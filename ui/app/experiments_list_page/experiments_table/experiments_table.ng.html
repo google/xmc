@@ -1,0 +1,164 @@
+@if (isLoading()) {
+  <!-- Shows only the loading bar when there is no data, i.e. when the page is first loaded, or when there is an error. Not used for refreshing as the table is already present. -->
+  <xmc-loading-bar />
+} @else {
+  @if (isRefreshing()) {
+    <!-- Shows the loading bar and the table when the table is reloading, avoiding jummps every time the page is reloaded. -->
+    <xmc-loading-bar [isRefreshing]="true" />
+  }
+  <div class="table-container">
+    <table
+      mat-table
+      matSort
+      matSortActive="created"
+      matSortDirection="desc"
+      matSortStart="desc"
+      [dataSource]="(tableRows$ | async) ?? []"
+      (matSortChange)="sortChange.emit($event)"
+      multiTemplateDataRows
+    >
+      <ng-container [matColumnDef]="TableColumns.XID">
+        <th mat-header-cell *matHeaderCellDef mat-sort-header="xid"> XID </th>
+        <td mat-cell *matCellDef="let row" class="xid-cell">
+          @if (row.xid) {
+            <div class="xid-content">
+              <xmc-xid-badge [xid]="row.xid"></xmc-xid-badge>
+            </div>
+          } @else {
+            N/A
+          }
+        </td>
+      </ng-container>
+
+      <ng-container [matColumnDef]="TableColumns.TITLE_AND_TAGS">
+        <th mat-header-cell *matHeaderCellDef> Title and Tags </th>
+        <td mat-cell *matCellDef="let row" class="title-cell">
+          <a class="cell-link" [routerLink]="['/experiments/', row.xid]">
+            @if (row.title) {
+              <div class="title-content">
+                <span class="title-text">{{ row.title }}</span>
+              </div>
+            }
+          </a>
+
+          <div class="tags-container">
+            @for (tag of row.tags; track tag) {
+              <xmc-tag [text]="tag"></xmc-tag>
+            }
+          </div>
+        </td>
+      </ng-container>
+
+      <ng-container [matColumnDef]="TableColumns.STATUS_AND_PRIORITY">
+        <th mat-header-cell *matHeaderCellDef> Status and Priority </th>
+        <td mat-cell *matCellDef="let row">
+          <div class="status-and-priority-container">
+            @if (row.status) {
+              <xmc-status-chip [status]="row.status"></xmc-status-chip>
+            }
+            @if (row.priority) {
+              <xmc-priority-chip [priority]="row.priority"></xmc-priority-chip>
+            }
+          </div>
+        </td>
+      </ng-container>
+
+      <ng-container [matColumnDef]="TableColumns.WORK_UNITS">
+        <th mat-header-cell *matHeaderCellDef> Work Units </th>
+        <td mat-cell *matCellDef="let row">
+          <xmc-work-units-status-bar [stateCounts]="row.stateCounts"> </xmc-work-units-status-bar>
+        </td>
+      </ng-container>
+
+      <ng-container [matColumnDef]="TableColumns.NOTES">
+        <th mat-header-cell *matHeaderCellDef> Notes </th>
+        <td mat-cell *matCellDef="let row">
+          {{ row.notes }}
+        </td>
+      </ng-container>
+
+      <ng-container [matColumnDef]="TableColumns.RESOURCES">
+        <th mat-header-cell *matHeaderCellDef> Resources </th>
+        <td mat-cell *matCellDef="let row">
+          <div class="resource-chips-container">
+            @for (resource of row.resources; track resource) {
+              <xmc-resource-chip
+                [resourceType]="resource.resourceType"
+                [text]="resource.text"
+              ></xmc-resource-chip>
+            }
+          </div>
+        </td>
+      </ng-container>
+
+      <ng-container [matColumnDef]="TableColumns.AUTHOR">
+        <th mat-header-cell *matHeaderCellDef> Author </th>
+        <td mat-cell *matCellDef="let row">
+          {{ row.author }}
+        </td>
+      </ng-container>
+
+      <ng-container [matColumnDef]="TableColumns.CREATED">
+        <th mat-header-cell *matHeaderCellDef mat-sort-header="created"> Created </th>
+        <td mat-cell *matCellDef="let row">
+          @if (row.createTime) {
+            {{ row.createTime | date: 'short' }}
+          } @else {
+            -
+          }
+        </td>
+      </ng-container>
+
+      <ng-container [matColumnDef]="TableColumns.COMPLETED">
+        <th mat-header-cell *matHeaderCellDef mat-sort-header="completed"> Completed </th>
+        <td mat-cell *matCellDef="let row">
+          @if (row.completedTime) {
+            {{ row.completedTime | date: 'short' }}
+          } @else {
+            -
+          }
+        </td>
+      </ng-container>
+
+      <ng-container [matColumnDef]="TableColumns.ACTIONS">
+        <th mat-header-cell *matHeaderCellDef>
+          <xmc-status-message-filter />
+        </th>
+        <td mat-cell *matCellDef="let row">
+          <div class="actions">
+            <button mat-icon-button aria-label="Edit experiment" (click)="editExperiment(row.xid)">
+              <mat-icon class="action-icon">edit</mat-icon>
+            </button>
+          </div>
+        </td>
+      </ng-container>
+
+      <!-- Status Message Sub-Row Column -->
+      <ng-container matColumnDef="status-message-detail">
+        <td mat-cell *matCellDef="let row" [attr.colspan]="displayedColumns.length">
+          @if (row.structuredStatusMessage) {
+            <xmc-status-message [message]="row.structuredStatusMessage"></xmc-status-message>
+          }
+        </td>
+      </ng-container>
+
+      <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+      <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+      <tr
+        mat-row
+        *matRowDef="let row; columns: ['status-message-detail']"
+        class="detail-row"
+        [style.display]="row.isStatusMessageVisible ? null : 'none'"
+      ></tr>
+      <tr *matNoDataRow>
+        <td [attr.colspan]="displayedColumns.length">
+          <div class="no-data-row">
+            @if (!isRefreshing()) {
+              <div class="no-experiments-message"> No experiments </div>
+            }
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>
+}

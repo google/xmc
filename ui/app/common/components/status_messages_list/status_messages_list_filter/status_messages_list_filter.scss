@@ -1,0 +1,12 @@
+@import 'third_party/xmanager_cloud/ui/consts';
+
+.filters-container {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  align-items: center;
+}
+
+.filter-field {
+  width: 200px;
+}

@@ -1,0 +1,37 @@
+<h1>Experiments</h1>
+
+<mat-card appearance="outlined">
+  <mat-card-content>
+    <xmc-experiments-table
+      [pageResult]="pageResult()"
+      [isFetching]="isLoading()"
+      [pageSize]="pageSize()"
+      (sortChange)="onSortChange($event)"
+    />
+  </mat-card-content>
+</mat-card>
+
+<div class="paginator">
+  <div class="paginator-controls">
+    <xmc-page-size-selector [pageSize]="pageSize()" (pageSizeChange)="onPageSizeChange($event)" />
+    <button
+      matIconButton
+      data-test-id="previous-page-button"
+      (click)="goToPreviousPage()"
+      [disabled]="!hasPreviousPage()"
+    >
+      <mat-icon>chevron_left</mat-icon>
+    </button>
+
+    <span> Page {{ pageIndex() + 1 }} </span>
+
+    <button
+      matIconButton
+      data-test-id="next-page-button"
+      (click)="goToNextPage()"
+      [disabled]="!hasNextPage()"
+    >
+      <mat-icon>chevron_right</mat-icon>
+    </button>
+  </div>
+</div>

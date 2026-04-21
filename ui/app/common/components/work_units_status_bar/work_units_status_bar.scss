@@ -1,0 +1,76 @@
+@import 'third_party/xmanager_cloud/ui/consts';
+
+.status-bar {
+  height: 14px;
+  width: 100%;
+  cursor: pointer;
+}
+
+.states {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.square {
+  width: 10px;
+  height: 10px;
+  margin-right: 5px;
+}
+
+.state-count-state-container {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.key-value-pair {
+  @include key-value-pair();
+  margin-left: 10px;
+  margin-right: 10px;
+}
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mat-sys-background);
+  font-size: 14px;
+}
+
+// Colors for each state.
+
+.INITIALIZING,
+.PENDING,
+.SCHEDULING,
+.RESTARTING {
+  background-color: $status-waiting;
+}
+
+.STARTING {
+  background-color: $status-starting;
+}
+
+.DESCHEDULING,
+.SCHEDULING {
+  background-color: $status-paused;
+}
+
+.RUNNING {
+  background-color: $status-running;
+}
+
+.COMPLETED {
+  background-color: $status-completed;
+}
+
+.STOPPING,
+.STOPPED {
+  background-color: $status-base;
+}
+
+.FAILED {
+  background-color: $status-failed;
+}

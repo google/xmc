@@ -1,0 +1,154 @@
+import {CommonModule} from '@angular/common';
+import {ChangeDetectionStrategy, Component, computed, inject, input, OnDestroy} from '@angular/core';
+import {toObservable} from '@angular/core/rxjs-interop';
+import {AbstractControl, FormControl, FormGroup, FormsModule, ReactiveFormsModule, ValidationErrors, Validators} from '@angular/forms';
+import {MatButtonModule} from '@angular/material/button';
+import {MatButtonToggleModule} from '@angular/material/button-toggle';
+import {MatCheckboxModule} from '@angular/material/checkbox';
+import {MatRippleModule} from '@angular/material/core';
+import {MatFormFieldModule} from '@angular/material/form-field';
+import {MatIconModule} from '@angular/material/icon';
+import {MatInputModule} from '@angular/material/input';
+import {MatProgressSpinner} from '@angular/material/progress-spinner';
+import {MatRadioModule} from '@angular/material/radio';
+import {MatSelectModule} from '@angular/material/select';
+import {Priority} from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
+import {Subscription} from 'rxjs';
+
+import {XidBadge} from '../../../common/components/xid_badge/xid_badge';
+import {BaseSidePanelContent, BaseSidePanelData} from '../../base_side_panel';
+import {SidePanelService} from '../../side_panel_service';
+
+import {EditExperimentFormStore} from './edit_experiment_form_store';
+
+/** Represents the data to render the Edit Experiment side panel. */
+export class EditExperimentFormData implements BaseSidePanelData {
+  constructor(
+      public xid: string,
+      public onUpdateSuccess?: () => void,
+      public onUpdateStart?: () => void,
+      public onUpdateFinish?: () => void,
+  ) {}
+}
+
+function notWhitespaceOnly(control: AbstractControl): ValidationErrors|null {
+  const isWhitespace = (control.value || '').trim().length === 0;
+  return isWhitespace ? {'whitespace': true} : null;
+}
+
+/** Side panel content for editing an experiment. */
+@Component({
+  selector: 'xmc-edit-experiment-form',
+  standalone: true,
+  templateUrl: './edit_experiment_form.ng.html',
+  styleUrl: './edit_experiment_form.css',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [
+    CommonModule,
+    FormsModule,
+    ReactiveFormsModule,
+    MatIconModule,
+    MatCheckboxModule,
+    MatButtonToggleModule,
+    MatButtonModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MatRadioModule,
+    MatRippleModule,
+    MatSelectModule,
+    MatProgressSpinner,
+    XidBadge,
+  ],
+  providers: [EditExperimentFormStore],
+})
+export class EditExperimentForm implements
+    BaseSidePanelContent<EditExperimentFormData>, OnDestroy {
+  readonly data = input.required<EditExperimentFormData>();
+
+  private readonly editExperimentFormStore = inject(EditExperimentFormStore);
+  private readonly sidePanelService = inject(SidePanelService);
+  private readonly subscriptions = new Subscription();
+
+  readonly initialExperiment = this.editExperimentFormStore.experiment;
+  readonly isLoading = this.editExperimentFormStore.isLoading;
+
+  readonly editExperimentFormGroup = computed(() => {
+    const initialExperiment = this.initialExperiment();
+
+    return new FormGroup({
+      'name': new FormControl<string>(
+          initialExperiment?.title ?? '',
+          [Validators.required, notWhitespaceOnly]),
+      'notes': new FormControl<string>(initialExperiment?.notes ?? ''),
+      'tags': new FormControl<string>(initialExperiment?.tags?.join(',') ?? ''),
+      'priority':
+          new FormControl<Priority>(initialExperiment?.priority ?? 'NORMAL'),
+    });
+  });
+
+  constructor() {
+    this.subscriptions.add(
+        toObservable(this.data).subscribe((data) => {
+          this.editExperimentFormStore.fetchExperiment(data.xid);
+        }),
+    );
+  }
+
+  close() {
+    this.sidePanelService.closeSidePanel();
+  }
+
+  updateExperiment() {
+    const formGroup = this.editExperimentFormGroup();
+    let updatedExperiment = this.initialExperiment()!;
+
+    const updateMask = new Array<string>();
+
+    const nameControl = formGroup.controls.name;
+    if (nameControl.dirty) {
+      updatedExperiment = {...updatedExperiment, title: nameControl.value!};
+      updateMask.push('title');
+    }
+
+    const notesControl = formGroup.controls.notes;
+    if (notesControl.dirty) {
+      updatedExperiment = {...updatedExperiment, notes: notesControl.value!};
+      updateMask.push('notes');
+    }
+
+    const tagsControl = formGroup.controls.tags;
+    if (tagsControl.dirty) {
+      updatedExperiment = {
+        ...updatedExperiment,
+        tags: tagsControl.value!.split(',')
+                  .map((tag) => tag.trim())
+                  .filter((tag) => tag !== ''),
+      };
+      updateMask.push('tags');
+    }
+
+    const priorityControl = formGroup.controls.priority;
+    if (priorityControl.dirty) {
+      updatedExperiment = {
+        ...updatedExperiment,
+        priority: priorityControl.value!
+      };
+      updateMask.push('priority');
+    }
+
+    this.data().onUpdateStart?.();
+    this.editExperimentFormStore.updateExperiment({
+      request: {
+        experiment: updatedExperiment,
+        updateMask: updateMask.join(','),
+      },
+      onSuccess: this.data().onUpdateSuccess,
+      onFinish: this.data().onUpdateFinish,
+    });
+    this.sidePanelService.closeSidePanel();
+  }
+
+  ngOnDestroy() {
+    this.subscriptions.unsubscribe();
+  }
+}

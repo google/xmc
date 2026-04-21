@@ -1,0 +1,31 @@
+<h2 class="column-title">{{ lifecyclePhase() }}</h2>
+<div class="artifacts-grid">
+  @if (items().length === 0) {
+    <div class="no-artifacts">No artifacts found.</div>
+  } @else {
+    @for (item of items(); track item.type === 'group' ? item.groupId : item.artifact.name) {
+      @if (item.type === 'single') {
+        <xmc-artifact-card [artifact]="item.artifact" [isOnExperimentPage]="isOnExperimentPage()" />
+      } @else if (item.type === 'group') {
+        <mat-expansion-panel class="artifact-group-card">
+          <mat-expansion-panel-header>
+            <div class="group-header-main">
+              <mat-icon class="group-icon">{{ item.icon }}</mat-icon>
+              <div class="group-title">
+                {{ formatDataType(item.dataType) }} ({{ item.artifacts.length }})
+              </div>
+            </div>
+          </mat-expansion-panel-header>
+          <div class="grouped-artifacts-list">
+            @for (artifact of item.artifacts; track artifact.name) {
+              <xmc-artifact-card
+                [artifact]="artifact"
+                [isOnExperimentPage]="isOnExperimentPage()"
+              />
+            }
+          </div>
+        </mat-expansion-panel>
+      }
+    }
+  }
+</div>

@@ -1,0 +1,22 @@
+@import 'third_party/xmanager_cloud/ui/consts';
+
+$max-page-width: 1500px;
+
+:host {
+  @include page-layout;
+  max-width: $max-page-width;
+  padding: $page-padding;
+  margin: 0 auto;
+}
+
+.header-section,
+.details-section,
+.tabs-section {
+  width: 100%;
+}
+
+.status-messages-container {
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}

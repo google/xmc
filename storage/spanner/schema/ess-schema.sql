@@ -1,0 +1,261 @@
+# SQLFORMAT:OFF
+
+CREATE PROTO BUNDLE (
+  -- Protos used in Experiments
+  cloud.xmanager.v1.Url,
+  cloud.xmanager.v1.ExperimentStatus,
+  cloud.xmanager.v1.ExperimentStatus.ActiveState,
+  cloud.xmanager.v1.ExperimentStatus.LaunchState,
+  cloud.xmanager.v1.ResourceSet,
+  cloud.xmanager.v1.Priority,
+
+  -- Protos used in StructuredMessages
+  cloud.xmanager.v1.StructuredMessage,
+  cloud.xmanager.v1.StructuredMessage.Source,
+  cloud.xmanager.v1.StructuredMessage.Severity,
+
+  -- Protos used in Artifacts
+  cloud.xmanager.v1.Artifact,
+  cloud.xmanager.v1.Artifact.AdditionalInfo,
+  cloud.xmanager.v1.Artifact.LifecyclePhase,
+  cloud.xmanager.v1.Artifact.DataType,
+
+  -- Protos used in Operations
+  google.rpc.Status,
+  cloud.xmanager.v1.OperationMetadata,
+  cloud.xmanager.v1.OperationMetadata.ActionType,
+
+  -- Protos used in WorkUnits
+  cloud.xmanager.v1.Executable,
+  cloud.xmanager.v1.ExecutableStatus,
+  cloud.xmanager.v1.SchedulingConstraints,
+  cloud.xmanager.v1.WorkUnit,
+  cloud.xmanager.v1.WorkUnit.WorkUnitType,
+  cloud.xmanager.v1.WorkUnitStatus,
+  cloud.xmanager.v1.WorkUnitStatus.WorkUnitState,
+  cloud.xmanager.v1.WorkUnitExecutionMetadata,
+  cloud.xmanager.v1.WorkUnitExecutionMetadata.WorkUnitExecutionType,
+  cloud.xmanager.v1.WorkUnitExecution,
+  cloud.xmanager.v1.WorkUnitExecution.WorkUnitExecutionState,
+);
+
+-- Table that holds the core experiments data.
+CREATE TABLE Experiments (
+  -- XID of the experiment.
+  Xid INT64 NOT NULL,
+  -- Bit-reversed XID for primary key.
+  BitReversedXid INT64 NOT NULL AS (BIT_REVERSE(Xid, FALSE)) STORED,
+
+  -- The title of the experiment.
+  Title STRING(MAX) NOT NULL,
+  -- Tokenized title of the experiment.
+  Title_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Title)) HIDDEN,
+  -- Creator of the experiment.
+  Creator STRING(MAX) NOT NULL,
+  -- Tokenized creator of the experiment.
+  Creator_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Creator)) HIDDEN,
+  -- The priority of the experiment. Higher values indicate higher priority.
+  Priority INT64 NOT NULL,
+  -- The URLs of the experiment.
+  Urls ARRAY<cloud.xmanager.v1.Url> NOT NULL,
+  -- The tags of the experiment.
+  Tags ARRAY<STRING(MAX)> NOT NULL,
+  -- Tokenized tags of the experiment.
+  Tags_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Tags)) HIDDEN,
+  -- The notes of the experiment.
+  Notes STRING(MAX) NOT NULL,
+
+  -- The resources of the experiment's work units, denormalized from the WorkUnits table.
+  Resources ARRAY<cloud.xmanager.v1.ResourceSet> NOT NULL,
+
+  -- The status of the experiment.
+  Status cloud.xmanager.v1.ExperimentStatus NOT NULL,
+
+  -- State of the experiment, stored for searching.
+  ActiveState cloud.xmanager.v1.ExperimentStatus.ActiveState NOT NULL AS (Status.active_state) STORED,
+  -- State of the experiment's launch process, stored for searching.
+  LaunchState cloud.xmanager.v1.ExperimentStatus.LaunchState NOT NULL AS (Status.launch_state) STORED,
+
+  -- The time the experiment was created.
+  CreateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+  -- The last time the experiment was updated, including on creation.
+  UpdateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+  -- The last time the experiment was moved to a terminal state.
+  CompleteTime TIMESTAMP,
+) PRIMARY KEY (BitReversedXid);
+
+CREATE INDEX ExperimentsByCreator ON Experiments (Creator);
+
+-- Allows full-text search on the Experiments by creator, title, and tags.
+CREATE SEARCH INDEX ExperimentsSearchIndex ON Experiments (Title_Tokens, Tags_Tokens, Creator_Tokens);
+
+CREATE TABLE Artifacts (
+  -- The associated XID.
+  Xid INT64 NOT NULL,
+  -- The bit-reversed XID of the experiment for indexing.
+  BitReversedXid INT64 NOT NULL AS (BIT_REVERSE(Xid, FALSE)) STORED,
+  -- The work unit ID. This may be NULL for artifacts that are not associated with a work unit.
+  WorkUnitId INT64,
+  -- The artifact ID associated with the artifact.
+  ArtifactId INT64 NOT NULL,
+  -- The bit-reversed artifact ID for indexing.
+  BitReversedArtifactId INT64 NOT NULL AS (BIT_REVERSE(ArtifactId, FALSE)) STORED,
+
+  -- The link of the artifact.
+  Url STRING(MAX) NOT NULL,
+  -- Tokenized URL of the artifact.
+  Url_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Url)) HIDDEN,
+  -- The icon of the artifact.
+  Icon STRING(MAX) NOT NULL,
+  -- The display name of the artifact.
+  DisplayName STRING(MAX) NOT NULL,
+  -- Tokenized display name of the artifact.
+  DisplayName_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(DisplayName)) HIDDEN,
+  -- The priority of the artifact when being shown in the UI. Lower numbers indicate higher priority.
+  Priority INT64 NOT NULL,
+
+  -- The tags of an artifact.
+  Tags ARRAY<STRING(MAX)> NOT NULL,
+  -- Tokenized tags of the artifact.
+  Tags_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Tags)) HIDDEN,
+  -- The notes of an artifact.
+  Notes STRING(MAX) NOT NULL,
+  -- Tokenized notes of the artifact.
+  Notes_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Notes)) HIDDEN,
+
+  -- The lifecycle phase of the artifact.
+  LifecyclePhase cloud.xmanager.v1.Artifact.LifecyclePhase NOT NULL,
+  -- The type of artifact.
+  DataType cloud.xmanager.v1.Artifact.DataType NOT NULL,
+  -- The MIME type of the artifact.
+  MimeType STRING(MAX) NOT NULL,
+  -- Tokenized MIME type of the artifact.
+  MimeType_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(MimeType)) HIDDEN,
+  -- Additional info for the artifact.
+  AdditionalInfo cloud.xmanager.v1.Artifact.AdditionalInfo,
+
+  -- The creation time of the artifact.
+  CreateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+  -- The last time the artifact was updated, including on creation.
+  UpdateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+) PRIMARY KEY (BitReversedXid, WorkUnitId, ArtifactId),
+  INTERLEAVE IN PARENT Experiments
+  ON DELETE CASCADE;
+
+-- To efficiently find artifacts by just their artifact ID.
+CREATE UNIQUE INDEX ArtifactsByBitReversedArtifactId ON Artifacts (BitReversedArtifactId);
+
+-- Allows full-text search on the Artifacts by URL, display name, MIME type, tags, and notes.
+CREATE SEARCH INDEX ArtifactsSearchIndex ON Artifacts (Url_Tokens, DisplayName_Tokens, Tags_Tokens, Notes_Tokens, MimeType_Tokens);
+
+-- Table that holds the core work units data. Interleaved with Experiments.
+CREATE TABLE WorkUnits (
+  -- The associated XID.
+  Xid INT64 NOT NULL,
+  -- The bit-reversed XID of the experiment for indexing.
+  BitReversedXid INT64 NOT NULL AS (BIT_REVERSE(Xid, FALSE)) STORED,
+  -- The work unit ID.
+  WorkUnitId INT64 NOT NULL,
+
+  -- The type of the work unit.
+  WorkUnitType cloud.xmanager.v1.WorkUnit.WorkUnitType NOT NULL,
+  -- The priority of the work unit. Higher values indicate higher priority.
+  Priority INT64 NOT NULL,
+  -- The URLs of the experiment.
+  Urls ARRAY<cloud.xmanager.v1.Url> NOT NULL,
+  -- The tags of the work unit.
+  Tags ARRAY<STRING(MAX)> NOT NULL,
+  -- The notes of the experiment.
+  Notes STRING(MAX) NOT NULL,
+
+  -- The executable of the work unit.
+  
+  Executable cloud.xmanager.v1.Executable NOT NULL,
+
+  -- Create time of the current work unit execution.
+  ExecutionCreateTime TIMESTAMP NOT NULL,
+  -- Update time of the current work unit execution.
+  ExecutionUpdateTime TIMESTAMP NOT NULL,
+  -- Complete time of the current work unit execution.
+  ExecutionCompleteTime TIMESTAMP,
+  -- The current execution ID of the work unit.
+  ExecutionId INT64 NOT NULL,
+  -- Metadata about the current work unit execution.
+  ExecutionMetadata cloud.xmanager.v1.WorkUnitExecutionMetadata NOT NULL,
+  -- The status of the current work unit execution.
+  WorkUnitStatus cloud.xmanager.v1.WorkUnitStatus NOT NULL,
+
+  -- The queue name of the work unit. Stored for indexing.
+  QueueName STRING(MAX) NOT NULL AS (Executable.scheduling_constraints.queue_name) STORED,
+  -- The state of the current work unit execution. Stored for searching.
+  ExecutionState cloud.xmanager.v1.WorkUnitStatus.WorkUnitState NOT NULL AS (WorkUnitStatus.state) STORED,
+  -- The severity of the current work unit structured status message. This is useful to query for
+  -- the highest severity messages to propagate up to the experiment.
+  ExecutionStatusMessageSeverity cloud.xmanager.v1.StructuredMessage.Severity AS (GREATEST(IFNULL(WorkUnitStatus.system_message.severity, 0), IFNULL(WorkUnitStatus.user_message.severity, 0))) STORED,
+
+  -- The time the work unit was created.
+  CreateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+  -- The last time the work unit was updated, including on creation.
+  UpdateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+) PRIMARY KEY (BitReversedXid, WorkUnitId),
+  INTERLEAVE IN PARENT Experiments
+  ON DELETE CASCADE;
+
+-- To efficiently find work units assigned to a specific queue.
+CREATE INDEX WorkUnitsByQueueName ON WorkUnits (QueueName);
+
+-- Table that holds the list of operations.
+CREATE TABLE Operations (
+  -- The associated XID.
+  Xid INT64 NOT NULL,
+  -- The bit-reversed XID of the experiment for indexing.
+  BitReversedXid INT64 NOT NULL AS (BIT_REVERSE(Xid, FALSE)) STORED,
+  -- The work unit ID.
+  WorkUnitId INT64 NOT NULL,
+  -- The operation ID.
+  OperationId STRING(MAX) NOT NULL DEFAULT (GENERATE_UUID()),
+
+  -- If the operation is done.
+  Done BOOL NOT NULL,
+
+  -- Error message if the operation failed.
+  Status google.rpc.Status,
+  -- Response message if the operation succeeded.
+  Response cloud.xmanager.v1.WorkUnit,
+
+  -- The metadata of the operation.
+  OperationMetadata cloud.xmanager.v1.OperationMetadata NOT NULL,
+
+  -- The time the operation was created.
+  CreateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+  -- The last time the operation was updated, including on creation.
+  UpdateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+) PRIMARY KEY (BitReversedXid, WorkUnitId, OperationId),
+  INTERLEAVE IN PARENT WorkUnits
+  ON DELETE CASCADE;
+
+-- Table that holds the work unit's historical executions. Interleaved with WorkUnits.
+CREATE TABLE WorkUnitExecutions (
+  -- The associated XID.
+  Xid INT64 NOT NULL,
+  -- The bit-reversed XID of the experiment for indexing.
+  BitReversedXid INT64 NOT NULL AS (BIT_REVERSE(Xid, FALSE)) STORED,
+  -- The work unit ID.
+  WorkUnitId INT64 NOT NULL,
+  -- The unique ID of the work unit execution.
+  ExecutionId INT64 NOT NULL,
+
+  -- Metadata about the work unit execution.
+  ExecutionMetadata cloud.xmanager.v1.WorkUnitExecutionMetadata NOT NULL,
+  -- The status of the work unit execution.
+  WorkUnitStatus cloud.xmanager.v1.WorkUnitStatus NOT NULL,
+
+  -- The time the work unit execution was created.
+  CreateTime TIMESTAMP NOT NULL,
+  -- The last time the work unit was updated.
+  UpdateTime TIMESTAMP NOT NULL,
+  -- The time the work unit execution was completed.
+  CompleteTime TIMESTAMP,
+) PRIMARY KEY (BitReversedXid, WorkUnitId, ExecutionId),
+  INTERLEAVE IN PARENT WorkUnits
+  ON DELETE CASCADE;

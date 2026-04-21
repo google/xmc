@@ -1,0 +1,36 @@
+<mat-card class="metadata-card">
+  <mat-card-content class="work-unit-summary-container">
+    <div class="work-unit-summary-metadata">
+      <h2 class="secondary-title">Metadata</h2>
+      <dl>
+        <div class="key-value-pair">
+          <dt>Created</dt>
+          <dd>{{ workUnit().createTime | date: 'short' }}</dd>
+        </div>
+        @if (workUnit().updateTime) {
+          <div class="key-value-pair">
+            <dt>Last Updated</dt>
+            <dd>{{ workUnit().updateTime | date: 'short' }}</dd>
+          </div>
+        }
+        <div class="key-value-pair">
+          <dt>Tags</dt>
+          <dd>
+            <mat-chip-set>
+              @for (tag of workUnit().tags; track tag) {
+                <xmc-tag [text]="tag"></xmc-tag>
+              }
+            </mat-chip-set>
+          </dd>
+        </div>
+      </dl>
+    </div>
+
+    <mat-divider [vertical]="true"> </mat-divider>
+
+    <div class="work-unit-summary-notes">
+      <h2 class="secondary-title">Notes</h2>
+      <p>{{ workUnit().notes }}</p>
+    </div>
+  </mat-card-content>
+</mat-card>

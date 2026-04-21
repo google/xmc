@@ -1,0 +1,40 @@
+@use 'third_party/javascript/angular_components/material' as mat;
+
+.paginator {
+  margin: 16px;
+  display: flex;
+  justify-content: right;
+  align-items: center;
+  gap: 8px;
+}
+
+.work-unit-id {
+  text-decoration: none;
+}
+
+.mat-column-Urls {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.error-message {
+  color: var(--mat-sys-error);
+  margin: 16px;
+}
+
+tr.detail-row td {
+  border-bottom-width: 0;
+  padding: 0;
+}
+
+tr.detail-row td .status-messages-box {
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+.no-work-units-message {
+  padding: 16px;
+  text-align: center;
+}

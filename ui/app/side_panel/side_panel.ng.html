@@ -1,0 +1,16 @@
+<mat-sidenav-container hasBackdrop>
+  <mat-sidenav
+    class="sidenav-panel"
+    mode="over"
+    position="end"
+    [opened]="(isPanelOpen$ | async) || false"
+    (closed)="closeSidePanel()"
+  >
+    <ng-container #sidePanelContents></ng-container>
+  </mat-sidenav>
+
+  <!-- This is the main content area, not the contents of the side nav. -->
+  <mat-sidenav-content class="sidenav-main-content">
+    <ng-content></ng-content>
+  </mat-sidenav-content>
+</mat-sidenav-container>

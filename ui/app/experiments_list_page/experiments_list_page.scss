@@ -1,0 +1,28 @@
+@import 'third_party/xmanager_cloud/ui/consts';
+
+:host {
+  @include page-layout;
+  gap: 0;
+  padding: $page-padding;
+  margin: 0 auto;
+  max-width: $max-page-width;
+}
+
+.paginator {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.paginator-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+h1 {
+  font-size: $font-size-large;
+  margin-top: 0;
+}

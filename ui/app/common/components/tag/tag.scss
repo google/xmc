@@ -1,0 +1,18 @@
+@use 'third_party/javascript/angular_components/material' as mat;
+
+.tag {
+  @include mat.chips-overrides(
+    (
+      container-height: 20px,
+      label-text-size: 12px,
+      elevated-container-color: var(--xmc-tag-container-color),
+      outline-color: var(--mat-sys-background),
+    )
+  );
+  text-decoration: none;
+
+  .tag-text {
+    cursor: pointer;
+    user-select: none;
+  }
+}

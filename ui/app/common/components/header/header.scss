@@ -1,0 +1,83 @@
+@use 'third_party/javascript/angular_components/material' as mat;
+@import 'third_party/xmanager_cloud/ui/consts';
+
+$small-margin: 15px;
+$max-searchbar-width: 1200px;
+$side-sections-width: 256px;
+
+:host {
+  @include mat.form-field-overrides(
+    (
+      container-vertical-padding: 9px,
+      container-height: 18px,
+    )
+  );
+}
+
+mat-toolbar {
+  border-bottom: 1px solid var(--mat-sys-outline);
+  justify-content: space-between;
+  gap: $small-margin;
+}
+
+.side-sections {
+  width: $side-sections-width;
+}
+
+.side-sections:link,
+.side-sections:visited {
+  text-decoration: none;
+  color: var(--mat-sys-on-surface);
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+}
+
+.logo-image {
+  height: 40px;
+  width: 40px;
+}
+
+.app-name {
+  margin-left: $small-margin;
+  color: var(--mat-sys-on-surface);
+}
+
+.search-textbox {
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+  max-width: $max-searchbar-width;
+}
+
+:host ::ng-deep .search-textbox .mat-mdc-form-field-subscript-wrapper {
+  height: 0;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+::ng-deep .cdk-overlay-pane > .search-syntax-menu.mat-mdc-menu-panel {
+  max-width: none;
+  min-width: 0;
+  padding: 1rem;
+  background-color: var(--mat-card-elevated-container-color);
+
+  ul {
+    padding-left: 1rem;
+  }
+
+  li {
+    margin-bottom: 0.5rem;
+  }
+
+  .code-container {
+    display: inline-block;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    background-color: var(--xmc-code-container-color);
+  }
+}

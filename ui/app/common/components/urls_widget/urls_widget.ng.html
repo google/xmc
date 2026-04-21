@@ -1,0 +1,22 @@
+<mat-card>
+  <mat-card-content>
+    @for (url of urls(); track $index) {
+      @if (url.processedUrl) {
+        <a
+          class="url-button"
+          [href]="url.processedUrl"
+          target="_blank"
+          [matTooltip]="url.processedUrl"
+        >
+          <mat-icon class="url-icon">{{ url.icon }}</mat-icon>
+          {{ url.displayName }}
+        </a>
+      } @else {
+        <button class="url-button" disabled matTooltip="Waiting for data...">
+          <mat-icon class="url-icon">pending</mat-icon>
+          {{ url.displayName }}
+        </button>
+      }
+    }
+  </mat-card-content>
+</mat-card>

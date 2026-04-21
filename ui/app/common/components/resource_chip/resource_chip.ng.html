@@ -1,0 +1,6 @@
+<mat-chip
+  [class.grey]="resourceType() === ResourceType.CPU || resourceType() === ResourceType.MEMORY"
+  [class.green]="resourceType() === ResourceType.GPU"
+>
+  {{ text() }}
+</mat-chip>

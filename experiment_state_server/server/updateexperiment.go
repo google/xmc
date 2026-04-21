@@ -1,0 +1,109 @@
+package server
+
+import (
+	"context"
+	"fmt"
+
+	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
+	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/storage/data/data"
+	"xmanager_cloud/storage/storage"
+	"xmanager_cloud/validator/validator"
+	xidpb "xmanager_cloud/xid_service/proto/api_go_proto"
+	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	"task/go/status"
+)
+
+// UpdateExperiment updates an experiment's data.
+func (s *Server) UpdateExperiment(ctx context.Context, req *apipb.UpdateExperimentRequest) (*msgpb.Experiment, error) {
+	ctx = logging.InjectOperation(ctx, "")
+	logging.Info(ctx, "Update experiment", "request", req)
+
+	// 1. Authenticate the user.
+	logging.Debug(ctx, "Extracting user identity from context")
+	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Validate the request payload.
+	name := req.GetExperiment().GetName()
+	xid, err := validator.ValidateExperimentName(name)
+	if err != nil {
+		logging.Warn(ctx, "UpdateExperiment validation failed", "name", name, "error", err)
+		return nil, fmt.Errorf("UpdateExperiment validation failed: %w (%v)", status.ErrInvalidArgument, err)
+	}
+	ctx = logging.WithExperimentName(ctx, name)
+
+	if req.GetUpdateMask() == nil {
+		logging.Warn(ctx, "UpdateExperiment validation failed for empty update mask", "update_mask", req.GetUpdateMask())
+		return nil, fmt.Errorf("UpdateExperiment validation failed: %w", status.ErrInvalidArgument)
+	}
+
+	if err := validator.ValidateUpdateExperimentRequest(req); err != nil {
+		logging.Warn(ctx, "UpdateExperiment validation failed", "error", err)
+		return nil, err
+	}
+
+	// 3. Authorize the user to update the experiment.
+	isAuthorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
+	if err != nil {
+		return nil, err
+	}
+	if !isAuthorized {
+		logging.Warn(ctx, "User not authorized to update experiment", "error", err)
+		return nil, fmt.Errorf("user not authorized to update experiment %s: %w", name, status.ErrPermissionDenied)
+	}
+
+	// 4. Update the experiment in the storage layer.
+	logging.Debug(ctx, "Updating experiment")
+	update := &storage.ExperimentUpdate{
+		XID:        xid,
+		Experiment: req.GetExperiment(),
+		UpdateMask: req.GetUpdateMask(),
+	}
+	_, returnedExp, err := s.storage.UpdateExperiment(ctx, update)
+	if err != nil {
+		logging.Error(ctx, "Failed to update experiment", "error", err)
+		return nil, fmt.Errorf("failed to update experiment %s: %w (%v)", name, status.ErrInternal, err)
+	}
+
+	// 5. Check if the XID entry needs to be updated.
+	xidEntryForUpdate, updateMask, err := data.ExperimentRequiresXIDUpdate(req.GetExperiment(), req.GetUpdateMask())
+	if err != nil {
+		logging.Error(ctx, "Failed to check if XID entry needs to be updated", "error", err)
+		return nil, fmt.Errorf("failed to check if XID entry needs to be updated: %w (%v)", status.ErrInternal, err)
+	}
+
+	// 6. Update the XID entry in the XID service if required.
+	if updateMask.GetPaths() != nil {
+		ctx := logging.WithXIDName(ctx, validator.ConstructXIDName(xid))
+		logging.Debug(ctx, "Updating XID entry")
+
+		request := &xidpb.UpdateXidEntryRequest{
+			XidEntry:   xidEntryForUpdate,
+			UpdateMask: updateMask,
+		}
+
+		if _, err := s.xidClient.UpdateXidEntry(propagateIAPJWT(ctx), request); err != nil {
+			logging.Error(ctx, "Failed to update XID entry", "error", err)
+			return nil, fmt.Errorf("failed to update XID entry, experiment resource may have been partially updated: %w (%v)", status.ErrInternal, err)
+		}
+		returnedExp.Acls = xidEntryForUpdate.GetAcls()
+	} else {
+		// 6.1. Fetch the XID entry from the XID service if required.
+		// This is required to populate the ACLs in the response.
+		currentXidEntry, err := s.getXid(ctx, validator.ConstructXIDName(xid))
+		if err != nil {
+			logging.Error(ctx, "XID lookup failed", "error", err)
+			return nil, fmt.Errorf("XID lookup failed for XID %d: %w (%v)", xid, status.ErrInternal, err)
+		}
+
+		returnedExp.Acls = currentXidEntry.GetAcls()
+	}
+
+
+	logging.Info(ctx, "Updated experiment", "experiment", returnedExp)
+	return returnedExp, nil
+}

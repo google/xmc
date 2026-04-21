@@ -1,0 +1,43 @@
+<div class="filters-container">
+  <mat-form-field appearance="outline" class="filter-field">
+    <mat-label>Severity</mat-label>
+    <mat-select
+      multiple
+      [value]="severityFilter()"
+      (selectionChange)="severityFilterChange.emit($event.value)"
+      data-testid="severity-select"
+    >
+      <mat-select-trigger>{{ selectedSeveritiesLabel() }}</mat-select-trigger>
+      @for (opt of severityOptions; track opt.value) {
+        <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  <mat-form-field appearance="outline" class="filter-field">
+    <mat-label>Source</mat-label>
+    <mat-select
+      multiple
+      [value]="sourceFilter()"
+      (selectionChange)="sourceFilterChange.emit($event.value)"
+      data-testid="source-select"
+    >
+      <mat-select-trigger>{{ selectedSourcesLabel() }}</mat-select-trigger>
+      @for (opt of sourceOptions; track opt.value) {
+        <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  <mat-form-field appearance="outline" class="filter-field">
+    <mat-label>Order</mat-label>
+    <mat-select
+      [value]="sortOrder()"
+      (selectionChange)="sortOrderChange.emit($event.value)"
+      data-testid="sort-order-select"
+    >
+      <mat-option value="DESC">Newest First</mat-option>
+      <mat-option value="ASC">Oldest First</mat-option>
+    </mat-select>
+  </mat-form-field>
+</div>

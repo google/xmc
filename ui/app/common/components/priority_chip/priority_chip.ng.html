@@ -1,0 +1,19 @@
+<mat-chip
+  [class.red]="priority() === 'HIGH'"
+  [class.yellow]="priority() === 'NORMAL'"
+  [class.green]="priority() === 'LOW'"
+>
+  <div class="priority-chip-content">
+    @switch (priority()) {
+      @case ('HIGH') {
+        High
+      }
+      @case ('NORMAL') {
+        Normal
+      }
+      @case ('LOW') {
+        Low
+      }
+    }
+  </div>
+</mat-chip>

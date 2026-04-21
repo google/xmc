@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package cloud.xmanager.v1;
+
+import "google/api/field_behavior.proto";
+import "google/protobuf/timestamp.proto";
+import "third_party/xmanager_cloud/experiment_state_server/proto/structured_message.proto";
+
+option java_multiple_files = true;
+
+// This is used in the metadata field of google.longrunning.Operation.
+message OperationMetadata {
+  enum ActionType {
+    ACTION_TYPE_UNSPECIFIED = 0;
+    CREATE = 1;
+    STOP = 2;
+    RESTART = 3;
+  }
+  // The time the operation was created.
+  google.protobuf.Timestamp create_time = 1
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The time the operation finished running.
+  google.protobuf.Timestamp end_time = 2
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The resource name of the primary target of this operation.
+  // In the form of work unit name: "experiments/{xid}/workUnits/{wid}"
+  string target = 3 [(google.api.field_behavior) = IMMUTABLE];
+
+  // A human-readable status message describing the current progress.
+  StructuredMessage detailed_status = 4
+      [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The type of action.
+  ActionType action_type = 5 [(google.api.field_behavior) = IMMUTABLE];
+
+  // The user who requested the action.
+  string original_requester = 6 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Identifies whether the user has requested cancellation.
+  bool requested_cancellation = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // User who requested the operation be cancelled.
+  string cancellation_requester = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+}

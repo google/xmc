@@ -1,0 +1,48 @@
+@use 'third_party/javascript/angular_components/material' as mat;
+@import 'third_party/xmanager_cloud/ui/consts';
+
+.work-unit-header-container {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: $large-padding;
+  justify-content: space-between;
+
+  .work-unit-title-container {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: $small-margin;
+  }
+
+  .priority-and-status-container {
+    display: flex;
+    flex-direction: row;
+    gap: $basic-margin;
+    align-items: center;
+  }
+
+  .actions-container {
+    display: flex;
+    flex-direction: row;
+    gap: $small-margin;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  h1 {
+    font-size: $font-size-large;
+  }
+}
+
+.experiment-link {
+  text-decoration: none;
+  font-weight: 500;
+  color: var(--mat-sys-primary);
+}
+
+.experiment-link-container {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}

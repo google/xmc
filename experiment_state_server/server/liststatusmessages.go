@@ -1,0 +1,91 @@
+package server
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
+	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/validator/validator"
+	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+	"task/go/status"
+)
+
+const (
+	defaultStatusMessagePageSize = 10
+	maxStatusMessagePageSize     = 1000
+	statusMessageSearchStaleness = 15 * time.Second
+)
+
+// ListStatusMessages returns a list of historical status messages for an experiment or work unit.
+func (s *Server) ListStatusMessages(ctx context.Context, req *apipb.ListStatusMessagesRequest) (*apipb.ListStatusMessagesResponse, error) {
+	ctx = logging.InjectOperation(ctx, "")
+	logging.Info(ctx, "Fetch status messages", "request", req)
+	resp, err := s.listStatusMessagesWithStaleness(ctx, req, 0*time.Second)
+	logging.Info(ctx, "Fetched status messages", "response", resp)
+	return resp, err
+}
+
+// SearchStatusMessages returns a list of historical status messages for an experiment or work unit
+// with a specified staleness for potentially faster reads.
+func (s *Server) SearchStatusMessages(ctx context.Context, req *apipb.ListStatusMessagesRequest) (*apipb.ListStatusMessagesResponse, error) {
+	ctx = logging.InjectOperation(ctx, "")
+	logging.Info(ctx, "Search status messages", "request", req)
+	resp, err := s.listStatusMessagesWithStaleness(ctx, req, statusMessageSearchStaleness)
+	logging.Info(ctx, "Searched status messages", "response", resp)
+	return resp, err
+}
+
+func (s *Server) listStatusMessagesWithStaleness(ctx context.Context, req *apipb.ListStatusMessagesRequest, staleness time.Duration) (*apipb.ListStatusMessagesResponse, error) {
+	// 1. Authenticate the user.
+	logging.Debug(ctx, "Extracting user identity from context")
+	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Validate the request payload.
+	if req.GetPageSize() == 0 {
+		logging.Warn(ctx, "Page size not specified, using default", "page_size", defaultStatusMessagePageSize)
+		req.PageSize = defaultStatusMessagePageSize
+	}
+	if err := validator.ValidateAIPCompliantListWithMaxPageSize(req.GetPageSize(), req.GetFilter(), req.GetOrderBy(), req.GetPageToken(), maxStatusMessagePageSize); err != nil {
+		logging.Warn(ctx, "Invalid ListStatusMessagesRequest", "error", err)
+		return nil, fmt.Errorf("invalid ListStatusMessagesRequest: %w (%v)", status.ErrInvalidArgument, err)
+	}
+
+	// 3. Validate the parent.
+	parent := req.GetParent()
+	parentXID, _, err := validator.ValidateStatusMessageParent(parent)
+	if err != nil {
+		logging.Warn(ctx, "Failed to validate parent", "parent", parent, "error", err)
+		return nil, fmt.Errorf("failed to validate parent %s: %w (%v)", parent, status.ErrInvalidArgument, err)
+	}
+	ctx = logging.WithStatusMessageParent(ctx, parent)
+
+	// 4. Authorize the caller to get the status messages for this experiment or work unit.
+	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(parentXID), email, xidmsgpb.XidAcls_READER.Enum())
+	if err != nil {
+		return nil, err
+	}
+	if !authorized {
+		logging.Warn(ctx, "User not authorized to list status messages", "user", email, "xid", parentXID)
+		return nil, fmt.Errorf("user %s is not authorized to list status messages for XID %d: %w", email, parentXID, status.ErrPermissionDenied)
+	}
+
+	// 5. Get the list of StatusMessages from the storage layer.
+	messages, nextPageToken, err := s.storage.ListStatusMessages(ctx, req.GetParent(), req.GetPageSize(), req.GetPageToken(), req.GetFilter(), req.GetOrderBy(), staleness)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(messages) == 0 {
+		logging.Warn(ctx, "No status messages found for request")
+	}
+
+	return &apipb.ListStatusMessagesResponse{
+		StatusMessages: messages,
+		NextPageToken:  nextPageToken,
+	}, nil
+}

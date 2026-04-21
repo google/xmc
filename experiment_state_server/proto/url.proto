@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package cloud.xmanager.v1;
+
+import "google/api/field_behavior.proto";
+
+option java_multiple_files = true;
+
+message Url {
+  // URL to link to.
+  string url = 1 [(google.api.field_behavior) = REQUIRED];
+  // Icon to display next to the URL. This icon should be a Material icon name
+  // (https://fonts.google.com/icons), e.g. `arrow_upward`.
+  string icon = 2 [(google.api.field_behavior) = OPTIONAL];
+  // Human-readable label for the URL.
+  string display_name = 3 [(google.api.field_behavior) = OPTIONAL];
+  // Priority of the URL. Lower numbers indicate higher priority. This is used
+  // to determine the order in which URLs are displayed in the UI.
+  int32 priority = 4 [(google.api.field_behavior) = OPTIONAL];
+}

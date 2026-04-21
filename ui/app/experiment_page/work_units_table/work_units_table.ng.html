@@ -1,0 +1,138 @@
+@let workUnits = workUnitViews();
+
+@if (isLoading()) {
+  <xmc-loading-bar />
+} @else if (error(); as error) {
+  <div class="error-message">Failed to fetch work units: {{ error }} </div>
+} @else {
+  @if (isRefreshing()) {
+    <xmc-loading-bar [isRefreshing]="true" />
+  }
+  <table mat-table [dataSource]="workUnits ?? []" multiTemplateDataRows>
+    <ng-container [matColumnDef]="WorkUnitColumn.ID">
+      <th mat-header-cell *matHeaderCellDef> ID </th>
+      <td mat-cell *matCellDef="let workUnit">
+        <a class="work-unit-id" [routerLink]="['workUnits/', getWorkUnitId(workUnit.name)]">
+          {{ getWorkUnitId(workUnit.name) }}
+        </a>
+      </td>
+    </ng-container>
+
+    <ng-container [matColumnDef]="WorkUnitColumn.STATUS">
+      <th mat-header-cell *matHeaderCellDef> Status </th>
+      <td mat-cell *matCellDef="let workUnit">
+        <xmc-status-chip
+          [status]="getStatusChip(workUnit.currentWorkUnitExecution?.status?.state)"
+        ></xmc-status-chip>
+      </td>
+    </ng-container>
+
+    <ng-container [matColumnDef]="WorkUnitColumn.TAGS">
+      <th mat-header-cell *matHeaderCellDef> Tags </th>
+      <td mat-cell *matCellDef="let workUnit">
+        @for (tag of workUnit.tags; track tag) {
+          <xmc-tag [text]="tag" [disableLinks]="disableWorkUnitTagLinks()"></xmc-tag>
+        }
+      </td>
+    </ng-container>
+
+    <ng-container [matColumnDef]="WorkUnitColumn.CREATED">
+      <th mat-header-cell *matHeaderCellDef> Created </th>
+      <td mat-cell *matCellDef="let workUnit">
+        {{ workUnit.createTime | date: 'short' }}
+      </td>
+    </ng-container>
+
+    <ng-container [matColumnDef]="WorkUnitColumn.COMPLETED">
+      <th mat-header-cell *matHeaderCellDef> Completed </th>
+      <td mat-cell *matCellDef="let workUnit">
+        @let completeTime = workUnit.currentWorkUnitExecution?.completeTime;
+        @if (isValidTime(completeTime)) {
+          {{ completeTime | date: 'short' }}
+        } @else {
+          -
+        }
+      </td>
+    </ng-container>
+
+    <ng-container [matColumnDef]="WorkUnitColumn.URLS">
+      <th mat-header-cell *matHeaderCellDef>
+        <xmc-status-message-filter />
+      </th>
+      <td mat-cell *matCellDef="let workUnit">
+        @for (url of workUnit.processedUrls; track $index) {
+          @if (url.processedUrl) {
+            @let disableReason = shouldDisableUrl(url, workUnit);
+            @if (disableReason) {
+              <span [matTooltip]="disableReason">
+                <button mat-icon-button disabled>
+                  <mat-icon>{{ url.icon }}</mat-icon>
+                </button>
+              </span>
+            } @else {
+              <a
+                mat-icon-button
+                [href]="url.processedUrl"
+                target="_blank"
+                [matTooltip]="url.displayName"
+              >
+                <mat-icon>{{ url.icon }}</mat-icon>
+              </a>
+            }
+          } @else {
+            <button mat-icon-button disabled matTooltip="Waiting for data...">
+              <mat-icon>pending</mat-icon>
+            </button>
+          }
+        }
+      </td>
+    </ng-container>
+
+    <!-- Status Message Sub-Row Column -->
+    <ng-container matColumnDef="status-message-detail">
+      <td mat-cell *matCellDef="let workUnit" [attr.colspan]="columnsToDisplay.length">
+        @if (workUnit.statusMessages.length > 0) {
+          <div class="status-messages-box">
+            @for (message of workUnit.statusMessages; track $index) {
+              <xmc-status-message [message]="message"></xmc-status-message>
+            }
+          </div>
+        }
+      </td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="columnsToDisplay"></tr>
+    <tr mat-row *matRowDef="let workUnit; columns: columnsToDisplay"></tr>
+    <tr
+      mat-row
+      *matRowDef="let workUnit; columns: ['status-message-detail']"
+      class="detail-row"
+      [style.display]="workUnit.isStatusMessageVisible ? null : 'none'"
+    ></tr>
+
+    <tr class="mat-row" *matNoDataRow>
+      <td class="mat-cell" [attr.colspan]="columnsToDisplay.length">
+        <div class="no-work-units-message">This experiment has no work units.</div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="paginator">
+    @if (pageSize(); as pageSize) {
+      <xmc-page-size-selector
+        [pageSize]="pageSize"
+        [pageSizeOptions]="[10, 25, 50]"
+        (pageSizeChange)="onPageSizeChange($event)"
+      />
+    }
+    <button matIconButton (click)="prevPage()" [disabled]="!hasPrevPage()">
+      <mat-icon>chevron_left</mat-icon>
+    </button>
+
+    <span> Page {{ pageIndex() + 1 }} </span>
+
+    <button matIconButton (click)="nextPage()" [disabled]="!hasNextPage()">
+      <mat-icon>chevron_right</mat-icon>
+    </button>
+  </div>
+}

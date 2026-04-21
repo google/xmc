@@ -1,0 +1,309 @@
+package jobset
+
+import (
+	"context"
+	"fmt"
+	"net/url"
+	"time"
+
+	fmpb "protobuf/field_mask_go_proto"
+	timestamppb "protobuf/timestamp_go_proto"
+	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
+	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/kubernetes/api/v1alpha2/v1alpha2"
+	"xmanager_cloud/kubernetes/common/jobsetutil"
+	"xmanager_cloud/logging/logging"
+	storagepkg "xmanager_cloud/storage/storage"
+)
+
+func calculateTotalReplicas(jobSet *v1alpha2.JobSet) int32 {
+	var totalReplicas int32
+	for _, rJob := range jobSet.Spec.ReplicatedJobs {
+		totalReplicas += rJob.Replicas
+	}
+	return totalReplicas
+}
+
+func calculateJobTotals(jobSet *v1alpha2.JobSet) (totalSucceeded, totalFailed, totalActive, totalReady, totalReplicas int32) {
+	for _, rjs := range jobSet.Status.ReplicatedJobsStatus {
+		totalSucceeded += rjs.Succeeded
+		totalFailed += rjs.Failed
+		totalActive += rjs.Active
+		totalReady += rjs.Ready
+	}
+	totalReplicas = calculateTotalReplicas(jobSet)
+	return
+}
+
+func generateStructuredMessage(ctx context.Context, jobSet *v1alpha2.JobSet, state spb.WorkUnitStatus_WorkUnitState, project, location, clusterName, podErrorMsg string) *spb.StructuredMessage {
+	ctx = logging.WithJobSetName(ctx, jobSet.Name, jobSet.Labels)
+
+	totalSucceeded, totalFailed, totalActive, totalReady, totalReplicas := calculateJobTotals(jobSet)
+	var msg string
+	msgSeverity := spb.StructuredMessage_DEBUG
+	msgSource := spb.StructuredMessage_KUBERNETES
+	switch state {
+	case spb.WorkUnitStatus_FAILED:
+		msg = "Work unit failed."
+		if podErrorMsg != "" {
+			msg = podErrorMsg
+		} else if condition := jobsetutil.FindConditionWithType(jobSet, v1alpha2.JobSetFailed); condition != nil {
+			msg = fmt.Sprintf("Work unit failed: %s (Reason: %s)", condition.Message, condition.Reason)
+		}
+		msgSeverity = spb.StructuredMessage_ERROR
+	case spb.WorkUnitStatus_COMPLETED:
+		msg = "Work unit completed successfully."
+		if condition := jobsetutil.FindConditionWithType(jobSet, v1alpha2.JobSetCompleted); condition != nil && condition.Message != "" {
+			msg = fmt.Sprintf("Work unit completed successfully with message: %s", condition.Message)
+		}
+	case spb.WorkUnitStatus_RUNNING:
+		if totalReady == totalActive {
+			msg = fmt.Sprintf("Work unit is running. %d/%d job(s) active and ready.", totalActive, totalReplicas)
+		} else {
+			msg = fmt.Sprintf("Work unit is running. %d/%d job(s) active, %d ready.", totalActive, totalReplicas, totalReady)
+		}
+	case spb.WorkUnitStatus_STARTING:
+		// In the STARTING state, totalActive > totalReady, meaning some jobs are active but not yet ready.
+		// We show the number of active jobs out of total replicas, and separately, how many are ready.
+		msg = fmt.Sprintf("Work unit is starting. %d/%d job(s) active, %d ready.", totalActive, totalReplicas, totalReady)
+	case spb.WorkUnitStatus_PARTIALLY_FAILED:
+		msg = fmt.Sprintf("Work unit is partially failed. %d failed, %d active, %d succeeded out of %d job(s).", totalFailed, totalActive, totalSucceeded, totalReplicas)
+		msgSeverity = spb.StructuredMessage_WARNING
+	case spb.WorkUnitStatus_SCHEDULING:
+		msg = "Work unit is waiting for resources from the scheduler."
+		if condition := jobsetutil.FindConditionWithType(jobSet, v1alpha2.JobSetStartupPolicyInProgress); condition != nil && condition.Message != "" {
+			msg = fmt.Sprintf("Work unit is scheduling jobs: %s", condition.Message)
+		}
+		msgSource = spb.StructuredMessage_SCHEDULER
+	case spb.WorkUnitStatus_STOPPED:
+		msg = "Work unit has been fully stopped."
+	case spb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED:
+		msg = "Work unit state is unspecified. This should not happen."
+	default:
+		msg = fmt.Sprintf("Work unit state: %s", state.String())
+	}
+
+	var debugLink string
+	if state == spb.WorkUnitStatus_FAILED || state == spb.WorkUnitStatus_PARTIALLY_FAILED {
+		if project != "" && location != "" && clusterName != "" {
+			debugLink = fmt.Sprintf(
+				"https://console.cloud.google.com/kubernetes/aiml/jobset/%s/GKE_CLUSTER/%s/%s/%s/%s/overview?project=%s",
+				url.PathEscape(project),
+				url.PathEscape(location),
+				url.PathEscape(clusterName),
+				url.PathEscape(jobSet.Namespace),
+				url.PathEscape(jobSet.Name),
+				url.QueryEscape(project),
+			)
+		} else {
+			logging.Warn(ctx, "Cannot build debug link for JobSet", "namespace", jobSet.Namespace, "jobSet", jobSet.Name, "project", project, "location", location, "clusterName", clusterName)
+		}
+	}
+
+	// We intentionally log the structured message and debug link so that the logs are clear.
+	logging.Debug(ctx, fmt.Sprintf("Structured status message: %q, debugLink: %q", msg, debugLink), "structuredMessage", msg, "debugLink", debugLink)
+
+	return &spb.StructuredMessage{
+		UserFacingText: msg,
+		UserFacingUrl: &spb.Url{
+			Url: debugLink,
+		},
+		Severity: msgSeverity,
+		Source:   msgSource,
+		// This create time is required for the status message to be correctly propagated. The storage
+		// layer will reject the update if it's older than the current update time, or zero.
+		CreateTime: timestamppb.New(time.Now()),
+	}
+}
+
+// ToWorkUnitState converts a JobSet status to a WorkUnitState enum value.
+func ToWorkUnitState(jobSet *v1alpha2.JobSet) spb.WorkUnitStatus_WorkUnitState {
+	// 1. Terminal Conditions (Highest Priority)
+	if jobsetutil.HasCondition(jobSet, v1alpha2.JobSetCompleted, metav1.ConditionTrue) {
+		return spb.WorkUnitStatus_COMPLETED
+	}
+	if jobsetutil.HasCondition(jobSet, v1alpha2.JobSetFailed, metav1.ConditionTrue) {
+		return spb.WorkUnitStatus_FAILED
+	}
+	if jobSet.GetDeletionTimestamp() != nil {
+		return spb.WorkUnitStatus_STOPPED
+	}
+
+	// 2. Initial / Queued Check
+	isStatusEmpty := len(jobSet.Status.Conditions) == 0 && len(jobSet.Status.ReplicatedJobsStatus) == 0
+	if isStatusEmpty {
+		return spb.WorkUnitStatus_SCHEDULING
+	}
+
+	totalSucceeded, totalFailed, totalActive, totalReady, _ := calculateJobTotals(jobSet)
+
+	// 3. "Alive" Check (Priority: High)
+	// If any pods are Ready, the WorkUnit is serving/alive. This prevents the "Active=0 vs Ready=1" flicker.
+	if totalReady > 0 {
+		return spb.WorkUnitStatus_RUNNING
+	}
+
+	// 4. Activity Check (Priority: Medium)
+	// If we have active pods (working/retrying), we are running/starting.
+	// We check this BEFORE `Failed` to ensure retrying jobs don't look broken.
+	if totalActive > 0 {
+		if totalSucceeded > 0 {
+			return spb.WorkUnitStatus_RUNNING
+		}
+		return spb.WorkUnitStatus_STARTING
+	}
+
+	// 5. Inactive Checks (Active=0, Ready=0)
+
+	// CRITICAL ORDERING:
+	// If the job stopped(Active=0), we MUST check for failures first.
+	if totalFailed > 0 {
+		return spb.WorkUnitStatus_PARTIALLY_FAILED
+	}
+
+	// "Success Gap": The job stopped, had NO failures, but has successes.
+	// This is the only safe time to return RUNNING based on Success count alone.
+	if totalSucceeded > 0 {
+		return spb.WorkUnitStatus_RUNNING
+	}
+
+	// 6. Fallback (Active=0, Ready=0, Failed=0, Succeeded=0)
+	return spb.WorkUnitStatus_SCHEDULING
+}
+
+// ConvertJobSetToWorkUnitExecutionUpdate converts a JobSet to a WorkUnitExecutionUpdate.
+func ConvertJobSetToWorkUnitExecutionUpdate(ctx context.Context, jobSet *v1alpha2.JobSet, wid int64, eid int64, project, location, clusterName, podErrorMsg string) (*storagepkg.WorkUnitExecutionUpdate, error) {
+	ctx = logging.WithJobSetName(ctx, jobSet.Name, jobSet.Labels)
+
+	var state spb.WorkUnitStatus_WorkUnitState
+	if podErrorMsg != "" {
+		state = spb.WorkUnitStatus_FAILED
+	} else {
+		state = ToWorkUnitState(jobSet)
+	}
+
+	// We intentionally log the state so that the logs are clear.
+	logging.Debug(ctx, fmt.Sprintf("JobSet state: %s", state.String()), "state", state.String(), "namespace", jobSet.ObjectMeta.Namespace)
+	time := time.Now()
+	metadata := &spb.WorkUnitExecutionMetadata{
+		ManagementCluster: &spb.ClusterInfo{
+			Project:     project,
+			Location:    location,
+			ClusterName: clusterName,
+		},
+		Type:           spb.WorkUnitExecutionMetadata_JOB_SET,
+		ResourceName:   jobSet.ObjectMeta.Name,
+		Namespace:      jobSet.ObjectMeta.Namespace,
+		ServiceAccount: getServiceAccountName(jobSet),
+	}
+
+	statusMessage := generateStructuredMessage(ctx, jobSet, state, project, location, clusterName, podErrorMsg)
+
+	// If we are about to propagate an error+ message, defer to any existing message. This will
+	// prevent us from continually clobbering log monitor error messages with job state messages.
+	deferToExistingMessage := false
+	if statusMessage.GetSeverity() >= spb.StructuredMessage_ERROR {
+		deferToExistingMessage = true
+	}
+
+	return &storagepkg.WorkUnitExecutionUpdate{
+		WID:                    wid,
+		EID:                    eid,
+		DeferToExistingMessage: deferToExistingMessage,
+		WorkUnitExecution: &spb.WorkUnitExecution{
+			Status: &spb.WorkUnitStatus{
+				State: state,
+				// This update time is required for the state update to be correctly propagated. The storage
+				// layer will reject the update if it's older than the current state update time, or zero.
+				StateUpdateTime: timestamppb.New(time),
+				SystemMessage:   statusMessage,
+				DetailedStatus: &spb.ExecutableStatus{
+					Kind: &spb.ExecutableStatus_JobsetStatus{
+						JobsetStatus: convertK8sJobSetStatusToProto(jobSet.Status),
+					},
+				},
+			},
+			Metadata: metadata,
+		},
+		UpdateMask: &fmpb.FieldMask{
+			Paths: []string{
+				"status.state",
+				"status.detailed_status",
+				"status.system_message",
+				"metadata.management_cluster",
+				"metadata.type",
+				"metadata.resource_name",
+				"metadata.namespace",
+				"metadata.service_account",
+			},
+		},
+	}, nil
+}
+
+func convertK8sJobSetStatusToProto(k8sStatus v1alpha2.JobSetStatus) *spb.JobSetStatus {
+	jsStatus := &spb.JobSetStatus{
+		Restarts: int64(k8sStatus.Restarts),
+	}
+	for _, condition := range k8sStatus.Conditions {
+		jsStatus.Conditions = append(jsStatus.Conditions, convertK8sConditionToProto(condition))
+	}
+	for _, rjs := range k8sStatus.ReplicatedJobsStatus {
+		jsStatus.ReplicatedJobsStatus = append(jsStatus.ReplicatedJobsStatus, convertK8sReplicatedJobStatusToProto(rjs))
+	}
+	return jsStatus
+}
+
+func convertK8sConditionToProto(k8sCond metav1.Condition) *spb.Condition {
+	return &spb.Condition{
+		Type:       k8sCond.Type,
+		Status:     string(k8sCond.Status),
+		UpdateTime: timestamppb.New(k8sCond.LastTransitionTime.Time),
+		Reason:     k8sCond.Reason,
+		Message:    k8sCond.Message,
+	}
+}
+
+func getServiceAccountName(jobSet *v1alpha2.JobSet) string {
+	if jobSet != nil && len(jobSet.Spec.ReplicatedJobs) > 0 {
+		// Assuming the ServiceAccountName is consistent across all ReplicatedJobs if specified.
+		return jobSet.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.ServiceAccountName
+	}
+	return ""
+}
+
+// createStoppedUpdate creates a WorkUnitExecutionUpdate with state STOPPED.
+func createStoppedUpdate(wid int64, eid int64) *storagepkg.WorkUnitExecutionUpdate {
+	time := time.Now()
+	return &storagepkg.WorkUnitExecutionUpdate{
+		WID: wid,
+		EID: eid,
+		WorkUnitExecution: &spb.WorkUnitExecution{
+			Status: &spb.WorkUnitStatus{
+				State:           spb.WorkUnitStatus_STOPPED,
+				StateUpdateTime: timestamppb.New(time),
+				SystemMessage: &spb.StructuredMessage{
+					UserFacingText: "Work unit has been fully stopped.",
+					Severity:       spb.StructuredMessage_DEBUG,
+					Source:         spb.StructuredMessage_KUBERNETES,
+					CreateTime:     timestamppb.New(time),
+				},
+			},
+		},
+		UpdateMask: &fmpb.FieldMask{
+			Paths: []string{
+				"status.state",
+				"status.system_message",
+			},
+		},
+	}
+}
+
+func convertK8sReplicatedJobStatusToProto(k8sRJS v1alpha2.ReplicatedJobStatus) *spb.ReplicatedJobStatus {
+	return &spb.ReplicatedJobStatus{
+		Name:      k8sRJS.Name,
+		Ready:     int64(k8sRJS.Ready),
+		Succeeded: int64(k8sRJS.Succeeded),
+		Active:    int64(k8sRJS.Active),
+		Failed:    int64(k8sRJS.Failed),
+	}
+}

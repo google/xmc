@@ -1,0 +1,52 @@
+<mat-card class="work-unit-title-content-container">
+  <mat-card-content>
+    <div class="work-unit-header-container">
+      <div class="work-unit-title-container">
+        <a class="experiment-link" [routerLink]="['/experiments', experimentId()]">
+          <div class="experiment-link-container">
+            <mat-icon>arrow_back_ios</mat-icon>
+            <span class="experiment-title"> {{ experimentId() }}: {{ experiment().title }} </span>
+          </div>
+        </a>
+        <h1> Work Unit {{ workUnitId() }} </h1>
+      </div>
+
+      <mat-divider [vertical]="true"> </mat-divider>
+
+      <div class="priority-and-status-container">
+        <xmc-status-chip class="chip" [status]="getStatusOption(workUnit())"></xmc-status-chip>
+
+        @if (workUnit().priority) {
+          <xmc-priority-chip class="chip" [priority]="workUnit().priority"></xmc-priority-chip>
+        }
+      </div>
+
+      <mat-divider [vertical]="true"> </mat-divider>
+
+      <div class="actions-container">
+        <button
+          mat-button
+          mat-raised-button
+          color="primary"
+          (click)="stop()"
+          [disabled]="isStopping$ | async"
+          [class.shimmer]="isStopping$ | async"
+        >
+          <mat-icon>stop_circle</mat-icon>
+          Stop
+        </button>
+        <button
+          mat-button
+          mat-raised-button
+          color="primary"
+          (click)="restart()"
+          [disabled]="isRestarting$ | async"
+          [class.shimmer]="isRestarting$ | async"
+        >
+          <mat-icon>restart_alt</mat-icon>
+          Restart
+        </button>
+      </div>
+    </div>
+  </mat-card-content>
+</mat-card>

@@ -1,0 +1,39 @@
+@if (workUnitsCount() === 0) {
+  <div class="no-work-units">No Work Units</div>
+} @else {
+  <div
+    class="status-bar"
+    #menuTrigger="matMenuTrigger"
+    [matMenuTriggerFor]="menu"
+    (click)="menuTrigger.openMenu()"
+  >
+    <div class="states">
+      @for (stateCount of sortedStateCounts(); track stateCount.state) {
+        @if (stateCount.count && stateCount.count !== '0') {
+          <span
+            class="state {{ stateCount.state }}"
+            [style.width]="getWidth(stateCount.count)"
+          >
+            {{ stateCount.count }}
+          </span>
+        }
+      }
+    </div>
+  </div>
+
+  <mat-menu #menu="matMenu">
+    @for (stateCount of sortedStateCounts(); track stateCount.state) {
+      <dl>
+        @if (stateCount.count && stateCount.count !== '0' && stateCount.state) {
+          <div class="key-value-pair">
+            <dt class="state-count-state-container">
+              <div class="square {{ stateCount.state }}"></div>
+              {{ stateCount.state.toLowerCase() }}:
+            </dt>
+            <dd>{{ stateCount.count }}</dd>
+          </div>
+        }
+      </dl>
+    }
+  </mat-menu>
+}

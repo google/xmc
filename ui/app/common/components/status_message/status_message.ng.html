@@ -1,0 +1,49 @@
+@if (isVisible$ | async) {
+  <div class="{{message().severity?.toLowerCase() || 'info'}}-message-container">
+    <div class="{{lineClass()}}"></div>
+    <div class="{{message().severity?.toLowerCase() || 'info'}}-message">
+      <div class="text">
+        {{ message().userFacingText }}
+      </div>
+      @if (message().auxiliaryInfo?.queueInfo; as queueInfo) {
+        <div class="queue-info">
+          Position in queue: {{ queueInfo.positionInQueue ?? '?' }} of {{ queueInfo.totalWorkloadsInQueue ?? '?' }}
+          @if(queueInfo.totalWorkloadsInQueue && queueInfo.positionInQueue && queueInfo.totalWorkloadsInQueue > 0) {
+            <mat-progress-bar
+              mode="determinate"
+              [value]="getQueueProgress(queueInfo)"
+            ></mat-progress-bar>
+          }
+        </div>
+      }
+      @if (message().auxiliaryInfo?.stackTrace) {
+        <div class="stack-trace">
+          <div class="stack-trace-content">
+            <pre>{{ stackTracePreview() }}</pre>
+            @if (stackTraceVisible() && showMoreButton()) {
+              <pre class="stack-trace-more-pre">{{ stackTraceMore() }}</pre>
+            }
+          </div>
+          @if(showMoreButton()) {
+            <button mat-button class="stack-trace-button" color="primary" (click)="toggleStackTrace()">
+              <mat-icon>{{ stackTraceVisible() ? 'expand_less' : 'expand_more' }}</mat-icon>
+              {{ stackTraceVisible() ? 'Show less' : 'Show more' }}
+            </button>
+          }
+        </div>
+      }
+      @if (urlsForWidget().length > 0) {
+        @for(url of urlsForWidget(); track url.processedUrl) {
+          <a [href]="url.processedUrl" target="_blank">{{url.displayName}}</a>
+        }
+      }
+      <div class="metadata">
+        {{ formatSource(message().source) }} ·
+        {{ message().createTime | date:'short' }}
+        @if (shouldShowOriginLink()) {
+          · <a [routerLink]="'/' + message().parent">Origin</a>
+        }
+      </div>
+    </div>
+  </div>
+}

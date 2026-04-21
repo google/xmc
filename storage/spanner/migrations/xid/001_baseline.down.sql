@@ -1,0 +1,4 @@
+DROP INDEX XidsByCreator;
+DROP TABLE Xids;
+
+DROP PROTO BUNDLE;

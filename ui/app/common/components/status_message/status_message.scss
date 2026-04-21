@@ -1,0 +1,139 @@
+@use 'third_party/javascript/angular_components/material' as mat;
+@import 'third_party/xmanager_cloud/ui/consts';
+
+
+:host {
+  @include mat.button-density(-3);
+}
+
+.debug-message-container,
+.fatal-message-container,
+.error-message-container,
+.warning-message-container,
+.info-message-container {
+  display: flex;
+  width: 100%;
+  min-height: 50px;
+}
+
+.red-vertical-line {
+  width: 5px;
+  background-color: var(--mat-sys-error);
+}
+
+.yellow-vertical-line {
+  width: 5px;
+  background-color: $warning-line;
+}
+
+.blue-vertical-line {
+  width: 5px;
+  background-color: var(--mat-sys-primary);
+}
+
+.grey-vertical-line {
+  width: 5px;
+  background-color: var(--mat-sys-outline);
+}
+
+.debug-message,
+.fatal-message,
+.error-message,
+.warning-message,
+.info-message {
+  flex: 1 1 0;
+  padding: $small-padding;
+  font-size: $font-size-medium;
+}
+
+.fatal-message {
+  background-color: var(--mat-sys-error-container);
+  color: var(--mat-sys-on-error-container);
+}
+
+.error-message {
+  background-color: var(--mat-sys-error-container);
+  color: var(--mat-sys-on-error-container);
+}
+
+.warning-message {
+  background-color: $warning-bg;
+  color: $warning-text;
+}
+
+.info-message {
+  background-color: var(--mat-sys-primary-container);
+  color: var(--mat-sys-primary);
+}
+
+.debug-message {
+  background-color: var(--mat-sys-surface-container-low);
+  color: var(--mat-sys-on-surface-variant);
+}
+
+xmc-urls-widget {
+  display: block;
+  margin-top: 8px;
+}
+
+.metadata {
+  font-size: 0.8em;
+  color: var(--mat-sys-on-surface-variant);
+  margin-top: 8px;
+}
+
+.text mat-icon[inline] {
+  vertical-align: text-bottom;
+  margin-right: 3px;
+}
+
+.error-message .text mat-icon[inline] {
+  color: var(--mat-sys-error);
+}
+
+.queue-info {
+  margin-top: 8px;
+  mat-progress-bar {
+    margin-top: 4px;
+    @include mat.progress-bar-overrides(
+      (
+        track-height: 8px,
+        active-indicator-height: 8px,
+        track-shape: 4px
+      )
+    );
+  }
+}
+
+.stack-trace {
+  margin-top: 8px;
+
+  .stack-trace-content {
+    background-color: rgba(0, 0, 0, 0.05);
+    border-radius: 4px;
+    padding: 8px;
+    font-size: 0.9em;
+    overflow-x: auto;
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .stack-trace-more-pre {
+      border-top: 1px dashed rgba(0, 0, 0, 0.1);
+      margin-top: 8px;
+      padding-top: 8px;
+    }
+  }
+
+  .stack-trace-button {
+    font-size: 0.9em;
+    padding: 0;
+    line-height: 24px;
+    mat-icon {
+      vertical-align: middle;
+    }
+  }
+}

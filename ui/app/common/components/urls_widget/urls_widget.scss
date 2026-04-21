@@ -1,0 +1,21 @@
+@use 'third_party/javascript/angular_components/material' as mat;
+@import 'third_party/xmanager_cloud/ui/consts';
+
+$url-button-border-radius: 5px;
+
+.url-button {
+  display: inline-flex;
+  align-items: center;
+  margin-right: $small-margin;
+  font-size: $font-size-small;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: $url-button-border-radius;
+  padding: $url-button-border-radius;
+  color: var(--mat-sys-on-primary-fixed);
+
+  .url-icon {
+    margin-right: 2px;
+  }
+
+  text-decoration: none;
+}

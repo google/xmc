@@ -1,0 +1,19 @@
+{
+  "$schema": "../../../javascript/angular_cli/packages/angular/cli/lib/config/schema.json",
+  "version": 1,
+  "projects": {
+    "xmc": {
+      "root": "",
+      "sourceRoot": "",
+      "projectType": "application",
+      "prefix": "xmc",
+      "schematics": {
+        "angular:component": {
+          "changeDetection": "OnPush",
+          "styleext": "scss"
+        }
+      }
+    }
+  },
+  "defaultProject": "xmc"
+}

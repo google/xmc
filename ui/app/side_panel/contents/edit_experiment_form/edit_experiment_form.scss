@@ -1,0 +1,75 @@
+@import 'third_party/xmanager_cloud/ui/consts';
+@import 'third_party/xmanager_cloud/ui/custom_colors';
+
+$panel-min-width: 650px;
+
+:host {
+  display: block;
+  width: $panel-min-width;
+  max-width: 100vw;
+}
+
+.container {
+  padding: $medium-padding;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: $small-padding;
+  padding-bottom: $medium-padding;
+}
+
+.loading-container {
+  display: flex;
+  align-items: center;
+  gap: $small-padding;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+}
+
+.priority-label {
+  margin-bottom: $xsmall-margin;
+  color: var(--mat-sys-on-surface-variant);
+  font-size: $font-size-medium;
+}
+
+mat-button-toggle-group {
+  border-radius: 8px;
+  border: 1px solid var(--mat-sys-outline);
+  overflow: hidden;
+  display: flex;
+  width: 100%;
+  margin-top: $small-margin;
+  margin-bottom: $large-padding;
+  mat-button-toggle {
+    flex: 1;
+    font-size: $font-size-medium;
+    padding: $small-margin 0;
+  }
+}
+
+mat-button-toggle.mat-button-toggle-checked {
+  &[value='LOW'] {
+    background-color: var(--xmc-chip-green-container-color);
+    color: var(--xmc-chip-green-text-color);
+  }
+  &[value='NORMAL'] {
+    background-color: var(--xmc-chip-yellow-container-color);
+    color: var(--xmc-chip-yellow-text-color);
+  }
+  &[value='HIGH'] {
+    background-color: var(--mat-sys-error-container);
+    color: var(--mat-sys-error);
+  }
+}
+
+.buttons-container {
+  padding-top: $medium-padding;
+  display: flex;
+  align-items: center;
+  gap: $small-padding;
+}

@@ -1,0 +1,32 @@
+@use 'third_party/javascript/angular_components/material' as mat;
+
+:host {
+  @include mat.chips-overrides(
+    (
+      container-height: 20px,
+      label-text-size: 12px,
+
+      // Remove the outline
+      outline-color: var(--mat-sys-background),
+    )
+  );
+  pointer-events: none;
+}
+
+.grey {
+  @include mat.chips-overrides(
+    (
+      elevated-container-color: var(--xmc-chip-grey-container-color),
+      label-text-color: var(--xmc-chip-grey-text-color),
+    )
+  );
+}
+
+.green {
+  @include mat.chips-overrides(
+    (
+      elevated-container-color: var(--xmc-chip-green-container-color),
+      label-text-color: var(--xmc-chip-green-text-color),
+    )
+  );
+}

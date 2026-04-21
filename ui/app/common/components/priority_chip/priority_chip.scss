@@ -1,0 +1,55 @@
+@use 'third_party/javascript/angular_components/material' as mat;
+@import 'third_party/xmanager_cloud/ui/consts';
+
+mat-chip {
+  @include mat.chips-overrides(
+    (
+      outline-color: var(--mat-sys-background),
+      container-height: 20px,
+      label-text-size: 12px,
+    )
+  );
+  pointer-events: none;
+}
+
+.green {
+  @include mat.chips-overrides(
+    (
+      elevated-container-color: var(--xmc-chip-green-container-color),
+      label-text-color: var(--xmc-chip-green-text-color),
+    )
+  );
+}
+
+.red {
+  @include mat.chips-overrides(
+    (
+      elevated-container-color: var(--mat-sys-error-container),
+      label-text-color: var(--mat-sys-error),
+    )
+  );
+}
+
+.blue {
+  @include mat.chips-overrides(
+    (
+      elevated-container-color: var(--mat-sys-primary-container),
+      label-text-color: var(--mat-sys-primary),
+    )
+  );
+}
+
+.yellow {
+  @include mat.chips-overrides(
+    (
+      elevated-container-color: var(--xmc-chip-yellow-container-color),
+      label-text-color: var(--xmc-chip-yellow-text-color),
+    )
+  );
+}
+
+.priority-chip-content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}

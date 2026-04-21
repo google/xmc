@@ -1,0 +1,99 @@
+<mat-card class="artifact-card" [class.clickable]="!!artifact().url?.url">
+  @if (artifact().url?.url) {
+    <a [href]="artifact().url?.url" target="_blank" style="text-decoration: none; color: inherit">
+      <ng-container [ngTemplateOutlet]="cardMainContent"></ng-container>
+    </a>
+  } @else {
+    <ng-container [ngTemplateOutlet]="cardMainContent"></ng-container>
+  }
+  @if (isNoteLong() || artifact().tags?.length || artifact().additionalInfo) {
+    <ng-container [ngTemplateOutlet]="cardAdditionalContent"></ng-container>
+  }
+</mat-card>
+
+<ng-template #cardMainContent>
+  <div class="card-main-content">
+    <mat-icon>{{ getIcon(artifact()) }}</mat-icon>
+    <div class="name-type-section">
+      <div class="artifact-title">
+        {{ artifact().url?.displayName || artifact().url?.url }}
+      </div>
+      <div class="artifact-subtitle">
+        <span>{{ formatDataType(artifact().dataType) }}</span>
+        @let wuInfo = workUnitInfo();
+        @if (wuInfo) {
+          <a
+            mat-stroked-button
+            class="work-unit-badge"
+            [routerLink]="wuInfo.routerLink"
+            (click)="$event.stopPropagation()"
+          >
+            {{ wuInfo.badgeText }}
+          </a>
+        }
+      </div>
+    </div>
+    @if (!isNoteLong() && artifact().notes) {
+      <div class="notes-section">
+        {{ artifact().notes }}
+      </div>
+    }
+  </div>
+</ng-template>
+
+<ng-template #additionalInfoBody let-info="info">
+  @if (info.codeBlock) {
+    <div class="additional-info-code"
+      ><ol class="code-lines">
+        @for (line of codeLines(); track $index) {
+          <li
+            ><code>{{ line }}</code></li
+          >
+        }
+      </ol></div
+    >
+  } @else if (info.text) {
+    <div class="additional-info-text">{{ info.text }}</div>
+  }
+</ng-template>
+
+<ng-template #cardAdditionalContent>
+  <mat-divider></mat-divider>
+  <div class="card-lower-content">
+    @if (isNoteLong()) {
+      <div class="long-notes-section">
+        {{ artifact().notes }}
+      </div>
+    }
+    @if (artifact().tags?.length) {
+      <div class="tags-section">
+        @for (tag of artifact().tags; track tag) {
+          <xmc-tag [text]="tag"></xmc-tag>
+        }
+      </div>
+    }
+    @if (artifact().additionalInfo; as info) {
+      <div class="additional-info-section">
+        @if (isAdditionalInfoLong()) {
+          <mat-expansion-panel class="additional-info-panel">
+            <mat-expansion-panel-header>
+              <mat-panel-title>{{ info.title || 'Details' }}</mat-panel-title>
+            </mat-expansion-panel-header>
+            <ng-container
+              [ngTemplateOutlet]="additionalInfoBody"
+              [ngTemplateOutletContext]="{info: info}"
+            ></ng-container>
+          </mat-expansion-panel>
+        } @else {
+          @if (info.title) {
+            <div class="additional-info-title">{{ info.title }}</div>
+          }
+          <ng-container
+            [ngTemplateOutlet]="additionalInfoBody"
+            [ngTemplateOutletContext]="{info: info}"
+          ></ng-container>
+        }
+      </div>
+    }
+  </div>
+</ng-template>

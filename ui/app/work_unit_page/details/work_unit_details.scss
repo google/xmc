@@ -1,0 +1,26 @@
+@use 'third_party/javascript/angular_components/material' as mat;
+@import 'third_party/xmanager_cloud/ui/consts';
+
+.work-unit-summary-container {
+  display: flex;
+  gap: $xlarge-padding;
+  justify-content: space-between;
+
+  .work-unit-summary-metadata {
+    flex: 1 1 0;
+    padding-right: $small-padding;
+    max-width: 400px;
+  }
+
+  .work-unit-summary-notes {
+    flex: 1 1 0;
+  }
+}
+
+.secondary-title {
+  @include summary-secondary-title;
+}
+
+.key-value-pair {
+  @include key-value-pair;
+}

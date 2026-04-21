@@ -1,0 +1,78 @@
+package server
+
+import (
+	"context"
+	"fmt"
+
+	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/validator/validator"
+	"task/go/status"
+
+	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
+	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+)
+
+// GetCurrentWorkUnitExecution returns the current execution that was run for a work unit.
+func (s *Server) GetCurrentWorkUnitExecution(ctx context.Context, req *apipb.GetCurrentWorkUnitExecutionRequest) (*msgpb.WorkUnitExecution, error) {
+	ctx = logging.InjectOperation(ctx, "")
+	logging.Info(ctx, "Fetch current work unit execution", "request", req)
+
+	// 1. Authenticate the user.
+	logging.Debug(ctx, "Extracting user identity from context")
+	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Validate the request payload.
+	name := req.GetName()
+	xid, wid, err := validator.ValidateWorkUnitName(name)
+	if err != nil {
+		logging.Warn(ctx, "GetCurrentWorkUnitExecution validation failed", "error", err)
+		return nil, fmt.Errorf("GetCurrentWorkUnitExecution validation failed: %w (%v)", status.ErrInvalidArgument, err)
+	}
+	ctx = logging.WithWorkUnitName(ctx, name)
+
+	// 3. Authorize the caller to get the current work unit execution for this experiment.
+	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_READER.Enum())
+	if err != nil {
+		return nil, err
+	}
+	if !authorized {
+		logging.Warn(ctx, "User not authorized to get current work unit execution", "user", email)
+		return nil, fmt.Errorf("user %s is not authorized to get the current work unit execution for XID %d: %w", email, xid, status.ErrPermissionDenied)
+	}
+
+	// 4. Retrieve the work unit from the storage layer.
+	wue, err := s.getCurrentWorkUnitExecution(ctx, name, xid, wid)
+	if err != nil {
+		if status.ExtractCanonicalCode(err) == status.NotFound {
+			logging.Warn(ctx, "Current work unit execution not found in storage")
+			return nil, fmt.Errorf("GetCurrentWorkUnitExecution with ID %s not found: %w (%v)", name, status.ErrNotFound, err)
+		}
+		logging.Error(ctx, "Failed to retrieve current work unit execution from storage", "error", err)
+		return nil, fmt.Errorf("failed to retrieve current work unit execution %s from storage: %w (%v)", name, status.ErrInternal, err)
+	}
+	ctx = logging.WithWorkUnitExecutionName(ctx, wue.GetName())
+
+	// 5. Return the successful response.
+	logging.Info(ctx, "Fetched current work unit execution", "work_unit_execution", wue)
+	return wue, nil
+}
+
+func (s *Server) getCurrentWorkUnitExecution(ctx context.Context, name string, xid int64, wid int64) (*msgpb.WorkUnitExecution, error) {
+	logging.Debug(ctx, "Fetching current work unit execution from storage")
+
+	wue, err := s.storage.FetchCurrentWorkUnitExecution(ctx, xid, wid)
+	if err != nil {
+		if status.ExtractCanonicalCode(err) == status.NotFound {
+			return nil, fmt.Errorf("current work unit execution with ID %s not found: %w (%v)", name, status.ErrNotFound, err)
+		}
+
+		logging.Error(ctx, "Failed to retrieve current work unit execution from storage", "error", err)
+		return nil, fmt.Errorf("failed to retrieve current work unit execution %s from storage: %w (%v)", name, status.ErrInternal, err)
+	}
+
+	return wue, nil
+}

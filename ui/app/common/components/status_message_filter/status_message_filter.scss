@@ -1,0 +1,26 @@
+:host ::ng-deep .cdk-overlay-pane > .filter-menu.mat-mdc-menu-panel {
+  max-width: none;
+  min-width: 0;
+  background-color: var(--mat-card-elevated-container-color);
+}
+
+.filter-menu-title {
+  padding: 1rem 1rem 0;
+  font-weight: 500;
+}
+
+.filter-menu-content {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.filter-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-column-title {
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}

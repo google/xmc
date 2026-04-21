@@ -1,0 +1,76 @@
+package spanner
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	timestamppb "protobuf/timestamp_go_proto"
+	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"golang/godebug/diff/diff"
+	"golang/protobuf/v2/encoding/prototext/prototext"
+	"golang/protobuf/v2/proto/proto"
+	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/storage/data/data"
+	"xmanager_cloud/storage/spanner/data/spannerdata"
+	"xmanager_cloud/storage/storage"
+	"xmanager_cloud/validator/validator"
+)
+
+// UpdateWorkUnit updates a work unit with the given update mask. It returns both the original and
+// updated work units in that order, so that the caller can choose whether to perform additional
+// actions based on the original work unit state.
+func (s *Storage) UpdateWorkUnit(ctx context.Context, update *storage.WorkUnitUpdate) (originalWorkUnit *essmsgpb.WorkUnit, updatedWorkUnit *essmsgpb.WorkUnit, err error) {
+	ctx = logging.WithWorkUnitName(ctx, validator.ConstructWorkUnitName(update.XID, update.WID))
+	logging.Info(ctx, "UpdateWorkUnit", "update", update.WorkUnit)
+
+	var mutated bool
+	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		mutated = false
+
+		// 1. Read the existing WorkUnit from storage.
+		var err error
+		originalWorkUnit, err = s.fetchWorkUnitTransaction(ctx, update.XID, update.WID, txn)
+		if err != nil {
+			return err
+		}
+
+		// 2. Merge the current and new entries based on the update mask.
+		updatedWorkUnit, err = data.MergeWorkUnits(originalWorkUnit, update.WorkUnit, update.UpdateMask)
+		if err != nil {
+			return fmt.Errorf("failed to merge WorkUnit: %w", err)
+		}
+
+		// 2.1. Check if the work unit has changed.
+		if proto.Equal(originalWorkUnit, updatedWorkUnit) {
+			return nil
+		}
+
+		// 2.2. Update the UpdateTime column to the current time.
+		now := time.Now()
+		updatedWorkUnit.UpdateTime = timestamppb.New(now)
+
+		// 3. Construct the Spanner mutation for the update.
+		mutation, err := spannerdata.WorkUnitProtoToUpdateMutation(updatedWorkUnit)
+		if err != nil {
+			return fmt.Errorf("failed to create Spanner mutation for WorkUnit: %w", err)
+		}
+
+		// 4. Apply the mutation to the transaction.
+		mutated = true
+		return txn.BufferWrite([]*spanner.Mutation{mutation})
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if mutated {
+		protoDiff := diff.Diff(prototext.Format(originalWorkUnit), prototext.Format(updatedWorkUnit))
+		logging.Info(ctx, fmt.Sprintf("WorkUnit updated successfully: %s", protoDiff), "updatedWorkUnit", updatedWorkUnit)
+	} else {
+		logging.Info(ctx, "WorkUnit not updated; no changes detected", "updatedWorkUnit", updatedWorkUnit)
+	}
+
+	return originalWorkUnit, updatedWorkUnit, nil
+}

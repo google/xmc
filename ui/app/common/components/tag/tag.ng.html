@@ -1,0 +1,16 @@
+@if (disableLinks()) {
+  <mat-chip-row class="tag">
+    <span class="tag-text">{{ text() }}</span>
+  </mat-chip-row>
+} @else {
+  <a
+    class="tag"
+    mat-chip
+    target="_blank"
+    [routerLink]="['/experiments']"
+    [queryParams]="{'filter': 'tags:&quot;' + encodedTag() + '&quot;'}"
+    >
+    <span class="tag-text">{{ text() }}</span>
+  </a>
+}
+
