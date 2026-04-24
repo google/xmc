@@ -1,43 +1,149 @@
-<div class="filters-container">
-  <mat-form-field appearance="outline" class="filter-field">
-    <mat-label>Severity</mat-label>
-    <mat-select
-      multiple
-      [value]="severityFilter()"
-      (selectionChange)="severityFilterChange.emit($event.value)"
-      data-testid="severity-select"
-    >
-      <mat-select-trigger>{{ selectedSeveritiesLabel() }}</mat-select-trigger>
-      @for (opt of severityOptions; track opt.value) {
-        <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
-      }
-    </mat-select>
-  </mat-form-field>
+<!--
+Copyright 2025 Google LLC
 
-  <mat-form-field appearance="outline" class="filter-field">
-    <mat-label>Source</mat-label>
-    <mat-select
-      multiple
-      [value]="sourceFilter()"
-      (selectionChange)="sourceFilterChange.emit($event.value)"
-      data-testid="source-select"
-    >
-      <mat-select-trigger>{{ selectedSourcesLabel() }}</mat-select-trigger>
-      @for (opt of sourceOptions; track opt.value) {
-        <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
-      }
-    </mat-select>
-  </mat-form-field>
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-  <mat-form-field appearance="outline" class="filter-field">
-    <mat-label>Order</mat-label>
-    <mat-select
-      [value]="sortOrder()"
-      (selectionChange)="sortOrderChange.emit($event.value)"
-      data-testid="sort-order-select"
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<div class="filter-wrapper">
+  <div class="filters-container">
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+      <mat-label>Severity</mat-label>
+      <mat-select
+        multiple
+        [value]="severityFilter()"
+        (selectionChange)="severityFilterChange.emit($event.value)"
+        data-testid="severity-select"
+      >
+        <mat-select-trigger>{{ selectedSeveritiesLabel() }}</mat-select-trigger>
+        @for (opt of severityOptions; track opt.value) {
+          <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+      <mat-label>Source</mat-label>
+      <mat-select
+        multiple
+        [value]="sourceFilter()"
+        (selectionChange)="sourceFilterChange.emit($event.value)"
+        data-testid="source-select"
+      >
+        <mat-select-trigger>{{ selectedSourcesLabel() }}</mat-select-trigger>
+        @for (opt of sourceOptions; track opt.value) {
+          <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+      <mat-label>Time Range</mat-label>
+      <mat-select
+        [value]="timeFilter().preset"
+        (selectionChange)="onPresetChange($event.value)"
+        data-testid="time-preset-select"
+      >
+        @for (opt of timeOptions; track opt.value) {
+          <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
+      <mat-label>Order</mat-label>
+      <mat-select
+        [value]="sortOrder()"
+        (selectionChange)="sortOrderChange.emit($event.value)"
+        data-testid="sort-order-select"
+      >
+        <mat-option value="DESC">Newest First</mat-option>
+        <mat-option value="ASC">Oldest First</mat-option>
+      </mat-select>
+    </mat-form-field>
+    <button
+      mat-icon-button
+      matTooltip="Refresh status messages"
+      class="refresh-button"
+      (click)="refresh.emit()"
+      aria-label="Refresh status messages"
     >
-      <mat-option value="DESC">Newest First</mat-option>
-      <mat-option value="ASC">Oldest First</mat-option>
-    </mat-select>
-  </mat-form-field>
+      <mat-icon>refresh</mat-icon>
+    </button>
+  </div>
+
+  @if (customTimeRangeSelected()) {
+    <div class="custom-time-row">
+      <span class="custom-time-label">Start Time:</span>
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="custom-time-field">
+        <input
+          id="custom-date-start"
+          matInput
+          placeholder="MM/DD/YYYY"
+          [matDatepicker]="startPicker"
+          [ngModel]="customStartDate()"
+          (ngModelChange)="onCustomStartChange($event)"
+          aria-label="Start date"
+        />
+        <mat-datepicker #startPicker></mat-datepicker>
+        <mat-datepicker-toggle matSuffix [for]="startPicker"></mat-datepicker-toggle>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="custom-time-field">
+        <input
+          id="custom-time-start"
+          matInput
+          placeholder="HH:MM AM"
+          [matTimepicker]="startTimePicker"
+          [ngModel]="customStartDate()"
+          (ngModelChange)="onCustomStartChange($event)"
+          [ngModelOptions]="{updateOn: 'blur'}"
+          aria-label="Start time"
+        />
+        <mat-timepicker #startTimePicker></mat-timepicker>
+        <mat-timepicker-toggle matSuffix [for]="startTimePicker"></mat-timepicker-toggle>
+      </mat-form-field>
+
+      <span class="custom-time-label">End Time:</span>
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="custom-time-field">
+        <input
+          id="custom-date-end"
+          matInput
+          placeholder="MM/DD/YYYY"
+          [matDatepicker]="endPicker"
+          [ngModel]="customEndDate()"
+          (ngModelChange)="onCustomEndChange($event)"
+          aria-label="End date"
+        />
+        <mat-datepicker #endPicker></mat-datepicker>
+        <mat-datepicker-toggle matSuffix [for]="endPicker"></mat-datepicker-toggle>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="custom-time-field">
+        <input
+          id="custom-time-end"
+          matInput
+          placeholder="HH:MM AM"
+          [matTimepicker]="endTimePicker"
+          [ngModel]="customEndDate()"
+          (ngModelChange)="onCustomEndChange($event)"
+          [ngModelOptions]="{updateOn: 'blur'}"
+          aria-label="End time"
+        />
+        <mat-timepicker #endTimePicker></mat-timepicker>
+        <mat-timepicker-toggle matSuffix [for]="endTimePicker"></mat-timepicker-toggle>
+      </mat-form-field>
+    </div>
+    @if (hasInvalidCustomRange()) {
+      <div class="custom-time-error"> Start date/time must be before end date/time. </div>
+    }
+  }
 </div>

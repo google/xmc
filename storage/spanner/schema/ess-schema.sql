@@ -1,3 +1,16 @@
+-- Copyright 2025 Google LLC
+--
+-- Licensed under the Apache License, Version 2.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at
+--
+--      http://www.apache.org/licenses/LICENSE-2.0
+--
+-- Unless required by applicable law or agreed to in writing, software
+-- distributed under the License is distributed on an "AS IS" BASIS,
+-- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-- See the License for the specific language governing permissions and
+-- limitations under the License.
 # SQLFORMAT:OFF
 
 CREATE PROTO BUNDLE (
@@ -13,6 +26,7 @@ CREATE PROTO BUNDLE (
   cloud.xmanager.v1.StructuredMessage,
   cloud.xmanager.v1.StructuredMessage.Source,
   cloud.xmanager.v1.StructuredMessage.Severity,
+  cloud.xmanager.v1.AuxiliaryInfo,
 
   -- Protos used in Artifacts
   cloud.xmanager.v1.Artifact,
@@ -259,3 +273,50 @@ CREATE TABLE WorkUnitExecutions (
 ) PRIMARY KEY (BitReversedXid, WorkUnitId, ExecutionId),
   INTERLEAVE IN PARENT WorkUnits
   ON DELETE CASCADE;
+
+-- Table that holds the status message history for experiments and work units. Interleaved with Experiments.
+CREATE TABLE StatusMessages (
+  -- The associated XID.
+  Xid INT64 NOT NULL,
+
+  -- The bit-reversed XID of the experiment for indexing.
+  BitReversedXid INT64 NOT NULL AS (BIT_REVERSE(Xid, FALSE)) STORED,
+
+  -- The work unit ID. NULL for experiment-level messages.
+  WorkUnitId INT64,
+
+  -- The unique ID for the message to avoid collisions if multiple messages are created at the same time.
+  MessageId INT64 NOT NULL,
+
+  -- The unique ID of the work unit execution. NULL for experiment-level messages.
+  ExecutionId INT64,
+
+  -- Severity of the structured message.
+  Severity cloud.xmanager.v1.StructuredMessage.Severity NOT NULL,
+
+  -- Source of the structured message.
+  Source cloud.xmanager.v1.StructuredMessage.Source NOT NULL,
+
+  -- User-facing text of the structured message.
+  UserFacingText STRING(MAX) NOT NULL,
+
+  -- User-facing URL of the structured message.
+  UserFacingUrl cloud.xmanager.v1.Url,
+
+  -- The time the structured message was created.
+  CreateTime TIMESTAMP NOT NULL,
+
+  -- The old message that was replaced by this one.
+  PreviousMessage cloud.xmanager.v1.StructuredMessage,
+
+  -- Auxiliary info associated with the message.
+  AuxiliaryInfo cloud.xmanager.v1.AuxiliaryInfo,
+
+  -- The time the structured message will expire.
+  ExpirationTime TIMESTAMP AS (IF(Severity = 'ERROR' OR Severity = 'FATAL',
+    TIMESTAMP_ADD(CreateTime, INTERVAL 180 DAY),
+    TIMESTAMP_ADD(CreateTime, INTERVAL 30 DAY))) STORED,
+) PRIMARY KEY (BitReversedXid, CreateTime DESC, WorkUnitId, MessageId),
+  INTERLEAVE IN PARENT Experiments
+  ON DELETE CASCADE,
+  ROW DELETION POLICY (OLDER_THAN(ExpirationTime, INTERVAL 0 DAY));

@@ -1,3 +1,16 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 // Package storage defines the interface for all data persistence operations
 // required by the Experiment State Server.
 package storage
@@ -154,7 +167,7 @@ type Storage interface {
 	// be set to 0 for strong reads, and up to 15 seconds for stale reads.
 	// If pageToken is empty, defaultToCursorPagination determines the pagination type. Otherwise,
 	// the pagination type is determined by the format of the non-empty pageToken.
-	ListStatusMessages(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.StructuredMessage, string, error)
+	ListStatusMessages(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.StatusMessage, string, error)
 
 	// -----------------------
 	// Artifact Methods

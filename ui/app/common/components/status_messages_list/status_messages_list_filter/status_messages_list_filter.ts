@@ -1,8 +1,49 @@
-import {ChangeDetectionStrategy, Component, computed, EventEmitter, input, Output} from '@angular/core';
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+import {ChangeDetectionStrategy, Component, computed, input, output} from '@angular/core';
+import {FormsModule} from '@angular/forms';
+import {MatButtonModule} from '@angular/material/button';
+import {MatNativeDateModule} from '@angular/material/core';
+import {MatDatepickerModule} from '@angular/material/datepicker';
 import {MatFormFieldModule} from '@angular/material/form-field';
+import {MatIconModule} from '@angular/material/icon';
+import {MatInputModule} from '@angular/material/input';
 import {MatSelectModule} from '@angular/material/select';
+import {MatTimepickerModule} from '@angular/material/timepicker';
+import {MatTooltipModule} from '@angular/material/tooltip';
 import {StructuredMessage} from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
 import {ALL_SEVERITIES, ALL_SOURCES, formatSource} from 'xmanager_cloud/ui/app/service/status_message_filter_service';
+
+/**
+ * Available presets for time filter.
+ */
+export enum TimePreset {
+  ALL = 'ALL',
+  LAST_1_HOUR = '1H',
+  LAST_24_HOURS = '24H',
+  LAST_7_DAYS = '7D',
+  CUSTOM = 'CUSTOM',
+}
+
+/**
+ * Represents the time filter interval preset and optional custom range bounds.
+ */
+export interface TimeFilterValue {
+  preset: TimePreset;
+  start?: string;
+  end?: string;
+}
 
 /**
  * Component for filter and sort options on the status messages history list.
@@ -13,8 +54,16 @@ import {ALL_SEVERITIES, ALL_SOURCES, formatSource} from 'xmanager_cloud/ui/app/s
   templateUrl: './status_messages_list_filter.ng.html',
   styleUrl: './status_messages_list_filter.css',
   imports: [
+    FormsModule,
+    MatButtonModule,
+    MatDatepickerModule,
     MatFormFieldModule,
+    MatIconModule,
+    MatInputModule,
+    MatNativeDateModule,
     MatSelectModule,
+    MatTimepickerModule,
+    MatTooltipModule,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -22,15 +71,26 @@ export class StatusMessagesListFilter {
   readonly severityFilter = input<readonly string[]>([]);
   readonly sourceFilter = input<readonly string[]>([]);
   readonly sortOrder = input<string>('DESC');
+  readonly timeFilter = input<TimeFilterValue>({preset: TimePreset.ALL});
 
-  @Output() readonly severityFilterChange = new EventEmitter<string[]>();
-  @Output() readonly sourceFilterChange = new EventEmitter<string[]>();
-  @Output() readonly sortOrderChange = new EventEmitter<string>();
+  readonly severityFilterChange = output<readonly string[]>();
+  readonly sourceFilterChange = output<readonly string[]>();
+  readonly sortOrderChange = output<string>();
+  readonly timeFilterChange = output<TimeFilterValue>();
+  readonly refresh = output<void>();
+
 
   protected readonly severityOptions = ALL_SEVERITIES.map(
       sev => ({value: sev, label: this.formatSeverity(sev)}));
   protected readonly sourceOptions =
       ALL_SOURCES.map(src => ({value: src, label: formatSource(src)}));
+  protected readonly timeOptions = [
+    {value: TimePreset.ALL, label: 'All time'},
+    {value: TimePreset.LAST_1_HOUR, label: 'Last 1 hour'},
+    {value: TimePreset.LAST_24_HOURS, label: 'Last 24 hours'},
+    {value: TimePreset.LAST_7_DAYS, label: 'Last 7 days'},
+    {value: TimePreset.CUSTOM, label: 'Custom range...'},
+  ];
 
   protected readonly selectedSeveritiesLabel = computed(
       () => this.getSelectionLabel(
@@ -41,6 +101,54 @@ export class StatusMessagesListFilter {
       () => this.getSelectionLabel(
           this.sourceFilter(), this.sourceOptions.length,
           s => formatSource(s as StructuredMessage.Source)));
+
+  protected readonly customTimeRangeSelected =
+      computed(() => this.timeFilter().preset === TimePreset.CUSTOM);
+
+  protected readonly customStartDate = computed(() => {
+    const start = this.timeFilter().start;
+    return start ? new Date(start) : null;
+  });
+
+  protected readonly customEndDate = computed(() => {
+    const end = this.timeFilter().end;
+    return end ? new Date(end) : null;
+  });
+
+  protected readonly hasInvalidCustomRange = computed(() => {
+    const filter = this.timeFilter();
+    if (filter.preset !== TimePreset.CUSTOM || !filter.start || !filter.end) {
+      return false;
+    }
+    return new Date(filter.start) >= new Date(filter.end);
+  });
+
+  protected onPresetChange(preset: TimePreset): void {
+    const current = this.timeFilter();
+    this.timeFilterChange.emit({
+      preset,
+      start: current.start,
+      end: current.end,
+    });
+  }
+
+  protected onCustomStartChange(date?: Date): void {
+    const current = this.timeFilter();
+    this.timeFilterChange.emit({
+      preset: current.preset,
+      start: date && !isNaN(date.getTime()) ? date.toISOString() : undefined,
+      end: current.end,
+    });
+  }
+
+  protected onCustomEndChange(date?: Date): void {
+    const current = this.timeFilter();
+    this.timeFilterChange.emit({
+      preset: current.preset,
+      start: current.start,
+      end: date && !isNaN(date.getTime()) ? date.toISOString() : undefined,
+    });
+  }
 
   private formatSeverity(sev: string): string {
     return sev.charAt(0).toUpperCase() + sev.slice(1).toLowerCase();

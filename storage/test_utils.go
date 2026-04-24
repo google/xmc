@@ -1,3 +1,16 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 package storage
 
 import (
@@ -62,7 +75,7 @@ type MockStorage struct {
 	GotDefaultToCursorPaginationArtifacts   bool
 	GotDefaultToCursorPaginationXIDs        bool
 	GotDefaultToCursorPaginationWorkUnits   bool
-	ListStatusMessagesResp                  []*essmsgpb.StructuredMessage
+	ListStatusMessagesResp                  []*essmsgpb.StatusMessage
 	ListStatusMessagesErr                   error
 }
 
@@ -239,6 +252,6 @@ func (s *MockStorage) UpdateWorkUnitOperation(ctx context.Context, update *Opera
 }
 
 // ListStatusMessages mocks listing status messages.
-func (s *MockStorage) ListStatusMessages(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.StructuredMessage, string, error) {
+func (s *MockStorage) ListStatusMessages(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.StatusMessage, string, error) {
 	return s.ListStatusMessagesResp, s.NextPageToken, s.ListStatusMessagesErr
 }

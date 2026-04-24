@@ -1,3 +1,16 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 import {CommonModule, DatePipe} from '@angular/common';
 import {ChangeDetectionStrategy, Component, computed, inject, input, signal} from '@angular/core';
 import {toObservable} from '@angular/core/rxjs-interop';
@@ -10,6 +23,7 @@ import {combineLatest} from 'rxjs';
 import {map} from 'rxjs/operators';
 
 import {formatSource, StatusMessageFilterService} from '../../../service/status_message_filter_service';
+import {parseWorkUnitName} from '../../resource_name_extractor';
 import {ProcessedUrl} from '../../url/url_processor';
 
 const STACK_TRACE_PREVIEW_LINES = 5;
@@ -36,6 +50,7 @@ const STACK_TRACE_PREVIEW_LINES = 5;
 export class StatusMessage {
   readonly message = input.required<StructuredMessage>();
   readonly ignoreFilters = input<boolean>(false);
+  readonly showWorkUnitId = input<boolean>(false);
   private readonly filterService = inject(StatusMessageFilterService);
   private readonly router = inject(Router);
   protected readonly formatSource = formatSource;
@@ -110,6 +125,16 @@ export class StatusMessage {
                 return ignoreFilters ||
                     this.filterService.isMessageVisible(message);
               }));
+
+  protected readonly workUnitId = computed(() => {
+    if (!this.showWorkUnitId()) {
+      return null;
+    }
+    const parent = this.message().parent;
+    if (!parent) return null;
+    const parsed = parseWorkUnitName(parent);
+    return parsed ? parsed.wid : null;
+  });
 
   protected shouldShowOriginLink(): boolean {
     const message = this.message();

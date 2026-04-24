@@ -1,3 +1,16 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 package validator
 
 import (
@@ -121,6 +134,27 @@ func ValidateWorkUnitExecutionName(name string) (int64, int64, int64, error) {
 		return 0, 0, 0, err
 	}
 	return ids[0], ids[1], ids[2], nil
+}
+
+// ValidateStatusMessageName checks if a given status message name is valid.
+// It ensures that the name is in the correct format and that the XID, WID (if present), and MessageID are valid.
+// It returns the integer XID, WID (or 0 if not present), and MessageID if it is valid.
+// Valid status message names are in the format "experiments/{xid}/statusMessages/{message_id}"
+// or "experiments/{xid}/workUnits/{wid}/statusMessages/{message_id}".
+func ValidateStatusMessageName(name string) (int64, int64, int64, error) {
+	// Try work unit pattern first (longer)
+	ids, err := validateResourceName(name, []string{"experiments", "workUnits", "statusMessages"}, "experiments/{xid}/workUnits/{wid}/statusMessages/{message_id}", false)
+	if err == nil {
+		return ids[0], ids[1], ids[2], nil
+	}
+
+	// Try experiment pattern
+	ids, err = validateResourceName(name, []string{"experiments", "statusMessages"}, "experiments/{xid}/statusMessages/{message_id}", false)
+	if err == nil {
+		return ids[0], 0, ids[1], nil
+	}
+
+	return 0, 0, 0, fmt.Errorf("status message name must be in the format 'experiments/{xid}/statusMessages/{message_id}' or 'experiments/{xid}/workUnits/{wid}/statusMessages/{message_id}': %w", status.ErrInvalidArgument)
 }
 
 // ValidateArtifactName checks if a given artifact name is valid.

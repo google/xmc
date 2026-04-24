@@ -1,3 +1,16 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 package spanner
 
 import (
@@ -32,13 +45,14 @@ func (s *Storage) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*e
 		}
 
 		// 1.1. If the work unit ID is 0, fetch the next available ID and update the names.
+		initialEID := int64(1)
 		if wid == 0 {
 			wid, err = s.fetchNextWorkUnitIDTransaction(ctx, xid, tx)
 			if err != nil {
 				return fmt.Errorf("failed to fetch next work unit ID: %w", err)
 			}
 			wu.Name = validator.ConstructWorkUnitName(xid, wid)
-			wu.CurrentWorkUnitExecution.Name = validator.ConstructWorkUnitExecutionName(xid, wid, 1)
+			wu.CurrentWorkUnitExecution.Name = validator.ConstructWorkUnitExecutionName(xid, wid, initialEID)
 			wu.CurrentWorkUnitExecution.Status.SystemMessage.Parent = wu.GetName()
 		}
 
@@ -78,7 +92,7 @@ func (s *Storage) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*e
 			NewMessage:     wu.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage(),
 		})
 
-		s.saveStatusMessageHistoryIfChanged(ctx, xid, nil, wu.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage(), &wid, tx)
+		s.saveStatusMessageHistoryIfChanged(ctx, xid, &wid, &initialEID, nil, wu.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage(), tx)
 
 		exp, err = state.DenormalizeWorkUnitStatus(ctx, exp, executionDeltas)
 		if err != nil {
