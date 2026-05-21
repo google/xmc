@@ -1,0 +1,19 @@
+sequenceDiagram
+    participant Reconciler
+    participant Batcher
+    participant Storage
+
+    Reconciler->>Batcher: Add(WorkUnitExecutionUpdate, Source)
+    Batcher->>Batcher: Stores update in memory mapped by XID -> WID -> Source
+    Batcher-->>Reconciler: (Returns immediately)
+
+    Batcher->>Batcher: LOOP: Every TickDuration (Background Thread)
+    Batcher->>Batcher: processBatches()
+    Batcher->>Batcher: Swaps in-memory map and processes batches in parallel
+
+    Batcher->>Batcher: PAR: For each Experiment (XID)
+    Batcher->>Batcher: processExperimentUpdates(xid, widMap)
+    Batcher->>Batcher: Flattens updates from all sources (Jobset, Workload, KueueSync)
+
+    Batcher->>Storage: UpdateWorkUnitExecutions(xid, updatesToSend)
+    Storage-->>Batcher: map[WID] WorkUnitExecution

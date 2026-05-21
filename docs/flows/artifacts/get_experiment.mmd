@@ -1,0 +1,14 @@
+sequenceDiagram
+    participant Client
+    participant ESS as ESS (Exp State Server)
+    participant XID as XID Service
+    participant Spanner as Spanner (Storage)
+
+    Client->>ESS: 1. GetExperiment(req)
+    ESS->>ESS: 2. Authenticate & Validate
+    ESS->>XID: 3. GetXidEntry (Implicit Auth)
+    XID-->>ESS: 4. XidEntry
+    ESS->>Spanner: 5. FetchExperiment
+    Spanner-->>ESS: 6. Experiment
+    ESS->>ESS: 7. Attach ACLs
+    ESS-->>Client: 8. Experiment

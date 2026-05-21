@@ -1,0 +1,23 @@
+sequenceDiagram
+    participant Client
+    participant ESS as ESS (Exp State Server)
+    participant XID as XID Service
+    participant Spanner as Spanner (Storage)
+    participant Redis
+    participant Actuator
+    participant Kubernetes as Kubernetes (K8s)
+
+    Client->>ESS: 1. CreateWorkUnit(req)
+    ESS->>XID: 2. CheckAuth(WRITER)
+    XID-->>ESS: 3. Authorized
+    ESS->>Spanner: 4. CreateWorkUnit
+    ESS->>Spanner: 5. AddWorkUnitOperation
+    ESS->>Spanner: 6. FetchExperiment (Priority)
+    ESS->>Redis: 7. Enqueue Payload
+    ESS-->>Client: 8. Operation
+
+    Redis->>Redis: Async Operations
+    Redis-->>Actuator: 9. HandleWorkUnitTask (Async)
+    Actuator->>Kubernetes: 10. Create JobSet
+    Kubernetes-->>Actuator: 11. Success
+    Actuator->>Spanner: 12. UpdateOperation(Done=true)

@@ -1,0 +1,171 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+package jobsetutil
+
+import (
+	"testing"
+
+	"golang/cmp/cmp"
+	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
+	"xmanager_cloud/kubernetes/api/v1alpha2/v1alpha2"
+)
+
+func TestHasCondition(t *testing.T) {
+	testCases := []struct {
+		name          string
+		jobSet        *v1alpha2.JobSet
+		conditionType v1alpha2.JobSetConditionType
+		status        metav1.ConditionStatus
+		want          bool
+	}{
+		{
+			name: "Condition present and true",
+			jobSet: &v1alpha2.JobSet{
+				Status: v1alpha2.JobSetStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(v1alpha2.JobSetCompleted), Status: metav1.ConditionTrue},
+					},
+				},
+			},
+			conditionType: v1alpha2.JobSetCompleted,
+			status:        metav1.ConditionTrue,
+			want:          true,
+		},
+		{
+			name: "Condition present but false",
+			jobSet: &v1alpha2.JobSet{
+				Status: v1alpha2.JobSetStatus{
+					Conditions: []metav1.Condition{
+						{Type: string(v1alpha2.JobSetCompleted), Status: metav1.ConditionFalse},
+					},
+				},
+			},
+			conditionType: v1alpha2.JobSetCompleted,
+			status:        metav1.ConditionTrue,
+			want:          false,
+		},
+		{
+			name: "Condition not present",
+			jobSet: &v1alpha2.JobSet{
+				Status: v1alpha2.JobSetStatus{
+					Conditions: []metav1.Condition{},
+				},
+			},
+			conditionType: v1alpha2.JobSetFailed,
+			status:        metav1.ConditionTrue,
+			want:          false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := HasCondition(tc.jobSet, tc.conditionType, tc.status)
+			if got != tc.want {
+				t.Errorf("HasCondition() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFindConditionWithType(t *testing.T) {
+	tests := []struct {
+		name          string
+		jobSet        *v1alpha2.JobSet
+		conditionType v1alpha2.JobSetConditionType
+		want          *metav1.Condition
+	}{
+		{
+			name: "condition type correct and status true",
+			jobSet: &v1alpha2.JobSet{
+				Status: v1alpha2.JobSetStatus{
+					Conditions: []metav1.Condition{
+						{Type: "Completed", Status: metav1.ConditionTrue},
+					},
+				},
+			},
+			conditionType: "Completed",
+			want:          &metav1.Condition{Type: "Completed", Status: metav1.ConditionTrue},
+		},
+		{
+			name: "condition type correct but status false",
+			jobSet: &v1alpha2.JobSet{
+				Status: v1alpha2.JobSetStatus{
+					Conditions: []metav1.Condition{
+						{Type: "Completed", Status: metav1.ConditionFalse},
+					},
+				},
+			},
+			conditionType: "Completed",
+			want:          nil,
+		},
+		{
+			name: "condition type incorrect but status true",
+			jobSet: &v1alpha2.JobSet{
+				Status: v1alpha2.JobSetStatus{
+					Conditions: []metav1.Condition{
+						{Type: "Failed", Status: metav1.ConditionTrue},
+					},
+				},
+			},
+			conditionType: "Completed",
+			want:          nil,
+		},
+		{
+			name: "multiple conditions pick correct one",
+			jobSet: &v1alpha2.JobSet{
+				Status: v1alpha2.JobSetStatus{
+					Conditions: []metav1.Condition{
+						{Type: "Failed", Status: metav1.ConditionTrue},
+						{Type: "Completed", Status: metav1.ConditionFalse},
+						{Type: "Completed", Status: metav1.ConditionTrue, Message: "foo"},
+					},
+				},
+			},
+			conditionType: "Completed",
+			want:          &metav1.Condition{Type: "Completed", Status: metav1.ConditionTrue, Message: "foo"},
+		},
+		{
+			name: "no conditions",
+			jobSet: &v1alpha2.JobSet{
+				Status: v1alpha2.JobSetStatus{
+					Conditions: []metav1.Condition{},
+				},
+			},
+			conditionType: "Completed",
+			want:          nil,
+		},
+		{
+			name: "multiple conditions none matching exactly",
+			jobSet: &v1alpha2.JobSet{
+				Status: v1alpha2.JobSetStatus{
+					Conditions: []metav1.Condition{
+						{Type: "Completed", Status: metav1.ConditionFalse},
+						{Type: "Failed", Status: metav1.ConditionTrue},
+					},
+				},
+			},
+			conditionType: "Completed",
+			want:          nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := FindConditionWithType(tc.jobSet, tc.conditionType)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("FindConditionWithType(%v, %q) returned diff (-want +got):\n%s", tc.jobSet, tc.conditionType, diff)
+			}
+		})
+	}
+}
