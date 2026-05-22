@@ -1,10 +1,11 @@
 name: 'XMC GKE HelloWorld Deploy'
 
 on:
+  pull_request:
   push:
     branches:
       - test # Trigger on push to the 'test' branch
-    workflow_dispatch:
+  workflow_dispatch:
 
 env:
   PROJECT_ID: 'xmc-test-project-2' 
