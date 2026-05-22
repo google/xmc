@@ -25,7 +25,6 @@ import "third_party/xmanager_cloud/xid_service/proto/messages.proto";
 service XidService {
   // AIP-131 compliant Get API call.
   rpc GetXidEntry(GetXidEntryRequest) returns (XidEntry) {
-    option deadline = 10.0;
     option (google.api.http) = {
       get: "/v1/{name=xids/*}"
     };
@@ -37,7 +36,6 @@ service XidService {
   // GetXidEntry spuriously.
   rpc CheckUserAuthorization(CheckUserAuthorizationRequest)
       returns (CheckUserAuthorizationResponse) {
-    option deadline = 10.0;
     option (google.api.http) = {
       post: "/v1/{name=xids/*}:checkUserAuthorization"
       body: "*"
@@ -48,7 +46,6 @@ service XidService {
   // AIP-132 compliant List API call. Data returned from this method is strongly
   // consistent.
   rpc ListXidEntries(ListXidEntriesRequest) returns (ListXidEntriesResponse) {
-    option deadline = 10.0;
     option (google.api.http) = {
       get: "/v1/xids"
     };
@@ -57,7 +54,6 @@ service XidService {
   // Search API call that mimics AIP-132 List behavior for searching. Data
   // returned from this method is at most 15 seconds stale.
   rpc SearchXidEntries(ListXidEntriesRequest) returns (ListXidEntriesResponse) {
-    option deadline = 10.0;
     option (google.api.http) = {
       post: "/v1/xids:search"
       body: "*"
@@ -66,7 +62,6 @@ service XidService {
 
   // AIP-133 compliant Create API call.
   rpc CreateXidEntry(CreateXidEntryRequest) returns (XidEntry) {
-    option deadline = 10.0;
     option (google.api.http) = {
       post: "/v1/xids"
       body: "xid_entry"
@@ -76,7 +71,6 @@ service XidService {
 
   // AIP-134 compliant Update API call.
   rpc UpdateXidEntry(UpdateXidEntryRequest) returns (XidEntry) {
-    option deadline = 10.0;
     option (google.api.http) = {
       patch: "/v1/{xid_entry.name=xids/*}"
       body: "xid_entry"

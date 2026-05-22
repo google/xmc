@@ -1,0 +1,10 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "longrunning",
+    srcs = ["longrunning.go"],
+    importpath = "longrunning/operations_go_proto",
+    deps = ["@com_google_cloud_go_longrunning//autogen/longrunningpb"],
+)

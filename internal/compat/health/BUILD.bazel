@@ -1,0 +1,10 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "health",
+    srcs = ["health.go"],
+    importpath = "grpc_proto/health_go_proto",
+    deps = ["@org_golang_google_grpc//health/grpc_health_v1:go_default_library"],
+)
