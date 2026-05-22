@@ -5,6 +5,6 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "field_mask",
     srcs = ["field_mask.go"],
-    importpath = "protobuf/field_mask_go_proto",
-    deps = ["@org_golang_google_protobuf//types/known/fieldmaskpb:go_default_library"],
+    importpath = "xmanager_cloud/internal/compat/field_mask",
+    deps = ["@org_golang_google_protobuf//types/known/fieldmaskpb"],
 )

@@ -1,0 +1,9 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "v1alpha2",
+    srcs = ["jobset_types.go"],
+    importpath = "xmanager_cloud/internal/kubernetes/api/v1alpha2",
+    visibility = ["//:__subpackages__"],
+    deps = ["@io_k8s_api//batch/v1"],
+)

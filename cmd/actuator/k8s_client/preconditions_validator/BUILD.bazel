@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "preconditions_validator",
+    srcs = ["preconditions_validator.go"],
+    importpath = "xmanager_cloud/cmd/actuator/k8s_client/preconditions_validator",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//internal/kubernetes/common:constants",
+        "//internal/logging",
+        "//internal/validator",
+    ],
+)
+
+go_test(
+    name = "preconditions_validator_test",
+    srcs = ["preconditions_validator_test.go"],
+    embed = [":preconditions_validator"],
+    deps = ["//internal/kubernetes/common:constants"],
+)

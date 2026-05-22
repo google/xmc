@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "storage",
+    srcs = [
+        "storage.go",
+        "test_utils.go",
+    ],
+    importpath = "xmanager_cloud/internal/storage",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//api/protos/xid:messages_go_proto",
+        "//internal/compat/field_mask",
+        "//internal/compat/longrunning",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

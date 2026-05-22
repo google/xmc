@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "commands",
+    srcs = [
+        "create.go",
+        "down.go",
+        "init.go",
+        "up.go",
+    ],
+    importpath = "xmanager_cloud/internal/storage/spanner/migrations/commands",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_api//iterator",
+    ],
+)
+
+go_test(
+    name = "commands_test",
+    srcs = [
+        "create_test.go",
+        "down_test.go",
+        "init_test.go",
+        "up_test.go",
+    ],
+    embed = [":commands"],
+    deps = [
+        "//internal/storage/spanner/emulator",
+        "@com_github_google_go_cmp//cmp",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1",
+    ],
+)

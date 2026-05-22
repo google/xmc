@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "state",
+    srcs = ["state.go"],
+    importpath = "xmanager_cloud/internal/storage/state",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//internal/compat/status",
+        "//internal/logging",
+        "//internal/validator",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "state_test",
+    srcs = ["state_test.go"],
+    embed = [":state"],
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
+        "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)

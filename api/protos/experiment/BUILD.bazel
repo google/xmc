@@ -1,5 +1,6 @@
-load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -18,13 +19,13 @@ proto_library(
         "work_unit.proto",
         "work_unit_execution.proto",
     ],
-    strip_import_prefix = "/api/protos/experiment",
     import_prefix = "third_party/xmanager_cloud/experiment_state_server/proto",
+    strip_import_prefix = "/api/protos/experiment",
     deps = [
         "//api/protos/xid:xid_messages_proto",
-        "@com_google_protobuf//:timestamp_proto",
         "@com_google_googleapis//google/api:field_behavior_proto",
         "@com_google_googleapis//google/api:resource_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
@@ -43,17 +44,17 @@ go_proto_library(
 proto_library(
     name = "experiment_api_proto",
     srcs = ["api.proto"],
-    strip_import_prefix = "/api/protos/experiment",
     import_prefix = "third_party/xmanager_cloud/experiment_state_server/proto",
+    strip_import_prefix = "/api/protos/experiment",
     deps = [
         ":experiment_messages_proto",
-        "@com_google_protobuf//:empty_proto",
-        "@com_google_protobuf//:field_mask_proto",
         "@com_google_googleapis//google/api:annotations_proto",
         "@com_google_googleapis//google/api:client_proto",
         "@com_google_googleapis//google/api:field_behavior_proto",
         "@com_google_googleapis//google/api:resource_proto",
         "@com_google_googleapis//google/longrunning:operations_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:field_mask_proto",
     ],
 )
 
@@ -67,10 +68,59 @@ go_proto_library(
     proto = ":experiment_api_proto",
     deps = [
         ":messages_go_proto",
+        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@com_google_googleapis//google/api:annotations_go_proto",
         "@com_google_googleapis//google/api:client_go_proto",
         "@com_google_googleapis//google/api:field_behavior_go_proto",
         "@com_google_googleapis//google/api:resource_go_proto",
-        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
     ],
+)
+
+proto_library(
+    name = "cloud_xmanager_v1_proto",
+    srcs = [
+        "api.proto",
+        "artifact.proto",
+        "experiment.proto",
+        "operations.proto",
+        "priority.proto",
+        "resources.proto",
+        "status.proto",
+        "status_message.proto",
+        "structured_message.proto",
+        "url.proto",
+        "work_unit.proto",
+        "work_unit_execution.proto",
+    ],
+    deps = [
+        ":experiment_messages_proto",
+        "//api/protos/xid:xid_messages_proto",
+        "//google/api:api_proto",
+        "//google/longrunning:longrunning_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:field_mask_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "cloud_xmanager_v1_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "xmanager_cloud/api/protos/experiment",
+    proto = ":cloud_xmanager_v1_proto",
+    deps = [
+        ":messages_go_proto",
+        "//api/protos/xid:messages_go_proto",
+        "//google/api:annotations_proto",
+        "//google/api:client_proto",
+        "//google/api:field_behavior_proto",
+        "//google/api:resource_proto",
+        "//google/longrunning:operations_proto",
+    ],
+)
+
+go_library(
+    name = "experiment",
+    embed = [":cloud_xmanager_v1_go_proto"],
+    importpath = "xmanager_cloud/api/protos/experiment",
 )

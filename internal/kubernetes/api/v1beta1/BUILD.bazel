@@ -1,0 +1,12 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "v1beta1",
+    srcs = ["kueue_types.go"],
+    importpath = "xmanager_cloud/internal/kubernetes/api/v1beta1",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@io_k8s_api//core/v1",
+        "@io_k8s_apimachinery//pkg/api/resource",
+    ],
+)

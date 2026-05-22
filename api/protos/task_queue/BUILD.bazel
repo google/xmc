@@ -1,18 +1,17 @@
-load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
 
 package(default_visibility = ["//visibility:public"])
 
 proto_library(
     name = "task_proto",
     srcs = ["task.proto"],
-    strip_import_prefix = "/api/protos/task_queue",
-    import_prefix = "third_party/xmanager_cloud/task_queue/proto",
     deps = [
         "//api/protos/experiment:experiment_messages_proto",
+        "//google/api:api_proto",
         "@com_google_protobuf//:field_mask_proto",
         "@com_google_protobuf//:timestamp_proto",
-        "@com_google_googleapis//google/api:field_behavior_proto",
     ],
 )
 
@@ -25,4 +24,20 @@ go_proto_library(
         "@com_google_googleapis//google/api:field_behavior_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
+)
+
+go_proto_library(
+    name = "cloud_xmanager_v1_go_proto",
+    importpath = "xmanager_cloud/api/protos/task_queue",
+    proto = ":task_proto",
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//google/api:field_behavior_proto",
+    ],
+)
+
+go_library(
+    name = "task_queue",
+    embed = [":cloud_xmanager_v1_go_proto"],
+    importpath = "xmanager_cloud/api/protos/task_queue",
 )

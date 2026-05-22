@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "reconciler_lib",
+    srcs = [
+        "config.go",
+        "main.go",
+    ],
+    importpath = "xmanager_cloud/cmd/reconciler",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//internal/common:health",
+        "//internal/kubernetes/api/v1alpha2",
+        "//internal/kubernetes/common:constants",
+        "//internal/logging",
+        "//internal/storage",
+        "//internal/storage/spanner",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_api//option",
+    ],
+)
+
+go_binary(
+    name = "reconciler",
+    embed = [":reconciler_lib"],
+    visibility = ["//visibility:public"],
+)

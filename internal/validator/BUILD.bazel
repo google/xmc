@@ -1,0 +1,40 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "validator",
+    srcs = [
+        "names.go",
+        "parameters.go",
+        "requests.go",
+    ],
+    importpath = "xmanager_cloud/internal/validator",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//api/protos/experiment:api_go_proto",
+        "//api/protos/experiment:messages_go_proto",
+        "//api/protos/xid:api_go_proto",
+        "//api/protos/xid:messages_go_proto",
+        "//internal/compat/log",
+        "//internal/compat/status",
+    ],
+)
+
+go_test(
+    name = "validator_test",
+    srcs = [
+        "names_test.go",
+        "parameters_test.go",
+        "requests_test.go",
+    ],
+    embed = [":validator"],
+    deps = [
+        "//api/protos/experiment:api_go_proto",
+        "//api/protos/experiment:messages_go_proto",
+        "//api/protos/xid:api_go_proto",
+        "//api/protos/xid:messages_go_proto",
+        "//internal/compat/field_mask",
+        "//internal/compat/status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)

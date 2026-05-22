@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "driver",
+    srcs = ["spannerdriver.go"],
+    importpath = "xmanager_cloud/internal/storage/spanner/migrations/driver",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/compat/log",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1",
+    ],
+)
+
+go_test(
+    name = "driver_test",
+    srcs = ["spannerdriver_test.go"],
+    embed = [":driver"],
+    deps = [
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

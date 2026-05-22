@@ -1,0 +1,56 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+go_library(
+    name = "log_monitor_lib",
+    srcs = [
+        "config.go",
+        "database.go",
+        "health.go",
+        "listener.go",
+        "log_processor.go",
+        "main.go",
+    ],
+    importpath = "xmanager_cloud/cmd/log_monitor",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//internal/common:health",
+        "//internal/compat/field_mask",
+        "//internal/compat/status",
+        "//internal/kubernetes/common:constants",
+        "//internal/logging",
+        "//internal/storage",
+        "//internal/storage/spanner",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_api//option",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+go_binary(
+    name = "log_monitor",
+    embed = [":log_monitor_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "log_monitor_test",
+    srcs = [
+        "config_test.go",
+        "health_test.go",
+        "listener_test.go",
+        "log_processor_test.go",
+    ],
+    embed = [":log_monitor_lib"],
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//internal/compat/field_mask",
+        "//internal/compat/status",
+        "//internal/storage",
+        "//internal/storage/spanner/emulator",
+        "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_api//option",
+        "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)

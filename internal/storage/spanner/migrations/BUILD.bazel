@@ -1,0 +1,47 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+go_library(
+    name = "migrations_lib",
+    srcs = ["runner.go"],
+    embedsrcs = [
+        "ess/001_baseline.down.sql",
+        "ess/001_baseline.up.sql",
+        "ess/002_artifactinfo.down.sql",
+        "ess/002_artifactinfo.up.sql",
+        "ess/003_status_messages.down.sql",
+        "ess/003_status_messages.up.sql",
+        "xid/001_baseline.down.sql",
+        "xid/001_baseline.up.sql",
+    ],
+    importpath = "xmanager_cloud/internal/storage/spanner/migrations",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//internal/compat/log",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_api//option",
+    ],
+)
+
+go_binary(
+    name = "migrations",
+    embed = [":migrations_lib"],
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "migrations_test",
+    srcs = [
+        "runner_test.go",
+        "schema_consistency_test.go",
+        "shared_test.go",
+    ],
+    embed = [":migrations_lib"],
+    deps = [
+        "//internal/storage/spanner/emulator",
+        "//internal/storage/spanner/migrations/testing/migrationtest",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
+        "@org_golang_google_api//option",
+        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1",
+    ],
+)

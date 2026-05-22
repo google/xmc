@@ -1,0 +1,29 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "auth",
+    srcs = [
+        "auth.go",
+        "authentication.go",
+        "authorization.go",
+        "test_utils.go",
+    ],
+    importpath = "xmanager_cloud/internal/auth",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//api/protos/xid:messages_go_proto",
+        "//internal/compat/status",
+        "//internal/logging",
+        "@org_golang_google_api//option",
+    ],
+)
+
+go_test(
+    name = "auth_test",
+    srcs = [
+        "authentication_test.go",
+        "authorization_test.go",
+    ],
+    embed = [":auth"],
+    deps = ["//api/protos/xid:messages_go_proto"],
+)

@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "emulator",
+    srcs = ["emulator.go"],
+    importpath = "xmanager_cloud/internal/storage/spanner/emulator",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1",
+    ],
+)
+
+go_test(
+    name = "emulator_test",
+    srcs = ["emulator_test.go"],
+    embed = [":emulator"],
+    deps = [
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_api//iterator",
+    ],
+)

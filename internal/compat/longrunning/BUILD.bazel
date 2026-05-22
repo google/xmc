@@ -5,6 +5,6 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "longrunning",
     srcs = ["longrunning.go"],
-    importpath = "longrunning/operations_go_proto",
+    importpath = "xmanager_cloud/internal/compat/longrunning",
     deps = ["@com_google_cloud_go_longrunning//autogen/longrunningpb"],
 )

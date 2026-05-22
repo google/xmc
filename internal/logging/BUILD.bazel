@@ -1,0 +1,32 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "logging",
+    srcs = [
+        "logging.go",
+        "operation.go",
+        "resources.go",
+    ],
+    importpath = "xmanager_cloud/internal/logging",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/compat/log",
+        "//internal/kubernetes/common:constants",
+        "//internal/validator",
+        "@com_github_google_uuid//:uuid",
+    ],
+)
+
+go_test(
+    name = "logging_test",
+    srcs = [
+        "logging_test.go",
+        "operation_test.go",
+        "resources_test.go",
+    ],
+    embed = [":logging"],
+    deps = [
+        "//internal/kubernetes/common:constants",
+        "@com_github_google_go_cmp//cmp",
+    ],
+)

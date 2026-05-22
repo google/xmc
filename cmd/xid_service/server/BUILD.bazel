@@ -1,0 +1,51 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "server",
+    srcs = [
+        "checkuserauthorization.go",
+        "createxidentry.go",
+        "getxidentry.go",
+        "listxidentries.go",
+        "server.go",
+        "updatexidentry.go",
+    ],
+    importpath = "xmanager_cloud/cmd/xid_service/server",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/protos/xid:api_go_proto",
+        "//api/protos/xid:messages_go_proto",
+        "//internal/auth",
+        "//internal/compat/status",
+        "//internal/logging",
+        "//internal/storage",
+        "//internal/validator",
+    ],
+)
+
+go_test(
+    name = "server_test",
+    srcs = [
+        "checkuserauthorization_test.go",
+        "createxidentry_test.go",
+        "getxidentry_test.go",
+        "listxidentries_test.go",
+        "server_test.go",
+        "updatexidentry_test.go",
+    ],
+    embed = [":server"],
+    deps = [
+        "//api/protos/xid:api_go_proto",
+        "//api/protos/xid:messages_go_proto",
+        "//internal/auth",
+        "//internal/compat/field_mask",
+        "//internal/compat/status",
+        "//internal/storage",
+        "//internal/storage/spanner",
+        "//internal/storage/spanner/emulator",
+        "//internal/validator",
+        "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//testing/protocmp",
+    ],
+)

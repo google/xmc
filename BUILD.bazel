@@ -1,1 +1,83 @@
-# Root package marker
+load("@bazel_gazelle//:def.bzl", "gazelle")
+
+# gazelle:prefix xmanager_cloud
+
+# Core legacy target mapping directives
+# gazelle:resolve go protobuf/timestamp_go_proto @org_golang_google_protobuf//types/known/timestamppb
+# gazelle:resolve go protobuf/any_go_proto @org_golang_google_protobuf//types/known/anypb
+# gazelle:resolve go rpc/status_go_proto @org_golang_google_genproto_googleapis_rpc//status
+# gazelle:resolve go spanner/admin/database/v1/spanner_database_admin_go_proto @org_golang_google_genproto//googleapis/spanner/admin/database/v1
+# gazelle:resolve go golang/protobuf/v2/proto/proto @org_golang_google_protobuf//proto
+# gazelle:resolve go golang/protobuf/v2/encoding/protojson/protojson @org_golang_google_protobuf//encoding/protojson
+# gazelle:resolve go golang/protobuf/v2/encoding/prototext/prototext @org_golang_google_protobuf//encoding/prototext
+# gazelle:resolve go golang/protobuf/v2/testing/protocmp/protocmp @org_golang_google_protobuf//testing/protocmp
+# gazelle:resolve go golang/uuid/uuid @com_github_google_uuid//:uuid
+# gazelle:resolve go golang/cmp/cmp @com_github_google_go_cmp//cmp
+# gazelle:resolve go golang/cmp/cmpopts/cmpopts @com_github_google_go_cmp//cmp/cmpopts
+# gazelle:resolve go golang/google_api/option/option @org_golang_google_api//option
+# gazelle:resolve go golang/google_api/iterator/iterator @org_golang_google_api//iterator
+# gazelle:resolve go golang/google_api/iamcredentials/v1/iamcredentials @org_golang_google_api//iamcredentials/v1
+# gazelle:resolve go golang/oauth2/google/google @org_golang_x_oauth2//google
+# gazelle:resolve go golang/godebug/diff/diff @com_github_kylelemons_godebug//diff
+# gazelle:resolve go golang/github_com/go_redis/redis/v/v9/redis @com_github_redis_go_redis_v9//:redis
+# gazelle:resolve go tink/go/jwt/jwt @com_github_google_tink_go//jwt
+# gazelle:resolve go tink/go/keyset/keyset @com_github_google_tink_go//keyset
+# gazelle:resolve go golang/cloud_google_com/go/spanner/v/v1/spanner @com_google_cloud_go_spanner//:spanner
+
+# Compatibility wrapper package target mappings
+# gazelle:resolve go go/log //internal/compat/log:log
+# gazelle:resolve go task/go/status //internal/compat/status:status
+# gazelle:resolve go googlesql/safesql/go/safesql //internal/compat/safesql:safesql
+# gazelle:resolve go protobuf/field_mask_go_proto //internal/compat/field_mask:field_mask
+# gazelle:resolve go longrunning/operations_go_proto //internal/compat/longrunning:longrunning
+# gazelle:resolve go grpc_proto/health_go_proto //internal/compat/health:health
+
+# Kubernetes target mappings
+# gazelle:resolve go golang/k8s_io/api/v/v0_23/core/v1/v1 @io_k8s_api//core/v1
+# gazelle:resolve go golang/k8s_io/api/v/v0_23/batch/v1/v1 @io_k8s_api//batch/v1
+# gazelle:resolve go golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource @io_k8s_apimachinery//pkg/api/resource
+# gazelle:resolve go golang/k8s_io/client_go/v/v0_23/kubernetes/typed/core/v1/v1 @io_k8s_client_go//kubernetes/typed/core/v1
+# gazelle:resolve go golang/k8s_io/client_go/v/v0_23/rest/fake/fake @io_k8s_client_go//rest/fake
+# gazelle:resolve go golang/k8s_io/client_go/v/v0_23/discovery/discovery @io_k8s_client_go//discovery
+# gazelle:resolve go golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/fake/fake @io_k8s_sigs_controller_runtime//pkg/client/fake
+
+# Proto stubs target package mappings (matching how Go codebase imports our proto stubs)
+# gazelle:resolve go xmanager_cloud/experiment_state_server/proto/messages_go_proto //api/protos/experiment:messages_go_proto
+# gazelle:resolve go xmanager_cloud/experiment_state_server/proto/api_go_proto //api/protos/experiment:api_go_proto
+# gazelle:resolve go xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto //api/protos/experiment:api_go_proto
+# gazelle:resolve go xmanager_cloud/xid_service/proto/messages_go_proto //api/protos/xid:messages_go_proto
+# gazelle:resolve go xmanager_cloud/xid_service/proto/api_go_proto //api/protos/xid:api_go_proto
+# gazelle:resolve go xmanager_cloud/xid_service/proto/api_go_grpc_proto //api/protos/xid:api_go_proto
+# gazelle:resolve go xmanager_cloud/task_queue/proto/task_go_proto //api/protos/task_queue:task_go_proto
+
+# Internal package package target mappings
+# gazelle:resolve go xmanager_cloud/auth/auth //internal/auth:auth
+# gazelle:resolve go xmanager_cloud/task_queue/client //internal/task_queue:client
+# gazelle:resolve go xmanager_cloud/task_queue_redis/redisclient //internal/task_queue_redis:redisclient
+# gazelle:resolve go xmanager_cloud/logging/logging //internal/logging:logging
+# gazelle:resolve go xmanager_cloud/validator/validator //internal/validator:validator
+# gazelle:resolve go xmanager_cloud/common/interfaces //internal/common:interfaces
+# gazelle:resolve go xmanager_cloud/common/health //internal/common:health
+# gazelle:resolve go xmanager_cloud/storage/storage //internal/storage:storage
+# gazelle:resolve go xmanager_cloud/storage/data/data //internal/storage/data:data
+# gazelle:resolve go xmanager_cloud/storage/state/state //internal/storage/state:state
+# gazelle:resolve go xmanager_cloud/storage/spanner/data/spannerdata //internal/storage/spanner/data:spannerdata
+# gazelle:resolve go xmanager_cloud/storage/spanner/spanner //internal/storage/spanner:spanner
+# gazelle:resolve go xmanager_cloud/storage/spanner/utils/parseddl //internal/storage/spanner/utils:parseddl
+# gazelle:resolve go xmanager_cloud/storage/spanner/schema/artifactschema //internal/storage/spanner/schema:artifactschema
+# gazelle:resolve go xmanager_cloud/storage/spanner/schema/experimentschema //internal/storage/spanner/schema:experimentschema
+# gazelle:resolve go xmanager_cloud/storage/spanner/schema/operationschema //internal/storage/spanner/schema:operationschema
+# gazelle:resolve go xmanager_cloud/storage/spanner/schema/statusmessageschema //internal/storage/spanner/schema:statusmessageschema
+# gazelle:resolve go xmanager_cloud/storage/spanner/schema/workunitschema //internal/storage/spanner/schema:workunitschema
+# gazelle:resolve go xmanager_cloud/storage/spanner/schema/xidschema //internal/storage/spanner/schema:xidschema
+# gazelle:resolve go xmanager_cloud/storage/spanner/schema/workunitexecutionschema //internal/storage/spanner/schema:workunitexecutionschema
+# gazelle:resolve go xmanager_cloud/storage/spanner/emulator/emulator //internal/storage/spanner/emulator:emulator
+# gazelle:resolve go xmanager_cloud/storage/spanner/migrations/testing/migrationtest //internal/storage/spanner/migrations/testing/migrationtest:migrationtest
+# gazelle:resolve go xmanager_cloud/kubernetes/common/constants //internal/kubernetes/common:constants
+# gazelle:resolve go xmanager_cloud/kubernetes/api/v1alpha2/v1alpha2 //internal/kubernetes/api/v1alpha2:v1alpha2
+# gazelle:resolve go xmanager_cloud/security/securitytest //internal/security:securitytest
+# gazelle:resolve go xmanager_cloud/query_generator/liststatement //internal/query_generator:liststatement
+# gazelle:resolve go xmanager_cloud/query_generator/normalizer/normalizer //internal/query_generator/normalizer:normalizer
+# gazelle:resolve go xmanager_cloud/query_generator/querytools //internal/query_generator:querytools
+
+gazelle(name = "gazelle")
