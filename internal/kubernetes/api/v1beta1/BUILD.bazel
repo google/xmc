@@ -6,7 +6,7 @@ go_library(
     importpath = "xmanager_cloud/internal/kubernetes/api/v1beta1",
     visibility = ["//:__subpackages__"],
     deps = [
-        "@io_k8s_api//core/v1",
+        "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/resource",
     ],
 )

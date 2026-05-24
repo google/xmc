@@ -8,12 +8,18 @@ go_library(
     ],
     importpath = "xmanager_cloud/internal/query_generator/normalizer",
     visibility = ["//:__subpackages__"],
-    deps = ["//internal/query_generator:querytools"],
+    deps = [
+        "//api/filter/go/filtervisitor",
+        "//internal/query_generator:querytools",
+    ],
 )
 
 go_test(
     name = "normalizer_test",
     srcs = ["normalizer_test.go"],
     embed = [":normalizer"],
-    deps = ["//internal/query_generator:querytools"],
+    deps = [
+        "//api/filter/go/filtervisitor",
+        "//internal/query_generator:querytools",
+    ],
 )

@@ -24,8 +24,8 @@ import (
 	"testing"
 	"time"
 
-	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
-	"golang/google_api/option/option"
+	"google.golang.org/api/cloudidentity/v1beta1"
+	"google.golang.org/api/option"
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 

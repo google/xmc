@@ -21,9 +21,8 @@ import (
 	"fmt"
 	"testing"
 
-	_ "go/tools/nogo/allowlist/crypto/rsa" // allowlist for crypto/rsa
 	"tink/go/insecuresecretdataaccess/insecuresecretdataaccess"
-	"tink/go/jwt/jwt"
+	"github.com/tink-crypto/tink-go/v2/jwt"
 	"tink/integration/go/jwt/jwtkeyconverter"
 )
 

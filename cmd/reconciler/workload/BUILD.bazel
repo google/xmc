@@ -14,7 +14,7 @@ go_library(
         "//internal/logging",
         "//internal/storage",
         "//internal/validator",
-        "@io_k8s_api//core/v1",
+        "@io_k8s_api//core/v1:core",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
@@ -28,12 +28,12 @@ go_test(
     embed = [":workload"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
+        "//internal/compat/cmp",
         "//internal/compat/field_mask",
+        "//internal/compat/protocmp",
         "//internal/kubernetes/common:constants",
         "//internal/storage",
-        "@com_github_google_go_cmp//cmp",
-        "@io_k8s_api//core/v1",
+        "@io_k8s_api//core/v1:core",
         "@io_k8s_sigs_controller_runtime//pkg/client/fake",
-        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

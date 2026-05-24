@@ -13,6 +13,6 @@ go_library(
         "//api/protos/xid:messages_go_proto",
         "//internal/compat/field_mask",
         "//internal/compat/longrunning",
-        "@org_golang_google_protobuf//proto",
+        "//internal/compat/proto",
     ],
 )

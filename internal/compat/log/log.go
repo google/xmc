@@ -1,7 +1,7 @@
 package log
 
 import (
-	"fmt"
+	"context"
 	"log"
 	"os"
 )
@@ -49,3 +49,39 @@ func Exit(v ...interface{}) {
 	log.Println(append([]interface{}{"EXIT: "}, v...)...)
 	os.Exit(1)
 }
+
+func InfoContextf(ctx context.Context, format string, v ...interface{}) { Infof(format, v...) }
+func WarningContextf(ctx context.Context, format string, v ...interface{}) { Warningf(format, v...) }
+func ErrorContextf(ctx context.Context, format string, v ...interface{}) { Errorf(format, v...) }
+func FatalContextf(ctx context.Context, format string, v ...interface{}) { Fatalf(format, v...) }
+
+type Verbose bool
+
+func V(level int) Verbose {
+	return Verbose(true)
+}
+
+func (v Verbose) Info(args ...interface{}) {
+	if v {
+		Info(args...)
+	}
+}
+
+func (v Verbose) Infof(format string, args ...interface{}) {
+	if v {
+		Infof(format, args...)
+	}
+}
+
+func (v Verbose) Warning(args ...interface{}) {
+	if v {
+		Warning(args...)
+	}
+}
+
+func (v Verbose) Warningf(format string, args ...interface{}) {
+	if v {
+		Warningf(format, args...)
+	}
+}
+

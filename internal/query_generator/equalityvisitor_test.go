@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"go/log"
+	fpb "api/filter/filter_expression_go_proto"
 	"api/filter/go/filter"
 	"api/filter/go/filtervisitor"
 )
@@ -182,7 +183,21 @@ func TestEquality(t *testing.T) {
 		}
 		m := map[string]bool{}
 		log.Info("calling into EqualityVisitor")
-		ev := EqualityVisitor{MemberFunc: memberMap(&m, tc.m)}
+		ev := EqualityVisitor{
+			MemberFunc: memberMap(&m, tc.m),
+			FunctionFunc: func(functionName string, ev *EqualityVisitor, args []*fpb.Expression) (filtervisitor.PrimType, error) {
+				old := ev.visitFromEqual
+				ev.visitFromEqual = false
+				for _, arg := range args {
+					if _, err := filtervisitor.Visit(ev, arg); err != nil {
+						ev.visitFromEqual = old
+						return filtervisitor.Invalid, err
+					}
+				}
+				ev.visitFromEqual = old
+				return filtervisitor.Invalid, nil
+			},
+		}
 		if _, err := filtervisitor.Visit(&ev, exp); err != nil {
 			t.Errorf("Visit(%v) failed with error: %v", exp, err)
 		}

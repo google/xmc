@@ -27,3 +27,67 @@ A set of compatibility packages is defined under `//internal/compat/...` to rout
 - `protobuf/field_mask_go_proto` -> `google.golang.org/protobuf/types/known/fieldmaskpb`
 - `longrunning/operations_go_proto` -> `google.golang.org/genproto/googleapis/longrunning`
 - `grpc_proto/health_go_proto` -> `google.golang.org/grpc/health/grpc_health_v1`
+
+## Custom AIP-160 Filter & Parser Engine (Step 3)
+
+The repository includes a custom, zero-dependency AIP-160 compliant filter parsing and query translation engine under `//api/filter/go/filter` and `//api/filter/go/queryfilterbase`. This parser replaces legacy `google3` dependencies with standard Go stubs and includes custom priority logical operator parsing (implicit space-conjunction, explicit `AND`, explicit `OR`), type safety verification, regular expression constraints, and disjunction IN list optimizations.
+
+### Build and Test Commands
+
+To build all filter component library targets, run:
+```bash
+bazel build //api/filter/...
+```
+
+To run the complete suite of parser, compiler, and query generator tests, run:
+```bash
+bazel test //internal/query_generator/... --nocache_test_results
+```
+
+This will run and pass the following test suites:
+- `//internal/query_generator:equalityvisitor_test` (LHS/RHS equivalence verification)
+- `//internal/query_generator:querytools_test` (Heuristic and table index candidate selection stubs)
+- `//internal/query_generator/filter:filter_test` (Spanner filter visitor and type safety integration)
+- `//internal/query_generator/normalizer:normalizer_test` (Filter normalization visitor)
+- `//internal/query_generator:liststatement_test` (End-to-end list statements translation integration)
+
+## Private Code Tree & Internal Packages (Step 5)
+
+Dedicated convenient targets are defined at the repository root `BUILD.bazel` to build and verify all private package library modules:
+
+- **Build all decoupled core library modules**:
+  ```bash
+  bazel build //:internal_libs
+  ```
+
+- **Run all core unit test suites**:
+  ```bash
+  bazel test //:internal_tests
+  ```
+
+This test suite executes the following verified tests:
+- `//internal/auth:auth_test` (User and Service Account role access authorization stubs)
+- `//internal/logging:logging_test` (Standard operational logs output format constraints)
+- `//internal/security:security_test` (Hot-reloaded certificates and programmatic key conversions)
+- `//internal/task_queue:task_queue_test` (Cloud Tasks actuation payloads and OIDC assertion queues)
+- `//internal/validator:validator_test` (AIP-compliant list parameter schema validations)
+- All custom AIP-160 Query Generator unit tests listed under Step 3.
+
+### Running Spanner Database Health Unit Tests
+
+Unit tests under `//internal/common:health_test` verify database query latency by connecting to a Cloud Spanner Emulator. If a background emulator is not running, these tests will timeout. To run a local Spanner Emulator in Docker:
+
+1. **Start the Spanner Emulator Docker container**:
+   ```bash
+   docker run -d -p 9010:9010 -p 9020:9020 gcr.io/cloud-spanner-emulator/emulator
+   ```
+
+2. **Configure the connection environment variable**:
+   ```bash
+   export SPANNER_EMULATOR_HOST=localhost:9010
+   ```
+
+3. **Run the health tests target directly**:
+   ```bash
+   bazel test //internal/common:health_test
+   ```

@@ -17,8 +17,8 @@ import (
 	"context"
 	"testing"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/google_api/iterator/iterator"
+	"cloud.google.com/go/spanner"
+	"google.golang.org/api/iterator"
 )
 
 func tableExists(ctx context.Context, t *testing.T, client *spanner.Client, tableName string) bool {

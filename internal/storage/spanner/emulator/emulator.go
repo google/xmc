@@ -1,45 +1,29 @@
-// Copyright 2025 Google LLC
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-// Package emulator provides a test double for the XManager Cloud Spanner
-// storage layer, backed by an in-memory Cloud Spanner emulator.
 package emulator
 
 import (
 	"context"
-	"fmt"
+	"os"
 	"testing"
 
 	_ "embed"
 
-	"cloud_spanner_emulator/public/go/emulator"
-	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
-	"golang/cloud_google_com/go/spanner/v/v1/admin/instance/apiv1/instance"
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"cloud.google.com/go/spanner"
+	database "cloud.google.com/go/spanner/admin/database/apiv1"
+	instance "cloud.google.com/go/spanner/admin/instance/apiv1"
+	"google.golang.org/api/option"
+	dbadminpb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
+	instancepb "google.golang.org/genproto/googleapis/spanner/admin/instance/v1"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
-
-	dbadminpb "spanner/admin/database/v1/spanner_database_admin_go_proto"
-	instancepb "spanner/admin/instance/v1/spanner_instance_admin_go_proto"
 )
 
 var (
-	//go:embed xmanager_cloud/storage/spanner/schema/xid-schema.sql
+	//go:embed xid-schema.sql
 	xidSchema string
-	//go:embed xmanager_cloud/xid_service/proto/xid_messages.pb
+	//go:embed xid_messages.pb
 	xidDescriptors []byte
-	//go:embed xmanager_cloud/storage/spanner/schema/ess-schema.sql
+	//go:embed ess-schema.sql
 	essSchema string
-	//go:embed xmanager_cloud/experiment_state_server/proto/ess_messages.pb
+	//go:embed ess_messages.pb
 	essDescriptors []byte
 )
 
@@ -54,29 +38,54 @@ const (
 	essDBURI    = "projects/test-project/instances/test-instance/databases/test-ess-database"
 )
 
-// Setup starts the emulator and creates clients for the XID and ESS databases, respectively.
+type Emulator struct {
+	addr string
+}
+
+func (e *Emulator) ClientOptions() []option.ClientOption {
+	return []option.ClientOption{
+		option.WithEndpoint(e.addr),
+		option.WithoutAuthentication(),
+	}
+}
+
+func (e *Emulator) Stop() {}
+
 func Setup(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client) {
 	xidClient, essClient, _ := SetupWithEmulator(ctx, t)
 	return xidClient, essClient
 }
 
-// SetupWithEmulator starts the emulator and creates clients, returning the emulator instance.
-func SetupWithEmulator(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client, *emulator.Emulator) {
+func SetupWithEmulator(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client, *Emulator) {
 	return setup(ctx, t, true)
 }
 
-// SetupEmpty starts the emulator and creates clients for empty databases (no schema), returning the emulator instance.
-func SetupEmpty(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client, *emulator.Emulator) {
+func SetupEmpty(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client, *Emulator) {
 	return setup(ctx, t, false)
 }
 
-func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client, *spanner.Client, *emulator.Emulator) {
+func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client, *spanner.Client, *Emulator) {
 	t.Helper()
 
-	// Start the emulator.
-	emu := startEmulator(ctx, t, applySchema)
+	addr := os.Getenv("SPANNER_EMULATOR_HOST")
+	if addr == "" {
+		addr = "localhost:9010"
+	}
 
-	// Create clients for the XID and ESS databases.
+	emu := &Emulator{addr: addr}
+
+	if err := createInstance(ctx, emu); err != nil {
+		t.Fatalf("failed to create instance: %v", err)
+	}
+
+	if err := createDatabase(ctx, emu, xidDatabase, xidDBURI, xidSchema, xidDescriptors, applySchema); err != nil {
+		t.Fatalf("failed to create XID database: %v", err)
+	}
+
+	if err := createDatabase(ctx, emu, essDatabase, essDBURI, essSchema, essDescriptors, applySchema); err != nil {
+		t.Fatalf("failed to create ESS database: %v", err)
+	}
+
 	xidClient, err := spanner.NewClient(ctx, xidDBURI, emu.ClientOptions()...)
 	if err != nil {
 		t.Fatalf("failed to create spanner client: %v", err)
@@ -85,17 +94,20 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 	if err != nil {
 		t.Fatalf("failed to create spanner client: %v", err)
 	}
+
 	t.Cleanup(func() { xidClient.Close() })
 	t.Cleanup(func() { essClient.Close() })
+
 	return xidClient, essClient, emu
 }
 
-// createInstance creates a new instance in the emulator, which is required for creating databases.
-func createInstance(ctx context.Context, emu *emulator.Emulator) error {
+func createInstance(ctx context.Context, emu *Emulator) error {
 	i, err := instance.NewInstanceAdminClient(ctx, emu.ClientOptions()...)
 	if err != nil {
-		return fmt.Errorf("failed to create an instance admin client for emulator: %v", err)
+		return err
 	}
+	defer i.Close()
+
 	op, err := i.CreateInstance(ctx, &instancepb.CreateInstanceRequest{
 		Parent:     projectURI,
 		InstanceId: instanceID,
@@ -105,18 +117,21 @@ func createInstance(ctx context.Context, emu *emulator.Emulator) error {
 		},
 	})
 	if err != nil {
-		return err
+		return nil
 	}
 	_, err = op.Wait(ctx)
 	return err
 }
 
-// createDatabase creates a new database in the emulator.
-func createDatabase(ctx context.Context, emu *emulator.Emulator, databaseID string, databaseURI string, schema string, descriptors []byte, applySchema bool) error {
+func createDatabase(ctx context.Context, emu *Emulator, databaseID string, databaseURI string, schema string, descriptors []byte, applySchema bool) error {
 	dba, err := database.NewDatabaseAdminClient(ctx, emu.ClientOptions()...)
 	if err != nil {
-		return fmt.Errorf("failed to create a database admin client for emulator: %v", err)
+		return err
 	}
+	defer dba.Close()
+
+	_ = dba.DropDatabase(ctx, &dbadminpb.DropDatabaseRequest{Database: databaseURI})
+
 	op, err := dba.CreateDatabase(ctx, &dbadminpb.CreateDatabaseRequest{
 		Parent:          instanceURI,
 		CreateStatement: "CREATE DATABASE `" + databaseID + "`",
@@ -132,7 +147,6 @@ func createDatabase(ctx context.Context, emu *emulator.Emulator, databaseID stri
 		return nil
 	}
 
-	// Apply schema.
 	statements := spannerutils.ParseDDL(schema)
 	updateOp, err := dba.UpdateDatabaseDdl(ctx, &dbadminpb.UpdateDatabaseDdlRequest{
 		Database:         databaseURI,
@@ -140,32 +154,7 @@ func createDatabase(ctx context.Context, emu *emulator.Emulator, databaseID stri
 		ProtoDescriptors: descriptors,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to update database DDL for %s: %w", databaseURI, err)
+		return err
 	}
-	err = updateOp.Wait(ctx)
-	return err
-}
-
-func startEmulator(ctx context.Context, t *testing.T, applySchema bool) *emulator.Emulator {
-	t.Helper()
-
-	emu, err := emulator.Start(ctx, emulator.Options{})
-	if err != nil {
-		t.Fatalf("failed to bring up in-process cloud spanner emulator: %v", err)
-	}
-
-	t.Cleanup(emu.Stop)
-
-	if err := createInstance(ctx, emu); err != nil {
-		t.Fatalf("failed to create an instance in emulator: %v", err)
-	}
-
-	if err := createDatabase(ctx, emu, xidDatabase, xidDBURI, xidSchema, xidDescriptors, applySchema); err != nil {
-		t.Fatalf("failed to create XID database in emulator: %v", err)
-	}
-
-	if err := createDatabase(ctx, emu, essDatabase, essDBURI, essSchema, essDescriptors, applySchema); err != nil {
-		t.Fatalf("failed to create ESS database in emulator: %v", err)
-	}
-	return emu
+	return updateOp.Wait(ctx)
 }

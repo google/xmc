@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
+	"google.golang.org/api/cloudidentity/v1beta1"
 	"xmanager_cloud/logging/logging"
 
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"

@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package api.filter;
+
+option go_package = "api/filter/filter_expression_go_proto;filter_expression_go_proto";
+
+message Expression {
+  oneof expression {
+    string value = 1;
+    ExpressionList conjunction = 2;
+    ExpressionList disjunction = 3;
+    Expression negation = 4;
+    Restriction restriction = 5;
+    Function function = 6;
+    Phrase phrase = 7;
+    ExpressionList member = 8;
+  }
+}
+
+message ExpressionList {
+  repeated Expression expressions = 1;
+}
+
+message Restriction {
+  enum Comparator {
+    COMPARATOR_UNSPECIFIED = 0;
+    LESS_THAN = 1;
+    LESS_EQUALS = 2;
+    GREATER_THAN = 3;
+    GREATER_EQUALS = 4;
+    EQUALS = 5;
+    NOT_EQUALS = 6;
+    HAS = 7;
+    REGEXP_MATCH = 8;
+    REGEXP_NOT_MATCH = 9;
+    GLOBAL = 10;
+  }
+  Expression lhs = 1;
+  Comparator comparator = 2;
+  Expression rhs = 3;
+}
+
+message Function {
+  Expression function = 1;
+  repeated Expression args = 2;
+}
+
+message Phrase {
+  repeated string values = 1;
+}
+
+message ExpressionParserOptions {
+  bool reject_legacy_operator_precedence = 1;
+  bool enable_regexp_matching = 2;
+  bool enable_simple_quoted_strings = 3;
+  bool enforce_valid_strings = 4;
+}

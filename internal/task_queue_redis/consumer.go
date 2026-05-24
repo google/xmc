@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"go/log"
-	"golang/github_com/go_redis/redis/v/v9/redis"
+	"github.com/redis/go-redis/v9"
 )
 
 const (

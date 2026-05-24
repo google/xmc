@@ -1,0 +1,30 @@
+# gazelle:ignore
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "redisclient",
+    srcs = [
+        "common.go",
+        "consumer.go",
+        "fake.go",
+        "publisher.go",
+    ],
+    importpath = "xmanager_cloud/task_queue_redis/redisclient",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//internal/compat/log",
+        "@com_github_redis_go_redis_v9//:go-redis",
+    ],
+)
+
+go_binary(
+    name = "validator",
+    srcs = ["validator.go"],
+    deps = [
+        ":redisclient",
+        "//internal/compat/log",
+        "//internal/compat/google",
+        "@com_github_redis_go_redis_v9//:go-redis",
+    ],
+    visibility = ["//visibility:public"],
+)

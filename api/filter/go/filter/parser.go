@@ -1,0 +1,603 @@
+package filter
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"unicode"
+
+	fpb "api/filter/filter_expression_go_proto"
+)
+
+type tokenKind int
+
+const (
+	tokEOF tokenKind = iota
+	tokAnd
+	tokOr
+	tokNot
+	tokIdentifier
+	tokString
+	tokInt
+	tokFloat
+	tokBool
+	tokEq
+	tokNotEq
+	tokLt
+	tokLtEq
+	tokGt
+	tokGtEq
+	tokHas
+	tokRegexMatch
+	tokRegexNotMatch
+	tokLParen
+	tokRParen
+	tokComma
+	tokMinus
+)
+
+type token struct {
+	kind  tokenKind
+	value string
+	pos   int
+}
+
+type lexer struct {
+	input []rune
+	pos   int
+}
+
+func newLexer(input string) *lexer {
+	return &lexer{input: []rune(input)}
+}
+
+func (l *lexer) peek() rune {
+	if l.pos >= len(l.input) {
+		return 0
+	}
+	return l.input[l.pos]
+}
+
+func (l *lexer) advance() rune {
+	r := l.peek()
+	if r != 0 {
+		l.pos++
+	}
+	return r
+}
+
+func (l *lexer) nextToken() (token, error) {
+	for {
+		r := l.peek()
+		if r == 0 {
+			return token{kind: tokEOF, value: "", pos: l.pos}, nil
+		}
+
+		if unicode.IsSpace(r) {
+			l.advance()
+			continue
+		}
+
+		startPos := l.pos
+
+		// Structural characters & basic operators
+		switch r {
+		case '(':
+			l.advance()
+			return token{kind: tokLParen, value: "(", pos: startPos}, nil
+		case ')':
+			l.advance()
+			return token{kind: tokRParen, value: ")", pos: startPos}, nil
+		case ',':
+			l.advance()
+			return token{kind: tokComma, value: ",", pos: startPos}, nil
+		case '-':
+			// We check if it is a number or prefix minus
+			l.advance()
+			next := l.peek()
+			if unicode.IsDigit(next) {
+				numStr := l.scanNumber(string(next))
+				return token{kind: l.deduceNumberKind("-" + numStr), value: "-" + numStr, pos: startPos}, nil
+			}
+			return token{kind: tokMinus, value: "-", pos: startPos}, nil
+		case '=':
+			l.advance()
+			if l.peek() == '~' {
+				l.advance()
+				return token{kind: tokRegexMatch, value: "=~", pos: startPos}, nil
+			}
+			return token{kind: tokEq, value: "=", pos: startPos}, nil
+		case '!':
+			l.advance()
+			if l.peek() == '=' {
+				l.advance()
+				return token{kind: tokNotEq, value: "!=", pos: startPos}, nil
+			} else if l.peek() == '~' {
+				l.advance()
+				return token{kind: tokRegexNotMatch, value: "!~", pos: startPos}, nil
+			}
+			return token{}, fmt.Errorf("unexpected char '!' at position %d", startPos)
+		case '<':
+			l.advance()
+			if l.peek() == '=' {
+				l.advance()
+				return token{kind: tokLtEq, value: "<=", pos: startPos}, nil
+			}
+			return token{kind: tokLt, value: "<", pos: startPos}, nil
+		case '>':
+			l.advance()
+			if l.peek() == '=' {
+				l.advance()
+				return token{kind: tokGtEq, value: ">=", pos: startPos}, nil
+			}
+			return token{kind: tokGt, value: ">", pos: startPos}, nil
+		case ':':
+			l.advance()
+			return token{kind: tokHas, value: ":", pos: startPos}, nil
+		case '"', '\'':
+			strVal, err := l.scanString(r)
+			if err != nil {
+				return token{}, err
+			}
+			return token{kind: tokString, value: strVal, pos: startPos}, nil
+		}
+
+		if unicode.IsDigit(r) {
+			numStr := l.scanNumber("")
+			return token{kind: l.deduceNumberKind(numStr), value: numStr, pos: startPos}, nil
+		}
+
+		if isAlpha(r) || r == '_' {
+			ident := l.scanIdentifier()
+			lower := strings.ToLower(ident)
+			switch lower {
+			case "and":
+				return token{kind: tokAnd, value: ident, pos: startPos}, nil
+			case "or":
+				return token{kind: tokOr, value: ident, pos: startPos}, nil
+			case "not":
+				return token{kind: tokNot, value: ident, pos: startPos}, nil
+			case "true":
+				return token{kind: tokBool, value: "true", pos: startPos}, nil
+			case "false":
+				return token{kind: tokBool, value: "false", pos: startPos}, nil
+			}
+			return token{kind: tokIdentifier, value: ident, pos: startPos}, nil
+		}
+
+		return token{}, fmt.Errorf("unexpected character %q at position %d", r, startPos)
+	}
+}
+
+func (l *lexer) scanString(quote rune) (string, error) {
+	l.advance() // consume open quote
+	var sb strings.Builder
+	sb.WriteRune(quote)
+	for {
+		r := l.peek()
+		if r == 0 {
+			return "", fmt.Errorf("unterminated string literal starting at position %d", l.pos)
+		}
+		if r == quote {
+			l.advance() // consume close quote
+			sb.WriteRune(quote)
+			break
+		}
+		if r == '\\' {
+			l.advance()
+			next := l.advance()
+			switch next {
+			case 'n':
+				sb.WriteRune('\n')
+			case 'r':
+				sb.WriteRune('\r')
+			case 't':
+				sb.WriteRune('\t')
+			case '\\':
+				sb.WriteRune('\\')
+			case quote:
+				sb.WriteRune(quote)
+			default:
+				sb.WriteRune('\\')
+				if next != 0 {
+					sb.WriteRune(next)
+				}
+			}
+		} else {
+			sb.WriteRune(l.advance())
+		}
+	}
+	return sb.String(), nil
+}
+
+func (l *lexer) scanNumber(prefix string) string {
+	var sb strings.Builder
+	sb.WriteString(prefix)
+	for {
+		r := l.peek()
+		if unicode.IsDigit(r) || r == '.' || r == 'e' || r == 'E' || r == '+' || r == '-' {
+			sb.WriteRune(l.advance())
+		} else {
+			break
+		}
+	}
+	return sb.String()
+}
+
+func (l *lexer) deduceNumberKind(s string) tokenKind {
+	if strings.ContainsAny(s, ".eE") {
+		return tokFloat
+	}
+	return tokInt
+}
+
+func (l *lexer) scanIdentifier() string {
+	var sb strings.Builder
+	for {
+		r := l.peek()
+		if isAlphaNum(r) || r == '_' || r == '.' {
+			sb.WriteRune(l.advance())
+		} else {
+			break
+		}
+	}
+	return sb.String()
+}
+
+func isAlpha(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+}
+
+func isAlphaNum(r rune) bool {
+	return isAlpha(r) || (r >= '0' && r <= '9')
+}
+
+type parser struct {
+	lex      *lexer
+	tokens   []token
+	curr     int
+	options  *fpb.ExpressionParserOptions
+}
+
+func newParser(input string, options *fpb.ExpressionParserOptions) (*parser, error) {
+	l := newLexer(input)
+	var tokens []token
+	for {
+		tok, err := l.nextToken()
+		if err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, tok)
+		if tok.kind == tokEOF {
+			break
+		}
+	}
+	if options == nil {
+		options = &fpb.ExpressionParserOptions{}
+	}
+	return &parser{lex: l, tokens: tokens, options: options}, nil
+}
+
+func (p *parser) peek() token {
+	if p.curr >= len(p.tokens) {
+		return token{kind: tokEOF, value: ""}
+	}
+	return p.tokens[p.curr]
+}
+
+func (p *parser) advance() token {
+	tok := p.peek()
+	if tok.kind != tokEOF {
+		p.curr++
+	}
+	return tok
+}
+
+func (p *parser) match(kind tokenKind) bool {
+	if p.peek().kind == kind {
+		p.advance()
+		return true
+	}
+	return false
+}
+
+func ParseExpression(input string) (*fpb.Expression, error) {
+	return ParseExpressionWithOptions(nil, input)
+}
+
+func ParseExpressionWithOptions(options *fpb.ExpressionParserOptions, input string) (*fpb.Expression, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil, nil
+	}
+	p, err := newParser(input, options)
+	if err != nil {
+		return nil, err
+	}
+	exp, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+	if p.peek().kind != tokEOF {
+		return nil, fmt.Errorf("unexpected trailing token %q at position %d", p.peek().value, p.peek().pos)
+	}
+	return exp, nil
+}
+
+func (p *parser) parseExpression() (*fpb.Expression, error) {
+	return p.parseExplicitAnd()
+}
+
+func (p *parser) parseExplicitAnd() (*fpb.Expression, error) {
+	left, err := p.parseExplicitOr()
+	if err != nil {
+		return nil, err
+	}
+	var list []*fpb.Expression
+	list = append(list, left)
+	for p.peek().kind == tokAnd {
+		p.advance() // consume explicit AND
+		right, err := p.parseExplicitOr()
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, right)
+	}
+	if len(list) == 1 {
+		return list[0], nil
+	}
+	return &fpb.Expression{
+		Expression: &fpb.Expression_Conjunction{
+			Conjunction: &fpb.ExpressionList{Expressions: list},
+		},
+	}, nil
+}
+
+func (p *parser) parseExplicitOr() (*fpb.Expression, error) {
+	left, err := p.parseImplicitAnd()
+	if err != nil {
+		return nil, err
+	}
+	var list []*fpb.Expression
+	list = append(list, left)
+	for p.match(tokOr) {
+		right, err := p.parseImplicitAnd()
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, right)
+	}
+	if len(list) == 1 {
+		return list[0], nil
+	}
+	return &fpb.Expression{
+		Expression: &fpb.Expression_Disjunction{
+			Disjunction: &fpb.ExpressionList{Expressions: list},
+		},
+	}, nil
+}
+
+func (p *parser) parseImplicitAnd() (*fpb.Expression, error) {
+	left, err := p.parsePrimary()
+	if err != nil {
+		return nil, err
+	}
+	var list []*fpb.Expression
+	list = append(list, left)
+	for p.isStartOfPrimary() && p.peek().kind != tokOr && p.peek().kind != tokAnd {
+		right, err := p.parsePrimary()
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, right)
+	}
+	if len(list) == 1 {
+		return list[0], nil
+	}
+	return &fpb.Expression{
+		Expression: &fpb.Expression_Conjunction{
+			Conjunction: &fpb.ExpressionList{Expressions: list},
+		},
+	}, nil
+}
+
+func (p *parser) isStartOfPrimary() bool {
+	tok := p.peek()
+	return tok.kind == tokNot || tok.kind == tokMinus || tok.kind == tokIdentifier ||
+		tok.kind == tokString || tok.kind == tokInt || tok.kind == tokFloat ||
+		tok.kind == tokBool || tok.kind == tokLParen
+}
+
+func (p *parser) parsePrimary() (*fpb.Expression, error) {
+	if p.match(tokNot) {
+		sub, err := p.parsePrimary()
+		if err != nil {
+			return nil, err
+		}
+		return &fpb.Expression{
+			Expression: &fpb.Expression_Negation{Negation: sub},
+		}, nil
+	}
+	if p.match(tokMinus) {
+		sub, err := p.parsePrimary()
+		if err != nil {
+			return nil, err
+		}
+		return &fpb.Expression{
+			Expression: &fpb.Expression_Negation{Negation: sub},
+		}, nil
+	}
+	if p.match(tokLParen) {
+		sub, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		if !p.match(tokRParen) {
+			return nil, errors.New("missing closing parenthesis")
+		}
+		return sub, nil
+	}
+	return p.parseRestriction()
+}
+
+func (p *parser) parseRestriction() (*fpb.Expression, error) {
+	// A term on the left side
+	left, err := p.parseTerm()
+	if err != nil {
+		return nil, err
+	}
+
+	comp := p.peek().kind
+	if comp == tokEq || comp == tokNotEq || comp == tokLt || comp == tokLtEq ||
+		comp == tokGt || comp == tokGtEq || comp == tokHas ||
+		comp == tokRegexMatch || comp == tokRegexNotMatch {
+
+		p.advance() // Consume comparator
+		var right *fpb.Expression
+		var err error
+		if (comp == tokRegexMatch || comp == tokRegexNotMatch) && p.peek().kind == tokLParen {
+			right, err = p.parseExpression()
+		} else {
+			right, err = p.parseTerm()
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		if comp == tokRegexMatch || comp == tokRegexNotMatch {
+			if right.WhichExpression() == fpb.Expression_Member_case || right.WhichExpression() == fpb.Expression_Value_case {
+				return nil, fmt.Errorf("regular expression match RHS must be a quoted string literal")
+			}
+		}
+
+		var op fpb.Restriction_Comparator
+		switch comp {
+		case tokEq:
+			op = fpb.Restriction_EQUALS
+		case tokNotEq:
+			op = fpb.Restriction_NOT_EQUALS
+		case tokLt:
+			op = fpb.Restriction_LESS_THAN
+		case tokLtEq:
+			op = fpb.Restriction_LESS_EQUALS
+		case tokGt:
+			op = fpb.Restriction_GREATER_THAN
+		case tokGtEq:
+			op = fpb.Restriction_GREATER_EQUALS
+		case tokHas:
+			op = fpb.Restriction_HAS
+		case tokRegexMatch:
+			if !p.options.GetEnableRegexpMatching() {
+				return nil, fmt.Errorf("regexp matching operator =~ is disabled by options")
+			}
+			op = fpb.Restriction_REGEXP_MATCH
+		case tokRegexNotMatch:
+			if !p.options.GetEnableRegexpMatching() {
+				return nil, fmt.Errorf("regexp matching operator !~ is disabled by options")
+			}
+			op = fpb.Restriction_REGEXP_NOT_MATCH
+		}
+
+		return &fpb.Expression{
+			Expression: &fpb.Expression_Restriction{
+				Restriction: &fpb.Restriction{
+					Lhs:        left,
+					Comparator: op,
+					Rhs:        right,
+				},
+			},
+		}, nil
+	}
+
+	// No explicit comparator: parse as global/unary restriction!
+	return &fpb.Expression{
+		Expression: &fpb.Expression_Restriction{
+			Restriction: &fpb.Restriction{
+				Comparator: fpb.Restriction_GLOBAL,
+				Rhs:        left,
+			},
+		},
+	}, nil
+}
+
+func (p *parser) parseTerm() (*fpb.Expression, error) {
+	tok := p.peek()
+	if tok.kind == tokIdentifier {
+		p.advance()
+		// Check if it is a function call
+		if p.peek().kind == tokLParen {
+			p.advance() // consume '('
+			var args []*fpb.Expression
+			if p.peek().kind != tokRParen {
+				for {
+					arg, err := p.parseTerm()
+					if err != nil {
+						return nil, err
+					}
+					args = append(args, arg)
+					if p.match(tokComma) {
+						continue
+					}
+					break
+				}
+			}
+			if !p.match(tokRParen) {
+				return nil, errors.New("missing closing parenthesis in function call")
+			}
+			return &fpb.Expression{
+				Expression: &fpb.Expression_Function{
+					Function: &fpb.Function{
+						Function: &fpb.Expression{
+							Expression: &fpb.Expression_Value{Value: tok.value},
+						},
+						Args: args,
+					},
+				},
+			}, nil
+		}
+
+		if !strings.Contains(tok.value, ".") {
+			return &fpb.Expression{
+				Expression: &fpb.Expression_Value{Value: tok.value},
+			}, nil
+		}
+
+		// Split dot-separated identifiers into individual member list elements
+		parts := strings.Split(tok.value, ".")
+		var list []*fpb.Expression
+		for _, part := range parts {
+			list = append(list, &fpb.Expression{
+				Expression: &fpb.Expression_Value{Value: part},
+			})
+		}
+		return &fpb.Expression{
+			Expression: &fpb.Expression_Member{
+				Member: &fpb.ExpressionList{Expressions: list},
+			},
+		}, nil
+	}
+
+	if tok.kind == tokString {
+		p.advance()
+		cleanVal := tok.value
+		if (strings.HasPrefix(tok.value, "\"") && strings.HasSuffix(tok.value, "\"")) || (strings.HasPrefix(tok.value, "'") && strings.HasSuffix(tok.value, "'")) {
+			cleanVal = tok.value[1 : len(tok.value)-1]
+		}
+		return &fpb.Expression{
+			Expression: &fpb.Expression_Phrase{
+				Phrase: &fpb.Phrase{
+					Values: []string{cleanVal},
+				},
+			},
+		}, nil
+	}
+
+	if tok.kind == tokInt || tok.kind == tokFloat || tok.kind == tokBool {
+		p.advance()
+		return &fpb.Expression{
+			Expression: &fpb.Expression_Value{Value: tok.value},
+		}, nil
+	}
+
+	return nil, fmt.Errorf("unexpected token %q at position %d", tok.value, tok.pos)
+}

@@ -1,0 +1,10 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "spanner",
+    srcs = ["spanner.go"],
+    importpath = "golang/cloud_google_com/go/spanner/v/v1/spanner",  # keep
+    deps = ["@com_google_cloud_go_spanner//:spanner"],
+)

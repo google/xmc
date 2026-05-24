@@ -5,5 +5,5 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "flag",
     srcs = ["flag.go"],
-    importpath = "go/flag",
+    importpath = "xmanager_cloud/internal/compat/flag",
 )

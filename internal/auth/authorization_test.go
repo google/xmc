@@ -74,7 +74,7 @@ func TestIsAuthorized_PrincipalTypes(t *testing.T) {
 	xidAclsNoAllUsers := &xpb.XidAcls{
 		Readers: []*xpb.XidAcls_Role{
 			{Principal: &xpb.XidAcls_Role_User{User: "user@example.com"}},
-			{Principal: &xpb.XidAcls_Role_Domain{Domain: "google.com"}},
+			{Principal: &xpb.XidAcls_Role_Domain{Domain: "example.com"}},
 			{Principal: &xpb.XidAcls_Role_ServiceAccount{ServiceAccount: "sa@project.iam.gserviceaccount.com"}},
 		},
 	}

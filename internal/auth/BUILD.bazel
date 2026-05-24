@@ -1,3 +1,4 @@
+# gazelle:ignore
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
@@ -9,11 +10,14 @@ go_library(
         "test_utils.go",
     ],
     importpath = "xmanager_cloud/internal/auth",
-    visibility = ["//:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         "//api/protos/xid:messages_go_proto",
+        "//internal/compat/metadata",
         "//internal/compat/status",
         "//internal/logging",
+        "@org_golang_google_api//cloudidentity/v1beta1:v1beta1",
+        "@org_golang_google_api//idtoken",
         "@org_golang_google_api//option",
     ],
 )
@@ -25,5 +29,9 @@ go_test(
         "authorization_test.go",
     ],
     embed = [":auth"],
-    deps = ["//api/protos/xid:messages_go_proto"],
+    deps = [
+        "//api/protos/xid:messages_go_proto",
+        "//internal/compat/metadata",
+        "@org_golang_google_api//idtoken",
+    ],
 )

@@ -1,13 +1,18 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//visibility:public"])
+
 go_library(
     name = "filter",
     srcs = ["queryfilter.go"],
-    importpath = "xmanager_cloud/internal/query_generator/filter",
-    visibility = ["//:__subpackages__"],
+    importpath = "xmanager_cloud/query_generator/filter/queryfilter",  # keep
     deps = [
+        # keep
+        "//api/filter:filter_expression_go_proto",
+        "//api/filter/go/filtervisitor",
+        "//api/filter/go/queryfilterbase",
         "//internal/compat/safesql",
-        "@com_google_cloud_go_spanner//:spanner",
+        "//internal/compat/spanner",
     ],
 )
 
@@ -16,10 +21,15 @@ go_test(
     srcs = ["queryfilter_test.go"],
     embed = [":filter"],
     deps = [
+        # keep
+        "//api/filter:filter_expression_go_proto",
+        "//api/filter/go/filter",
+        "//api/filter/go/filtervisitor",
+        "//api/filter/go/queryfilterbase",
+        "//internal/compat/cmp",
+        "//internal/compat/proto",
         "//internal/compat/safesql",
+        "//internal/compat/spanner",
         "//internal/compat/status",
-        "@com_github_google_go_cmp//cmp",
-        "@com_google_cloud_go_spanner//:spanner",
-        "@org_golang_google_protobuf//proto",
     ],
 )

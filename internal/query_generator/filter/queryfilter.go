@@ -29,9 +29,8 @@ import (
 	fpb "api/filter/filter_expression_go_proto"
 )
 
-// MemberFunc is the callback used to process member accesses when augmenting a query with a filter.
-// The filtervisitor.PrimType returned is the primitive type of the member being accessed (filtervisitor.Invalid on error).
-type MemberFunc func(path []string) (filtervisitor.PrimType, error)
+// MemberFunc represents a callback that maps a dynamic query member field path to a database representation.
+type MemberFunc func([]string) (safesql.TrustedSQLString, filtervisitor.PrimType, error)
 
 // FunctionFunc is the callback used to process function calls when augmenting a query with a filter.
 // The filtervisitor.PrimType returned is the primitive type returned by the function (filtervisitor.Invalid on error).
@@ -90,6 +89,8 @@ type Spanner struct {
 	// FilterBaseOptions are options for the queryfilterbase.
 	FilterBaseOptions    []FilterBaseOption
 	filterBaseExpOptions *queryfilterbase.ExpOptions
+	isRHS                bool
+	isHAS                bool
 }
 
 // AppendFilters augments the given query with a predicate expression derived from the parsed filter expression.
@@ -157,9 +158,9 @@ func (qf *Spanner) GetLastType() filtervisitor.PrimType {
 }
 
 // HandleMember implements queryfilterbase.QueryFilterVisitor
-func (qf *Spanner) HandleMember(path []string) (filtervisitor.PrimType, error) {
+func (qf *Spanner) HandleMember(path []string) (safesql.TrustedSQLString, filtervisitor.PrimType, error) {
 	if qf.MemberFunc == nil {
-		return filtervisitor.Invalid, errors.New("handling member is not implemented")
+		return safesql.New(""), filtervisitor.Invalid, errors.New("handling member is not implemented")
 	}
 	return qf.MemberFunc(path)
 }
@@ -272,4 +273,43 @@ func (qf *Spanner) AppendBindingEnum(e string) {
 // AppendTrustedSQL implements queryfilterbase.QueryFilterVisitor
 func (qf *Spanner) AppendTrustedSQL(sql safesql.TrustedSQLString) {
 	qf.Q.SQL = qf.Q.SQL + sql.String()
+}
+
+func (qf *Spanner) SetIsRHS(isRHS bool) {
+	qf.isRHS = isRHS
+}
+
+func (qf *Spanner) GetIsRHS() bool {
+	return qf.isRHS
+}
+
+func (qf *Spanner) SetIsHAS(isHAS bool) {
+	qf.isHAS = isHAS
+}
+
+func (qf *Spanner) GetIsHAS() bool {
+	return qf.isHAS
+}
+
+func (qf *Spanner) GetSQL() string {
+	if qf.Q == nil {
+		return ""
+	}
+	return qf.Q.SQL
+}
+
+func (qf *Spanner) SetSQL(s string) {
+	if qf.Q != nil {
+		qf.Q.SQL = s
+	}
+}
+
+func (qf *Spanner) HandleTextSearch(col safesql.TrustedSQLString, val string) (safesql.TrustedSQLString, error) {
+	oldSQL := qf.GetSQL()
+	qf.SetSQL("")
+	qf.AppendBindingString(val)
+	paramSQL := qf.GetSQL()
+	qf.SetSQL(oldSQL)
+
+	return safesql.New("SEARCH(" + col.String() + ", " + paramSQL + ")"), nil
 }

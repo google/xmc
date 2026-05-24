@@ -1,13 +1,25 @@
+# gazelle:ignore
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "emulator",
     srcs = ["emulator.go"],
+    embedsrcs = [
+        "ess-schema.sql",
+        "xid-schema.sql",
+        "ess_messages.pb",
+        "xid_messages.pb",
+    ],
     importpath = "xmanager_cloud/internal/storage/spanner/emulator",
-    visibility = ["//:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         "@com_google_cloud_go_spanner//:spanner",
-        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1",
+        "@com_google_cloud_go_spanner//admin/database/apiv1:apiv1",
+        "@com_google_cloud_go_spanner//admin/instance/apiv1:apiv1",
+        "@org_golang_google_api//option:option",
+        "//internal/storage/spanner/utils:spannerutils",
+        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
+        "@org_golang_google_genproto//googleapis/spanner/admin/instance/v1:instance",
     ],
 )
 
@@ -17,6 +29,6 @@ go_test(
     embed = [":emulator"],
     deps = [
         "@com_google_cloud_go_spanner//:spanner",
-        "@org_golang_google_api//iterator",
+        "@org_golang_google_api//iterator:iterator",
     ],
 )

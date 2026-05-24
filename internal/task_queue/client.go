@@ -23,19 +23,19 @@ import (
 	"os"
 	"time"
 
-	"golang/google_api/iamcredentials/v1/iamcredentials"
-	"golang/google_api/option/option"
-	"golang/oauth2/google/google"
-	"golang/protobuf/v2/encoding/protojson/protojson"
-	"golang/protobuf/v2/proto/proto"
-	"golang/uuid/uuid"
-	"tink/go/jwt/jwt"
+	"google.golang.org/api/iamcredentials/v1"
+	"google.golang.org/api/option"
+	"golang.org/x/oauth2/google"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+	"github.com/google/uuid"
+	"github.com/tink-crypto/tink-go/v2/jwt"
 	"xmanager_cloud/common/interfaces"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/task_queue_redis/redisclient"
 
-	timestamppb "protobuf/timestamp_go_proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
@@ -94,7 +94,7 @@ func (c *Client) EnqueueWorkUnitTask(ctx context.Context, target string, workUni
 
 	traceID, ok := logging.OperationID(ctx)
 	if !ok {
-		traceID = uuid.New()
+		traceID = uuid.NewString()
 	}
 
 	metadata := &actuatortaskpb.Metadata{

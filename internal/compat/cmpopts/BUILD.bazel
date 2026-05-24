@@ -1,0 +1,13 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "cmpopts",
+    srcs = ["cmpopts.go"],
+    importpath = "golang/cmp/cmpopts/cmpopts",  # keep
+    deps = [
+        "//internal/compat/cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
+    ],
+)

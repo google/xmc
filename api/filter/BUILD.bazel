@@ -1,0 +1,33 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# gazelle:exclude expression_helper.go
+# gazelle:exclude filter_expression.proto
+# gazelle:exclude filter_expression.pb.go
+
+# Custom genrule to compile the AST proto to Go source with the Go plugin
+genrule(
+    name = "generate_filter_proto_go",
+    srcs = ["filter_expression.proto"],
+    outs = ["filter_expression.pb.go"],
+    cmd = "$(location @com_google_protobuf//:protoc) --plugin=protoc-gen-go=$(location @org_golang_google_protobuf//cmd/protoc-gen-go) -I. --go_out=$(RULEDIR)/../.. --go_opt=paths=source_relative api/filter/filter_expression.proto",
+    tools = [
+        "@com_google_protobuf//:protoc",
+        "@org_golang_google_protobuf//cmd/protoc-gen-go",
+    ],
+)
+
+go_library(
+    name = "filter_expression_go_proto",
+    srcs = [
+        "expression_helper.go",
+        ":generate_filter_proto_go",
+    ],
+    importpath = "api/filter/filter_expression_go_proto",  # keep
+    deps = [
+        # keep
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//runtime/protoimpl",
+    ],
+)

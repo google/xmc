@@ -49,14 +49,13 @@ type successTest struct {
 }
 
 func memberMap(query *spanner.Statement, m map[string]appendix) MemberFunc {
-	return func(name []string) (filtervisitor.PrimType, error) {
+	return func(name []string) (safesql.TrustedSQLString, filtervisitor.PrimType, error) {
 		n := strings.Join(name, ".")
 		a, ok := m[n]
 		if !ok {
-			return filtervisitor.Invalid, fmt.Errorf("name %q not found", n)
+			return safesql.New(""), filtervisitor.Invalid, fmt.Errorf("name %q not found", n)
 		}
-		query.SQL = query.SQL + a.ql.String()
-		return a.tp, nil
+		return a.ql, a.tp, nil
 	}
 }
 
@@ -808,7 +807,10 @@ func TestRestrictionTranslate(t *testing.T) {
 				return r
 			}
 
-			newphrase := tc.sub[phrase]
+			newphrase, ok := tc.sub[phrase]
+			if !ok {
+				return r
+			}
 			out := &fpb.Restriction{}
 			proto.Merge(out, r)
 			if r.GetLhs().GetPhrase() != nil {

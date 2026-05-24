@@ -18,7 +18,7 @@ import (
 	"errors"
 	"testing"
 
-	"golang/google_api/idtoken/idtoken"
+	"google.golang.org/api/idtoken"
 	"golang/grpc/metadata/metadata"
 )
 

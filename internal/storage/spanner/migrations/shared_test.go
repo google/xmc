@@ -17,7 +17,7 @@ import (
 	"testing"
 
 	"golang/github_com/golang_migrate/migrate/v/v4/source/iofs/iofs"
-	"xmanager_cloud/storage/spanner/migrations/testing/migrationtest"
+	"xmanager_cloud/internal/storage/spanner/migrations/testing"
 )
 
 type testRunCase struct {

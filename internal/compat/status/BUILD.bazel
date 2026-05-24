@@ -5,7 +5,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "status",
     srcs = ["status.go"],
-    importpath = "xmanager_cloud/internal/compat/status",
+    importpath = "task/go/status",  # keep
     deps = [
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

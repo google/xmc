@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"api/filter/go/filtervisitor"
 	"xmanager_cloud/logging/logging"
@@ -126,6 +127,9 @@ func (ev *EqualityVisitor) MemberExp(e *fpb.ExpressionList) (filtervisitor.PrimT
 		return filtervisitor.Invalid, propagateError(err, "value")
 	}
 	if ft.Equals(filtervisitor.Invalid) {
+		if !ev.visitFromEqual {
+			return filtervisitor.Invalid, nil
+		}
 		logging.Error(context.Background(), "MemberFunc should only return filtervisitor.Invalid with an error", "input", ml)
 		return filtervisitor.Invalid, errors.New("value: member has invalid type")
 	}
@@ -153,6 +157,10 @@ func (ev *EqualityVisitor) FunctionExp(e *fpb.Function) (filtervisitor.PrimType,
 
 // ValueExp handles expressions with the value type
 func (ev *EqualityVisitor) ValueExp(e string) (filtervisitor.PrimType, error) {
+	if (strings.HasPrefix(e, "\"") && strings.HasSuffix(e, "\"")) || (strings.HasPrefix(e, "'") && strings.HasSuffix(e, "'")) {
+		ev.visitFromEqual = false
+		return filtervisitor.String, nil
+	}
 	if i, err := strconv.ParseInt(e, 10, 0); err == nil {
 		if i < 0 {
 			ev.visitFromEqual = false

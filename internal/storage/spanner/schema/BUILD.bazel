@@ -1,0 +1,86 @@
+# gazelle:ignore
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "artifactschema",
+    srcs = ["artifactschema.go"],
+    importpath = "xmanager_cloud/storage/spanner/schema/artifactschema",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/filter/go/filtervisitor",
+        "//internal/compat/safesql",
+        "//internal/query_generator:querytools",
+    ],
+)
+
+go_library(
+    name = "experimentschema",
+    srcs = ["experimentschema.go"],
+    importpath = "xmanager_cloud/storage/spanner/schema/experimentschema",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/filter/go/filtervisitor",
+        "//internal/compat/safesql",
+        "//internal/query_generator:querytools",
+    ],
+)
+
+go_library(
+    name = "operationschema",
+    srcs = ["operationschema.go"],
+    importpath = "xmanager_cloud/storage/spanner/schema/operationschema",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/filter/go/filtervisitor",
+        "//internal/compat/safesql",
+        "//internal/query_generator:querytools",
+    ],
+)
+
+go_library(
+    name = "statusmessageschema",
+    srcs = ["statusmessageschema.go"],
+    importpath = "xmanager_cloud/storage/spanner/schema/statusmessageschema",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/filter/go/filtervisitor",
+        "//internal/compat/safesql",
+        "//internal/query_generator:querytools",
+    ],
+)
+
+go_library(
+    name = "workunitschema",
+    srcs = ["workunitschema.go"],
+    importpath = "xmanager_cloud/storage/spanner/schema/workunitschema",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/filter/go/filtervisitor",
+        "//internal/compat/safesql",
+        "//internal/query_generator:querytools",
+    ],
+)
+
+go_library(
+    name = "workunitexecutionschema",
+    srcs = ["workunitexecutionschema.go"],
+    importpath = "xmanager_cloud/storage/spanner/schema/workunitexecutionschema",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/filter/go/filtervisitor",
+        "//internal/compat/safesql",
+        "//internal/query_generator:querytools",
+    ],
+)
+
+go_library(
+    name = "xidschema",
+    srcs = ["xidschema.go"],
+    importpath = "xmanager_cloud/storage/spanner/schema/xidschema",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/filter/go/filtervisitor",
+        "//internal/compat/safesql",
+        "//internal/query_generator:querytools",
+    ],
+)

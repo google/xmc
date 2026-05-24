@@ -5,5 +5,5 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "log",
     srcs = ["log.go"],
-    importpath = "xmanager_cloud/internal/compat/log",
+    importpath = "go/log",  # keep
 )

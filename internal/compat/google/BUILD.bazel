@@ -1,3 +1,4 @@
+# gazelle:ignore
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -5,5 +6,5 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "google",
     srcs = ["google.go"],
-    importpath = "go/google",
+    importpath = "go/google",  # keep
 )

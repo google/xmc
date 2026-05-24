@@ -5,6 +5,6 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "health",
     srcs = ["health.go"],
-    importpath = "xmanager_cloud/internal/compat/health",
+    importpath = "grpc_proto/health_go_proto",  # keep
     deps = ["@org_golang_google_grpc//health/grpc_health_v1"],
 )

@@ -123,14 +123,14 @@ func NewUnnester(members map[string]Member, functions map[string]Function, filte
 	// us back on members.
 	dummyQuery := spanner.NewStatement("")
 	qf := queryfilter.Spanner{
-		MemberFunc: func(name []string) (filtervisitor.PrimType, error) {
+		MemberFunc: func(name []string) (safesql.TrustedSQLString, filtervisitor.PrimType, error) {
 			n := strings.Join(name, ".")
 			m, ok := members[n]
 			if !ok {
-				return filtervisitor.Invalid, status.Errorf(status.InvalidArgument, "unsupported filter field in query: %q", n)
+				return safesql.New(""), filtervisitor.Invalid, status.Errorf(status.InvalidArgument, "unsupported filter field in query: %q", n)
 			}
 			unr.seen[m.UnnestClause] = true
-			return m.Type, nil
+			return safesql.New(""), m.Type, nil
 		},
 		FunctionFunc: FunctionMap(functions),
 		Q:            &dummyQuery,

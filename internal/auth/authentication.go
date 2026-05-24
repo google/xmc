@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"strings"
 
-	"golang/google_api/idtoken/idtoken"
+	"google.golang.org/api/idtoken"
 	"golang/grpc/metadata/metadata"
 	"xmanager_cloud/logging/logging"
 	"task/go/status"

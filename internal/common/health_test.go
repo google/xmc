@@ -18,10 +18,10 @@ import (
 	"errors"
 	"testing"
 
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/version/version"
-	"golang/k8s_io/client_go/v/v0_23/discovery/discovery"
-	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"k8s.io/apimachinery/pkg/version"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/kubernetes"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 )
 
 func TestCheckSpanner(t *testing.T) {

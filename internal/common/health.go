@@ -19,9 +19,9 @@ import (
 	"errors"
 	"fmt"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/google_api/iterator/iterator"
-	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
+	"cloud.google.com/go/spanner"
+	"google.golang.org/api/iterator"
+	"k8s.io/client-go/kubernetes"
 	"xmanager_cloud/logging/logging"
 )
 

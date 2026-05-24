@@ -1,15 +1,23 @@
+# gazelle:ignore
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "testing",
     srcs = ["driverinterceptor.go"],
     importpath = "xmanager_cloud/internal/storage/spanner/migrations/testing",
-    visibility = ["//:__subpackages__"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//internal/storage/spanner/utils:spannerutils",
+        "@com_github_golang_migrate_migrate_v4//source",
+    ],
 )
 
 go_test(
     name = "testing_test",
     srcs = ["driverinterceptor_test.go"],
     embed = [":testing"],
-    deps = ["@com_github_google_go_cmp//cmp"],
+    deps = [
+        "//internal/compat/cmp",
+        "@com_github_golang_migrate_migrate_v4//source",
+    ],
 )

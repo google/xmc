@@ -19,10 +19,12 @@ import (
 	"testing"
 	"time"
 
-	fmpb "protobuf/field_mask_go_proto"
-	timestamppb "protobuf/timestamp_go_proto"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 
-	"golang/protobuf/v2/proto/proto"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 	essapipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
@@ -423,8 +425,8 @@ func TestFillExperimentNullValues(t *testing.T) {
 		Tags:     []string{},
 		Priority: essmsgpb.Priority_LOW,
 	}
-	if diff, eq := messagediff.Diff(got, want); !eq {
-		t.Errorf("FillExperimentNullValues(%v) returned unexpected diff (got -> want):\n%s", exp, diff)
+	if diff := cmp.Diff(got, want, protocmp.Transform()); diff != "" {
+		t.Errorf("FillExperimentNullValues(%v) returned unexpected diff (-got +want):\n%s", exp, diff)
 	}
 }
 
@@ -436,8 +438,8 @@ func TestFillWorkUnitNullValues(t *testing.T) {
 		Tags:     []string{},
 		Priority: essmsgpb.Priority_LOW,
 	}
-	if diff, eq := messagediff.Diff(got, want); !eq {
-		t.Errorf("FillWorkUnitNullValues(%v) returned unexpected diff (got -> want):\n%s", wu, diff)
+	if diff := cmp.Diff(got, want, protocmp.Transform()); diff != "" {
+		t.Errorf("FillWorkUnitNullValues(%v) returned unexpected diff (-got +want):\n%s", wu, diff)
 	}
 }
 
@@ -447,8 +449,8 @@ func TestFillArtifactNullValues(t *testing.T) {
 	want := &essmsgpb.Artifact{
 		Tags: []string{},
 	}
-	if diff, eq := messagediff.Diff(got, want); !eq {
-		t.Errorf("FillArtifactNullValues(%v) returned unexpected diff (got -> want):\n%s", art, diff)
+	if diff := cmp.Diff(got, want, protocmp.Transform()); diff != "" {
+		t.Errorf("FillArtifactNullValues(%v) returned unexpected diff (-got +want):\n%s", art, diff)
 	}
 }
 
@@ -458,8 +460,8 @@ func TestFillXidEntryNullValues(t *testing.T) {
 	want := &xidmessagespb.XidEntry{
 		Acls: &xidmessagespb.XidAcls{},
 	}
-	if diff, eq := messagediff.Diff(got, want); !eq {
-		t.Errorf("FillXidEntryNullValues(%v) returned unexpected diff (got -> want):\n%s", xid, diff)
+	if diff := cmp.Diff(got, want, protocmp.Transform()); diff != "" {
+		t.Errorf("FillXidEntryNullValues(%v) returned unexpected diff (-got +want):\n%s", xid, diff)
 	}
 }
 

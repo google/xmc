@@ -7,7 +7,7 @@ go_library(
         "parameters.go",
         "requests.go",
     ],
-    importpath = "xmanager_cloud/internal/validator",
+    importpath = "xmanager_cloud/validator/validator",  # keep
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:api_go_proto",
@@ -32,9 +32,11 @@ go_test(
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/xid:api_go_proto",
         "//api/protos/xid:messages_go_proto",
-        "//internal/compat/field_mask",
         "//internal/compat/status",
+        "@com_github_google_go_cmp//cmp",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/fieldmaskpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

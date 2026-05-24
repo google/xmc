@@ -157,13 +157,12 @@ type Member struct {
 // primitive type. If a given name in the expression is unrecognized, it
 // returns an error.
 func MemberMap(q *spanner.Statement, members map[string]Member) queryfilter.MemberFunc {
-	return func(name []string) (filtervisitor.PrimType, error) {
+	return func(name []string) (safesql.TrustedSQLString, filtervisitor.PrimType, error) {
 		m, err := fetchMember(name, members)
 		if err != nil {
-			return filtervisitor.Invalid, err
+			return safesql.New(""), filtervisitor.Invalid, err
 		}
-		q.SQL = q.SQL + m.QueryLiteral.String()
-		return m.Type, nil
+		return m.QueryLiteral, m.Type, nil
 	}
 }
 
@@ -568,15 +567,15 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 		dummyQuery := spanner.NewStatement("")
 
 		qf := queryfilter.Spanner{
-			MemberFunc: func(name []string) (filtervisitor.PrimType, error) {
+			MemberFunc: func(name []string) (safesql.TrustedSQLString, filtervisitor.PrimType, error) {
 				n := strings.Join(name, ".")
 				m, ok := q.members[n]
 				// Members without an explicit Name can't be used in user filters.
 				if !ok || m.Name == "" {
-					return filtervisitor.Invalid, status.Errorf(status.InvalidArgument, "unsupported field name in query: %q", n)
+					return safesql.New(""), filtervisitor.Invalid, status.Errorf(status.InvalidArgument, "unsupported field name in query: %q", n)
 				}
 				userFilters[n] = m.Name
-				return m.Type, nil
+				return safesql.New(""), m.Type, nil
 			},
 			FunctionFunc:      FunctionMap(q.functions),
 			Q:                 &dummyQuery,

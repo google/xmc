@@ -1,0 +1,10 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "metadata",
+    srcs = ["metadata.go"],
+    importpath = "golang/grpc/metadata/metadata",  # keep
+    deps = ["@org_golang_google_grpc//metadata"],
+)

@@ -7,8 +7,9 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//internal/compat/log",
-        "@com_google_cloud_go_spanner//:spanner",
-        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1",
+        "//internal/compat/spanner",
+        "//internal/storage/spanner/utils:spannerutils",
+        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
     ],
 )
 
@@ -17,8 +18,9 @@ go_test(
     srcs = ["spannerdriver_test.go"],
     embed = [":driver"],
     deps = [
-        "@com_google_cloud_go_spanner//:spanner",
-        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1",
-        "@org_golang_google_protobuf//proto",
+        "//internal/compat/proto",
+        "//internal/compat/spanner",
+        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
+        "@org_golang_google_genproto//googleapis/spanner/admin/instance/v1:instance",
     ],
 )
