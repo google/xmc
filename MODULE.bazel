@@ -9,22 +9,40 @@ bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "protobuf", version = "33.4", repo_name = "com_google_protobuf")
 bazel_dep(name = "googleapis", version = "0.0.0-20260514-1dbb1a14", repo_name = "com_google_googleapis")
 bazel_dep(name = "googleapis-go", version = "1.1.5")
+bazel_dep(name = "rules_license", version = "1.0.0")
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.host()
 
+repo_import = use_extension("//:import.bzl", "repo_import")
+use_repo(repo_import, "com_github_grpc_ecosystem_grpc_gateway_v2_custom")
+
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
+go_deps.gazelle_override(
+    build_file_generation = "on",
+    directives = [
+        "gazelle:default_visibility //visibility:public",
+    ],
+    path = "cloud.google.com/go",
+)
 use_repo(
     go_deps,
+    "com_github_evanphx_json_patch_v5",
+    "com_github_fsnotify_fsnotify",
     "com_github_golang_migrate_migrate_v4",
     "com_github_google_go_cmp",
-    "com_github_google_tink_go",
     "com_github_google_uuid",
+    "com_github_grpc_ecosystem_grpc_gateway_v2",
     "com_github_kylelemons_godebug",
+    "com_github_prometheus_client_golang",
+    "com_github_prometheus_client_model",
     "com_github_redis_go_redis_v9",
+    "com_github_rs_cors",
     "com_github_tink_crypto_tink_go_v2",
+    "com_google_cloud_go_compute_metadata",
     "com_google_cloud_go_longrunning",
+    "com_google_cloud_go_pubsub",
     "com_google_cloud_go_spanner",
     "io_k8s_api",
     "io_k8s_apimachinery",
@@ -37,4 +55,7 @@ use_repo(
     "org_golang_google_grpc",
     "org_golang_google_protobuf",
     "org_golang_x_oauth2",
+    "org_golang_x_sync",
+    "org_golang_x_text",
+    "xyz_gomodules_jsonpatch_v2",
 )

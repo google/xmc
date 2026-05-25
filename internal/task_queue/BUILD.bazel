@@ -1,12 +1,12 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "task_queue",
+    name = "client",
     srcs = [
         "client.go",
         "test_utils.go",
     ],
-    importpath = "xmanager_cloud/internal/task_queue",
+    importpath = "xmanager_cloud/task_queue/client",
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
@@ -30,7 +30,7 @@ go_library(
 go_test(
     name = "task_queue_test",
     srcs = ["client_test.go"],
-    embed = [":task_queue"],
+    embed = [":client"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue:task_go_proto",

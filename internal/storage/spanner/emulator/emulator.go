@@ -38,6 +38,16 @@ const (
 	essDBURI    = "projects/test-project/instances/test-instance/databases/test-ess-database"
 )
 
+type Options struct{}
+
+func Start(ctx context.Context, opts Options) (*Emulator, error) {
+	addr := os.Getenv("SPANNER_EMULATOR_HOST")
+	if addr == "" {
+		addr = "localhost:9010"
+	}
+	return &Emulator{addr: addr}, nil
+}
+
 type Emulator struct {
 	addr string
 }

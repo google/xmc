@@ -1,12 +1,16 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//:compat.bzl", "compat_go_library")
 
-go_library(
+compat_go_library(
     name = "v1beta1",
     srcs = ["kueue_types.go"],
-    importpath = "xmanager_cloud/internal/kubernetes/api/v1beta1",
+    importpath = "xmanager_cloud/kubernetes/api/v1beta1/v1beta1",
     visibility = ["//:__subpackages__"],
     deps = [
         "@io_k8s_api//core/v1:core",
-        "@io_k8s_apimachinery//pkg/api/resource",
+        "@io_k8s_apimachinery//pkg/api/resource:resource",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime:runtime",
+        "@io_k8s_apimachinery//pkg/runtime/schema:schema",
+        "@io_k8s_sigs_controller_runtime//pkg/scheme:scheme",
     ],
 )

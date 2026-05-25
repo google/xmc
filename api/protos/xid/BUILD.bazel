@@ -59,18 +59,10 @@ go_proto_library(
 
 proto_library(
     name = "cloud_xmanager_v1_proto",
-    srcs = [
-        "api.proto",
-        "messages.proto",
-    ],
+    srcs = [],
     deps = [
+        ":xid_api_proto",
         ":xid_messages_proto",
-        "@com_google_googleapis//google/api:annotations_proto",
-        "@com_google_googleapis//google/api:client_proto",
-        "@com_google_googleapis//google/api:field_behavior_proto",
-        "@com_google_googleapis//google/api:resource_proto",
-        "@com_google_protobuf//:field_mask_proto",
-        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 

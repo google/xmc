@@ -1,6 +1,7 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
-go_library(
+compat_go_library(
     name = "server",
     srcs = [
         "checkuserauthorization.go",
@@ -20,10 +21,11 @@ go_library(
         "//internal/logging",
         "//internal/storage",
         "//internal/validator",
+        "//cmd/xid_service:config",
     ],
 )
 
-go_test(
+compat_go_test(
     name = "server_test",
     srcs = [
         "checkuserauthorization_test.go",
@@ -47,6 +49,6 @@ go_test(
         "//internal/storage/spanner",
         "//internal/storage/spanner/emulator",
         "//internal/validator",
-        "@org_golang_google_api//cloudidentity/v1beta1",
+        "@org_golang_google_api//cloudidentity/v1beta1:v1beta1",
     ],
 )

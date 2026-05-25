@@ -114,7 +114,7 @@ filegroup(
         "//internal/query_generator/normalizer",
         "//internal/security",
         "//internal/security:securitytest",
-        "//internal/task_queue",
+        "//internal/task_queue:client",
         "//internal/task_queue_redis:redisclient",
         "//internal/task_queue_redis:validator",
         "//internal/validator",

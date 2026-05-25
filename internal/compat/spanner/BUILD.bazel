@@ -6,5 +6,9 @@ go_library(
     name = "spanner",
     srcs = ["spanner.go"],
     importpath = "golang/cloud_google_com/go/spanner/v/v1/spanner",  # keep
-    deps = ["@com_google_cloud_go_spanner//:spanner"],
+    deps = [
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_protobuf//proto:go_default_library",
+        "@org_golang_google_api//option",
+    ],
 )

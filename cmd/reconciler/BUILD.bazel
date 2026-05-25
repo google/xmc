@@ -1,6 +1,7 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("//:compat.bzl", "compat_go_library")
 
-go_library(
+compat_go_library(
     name = "reconciler_lib",
     srcs = [
         "config.go",
@@ -14,10 +15,26 @@ go_library(
         "//internal/compat/google",
         "//internal/compat/spanner",
         "//internal/kubernetes/api/v1alpha2",
+        "//internal/kubernetes/api/v1beta1",
         "//internal/kubernetes/common:constants",
         "//internal/logging",
         "//internal/storage",
         "//internal/storage/spanner",
+        "//cmd/reconciler/clusterqueue",
+        "//cmd/reconciler/jobset",
+        "//cmd/reconciler/workload",
+        "//cmd/reconciler/kueue_sync",
+        "//cmd/actuator/k8s_client",
+        "//cmd/reconciler/shared",
+        "@com_google_cloud_go_compute_metadata//:metadata",
+        "@org_golang_x_sync//errgroup:go_default_library",
+        "@io_k8s_apimachinery//pkg/labels:labels",
+        "@io_k8s_apimachinery//pkg/runtime:runtime",
+        "@io_k8s_client_go//kubernetes/scheme:scheme",
+        "@io_k8s_sigs_controller_runtime//:go_default_library",
+        "@io_k8s_sigs_controller_runtime//pkg/cache:cache",
+        "@io_k8s_sigs_controller_runtime//pkg/client:client",
+        "@io_k8s_sigs_controller_runtime//pkg/metrics/server:server",
         "@org_golang_google_api//option",
     ],
 )
@@ -26,4 +43,11 @@ go_binary(
     name = "reconciler",
     embed = [":reconciler_lib"],
     visibility = ["//visibility:public"],
+)
+
+load("//:oci.bzl", "oci_image_for_service")
+
+oci_image_for_service(
+    name = "reconciler_image",
+    binary = ":reconciler",
 )

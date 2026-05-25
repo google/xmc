@@ -1,6 +1,7 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
-go_library(
+compat_go_library(
     name = "shared",
     srcs = [
         "batcher.go",
@@ -13,10 +14,12 @@ go_library(
         "//internal/logging",
         "//internal/storage",
         "//internal/validator",
+        "@com_github_prometheus_client_golang//prometheus:prometheus",
+        "@com_github_prometheus_client_golang//prometheus/promauto:promauto",
     ],
 )
 
-go_test(
+compat_go_test(
     name = "shared_test",
     srcs = [
         "batcher_test.go",
@@ -29,5 +32,7 @@ go_test(
         "//internal/compat/protocmp",
         "//internal/compat/status",
         "//internal/storage",
+        "@com_github_prometheus_client_golang//prometheus/testutil:testutil",
+        "@com_github_prometheus_client_model//go:go",
     ],
 )

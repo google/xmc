@@ -1,4 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -8,18 +9,24 @@ go_library(
     importpath = "xmanager_cloud/kubernetes/common/constants",
 )
 
-go_library(
+compat_go_library(
     name = "jobsetutil",
     srcs = ["jobsetutil.go"],
     importpath = "xmanager_cloud/kubernetes/common/jobsetutil",
     deps = [
         "//internal/compat/log",
-        "@io_k8s_api//batch/v1:go_default_library",  # wait, we can let Gazelle map them!
+        "//internal/kubernetes/api/v1alpha2",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
     ],
 )
 
-go_test(
+compat_go_test(
     name = "jobsetutil_test",
     srcs = ["jobsetutil_test.go"],
     embed = [":jobsetutil"],
+    deps = [
+        "//internal/compat/cmp",
+        "//internal/kubernetes/api/v1alpha2",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+    ],
 )

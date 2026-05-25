@@ -11,3 +11,7 @@ func Equal(x, y interface{}, opts ...Option) bool {
 func Diff(x, y interface{}, opts ...Option) string {
 	return cmp.Diff(x, y, opts...)
 }
+
+func AllowUnexported(types ...interface{}) Option {
+	return cmp.AllowUnexported(types...)
+}

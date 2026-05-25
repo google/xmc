@@ -35,9 +35,40 @@ func Error(code Code, msg string) error {
 	return status.Error(code, msg)
 }
 
-func CodeFromError(err error) Code {
+type Status struct {
+	Code    Code
+	Message string
+	Msg     string
+}
+
+func FromError(err error) (*Status, bool) {
 	if s, ok := status.FromError(err); ok {
-		return s.Code()
+		return &Status{
+			Code:    s.Code(),
+			Message: s.Message(),
+			Msg:     s.Message(),
+		}, true
+	}
+	return nil, false
+}
+
+func (m *Status) CanonicalCode() Code {
+	if m == nil {
+		return codes.Unknown
+	}
+	return m.Code
+}
+
+func (m *Status) Err() error {
+	if m == nil {
+		return nil
+	}
+	return status.Error(m.Code, m.Message)
+}
+
+func CodeFromError(err error) Code {
+	if s, ok := FromError(err); ok {
+		return s.Code
 	}
 	return codes.Unknown
 }

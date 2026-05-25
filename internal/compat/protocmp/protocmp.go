@@ -13,7 +13,7 @@ func Transform() cmp.Option {
 	return protocmp.Transform()
 }
 
-func IgnoreFields(message protocmp.Message, names ...string) cmp.Option {
+func IgnoreFields(message proto.Message, names ...string) cmp.Option {
 	fields := make([]protoreflect.Name, len(names))
 	for i, n := range names {
 		fields[i] = protoreflect.Name(n)

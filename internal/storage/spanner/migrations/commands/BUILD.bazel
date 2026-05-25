@@ -1,6 +1,7 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
-go_library(
+compat_go_library(
     name = "commands",
     srcs = [
         "create.go",
@@ -12,13 +13,14 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//internal/compat/spanner",
-        "@com_github_golang_migrate_migrate_v4//source",
-        "@com_github_golang_migrate_migrate_v4//source/iofs",
+        "@com_github_golang_migrate_migrate_v4//:go_default_library",
+        "@com_github_golang_migrate_migrate_v4//source:source",
+        "@com_github_golang_migrate_migrate_v4//source/iofs:iofs",
         "@org_golang_google_api//iterator",
     ],
 )
 
-go_test(
+compat_go_test(
     name = "commands_test",
     srcs = [
         "create_test.go",
@@ -31,7 +33,11 @@ go_test(
         "//internal/compat/cmp",
         "//internal/compat/spanner",
         "//internal/storage/spanner/emulator",
-        "@com_github_golang_migrate_migrate_v4//source",
+        "@com_github_golang_migrate_migrate_v4//source:source",
+        "@com_github_golang_migrate_migrate_v4//database:database",
+        "@com_github_golang_migrate_migrate_v4//database/stub:stub",
+        "@com_github_golang_migrate_migrate_v4//source/stub:stub",
+        "@com_google_cloud_go_spanner//admin/database/apiv1:apiv1",
         "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
     ],
 )
