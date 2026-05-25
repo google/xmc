@@ -7,24 +7,27 @@ on:
       - test # Trigger on push to the 'test' branch
   workflow_dispatch:
 
-env:
-  PROJECT_ID: 'xmc-test-project-2' 
-  GAR_LOCATION: 'us-central1'
-  GKE_CLUSTER: 'xmc-cluster-janzak'
-  GKE_ZONE: 'us-central1'
-  DEPLOYMENT_NAME: 'helloworld-test'
-  REPOSITORY: 'samples'
-  IMAGE: 'helloworld'
-  WORKLOAD_IDENTITY_PROVIDER: 'projects/70700744710/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
-
 jobs:
   deploy-helloworld:
     name: 'Build and Deploy HelloWorld'
     runs-on: 'ubuntu-latest'
+    environment: janzak-dev-test
 
     permissions:
       contents: 'read'
       id-token: 'write' # Required for WIF
+
+    env:
+      # TODO: split this into secrets and variables
+      PROJECT_ID: ${{ vars.PROJECT_ID }}
+      GAR_LOCATION: ${{ vars.GAR_LOCATION }}
+      GKE_CLUSTER: ${{ vars.GKE_CLUSTER }}
+      GKE_ZONE: ${{ vars.GKE_ZONE }}
+      DEPLOYMENT_NAME: ${{ vars.DEPLOYMENT_NAME }}
+      REPOSITORY: ${{ vars.REPOSITORY }}
+      IMAGE: ${{ vars.IMAGE }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+      SERVICE_ACCOUNT: ${{ vars.SERVICE_ACCOUNT }}
 
     steps:
       - name: 'Checkout'
@@ -36,7 +39,7 @@ jobs:
         with:
           token_format: 'access_token'
           workload_identity_provider: '${{ env.WORKLOAD_IDENTITY_PROVIDER }}'
-          service_account: 'xmc-github-actions@${{ env.PROJECT_ID }}.iam.gserviceaccount.com' 
+          service_account: '${{ env.SERVICE_ACCOUNT }}' 
 
       - name: 'Docker Auth'
         uses: 'docker/login-action@v3'
