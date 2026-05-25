@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "labels",
+    srcs = ["labels.go"],
+    importpath = "xmanager_cloud/kubernetes/common/labels",
+    deps = [
+        "//internal/kubernetes/common:constants",
+    ],
+)
+
+go_test(
+    name = "labels_test",
+    srcs = ["labels_test.go"],
+    embed = [":labels"],
+    deps = [
+        "//internal/kubernetes/common:constants",
+    ],
+)

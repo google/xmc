@@ -91,3 +91,57 @@ Unit tests under `//internal/common:health_test` verify database query latency b
    ```bash
    bazel test //internal/common:health_test
    ```
+
+## Building & Testing Core Application Services (Step 6)
+
+The primary daemon services are defined under the `./cmd` directory and can be built and tested standalone using their corresponding Bazel rules:
+
+### Reconciler Service
+The **Reconciler** manages custom Kubernetes resources (JobSets, Workloads, and ClusterQueues) and orchestrates scheduling and priority transitions.
+
+- **Build the Reconciler binary**:
+  ```bash
+  bazel build //cmd/reconciler:reconciler
+  ```
+
+- **Run all reconciler test suites**:
+  ```bash
+  bazel test //cmd/reconciler/...
+  ```
+
+This test suite executes:
+- `//cmd/reconciler/clusterqueue:clusterqueue_test` (ClusterQueue cache state sync checks)
+- `//cmd/reconciler/kueue_sync:kueue_sync_test` (Pending workloads scheduling state checks)
+- `//cmd/reconciler/shared:shared_test` (State update batcher and throttling logic)
+- `//cmd/reconciler/jobset:jobset_test` (JobSet state to AIP transitions and converters)
+- `//cmd/reconciler/workload:workload_test` (Workload custom converters)
+
+### Log Monitor Service
+The **Log Monitor** subscribes to execution log entries on Pub/Sub and updates work unit status entities accordingly.
+
+- **Build the Log Monitor binary**:
+  ```bash
+  bazel build //cmd/log_monitor:log_monitor
+  ```
+
+- **Run the log monitor test suite**:
+  ```bash
+  bazel test //cmd/log_monitor/...
+  ```
+
+---
+
+## Global Repository Commands
+
+To build the entire project codebase or run all decoupled standalone test suites at once:
+
+- **Build all components and stubs**:
+  ```bash
+  bazel build //...
+  ```
+
+- **Run all unit and integration test suites**:
+  ```bash
+  bazel test //...
+  ```
+

@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "state",
     srcs = ["state.go"],
-    importpath = "xmanager_cloud/internal/storage/state",
+    importpath = "xmanager_cloud/storage/state/state",
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

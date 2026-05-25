@@ -11,8 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-// Package shared contains shared utilities for the XManager Cloud actuator reconciler.
-package shared
+
+// Package labels contains shared utilities for parsing XManager Cloud resource labels.
+package labels
 
 import (
 	"errors"

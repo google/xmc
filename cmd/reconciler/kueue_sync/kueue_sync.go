@@ -31,6 +31,7 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/api/v1alpha2/v1alpha2"
 	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
+	"xmanager_cloud/kubernetes/common/labels"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
@@ -182,7 +183,7 @@ func (r *Reconciler) updateWorkUnitNotesAboutPosition(ctx context.Context) {
 }
 
 func (r *Reconciler) createWorkUnitExecutionUpdate(ctx context.Context, jobSet *v1alpha2.JobSet, info WorkloadPositionInfo) (*storage.WorkUnitExecutionUpdate, int64, error) {
-	experimentID, workUnitID, executionID, err := shared.ParseXMCLabels(jobSet.GetLabels())
+	experimentID, workUnitID, executionID, err := labels.ParseXMCLabels(jobSet.GetLabels())
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to get update information from JobSet %s: %w", jobSet.GetName(), err)
 	}

@@ -35,6 +35,7 @@ import (
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/source/source"
 	"xmanager_cloud/kubernetes/api/v1beta1/v1beta1"
+	"xmanager_cloud/kubernetes/common/labels"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
@@ -81,7 +82,7 @@ type Reconciler struct {
 
 func hasValidXMCLabels(ctx context.Context, workload *v1beta1.Workload) bool {
 	_, _, _, err := parseXMCLabelsFromPodSet(ctx, workload)
-	if errors.Is(err, shared.ErrMissingXMCLabels) {
+	if errors.Is(err, labels.ErrMissingXMCLabels) {
 		logging.Warn(ctx, "Workload is missing XMC labels and will be skipped", "workload", workload.GetName(), "error", err)
 	} else {
 		logging.Error(ctx, "Workload has invalid XMC labels and will be skipped", "workload", workload.GetName(), "error", err)
@@ -95,7 +96,7 @@ func parseXMCLabelsFromPodSet(ctx context.Context, workload *v1beta1.Workload) (
 		return 0, 0, 0, fmt.Errorf("Workload has no PodSets")
 	}
 
-	return shared.ParseXMCLabels(workload.Spec.PodSets[0].Template.Labels)
+	return labels.ParseXMCLabels(workload.Spec.PodSets[0].Template.Labels)
 }
 
 func workloadPredicate(ctx context.Context) predicate.Predicate {

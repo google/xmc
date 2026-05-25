@@ -25,7 +25,7 @@ import (
 	timestamppb "protobuf/timestamp_go_proto"
 	"golang/cloud_google_com/go/pubsub/v/v1/pubsub"
 	"xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/kubernetes/reconciler/shared/shared"
+	"xmanager_cloud/kubernetes/common/labels"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
@@ -184,7 +184,7 @@ func (lp *LogProcessor) processUpdatesForExperiment(ctx context.Context, xid int
 
 func (lp *LogProcessor) buildUpdate(ctx context.Context, entry LogEntry) (int64, *storage.WorkUnitExecutionUpdate, bool) {
 	jobLabels := mapLogLabels(entry.Labels)
-	xid, wid, eid, err := shared.ParseXMCLabels(jobLabels)
+	xid, wid, eid, err := labels.ParseXMCLabels(jobLabels)
 	if err != nil {
 		logging.Warn(ctx, "Failed to parse XMC labels from log entry", "err", err, "labels", entry.Labels)
 		return 0, nil, false

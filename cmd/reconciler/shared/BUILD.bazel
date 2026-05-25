@@ -4,14 +4,12 @@ go_library(
     name = "shared",
     srcs = [
         "batcher.go",
-        "xmc_labels_parser.go",
     ],
     importpath = "xmanager_cloud/cmd/reconciler/shared",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//internal/compat/status",
-        "//internal/kubernetes/common:constants",
         "//internal/logging",
         "//internal/storage",
         "//internal/validator",
@@ -22,7 +20,6 @@ go_test(
     name = "shared_test",
     srcs = [
         "batcher_test.go",
-        "xmc_labels_parser_test.go",
     ],
     embed = [":shared"],
     deps = [
@@ -31,7 +28,6 @@ go_test(
         "//internal/compat/cmpopts",
         "//internal/compat/protocmp",
         "//internal/compat/status",
-        "//internal/kubernetes/common:constants",
         "//internal/storage",
     ],
 )

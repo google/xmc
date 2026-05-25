@@ -39,6 +39,7 @@ import (
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/api/v1alpha2/v1alpha2"
 	"xmanager_cloud/kubernetes/common/constants"
+	"xmanager_cloud/kubernetes/common/labels"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
@@ -83,9 +84,9 @@ type Reconciler struct {
 func hasValidXMCLabels(ctx context.Context, jobSet *v1alpha2.JobSet) bool {
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, nil)
 
-	_, _, _, err := shared.ParseXMCLabels(jobSet.Labels)
+	_, _, _, err := labels.ParseXMCLabels(jobSet.Labels)
 	if err != nil {
-		if errors.Is(err, shared.ErrMissingXMCLabels) {
+		if errors.Is(err, labels.ErrMissingXMCLabels) {
 			logging.Warn(ctx, "JobSet is missing XMC labels and will be skipped", "error", err)
 		} else {
 			logging.Error(ctx, "JobSet has invalid XMC labels and will be skipped", "error", err)
@@ -229,7 +230,7 @@ func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v
 
 	logging.Debug(ctx, "JobSet is being deleted, processing finalizer", "namespace", jobSet.Namespace)
 
-	xid, wid, eid, labelsErr := shared.ParseXMCLabels(jobSet.Labels)
+	xid, wid, eid, labelsErr := labels.ParseXMCLabels(jobSet.Labels)
 	ctx = logging.WithWorkUnitExecutionName(ctx, validator.ConstructWorkUnitExecutionName(xid, wid, eid))
 	if labelsErr == nil {
 		update := createStoppedUpdate(wid, eid)
@@ -276,7 +277,7 @@ func (r *Reconciler) handlePatchError(ctx context.Context, jobSet *v1alpha2.JobS
 func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobSet) (ctrl.Result, error) {
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, jobSet.Labels)
 
-	xid, wid, eid, err := shared.ParseXMCLabels(jobSet.Labels)
+	xid, wid, eid, err := labels.ParseXMCLabels(jobSet.Labels)
 	ctx = logging.WithWorkUnitExecutionName(ctx, validator.ConstructWorkUnitExecutionName(xid, wid, eid))
 	if err != nil {
 		logging.Error(ctx, "Failed to parse labels for JobSet", "namespace", jobSet.Namespace, "error", err)

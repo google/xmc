@@ -12,6 +12,8 @@ go_library(
         "//api/protos/experiment:messages_go_proto",
         "//internal/compat/field_mask",
         "//internal/logging",
+        "//internal/kubernetes/common/labels",
+        "//cmd/reconciler/shared:shared",
         "//internal/storage",
         "//internal/validator",
         "@io_k8s_api//core/v1:core",
