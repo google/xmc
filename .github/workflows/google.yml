@@ -61,15 +61,15 @@ jobs:
 
       - name: 'Build and Push Docker container'
         run: |
-          DOCKER_TAG="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}"
-          docker build -t "${DOCKER_TAG}" .
-          docker push "${DOCKER_TAG}"
+          DOCKER_IMAGE="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}"
+          docker build -t "${DOCKER_IMAGE}" .
+          docker push "${DOCKER_IMAGE}"
 
       - name: 'Deploy to GKE'
         run: |
-          DOCKER_TAG="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}"
+          DOCKER_IMAGE="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}"
 
-          # Create a simple Deployment and Service on the fly
+          # Create a simple Deployment vice on the fly
           cat <<EOF | kubectl apply -f -
           apiVersion: apps/v1
           kind: Deployment
@@ -87,21 +87,7 @@ jobs:
               spec:
                 containers:
                 - name: helloworld
-                  image: $DOCKER_TAG
-                  ports:
-                  - containerPort: 80
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: ${{ env.DEPLOYMENT_NAME }}-svc
-          spec:
-            type: LoadBalancer
-            ports:
-            - port: 80
-              targetPort: 80
-            selector:
-              app: helloworld
+                  image: $DOCKER_IMAGE
           EOF
 
           kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }}
