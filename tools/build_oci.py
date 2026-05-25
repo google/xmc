@@ -25,9 +25,22 @@ def main():
     image_tag = sys.argv[3]
     output_tar = sys.argv[4]
 
-    # 1. Create the layer tarball containing /app/<binary_name>
+    # 1. Create the layer tarball containing /app/<binary_name> and CA certs
     layer_tar_path = "layer.tar"
     real_binary_path = os.path.realpath(binary_path)
+    
+    ca_paths = [
+        "/etc/ssl/certs/ca-certificates.crt",
+        "/etc/pki/tls/certs/ca-bundle.crt",
+        "/etc/ssl/ca-bundle.pem",
+        "/etc/ssl/cert.pem",
+    ]
+    host_ca_path = None
+    for path in ca_paths:
+        if os.path.exists(path):
+            host_ca_path = path
+            break
+
     with tarfile.open(layer_tar_path, "w") as tar:
         # Create tar entry with specific permission and path
         info = tar.gettarinfo(real_binary_path, arcname=f"app/{binary_name}")
@@ -38,6 +51,16 @@ def main():
         info.mode = 0o755
         with open(real_binary_path, "rb") as f:
             tar.addfile(info, f)
+            
+        if host_ca_path:
+            info_ca = tar.gettarinfo(host_ca_path, arcname="etc/ssl/certs/ca-certificates.crt")
+            info_ca.uid = 0
+            info_ca.gid = 0
+            info_ca.uname = "root"
+            info_ca.gname = "root"
+            info_ca.mode = 0o644
+            with open(host_ca_path, "rb") as f:
+                tar.addfile(info_ca, f)
 
     layer_sha = get_sha256(layer_tar_path)
 

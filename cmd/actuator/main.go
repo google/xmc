@@ -162,26 +162,37 @@ func activeHealthCheck(k8s *k8sclient.Client, spClient *spanner.Client, redis re
 
 		// 1. Kubernetes check
 		eg.Go(func() error {
-			return health.CheckKubernetes(k8s.Clientset())
+			err := health.CheckKubernetes(k8s.Clientset())
+			if err != nil {
+				slog.Error("Kubernetes healthcheck failed", "error", err)
+			}
+			return err
 		})
 
 		// 2. Spanner check
 		eg.Go(func() error {
-			return health.CheckSpanner(ctx, spClient)
+			err := health.CheckSpanner(ctx, spClient)
+			if err != nil {
+				slog.Error("Spanner healthcheck failed", "error", err)
+			}
+			return err
 		})
 
 		// 3. Redis check
 		eg.Go(func() error {
 			if redis == nil {
+				slog.Error("Redis healthcheck failed: client is nil")
 				return fmt.Errorf("redis client is nil")
 			}
 			if err := redis.Ping(ctx); err != nil {
+				slog.Error("Redis healthcheck failed", "error", err)
 				return fmt.Errorf("redis reachability: %w", err)
 			}
 			return nil
 		})
 
 		if err := eg.Wait(); err != nil {
+			slog.Error("Overall healthcheck failed", "error", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
