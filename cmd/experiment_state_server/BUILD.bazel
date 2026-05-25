@@ -54,6 +54,7 @@ compat_go_library(
 go_binary(
     name = "experiment_state_server",
     embed = [":experiment_state_server_lib"],
+    pure = "on",
     visibility = ["//visibility:public"],
 )
 

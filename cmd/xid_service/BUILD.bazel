@@ -45,6 +45,7 @@ compat_go_library(
 go_binary(
     name = "xid_service",
     embed = [":xid_service_lib"],
+    pure = "on",
     visibility = ["//visibility:public"],
 )
 

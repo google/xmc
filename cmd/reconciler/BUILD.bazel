@@ -42,6 +42,7 @@ compat_go_library(
 go_binary(
     name = "reconciler",
     embed = [":reconciler_lib"],
+    pure = "on",
     visibility = ["//visibility:public"],
 )
 

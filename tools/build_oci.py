@@ -27,15 +27,16 @@ def main():
 
     # 1. Create the layer tarball containing /app/<binary_name>
     layer_tar_path = "layer.tar"
+    real_binary_path = os.path.realpath(binary_path)
     with tarfile.open(layer_tar_path, "w") as tar:
         # Create tar entry with specific permission and path
-        info = tar.gettarinfo(binary_path, arcname=f"app/{binary_name}")
+        info = tar.gettarinfo(real_binary_path, arcname=f"app/{binary_name}")
         info.uid = 0
         info.gid = 0
         info.uname = "root"
         info.gname = "root"
         info.mode = 0o755
-        with open(binary_path, "rb") as f:
+        with open(real_binary_path, "rb") as f:
             tar.addfile(info, f)
 
     layer_sha = get_sha256(layer_tar_path)

@@ -35,6 +35,7 @@ compat_go_library(
 go_binary(
     name = "log_monitor",
     embed = [":log_monitor_lib"],
+    pure = "on",
     visibility = ["//visibility:public"],
 )
 

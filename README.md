@@ -162,7 +162,7 @@ To build the entire project codebase or run all decoupled standalone test suites
 - **Push all OCI images to GCP Artifact Registry**:
   Define the environment variables and run the corresponding push targets:
   ```bash
-  export XMC_ACR_TARGET=us-docker.pkg.dev/my-project/my-registry/
+  export XMC_ACR_TARGET=us-docker.pkg.dev/my-project/my-registry
   export XMC_ENV=dev # Optional, defaults to "dev"
   export BUILD_TAG=latest # Optional, defaults to "latest"
 

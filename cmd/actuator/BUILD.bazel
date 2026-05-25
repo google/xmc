@@ -58,6 +58,7 @@ compat_go_library(
 go_binary(
     name = "actuator",
     embed = [":actuator_lib"],
+    pure = "on",
     visibility = ["//visibility:public"],
 )
 
