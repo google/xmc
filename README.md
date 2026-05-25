@@ -145,3 +145,30 @@ To build the entire project codebase or run all decoupled standalone test suites
   bazel test //...
   ```
 
+- **Build Core codebase**:
+  ```bash
+  bazel build //cmd/... //internal/...
+  ```
+
+- **Build all OCI images**:
+  ```bash
+  bazel build //cmd/actuator:actuator_image_tarball \
+            //cmd/experiment_state_server:experiment_state_server_image_tarball \
+            //cmd/log_monitor:log_monitor_image_tarball \
+            //cmd/reconciler:reconciler_image_tarball \
+            //cmd/xid_service:xid_service_image_tarball
+  ```
+
+- **Push all OCI images to GCP Artifact Registry**:
+  Define the environment variables and run the corresponding push targets:
+  ```bash
+  export XMC_ACR_TARGET=us-docker.pkg.dev/my-project/my-registry/
+  export XMC_ENV=dev # Optional, defaults to "dev"
+  export BUILD_TAG=latest # Optional, defaults to "latest"
+
+  bazel run //cmd/actuator:actuator_image_push
+  bazel run //cmd/experiment_state_server:experiment_state_server_image_push
+  bazel run //cmd/log_monitor:log_monitor_image_push
+  bazel run //cmd/reconciler:reconciler_image_push
+  bazel run //cmd/xid_service:xid_service_image_push
+  ```
