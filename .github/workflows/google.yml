@@ -10,7 +10,7 @@ on:
 jobs:
   deploy-helloworld:
     name: 'Build and Deploy HelloWorld'
-    runs-on: 'ubuntu-latest'
+    runs-on: 'ubuntu-24.04'
     environment: janzak-dev-test
 
     permissions:
@@ -22,7 +22,7 @@ jobs:
       PROJECT_ID: ${{ vars.PROJECT_ID }}
       GAR_LOCATION: ${{ vars.GAR_LOCATION }}
       GKE_CLUSTER: ${{ vars.GKE_CLUSTER }}
-      GKE_ZONE: ${{ vars.GKE_ZONE }}
+      GKE_LOCATION: ${{ vars.GKE_LOCATION }}
       DEPLOYMENT_NAME: ${{ vars.DEPLOYMENT_NAME }}
       REPOSITORY: ${{ vars.REPOSITORY }}
       IMAGE: ${{ vars.IMAGE }}
@@ -52,7 +52,7 @@ jobs:
         uses: 'google-github-actions/get-gke-credentials@v2'
         with:
           cluster_name: '${{ env.GKE_CLUSTER }}'
-          location: '${{ env.GKE_ZONE }}'
+          location: '${{ env.GKE_LOCATION }}'
 
       - name: 'Create Simple HelloWorld Dockerfile'
         run: |
@@ -91,4 +91,4 @@ jobs:
           EOF
 
           kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }}
-          kubectl get service ${{ env.DEPLOYMENT_NAME }}-svc
+          kubectl get deployment ${{ env.DEPLOYMENT_NAME }}
