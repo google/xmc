@@ -50,16 +50,13 @@ func OperationRowToProto(row *spanner.Row) (*lropb.Operation, error) {
 		return nil, fmt.Errorf("failed to read column Done: %w", err)
 	}
 
-	var statusBytes []byte
-	if err := row.ColumnByName("Status", &statusBytes); err != nil {
+	statusMsg := spanner.NullProtoMessage{ProtoMessageVal: &statuspb.Status{}}
+	if err := row.ColumnByName("Status", &statusMsg); err != nil {
 		return nil, fmt.Errorf("failed to read column Status: %w", err)
 	}
 	var status *statuspb.Status
-	if statusBytes != nil {
-		status = &statuspb.Status{}
-		if err := proto.Unmarshal(statusBytes, status); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal Status: %w", err)
-		}
+	if statusMsg.Valid {
+		status = statusMsg.ProtoMessageVal.(*statuspb.Status)
 	}
 
 	var responseBytes []byte

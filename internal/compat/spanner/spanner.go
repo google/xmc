@@ -3,43 +3,11 @@ package spanner
 import (
 	"cloud.google.com/go/spanner"
 	"context"
-	"fmt"
 	"google.golang.org/api/option"
-	"google.golang.org/protobuf/proto"
 	"time"
 )
 
-type NullProtoMessage struct {
-	ProtoMessageVal proto.Message
-	Valid           bool
-}
-
-func (m *NullProtoMessage) Encode() (interface{}, error) {
-	if m == nil || !m.Valid || m.ProtoMessageVal == nil {
-		return nil, nil
-	}
-	return proto.Marshal(m.ProtoMessageVal)
-}
-
-func (m *NullProtoMessage) Decode(val interface{}) error {
-	if val == nil {
-		m.Valid = false
-		return nil
-	}
-	bytes, ok := val.([]byte)
-	if !ok {
-		if str, ok := val.(string); ok {
-			bytes = []byte(str)
-		} else {
-			return fmt.Errorf("NullProtoMessage: expected []byte or string column value, got %T", val)
-		}
-	}
-	if err := proto.Unmarshal(bytes, m.ProtoMessageVal); err != nil {
-		return err
-	}
-	m.Valid = true
-	return nil
-}
+type NullProtoMessage = spanner.NullProtoMessage
 
 type Statement = spanner.Statement
 type NullString = spanner.NullString
