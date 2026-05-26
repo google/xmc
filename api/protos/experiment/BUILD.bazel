@@ -107,6 +107,8 @@ proto_library(
         "work_unit.proto",
         "work_unit_execution.proto",
     ],
+    import_prefix = "third_party/xmanager_cloud/experiment_state_server/proto",
+    strip_import_prefix = "/api/protos/experiment",
     deps = [
         "//api/protos/xid:xid_messages_proto",
         "@com_google_googleapis//google/api:annotations_proto",
@@ -122,11 +124,13 @@ proto_library(
 
 go_proto_library(
     name = "cloud_xmanager_v1_go_proto",
-    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
     importpath = "xmanager_cloud/api/protos/experiment",
     proto = ":cloud_xmanager_v1_proto",
     deps = [
-        ":messages_go_proto",
         "//api/protos/xid:messages_go_proto",
         "@org_golang_google_genproto_googleapis_api//:go_default_library",
         "@org_golang_google_genproto_googleapis_api//annotations",
