@@ -1,0 +1,68 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("//:compat.bzl", "compat_go_library")
+
+compat_go_library(
+    name = "reconciler_lib",
+    srcs = [
+        "config.go",
+        "main.go",
+    ],
+    importpath = "xmanager_cloud/cmd/reconciler",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//internal/common:health",
+        "//internal/compat/google",
+        "//internal/compat/spanner",
+        "//internal/kubernetes/api/v1alpha2",
+        "//internal/kubernetes/api/v1beta1",
+        "//internal/kubernetes/common:constants",
+        "//internal/logging",
+        "//internal/storage",
+        "//internal/storage/spanner",
+        "//cmd/reconciler/clusterqueue",
+        "//cmd/reconciler/jobset",
+        "//cmd/reconciler/workload",
+        "//cmd/reconciler/kueue_sync",
+        "//cmd/actuator/k8s_client",
+        "//cmd/reconciler/shared",
+        "@com_google_cloud_go_compute_metadata//:metadata",
+        "@org_golang_x_sync//errgroup:go_default_library",
+        "@io_k8s_apimachinery//pkg/labels:labels",
+        "@io_k8s_apimachinery//pkg/runtime:runtime",
+        "@io_k8s_client_go//kubernetes/scheme:scheme",
+        "@io_k8s_sigs_controller_runtime//:go_default_library",
+        "@io_k8s_sigs_controller_runtime//pkg/cache:cache",
+        "@io_k8s_sigs_controller_runtime//pkg/client:client",
+        "@io_k8s_sigs_controller_runtime//pkg/metrics/server:server",
+        "@org_golang_google_api//option",
+    ],
+)
+
+go_binary(
+    name = "reconciler",
+    embed = [":reconciler_lib"],
+    pure = "on",
+    visibility = ["//visibility:public"],
+)
+
+load("//:oci.bzl", "oci_image_for_service")
+
+oci_image_for_service(
+    name = "reconciler_image",
+    binary = ":reconciler",
+)

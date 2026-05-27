@@ -1,0 +1,89 @@
+<!--
+Copyright 2025 Google LLC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<div class="container">
+  <div class="header">
+    <h3>Edit Experiment</h3>
+    <xmc-xid-badge [xid]="data().xid"></xmc-xid-badge>
+  </div>
+
+  @if (isLoading()) {
+    <div class="loading-container">
+      <mat-progress-spinner mode="indeterminate" diameter="24"></mat-progress-spinner>
+      <div>Loading experiment...</div>
+    </div>
+  } @else {
+    <form [formGroup]="editExperimentFormGroup()" class="form">
+      <mat-form-field appearance="outline">
+        <mat-label>Name</mat-label>
+        <input matInput formControlName="name" placeholder="Enter a name for this experiment" />
+
+        @if (editExperimentFormGroup().controls['name'].invalid) {
+          <mat-error> Invalid input. </mat-error>
+        }
+      </mat-form-field>
+
+      <div class="priority-container">
+        <mat-label>Priority</mat-label>
+        <mat-button-toggle-group
+          formControlName="priority"
+          aria-label="Priority"
+          hideSingleSelectionIndicator
+        >
+          <mat-button-toggle value="LOW">Low</mat-button-toggle>
+          <mat-button-toggle value="NORMAL">Medium</mat-button-toggle>
+          <mat-button-toggle value="HIGH">High</mat-button-toggle>
+        </mat-button-toggle-group>
+      </div>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Tags</mat-label>
+        <input matInput formControlName="tags" placeholder="Add tags, delimited by commas" />
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Notes</mat-label>
+        <textarea
+          matInput
+          formControlName="notes"
+          rows="5"
+          placeholder="Enter a description for this experiment"
+        ></textarea>
+      </mat-form-field>
+
+      <div class="buttons-container">
+        <button
+          matButton="filled"
+          data-testid="cancel-button"
+          color="primary"
+          type="button"
+          (click)="close()"
+        >
+          Cancel
+        </button>
+        <button
+          [disabled]="!editExperimentFormGroup().valid"
+          matButton="filled"
+          data-testid="save-button"
+          color="primary"
+          type="submit"
+          (click)="updateExperiment()"
+        >
+          Save
+        </button>
+      </div>
+    </form>
+  }
+</div>

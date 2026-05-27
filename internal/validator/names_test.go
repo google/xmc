@@ -1,0 +1,766 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+package validator
+
+import (
+	"errors"
+	"testing"
+
+	"task/go/status"
+)
+
+func TestValidateXidName(t *testing.T) {
+	tests := []struct {
+		name    string
+		xidName string
+		want    int64
+		wantErr error
+	}{
+		{
+			name:    "valid_xid_name",
+			xidName: "xids/123",
+			want:    123,
+			wantErr: nil,
+		},
+		{
+			name:    "invalid_xid_name_format",
+			xidName: "invalid/123",
+			want:    0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_xid_name_parts",
+			xidName: "xids/123/456",
+			want:    0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_xid_name_xid",
+			xidName: "xids/abc",
+			want:    0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_xid_name_negative_xid",
+			xidName: "xids/-123",
+			want:    0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_xid_name_zero_xid",
+			xidName: "xids/0",
+			want:    0,
+			wantErr: status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ValidateXIDName(tc.xidName)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateXidName(%q) returned an unexpected error: %v, want %v", tc.xidName, err, tc.wantErr)
+			}
+
+			if got != tc.want {
+				t.Errorf("ValidateXidName(%q) = %d, want: %d", tc.xidName, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateExperimentName(t *testing.T) {
+	tests := []struct {
+		name    string
+		expName string
+		want    int64
+		wantErr error
+	}{
+		{
+			name:    "valid_experiment_name",
+			expName: "experiments/123",
+			want:    123,
+			wantErr: nil,
+		},
+		{
+			name:    "invalid_experiment_name_format",
+			expName: "invalid/123",
+			want:    0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_experiment_name_parts",
+			expName: "experiments/123/456",
+			want:    0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_experiment_name_xid",
+			expName: "experiments/abc",
+			want:    0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_experiment_name_negative_xid",
+			expName: "experiments/-123",
+			want:    0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_experiment_name_zero_xid",
+			expName: "experiments/0",
+			want:    0,
+			wantErr: status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ValidateExperimentName(tc.expName)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateExperimentName(%q) returned an unexpected error: %v, want %v", tc.expName, err, tc.wantErr)
+			}
+
+			if got != tc.want {
+				t.Errorf("ValidateExperimentName(%q) = %d, want: %d", tc.expName, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateWorkUnitName(t *testing.T) {
+	tests := []struct {
+		name    string
+		wuName  string
+		wantXID int64
+		wantWID int64
+		wantErr error
+	}{
+		{
+			name:    "valid_work_unit_name",
+			wuName:  "experiments/123/workUnits/456",
+			wantXID: 123,
+			wantWID: 456,
+			wantErr: nil,
+		},
+		{
+			name:    "invalid_work_unit_name_format",
+			wuName:  "experiments/123/invalid/456",
+			wantXID: 0,
+			wantWID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_name_parts",
+			wuName:  "experiments/123/workUnits/456/789",
+			wantXID: 0,
+			wantWID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_name_xid",
+			wuName:  "experiments/abc/workUnits/456",
+			wantXID: 0,
+			wantWID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_name_wid",
+			wuName:  "experiments/123/workUnits/abc",
+			wantXID: 0,
+			wantWID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_name_negative_xid",
+			wuName:  "experiments/-123/workUnits/456",
+			wantXID: 0,
+			wantWID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_name_zero_xid",
+			wuName:  "experiments/0/workUnits/456",
+			wantXID: 0,
+			wantWID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_name_negative_wid",
+			wuName:  "experiments/123/workUnits/-456",
+			wantXID: 0,
+			wantWID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_name_zero_wid",
+			wuName:  "experiments/123/workUnits/0",
+			wantXID: 0,
+			wantWID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotXID, gotWID, err := ValidateWorkUnitName(tc.wuName)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateWorkUnitName(%q) returned an unexpected error: %v, want %v", tc.wuName, err, tc.wantErr)
+			}
+
+			if gotXID != tc.wantXID || gotWID != tc.wantWID {
+				t.Errorf("ValidateWorkUnitName(%q) = (%d, %d), want: (%d, %d)", tc.wuName, gotXID, gotWID, tc.wantXID, tc.wantWID)
+			}
+		})
+	}
+}
+
+func TestValidateWorkUnitNameAllowZeroWID(t *testing.T) {
+	tests := []struct {
+		name    string
+		wuName  string
+		wantXID int64
+		wantWID int64
+		wantErr error
+	}{
+		{
+			name:    "valid_work_unit_name",
+			wuName:  "experiments/123/workUnits/456",
+			wantXID: 123,
+			wantWID: 456,
+			wantErr: nil,
+		},
+		{
+			name:    "valid_work_unit_name_zero_wid",
+			wuName:  "experiments/123/workUnits/0",
+			wantXID: 123,
+			wantWID: 0,
+			wantErr: nil,
+		},
+		{
+			name:    "invalid_work_unit_name_format",
+			wuName:  "experiments/123/invalid/456",
+			wantXID: 0,
+			wantWID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_name_xid",
+			wuName:  "experiments/abc/workUnits/456",
+			wantXID: 0,
+			wantWID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_name_zero_xid",
+			wuName:  "experiments/0/workUnits/456",
+			wantXID: 0,
+			wantWID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_name_negative_wid",
+			wuName:  "experiments/123/workUnits/-1",
+			wantXID: 0,
+			wantWID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotXID, gotWID, err := ValidateWorkUnitNameAllowZeroWID(tc.wuName)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateWorkUnitNameAllowZeroWID(%q) returned an unexpected error: %v, want %v", tc.wuName, err, tc.wantErr)
+			}
+
+			if gotXID != tc.wantXID || gotWID != tc.wantWID {
+				t.Errorf("ValidateWorkUnitNameAllowZeroWID(%q) = (%d, %d), want: (%d, %d)", tc.wuName, gotXID, gotWID, tc.wantXID, tc.wantWID)
+			}
+		})
+	}
+}
+
+func TestValidateWorkUnitExecutionName(t *testing.T) {
+	tests := []struct {
+		name    string
+		wueName string
+		wantXID int64
+		wantWID int64
+		wantEID int64
+		wantErr error
+	}{
+		{
+			name:    "valid_work_unit_execution_name",
+			wueName: "experiments/123/workUnits/456/executions/789",
+			wantXID: 123,
+			wantWID: 456,
+			wantEID: 789,
+			wantErr: nil,
+		},
+		{
+			name:    "invalid_work_unit_execution_name_format",
+			wueName: "experiments/123/workUnits/456/invalid/789",
+			wantXID: 0,
+			wantWID: 0,
+			wantEID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_execution_name_parts",
+			wueName: "experiments/123/workUnits/456/executions/789/10",
+			wantXID: 0,
+			wantWID: 0,
+			wantEID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_execution_name_xid",
+			wueName: "experiments/abc/workUnits/456/executions/789",
+			wantXID: 0,
+			wantWID: 0,
+			wantEID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_execution_name_wid",
+			wueName: "experiments/123/workUnits/abc/executions/789",
+			wantXID: 0,
+			wantWID: 0,
+			wantEID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_execution_name_eid",
+			wueName: "experiments/123/workUnits/456/executions/abc",
+			wantXID: 0,
+			wantWID: 0,
+			wantEID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_execution_name_negative_xid",
+			wueName: "experiments/-123/workUnits/456/executions/789",
+			wantXID: 0,
+			wantWID: 0,
+			wantEID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_execution_name_zero_xid",
+			wueName: "experiments/0/workUnits/456/executions/789",
+			wantXID: 0,
+			wantWID: 0,
+			wantEID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_execution_name_negative_wid",
+			wueName: "experiments/123/workUnits/-456/executions/789",
+			wantXID: 0,
+			wantWID: 0,
+			wantEID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_execution_name_zero_wid",
+			wueName: "experiments/123/workUnits/0/executions/789",
+			wantXID: 0,
+			wantWID: 0,
+			wantEID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_execution_name_negative_eid",
+			wueName: "experiments/123/workUnits/456/executions/-789",
+			wantXID: 0,
+			wantWID: 0,
+			wantEID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_work_unit_execution_name_zero_eid",
+			wueName: "experiments/123/workUnits/456/executions/0",
+			wantXID: 0,
+			wantWID: 0,
+			wantEID: 0,
+			wantErr: status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotXID, gotWID, gotEID, err := ValidateWorkUnitExecutionName(tc.wueName)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateWorkUnitExecutionName(%q) returned an unexpected error: %v, want %v", tc.wueName, err, tc.wantErr)
+			}
+
+			if gotXID != tc.wantXID || gotWID != tc.wantWID || gotEID != tc.wantEID {
+				t.Errorf("ValidateWorkUnitExecutionName(%q) = (%d, %d, %d), want: (%d, %d, %d)", tc.wueName, gotXID, gotWID, gotEID, tc.wantXID, tc.wantWID, tc.wantEID)
+			}
+		})
+	}
+}
+
+func TestValidateStatusMessageName(t *testing.T) {
+	tests := []struct {
+		name          string
+		statusMsgName string
+		wantXID       int64
+		wantWID       int64
+		wantMessageID int64
+		wantErr       error
+	}{
+		{
+			name:          "valid_experiment_status_message_name",
+			statusMsgName: "experiments/123/statusMessages/789",
+			wantXID:       123,
+			wantWID:       0,
+			wantMessageID: 789,
+			wantErr:       nil,
+		},
+		{
+			name:          "valid_work_unit_status_message_name",
+			statusMsgName: "experiments/123/workUnits/456/statusMessages/789",
+			wantXID:       123,
+			wantWID:       456,
+			wantMessageID: 789,
+			wantErr:       nil,
+		},
+		{
+			name:          "invalid_status_message_name_format",
+			statusMsgName: "experiments/123/invalid/789",
+			wantXID:       0,
+			wantWID:       0,
+			wantMessageID: 0,
+			wantErr:       status.ErrInvalidArgument,
+		},
+		{
+			name:          "invalid_status_message_name_parts",
+			statusMsgName: "experiments/123/statusMessages/789/10",
+			wantXID:       0,
+			wantWID:       0,
+			wantMessageID: 0,
+			wantErr:       status.ErrInvalidArgument,
+		},
+		{
+			name:          "invalid_status_message_name_xid",
+			statusMsgName: "experiments/abc/statusMessages/789",
+			wantXID:       0,
+			wantWID:       0,
+			wantMessageID: 0,
+			wantErr:       status.ErrInvalidArgument,
+		},
+		{
+			name:          "invalid_status_message_name_wid",
+			statusMsgName: "experiments/123/workUnits/abc/statusMessages/789",
+			wantXID:       0,
+			wantWID:       0,
+			wantMessageID: 0,
+			wantErr:       status.ErrInvalidArgument,
+		},
+		{
+			name:          "invalid_status_message_name_message_id",
+			statusMsgName: "experiments/123/statusMessages/abc",
+			wantXID:       0,
+			wantWID:       0,
+			wantMessageID: 0,
+			wantErr:       status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotXID, gotWID, gotMessageID, err := ValidateStatusMessageName(tc.statusMsgName)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateStatusMessageName(%q) returned an unexpected error: %v, want %v", tc.statusMsgName, err, tc.wantErr)
+			}
+
+			if gotXID != tc.wantXID || gotWID != tc.wantWID || gotMessageID != tc.wantMessageID {
+				t.Errorf("ValidateStatusMessageName(%q) = (%d, %d, %d), want: (%d, %d, %d)", tc.statusMsgName, gotXID, gotWID, gotMessageID, tc.wantXID, tc.wantWID, tc.wantMessageID)
+			}
+		})
+	}
+}
+
+func TestConstructXidName(t *testing.T) {
+	xid := int64(123)
+	want := "xids/123"
+	got := ConstructXIDName(xid)
+	if got != want {
+		t.Errorf("ConstructXidName(%d) = %q, want: %q", xid, got, want)
+	}
+}
+
+func TestConstructExperimentName(t *testing.T) {
+	xid := int64(123)
+	want := "experiments/123"
+	got := ConstructExperimentName(xid)
+	if got != want {
+		t.Errorf("ConstructExperimentName(%d) = %q, want: %q", xid, got, want)
+	}
+}
+
+func TestConstructWorkUnitName(t *testing.T) {
+	xid := int64(123)
+	wid := int64(456)
+	want := "experiments/123/workUnits/456"
+	got := ConstructWorkUnitName(xid, wid)
+	if got != want {
+		t.Errorf("ConstructWorkUnitName(%d, %d) = %q, want: %q", xid, wid, got, want)
+	}
+}
+
+func TestConstructWorkUnitExecutionName(t *testing.T) {
+	xid := int64(123)
+	wid := int64(456)
+	eid := int64(789)
+	want := "experiments/123/workUnits/456/executions/789"
+	got := ConstructWorkUnitExecutionName(xid, wid, eid)
+	if got != want {
+		t.Errorf("ConstructWorkUnitExecutionName(%d, %d, %d) = %q, want: %q", xid, wid, eid, got, want)
+	}
+}
+
+func TestValidateOperationName(t *testing.T) {
+	tests := []struct {
+		name     string
+		opName   string
+		wantXID  int64
+		wantWID  int64
+		wantUUID string
+		wantErr  error
+	}{
+		{
+			name:     "valid_operation_name",
+			opName:   "experiments/123/workUnits/456/operations/uuid-123",
+			wantXID:  123,
+			wantWID:  456,
+			wantUUID: "uuid-123",
+			wantErr:  nil,
+		},
+		{
+			name:     "invalid_operation_name_format",
+			opName:   "experiments/123/workUnits/456/invalid/uuid-123",
+			wantXID:  0,
+			wantWID:  0,
+			wantUUID: "",
+			wantErr:  status.ErrInvalidArgument,
+		},
+		{
+			name:     "invalid_operation_name_no_uuid",
+			opName:   "experiments/123/workUnits/456/operations/",
+			wantXID:  0,
+			wantWID:  0,
+			wantUUID: "",
+			wantErr:  status.ErrInvalidArgument,
+		},
+		{
+			name:     "invalid_operation_name_bad_work_unit",
+			opName:   "experiments/123/workUnits/abc/operations/uuid-123",
+			wantXID:  0,
+			wantWID:  0,
+			wantUUID: "",
+			wantErr:  status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotXID, gotWID, gotUUID, err := ValidateOperationName(tc.opName)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateOperationName(%q) returned an unexpected error: %v, want %v", tc.opName, err, tc.wantErr)
+			}
+
+			if gotXID != tc.wantXID || gotWID != tc.wantWID || gotUUID != tc.wantUUID {
+				t.Errorf("ValidateOperationName(%q) = (%d, %d, %q), want: (%d, %d, %q)", tc.opName, gotXID, gotWID, gotUUID, tc.wantXID, tc.wantWID, tc.wantUUID)
+			}
+		})
+	}
+}
+
+func TestValidateArtifactName(t *testing.T) {
+	tests := []struct {
+		name    string
+		artName string
+		want    int64
+		wantErr error
+	}{
+		{
+			name:    "valid_artifact_name",
+			artName: "artifacts/123",
+			want:    123,
+			wantErr: nil,
+		},
+		{
+			name:    "invalid_artifact_name_format",
+			artName: "invalid/123",
+			want:    0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_artifact_name_parts",
+			artName: "artifacts/123/456",
+			want:    0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_artifact_name_aid",
+			artName: "artifacts/abc",
+			want:    0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_artifact_name_negative_aid",
+			artName: "artifacts/-123",
+			want:    0,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "invalid_artifact_name_zero_aid",
+			artName: "artifacts/0",
+			want:    0,
+			wantErr: status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ValidateArtifactName(tc.artName)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateArtifactName(%q) returned an unexpected error: %v, want %v", tc.artName, err, tc.wantErr)
+			}
+
+			if got != tc.want {
+				t.Errorf("ValidateArtifactName(%q) = %d, want: %d", tc.artName, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateArtifactParent(t *testing.T) {
+	tests := []struct {
+		name       string
+		parentName string
+		wantXID    int64
+		wantWID    int64
+		wantErr    error
+	}{
+		{
+			name:       "valid_work_unit_parent",
+			parentName: "experiments/123/workUnits/456",
+			wantXID:    123,
+			wantWID:    456,
+			wantErr:    nil,
+		},
+		{
+			name:       "valid_experiment_parent",
+			parentName: "experiments/123",
+			wantXID:    123,
+			wantWID:    0,
+			wantErr:    nil,
+		},
+		{
+			name:       "invalid_parent_format",
+			parentName: "invalid/123",
+			wantXID:    0,
+			wantWID:    0,
+			wantErr:    status.ErrInvalidArgument,
+		},
+		{
+			name:       "invalid_work_unit_parent_wid",
+			parentName: "experiments/123/workUnits/abc",
+			wantXID:    0,
+			wantWID:    0,
+			wantErr:    status.ErrInvalidArgument,
+		},
+		{
+			name:       "invalid_experiment_parent_xid",
+			parentName: "experiments/abc",
+			wantXID:    0,
+			wantWID:    0,
+			wantErr:    status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotXID, gotWID, err := ValidateArtifactParent(tc.parentName)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateArtifactParent(%q) returned an unexpected error: %v, want %v", tc.parentName, err, tc.wantErr)
+			}
+
+			if gotXID != tc.wantXID || gotWID != tc.wantWID {
+				t.Errorf("ValidateArtifactParent(%q) = (%d, %d), want: (%d, %d)", tc.parentName, gotXID, gotWID, tc.wantXID, tc.wantWID)
+			}
+		})
+	}
+}
+
+func TestGetResourceType(t *testing.T) {
+	tests := []struct {
+		name     string
+		resource string
+		want     ResourceType
+	}{
+		{
+			name:     "valid_xid",
+			resource: "xids/1",
+			want:     XIDResource,
+		},
+		{
+			name:     "valid_experiment",
+			resource: "experiments/1",
+			want:     ExperimentResource,
+		},
+		{
+			name:     "valid_work_unit",
+			resource: "experiments/1/workUnits/1",
+			want:     WorkUnitResource,
+		},
+		{
+			name:     "valid_work_unit_execution",
+			resource: "experiments/1/workUnits/1/executions/1",
+			want:     WorkUnitExecutionResource,
+		},
+		{
+			name:     "valid_artifact",
+			resource: "artifacts/1",
+			want:     ArtifactResource,
+		},
+		{
+			name:     "valid_operation",
+			resource: "experiments/1/workUnits/1/operations/uuid",
+			want:     OperationResource,
+		},
+		{
+			name:     "unknown_resource",
+			resource: "invalid/resource",
+			want:     UnknownResource,
+		},
+		{
+			name:     "ambiguous_prefix_experiment_workunit",
+			resource: "experiments/1/workUnits",
+			want:     UnknownResource,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := GetResourceType(tc.resource)
+			if got != tc.want {
+				t.Errorf("GetResourceType(%q) = %v, want %v", tc.resource, got, tc.want)
+			}
+		})
+	}
+}

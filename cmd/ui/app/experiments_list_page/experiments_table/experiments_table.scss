@@ -1,0 +1,159 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+@import 'third_party/xmanager_cloud/ui/consts';
+
+xmc-tag,
+xmc-status-chip,
+xmc-priority-chip,
+xmc-resource-chip {
+  @include small-chip;
+}
+
+.table-container {
+  width: 100%;
+  overflow: auto;
+}
+
+td {
+  padding-top: $xsmall-margin;
+  padding-bottom: $xsmall-margin;
+}
+
+.tags-container,
+.resource-chips-container {
+  display: flex;
+  gap: $xsmall-margin;
+  flex-wrap: wrap;
+}
+
+.status-and-priority-container {
+  display: flex;
+  gap: $xsmall-margin;
+  flex-direction: column;
+}
+
+.actions {
+  visibility: hidden;
+  display: flex;
+  align-items: center;
+  gap: $small-margin;
+}
+
+tr:hover,
+tr:active {
+  .actions {
+    visibility: visible;
+  }
+}
+
+.action-icon {
+  transform: scale(0.75);
+}
+
+.no-data-row {
+  justify-content: center;
+  display: flex;
+  padding: $medium-padding 0px;
+}
+
+.loading-message {
+  display: flex;
+  gap: $small-margin;
+}
+
+.no-experiments-message {
+  padding: $medium-padding 0px;
+  width: 100%;
+  text-align: center;
+}
+
+.mat-column-XID {
+  width: 50px;
+}
+
+.mat-column-Title-and-Tags {
+  width: 150px;
+}
+
+.mat-column-Status-and-Priority {
+  width: 100px;
+}
+
+.mat-column-Work-Units {
+  width: 150px;
+  min-width: 150px;
+}
+
+.mat-column-Notes {
+  width: 200px;
+}
+
+.mat-column-Resources {
+  width: 150px;
+}
+
+.mat-column-Created {
+  width: 120px;
+}
+
+.mat-column-Completed {
+  width: 120px;
+}
+
+.mat-column-Actions {
+  width: 50px;
+  text-align: right;
+}
+
+.mat-column-Author {
+  width: 100px;
+}
+
+.xid-content {
+  display: flex;
+  align-items: center;
+}
+
+.title-cell {
+  position: relative;
+  padding: $xsmall-margin 16px;
+
+  .cell-link {
+    display: block;
+    text-decoration: none;
+    color: var(--mat-sys-primary);
+  }
+}
+
+.title-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+tr.detail-row td {
+  border-bottom-width: 0;
+  padding: 0;
+}
+
+.navigate-icon {
+  visibility: hidden;
+  font-size: 20px;
+  height: 20px;
+  width: 20px;
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+}

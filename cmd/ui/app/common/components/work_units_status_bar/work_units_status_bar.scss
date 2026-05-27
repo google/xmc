@@ -1,0 +1,89 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+@import 'third_party/xmanager_cloud/ui/consts';
+
+.status-bar {
+  height: 14px;
+  width: 100%;
+  cursor: pointer;
+}
+
+.states {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.square {
+  width: 10px;
+  height: 10px;
+  margin-right: 5px;
+}
+
+.state-count-state-container {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.key-value-pair {
+  @include key-value-pair();
+  margin-left: 10px;
+  margin-right: 10px;
+}
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mat-sys-background);
+  font-size: 14px;
+}
+
+// Colors for each state.
+
+.INITIALIZING,
+.PENDING,
+.SCHEDULING,
+.RESTARTING {
+  background-color: $status-waiting;
+}
+
+.STARTING {
+  background-color: $status-starting;
+}
+
+.DESCHEDULING,
+.SCHEDULING {
+  background-color: $status-paused;
+}
+
+.RUNNING {
+  background-color: $status-running;
+}
+
+.COMPLETED {
+  background-color: $status-completed;
+}
+
+.STOPPING,
+.STOPPED {
+  background-color: $status-base;
+}
+
+.FAILED {
+  background-color: $status-failed;
+}

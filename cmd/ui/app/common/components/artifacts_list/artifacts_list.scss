@@ -1,0 +1,90 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+@use 'third_party/javascript/angular_components/material' as mat;
+@import 'third_party/xmanager_cloud/ui/consts';
+
+:host {
+  @include mat.button-toggle-density(-3);
+}
+
+.filter-label {
+  font-size: 0.9em;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.filter-toggle {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: $small-margin;
+  padding: 0 16px;
+  margin-top: 16px;
+
+  mat-button-toggle-group {
+    border: 0;
+    box-shadow: none;
+    gap: 6px;
+
+    &.empty-filter mat-button-toggle {
+      border: 1px solid var(--mat-sys-error);
+      color: var(--mat-sys-error);
+    }
+  }
+
+  mat-button-toggle {
+    font-size: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--mat-sys-outline);
+    background-color: var(--mat-sys-surface);
+    color: var(--mat-sys-on-surface-variant);
+
+    &.mat-button-toggle-checked {
+      background-color: var(--mat-sys-secondary-container);
+      color: var(--mat-sys-on-secondary-container);
+      border: 1px solid var(--mat-sys-secondary-container);
+    }
+
+    ::ng-deep .mat-button-toggle-label-content {
+      line-height: 24px;
+      padding: 0 12px;
+    }
+  }
+}
+
+.truncation-message {
+  text-align: center;
+  font-style: italic;
+  padding: 0 16px;
+  margin-top: 16px;
+}
+
+.pipeline-container {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 16px;
+}
+
+.pipeline-column {
+  flex: 1;
+  min-width: 0; // for flexbox to shrink below content size
+}
+
+.chevron {
+  font-size: 36px;
+  width: 36px;
+  height: 36px;
+  align-self: center;
+  color: var(--mat-sys-outline);
+}

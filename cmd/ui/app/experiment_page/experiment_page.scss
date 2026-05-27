@@ -1,0 +1,98 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+@import 'third_party/xmanager_cloud/ui/consts';
+
+$max-page-width: 1500px;
+
+:host {
+  @include page-layout;
+  max-width: $max-page-width;
+  padding: $page-padding;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: $font-size-large;
+}
+
+.experiment-title-container {
+  display: flex;
+  flex-direction: row;
+  gap: $large-padding;
+  align-items: stretch;
+  justify-content: space-between;
+
+  .xid-and-title {
+    display: flex;
+    flex-direction: row;
+    gap: $small-margin;
+    align-items: center;
+  }
+
+  .priority-and-status-container {
+    display: flex;
+    flex-direction: row;
+    gap: $basic-margin;
+    align-items: center;
+  }
+
+  .work-units-status-bar-container {
+    height: 20px;
+    min-width: 200px;
+  }
+
+  .actions-container {
+    display: flex;
+    flex-direction: row;
+    gap: $basic-margin;
+    align-items: center;
+  }
+}
+
+.experiment-summary-container {
+  display: flex;
+  gap: $xlarge-padding;
+  justify-content: space-between;
+
+  .experiment-summary-metadata {
+    flex: 1 1 0;
+    padding-right: $small-padding;
+    max-width: 400px;
+  }
+
+  .experiment-summary-notes {
+    flex: 1 1 0;
+  }
+}
+
+.secondary-title {
+  @include summary-secondary-title;
+}
+
+.key-value-pair {
+  @include key-value-pair;
+}
+
+.url-button {
+  margin-right: $small-margin;
+}
+
+mat-card-title,
+mat-card-content {
+  padding: $small-padding;
+}
+
+mat-card-content {
+  font-size: $font-size-medium;
+}

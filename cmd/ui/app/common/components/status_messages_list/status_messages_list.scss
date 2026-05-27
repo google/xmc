@@ -1,0 +1,111 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+@import 'third_party/xmanager_cloud/ui/consts';
+
+.status-messages-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.messages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.timeline-container {
+  position: relative;
+  padding-left: 24px;
+}
+
+.timeline-item {
+  position: relative;
+  margin-bottom: 16px;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: -19px;
+    top: 16px;
+    bottom: -32px;
+    width: 2px;
+    background-color: var(--mat-sys-outline-variant);
+  }
+
+  &:last-child {
+    margin-bottom: 0;
+
+    &::before {
+      display: none;
+    }
+  }
+}
+
+.timeline-badge {
+  position: absolute;
+  left: -26px;
+  top: 8px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+
+  &.info {
+    background-color: var(--mat-sys-primary);
+  }
+
+  &.warning {
+    background-color: $warning-line;
+  }
+
+  &.error, &.fatal {
+    background-color: var(--mat-sys-error);
+  }
+
+  &.debug {
+    background-color: var(--mat-sys-outline);
+  }
+}
+
+.loading-state, .empty-state, .error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  color: var(--mat-sys-on-surface-variant);
+  gap: 8px;
+}
+
+.load-more-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+  padding-bottom: 16px;
+
+  button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+}
+
+.error-state-inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--mat-sys-error);
+  margin-left: 16px;
+}

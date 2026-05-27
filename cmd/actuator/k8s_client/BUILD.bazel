@@ -1,0 +1,93 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
+
+compat_go_library(
+    name = "k8s_client",
+    srcs = [
+        "client.go",
+        "jobset.go",
+        "jobset_queries.go",
+        "k8sclient_test_utils.go",
+        "namespace.go",
+    ],
+    importpath = "xmanager_cloud/cmd/actuator/k8s_client",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//api/protos/task_queue:task_go_proto",
+        "//internal/compat/field_mask",
+        "//internal/compat/longrunning",
+        "//internal/compat/proto",
+        "//internal/compat/spanner",
+        "//internal/compat/status",
+        "//internal/kubernetes/api/v1alpha2",
+        "//internal/kubernetes/api/v1beta1",
+        "//internal/kubernetes/common:constants",
+        "//internal/logging",
+        "//internal/storage",
+        "//internal/validator",
+        "//cmd/actuator/k8s_client/preconditions_validator:preconditions_validator",
+        "//internal/toollibs/execution_environments:execution_environments",
+        "@io_k8s_api//batch/v1:batch",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors:errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured:unstructured",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime:runtime",
+        "@io_k8s_apimachinery//pkg/runtime/schema:schema",
+        "@io_k8s_apimachinery//pkg/types:types",
+        "@io_k8s_apimachinery//pkg/util/wait:wait",
+        "@io_k8s_client_go//dynamic:dynamic",
+        "@io_k8s_client_go//dynamic/fake:fake",
+        "@io_k8s_client_go//kubernetes:kubernetes",
+        "@io_k8s_client_go//kubernetes/fake:fake",
+        "@io_k8s_client_go//rest:rest",
+        "@io_k8s_sigs_controller_runtime//pkg/client:client",
+        "@org_golang_google_genproto_googleapis_rpc//status",
+        "@org_golang_google_protobuf//types/known/anypb",
+    ],
+)
+
+compat_go_test(
+    name = "k8s_client_test",
+    srcs = [
+        "client_test.go",
+        "jobset_queries_test.go",
+        "jobset_test.go",
+        "namespace_test.go",
+    ],
+    embed = [":k8s_client"],
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//api/protos/task_queue:task_go_proto",
+        "//internal/compat/cmp",
+        "//internal/compat/proto",
+        "//internal/compat/protocmp",
+        "//internal/kubernetes/api/v1alpha2",
+        "//internal/kubernetes/common:constants",
+        "//internal/storage/spanner",
+        "//internal/storage/spanner/emulator",
+        "//internal/validator",
+        "@io_k8s_api//batch/v1:batch",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/resource:resource",
+        "@io_k8s_client_go//dynamic/fake:fake",
+        "@io_k8s_client_go//kubernetes/fake:fake",
+        "@io_k8s_client_go//testing:go_default_library",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)

@@ -1,0 +1,380 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+package kueuesync
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+
+	fmpb "protobuf/field_mask_go_proto"
+	"golang/cmp/cmp"
+	"golang/cmp/cmpopts/cmpopts"
+	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
+	"golang/k8s_io/apimachinery/v/v0_23/pkg/fields/fields"
+	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
+	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/schema/schema"
+	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/serializer/serializer"
+	kubernetesfake "golang/k8s_io/client_go/v/v0_23/kubernetes/fake/fake"
+	clientscheme "golang/k8s_io/client_go/v/v0_23/kubernetes/scheme/scheme"
+	corev1 "golang/k8s_io/client_go/v/v0_23/kubernetes/typed/core/v1/v1"
+	fakerest "golang/k8s_io/client_go/v/v0_23/rest/fake/fake"
+	"golang/k8s_io/client_go/v/v0_23/rest/rest"
+	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
+	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/fake/fake"
+	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/kubernetes/api/v1alpha2/v1alpha2"
+	constants "xmanager_cloud/kubernetes/common/constants"
+	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
+	"xmanager_cloud/kubernetes/reconciler/shared/shared"
+	storagepkg "xmanager_cloud/storage/storage"
+)
+
+const (
+	ClusterQueue1 = "cq1"
+)
+
+// JobSetGVR is GVR for JobSets.
+var JobSetGVR = schema.GroupVersionResource{
+	Group:    "jobset.x-k8s.io",
+	Version:  "v1alpha2",
+	Resource: "jobsets",
+}
+
+var testPendingWorkloads = pendingWorkloadList{
+	Items: []pendingWorkload{
+		{
+			Metadata: metav1.ObjectMeta{
+				Name:      "workload1",
+				Namespace: "default",
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: "jobset.x-k8s.io/v1alpha2",
+					Kind:       "JobSet",
+					Name:       "owner1",
+				}},
+			},
+			PositionInClusterQueue: 0,
+		},
+		{
+			Metadata: metav1.ObjectMeta{
+				Name:      "workload2",
+				Namespace: "default",
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: "jobset.x-k8s.io/v1alpha2",
+					Kind:       "JobSet",
+					Name:       "owner2",
+				}},
+			},
+			PositionInClusterQueue: 1,
+		},
+		{
+			Metadata: metav1.ObjectMeta{
+				Name:      "workload3",
+				Namespace: "default",
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: "jobset.x-k8s.io/v1alpha2",
+					Kind:       "JobSet",
+					Name:       "owner3_no_jobset",
+				}},
+			},
+			PositionInClusterQueue: 2,
+		},
+		{
+			Metadata: metav1.ObjectMeta{
+				Name:      "workload4",
+				Namespace: "default",
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: "jobset.x-k8s.io/v1alpha2",
+					Kind:       "JobSet",
+					Name:       "owner4_no_labels",
+				}},
+			},
+			PositionInClusterQueue: 3,
+		},
+		{
+			Metadata: metav1.ObjectMeta{
+				Name:      "workload5_no_owner",
+				Namespace: "default",
+			},
+			PositionInClusterQueue: 4,
+		},
+		{
+			Metadata: metav1.ObjectMeta{
+				Name:      "workload6_two_owners",
+				Namespace: "default",
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: "jobset.x-k8s.io/v1alpha2",
+					Kind:       "JobSet",
+					Name:       "owner6_1",
+				}, {
+					APIVersion: "jobset.x-k8s.io/v1alpha2",
+					Kind:       "JobSet",
+					Name:       "owner6_2",
+				}},
+			},
+			PositionInClusterQueue: 5,
+		},
+	},
+}
+
+type fakeClient struct {
+	client.Client
+	jobsets []v1alpha2.JobSet
+}
+
+func (f *fakeClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	listOpts := client.ListOptions{}
+	listOpts.ApplyOptions(opts)
+	if listOpts.FieldSelector != nil {
+		jobSetList, ok := list.(*v1alpha2.JobSetList)
+		if !ok {
+			return fmt.Errorf("can only list JobSetList with field selector")
+		}
+		var jobsets []v1alpha2.JobSet
+		for _, js := range f.jobsets {
+			if listOpts.Namespace != "" && js.Namespace != listOpts.Namespace {
+				continue
+			}
+			if listOpts.FieldSelector.Matches(fields.Set{"metadata.name": js.Name}) {
+				jobsets = append(jobsets, js)
+			}
+		}
+		jobSetList.Items = jobsets
+		return nil
+	}
+	return f.Client.List(ctx, list, opts...)
+}
+
+// fakeCoreV1Impl provides a fake corev1.CoreV1Interface implementation that returns a fake RESTClient.
+type fakeCoreV1Impl struct {
+	corev1.CoreV1Interface
+	fakeRestClient rest.Interface
+}
+
+func (c *fakeCoreV1Impl) RESTClient() rest.Interface {
+	return c.fakeRestClient
+}
+
+// fakeClientset provides a fake kubernetes.Interface implementation that returns a fake CoreV1().
+type fakeClientset struct {
+	*kubernetesfake.Clientset
+	fakeCoreV1 corev1.CoreV1Interface
+}
+
+func (c *fakeClientset) CoreV1() corev1.CoreV1Interface {
+	return c.fakeCoreV1
+}
+
+func setupKueueTestClientWithFakeRestClient(t *testing.T, restClient rest.Interface) (context.Context, *Reconciler, *shared.UpdateBatcher) {
+	t.Helper()
+	ctx := context.Background()
+	fcs := kubernetesfake.NewSimpleClientset()
+	cs := &fakeClientset{
+		Clientset: fcs,
+		fakeCoreV1: &fakeCoreV1Impl{
+			CoreV1Interface: fcs.CoreV1(),
+			fakeRestClient:  restClient,
+		},
+	}
+	updateBatcher := shared.NewUpdateBatcher(ctx, &shared.BatcherConfig{
+		TickDuration:           1 * time.Minute,
+		MaxParallelExperiments: 1,
+	}, &mockStorage{})
+
+	reconciler := &Reconciler{
+		Clientset:                        cs,
+		UpdateBatcher:                    updateBatcher,
+		KueueSyncTickDuration:            1 * time.Minute,
+		MaxConcurrentKueueSyncReconciles: 100,
+	}
+	return ctx, reconciler, updateBatcher
+}
+
+func createFakeRestClient(t *testing.T, workloadsJSON []byte) *fakerest.RESTClient {
+	t.Helper()
+	return &fakerest.RESTClient{
+		NegotiatedSerializer: serializer.NewCodecFactory(clientscheme.Scheme),
+		Client: fakerest.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
+			if strings.Contains(req.URL.Path, fmt.Sprintf("/clusterqueues/%s/pendingworkloads", ClusterQueue1)) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewReader(workloadsJSON)),
+				}, nil
+			}
+			return &http.Response{StatusCode: http.StatusNotFound, Body: io.NopCloser(strings.NewReader(""))}, nil
+		}),
+	}
+}
+
+// TODO - (internal issue): Consider using a fake instead of a mock.
+type mockStorage struct {
+	storagepkg.Storage
+	calls map[int64][]*storagepkg.WorkUnitExecutionUpdate
+}
+
+func (m *mockStorage) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
+	if m.calls == nil {
+		m.calls = make(map[int64][]*storagepkg.WorkUnitExecutionUpdate)
+	}
+	m.calls[xid] = append(m.calls[xid], updates...)
+	return nil, nil
+}
+
+func TestFetchPendingWorkloadsFromQueue(t *testing.T) {
+	workloadsJSON, err := json.Marshal(testPendingWorkloads)
+	if err != nil {
+		t.Fatalf("Failed to marshal workloads: %v", err)
+	}
+
+	fakeRestClient := createFakeRestClient(t, workloadsJSON)
+	ctx, reconciler, _ := setupKueueTestClientWithFakeRestClient(t, fakeRestClient)
+
+	got, err := reconciler.fetchPendingWorkloadsFromQueue(ctx, ClusterQueue1)
+	if err != nil {
+		t.Fatalf("FetchPendingWorkloadsFromQueue() returned unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(testPendingWorkloads.Items, got); diff != "" {
+		t.Errorf("FetchPendingWorkloadsFromQueue() returned diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestUpdateWorkUnitNotesAboutPosition(t *testing.T) {
+	workloadsJSON, err := json.Marshal(testPendingWorkloads)
+	if err != nil {
+		t.Fatalf("Failed to marshal workloads: %v", err)
+	}
+
+	fakeRestClient := createFakeRestClient(t, workloadsJSON)
+	ctx, reconciler, updateBatcher := setupKueueTestClientWithFakeRestClient(t, fakeRestClient)
+	cqCache := clusterqueue.NewNameCache()
+	cqCache.Add(ClusterQueue1)
+	reconciler.CQCache = cqCache
+
+	js1 := &v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "owner1",
+			Namespace: "default",
+			Labels: map[string]string{
+				constants.WorkUnitIDLabel:   "1",
+				constants.ExperimentIDLabel: "101",
+				constants.ExecutionIDLabel:  "1001",
+			},
+		},
+	}
+	js2 := &v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "owner2",
+			Namespace: "default",
+			Labels: map[string]string{
+				constants.WorkUnitIDLabel:   "2",
+				constants.ExperimentIDLabel: "102",
+				constants.ExecutionIDLabel:  "1002",
+			},
+		},
+	}
+	js4 := &v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "owner4_no_labels",
+			Namespace: "default",
+		},
+	}
+	s := runtime.NewScheme()
+	v1alpha2.AddToScheme(s)
+	clientscheme.AddToScheme(s)
+	cl := &fakeClient{
+		Client: fake.NewClientBuilder().
+			WithScheme(s).
+			WithObjects(js1, js2, js4).
+			Build(),
+		jobsets: []v1alpha2.JobSet{*js1, *js2, *js4},
+	}
+	reconciler.Client = cl
+
+	reconciler.updateWorkUnitNotesAboutPosition(ctx)
+
+	wantCalls := map[int64][]storagepkg.WorkUnitExecutionUpdate{
+		101: {{
+			WID: 1,
+			EID: 1001,
+			UpdateMask: &fmpb.FieldMask{
+				Paths: []string{"status.scheduling_information"},
+			},
+			WorkUnitExecution: &essmsgpb.WorkUnitExecution{
+				Status: &essmsgpb.WorkUnitStatus{
+					SchedulingInformation: &essmsgpb.StructuredMessage{
+						UserFacingText: "Work unit is #1 in queue. There are 6 workloads in the queue total.",
+						Severity:       essmsgpb.StructuredMessage_INFO,
+						Source:         essmsgpb.StructuredMessage_SCHEDULER,
+						AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{
+							Detail: &essmsgpb.AuxiliaryInfo_QueueInfo{
+								QueueInfo: &essmsgpb.QueueInfo{
+									PositionInQueue:       1,
+									TotalWorkloadsInQueue: 6,
+								},
+							},
+						},
+					},
+				},
+			},
+		}},
+		102: {{
+			WID: 2,
+			EID: 1002,
+			UpdateMask: &fmpb.FieldMask{
+				Paths: []string{"status.scheduling_information"},
+			},
+			WorkUnitExecution: &essmsgpb.WorkUnitExecution{
+				Status: &essmsgpb.WorkUnitStatus{
+					SchedulingInformation: &essmsgpb.StructuredMessage{
+						UserFacingText: "Work unit is #2 in queue. There are 6 workloads in the queue total.",
+						Severity:       essmsgpb.StructuredMessage_INFO,
+						Source:         essmsgpb.StructuredMessage_SCHEDULER,
+						AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{
+							Detail: &essmsgpb.AuxiliaryInfo_QueueInfo{
+								QueueInfo: &essmsgpb.QueueInfo{
+									PositionInQueue:       2,
+									TotalWorkloadsInQueue: 6,
+								},
+							},
+						},
+					},
+				},
+			},
+		}},
+	}
+
+	sortWorkUnitExecutionUpdates := cmpopts.SortSlices(func(a, b storagepkg.WorkUnitExecutionUpdate) bool {
+		return a.WID < b.WID
+	})
+
+	gotCalls := make(map[int64][]storagepkg.WorkUnitExecutionUpdate)
+	for xid, widMap := range updateBatcher.Updates {
+		for _, sourceMap := range widMap {
+			if update, ok := sourceMap[shared.KueueSyncSource]; ok {
+				gotCalls[xid] = append(gotCalls[xid], update)
+			}
+		}
+	}
+
+	if diff := cmp.Diff(wantCalls, gotCalls, protocmp.Transform(), sortWorkUnitExecutionUpdates, protocmp.IgnoreFields(&essmsgpb.StructuredMessage{}, "create_time")); diff != "" {
+		t.Errorf("UpdateWorkUnitNotesAboutPosition() made unexpected calls to storage (-want +got):\n%s", diff)
+	}
+}

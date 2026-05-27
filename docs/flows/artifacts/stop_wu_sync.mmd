@@ -1,0 +1,13 @@
+sequenceDiagram
+    participant Client
+    participant ESS as ESS (Exp State Server)
+    participant XID as XID Service
+    participant Spanner as Spanner (Storage)
+    participant Redis
+
+    Client->>ESS: 1. StopWorkUnit(req)
+    ESS->>XID: 2. CheckAuth(WRITER)
+    XID-->>ESS: 3. Authorized
+    ESS->>Spanner: 4. Fetch & Update Status(STOPPING)
+    ESS->>Redis: 5. Enqueue Delete Task
+    ESS-->>Client: 6. Operation

@@ -1,0 +1,49 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Default values for xmanager-cloud.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+projectId: ~
+environment: ~
+domainSuffix: ~
+taskSignatureTtlSeconds: 86400
+isDevEnvironment: false
+imageTag: latest
+xid_custom_image: ""
+actuator_custom_image: ""
+reconciler_custom_image: ""
+ess_custom_image: ""
+defaultToCursorPagination: false
+detectInadmissibleWorkUnits: false
+startupPodErrorCheckEnabled: false
+statusMessageHistoryEnabled: false
+redisAddr: ""
+
+experimentStateServer:
+  iap:
+    iapIssuer: ""
+    httpAudience: ""
+    grpcAudience: ""
+    clientId: ""
+  allowedOrigins: ""
+
+# Pass configuration to Kueue sub-chart
+kueue:
+  controllerManager:
+    config:
+      integrations:
+        labelKeysToCopy:
+          - "xmc.google.com/experiment-id"
+          - "xmc.google.com/work-unit-id"

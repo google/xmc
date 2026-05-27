@@ -1,0 +1,81 @@
+<!--
+Copyright 2025 Google LLC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<div class="status-messages-container">
+  <xmc-status-messages-list-filter
+    [severityFilter]="severityFilter()"
+    [sourceFilter]="sourceFilter()"
+    [sortOrder]="sortOrder()"
+    [timeFilter]="timeFilter()"
+    (severityFilterChange)="severityFilter.set($event)"
+    (sourceFilterChange)="sourceFilter.set($event)"
+    (sortOrderChange)="sortOrder.set($event)"
+    (timeFilterChange)="timeFilter.set($event)"
+    (refresh)="refresh()"
+  />
+
+  @if (isLoading() && messages().length === 0) {
+    <xmc-loading-bar />
+  } @else if (loadingError() && messages().length === 0) {
+    <div class="error-state">
+      <mat-icon color="warn">error</mat-icon>
+      <p>{{ loadingError() }}</p>
+    </div>
+  } @else {
+    <div class="messages-list">
+      @if (messages().length === 0) {
+        <div class="empty-state">
+          <mat-icon>info</mat-icon>
+          <p>No status messages found.</p>
+        </div>
+      }
+
+      @if (messages().length > 0) {
+        <div class="timeline-container">
+          @for (msg of messages(); track $index) {
+            <div class="timeline-item">
+              <div class="timeline-badge" [class]="msg.severity?.toLowerCase() || 'info'"></div>
+              <div class="timeline-content">
+                <xmc-status-message
+                  [message]="msg"
+                  [ignoreFilters]="true"
+                  [showWorkUnitId]="showWorkUnitId()"
+                ></xmc-status-message>
+              </div>
+            </div>
+          }
+        </div>
+
+        @if (nextPageToken()) {
+          <div class="load-more-container">
+            <button type="button" mat-stroked-button (click)="loadMore()" [disabled]="isLoading()">
+              @if (isLoading()) {
+                <mat-spinner diameter="20"></mat-spinner>
+              } @else {
+                Load More
+              }
+            </button>
+            @if (loadingError()) {
+              <div class="error-state-inline">
+                <mat-icon color="warn" inline>error</mat-icon>
+                <span>{{ loadingError() }}</span>
+              </div>
+            }
+          </div>
+        }
+      }
+    </div>
+  }
+</div>

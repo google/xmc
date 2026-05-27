@@ -1,0 +1,67 @@
+<!--
+Copyright 2025 Google LLC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<mat-card class="work-unit-title-content-container">
+  <mat-card-content>
+    <div class="work-unit-header-container">
+      <div class="work-unit-title-container">
+        <a class="experiment-link" [routerLink]="['/experiments', experimentId()]">
+          <div class="experiment-link-container">
+            <mat-icon>arrow_back_ios</mat-icon>
+            <span class="experiment-title"> {{ experimentId() }}: {{ experiment().title }} </span>
+          </div>
+        </a>
+        <h1> Work Unit {{ workUnitId() }} </h1>
+      </div>
+
+      <mat-divider [vertical]="true"> </mat-divider>
+
+      <div class="priority-and-status-container">
+        <xmc-status-chip class="chip" [status]="getStatusOption(workUnit())"></xmc-status-chip>
+
+        @if (workUnit().priority) {
+          <xmc-priority-chip class="chip" [priority]="workUnit().priority"></xmc-priority-chip>
+        }
+      </div>
+
+      <mat-divider [vertical]="true"> </mat-divider>
+
+      <div class="actions-container">
+        <button
+          mat-button
+          mat-raised-button
+          color="primary"
+          (click)="stop()"
+          [disabled]="isStopping$ | async"
+          [class.shimmer]="isStopping$ | async"
+        >
+          <mat-icon>stop_circle</mat-icon>
+          Stop
+        </button>
+        <button
+          mat-button
+          mat-raised-button
+          color="primary"
+          (click)="restart()"
+          [disabled]="isRestarting$ | async"
+          [class.shimmer]="isRestarting$ | async"
+        >
+          <mat-icon>restart_alt</mat-icon>
+          Restart
+        </button>
+      </div>
+    </div>
+  </mat-card-content>
+</mat-card>

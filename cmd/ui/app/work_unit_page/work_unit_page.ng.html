@@ -1,0 +1,66 @@
+<!--
+Copyright 2025 Google LLC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+@if (isLoading()) {
+  loading...
+} @else {
+  @let experimentVal = experiment();
+  @let workUnitVal = workUnit();
+  @if (experimentVal && workUnitVal) {
+    <xmc-work-unit-header
+      [workUnit]="workUnitVal"
+      [experiment]="experimentVal"
+      class="header-section"
+    />
+
+    @let urlsVal = urls();
+    @if (urlsVal?.length) {
+      <xmc-urls-widget [urls]="urlsVal" />
+    }
+
+    <xmc-work-unit-details
+      [workUnit]="workUnitVal"
+      [experiment]="experimentVal"
+      class="details-section"
+    />
+
+    @let statusMessagesVal = statusMessages();
+    @if (statusMessagesVal.length > 0) {
+      <div class="status-messages-container">
+        @for (message of statusMessagesVal; track $index) {
+          <xmc-status-message [message]="message"></xmc-status-message>
+        }
+      </div>
+    }
+
+    <mat-card class="tabs-section">
+      <mat-tab-group class="work-unit-tabs-section" mat-stretch-tabs="false" mat-align-tabs="start">
+        <mat-tab label="Jobs">
+          <xmc-work-unit-jobs-table [workUnit]="workUnitVal" />
+        </mat-tab>
+        <mat-tab label="Artifacts">
+          <xmc-artifacts-list [parentName]="'experiments/' + xid() + '/workUnits/' + wid()" />
+        </mat-tab>
+        @if (isStatusMessageHistoryEnabled) {
+          <mat-tab label="Status History">
+            <xmc-status-messages-list
+              [parentName]="'experiments/' + xid() + '/workUnits/' + wid()"
+            ></xmc-status-messages-list>
+          </mat-tab>
+        }
+      </mat-tab-group>
+    </mat-card>
+  }
+}

@@ -1,0 +1,47 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# gazelle:exclude expression_helper.go
+# gazelle:exclude filter_expression.proto
+# gazelle:exclude filter_expression.pb.go
+
+# Custom genrule to compile the AST proto to Go source with the Go plugin
+genrule(
+    name = "generate_filter_proto_go",
+    srcs = ["filter_expression.proto"],
+    outs = ["filter_expression.pb.go"],
+    cmd = "$(location @com_google_protobuf//:protoc) --plugin=protoc-gen-go=$(location @org_golang_google_protobuf//cmd/protoc-gen-go) -I. --go_out=$(RULEDIR)/../.. --go_opt=paths=source_relative api/filter/filter_expression.proto",
+    tools = [
+        "@com_google_protobuf//:protoc",
+        "@org_golang_google_protobuf//cmd/protoc-gen-go",
+    ],
+)
+
+go_library(
+    name = "filter_expression_go_proto",
+    srcs = [
+        "expression_helper.go",
+        ":generate_filter_proto_go",
+    ],
+    importpath = "api/filter/filter_expression_go_proto",  # keep
+    deps = [
+        # keep
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//runtime/protoimpl",
+    ],
+)

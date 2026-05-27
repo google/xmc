@@ -1,0 +1,54 @@
+<!--
+Copyright 2025 Google LLC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+@if (workUnitsCount() === 0) {
+  <div class="no-work-units">No Work Units</div>
+} @else {
+  <div
+    class="status-bar"
+    #menuTrigger="matMenuTrigger"
+    [matMenuTriggerFor]="menu"
+    (click)="menuTrigger.openMenu()"
+  >
+    <div class="states">
+      @for (stateCount of sortedStateCounts(); track stateCount.state) {
+        @if (stateCount.count && stateCount.count !== '0') {
+          <span
+            class="state {{ stateCount.state }}"
+            [style.width]="getWidth(stateCount.count)"
+          >
+            {{ stateCount.count }}
+          </span>
+        }
+      }
+    </div>
+  </div>
+
+  <mat-menu #menu="matMenu">
+    @for (stateCount of sortedStateCounts(); track stateCount.state) {
+      <dl>
+        @if (stateCount.count && stateCount.count !== '0' && stateCount.state) {
+          <div class="key-value-pair">
+            <dt class="state-count-state-container">
+              <div class="square {{ stateCount.state }}"></div>
+              {{ stateCount.state.toLowerCase() }}:
+            </dt>
+            <dd>{{ stateCount.count }}</dd>
+          </div>
+        }
+      </dl>
+    }
+  </mat-menu>
+}

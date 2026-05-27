@@ -1,0 +1,119 @@
+<!--
+Copyright 2025 Google LLC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<mat-toolbar>
+  <button mat-icon-button aria-label="Open menu" (click)="toggleSidenav()">
+    <mat-icon>menu</mat-icon>
+  </button>
+  <a class="side-sections" [routerLink]="['/']">
+    <div class="logo-container">
+      <img class="logo-image" src="/favicon.ico" alt="XManager logo" />
+      <div class="app-name"> XManager </div>
+    </div>
+  </a>
+  <mat-form-field appearance="outline" #searchBar class="search-textbox">
+    <mat-icon matPrefix> search </mat-icon>
+
+    <input
+      matInput
+      [formControl]="userInput"
+      data-testid="search-input-field"
+      autocomplete="off"
+      [placeholder]="'Search for experiments'"
+      type="text"
+      (keyup.enter)="searchExperiments()"
+    />
+
+    <button
+      matSuffix
+      mat-icon-button
+      [attr.aria-label]="'Information on the search syntax'"
+      [matMenuTriggerFor]="menu"
+    >
+      <mat-icon>info</mat-icon>
+    </button>
+  </mat-form-field>
+  <div class="side-sections"></div>
+</mat-toolbar>
+
+<mat-menu class="search-syntax-menu" #menu="matMenu" xPosition="before">
+  <h3>Search Syntax</h3>
+  <div>
+    <p> <strong>Full-Text Search:</strong></p>
+    <p>Use strings to search by Title, Tags, or Creator. </p>
+    <span class="code-container">
+      <code>gemax "my experiment"</code>
+    </span>
+  </div>
+  <div>
+    <p>
+      <strong>Field-Specific Filters:</strong>
+    </p>
+    <p> Use comparators (=, !=, >=, <=) for specific fields. </p>
+    <ul>
+      <li>
+        <strong>XID: </strong>
+        <span class="code-container"><code>xid = 72901</code></span>
+      </li>
+      <li>
+        <strong>Title: </strong>
+        <span class="code-container"><code>title = "My Experiment"</code></span>
+      </li>
+      <li>
+        <strong>Creator: </strong>
+        <span class="code-container"><code>creator = user&#64;google.com</code></span>
+      </li>
+      <li>
+        <strong>Notes: </strong>
+        <span class="code-container"><code>notes = dropout</code></span>
+      </li>
+      <li>
+        <strong>Date: </strong>
+        <span class="code-container"><code>created >= 2025-10-10</code></span>
+      </li>
+    </ul>
+  </div>
+  <div>
+    <p> <strong>Special Fields:</strong> </p>
+    <ul>
+      <li>
+        <strong>Tags: </strong>
+        <span class="code-container"><code>tags:test</code></span></li
+      >
+      <li>
+        <strong>State: </strong>
+        <span class="code-container"><code>active_state = Active</code></span>
+      </li>
+    </ul>
+  </div>
+  <div>
+    <p> <strong>Operators:</strong> Combine queries with AND, OR, and NOT (or -). </p>
+    <ul>
+      <li>
+        <span class="code-container"><code>tags:llm AND created >= 2025-10-10</code></span>
+      </li>
+      <li>
+        <span class="code-container"><code>-tags:archive</code></span>
+      </li>
+    </ul>
+  </div>
+  <div>
+    <p> <strong>Not Supported:</strong> </p>
+    <ul>
+      <li>Wildcard searches (e.g., title="*gemini")</li>
+      <li>Structural searches (e.g., status.active_state = 2)</li>
+    </ul>
+  </div>
+</mat-menu>
