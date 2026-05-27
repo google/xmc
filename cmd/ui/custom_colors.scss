@@ -1,0 +1,36 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+/**
+ * Custom colors (Light Mode)
+ * We should only add colors here if the color doesn't exist in mat-sys color pallette.
+ */
+:root {
+  --xmc-code-container-color: rgb(229 231 235 / var(--tw-bg-opacity, 1));
+  --xmc-border-color: #dadce0;
+  --xmc-tag-container-color: rgb(229 231 235 / var(--tw-bg-opacity, 1));
+
+  // Custom colors for mat chip container and text.
+  --xmc-chip-green-container-color: rgb(220 252 231 / var(--tw-bg-opacity, 1));
+  --xmc-chip-green-text-color: rgb(22 101 52 / var(--tw-text-opacity, 1));
+
+  --xmc-chip-yellow-container-color: rgb(254 249 195 / var(--tw-bg-opacity, 1));
+  --xmc-chip-yellow-text-color: rgb(133 77 14 / var(--tw-text-opacity, 1));
+
+  --xmc-chip-grey-container-color: rgb(229 231 235 / var(--tw-bg-opacity, 1));
+  --xmc-chip-grey-text-color: rgb(60 64 67 / var(--tw-text-opacity, 1));
+
+  // XID badge colors
+  --xmc-xid-badge-container-color: rgb(224 231 255 / var(--tw-bg-opacity, 1));
+  --xmc-xid-badge-text-color: rgb(67 56 202 / var(--tw-text-opacity, 1));
+}

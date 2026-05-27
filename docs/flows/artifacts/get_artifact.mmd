@@ -1,0 +1,12 @@
+sequenceDiagram
+    participant Client
+    participant ESS
+    participant XID
+    participant Spanner
+
+    Client->>ESS: GetArtifact(name)
+    ESS->>XID: CheckAuth(READER)
+    XID-->>ESS: Authorized
+    ESS->>Spanner: FetchArtifact
+    Spanner-->>ESS: Artifact
+    ESS-->>Client: Artifact

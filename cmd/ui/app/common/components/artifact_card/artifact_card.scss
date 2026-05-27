@@ -1,0 +1,173 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+@use 'third_party/javascript/angular_components/material' as mat;
+@import 'third_party/xmanager_cloud/ui/consts';
+
+.artifact-card {
+  padding: 12px 16px;
+
+  &.clickable:hover {
+    background-color: var(--mat-sys-surface-container-high);
+    cursor: pointer;
+  }
+
+  .card-main-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  mat-icon {
+    font-size: 20px;
+    width: 32px;
+    height: 32px;
+    line-height: 32px;
+    text-align: center;
+    border-radius: 50%;
+    background-color: var(--mat-sys-secondary-container);
+    color: var(--mat-sys-on-secondary-container);
+    flex-shrink: 0;
+  }
+
+  .name-type-section {
+    flex: 2;
+    min-width: 0;
+  }
+
+  .notes-section {
+    flex: 1;
+    font-size: 0.8em;
+    color: var(--mat-sys-on-surface-variant);
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: break-word;
+    min-width: 0;
+  }
+
+  .artifact-title {
+    font-size: 0.9em;
+    font-weight: 500;
+    line-height: 1.2;
+    margin-bottom: 2px;
+    overflow-wrap: break-word;
+  }
+
+  .artifact-subtitle {
+    font-size: 0.8em;
+    line-height: 1.2;
+    color: var(--mat-sys-on-surface-variant);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .work-unit-badge {
+    @include mat.button-density(-3);
+    height: 24px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  mat-divider {
+    margin: 12px 0;
+  }
+
+  .card-lower-content {
+    font-size: 0.8em;
+    color: var(--mat-sys-on-surface-variant);
+
+    .long-notes-section {
+      margin-bottom: 12px;
+      overflow-wrap: break-word;
+    }
+
+    .tags-section {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    .additional-info-section {
+      margin-top: 8px;
+
+      .additional-info-panel {
+        box-shadow: none;
+        border: 1px solid var(--mat-sys-outline-variant);
+        border-radius: 8px;
+      }
+
+      .additional-info-title {
+        font-weight: 500;
+        color: var(--mat-sys-on-surface);
+        margin-bottom: 6px;
+      }
+
+      .additional-info-code {
+        background-color: var(--mat-sys-surface-container);
+        border: 1px solid var(--mat-sys-outline-variant);
+        border-radius: 8px;
+        margin: 0;
+        overflow: auto;
+
+        .code-lines {
+          margin: 0;
+          padding: 8px 0;
+          list-style: none;
+          counter-reset: line;
+
+          li {
+            display: block;
+            padding: 0 12px 0 0;
+            counter-increment: line;
+            font-family: 'Roboto Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+
+            &::before {
+              content: counter(line);
+              display: inline-block;
+              width: 36px;
+              padding-right: 12px;
+              text-align: right;
+              color: var(--mat-sys-on-surface-variant);
+              border-right: 1px solid var(--mat-sys-outline-variant);
+              margin-right: 12px;
+              user-select: none;
+            }
+
+            code {
+              font-family: inherit;
+            }
+
+            &:hover {
+              background-color: var(--mat-sys-surface-container-high);
+            }
+          }
+        }
+      }
+
+      .additional-info-text {
+        line-height: 1.5;
+        overflow-wrap: break-word;
+        white-space: pre-wrap;
+      }
+    }
+  }
+}
+
+xmc-tag {
+  @include small-chip();
+}

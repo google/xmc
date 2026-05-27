@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 678.257 580" width="678.257" height="580" style="--bg:#ffffff;--fg:#1f2328;--line:#d1d9e0;--accent:#0969da;--muted:#59636e;background:var(--bg)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Arial:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Arial', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="seq-arrow" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" />
+  </marker>
+  <marker id="seq-arrow-open" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polyline points="0 0, 8 2.5, 0 5" fill="none" stroke="var(--_arrow)" stroke-width="1" />
+  </marker>
+</defs>
+<line class="lifeline" data-actor="Client" x1="70" y1="70" x2="70" y2="550" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="ESS" x1="235.51749999999998" y1="70" x2="235.51749999999998" y2="550" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="XID" x1="413.2075" y1="70" x2="413.2075" y2="550" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="Spanner" x1="576.8185" y1="70" x2="576.8185" y2="550" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<g class="message" data-from="Client" data-to="ESS" data-label="1. CreateExperiment(req)" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="70" y1="90" x2="235.51749999999998" y2="90" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="152.75875" y="80" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">1. CreateExperiment(req)</text>
+</g>
+<g class="message" data-from="ESS" data-to="ESS" data-label="2. Authenticate &amp; Validate" data-line-style="solid" data-arrow-head="filled" data-self="true">
+  <polyline points="235.51749999999998,130 265.5175,130 265.5175,150 235.51749999999998,150" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="273.5175" y="140" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">2. Authenticate &amp; Validate</text>
+</g>
+<g class="message" data-from="ESS" data-to="XID" data-label="3. CreateXidEntry" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="235.51749999999998" y1="200" x2="413.2075" y2="200" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="324.36249999999995" y="190" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">3. CreateXidEntry</text>
+</g>
+<g class="message" data-from="XID" data-to="ESS" data-label="4. XidEntry (XID)" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="413.2075" y1="240" x2="235.51749999999998" y2="240" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)" />
+  <text x="324.36249999999995" y="230" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">4. XidEntry (XID)</text>
+</g>
+<g class="message" data-from="ESS" data-to="XID" data-label="5. CheckAuth(WRITER)" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="235.51749999999998" y1="280" x2="413.2075" y2="280" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="324.36249999999995" y="270" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">5. CheckAuth(WRITER)</text>
+</g>
+<g class="message" data-from="XID" data-to="ESS" data-label="6. Authorized" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="413.2075" y1="320" x2="235.51749999999998" y2="320" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)" />
+  <text x="324.36249999999995" y="310" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">6. Authorized</text>
+</g>
+<g class="message" data-from="ESS" data-to="ESS" data-label="7. Assemble Experiment" data-line-style="solid" data-arrow-head="filled" data-self="true">
+  <polyline points="235.51749999999998,360 265.5175,360 265.5175,380 235.51749999999998,380" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="273.5175" y="370" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">7. Assemble Experiment</text>
+</g>
+<g class="message" data-from="ESS" data-to="Spanner" data-label="8. CreateExperiment" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="235.51749999999998" y1="430" x2="576.8185" y2="430" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <text x="406.168" y="420" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">8. CreateExperiment</text>
+</g>
+<g class="message" data-from="Spanner" data-to="ESS" data-label="9. Success" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="576.8185" y1="470" x2="235.51749999999998" y2="470" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)" />
+  <text x="406.168" y="460" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">9. Success</text>
+</g>
+<g class="message" data-from="ESS" data-to="Client" data-label="10. Experiment" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="235.51749999999998" y1="510" x2="70" y2="510" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)" />
+  <text x="152.75875" y="500" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">10. Experiment</text>
+</g>
+<g class="actor" data-id="Client" data-label="Client" data-type="participant">
+  <rect x="30" y="30" width="80" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="70" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Client</text>
+</g>
+<g class="actor" data-id="ESS" data-label="ESS (Exp State Server)" data-type="participant">
+  <rect x="150" y="30" width="171.035" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="235.51749999999998" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">ESS (Exp State Server)</text>
+</g>
+<g class="actor" data-id="XID" data-label="XID Service" data-type="participant">
+  <rect x="361.03499999999997" y="30" width="104.345" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="413.2075" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">XID Service</text>
+</g>
+<g class="actor" data-id="Spanner" data-label="Spanner (Storage)" data-type="participant">
+  <rect x="505.38" y="30" width="142.877" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="576.8185" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Spanner (Storage)</text>
+</g>
+</svg>

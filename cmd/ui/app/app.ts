@@ -1,0 +1,44 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+import {ChangeDetectionStrategy, Component, signal} from '@angular/core';
+import {MatIconModule} from '@angular/material/icon';
+import {MatListModule} from '@angular/material/list';
+import {MatSidenavModule} from '@angular/material/sidenav';
+import {RouterModule, RouterOutlet} from '@angular/router';
+
+import {Header} from './common/components/header/header';
+import {SidePanel} from './side_panel/side_panel';
+
+/**
+ * The root component.
+ */
+@Component({
+  selector: 'app-root',
+  templateUrl: './app.ng.html',
+  standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  styleUrl: './app.css',
+  imports: [
+    RouterOutlet, Header, SidePanel, MatSidenavModule, MatListModule,
+    RouterModule, MatIconModule
+  ],
+})
+export class App {
+  title = 'xmc';
+  readonly isSidenavOpened = signal(true);
+
+  toggleSidenav() {
+    this.isSidenavOpened.set(!this.isSidenavOpened());
+  }
+}

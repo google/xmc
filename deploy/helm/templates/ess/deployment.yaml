@@ -1,0 +1,122 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Defines the Deployment for the Experiment State Server pods.
+{{- if .Values.essDeployment.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: experiment-state-server-deployment
+  labels:
+    app: experiment-state-server
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: experiment-state-server
+  template:
+    metadata:
+      labels:
+        app: experiment-state-server
+    spec:
+      serviceAccountName: experiment-server
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: tls-certs
+          secret:
+            secretName: xmc-grpc-tls
+        - name: validation-private-key-volume
+          secret:
+            secretName: validation-secret
+            items:
+            - key: tls.key
+              path: tls.key
+      containers:
+      - name: experiment-state-server
+        image: {{ .Values.ess_custom_image | quote }}
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+          - name: tls-certs
+            mountPath: /etc/tls
+            readOnly: true
+          - name: validation-private-key-volume
+            mountPath: /etc/signing-key
+            readOnly: true
+        ports:
+        - containerPort: 50051
+          name: grpc-port
+        - containerPort: 8080
+          name: http-port
+        readinessProbe:
+          tcpSocket:
+              port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          tcpSocket:
+              port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+        env:
+        - name: IAP_EXPECTED_ISSUER
+          value: {{ .Values.experimentStateServer.iap.iapIssuer | quote }}
+        - name: IAP_EXPECTED_HTTP_AUDIENCE
+          value: {{ .Values.experimentStateServer.iap.httpAudience | quote }}
+        - name: IAP_EXPECTED_GRPC_AUDIENCE
+          value: {{ .Values.experimentStateServer.iap.grpcAudience | quote }}
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        args:
+        - "-ess_gcp_project_id={{ .Values.projectId }}"
+        - "-ess_xid_service_addr=xid-svc.xmc.svc.cluster.local:50051"
+        - "-ess_spanner_database_name=projects/{{ .Values.projectId }}/instances/xmc-{{ .Values.environment }}/databases/experiment-db-{{ .Values.environment }}"
+        - "-ess_actuator_url=https://actuator.api.{{ .Values.environment }}.{{ .Values.domainSuffix }}/actuate"
+        - "-ess_endpoint_url=http://api.{{ .Values.environment }}.{{ .Values.domainSuffix }}"
+        - "-ess_quota_project_id={{ .Values.projectId }}"
+        - "-ess_service_account=xmc-ess-sa-{{ .Values.environment }}@{{ .Values.projectId }}.iam.gserviceaccount.com"
+        - "-ess_signature_ttl_seconds={{ .Values.taskSignatureTtlSeconds }}"
+        - "-ess_allowed_origins={{ .Values.experimentStateServer.allowedOrigins }}"
+        - "-alsologtostderr"
+        - "-ess_default_to_cursor_pagination={{ .Values.defaultToCursorPagination }}"
+        - "-ess_status_message_history_enabled={{ .Values.statusMessageHistoryEnabled }}"
+        - "-redis_addr={{ .Values.redisAddr }}"
+        # Flags to disable internalVCSdependencies.
+        - "--enforce_kernel_ipv6_support=false"
+        - "--enable_streamz_rpc_service=false"
+        - "--logtostderr"
+        - "--securewrapper_dummyimpl_auth_user=$(USER)"
+        - "--streamz_servers="
+        - "--envelope_enabled=false"
+        - "--notracelog"
+        - "--remote_coredump_enabled"
+{{- end }}

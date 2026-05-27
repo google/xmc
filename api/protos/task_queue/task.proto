@@ -1,0 +1,114 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+edition = "2023";
+
+package cloud.xmanager.v1;
+
+import "google/api/field_behavior.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "third_party/xmanager_cloud/experiment_state_server/proto/priority.proto";
+import "third_party/xmanager_cloud/experiment_state_server/proto/work_unit.proto";
+
+// ActuatorPayload is the structured, versioned message sent via Cloud Tasks
+// from the Experiment State Server to the Actuator.
+message ActuatorPayload {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    WORK_UNIT_ACTUATION_REQUEST = 1;
+  }
+
+  // The kind of request. Right now, only WORK_UNIT_ACTUATION_REQUEST is
+  // supported, but in the future we might add support for other kinds of
+  // requests.
+  Kind kind = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The target of the operation, in the form of:
+  // "experiments/{xid}/workUnits/{wid}/executions/{execution_id}".
+  // This field has the following semantics:
+  // - For CREATE, this is the target that should be created.
+  // - For DELETE, this is the target that should be deleted.
+  // - For RESTART, this target is the current running execution. The work unit
+  //   will contain the new execution to run.
+  // - For UPDATE, this is the target that should be updated.
+  string target = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // The work unit to act on. This is the work unit as it was sent by the
+  // Experiment State Server, but it may not be the work unit that is currently
+  // running on Kubernetes or present in the ESS database, depending on the
+  // action ordering or timing.
+  WorkUnit work_unit = 3 [(google.api.field_behavior) = REQUIRED];
+
+  // The action that the Actuator should perform.
+  Action action = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // Metadata about the request.
+  Metadata metadata = 5 [(google.api.field_behavior) = REQUIRED];
+
+  // The timestamp when the request was created.
+  google.protobuf.Timestamp create_time = 6
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+message Action {
+  oneof action {
+    CreateAction create = 1;
+    DeleteAction delete = 2;
+    RestartAction restart = 3;
+    UpdateAction update = 4;
+  }
+}
+
+// Metadata about the request.
+message Metadata {
+  // The idempotency key for the request.
+  string idempotency_key = 1 [(google.api.field_behavior) = REQUIRED];
+  // The operation name for the request. This is used to update the operation
+  // metadata in the ESS database. The format is:
+  // "experiments/{xid}/workUnits/{wid}/operations/{operation_id}".
+  // If no operation should be updated, this field should be unset.
+  string operation_name = 2 [(google.api.field_behavior) = OPTIONAL];
+  // The trace ID for the request. This is used to propagate the trace ID to
+  // Kubernetes, so that the logs from the ESS and Actuator are linked. If no
+  // trace ID is provided, one will be generated on the actuator.
+  string trace_id = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message CreateAction {
+  // The priority of the experiment.
+  Priority experiment_priority = 1 [(google.api.field_behavior) = REQUIRED];
+  // The author of the experiment.
+  string author = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+message DeleteAction {}
+
+message RestartAction {
+  // The priority of the experiment.
+  // This is needed to determine the priority class of the JobSet if it doesn't
+  // exist currently.
+  Priority experiment_priority = 1 [(google.api.field_behavior) = REQUIRED];
+  // The author of the experiment.
+  string author = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+message UpdateAction {
+  // Mask for the fields to update. Supported fields are:
+  // - priority
+  google.protobuf.FieldMask update_mask = 1
+      [(google.api.field_behavior) = REQUIRED];
+  // The experiment priority to update to. If priority is not in the update
+  // mask, this field will be ignored.
+  Priority experiment_priority = 2 [(google.api.field_behavior) = OPTIONAL];
+}

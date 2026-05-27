@@ -1,0 +1,17 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 44 44">
+  <path fill-rule="evenodd" d="M.654 3.276C0 4.56 0 6.24 0 9.6v24.8c0 3.36 0 5.04.654 6.324a6 6 0 0 0 2.622 2.622C4.56 44 6.24 44 9.6 44h24.8c3.36 0 5.04 0 6.324-.654a6 6 0 0 0 2.622-2.622C44 39.44 44 37.76 44 34.4V9.6c0-3.36 0-5.04-.654-6.324A6 6 0 0 0 40.724.654C39.44 0 37.76 0 34.4 0H9.6C6.24 0 4.56 0 3.276.654A6 6 0 0 0 .654 3.276zM10 11.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm0 12a1.5 1.5 0 0 0 .5-2.915V14a.5.5 0 0 0-1 0v6.585A1.5 1.5 0 0 0 10 23.5zM11.5 34a1.5 1.5 0 1 1-2-1.415V26a.5.5 0 0 1 1 0v6.585a1.5 1.5 0 0 1 1 1.415zM34 11.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM35.5 22a1.5 1.5 0 1 1-2-1.415V14a.5.5 0 0 1 1 0v6.585a1.5 1.5 0 0 1 1 1.415zM34 35.5a1.5 1.5 0 0 0 .5-2.915V26a.5.5 0 0 0-1 0v6.585A1.5 1.5 0 0 0 34 35.5zM14.354 13.646a.5.5 0 0 0-.708.708l5 5a.5.5 0 0 0 .708-.708l-5-5zm10.292 11a.5.5 0 0 1 .708 0l5.5 5.5a.5.5 0 0 1-.708.708l-5.5-5.5a.5.5 0 0 1 0-.708zm5-11a.5.5 0 0 1 .708.708l-5 5a.5.5 0 0 1-.708-.708l5-5zm-10.292 11a.5.5 0 0 0-.708 0l-5 5a.5.5 0 0 0 .708.708l5-5a.5.5 0 0 0 0-.708zM22 23.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z" clip-rule="evenodd"/>
+</svg>

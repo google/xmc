@@ -1,0 +1,52 @@
+<!--
+Copyright 2025 Google LLC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<button
+  mat-icon-button
+  aria-label="Filter status messages"
+  matTooltip="Filter status messages"
+  [matMenuTriggerFor]="filterMenu"
+>
+  <mat-icon>filter_list</mat-icon>
+</button>
+<mat-menu class="filter-menu" #filterMenu="matMenu">
+  <div class="filter-menu-title">Display Status Messages</div>
+  <mat-card-content class="filter-menu-content">
+    <div class="filter-column">
+      <div class="filter-column-title">Severity</div>
+      @for (severity of allSeverities; track severity) {
+        <mat-checkbox
+          [checked]="(filterService.severities$ | async)?.has(severity)"
+          (change)="toggleSeverity(severity, $event.checked)"
+          (click)="$event.stopPropagation()"
+        >
+          {{ formatSeverity(severity) }}
+        </mat-checkbox>
+      }
+    </div>
+    <div class="filter-column">
+      <div class="filter-column-title">Source</div>
+      @for (source of allSources; track source) {
+        <mat-checkbox
+          [checked]="(filterService.sources$ | async)?.has(source)"
+          (change)="toggleSource(source, $event.checked)"
+          (click)="$event.stopPropagation()"
+        >
+          {{ formatSource(source) }}
+        </mat-checkbox>
+      }
+    </div>
+  </mat-card-content>
+</mat-menu>

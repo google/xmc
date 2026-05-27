@@ -1,0 +1,13 @@
+sequenceDiagram
+    participant Client
+    participant ESS as ESS (Exp State Server)
+    participant XID as XID Service
+    participant Spanner as Spanner (Storage)
+
+    Client->>ESS: 1. ListStatusMessages(req) / SearchStatusMessages(req)
+    ESS->>ESS: 2. Authenticate & Validate (Check Parent & Page Size)
+    ESS->>XID: 3. CheckAuth(READER)
+    XID-->>ESS: 4. Authorized
+    ESS->>Spanner: 5. FetchStatusMessages (with staleness)
+    Spanner-->>ESS: 6. StatusMessages & NextPageToken
+    ESS-->>Client: 7. ListStatusMessagesResponse

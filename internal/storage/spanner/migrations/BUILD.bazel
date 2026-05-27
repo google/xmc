@@ -1,0 +1,86 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
+
+genrule(
+    name = "copy_ess_messages",
+    srcs = ["//internal/storage/spanner/emulator:ess_messages.pb"],
+    outs = ["ess_messages.pb"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "copy_xid_messages",
+    srcs = ["//internal/storage/spanner/emulator:xid_messages.pb"],
+    outs = ["xid_messages.pb"],
+    cmd = "cp $< $@",
+)
+
+compat_go_library(
+    name = "migrations_lib",
+    srcs = ["runner.go"],
+    embedsrcs = [
+        "ess/001_baseline.down.sql",
+        "ess/001_baseline.up.sql",
+        "ess/002_artifactinfo.down.sql",
+        "ess/002_artifactinfo.up.sql",
+        "ess/003_status_messages.down.sql",
+        "ess/003_status_messages.up.sql",
+        "xid/001_baseline.down.sql",
+        "xid/001_baseline.up.sql",
+        ":ess_messages.pb",
+        ":xid_messages.pb",
+    ],
+    importpath = "xmanager_cloud/internal/storage/spanner/migrations",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//internal/compat/google",
+        "//internal/compat/log",
+        "//internal/compat/spanner",
+        "//internal/storage/spanner/migrations/commands",
+        "//internal/storage/spanner/migrations/driver:driver",
+        "@com_github_golang_migrate_migrate_v4//:go_default_library",
+        "@com_github_golang_migrate_migrate_v4//source:source",
+        "@com_github_golang_migrate_migrate_v4//source/iofs:iofs",
+        "@com_google_cloud_go_spanner//admin/database/apiv1:apiv1",
+        "@org_golang_google_api//option",
+    ],
+)
+
+go_binary(
+    name = "migrations",
+    embed = [":migrations_lib"],
+    visibility = ["//:__subpackages__"],
+)
+
+compat_go_test(
+    name = "migrations_test",
+    srcs = [
+        "runner_test.go",
+        "schema_consistency_test.go",
+        "shared_test.go",
+    ],
+    embed = [":migrations_lib"],
+    deps = [
+        "//internal/compat/cmp",
+        "//internal/compat/cmpopts",
+        "//internal/storage/spanner/emulator",
+        "//internal/storage/spanner/migrations/testing",
+        "@com_github_golang_migrate_migrate_v4//source/iofs:iofs",
+        "@org_golang_google_api//option",
+        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
+    ],
+)

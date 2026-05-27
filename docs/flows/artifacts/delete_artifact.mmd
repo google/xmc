@@ -1,0 +1,12 @@
+sequenceDiagram
+    participant Client
+    participant ESS
+    participant XID
+    participant Spanner
+
+    Client->>ESS: DeleteArtifact(req)
+    ESS->>XID: CheckAuth(OWNER)
+    XID-->>ESS: Authorized
+    ESS->>Spanner: DeleteArtifact
+    Spanner-->>ESS: Success
+    ESS-->>Client: Success

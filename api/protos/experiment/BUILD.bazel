@@ -1,0 +1,161 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# gazelle:ignore
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//proto:compiler.bzl", "go_proto_compiler")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+package(default_visibility = ["//visibility:public"])
+
+proto_library(
+    name = "experiment_messages_proto",
+    srcs = [
+        "artifact.proto",
+        "experiment.proto",
+        "operations.proto",
+        "priority.proto",
+        "resources.proto",
+        "status.proto",
+        "status_message.proto",
+        "structured_message.proto",
+        "url.proto",
+        "work_unit.proto",
+        "work_unit_execution.proto",
+    ],
+    import_prefix = "third_party/xmanager_cloud/experiment_state_server/proto",
+    strip_import_prefix = "/api/protos/experiment",
+    deps = [
+        "//api/protos/xid:xid_messages_proto",
+        "@com_google_googleapis//google/api:field_behavior_proto",
+        "@com_google_googleapis//google/api:resource_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "messages_go_proto",
+    importpath = "xmanager_cloud/experiment_state_server/proto/messages_go_proto",
+    proto = ":experiment_messages_proto",
+    deps = [
+        "//api/protos/xid:messages_go_proto",
+        "@org_golang_google_genproto_googleapis_api//:go_default_library",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+    ],
+)
+
+proto_library(
+    name = "experiment_api_proto",
+    srcs = ["api.proto"],
+    import_prefix = "third_party/xmanager_cloud/experiment_state_server/proto",
+    strip_import_prefix = "/api/protos/experiment",
+    deps = [
+        ":experiment_messages_proto",
+        "@com_google_googleapis//google/api:annotations_proto",
+        "@com_google_googleapis//google/api:client_proto",
+        "@com_google_googleapis//google/api:field_behavior_proto",
+        "@com_google_googleapis//google/api:resource_proto",
+        "@com_google_googleapis//google/longrunning:operations_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:field_mask_proto",
+    ],
+)
+
+go_proto_compiler(
+    name = "go_grpc_gateway",
+    plugin = "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:protoc-gen-grpc-gateway",
+    suffix = ".pb.gw.go",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:utilities",
+        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//grpclog:go_default_library",
+        "@org_golang_google_grpc//metadata:go_default_library",
+        "@org_golang_google_protobuf//proto:go_default_library",
+    ],
+)
+
+go_proto_library(
+    name = "api_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+        ":go_grpc_gateway",
+    ],
+    importpath = "xmanager_cloud/experiment_state_server/proto/api_go_proto",
+    proto = ":experiment_api_proto",
+    deps = [
+        ":messages_go_proto",
+        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
+        "@org_golang_google_genproto_googleapis_api//:go_default_library",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+    ],
+)
+
+proto_library(
+    name = "cloud_xmanager_v1_proto",
+    srcs = [
+        "api.proto",
+        "artifact.proto",
+        "experiment.proto",
+        "operations.proto",
+        "priority.proto",
+        "resources.proto",
+        "status.proto",
+        "status_message.proto",
+        "structured_message.proto",
+        "url.proto",
+        "work_unit.proto",
+        "work_unit_execution.proto",
+    ],
+    import_prefix = "third_party/xmanager_cloud/experiment_state_server/proto",
+    strip_import_prefix = "/api/protos/experiment",
+    deps = [
+        "//api/protos/xid:xid_messages_proto",
+        "@com_google_googleapis//google/api:annotations_proto",
+        "@com_google_googleapis//google/api:client_proto",
+        "@com_google_googleapis//google/api:field_behavior_proto",
+        "@com_google_googleapis//google/api:resource_proto",
+        "@com_google_googleapis//google/longrunning:operations_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:field_mask_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "cloud_xmanager_v1_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "xmanager_cloud/api/protos/experiment",
+    proto = ":cloud_xmanager_v1_proto",
+    deps = [
+        "//api/protos/xid:messages_go_proto",
+        "@org_golang_google_genproto_googleapis_api//:go_default_library",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+        "@com_google_googleapis//google/api:field_behavior_go_proto",
+        "@com_google_googleapis//google/api:resource_go_proto",
+        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
+    ],
+)
+
+go_library(
+    name = "experiment",
+    embed = [":cloud_xmanager_v1_go_proto"],
+    importpath = "xmanager_cloud/api/protos/experiment",
+)
