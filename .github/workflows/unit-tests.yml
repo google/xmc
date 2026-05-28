@@ -5,7 +5,10 @@ on:
   push:
     branches:
       - feature/unit_tests_action
+<<<<<<< HEAD
       - test
+=======
+>>>>>>> 08a9715 (Github actions - tests setup trigger on branch push)
   workflow_dispatch:
 
 permissions:
@@ -42,7 +45,11 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
+<<<<<<< HEAD
           key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+=======
+          key: bazel-${{ runner.os }}-${{ github.sha }}
+>>>>>>> 08a9715 (Github actions - tests setup trigger on branch push)
           restore-keys: |
             bazel-${{ runner.os }}-
 
@@ -56,6 +63,7 @@ jobs:
 
       - name: 'Run Unit Tests'
         run: |
+<<<<<<< HEAD
           # TODO: increase this time limit or remove altogether once the spanner tests are not timing out
           # TODO: add the following tests back once they are green:
           # //cmd/actuator/k8s_client:k8s_client_test
@@ -73,6 +81,10 @@ jobs:
           # //internal/storage/spanner/migrations/commands:commands_test
           # //internal/storage/spanner/migrations/driver:driver_test
           bazel test \
+=======
+          # TODO: increase the test timeout limit or remove altogether once the spanner tests are not timing out
+          bazel test //... \
+>>>>>>> 08a9715 (Github actions - tests setup trigger on branch push)
             --repository_cache=~/.cache/bazel-repo \
             --disk_cache=~/.cache/bazel-disk \
             --test_output=errors \
@@ -85,6 +97,7 @@ jobs:
             --bes_header="x-goog-user-project=${{ env.PROJECT_ID }}" \
             --bes_timeout=15s \
             --test_timeout=15,15,15,15 \
+<<<<<<< HEAD
             --google_default_credentials \
             -- \
             //... \
@@ -102,6 +115,9 @@ jobs:
             -//internal/storage/spanner/migrations:migrations_test \
             -//internal/storage/spanner/migrations/commands:commands_test \
             -//internal/storage/spanner/migrations/driver:driver_test
+=======
+            --google_default_credentials
+>>>>>>> 08a9715 (Github actions - tests setup trigger on branch push)
 
       - name: 'Save Bazel Cache'
         uses: 'actions/cache/save@v4'
@@ -110,4 +126,8 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
+<<<<<<< HEAD
           key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+=======
+          key: bazel-${{ runner.os }}-${{ github.sha }}
+>>>>>>> 08a9715 (Github actions - tests setup trigger on branch push)
