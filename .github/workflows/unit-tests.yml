@@ -1,0 +1,35 @@
+name: 'XMC Unit Tests'
+
+on:
+  pull_request:
+  push:
+    branches:
+      - test
+  workflow_dispatch:
+
+jobs:
+  run-tests:
+    name: 'Run Unit Tests'
+    runs-on: 'ubuntu-24.04'
+
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@v4'
+
+      - name: 'Set up Bazel'
+        uses: 'bazel-contrib/setup-bazel@v0'
+        with:
+          bazelisk-version: 'latest'
+
+      - name: 'Bazel Cache'
+        uses: 'actions/cache@v4'
+        with:
+          path: |
+            ~/.cache/bazel
+          key: ${{ runner.os }}-bazel-${{ hashFiles('**/BUILD.bazel', 'WORKSPACE', 'MODULE.bazel') }}
+          restore-keys: |
+            ${{ runner.os }}-bazel-
+
+      - name: 'Run Internal Unit Tests'
+        run: |
+          bazel test //:internal_tests
