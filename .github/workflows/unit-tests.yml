@@ -5,31 +5,78 @@ on:
   push:
     branches:
       - test
+      - feature-github-actions-test-worker
   workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   run-tests:
     name: 'Run Unit Tests'
     runs-on: 'ubuntu-24.04'
+    environment: janzak-dev-test
+
+    env:
+      PROJECT_ID: ${{ vars.PROJECT_ID }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+      SERVICE_ACCOUNT: ${{ vars.SERVICE_ACCOUNT }}
 
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
 
-      - name: 'Set up Bazel'
-        uses: 'bazel-contrib/setup-bazel@v0'
+      - name: 'Set up Go'
+        uses: 'actions/setup-go@v5'
         with:
-          bazelisk-version: 'latest'
+          go-version: '1.26.0'
 
-      - name: 'Bazel Cache'
-        uses: 'actions/cache@v4'
+      - name: 'Set up Bazel'
+        uses: 'bazelbuild/setup-bazelisk@v3'
+
+      # ROLLING CACHE (Split): Restores the latest available cache.
+      - name: 'Restore Bazel Cache'
+        id: 'cache-bazel-restore'
+        uses: 'actions/cache/restore@v4'
         with:
           path: |
-            ~/.cache/bazel
-          key: ${{ runner.os }}-bazel-${{ hashFiles('**/BUILD.bazel', 'WORKSPACE', 'MODULE.bazel') }}
+            ~/.cache/bazel-repo
+            ~/.cache/bazel-disk
+          key: bazel-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-bazel-
+            bazel-${{ runner.os }}-
 
-      - name: 'Run Internal Unit Tests'
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: '${{ env.WORKLOAD_IDENTITY_PROVIDER }}'
+          service_account: '${{ env.SERVICE_ACCOUNT }}'
+          create_credentials_file: true
+
+      - name: 'Run Reconciler Unit Tests'
         run: |
-          bazel test //:internal_tests
+          bazel test //cmd/reconciler/... \
+            --repository_cache=~/.cache/bazel-repo \
+            --disk_cache=~/.cache/bazel-disk \
+            --test_output=errors \
+            --build_tests_only \
+            --remote_build_event_upload=all \
+            --bes_backend="grpcs://buildeventservice.googleapis.com" \
+            --bes_results_url="https://source.cloud.google.com/results/invocations" \
+            --bes_instance_name="${{ env.PROJECT_ID }}" \
+            --google_auth_scopes="https://www.googleapis.com/auth/cloud-platform" \
+            --bes_header="x-goog-user-project=${{ env.PROJECT_ID }}" \
+            --bes_timeout=60s \
+            --google_default_credentials
+
+      # ROLLING CACHE (Split): Always saves the new state even if tests failed.
+      - name: 'Save Bazel Cache'
+        uses: 'actions/cache/save@v4'
+        if: always()
+        with:
+          path: |
+            ~/.cache/bazel-repo
+            ~/.cache/bazel-disk
+          key: bazel-${{ runner.os }}-${{ github.sha }}
