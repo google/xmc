@@ -14,14 +14,15 @@ permissions:
 
 jobs:
   run-tests:
-    name: 'Run Unit Tests'
-    runs-on: 'ubuntu-24.04'
+    name: 'Run Reconciler Unit Tests'
+    runs-on: 'ubuntu-latest'
     environment: janzak-dev-test
 
     env:
       PROJECT_ID: ${{ vars.PROJECT_ID }}
       WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
       SERVICE_ACCOUNT: ${{ vars.SERVICE_ACCOUNT }}
+      LOGS_BUCKET: xmc-test-logs-${{ vars.PROJECT_ID }}
 
     steps:
       - name: 'Checkout'
@@ -35,7 +36,6 @@ jobs:
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@v3'
 
-      # ROLLING CACHE (Split): Restores the latest available cache.
       - name: 'Restore Bazel Cache'
         id: 'cache-bazel-restore'
         uses: 'actions/cache/restore@v4'
@@ -56,22 +56,62 @@ jobs:
           create_credentials_file: true
 
       - name: 'Run Reconciler Unit Tests'
+        id: 'run-tests'
         run: |
+          # 1. Generate ID
+          export INVOCATION_ID=$(python3 -c "import uuid; print(str(uuid.uuid4()))")
+          echo "INVOCATION_ID=$INVOCATION_ID" >> $GITHUB_ENV
+
+          # 2. Run Bazel (Minimal configuration - NO shared secret)
+          # This makes the Service Account the sole owner of the record, 
+          # which fixes the 'Permission Denied' errors during later patching.
           bazel test //cmd/reconciler/... \
             --repository_cache=~/.cache/bazel-repo \
             --disk_cache=~/.cache/bazel-disk \
             --test_output=errors \
             --build_tests_only \
-            --remote_build_event_upload=all \
+            --remote_build_event_upload=minimal \
             --bes_backend="grpcs://buildeventservice.googleapis.com" \
             --bes_results_url="https://source.cloud.google.com/results/invocations" \
             --bes_instance_name="${{ env.PROJECT_ID }}" \
+            --invocation_id="$INVOCATION_ID" \
             --google_auth_scopes="https://www.googleapis.com/auth/cloud-platform" \
             --bes_header="x-goog-user-project=${{ env.PROJECT_ID }}" \
             --bes_timeout=60s \
-            --google_default_credentials
+            --google_default_credentials \
+            --bes_lifecycle_events=true
+        continue-on-error: true
 
-      # ROLLING CACHE (Split): Always saves the new state even if tests failed.
+      - name: 'Consolidate and Upload Logs'
+        if: always()
+        run: |
+          # Follow symlinks and consolidate
+          find -L bazel-testlogs bazel-out -name "test.log" -type f -exec cat {} + > combined_test.log 2>/dev/null || true
+          
+          if [ ! -s combined_test.log ]; then
+            echo "No test logs captured." > combined_test.log
+          fi
+
+          # Upload while authenticated as the Service Account
+          gcloud storage cp combined_test.log "gs://${{ env.LOGS_BUCKET }}/${{ env.INVOCATION_ID }}/test.log"
+
+      - name: 'Update ResultStore with Logs (Go gRPC)'
+        if: always()
+        run: |
+          # Use the native Go gRPC tool. 
+          # Since we removed the shared secret, the SA identity has direct ownership.
+          go run tools/resultstore_linker.go \
+            --action patch \
+            --invocation_id "${{ env.INVOCATION_ID }}" \
+            --project_id "${{ env.PROJECT_ID }}" \
+            --bucket "${{ env.LOGS_BUCKET }}" \
+            --status ${{ steps.run-tests.outcome == 'success' && 'passed' || 'failed' }}
+          
+          go run tools/resultstore_linker.go \
+            --action finalize \
+            --invocation_id "${{ env.INVOCATION_ID }}" \
+            --project_id "${{ env.PROJECT_ID }}"
+
       - name: 'Save Bazel Cache'
         uses: 'actions/cache/save@v4'
         if: always()
