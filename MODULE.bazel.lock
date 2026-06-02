@@ -217,7 +217,7 @@
   "moduleExtensions": {
     "//:import.bzl%repo_import": {
       "general": {
-        "bzlTransitiveDigest": "fxTSL1Qu/eg9OHVsoE4jaXmjxjfZsB/5jN6z2hqFnT8=",
+        "bzlTransitiveDigest": "g9gJACaE246lzlieYHGiNRJxdvGs2RFTlOqviBztkw8=",
         "usagesDigest": "kDlR5ZWx4ycbeEcOmldVRQoSLzORk8CsesseAYBptZ8=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
