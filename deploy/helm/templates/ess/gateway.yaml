@@ -1,0 +1,35 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Values.gateway.name }}
+  namespace: {{ .Release.Namespace }}
+  {{- if .Values.gateway.certMap }}
+  annotations:
+    networking.gke.io/certmap: {{ .Values.gateway.certMap | quote }}
+  {{- end }}
+spec:
+  gatewayClassName: {{ .Values.gateway.className | quote }}
+  {{- if .Values.gateway.staticIp }}
+  addresses:
+    - type: NamedAddress
+      value: {{ .Values.gateway.staticIp | quote }}
+  {{- end }}
+  listeners:
+    - name: http-listener
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https
+      protocol: HTTPS
+      port: 443
+      allowedRoutes:
+        namespaces:
+          from: Same
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: {{ .Values.gateway.sslCertificateName | default "xmc-grpc-tls" | quote }}
+{{- end }}

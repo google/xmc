@@ -1,0 +1,82 @@
+# Standalone BUILD.bazel file for XMC UI
+package(default_visibility = ["//visibility:public"])
+
+# 1. Build the OCI image tarball using the custom python builder
+genrule(
+    name = "ui_image_tarball",
+    srcs = glob([
+        "app/**/*",
+        "static/**/*",
+        "*.ts",
+        "*.scss",
+        "*.html",
+        "*.json",
+        "*.ico",
+        "*.svg",
+        "nginx.conf",
+        "generate_config.sh",
+    ]) + [":build_ui_oci.py"],
+    outs = ["ui_image_tarball.tar"],
+    cmd = "python3 $(location :build_ui_oci.py) $@",
+    tools = [":build_ui_oci.py"],
+    visibility = ["//visibility:public"],
+)
+
+# 2. Generate the push script for remote registry uploads
+genrule(
+    name = "ui_image_push",
+    srcs = [":ui_image_tarball"],
+    outs = ["ui_image_push.sh"],
+    cmd = """
+cat << 'EOF' > $@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -z "$${XMC_ACR_TARGET:-}" ]]; then
+  echo "ERROR: XMC_ACR_TARGET environment variable is not set." >&2
+  exit 1
+fi
+
+XMC_ENV="$${XMC_ENV:-dev}"
+REPO="$${XMC_ACR_TARGET}/ui-$${XMC_ENV}"
+TAG="$${BUILD_TAG:-latest}"
+
+if command -v docker &>/dev/null; then
+  CONTAINER_CMD="docker"
+elif command -v podman &>/dev/null; then
+  CONTAINER_CMD="podman"
+else
+  echo "ERROR: Neither docker nor podman command was found." >&2
+  exit 1
+fi
+
+# Find the path of the tarball
+DIR="$$(dirname "$${BASH_SOURCE[0]}")"
+TARBALL_PATH="$$DIR/ui_image_tarball.tar"
+
+if [[ ! -f "$$TARBALL_PATH" ]]; then
+  # Fallback to search
+  TARBALL_PATH="$$(find . -name 'ui_image_tarball.tar' -print -quit)"
+fi
+
+echo "Loading UI image from tarball $${TARBALL_PATH}..."
+LOAD_OUT=$$($${CONTAINER_CMD} load -i "$${TARBALL_PATH}")
+echo "$$LOAD_OUT"
+
+# Parse loaded image tag
+IMAGE_ID=$$(echo "$$LOAD_OUT" | sed -n 's/^Loaded image: //p')
+if [[ -z "$$IMAGE_ID" ]]; then
+  IMAGE_ID="ui-image:latest"
+fi
+
+echo "Tagging image: $$IMAGE_ID -> $${REPO}:$${TAG}"
+$${CONTAINER_CMD} tag "$$IMAGE_ID" "$${REPO}:$${TAG}"
+
+echo "Pushing image to $${REPO}:$${TAG}..."
+$${CONTAINER_CMD} push "$${REPO}:$${TAG}"
+EOF
+chmod +x $@
+""",
+    executable = True,
+    visibility = ["//visibility:public"],
+)

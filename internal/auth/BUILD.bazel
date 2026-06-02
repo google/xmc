@@ -26,6 +26,7 @@ go_library(
     importpath = "xmanager_cloud/internal/auth",
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/auth/oauth2",
         "//api/protos/xid:messages_go_proto",
         "//internal/compat/metadata",
         "//internal/compat/status",

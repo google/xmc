@@ -1,0 +1,42 @@
+{{- if .Values.ui.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui-deployment
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ui
+  template:
+    metadata:
+      labels:
+        app: ui
+    spec:
+      serviceAccountName: experiment-server
+      containers:
+      - name: xmc-ui
+        image: {{ .Values.ui.image | quote }}
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: XMC_API_URL
+          value: {{ .Values.ui.apiUrl | quote }}
+        - name: XMC_REFRESH_INTERVAL_MS
+          value: {{ .Values.ui.refreshIntervalMs | quote }}
+        - name: XMC_DEFAULT_TO_CURSOR_PAGINATION
+          value: {{ .Values.ui.enableCursorPagination | quote }}
+        - name: XMC_STATUS_MESSAGE_HISTORY_ENABLED
+          value: {{ .Values.ui.enableStatusMessageHistory | quote }}
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+{{- end }}

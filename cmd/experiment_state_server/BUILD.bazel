@@ -39,6 +39,7 @@ compat_go_library(
     visibility = ["//visibility:private"],
     deps = [
         ":config",
+        "//pkg/auth/oauth2:oauth2",
         "//internal/auth",
         "//internal/logging",
         "//internal/compat/google",

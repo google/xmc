@@ -47,6 +47,7 @@ import (
 	healthgrpc "grpc_proto/health_go_grpc"
 	healthpb "grpc_proto/health_go_proto"
 	authz "xmanager_cloud/auth/auth"
+	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/experiment_state_server/config"
 	gwpb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_gateway_proto"
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
@@ -63,7 +64,7 @@ var embedFS embed.FS
 
 func incomingHeaderMatcher(key string) (string, bool) {
 	switch strings.ToLower(key) {
-	case "x-goog-iap-jwt-assertion", "x-goog-authenticated-user-email", "x-goog-authenticated-user-id":
+	case "x-goog-iap-jwt-assertion", "x-goog-user-email", "x-goog-authenticated-user-email", "x-goog-authenticated-user-id":
 		return key, true
 	default:
 		return runtime.DefaultHeaderMatcher(key)
@@ -76,6 +77,10 @@ func main() {
 
 	// 1. Load configuration
 	cfg := config.Load()
+	oauthCfg := oauth.LoadConfig()
+	if oauthCfg.GCPProjectID == "" {
+		oauthCfg.GCPProjectID = cfg.ProjectID
+	}
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
 	ctx := logging.WithLogger(context.Background(), logger)
 	if cfg.InvokerSA == "" {
@@ -112,7 +117,7 @@ func main() {
 		logging.Fatal(ctx, "failed to create storage", "error", err)
 	}
 
-	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{cfg.HTTPAudience, cfg.GRPCAudience}, cfg.IAPIssuer, false)
+	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}, cfg.IAPIssuer, false)
 	if err != nil {
 		logging.Fatal(ctx, "failed to create authorizer", "error", err)
 	}
@@ -216,6 +221,17 @@ func main() {
 	// 9. Create a master HTTP mux for the gRPC gateway + health checks.
 	httpMux := http.NewServeMux()
 
+	// Load dynamic OAuth2 Authentication configurations
+	oauthAuth := oauth.NewAuthenticator(oauthCfg)
+
+	// Mount OAuth2 routing handlers
+	httpMux.HandleFunc("/api/login", oauthAuth.HandleLogin)
+	httpMux.HandleFunc("/api/callback", oauthAuth.HandleCallback)
+	httpMux.HandleFunc("/api/logout", oauthAuth.HandleLogout)
+	httpMux.Handle("/api/user", oauthAuth.Authenticate(http.HandlerFunc(oauthAuth.HandleUser)))
+
+
+
 	staticRootFS, err := fs.Sub(embedFS, "xmanager_cloud/experiment_state_server/static")
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create static file system", "error", err)
@@ -246,6 +262,9 @@ func main() {
 
 	httpMux.HandleFunc("/healthz", activeHealthCheck(spannerClient, xidClient, taskQueueClient))
 
+	// Secure the private gRPC-Gateway endpoints with the Authenticate middleware.
+	authenticatedGwmux := oauthAuth.Authenticate(gwmux)
+
 	// Register a handler for the "/" path, aka. all traffic to the HTTP port.
 	httpMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// Check if the path is exactly "/". This serves as a simple "live" check
@@ -256,9 +275,10 @@ func main() {
 			return
 		}
 
-		// Delegate to the gRPC-Gateway.
-		gwmux.ServeHTTP(w, r)
+		// Delegate to the gRPC-Gateway, secured by OAuth2.
+		authenticatedGwmux.ServeHTTP(w, r)
 	})
+
 
 	// 10. Configure CORS for the HTTP server.
 	// server.
@@ -288,6 +308,7 @@ func main() {
 		}
 	}
 	handler = cop.Handler(handler)
+	handler = oauthAuth.SecurityHeadersMiddleware(handler)
 
 	// 11. Start the HTTP server.
 	gwServer := &http.Server{

@@ -11,22 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# Defines the Ingress resource for HTTP traffic to the Experiment State Server.
-apiVersion: networking.k8s.io/v1
-kind: Ingress
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: WorkloadPriorityClass
 metadata:
-  name: http-ingress
-  annotations:
-    networking.gke.io/managed-certificates: "xmc-ess-certificate"
-    kubernetes.io/ingress.global-static-ip-name: xmc-ess-http-static-ip-{{ .Values.environment }}
-spec:
-  rules:
-  - host: api.{{ .Values.environment }}.{{ .Values.domainSuffix }}
-    http:
-      paths:
-      - pathType: ImplementationSpecific
-        backend:
-          service:
-            name: http-service
-            port:
-              number: 8080
+  name: exp-medium-wu-low
+value: 600
+description: "Experiment medium priority, Work Unit low priority"

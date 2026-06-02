@@ -17,8 +17,8 @@ limitations under the License.
 
 @if (isLoading()) {
   <xmc-loading-bar />
-} @else if (error(); as error) {
-  <div class="error-message">Failed to fetch work units: {{ error }} </div>
+} @else if (error()) {
+  <div class="error-message">Failed to fetch work units: {{ error() }} </div>
 } @else {
   @if (isRefreshing()) {
     <xmc-loading-bar [isRefreshing]="true" />
