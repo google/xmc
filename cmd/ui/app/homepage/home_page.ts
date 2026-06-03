@@ -44,7 +44,7 @@ export class HomePage {
       return null;
     }
     if (errType === 'forbidden') {
-      const email = params['email'] || '';
+      const email = params['email'] ?? '';
       return `Your account (${email}) is not authorized. Please contact your administrator to request access.`;
     } else if (errType === 'permission_error') {
       return 'Failed to verify authorization permissions. Please contact your administrator.';
