@@ -156,10 +156,20 @@ func (a *Authenticator) Authenticate(next http.Handler) http.Handler {
 func (a *Authenticator) CORSMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin == "" {
-			origin = a.Config.FrontendURL
+		allowedOrigin := a.Config.FrontendURL
+		if origin != "" {
+			if origin == a.Config.FrontendURL {
+				allowedOrigin = origin
+			} else {
+				for _, ao := range a.Config.AllowedOrigins {
+					if origin == ao {
+						allowedOrigin = origin
+						break
+					}
+				}
+			}
 		}
-		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")

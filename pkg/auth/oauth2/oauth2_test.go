@@ -386,3 +386,69 @@ func TestXForwardedProtoTrust(t *testing.T) {
 	}
 }
 
+func TestCORSMiddleware(t *testing.T) {
+	cfg := &Config{
+		FrontendURL:    "http://frontend.com",
+		AllowedOrigins: []string{"http://allowed1.com", "http://allowed2.com"},
+	}
+	a := NewAuthenticator(cfg)
+
+	tests := []struct {
+		name       string
+		origin     string
+		wantOrigin string
+	}{
+		{
+			name:       "Empty origin defaults to FrontendURL",
+			origin:     "",
+			wantOrigin: "http://frontend.com",
+		},
+		{
+			name:       "FrontendURL matches",
+			origin:     "http://frontend.com",
+			wantOrigin: "http://frontend.com",
+		},
+		{
+			name:       "AllowedOrigin matches 1",
+			origin:     "http://allowed1.com",
+			wantOrigin: "http://allowed1.com",
+		},
+		{
+			name:       "AllowedOrigin matches 2",
+			origin:     "http://allowed2.com",
+			wantOrigin: "http://allowed2.com",
+		},
+		{
+			name:       "Disallowed origin defaults to FrontendURL",
+			origin:     "http://disallowed.com",
+			wantOrigin: "http://frontend.com",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := a.CORSMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+
+			req := httptest.NewRequest("GET", "http://frontend.com/api/test", nil)
+			if tt.origin != "" {
+				req.Header.Set("Origin", tt.origin)
+			}
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, req)
+
+			gotOrigin := w.Header().Get("Access-Control-Allow-Origin")
+			if gotOrigin != tt.wantOrigin {
+				t.Errorf("Access-Control-Allow-Origin = %q, want %q", gotOrigin, tt.wantOrigin)
+			}
+
+			gotCreds := w.Header().Get("Access-Control-Allow-Credentials")
+			if gotCreds != "true" {
+				t.Errorf("Access-Control-Allow-Credentials = %q, want 'true'", gotCreds)
+			}
+		})
+	}
+}
+

@@ -26,6 +26,7 @@ type Config struct {
 	DisableAuthentication bool
 	AllowedDomains []string
 	AllowedEmails  []string
+	AllowedOrigins []string
 	GCPProjectID   string
 	TargetIAMRole  string
 	ClientID       string
@@ -68,12 +69,24 @@ func LoadConfig() *Config {
 		}
 	}
 
+	allowedOriginsStr := getEnv("ALLOWED_ORIGINS", "")
+	var allowedOrigins []string
+	for _, part := range strings.FieldsFunc(allowedOriginsStr, func(r rune) bool {
+		return r == ' ' || r == ','
+	}) {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			allowedOrigins = append(allowedOrigins, part)
+		}
+	}
+
 	return &Config{
 		Port:           port,
 		MockAuth:       mockAuth,
 		DisableAuthentication: getEnvBool("DISABLE_AUTHENTICATION", false),
 		AllowedDomains: allowedDomains,
 		AllowedEmails:  allowedEmails,
+		AllowedOrigins: allowedOrigins,
 		GCPProjectID:   getEnv("GCP_PROJECT_ID", ""),
 		TargetIAMRole:  getEnv("AUTHORIZED_IAM_ROLE", "roles/viewer"),
 		ClientID:       getEnv("CLIENT_ID", ""),
