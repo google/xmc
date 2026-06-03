@@ -245,7 +245,9 @@ func GenerateRandomString() (string, error) {
 
 func (a *Authenticator) getRequestSchemeAndHost(r *http.Request) (string, string) {
 	scheme := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+	// We only trust X-Forwarded-Proto if configured to trust upstream proxies.
+	// The operator must ensure the upstream proxy strips/overwrites spoofed headers.
+	if r.TLS != nil || (a.Config.TrustXForwardedProto && r.Header.Get("X-Forwarded-Proto") == "https") {
 		scheme = "https"
 	}
 

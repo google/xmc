@@ -57,6 +57,10 @@ experimentStateServer:
     clientId: "YOUR_IAP_CLIENT_ID"
   allowedOrigins: ""
   mockAuth: false
+  # trustXForwardedProto forces the Authenticator to respect the X-Forwarded-Proto header.
+  # WARNING: Only set to true if the upstream load balancer/ingress terminates TLS
+  # and strips untrusted client headers to prevent header spoofing attacks.
+  trustXForwardedProto: false
   allowedDomains: "YOUR_ALLOWED_DOMAINS"
   allowedEmails: "YOUR_ALLOWED_EMAILS"
   authorizedIamRole: "projects/YOUR_GCP_PROJECT_ID/roles/YOUR_ROLE"

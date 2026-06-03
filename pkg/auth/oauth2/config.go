@@ -37,6 +37,7 @@ type Config struct {
 	UsePKCE        bool
 	FrontendURL    string
 	SecureCookie   bool
+	TrustXForwardedProto bool
 }
 
 // LoadConfig bootstraps the configuration from environment variables.
@@ -83,6 +84,7 @@ func LoadConfig() *Config {
 		UsePKCE:        getEnvBool("USE_PKCE", true),
 		FrontendURL:    getEnv("FRONTEND_URL", "http://localhost:8080"),
 		SecureCookie:   getEnvBool("SECURE_COOKIE", !mockAuth),
+		TrustXForwardedProto: getEnvBool("TRUST_X_FORWARDED_PROTO", false),
 	}
 }
 

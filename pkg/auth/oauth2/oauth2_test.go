@@ -16,6 +16,7 @@ package oauth2
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"net/http"
 	"net/http/cookiejar"
@@ -307,6 +308,67 @@ func TestHandleLoginGenerateStateFailure(t *testing.T) {
 	resp := w.Result()
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("Expected status code 500, got %d", resp.StatusCode)
+	}
+}
+
+func TestXForwardedProtoTrust(t *testing.T) {
+	tests := []struct {
+		name                 string
+		trustXForwardedProto bool
+		headerVal            string
+		tls                  bool
+		wantScheme           string
+	}{
+		{
+			name:                 "TLS set directly",
+			trustXForwardedProto: false,
+			headerVal:            "",
+			tls:                  true,
+			wantScheme:           "https",
+		},
+		{
+			name:                 "Header set, not trusted",
+			trustXForwardedProto: false,
+			headerVal:            "https",
+			tls:                  false,
+			wantScheme:           "http",
+		},
+		{
+			name:                 "Header set, trusted",
+			trustXForwardedProto: true,
+			headerVal:            "https",
+			tls:                  false,
+			wantScheme:           "https",
+		},
+		{
+			name:                 "Header set to HTTP, trusted",
+			trustXForwardedProto: true,
+			headerVal:            "http",
+			tls:                  false,
+			wantScheme:           "http",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				TrustXForwardedProto: tt.trustXForwardedProto,
+				FrontendURL:          "http://localhost:8080",
+			}
+			a := NewAuthenticator(cfg)
+			req := httptest.NewRequest("GET", "http://localhost:8080/api/login", nil)
+			if tt.headerVal != "" {
+				req.Header.Set("X-Forwarded-Proto", tt.headerVal)
+			}
+			if tt.tls {
+				req.TLS = &tls.ConnectionState{}
+			}
+
+			scheme, _ := a.getRequestSchemeAndHost(req)
+			if scheme != tt.wantScheme {
+				t.Errorf("getRequestSchemeAndHost() scheme = %q, want %q", scheme, tt.wantScheme)
+			}
+		})
 	}
 }
 

@@ -182,7 +182,7 @@ func (a *Authenticator) SecurityHeadersMiddleware(next http.Handler) http.Handle
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:;")
 
-		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		if r.TLS != nil || (a.Config.TrustXForwardedProto && r.Header.Get("X-Forwarded-Proto") == "https") {
 			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
 		}
 

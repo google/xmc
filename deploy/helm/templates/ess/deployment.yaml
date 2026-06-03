@@ -111,6 +111,8 @@ spec:
           value: {{ .Values.experimentStateServer.allowedDomains | quote }}
         - name: ALLOWED_EMAILS
           value: {{ .Values.experimentStateServer.allowedEmails | quote }}
+        - name: TRUST_X_FORWARDED_PROTO
+          value: {{ .Values.experimentStateServer.trustXForwardedProto | quote }}
         - name: CLIENT_ID
           value: {{ .Values.experimentStateServer.iap.clientId | quote }}
         - name: GCP_PROJECT_ID
