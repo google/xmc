@@ -19,22 +19,34 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
+	"time"
 
 	resourcemanager "cloud.google.com/go/resourcemanager/apiv3"
 	"cloud.google.com/go/iam/apiv1/iampb"
 	"golang.org/x/oauth2"
 )
 
+type policyCacheEntry struct {
+	policy *iampb.Policy
+	expiry time.Time
+}
+
 // Authenticator manages session issuance, validation, and 3-stage hybrid authorization checking.
 type Authenticator struct {
 	Config      *Config
 	OAuthConfig *oauth2.Config
 	JWTSecret   []byte
+
+	mu             sync.Mutex
+	projectsClient *resourcemanager.ProjectsClient
+	policyCache    policyCacheEntry
+	policyFetcher  func(context.Context) (*iampb.Policy, error)
 }
 
 // NewAuthenticator initializes a new instance of Authenticator.
 func NewAuthenticator(cfg *Config) *Authenticator {
-	return &Authenticator{
+	a := &Authenticator{
 		Config:    cfg,
 		JWTSecret: []byte(cfg.JWTSecret),
 		OAuthConfig: &oauth2.Config{
@@ -48,6 +60,62 @@ func NewAuthenticator(cfg *Config) *Authenticator {
 			},
 		},
 	}
+	a.policyFetcher = func(ctx context.Context) (*iampb.Policy, error) {
+		client, err := a.getProjectsClientLocked(ctx)
+		if err != nil {
+			return nil, err
+		}
+		req := &iampb.GetIamPolicyRequest{
+			Resource: "projects/" + a.Config.GCPProjectID,
+		}
+		return client.GetIamPolicy(ctx, req)
+	}
+	return a
+}
+
+// Close closes the underlying GCP Projects client if it was initialized.
+func (a *Authenticator) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.projectsClient != nil {
+		err := a.projectsClient.Close()
+		a.projectsClient = nil
+		return err
+	}
+	return nil
+}
+
+func (a *Authenticator) getProjectsClientLocked(ctx context.Context) (*resourcemanager.ProjectsClient, error) {
+	if a.projectsClient != nil {
+		return a.projectsClient, nil
+	}
+	client, err := resourcemanager.NewProjectsClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCP Projects Resource Manager client: %w", err)
+	}
+	a.projectsClient = client
+	return client, nil
+}
+
+func (a *Authenticator) getIamPolicy(ctx context.Context) (*iampb.Policy, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.policyCache.policy != nil && time.Now().Before(a.policyCache.expiry) {
+		return a.policyCache.policy, nil
+	}
+
+	policy, err := a.policyFetcher(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	a.policyCache = policyCacheEntry{
+		policy: policy,
+		expiry: time.Now().Add(2 * time.Minute),
+	}
+	return policy, nil
 }
 
 
@@ -97,19 +165,9 @@ func (a *Authenticator) IsUserAuthorized(ctx context.Context, email string) (boo
 
 // IsUserAuthorizedViaIAM queries Google Cloud Resource Manager API to verify IAM role mappings.
 func (a *Authenticator) IsUserAuthorizedViaIAM(ctx context.Context, email string) (bool, error) {
-	client, err := resourcemanager.NewProjectsClient(ctx)
+	policy, err := a.getIamPolicy(ctx)
 	if err != nil {
-		return false, fmt.Errorf("failed to create GCP Projects Resource Manager client: %w", err)
-	}
-	defer client.Close()
-
-	req := &iampb.GetIamPolicyRequest{
-		Resource: "projects/" + a.Config.GCPProjectID,
-	}
-
-	policy, err := client.GetIamPolicy(ctx, req)
-	if err != nil {
-		return false, fmt.Errorf("failed to retrieve GCP project policy: %w", err)
+		return false, err
 	}
 
 	userPrincipal := "user:" + email

@@ -37,7 +37,10 @@ go_library(
 
 go_test(
     name = "oauth2_test",
-    srcs = ["oauth2_test.go"],
+    srcs = [
+        "oauth2_test.go",
+        "pipeline_test.go",
+    ],
     embed = [":oauth2"],
     deps = [
         "@com_github_golang_jwt_jwt_v5//:jwt",

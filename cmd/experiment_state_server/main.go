@@ -223,6 +223,7 @@ func main() {
 
 	// Load dynamic OAuth2 Authentication configurations
 	oauthAuth := oauth.NewAuthenticator(oauthCfg)
+	defer oauthAuth.Close()
 
 	// Mount OAuth2 routing handlers
 	httpMux.HandleFunc("/api/login", oauthAuth.HandleLogin)
