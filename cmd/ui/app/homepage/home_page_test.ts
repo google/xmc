@@ -14,24 +14,71 @@
 import 'jasmine';
 
 import {NoopAnimationsModule} from '@angular/platform-browser/animations';
-import {provideRouter} from '@angular/router';
-
+import {ActivatedRoute, Params, provideRouter, Router} from '@angular/router';
+import {BehaviorSubject, of} from 'rxjs';
 import {HomePage} from './home_page';
+import {AuthService} from '../service/auth.service';
 
 describe('HomePage Component', () => {
-  beforeEach(() => {
+  const state = cleanState(() => {
+    const authService = jasmine.createSpyObj<AuthService>('AuthService', ['getUser']);
+    authService.getUser.and.returnValue(of(null));
+    const queryParams = new BehaviorSubject<Params>({});
+    const mockRoute = new ActivatedRoute();
+    mockRoute.queryParams = queryParams;
+    const router = jasmine.createSpyObj<Router>('Router', ['navigate']);
+
     setupModule({
       imports: [
         HomePage,
-        NoopAnimationsModule,  // This makes test faster and more stable.
+        NoopAnimationsModule,
       ],
-      providers: [provideRouter([])]
+      providers: [
+        provideRouter([]),
+        {provide: AuthService, useValue: authService},
+        {provide: ActivatedRoute, useFactory: () => mockRoute},
+        {provide: Router, useValue: router},
+      ]
     });
-  });
+
+    return {
+      authService,
+      queryParams,
+      router,
+    };
+  }, beforeEach);
 
   it('should be created', () => {
     const comp = bootstrap(HomePage);
     expect(comp).toBeTruthy();
-    expect(getEl('p').innerText).toBe('home-page works!');
+  });
+
+  it('should not display error message by default', () => {
+    const comp = bootstrap(HomePage);
+    expect(comp.errorMessage()).toBeNull();
+  });
+
+  it('should set error message for forbidden error', () => {
+    state.queryParams.next({error: 'forbidden', email: 'user@example.com'});
+    const comp = bootstrap(HomePage);
+    expect(comp.errorMessage()).toBe('Your account (user@example.com) is not authorized. Please contact your administrator to request access.');
+  });
+
+  it('should set error message for permission error', () => {
+    state.queryParams.next({error: 'permission_error'});
+    const comp = bootstrap(HomePage);
+    expect(comp.errorMessage()).toBe('Failed to verify authorization permissions. Please contact your administrator.');
+  });
+
+  it('should set generic error message for other errors', () => {
+    state.queryParams.next({error: 'other_error'});
+    const comp = bootstrap(HomePage);
+    expect(comp.errorMessage()).toBe('An authentication error occurred. Please try again.');
+  });
+
+  it('should navigate to experiments if user is logged in', () => {
+    state.authService.getUser.and.returnValue(of({email: 'user@example.com'}));
+    bootstrap(HomePage);
+    expect(state.router.navigate).toHaveBeenCalledWith(['/experiments']);
   });
 });

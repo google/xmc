@@ -11,9 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {Component, OnInit, ChangeDetectionStrategy, inject} from '@angular/core';
+import {Component, ChangeDetectionStrategy, inject, computed, effect} from '@angular/core';
 import {Router, ActivatedRoute} from '@angular/router';
 import {AuthService} from '../service/auth.service';
+import {toSignal} from '@angular/core/rxjs-interop';
 
 /**
  * Home page for the XMC UI.
@@ -25,30 +26,36 @@ import {AuthService} from '../service/auth.service';
   styleUrl: './home_page.css',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class HomePage implements OnInit {
+export class HomePage {
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
 
-  errorMessage: string | null = null;
+  private readonly queryParams = toSignal(this.route.queryParams);
+  private readonly user = toSignal(this.authService.getUser());
 
-  ngOnInit() {
-    // Parse login/authorization errors from query parameters
-    this.route.queryParams.subscribe((params) => {
-      if (params['error']) {
-        const errType = params['error'];
-        const email = params['email'] || '';
-        if (errType === 'forbidden') {
-          this.errorMessage = `Your account (${email}) is not authorized. Please contact your administrator to request access.`;
-        } else if (errType === 'permission_error') {
-          this.errorMessage = 'Failed to verify authorization permissions. Please contact your administrator.';
-        } else {
-          this.errorMessage = 'An authentication error occurred. Please try again.';
-        }
-      }
-    });
+  readonly errorMessage = computed(() => {
+    const params = this.queryParams();
+    if (!params) {
+      return null;
+    }
+    const errType = params['error'];
+    if (!errType) {
+      return null;
+    }
+    if (errType === 'forbidden') {
+      const email = params['email'] || '';
+      return `Your account (${email}) is not authorized. Please contact your administrator to request access.`;
+    } else if (errType === 'permission_error') {
+      return 'Failed to verify authorization permissions. Please contact your administrator.';
+    } else {
+      return 'An authentication error occurred. Please try again.';
+    }
+  });
 
-    this.authService.getUser().subscribe((user) => {
+  constructor() {
+    effect(() => {
+      const user = this.user();
       if (user && user.email) {
         this.router.navigate(['/experiments']);
       }

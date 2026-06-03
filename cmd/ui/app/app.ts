@@ -42,8 +42,8 @@ export class App {
   title = 'xmc';
   readonly isSidenavOpened = signal(true);
 
-  authService = inject(AuthService);
-  user = toSignal(this.authService.getUser());
+  private readonly authService = inject(AuthService);
+  protected readonly user = toSignal(this.authService.getUser());
 
   toggleSidenav() {
     this.isSidenavOpened.set(!this.isSidenavOpened());

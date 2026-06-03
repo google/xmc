@@ -13,7 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 -->
-<ng-container *ngIf="user()?.email; else guestLayout">
+@if (user()?.email) {
   <xmc-side-panel>
     <xmc-header class="header" (menuToggle)="toggleSidenav()"></xmc-header>
 
@@ -37,10 +37,8 @@ limitations under the License.
       </mat-sidenav-content>
     </mat-sidenav-container>
   </xmc-side-panel>
-</ng-container>
-
-<ng-template #guestLayout>
+} @else {
   <div class="guest-page-container">
     <router-outlet></router-outlet>
   </div>
-</ng-template>
+}

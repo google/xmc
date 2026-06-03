@@ -8,12 +8,12 @@
       <p class="portal-subtitle">Secure Cloud Platform for ML Experiments</p>
     </header>
 
-    @if (errorMessage) {
+    @if (errorMessage()) {
       <div class="error-banner">
         <span class="error-icon">⚠️</span>
         <div class="error-message-container">
           <h4>Access Denied</h4>
-          <p>{{ errorMessage }}</p>
+          <p>{{ errorMessage() }}</p>
         </div>
       </div>
     }
