@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
-	"google.golang.org/api/idtoken"
 )
 
 type contextKey string
@@ -112,7 +111,7 @@ func (a *Authenticator) Authenticate(next http.Handler) http.Handler {
 
 			// 2.3 Verify as Google-signed OIDC ID Token (programmatic Service Accounts)
 			if a.Config.ClientID != "" {
-				payload, idTokenErr := idtoken.Validate(r.Context(), tokenStr, a.Config.ClientID)
+				payload, idTokenErr := a.idTokenValidator(r.Context(), tokenStr, a.Config.ClientID)
 				if idTokenErr == nil && payload != nil {
 					emailClaim, _ := payload.Claims["email"].(string)
 					nameClaim, _ := payload.Claims["name"].(string)

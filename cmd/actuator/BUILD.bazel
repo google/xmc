@@ -14,6 +14,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("//:oci.bzl", "oci_image_for_service")
 
 package(default_visibility = ["//visibility:private"])
 
@@ -24,20 +25,20 @@ compat_go_library(
     importpath = "xmanager_cloud/cmd/actuator/workunittaskhandler",
     visibility = ["//visibility:public"],
     deps = [
-        "//internal/common:interfaces",
-        "//cmd/actuator/k8s_client:k8s_client",
-        "//internal/logging",
         "//api/protos/task_queue:task_go_proto",
+        "//cmd/actuator/k8s_client",
+        "//internal/common:interfaces",
+        "//internal/compat/uuid",
+        "//internal/logging",
         "//internal/task_queue_redis:redisclient",
+        "@com_github_prometheus_client_golang//prometheus:go_default_library",
+        "@com_github_prometheus_client_golang//prometheus/promauto:go_default_library",
+        "@com_github_tink_crypto_tink_go_v2//jwt:go_default_library",
+        "@io_k8s_apimachinery//pkg/api/errors",
         "@org_golang_google_api//idtoken",
         "@org_golang_google_protobuf//encoding/protojson:go_default_library",
         "@org_golang_x_text//cases:go_default_library",
         "@org_golang_x_text//language:go_default_library",
-        "@com_github_tink_crypto_tink_go_v2//jwt:go_default_library",
-        "//internal/compat/uuid",
-        "@com_github_prometheus_client_golang//prometheus/promauto:go_default_library",
-        "@com_github_prometheus_client_golang//prometheus:go_default_library",
-        "@io_k8s_apimachinery//pkg/api/errors:errors",
     ],
 )
 
@@ -51,21 +52,21 @@ compat_go_library(
     importpath = "xmanager_cloud/cmd/actuator/main",
     deps = [
         ":workunittaskhandler",
+        "//cmd/actuator/k8s_client",
         "//internal/common:health",
-        "//cmd/actuator/k8s_client:k8s_client",
+        "//internal/compat/google",
+        "//internal/compat/spanner",
         "//internal/kubernetes/common:constants",
         "//internal/logging",
         "//internal/security",
         "//internal/storage",
         "//internal/storage/spanner",
-        "//internal/compat/google",
-        "//internal/compat/spanner",
         "//internal/task_queue_redis:redisclient",
-        "@org_golang_x_sync//errgroup:go_default_library",
-        "@com_google_cloud_go_compute_metadata//:metadata",
-        "@org_golang_google_api//option",
         "@com_github_prometheus_client_golang//prometheus/promhttp:go_default_library",
+        "@com_google_cloud_go_compute_metadata//:metadata",
         "@io_k8s_sigs_controller_runtime//:go_default_library",
+        "@org_golang_google_api//option",
+        "@org_golang_x_sync//errgroup:go_default_library",
     ],
 )
 
@@ -75,8 +76,6 @@ go_binary(
     pure = "on",
     visibility = ["//visibility:public"],
 )
-
-load("//:oci.bzl", "oci_image_for_service")
 
 oci_image_for_service(
     name = "actuator_image",
@@ -91,15 +90,15 @@ compat_go_test(
     deps = [
         "//cmd/actuator/k8s_client/preconditions_validator",
         "//internal/security:securitytest",
-        "@org_golang_google_api//idtoken",
-        "@io_k8s_apimachinery//pkg/api/errors:errors",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
-        "@io_k8s_apimachinery//pkg/runtime:runtime",
-        "@io_k8s_apimachinery//pkg/runtime/schema:schema",
-        "@io_k8s_apimachinery//pkg/util/validation/field:field",
-        "@io_k8s_client_go//dynamic/fake:fake",
-        "@io_k8s_client_go//kubernetes/fake:fake",
         "@com_github_prometheus_client_golang//prometheus/testutil:go_default_library",
         "@com_github_tink_crypto_tink_go_v2//jwt:go_default_library",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_apimachinery//pkg/util/validation/field",
+        "@io_k8s_client_go//dynamic/fake",
+        "@io_k8s_client_go//kubernetes/fake",
+        "@org_golang_google_api//idtoken",
     ],
 )

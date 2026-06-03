@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
 compat_go_library(
@@ -28,8 +27,8 @@ compat_go_library(
     deps = [
         "//internal/compat/spanner",
         "@com_github_golang_migrate_migrate_v4//:go_default_library",
-        "@com_github_golang_migrate_migrate_v4//source:source",
-        "@com_github_golang_migrate_migrate_v4//source/iofs:iofs",
+        "@com_github_golang_migrate_migrate_v4//source",
+        "@com_github_golang_migrate_migrate_v4//source/iofs",
         "@org_golang_google_api//iterator",
     ],
 )
@@ -47,11 +46,11 @@ compat_go_test(
         "//internal/compat/cmp",
         "//internal/compat/spanner",
         "//internal/storage/spanner/emulator",
-        "@com_github_golang_migrate_migrate_v4//source:source",
-        "@com_github_golang_migrate_migrate_v4//database:database",
-        "@com_github_golang_migrate_migrate_v4//database/stub:stub",
-        "@com_github_golang_migrate_migrate_v4//source/stub:stub",
-        "@com_google_cloud_go_spanner//admin/database/apiv1:apiv1",
+        "@com_github_golang_migrate_migrate_v4//database",
+        "@com_github_golang_migrate_migrate_v4//database/stub",
+        "@com_github_golang_migrate_migrate_v4//source",
+        "@com_github_golang_migrate_migrate_v4//source/stub",
+        "@com_google_cloud_go_spanner//admin/database/apiv1",
         "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
     ],
 )

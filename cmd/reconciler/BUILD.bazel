@@ -14,6 +14,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("//:compat.bzl", "compat_go_library")
+load("//:oci.bzl", "oci_image_for_service")
 
 compat_go_library(
     name = "reconciler_lib",
@@ -25,6 +26,12 @@ compat_go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
+        "//cmd/actuator/k8s_client",
+        "//cmd/reconciler/clusterqueue",
+        "//cmd/reconciler/jobset",
+        "//cmd/reconciler/kueue_sync",
+        "//cmd/reconciler/shared",
+        "//cmd/reconciler/workload",
         "//internal/common:health",
         "//internal/compat/google",
         "//internal/compat/spanner",
@@ -34,22 +41,16 @@ compat_go_library(
         "//internal/logging",
         "//internal/storage",
         "//internal/storage/spanner",
-        "//cmd/reconciler/clusterqueue",
-        "//cmd/reconciler/jobset",
-        "//cmd/reconciler/workload",
-        "//cmd/reconciler/kueue_sync",
-        "//cmd/actuator/k8s_client",
-        "//cmd/reconciler/shared",
         "@com_google_cloud_go_compute_metadata//:metadata",
-        "@org_golang_x_sync//errgroup:go_default_library",
-        "@io_k8s_apimachinery//pkg/labels:labels",
-        "@io_k8s_apimachinery//pkg/runtime:runtime",
-        "@io_k8s_client_go//kubernetes/scheme:scheme",
+        "@io_k8s_apimachinery//pkg/labels",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_client_go//kubernetes/scheme",
         "@io_k8s_sigs_controller_runtime//:go_default_library",
-        "@io_k8s_sigs_controller_runtime//pkg/cache:cache",
-        "@io_k8s_sigs_controller_runtime//pkg/client:client",
-        "@io_k8s_sigs_controller_runtime//pkg/metrics/server:server",
+        "@io_k8s_sigs_controller_runtime//pkg/cache",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@io_k8s_sigs_controller_runtime//pkg/metrics/server",
         "@org_golang_google_api//option",
+        "@org_golang_x_sync//errgroup:go_default_library",
     ],
 )
 
@@ -59,8 +60,6 @@ go_binary(
     pure = "on",
     visibility = ["//visibility:public"],
 )
-
-load("//:oci.bzl", "oci_image_for_service")
 
 oci_image_for_service(
     name = "reconciler_image",

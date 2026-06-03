@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("//:oci.bzl", "oci_image_for_service")
 
 compat_go_library(
     name = "log_monitor_lib",
@@ -40,9 +41,9 @@ compat_go_library(
         "//internal/storage",
         "//internal/storage/spanner",
         "@com_google_cloud_go_pubsub//:pubsub",
-        "@org_golang_x_sync//errgroup:go_default_library",
         "@org_golang_google_api//option",
         "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
+        "@org_golang_x_sync//errgroup:go_default_library",
     ],
 )
 
@@ -52,8 +53,6 @@ go_binary(
     pure = "on",
     visibility = ["//visibility:public"],
 )
-
-load("//:oci.bzl", "oci_image_for_service")
 
 oci_image_for_service(
     name = "log_monitor_image",
@@ -78,7 +77,7 @@ compat_go_test(
         "//internal/storage",
         "//internal/storage/spanner/emulator",
         "@com_google_cloud_go_pubsub//:pubsub",
-        "@com_google_cloud_go_pubsub//pstest:pstest",
+        "@com_google_cloud_go_pubsub//pstest",
         "@org_golang_google_api//option",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//credentials/insecure:go_default_library",

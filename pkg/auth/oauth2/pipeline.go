@@ -25,6 +25,7 @@ import (
 	resourcemanager "cloud.google.com/go/resourcemanager/apiv3"
 	"cloud.google.com/go/iam/apiv1/iampb"
 	"golang.org/x/oauth2"
+	"google.golang.org/api/idtoken"
 )
 
 type policyCacheEntry struct {
@@ -42,6 +43,7 @@ type Authenticator struct {
 	projectsClient *resourcemanager.ProjectsClient
 	policyCache    policyCacheEntry
 	policyFetcher  func(context.Context) (*iampb.Policy, error)
+	idTokenValidator func(ctx context.Context, idToken string, audience string) (*idtoken.Payload, error)
 }
 
 // NewAuthenticator initializes a new instance of Authenticator.
@@ -70,6 +72,7 @@ func NewAuthenticator(cfg *Config) *Authenticator {
 		}
 		return client.GetIamPolicy(ctx, req)
 	}
+	a.idTokenValidator = idtoken.Validate
 	return a
 }
 

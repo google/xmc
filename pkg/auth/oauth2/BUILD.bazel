@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
@@ -38,11 +37,14 @@ go_library(
 go_test(
     name = "oauth2_test",
     srcs = [
+        "config_test.go",
         "oauth2_test.go",
         "pipeline_test.go",
     ],
     embed = [":oauth2"],
     deps = [
         "@com_github_golang_jwt_jwt_v5//:jwt",
+        "@com_google_cloud_go_iam//apiv1/iampb",
+        "@org_golang_google_api//idtoken",
     ],
 )

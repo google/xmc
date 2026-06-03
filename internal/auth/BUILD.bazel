@@ -40,6 +40,7 @@ go_library(
 go_test(
     name = "auth_test",
     srcs = [
+        "auth_test.go",
         "authentication_test.go",
         "authorization_test.go",
     ],
