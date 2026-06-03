@@ -18,10 +18,19 @@ jobs:
     runs-on: 'ubuntu-24.04'
     environment: janzak-dev-test
 
+    # Use a service container for the Spanner Emulator
+    services:
+      spanner-emulator:
+        image: gcr.io/cloud-spanner-emulator/emulator
+        ports:
+          - 9010:9010
+          - 9020:9020
+
     env:
       PROJECT_ID: ${{ vars.PROJECT_ID }}
       WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
       SERVICE_ACCOUNT: ${{ vars.SERVICE_ACCOUNT }}
+      SPANNER_EMULATOR_HOST: localhost:9010
 
     steps:
       - name: 'Checkout'
