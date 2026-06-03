@@ -124,7 +124,7 @@ message Artifact {
   LifecyclePhase lifecycle_phase = 7 [(google.api.field_behavior) = OPTIONAL];
   // The type of data that the artifact represents.
   DataType data_type = 8
-      [(google.api.field_behavior) = REQUIRED, deprecated = true];
+      [(google.api.field_behavior) = OPTIONAL, deprecated = true];
   // The MIME type of the artifact, if applicable.
   string mime_type = 9 [(google.api.field_behavior) = OPTIONAL];
 
