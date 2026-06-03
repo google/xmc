@@ -275,3 +275,38 @@ func TestHybridAuthorizationPipeline(t *testing.T) {
 		})
 	}
 }
+
+type errorReader struct{}
+
+func (errorReader) Read(p []byte) (n int, err error) {
+	return 0, errors.New("mock read error")
+}
+
+func TestGenerateRandomStringFailure(t *testing.T) {
+	oldRandReader := randReader
+	defer func() { randReader = oldRandReader }()
+	randReader = errorReader{}
+
+	_, err := GenerateRandomString()
+	if err == nil {
+		t.Fatal("Expected error when random reader fails, got nil")
+	}
+}
+
+func TestHandleLoginGenerateStateFailure(t *testing.T) {
+	oldRandReader := randReader
+	defer func() { randReader = oldRandReader }()
+	randReader = errorReader{}
+
+	a := NewAuthenticator(&Config{})
+	req := httptest.NewRequest("GET", "/api/login", nil)
+	w := httptest.NewRecorder()
+
+	a.HandleLogin(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("Expected status code 500, got %d", resp.StatusCode)
+	}
+}
+

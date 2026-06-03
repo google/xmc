@@ -30,6 +30,8 @@ import (
 	"golang.org/x/oauth2"
 )
 
+var randReader io.Reader = rand.Reader
+
 // GoogleUserInfo holds fields returned by OpenID Connect userinfo endpoint.
 type GoogleUserInfo struct {
 	Email   string `json:"email"`
@@ -39,7 +41,11 @@ type GoogleUserInfo struct {
 
 // HandleLogin serves the initial redirection endpoint.
 func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	state := GenerateRandomString()
+	state, err := GenerateRandomString()
+	if err != nil {
+		http.Error(w, "Failed to generate secure random state", http.StatusInternalServerError)
+		return
+	}
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
@@ -229,12 +235,12 @@ func (a *Authenticator) HandleUser(w http.ResponseWriter, r *http.Request) {
 
 // Helper functions
 
-func GenerateRandomString() string {
+func GenerateRandomString() (string, error) {
 	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "fallback_state_" + time.Now().Format("20060102150405")
+	if _, err := io.ReadFull(randReader, b); err != nil {
+		return "", err
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
 func (a *Authenticator) getRequestSchemeAndHost(r *http.Request) (string, string) {
