@@ -191,15 +191,16 @@ func TestIntegrationMockAuth(t *testing.T) {
 
 func TestHybridAuthorizationPipeline(t *testing.T) {
 	tests := []struct {
-		name           string
-		allowedDomains []string
-		allowedEmails  []string
-		gcpProjectID   string
-		targetRole     string
-		mockAuth       bool
-		emailToCheck   string
-		want           bool
-		wantErr        bool
+		name                  string
+		allowedDomains        []string
+		allowedEmails         []string
+		gcpProjectID          string
+		targetRole            string
+		mockAuth              bool
+		disableAuthentication bool
+		emailToCheck          string
+		want                  bool
+		wantErr               bool
 	}{
 		{
 			name:           "Stage 1: Match direct email whitelist (Fast path)",
@@ -242,25 +243,38 @@ func TestHybridAuthorizationPipeline(t *testing.T) {
 			wantErr:        false,
 		},
 		{
-			name:           "No parameters: Open access compatibility",
-			allowedDomains: []string{},
-			allowedEmails:  []string{},
-			gcpProjectID:   "",
-			emailToCheck:   "anyone@external.com",
-			mockAuth:       true,
-			want:           true,
-			wantErr:        false,
+			name:                  "No parameters: Open access compatibility with disableAuthentication=true",
+			allowedDomains:        []string{},
+			allowedEmails:         []string{},
+			gcpProjectID:          "",
+			disableAuthentication: true,
+			emailToCheck:          "anyone@external.com",
+			mockAuth:              true,
+			want:                  true,
+			wantErr:               false,
+		},
+		{
+			name:                  "No parameters: Fail-closed default",
+			allowedDomains:        []string{},
+			allowedEmails:         []string{},
+			gcpProjectID:          "",
+			disableAuthentication: false,
+			emailToCheck:          "anyone@external.com",
+			mockAuth:              true,
+			want:                  false,
+			wantErr:               true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
-				AllowedDomains: tt.allowedDomains,
-				AllowedEmails:  tt.allowedEmails,
-				GCPProjectID:   tt.gcpProjectID,
-				TargetIAMRole:  tt.targetRole,
-				MockAuth:       tt.mockAuth,
+				AllowedDomains:        tt.allowedDomains,
+				AllowedEmails:         tt.allowedEmails,
+				GCPProjectID:          tt.gcpProjectID,
+				TargetIAMRole:         tt.targetRole,
+				MockAuth:              tt.mockAuth,
+				DisableAuthentication: tt.disableAuthentication,
 			}
 			a := NewAuthenticator(cfg)
 

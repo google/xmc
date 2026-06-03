@@ -57,6 +57,7 @@ experimentStateServer:
     clientId: "YOUR_IAP_CLIENT_ID"
   allowedOrigins: ""
   mockAuth: false
+  disableAuthentication: false
   # trustXForwardedProto forces the Authenticator to respect the X-Forwarded-Proto header.
   # WARNING: Only set to true if the upstream load balancer/ingress terminates TLS
   # and strips untrusted client headers to prevent header spoofing attacks.

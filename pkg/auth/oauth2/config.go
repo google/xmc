@@ -23,6 +23,7 @@ import (
 type Config struct {
 	Port           string
 	MockAuth       bool
+	DisableAuthentication bool
 	AllowedDomains []string
 	AllowedEmails  []string
 	GCPProjectID   string
@@ -70,6 +71,7 @@ func LoadConfig() *Config {
 	return &Config{
 		Port:           port,
 		MockAuth:       mockAuth,
+		DisableAuthentication: getEnvBool("DISABLE_AUTHENTICATION", false),
 		AllowedDomains: allowedDomains,
 		AllowedEmails:  allowedEmails,
 		GCPProjectID:   getEnv("GCP_PROJECT_ID", ""),

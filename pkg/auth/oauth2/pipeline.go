@@ -123,9 +123,12 @@ func (a *Authenticator) getIamPolicy(ctx context.Context) (*iampb.Policy, error)
 func (a *Authenticator) IsUserAuthorized(ctx context.Context, email string) (bool, error) {
 	emailLower := strings.ToLower(strings.TrimSpace(email))
 
-	// If all whitelists and ProjectID are blank, default to open access (allow all) for backward compatibility.
+	// If all whitelists and ProjectID are blank, default to open access (allow all) only if DisableAuthentication is true.
 	if len(a.Config.AllowedEmails) == 0 && len(a.Config.AllowedDomains) == 0 && a.Config.GCPProjectID == "" {
-		return true, nil
+		if a.Config.DisableAuthentication {
+			return true, nil
+		}
+		return false, fmt.Errorf("fail-closed: AllowedEmails, AllowedDomains, and GCPProjectID are all empty; access is denied unless DISABLE_AUTHENTICATION=true")
 	}
 
 	// 1. STAGE 1: Local Guest/Admin Email Whitelist Check (Fast Path)
