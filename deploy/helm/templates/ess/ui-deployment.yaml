@@ -25,7 +25,7 @@ spec:
           name: http
         env:
         - name: XMC_API_URL
-          value: {{ .Values.ui.apiUrl | quote }}
+          value: {{ include "xmanager-cloud.uiApiUrl" . | quote }}
         - name: XMC_REFRESH_INTERVAL_MS
           value: {{ .Values.ui.refreshIntervalMs | quote }}
         - name: XMC_DEFAULT_TO_CURSOR_PAGINATION

@@ -73,3 +73,47 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Get the UI hostname.
+*/}}
+{{- define "xmanager-cloud.uiHostname" -}}
+{{- if .Values.xmcUrl -}}
+{{- .Values.xmcUrl -}}
+{{- else -}}
+{{- .Values.gateway.uiHostname -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Get the API hostname.
+*/}}
+{{- define "xmanager-cloud.apiHostname" -}}
+{{- if .Values.xmcUrl -}}
+{{- printf "api.%s" .Values.xmcUrl -}}
+{{- else -}}
+{{- .Values.gateway.apiHostname -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Get the gRPC hostname.
+*/}}
+{{- define "xmanager-cloud.grpcHostname" -}}
+{{- if .Values.xmcUrl -}}
+{{- printf "grpc.%s" .Values.xmcUrl -}}
+{{- else -}}
+{{- .Values.gateway.grpcHostname -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Get the UI API URL.
+*/}}
+{{- define "xmanager-cloud.uiApiUrl" -}}
+{{- if .Values.xmcUrl -}}
+{{- printf "https://%s/v1" .Values.xmcUrl -}}
+{{- else -}}
+{{- .Values.ui.apiUrl -}}
+{{- end -}}
+{{- end -}}

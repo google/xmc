@@ -20,14 +20,14 @@ spec:
   secretName: {{ .Values.gateway.sslCertificateName | default "xmc-grpc-tls" | quote }}
   duration: 2160h
   renewBefore: 360h
-  commonName: {{ if or (eq .Values.certs.type "letsencrypt") (eq .Values.certs.type "gts") }}{{ .Values.gateway.uiHostname | quote }}{{ else }}"experiment-state-server"{{ end }}
+  commonName: {{ if or (eq .Values.certs.type "letsencrypt") (eq .Values.certs.type "gts") }}{{ include "xmanager-cloud.uiHostname" . | quote }}{{ else }}"experiment-state-server"{{ end }}
   privateKey:
     rotationPolicy: Always
   dnsNames:
   {{- if or (eq .Values.certs.type "letsencrypt") (eq .Values.certs.type "gts") }}
-  - {{ .Values.gateway.uiHostname | quote }}
-  - {{ .Values.gateway.apiHostname | quote }}
-  - {{ .Values.gateway.grpcHostname | quote }}
+  - {{ include "xmanager-cloud.uiHostname" . | quote }}
+  - {{ include "xmanager-cloud.apiHostname" . | quote }}
+  - {{ include "xmanager-cloud.grpcHostname" . | quote }}
   {{- else }}
   - experiment-state-server
   - experiment-state-server.{{ .Release.Namespace }}

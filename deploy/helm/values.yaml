@@ -18,6 +18,10 @@
 projectId: "YOUR_GCP_PROJECT_ID"
 environment: "YOUR_ENVIRONMENT_NAME"
 domainSuffix: "YOUR_DOMAIN_SUFFIX"
+# Top-level URL for the XMC deployment. If set, this automatically configures
+# gateway.uiHostname, gateway.apiHostname, gateway.grpcHostname, and ui.apiUrl.
+xmcUrl: ""
+
 taskSignatureTtlSeconds: 86400
 isDevEnvironment: false
 imageTag: latest

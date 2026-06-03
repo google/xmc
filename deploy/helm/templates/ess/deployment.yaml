@@ -122,9 +122,9 @@ spec:
         - name: CLIENT_SECRET_FILE
           value: "/etc/gcp-secrets/client-secret"
         - name: REDIRECT_URL
-          value: "https://{{ .Values.gateway.apiHostname }}/api/callback"
+          value: "https://{{ include "xmanager-cloud.apiHostname" . }}/api/callback"
         - name: FRONTEND_URL
-          value: "https://{{ .Values.gateway.uiHostname }}"
+          value: "https://{{ include "xmanager-cloud.uiHostname" . }}"
         args:
         - "-ess_tls_cert_file="
         - "-ess_tls_key_file="

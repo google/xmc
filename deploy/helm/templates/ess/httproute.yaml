@@ -9,7 +9,7 @@ spec:
     - name: {{ .Values.gateway.name }}
       sectionName: https
   hostnames:
-    - {{ .Values.gateway.uiHostname | quote }}
+    - {{ include "xmanager-cloud.uiHostname" . | quote }}
   rules:
     - matches:
         - path:
@@ -44,7 +44,7 @@ spec:
     - name: {{ .Values.gateway.name }}
       sectionName: https
   hostnames:
-    - {{ .Values.gateway.apiHostname | quote }}
+    - {{ include "xmanager-cloud.apiHostname" . | quote }}
   rules:
     - matches:
         - path:
@@ -65,7 +65,7 @@ spec:
     - name: {{ .Values.gateway.name }}
       sectionName: https
   hostnames:
-    - {{ .Values.gateway.grpcHostname | quote }}
+    - {{ include "xmanager-cloud.grpcHostname" . | quote }}
   rules:
     - matches:
         - path:
@@ -86,9 +86,9 @@ spec:
     - name: {{ .Values.gateway.name }}
       sectionName: http-listener
   hostnames:
-    - {{ .Values.gateway.uiHostname | quote }}
-    - {{ .Values.gateway.apiHostname | quote }}
-    - {{ .Values.gateway.grpcHostname | quote }}
+    - {{ include "xmanager-cloud.uiHostname" . | quote }}
+    - {{ include "xmanager-cloud.apiHostname" . | quote }}
+    - {{ include "xmanager-cloud.grpcHostname" . | quote }}
   rules:
     - matches:
         - path:
