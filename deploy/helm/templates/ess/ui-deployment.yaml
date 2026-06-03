@@ -16,7 +16,7 @@ spec:
       labels:
         app: ui
     spec:
-      serviceAccountName: experiment-server
+      serviceAccountName: xmc-ui
       containers:
       - name: xmc-ui
         image: {{ .Values.ui.image | quote }}
