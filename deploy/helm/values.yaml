@@ -84,6 +84,10 @@ secrets:
     projectNumber: "YOUR_GCP_PROJECT_NUMBER"
     jwtSecretName: "backend-jwt-secret"
     oauthClientSecretName: "gcp-oauth-client-secret"
+  development:
+    # A placeholder for default JWT secret key for development environments.
+    jwtSecret: "YOUR_JWT_SECRET"
+    clientSecret: "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"
 
 ui:
   enabled: true
