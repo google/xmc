@@ -14,10 +14,8 @@
 package auth
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"google.golang.org/api/idtoken"
@@ -43,12 +41,8 @@ func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, s
 	}
 
 	// Try to parse the token using our custom JWT secret first.
-	var jwtSecret []byte
-	if content, err := os.ReadFile("/etc/gcp-secrets/jwt-secret"); err == nil {
-		jwtSecret = bytes.TrimSpace(content)
-	} else if secretStr := os.Getenv("JWT_SECRET"); secretStr != "" {
-		jwtSecret = []byte(secretStr)
-	} else {
+	jwtSecret := a.jwtSecret
+	if len(jwtSecret) == 0 {
 		jwtSecret = []byte("default-jwt-secret-for-local-dev-only-12345")
 	}
 	claims, parseErr := oauth2.ParseSessionToken(jwt, jwtSecret)

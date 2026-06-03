@@ -77,7 +77,7 @@ func main() {
 	}
 
 	// 4. Inject dependencies into the server
-	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{cfg.Audience, cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}, cfg.IAPIssuer, cfg.DisableAuthentication)
+	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{cfg.Audience, cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}, cfg.IAPIssuer, cfg.DisableAuthentication, []byte(oauthCfg.JWTSecret))
 	if err != nil {
 		logging.Fatal(ctx, "failed to create authorizer", "error", err)
 	}

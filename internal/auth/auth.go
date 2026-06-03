@@ -74,11 +74,12 @@ type Authorizer struct {
 	// disableAuthentication disables authentication for testing.
 	disableAuthentication bool
 	iapIssuer             string
+	jwtSecret             []byte
 }
 
 // NewAuthorizer creates a new Authorizer with an initialized group cache.
 // cacheTTL (e.g., 10 * time.Minute) defines how long to cache results.
-func NewAuthorizer(ctx context.Context, idService *cloudidentity.Service, cacheTTL time.Duration, cacheErrorTTL time.Duration, iapAudiences []string, iapIssuer string, disableAuthentication bool) (*Authorizer, error) {
+func NewAuthorizer(ctx context.Context, idService *cloudidentity.Service, cacheTTL time.Duration, cacheErrorTTL time.Duration, iapAudiences []string, iapIssuer string, disableAuthentication bool, jwtSecret []byte) (*Authorizer, error) {
 	for _, aud := range iapAudiences {
 		if aud == "" {
 			return nil, fmt.Errorf("IAP audience cannot be an empty string")
@@ -99,5 +100,6 @@ func NewAuthorizer(ctx context.Context, idService *cloudidentity.Service, cacheT
 		iapAudiences:          iapAudiences,
 		disableAuthentication: disableAuthentication,
 		iapIssuer:             iapIssuer,
+		jwtSecret:             jwtSecret,
 	}, nil
 }

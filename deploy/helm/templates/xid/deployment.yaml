@@ -79,6 +79,8 @@ spec:
           value: {{ .Values.experimentStateServer.iap.grpcAudience | quote }}
         - name: CLIENT_ID
           value: {{ .Values.experimentStateServer.iap.clientId | quote }}
+        - name: JWT_SECRET_FILE
+          value: "/etc/gcp-secrets/jwt-secret"
         args:
         - "-xid_grpc_port=50051"
         - "-xid_quota_project_id={{ .Values.projectId }}"
