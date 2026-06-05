@@ -22,6 +22,7 @@ jobs:
       PROJECT_ID: ${{ vars.PROJECT_ID }}
       WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
       SERVICE_ACCOUNT: ${{ vars.SERVICE_ACCOUNT }}
+      SPANNER_EMULATOR_HOST: localhost:9010
 
     steps:
       - name: 'Checkout'
@@ -56,22 +57,13 @@ jobs:
 
       - name: 'Run Unit Tests'
         run: |
-          # TODO: increase this time limit or remove altogether once the spanner tests are not timing out
           # TODO: add the following tests back once they are green:
-          # //cmd/actuator/k8s_client:k8s_client_test
-          # //cmd/experiment_state_server:health_test
           # //cmd/experiment_state_server/server:server_test
-          # //cmd/log_monitor:log_monitor_test
-          # //cmd/reconciler/jobset:jobset_test
-          # //cmd/reconciler/shared:shared_test
-          # //cmd/xid_service:health_test
           # //cmd/xid_service/server:server_test
-          # //internal/common:health_test
           # //internal/storage/spanner:spanner_test
-          # //internal/storage/spanner/emulator:emulator_test
           # //internal/storage/spanner/migrations:migrations_test
-          # //internal/storage/spanner/migrations/commands:commands_test
           # //internal/storage/spanner/migrations/driver:driver_test
+
           bazel test \
             --repository_cache=~/.cache/bazel-repo \
             --disk_cache=~/.cache/bazel-disk \
@@ -86,21 +78,11 @@ jobs:
             --bes_timeout=15s \
             --test_timeout=15,15,15,15 \
             --google_default_credentials \
-            -- \
             //... \
-            -//cmd/actuator/k8s_client:k8s_client_test \
-            -//cmd/experiment_state_server:health_test \
             -//cmd/experiment_state_server/server:server_test \
-            -//cmd/log_monitor:log_monitor_test \
-            -//cmd/reconciler/jobset:jobset_test \
-            -//cmd/reconciler/shared:shared_test \
-            -//cmd/xid_service:health_test \
             -//cmd/xid_service/server:server_test \
-            -//internal/common:health_test \
             -//internal/storage/spanner:spanner_test \
-            -//internal/storage/spanner/emulator:emulator_test \
             -//internal/storage/spanner/migrations:migrations_test \
-            -//internal/storage/spanner/migrations/commands:commands_test \
             -//internal/storage/spanner/migrations/driver:driver_test
 
       - name: 'Save Bazel Cache'
