@@ -49,6 +49,8 @@ message Artifact {
   }
 
   enum DataType {
+    option deprecated = true;
+
     DATA_TYPE_UNSPECIFIED = 0;
 
     // --- Storage Primitives ---
@@ -104,7 +106,7 @@ message Artifact {
   // "experiments/{xid}/workUnits/{wid}"
   string parent = 2 [(google.api.field_behavior) = IMMUTABLE];
 
-  Url url = 3 [(google.api.field_behavior) = REQUIRED];
+  Url url = 3 [(google.api.field_behavior) = REQUIRED, deprecated = true];
 
   // ACLs to control access to the artifact. The artifact inherits ACLs from
   // the parent XID. The ACLs per artifact are the merged ACLs of it's parent
@@ -121,11 +123,14 @@ message Artifact {
   // experiment lifecycle that the artifact is associated with.
   LifecyclePhase lifecycle_phase = 7 [(google.api.field_behavior) = OPTIONAL];
   // The type of data that the artifact represents.
-  DataType data_type = 8 [(google.api.field_behavior) = OPTIONAL];
+  DataType data_type = 8
+      [(google.api.field_behavior) = OPTIONAL, deprecated = true];
   // The MIME type of the artifact, if applicable.
   string mime_type = 9 [(google.api.field_behavior) = OPTIONAL];
 
   message AdditionalInfo {
+    option deprecated = true;
+
     string title = 1;
     oneof content {
       string code_block = 2;
@@ -134,7 +139,10 @@ message Artifact {
   }
 
   // Additional info for the artifact.
-  AdditionalInfo additional_info = 12 [(google.api.field_behavior) = OPTIONAL];
+  AdditionalInfo additional_info = 12 [(google.api.field_behavior) = OPTIONAL, deprecated = true];
+
+  // Strongly-typed polymorphic payload.
+  ArtifactPayload payload = 13 [(google.api.field_behavior) = OPTIONAL];
 
   // The timestamp of the artifact creation.
   google.protobuf.Timestamp create_time = 10
@@ -143,3 +151,40 @@ message Artifact {
   google.protobuf.Timestamp update_time = 11
       [(google.api.field_behavior) = OUTPUT_ONLY];
 }
+
+// A dedicated message to hold the polymorphic data of the artifact.
+message ArtifactPayload {
+  oneof type {
+    ManagedXprofArtifact managed_xprof = 1;
+    CodeSourceArtifact code_source = 2;
+    TextArtifact text = 3;
+  }
+}
+
+// Strongly-typed artifact subtypes.
+
+message CodeSourceArtifact {
+  string title = 1 [(google.api.field_behavior) = REQUIRED];
+  string description = 2 [(google.api.field_behavior) = OPTIONAL];
+  string code_block = 3 [(google.api.field_behavior) = REQUIRED];
+  string code_url = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message TextArtifact {
+  string title = 1 [(google.api.field_behavior) = REQUIRED];
+  string text = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+message ManagedXprofArtifact {
+  // The title for the XProf UI. For example, finetune-gemma-batch-size-8
+  string display_name = 1 [(google.api.field_behavior) = REQUIRED];
+  // The tag for this profiling session. For example, finetune-gemma
+  string run_group = 2 [(google.api.field_behavior) = REQUIRED];
+  XProfUIInstance xprof = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+message XProfUIInstance {
+  // The url of the xprof UI.
+  string xprof_url = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
