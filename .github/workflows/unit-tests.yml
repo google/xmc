@@ -108,6 +108,7 @@ jobs:
             --bes_header="x-goog-user-project=${{ env.PROJECT_ID }}" \
             --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }} \
             --google_default_credentials \
+            -- \
             //... \
             -//cmd/experiment_state_server/server:server_test \
             -//cmd/xid_service/server:server_test \
