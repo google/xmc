@@ -15,6 +15,8 @@ package spannerdriver
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"testing"
@@ -51,22 +53,33 @@ func newSpannerServer(ctx context.Context, t *testing.T) *emulator.Emulator {
 	if err != nil {
 		t.Fatalf("instance.NewInstanceAdminClient() failed: %v", err)
 	}
-	op1, err := instClient.CreateInstance(ctx, &instancepb.CreateInstanceRequest{
-		Parent:     fmt.Sprintf("projects/%s", projectID),
-		InstanceId: instanceID,
-		Instance: &instancepb.Instance{
-			DisplayName: instanceID,
-			NodeCount:   1,
-		},
-	})
+	_, err = instClient.GetInstance(ctx, &instancepb.GetInstanceRequest{Name: instancePath})
 	if err != nil {
-		t.Fatalf("instClient.CreateInstance() failed: %v", err)
-	}
-	if _, err := op1.Wait(ctx); err != nil {
-		t.Fatalf("op1.Wait() failed: %v", err)
+		op1, err := instClient.CreateInstance(ctx, &instancepb.CreateInstanceRequest{
+			Parent:     fmt.Sprintf("projects/%s", projectID),
+			InstanceId: instanceID,
+			Instance: &instancepb.Instance{
+				DisplayName: instanceID,
+				NodeCount:   1,
+			},
+		})
+		if err != nil {
+			t.Fatalf("instClient.CreateInstance() failed: %v", err)
+		}
+		if _, err := op1.Wait(ctx); err != nil {
+			t.Fatalf("op1.Wait() failed: %v", err)
+		}
 	}
 
 	return emu
+}
+
+func randomSuffix() string {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
 }
 
 func createAdminClient(ctx context.Context, t *testing.T, emu *emulator.Emulator) *database.DatabaseAdminClient {
@@ -106,8 +119,8 @@ func TestNew(t *testing.T) {
 	ctx := t.Context()
 	emu := newSpannerServer(ctx, t)
 	adminClient := createAdminClient(ctx, t, emu)
-	dbName := "test-db-1"
-	dbPath := fmt.Sprintf("%s/databases/test-db-1", instancePath)
+	dbName := "test-db-" + randomSuffix()
+	dbPath := fmt.Sprintf("%s/databases/%s", instancePath, dbName)
 	createDatabase(ctx, t, adminClient, dbName)
 	dataClient := createDataClient(ctx, t, emu, dbPath)
 
@@ -247,7 +260,7 @@ func TestRun(t *testing.T) {
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a new database for each test case.
-			dbName := fmt.Sprintf("testdb-%d", i)
+			dbName := fmt.Sprintf("testdb-%d-%s", i, randomSuffix())
 			dbPath := fmt.Sprintf("%s/databases/%s", instancePath, dbName)
 			createDatabase(ctx, t, adminClient, dbName)
 			dataClient := createDataClient(ctx, t, emu, dbPath)

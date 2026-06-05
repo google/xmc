@@ -21,7 +21,17 @@ import (
 	_ "cloud_spanner_emulator/public/go/emulator" // definitions for emulator options
 	"golang/github_com/golang_migrate/migrate/v/v4/migrate"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"crypto/rand"
+	"encoding/hex"
 )
+
+func randomSuffix() string {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
+}
 
 func TestRun(t *testing.T) {
 	ctx := t.Context()
@@ -30,12 +40,12 @@ func TestRun(t *testing.T) {
 		{
 			name:          "ess",
 			migrationsDir: "ess",
-			databaseID:    "test-ess-database",
+			databaseID:    "test-ess-db-" + randomSuffix(),
 		},
 		{
 			name:          "xid",
 			migrationsDir: "xid",
-			databaseID:    "test-xid-database",
+			databaseID:    "test-xid-db-" + randomSuffix(),
 		},
 	}
 
