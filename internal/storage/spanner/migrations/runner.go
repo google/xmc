@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 // Runner is the main entry point for the Spanner migration runner.
 package main
 
@@ -98,6 +99,7 @@ func parseConfig() *config {
 	flag.StringVar(&cfg.migrationsDir, "migrations_dir", "", "Name of the migrations subdirectory (e.g., 'ess' or 'xid')")
 	flag.StringVar(&cfg.command, "command", "", fmt.Sprintf("Command to run: %s, %s, %s, %s, %s", upCmd, downCmd, forceCmd, versionCmd, initCmd))
 	google.Init()
+	flag.Parse()
 
 	if err := parseArg(cfg, flag.Args()); err != nil {
 		log.Exit(err)
