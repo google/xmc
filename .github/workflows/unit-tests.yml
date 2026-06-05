@@ -78,6 +78,7 @@ jobs:
             --bes_timeout=15s \
             --test_timeout=15,15,15,15 \
             --google_default_credentials \
+            -- \
             //... \
             -//cmd/experiment_state_server/server:server_test \
             -//cmd/xid_service/server:server_test \
