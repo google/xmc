@@ -360,3 +360,4 @@ func TestListStatusMessages_DefaultOrdering(t *testing.T) {
 		t.Errorf("Expected first message to be 'Newer Message', got %q. Default ordering might be using work_unit_id first.", gotMessages[0].GetContent().GetUserFacingText())
 	}
 }
+
