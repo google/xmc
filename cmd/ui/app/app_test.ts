@@ -15,15 +15,21 @@ import 'jasmine';
 
 import {provideNoopAnimations} from '@angular/platform-browser/animations';
 import {provideRouter} from '@angular/router';
+import {of} from 'rxjs';
 
 import {App} from './app';
+import {AuthService} from './service/auth.service';
 
 describe('App Component', () => {
   beforeEach(() => {
+    const authServiceMock = jasmine.createSpyObj<AuthService>('AuthService', ['getUser']);
+    authServiceMock.getUser.and.returnValue(of(null));
+
     setupModule({
       providers: [
         provideNoopAnimations(),
         provideRouter([]),
+        {provide: AuthService, useValue: authServiceMock},
       ],
       imports: [
         App,

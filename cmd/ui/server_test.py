@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Tests for server.py."""
+
 import http.server
 import io
 import os
@@ -18,11 +20,16 @@ import socket
 import unittest
 from unittest import mock
 
-from absl.testing import parameterized
-from xmanager_cloud.ui import server
+try:
+  from cmd.ui import server
+except ImportError:
+  try:
+    from xmanager_cloud.ui import server
+  except ImportError:
+    import server
 
 
-class SPAHandlerTest(parameterized.TestCase):
+class SPAHandlerTest(unittest.TestCase):
 
   def setUp(self):
     super().setUp()
@@ -34,12 +41,7 @@ class SPAHandlerTest(parameterized.TestCase):
     self.mock_server = mock.create_autospec(
         http.server.HTTPServer, instance=True, spec_set=True
     )
-
-  def tearDown(self):
-    self.mock_wfile.close()
-    super().tearDown()
-
-  def _get_handler(self, path):
+    # Patch base class methods once per test to avoid side effects
     self.enter_context(mock.patch.object(
         server.SPAHandler, 'finish', autospec=True, spec_set=True
     ))
@@ -49,6 +51,12 @@ class SPAHandlerTest(parameterized.TestCase):
     self.enter_context(mock.patch.object(
         server.SPAHandler, 'setup', autospec=True, spec_set=True
     ))
+
+  def tearDown(self):
+    self.mock_wfile.close()
+    super().tearDown()
+
+  def _get_handler(self, path):
     handler = server.SPAHandler(
         self.mock_request, self.mock_client_address, self.mock_server
     )
@@ -66,10 +74,15 @@ class SPAHandlerTest(parameterized.TestCase):
     )
     return handler
 
+  def enter_context(self, context_manager):
+    result = context_manager.__enter__()
+    self.addCleanup(context_manager.__exit__, None, None, None)
+    return result
+
   def _get_config_js_output(self, environ):
     handler = self._get_handler('/config.js')
-    self.enter_context(mock.patch.dict(os.environ, environ, clear=True))
-    handler.do_GET()
+    with mock.patch.dict(os.environ, environ, clear=True):
+      handler.do_GET()
 
     handler.send_response.assert_called_with(200)
     handler.send_header.assert_any_call(
@@ -83,92 +96,105 @@ class SPAHandlerTest(parameterized.TestCase):
     handler.send_response.assert_called_with(200, 'OK')
     handler.send_header.assert_any_call('Content-type', 'text/plain')
 
-  @parameterized.named_parameters(
-      dict(
-          testcase_name='defaults',
-          environ={},
-          expected='window.XMC_API_URL="https://api.example.com/v1";',
-      ),
-      dict(
-          testcase_name='custom_env',
-          environ={'XMC_API_URL': 'https://custom.api/v1'},
-          expected='window.XMC_API_URL="https://custom.api/v1";',
-      ),
-  )
-  def test_config_js_api_url(self, environ, expected):
-    output = self._get_config_js_output(environ)
-    self.assertIn(expected, output)
+  def test_config_js_api_url(self):
+    cases = [
+        dict(
+            testcase_name='defaults',
+            environ={},
+            expected='window.XMC_API_URL="https://api.example.com/v1";',
+        ),
+        dict(
+            testcase_name='custom_env',
+            environ={'XMC_API_URL': 'https://custom.api/v1'},
+            expected='window.XMC_API_URL="https://custom.api/v1";',
+        ),
+    ]
+    for case in cases:
+      with self.subTest(case['testcase_name']):
+        self.mock_wfile.seek(0)
+        self.mock_wfile.truncate(0)
+        output = self._get_config_js_output(case['environ'])
+        self.assertIn(case['expected'], output)
 
-  @parameterized.named_parameters(
-      dict(
-          testcase_name='defaults',
-          environ={}, expected='window.XMC_REFRESH_INTERVAL_MS=30000;',
-      ),
-      dict(
-          testcase_name='custom_env',
-          environ={'XMC_REFRESH_INTERVAL_MS': '60000'},
-          expected='window.XMC_REFRESH_INTERVAL_MS=60000;',
-      ),
-      dict(
-          testcase_name='invalid_interval',
-          environ={'XMC_REFRESH_INTERVAL_MS': 'invalid'},
-          expected='window.XMC_REFRESH_INTERVAL_MS=30000;',
-      ),
-  )
-  def test_config_js_refresh_interval(self, environ, expected):
-    output = self._get_config_js_output(environ)
-    self.assertIn(expected, output)
+  def test_config_js_refresh_interval(self):
+    cases = [
+        dict(
+            testcase_name='defaults',
+            environ={},
+            expected='window.XMC_REFRESH_INTERVAL_MS=30000;',
+        ),
+        dict(
+            testcase_name='custom_env',
+            environ={'XMC_REFRESH_INTERVAL_MS': '60000'},
+            expected='window.XMC_REFRESH_INTERVAL_MS=60000;',
+        ),
+        dict(
+            testcase_name='invalid_interval',
+            environ={'XMC_REFRESH_INTERVAL_MS': 'invalid'},
+            expected='window.XMC_REFRESH_INTERVAL_MS=30000;',
+        ),
+    ]
+    for case in cases:
+      with self.subTest(case['testcase_name']):
+        self.mock_wfile.seek(0)
+        self.mock_wfile.truncate(0)
+        output = self._get_config_js_output(case['environ'])
+        self.assertIn(case['expected'], output)
 
-  @parameterized.named_parameters(
-      dict(
-          testcase_name='defaults',
-          environ={},
-          expected=(
-              'window.XMC_FEATURE_FLAGS={'
-              '"cursorPaginationEnabled": false, '
-              '"statusMessageHistoryEnabled": false};'
-          ),
-      ),
-      dict(
-          testcase_name='cursor_pagination_true',
-          environ={'XMC_DEFAULT_TO_CURSOR_PAGINATION': 'true'},
-          expected=(
-              'window.XMC_FEATURE_FLAGS={'
-              '"cursorPaginationEnabled": true, '
-              '"statusMessageHistoryEnabled": false};'
-          ),
-      ),
-      dict(
-          testcase_name='status_message_history_true',
-          environ={'XMC_STATUS_MESSAGE_HISTORY_ENABLED': 'true'},
-          expected=(
-              'window.XMC_FEATURE_FLAGS={'
-              '"cursorPaginationEnabled": false, '
-              '"statusMessageHistoryEnabled": true};'
-          ),
-      ),
-      dict(
-          testcase_name='cursor_pagination_false',
-          environ={'XMC_DEFAULT_TO_CURSOR_PAGINATION': 'false'},
-          expected=(
-              'window.XMC_FEATURE_FLAGS={'
-              '"cursorPaginationEnabled": false, '
-              '"statusMessageHistoryEnabled": false};'
-          ),
-      ),
-      dict(
-          testcase_name='cursor_pagination_other',
-          environ={'XMC_DEFAULT_TO_CURSOR_PAGINATION': '1'},
-          expected=(
-              'window.XMC_FEATURE_FLAGS={'
-              '"cursorPaginationEnabled": false, '
-              '"statusMessageHistoryEnabled": false};'
-          ),
-      ),
-  )
-  def test_config_js_feature_flags(self, environ, expected):
-    output = self._get_config_js_output(environ)
-    self.assertIn(expected, output)
+  def test_config_js_feature_flags(self):
+    cases = [
+        dict(
+            testcase_name='defaults',
+            environ={},
+            expected=(
+                'window.XMC_FEATURE_FLAGS={'
+                '"cursorPaginationEnabled": false, '
+                '"statusMessageHistoryEnabled": false};'
+            ),
+        ),
+        dict(
+            testcase_name='cursor_pagination_true',
+            environ={'XMC_DEFAULT_TO_CURSOR_PAGINATION': 'true'},
+            expected=(
+                'window.XMC_FEATURE_FLAGS={'
+                '"cursorPaginationEnabled": true, '
+                '"statusMessageHistoryEnabled": false};'
+            ),
+        ),
+        dict(
+            testcase_name='status_message_history_true',
+            environ={'XMC_STATUS_MESSAGE_HISTORY_ENABLED': 'true'},
+            expected=(
+                'window.XMC_FEATURE_FLAGS={'
+                '"cursorPaginationEnabled": false, '
+                '"statusMessageHistoryEnabled": true};'
+            ),
+        ),
+        dict(
+            testcase_name='cursor_pagination_false',
+            environ={'XMC_DEFAULT_TO_CURSOR_PAGINATION': 'false'},
+            expected=(
+                'window.XMC_FEATURE_FLAGS={'
+                '"cursorPaginationEnabled": false, '
+                '"statusMessageHistoryEnabled": false};'
+            ),
+        ),
+        dict(
+            testcase_name='cursor_pagination_other',
+            environ={'XMC_DEFAULT_TO_CURSOR_PAGINATION': '1'},
+            expected=(
+                'window.XMC_FEATURE_FLAGS={'
+                '"cursorPaginationEnabled": false, '
+                '"statusMessageHistoryEnabled": false};'
+            ),
+        ),
+    ]
+    for case in cases:
+      with self.subTest(case['testcase_name']):
+        self.mock_wfile.seek(0)
+        self.mock_wfile.truncate(0)
+        output = self._get_config_js_output(case['environ'])
+        self.assertIn(case['expected'], output)
 
   def test_fallback_to_index(self):
     self.enter_context(

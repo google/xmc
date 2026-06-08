@@ -59,8 +59,34 @@
             }
           },
           "defaultConfiguration": "production"
+        },
+        "test": {
+          "builder": "@angular-devkit/build-angular:karma",
+          "options": {
+            "karmaConfig": "karma.conf.js",
+            "main": "app/testing/test.ts",
+            "tsConfig": "tsconfig.spec.json",
+            "include": [
+              "app/**/*_test.ts"
+            ],
+            "polyfills": [
+              "zone.js",
+              "zone.js/testing"
+            ],
+            "styles": [
+              "styles.scss"
+            ],
+            "stylePreprocessorOptions": {
+              "includePaths": [
+                "."
+              ]
+            }
+          }
         }
       }
     }
+  },
+  "cli": {
+    "analytics": false
   }
 }

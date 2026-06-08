@@ -45,6 +45,8 @@ const MOCK_PAGE_RESULT_2: ListExperimentsResponse = {
 };
 
 describe('ExperimentsListPage Component', () => {
+  useAutoTick();
+
   const state = cleanState(() => {
     const experimentService = jasmine.createSpyObj<ExperimentService>(
         'ExperimentService',

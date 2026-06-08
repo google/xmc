@@ -81,4 +81,18 @@ describe('HomePage Component', () => {
     bootstrap(HomePage);
     expect(state.router.navigate).toHaveBeenCalledWith(['/experiments']);
   });
+
+  it('should set error message for forbidden error when email is missing', () => {
+    state.queryParams.next({error: 'forbidden'});
+    const comp = bootstrap(HomePage);
+    expect(comp.errorMessage()).toBe('Your account () is not authorized. Please contact your administrator to request access.');
+  });
+
+  it('should redirect user to login endpoint when login is called', () => {
+    const openSpy = spyOn(window, 'open').and.stub();
+
+    const comp = bootstrap(HomePage);
+    comp.login();
+    expect(openSpy).toHaveBeenCalledWith('/api/login', '_self');
+  });
 });

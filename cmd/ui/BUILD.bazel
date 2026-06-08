@@ -80,3 +80,42 @@ chmod +x $@
     executable = True,
     visibility = ["//visibility:public"],
 )
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "server_test",
+    srcs = ["server_test.py"],
+    deps = [
+        ":server",
+    ],
+)
+
+py_test(
+    name = "ui_unit_tests",
+    srcs = ["run_ui_tests.py"],
+    main = "run_ui_tests.py",
+    data = glob([
+        "app/**/*",
+        "static/**/*",
+        "*.ts",
+        "*.scss",
+        "*.html",
+        "*.json",
+        "*.ico",
+        "*.svg",
+        "package-lock.json",
+        "karma.conf.js",
+    ]),
+    tags = [
+        "local",
+        "manual",
+    ],
+)

@@ -63,6 +63,6 @@ export class HomePage {
   }
 
   login() {
-    window.location.href = '/api/login';
+    window.open('/api/login', '_self');
   }
 }

@@ -14,6 +14,8 @@
 import 'jasmine';
 
 
+import {provideHttpClient} from '@angular/common/http';
+
 import {WorkUnitsService} from './work_units_service';
 
 describe('WorkUnitsService', () => {
@@ -21,7 +23,10 @@ describe('WorkUnitsService', () => {
 
   beforeEach(() => {
     setupModule({
-      providers: [WorkUnitsService],
+      providers: [
+        provideHttpClient(),
+        WorkUnitsService,
+      ],
     });
     service = get(WorkUnitsService);
   });

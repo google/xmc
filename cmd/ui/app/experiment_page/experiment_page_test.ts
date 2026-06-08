@@ -25,6 +25,7 @@ import {FeatureFlagService} from 'xmanager_cloud/ui/app/service/feature_flag_ser
 import {SnackbarService} from 'xmanager_cloud/ui/app/service/snackbar_service';
 import {StatusMessageService} from 'xmanager_cloud/ui/app/service/status_message_service';
 import {WorkUnitsService} from 'xmanager_cloud/ui/app/service/work_units_service';
+import {AutoReloadService} from 'xmanager_cloud/ui/app/common/components/autoreloader/autoreloader_service';
 import {SidePanelService} from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
 import {BehaviorSubject, NEVER, of} from 'rxjs';
 
@@ -78,6 +79,13 @@ describe('ExperimentPage Component', () => {
     const featureFlagService = {
       isStatusMessageHistoryEnabled: true,
     };
+    const autoReloadServiceMock = {
+      createReloader: () => ({
+        reloader$: NEVER,
+        start: () => {},
+        stop: () => {},
+      }),
+    };
 
     experimentService.getExperiment.and.returnValue(of(MOCK_EXPERIMENT));
     workUnitsService.searchWorkUnits.and.returnValue(of({workUnits: []}));
@@ -112,6 +120,7 @@ describe('ExperimentPage Component', () => {
         {provide: ArtifactService, useValue: artifactService},
         {provide: FeatureFlagService, useValue: featureFlagService},
         {provide: StatusMessageService, useValue: statusMessageService},
+        {provide: AutoReloadService, useValue: autoReloadServiceMock},
       ],
     });
 

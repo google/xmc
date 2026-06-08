@@ -20,6 +20,7 @@
     "baseUrl": ".",
     "paths": {
       "xmanager_cloud/ui/app/*": ["app/*"],
+      "jasmine": ["app/stubs/jasmine.ts"],
       "javascript/closure/format/format": ["app/stubs/format.ts"],
       "javascript/closure/i18n/messageformat": ["app/stubs/messageformat.ts"],
       "javascript/closure/i18n/messages": ["app/stubs/messages.ts"],

@@ -211,6 +211,8 @@ describe('AutoReloadService', () => {
       undefined,
       undefined,
       undefined,
+      undefined,
+      undefined,
     ]);
     control1.stop();
     control2.stop();

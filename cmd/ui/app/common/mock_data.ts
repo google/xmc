@@ -13,14 +13,86 @@
 // limitations under the License.
 
 export const TOTAL_STATUS_MESSAGES: any[] = [];
-export const MOCK_HISTORICAL_STATUS_MESSAGES: any[] = [];
-export const WORK_UNIT_1: any = {};
-export const WORK_UNIT_2: any = {};
-export const WORK_UNIT_3: any = {};
-export const WORK_UNIT_4: any = {};
-export const WORK_UNIT_LIST: any[] = [];
+export const MOCK_HISTORICAL_STATUS_MESSAGES: any[] = [
+  {
+    name: 'experiments/1/statusMessages/1',
+    createTime: '2026-06-08T00:00:00Z',
+    content: {
+      userFacingText: 'Application is being initialized.',
+      severity: 'INFO',
+      source: 'APPLICATION',
+    },
+  },
+  {
+    name: 'experiments/1/statusMessages/2',
+    createTime: '2026-06-08T00:01:00Z',
+    content: {
+      userFacingText: 'Critical failure: connection lost.',
+      severity: 'ERROR',
+      source: 'APPLICATION',
+    },
+  },
+];
+
+export const EXPERIMENT_1: any = {
+  name: 'experiments/1',
+  title: 'Experiment 1',
+  notes: 'Notes for experiment 1',
+  tags: ['tag1', 'tag2'],
+  priority: 'LOW',
+  createTime: '2026-06-08T00:00:00Z',
+};
+
+export const EXPERIMENT_2: any = {
+  name: 'experiments/2',
+  title: 'Experiment 2',
+  notes: 'Notes for experiment 2',
+  tags: ['tag3'],
+  priority: 'NORMAL',
+  createTime: '2026-06-08T01:00:00Z',
+};
+
+export const EXPERIMENT_LIST: any[] = [
+  EXPERIMENT_1,
+  EXPERIMENT_2,
+];
+
+export const WORK_UNIT_1: any = {
+  name: 'experiments/1/workUnits/1',
+  createTime: '2026-06-08T00:00:00Z',
+  currentWorkUnitExecution: {
+    metadata: {
+      managementCluster: {
+        project: 'test-project',
+        location: 'us-central1',
+        clusterName: 'test-cluster',
+      },
+      resourceName: 'test-resource',
+      namespace: 'test-namespace',
+      serviceAccount: 'test-sa',
+    },
+  },
+};
+
+export const WORK_UNIT_2: any = {
+  name: 'experiments/1/workUnits/2',
+  // Missing metadata for testing undefined URL resolution
+};
+
+export const WORK_UNIT_3: any = {
+  name: 'experiments/1/workUnits/3',
+};
+
+export const WORK_UNIT_4: any = {
+  name: 'experiments/1/workUnits/4',
+};
+
+export const WORK_UNIT_LIST: any[] = [
+  WORK_UNIT_1,
+  WORK_UNIT_2,
+  WORK_UNIT_3,
+  WORK_UNIT_4,
+];
 
 export const ARTIFACT_LIST: any[] = [];
 export const WORK_UNIT_1_ARTIFACT_LIST: any[] = [];
-export const EXPERIMENT_1: any = {};
-export const EXPERIMENT_LIST: any[] = [];

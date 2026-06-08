@@ -85,6 +85,7 @@ describe('StatusMessageService', () => {
     const state = cleanState(() => {
       setupModule({
         providers: [
+          provideHttpClient(),
           StatusMessageService,
           {provide: USE_MOCK_DATA, useValue: true},
         ],

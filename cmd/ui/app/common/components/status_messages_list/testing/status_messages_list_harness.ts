@@ -16,7 +16,8 @@ import {StatusMessagesListFilterHarness} from 'xmanager_cloud/ui/app/common/comp
 
 /** Harness for interacting with <xmc-status-messages-list> in tests. */
 export class StatusMessagesListHarness extends ComponentHarness {
-  static hostSelector = 'xmc-status-messages-list';
+  static hostSelector =
+      'xmc-status-messages-list, [data-component-selector="xmc-status-messages-list"]';
 
   private readonly messagesEls = this.locatorForAll('xmc-status-message');
   private readonly filterEl = this.locatorFor(StatusMessagesListFilterHarness);
