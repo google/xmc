@@ -69,7 +69,23 @@ func (i *DriverInterceptor) intercept(r io.ReadCloser) (io.ReadCloser, error) {
 	}
 	content := string(data)
 	modified := injectStoredColumnsReinitialization(content, i.DBName)
+	modified = stripUnsupportedStatements(modified)
 	return io.NopCloser(strings.NewReader(modified)), nil
+}
+
+func stripUnsupportedStatements(content string) string {
+	var result strings.Builder
+	statements := spannerutils.ParseDDL(content)
+	for _, statement := range statements {
+		upperStmt := strings.ToUpper(strings.TrimSpace(statement))
+		if strings.HasPrefix(upperStmt, "ALTER SEARCH INDEX") {
+			// Spanner Emulator does not support ALTER SEARCH INDEX statements.
+			continue
+		}
+		result.WriteString(statement)
+		result.WriteString(";\n")
+	}
+	return result.String()
 }
 
 type columnSpec struct {
