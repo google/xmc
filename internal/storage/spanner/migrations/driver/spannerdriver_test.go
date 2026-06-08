@@ -31,7 +31,6 @@ import (
 	emptypb "protobuf/empty_go_proto"
 	adminpb "spanner/admin/database/v1/spanner_database_admin_go_proto"
 	instancepb "spanner/admin/instance/v1/spanner_instance_admin_go_proto"
-
 )
 
 const (

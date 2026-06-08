@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"task/go/status"
 
@@ -82,6 +83,10 @@ func (s *XIDServer) UpdateXidEntry(ctx context.Context, in *apipb.UpdateXidEntry
 		if errors.Is(err, status.ErrInvalidArgument) {
 			logging.Warn(ctx, "Invalid UpdateXidEntry request", "error", err)
 			return nil, fmt.Errorf("invalid UpdateXidEntry request %v: %w", err, status.ErrInvalidArgument)
+		}
+		if errors.Is(err, status.ErrPermissionDenied) && strings.Contains(err.Error(), "does not have owners") {
+			logging.Warn(ctx, "Invalid UpdateXidEntry request: no owners", "error", err)
+			return nil, fmt.Errorf("invalid UpdateXidEntry request: %w", status.ErrInvalidArgument)
 		}
 		logging.Error(ctx, "Storage layer error for UpdateXidEntry", "xid", xid, "error", err)
 		return nil, fmt.Errorf("an internal error occurred while updating the XID: %w", status.ErrInternal)

@@ -16,7 +16,6 @@ package commands
 import (
 	"testing"
 
-	dbadminpb "spanner/admin/database/v1/spanner_database_admin_go_proto"
 	"cloud_spanner_emulator/public/go/emulator"
 	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
@@ -25,6 +24,7 @@ import (
 	"golang/github_com/golang_migrate/migrate/v/v4/migrate"
 	"golang/github_com/golang_migrate/migrate/v/v4/source/source"
 	stubs "golang/github_com/golang_migrate/migrate/v/v4/source/stub/stub"
+	dbadminpb "spanner/admin/database/v1/spanner_database_admin_go_proto"
 	xmcemulator "xmanager_cloud/storage/spanner/emulator/emulator"
 )
 
