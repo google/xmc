@@ -99,7 +99,6 @@ func parseConfig() *config {
 	flag.StringVar(&cfg.migrationsDir, "migrations_dir", "", "Name of the migrations subdirectory (e.g., 'ess' or 'xid')")
 	flag.StringVar(&cfg.command, "command", "", fmt.Sprintf("Command to run: %s, %s, %s, %s, %s", upCmd, downCmd, forceCmd, versionCmd, initCmd))
 	google.Init()
-	flag.Parse()
 
 	if err := parseArg(cfg, flag.Args()); err != nil {
 		log.Exit(err)

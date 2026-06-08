@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"cloud_spanner_emulator/public/go/emulator"
 	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
@@ -29,16 +30,14 @@ import (
 	emptypb "protobuf/empty_go_proto"
 	adminpb "spanner/admin/database/v1/spanner_database_admin_go_proto"
 	instancepb "spanner/admin/instance/v1/spanner_instance_admin_go_proto"
-
 )
 
 const (
-	projectID    = "test-project"
-	instanceID   = "test-instance"
-	instancePath = "projects/test-project/instances/test-instance"
+	projectID        = "test-project"
+	instanceIDPrefix = "test-instance"
 )
 
-func newSpannerServer(ctx context.Context, t *testing.T) *emulator.Emulator {
+func newSpannerServer(ctx context.Context, t *testing.T) (*emulator.Emulator, string) {
 	t.Helper()
 
 	emu, err := emulator.Start(ctx, emulator.Options{})
@@ -51,6 +50,14 @@ func newSpannerServer(ctx context.Context, t *testing.T) *emulator.Emulator {
 	if err != nil {
 		t.Fatalf("instance.NewInstanceAdminClient() failed: %v", err)
 	}
+	instanceID := fmt.Sprintf("%s-%d", instanceIDPrefix, time.Now().UnixNano())
+	t.Cleanup(func() {
+		_ = instClient.DeleteInstance(context.Background(), &instancepb.DeleteInstanceRequest{
+			Name: fmt.Sprintf("projects/%s/instances/%s", projectID, instanceID),
+		})
+		instClient.Close()
+	})
+
 	op1, err := instClient.CreateInstance(ctx, &instancepb.CreateInstanceRequest{
 		Parent:     fmt.Sprintf("projects/%s", projectID),
 		InstanceId: instanceID,
@@ -66,7 +73,7 @@ func newSpannerServer(ctx context.Context, t *testing.T) *emulator.Emulator {
 		t.Fatalf("op1.Wait() failed: %v", err)
 	}
 
-	return emu
+	return emu, fmt.Sprintf("projects/%s/instances/%s", projectID, instanceID)
 }
 
 func createAdminClient(ctx context.Context, t *testing.T, emu *emulator.Emulator) *database.DatabaseAdminClient {
@@ -78,7 +85,7 @@ func createAdminClient(ctx context.Context, t *testing.T, emu *emulator.Emulator
 	return dbAdmin
 }
 
-func createDatabase(ctx context.Context, t *testing.T, dbAdmin *database.DatabaseAdminClient, dbName string) {
+func createDatabase(ctx context.Context, t *testing.T, dbAdmin *database.DatabaseAdminClient, instancePath string, dbName string) {
 	t.Helper()
 	dbReq := &adminpb.CreateDatabaseRequest{
 		Parent:          instancePath,
@@ -104,11 +111,11 @@ func createDataClient(ctx context.Context, t *testing.T, emu *emulator.Emulator,
 
 func TestNew(t *testing.T) {
 	ctx := t.Context()
-	emu := newSpannerServer(ctx, t)
+	emu, instancePath := newSpannerServer(ctx, t)
 	adminClient := createAdminClient(ctx, t, emu)
 	dbName := "test-db-1"
 	dbPath := fmt.Sprintf("%s/databases/test-db-1", instancePath)
-	createDatabase(ctx, t, adminClient, dbName)
+	createDatabase(ctx, t, adminClient, instancePath, dbName)
 	dataClient := createDataClient(ctx, t, emu, dbPath)
 
 	tests := []struct {
@@ -181,7 +188,7 @@ func emptyProtoDescriptorBytes(t *testing.T) []byte {
 
 func TestRun(t *testing.T) {
 	ctx := t.Context()
-	emu := newSpannerServer(ctx, t)
+	emu, instancePath := newSpannerServer(ctx, t)
 	adminClient := createAdminClient(ctx, t, emu)
 
 	tests := []struct {
@@ -249,7 +256,7 @@ func TestRun(t *testing.T) {
 			// Create a new database for each test case.
 			dbName := fmt.Sprintf("testdb-%d", i)
 			dbPath := fmt.Sprintf("%s/databases/%s", instancePath, dbName)
-			createDatabase(ctx, t, adminClient, dbName)
+			createDatabase(ctx, t, adminClient, instancePath, dbName)
 			dataClient := createDataClient(ctx, t, emu, dbPath)
 			defer dataClient.Close()
 

@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -24,8 +24,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/golang-migrate/migrate/v4/source"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
+
+	"github.com/golang-migrate/migrate/v4/source"
 )
 
 // DriverInterceptor intercepts SQL migration files for purpose of testing.
@@ -111,6 +112,9 @@ func injectStoredColumnsReinitialization(content string, dbName string) string {
 			result.WriteString(statement)
 			result.WriteString(";\n")
 			result.WriteString(adds)
+		} else if strings.Contains(strings.ToUpper(statement), "ALTER SEARCH INDEX") {
+			// ALTER SEARCH INDEX is not supported by the Spanner emulator. TODO: remove this once the emulator is fixed.
+			continue
 		} else {
 			result.WriteString(statement)
 			result.WriteString(";\n")
