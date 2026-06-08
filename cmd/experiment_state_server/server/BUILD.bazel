@@ -78,6 +78,7 @@ compat_go_library(
 
 compat_go_test(
     name = "server_test",
+    shard_count = 10,
     srcs = [
         "batchrestartworkunits_test.go",
         "batchstopworkunits_test.go",
