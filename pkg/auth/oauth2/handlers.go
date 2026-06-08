@@ -58,14 +58,7 @@ func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	if a.Config.MockAuth {
-		redirectURL := fmt.Sprintf("/api/callback?code=mock_code_123&state=%s", state)
-		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
-		return
-	}
-
-	oauthConfig := a.getDynamicOAuthConfig(r)
-	authURL := oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	authURL := a.OAuthProvider.AuthCodeURL(state, r)
 	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
 }
 
@@ -87,7 +80,7 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	})
 
 	code := r.URL.Query().Get("code")
-	if !a.Config.MockAuth && code == "" {
+	if code == "" {
 		http.Error(w, "Code parameter is missing", http.StatusBadRequest)
 		return
 	}
@@ -95,7 +88,7 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	userInfo, err := a.getUserInfo(ctx, r, code)
+	userInfo, err := a.OAuthProvider.ExchangeAndGetUserInfo(ctx, r, code)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to get user info: %v", err), http.StatusInternalServerError)
 		return
@@ -140,45 +133,6 @@ func (a *Authenticator) validateState(r *http.Request) (string, error) {
 		return "", fmt.Errorf("CSRF state mismatch")
 	}
 	return stateParam, nil
-}
-
-func (a *Authenticator) getUserInfo(ctx context.Context, r *http.Request, code string) (*GoogleUserInfo, error) {
-	if a.Config.MockAuth {
-		return &GoogleUserInfo{
-			Email:   "mock-user@mycompany.com",
-			Name:    "Mock User",
-			Picture: "https://example.com/mock-avatar.png",
-		}, nil
-	}
-
-	oauthConfig := a.getDynamicOAuthConfig(r)
-	token, err := oauthConfig.Exchange(ctx, code)
-	if err != nil {
-		return nil, fmt.Errorf("Token exchange failed: %w", err)
-	}
-
-	client := oauthConfig.Client(ctx, token)
-	resp, err := client.Get(a.Config.APIURL)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to fetch user info: %w", err)
-	}
-	defer resp.Body.Close()
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to read user info response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("User info call failed with status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var userInfo GoogleUserInfo
-	if err := json.Unmarshal(bodyBytes, &userInfo); err != nil {
-		return nil, fmt.Errorf("Failed to decode user info details: %w", err)
-	}
-
-	return &userInfo, nil
 }
 
 func (a *Authenticator) createSession(w http.ResponseWriter, r *http.Request, email, name, picture string) error {

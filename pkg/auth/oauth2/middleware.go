@@ -93,9 +93,6 @@ func (a *Authenticator) authenticateBearer(w http.ResponseWriter, r *http.Reques
 
 	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 
-	if a.authenticateMockBearer(w, r, tokenStr, next) {
-		return true
-	}
 	if a.authenticateSessionJWT(w, r, tokenStr, next) {
 		return true
 	}
@@ -106,25 +103,6 @@ func (a *Authenticator) authenticateBearer(w http.ResponseWriter, r *http.Reques
 	return false
 }
 
-// authenticateMockBearer checks if mock authentication is enabled and the token is the mock service account token.
-// If so, it updates the context and handles the request, returning true. Otherwise, it returns false.
-func (a *Authenticator) authenticateMockBearer(w http.ResponseWriter, r *http.Request, tokenStr string, next http.Handler) bool {
-	if !a.Config.MockAuth || tokenStr != "mock-sa-token" {
-		return false
-	}
-
-	claims := &SessionClaims{
-		Email:   "service-account@mycompany.com",
-		Name:    "Mock Service Account",
-		Picture: "https://example.com/sa-avatar.png",
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer: "google-service-account",
-		},
-	}
-	ctx := context.WithValue(r.Context(), UserClaimsContextKey, claims)
-	next.ServeHTTP(w, r.WithContext(ctx))
-	return true
-}
 
 // authenticateSessionJWT attempts to parse the token as a signed session JWT token.
 // If it succeeds, it verifies authorization and handles the request, returning true.

@@ -961,7 +961,7 @@ func TestGetUserInfo(t *testing.T) {
 			MockAuth: true,
 		})
 		req := httptest.NewRequest("GET", "/api/callback", nil)
-		info, err := a.getUserInfo(context.Background(), req, "anycode")
+		info, err := a.OAuthProvider.ExchangeAndGetUserInfo(context.Background(), req, "anycode")
 		if err != nil {
 			t.Fatalf("getUserInfo failed: %v", err)
 		}
@@ -998,7 +998,7 @@ func TestGetUserInfo(t *testing.T) {
 		})
 
 		req := httptest.NewRequest("GET", "/api/callback", nil)
-		info, err := a.getUserInfo(context.Background(), req, "validcode")
+		info, err := a.OAuthProvider.ExchangeAndGetUserInfo(context.Background(), req, "validcode")
 		if err != nil {
 			t.Fatalf("getUserInfo failed: %v", err)
 		}

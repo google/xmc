@@ -21,6 +21,7 @@ go_library(
         "handlers.go",
         "middleware.go",
         "pipeline.go",
+        "provider.go",
         "session.go",
     ],
     importpath = "xmanager_cloud/pkg/auth/oauth2",

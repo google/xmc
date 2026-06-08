@@ -44,6 +44,9 @@ type Authenticator struct {
 	policyCache    policyCacheEntry
 	policyFetcher  func(context.Context) (*iampb.Policy, error)
 	idTokenValidator func(ctx context.Context, idToken string, audience string) (*idtoken.Payload, error)
+
+	// Injected provider for OAuth client interactions.
+	OAuthProvider OAuthProvider
 }
 
 // NewAuthenticator initializes a new instance of Authenticator.
@@ -62,17 +65,53 @@ func NewAuthenticator(cfg *Config) *Authenticator {
 			},
 		},
 	}
-	a.policyFetcher = func(ctx context.Context) (*iampb.Policy, error) {
-		client, err := a.getProjectsClientLocked(ctx)
-		if err != nil {
-			return nil, err
+	// Determine OAuthProvider based on MockAuth configuration
+	if cfg.MockAuth {
+		a.OAuthProvider = &MockOAuthProvider{
+			MockEmail: "mock-user@mycompany.com",
+			MockName:  "Mock User",
+			MockPic:   "https://example.com/mock-avatar.png",
 		}
-		req := &iampb.GetIamPolicyRequest{
-			Resource: "projects/" + a.Config.GCPProjectID,
+		a.idTokenValidator = func(ctx context.Context, idToken string, audience string) (*idtoken.Payload, error) {
+			if idToken == "mock-sa-token" {
+				return &idtoken.Payload{
+					Issuer:   "google-service-account",
+					Audience: audience,
+					Claims: map[string]interface{}{
+						"email":   "service-account@mycompany.com",
+						"name":    "Mock Service Account",
+						"picture": "https://example.com/sa-avatar.png",
+					},
+				}, nil
+			}
+			return nil, fmt.Errorf("invalid token: %s", idToken)
 		}
-		return client.GetIamPolicy(ctx, req)
+		a.policyFetcher = func(ctx context.Context) (*iampb.Policy, error) {
+			return &iampb.Policy{
+				Bindings: []*iampb.Binding{
+					{
+						Role:    cfg.TargetIAMRole,
+						Members: []string{"user:mock-admin@mycompany.com", "user:mock-sa-user@mycompany.com", "serviceaccount:service-account@mycompany.com"},
+					},
+				},
+			}, nil
+		}
+	} else {
+		a.OAuthProvider = &GoogleOAuthProvider{
+			Authenticator: a,
+		}
+		a.policyFetcher = func(ctx context.Context) (*iampb.Policy, error) {
+			client, err := a.getProjectsClientLocked(ctx)
+			if err != nil {
+				return nil, err
+			}
+			req := &iampb.GetIamPolicyRequest{
+				Resource: "projects/" + a.Config.GCPProjectID,
+			}
+			return client.GetIamPolicy(ctx, req)
+		}
+		a.idTokenValidator = idtoken.Validate
 	}
-	a.idTokenValidator = idtoken.Validate
 	return a
 }
 
@@ -158,11 +197,6 @@ func (a *Authenticator) IsUserAuthorized(ctx context.Context, email string) (boo
 
 	// 3. STAGE 3: GCP IAM Fallback Check
 	if a.Config.GCPProjectID != "" {
-		if a.Config.MockAuth {
-			// Mock behavior for test environments
-			return (emailLower == "mock-admin@mycompany.com" || emailLower == "mock-sa-user@mycompany.com"), nil
-		}
-
 		return a.IsUserAuthorizedViaIAM(ctx, emailLower)
 	}
 
