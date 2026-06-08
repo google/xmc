@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	_ "embed"
 
@@ -30,6 +31,8 @@ import (
 	"google.golang.org/api/option"
 	dbadminpb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
 	instancepb "google.golang.org/genproto/googleapis/spanner/admin/instance/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
 )
 
@@ -138,13 +141,14 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 	t.Cleanup(func() { essClient.Close() })
 
 	t.Cleanup(func() {
-		dba, err := database.NewDatabaseAdminClient(ctx, emu.ClientOptions()...)
+		cleanupCtx := context.WithoutCancel(ctx)
+		dba, err := database.NewDatabaseAdminClient(cleanupCtx, emu.ClientOptions()...)
 		if err != nil {
 			return
 		}
 		defer dba.Close()
-		_ = dba.DropDatabase(ctx, &dbadminpb.DropDatabaseRequest{Database: xidDBURI})
-		_ = dba.DropDatabase(ctx, &dbadminpb.DropDatabaseRequest{Database: essDBURI})
+		_ = dba.DropDatabase(cleanupCtx, &dbadminpb.DropDatabaseRequest{Database: xidDBURI})
+		_ = dba.DropDatabase(cleanupCtx, &dbadminpb.DropDatabaseRequest{Database: essDBURI})
 	})
 
 	return xidClient, essClient, emu
@@ -171,7 +175,25 @@ func createInstance(ctx context.Context, emu *Emulator) error {
 		},
 	})
 	if err != nil {
-		return nil
+		if status.Code(err) == codes.AlreadyExists {
+			// Ensure instance finishes provisioning before returning
+			for {
+				inst, getErr := i.GetInstance(ctx, &instancepb.GetInstanceRequest{Name: instanceURI})
+				if getErr != nil {
+					return getErr
+				}
+				if inst.State == instancepb.Instance_READY {
+					return nil
+				}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+					time.Sleep(50 * time.Millisecond)
+				}
+			}
+		}
+		return fmt.Errorf("CreateInstance failed: %w", err)
 	}
 	_, err = op.Wait(ctx)
 	return err
