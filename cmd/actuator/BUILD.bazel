@@ -60,6 +60,7 @@ compat_go_library(
         "//internal/storage/spanner",
         "//internal/compat/google",
         "//internal/compat/spanner",
+        "@com_google_cloud_go_spanner//:spanner",
         "//internal/task_queue_redis:redisclient",
         "@org_golang_x_sync//errgroup:go_default_library",
         "@com_google_cloud_go_compute_metadata//:metadata",
