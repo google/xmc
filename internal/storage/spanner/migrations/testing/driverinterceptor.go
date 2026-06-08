@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -24,8 +24,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/golang-migrate/migrate/v4/source"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
+
+	"github.com/golang-migrate/migrate/v4/source"
 )
 
 // DriverInterceptor intercepts SQL migration files for purpose of testing.
@@ -68,7 +69,23 @@ func (i *DriverInterceptor) intercept(r io.ReadCloser) (io.ReadCloser, error) {
 	}
 	content := string(data)
 	modified := injectStoredColumnsReinitialization(content, i.DBName)
+	modified = stripUnsupportedStatements(modified)
 	return io.NopCloser(strings.NewReader(modified)), nil
+}
+
+func stripUnsupportedStatements(content string) string {
+	var result strings.Builder
+	statements := spannerutils.ParseDDL(content)
+	for _, statement := range statements {
+		upperStmt := strings.ToUpper(strings.TrimSpace(statement))
+		if strings.HasPrefix(upperStmt, "ALTER SEARCH INDEX") {
+			// Spanner Emulator does not support ALTER SEARCH INDEX statements.
+			continue
+		}
+		result.WriteString(statement)
+		result.WriteString(";\n")
+	}
+	return result.String()
 }
 
 type columnSpec struct {

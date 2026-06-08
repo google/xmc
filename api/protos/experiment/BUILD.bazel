@@ -17,7 +17,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@io_bazel_rules_go//proto:compiler.bzl", "go_proto_compiler")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@rules_proto//proto:defs.bzl", "proto_library")
-load(":descriptor.bzl", "merge_descriptors")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -147,11 +146,11 @@ go_proto_library(
     proto = ":cloud_xmanager_v1_proto",
     deps = [
         "//api/protos/xid:messages_go_proto",
-        "@org_golang_google_genproto_googleapis_api//:go_default_library",
-        "@org_golang_google_genproto_googleapis_api//annotations",
+        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@com_google_googleapis//google/api:field_behavior_go_proto",
         "@com_google_googleapis//google/api:resource_go_proto",
-        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
+        "@org_golang_google_genproto_googleapis_api//:go_default_library",
+        "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
 
@@ -159,10 +158,4 @@ go_library(
     name = "experiment",
     embed = [":cloud_xmanager_v1_go_proto"],
     importpath = "xmanager_cloud/api/protos/experiment",
-)
-
-merge_descriptors(
-    name = "ess_messages_descriptor_set",
-    deps = [":cloud_xmanager_v1_proto"],
-    out = "ess_messages.pb",
 )
