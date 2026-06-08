@@ -80,6 +80,7 @@ content = content.replace("xmanager_cloud/kubernetes/reconciler/jobset/jobset", 
 content = content.replace("xmanager_cloud/kubernetes/reconciler/kueue_sync/kueuesync", "xmanager_cloud/cmd/reconciler/kueue_sync")
 content = content.replace("xmanager_cloud/kubernetes/reconciler/workload/workload", "xmanager_cloud/cmd/reconciler/workload")
 content = content.replace("xmanager_cloud/kubernetes/actuator/workunittaskhandler", "xmanager_cloud/cmd/actuator/workunittaskhandler")
+content = content.replace("xmanager_cloud/kubernetes/common/labels", "xmanager_cloud/internal/kubernetes/common/labels")
 content = content.replace("golang/google_api/idtoken/idtoken", "google.golang.org/api/idtoken")
 content = content.replace("tink/go/jwt/jwt", "github.com/tink-crypto/tink-go/v2/jwt")
 content = content.replace("xmanager_cloud/auth/auth", "xmanager_cloud/internal/auth")
