@@ -184,9 +184,7 @@ func (a *Authenticator) CORSMiddleware(next http.Handler) http.Handler {
 		origin := r.Header.Get("Origin")
 		allowedOrigin := a.Config.FrontendURL
 		if origin != "" {
-			if origin == a.Config.FrontendURL {
-				allowedOrigin = origin
-			} else {
+			if origin != a.Config.FrontendURL {
 				for _, ao := range a.Config.AllowedOrigins {
 					if origin == ao {
 						allowedOrigin = origin
