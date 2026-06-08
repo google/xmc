@@ -16,6 +16,7 @@ jobs:
   run-tests:
     name: 'Run Unit Tests'
     runs-on: 'ubuntu-24.04'
+    timeout-minutes: 30
     environment: janzak-dev-test
 
     # Use a service container for the Spanner Emulator
@@ -31,6 +32,8 @@ jobs:
       WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
       SERVICE_ACCOUNT: ${{ vars.SERVICE_ACCOUNT }}
       SPANNER_EMULATOR_HOST: localhost:9010
+      # We're overriding the test timeout to catch failures with Spanner faster
+      TEST_TIMEOUT_SECONDS: 60
 
     steps:
       - name: 'Checkout'
@@ -102,8 +105,7 @@ jobs:
             --bes_instance_name="${{ env.PROJECT_ID }}" \
             --google_auth_scopes="https://www.googleapis.com/auth/cloud-platform" \
             --bes_header="x-goog-user-project=${{ env.PROJECT_ID }}" \
-            --bes_timeout=60s \
-            --test_timeout=60,60,60,60 \
+            --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }} \
             --google_default_credentials \
             -- \
             //... \
