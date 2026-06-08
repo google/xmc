@@ -26,6 +26,7 @@ compat_go_library(
         "//internal/storage/spanner/utils:spannerutils",
         "@com_github_golang_migrate_migrate_v4//database:database",
         "@com_github_golang_migrate_migrate_v4//database/spanner:spanner",
+        "@com_google_cloud_go_spanner//:spanner",
         "@com_google_cloud_go_spanner//admin/database/apiv1:apiv1",
         "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
     ],
