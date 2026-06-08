@@ -24,8 +24,7 @@
       "javascript/closure/format/format": ["app/stubs/format.ts"],
       "javascript/closure/i18n/messageformat": ["app/stubs/messageformat.ts"],
       "javascript/closure/i18n/messages": ["app/stubs/messages.ts"],
-      "javascript/closure/i18n/numberformat": ["app/stubs/numberformat.ts"],
-      "@angular/material/timepicker": ["app/stubs/timepicker.ts"]
+      "javascript/closure/i18n/numberformat": ["app/stubs/numberformat.ts"]
     }
   },
   "include": [
@@ -39,6 +38,7 @@
     "strictTemplates": false
   },
   "exclude": [
-    "**/*_test.ts"
+    "**/*_test.ts",
+    "app/testing"
   ]
 }

@@ -100,16 +100,13 @@ limitations under the License.
       <mat-form-field appearance="outline" subscriptSizing="dynamic" class="custom-time-field">
         <input
           id="custom-time-start"
+          type="time"
           matInput
-          placeholder="HH:MM AM"
-          [matTimepicker]="startTimePicker"
-          [ngModel]="customStartDate()"
-          (ngModelChange)="onCustomStartChange($event)"
-          [ngModelOptions]="{updateOn: 'blur'}"
+          [ngModel]="customStartTime()"
+          (ngModelChange)="onCustomStartTimeChange($event)"
           aria-label="Start time"
         />
-        <mat-timepicker #startTimePicker></mat-timepicker>
-        <mat-timepicker-toggle matSuffix [for]="startTimePicker"></mat-timepicker-toggle>
+        <mat-icon matSuffix>access_time</mat-icon>
       </mat-form-field>
 
       <span class="custom-time-label">End Time:</span>
@@ -130,16 +127,13 @@ limitations under the License.
       <mat-form-field appearance="outline" subscriptSizing="dynamic" class="custom-time-field">
         <input
           id="custom-time-end"
+          type="time"
           matInput
-          placeholder="HH:MM AM"
-          [matTimepicker]="endTimePicker"
-          [ngModel]="customEndDate()"
-          (ngModelChange)="onCustomEndChange($event)"
-          [ngModelOptions]="{updateOn: 'blur'}"
+          [ngModel]="customEndTime()"
+          (ngModelChange)="onCustomEndTimeChange($event)"
           aria-label="End time"
         />
-        <mat-timepicker #endTimePicker></mat-timepicker>
-        <mat-timepicker-toggle matSuffix [for]="endTimePicker"></mat-timepicker-toggle>
+        <mat-icon matSuffix>access_time</mat-icon>
       </mat-form-field>
     </div>
     @if (hasInvalidCustomRange()) {

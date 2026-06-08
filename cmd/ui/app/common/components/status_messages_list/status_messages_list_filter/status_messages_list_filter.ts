@@ -20,7 +20,6 @@ import {MatFormFieldModule} from '@angular/material/form-field';
 import {MatIconModule} from '@angular/material/icon';
 import {MatInputModule} from '@angular/material/input';
 import {MatSelectModule} from '@angular/material/select';
-import {MatTimepickerModule} from '@angular/material/timepicker';
 import {MatTooltipModule} from '@angular/material/tooltip';
 import {StructuredMessage} from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
 import {ALL_SEVERITIES, ALL_SOURCES, formatSource} from 'xmanager_cloud/ui/app/service/status_message_filter_service';
@@ -62,7 +61,6 @@ export interface TimeFilterValue {
     MatInputModule,
     MatNativeDateModule,
     MatSelectModule,
-    MatTimepickerModule,
     MatTooltipModule,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -110,9 +108,29 @@ export class StatusMessagesListFilter {
     return start ? new Date(start) : null;
   });
 
+  protected readonly customStartTime = computed(() => {
+    const start = this.timeFilter().start;
+    if (!start) return '';
+    const date = new Date(start);
+    if (isNaN(date.getTime())) return '';
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  });
+
   protected readonly customEndDate = computed(() => {
     const end = this.timeFilter().end;
     return end ? new Date(end) : null;
+  });
+
+  protected readonly customEndTime = computed(() => {
+    const end = this.timeFilter().end;
+    if (!end) return '';
+    const date = new Date(end);
+    if (isNaN(date.getTime())) return '';
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
   });
 
   protected readonly hasInvalidCustomRange = computed(() => {
@@ -134,19 +152,105 @@ export class StatusMessagesListFilter {
 
   protected onCustomStartChange(date?: Date): void {
     const current = this.timeFilter();
+    if (!date || isNaN(date.getTime())) {
+      this.timeFilterChange.emit({
+        preset: current.preset,
+        start: undefined,
+        end: current.end,
+      });
+      return;
+    }
+    if (current.start) {
+      const prevDate = new Date(current.start);
+      if (!isNaN(prevDate.getTime())) {
+        date.setHours(prevDate.getHours());
+        date.setMinutes(prevDate.getMinutes());
+        date.setSeconds(0);
+        date.setMilliseconds(0);
+      }
+    }
     this.timeFilterChange.emit({
       preset: current.preset,
-      start: date && !isNaN(date.getTime()) ? date.toISOString() : undefined,
+      start: date.toISOString(),
+      end: current.end,
+    });
+  }
+
+  protected onCustomStartTimeChange(timeString: string): void {
+    const current = this.timeFilter();
+    const baseDate = current.start ? new Date(current.start) : new Date();
+    if (isNaN(baseDate.getTime())) return;
+
+    if (!timeString) {
+      baseDate.setHours(0);
+      baseDate.setMinutes(0);
+      baseDate.setSeconds(0);
+      baseDate.setMilliseconds(0);
+    } else {
+      const [hours, minutes] = timeString.split(':').map(Number);
+      if (hours !== undefined && minutes !== undefined) {
+        baseDate.setHours(hours);
+        baseDate.setMinutes(minutes);
+        baseDate.setSeconds(0);
+        baseDate.setMilliseconds(0);
+      }
+    }
+    this.timeFilterChange.emit({
+      preset: current.preset,
+      start: baseDate.toISOString(),
       end: current.end,
     });
   }
 
   protected onCustomEndChange(date?: Date): void {
     const current = this.timeFilter();
+    if (!date || isNaN(date.getTime())) {
+      this.timeFilterChange.emit({
+        preset: current.preset,
+        start: current.start,
+        end: undefined,
+      });
+      return;
+    }
+    if (current.end) {
+      const prevDate = new Date(current.end);
+      if (!isNaN(prevDate.getTime())) {
+        date.setHours(prevDate.getHours());
+        date.setMinutes(prevDate.getMinutes());
+        date.setSeconds(0);
+        date.setMilliseconds(0);
+      }
+    }
     this.timeFilterChange.emit({
       preset: current.preset,
       start: current.start,
-      end: date && !isNaN(date.getTime()) ? date.toISOString() : undefined,
+      end: date.toISOString(),
+    });
+  }
+
+  protected onCustomEndTimeChange(timeString: string): void {
+    const current = this.timeFilter();
+    const baseDate = current.end ? new Date(current.end) : new Date();
+    if (isNaN(baseDate.getTime())) return;
+
+    if (!timeString) {
+      baseDate.setHours(0);
+      baseDate.setMinutes(0);
+      baseDate.setSeconds(0);
+      baseDate.setMilliseconds(0);
+    } else {
+      const [hours, minutes] = timeString.split(':').map(Number);
+      if (hours !== undefined && minutes !== undefined) {
+        baseDate.setHours(hours);
+        baseDate.setMinutes(minutes);
+        baseDate.setSeconds(0);
+        baseDate.setMilliseconds(0);
+      }
+    }
+    this.timeFilterChange.emit({
+      preset: current.preset,
+      start: current.start,
+      end: baseDate.toISOString(),
     });
   }
 

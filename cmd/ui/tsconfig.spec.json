@@ -12,7 +12,6 @@
       "javascript/closure/i18n/messageformat": ["app/stubs/messageformat.ts"],
       "javascript/closure/i18n/messages": ["app/stubs/messages.ts"],
       "javascript/closure/i18n/numberformat": ["app/stubs/numberformat.ts"],
-      "@angular/material/timepicker": ["app/stubs/timepicker.ts"],
       "@angular/cdk/testing/catalyst/async": ["app/testing/catalyst_async.ts"]
     }
   },

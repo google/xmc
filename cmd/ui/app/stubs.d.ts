@@ -75,14 +75,6 @@ declare module 'javascript/closure/i18n/numberformat' {
     static Format: { COMPACT_SHORT: number; [key: string]: number; };
   }
 }
-declare module '@angular/material/timepicker' {
-  import * as i0 from '@angular/core';
-  export class MatTimepickerModule {
-    static ɵfac: i0.ɵɵFactoryDeclaration<MatTimepickerModule, never>;
-    static ɵmod: i0.ɵɵNgModuleDeclaration<MatTimepickerModule, never, never, never>;
-    static ɵinj: i0.ɵɵInjectorDeclaration<MatTimepickerModule>;
-  }
-}
 declare module 'safevalues' {
   export class HtmlSanitizerBuilder {
     allowClassAttributes(): this;
