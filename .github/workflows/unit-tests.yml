@@ -18,6 +18,14 @@ jobs:
     runs-on: 'ubuntu-24.04'
     environment: janzak-dev-test
 
+    # Use a service container for the Spanner Emulator
+    services:
+      spanner-emulator:
+        image: gcr.io/cloud-spanner-emulator/emulator
+        ports:
+          - 9010:9010
+          - 9020:9020
+
     env:
       PROJECT_ID: ${{ vars.PROJECT_ID }}
       WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
@@ -54,6 +62,25 @@ jobs:
           workload_identity_provider: '${{ env.WORKLOAD_IDENTITY_PROVIDER }}'
           service_account: '${{ env.SERVICE_ACCOUNT }}'
           create_credentials_file: true
+
+      - name: 'Verify Spanner Emulator Endpoint'
+        run: |
+          echo "Verifying Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}..."
+          HOST=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f1)
+          PORT=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f2)
+          
+          # Try connecting to the port
+          for i in {1..15}; do
+            if nc -z "$HOST" "$PORT" >/dev/null 2>&1 || timeout 1s bash -c "cat < /dev/null > /dev/tcp/$HOST/$PORT" 2>/dev/null; then
+              echo "Successfully connected to Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}."
+              exit 0
+            fi
+            echo "Waiting for Spanner Emulator to start (attempt $i/15)..."
+            sleep 1
+          done
+          
+          echo "CRITICAL: Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }} did not start within 15 seconds."
+          exit 1
 
       - name: 'Run Unit Tests'
         run: |
