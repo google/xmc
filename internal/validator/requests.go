@@ -410,33 +410,40 @@ func ValidateCreateArtifactRequest(in *essapipb.CreateArtifactRequest) error {
 		}
 	}
 	if payload := art.GetPayload(); payload != nil {
-		if payload.GetType() == nil {
-			return fmt.Errorf("artifact.payload.type must be set when payload is provided: %w", status.ErrInvalidArgument)
-		}
-		switch p := payload.Type.(type) {
-		case *essmsgpb.ArtifactPayload_ManagedXprof:
-			if p.ManagedXprof.GetDisplayName() == "" {
-				return fmt.Errorf("artifact.payload.managed_xprof.display_name must be set: %w", status.ErrInvalidArgument)
-			}
-			if p.ManagedXprof.GetRunGroup() == "" {
-				return fmt.Errorf("artifact.payload.managed_xprof.run_group must be set: %w", status.ErrInvalidArgument)
-			}
-		case *essmsgpb.ArtifactPayload_CodeSource:
-			if p.CodeSource.GetTitle() == "" {
-				return fmt.Errorf("artifact.payload.code_source.title must be set: %w", status.ErrInvalidArgument)
-			}
-			if p.CodeSource.GetCodeBlock() == "" {
-				return fmt.Errorf("artifact.payload.code_source.code_block must be set: %w", status.ErrInvalidArgument)
-			}
-		case *essmsgpb.ArtifactPayload_Text:
-			if p.Text.GetTitle() == "" {
-				return fmt.Errorf("artifact.payload.text.title must be set: %w", status.ErrInvalidArgument)
-			}
-			if p.Text.GetText() == "" {
-				return fmt.Errorf("artifact.payload.text.text must be set: %w", status.ErrInvalidArgument)
-			}
+		if err := validatePayload(payload); err != nil {
+			return err
 		}
 	}
 
+	return nil
+}
+
+func validatePayload(payload *essmsgpb.ArtifactPayload) error {
+	if payload.GetType() == nil {
+		return fmt.Errorf("artifact.payload.type must be set when payload is provided: %w", status.ErrInvalidArgument)
+	}
+	switch p := payload.Type.(type) {
+	case *essmsgpb.ArtifactPayload_ManagedXprof:
+		if p.ManagedXprof.GetDisplayName() == "" {
+			return fmt.Errorf("artifact.payload.managed_xprof.display_name must be set: %w", status.ErrInvalidArgument)
+		}
+		if p.ManagedXprof.GetRunGroup() == "" {
+			return fmt.Errorf("artifact.payload.managed_xprof.run_group must be set: %w", status.ErrInvalidArgument)
+		}
+	case *essmsgpb.ArtifactPayload_CodeSource:
+		if p.CodeSource.GetTitle() == "" {
+			return fmt.Errorf("artifact.payload.code_source.title must be set: %w", status.ErrInvalidArgument)
+		}
+		if p.CodeSource.GetCodeBlock() == "" {
+			return fmt.Errorf("artifact.payload.code_source.code_block must be set: %w", status.ErrInvalidArgument)
+		}
+	case *essmsgpb.ArtifactPayload_Text:
+		if p.Text.GetTitle() == "" {
+			return fmt.Errorf("artifact.payload.text.title must be set: %w", status.ErrInvalidArgument)
+		}
+		if p.Text.GetText() == "" {
+			return fmt.Errorf("artifact.payload.text.text must be set: %w", status.ErrInvalidArgument)
+		}
+	}
 	return nil
 }
