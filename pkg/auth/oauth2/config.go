@@ -47,38 +47,9 @@ func LoadConfig() *Config {
 	port := getEnv("PORT", "8080")
 	mockAuth := getEnvBool("MOCK_AUTH", false)
 
-	allowedDomainsStr := getEnv("ALLOWED_DOMAINS", "")
-	var allowedDomains []string
-	for _, part := range strings.FieldsFunc(allowedDomainsStr, func(r rune) bool {
-		return r == ' ' || r == ','
-	}) {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			allowedDomains = append(allowedDomains, part)
-		}
-	}
-
-	allowedEmailsStr := getEnv("ALLOWED_EMAILS", "")
-	var allowedEmails []string
-	for _, part := range strings.FieldsFunc(allowedEmailsStr, func(r rune) bool {
-		return r == ' ' || r == ','
-	}) {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			allowedEmails = append(allowedEmails, part)
-		}
-	}
-
-	allowedOriginsStr := getEnv("ALLOWED_ORIGINS", "")
-	var allowedOrigins []string
-	for _, part := range strings.FieldsFunc(allowedOriginsStr, func(r rune) bool {
-		return r == ' ' || r == ','
-	}) {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			allowedOrigins = append(allowedOrigins, part)
-		}
-	}
+	allowedDomains := parseCommaSpaceSeparated(getEnv("ALLOWED_DOMAINS", ""))
+	allowedEmails := parseCommaSpaceSeparated(getEnv("ALLOWED_EMAILS", ""))
+	allowedOrigins := parseCommaSpaceSeparated(getEnv("ALLOWED_ORIGINS", ""))
 
 	return &Config{
 		Port:           port,
@@ -101,6 +72,19 @@ func LoadConfig() *Config {
 		SecureCookie:   getEnvBool("SECURE_COOKIE", !mockAuth),
 		TrustXForwardedProto: getEnvBool("TRUST_X_FORWARDED_PROTO", false),
 	}
+}
+
+func parseCommaSpaceSeparated(val string) []string {
+	var list []string
+	for _, part := range strings.FieldsFunc(val, func(r rune) bool {
+		return r == ' ' || r == ','
+	}) {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			list = append(list, part)
+		}
+	}
+	return list
 }
 
 func getEnvOrFile(key, defaultVal string) string {

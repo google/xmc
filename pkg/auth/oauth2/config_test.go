@@ -114,3 +114,61 @@ func TestLoadConfig(t *testing.T) {
 		t.Errorf("Expected AllowedOrigins [http://org1.com, http://org2.com], got %v", cfg.AllowedOrigins)
 	}
 }
+
+func TestParseCommaSpaceSeparated(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "Empty input",
+			input:    "",
+			expected: nil,
+		},
+		{
+			name:     "Whitespace only",
+			input:    "   ",
+			expected: nil,
+		},
+		{
+			name:     "Commas only",
+			input:    ",,,",
+			expected: nil,
+		},
+		{
+			name:     "Whitespace and commas only",
+			input:    " , ,   ",
+			expected: nil,
+		},
+		{
+			name:     "Comma separated",
+			input:    "a,b,c",
+			expected: []string{"a", "b", "c"},
+		},
+		{
+			name:     "Space separated",
+			input:    "a b c",
+			expected: []string{"a", "b", "c"},
+		},
+		{
+			name:     "Mixed separated with extra spaces",
+			input:    " a, b,  c d,e ",
+			expected: []string{"a", "b", "c", "d", "e"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseCommaSpaceSeparated(tc.input)
+			if len(got) != len(tc.expected) {
+				t.Fatalf("Expected length %d, got %d (expected %v, got %v)", len(tc.expected), len(got), tc.expected, got)
+			}
+			for i := range got {
+				if got[i] != tc.expected[i] {
+					t.Errorf("At index %d: expected %q, got %q", i, tc.expected[i], got[i])
+				}
+			}
+		})
+	}
+}
