@@ -24,7 +24,10 @@ func TestGetEnvOrFile(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	t.Run("Default fallback", func(t *testing.T) {
-		val := getEnvOrFile("TEST_KEY_NOT_EXIST", "my-default-value")
+		val, err := getEnvOrFile("TEST_KEY_NOT_EXIST", "my-default-value")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
 		if val != "my-default-value" {
 			t.Errorf("Expected 'my-default-value', got %q", val)
 		}
@@ -34,7 +37,10 @@ func TestGetEnvOrFile(t *testing.T) {
 		os.Setenv("TEST_LITERAL_KEY", "literal-secret-123")
 		defer os.Unsetenv("TEST_LITERAL_KEY")
 
-		val := getEnvOrFile("TEST_LITERAL_KEY", "def")
+		val, err := getEnvOrFile("TEST_LITERAL_KEY", "def")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
 		if val != "literal-secret-123" {
 			t.Errorf("Expected 'literal-secret-123', got %q", val)
 		}
@@ -50,7 +56,10 @@ func TestGetEnvOrFile(t *testing.T) {
 		os.Setenv("TEST_SUFFIX_KEY_FILE", secretPath)
 		defer os.Unsetenv("TEST_SUFFIX_KEY_FILE")
 
-		val := getEnvOrFile("TEST_SUFFIX_KEY", "def")
+		val, err := getEnvOrFile("TEST_SUFFIX_KEY", "def")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
 		if val != "secret-from-suffix-file" {
 			t.Errorf("Expected 'secret-from-suffix-file', got %q", val)
 		}
@@ -66,9 +75,39 @@ func TestGetEnvOrFile(t *testing.T) {
 		os.Setenv("TEST_LITERAL_PATH_KEY", secretPath)
 		defer os.Unsetenv("TEST_LITERAL_PATH_KEY")
 
-		val := getEnvOrFile("TEST_LITERAL_PATH_KEY", "def")
+		val, err := getEnvOrFile("TEST_LITERAL_PATH_KEY", "def")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
 		if val != "secret-from-literal-path" {
 			t.Errorf("Expected 'secret-from-literal-path', got %q", val)
+		}
+	})
+
+	t.Run("File suffix env value read failure", func(t *testing.T) {
+		os.Setenv("TEST_SUFFIX_KEY_FILE", "/nonexistent/path/to/secret")
+		defer os.Unsetenv("TEST_SUFFIX_KEY_FILE")
+
+		_, err := getEnvOrFile("TEST_SUFFIX_KEY", "def")
+		if err == nil {
+			t.Error("Expected error due to nonexistent file, got nil")
+		}
+	})
+
+	t.Run("Literal key pointing to a file path read failure", func(t *testing.T) {
+		// Create a directory, which will succeed os.Stat but fail os.ReadFile
+		dirPath := filepath.Join(tmpDir, "secret_dir_literal")
+		err := os.Mkdir(dirPath, 0755)
+		if err != nil {
+			t.Fatalf("Failed to create temporary directory: %v", err)
+		}
+
+		os.Setenv("TEST_LITERAL_DIR_KEY", dirPath)
+		defer os.Unsetenv("TEST_LITERAL_DIR_KEY")
+
+		_, err = getEnvOrFile("TEST_LITERAL_DIR_KEY", "def")
+		if err == nil {
+			t.Error("Expected error due to directory path read failure, got nil")
 		}
 	})
 }
@@ -94,7 +133,10 @@ func TestLoadConfig(t *testing.T) {
 		os.Unsetenv("CLIENT_SECRET")
 	}()
 
-	cfg := LoadConfig()
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig() failed unexpectedly: %v", err)
+	}
 	if cfg.Port != "9090" {
 		t.Errorf("Expected Port 9090, got %q", cfg.Port)
 	}

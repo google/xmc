@@ -77,12 +77,16 @@ func main() {
 
 	// 1. Load configuration
 	cfg := config.Load()
-	oauthCfg := oauth.LoadConfig()
+	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
+	ctx := logging.WithLogger(context.Background(), logger)
+
+	oauthCfg, err := oauth.LoadConfig()
+	if err != nil {
+		logging.Fatal(ctx, "failed to load oauth configuration", "error", err)
+	}
 	if oauthCfg.GCPProjectID == "" {
 		oauthCfg.GCPProjectID = cfg.ProjectID
 	}
-	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
-	ctx := logging.WithLogger(context.Background(), logger)
 	if cfg.InvokerSA == "" {
 		logging.Fatal(ctx, "failed to load configuration, invoker service account is empty")
 	}

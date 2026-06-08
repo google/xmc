@@ -15,6 +15,7 @@
 package oauth2
 
 import (
+	"fmt"
 	"os"
 	"strings"
 )
@@ -43,13 +44,22 @@ type Config struct {
 }
 
 // LoadConfig bootstraps the configuration from environment variables.
-func LoadConfig() *Config {
+func LoadConfig() (*Config, error) {
 	port := getEnv("PORT", "8080")
 	mockAuth := getEnvBool("MOCK_AUTH", false)
 
 	allowedDomains := parseCommaSpaceSeparated(getEnv("ALLOWED_DOMAINS", ""))
 	allowedEmails := parseCommaSpaceSeparated(getEnv("ALLOWED_EMAILS", ""))
 	allowedOrigins := parseCommaSpaceSeparated(getEnv("ALLOWED_ORIGINS", ""))
+
+	clientSecret, err := getEnvOrFile("CLIENT_SECRET", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load CLIENT_SECRET: %w", err)
+	}
+	jwtSecret, err := getEnvOrFile("JWT_SECRET", "default-jwt-secret-for-local-dev-only-12345")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load JWT_SECRET: %w", err)
+	}
 
 	return &Config{
 		Port:           port,
@@ -61,8 +71,8 @@ func LoadConfig() *Config {
 		GCPProjectID:   getEnv("GCP_PROJECT_ID", ""),
 		TargetIAMRole:  getEnv("AUTHORIZED_IAM_ROLE", "roles/viewer"),
 		ClientID:       getEnv("CLIENT_ID", ""),
-		ClientSecret:   getEnvOrFile("CLIENT_SECRET", ""),
-		JWTSecret:      getEnvOrFile("JWT_SECRET", "default-jwt-secret-for-local-dev-only-12345"),
+		ClientSecret:   clientSecret,
+		JWTSecret:      jwtSecret,
 		RedirectURL:    getEnv("REDIRECT_URL", "http://localhost:8080/api/callback"),
 		AuthURL:        getEnv("AUTH_URL", "https://accounts.google.com/o/oauth2/v2/auth"),
 		TokenURL:       getEnv("TOKEN_URL", "https://oauth2.googleapis.com/token"),
@@ -71,7 +81,7 @@ func LoadConfig() *Config {
 		FrontendURL:    getEnv("FRONTEND_URL", "http://localhost:8080"),
 		SecureCookie:   getEnvBool("SECURE_COOKIE", !mockAuth),
 		TrustXForwardedProto: getEnvBool("TRUST_X_FORWARDED_PROTO", false),
-	}
+	}, nil
 }
 
 func parseCommaSpaceSeparated(val string) []string {
@@ -87,21 +97,25 @@ func parseCommaSpaceSeparated(val string) []string {
 	return list
 }
 
-func getEnvOrFile(key, defaultVal string) string {
+func getEnvOrFile(key, defaultVal string) (string, error) {
 	if fileVar, ok := os.LookupEnv(key + "_FILE"); ok {
-		if content, readErr := os.ReadFile(fileVar); readErr == nil {
-			return strings.TrimSpace(string(content))
+		content, readErr := os.ReadFile(fileVar)
+		if readErr != nil {
+			return "", readErr
 		}
+		return strings.TrimSpace(string(content)), nil
 	}
 	if val, ok := os.LookupEnv(key); ok {
 		if _, err := os.Stat(val); err == nil {
-			if content, readErr := os.ReadFile(val); readErr == nil {
-				return strings.TrimSpace(string(content))
+			content, readErr := os.ReadFile(val)
+			if readErr != nil {
+				return "", readErr
 			}
+			return strings.TrimSpace(string(content)), nil
 		}
-		return val
+		return val, nil
 	}
-	return defaultVal
+	return defaultVal, nil
 }
 
 func getEnv(key, defaultVal string) string {

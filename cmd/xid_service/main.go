@@ -46,11 +46,15 @@ func main() {
 
 	// 1. Load configuration
 	cfg := config.Load()
-	oauthCfg := oauth.LoadConfig()
 
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.QuotaProjectID)
 	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
+
+	oauthCfg, err := oauth.LoadConfig()
+	if err != nil {
+		logging.Fatal(ctx, "failed to load oauth configuration", "error", err)
+	}
 
 	// 2. Initialize Spanner client.
 	sessionPoolConfig := spanner.SessionPoolConfig{
