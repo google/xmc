@@ -16,7 +16,7 @@ graph TD
     end
 
     subgraph GKE ["GKE Cluster (Kubernetes Boundary)"]
-        Gateway["GKE Gateway <br/>(L7 Load Balancer / GKE Gateway API)"]
+        Gateway["GKE Gateway <br/>(GKE Gateway API)"]
         
         UISvc["ui-service (Service)"]
         UIPod["UI Pod <br/>(Angular/Nginx)"]
