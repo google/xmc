@@ -66,8 +66,8 @@ func TestUpdateWorkUnit_HappyPath(t *testing.T) {
 			},
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"urls"}},
 			want: &msgpb.WorkUnit{
-				Name: "experiments/1/workUnits/1",
-				Urls: []*msgpb.Url{{Url: "http://new.url"}},
+				Name:     "experiments/1/workUnits/1",
+				Urls:     []*msgpb.Url{{Url: "http://new.url"}},
 				Priority: msgpb.Priority_LOW,
 			},
 		},

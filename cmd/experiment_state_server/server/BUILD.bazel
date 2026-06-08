@@ -125,6 +125,7 @@ compat_go_test(
         "//internal/storage",
         "//internal/storage/spanner",
         "//internal/storage/spanner/emulator",
+        "@com_google_cloud_go_spanner//:spanner",
         "//internal/task_queue:client",
         "//internal/validator",
         "//cmd/xid_service:config",

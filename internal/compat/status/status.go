@@ -87,6 +87,35 @@ func CodeFromError(err error) Code {
 	return codes.Unknown
 }
 
+func CodeToError(code Code) error {
+	switch code {
+	case InvalidArgument:
+		return ErrInvalidArgument
+	case NotFound:
+		return ErrNotFound
+	case AlreadyExists:
+		return ErrAlreadyExists
+	case PermissionDenied:
+		return ErrPermissionDenied
+	case Internal:
+		return ErrInternal
+	case Unimplemented:
+		return ErrUnimplemented
+	case FailedPrecondition:
+		return ErrFailedPrecondition
+	case Aborted:
+		return ErrAborted
+	case Unavailable:
+		return ErrUnavailable
+	case DeadlineExceeded:
+		return ErrDeadlineExceeded
+	case Unauthenticated:
+		return ErrUnauthenticated
+	default:
+		return ErrInternal
+	}
+}
+
 var (
 	ErrInvalidArgument    = status.Error(codes.InvalidArgument, "invalid argument")
 	ErrNotFound           = status.Error(codes.NotFound, "not found")
