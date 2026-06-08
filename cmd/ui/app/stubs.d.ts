@@ -75,14 +75,4 @@ declare module 'javascript/closure/i18n/numberformat' {
     static Format: { COMPACT_SHORT: number; [key: string]: number; };
   }
 }
-declare module 'safevalues' {
-  export class HtmlSanitizerBuilder {
-    allowClassAttributes(): this;
-    build(): { sanitize(html: string): any; };
-  }
-  export function trySanitizeUrl(url: string): string;
-}
-declare module 'safevalues/dom' {
-  export function setElementInnerHtml(element: HTMLElement, safeHtml: any): void;
-  export function windowOpen(window: Window, url: string, name?: string, specs?: string): Window | null;
-}
+

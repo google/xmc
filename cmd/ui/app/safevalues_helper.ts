@@ -1,19 +1,28 @@
 // Copyright 2026 Google LLC
+
+import { HtmlSanitizerBuilder as RealHtmlSanitizerBuilder, SafeHtml } from 'safevalues';
+import { safeElement, safeWindow } from 'safevalues/dom';
+
 export class HtmlSanitizerBuilder {
+  private readonly builder = new RealHtmlSanitizerBuilder();
+
   allowClassAttributes() {
+    this.builder.allowClassAttributes();
     return this;
   }
+
   build() {
+    const sanitizer = this.builder.build();
     return {
-      sanitize(html: string): string {
-        return html;
+      sanitize(html: string): SafeHtml {
+        return sanitizer.sanitize(html);
       }
     };
   }
 }
 
-export function setElementInnerHtml(element: HTMLElement, safeHtml: string) {
-  element.innerHTML = safeHtml;
+export function setElementInnerHtml(element: HTMLElement, safeHtml: SafeHtml) {
+  safeElement.setInnerHtml(element, safeHtml);
 }
 
 export function trySanitizeUrl(url: string): string {
@@ -25,5 +34,6 @@ export function trySanitizeUrl(url: string): string {
 }
 
 export function windowOpen(window: Window, url: string, name?: string, specs?: string): Window | null {
-  return window.open(url, name, specs);
+  return safeWindow.open(window, url, name, specs);
 }
+
