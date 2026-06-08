@@ -753,4 +753,154 @@ func TestSessionLifecycleSignatureMethodError(t *testing.T) {
 	}
 }
 
+func TestAuthenticateCookie(t *testing.T) {
+	jwtSecret := []byte("test-jwt-secret-key-123456789-abcd")
+	cfg := &Config{
+		JWTSecret:      string(jwtSecret),
+		AllowedDomains: []string{"mycompany.com"},
+	}
+	a := NewAuthenticator(cfg)
+
+	targetHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+
+	t.Run("Cookie Missing", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/data", nil)
+		w := httptest.NewRecorder()
+		handled := a.authenticateCookie(w, req, targetHandler)
+		if handled {
+			t.Error("Expected authenticateCookie to return false for missing cookie")
+		}
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+	})
+
+	t.Run("Cookie Present but Invalid Signature", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/data", nil)
+		req.AddCookie(&http.Cookie{Name: "session_token", Value: "invalid-token"})
+		w := httptest.NewRecorder()
+		handled := a.authenticateCookie(w, req, targetHandler)
+		if handled {
+			t.Error("Expected authenticateCookie to return false for invalid cookie")
+		}
+	})
+
+	t.Run("Cookie Present & Valid User", func(t *testing.T) {
+		token, err := GenerateSessionToken("user@mycompany.com", "Test", "", 1*time.Hour, jwtSecret)
+		if err != nil {
+			t.Fatalf("Failed to generate token: %v", err)
+		}
+		req := httptest.NewRequest("GET", "/api/data", nil)
+		req.AddCookie(&http.Cookie{Name: "session_token", Value: token})
+		w := httptest.NewRecorder()
+		handled := a.authenticateCookie(w, req, targetHandler)
+		if !handled {
+			t.Error("Expected authenticateCookie to return true")
+		}
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+		}
+		if req.Header.Get("Authorization") != "Bearer "+token {
+			t.Errorf("Expected Authorization header 'Bearer %s', got %q", token, req.Header.Get("Authorization"))
+		}
+	})
+
+	t.Run("Cookie Present but De-authorized User", func(t *testing.T) {
+		token, err := GenerateSessionToken("deauthorized@external.com", "Test", "", 1*time.Hour, jwtSecret)
+		if err != nil {
+			t.Fatalf("Failed to generate token: %v", err)
+		}
+		req := httptest.NewRequest("GET", "/api/data", nil)
+		req.AddCookie(&http.Cookie{Name: "session_token", Value: token})
+		w := httptest.NewRecorder()
+		handled := a.authenticateCookie(w, req, targetHandler)
+		if !handled {
+			t.Error("Expected authenticateCookie to return true")
+		}
+		if w.Code != http.StatusForbidden {
+			t.Errorf("Expected status 403, got %d", w.Code)
+		}
+	})
+}
+
+func TestAuthenticateBearer(t *testing.T) {
+	jwtSecret := []byte("test-jwt-secret-key-123456789-abcd")
+	cfg := &Config{
+		JWTSecret:      string(jwtSecret),
+		AllowedDomains: []string{"mycompany.com"},
+		MockAuth:       true,
+		ClientID:       "test-client-id",
+	}
+	a := NewAuthenticator(cfg)
+
+	targetHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+
+	t.Run("Header Missing", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/data", nil)
+		w := httptest.NewRecorder()
+		handled := a.authenticateBearer(w, req, targetHandler)
+		if handled {
+			t.Error("Expected authenticateBearer to return false")
+		}
+	})
+
+	t.Run("Mock Token Support", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/data", nil)
+		req.Header.Set("Authorization", "Bearer mock-sa-token")
+		w := httptest.NewRecorder()
+		handled := a.authenticateBearer(w, req, targetHandler)
+		if !handled {
+			t.Error("Expected authenticateBearer to return true")
+		}
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+	})
+
+	t.Run("Valid Session JWT Bearer Token", func(t *testing.T) {
+		token, err := GenerateSessionToken("user@mycompany.com", "Test", "", 1*time.Hour, jwtSecret)
+		if err != nil {
+			t.Fatalf("Failed to generate token: %v", err)
+		}
+		req := httptest.NewRequest("GET", "/api/data", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		handled := a.authenticateBearer(w, req, targetHandler)
+		if !handled {
+			t.Error("Expected authenticateBearer to return true")
+		}
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+	})
+
+	t.Run("Valid OIDC Token Success", func(t *testing.T) {
+		a.idTokenValidator = func(ctx context.Context, token string, audience string) (*idtoken.Payload, error) {
+			return &idtoken.Payload{
+				Issuer: "https://accounts.google.com",
+				Claims: map[string]interface{}{
+					"email": "sa@mycompany.com",
+				},
+			}, nil
+		}
+		req := httptest.NewRequest("GET", "/api/data", nil)
+		req.Header.Set("Authorization", "Bearer oidc-token-123")
+		w := httptest.NewRecorder()
+		handled := a.authenticateBearer(w, req, targetHandler)
+		if !handled {
+			t.Error("Expected authenticateBearer to return true")
+		}
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+	})
+}
+
+
 
