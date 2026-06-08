@@ -902,5 +902,152 @@ func TestAuthenticateBearer(t *testing.T) {
 	})
 }
 
+func TestValidateState(t *testing.T) {
+	a := NewAuthenticator(&Config{
+		FrontendURL: "http://localhost:8080",
+	})
+
+	t.Run("Valid state cookie matches query parameter", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/callback?state=mystate123", nil)
+		req.AddCookie(&http.Cookie{
+			Name:  "oauth_state",
+			Value: "mystate123",
+		})
+		state, err := a.validateState(req)
+		if err != nil {
+			t.Fatalf("validateState returned unexpected error: %v", err)
+		}
+		if state != "mystate123" {
+			t.Errorf("validateState returned %q, want %q", state, "mystate123")
+		}
+	})
+
+	t.Run("Missing state cookie", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/callback?state=mystate123", nil)
+		_, err := a.validateState(req)
+		if err == nil {
+			t.Fatal("validateState expected error, got nil")
+		}
+	})
+
+	t.Run("Empty state cookie", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/callback?state=mystate123", nil)
+		req.AddCookie(&http.Cookie{
+			Name:  "oauth_state",
+			Value: "",
+		})
+		_, err := a.validateState(req)
+		if err == nil {
+			t.Fatal("validateState expected error, got nil")
+		}
+	})
+
+	t.Run("State mismatch", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/callback?state=mismatch", nil)
+		req.AddCookie(&http.Cookie{
+			Name:  "oauth_state",
+			Value: "mystate123",
+		})
+		_, err := a.validateState(req)
+		if err == nil {
+			t.Fatal("validateState expected error, got nil")
+		}
+	})
+}
+
+func TestGetUserInfo(t *testing.T) {
+	t.Run("Mock Mode returns mock profile immediately", func(t *testing.T) {
+		a := NewAuthenticator(&Config{
+			MockAuth: true,
+		})
+		req := httptest.NewRequest("GET", "/api/callback", nil)
+		info, err := a.getUserInfo(context.Background(), req, "anycode")
+		if err != nil {
+			t.Fatalf("getUserInfo failed: %v", err)
+		}
+		if info.Email != "mock-user@mycompany.com" {
+			t.Errorf("expected mock email, got %q", info.Email)
+		}
+	})
+
+	t.Run("Real Mode OIDC Success", func(t *testing.T) {
+		mockOIDC := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/token" {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`{"access_token": "token-xyz", "token_type": "Bearer"}`))
+				return
+			}
+			if r.URL.Path == "/userinfo" {
+				if r.Header.Get("Authorization") != "Bearer token-xyz" {
+					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`{"email": "real-user@mycompany.com", "name": "Real User", "picture": "pic-url"}`))
+				return
+			}
+		}))
+		defer mockOIDC.Close()
+
+		a := NewAuthenticator(&Config{
+			MockAuth:     false,
+			ClientID:     "test-client",
+			ClientSecret: "test-secret",
+			TokenURL:     mockOIDC.URL + "/token",
+			APIURL:       mockOIDC.URL + "/userinfo",
+		})
+
+		req := httptest.NewRequest("GET", "/api/callback", nil)
+		info, err := a.getUserInfo(context.Background(), req, "validcode")
+		if err != nil {
+			t.Fatalf("getUserInfo failed: %v", err)
+		}
+		if info.Email != "real-user@mycompany.com" {
+			t.Errorf("expected email real-user@mycompany.com, got %q", info.Email)
+		}
+	})
+}
+
+func TestCreateSession(t *testing.T) {
+	jwtSecret := "test-jwt-secret-key-123456789-abcd"
+	a := NewAuthenticator(&Config{
+		JWTSecret:    jwtSecret,
+		FrontendURL:  "http://localhost:8080",
+		SecureCookie: false,
+	})
+
+	req := httptest.NewRequest("GET", "/api/callback", nil)
+	w := httptest.NewRecorder()
+
+	err := a.createSession(w, req, "test@mycompany.com", "Test User", "https://example.com/pic")
+	if err != nil {
+		t.Fatalf("createSession failed: %v", err)
+	}
+
+	resp := w.Result()
+	cookies := resp.Cookies()
+	var sessionCookie *http.Cookie
+	for _, c := range cookies {
+		if c.Name == "session_token" {
+			sessionCookie = c
+			break
+		}
+	}
+
+	if sessionCookie == nil {
+		t.Fatal("expected session_token cookie, found none")
+	}
+
+	claims, err := ParseSessionToken(sessionCookie.Value, []byte(jwtSecret))
+	if err != nil {
+		t.Fatalf("failed to parse session token: %v", err)
+	}
+
+	if claims.Email != "test@mycompany.com" {
+		t.Errorf("expected email test@mycompany.com, got %q", claims.Email)
+	}
+}
+
+
 
 

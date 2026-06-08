@@ -71,10 +71,9 @@ func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
 
 // HandleCallback processes the authentication callback.
 func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
-	stateParam := r.URL.Query().Get("state")
-	stateCookie, err := r.Cookie("oauth_state")
-	if err != nil || stateCookie.Value == "" || stateCookie.Value != stateParam {
-		http.Error(w, "State validation failed (CSRF check failed)", http.StatusBadRequest)
+	_, err := a.validateState(r)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("State validation failed: %v", err), http.StatusBadRequest)
 		return
 	}
 
@@ -87,65 +86,24 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	})
 
-	var email, name, picture string
-
-	if a.Config.MockAuth {
-		email = "mock-user@mycompany.com"
-		name = "Mock User"
-		picture = "https://example.com/mock-avatar.png"
-	} else {
-		code := r.URL.Query().Get("code")
-		if code == "" {
-			http.Error(w, "Code parameter is missing", http.StatusBadRequest)
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-		defer cancel()
-
-		oauthConfig := a.getDynamicOAuthConfig(r)
-		token, err := oauthConfig.Exchange(ctx, code)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Token exchange failed: %v", err), http.StatusInternalServerError)
-			return
-		}
-
-		client := oauthConfig.Client(ctx, token)
-		resp, err := client.Get(a.Config.APIURL)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to fetch user info: %v", err), http.StatusInternalServerError)
-			return
-		}
-		defer resp.Body.Close()
-
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			http.Error(w, "Failed to read user info response", http.StatusInternalServerError)
-			return
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			http.Error(w, fmt.Sprintf("User info call failed: %s", string(bodyBytes)), http.StatusBadRequest)
-			return
-		}
-
-		var userInfo GoogleUserInfo
-		if err := json.Unmarshal(bodyBytes, &userInfo); err != nil {
-			http.Error(w, "Failed to decode user info details", http.StatusInternalServerError)
-			return
-		}
-
-		email = userInfo.Email
-		name = userInfo.Name
-		picture = userInfo.Picture
+	code := r.URL.Query().Get("code")
+	if !a.Config.MockAuth && code == "" {
+		http.Error(w, "Code parameter is missing", http.StatusBadRequest)
+		return
 	}
-
-	dynamicFrontendURL := a.getDynamicFrontendURL(r)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	authorized, err := a.IsUserAuthorized(ctx, email)
+	userInfo, err := a.getUserInfo(ctx, r, code)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get user info: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	dynamicFrontendURL := a.getDynamicFrontendURL(r)
+
+	authorized, err := a.IsUserAuthorized(ctx, userInfo.Email)
 	if err != nil {
 		log.Printf("[Callback Auth] Authorization pipeline check failed: %v", err)
 		permissionErrorURL := fmt.Sprintf("%s/?error=permission_error", dynamicFrontendURL)
@@ -154,16 +112,79 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !authorized {
-		log.Printf("[Callback Auth] Access forbidden: user %q is not authorized", email)
-		forbiddenURL := fmt.Sprintf("%s/?error=forbidden&email=%s", dynamicFrontendURL, url.QueryEscape(email))
+		log.Printf("[Callback Auth] Access forbidden: user %q is not authorized", userInfo.Email)
+		forbiddenURL := fmt.Sprintf("%s/?error=forbidden&email=%s", dynamicFrontendURL, url.QueryEscape(userInfo.Email))
 		http.Redirect(w, r, forbiddenURL, http.StatusTemporaryRedirect)
 		return
 	}
 
+	if err := a.createSession(w, r, userInfo.Email, userInfo.Name, userInfo.Picture); err != nil {
+		http.Error(w, "Failed to create session", http.StatusInternalServerError)
+		return
+	}
+
+	dashboardURL := fmt.Sprintf("%s/experiments", dynamicFrontendURL)
+	http.Redirect(w, r, dashboardURL, http.StatusTemporaryRedirect)
+}
+
+func (a *Authenticator) validateState(r *http.Request) (string, error) {
+	stateParam := r.URL.Query().Get("state")
+	stateCookie, err := r.Cookie("oauth_state")
+	if err != nil {
+		return "", fmt.Errorf("CSRF cookie missing: %w", err)
+	}
+	if stateCookie.Value == "" {
+		return "", fmt.Errorf("CSRF cookie is empty")
+	}
+	if stateCookie.Value != stateParam {
+		return "", fmt.Errorf("CSRF state mismatch")
+	}
+	return stateParam, nil
+}
+
+func (a *Authenticator) getUserInfo(ctx context.Context, r *http.Request, code string) (*GoogleUserInfo, error) {
+	if a.Config.MockAuth {
+		return &GoogleUserInfo{
+			Email:   "mock-user@mycompany.com",
+			Name:    "Mock User",
+			Picture: "https://example.com/mock-avatar.png",
+		}, nil
+	}
+
+	oauthConfig := a.getDynamicOAuthConfig(r)
+	token, err := oauthConfig.Exchange(ctx, code)
+	if err != nil {
+		return nil, fmt.Errorf("Token exchange failed: %w", err)
+	}
+
+	client := oauthConfig.Client(ctx, token)
+	resp, err := client.Get(a.Config.APIURL)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to fetch user info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to read user info response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("User info call failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var userInfo GoogleUserInfo
+	if err := json.Unmarshal(bodyBytes, &userInfo); err != nil {
+		return nil, fmt.Errorf("Failed to decode user info details: %w", err)
+	}
+
+	return &userInfo, nil
+}
+
+func (a *Authenticator) createSession(w http.ResponseWriter, r *http.Request, email, name, picture string) error {
 	sessionToken, err := GenerateSessionToken(email, name, picture, 1*time.Hour, a.JWTSecret)
 	if err != nil {
-		http.Error(w, "Failed to generate session token", http.StatusInternalServerError)
-		return
+		return fmt.Errorf("Failed to generate session token: %w", err)
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -176,10 +197,9 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		Secure:   a.isCookieSecure(r),
 		SameSite: a.getSameSiteMode(r),
 	})
-
-	dashboardURL := fmt.Sprintf("%s/experiments", dynamicFrontendURL)
-	http.Redirect(w, r, dashboardURL, http.StatusTemporaryRedirect)
+	return nil
 }
+
 
 // HandleLogout logs out the user.
 func (a *Authenticator) HandleLogout(w http.ResponseWriter, r *http.Request) {
