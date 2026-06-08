@@ -70,9 +70,10 @@ func ParseSessionToken(tokenStr string, secretKey []byte) (*SessionClaims, error
 		return nil, ErrInvalidToken
 	}
 
-	if claims, ok := token.Claims.(*SessionClaims); ok && token.Valid {
-		return claims, nil
+	claims, ok := token.Claims.(*SessionClaims)
+	if !ok || !token.Valid {
+		return nil, ErrInvalidToken
 	}
 
-	return nil, ErrInvalidToken
+	return claims, nil
 }
