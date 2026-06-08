@@ -253,11 +253,7 @@ func (a *Authenticator) getRequestSchemeAndHost(r *http.Request) (string, string
 
 	host := r.Host
 
-	hostLower := strings.ToLower(host)
-	isLocal := hostLower == "localhost" || strings.HasPrefix(hostLower, "localhost:") ||
-		hostLower == "127.0.0.1" || strings.HasPrefix(hostLower, "127.0.0.1:")
-
-	if !isLocal {
+	if !isLocalhost(host) {
 		if strings.HasPrefix(strings.ToLower(a.Config.FrontendURL), "https://") ||
 			strings.HasPrefix(strings.ToLower(a.Config.RedirectURL), "https://") {
 			scheme = "https"
@@ -274,13 +270,18 @@ func (a *Authenticator) getRequestSchemeAndHost(r *http.Request) (string, string
 	return scheme, host
 }
 
-func isHostAllowed(host string, allowedURLs ...string) bool {
+func isLocalhost(host string) bool {
 	hostLower := strings.ToLower(host)
-	if hostLower == "localhost" || strings.HasPrefix(hostLower, "localhost:") ||
-		hostLower == "127.0.0.1" || strings.HasPrefix(hostLower, "127.0.0.1:") {
+	return hostLower == "localhost" || strings.HasPrefix(hostLower, "localhost:") ||
+		hostLower == "127.0.0.1" || strings.HasPrefix(hostLower, "127.0.0.1:")
+}
+
+func isHostAllowed(host string, allowedURLs ...string) bool {
+	if isLocalhost(host) {
 		return true
 	}
 
+	hostLower := strings.ToLower(host)
 	for _, allowedURL := range allowedURLs {
 		if allowedURL == "" {
 			continue
@@ -311,9 +312,7 @@ func (a *Authenticator) isCookieSecure(r *http.Request) bool {
 	if scheme == "https" {
 		return true
 	}
-	hostLower := strings.ToLower(host)
-	if hostLower == "localhost" || strings.HasPrefix(hostLower, "localhost:") ||
-		hostLower == "127.0.0.1" || strings.HasPrefix(hostLower, "127.0.0.1:") {
+	if isLocalhost(host) {
 		return a.Config.SecureCookie
 	}
 	return false
@@ -322,8 +321,7 @@ func (a *Authenticator) isCookieSecure(r *http.Request) bool {
 func (a *Authenticator) getCookieDomain(r *http.Request) string {
 	if u, err := url.Parse(a.Config.FrontendURL); err == nil {
 		host := u.Hostname()
-		hostLower := strings.ToLower(host)
-		if hostLower == "localhost" || strings.HasPrefix(hostLower, "127.0.0.1") {
+		if isLocalhost(host) {
 			return ""
 		}
 		return host
