@@ -101,7 +101,6 @@ jobs:
             -//internal/storage/spanner/emulator:emulator_test \
             -//internal/storage/spanner/migrations:migrations_test \
             -//internal/storage/spanner/migrations/commands:commands_test \
-            -//internal/storage/spanner/migrations/driver:driver_test
 
       - name: 'Save Bazel Cache'
         uses: 'actions/cache/save@v4'
