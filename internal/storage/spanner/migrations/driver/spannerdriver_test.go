@@ -15,8 +15,6 @@ package spannerdriver
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"testing"
@@ -31,6 +29,7 @@ import (
 	emptypb "protobuf/empty_go_proto"
 	adminpb "spanner/admin/database/v1/spanner_database_admin_go_proto"
 	instancepb "spanner/admin/instance/v1/spanner_instance_admin_go_proto"
+	xmcemulator "xmanager_cloud/storage/spanner/emulator/emulator"
 )
 
 const (
@@ -73,14 +72,6 @@ func newSpannerServer(ctx context.Context, t *testing.T) *emulator.Emulator {
 	return emu
 }
 
-func randomSuffix() string {
-	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(b)
-}
-
 func createAdminClient(ctx context.Context, t *testing.T, emu *emulator.Emulator) *database.DatabaseAdminClient {
 	t.Helper()
 	dbAdmin, err := database.NewDatabaseAdminClient(ctx, emu.ClientOptions()...)
@@ -118,7 +109,7 @@ func TestNew(t *testing.T) {
 	ctx := t.Context()
 	emu := newSpannerServer(ctx, t)
 	adminClient := createAdminClient(ctx, t, emu)
-	dbName := "test-db-" + randomSuffix()
+	dbName := "test-db-" + xmcemulator.RandomSuffix()
 	dbPath := fmt.Sprintf("%s/databases/%s", instancePath, dbName)
 	createDatabase(ctx, t, adminClient, dbName)
 	dataClient := createDataClient(ctx, t, emu, dbPath)
@@ -259,7 +250,7 @@ func TestRun(t *testing.T) {
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a new database for each test case.
-			dbName := fmt.Sprintf("testdb-%d-%s", i, randomSuffix())
+			dbName := fmt.Sprintf("testdb-%d-%s", i, xmcemulator.RandomSuffix())
 			dbPath := fmt.Sprintf("%s/databases/%s", instancePath, dbName)
 			createDatabase(ctx, t, adminClient, dbName)
 			dataClient := createDataClient(ctx, t, emu, dbPath)
