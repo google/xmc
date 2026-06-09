@@ -88,7 +88,7 @@ func (s *Storage) UpdateXidEntry(ctx context.Context, update *storage.XidEntryUp
 		}
 
 		if !hasOwners {
-			return fmt.Errorf("XidEntry %s does not have owners after update: %w", updatedEntry.GetName(), status.ErrPermissionDenied)
+			return fmt.Errorf("XidEntry %s does not have owners after update: %w", updatedEntry.GetName(), status.ErrInvalidArgument)
 		}
 
 		// 3.1. Update the UpdateTime column to the current time.

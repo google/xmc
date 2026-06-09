@@ -54,7 +54,7 @@ const (
 	instanceURI = "projects/test-project/instances/test-instance"
 )
 
-func randomSuffix() string {
+func RandomSuffix() string {
 	b := make([]byte, 4)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
@@ -74,7 +74,9 @@ func Start(ctx context.Context, opts Options) (*Emulator, error) {
 }
 
 type Emulator struct {
-	addr string
+	addr        string
+	XIDDatabase string
+	ESSDatabase string
 }
 
 func (e *Emulator) ClientOptions() []option.ClientOption {
@@ -114,9 +116,12 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 		t.Fatalf("failed to create instance: %v", err)
 	}
 
-	suffix := randomSuffix()
+	suffix := RandomSuffix()
 	xidDatabase := fmt.Sprintf("test-xid-db-%s", suffix)
 	essDatabase := fmt.Sprintf("test-ess-db-%s", suffix)
+
+	emu.XIDDatabase = xidDatabase
+	emu.ESSDatabase = essDatabase
 	xidDBURI := fmt.Sprintf("projects/%s/instances/%s/databases/%s", projectID, instanceID, xidDatabase)
 	essDBURI := fmt.Sprintf("projects/%s/instances/%s/databases/%s", projectID, instanceID, essDatabase)
 
