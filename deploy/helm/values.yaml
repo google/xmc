@@ -52,8 +52,8 @@ certs:
 experimentStateServer:
   iap:
     iapIssuer: "https://iap.googleapis.com"
-    httpAudience: "dummy-http-audience"
-    grpcAudience: "dummy-grpc-audience"
+    httpAudience: "placeholder-http-audience"
+    grpcAudience: "placeholder-grpc-audience"
     clientId: "YOUR_IAP_CLIENT_ID"
   allowedOrigins: ""
   mockAuth: false
