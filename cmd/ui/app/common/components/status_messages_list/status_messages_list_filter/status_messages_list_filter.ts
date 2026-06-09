@@ -108,30 +108,16 @@ export class StatusMessagesListFilter {
     return start ? new Date(start) : null;
   });
 
-  protected readonly customStartTime = computed(() => {
-    const start = this.timeFilter().start;
-    if (!start) return '';
-    const date = new Date(start);
-    if (isNaN(date.getTime())) return '';
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${hours}:${minutes}`;
-  });
+  protected readonly customStartTime = computed(() =>
+      this.formatTimeString(this.timeFilter().start));
 
   protected readonly customEndDate = computed(() => {
     const end = this.timeFilter().end;
     return end ? new Date(end) : null;
   });
 
-  protected readonly customEndTime = computed(() => {
-    const end = this.timeFilter().end;
-    if (!end) return '';
-    const date = new Date(end);
-    if (isNaN(date.getTime())) return '';
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${hours}:${minutes}`;
-  });
+  protected readonly customEndTime = computed(() =>
+      this.formatTimeString(this.timeFilter().end));
 
   protected readonly hasInvalidCustomRange = computed(() => {
     const filter = this.timeFilter();
@@ -263,5 +249,14 @@ export class StatusMessagesListFilter {
       formatFn: (s: string) => string): string {
     if (selected.length === allCount) return 'All';
     return selected.map(formatFn).join(', ');
+  }
+
+  private formatTimeString(dateStr?: string): string {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '';
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
   }
 }
