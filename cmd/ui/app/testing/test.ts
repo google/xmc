@@ -211,32 +211,7 @@ afterEach(() => {
   }
 };
 
-(globalThis as any).pit = function(name: string, cases: any, ...args: any[]) {
-  const testFn = args[args.length - 1];
-  const nameSuffix = args.length > 1 ? args[0] : '';
-  if (Array.isArray(cases)) {
-    for (const c of cases) {
-      const caseName = `${name} (case: ${JSON.stringify(c)})`;
-      if (Array.isArray(c)) {
-        it(caseName, async () => {
-          await testFn(...c);
-        });
-      } else {
-        it(caseName, async () => {
-          await testFn(c);
-        });
-      }
-    }
-  } else if (cases && typeof cases === 'object') {
-    for (const key of Object.keys(cases)) {
-      const c = cases[key];
-      const caseName = `${name} ${nameSuffix} ${key}`.trim();
-      it(caseName, async () => {
-        await testFn(c);
-      });
-    }
-  }
-};
+
 
 // 10. Define setupObservableMatchers and async matchers
 (globalThis as any).setupObservableMatchers = function() {

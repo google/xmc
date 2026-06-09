@@ -37,33 +37,22 @@ describe('ResourceChip Component', () => {
     expect(await chipHarness.getText()).toBe(testText);
   });
 
-  pit(
-      'should apply correct classes for',
-      {
-        'CPU': {
-          type: ResourceType.CPU,
-          expectedClass: 'grey',
-        },
-        'MEMORY': {
-          type: ResourceType.MEMORY,
-          expectedClass: 'grey',
-        },
-        'GPU': {
-          type: ResourceType.GPU,
-          expectedClass: 'green',
-        },
-      },
-      'resource type',
-      async ({type, expectedClass}:
-                 {type: ResourceType, expectedClass: string}) => {
-        bootstrap(ResourceChip, {resourceType: type, text: 'Some Text'});
+  const testCases = [
+    { name: 'CPU', type: ResourceType.CPU, expectedClass: 'grey' },
+    { name: 'MEMORY', type: ResourceType.MEMORY, expectedClass: 'grey' },
+    { name: 'GPU', type: ResourceType.GPU, expectedClass: 'green' },
+  ];
 
-        const chipHarness = await getHarness(MatChipHarness);
-        const host = await chipHarness.host();
+  for (const tc of testCases) {
+    it(`should apply correct classes for resource type ${tc.name}`, async () => {
+      bootstrap(ResourceChip, {resourceType: tc.type, text: 'Some Text'});
 
-        expect(await host.hasClass(expectedClass))
-            .withContext(`Expected to have class "${expectedClass}"`)
-            .toBeTrue();
-      },
-  );
+      const chipHarness = await getHarness(MatChipHarness);
+      const host = await chipHarness.host();
+
+      expect(await host.hasClass(tc.expectedClass))
+          .withContext(`Expected to have class "${tc.expectedClass}"`)
+          .toBeTrue();
+    });
+  }
 });

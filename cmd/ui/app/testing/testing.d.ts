@@ -37,7 +37,6 @@ declare global {
   function trigger(el: HTMLElement, eventName: string, eventData?: any): Promise<void>;
   function bootstrapTemplate(template: string, options?: any): any;
   function markForCheckAndFlush(): Promise<void>;
-  const pit: any;
 
   function useAutoTick(): void;
 
