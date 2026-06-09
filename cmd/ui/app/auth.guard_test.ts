@@ -20,54 +20,59 @@ import { of, throwError } from 'rxjs';
 import { authGuard } from './auth.guard';
 import { AuthService } from './service/auth.service';
 
-describe('authGuard', () => {
-  let authServiceSpy: jasmine.SpyObj<AuthService>;
-  let routerSpy: jasmine.SpyObj<Router>;
+function setup() {
+  return cleanState(() => {
+    const authServiceSpy = jasmine.createSpyObj('AuthService', ['getUser']);
+    const routerSpy = jasmine.createSpyObj('Router', ['navigate']);
 
-  beforeEach(() => {
-    authServiceSpy = jasmine.createSpyObj('AuthService', ['getUser']);
-    routerSpy = jasmine.createSpyObj('Router', ['navigate']);
-
-    TestBed.configureTestingModule({
+    setupModule({
       providers: [
         { provide: AuthService, useValue: authServiceSpy },
         { provide: Router, useValue: routerSpy }
       ]
     });
-  });
+    return {
+      authServiceSpy,
+      routerSpy,
+    };
+  }, beforeEach);
+}
+
+describe('authGuard', () => {
+  const state = setup();
 
   it('should return true if user is logged in', (done) => {
-    authServiceSpy.getUser.and.returnValue(of({ email: 'user@example.com' } as any));
+    state.authServiceSpy.getUser.and.returnValue(of({ email: 'user@example.com' } as any));
 
     const result = TestBed.runInInjectionContext(() => authGuard({} as any, {} as any));
 
     (result as any).subscribe((res: boolean) => {
       expect(res).toBeTrue();
-      expect(routerSpy.navigate).not.toHaveBeenCalled();
+      expect(state.routerSpy.navigate).not.toHaveBeenCalled();
       done();
     });
   });
 
   it('should redirect to / and return false if user is not logged in', (done) => {
-    authServiceSpy.getUser.and.returnValue(of(null));
+    state.authServiceSpy.getUser.and.returnValue(of(null));
 
     const result = TestBed.runInInjectionContext(() => authGuard({} as any, {} as any));
 
     (result as any).subscribe((res: boolean) => {
       expect(res).toBeFalse();
-      expect(routerSpy.navigate).toHaveBeenCalledWith(['/']);
+      expect(state.routerSpy.navigate).toHaveBeenCalledWith(['/']);
       done();
     });
   });
 
   it('should redirect to / and return false if auth service throws an error', (done) => {
-    authServiceSpy.getUser.and.returnValue(throwError(() => new Error('Auth error')));
+    state.authServiceSpy.getUser.and.returnValue(throwError(() => new Error('Auth error')));
 
     const result = TestBed.runInInjectionContext(() => authGuard({} as any, {} as any));
 
     (result as any).subscribe((res: boolean) => {
       expect(res).toBeFalse();
-      expect(routerSpy.navigate).toHaveBeenCalledWith(['/']);
+      expect(state.routerSpy.navigate).toHaveBeenCalledWith(['/']);
       done();
     });
   });
