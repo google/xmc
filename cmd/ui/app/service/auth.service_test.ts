@@ -18,21 +18,24 @@ import { TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { AuthService, UserResponse } from './auth.service';
 
-describe('AuthService', () => {
-  let service: AuthService;
-  let httpMock: HttpTestingController;
-
-  beforeEach(() => {
-    TestBed.configureTestingModule({
+function setup() {
+  return cleanState(() => {
+    setupModule({
       imports: [HttpClientTestingModule],
-      providers: [AuthService]
+      providers: [AuthService],
     });
-    service = TestBed.inject(AuthService);
-    httpMock = TestBed.inject(HttpTestingController);
-  });
+    return {
+      service: get(AuthService),
+      httpMock: get(HttpTestingController),
+    };
+  }, beforeEach);
+}
+
+describe('AuthService', () => {
+  const state = setup();
 
   afterEach(() => {
-    httpMock.verify();
+    state.httpMock.verify();
   });
 
   it('should request user data and cache it', () => {
@@ -44,28 +47,28 @@ describe('AuthService', () => {
       allowedDomains: ['example.com']
     };
 
-    service.getUser().subscribe((user) => {
+    state.service.getUser().subscribe((user) => {
       expect(user).toEqual(mockUser);
     });
 
-    const req = httpMock.expectOne('/api/user');
+    const req = state.httpMock.expectOne('/api/user');
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
     req.flush(mockUser);
 
-    service.getUser().subscribe((user) => {
+    state.service.getUser().subscribe((user) => {
       expect(user).toEqual(mockUser);
     });
 
-    httpMock.expectNone('/api/user');
+    state.httpMock.expectNone('/api/user');
   });
 
   it('should catch error and return null on failed HTTP request', () => {
-    service.getUser().subscribe((user) => {
+    state.service.getUser().subscribe((user) => {
       expect(user).toBeNull();
     });
 
-    const req = httpMock.expectOne('/api/user');
+    const req = state.httpMock.expectOne('/api/user');
     req.error(new ProgressEvent('error'));
   });
 
@@ -78,14 +81,14 @@ describe('AuthService', () => {
       allowedDomains: ['example.com']
     };
 
-    service.getUser().subscribe();
-    let req = httpMock.expectOne('/api/user');
+    state.service.getUser().subscribe();
+    let req = state.httpMock.expectOne('/api/user');
     req.flush(mockUser);
 
-    service.clearCache();
+    state.service.clearCache();
 
-    service.getUser().subscribe();
-    req = httpMock.expectOne('/api/user');
+    state.service.getUser().subscribe();
+    req = state.httpMock.expectOne('/api/user');
     req.flush(mockUser);
   });
 });

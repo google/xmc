@@ -18,20 +18,24 @@ import {provideHttpClient} from '@angular/common/http';
 
 import {WorkUnitsService} from './work_units_service';
 
-describe('WorkUnitsService', () => {
-  let service: WorkUnitsService;
-
-  beforeEach(() => {
+function setup() {
+  return cleanState(() => {
     setupModule({
       providers: [
         provideHttpClient(),
         WorkUnitsService,
       ],
     });
-    service = get(WorkUnitsService);
-  });
+    return {
+      service: get(WorkUnitsService),
+    };
+  }, beforeEach);
+}
+
+describe('WorkUnitsService', () => {
+  const state = setup();
 
   it('should be instantiated', () => {
-    expect(service).toBeTruthy();
+    expect(state.service).toBeTruthy();
   });
 });
