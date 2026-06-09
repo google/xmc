@@ -293,7 +293,7 @@ func TestProcessBatches_Metrics(t *testing.T) {
 		{
 			name:       "status error",
 			err:        fmt.Errorf("invalid arg: %w", status.ErrInvalidArgument),
-			wantReason: "INVALID_ARGUMENT",
+			wantReason: "InvalidArgument",
 		},
 		{
 			name:       "deadline exceeded",
