@@ -16,6 +16,7 @@ package oauth2
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -41,6 +42,8 @@ type Config struct {
 	FrontendURL    string
 	SecureCookie   bool
 	TrustXForwardedProto bool
+	CookieDomain   string
+	AllowedHosts   []string
 }
 
 // LoadConfig bootstraps the configuration from environment variables.
@@ -61,6 +64,23 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("failed to load JWT_SECRET: %w", err)
 	}
 
+	frontendURL := getEnv("FRONTEND_URL", "http://localhost:8080")
+	redirectURL := getEnv("REDIRECT_URL", "http://localhost:8080/api/callback")
+
+	var cookieDomain string
+	var allowedHosts []string
+
+	if u, err := url.Parse(frontendURL); err == nil {
+		host := u.Hostname()
+		if !isLocalhost(host) {
+			cookieDomain = host
+		}
+		allowedHosts = append(allowedHosts, strings.ToLower(u.Host))
+	}
+	if u, err := url.Parse(redirectURL); err == nil {
+		allowedHosts = append(allowedHosts, strings.ToLower(u.Host))
+	}
+
 	return &Config{
 		Port:           port,
 		MockAuth:       mockAuth,
@@ -73,14 +93,16 @@ func LoadConfig() (*Config, error) {
 		ClientID:       getEnv("CLIENT_ID", ""),
 		ClientSecret:   clientSecret,
 		JWTSecret:      jwtSecret,
-		RedirectURL:    getEnv("REDIRECT_URL", "http://localhost:8080/api/callback"),
+		RedirectURL:    redirectURL,
 		AuthURL:        getEnv("AUTH_URL", "https://accounts.google.com/o/oauth2/v2/auth"),
 		TokenURL:       getEnv("TOKEN_URL", "https://oauth2.googleapis.com/token"),
 		APIURL:         getEnv("API_URL", "https://openidconnect.googleapis.com/v1/userinfo"),
 		UsePKCE:        getEnvBool("USE_PKCE", true),
-		FrontendURL:    getEnv("FRONTEND_URL", "http://localhost:8080"),
+		FrontendURL:    frontendURL,
 		SecureCookie:   getEnvBool("SECURE_COOKIE", !mockAuth),
 		TrustXForwardedProto: getEnvBool("TRUST_X_FORWARDED_PROTO", false),
+		CookieDomain:   cookieDomain,
+		AllowedHosts:   allowedHosts,
 	}, nil
 }
 

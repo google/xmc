@@ -233,7 +233,7 @@ func (a *Authenticator) getRequestSchemeAndHost(r *http.Request) (string, string
 		}
 	}
 
-	if !isHostAllowed(host, a.Config.FrontendURL, a.Config.RedirectURL) {
+	if !isHostAllowed(host, a.Config.AllowedHosts) {
 		if u, err := url.Parse(a.Config.FrontendURL); err == nil {
 			return u.Scheme, u.Host
 		}
@@ -249,20 +249,15 @@ func isLocalhost(host string) bool {
 		hostLower == "127.0.0.1" || strings.HasPrefix(hostLower, "127.0.0.1:")
 }
 
-func isHostAllowed(host string, allowedURLs ...string) bool {
+func isHostAllowed(host string, allowedHosts []string) bool {
 	if isLocalhost(host) {
 		return true
 	}
 
 	hostLower := strings.ToLower(host)
-	for _, allowedURL := range allowedURLs {
-		if allowedURL == "" {
-			continue
-		}
-		if u, err := url.Parse(allowedURL); err == nil {
-			if strings.ToLower(u.Host) == hostLower {
-				return true
-			}
+	for _, ah := range allowedHosts {
+		if ah == hostLower {
+			return true
 		}
 	}
 	return false
@@ -292,14 +287,7 @@ func (a *Authenticator) isCookieSecure(r *http.Request) bool {
 }
 
 func (a *Authenticator) getCookieDomain(r *http.Request) string {
-	if u, err := url.Parse(a.Config.FrontendURL); err == nil {
-		host := u.Hostname()
-		if isLocalhost(host) {
-			return ""
-		}
-		return host
-	}
-	return ""
+	return a.Config.CookieDomain
 }
 
 func (a *Authenticator) getSameSiteMode(r *http.Request) http.SameSite {
