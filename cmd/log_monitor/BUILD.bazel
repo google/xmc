@@ -33,6 +33,7 @@ compat_go_library(
         "//internal/compat/field_mask",
         "//internal/compat/google",
         "//internal/compat/spanner",
+        "@com_google_cloud_go_spanner//:spanner",
         "//internal/compat/status",
         "//internal/kubernetes/common:constants",
         "//internal/kubernetes/common/labels",

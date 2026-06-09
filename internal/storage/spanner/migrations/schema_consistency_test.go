@@ -45,21 +45,30 @@ func TestSchemaSynchronization(t *testing.T) {
 		{
 			name:          "ess",
 			migrationsDir: "ess",
-			databaseID:    "test-ess-database",
+			databaseID:    "test-ess-db-" + emulator.RandomSuffix(),
+			getDB: func(emu *emulator.Emulator) string {
+				return emu.ESSDatabase
+			},
 		},
 		{
 			name:          "xid",
 			migrationsDir: "xid",
-			databaseID:    "test-xid-database",
+			databaseID:    "test-xid-db-" + emulator.RandomSuffix(),
+			getDB: func(emu *emulator.Emulator) string {
+				return emu.XIDDatabase
+			},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// 1. Run all migrations up on an empty database and get the DDL.
-			cfg := mustCreateConfig(t, tc, "up", nil)
+			tcEmpty := withEmuDB(tc, emptyDBEmu)
+			tcEmu := withEmuDB(tc, emu)
 
-			baselineDBName := fmt.Sprintf("projects/%s/instances/%s/databases/%s", cfg.projectID, cfg.instanceID, tc.databaseID)
+			// 1. Run all migrations up on an empty database and get the DDL.
+			cfg := mustCreateConfig(t, tcEmpty, "up", nil)
+
+			baselineDBNameMigrations := fmt.Sprintf("projects/%s/instances/%s/databases/%s", cfg.projectID, cfg.instanceID, tcEmpty.databaseID)
 
 			if err := run(cfg, emptyDBEmu.ClientOptions()...); err != nil {
 				t.Fatalf("run(up) failed: %v", err)
@@ -69,13 +78,14 @@ func TestSchemaSynchronization(t *testing.T) {
 				t.Fatalf("Failed to create admin client: %v", err)
 			}
 			defer adminClientMigrations.Close()
-			ddlAfterMigrations, err := fetchDDL(ctx, adminClientMigrations, baselineDBName)
+			ddlAfterMigrations, err := fetchDDL(ctx, adminClientMigrations, baselineDBNameMigrations)
 			if err != nil {
 				t.Fatalf("Failed to get DDL for empty DB after migrations: %v", err)
 			}
 
 			// 2. Get DDL from applying the full *-schema.sql DDL and run init to initialize SchemaMigrations table.
-			cfgInit := mustCreateConfig(t, tc, "init", nil)
+			cfgInit := mustCreateConfig(t, tcEmu, "init", nil)
+			baselineDBNameFullSchema := fmt.Sprintf("projects/%s/instances/%s/databases/%s", cfgInit.projectID, cfgInit.instanceID, tcEmu.databaseID)
 			if err := run(cfgInit, emu.ClientOptions()...); err != nil {
 				t.Fatalf("run(init) failed: %v", err)
 			}
@@ -85,15 +95,16 @@ func TestSchemaSynchronization(t *testing.T) {
 				t.Fatalf("Failed to create admin client: %v", err)
 			}
 			defer adminClient.Close()
-			ddlFromFullSchema, err := fetchDDL(ctx, adminClient, baselineDBName)
+			ddlFromFullSchema, err := fetchDDL(ctx, adminClient, baselineDBNameFullSchema)
 			if err != nil {
 				t.Fatalf("Failed to get DDL for baseline DB: %v", err)
 			}
 
 			// 3. Compare schema versions.
-			cfgVersion := mustCreateConfig(t, tc, "version", nil)
-			versionMigrations, dirtyMigrations := mustFetchVersion(ctx, t, cfgVersion, emptyDBEmu.ClientOptions()...)
-			versionBaseline, dirtyBaseline := mustFetchVersion(ctx, t, cfgVersion, emu.ClientOptions()...)
+			cfgVersionMigrations := mustCreateConfig(t, tcEmpty, "version", nil)
+			cfgVersionBaseline := mustCreateConfig(t, tcEmu, "version", nil)
+			versionMigrations, dirtyMigrations := mustFetchVersion(ctx, t, cfgVersionMigrations, emptyDBEmu.ClientOptions()...)
+			versionBaseline, dirtyBaseline := mustFetchVersion(ctx, t, cfgVersionBaseline, emu.ClientOptions()...)
 
 			if versionMigrations != versionBaseline {
 				t.Errorf("Schema version mismatch: migrations=%d, baseline=%d", versionMigrations, versionBaseline)
@@ -121,17 +132,24 @@ func TestMigrationUpDownConsistency(t *testing.T) {
 		{
 			name:          "ess",
 			migrationsDir: "ess",
-			databaseID:    "test-ess-database",
+			databaseID:    "test-ess-db-" + emulator.RandomSuffix(),
+			getDB: func(emu *emulator.Emulator) string {
+				return emu.ESSDatabase
+			},
 		},
 		{
 			name:          "xid",
 			migrationsDir: "xid",
-			databaseID:    "test-xid-database",
+			databaseID:    "test-xid-db-" + emulator.RandomSuffix(),
+			getDB: func(emu *emulator.Emulator) string {
+				return emu.XIDDatabase
+			},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			tc = withEmuDB(tc, emu)
 			cfg := mustCreateConfig(t, tc, "version", nil)
 			runner, err := newRunner(ctx, cfg, emu.ClientOptions()...)
 			if err != nil {

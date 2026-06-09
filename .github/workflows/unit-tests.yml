@@ -31,10 +31,10 @@ jobs:
       PROJECT_ID: ${{ vars.PROJECT_ID }}
       WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
       SERVICE_ACCOUNT: ${{ vars.SERVICE_ACCOUNT }}
-      SPANNER_EMULATOR_HOST: localhost:9010
       # We're overriding the test timeout to catch failures with Spanner faster
       TEST_TIMEOUT_SECONDS: 60
       SPANNER_CHECK_TIMEOUT: 15
+      SPANNER_EMULATOR_HOST: 127.0.0.1:9010
 
     steps:
       - name: 'Checkout'
@@ -88,13 +88,6 @@ jobs:
 
       - name: 'Run Unit Tests'
         run: |
-          # TODO: add the following tests back once they are green:
-          # //cmd/experiment_state_server/server:server_test
-          # //cmd/xid_service/server:server_test
-          # //internal/storage/spanner:spanner_test
-          # //internal/storage/spanner/migrations:migrations_test
-          # //internal/storage/spanner/migrations/driver:driver_test
-
           bazel test \
             --repository_cache=~/.cache/bazel-repo \
             --disk_cache=~/.cache/bazel-disk \
@@ -109,12 +102,7 @@ jobs:
             --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }} \
             --google_default_credentials \
             -- \
-            //... \
-            -//cmd/experiment_state_server/server:server_test \
-            -//cmd/xid_service/server:server_test \
-            -//internal/storage/spanner:spanner_test \
-            -//internal/storage/spanner/migrations:migrations_test \
-            -//internal/storage/spanner/migrations/driver:driver_test
+            //...
 
       - name: 'Save Bazel Cache'
         uses: 'actions/cache/save@v4'
