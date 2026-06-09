@@ -32,6 +32,8 @@ compat_go_library(
 compat_go_library(
     name = "experiment_state_server_lib",
     srcs = [
+        "auth_dev.go",
+        "auth_prod.go",
         "health.go",
         "main.go",
     ],
@@ -52,6 +54,7 @@ compat_go_library(
         "//internal/storage/spanner",
         "//internal/task_queue:client",
         "//pkg/auth/oauth2",
+        "//pkg/auth/oauth2/mock",
         "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
         "@com_github_rs_cors//:go_default_library",
         "@com_google_cloud_go_spanner//:spanner",
@@ -74,9 +77,17 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
+go_binary(
+    name = "experiment_state_server_dev",
+    embed = [":experiment_state_server_lib"],
+    gotags = ["mockauth"],
+    pure = "on",
+    visibility = ["//visibility:public"],
+)
+
 oci_image_for_service(
     name = "experiment_state_server_image",
-    binary = ":experiment_state_server",
+    binary = ":experiment_state_server_dev",
 )
 
 compat_go_test(

@@ -227,6 +227,7 @@ func main() {
 
 	// Load dynamic OAuth2 Authentication configurations
 	oauthAuth := oauth.NewAuthenticator(oauthCfg)
+	configureAuth(oauthAuth, oauthCfg)
 	defer oauthAuth.Close()
 
 	// Mount OAuth2 routing handlers

@@ -75,23 +75,4 @@ func (g *GoogleOAuthProvider) ExchangeAndGetUserInfo(ctx context.Context, r *htt
 	return &userInfo, nil
 }
 
-// MockOAuthProvider implements OAuthProvider with hardcoded credentials for local dev/testing.
-type MockOAuthProvider struct {
-	MockEmail string
-	MockName  string
-	MockPic   string
-}
 
-// AuthCodeURL returns the mock callback URL.
-func (m *MockOAuthProvider) AuthCodeURL(state string, r *http.Request) string {
-	return fmt.Sprintf("/api/callback?code=mock_code_123&state=%s", state)
-}
-
-// ExchangeAndGetUserInfo returns mock user details directly without performing external HTTP network calls.
-func (m *MockOAuthProvider) ExchangeAndGetUserInfo(ctx context.Context, r *http.Request, code string) (*GoogleUserInfo, error) {
-	return &GoogleUserInfo{
-		Email:   m.MockEmail,
-		Name:    m.MockName,
-		Picture: m.MockPic,
-	}, nil
-}

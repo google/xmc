@@ -142,7 +142,7 @@ func (a *Authenticator) authenticateOIDC(w http.ResponseWriter, r *http.Request,
 		return false
 	}
 
-	payload, idTokenErr := a.idTokenValidator(r.Context(), tokenStr, a.Config.ClientID)
+	payload, idTokenErr := a.IDTokenValidator(r.Context(), tokenStr, a.Config.ClientID)
 	if idTokenErr != nil || payload == nil {
 		return false
 	}

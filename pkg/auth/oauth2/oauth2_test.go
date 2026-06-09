@@ -30,6 +30,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"google.golang.org/api/idtoken"
+	"cloud.google.com/go/iam/apiv1/iampb"
 )
 
 func TestSessionLifecycle(t *testing.T) {
@@ -95,7 +96,7 @@ func TestIntegrationMockAuth(t *testing.T) {
 		FrontendURL:    "http://localhost:8080",
 	}
 
-	a := NewAuthenticator(cfg)
+	a := newTestAuthenticator(cfg)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/login", a.HandleLogin)
@@ -281,7 +282,7 @@ func TestHybridAuthorizationPipeline(t *testing.T) {
 				MockAuth:              tt.mockAuth,
 				DisableAuthentication: tt.disableAuthentication,
 			}
-			a := NewAuthenticator(cfg)
+			a := newTestAuthenticator(cfg)
 
 			ctx := context.Background()
 			got, err := a.IsUserAuthorized(ctx, tt.emailToCheck)
@@ -318,7 +319,7 @@ func TestHandleLoginGenerateStateFailure(t *testing.T) {
 	defer func() { randReader = oldRandReader }()
 	randReader = errorReader{}
 
-	a := NewAuthenticator(&Config{})
+	a := newTestAuthenticator(&Config{})
 	req := httptest.NewRequest("GET", "/api/login", nil)
 	w := httptest.NewRecorder()
 
@@ -374,7 +375,7 @@ func TestXForwardedProtoTrust(t *testing.T) {
 				TrustXForwardedProto: tt.trustXForwardedProto,
 				FrontendURL:          "http://localhost:8080",
 			}
-			a := NewAuthenticator(cfg)
+			a := newTestAuthenticator(cfg)
 			req := httptest.NewRequest("GET", "http://localhost:8080/api/login", nil)
 			if tt.headerVal != "" {
 				req.Header.Set("X-Forwarded-Proto", tt.headerVal)
@@ -396,7 +397,7 @@ func TestCORSMiddleware(t *testing.T) {
 		FrontendURL:    "http://frontend.com",
 		AllowedOrigins: []string{"http://allowed1.com", "http://allowed2.com"},
 	}
-	a := NewAuthenticator(cfg)
+	a := newTestAuthenticator(cfg)
 
 	tests := []struct {
 		name       string
@@ -507,7 +508,7 @@ func TestHandleCallbackProduction(t *testing.T) {
 		AllowedDomains: []string{"mycompany.com"},
 		FrontendURL:    "http://localhost:8080",
 	}
-	a := NewAuthenticator(cfg)
+	a := newTestAuthenticator(cfg)
 
 	// Create request handlers
 	mux := http.NewServeMux()
@@ -574,7 +575,7 @@ func TestBearerTokenValidation(t *testing.T) {
 		JWTSecret:      string(jwtSecret),
 		AllowedDomains: []string{"mycompany.com"},
 	}
-	a := NewAuthenticator(cfg)
+	a := newTestAuthenticator(cfg)
 
 	// Simple target handler that outputs authenticated user email
 	targetHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -625,7 +626,7 @@ func TestBearerTokenValidation(t *testing.T) {
 	})
 
 	t.Run("Valid Google OIDC ID Token", func(t *testing.T) {
-		a.idTokenValidator = func(ctx context.Context, token string, audience string) (*idtoken.Payload, error) {
+		a.IDTokenValidator = func(ctx context.Context, token string, audience string) (*idtoken.Payload, error) {
 			if token != "mock-oidc-token-123" || audience != "test-client-id" {
 				return nil, errors.New("invalid oidc token or audience")
 			}
@@ -653,7 +654,7 @@ func TestBearerTokenValidation(t *testing.T) {
 	})
 
 	t.Run("De-authorized OIDC Token", func(t *testing.T) {
-		a.idTokenValidator = func(ctx context.Context, token string, audience string) (*idtoken.Payload, error) {
+		a.IDTokenValidator = func(ctx context.Context, token string, audience string) (*idtoken.Payload, error) {
 			return &idtoken.Payload{
 				Issuer: "https://accounts.google.com",
 				Claims: map[string]interface{}{
@@ -680,7 +681,7 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 		TrustXForwardedProto: true,
 		FrontendURL:          "http://frontend.com",
 	}
-	a := NewAuthenticator(cfg)
+	a := newTestAuthenticator(cfg)
 
 	targetHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -759,7 +760,7 @@ func TestAuthenticateCookie(t *testing.T) {
 		JWTSecret:      string(jwtSecret),
 		AllowedDomains: []string{"mycompany.com"},
 	}
-	a := NewAuthenticator(cfg)
+	a := newTestAuthenticator(cfg)
 
 	targetHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -834,7 +835,7 @@ func TestAuthenticateBearer(t *testing.T) {
 		MockAuth:       true,
 		ClientID:       "test-client-id",
 	}
-	a := NewAuthenticator(cfg)
+	a := newTestAuthenticator(cfg)
 
 	targetHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -881,7 +882,7 @@ func TestAuthenticateBearer(t *testing.T) {
 	})
 
 	t.Run("Valid OIDC Token Success", func(t *testing.T) {
-		a.idTokenValidator = func(ctx context.Context, token string, audience string) (*idtoken.Payload, error) {
+		a.IDTokenValidator = func(ctx context.Context, token string, audience string) (*idtoken.Payload, error) {
 			return &idtoken.Payload{
 				Issuer: "https://accounts.google.com",
 				Claims: map[string]interface{}{
@@ -903,7 +904,7 @@ func TestAuthenticateBearer(t *testing.T) {
 }
 
 func TestValidateState(t *testing.T) {
-	a := NewAuthenticator(&Config{
+	a := newTestAuthenticator(&Config{
 		FrontendURL: "http://localhost:8080",
 	})
 
@@ -957,7 +958,7 @@ func TestValidateState(t *testing.T) {
 
 func TestGetUserInfo(t *testing.T) {
 	t.Run("Mock Mode returns mock profile immediately", func(t *testing.T) {
-		a := NewAuthenticator(&Config{
+		a := newTestAuthenticator(&Config{
 			MockAuth: true,
 		})
 		req := httptest.NewRequest("GET", "/api/callback", nil)
@@ -989,7 +990,7 @@ func TestGetUserInfo(t *testing.T) {
 		}))
 		defer mockOIDC.Close()
 
-		a := NewAuthenticator(&Config{
+		a := newTestAuthenticator(&Config{
 			MockAuth:     false,
 			ClientID:     "test-client",
 			ClientSecret: "test-secret",
@@ -1010,7 +1011,7 @@ func TestGetUserInfo(t *testing.T) {
 
 func TestCreateSession(t *testing.T) {
 	jwtSecret := "test-jwt-secret-key-123456789-abcd"
-	a := NewAuthenticator(&Config{
+	a := newTestAuthenticator(&Config{
 		JWTSecret:    jwtSecret,
 		FrontendURL:  "http://localhost:8080",
 		SecureCookie: false,
@@ -1046,6 +1047,60 @@ func TestCreateSession(t *testing.T) {
 	if claims.Email != "test@mycompany.com" {
 		t.Errorf("expected email test@mycompany.com, got %q", claims.Email)
 	}
+}
+
+type testMockOAuthProvider struct {
+	MockEmail string
+	MockName  string
+	MockPic   string
+}
+
+func (m *testMockOAuthProvider) AuthCodeURL(state string, r *http.Request) string {
+	return fmt.Sprintf("/api/callback?code=mock_code_123&state=%s", state)
+}
+
+func (m *testMockOAuthProvider) ExchangeAndGetUserInfo(ctx context.Context, r *http.Request, code string) (*GoogleUserInfo, error) {
+	return &GoogleUserInfo{
+		Email:   m.MockEmail,
+		Name:    m.MockName,
+		Picture: m.MockPic,
+	}, nil
+}
+
+func newTestAuthenticator(cfg *Config) *Authenticator {
+	a := NewAuthenticator(cfg)
+	if cfg.MockAuth {
+		a.OAuthProvider = &testMockOAuthProvider{
+			MockEmail: "mock-user@mycompany.com",
+			MockName:  "Mock User",
+			MockPic:   "https://example.com/mock-avatar.png",
+		}
+		a.IDTokenValidator = func(ctx context.Context, idToken string, audience string) (*idtoken.Payload, error) {
+			if idToken == "mock-sa-token" {
+				return &idtoken.Payload{
+					Issuer:   "google-service-account",
+					Audience: audience,
+					Claims: map[string]interface{}{
+						"email":   "service-account@mycompany.com",
+						"name":    "Mock Service Account",
+						"picture": "https://example.com/sa-avatar.png",
+					},
+				}, nil
+			}
+			return nil, fmt.Errorf("invalid token: %s", idToken)
+		}
+		a.PolicyFetcher = func(ctx context.Context) (*iampb.Policy, error) {
+			return &iampb.Policy{
+				Bindings: []*iampb.Binding{
+					{
+						Role:    a.Config.TargetIAMRole,
+						Members: []string{"user:mock-admin@mycompany.com", "user:mock-sa-user@mycompany.com", "serviceaccount:service-account@mycompany.com"},
+					},
+				},
+			}, nil
+		}
+	}
+	return a
 }
 
 

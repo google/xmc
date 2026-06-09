@@ -42,7 +42,7 @@ func TestIamPolicyCachingAndClientReuse(t *testing.T) {
 		},
 	}
 
-	a.policyFetcher = func(ctx context.Context) (*iampb.Policy, error) {
+	a.PolicyFetcher = func(ctx context.Context) (*iampb.Policy, error) {
 		atomic.AddInt64(&fetchCount, 1)
 		return mockPolicy, nil
 	}
@@ -59,7 +59,7 @@ func TestIamPolicyCachingAndClientReuse(t *testing.T) {
 	}
 
 	if count := atomic.LoadInt64(&fetchCount); count != 1 {
-		t.Errorf("expected policyFetcher to be called once, got %d", count)
+		t.Errorf("expected PolicyFetcher to be called once, got %d", count)
 	}
 
 	// 2. Immediate second lookup - should use cached results, fetchCount should remain 1
@@ -72,7 +72,7 @@ func TestIamPolicyCachingAndClientReuse(t *testing.T) {
 	}
 
 	if count := atomic.LoadInt64(&fetchCount); count != 1 {
-		t.Errorf("expected policyFetcher to still be called once (cached), got %d", count)
+		t.Errorf("expected PolicyFetcher to still be called once (cached), got %d", count)
 	}
 
 	// 3. Different user lookup - should still use cached policy (fetchCount remains 1)
@@ -85,7 +85,7 @@ func TestIamPolicyCachingAndClientReuse(t *testing.T) {
 	}
 
 	if count := atomic.LoadInt64(&fetchCount); count != 1 {
-		t.Errorf("expected policyFetcher to still be called once (cached for project-wide policy), got %d", count)
+		t.Errorf("expected PolicyFetcher to still be called once (cached for project-wide policy), got %d", count)
 	}
 
 	// 4. Force expiration of cache and lookup - should fetch again (fetchCount becomes 2)
@@ -102,7 +102,7 @@ func TestIamPolicyCachingAndClientReuse(t *testing.T) {
 	}
 
 	if count := atomic.LoadInt64(&fetchCount); count != 2 {
-		t.Errorf("expected policyFetcher to be called twice after cache expired, got %d", count)
+		t.Errorf("expected PolicyFetcher to be called twice after cache expired, got %d", count)
 	}
 
 	// Test Close() does not error when projectsClient is nil (not initialized because policyFetcher was mocked)

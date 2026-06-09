@@ -42,8 +42,9 @@ type Authenticator struct {
 	mu             sync.Mutex
 	projectsClient *resourcemanager.ProjectsClient
 	policyCache    policyCacheEntry
-	policyFetcher  func(context.Context) (*iampb.Policy, error)
-	idTokenValidator func(ctx context.Context, idToken string, audience string) (*idtoken.Payload, error)
+
+	PolicyFetcher  func(context.Context) (*iampb.Policy, error)
+	IDTokenValidator func(ctx context.Context, idToken string, audience string) (*idtoken.Payload, error)
 
 	// Injected provider for OAuth client interactions.
 	OAuthProvider OAuthProvider
@@ -65,53 +66,22 @@ func NewAuthenticator(cfg *Config) *Authenticator {
 			},
 		},
 	}
-	// Determine OAuthProvider based on MockAuth configuration
-	if cfg.MockAuth {
-		a.OAuthProvider = &MockOAuthProvider{
-			MockEmail: "mock-user@mycompany.com",
-			MockName:  "Mock User",
-			MockPic:   "https://example.com/mock-avatar.png",
-		}
-		a.idTokenValidator = func(ctx context.Context, idToken string, audience string) (*idtoken.Payload, error) {
-			if idToken == "mock-sa-token" {
-				return &idtoken.Payload{
-					Issuer:   "google-service-account",
-					Audience: audience,
-					Claims: map[string]interface{}{
-						"email":   "service-account@mycompany.com",
-						"name":    "Mock Service Account",
-						"picture": "https://example.com/sa-avatar.png",
-					},
-				}, nil
-			}
-			return nil, fmt.Errorf("invalid token: %s", idToken)
-		}
-		a.policyFetcher = func(ctx context.Context) (*iampb.Policy, error) {
-			return &iampb.Policy{
-				Bindings: []*iampb.Binding{
-					{
-						Role:    cfg.TargetIAMRole,
-						Members: []string{"user:mock-admin@mycompany.com", "user:mock-sa-user@mycompany.com", "serviceaccount:service-account@mycompany.com"},
-					},
-				},
-			}, nil
-		}
-	} else {
-		a.OAuthProvider = &GoogleOAuthProvider{
-			Authenticator: a,
-		}
-		a.policyFetcher = func(ctx context.Context) (*iampb.Policy, error) {
-			client, err := a.getProjectsClientLocked(ctx)
-			if err != nil {
-				return nil, err
-			}
-			req := &iampb.GetIamPolicyRequest{
-				Resource: "projects/" + a.Config.GCPProjectID,
-			}
-			return client.GetIamPolicy(ctx, req)
-		}
-		a.idTokenValidator = idtoken.Validate
+
+	a.OAuthProvider = &GoogleOAuthProvider{
+		Authenticator: a,
 	}
+	a.PolicyFetcher = func(ctx context.Context) (*iampb.Policy, error) {
+		client, err := a.getProjectsClientLocked(ctx)
+		if err != nil {
+			return nil, err
+		}
+		req := &iampb.GetIamPolicyRequest{
+			Resource: "projects/" + a.Config.GCPProjectID,
+		}
+		return client.GetIamPolicy(ctx, req)
+	}
+	a.IDTokenValidator = idtoken.Validate
+
 	return a
 }
 
@@ -148,7 +118,7 @@ func (a *Authenticator) getIamPolicy(ctx context.Context) (*iampb.Policy, error)
 		return a.policyCache.policy, nil
 	}
 
-	policy, err := a.policyFetcher(ctx)
+	policy, err := a.PolicyFetcher(ctx)
 	if err != nil {
 		return nil, err
 	}
