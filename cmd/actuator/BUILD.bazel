@@ -61,8 +61,6 @@ compat_go_library(
         "//internal/security",
         "//internal/storage",
         "//internal/storage/spanner",
-        "//internal/compat/google",
-        "//internal/compat/spanner",
         "@com_google_cloud_go_spanner//:spanner",
         "//internal/task_queue_redis:redisclient",
         "@com_github_prometheus_client_golang//prometheus/promhttp:go_default_library",
