@@ -17,7 +17,6 @@ jobs:
     name: 'Run Unit Tests'
     runs-on: 'ubuntu-24.04'
     timeout-minutes: 30
-    environment: janzak-dev-test
 
     # Use a service container for the Spanner Emulator
     services:
@@ -28,9 +27,6 @@ jobs:
           - 9020:9020
 
     env:
-      PROJECT_ID: ${{ vars.PROJECT_ID }}
-      WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
-      SERVICE_ACCOUNT: ${{ vars.SERVICE_ACCOUNT }}
       # We're overriding the test timeout to catch failures with Spanner faster
       TEST_TIMEOUT_SECONDS: 60
       SPANNER_CHECK_TIMEOUT: 15
@@ -59,14 +55,6 @@ jobs:
           restore-keys: |
             bazel-${{ runner.os }}-
 
-      - id: 'auth'
-        name: 'Authenticate to Google Cloud'
-        uses: 'google-github-actions/auth@v2'
-        with:
-          workload_identity_provider: '${{ env.WORKLOAD_IDENTITY_PROVIDER }}'
-          service_account: '${{ env.SERVICE_ACCOUNT }}'
-          create_credentials_file: true
-
       - name: 'Verify Spanner Emulator Endpoint'
         run: |
           echo "Verifying Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}..."
@@ -93,14 +81,7 @@ jobs:
             --disk_cache=~/.cache/bazel-disk \
             --test_output=errors \
             --build_tests_only \
-            --remote_build_event_upload=all \
-            --bes_backend="grpcs://buildeventservice.googleapis.com" \
-            --bes_results_url="https://source.cloud.google.com/results/invocations" \
-            --bes_instance_name="${{ env.PROJECT_ID }}" \
-            --google_auth_scopes="https://www.googleapis.com/auth/cloud-platform" \
-            --bes_header="x-goog-user-project=${{ env.PROJECT_ID }}" \
             --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }} \
-            --google_default_credentials \
             -- \
             //...
 
