@@ -18,6 +18,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -184,13 +185,8 @@ func (a *Authenticator) CORSMiddleware(next http.Handler) http.Handler {
 		origin := r.Header.Get("Origin")
 		allowedOrigin := a.Config.FrontendURL
 		if origin != "" {
-			if origin != a.Config.FrontendURL {
-				for _, ao := range a.Config.AllowedOrigins {
-					if origin == ao {
-						allowedOrigin = origin
-						break
-					}
-				}
+			if origin == a.Config.FrontendURL || slices.Contains(a.Config.AllowedOrigins, origin) {
+				allowedOrigin = origin
 			}
 		}
 		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
