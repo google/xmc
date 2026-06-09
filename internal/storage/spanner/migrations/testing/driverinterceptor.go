@@ -139,10 +139,6 @@ var fixes = []interceptedStatement{
 // injectStoredColumnsReinitialization injects DDL statements to reinitialize stored columns.
 // This is needed to get around Spanner emulator issues with stored columns when running tests.
 func injectStoredColumnsReinitialization(content string, direction Direction, version uint, dbName string) string {
-	// if !strings.Contains(strings.ToUpper(content), "ALTER PROTO BUNDLE") {
-	// 	return content
-	// }
-
 	drops, adds := getReinitializationStatements(dbName)
 	if drops == "" && adds == "" {
 		return content
