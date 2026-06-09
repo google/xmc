@@ -30,17 +30,20 @@ export const routes: Routes = [
   },
   {
     path: 'experiments',
-    component: ExperimentsListPage,
     canActivate: [authGuard],
-  },
-  {
-    path: 'experiments/:xid',
-    component: ExperimentPage,
-    canActivate: [authGuard],
-  },
-  {
-    path: 'experiments/:xid/workUnits/:wid',
-    component: WorkUnitPage,
-    canActivate: [authGuard],
+    children: [
+      {
+        path: '',
+        component: ExperimentsListPage,
+      },
+      {
+        path: ':xid',
+        component: ExperimentPage,
+      },
+      {
+        path: ':xid/workUnits/:wid',
+        component: WorkUnitPage,
+      },
+    ],
   },
 ];

@@ -24,7 +24,7 @@ import { authGuard } from './auth.guard';
 describe('App Routes', () => {
   it('should define route configuration', () => {
     expect(routes).toBeDefined();
-    expect(routes.length).toBe(4);
+    expect(routes.length).toBe(2);
   });
 
   it('should route "" to HomePage', () => {
@@ -34,24 +34,23 @@ describe('App Routes', () => {
     expect(route?.pathMatch).toBe('full');
   });
 
-  it('should route "experiments" to ExperimentsListPage with authGuard', () => {
-    const route = routes.find(r => r.path === 'experiments');
-    expect(route).toBeDefined();
-    expect(route?.component).toBe(ExperimentsListPage);
-    expect(route?.canActivate).toContain(authGuard);
-  });
+  it('should route "experiments" with authGuard and children', () => {
+    const parentRoute = routes.find(r => r.path === 'experiments');
+    expect(parentRoute).toBeDefined();
+    expect(parentRoute?.canActivate).toContain(authGuard);
+    expect(parentRoute?.children).toBeDefined();
+    expect(parentRoute?.children?.length).toBe(3);
 
-  it('should route "experiments/:xid" to ExperimentPage with authGuard', () => {
-    const route = routes.find(r => r.path === 'experiments/:xid');
-    expect(route).toBeDefined();
-    expect(route?.component).toBe(ExperimentPage);
-    expect(route?.canActivate).toContain(authGuard);
-  });
+    const listChild = parentRoute?.children?.find(r => r.path === '');
+    expect(listChild).toBeDefined();
+    expect(listChild?.component).toBe(ExperimentsListPage);
 
-  it('should route "experiments/:xid/workUnits/:wid" to WorkUnitPage with authGuard', () => {
-    const route = routes.find(r => r.path === 'experiments/:xid/workUnits/:wid');
-    expect(route).toBeDefined();
-    expect(route?.component).toBe(WorkUnitPage);
-    expect(route?.canActivate).toContain(authGuard);
+    const detailChild = parentRoute?.children?.find(r => r.path === ':xid');
+    expect(detailChild).toBeDefined();
+    expect(detailChild?.component).toBe(ExperimentPage);
+
+    const wuChild = parentRoute?.children?.find(r => r.path === ':xid/workUnits/:wid');
+    expect(wuChild).toBeDefined();
+    expect(wuChild?.component).toBe(WorkUnitPage);
   });
 });
