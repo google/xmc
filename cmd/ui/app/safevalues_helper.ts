@@ -26,11 +26,18 @@ export function setElementInnerHtml(element: HTMLElement, safeHtml: SafeHtml) {
 }
 
 export function trySanitizeUrl(url: string): string {
-  const lower = url.trim().toLowerCase();
-  if (lower.startsWith('javascript:') || lower.startsWith('data:')) {
-    return 'about:blank';
+  const trimmed = url.trim();
+  const lower = trimmed.toLowerCase();
+  if (
+    lower.startsWith('http://') ||
+    lower.startsWith('https://') ||
+    lower.startsWith('/') ||
+    lower.startsWith('./') ||
+    lower.startsWith('../')
+  ) {
+    return trimmed;
   }
-  return url;
+  return 'about:blank';
 }
 
 export function windowOpen(window: Window, url: string, name?: string, specs?: string): Window | null {

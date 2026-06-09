@@ -38,6 +38,8 @@ describe('SafeValues Helper', () => {
       expect(trySanitizeUrl('https://example.com/test')).toBe('https://example.com/test');
       expect(trySanitizeUrl('http://localhost:8080')).toBe('http://localhost:8080');
       expect(trySanitizeUrl('/relative/path')).toBe('/relative/path');
+      expect(trySanitizeUrl('./relative/path')).toBe('./relative/path');
+      expect(trySanitizeUrl('../relative/path')).toBe('../relative/path');
     });
 
     it('should sanitize javascript: URLs', () => {
@@ -48,6 +50,12 @@ describe('SafeValues Helper', () => {
     it('should sanitize data: URLs', () => {
       expect(trySanitizeUrl('data:text/html,<script>alert(1)</script>')).toBe('about:blank');
       expect(trySanitizeUrl('DATA:image/png;base64,123')).toBe('about:blank');
+    });
+
+    it('should sanitize unsupported protocols', () => {
+      expect(trySanitizeUrl('ftp://example.com')).toBe('about:blank');
+      expect(trySanitizeUrl('mailto:test@example.com')).toBe('about:blank');
+      expect(trySanitizeUrl('path/without/slash')).toBe('about:blank');
     });
   });
 
