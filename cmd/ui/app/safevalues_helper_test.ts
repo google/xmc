@@ -1,5 +1,6 @@
 // Copyright 2026 Google LLC
 
+import { cleanState } from './testing/test';
 import 'jasmine';
 import { HtmlSanitizerBuilder, trySanitizeUrl, windowOpen } from './safevalues_helper';
 import { SafeHtml, unwrapHtml } from 'safevalues';

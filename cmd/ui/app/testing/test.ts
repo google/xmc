@@ -14,8 +14,7 @@
 
 import { getTestBed, TestBed, TestModuleMetadata } from '@angular/core/testing';
 import { BrowserDynamicTestingModule, platformBrowserDynamicTesting } from '@angular/platform-browser-dynamic/testing';
-import { Type, Component, ComponentFactoryResolver } from '@angular/core';
-import { ComponentHarness, HarnessQuery } from '@angular/cdk/testing';
+import { Component, ComponentFactoryResolver } from '@angular/core';
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { By } from '@angular/platform-browser';
 
@@ -38,8 +37,8 @@ afterEach(() => {
   }
 });
 
-// 2. Define cleanState global helper
-(globalThis as any).cleanState = function(factory: () => any, beforeEachFn: typeof beforeEach): any {
+// 2. Define cleanState helper
+export function cleanState(factory: () => any, beforeEachFn: typeof beforeEach): any {
   const state = {} as any;
   beforeEachFn(async () => {
     const fresh = await factory();
@@ -49,15 +48,15 @@ afterEach(() => {
     Object.assign(state, fresh);
   });
   return state;
-};
+}
 
-// 3. Define setupModule global helper
-(globalThis as any).setupModule = function(moduleDef: TestModuleMetadata) {
+// 3. Define setupModule helper
+export function setupModule(moduleDef: TestModuleMetadata) {
   TestBed.configureTestingModule(moduleDef);
-};
+}
 
-// 4. Define bootstrap global helper
-(globalThis as any).bootstrap = function(component: any, options?: any): any {
+// 4. Define bootstrap helper
+export function bootstrap(component: any, options?: any): any {
   const fixture = TestBed.createComponent(component);
   if (options) {
     for (const key of Object.keys(options)) {
@@ -81,15 +80,15 @@ afterEach(() => {
   }
   currentFixture = fixture;
   return fixture.componentInstance;
-};
+}
 
-// 5. Define get global helper
-(globalThis as any).get = function(token: any): any {
+// 5. Define get helper
+export function get(token: any): any {
   return TestBed.inject(token);
-};
+}
 
-// 6. Define getHarness global helper
-(globalThis as any).getHarness = async function(query: any): Promise<any> {
+// 6. Define getHarness helper
+export async function getHarness(query: any): Promise<any> {
   if (!currentFixture) {
     throw new Error('getHarness: No active component fixture has been bootstrapped. Call bootstrap(Component) first.');
   }
@@ -111,17 +110,17 @@ afterEach(() => {
   }
   const loader = TestbedHarnessEnvironment.loader(currentFixture);
   return await loader.getHarness(query);
-};
+}
 
 // 7. Define DOM query helpers
-(globalThis as any).getEl = function(selector: string): HTMLElement {
+export function getEl<T extends HTMLElement = HTMLElement>(selector: string): T {
   if (!currentFixture) {
     throw new Error('getEl: No active component fixture has been bootstrapped.');
   }
   return currentFixture.nativeElement.querySelector(selector);
-};
+}
 
-(globalThis as any).getDebugEl = function(token?: any): any {
+export function getDebugEl(token?: any): any {
   if (!currentFixture) {
     throw new Error('getDebugEl: No active component fixture has been bootstrapped.');
   }
@@ -130,33 +129,33 @@ afterEach(() => {
     return currentFixture.debugElement.query(predicate);
   }
   return currentFixture.debugElement;
-};
+}
 
-(globalThis as any).getEls = function(selector: string): HTMLElement[] {
+export function getEls(selector: string): HTMLElement[] {
   if (!currentFixture) {
     throw new Error('getEls: No active component fixture has been bootstrapped.');
   }
   return Array.from(currentFixture.nativeElement.querySelectorAll(selector));
-};
+}
 
-(globalThis as any).hasEl = function(selector: string): boolean {
+export function hasEl(selector: string): boolean {
   if (!currentFixture) {
     return false;
   }
   return !!currentFixture.nativeElement.querySelector(selector);
-};
+}
 
 // 8. Define flush async helper
-(globalThis as any).flush = async function() {
+export async function flush() {
   if (currentFixture) {
     currentFixture.detectChanges();
     await currentFixture.whenStable();
     currentFixture.detectChanges();
   }
-};
+}
 
 // 9. Define extra Catalyst helpers
-(globalThis as any).trigger = async function(el: HTMLElement, eventName: string, eventData?: any) {
+export async function trigger(el: HTMLElement, eventName: string, eventData?: any) {
   let event: Event;
   if (eventName === 'click' || eventName === 'mousedown' || eventName === 'mouseup') {
     event = new MouseEvent(eventName, { bubbles: true, cancelable: true, ...eventData });
@@ -166,10 +165,10 @@ afterEach(() => {
     event = new CustomEvent(eventName, { bubbles: true, cancelable: true, detail: eventData });
   }
   el.dispatchEvent(event);
-  await (globalThis as any).flush();
-};
+  await flush();
+}
 
-(globalThis as any).bootstrapTemplate = function(template: string, options?: any): any {
+export function bootstrapTemplate(template: string, options?: any): any {
   @Component({
     template: template
   })
@@ -192,29 +191,27 @@ afterEach(() => {
     declarations: [DynamicHostComponent]
   });
 
-  return (globalThis as any).bootstrap(DynamicHostComponent);
-};
+  return bootstrap(DynamicHostComponent);
+}
 
-(globalThis as any).useAutoTick = function() {
+export function useAutoTick() {
   beforeEach(() => {
     jasmine.clock().install();
   });
   afterEach(() => {
     jasmine.clock().uninstall();
   });
-};
+}
 
-(globalThis as any).markForCheckAndFlush = async function() {
+export async function markForCheckAndFlush() {
   if (currentFixture) {
     currentFixture.changeDetectorRef.markForCheck();
-    await (globalThis as any).flush();
+    await flush();
   }
-};
-
-
+}
 
 // 10. Define setupObservableMatchers and async matchers
-(globalThis as any).setupObservableMatchers = function() {
+export function setupObservableMatchers() {
   jasmine.addAsyncMatchers({
     toEmit(util: any, customEqualityTesters: any): any {
       return {
@@ -305,4 +302,4 @@ afterEach(() => {
       };
     }
   } as any);
-};
+}

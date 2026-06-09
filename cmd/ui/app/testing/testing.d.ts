@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Type } from '@angular/core';
 import { TestModuleMetadata } from '@angular/core/testing';
-import { ComponentHarness, HarnessQuery } from '@angular/cdk/testing';
 
 declare global {
   const require: {
@@ -23,22 +21,6 @@ declare global {
       <T>(id: string): T;
     };
   };
-  function cleanState(factory: () => any, beforeEachFn: typeof beforeEach): any;
-  function setupModule(moduleDef: TestModuleMetadata): void;
-  function bootstrap(component: any, options?: any): any;
-  function get(token: any): any;
-  function getHarness(query: any): Promise<any>;
-  function getEl<T extends HTMLElement = HTMLElement>(selector: string): T;
-  function getEls(selector: string): HTMLElement[];
-  function getDebugEl(token?: any): any;
-  function hasEl(selector: string): boolean;
-  function flush(): Promise<void>;
-  function setupObservableMatchers(): void;
-  function trigger(el: HTMLElement, eventName: string, eventData?: any): Promise<void>;
-  function bootstrapTemplate(template: string, options?: any): any;
-  function markForCheckAndFlush(): Promise<void>;
-
-  function useAutoTick(): void;
 
   namespace jasmine {
     interface AsyncMatchers<T, U> {
