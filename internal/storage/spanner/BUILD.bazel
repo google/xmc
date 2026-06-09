@@ -62,6 +62,7 @@ compat_go_library(
         "//internal/compat/protocmp",
         "//internal/compat/safesql",
         "//internal/compat/spanner",
+        "@com_google_cloud_go_spanner//:spanner",
         "//internal/compat/status",
         "//internal/compat/uuid",
         "//internal/logging",

@@ -35,6 +35,7 @@ compat_go_library(
         "//internal/common:health",
         "//internal/compat/google",
         "//internal/compat/spanner",
+        "@com_google_cloud_go_spanner//:spanner",
         "//internal/kubernetes/api/v1alpha2",
         "//internal/kubernetes/api/v1beta1",
         "//internal/kubernetes/common:constants",

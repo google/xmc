@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"go/log"
+	googlespanner "golang/cloud_google_com/go/spanner/v/v1/spanner"
 	lropb "longrunning/operations_go_proto"
 	fmpb "protobuf/field_mask_go_proto"
 	"golang/cmp/cmp"
@@ -90,9 +91,9 @@ func createTestAuthorizer(ctx context.Context, t *testing.T) authz.AuthorizerInt
 
 func createExperimentStateServer(ctx context.Context, t *testing.T) (*Server, *tq.FakeClient) {
 	t.Helper()
-	_, essStorageClient := emulator.Setup(ctx, t)
+	xidStorageClient, essStorageClient := emulator.Setup(ctx, t)
 	storage, _ := spanner.NewStorage(essStorageClient)
-	xidAddr := createXidServer(ctx, t)
+	xidAddr := createXidServer(ctx, t, xidStorageClient)
 	cfg := config.Config{
 		EndpointURL:                 "http://localhost:8080",
 		XidServiceAddr:              xidAddr.Addr().String(),
@@ -110,9 +111,8 @@ func createExperimentStateServer(ctx context.Context, t *testing.T) (*Server, *t
 	return New(storage, &cfg, createTestAuthorizer(ctx, t), xidClient, taskQueueClient), taskQueueClient
 }
 
-func createXidServer(ctx context.Context, t *testing.T) net.Listener {
+func createXidServer(ctx context.Context, t *testing.T, xidClient *googlespanner.Client) net.Listener {
 	t.Helper()
-	xidClient, _ := emulator.Setup(ctx, t)
 	storage, _ := spanner.NewStorage(xidClient)
 	cfg := xidconfig.Config{}
 

@@ -29,7 +29,7 @@ import (
 	emptypb "protobuf/empty_go_proto"
 	adminpb "spanner/admin/database/v1/spanner_database_admin_go_proto"
 	instancepb "spanner/admin/instance/v1/spanner_instance_admin_go_proto"
-
+	xmcemulator "xmanager_cloud/storage/spanner/emulator/emulator"
 )
 
 const (
@@ -51,19 +51,22 @@ func newSpannerServer(ctx context.Context, t *testing.T) *emulator.Emulator {
 	if err != nil {
 		t.Fatalf("instance.NewInstanceAdminClient() failed: %v", err)
 	}
-	op1, err := instClient.CreateInstance(ctx, &instancepb.CreateInstanceRequest{
-		Parent:     fmt.Sprintf("projects/%s", projectID),
-		InstanceId: instanceID,
-		Instance: &instancepb.Instance{
-			DisplayName: instanceID,
-			NodeCount:   1,
-		},
-	})
+	_, err = instClient.GetInstance(ctx, &instancepb.GetInstanceRequest{Name: instancePath})
 	if err != nil {
-		t.Fatalf("instClient.CreateInstance() failed: %v", err)
-	}
-	if _, err := op1.Wait(ctx); err != nil {
-		t.Fatalf("op1.Wait() failed: %v", err)
+		op1, err := instClient.CreateInstance(ctx, &instancepb.CreateInstanceRequest{
+			Parent:     fmt.Sprintf("projects/%s", projectID),
+			InstanceId: instanceID,
+			Instance: &instancepb.Instance{
+				DisplayName: instanceID,
+				NodeCount:   1,
+			},
+		})
+		if err != nil {
+			t.Fatalf("instClient.CreateInstance() failed: %v", err)
+		}
+		if _, err := op1.Wait(ctx); err != nil {
+			t.Fatalf("op1.Wait() failed: %v", err)
+		}
 	}
 
 	return emu
@@ -106,8 +109,8 @@ func TestNew(t *testing.T) {
 	ctx := t.Context()
 	emu := newSpannerServer(ctx, t)
 	adminClient := createAdminClient(ctx, t, emu)
-	dbName := "test-db-1"
-	dbPath := fmt.Sprintf("%s/databases/test-db-1", instancePath)
+	dbName := "test-db-" + xmcemulator.RandomSuffix()
+	dbPath := fmt.Sprintf("%s/databases/%s", instancePath, dbName)
 	createDatabase(ctx, t, adminClient, dbName)
 	dataClient := createDataClient(ctx, t, emu, dbPath)
 
@@ -247,7 +250,7 @@ func TestRun(t *testing.T) {
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a new database for each test case.
-			dbName := fmt.Sprintf("testdb-%d", i)
+			dbName := fmt.Sprintf("testdb-%d-%s", i, xmcemulator.RandomSuffix())
 			dbPath := fmt.Sprintf("%s/databases/%s", instancePath, dbName)
 			createDatabase(ctx, t, adminClient, dbName)
 			dataClient := createDataClient(ctx, t, emu, dbPath)
