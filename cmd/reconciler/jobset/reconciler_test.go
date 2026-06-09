@@ -846,6 +846,7 @@ func TestActuatorReconcilerFinalizer_WithoutBatcherUpdateDoesNotDeleteJobSet(t *
 
 	initialJobSet := baseJobSetWithLabels.DeepCopy()
 	initialJobSet.DeletionTimestamp = &metav1.Time{Time: time.Date(2025, time.November, 19, 15, 59, 26, 0, time.UTC)}
+	initialJobSet.Finalizers = []string{"other-finalizer"}
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initialJobSet).Build()
 	batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
@@ -869,7 +870,7 @@ func TestActuatorReconcilerFinalizer_WithoutBatcherUpdateDoesNotDeleteJobSet(t *
 	if err != nil {
 		t.Fatalf("Failed to get JobSet after reconcile: %v", err)
 	}
-	if diff := cmp.Diff([]string(nil), gotJobSet.Finalizers); diff != "" {
+	if diff := cmp.Diff([]string{"other-finalizer"}, gotJobSet.Finalizers); diff != "" {
 		t.Errorf("JobSet finalizers unexpected diff (-want +got):\n%s", diff)
 	}
 
@@ -1012,7 +1013,13 @@ func TestReconcileImagePullBackOff(t *testing.T) {
 			objs := []runtime.Object{js}
 			objs = append(objs, tc.pods...)
 
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...).Build()
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithRuntimeObjects(objs...).
+				WithIndex(&corev1.Pod{}, v1alpha2.JobSetNameKey, func(obj client.Object) []string {
+					return []string{obj.(*corev1.Pod).Labels[v1alpha2.JobSetNameKey]}
+				}).
+				Build()
 			batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
 			r := &Reconciler{
 				Client:                      fakeClient,

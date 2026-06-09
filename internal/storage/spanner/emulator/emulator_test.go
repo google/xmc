@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,6 +15,7 @@ package emulator
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"cloud.google.com/go/spanner"
@@ -54,6 +55,31 @@ func TestEmulatorSetup(t *testing.T) {
 	for _, table := range essTables {
 		if !tableExists(ctx, t, essClient, table) {
 			t.Errorf("ESS table %s does not exist after setup", table)
+		}
+	}
+}
+
+func TestCreateInstance_Concurrent(t *testing.T) {
+	ctx := context.Background()
+	addr := os.Getenv("SPANNER_EMULATOR_HOST")
+	if addr == "" {
+		addr = "localhost:9010"
+	}
+	emu := &Emulator{addr: addr}
+
+	// Run createInstance concurrently in multiple goroutines
+	const numGoroutines = 5
+	errChan := make(chan error, numGoroutines)
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			errChan <- createInstance(ctx, emu)
+		}()
+	}
+
+	for i := 0; i < numGoroutines; i++ {
+		err := <-errChan
+		if err != nil {
+			t.Errorf("Concurrent createInstance failed: %v", err)
 		}
 	}
 }

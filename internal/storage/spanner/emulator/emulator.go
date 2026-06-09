@@ -16,8 +16,12 @@ package emulator
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	_ "embed"
 
@@ -27,6 +31,8 @@ import (
 	"google.golang.org/api/option"
 	dbadminpb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
 	instancepb "google.golang.org/genproto/googleapis/spanner/admin/instance/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
 )
 
@@ -44,13 +50,17 @@ var (
 const (
 	projectID   = "test-project"
 	instanceID  = "test-instance"
-	xidDatabase = "test-xid-database"
-	essDatabase = "test-ess-database"
 	projectURI  = "projects/test-project"
 	instanceURI = "projects/test-project/instances/test-instance"
-	xidDBURI    = "projects/test-project/instances/test-instance/databases/test-xid-database"
-	essDBURI    = "projects/test-project/instances/test-instance/databases/test-ess-database"
 )
+
+func randomSuffix() string {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
+}
 
 type Options struct{}
 
@@ -58,6 +68,7 @@ func Start(ctx context.Context, opts Options) (*Emulator, error) {
 	addr := os.Getenv("SPANNER_EMULATOR_HOST")
 	if addr == "" {
 		addr = "localhost:9010"
+		os.Setenv("SPANNER_EMULATOR_HOST", addr)
 	}
 	return &Emulator{addr: addr}, nil
 }
@@ -94,6 +105,7 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 	addr := os.Getenv("SPANNER_EMULATOR_HOST")
 	if addr == "" {
 		addr = "localhost:9010"
+		os.Setenv("SPANNER_EMULATOR_HOST", addr)
 	}
 
 	emu := &Emulator{addr: addr}
@@ -101,6 +113,12 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 	if err := createInstance(ctx, emu); err != nil {
 		t.Fatalf("failed to create instance: %v", err)
 	}
+
+	suffix := randomSuffix()
+	xidDatabase := fmt.Sprintf("test-xid-db-%s", suffix)
+	essDatabase := fmt.Sprintf("test-ess-db-%s", suffix)
+	xidDBURI := fmt.Sprintf("projects/%s/instances/%s/databases/%s", projectID, instanceID, xidDatabase)
+	essDBURI := fmt.Sprintf("projects/%s/instances/%s/databases/%s", projectID, instanceID, essDatabase)
 
 	if err := createDatabase(ctx, emu, xidDatabase, xidDBURI, xidSchema, xidDescriptors, applySchema); err != nil {
 		t.Fatalf("failed to create XID database: %v", err)
@@ -122,6 +140,17 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 	t.Cleanup(func() { xidClient.Close() })
 	t.Cleanup(func() { essClient.Close() })
 
+	t.Cleanup(func() {
+		cleanupCtx := context.WithoutCancel(ctx)
+		dba, err := database.NewDatabaseAdminClient(cleanupCtx, emu.ClientOptions()...)
+		if err != nil {
+			return
+		}
+		defer dba.Close()
+		_ = dba.DropDatabase(cleanupCtx, &dbadminpb.DropDatabaseRequest{Database: xidDBURI})
+		_ = dba.DropDatabase(cleanupCtx, &dbadminpb.DropDatabaseRequest{Database: essDBURI})
+	})
+
 	return xidClient, essClient, emu
 }
 
@@ -132,6 +161,11 @@ func createInstance(ctx context.Context, emu *Emulator) error {
 	}
 	defer i.Close()
 
+	_, err = i.GetInstance(ctx, &instancepb.GetInstanceRequest{Name: instanceURI})
+	if err == nil {
+		return nil
+	}
+
 	op, err := i.CreateInstance(ctx, &instancepb.CreateInstanceRequest{
 		Parent:     projectURI,
 		InstanceId: instanceID,
@@ -141,7 +175,25 @@ func createInstance(ctx context.Context, emu *Emulator) error {
 		},
 	})
 	if err != nil {
-		return nil
+		if status.Code(err) == codes.AlreadyExists {
+			// Ensure instance finishes provisioning before returning
+			for {
+				inst, getErr := i.GetInstance(ctx, &instancepb.GetInstanceRequest{Name: instanceURI})
+				if getErr != nil {
+					return getErr
+				}
+				if inst.State == instancepb.Instance_READY {
+					return nil
+				}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+					time.Sleep(50 * time.Millisecond)
+				}
+			}
+		}
+		return fmt.Errorf("CreateInstance failed: %w", err)
 	}
 	_, err = op.Wait(ctx)
 	return err
