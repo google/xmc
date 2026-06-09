@@ -51,18 +51,21 @@ describe('SafeValues Helper', () => {
     });
   });
 
-  describe('windowOpen', () => {
-    let mockWindow: any;
-
-    beforeEach(() => {
-      mockWindow = {
+  function setup() {
+    return cleanState(() => {
+      const mockWindow = {
         open: jasmine.createSpy('open').and.returnValue({} as Window)
       };
-    });
+      return { mockWindow };
+    }, beforeEach);
+  }
+
+  describe('windowOpen', () => {
+    const state = setup();
 
     it('should call window.open with parameters', () => {
-      const result = windowOpen(mockWindow, 'https://example.com', '_blank', 'resizable=yes');
-      expect(mockWindow.open).toHaveBeenCalledWith('https://example.com', '_blank', 'resizable=yes');
+      const result = windowOpen(state.mockWindow, 'https://example.com', '_blank', 'resizable=yes');
+      expect(state.mockWindow.open).toHaveBeenCalledWith('https://example.com', '_blank', 'resizable=yes');
       expect(result).toBeDefined();
     });
   });
