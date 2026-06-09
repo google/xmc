@@ -101,7 +101,7 @@ const (
 )
 
 type interceptedStatement struct {
-	version   uint
+	version   uint // Version 0 matches all .versions
 	direction Direction
 	trigger   string
 	action    func(drops, adds, statement string, result *strings.Builder)
@@ -149,6 +149,7 @@ func injectStoredColumnsReinitialization(content string, direction Direction, ve
 	for _, statement := range statements {
 		matched := false
 		for _, fix := range fixes {
+			// Version 0 matches all versions.
 			if (fix.version == 0 || fix.version == version) && fix.direction == direction && strings.Contains(strings.ToUpper(statement), fix.trigger) {
 				fix.action(drops, adds, statement, &result)
 				matched = true
