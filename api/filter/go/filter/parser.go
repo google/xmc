@@ -110,7 +110,7 @@ func (l *lexer) nextToken() (token, error) {
 			l.advance()
 			next := l.peek()
 			if unicode.IsDigit(next) {
-				numStr := l.scanNumber(string(next))
+				numStr := l.scanNumber("")
 				return token{kind: l.deduceNumberKind("-" + numStr), value: "-" + numStr, pos: startPos}, nil
 			}
 			return token{kind: tokMinus, value: "-", pos: startPos}, nil

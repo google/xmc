@@ -226,8 +226,8 @@ func TestUpdateXidEntry_NoOwnerFailsWithoutParent(t *testing.T) {
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"acls"}},
 	}
 	_, err = s.UpdateXidEntry(ctx, update)
-	if !errors.Is(err, status.ErrPermissionDenied) {
-		t.Errorf("UpdateXidEntry with no owners returned error %v, want %v", err, status.ErrPermissionDenied)
+	if !errors.Is(err, status.ErrInvalidArgument) {
+		t.Errorf("UpdateXidEntry with no owners returned error %v, want %v", err, status.ErrInvalidArgument)
 	}
 }
 

@@ -33,6 +33,7 @@ go_library(
         "//internal/compat/proto",
         "//internal/compat/safesql",
         "//internal/compat/spanner",
+        "@com_google_cloud_go_spanner//:spanner",
         "//internal/compat/status",
         "//internal/query_generator/filter",
     ],
@@ -59,6 +60,7 @@ go_library(
         "//api/filter/go/filter",
         "//internal/compat/safesql",
         "//internal/compat/spanner",
+        "@com_google_cloud_go_spanner//:spanner",
         "//internal/compat/status",
         "//internal/logging",
     ],
@@ -89,6 +91,7 @@ go_test(
         "//internal/compat/protocmp",
         "//internal/compat/safesql",
         "//internal/compat/spanner",
+        "@com_google_cloud_go_spanner//:spanner",
     ],
 )
 
@@ -116,6 +119,7 @@ go_test(
         "//internal/compat/log",
         "//internal/compat/safesql",
         "//internal/compat/spanner",
+        "@com_google_cloud_go_spanner//:spanner",
         "//internal/compat/status",
     ],
 )

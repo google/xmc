@@ -30,12 +30,18 @@ func TestRun(t *testing.T) {
 		{
 			name:          "ess",
 			migrationsDir: "ess",
-			databaseID:    "test-ess-database",
+			databaseID:    "test-ess-db-" + emulator.RandomSuffix(),
+			getDB: func(emu *emulator.Emulator) string {
+				return emu.ESSDatabase
+			},
 		},
 		{
 			name:          "xid",
 			migrationsDir: "xid",
-			databaseID:    "test-xid-database",
+			databaseID:    "test-xid-db-" + emulator.RandomSuffix(),
+			getDB: func(emu *emulator.Emulator) string {
+				return emu.XIDDatabase
+			},
 		},
 	}
 
@@ -46,6 +52,7 @@ func TestRun(t *testing.T) {
 			t.Run(cmd, func(t *testing.T) {
 				for _, tc := range tests {
 					t.Run(tc.name, func(t *testing.T) {
+						tc = withEmuDB(tc, emu)
 						cfg := mustCreateConfig(t, tc, cmd, nil)
 						err := run(cfg, emu.ClientOptions()...)
 						if err == nil {
@@ -61,6 +68,7 @@ func TestRun(t *testing.T) {
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				_, _, emu := emulator.SetupWithEmulator(ctx, t)
+				tc = withEmuDB(tc, emu)
 				cfg := mustCreateConfig(t, tc, "version", nil)
 
 				if err := run(cfg, emu.ClientOptions()...); err != nil {
@@ -101,6 +109,7 @@ func TestRun(t *testing.T) {
 				_, _, emu := emulator.SetupWithEmulator(ctx, t)
 				for _, ft := range forceTests {
 					t.Run(ft.name, func(t *testing.T) {
+						tc = withEmuDB(tc, emu)
 						cfg := mustCreateConfig(t, tc, "force", ft.arg)
 
 						err := run(cfg, emu.ClientOptions()...)
@@ -148,6 +157,7 @@ func TestRun(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				// SetupWithEmulator applies the schema but does not initialize the migration table.
 				_, _, emu := emulator.SetupWithEmulator(ctx, t)
+				tc = withEmuDB(tc, emu)
 				cfg := mustCreateConfig(t, tc, "up", nil)
 
 				r, err := newRunner(ctx, cfg, emu.ClientOptions()...)
@@ -182,6 +192,7 @@ func TestRun(t *testing.T) {
 		for _, tc := range tests {
 			_, _, emu := emulator.SetupEmpty(ctx, t)
 			t.Run(tc.name, func(t *testing.T) {
+				tc = withEmuDB(tc, emu)
 				cfg := mustCreateConfig(t, tc, "up", nil)
 
 				if err := run(cfg, emu.ClientOptions()...); err != nil {
@@ -199,6 +210,7 @@ func TestRun(t *testing.T) {
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				_, _, emu := emulator.SetupEmpty(ctx, t)
+				tc = withEmuDB(tc, emu)
 				cfg := mustCreateConfig(t, tc, "up", nil)
 
 				// Run up first to have something to revert.
@@ -243,6 +255,7 @@ func TestRun(t *testing.T) {
 		for _, tc := range tests {
 			_, _, emu := emulator.SetupEmpty(ctx, t)
 			t.Run(tc.name, func(t *testing.T) {
+				tc = withEmuDB(tc, emu)
 				cfg := mustCreateConfig(t, tc, "init", nil)
 
 				if err := run(cfg, emu.ClientOptions()...); err != nil {
