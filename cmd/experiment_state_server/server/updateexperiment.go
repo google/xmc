@@ -116,6 +116,7 @@ func (s *Server) UpdateExperiment(ctx context.Context, req *apipb.UpdateExperime
 		returnedExp.Acls = currentXidEntry.GetAcls()
 	}
 
+
 	logging.Info(ctx, "Updated experiment", "experiment", returnedExp)
 	return returnedExp, nil
 }

@@ -319,11 +319,11 @@ func TestBatchRestartWorkUnits_DependencyFailures(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name          string
-		authenticator auth.AuthorizerInterface
-		xidClient     xidgrpcpb.XidServiceClient
-		storage       storage.Storage
-		wantErr       error
+		name            string
+		authenticator   auth.AuthorizerInterface
+		xidClient       xidgrpcpb.XidServiceClient
+		storage         storage.Storage
+		wantErr         error
 	}{
 		{
 			name:          "auth_fails",
