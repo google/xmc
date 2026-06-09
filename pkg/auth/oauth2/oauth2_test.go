@@ -374,6 +374,7 @@ func TestXForwardedProtoTrust(t *testing.T) {
 			cfg := &Config{
 				TrustXForwardedProto: tt.trustXForwardedProto,
 				FrontendURL:          "http://localhost:8080",
+				AllowedHosts:         []string{"localhost:8080"},
 			}
 			a := newTestAuthenticator(cfg)
 			req := httptest.NewRequest("GET", "http://localhost:8080/api/login", nil)
@@ -517,6 +518,10 @@ func TestHandleCallbackProduction(t *testing.T) {
 
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
+
+	if u, err := url.Parse(ts.URL); err == nil {
+		cfg.AllowedHosts = append(cfg.AllowedHosts, strings.ToLower(u.Host))
+	}
 
 	// 3. Perform login flow
 	jar, err := cookiejar.New(nil)

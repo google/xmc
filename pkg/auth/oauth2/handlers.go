@@ -233,7 +233,7 @@ func (a *Authenticator) getRequestSchemeAndHost(r *http.Request) (string, string
 		}
 	}
 
-	if !isHostAllowed(host, a.Config.AllowedHosts) {
+	if !isHostAllowed(host, a.Config.AllowedHosts, a.Config.MockAuth) {
 		if u, err := url.Parse(a.Config.FrontendURL); err == nil {
 			return u.Scheme, u.Host
 		}
@@ -249,8 +249,8 @@ func isLocalhost(host string) bool {
 		hostLower == "127.0.0.1" || strings.HasPrefix(hostLower, "127.0.0.1:")
 }
 
-func isHostAllowed(host string, allowedHosts []string) bool {
-	if isLocalhost(host) {
+func isHostAllowed(host string, allowedHosts []string, mockAuth bool) bool {
+	if mockAuth && isLocalhost(host) {
 		return true
 	}
 
