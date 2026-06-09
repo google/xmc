@@ -41,6 +41,7 @@ proto_library(
         "//api/protos/xid:xid_messages_proto",
         "@com_google_googleapis//google/api:field_behavior_proto",
         "@com_google_googleapis//google/api:resource_proto",
+        "@com_google_googleapis//google/rpc:status_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
 )
@@ -53,6 +54,7 @@ go_proto_library(
         "//api/protos/xid:messages_go_proto",
         "@org_golang_google_genproto_googleapis_api//:go_default_library",
         "@org_golang_google_genproto_googleapis_api//annotations",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
@@ -130,6 +132,7 @@ proto_library(
         "@com_google_googleapis//google/api:field_behavior_proto",
         "@com_google_googleapis//google/api:resource_proto",
         "@com_google_googleapis//google/longrunning:operations_proto",
+        "@com_google_googleapis//google/rpc:status_proto",
         "@com_google_protobuf//:empty_proto",
         "@com_google_protobuf//:field_mask_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -151,6 +154,7 @@ go_proto_library(
         "@com_google_googleapis//google/api:resource_go_proto",
         "@org_golang_google_genproto_googleapis_api//:go_default_library",
         "@org_golang_google_genproto_googleapis_api//annotations",
+        "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
 
