@@ -134,6 +134,7 @@ func TestListXidEntries_BadPaths(t *testing.T) {
 		},
 	}
 
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := server.ListXidEntries(ctx, tc.req)
