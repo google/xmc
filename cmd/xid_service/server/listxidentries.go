@@ -62,7 +62,7 @@ func (s *XIDServer) listXidEntriesWithStaleness(ctx context.Context, in *apipb.L
 		statusErr, ok := status.FromError(err)
 		if ok {
 			logging.Error(ctx, "Storage layer returned a gRPC error for listing XIDs", "error", err)
-			return nil, fmt.Errorf("an error occurred while retrieving the XID %v: %w", err, status.CodeToError(statusErr.Code))
+			return nil, status.Errorf(statusErr.Code, "an error occurred while retrieving the XID %v", err)
 		}
 
 		logging.Error(ctx, "Storage layer returned a non-gRPC error for listing XIDs", "error", err)
