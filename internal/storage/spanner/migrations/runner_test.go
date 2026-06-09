@@ -19,28 +19,9 @@ import (
 	"testing"
 
 	_ "cloud_spanner_emulator/public/go/emulator" // definitions for emulator options
-	"crypto/rand"
-	"encoding/hex"
 	"golang/github_com/golang_migrate/migrate/v/v4/migrate"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 )
-
-func randomSuffix() string {
-	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(b)
-}
-
-func withEmuDB(tc testRunCase, emu *emulator.Emulator) testRunCase {
-	if tc.name == "ess" {
-		tc.databaseID = emu.ESSDatabase
-	} else if tc.name == "xid" {
-		tc.databaseID = emu.XIDDatabase
-	}
-	return tc
-}
 
 func TestRun(t *testing.T) {
 	ctx := t.Context()
@@ -49,12 +30,18 @@ func TestRun(t *testing.T) {
 		{
 			name:          "ess",
 			migrationsDir: "ess",
-			databaseID:    "test-ess-db-" + randomSuffix(),
+			databaseID:    "test-ess-db-" + emulator.RandomSuffix(),
+			getDB: func(emu *emulator.Emulator) string {
+				return emu.ESSDatabase
+			},
 		},
 		{
 			name:          "xid",
 			migrationsDir: "xid",
-			databaseID:    "test-xid-db-" + randomSuffix(),
+			databaseID:    "test-xid-db-" + emulator.RandomSuffix(),
+			getDB: func(emu *emulator.Emulator) string {
+				return emu.XIDDatabase
+			},
 		},
 	}
 

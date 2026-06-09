@@ -14,16 +14,27 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
 	"golang/github_com/golang_migrate/migrate/v/v4/source/iofs/iofs"
 	"xmanager_cloud/internal/storage/spanner/migrations/testing"
+	"xmanager_cloud/storage/spanner/emulator/emulator"
 )
 
 type testRunCase struct {
 	name          string
 	migrationsDir string
 	databaseID    string
+	getDB         func(emu *emulator.Emulator) string
+}
+
+func withEmuDB(tc testRunCase, emu *emulator.Emulator) testRunCase {
+	if tc.getDB == nil {
+		panic(fmt.Sprintf("CRITICAL: testRunCase %q failed to declare a getDB selector callback", tc.name))
+	}
+	tc.databaseID = tc.getDB(emu)
+	return tc
 }
 
 func mustCreateConfig(t *testing.T, tc testRunCase, command string, arg *int) *config {

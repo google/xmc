@@ -45,30 +45,25 @@ func TestSchemaSynchronization(t *testing.T) {
 		{
 			name:          "ess",
 			migrationsDir: "ess",
-			databaseID:    "test-ess-database",
+			databaseID:    "test-ess-db-" + emulator.RandomSuffix(),
+			getDB: func(emu *emulator.Emulator) string {
+				return emu.ESSDatabase
+			},
 		},
 		{
 			name:          "xid",
 			migrationsDir: "xid",
-			databaseID:    "test-xid-database",
+			databaseID:    "test-xid-db-" + emulator.RandomSuffix(),
+			getDB: func(emu *emulator.Emulator) string {
+				return emu.XIDDatabase
+			},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tcEmpty := tc
-			if tc.name == "ess" {
-				tcEmpty.databaseID = emptyDBEmu.ESSDatabase
-			} else if tc.name == "xid" {
-				tcEmpty.databaseID = emptyDBEmu.XIDDatabase
-			}
-
-			tcEmu := tc
-			if tc.name == "ess" {
-				tcEmu.databaseID = emu.ESSDatabase
-			} else if tc.name == "xid" {
-				tcEmu.databaseID = emu.XIDDatabase
-			}
+			tcEmpty := withEmuDB(tc, emptyDBEmu)
+			tcEmu := withEmuDB(tc, emu)
 
 			// 1. Run all migrations up on an empty database and get the DDL.
 			cfg := mustCreateConfig(t, tcEmpty, "up", nil)
@@ -137,22 +132,24 @@ func TestMigrationUpDownConsistency(t *testing.T) {
 		{
 			name:          "ess",
 			migrationsDir: "ess",
-			databaseID:    "test-ess-database",
+			databaseID:    "test-ess-db-" + emulator.RandomSuffix(),
+			getDB: func(emu *emulator.Emulator) string {
+				return emu.ESSDatabase
+			},
 		},
 		{
 			name:          "xid",
 			migrationsDir: "xid",
-			databaseID:    "test-xid-database",
+			databaseID:    "test-xid-db-" + emulator.RandomSuffix(),
+			getDB: func(emu *emulator.Emulator) string {
+				return emu.XIDDatabase
+			},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.name == "ess" {
-				tc.databaseID = emu.ESSDatabase
-			} else if tc.name == "xid" {
-				tc.databaseID = emu.XIDDatabase
-			}
+			tc = withEmuDB(tc, emu)
 			cfg := mustCreateConfig(t, tc, "version", nil)
 			runner, err := newRunner(ctx, cfg, emu.ClientOptions()...)
 			if err != nil {

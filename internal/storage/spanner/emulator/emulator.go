@@ -54,7 +54,7 @@ const (
 	instanceURI = "projects/test-project/instances/test-instance"
 )
 
-func randomSuffix() string {
+func RandomSuffix() string {
 	b := make([]byte, 4)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
@@ -116,7 +116,7 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 		t.Fatalf("failed to create instance: %v", err)
 	}
 
-	suffix := randomSuffix()
+	suffix := RandomSuffix()
 	xidDatabase := fmt.Sprintf("test-xid-db-%s", suffix)
 	essDatabase := fmt.Sprintf("test-ess-db-%s", suffix)
 
