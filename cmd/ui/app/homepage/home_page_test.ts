@@ -14,19 +14,15 @@
 import 'jasmine';
 
 import {NoopAnimationsModule} from '@angular/platform-browser/animations';
-import {ActivatedRoute, Params, provideRouter, Router} from '@angular/router';
-import {BehaviorSubject, of} from 'rxjs';
+import {ActivatedRoute, Params, provideRouter} from '@angular/router';
+import {BehaviorSubject} from 'rxjs';
 import {HomePage} from './home_page';
-import {AuthService} from '../service/auth.service';
 
 describe('HomePage Component', () => {
   const state = cleanState(() => {
-    const authService = jasmine.createSpyObj<AuthService>('AuthService', ['getUser']);
-    authService.getUser.and.returnValue(of(null));
     const queryParams = new BehaviorSubject<Params>({});
     const mockRoute = new ActivatedRoute();
     mockRoute.queryParams = queryParams;
-    const router = jasmine.createSpyObj<Router>('Router', ['navigate']);
 
     setupModule({
       imports: [
@@ -35,16 +31,12 @@ describe('HomePage Component', () => {
       ],
       providers: [
         provideRouter([]),
-        {provide: AuthService, useValue: authService},
         {provide: ActivatedRoute, useFactory: () => mockRoute},
-        {provide: Router, useValue: router},
       ]
     });
 
     return {
-      authService,
       queryParams,
-      router,
     };
   }, beforeEach);
 
@@ -74,12 +66,6 @@ describe('HomePage Component', () => {
     state.queryParams.next({error: 'other_error'});
     const comp = bootstrap(HomePage);
     expect(comp.errorMessage()).toBe('An authentication error occurred. Please try again.');
-  });
-
-  it('should navigate to experiments if user is logged in', () => {
-    state.authService.getUser.and.returnValue(of({email: 'user@example.com'}));
-    bootstrap(HomePage);
-    expect(state.router.navigate).toHaveBeenCalledWith(['/experiments']);
   });
 
   it('should set error message for forbidden error when email is missing', () => {

@@ -20,6 +20,7 @@ import { ExperimentsListPage } from './experiments_list_page/experiments_list_pa
 import { ExperimentPage } from './experiment_page/experiment_page';
 import { WorkUnitPage } from './work_unit_page/work_unit_page';
 import { authGuard } from './auth.guard';
+import { guestGuard } from './guest.guard';
 
 describe('App Routes', () => {
   it('should define route configuration', () => {
@@ -27,10 +28,11 @@ describe('App Routes', () => {
     expect(routes.length).toBe(2);
   });
 
-  it('should route "" to HomePage', () => {
+  it('should route "" to HomePage with guestGuard', () => {
     const route = routes.find(r => r.path === '');
     expect(route).toBeDefined();
     expect(route?.component).toBe(HomePage);
+    expect(route?.canActivate).toContain(guestGuard);
     expect(route?.pathMatch).toBe('full');
   });
 

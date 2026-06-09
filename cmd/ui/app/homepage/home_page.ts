@@ -11,9 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {Component, ChangeDetectionStrategy, inject, computed, effect} from '@angular/core';
-import {Router, ActivatedRoute} from '@angular/router';
-import {AuthService} from '../service/auth.service';
+import {Component, ChangeDetectionStrategy, inject, computed} from '@angular/core';
+import {ActivatedRoute} from '@angular/router';
 import {windowOpen} from '../safevalues_helper';
 import {toSignal} from '@angular/core/rxjs-interop';
 
@@ -28,12 +27,9 @@ import {toSignal} from '@angular/core/rxjs-interop';
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class HomePage {
-  private readonly authService = inject(AuthService);
-  private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
 
   private readonly queryParams = toSignal(this.route.queryParams);
-  private readonly user = toSignal(this.authService.getUser());
 
   readonly errorMessage = computed(() => {
     const params = this.queryParams();
@@ -53,15 +49,6 @@ export class HomePage {
       return 'An authentication error occurred. Please try again.';
     }
   });
-
-  constructor() {
-    effect(() => {
-      const user = this.user();
-      if (user && user.email) {
-        this.router.navigate(['/experiments']);
-      }
-    });
-  }
 
   login() {
     windowOpen(window, '/api/login', '_self');
