@@ -30,6 +30,7 @@ compat_go_library(
         "@com_github_golang_migrate_migrate_v4//:go_default_library",
         "@com_github_golang_migrate_migrate_v4//source:source",
         "@com_github_golang_migrate_migrate_v4//source/iofs:iofs",
+        "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_api//iterator",
     ],
 )
@@ -51,6 +52,7 @@ compat_go_test(
         "@com_github_golang_migrate_migrate_v4//database:database",
         "@com_github_golang_migrate_migrate_v4//database/stub:stub",
         "@com_github_golang_migrate_migrate_v4//source/stub:stub",
+        "@com_google_cloud_go_spanner//:spanner",
         "@com_google_cloud_go_spanner//admin/database/apiv1:apiv1",
         "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
     ],
