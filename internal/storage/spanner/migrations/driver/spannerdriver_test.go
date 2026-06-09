@@ -33,11 +33,12 @@ import (
 )
 
 const (
-	projectID        = "test-project"
-	instanceIDPrefix = "test-instance"
+	projectID    = "test-project"
+	instanceID   = "test-instance"
+	instancePath = "projects/test-project/instances/test-instance"
 )
 
-func newSpannerServer(ctx context.Context, t *testing.T) (*emulator.Emulator, string) {
+func newSpannerServer(ctx context.Context, t *testing.T) *emulator.Emulator {
 	t.Helper()
 
 	emu, err := emulator.Start(ctx, emulator.Options{})
@@ -68,7 +69,7 @@ func newSpannerServer(ctx context.Context, t *testing.T) (*emulator.Emulator, st
 		}
 	}
 
-	return emu, fmt.Sprintf("projects/%s/instances/%s", projectID, instanceID)
+	return emu
 }
 
 func createAdminClient(ctx context.Context, t *testing.T, emu *emulator.Emulator) *database.DatabaseAdminClient {
@@ -80,7 +81,7 @@ func createAdminClient(ctx context.Context, t *testing.T, emu *emulator.Emulator
 	return dbAdmin
 }
 
-func createDatabase(ctx context.Context, t *testing.T, dbAdmin *database.DatabaseAdminClient, instancePath string, dbName string) {
+func createDatabase(ctx context.Context, t *testing.T, dbAdmin *database.DatabaseAdminClient, dbName string) {
 	t.Helper()
 	dbReq := &adminpb.CreateDatabaseRequest{
 		Parent:          instancePath,
@@ -106,7 +107,7 @@ func createDataClient(ctx context.Context, t *testing.T, emu *emulator.Emulator,
 
 func TestNew(t *testing.T) {
 	ctx := t.Context()
-	emu, instancePath := newSpannerServer(ctx, t)
+	emu := newSpannerServer(ctx, t)
 	adminClient := createAdminClient(ctx, t, emu)
 	dbName := "test-db-" + xmcemulator.RandomSuffix()
 	dbPath := fmt.Sprintf("%s/databases/%s", instancePath, dbName)
@@ -183,7 +184,7 @@ func emptyProtoDescriptorBytes(t *testing.T) []byte {
 
 func TestRun(t *testing.T) {
 	ctx := t.Context()
-	emu, instancePath := newSpannerServer(ctx, t)
+	emu := newSpannerServer(ctx, t)
 	adminClient := createAdminClient(ctx, t, emu)
 
 	tests := []struct {
@@ -251,7 +252,7 @@ func TestRun(t *testing.T) {
 			// Create a new database for each test case.
 			dbName := fmt.Sprintf("testdb-%d-%s", i, xmcemulator.RandomSuffix())
 			dbPath := fmt.Sprintf("%s/databases/%s", instancePath, dbName)
-			createDatabase(ctx, t, adminClient, instancePath, dbName)
+			createDatabase(ctx, t, adminClient, dbName)
 			dataClient := createDataClient(ctx, t, emu, dbPath)
 			defer dataClient.Close()
 
