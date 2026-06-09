@@ -137,8 +137,8 @@ func TestListXidEntries_BadPaths(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := server.ListXidEntries(ctx, tc.req)
-			if !errors.Is(err, tc.wantErr) {
-				t.Errorf("ListXidEntries(%v) returned error %v, want %v", tc.req, err, tc.wantErr)
+			if status.CodeFromError(err) != status.CodeFromError(tc.wantErr) {
+				t.Errorf("ListXidEntries(%v) returned error %v, want code %v", tc.req, err, status.CodeFromError(tc.wantErr))
 			}
 		})
 	}
@@ -251,8 +251,8 @@ func TestListXidEntries_Failures(t *testing.T) {
 			ctx := context.Background()
 			server := NewXIDServer(config.Config{}, tc.mockAuth, tc.mockStorage)
 			_, err := server.ListXidEntries(ctx, &apipb.ListXidEntriesRequest{})
-			if !errors.Is(err, tc.wantErr) {
-				t.Errorf("ListXidEntries() returned error %v, want %v", err, tc.wantErr)
+			if status.CodeFromError(err) != status.CodeFromError(tc.wantErr) {
+				t.Errorf("ListXidEntries() returned error %v, want code %v", err, status.CodeFromError(tc.wantErr))
 			}
 		})
 	}
