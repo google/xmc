@@ -1,3 +1,8 @@
+---
+name: PR Comment Workflow
+description: Automates addressing PR comments (fetching context, running tests, measuring coverage, and GKE redeployment).
+---
+
 # PR Comment-Driven Development Workflow
 
 This document proposes a structured agent workflow that automates the process of addressing GitHub Pull Request comments. 
