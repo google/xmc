@@ -85,16 +85,9 @@ func LoadConfig() (*Config, error) {
 }
 
 func parseCommaSpaceSeparated(val string) []string {
-	var list []string
-	for _, part := range strings.FieldsFunc(val, func(r rune) bool {
+	return strings.FieldsFunc(val, func(r rune) bool {
 		return r == ' ' || r == ','
-	}) {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			list = append(list, part)
-		}
-	}
-	return list
+	})
 }
 
 func getEnvOrFile(key, defaultVal string) (string, error) {
