@@ -14,6 +14,7 @@
 import {Component, ChangeDetectionStrategy, inject, computed, effect} from '@angular/core';
 import {Router, ActivatedRoute} from '@angular/router';
 import {AuthService} from '../service/auth.service';
+import {windowOpen} from '../safevalues_helper';
 import {toSignal} from '@angular/core/rxjs-interop';
 
 /**
@@ -63,6 +64,6 @@ export class HomePage {
   }
 
   login() {
-    window.open('/api/login', '_self');
+    windowOpen(window, '/api/login', '_self');
   }
 }

@@ -93,6 +93,6 @@ describe('HomePage Component', () => {
 
     const comp = bootstrap(HomePage);
     comp.login();
-    expect(openSpy).toHaveBeenCalledWith('/api/login', '_self');
+    expect(openSpy).toHaveBeenCalledWith('/api/login', '_self', undefined);
   });
 });
