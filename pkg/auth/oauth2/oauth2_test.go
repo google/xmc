@@ -208,7 +208,7 @@ func TestHybridAuthorizationPipeline(t *testing.T) {
 		wantErr               bool
 	}{
 		{
-			name:           "Stage 1: Match direct email whitelist (Fast path)",
+			name:           "Stage 1: Match direct email allowlist (Fast path)",
 			allowedDomains: []string{"company.com"},
 			allowedEmails:  []string{"guest@external.com"},
 			gcpProjectID:   "my-project",

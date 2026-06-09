@@ -161,11 +161,11 @@ func (a *Authenticator) getIamPolicy(ctx context.Context) (*iampb.Policy, error)
 }
 
 
-// IsUserAuthorized implements the 3-stage Hybrid Pipeline: Local Email Whitelist -> Domain Whitelist -> GCP IAM Policy Check.
+// IsUserAuthorized implements the 3-stage Hybrid Pipeline: Local Email Allowlist -> Domain Allowlist -> GCP IAM Policy Check.
 func (a *Authenticator) IsUserAuthorized(ctx context.Context, email string) (bool, error) {
 	emailLower := strings.ToLower(strings.TrimSpace(email))
 
-	// If all whitelists and ProjectID are blank, default to open access (allow all) only if DisableAuthentication is true.
+	// If all allowlists and ProjectID are blank, default to open access (allow all) only if DisableAuthentication is true.
 	if len(a.Config.AllowedEmails) == 0 && len(a.Config.AllowedDomains) == 0 && a.Config.GCPProjectID == "" {
 		if a.Config.DisableAuthentication {
 			return true, nil
@@ -173,7 +173,7 @@ func (a *Authenticator) IsUserAuthorized(ctx context.Context, email string) (boo
 		return false, fmt.Errorf("fail-closed: AllowedEmails, AllowedDomains, and GCPProjectID are all empty; access is denied unless DISABLE_AUTHENTICATION=true")
 	}
 
-	// 1. STAGE 1: Local Guest/Admin Email Whitelist Check (Fast Path)
+	// 1. STAGE 1: Local Guest/Admin Email Allowlist Check (Fast Path)
 	if len(a.Config.AllowedEmails) > 0 {
 		for _, allowedEmail := range a.Config.AllowedEmails {
 			if strings.ToLower(strings.TrimSpace(allowedEmail)) == emailLower {
@@ -182,7 +182,7 @@ func (a *Authenticator) IsUserAuthorized(ctx context.Context, email string) (boo
 		}
 	}
 
-	// 2. STAGE 2: Local Domain Whitelist Check (Fast Path)
+	// 2. STAGE 2: Local Domain Allowlist Check (Fast Path)
 	if len(a.Config.AllowedDomains) > 0 {
 		parts := strings.Split(emailLower, "@")
 		if len(parts) == 2 {
