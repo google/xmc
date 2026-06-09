@@ -105,17 +105,18 @@ func getEnvOrFile(key, defaultVal string) (string, error) {
 		}
 		return strings.TrimSpace(string(content)), nil
 	}
-	if val, ok := os.LookupEnv(key); ok {
-		if _, err := os.Stat(val); err == nil {
-			content, readErr := os.ReadFile(val)
-			if readErr != nil {
-				return "", readErr
-			}
-			return strings.TrimSpace(string(content)), nil
-		}
-		return val, nil
+	val, ok := os.LookupEnv(key)
+	if !ok {
+		return defaultVal, nil
 	}
-	return defaultVal, nil
+	if _, err := os.Stat(val); err != nil {
+		return val, nil // Treat as literal string
+	}
+	content, readErr := os.ReadFile(val)
+	if readErr != nil {
+		return "", readErr
+	}
+	return strings.TrimSpace(string(content)), nil
 }
 
 func getEnv(key, defaultVal string) string {
