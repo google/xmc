@@ -16,12 +16,25 @@ jobs:
   run-tests:
     name: 'Run Unit Tests'
     runs-on: 'ubuntu-24.04'
+    timeout-minutes: 30
     environment: janzak-dev-test
+
+    # Use a service container for the Spanner Emulator
+    services:
+      spanner-emulator:
+        image: gcr.io/cloud-spanner-emulator/emulator
+        ports:
+          - 9010:9010
+          - 9020:9020
 
     env:
       PROJECT_ID: ${{ vars.PROJECT_ID }}
       WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
       SERVICE_ACCOUNT: ${{ vars.SERVICE_ACCOUNT }}
+      SPANNER_EMULATOR_HOST: localhost:9010
+      # We're overriding the test timeout to catch failures with Spanner faster
+      TEST_TIMEOUT_SECONDS: 60
+      SPANNER_CHECK_TIMEOUT: 15
 
     steps:
       - name: 'Checkout'
@@ -54,24 +67,34 @@ jobs:
           service_account: '${{ env.SERVICE_ACCOUNT }}'
           create_credentials_file: true
 
+      - name: 'Verify Spanner Emulator Endpoint'
+        run: |
+          echo "Verifying Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}..."
+          HOST=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f1)
+          PORT=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f2)
+          
+          # Try connecting to the port
+          for i in {1..${{ env.SPANNER_CHECK_TIMEOUT }}}; do
+            if nc -z "$HOST" "$PORT" >/dev/null 2>&1 || timeout 1s bash -c "cat < /dev/null > /dev/tcp/$HOST/$PORT" 2>/dev/null; then
+              echo "Successfully connected to Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}."
+              exit 0
+            fi
+            echo "Waiting for Spanner Emulator to start (attempt $i/15)..."
+            sleep 1
+          done
+          
+          echo "CRITICAL: Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }} did not start within ${{ env.SPANNER_CHECK_TIMEOUT }} seconds."
+          exit 1
+
       - name: 'Run Unit Tests'
         run: |
-          # TODO: increase this time limit or remove altogether once the spanner tests are not timing out
           # TODO: add the following tests back once they are green:
-          # //cmd/actuator/k8s_client:k8s_client_test
-          # //cmd/experiment_state_server:health_test
           # //cmd/experiment_state_server/server:server_test
-          # //cmd/log_monitor:log_monitor_test
-          # //cmd/reconciler/jobset:jobset_test
-          # //cmd/reconciler/shared:shared_test
-          # //cmd/xid_service:health_test
           # //cmd/xid_service/server:server_test
-          # //internal/common:health_test
           # //internal/storage/spanner:spanner_test
-          # //internal/storage/spanner/emulator:emulator_test
           # //internal/storage/spanner/migrations:migrations_test
-          # //internal/storage/spanner/migrations/commands:commands_test
           # //internal/storage/spanner/migrations/driver:driver_test
+
           bazel test \
             --repository_cache=~/.cache/bazel-repo \
             --disk_cache=~/.cache/bazel-disk \
@@ -83,24 +106,14 @@ jobs:
             --bes_instance_name="${{ env.PROJECT_ID }}" \
             --google_auth_scopes="https://www.googleapis.com/auth/cloud-platform" \
             --bes_header="x-goog-user-project=${{ env.PROJECT_ID }}" \
-            --bes_timeout=15s \
-            --test_timeout=15,15,15,15 \
+            --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }} \
             --google_default_credentials \
             -- \
             //... \
-            -//cmd/actuator/k8s_client:k8s_client_test \
-            -//cmd/experiment_state_server:health_test \
             -//cmd/experiment_state_server/server:server_test \
-            -//cmd/log_monitor:log_monitor_test \
-            -//cmd/reconciler/jobset:jobset_test \
-            -//cmd/reconciler/shared:shared_test \
-            -//cmd/xid_service:health_test \
             -//cmd/xid_service/server:server_test \
-            -//internal/common:health_test \
             -//internal/storage/spanner:spanner_test \
-            -//internal/storage/spanner/emulator:emulator_test \
             -//internal/storage/spanner/migrations:migrations_test \
-            -//internal/storage/spanner/migrations/commands:commands_test \
             -//internal/storage/spanner/migrations/driver:driver_test
 
       - name: 'Save Bazel Cache'
