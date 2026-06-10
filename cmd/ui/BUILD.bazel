@@ -116,6 +116,5 @@ py_test(
     ]),
     tags = [
         "local",
-        "manual",
     ],
 )
