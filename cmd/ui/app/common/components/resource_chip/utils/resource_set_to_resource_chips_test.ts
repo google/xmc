@@ -38,7 +38,7 @@ describe('resourceSetsToResourceChipsData', () => {
     ];
     const expected: ResourceChipData[] = [
       {resourceType: ResourceType.CPU, text: '1.5 cores'},
-      {resourceType: ResourceType.MEMORY, text: '1GB'},
+      {resourceType: ResourceType.MEMORY, text: '1 GB'},
     ];
     expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
   });
@@ -51,7 +51,7 @@ describe('resourceSetsToResourceChipsData', () => {
     ];
     const expected: ResourceChipData[] = [
       {resourceType: ResourceType.CPU, text: '0 cores'},
-      {resourceType: ResourceType.MEMORY, text: '512'},
+      {resourceType: ResourceType.MEMORY, text: '512 B'},
     ];
     expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
   });
@@ -64,7 +64,7 @@ describe('resourceSetsToResourceChipsData', () => {
     ];
     const expected: ResourceChipData[] = [
       {resourceType: ResourceType.CPU, text: '0 cores'},
-      {resourceType: ResourceType.MEMORY, text: '256'},
+      {resourceType: ResourceType.MEMORY, text: '256 B'},
     ];
     expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
   });
@@ -102,7 +102,7 @@ describe('resourceSetsToResourceChipsData', () => {
     ];
     const expected: ResourceChipData[] = [
       {resourceType: ResourceType.CPU, text: '1 core'},
-      {resourceType: ResourceType.MEMORY, text: '2KB'},
+      {resourceType: ResourceType.MEMORY, text: '2 KB'},
       {resourceType: ResourceType.GPU, text: '1 x NVIDIA_V100'},
     ];
     expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
@@ -118,11 +118,11 @@ describe('resourceSetsToResourceChipsData', () => {
        ];
        const expected: ResourceChipData[] = [
          {resourceType: ResourceType.CPU, text: '0.5 cores'},
-         {resourceType: ResourceType.MEMORY, text: '128'},
+         {resourceType: ResourceType.MEMORY, text: '128 B'},
          {resourceType: ResourceType.GPU, text: '4 x NVIDIA_A100'},
          {resourceType: ResourceType.GPU, text: '4x4 x V3'},
          {resourceType: ResourceType.CPU, text: '2 cores'},
-         {resourceType: ResourceType.MEMORY, text: '4KB'},
+         {resourceType: ResourceType.MEMORY, text: '4 KB'},
        ];
        expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
      });

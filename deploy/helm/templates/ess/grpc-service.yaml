@@ -19,14 +19,14 @@ metadata:
     app: experiment-state-server
   annotations:
     cloud.google.com/app-protocols: '{"grpc-port":"HTTP2"}'
-    cloud.google.com/backend-config: '{"default":"shared-backend-config"}'
     cloud.google.com/neg: '{"ingress": true}'
 spec:
   type: ClusterIP
   selector:
     app: experiment-state-server
   ports:
-  - port: 443
+  - port: 50051
     name: grpc-port
     targetPort: 50051
     protocol: TCP
+    appProtocol: kubernetes.io/h2c

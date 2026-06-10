@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
 compat_go_library(
@@ -28,8 +27,8 @@ compat_go_library(
         "//internal/logging",
         "//internal/storage",
         "//internal/validator",
-        "@com_github_prometheus_client_golang//prometheus:prometheus",
-        "@com_github_prometheus_client_golang//prometheus/promauto:promauto",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_client_golang//prometheus/promauto",
     ],
 )
 
@@ -46,7 +45,7 @@ compat_go_test(
         "//internal/compat/protocmp",
         "//internal/compat/status",
         "//internal/storage",
-        "@com_github_prometheus_client_golang//prometheus/testutil:testutil",
-        "@com_github_prometheus_client_model//go:go",
+        "@com_github_prometheus_client_golang//prometheus/testutil",
+        "@com_github_prometheus_client_model//go",
     ],
 )

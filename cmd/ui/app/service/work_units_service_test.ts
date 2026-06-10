@@ -11,22 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+import { cleanState, setupModule, get } from '../testing/test';
 import 'jasmine';
 
 
+import {provideHttpClient} from '@angular/common/http';
+
 import {WorkUnitsService} from './work_units_service';
 
-describe('WorkUnitsService', () => {
-  let service: WorkUnitsService;
-
-  beforeEach(() => {
+function setup() {
+  return cleanState(() => {
     setupModule({
-      providers: [WorkUnitsService],
+      providers: [
+        provideHttpClient(),
+        WorkUnitsService,
+      ],
     });
-    service = get(WorkUnitsService);
-  });
+    return {
+      service: get(WorkUnitsService),
+    };
+  }, beforeEach);
+}
+
+describe('WorkUnitsService', () => {
+  const state = setup();
 
   it('should be instantiated', () => {
-    expect(service).toBeTruthy();
+    expect(state.service).toBeTruthy();
   });
 });

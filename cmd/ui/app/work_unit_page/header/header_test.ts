@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { setupModule, bootstrap } from '../../testing/test';
 import {NoopAnimationsModule} from '@angular/platform-browser/animations';
 import {RouterModule} from '@angular/router';
 import {EXPERIMENT_1, WORK_UNIT_1} from 'xmanager_cloud/ui/app/common/mock_data';

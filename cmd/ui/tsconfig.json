@@ -1,2 +1,44 @@
-// DO NOT EDIT see (internal link)
-{"extends": "../../../blaze-bin/third_party/xmanager_cloud/ui/tsconfig_editor.json"}
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": false,
+    "forceConsistentCasingInFileNames": true,
+    "strict": false,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": false,
+    "noImplicitReturns": false,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "moduleResolution": "node",
+    "module": "ES2022",
+    "lib": [
+      "ES2022",
+      "dom"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "xmanager_cloud/ui/app/*": ["app/*"],
+      "jasmine": ["app/stubs/jasmine.ts"],
+      "javascript/closure/format/format": ["app/stubs/format.ts"],
+      "javascript/closure/i18n/messageformat": ["app/stubs/messageformat.ts"],
+      "javascript/closure/i18n/messages": ["app/stubs/messages.ts"],
+      "javascript/closure/i18n/numberformat": ["app/stubs/numberformat.ts"]
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.d.ts"
+  ],
+  "angularCompilerOptions": {
+    "enableI18nLegacyMessageIdFormat": false,
+    "strictInjectionParameters": true,
+    "strictInputAccessModifiers": true,
+    "strictTemplates": false
+  },
+  "exclude": [
+    "**/*_test.ts",
+    "app/testing"
+  ]
+}

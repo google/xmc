@@ -11,24 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-@use 'third_party/javascript/angular_components/material' as mat;
-@import 'third_party/xmanager_cloud/ui/custom_colors';
+@use '@angular/material' as mat;
+@import "@angular/material/prebuilt-themes/indigo-pink";
+@import 'custom_colors';
+
 
 html {
-  @include mat.gm3-theme();
-  @include mat.theme-overrides(
-    (
-      outline: var(--xmc-border-color),
-    )
-  );
-  @include mat.card-overrides(
-    (
-      elevated-container-color: var(--mat-sys-surface),
-    )
-  );
-
-  background-color: var(--mat-sys-surface);
-  color: var(--mat-sys-on-surface);
+  background-color: var(--mat-sys-surface, #f8f9fa);
+  color: var(--mat-sys-on-surface, #202124);
 }
 
 body {

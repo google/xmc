@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,3 +11,188 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+.landing-container {
+  min-height: 90vh;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+  position: relative;
+}
+
+.glow-orb {
+  position: absolute;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(63, 81, 181, 0.06) 0%, rgba(248, 249, 250, 0) 70%);
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.main-card {
+  width: 100%;
+  max-width: 500px;
+  padding: 40px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #dadce0;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08);
+}
+
+.card-header {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-badge {
+  background: rgba(63, 81, 181, 0.08);
+  border: 1px solid rgba(63, 81, 181, 0.2);
+  color: #3f51b5;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 4px 12px;
+  border-radius: 20px;
+  text-transform: uppercase;
+}
+
+.portal-title {
+  font-size: 2.2rem;
+  color: #202124;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.portal-subtitle {
+  font-size: 0.95rem;
+  color: #5f6368;
+}
+
+.card-features {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.feature-item {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 16px;
+  border-radius: 12px;
+  background: #f8f9fa;
+  border: 1px solid #f1f3f4;
+  transition: all 0.3s cubic-bezier(.4, 0, .2, 1);
+}
+
+.feature-item:hover {
+  background: #f1f3f4;
+  border-color: rgba(63, 81, 181, 0.3);
+  transform: translateX(4px);
+}
+
+.feature-item .icon {
+  font-size: 1.5rem;
+  background: rgba(63, 81, 181, 0.06);
+  padding: 8px;
+  border-radius: 8px;
+}
+
+.feature-text h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #202124;
+  margin-bottom: 4px;
+}
+
+.feature-text p {
+  font-size: 0.85rem;
+  color: #5f6368;
+  line-height: 1.5;
+}
+
+.card-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.login-btn {
+  width: 100%;
+  padding: 14px;
+  font-size: 1rem;
+  background: linear-gradient(135deg, #1a73e8 0%, #3f51b5 100%);
+  border: none;
+  border-radius: 12px;
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: all 0.15s ease-out;
+}
+
+.login-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(63, 81, 181, 0.2);
+}
+
+.error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #fce8e6;
+  border: 1px solid #fad2cf;
+  color: #c5221f;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  margin-bottom: 8px;
+  text-align: left;
+
+  .error-icon {
+    font-size: 1.2rem;
+    line-height: 1;
+  }
+
+  .error-message-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    h4 {
+      font-weight: 600;
+      margin: 0;
+      font-size: 0.95rem;
+      color: #b06000;
+      color: #c5221f;
+    }
+
+    p {
+      margin: 0;
+      font-size: 0.85rem;
+      opacity: 0.9;
+    }
+  }
+}
+
+.google-icon {
+  margin-right: 10px;
+  vertical-align: middle;
+}
+
+

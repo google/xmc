@@ -16,7 +16,8 @@ import {MatProgressBarHarness} from '@angular/material/progress-bar/testing';
 
 /** Harness for interacting with <xmc-loading-bar> in tests. */
 export class LoadingBarHarness extends ComponentHarness {
-  static hostSelector = 'xmc-loading-bar';
+  static hostSelector =
+      'xmc-loading-bar, [data-component-selector="xmc-loading-bar"]';
 
   // Use locatorFor to find the MatProgressBarHarness within this component's
   // template

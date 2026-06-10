@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
 compat_go_library(
@@ -40,8 +39,8 @@ compat_go_test(
         "//internal/compat/proto",
         "//internal/compat/spanner",
         "//internal/storage/spanner/emulator",
-        "@com_google_cloud_go_spanner//admin/database/apiv1:apiv1",
-        "@com_google_cloud_go_spanner//admin/instance/apiv1:apiv1",
+        "@com_google_cloud_go_spanner//admin/database/apiv1",
+        "@com_google_cloud_go_spanner//admin/instance/apiv1",
         "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
         "@org_golang_google_genproto//googleapis/spanner/admin/instance/v1:instance",
         "@org_golang_google_protobuf//reflect/protodesc:go_default_library",

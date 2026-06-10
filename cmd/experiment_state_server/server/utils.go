@@ -53,6 +53,10 @@ func propagateIAPJWT(ctx context.Context) context.Context {
 	} else {
 		logging.Warn(ctx, "x-goog-user-email not found in incoming metadata to Experiment State Server")
 	}
+	if authValues := md.Get("authorization"); len(authValues) > 0 {
+		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", authValues[0])
+		logging.Debug(ctx, "Propagating authorization to XID service")
+	}
 
 	return ctx
 }

@@ -11,9 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+import { setupModule, bootstrap, flush } from '../../../../testing/test';
 import 'jasmine';
 
 import {getHarness} from '@angular/cdk/testing/catalyst/async';
+import {NoopAnimationsModule} from '@angular/platform-browser/animations';
 import {StatusMessagesListFilterHarness} from 'xmanager_cloud/ui/app/common/components/status_messages_list/status_messages_list_filter/testing/status_messages_list_filter_harness';
 
 import {StatusMessagesListFilter} from './status_messages_list_filter';
@@ -23,6 +25,7 @@ describe('StatusMessagesListFilter', () => {
     setupModule({
       imports: [
         StatusMessagesListFilter,
+        NoopAnimationsModule,
       ],
     });
   });

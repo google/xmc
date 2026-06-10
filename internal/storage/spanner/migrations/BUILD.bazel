@@ -53,7 +53,7 @@ compat_go_library(
         "//internal/compat/log",
         "//internal/compat/spanner",
         "//internal/storage/spanner/migrations/commands",
-        "//internal/storage/spanner/migrations/driver:driver",
+        "//internal/storage/spanner/migrations/driver",
         "@com_github_golang_migrate_migrate_v4//:go_default_library",
         "@com_github_golang_migrate_migrate_v4//source:source",
         "@com_github_golang_migrate_migrate_v4//source/iofs:iofs",

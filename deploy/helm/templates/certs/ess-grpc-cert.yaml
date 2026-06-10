@@ -15,21 +15,29 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: experiment-state-server-cert
-  namespace: xmc
+  namespace: {{ .Release.Namespace }}
 spec:
-  secretName: xmc-grpc-tls
+  secretName: {{ .Values.gateway.sslCertificateName | default "xmc-grpc-tls" | quote }}
   duration: 2160h
   renewBefore: 360h
-  commonName: experiment-state-server
+  commonName: {{ if or (eq .Values.certs.type "letsencrypt") (eq .Values.certs.type "gts") }}{{ include "xmanager-cloud.uiHostname" . | quote }}{{ else }}"experiment-state-server"{{ end }}
   privateKey:
     rotationPolicy: Always
   dnsNames:
+  {{- if or (eq .Values.certs.type "letsencrypt") (eq .Values.certs.type "gts") }}
+  - {{ include "xmanager-cloud.uiHostname" . | quote }}
+  - {{ include "xmanager-cloud.apiHostname" . | quote }}
+  - {{ include "xmanager-cloud.grpcHostname" . | quote }}
+  {{- else }}
   - experiment-state-server
-  - experiment-state-server.xmc
-  - experiment-state-server.xmc.svc.cluster.local
+  - experiment-state-server.{{ .Release.Namespace }}
+  - experiment-state-server.{{ .Release.Namespace }}.svc.cluster.local
   - localhost
+  {{- end }}
+  {{- if and (ne .Values.certs.type "letsencrypt") (ne .Values.certs.type "gts") }}
   ipAddresses:
   - 127.0.0.1
+  {{- end }}
   issuerRef:
-    name: self-signed-issuer
+    name: {{ if eq .Values.certs.type "letsencrypt" }}"letsencrypt-prod-issuer"{{ else if eq .Values.certs.type "gts" }}"gts-prod-issuer"{{ else }}"self-signed-issuer"{{ end }}
     kind: Issuer

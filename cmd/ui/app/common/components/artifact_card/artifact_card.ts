@@ -20,8 +20,7 @@ import {MatExpansionModule} from '@angular/material/expansion';
 import {MatIconModule} from '@angular/material/icon';
 import {RouterLink} from '@angular/router';
 import {Artifact} from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
-import {trySanitizeUrl} from 'safevalues';
-import {windowOpen} from 'safevalues/dom';
+import {trySanitizeUrl, windowOpen} from '../../../safevalues_helper';
 
 import {formatArtifactDataType, getArtifactIcon} from '../../artifacts/artifact_utils';
 import {parseWorkUnitName} from '../../resource_name_extractor';

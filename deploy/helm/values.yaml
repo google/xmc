@@ -15,29 +15,89 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
-projectId: ~
-environment: ~
-domainSuffix: ~
+projectId: "YOUR_GCP_PROJECT_ID"
+environment: "YOUR_ENVIRONMENT_NAME"
+domainSuffix: "YOUR_DOMAIN_SUFFIX"
+# Top-level URL for the XMC deployment. If set, this automatically configures
+# gateway.uiHostname, gateway.apiHostname, gateway.grpcHostname, and ui.apiUrl.
+xmcUrl: ""
+
 taskSignatureTtlSeconds: 86400
 isDevEnvironment: false
 imageTag: latest
-xid_custom_image: ""
-actuator_custom_image: ""
-reconciler_custom_image: ""
-ess_custom_image: ""
+xid_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/xid-service-dev:latest"
+actuator_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/actuator-dev:latest"
+reconciler_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/reconciler-dev:latest"
+ess_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/experiment-state-server-dev:latest"
+
+essDeployment:
+  enabled: true
+  replicas: 2
+
 defaultToCursorPagination: false
 detectInadmissibleWorkUnits: false
 startupPodErrorCheckEnabled: false
 statusMessageHistoryEnabled: false
-redisAddr: ""
+redisAddr: "YOUR_REDIS_IP:6379"
+redisPassword: "YOUR_REDIS_PASSWORD"
+gcpServiceAccount: "YOUR_GCP_SERVICE_ACCOUNT_EMAIL"
+
+certs:
+  type: "gts"
+  email: "YOUR_EMAIL_FOR_CERTS"
+  gts:
+    keyId: "YOUR_GTS_KEY_ID"
+    hmacKey: "YOUR_GTS_HMAC_KEY"
 
 experimentStateServer:
   iap:
-    iapIssuer: ""
-    httpAudience: ""
-    grpcAudience: ""
-    clientId: ""
+    iapIssuer: "https://iap.googleapis.com"
+    httpAudience: "placeholder-http-audience"
+    grpcAudience: "placeholder-grpc-audience"
+    clientId: "YOUR_IAP_CLIENT_ID"
   allowedOrigins: ""
+  mockAuth: false
+  disableAuthentication: false
+  # trustXForwardedProto forces the Authenticator to respect the X-Forwarded-Proto header.
+  # WARNING: Only set to true if the upstream load balancer/ingress terminates TLS
+  # and strips untrusted client headers to prevent header spoofing attacks.
+  trustXForwardedProto: false
+  allowedDomains: "YOUR_ALLOWED_DOMAINS"
+  allowedEmails: "YOUR_ALLOWED_EMAILS"
+  authorizedIamRole: "projects/YOUR_GCP_PROJECT_ID/roles/YOUR_ROLE"
+  spannerDatabaseName: "projects/YOUR_GCP_PROJECT_ID/instances/YOUR_SPANNER_INSTANCE/databases/YOUR_SPANNER_DATABASE"
+
+gateway:
+  enabled: true
+  name: "xmc-gateway"
+  className: "gke-l7-global-external-managed"
+  staticIp: "YOUR_GATEWAY_STATIC_IP"
+  uiHostname: "YOUR_UI_HOSTNAME"
+  apiHostname: "YOUR_API_HOSTNAME"
+  grpcHostname: "YOUR_GRPC_HOSTNAME"
+  certMap: ""
+  sslCertificateName: "xmc-grpc-tls"
+
+secrets:
+  csi:
+    enabled: false
+    projectNumber: "YOUR_GCP_PROJECT_NUMBER"
+    jwtSecretName: "backend-jwt-secret"
+    oauthClientSecretName: "gcp-oauth-client-secret"
+  development:
+    # A placeholder for default JWT secret key for development environments.
+    jwtSecret: "YOUR_JWT_SECRET"
+    clientSecret: "***REMOVED***"
+
+ui:
+  enabled: true
+  image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/ui-dev:latest"
+  apiUrl: "https://YOUR_API_HOSTNAME/v1"
+  refreshIntervalMs: "30000"
+  enableCursorPagination: "false"
+  enableStatusMessageHistory: "false"
+
+
 
 # Pass configuration to Kueue sub-chart
 kueue:

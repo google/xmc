@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+import { cleanState, setupModule, get, setupObservableMatchers, useAutoTick } from '../../../testing/test';
 import 'jasmine';
 
 import {DOCUMENT} from '@angular/common';
@@ -206,6 +207,8 @@ describe('AutoReloadService', () => {
     // R2: 0, 201, 402, 603, 804 (5 total)
     await expectAsync(recorder1$).toEmitSequence([undefined, undefined]);
     await expectAsync(recorder2$).toEmitSequence([
+      undefined,
+      undefined,
       undefined,
       undefined,
       undefined,

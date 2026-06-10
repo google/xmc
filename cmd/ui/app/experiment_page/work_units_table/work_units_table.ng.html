@@ -17,8 +17,8 @@ limitations under the License.
 
 @if (isLoading()) {
   <xmc-loading-bar />
-} @else if (error(); as error) {
-  <div class="error-message">Failed to fetch work units: {{ error }} </div>
+} @else if (error()) {
+  <div class="error-message">Failed to fetch work units: {{ error() }} </div>
 } @else {
   @if (isRefreshing()) {
     <xmc-loading-bar [isRefreshing]="true" />
@@ -140,13 +140,13 @@ limitations under the License.
         (pageSizeChange)="onPageSizeChange($event)"
       />
     }
-    <button matIconButton (click)="prevPage()" [disabled]="!hasPrevPage()">
+    <button mat-icon-button (click)="prevPage()" [disabled]="!hasPrevPage()">
       <mat-icon>chevron_left</mat-icon>
     </button>
 
     <span> Page {{ pageIndex() + 1 }} </span>
 
-    <button matIconButton (click)="nextPage()" [disabled]="!hasNextPage()">
+    <button mat-icon-button (click)="nextPage()" [disabled]="!hasNextPage()">
       <mat-icon>chevron_right</mat-icon>
     </button>
   </div>

@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+import { setupModule, bootstrap, get, flush } from '../../../testing/test';
 import 'jasmine';
 
 import {getHarness} from '@angular/cdk/testing/catalyst/async';
@@ -257,45 +258,43 @@ describe('StatusMessagesList', () => {
       jasmine.clock().uninstall();
     });
 
-    pit(
-        'should send correct filter to backend for time preset',
-        {
-          'All time': {
-            presetName: 'All time',
-            expectedFilter: undefined,
-          },
-          'Last 1 hour': {
-            presetName: 'Last 1 hour',
-            expectedFilter: 'create_time >= "2025-10-23T17:00:00.000Z"',
-          },
-          'Last 24 hours': {
-            presetName: 'Last 24 hours',
-            expectedFilter: 'create_time >= "2025-10-22T18:00:00.000Z"',
-          },
-          'Last 7 days': {
-            presetName: 'Last 7 days',
-            expectedFilter: 'create_time >= "2025-10-16T18:00:00.000Z"',
-          },
-        },
-        'preset selection',
-        async ({presetName, expectedFilter}:
-                   {presetName: string, expectedFilter: string|undefined}) => {
-          bootstrap(StatusMessagesList, {parentName: 'experiments/1'});
-          await flush();
-          const harness = await getHarness(StatusMessagesListHarness);
+    const timePresetCases = [
+      {
+        presetName: 'All time',
+        expectedFilter: undefined,
+      },
+      {
+        presetName: 'Last 1 hour',
+        expectedFilter: 'create_time >= "2025-10-23T17:00:00.000Z"',
+      },
+      {
+        presetName: 'Last 24 hours',
+        expectedFilter: 'create_time >= "2025-10-22T18:00:00.000Z"',
+      },
+      {
+        presetName: 'Last 7 days',
+        expectedFilter: 'create_time >= "2025-10-16T18:00:00.000Z"',
+      },
+    ];
 
-          await (await harness.getFilter()).selectTimePreset(presetName);
-          await flush();
+    for (const tc of timePresetCases) {
+      it(`should send correct filter to backend for time preset selection: ${tc.presetName}`, async () => {
+        bootstrap(StatusMessagesList, {parentName: 'experiments/1'});
+        await flush();
+        const harness = await getHarness(StatusMessagesListHarness);
 
-          const lastCall =
-              mockStatusMessageService.listStatusMessages.calls.mostRecent();
-          if (expectedFilter) {
-            expect(lastCall.args[0].filter).toContain(expectedFilter);
-          } else {
-            expect(lastCall.args[0].filter).toBeUndefined();
-          }
-        },
-    );
+        await (await harness.getFilter()).selectTimePreset(tc.presetName);
+        await flush();
+
+        const lastCall =
+            mockStatusMessageService.listStatusMessages.calls.mostRecent();
+        if (tc.expectedFilter) {
+          expect(lastCall.args[0].filter).toContain(tc.expectedFilter);
+        } else {
+          expect(lastCall.args[0].filter).toBeUndefined();
+        }
+      });
+    }
 
     it('should send correct filter payload for custom time range', async () => {
       bootstrap(StatusMessagesList, {parentName: 'experiments/1'});

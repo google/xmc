@@ -17,7 +17,8 @@ import {LoadingBarHarness} from 'xmanager_cloud/ui/app/common/components/loading
 
 /** Harness for interacting with <xmc-experiments-table> in tests. */
 export class ExperimentsTableHarness extends ComponentHarness {
-  static hostSelector = 'xmc-experiments-table';
+  static hostSelector =
+      'xmc-experiments-table, [data-component-selector="xmc-experiments-table"]';
 
   private readonly _loadingBar = this.locatorForOptional(LoadingBarHarness);
   private readonly _table = this.locatorForOptional(MatTableHarness);
