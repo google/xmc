@@ -149,12 +149,12 @@ go_proto_library(
     proto = ":cloud_xmanager_v1_proto",
     deps = [
         "//api/protos/xid:messages_go_proto",
+        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
+        "@com_google_googleapis//google/api:field_behavior_go_proto",
+        "@com_google_googleapis//google/api:resource_go_proto",
         "@org_golang_google_genproto_googleapis_api//:go_default_library",
         "@org_golang_google_genproto_googleapis_api//annotations",
         "@org_golang_google_genproto_googleapis_rpc//status",
-        "@com_google_googleapis//google/api:field_behavior_go_proto",
-        "@com_google_googleapis//google/api:resource_go_proto",
-        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
     ],
 )
 

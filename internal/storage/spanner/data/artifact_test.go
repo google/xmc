@@ -49,7 +49,7 @@ var (
 )
 
 func TestArtifactRowToProto(t *testing.T) {
-	keys := []string{"Xid", "WorkUnitId", "ArtifactId", "Url", "Icon", "DisplayName", "Priority", "Tags", "Notes", "LifecyclePhase", "DataType", "MimeType", "AdditionalInfo", "CreateTime", "UpdateTime"}
+	keys := []string{"Xid", "WorkUnitId", "ArtifactId", "Url", "Icon", "DisplayName", "Priority", "Tags", "Notes", "LifecyclePhase", "DataType", "MimeType", "AdditionalInfo", "Payload", "CreateTime", "UpdateTime"}
 	values := []any{
 		int64(123),
 		int64(456),
@@ -64,6 +64,7 @@ func TestArtifactRowToProto(t *testing.T) {
 		testArtifact.DataType,
 		testArtifact.MimeType,
 		testArtifact.AdditionalInfo,
+		testArtifact.Payload,
 		testArtTime,
 		testArtTime,
 	}
@@ -91,7 +92,7 @@ func TestArtifactRowToProto_WithAdditionalInfo(t *testing.T) {
 	want := proto.Clone(&testArtifact).(*pb.Artifact)
 	want.AdditionalInfo = additionalInfo
 
-	keys := []string{"Xid", "WorkUnitId", "ArtifactId", "Url", "Icon", "DisplayName", "Priority", "Tags", "Notes", "LifecyclePhase", "DataType", "MimeType", "AdditionalInfo", "CreateTime", "UpdateTime"}
+	keys := []string{"Xid", "WorkUnitId", "ArtifactId", "Url", "Icon", "DisplayName", "Priority", "Tags", "Notes", "LifecyclePhase", "DataType", "MimeType", "AdditionalInfo", "Payload", "CreateTime", "UpdateTime"}
 	values := []any{
 		int64(123),
 		int64(456),
@@ -106,6 +107,150 @@ func TestArtifactRowToProto_WithAdditionalInfo(t *testing.T) {
 		want.DataType,
 		want.MimeType,
 		spanner.NullProtoMessage{ProtoMessageVal: additionalInfo, Valid: true},
+		spanner.NullProtoMessage{ProtoMessageVal: (*pb.ArtifactPayload)(nil), Valid: true},
+		testArtTime,
+		testArtTime,
+	}
+
+	row, err := spanner.NewRow(keys, values)
+	if err != nil {
+		t.Fatalf("Failed to create Spanner row: %v", err)
+	}
+
+	got, err := ArtifactRowToProto(row)
+	if err != nil {
+		t.Fatalf("Failed to convert Spanner row to Artifact proto: %v", err)
+	}
+
+	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		t.Errorf("ArtifactRowToProto() returned unexpected diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestArtifactRowToProto_WithPayload(t *testing.T) {
+	payload := &pb.ArtifactPayload{
+		Type: &pb.ArtifactPayload_ManagedXprof{
+			ManagedXprof: &pb.ManagedXprofArtifact{
+				DisplayName: "tb-display-name",
+				RunGroup:    "tb-run-group",
+			},
+		},
+	}
+	want := proto.Clone(&testArtifact).(*pb.Artifact)
+	want.Payload = payload
+
+	keys := []string{"Xid", "WorkUnitId", "ArtifactId", "Url", "Icon", "DisplayName", "Priority", "Tags", "Notes", "LifecyclePhase", "DataType", "MimeType", "AdditionalInfo", "Payload", "CreateTime", "UpdateTime"}
+	values := []any{
+		int64(123),
+		int64(456),
+		int64(789),
+		want.Url.Url,
+		want.Url.Icon,
+		want.Url.DisplayName,
+		int64(want.Url.Priority),
+		want.Tags,
+		want.Notes,
+		want.LifecyclePhase,
+		want.DataType,
+		want.MimeType,
+		want.AdditionalInfo,
+		spanner.NullProtoMessage{ProtoMessageVal: payload, Valid: true},
+		testArtTime,
+		testArtTime,
+	}
+
+	row, err := spanner.NewRow(keys, values)
+	if err != nil {
+		t.Fatalf("Failed to create Spanner row: %v", err)
+	}
+
+	got, err := ArtifactRowToProto(row)
+	if err != nil {
+		t.Fatalf("Failed to convert Spanner row to Artifact proto: %v", err)
+	}
+
+	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		t.Errorf("ArtifactRowToProto() returned unexpected diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestArtifactRowToProto_WithCodeSourcePayload(t *testing.T) {
+	payload := &pb.ArtifactPayload{
+		Type: &pb.ArtifactPayload_CodeSource{
+			CodeSource: &pb.CodeSourceArtifact{
+				Title:       "code-title",
+				Description: "code-description",
+				CodeBlock:   "print('hello')",
+				CodeUrl:     "http://code.url",
+			},
+		},
+	}
+	want := proto.Clone(&testArtifact).(*pb.Artifact)
+	want.Payload = payload
+
+	keys := []string{"Xid", "WorkUnitId", "ArtifactId", "Url", "Icon", "DisplayName", "Priority", "Tags", "Notes", "LifecyclePhase", "DataType", "MimeType", "AdditionalInfo", "Payload", "CreateTime", "UpdateTime"}
+	values := []any{
+		int64(123),
+		int64(456),
+		int64(789),
+		want.Url.Url,
+		want.Url.Icon,
+		want.Url.DisplayName,
+		int64(want.Url.Priority),
+		want.Tags,
+		want.Notes,
+		want.LifecyclePhase,
+		want.DataType,
+		want.MimeType,
+		want.AdditionalInfo,
+		spanner.NullProtoMessage{ProtoMessageVal: payload, Valid: true},
+		testArtTime,
+		testArtTime,
+	}
+
+	row, err := spanner.NewRow(keys, values)
+	if err != nil {
+		t.Fatalf("Failed to create Spanner row: %v", err)
+	}
+
+	got, err := ArtifactRowToProto(row)
+	if err != nil {
+		t.Fatalf("Failed to convert Spanner row to Artifact proto: %v", err)
+	}
+
+	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		t.Errorf("ArtifactRowToProto() returned unexpected diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestArtifactRowToProto_WithTextPayload(t *testing.T) {
+	payload := &pb.ArtifactPayload{
+		Type: &pb.ArtifactPayload_Text{
+			Text: &pb.TextArtifact{
+				Title: "text-title",
+				Text:  "text-content",
+			},
+		},
+	}
+	want := proto.Clone(&testArtifact).(*pb.Artifact)
+	want.Payload = payload
+
+	keys := []string{"Xid", "WorkUnitId", "ArtifactId", "Url", "Icon", "DisplayName", "Priority", "Tags", "Notes", "LifecyclePhase", "DataType", "MimeType", "AdditionalInfo", "Payload", "CreateTime", "UpdateTime"}
+	values := []any{
+		int64(123),
+		int64(456),
+		int64(789),
+		want.Url.Url,
+		want.Url.Icon,
+		want.Url.DisplayName,
+		int64(want.Url.Priority),
+		want.Tags,
+		want.Notes,
+		want.LifecyclePhase,
+		want.DataType,
+		want.MimeType,
+		want.AdditionalInfo,
+		spanner.NullProtoMessage{ProtoMessageVal: payload, Valid: true},
 		testArtTime,
 		testArtTime,
 	}
@@ -157,6 +302,141 @@ func TestArtifactProtoToInsertMutation(t *testing.T) {
 			art.DataType,
 			art.MimeType,
 			art.AdditionalInfo,
+			art.Payload,
+			"", // SearchableContent
+			art.CreateTime.AsTime(),
+			art.UpdateTime.AsTime(),
+		},
+	)
+	got, err := ArtifactProtoToInsertMutation(art)
+	if err != nil {
+		t.Fatalf("ArtifactProtoToInsertMutation() returned unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(want, got, protocmp.Transform(), cmp.AllowUnexported(spanner.Mutation{})); diff != "" {
+		t.Errorf("ArtifactProtoToInsertMutation() returned unexpected diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestArtifactProtoToInsertMutation_WithTextPayload(t *testing.T) {
+	payload := &pb.ArtifactPayload{
+		Type: &pb.ArtifactPayload_Text{
+			Text: &pb.TextArtifact{
+				Title: "my-title",
+				Text:  "my-text",
+			},
+		},
+	}
+	art := proto.Clone(&testArtifact).(*pb.Artifact)
+	art.Payload = payload
+
+	want := spanner.Insert(
+		artifactschema.ArtifactTableName,
+		artifactschema.ArtifactColumns,
+		[]any{
+			int64(123),
+			spanner.NullInt64{Int64: 456, Valid: true},
+			int64(789),
+			art.Url.Url,
+			art.Url.Icon,
+			art.Url.DisplayName,
+			int64(art.Url.Priority),
+			art.Tags,
+			art.Notes,
+			art.LifecyclePhase,
+			art.DataType,
+			art.MimeType,
+			art.AdditionalInfo,
+			art.Payload,
+			"my-title my-text", // SearchableContent calculated from payload
+			art.CreateTime.AsTime(),
+			art.UpdateTime.AsTime(),
+		},
+	)
+	got, err := ArtifactProtoToInsertMutation(art)
+	if err != nil {
+		t.Fatalf("ArtifactProtoToInsertMutation() returned unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(want, got, protocmp.Transform(), cmp.AllowUnexported(spanner.Mutation{})); diff != "" {
+		t.Errorf("ArtifactProtoToInsertMutation() returned unexpected diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestArtifactProtoToInsertMutation_WithManagedXprofPayload(t *testing.T) {
+	payload := &pb.ArtifactPayload{
+		Type: &pb.ArtifactPayload_ManagedXprof{
+			ManagedXprof: &pb.ManagedXprofArtifact{
+				DisplayName: "my-display-name",
+				RunGroup:    "my-run-group",
+			},
+		},
+	}
+	art := proto.Clone(&testArtifact).(*pb.Artifact)
+	art.Payload = payload
+
+	want := spanner.Insert(
+		artifactschema.ArtifactTableName,
+		artifactschema.ArtifactColumns,
+		[]any{
+			int64(123),
+			spanner.NullInt64{Int64: 456, Valid: true},
+			int64(789),
+			art.Url.Url,
+			art.Url.Icon,
+			art.Url.DisplayName,
+			int64(art.Url.Priority),
+			art.Tags,
+			art.Notes,
+			art.LifecyclePhase,
+			art.DataType,
+			art.MimeType,
+			art.AdditionalInfo,
+			art.Payload,
+			"my-display-name my-run-group", // SearchableContent calculated from payload
+			art.CreateTime.AsTime(),
+			art.UpdateTime.AsTime(),
+		},
+	)
+	got, err := ArtifactProtoToInsertMutation(art)
+	if err != nil {
+		t.Fatalf("ArtifactProtoToInsertMutation() returned unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(want, got, protocmp.Transform(), cmp.AllowUnexported(spanner.Mutation{})); diff != "" {
+		t.Errorf("ArtifactProtoToInsertMutation() returned unexpected diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestArtifactProtoToInsertMutation_WithCodeSourcePayload(t *testing.T) {
+	payload := &pb.ArtifactPayload{
+		Type: &pb.ArtifactPayload_CodeSource{
+			CodeSource: &pb.CodeSourceArtifact{
+				Title:       "my-title",
+				Description: "my-description",
+				CodeBlock:   "my-code-block",
+			},
+		},
+	}
+	art := proto.Clone(&testArtifact).(*pb.Artifact)
+	art.Payload = payload
+
+	want := spanner.Insert(
+		artifactschema.ArtifactTableName,
+		artifactschema.ArtifactColumns,
+		[]any{
+			int64(123),
+			spanner.NullInt64{Int64: 456, Valid: true},
+			int64(789),
+			art.Url.Url,
+			art.Url.Icon,
+			art.Url.DisplayName,
+			int64(art.Url.Priority),
+			art.Tags,
+			art.Notes,
+			art.LifecyclePhase,
+			art.DataType,
+			art.MimeType,
+			art.AdditionalInfo,
+			art.Payload,
+			"my-title my-description my-code-block", // SearchableContent calculated from payload
 			art.CreateTime.AsTime(),
 			art.UpdateTime.AsTime(),
 		},
@@ -189,6 +469,52 @@ func TestArtifactProtoToUpdateMutation(t *testing.T) {
 			art.DataType,
 			art.MimeType,
 			art.AdditionalInfo,
+			art.Payload,
+			"", // SearchableContent
+			art.UpdateTime.AsTime(),
+		},
+	)
+	got, err := ArtifactProtoToUpdateMutation(art)
+	if err != nil {
+		t.Fatalf("ArtifactProtoToUpdateMutation() returned unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(want, got, protocmp.Transform(), cmp.AllowUnexported(spanner.Mutation{})); diff != "" {
+		t.Errorf("ArtifactProtoToUpdateMutation() returned unexpected diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestArtifactProtoToUpdateMutation_WithPayload(t *testing.T) {
+	payload := &pb.ArtifactPayload{
+		Type: &pb.ArtifactPayload_CodeSource{
+			CodeSource: &pb.CodeSourceArtifact{
+				Title:       "my-title",
+				Description: "my-description",
+				CodeBlock:   "my-code-block",
+			},
+		},
+	}
+	art := proto.Clone(&testArtifact).(*pb.Artifact)
+	art.Payload = payload
+
+	want := spanner.Update(
+		artifactschema.ArtifactTableName,
+		artifactschema.ArtifactUpdateColumns,
+		[]any{
+			data.ReverseBits(int64(123)),
+			spanner.NullInt64{Int64: 456, Valid: true},
+			int64(789),
+			art.Url.Url,
+			art.Url.Icon,
+			art.Url.DisplayName,
+			int64(art.Url.Priority),
+			art.Tags,
+			art.Notes,
+			art.LifecyclePhase,
+			art.DataType,
+			art.MimeType,
+			art.AdditionalInfo,
+			art.Payload,
+			"my-title my-description my-code-block", // SearchableContent calculated from payload
 			art.UpdateTime.AsTime(),
 		},
 	)

@@ -24,16 +24,18 @@ import (
 
 func TestInjectStoredColumnsReinitialization(t *testing.T) {
 	tests := []struct {
-		name    string
-		content string
-		dbName  string
-		want    string
+		name      string
+		content   string
+		dbName    string
+		direction Direction
+		version   uint
+		want      string
 	}{
 		{
 			name:    "no ALTER PROTO BUNDLE",
 			content: "CREATE TABLE T1 (A INT64);",
 			dbName:  "ess",
-			want:    "CREATE TABLE T1 (A INT64);",
+			want:    "CREATE TABLE T1 (A INT64);\n",
 		},
 		{
 			name:    "ess database with ALTER PROTO BUNDLE",
@@ -106,7 +108,7 @@ CREATE TABLE T2 (B INT64);`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := injectStoredColumnsReinitialization(tt.content, tt.dbName)
+			got := injectStoredColumnsReinitialization(tt.content, tt.direction, tt.version, tt.dbName)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("injectStoredColumnsReinitialization() mismatch (-want +got):\n%s", diff)
 			}
@@ -156,7 +158,7 @@ func TestDriverInterceptor_ReadUp(t *testing.T) {
 	}
 
 	got := string(data)
-	want := injectStoredColumnsReinitialization(content, "xid")
+	want := injectStoredColumnsReinitialization(content, UP, 1, "xid")
 	if got != want {
 		t.Errorf("ReadUp(1) content = %q, want %q", got, want)
 	}
@@ -190,7 +192,7 @@ func TestDriverInterceptor_ReadDown(t *testing.T) {
 	}
 
 	got := string(data)
-	want := injectStoredColumnsReinitialization(content, "xid")
+	want := injectStoredColumnsReinitialization(content, DOWN, 1, "xid")
 	if got != want {
 		t.Errorf("ReadDown(1) content = %q, want %q", got, want)
 	}
