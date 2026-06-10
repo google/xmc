@@ -193,36 +193,44 @@ func getSearchableContent(payload *pb.ArtifactPayload) string {
 	if payload == nil {
 		return ""
 	}
+
+	var parts []string
+	
 	switch p := payload.Type.(type) {
 	case *pb.ArtifactPayload_ManagedXprof:
-		if p.ManagedXprof == nil {
-			return ""
+		if p.ManagedXprof != nil {
+			if p.ManagedXprof.DisplayName != "" {
+				parts = append(parts, p.ManagedXprof.DisplayName)
+			}
+			if p.ManagedXprof.RunGroup != "" {
+				parts = append(parts, p.ManagedXprof.RunGroup)
+			}
 		}
-		return fmt.Sprintf("%s %s", p.ManagedXprof.DisplayName, p.ManagedXprof.RunGroup)
 	case *pb.ArtifactPayload_CodeSource:
-		if p.CodeSource == nil {
-			return ""
+		if p.CodeSource != nil {
+			if p.CodeSource.Title != "" {
+				parts = append(parts, p.CodeSource.Title)
+			}
+			if p.CodeSource.Description != "" {
+				parts = append(parts, p.CodeSource.Description)
+			}
+			if p.CodeSource.CodeBlock != "" {
+				parts = append(parts, p.CodeSource.CodeBlock)
+			}
+			if p.CodeSource.CodeUrl != "" {
+				parts = append(parts, p.CodeSource.CodeUrl)
+			}
 		}
-		var parts []string
-		if p.CodeSource.Title != "" {
-			parts = append(parts, p.CodeSource.Title)
-		}
-		if p.CodeSource.Description != "" {
-			parts = append(parts, p.CodeSource.Description)
-		}
-		if p.CodeSource.CodeBlock != "" {
-			parts = append(parts, p.CodeSource.CodeBlock)
-		}
-		if p.CodeSource.CodeUrl != "" {
-			parts = append(parts, p.CodeSource.CodeUrl)
-		}
-		return strings.Join(parts, " ")
 	case *pb.ArtifactPayload_Text:
-		if p.Text == nil {
-			return ""
+		if p.Text != nil {
+			if p.Text.Title != "" {
+				parts = append(parts, p.Text.Title)
+			}
+			if p.Text.Text != "" {
+				parts = append(parts, p.Text.Text)
+			}
 		}
-		return fmt.Sprintf("%s %s", p.Text.Title, p.Text.Text)
-	default:
-		return ""
 	}
+
+	return strings.Join(parts, " ")
 }
