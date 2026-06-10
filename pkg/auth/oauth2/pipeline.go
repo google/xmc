@@ -22,8 +22,8 @@ import (
 	"sync"
 	"time"
 
-	resourcemanager "cloud.google.com/go/resourcemanager/apiv3"
 	"cloud.google.com/go/iam/apiv1/iampb"
+	resourcemanager "cloud.google.com/go/resourcemanager/apiv3"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/api/idtoken"
@@ -45,7 +45,7 @@ type Authenticator struct {
 	policyCache    policyCacheEntry
 	sfGroup        singleflight.Group
 
-	PolicyFetcher  func(context.Context) (*iampb.Policy, error)
+	PolicyFetcher    func(context.Context) (*iampb.Policy, error)
 	IDTokenValidator func(ctx context.Context, idToken string, audience string) (*idtoken.Payload, error)
 
 	// Injected provider for OAuth client interactions.
@@ -155,7 +155,6 @@ func (a *Authenticator) getIamPolicy(ctx context.Context) (*iampb.Policy, error)
 	}
 	return val.(*iampb.Policy), nil
 }
-
 
 // IsUserAuthorized implements the 3-stage Hybrid Pipeline: Local Email Allowlist -> Domain Allowlist -> GCP IAM Policy Check.
 func (a *Authenticator) IsUserAuthorized(ctx context.Context, email string) (bool, error) {

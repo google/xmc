@@ -23,27 +23,27 @@ import (
 
 // Config holds the configuration properties for OAuth2 and the authorization checks.
 type Config struct {
-	Port           string
-	MockAuth       bool
+	Port                  string
+	MockAuth              bool
 	DisableAuthentication bool
-	AllowedDomains []string
-	AllowedEmails  []string
-	AllowedOrigins []string
-	GCPProjectID   string
-	TargetIAMRole  string
-	ClientID       string
-	ClientSecret   string
-	JWTSecret      string
-	RedirectURL    string
-	AuthURL        string
-	TokenURL       string
-	APIURL         string
-	UsePKCE        bool
-	FrontendURL    string
-	SecureCookie   bool
-	TrustXForwardedProto bool
-	CookieDomain   string
-	AllowedHosts   []string
+	AllowedDomains        []string
+	AllowedEmails         []string
+	AllowedOrigins        []string
+	GCPProjectID          string
+	TargetIAMRole         string
+	ClientID              string
+	ClientSecret          string
+	JWTSecret             string
+	RedirectURL           string
+	AuthURL               string
+	TokenURL              string
+	APIURL                string
+	UsePKCE               bool
+	FrontendURL           string
+	SecureCookie          bool
+	TrustXForwardedProto  bool
+	CookieDomain          string
+	AllowedHosts          []string
 }
 
 // LoadConfig bootstraps the configuration from environment variables.
@@ -82,27 +82,27 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return &Config{
-		Port:           port,
-		MockAuth:       mockAuth,
+		Port:                  port,
+		MockAuth:              mockAuth,
 		DisableAuthentication: getEnvBool("DISABLE_AUTHENTICATION", false),
-		AllowedDomains: allowedDomains,
-		AllowedEmails:  allowedEmails,
-		AllowedOrigins: allowedOrigins,
-		GCPProjectID:   getEnv("GCP_PROJECT_ID", ""),
-		TargetIAMRole:  getEnv("AUTHORIZED_IAM_ROLE", "roles/viewer"),
-		ClientID:       getEnv("CLIENT_ID", ""),
-		ClientSecret:   clientSecret,
-		JWTSecret:      jwtSecret,
-		RedirectURL:    redirectURL,
-		AuthURL:        getEnv("AUTH_URL", "https://accounts.google.com/o/oauth2/v2/auth"),
-		TokenURL:       getEnv("TOKEN_URL", "https://oauth2.googleapis.com/token"),
-		APIURL:         getEnv("API_URL", "https://openidconnect.googleapis.com/v1/userinfo"),
-		UsePKCE:        getEnvBool("USE_PKCE", true),
-		FrontendURL:    frontendURL,
-		SecureCookie:   getEnvBool("SECURE_COOKIE", !mockAuth),
-		TrustXForwardedProto: getEnvBool("TRUST_X_FORWARDED_PROTO", false),
-		CookieDomain:   cookieDomain,
-		AllowedHosts:   allowedHosts,
+		AllowedDomains:        allowedDomains,
+		AllowedEmails:         allowedEmails,
+		AllowedOrigins:        allowedOrigins,
+		GCPProjectID:          getEnv("GCP_PROJECT_ID", ""),
+		TargetIAMRole:         getEnv("AUTHORIZED_IAM_ROLE", "roles/viewer"),
+		ClientID:              getEnv("CLIENT_ID", ""),
+		ClientSecret:          clientSecret,
+		JWTSecret:             jwtSecret,
+		RedirectURL:           redirectURL,
+		AuthURL:               getEnv("AUTH_URL", "https://accounts.google.com/o/oauth2/v2/auth"),
+		TokenURL:              getEnv("TOKEN_URL", "https://oauth2.googleapis.com/token"),
+		APIURL:                getEnv("API_URL", "https://openidconnect.googleapis.com/v1/userinfo"),
+		UsePKCE:               getEnvBool("USE_PKCE", true),
+		FrontendURL:           frontendURL,
+		SecureCookie:          getEnvBool("SECURE_COOKIE", !mockAuth),
+		TrustXForwardedProto:  getEnvBool("TRUST_X_FORWARDED_PROTO", false),
+		CookieDomain:          cookieDomain,
+		AllowedHosts:          allowedHosts,
 	}, nil
 }
 

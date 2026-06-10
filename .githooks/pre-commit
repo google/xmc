@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -e
+
+echo "=== Running XMC Pre-Commit Linter Hooks ==="
+
+# 1. Bazel Lint & Auto-Fix via buildifier
+if which buildifier >/dev/null 2>&1 || [ -f "$HOME/go/bin/buildifier" ]; then
+  echo "--> Running buildifier (Bazel formatter)..."
+  BUILDIFIER_BIN="buildifier"
+  [ -f "$HOME/go/bin/buildifier" ] && BUILDIFIER_BIN="$HOME/go/bin/buildifier"
+
+  BAZEL_FILES=$(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \))
+  if [ -n "$BAZEL_FILES" ]; then
+    $BUILDIFIER_BIN -lint=fix -mode=fix $BAZEL_FILES
+  fi
+else
+  echo "--> WARNING: buildifier not found. To install: go install github.com/bazelbuild/buildtools/buildifier@latest"
+fi
+
+# 2. Go Code Formatting
+echo "--> Running Go code formatter..."
+if which golangci-lint >/dev/null 2>&1; then
+  golangci-lint run --fix || true
+elif [ -f "$HOME/go/bin/golangci-lint" ]; then
+  "$HOME/go/bin/golangci-lint" run --fix || true
+else
+  find . -type f -name "*.go" -exec gofmt -s -w {} +
+fi
+
+# Check if the linters modified any un-staged files
+if ! git diff --quiet; then
+  echo ""
+  echo "❌ PRE-COMMIT HOOK FAILED: Linters automatically fixed formatting issues in your code!"
+  echo "   Please review the modified files (git diff), stage them (git add -u), and re-run git commit."
+  exit 1
+fi
+
+echo "=== ✅ All pre-commit checks passed! ==="

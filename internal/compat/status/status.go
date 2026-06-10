@@ -87,7 +87,6 @@ func CodeFromError(err error) Code {
 	return codes.Unknown
 }
 
-
 var (
 	ErrInvalidArgument    = status.Error(codes.InvalidArgument, "invalid argument")
 	ErrNotFound           = status.Error(codes.NotFound, "not found")

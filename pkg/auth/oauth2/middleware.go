@@ -104,7 +104,6 @@ func (a *Authenticator) authenticateBearer(w http.ResponseWriter, r *http.Reques
 	return false
 }
 
-
 // authenticateSessionJWT attempts to parse the token as a signed session JWT token.
 // If it succeeds, it verifies authorization and handles the request, returning true.
 // If parsing fails, it returns false to fall back to OIDC token verification.

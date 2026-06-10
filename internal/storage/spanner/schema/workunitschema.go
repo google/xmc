@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -120,42 +120,42 @@ var (
 		NameClause: safesql.New("WorkUnits wu"),
 		Cost:       30,
 		Fields: map[querytools.TableField]querytools.Member{
-			bitReversedXidTableField: querytools.Member{
+			bitReversedXidTableField: {
 				Name:         bitReversedXidTableField,
 				QueryLiteral: safesql.New("wu.BitReversedXid"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			xidTableField: querytools.Member{
+			xidTableField: {
 				Name:         xidTableField,
 				QueryLiteral: safesql.New("wu.Xid"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			workUnitIDTableField: querytools.Member{
+			workUnitIDTableField: {
 				Name:         workUnitIDTableField,
 				QueryLiteral: safesql.New("wu.WorkUnitId"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			workUnitTypeTableField: querytools.Member{
+			workUnitTypeTableField: {
 				Name:         workUnitTypeTableField,
 				QueryLiteral: safesql.New("wu.WorkUnitType"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			priorityTableField: querytools.Member{
+			priorityTableField: {
 				Name:         priorityTableField,
 				QueryLiteral: safesql.New("wu.Priority"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			urlsTableField: querytools.Member{
+			urlsTableField: {
 				Name:            urlsTableField,
 				SelectSQLString: safesql.New("wu.Urls"),
 				QueryLiteral:    safesql.New("UNNEST(wu.Urls)"),
@@ -163,7 +163,7 @@ var (
 				Selectable:      true,
 				Indexed:         false,
 			},
-			tagsTableField: querytools.Member{
+			tagsTableField: {
 				Name:            tagsTableField,
 				SelectSQLString: safesql.New("wu.Tags"),
 				QueryLiteral:    safesql.New("UNNEST(wu.Tags)"),
@@ -171,84 +171,84 @@ var (
 				Selectable:      true,
 				Indexed:         false,
 			},
-			notesTableField: querytools.Member{
+			notesTableField: {
 				Name:         notesTableField,
 				QueryLiteral: safesql.New("wu.Notes"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			executableTableField: querytools.Member{
+			executableTableField: {
 				Name:         executableTableField,
 				QueryLiteral: safesql.New("wu.Executable"),
 				Type:         filtervisitor.Bytes,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			executionCreateTimeTableField: querytools.Member{
+			executionCreateTimeTableField: {
 				Name:         executionCreateTimeTableField,
 				QueryLiteral: safesql.New("wu.ExecutionCreateTime"),
 				Type:         filtervisitor.Timestamp,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			executionUpdateTimeTableField: querytools.Member{
+			executionUpdateTimeTableField: {
 				Name:         executionUpdateTimeTableField,
 				QueryLiteral: safesql.New("wu.ExecutionUpdateTime"),
 				Type:         filtervisitor.Timestamp,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			executionCompleteTimeTableField: querytools.Member{
+			executionCompleteTimeTableField: {
 				Name:         executionCompleteTimeTableField,
 				QueryLiteral: safesql.New("wu.ExecutionCompleteTime"),
 				Type:         filtervisitor.Timestamp,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			executionIDTableField: querytools.Member{
+			executionIDTableField: {
 				Name:         executionIDTableField,
 				QueryLiteral: safesql.New("wu.ExecutionId"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			executionMetadataTableField: querytools.Member{
+			executionMetadataTableField: {
 				Name:         executionMetadataTableField,
 				QueryLiteral: safesql.New("wu.ExecutionMetadata"),
 				Type:         filtervisitor.Bytes,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			workUnitStatusTableField: querytools.Member{
+			workUnitStatusTableField: {
 				Name:         workUnitStatusTableField,
 				QueryLiteral: safesql.New("wu.WorkUnitStatus"),
 				Type:         filtervisitor.Bytes,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			queueNameTableField: querytools.Member{
+			queueNameTableField: {
 				Name:         queueNameTableField,
 				QueryLiteral: safesql.New("wu.QueueName"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			executionStateTableField: querytools.Member{
+			executionStateTableField: {
 				Name:         executionStateTableField,
 				QueryLiteral: safesql.New("wu.ExecutionState"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			createdTableField: querytools.Member{
+			createdTableField: {
 				Name:         createdTableField,
 				QueryLiteral: safesql.New("wu.CreateTime"),
 				Type:         filtervisitor.Timestamp,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			updatedTableField: querytools.Member{
+			updatedTableField: {
 				Name:         updatedTableField,
 				QueryLiteral: safesql.New("wu.UpdateTime"),
 				Type:         filtervisitor.Timestamp,
@@ -257,8 +257,8 @@ var (
 			},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
-			querytools.UserOrderedIndex{TableField: bitReversedXidTableField, SortOrder: querytools.Asc},
-			querytools.UserOrderedIndex{TableField: workUnitIDTableField, SortOrder: querytools.Asc},
+			{TableField: bitReversedXidTableField, SortOrder: querytools.Asc},
+			{TableField: workUnitIDTableField, SortOrder: querytools.Asc},
 		},
 	}
 
@@ -294,8 +294,8 @@ var (
 
 	// WorkUnitOrderByFields is the list of fields that can be used for ordering WorkUnit queries.
 	WorkUnitOrderByFields = []querytools.UserOrderedIndex{
-		querytools.UserOrderedIndex{TableField: createdTableField},
-		querytools.UserOrderedIndex{TableField: updatedTableField},
-		querytools.UserOrderedIndex{TableField: xidTableField},
+		{TableField: createdTableField},
+		{TableField: updatedTableField},
+		{TableField: xidTableField},
 	}
 )

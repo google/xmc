@@ -55,7 +55,7 @@ func (x *Expression) WhichExpression() ExpressionCase {
 
 type ExpressionParserOptions_builder struct {
 	RejectLegacyOperatorPrecedence bool
-	EnableRegexpMatching          bool
+	EnableRegexpMatching           bool
 	EnableSimpleQuotedStrings      bool
 	EnforceValidStrings            bool
 }
@@ -63,7 +63,7 @@ type ExpressionParserOptions_builder struct {
 func (b ExpressionParserOptions_builder) Build() *ExpressionParserOptions {
 	return &ExpressionParserOptions{
 		RejectLegacyOperatorPrecedence: b.RejectLegacyOperatorPrecedence,
-		EnableRegexpMatching:          b.EnableRegexpMatching,
+		EnableRegexpMatching:           b.EnableRegexpMatching,
 		EnableSimpleQuotedStrings:      b.EnableSimpleQuotedStrings,
 		EnforceValidStrings:            b.EnforceValidStrings,
 	}
@@ -135,6 +135,3 @@ func (b ExpressionList_builder) Build() *ExpressionList {
 		Expressions: b.Expressions,
 	}
 }
-
-
-
