@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
 compat_go_library(
@@ -21,16 +20,16 @@ compat_go_library(
     importpath = "xmanager_cloud/cmd/reconciler/clusterqueue",
     visibility = ["//visibility:public"],
     deps = [
-        "//internal/logging",
         "//internal/kubernetes/api/v1beta1",
-        "@io_k8s_apimachinery//pkg/api/errors:errors",
-        "@io_k8s_apimachinery//pkg/runtime:runtime",
+        "//internal/logging",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_sigs_controller_runtime//:go_default_library",
-        "@io_k8s_sigs_controller_runtime//pkg/client:client",
-        "@io_k8s_sigs_controller_runtime//pkg/controller:controller",
-        "@io_k8s_sigs_controller_runtime//pkg/handler:handler",
-        "@io_k8s_sigs_controller_runtime//pkg/predicate:predicate",
-        "@io_k8s_sigs_controller_runtime//pkg/source:source",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@io_k8s_sigs_controller_runtime//pkg/controller",
+        "@io_k8s_sigs_controller_runtime//pkg/handler",
+        "@io_k8s_sigs_controller_runtime//pkg/predicate",
+        "@io_k8s_sigs_controller_runtime//pkg/source",
     ],
 )
 
@@ -42,10 +41,10 @@ compat_go_test(
         "//internal/compat/cmp",
         "//internal/kubernetes/api/v1beta1",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
-        "@io_k8s_apimachinery//pkg/runtime:runtime",
-        "@io_k8s_apimachinery//pkg/types:types",
-        "@io_k8s_client_go//kubernetes/scheme:scheme",
-        "@io_k8s_sigs_controller_runtime//pkg/client/fake:fake",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_client_go//kubernetes/scheme",
         "@io_k8s_sigs_controller_runtime//:go_default_library",
+        "@io_k8s_sigs_controller_runtime//pkg/client/fake",
     ],
 )

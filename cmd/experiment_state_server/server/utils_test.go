@@ -82,7 +82,7 @@ var testExecutable = &essmsgpb.Executable{
 func createTestAuthorizer(ctx context.Context, t *testing.T) authz.AuthorizerInterface {
 	t.Helper()
 	idService := &cloudidentity.Service{}
-	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{"test-audience"}, authz.DefaultIAPIssuer, true)
+	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{"test-audience"}, authz.DefaultIAPIssuer, true, nil)
 	if err != nil {
 		t.Fatalf("Failed to create mock authorizer: %v", err)
 	}

@@ -28,7 +28,7 @@ import (
 func createTestAuthorizer(ctx context.Context, t *testing.T) *auth.Authorizer {
 	t.Helper()
 	idService := &cloudidentity.Service{}
-	authorizer, err := auth.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{"test-audience"}, auth.DefaultIAPIssuer, true)
+	authorizer, err := auth.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{"test-audience"}, auth.DefaultIAPIssuer, true, nil)
 	if err != nil {
 		t.Fatalf("Failed to create mock authorizer: %v", err)
 	}

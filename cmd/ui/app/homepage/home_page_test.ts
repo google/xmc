@@ -11,27 +11,75 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+import { cleanState, setupModule, bootstrap } from '../testing/test';
 import 'jasmine';
 
 import {NoopAnimationsModule} from '@angular/platform-browser/animations';
-import {provideRouter} from '@angular/router';
-
+import {ActivatedRoute, Params, provideRouter} from '@angular/router';
+import {BehaviorSubject} from 'rxjs';
 import {HomePage} from './home_page';
 
 describe('HomePage Component', () => {
-  beforeEach(() => {
+  const state = cleanState(() => {
+    const queryParams = new BehaviorSubject<Params>({});
+    const mockRoute = new ActivatedRoute();
+    mockRoute.queryParams = queryParams;
+
     setupModule({
       imports: [
         HomePage,
-        NoopAnimationsModule,  // This makes test faster and more stable.
+        NoopAnimationsModule,
       ],
-      providers: [provideRouter([])]
+      providers: [
+        provideRouter([]),
+        {provide: ActivatedRoute, useFactory: () => mockRoute},
+      ]
     });
-  });
+
+    return {
+      queryParams,
+    };
+  }, beforeEach);
 
   it('should be created', () => {
     const comp = bootstrap(HomePage);
     expect(comp).toBeTruthy();
-    expect(getEl('p').innerText).toBe('home-page works!');
+  });
+
+  it('should not display error message by default', () => {
+    const comp = bootstrap(HomePage);
+    expect(comp.errorMessage()).toBeNull();
+  });
+
+  it('should set error message for forbidden error', () => {
+    state.queryParams.next({error: 'forbidden', email: 'user@example.com'});
+    const comp = bootstrap(HomePage);
+    expect(comp.errorMessage()).toBe('Your account (user@example.com) is not authorized. Please contact your administrator to request access.');
+  });
+
+  it('should set error message for permission error', () => {
+    state.queryParams.next({error: 'permission_error'});
+    const comp = bootstrap(HomePage);
+    expect(comp.errorMessage()).toBe('Failed to verify authorization permissions. Please contact your administrator.');
+  });
+
+  it('should set generic error message for other errors', () => {
+    state.queryParams.next({error: 'other_error'});
+    const comp = bootstrap(HomePage);
+    expect(comp.errorMessage()).toBe('An authentication error occurred. Please try again.');
+  });
+
+  it('should set error message for forbidden error when email is missing', () => {
+    state.queryParams.next({error: 'forbidden'});
+    const comp = bootstrap(HomePage);
+    expect(comp.errorMessage()).toBe('Your account () is not authorized. Please contact your administrator to request access.');
+  });
+
+  it('should redirect user to login endpoint when login is called', () => {
+    const openSpy = spyOn(window, 'open').and.stub();
+
+    const comp = bootstrap(HomePage);
+    comp.login();
+    expect(openSpy).toHaveBeenCalledWith('/api/login', '_self', undefined);
   });
 });

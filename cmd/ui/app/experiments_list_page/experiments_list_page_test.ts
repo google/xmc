@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+import { cleanState, setupModule, bootstrap, useAutoTick } from '../testing/test';
 import 'jasmine';
 
 import {getHarness} from '@angular/cdk/testing/catalyst/async';
@@ -45,6 +46,8 @@ const MOCK_PAGE_RESULT_2: ListExperimentsResponse = {
 };
 
 describe('ExperimentsListPage Component', () => {
+  useAutoTick();
+
   const state = cleanState(() => {
     const experimentService = jasmine.createSpyObj<ExperimentService>(
         'ExperimentService',

@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import {DOCUMENT} from '@angular/common';
-import {APP_INITIALIZER, ApplicationConfig, inject, provideZonelessChangeDetection, RendererFactory2} from '@angular/core';
+import {APP_INITIALIZER, ApplicationConfig, inject, provideZoneChangeDetection, RendererFactory2} from '@angular/core';
 import {provideRouter} from '@angular/router';
-import {HtmlSanitizerBuilder} from 'safevalues';
-import {setElementInnerHtml} from 'safevalues/dom';
+import {provideHttpClient} from '@angular/common/http';
+import {provideAnimations} from '@angular/platform-browser/animations';
+import {HtmlSanitizerBuilder, setElementInnerHtml} from './safevalues_helper';
 
 import {routes} from './app_routes';
 import {AUTH_ERROR_STYLES} from './auth-error.styles';
@@ -33,8 +34,15 @@ function initializeAuthFactory(): () => Promise<void> {
   const document = inject(DOCUMENT);
   return () => new Promise((resolve, reject) => {
            if (window.XMC_API_URL) {
+             let baseUrl = window.XMC_API_URL;
+             if (baseUrl.endsWith('/v1')) {
+               baseUrl = baseUrl.substring(0, baseUrl.length - 3);
+             }
+             if (baseUrl.endsWith('/v1/')) {
+               baseUrl = baseUrl.substring(0, baseUrl.length - 4);
+             }
              const script = renderer.createElement('script');
-             script.src = `${window.XMC_API_URL}/static/auth-check.js`;
+             script.src = `${baseUrl}/v1/static/auth-check.js`;
              script.onload = () => {
                resolve();
              };
@@ -64,7 +72,9 @@ function initializeAuthFactory(): () => Promise<void> {
  */
 export const appConfig: ApplicationConfig = {
   providers: [
-    provideZonelessChangeDetection(),
+    provideZoneChangeDetection(),
+    provideHttpClient(),
+    provideAnimations(),
     provideRouter(routes),
     {
       provide: APP_INITIALIZER,

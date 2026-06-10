@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
 compat_go_library(
@@ -24,7 +23,7 @@ compat_go_library(
         "//internal/kubernetes/common:constants",
         "//internal/logging",
         "//internal/validator",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured:unstructured",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
     ],
 )
 
@@ -34,6 +33,6 @@ compat_go_test(
     embed = [":preconditions_validator"],
     deps = [
         "//internal/kubernetes/common:constants",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured:unstructured",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
     ],
 )
