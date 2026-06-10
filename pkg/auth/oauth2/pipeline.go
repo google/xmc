@@ -25,6 +25,7 @@ import (
 	resourcemanager "cloud.google.com/go/resourcemanager/apiv3"
 	"cloud.google.com/go/iam/apiv1/iampb"
 	"golang.org/x/oauth2"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/api/idtoken"
 )
 
@@ -42,6 +43,7 @@ type Authenticator struct {
 	mu             sync.Mutex
 	projectsClient *resourcemanager.ProjectsClient
 	policyCache    policyCacheEntry
+	sfGroup        singleflight.Group
 
 	PolicyFetcher  func(context.Context) (*iampb.Policy, error)
 	IDTokenValidator func(ctx context.Context, idToken string, audience string) (*idtoken.Payload, error)
@@ -71,7 +73,7 @@ func NewAuthenticator(cfg *Config) *Authenticator {
 		Authenticator: a,
 	}
 	a.PolicyFetcher = func(ctx context.Context) (*iampb.Policy, error) {
-		client, err := a.getProjectsClientLocked(ctx)
+		client, err := a.getProjectsClient(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -98,36 +100,60 @@ func (a *Authenticator) Close() error {
 	return nil
 }
 
-func (a *Authenticator) getProjectsClientLocked(ctx context.Context) (*resourcemanager.ProjectsClient, error) {
+func (a *Authenticator) getProjectsClient(ctx context.Context) (*resourcemanager.ProjectsClient, error) {
+	a.mu.Lock()
 	if a.projectsClient != nil {
-		return a.projectsClient, nil
+		client := a.projectsClient
+		a.mu.Unlock()
+		return client, nil
 	}
+	a.mu.Unlock()
+
 	client, err := resourcemanager.NewProjectsClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCP Projects Resource Manager client: %w", err)
 	}
+
+	a.mu.Lock()
+	if a.projectsClient != nil {
+		client.Close()
+		existing := a.projectsClient
+		a.mu.Unlock()
+		return existing, nil
+	}
 	a.projectsClient = client
+	a.mu.Unlock()
 	return client, nil
 }
 
 func (a *Authenticator) getIamPolicy(ctx context.Context) (*iampb.Policy, error) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	if a.policyCache.policy != nil && time.Now().Before(a.policyCache.expiry) {
-		return a.policyCache.policy, nil
+		policy := a.policyCache.policy
+		a.mu.Unlock()
+		return policy, nil
 	}
+	a.mu.Unlock()
 
-	policy, err := a.PolicyFetcher(ctx)
+	val, err, _ := a.sfGroup.Do("get_iam_policy", func() (interface{}, error) {
+		policy, err := a.PolicyFetcher(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		a.mu.Lock()
+		a.policyCache = policyCacheEntry{
+			policy: policy,
+			expiry: time.Now().Add(2 * time.Minute),
+		}
+		a.mu.Unlock()
+		return policy, nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
-
-	a.policyCache = policyCacheEntry{
-		policy: policy,
-		expiry: time.Now().Add(2 * time.Minute),
-	}
-	return policy, nil
+	return val.(*iampb.Policy), nil
 }
 
 
