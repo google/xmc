@@ -1,0 +1,19 @@
+// Mock Sass file for XMC UI constants
+$primary-color: #1a73e8;
+$grey-color: #5f6368;
+$font-family: 'Roboto', sans-serif;
+
+$small-margin: 8px;
+$basic-margin: 8px;
+$large-margin: 16px;
+$xlarge-margin: 24px;
+
+$small-padding: 8px;
+$large-padding: 16px;
+$xlarge-padding: 24px;
+
+$font-size-small: 12px;
+$font-size-large: 18px;
+
+@mixin summary-secondary-title {}
+@mixin key-value-pair {}

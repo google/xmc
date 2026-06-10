@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # Defines the ManagedCertificate for TLS.
+{{- if and .Values.environment .Values.domainSuffix }}
 apiVersion: networking.gke.io/v1
 kind: ManagedCertificate
 metadata:
@@ -20,3 +21,4 @@ spec:
   domains:
   - api.{{ .Values.environment }}.{{ .Values.domainSuffix }}
   - grpc.api.{{ .Values.environment }}.{{ .Values.domainSuffix }}
+{{- end }}

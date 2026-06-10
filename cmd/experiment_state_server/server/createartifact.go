@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,12 +17,12 @@ import (
 	"context"
 	"fmt"
 
+	"task/go/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
-	"task/go/status"
 )
 
 func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRequest) (*msgpb.Artifact, error) {
@@ -92,6 +92,7 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 		DataType:       artifact.DataType,
 		MimeType:       artifact.MimeType,
 		AdditionalInfo: artifact.AdditionalInfo,
+		Payload:        artifact.Payload,
 	}
 
 	// 6. Persist the artifact to the storage layer.

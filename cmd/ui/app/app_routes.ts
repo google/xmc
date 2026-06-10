@@ -16,6 +16,9 @@ import {Routes} from '@angular/router';
 import {ExperimentPage} from './experiment_page/experiment_page';
 import {ExperimentsListPage} from './experiments_list_page/experiments_list_page';
 import {WorkUnitPage} from './work_unit_page/work_unit_page';
+import {HomePage} from './homepage/home_page';
+import {authGuard} from './auth.guard';
+import {guestGuard} from './guest.guard';
 
 /**
  * The application routes.
@@ -23,19 +26,26 @@ import {WorkUnitPage} from './work_unit_page/work_unit_page';
 export const routes: Routes = [
   {
     path: '',
-    redirectTo: 'experiments',
+    component: HomePage,
+    canActivate: [guestGuard],
     pathMatch: 'full',
   },
   {
     path: 'experiments',
-    component: ExperimentsListPage,
-  },
-  {
-    path: 'experiments/:xid',
-    component: ExperimentPage,
-  },
-  {
-    path: 'experiments/:xid/workUnits/:wid',
-    component: WorkUnitPage,
+    canActivate: [authGuard],
+    children: [
+      {
+        path: '',
+        component: ExperimentsListPage,
+      },
+      {
+        path: ':xid',
+        component: ExperimentPage,
+      },
+      {
+        path: ':xid/workUnits/:wid',
+        component: WorkUnitPage,
+      },
+    ],
   },
 ];

@@ -33,6 +33,19 @@ spec:
       securityContext:
         seccompProfile:
           type: RuntimeDefault
+      volumes:
+        {{- if .Values.secrets.csi.enabled }}
+        - name: gcp-secrets-volume
+          csi:
+            driver: secrets-store-gke.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "gcp-secrets-provider"
+        {{- else }}
+        - name: gcp-secrets-volume
+          secret:
+            secretName: backend-oauth-secrets
+        {{- end }}
       containers:
       - name: xid-service
         image: {{ .Values.xid_custom_image | quote }}
@@ -46,6 +59,10 @@ spec:
           capabilities:
             drop:
             - ALL
+        volumeMounts:
+          - name: gcp-secrets-volume
+            mountPath: /etc/gcp-secrets
+            readOnly: true
         ports:
         - containerPort: 50051
           name: grpc-port
@@ -60,6 +77,10 @@ spec:
           value: {{ .Values.experimentStateServer.iap.httpAudience | quote }}
         - name: IAP_EXPECTED_GRPC_AUDIENCE
           value: {{ .Values.experimentStateServer.iap.grpcAudience | quote }}
+        - name: CLIENT_ID
+          value: {{ .Values.experimentStateServer.iap.clientId | quote }}
+        - name: JWT_SECRET_FILE
+          value: "/etc/gcp-secrets/jwt-secret"
         args:
         - "-xid_grpc_port=50051"
         - "-xid_quota_project_id={{ .Values.projectId }}"

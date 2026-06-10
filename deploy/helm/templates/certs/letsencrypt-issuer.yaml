@@ -1,0 +1,19 @@
+{{- if eq .Values.certs.type "letsencrypt" }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: letsencrypt-prod-issuer
+  namespace: {{ .Release.Namespace }}
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: {{ .Values.certs.email | quote }}
+    privateKeySecretRef:
+      name: letsencrypt-prod-private-key
+    solvers:
+    - http01:
+        gatewayHTTPRoute:
+          parentRefs:
+          - name: {{ .Values.gateway.name }}
+            namespace: {{ .Release.Namespace }}
+{{- end }}

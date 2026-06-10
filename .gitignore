@@ -1,2 +1,12 @@
 # Bazel build products and symlinks
 /bazel-*
+.env
+
+# Environment-specific values overrides
+/deploy/helm/environments/values-*.yaml
+
+# Node.js and Angular
+cmd/ui/node_modules/
+cmd/ui/.angular/
+cmd/ui/dist/
+cmd/ui/build_tmp/

@@ -11,7 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {Component, OnInit, ChangeDetectionStrategy} from '@angular/core';
+import {Component, ChangeDetectionStrategy, inject, computed} from '@angular/core';
+import {ActivatedRoute} from '@angular/router';
+import {windowOpen} from '../safevalues_helper';
+import {toSignal} from '@angular/core/rxjs-interop';
 
 /**
  * Home page for the XMC UI.
@@ -23,6 +26,31 @@ import {Component, OnInit, ChangeDetectionStrategy} from '@angular/core';
   styleUrl: './home_page.css',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class HomePage implements OnInit {
-  ngOnInit() {}
+export class HomePage {
+  private readonly route = inject(ActivatedRoute);
+
+  private readonly queryParams = toSignal(this.route.queryParams);
+
+  readonly errorMessage = computed(() => {
+    const params = this.queryParams();
+    if (!params) {
+      return null;
+    }
+    const errType = params['error'];
+    if (!errType) {
+      return null;
+    }
+    if (errType === 'forbidden') {
+      const email = params['email'] ?? '';
+      return `Your account (${email}) is not authorized. Please contact your administrator to request access.`;
+    } else if (errType === 'permission_error') {
+      return 'Failed to verify authorization permissions. Please contact your administrator.';
+    } else {
+      return 'An authentication error occurred. Please try again.';
+    }
+  });
+
+  login() {
+    windowOpen(window, '/api/login', '_self');
+  }
 }

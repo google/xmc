@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
 compat_go_library(
@@ -30,12 +29,12 @@ compat_go_library(
     deps = [
         "//api/protos/xid:api_go_proto",
         "//api/protos/xid:messages_go_proto",
+        "//cmd/xid_service:config",
         "//internal/auth",
         "//internal/compat/status",
         "//internal/logging",
         "//internal/storage",
         "//internal/validator",
-        "//cmd/xid_service:config",
     ],
 )
 
@@ -63,6 +62,6 @@ compat_go_test(
         "//internal/storage/spanner",
         "//internal/storage/spanner/emulator",
         "//internal/validator",
-        "@org_golang_google_api//cloudidentity/v1beta1:v1beta1",
+        "@org_golang_google_api//cloudidentity/v1beta1",
     ],
 )

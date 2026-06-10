@@ -1590,6 +1590,173 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 			},
 			wantErr: nil,
 		},
+		{
+			name: "payload_type_nil",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{},
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "payload_managed_xprof_missing_display_name",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_ManagedXprof{
+							ManagedXprof: &essmsgpb.ManagedXprofArtifact{
+								RunGroup: "run_group",
+							},
+						},
+					},
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "payload_managed_xprof_missing_run_group",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_ManagedXprof{
+							ManagedXprof: &essmsgpb.ManagedXprofArtifact{
+								DisplayName: "display_name",
+							},
+						},
+					},
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "payload_code_source_missing_title",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_CodeSource{
+							CodeSource: &essmsgpb.CodeSourceArtifact{
+								CodeBlock: "code_block",
+							},
+						},
+					},
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "payload_code_source_missing_code_block",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_CodeSource{
+							CodeSource: &essmsgpb.CodeSourceArtifact{
+								Title: "title",
+							},
+						},
+					},
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "payload_text_missing_title",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_Text{
+							Text: &essmsgpb.TextArtifact{
+								Text: "text",
+							},
+						},
+					},
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "payload_text_missing_text",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_Text{
+							Text: &essmsgpb.TextArtifact{
+								Title: "title",
+							},
+						},
+					},
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "valid_request_with_managed_xprof_payload",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_ManagedXprof{
+							ManagedXprof: &essmsgpb.ManagedXprofArtifact{
+								DisplayName: "display_name",
+								RunGroup:    "run_group",
+							},
+						},
+					},
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid_request_with_code_source_payload",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_CodeSource{
+							CodeSource: &essmsgpb.CodeSourceArtifact{
+								Title:     "title",
+								CodeBlock: "code_block",
+							},
+						},
+					},
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid_request_with_text_payload",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_Text{
+							Text: &essmsgpb.TextArtifact{
+								Title: "title",
+								Text:  "text",
+							},
+						},
+					},
+				},
+			},
+			wantErr: nil,
+		},
 	}
 
 	for _, tc := range tests {

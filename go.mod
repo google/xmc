@@ -4,11 +4,14 @@ go 1.26.0
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0
+	cloud.google.com/go/iam v1.11.0
 	cloud.google.com/go/longrunning v1.0.0
 	cloud.google.com/go/pubsub v1.50.1
+	cloud.google.com/go/resourcemanager v1.15.0
 	cloud.google.com/go/spanner v1.91.0
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/fsnotify/fsnotify v1.9.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
@@ -40,7 +43,6 @@ require (
 	cloud.google.com/go v0.123.0 // indirect
 	cloud.google.com/go/auth v0.20.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
-	cloud.google.com/go/iam v1.7.0 // indirect
 	cloud.google.com/go/monitoring v1.25.0 // indirect
 	cloud.google.com/go/pubsub/v2 v2.0.0 // indirect
 	github.com/GoogleCloudPlatform/grpc-gcp-go/grpcgcp v1.6.0 // indirect

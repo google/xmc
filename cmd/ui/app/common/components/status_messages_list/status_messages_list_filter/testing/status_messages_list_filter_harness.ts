@@ -18,7 +18,8 @@ import {MatSelectHarness} from '@angular/material/select/testing';
 
 /** Harness for interacting with <xmc-status-messages-list-filter> in tests. */
 export class StatusMessagesListFilterHarness extends ComponentHarness {
-  static hostSelector = 'xmc-status-messages-list-filter';
+  static hostSelector =
+      'xmc-status-messages-list-filter, [data-component-selector="xmc-status-messages-list-filter"]';
 
   private readonly severitySelect = this.locatorFor(
       MatSelectHarness.with({selector: '[data-testid="severity-select"]'}));

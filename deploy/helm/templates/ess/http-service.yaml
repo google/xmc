@@ -17,7 +17,6 @@ metadata:
   name: http-service
   annotations:
     cloud.google.com/neg: '{"ingress": true}'
-    cloud.google.com/backend-config: '{"ports": {"8080":"shared-backend-config"}}'
   labels:
     app: experiment-state-server
 spec:

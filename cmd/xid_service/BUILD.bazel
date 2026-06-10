@@ -14,6 +14,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("//:oci.bzl", "oci_image_for_service")
 
 compat_go_library(
     name = "config",
@@ -22,8 +23,8 @@ compat_go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//internal/auth",
-        "//internal/logging",
         "//internal/compat/log",
+        "//internal/logging",
     ],
 )
 
@@ -37,22 +38,23 @@ compat_go_library(
     visibility = ["//visibility:private"],
     deps = [
         ":config",
+        "//api/protos/xid:api_go_proto",
+        "//cmd/xid_service/server",
         "//internal/auth",
-        "//internal/logging",
+        "//internal/common:health",
         "//internal/compat/google",
         "//internal/compat/spanner",
-        "//internal/common:health",
-        "//cmd/xid_service/server:server",
-        "//api/protos/xid:api_go_proto",
+        "//internal/logging",
         "//internal/storage/spanner",
+        "//pkg/auth/oauth2",
         "@com_google_cloud_go_spanner//:spanner",
-        "@org_golang_google_api//cloudidentity/v1beta1:v1beta1",
+        "@org_golang_google_api//cloudidentity/v1beta1",
         "@org_golang_google_api//option",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//credentials/insecure:go_default_library",
-        "@org_golang_google_grpc//reflection:go_default_library",
         "@org_golang_google_grpc//health:go_default_library",
         "@org_golang_google_grpc//health/grpc_health_v1:go_default_library",
+        "@org_golang_google_grpc//reflection:go_default_library",
     ],
 )
 
@@ -62,8 +64,6 @@ go_binary(
     pure = "on",
     visibility = ["//visibility:public"],
 )
-
-load("//:oci.bzl", "oci_image_for_service")
 
 oci_image_for_service(
     name = "xid_service_image",

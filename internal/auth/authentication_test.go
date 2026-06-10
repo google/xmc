@@ -17,9 +17,11 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"google.golang.org/api/idtoken"
 	"golang/grpc/metadata/metadata"
+	"xmanager_cloud/pkg/auth/oauth2"
 )
 
 func TestAuthenticateUserFromContext_Unauthenticated(t *testing.T) {
@@ -185,6 +187,29 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 			},
 			wantEmail:  "email@example.com",
 			wantUserID: "userID",
+		},
+		{
+			name: "custom session token authentication success",
+			metadata: func() metadata.MD {
+				tok, err := oauth2.GenerateSessionToken("custom-sa@mycompany.com", "Custom SA", "", 1*time.Hour, []byte("default-jwt-secret-for-local-dev-only-12345"))
+				if err != nil {
+					t.Fatalf("Failed to generate custom session token: %v", err)
+				}
+				return metadata.Pairs("x-goog-iap-jwt-assertion", tok)
+			}(),
+			wantEmail:  "custom-sa@mycompany.com",
+			wantUserID: "custom-sa@mycompany.com",
+		},
+		{
+			name: "custom session token empty email failure",
+			metadata: func() metadata.MD {
+				tok, err := oauth2.GenerateSessionToken("", "Custom SA No Email", "", 1*time.Hour, []byte("default-jwt-secret-for-local-dev-only-12345"))
+				if err != nil {
+					t.Fatalf("Failed to generate custom session token: %v", err)
+				}
+				return metadata.Pairs("x-goog-iap-jwt-assertion", tok)
+			}(),
+			wantErr: true,
 		},
 	}
 

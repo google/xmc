@@ -32,11 +32,15 @@ const (
 	xidServiceHealthCheckName = "xmc.XidService"
 )
 
-// MonitorHealth periodically checks dependencies and updates the gRPC health server.
-func MonitorHealth(ctx context.Context, sc *spanner.Client, s *grpc.Server) {
+// RegisterHealthServer registers the health server on the gRPC server.
+func RegisterHealthServer(s *grpc.Server) *health.Server {
 	healthServer := health.NewServer()
 	healthgrpc.RegisterHealthServer(s, healthServer)
+	return healthServer
+}
 
+// StartHealthMonitor periodically checks dependencies and updates the gRPC health server.
+func StartHealthMonitor(ctx context.Context, sc *spanner.Client, healthServer *health.Server) {
 	ticker := time.NewTicker(healthCheckInterval)
 	defer ticker.Stop()
 

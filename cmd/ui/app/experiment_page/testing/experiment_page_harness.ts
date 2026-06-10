@@ -18,7 +18,8 @@ import {LoadingBarHarness} from 'xmanager_cloud/ui/app/common/components/loading
 
 /** Harness for interacting with <xmc-experiment-page> in tests. */
 export class ExperimentPageHarness extends ComponentHarness {
-  static hostSelector = 'xmc-experiment-page';
+  static hostSelector =
+      'xmc-experiment-page, [data-component-selector="xmc-experiment-page"]';
 
   private readonly _loadingBar = this.locatorForOptional(LoadingBarHarness);
   private readonly _title = this.locatorForOptional('.experiment-title');

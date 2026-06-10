@@ -31,6 +31,7 @@ import (
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
 	authz "xmanager_cloud/auth/auth"
+	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/xid_service/config"
 	"xmanager_cloud/xid_service/server/server"
@@ -49,6 +50,11 @@ func main() {
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.QuotaProjectID)
 	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
+
+	oauthCfg, err := oauth.LoadConfig()
+	if err != nil {
+		logging.Fatal(ctx, "failed to load oauth configuration", "error", err)
+	}
 
 	// 2. Initialize Spanner client.
 	sessionPoolConfig := spanner.SessionPoolConfig{
@@ -75,7 +81,7 @@ func main() {
 	}
 
 	// 4. Inject dependencies into the server
-	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{cfg.Audience, cfg.HTTPAudience, cfg.GRPCAudience}, cfg.IAPIssuer, cfg.DisableAuthentication)
+	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{cfg.Audience, cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}, cfg.IAPIssuer, cfg.DisableAuthentication, []byte(oauthCfg.JWTSecret))
 	if err != nil {
 		logging.Fatal(ctx, "failed to create authorizer", "error", err)
 	}
@@ -99,7 +105,8 @@ func main() {
 	reflection.Register(s)
 
 	// Start active monitoring of dependencies
-	go MonitorHealth(ctx, sc, s)
+	healthServer := RegisterHealthServer(s)
+	go StartHealthMonitor(ctx, sc, healthServer)
 
 	logging.Info(ctx, "gRPC server listening", "addr", lis.Addr())
 
