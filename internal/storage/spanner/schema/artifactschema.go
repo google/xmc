@@ -41,6 +41,8 @@ const (
 	dataTypeTableField       = querytools.TableField("data_type")
 	mimeTypeTableField       = querytools.TableField("mime_type")
 	additionalInfoTableField = querytools.TableField("additional_info")
+	payloadTableField        = querytools.TableField("payload")
+	searchableContentTableField = querytools.TableField("searchable_content")
 
 	createdTableField = querytools.TableField("created")
 	updatedTableField = querytools.TableField("updated")
@@ -62,6 +64,8 @@ var ArtifactColumns = []string{
 	"DataType",
 	"MimeType",
 	"AdditionalInfo",
+	"Payload",
+	"SearchableContent",
 	"CreateTime",
 	"UpdateTime",
 }
@@ -82,6 +86,8 @@ var ArtifactUpdateColumns = []string{
 	"DataType",
 	"MimeType",
 	"AdditionalInfo",
+	"Payload",
+	"SearchableContent",
 	"UpdateTime",
 }
 
@@ -202,6 +208,18 @@ var (
 				Selectable:   true,
 				Indexed:      false,
 			},
+			payloadTableField: querytools.Member{
+				Name:         payloadTableField,
+				QueryLiteral: safesql.New("a.Payload"),
+				Selectable:   true,
+				Indexed:      false,
+			},
+			searchableContentTableField: querytools.Member{
+				Name:         searchableContentTableField,
+				QueryLiteral: safesql.New("a.SearchableContent"),
+				Selectable:   false,
+				Indexed:      false,
+			},
 
 			createdTableField: querytools.Member{
 				Name:         createdTableField,
@@ -245,13 +263,14 @@ var (
 		dataTypeTableField,
 		mimeTypeTableField,
 		additionalInfoTableField,
+		payloadTableField,
 
 		createdTableField,
 		updatedTableField,
 	}
 
 	// ArtifactsFullTextFields is the list of fields that can be used for full text search for Artifacts queries.
-	ArtifactsFullTextFields = []safesql.TrustedSQLString{safesql.New("Url_Tokens"), safesql.New("DisplayName_Tokens"), safesql.New("Tags_Tokens"), safesql.New("Notes_Tokens"), safesql.New("MimeType_Tokens")}
+	ArtifactsFullTextFields = []safesql.TrustedSQLString{safesql.New("Url_Tokens"), safesql.New("DisplayName_Tokens"), safesql.New("Tags_Tokens"), safesql.New("Notes_Tokens"), safesql.New("MimeType_Tokens"), safesql.New("SearchableContent_Tokens")}
 
 	// ArtifactsOrderByFields is the list of fields that can be used for ordering Artifacts queries.
 	ArtifactsOrderByFields = []querytools.UserOrderedIndex{

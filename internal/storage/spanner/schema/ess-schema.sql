@@ -33,6 +33,11 @@ CREATE PROTO BUNDLE (
   cloud.xmanager.v1.Artifact.AdditionalInfo,
   cloud.xmanager.v1.Artifact.LifecyclePhase,
   cloud.xmanager.v1.Artifact.DataType,
+  cloud.xmanager.v1.ArtifactPayload,
+  cloud.xmanager.v1.ManagedXprofArtifact,
+  cloud.xmanager.v1.XProfUIInstance,
+  cloud.xmanager.v1.CodeSourceArtifact,
+  cloud.xmanager.v1.TextArtifact,
 
   -- Protos used in Operations
   google.rpc.Status,
@@ -147,6 +152,12 @@ CREATE TABLE Artifacts (
   MimeType_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(MimeType)) HIDDEN,
   -- Additional info for the artifact.
   AdditionalInfo cloud.xmanager.v1.Artifact.AdditionalInfo,
+  -- Strongly-typed payload for the artifact.
+  Payload cloud.xmanager.v1.ArtifactPayload,
+  -- Searchable content for the artifact.
+  SearchableContent STRING(MAX),
+  -- Tokenized searchable content of the artifact.
+  SearchableContent_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(SearchableContent)) HIDDEN,
 
   -- The creation time of the artifact.
   CreateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
@@ -160,7 +171,7 @@ CREATE TABLE Artifacts (
 CREATE UNIQUE INDEX ArtifactsByBitReversedArtifactId ON Artifacts (BitReversedArtifactId);
 
 -- Allows full-text search on the Artifacts by URL, display name, MIME type, tags, and notes.
-CREATE SEARCH INDEX ArtifactsSearchIndex ON Artifacts (Url_Tokens, DisplayName_Tokens, Tags_Tokens, Notes_Tokens, MimeType_Tokens);
+CREATE SEARCH INDEX ArtifactsSearchIndex ON Artifacts (Url_Tokens, DisplayName_Tokens, Tags_Tokens, Notes_Tokens, MimeType_Tokens, SearchableContent_Tokens);
 
 -- Table that holds the core work units data. Interleaved with Experiments.
 CREATE TABLE WorkUnits (

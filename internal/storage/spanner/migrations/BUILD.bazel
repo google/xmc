@@ -39,6 +39,8 @@ compat_go_library(
         "ess/002_artifactinfo.up.sql",
         "ess/003_status_messages.down.sql",
         "ess/003_status_messages.up.sql",
+        "ess/004_artifactpayload.down.sql",
+        "ess/004_artifactpayload.up.sql",
         "xid/001_baseline.down.sql",
         "xid/001_baseline.up.sql",
         ":ess_messages.pb",
