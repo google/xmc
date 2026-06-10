@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,11 +19,11 @@ import (
 	"regexp"
 	"strings"
 
+	"task/go/status"
 	essapipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmessagespb "xmanager_cloud/xid_service/proto/messages_go_proto"
-	"task/go/status"
 )
 
 const (
@@ -409,6 +409,41 @@ func ValidateCreateArtifactRequest(in *essapipb.CreateArtifactRequest) error {
 			return fmt.Errorf("artifact.additional_info.content must be set when additional_info is provided: %w", status.ErrInvalidArgument)
 		}
 	}
+	if payload := art.GetPayload(); payload != nil {
+		if err := validatePayload(payload); err != nil {
+			return err
+		}
+	}
 
+	return nil
+}
+
+func validatePayload(payload *essmsgpb.ArtifactPayload) error {
+	if payload.GetType() == nil {
+		return fmt.Errorf("artifact.payload.type must be set when payload is provided: %w", status.ErrInvalidArgument)
+	}
+	switch p := payload.Type.(type) {
+	case *essmsgpb.ArtifactPayload_ManagedXprof:
+		if p.ManagedXprof.GetDisplayName() == "" {
+			return fmt.Errorf("artifact.payload.managed_xprof.display_name must be set: %w", status.ErrInvalidArgument)
+		}
+		if p.ManagedXprof.GetRunGroup() == "" {
+			return fmt.Errorf("artifact.payload.managed_xprof.run_group must be set: %w", status.ErrInvalidArgument)
+		}
+	case *essmsgpb.ArtifactPayload_CodeSource:
+		if p.CodeSource.GetTitle() == "" {
+			return fmt.Errorf("artifact.payload.code_source.title must be set: %w", status.ErrInvalidArgument)
+		}
+		if p.CodeSource.GetCodeBlock() == "" {
+			return fmt.Errorf("artifact.payload.code_source.code_block must be set: %w", status.ErrInvalidArgument)
+		}
+	case *essmsgpb.ArtifactPayload_Text:
+		if p.Text.GetTitle() == "" {
+			return fmt.Errorf("artifact.payload.text.title must be set: %w", status.ErrInvalidArgument)
+		}
+		if p.Text.GetText() == "" {
+			return fmt.Errorf("artifact.payload.text.text must be set: %w", status.ErrInvalidArgument)
+		}
+	}
 	return nil
 }

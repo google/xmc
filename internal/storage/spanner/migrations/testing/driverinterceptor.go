@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -24,8 +24,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/golang-migrate/migrate/v4/source"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
+
+	"github.com/golang-migrate/migrate/v4/source"
 )
 
 // DriverInterceptor intercepts SQL migration files for purpose of testing.
@@ -40,7 +41,7 @@ func (i *DriverInterceptor) ReadUp(version uint) (io.ReadCloser, string, error) 
 	if err != nil {
 		return nil, "", err
 	}
-	ir, err := i.intercept(r)
+	ir, err := i.intercept(r, UP, version)
 	if err != nil {
 		return nil, "", err
 	}
@@ -53,21 +54,21 @@ func (i *DriverInterceptor) ReadDown(version uint) (io.ReadCloser, string, error
 	if err != nil {
 		return nil, "", err
 	}
-	ir, err := i.intercept(r)
+	ir, err := i.intercept(r, DOWN, version)
 	if err != nil {
 		return nil, "", err
 	}
 	return ir, identifier, nil
 }
 
-func (i *DriverInterceptor) intercept(r io.ReadCloser) (io.ReadCloser, error) {
+func (i *DriverInterceptor) intercept(r io.ReadCloser, direction Direction, version uint) (io.ReadCloser, error) {
 	defer r.Close()
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
 	content := string(data)
-	modified := injectStoredColumnsReinitialization(content, i.DBName)
+	modified := injectStoredColumnsReinitialization(content, direction, version, i.DBName)
 	return io.NopCloser(strings.NewReader(modified)), nil
 }
 
@@ -91,13 +92,53 @@ var storedColumns = map[string][]columnSpec{
 	"xid": {},
 }
 
+type Direction int
+
+const (
+	DONT_CARE Direction = iota
+	UP
+	DOWN
+)
+
+type interceptedStatement struct {
+	version   uint // Version 0 matches all .versions
+	direction Direction
+	trigger   string
+	action    func(drops, adds, statement string, result *strings.Builder)
+}
+
+var fixes = []interceptedStatement{
+	{version: 00,
+		trigger:   "ALTER PROTO BUNDLE",
+		direction: DONT_CARE,
+		action: func(drops, adds, statement string, result *strings.Builder) {
+			result.WriteString(drops)
+			result.WriteString(statement)
+			result.WriteString(";\n")
+			result.WriteString(adds)
+		},
+	},
+	{version: 04,
+		trigger:   "ALTER SEARCH INDEX",
+		direction: UP,
+		action: func(drops, adds, statement string, result *strings.Builder) {
+			result.WriteString("DROP SEARCH INDEX ArtifactsSearchIndex;\n")
+			result.WriteString("CREATE SEARCH INDEX ArtifactsSearchIndex ON Artifacts (Url_Tokens, DisplayName_Tokens, Tags_Tokens, Notes_Tokens, MimeType_Tokens, SearchableContent_Tokens);\n")
+		},
+	},
+	{version: 04,
+		trigger:   "ALTER SEARCH INDEX",
+		direction: DOWN,
+		action: func(drops, adds, statement string, result *strings.Builder) {
+			result.WriteString("DROP SEARCH INDEX ArtifactsSearchIndex;\n")
+			result.WriteString("CREATE SEARCH INDEX ArtifactsSearchIndex ON Artifacts (Url_Tokens, DisplayName_Tokens, Tags_Tokens, Notes_Tokens, MimeType_Tokens);\n")
+		},
+	},
+}
+
 // injectStoredColumnsReinitialization injects DDL statements to reinitialize stored columns.
 // This is needed to get around Spanner emulator issues with stored columns when running tests.
-func injectStoredColumnsReinitialization(content string, dbName string) string {
-	if !strings.Contains(strings.ToUpper(content), "ALTER PROTO BUNDLE") {
-		return content
-	}
-
+func injectStoredColumnsReinitialization(content string, direction Direction, version uint, dbName string) string {
 	drops, adds := getReinitializationStatements(dbName)
 	if drops == "" && adds == "" {
 		return content
@@ -106,12 +147,16 @@ func injectStoredColumnsReinitialization(content string, dbName string) string {
 	var result strings.Builder
 	statements := spannerutils.ParseDDL(content)
 	for _, statement := range statements {
-		if strings.Contains(strings.ToUpper(statement), "ALTER PROTO BUNDLE") {
-			result.WriteString(drops)
-			result.WriteString(statement)
-			result.WriteString(";\n")
-			result.WriteString(adds)
-		} else {
+		matched := false
+		for _, fix := range fixes {
+			// Version 0 matches all versions.
+			if (fix.version == 0 || fix.version == version) && fix.direction == direction && strings.Contains(strings.ToUpper(statement), fix.trigger) {
+				fix.action(drops, adds, statement, &result)
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			result.WriteString(statement)
 			result.WriteString(";\n")
 		}

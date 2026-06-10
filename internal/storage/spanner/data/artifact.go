@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,9 +15,10 @@ package spannerdata
 
 import (
 	"fmt"
+	"strings"
 
-	timestamppb "protobuf/timestamp_go_proto"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	timestamppb "protobuf/timestamp_go_proto"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/schema/artifactschema"
@@ -86,6 +87,14 @@ func ArtifactRowToProto(row *spanner.Row) (*pb.Artifact, error) {
 		artifact.AdditionalInfo = additionalInfo.ProtoMessageVal.(*pb.Artifact_AdditionalInfo)
 	}
 
+	payload := spanner.NullProtoMessage{ProtoMessageVal: &pb.ArtifactPayload{}}
+	if err := row.ColumnByName("Payload", &payload); err != nil {
+		return nil, fmt.Errorf("failed to read column Payload: %w", err)
+	}
+	if payload.Valid {
+		artifact.Payload = payload.ProtoMessageVal.(*pb.ArtifactPayload)
+	}
+
 	// Time fields.
 	var createTime, updateTime spanner.NullTime
 	if err := row.ColumnByName("CreateTime", &createTime); err != nil {
@@ -135,6 +144,8 @@ func ArtifactProtoToInsertMutation(art *pb.Artifact) (*spanner.Mutation, error) 
 			art.DataType,            // DataType
 			art.MimeType,            // MimeType
 			art.AdditionalInfo,      // AdditionalInfo
+			art.Payload,             // Payload
+			getSearchableContent(art.Payload), // SearchableContent
 			art.CreateTime.AsTime(), // CreateTime
 			art.UpdateTime.AsTime(), // UpdateTime
 		},
@@ -171,7 +182,55 @@ func ArtifactProtoToUpdateMutation(art *pb.Artifact) (*spanner.Mutation, error) 
 			art.DataType,            // DataType
 			art.MimeType,            // MimeType
 			art.AdditionalInfo,      // AdditionalInfo
+			art.Payload,             // Payload
+			getSearchableContent(art.Payload), // SearchableContent
 			art.UpdateTime.AsTime(), // UpdateTime
 		},
 	), nil
+}
+
+func getSearchableContent(payload *pb.ArtifactPayload) string {
+	if payload == nil {
+		return ""
+	}
+
+	var parts []string
+	
+	switch p := payload.Type.(type) {
+	case *pb.ArtifactPayload_ManagedXprof:
+		if p.ManagedXprof != nil {
+			if p.ManagedXprof.DisplayName != "" {
+				parts = append(parts, p.ManagedXprof.DisplayName)
+			}
+			if p.ManagedXprof.RunGroup != "" {
+				parts = append(parts, p.ManagedXprof.RunGroup)
+			}
+		}
+	case *pb.ArtifactPayload_CodeSource:
+		if p.CodeSource != nil {
+			if p.CodeSource.Title != "" {
+				parts = append(parts, p.CodeSource.Title)
+			}
+			if p.CodeSource.Description != "" {
+				parts = append(parts, p.CodeSource.Description)
+			}
+			if p.CodeSource.CodeBlock != "" {
+				parts = append(parts, p.CodeSource.CodeBlock)
+			}
+			if p.CodeSource.CodeUrl != "" {
+				parts = append(parts, p.CodeSource.CodeUrl)
+			}
+		}
+	case *pb.ArtifactPayload_Text:
+		if p.Text != nil {
+			if p.Text.Title != "" {
+				parts = append(parts, p.Text.Title)
+			}
+			if p.Text.Text != "" {
+				parts = append(parts, p.Text.Text)
+			}
+		}
+	}
+
+	return strings.Join(parts, " ")
 }
