@@ -133,7 +133,7 @@ The **Log Monitor** subscribes to execution log entries on Pub/Sub and updates w
 
 [![XMC Unit Tests](https://github.com/google/xmc/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/google/xmc/actions/workflows/unit-tests.yml)
 
-Automated unit test suites (including hermetically-orchestrated Cloud Spanner emulator verification) are executed on:
+Automated unit test suites are executed on:
 * **Pull Requests** targeting any branch.
 * **Direct Pushes** to the `test` (main baseline) and `feature/unit_tests_action` branches.
 * **Manual Dispatch** (`workflow_dispatch`) via the GitHub Actions UI.
