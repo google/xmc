@@ -92,7 +92,7 @@ jobs:
             --disk_cache=~/.cache/bazel-disk \
             --test_output=errors \
             --build_tests_only \
-            --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }},${{ env.TEST_TIMEOUT_SECONDS }} \
+            --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},300,300,300 \
             -- \
             //...
 
