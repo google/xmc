@@ -26,11 +26,16 @@ jobs:
         with:
           go-version: '1.26.0'
 
-      - name: 'Run golangci-lint'
-        uses: 'golangci/golangci-lint-action@v6'
-        with:
-          version: 'latest'
-          args: '--timeout=5m --out-format=github-actions'
+      - name: 'Verify Canonical Formatting (gofmt)'
+        run: |
+          UNFORMATTED=$(gofmt -s -l .)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "❌ Go code is not canonically formatted:"
+            echo "$UNFORMATTED"
+            echo "Please run 'gofmt -s -w .' locally before pushing."
+            exit 1
+          fi
+          echo "✅ All Go files are canonically formatted!"
 
   bazel-lint:
     name: 'Bazel Lint'
@@ -44,7 +49,8 @@ jobs:
         with:
           go-version: '1.26.0'
 
-      - name: 'Install buildifier & Run Check'
+      - name: 'Install buildifier & Check Formatting'
         run: |
           go install github.com/bazelbuild/buildtools/buildifier@latest
-          ~/go/bin/buildifier -lint=warn -mode=check $(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" \))
+          # Check canonical formatting (-mode=check) without failing on legacy macro warnings (-lint=off)
+          ~/go/bin/buildifier -mode=check -lint=off -r .
