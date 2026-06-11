@@ -22,6 +22,7 @@ import (
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"task/go/status"
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
@@ -31,7 +32,6 @@ import (
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
-	"task/go/status"
 
 	fieldmaskpb "protobuf/field_mask_go_proto"
 )
@@ -66,8 +66,8 @@ func TestUpdateWorkUnit_HappyPath(t *testing.T) {
 			},
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"urls"}},
 			want: &msgpb.WorkUnit{
-				Name: "experiments/1/workUnits/1",
-				Urls: []*msgpb.Url{{Url: "http://new.url"}},
+				Name:     "experiments/1/workUnits/1",
+				Urls:     []*msgpb.Url{{Url: "http://new.url"}},
 				Priority: msgpb.Priority_LOW,
 			},
 		},

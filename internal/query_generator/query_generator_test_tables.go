@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -97,21 +97,21 @@ var (
 		NameClause: safesql.New("Singers s"),
 		Cost:       30,
 		Fields: map[TableField]Member{
-			SingerIDTableField: Member{
+			SingerIDTableField: {
 				Name:         SingerIDTableField,
 				QueryLiteral: safesql.New("s.SingerId"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			SingerNameTableField: Member{
+			SingerNameTableField: {
 				Name:                   SingerNameTableField,
 				QueryLiteral:           safesql.New("s.SingerName"),
 				Type:                   filtervisitor.String,
 				Selectable:             true,
 				DisjunctionOptimizable: true,
 			},
-			SingerNameCountTableField: Member{
+			SingerNameCountTableField: {
 				Name:            SingerNameCountTableField,
 				QueryLiteral:    safesql.New("COUNT(s.SingerName) AS SingerNameCount"),
 				Type:            filtervisitor.Integer,
@@ -125,7 +125,7 @@ var (
 	}
 
 	singersRelationship = []Join{
-		Join{Singers, safesql.New(` JOIN Singers s ON (a.SingerId = s.SingerId)`)},
+		{Singers, safesql.New(` JOIN Singers s ON (a.SingerId = s.SingerId)`)},
 	}
 
 	// Albums is the TableView for the Albums table.
@@ -134,33 +134,33 @@ var (
 		NameClause: safesql.New("Albums a"),
 		Cost:       30,
 		Fields: map[TableField]Member{
-			AlbumSingerIDTableField: Member{
+			AlbumSingerIDTableField: {
 				Name:         AlbumSingerIDTableField,
 				QueryLiteral: safesql.New("a.SingerId"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			AlbumIDTableField: Member{
+			AlbumIDTableField: {
 				Name:         AlbumIDTableField,
 				QueryLiteral: safesql.New("a.AlbumId"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			AlbumTitleTableField: Member{
+			AlbumTitleTableField: {
 				Name:         AlbumTitleTableField,
 				QueryLiteral: safesql.New("a.AlbumTitle"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 			},
-			ReleaseDateTableField: Member{
+			ReleaseDateTableField: {
 				Name:         ReleaseDateTableField,
 				QueryLiteral: safesql.New("a.ReleaseDate"),
 				Type:         filtervisitor.Date,
 				Selectable:   true,
 			},
-			RatingTableField: Member{
+			RatingTableField: {
 				Name:         RatingTableField,
 				QueryLiteral: safesql.New("a.Rating"),
 				Type:         filtervisitor.Integer,
@@ -177,33 +177,33 @@ var (
 		NameClause: safesql.New("Albums@{FORCE_INDEX=AlbumsByTitleReleaseDate} a"),
 		Cost:       33,
 		Fields: map[TableField]Member{
-			AlbumSingerIDTableField: Member{
+			AlbumSingerIDTableField: {
 				Name:         AlbumSingerIDTableField,
 				QueryLiteral: safesql.New("a.SingerId"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 			},
-			AlbumIDTableField: Member{
+			AlbumIDTableField: {
 				Name:         AlbumIDTableField,
 				QueryLiteral: safesql.New("a.AlbumId"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 			},
-			AlbumTitleTableField: Member{
+			AlbumTitleTableField: {
 				Name:         AlbumTitleTableField,
 				QueryLiteral: safesql.New("a.AlbumTitle"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			ReleaseDateTableField: Member{
+			ReleaseDateTableField: {
 				Name:         ReleaseDateTableField,
 				QueryLiteral: safesql.New("a.ReleaseDate"),
 				Type:         filtervisitor.Date,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			RatingTableField: Member{
+			RatingTableField: {
 				Name:         RatingTableField,
 				QueryLiteral: safesql.New("a.Rating"),
 				Type:         filtervisitor.Integer,
@@ -220,34 +220,34 @@ var (
 		NameClause: safesql.New("Albums@{FORCE_INDEX=AlbumsByTitleAlbumIdReleaseDate} a"),
 		Cost:       34,
 		Fields: map[TableField]Member{
-			AlbumSingerIDTableField: Member{
+			AlbumSingerIDTableField: {
 				Name:         AlbumSingerIDTableField,
 				QueryLiteral: safesql.New("a.SingerId"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 			},
-			AlbumIDTableField: Member{
+			AlbumIDTableField: {
 				Name:         AlbumIDTableField,
 				QueryLiteral: safesql.New("a.AlbumId"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			AlbumTitleTableField: Member{
+			AlbumTitleTableField: {
 				Name:         AlbumTitleTableField,
 				QueryLiteral: safesql.New("a.AlbumTitle"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			ReleaseDateTableField: Member{
+			ReleaseDateTableField: {
 				Name:         ReleaseDateTableField,
 				QueryLiteral: safesql.New("a.ReleaseDate"),
 				Type:         filtervisitor.Date,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			RatingTableField: Member{
+			RatingTableField: {
 				Name:         RatingTableField,
 				QueryLiteral: safesql.New("a.Rating"),
 				Type:         filtervisitor.Integer,
@@ -264,34 +264,34 @@ var (
 		NameClause: safesql.New("Albums@{FORCE_INDEX=AlbumsByTitleAlbumIdReleaseDate} a"),
 		Cost:       35,
 		Fields: map[TableField]Member{
-			AlbumSingerIDTableField: Member{
+			AlbumSingerIDTableField: {
 				Name:         AlbumSingerIDTableField,
 				QueryLiteral: safesql.New("a.SingerId"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 			},
-			AlbumIDTableField: Member{
+			AlbumIDTableField: {
 				Name:         AlbumIDTableField,
 				QueryLiteral: safesql.New("a.AlbumId"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			AlbumTitleTableField: Member{
+			AlbumTitleTableField: {
 				Name:         AlbumTitleTableField,
 				QueryLiteral: safesql.New("a.AlbumTitle"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			ReleaseDateTableField: Member{
+			ReleaseDateTableField: {
 				Name:         ReleaseDateTableField,
 				QueryLiteral: safesql.New("a.ReleaseDate"),
 				Type:         filtervisitor.Date,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			RatingTableField: Member{
+			RatingTableField: {
 				Name:         RatingTableField,
 				QueryLiteral: safesql.New("a.Rating"),
 				Type:         filtervisitor.Integer,
@@ -309,26 +309,26 @@ var (
 		NameClause: safesql.New("Albums@{FORCE_INDEX=AlbumsByTitleReleaseDateRating} a"),
 		Cost:       25,
 		Fields: map[TableField]Member{
-			AlbumSingerIDTableField: Member{
+			AlbumSingerIDTableField: {
 				Name:         AlbumSingerIDTableField,
 				QueryLiteral: safesql.New("a.SingerId"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 			},
-			AlbumIDTableField: Member{
+			AlbumIDTableField: {
 				Name:         AlbumIDTableField,
 				QueryLiteral: safesql.New("a.AlbumId"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 			},
-			AlbumTitleTableField: Member{
+			AlbumTitleTableField: {
 				Name:         AlbumTitleTableField,
 				QueryLiteral: safesql.New("a.AlbumTitle"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			ReleaseDateTableField: Member{
+			ReleaseDateTableField: {
 				Name:         ReleaseDateTableField,
 				QueryLiteral: safesql.New("a.ReleaseDate"),
 				Type:         filtervisitor.Date,
@@ -336,7 +336,7 @@ var (
 				Indexed:      true,
 				NullFiltered: true,
 			},
-			RatingTableField: Member{
+			RatingTableField: {
 				Name:         RatingTableField,
 				QueryLiteral: safesql.New("a.Rating"),
 				Type:         filtervisitor.Integer,

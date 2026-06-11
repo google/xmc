@@ -74,5 +74,3 @@ func (g *GoogleOAuthProvider) ExchangeAndGetUserInfo(ctx context.Context, r *htt
 
 	return &userInfo, nil
 }
-
-

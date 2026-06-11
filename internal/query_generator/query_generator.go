@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,14 +22,14 @@ import (
 	"strconv"
 	"strings"
 
-	"go/log"
 	"api/filter/go/filtervisitor"
-	"googlesql/safesql/go/safesql"
+	"go/log"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/protobuf/v2/proto/proto"
+	"googlesql/safesql/go/safesql"
+	"task/go/status"
 	"xmanager_cloud/query_generator/equalityvisitor"
 	"xmanager_cloud/query_generator/filter/queryfilter"
-	"task/go/status"
 
 	fpb "api/filter/filter_expression_go_proto"
 )

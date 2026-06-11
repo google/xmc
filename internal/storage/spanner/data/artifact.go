@@ -131,23 +131,23 @@ func ArtifactProtoToInsertMutation(art *pb.Artifact) (*spanner.Mutation, error) 
 		artifactschema.ArtifactTableName,
 		artifactschema.ArtifactColumns,
 		[]any{
-			xid,                     // Xid
-			workUnitID,              // WorkUnitId
-			aid,                     // ArtifactId
-			art.Url.Url,             // Url
-			art.Url.Icon,            // Icon
-			art.Url.DisplayName,     // DisplayName
-			int64(art.Url.Priority), // Priority
-			art.Tags,                // Tags
-			art.Notes,               // Notes
-			art.LifecyclePhase,      // LifecyclePhase
-			art.DataType,            // DataType
-			art.MimeType,            // MimeType
-			art.AdditionalInfo,      // AdditionalInfo
-			art.Payload,             // Payload
+			xid,                               // Xid
+			workUnitID,                        // WorkUnitId
+			aid,                               // ArtifactId
+			art.Url.Url,                       // Url
+			art.Url.Icon,                      // Icon
+			art.Url.DisplayName,               // DisplayName
+			int64(art.Url.Priority),           // Priority
+			art.Tags,                          // Tags
+			art.Notes,                         // Notes
+			art.LifecyclePhase,                // LifecyclePhase
+			art.DataType,                      // DataType
+			art.MimeType,                      // MimeType
+			art.AdditionalInfo,                // AdditionalInfo
+			art.Payload,                       // Payload
 			getSearchableContent(art.Payload), // SearchableContent
-			art.CreateTime.AsTime(), // CreateTime
-			art.UpdateTime.AsTime(), // UpdateTime
+			art.CreateTime.AsTime(),           // CreateTime
+			art.UpdateTime.AsTime(),           // UpdateTime
 		},
 	), nil
 }
@@ -169,22 +169,22 @@ func ArtifactProtoToUpdateMutation(art *pb.Artifact) (*spanner.Mutation, error) 
 		artifactschema.ArtifactTableName,
 		artifactschema.ArtifactUpdateColumns,
 		[]any{
-			data.ReverseBits(xid),   // BitReversedXid
-			workUnitID,              // WorkUnitId
-			aid,                     // ArtifactId
-			art.Url.Url,             // Url
-			art.Url.Icon,            // Icon
-			art.Url.DisplayName,     // DisplayName
-			int64(art.Url.Priority), // Priority
-			art.Tags,                // Tags
-			art.Notes,               // Notes
-			art.LifecyclePhase,      // LifecyclePhase
-			art.DataType,            // DataType
-			art.MimeType,            // MimeType
-			art.AdditionalInfo,      // AdditionalInfo
-			art.Payload,             // Payload
+			data.ReverseBits(xid),             // BitReversedXid
+			workUnitID,                        // WorkUnitId
+			aid,                               // ArtifactId
+			art.Url.Url,                       // Url
+			art.Url.Icon,                      // Icon
+			art.Url.DisplayName,               // DisplayName
+			int64(art.Url.Priority),           // Priority
+			art.Tags,                          // Tags
+			art.Notes,                         // Notes
+			art.LifecyclePhase,                // LifecyclePhase
+			art.DataType,                      // DataType
+			art.MimeType,                      // MimeType
+			art.AdditionalInfo,                // AdditionalInfo
+			art.Payload,                       // Payload
 			getSearchableContent(art.Payload), // SearchableContent
-			art.UpdateTime.AsTime(), // UpdateTime
+			art.UpdateTime.AsTime(),           // UpdateTime
 		},
 	), nil
 }
@@ -195,7 +195,7 @@ func getSearchableContent(payload *pb.ArtifactPayload) string {
 	}
 
 	var parts []string
-	
+
 	switch p := payload.Type.(type) {
 	case *pb.ArtifactPayload_ManagedXprof:
 		if p.ManagedXprof != nil {

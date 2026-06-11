@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,13 +20,13 @@ import (
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"task/go/status"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
-	"task/go/status"
 
-	fmpb "protobuf/field_mask_go_proto"
 	"golang/protobuf/v2/proto/proto"
+	fmpb "protobuf/field_mask_go_proto"
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
