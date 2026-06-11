@@ -14,7 +14,7 @@
 
 import { getTestBed, TestBed, TestModuleMetadata } from '@angular/core/testing';
 import { BrowserDynamicTestingModule, platformBrowserDynamicTesting } from '@angular/platform-browser-dynamic/testing';
-import { Component, ComponentFactoryResolver } from '@angular/core';
+import { Component } from '@angular/core';
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { By } from '@angular/platform-browser';
 
@@ -70,10 +70,12 @@ export function bootstrap(component: any, options?: any): any {
   fixture.detectChanges();
   let selector: string | undefined = undefined;
   try {
-    const resolver = TestBed.inject(ComponentFactoryResolver);
-    selector = resolver.resolveComponentFactory(component).selector;
+    const cmpDef = (component as any).ɵcmp;
+    if (cmpDef && cmpDef.selectors && cmpDef.selectors[0]) {
+      selector = cmpDef.selectors[0][0];
+    }
   } catch (e) {
-    selector = (component as any).ɵcmp?.selector;
+    // Fallback or ignore
   }
   if (selector) {
     fixture.nativeElement.setAttribute('data-component-selector', selector);
@@ -170,7 +172,8 @@ export async function trigger(el: HTMLElement, eventName: string, eventData?: an
 
 export function bootstrapTemplate(template: string, options?: any): any {
   @Component({
-    template: template
+    template: template,
+    standalone: false
   })
   class DynamicHostComponent {
     constructor() {

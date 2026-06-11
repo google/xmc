@@ -116,6 +116,5 @@ py_test(
     main = "run_ui_tests.py",
     tags = [
         "local",
-        "manual",
     ],
 )
