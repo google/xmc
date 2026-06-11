@@ -12,16 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# gazelle:ignore
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-
-exports_files(
-    [
-        "ess_messages.pb",
-        "xid_messages.pb",
-    ],
-    visibility = ["//visibility:public"],
-)
 
 genrule(
     name = "copy_ess_schema",
@@ -37,14 +28,28 @@ genrule(
     cmd = "cp $< $@",
 )
 
+genrule(
+    name = "copy_ess_messages",
+    srcs = ["//api/protos/experiment:experiment_messages_descriptor"],
+    outs = ["ess_messages.pb"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "copy_xid_messages",
+    srcs = ["//api/protos/xid:xid_messages_descriptor"],
+    outs = ["xid_messages.pb"],
+    cmd = "cp $< $@",
+)
+
 go_library(
     name = "emulator",
     srcs = ["emulator.go"],
     embedsrcs = [
         ":ess-schema.sql",
         ":xid-schema.sql",
-        "ess_messages.pb",
-        "xid_messages.pb",
+        ":ess_messages.pb",
+        ":xid_messages.pb",
     ],
     importpath = "xmanager_cloud/internal/storage/spanner/emulator",
     visibility = ["//visibility:public"],
