@@ -15,6 +15,14 @@
 # gazelle:ignore
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+exports_files(
+    [
+        "ess-schema.sql",
+        "xid-schema.sql",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 go_library(
     name = "artifactschema",
     srcs = ["artifactschema.go"],
