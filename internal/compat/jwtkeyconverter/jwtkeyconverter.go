@@ -18,15 +18,15 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/rsa"
-	"math/big"
 	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/tink-crypto/tink-go/v2/insecurecleartextkeyset"
-	"github.com/tink-crypto/tink-go/v2/keyset"
 	_ "github.com/tink-crypto/tink-go/v2/jwt"
-	tink_go_proto "github.com/tink-crypto/tink-go/v2/proto/tink_go_proto"
+	"github.com/tink-crypto/tink-go/v2/keyset"
 	jwt_rsa_ssa_pkcs1_go_proto "github.com/tink-crypto/tink-go/v2/proto/jwt_rsa_ssa_pkcs1_go_proto"
+	tink_go_proto "github.com/tink-crypto/tink-go/v2/proto/tink_go_proto"
 	"google.golang.org/protobuf/proto"
 	"tink/go/insecuresecretdataaccess/insecuresecretdataaccess"
 )

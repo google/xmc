@@ -28,9 +28,9 @@ import (
 	"testing"
 	"time"
 
+	"cloud.google.com/go/iam/apiv1/iampb"
 	"github.com/golang-jwt/jwt/v5"
 	"google.golang.org/api/idtoken"
-	"cloud.google.com/go/iam/apiv1/iampb"
 )
 
 func TestSessionLifecycle(t *testing.T) {
@@ -1107,7 +1107,3 @@ func newTestAuthenticator(cfg *Config) *Authenticator {
 	}
 	return a
 }
-
-
-
-

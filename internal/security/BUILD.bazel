@@ -21,11 +21,11 @@ go_library(
     importpath = "xmanager_cloud/internal/security",
     visibility = ["//visibility:public"],
     deps = [
+        "//internal/compat/insecuresecretdataaccess",
+        "//internal/compat/jwtkeyconverter",
         "//internal/compat/log",
-        "//internal/compat/insecuresecretdataaccess:insecuresecretdataaccess",
-        "//internal/compat/jwtkeyconverter:jwtkeyconverter",
         "//internal/logging",
-        "@com_github_tink_crypto_tink_go_v2//jwt:jwt",
+        "@com_github_tink_crypto_tink_go_v2//jwt",
     ],
 )
 
@@ -35,9 +35,9 @@ go_library(
     importpath = "xmanager_cloud/security/securitytest",
     visibility = ["//visibility:public"],
     deps = [
-        "//internal/compat/insecuresecretdataaccess:insecuresecretdataaccess",
-        "//internal/compat/jwtkeyconverter:jwtkeyconverter",
-        "@com_github_tink_crypto_tink_go_v2//jwt:jwt",
+        "//internal/compat/insecuresecretdataaccess",
+        "//internal/compat/jwtkeyconverter",
+        "@com_github_tink_crypto_tink_go_v2//jwt",
     ],
 )
 
@@ -46,8 +46,8 @@ go_test(
     srcs = ["key_reloader_test.go"],
     embed = [":security"],
     deps = [
-        "//internal/compat/insecuresecretdataaccess:insecuresecretdataaccess",
-        "//internal/compat/jwtkeyconverter:jwtkeyconverter",
-        "@com_github_tink_crypto_tink_go_v2//jwt:jwt",
+        "//internal/compat/insecuresecretdataaccess",
+        "//internal/compat/jwtkeyconverter",
+        "@com_github_tink_crypto_tink_go_v2//jwt",
     ],
 )

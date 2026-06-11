@@ -25,11 +25,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	"task/go/status"
 	essapipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmessagespb "xmanager_cloud/xid_service/proto/messages_go_proto"
-	"task/go/status"
 )
 
 func TestValidateCreateXidRequest(t *testing.T) {
@@ -1595,7 +1595,7 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 			req: &essapipb.CreateArtifactRequest{
 				Parent: "experiments/123",
 				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Url:     &essmsgpb.Url{Url: "http://example.com"},
 					Payload: &essmsgpb.ArtifactPayload{},
 				},
 			},

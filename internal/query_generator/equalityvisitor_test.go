@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,10 +18,10 @@ import (
 	"strings"
 	"testing"
 
-	"go/log"
 	fpb "api/filter/filter_expression_go_proto"
 	"api/filter/go/filter"
 	"api/filter/go/filtervisitor"
+	"go/log"
 )
 
 type testCase struct {
@@ -55,120 +55,120 @@ func TestEquality(t *testing.T) {
 		{
 			`name = "42"`,
 			map[string]testMember{
-				"name": testMember{"name", filtervisitor.String},
+				"name": {"name", filtervisitor.String},
 			},
 			map[string]bool{"name": true},
 		},
 		{
 			`count > 12`,
 			map[string]testMember{
-				"count": testMember{"count", filtervisitor.Integer},
+				"count": {"count", filtervisitor.Integer},
 			},
 			map[string]bool{},
 		},
 		{
 			`humidity < 3.14`,
 			map[string]testMember{
-				"humidity": testMember{"humidity", filtervisitor.Integer},
+				"humidity": {"humidity", filtervisitor.Integer},
 			},
 			map[string]bool{},
 		},
 		{
 			`humidity >= 3`,
 			map[string]testMember{
-				"humidity": testMember{"humidity", filtervisitor.Integer},
+				"humidity": {"humidity", filtervisitor.Integer},
 			},
 			map[string]bool{},
 		},
 		{
 			`state != "FIRST"`,
 			map[string]testMember{
-				"state": testMember{"state", filtervisitor.Integer},
+				"state": {"state", filtervisitor.Integer},
 			},
 			map[string]bool{},
 		},
 		{
 			`bit`,
 			map[string]testMember{
-				"bit": testMember{"bit", filtervisitor.Boolean},
+				"bit": {"bit", filtervisitor.Boolean},
 			},
 			map[string]bool{},
 		},
 		{
 			`bit = false`,
 			map[string]testMember{
-				"bit": testMember{"bit", filtervisitor.Boolean},
+				"bit": {"bit", filtervisitor.Boolean},
 			},
 			map[string]bool{"bit": true},
 		},
 		{
 			`severity > 10`,
 			map[string]testMember{
-				"severity": testMember{"severity", filtervisitor.Unsigned},
+				"severity": {"severity", filtervisitor.Unsigned},
 			},
 			map[string]bool{},
 		},
 		{
 			`time > "2012-11-01T22:08:41+00:00"`,
 			map[string]testMember{
-				"time": testMember{"time", filtervisitor.Timestamp},
+				"time": {"time", filtervisitor.Timestamp},
 			},
 			map[string]bool{},
 		},
 		{
 			`foo(name)`,
 			map[string]testMember{
-				"foo":  testMember{"bar", filtervisitor.Boolean},
-				"name": testMember{"name", filtervisitor.String},
+				"foo":  {"bar", filtervisitor.Boolean},
+				"name": {"name", filtervisitor.String},
 			},
 			map[string]bool{},
 		},
 		{
 			`foo(name, "asdf")`,
 			map[string]testMember{
-				"foo":  testMember{"bar", filtervisitor.Boolean},
-				"name": testMember{"name", filtervisitor.String},
+				"foo":  {"bar", filtervisitor.Boolean},
+				"name": {"name", filtervisitor.String},
 			},
 			map[string]bool{},
 		},
 		{
 			`foo(name, bar("asdf"))`,
 			map[string]testMember{
-				"foo":  testMember{"bar", filtervisitor.Boolean},
-				"bar":  testMember{"baz", filtervisitor.Boolean},
-				"name": testMember{"name", filtervisitor.String},
+				"foo":  {"bar", filtervisitor.Boolean},
+				"bar":  {"baz", filtervisitor.Boolean},
+				"name": {"name", filtervisitor.String},
 			},
 			map[string]bool{},
 		},
 		{
 			`name = "42" count > 42`,
 			map[string]testMember{
-				"name":  testMember{"name", filtervisitor.String},
-				"count": testMember{"count", filtervisitor.Integer},
+				"name":  {"name", filtervisitor.String},
+				"count": {"count", filtervisitor.Integer},
 			},
 			map[string]bool{"name": true},
 		},
 		{
 			`name = "42" OR count > 42`,
 			map[string]testMember{
-				"name":  testMember{"name", filtervisitor.String},
-				"count": testMember{"count", filtervisitor.Integer},
+				"name":  {"name", filtervisitor.String},
+				"count": {"count", filtervisitor.Integer},
 			},
 			map[string]bool{},
 		},
 		{
 			`name = "42" AND count > 42`,
 			map[string]testMember{
-				"name":  testMember{"name", filtervisitor.String},
-				"count": testMember{"count", filtervisitor.Integer},
+				"name":  {"name", filtervisitor.String},
+				"count": {"count", filtervisitor.Integer},
 			},
 			map[string]bool{"name": true},
 		},
 		{
 			`name = "42" AND count = 42`,
 			map[string]testMember{
-				"name":  testMember{"name", filtervisitor.String},
-				"count": testMember{"count", filtervisitor.Integer},
+				"name":  {"name", filtervisitor.String},
+				"count": {"count", filtervisitor.Integer},
 			},
 			map[string]bool{"name": true,
 				"count": true},

@@ -77,7 +77,6 @@ compat_go_library(
 
 compat_go_test(
     name = "server_test",
-    shard_count = 10,
     srcs = [
         "batchrestartworkunits_test.go",
         "batchstopworkunits_test.go",
@@ -104,6 +103,7 @@ compat_go_test(
         "utils_test.go",
     ],
     embed = [":server"],
+    shard_count = 10,
     deps = [
         "//api/protos/experiment:api_go_proto",
         "//api/protos/experiment:messages_go_proto",
@@ -127,9 +127,9 @@ compat_go_test(
         "//internal/storage",
         "//internal/storage/spanner",
         "//internal/storage/spanner/emulator",
-        "@com_google_cloud_go_spanner//:spanner",
         "//internal/task_queue:client",
         "//internal/validator",
+        "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_api//cloudidentity/v1beta1",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//credentials/insecure:go_default_library",

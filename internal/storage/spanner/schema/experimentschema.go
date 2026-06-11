@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -102,96 +102,96 @@ var (
 		NameClause: safesql.New("Experiments e"),
 		Cost:       30,
 		Fields: map[querytools.TableField]querytools.Member{
-			bitReversedXidTableField: querytools.Member{
+			bitReversedXidTableField: {
 				Name:         bitReversedXidTableField,
 				QueryLiteral: safesql.New("e.BitReversedXid"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			xidTableField: querytools.Member{
+			xidTableField: {
 				Name:         xidTableField,
 				QueryLiteral: safesql.New("e.Xid"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			titleTableField: querytools.Member{
+			titleTableField: {
 				Name:         titleTableField,
 				QueryLiteral: safesql.New("e.Title"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 			},
-			creatorTableField: querytools.Member{
+			creatorTableField: {
 				Name:                   creatorTableField,
 				QueryLiteral:           safesql.New("e.Creator"),
 				Type:                   filtervisitor.String,
 				Selectable:             true,
 				DisjunctionOptimizable: true,
 			},
-			priorityTableField: querytools.Member{
+			priorityTableField: {
 				Name:         priorityTableField,
 				QueryLiteral: safesql.New("e.Priority"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 			},
-			urlsTableField: querytools.Member{
+			urlsTableField: {
 				Name:            urlsTableField,
 				SelectSQLString: safesql.New("e.Urls"),
 				QueryLiteral:    safesql.New("UNNEST(e.Urls)"),
 				Type:            filtervisitor.ArrayType(&filtervisitor.Bytes),
 				Selectable:      true,
 			},
-			tagsTableField: querytools.Member{
+			tagsTableField: {
 				Name:            tagsTableField,
 				SelectSQLString: safesql.New("e.Tags"),
 				QueryLiteral:    safesql.New("UNNEST(e.Tags)"),
 				Type:            filtervisitor.ArrayType(&filtervisitor.String),
 				Selectable:      true,
 			},
-			notesTableField: querytools.Member{
+			notesTableField: {
 				Name:         notesTableField,
 				QueryLiteral: safesql.New("e.Notes"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 			},
-			resourcesTableField: querytools.Member{
+			resourcesTableField: {
 				Name:         resourcesTableField,
 				QueryLiteral: safesql.New("e.Resources"),
 				Type:         filtervisitor.Bytes,
 				Selectable:   true,
 			},
-			statusTableField: querytools.Member{
+			statusTableField: {
 				Name:         statusTableField,
 				QueryLiteral: safesql.New("e.Status"),
 				Type:         filtervisitor.Bytes,
 				Selectable:   true,
 			},
-			activeStateTableField: querytools.Member{
+			activeStateTableField: {
 				Name:         activeStateTableField,
 				QueryLiteral: safesql.New("e.ActiveState"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 			},
-			launchStateTableField: querytools.Member{
+			launchStateTableField: {
 				Name:         launchStateTableField,
 				QueryLiteral: safesql.New("e.LaunchState"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 			},
-			createdTableField: querytools.Member{
+			createdTableField: {
 				Name:         createdTableField,
 				QueryLiteral: safesql.New("e.CreateTime"),
 				Type:         filtervisitor.Timestamp,
 				Selectable:   true,
 			},
-			updatedTableField: querytools.Member{
+			updatedTableField: {
 				Name:         updatedTableField,
 				QueryLiteral: safesql.New("e.UpdateTime"),
 				Type:         filtervisitor.Timestamp,
 				Selectable:   true,
 			},
-			completedTableField: querytools.Member{
+			completedTableField: {
 				Name:         completedTableField,
 				QueryLiteral: safesql.New("e.CompleteTime"),
 				Type:         filtervisitor.Timestamp,
@@ -199,7 +199,7 @@ var (
 			},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
-			querytools.UserOrderedIndex{TableField: bitReversedXidTableField, SortOrder: querytools.Asc},
+			{TableField: bitReversedXidTableField, SortOrder: querytools.Asc},
 		},
 	}
 
@@ -230,9 +230,9 @@ var (
 
 	// ExperimentsOrderByFields is the list of fields that can be used for ordering Experiments queries.
 	ExperimentsOrderByFields = []querytools.UserOrderedIndex{
-		querytools.UserOrderedIndex{TableField: createdTableField},
-		querytools.UserOrderedIndex{TableField: updatedTableField},
-		querytools.UserOrderedIndex{TableField: completedTableField},
-		querytools.UserOrderedIndex{TableField: xidTableField},
+		{TableField: createdTableField},
+		{TableField: updatedTableField},
+		{TableField: completedTableField},
+		{TableField: xidTableField},
 	}
 )

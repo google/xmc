@@ -30,14 +30,14 @@ var (
 	Usage       = flag.Usage
 )
 
-func Arg(i int) string { return flag.Arg(i) }
-func Args() []string   { return flag.Args() }
-func NArg() int        { return flag.NArg() }
-func NFlag() int       { return flag.NFlag() }
-func Parse()           { flag.Parse() }
-func Parsed() bool     { return flag.Parsed() }
-func PrintDefaults()   { flag.PrintDefaults() }
-func Visit(fn func(*Flag)) { flag.Visit(fn) }
+func Arg(i int) string        { return flag.Arg(i) }
+func Args() []string          { return flag.Args() }
+func NArg() int               { return flag.NArg() }
+func NFlag() int              { return flag.NFlag() }
+func Parse()                  { flag.Parse() }
+func Parsed() bool            { return flag.Parsed() }
+func PrintDefaults()          { flag.PrintDefaults() }
+func Visit(fn func(*Flag))    { flag.Visit(fn) }
 func VisitAll(fn func(*Flag)) { flag.VisitAll(fn) }
 
 func Bool(name string, value bool, usage string) *bool {
@@ -52,6 +52,7 @@ func Duration(name string, value time.Duration, usage string) *time.Duration {
 func DurationVar(p *time.Duration, name string, value time.Duration, usage string) {
 	flag.DurationVar(p, name, value, usage)
 }
+
 // We can use generic wrappers or simply delegate:
 func Float64(name string, value float64, usage string) *float64 {
 	return flag.Float64(name, value, usage)
