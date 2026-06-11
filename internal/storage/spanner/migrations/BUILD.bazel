@@ -17,14 +17,14 @@ load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
 genrule(
     name = "copy_ess_messages",
-    srcs = ["//internal/storage/spanner/emulator:ess_messages.pb"],
+    srcs = ["//api/protos/experiment:experiment_messages_descriptor"],
     outs = ["ess_messages.pb"],
     cmd = "cp $< $@",
 )
 
 genrule(
     name = "copy_xid_messages",
-    srcs = ["//internal/storage/spanner/emulator:xid_messages.pb"],
+    srcs = ["//api/protos/xid:xid_messages_descriptor"],
     outs = ["xid_messages.pb"],
     cmd = "cp $< $@",
 )
