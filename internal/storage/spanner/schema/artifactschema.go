@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -37,11 +37,11 @@ const (
 	tagsTableField  = querytools.TableField("tags")
 	notesTableField = querytools.TableField("notes")
 
-	lifecyclePhaseTableField = querytools.TableField("lifecycle_phase")
-	dataTypeTableField       = querytools.TableField("data_type")
-	mimeTypeTableField       = querytools.TableField("mime_type")
-	additionalInfoTableField = querytools.TableField("additional_info")
-	payloadTableField        = querytools.TableField("payload")
+	lifecyclePhaseTableField    = querytools.TableField("lifecycle_phase")
+	dataTypeTableField          = querytools.TableField("data_type")
+	mimeTypeTableField          = querytools.TableField("mime_type")
+	additionalInfoTableField    = querytools.TableField("additional_info")
+	payloadTableField           = querytools.TableField("payload")
 	searchableContentTableField = querytools.TableField("searchable_content")
 
 	createdTableField = querytools.TableField("created")
@@ -103,70 +103,70 @@ var (
 		NameClause: safesql.New("Artifacts a"),
 		Cost:       30,
 		Fields: map[querytools.TableField]querytools.Member{
-			bitReversedXidTableField: querytools.Member{
+			bitReversedXidTableField: {
 				Name:         bitReversedXidTableField,
 				QueryLiteral: safesql.New("a.BitReversedXid"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			xidTableField: querytools.Member{
+			xidTableField: {
 				Name:         xidTableField,
 				QueryLiteral: safesql.New("a.Xid"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			workUnitIDTableField: querytools.Member{
+			workUnitIDTableField: {
 				Name:         workUnitIDTableField,
 				QueryLiteral: safesql.New("a.WorkUnitId"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			artifactIDTableField: querytools.Member{
+			artifactIDTableField: {
 				Name:         artifactIDTableField,
 				QueryLiteral: safesql.New("a.ArtifactId"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			bitReversedArtifactIDTableField: querytools.Member{
+			bitReversedArtifactIDTableField: {
 				Name:         bitReversedArtifactIDTableField,
 				QueryLiteral: safesql.New("a.BitReversedArtifactId"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			urlTableField: querytools.Member{
+			urlTableField: {
 				Name:         urlTableField,
 				QueryLiteral: safesql.New("a.Url"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			iconTableField: querytools.Member{
+			iconTableField: {
 				Name:         iconTableField,
 				QueryLiteral: safesql.New("a.Icon"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			displayNameTableField: querytools.Member{
+			displayNameTableField: {
 				Name:         displayNameTableField,
 				QueryLiteral: safesql.New("a.DisplayName"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			priorityTableField: querytools.Member{
+			priorityTableField: {
 				Name:         priorityTableField,
 				QueryLiteral: safesql.New("a.Priority"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			tagsTableField: querytools.Member{
+			tagsTableField: {
 				Name:            tagsTableField,
 				SelectSQLString: safesql.New("a.Tags"),
 				QueryLiteral:    safesql.New("UNNEST(a.Tags)"),
@@ -174,61 +174,61 @@ var (
 				Selectable:      true,
 				Indexed:         false,
 			},
-			notesTableField: querytools.Member{
+			notesTableField: {
 				Name:         notesTableField,
 				QueryLiteral: safesql.New("a.Notes"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			lifecyclePhaseTableField: querytools.Member{
+			lifecyclePhaseTableField: {
 				Name:         lifecyclePhaseTableField,
 				QueryLiteral: safesql.New("a.LifecyclePhase"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			dataTypeTableField: querytools.Member{
+			dataTypeTableField: {
 				Name:         dataTypeTableField,
 				QueryLiteral: safesql.New("a.DataType"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			mimeTypeTableField: querytools.Member{
+			mimeTypeTableField: {
 				Name:         mimeTypeTableField,
 				QueryLiteral: safesql.New("a.MimeType"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			additionalInfoTableField: querytools.Member{
+			additionalInfoTableField: {
 				Name:         additionalInfoTableField,
 				QueryLiteral: safesql.New("a.AdditionalInfo"),
 				Selectable:   true,
 				Indexed:      false,
 			},
-			payloadTableField: querytools.Member{
+			payloadTableField: {
 				Name:         payloadTableField,
 				QueryLiteral: safesql.New("a.Payload"),
 				Selectable:   true,
 				Indexed:      false,
 			},
-			searchableContentTableField: querytools.Member{
+			searchableContentTableField: {
 				Name:         searchableContentTableField,
 				QueryLiteral: safesql.New("a.SearchableContent"),
 				Selectable:   false,
 				Indexed:      false,
 			},
 
-			createdTableField: querytools.Member{
+			createdTableField: {
 				Name:         createdTableField,
 				QueryLiteral: safesql.New("a.CreateTime"),
 				Type:         filtervisitor.Timestamp,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			updatedTableField: querytools.Member{
+			updatedTableField: {
 				Name:         updatedTableField,
 				QueryLiteral: safesql.New("a.UpdateTime"),
 				Type:         filtervisitor.Timestamp,
@@ -237,9 +237,9 @@ var (
 			},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
-			querytools.UserOrderedIndex{TableField: bitReversedXidTableField, SortOrder: querytools.Asc},
-			querytools.UserOrderedIndex{TableField: workUnitIDTableField, SortOrder: querytools.Asc},
-			querytools.UserOrderedIndex{TableField: artifactIDTableField, SortOrder: querytools.Asc},
+			{TableField: bitReversedXidTableField, SortOrder: querytools.Asc},
+			{TableField: workUnitIDTableField, SortOrder: querytools.Asc},
+			{TableField: artifactIDTableField, SortOrder: querytools.Asc},
 		},
 	}
 
@@ -274,10 +274,10 @@ var (
 
 	// ArtifactsOrderByFields is the list of fields that can be used for ordering Artifacts queries.
 	ArtifactsOrderByFields = []querytools.UserOrderedIndex{
-		querytools.UserOrderedIndex{TableField: createdTableField},
-		querytools.UserOrderedIndex{TableField: updatedTableField},
-		querytools.UserOrderedIndex{TableField: priorityTableField},
-		querytools.UserOrderedIndex{TableField: artifactIDTableField},
-		querytools.UserOrderedIndex{TableField: displayNameTableField},
+		{TableField: createdTableField},
+		{TableField: updatedTableField},
+		{TableField: priorityTableField},
+		{TableField: artifactIDTableField},
+		{TableField: displayNameTableField},
 	}
 )

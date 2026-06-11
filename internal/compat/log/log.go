@@ -64,10 +64,10 @@ func Exit(v ...interface{}) {
 	os.Exit(1)
 }
 
-func InfoContextf(ctx context.Context, format string, v ...interface{}) { Infof(format, v...) }
+func InfoContextf(ctx context.Context, format string, v ...interface{})    { Infof(format, v...) }
 func WarningContextf(ctx context.Context, format string, v ...interface{}) { Warningf(format, v...) }
-func ErrorContextf(ctx context.Context, format string, v ...interface{}) { Errorf(format, v...) }
-func FatalContextf(ctx context.Context, format string, v ...interface{}) { Fatalf(format, v...) }
+func ErrorContextf(ctx context.Context, format string, v ...interface{})   { Errorf(format, v...) }
+func FatalContextf(ctx context.Context, format string, v ...interface{})   { Fatalf(format, v...) }
 
 type Verbose bool
 
@@ -98,4 +98,3 @@ func (v Verbose) Warningf(format string, args ...interface{}) {
 		Warningf(format, args...)
 	}
 }
-

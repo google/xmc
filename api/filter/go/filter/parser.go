@@ -267,10 +267,10 @@ func isAlphaNum(r rune) bool {
 }
 
 type parser struct {
-	lex      *lexer
-	tokens   []token
-	curr     int
-	options  *fpb.ExpressionParserOptions
+	lex     *lexer
+	tokens  []token
+	curr    int
+	options *fpb.ExpressionParserOptions
 }
 
 func newParser(input string, options *fpb.ExpressionParserOptions) (*parser, error) {

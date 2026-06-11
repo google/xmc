@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	fmpb "protobuf/field_mask_go_proto"
+	"task/go/status"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
@@ -25,7 +26,6 @@ import (
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
-	"task/go/status"
 )
 
 // UpdateWorkUnit updates a work unit's data.

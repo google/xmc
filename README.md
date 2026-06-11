@@ -132,11 +132,37 @@ The **Log Monitor** subscribes to execution log entries on Pub/Sub and updates w
 ## Continuous Integration
 
 [![XMC Unit Tests](https://github.com/google/xmc/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/google/xmc/actions/workflows/unit-tests.yml)
+[![Lint Checks](https://github.com/google/xmc/actions/workflows/lint.yml/badge.svg)](https://github.com/google/xmc/actions/workflows/lint.yml)
 
-Automated unit test suites are executed on:
+Automated unit test suites and code quality checks are executed on:
 * **Pull Requests** targeting any branch.
 * **Direct Pushes** to the `test` (main baseline) and `feature/unit_tests_action` branches.
 * **Manual Dispatch** (`workflow_dispatch`) via the GitHub Actions UI.
+
+### Implemented Linting & Code Quality Rules
+
+To maintain pristine architecture, canonical styling, and avoid common defects across the monorepo, code quality rules are enforced automatically on all Pull Requests via GitHub Actions (`.github/workflows/lint.yml`) and locally via a pre-commit hook (`.githooks/pre-commit`).
+
+The following specific linting rules and static analysis toolchains are implemented across our supported languages:
+
+#### 1. Go Code (`golangci-lint`)
+Go source files (`.go`) are analyzed using the **`golangci-lint`** orchestrator. The following core rules and static analysis checks are enforced:
+* **`gofmt` / `goimports`**: Enforces canonical whitespace, indentation, and canonical alphabetical ordering of standard and third-party import statements.
+* **`govet`**: Inspects code for suspicious constructs, shadowed variables, un-keyed composite literals, and printf-style argument format mismatches.
+* **`staticcheck`**: Applies state-of-the-art static analysis to detect unused constants/variables, out-of-bounds slice access, unclosed HTTP response bodies, dead code paths, and deprecated API calls.
+* **`errcheck` / `gosimple`**: Ensures all returned error values are explicitly checked and simplifies redundant boolean, channel, or loop constructs.
+
+#### 2. Bazel Build Files (`buildifier`)
+Bazel build graphs (`BUILD`, `BUILD.bazel`, `WORKSPACE`, `MODULE.bazel`, and `.bzl` files) are formatted and analyzed using the official Bazel **`buildifier`** toolchain. Enforced rules include:
+* **Canonical Formatting**: Standardizes indentation (4 spaces for rule declarations), canonical keyword ordering, and proper multi-line list formatting.
+* **Target Sorting**: Automatically sorts `srcs`, `deps`, and `data` attribute lists alphabetically to prevent merge conflicts.
+* **Lint Warnings (`-lint=warn`)**: Flags deprecated Bazel syntax (such as legacy `load()` statements), un-pinned external dependencies, unused variable declarations inside `.bzl` macros, and non-canonical label references.
+
+#### Auto-Fixing Code Locally
+Developers can automatically format their code and fix lint violations locally before pushing by enabling the repository pre-commit hook:
+```bash
+git config core.hooksPath .githooks
+```
 
 ---
 

@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,10 +22,10 @@ import (
 	"api/filter/go/filter"
 	"api/filter/go/filtervisitor"
 	"api/filter/go/queryfilterbase"
-	"googlesql/safesql/go/safesql"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/proto/proto"
+	"googlesql/safesql/go/safesql"
 	"task/go/status"
 
 	fpb "api/filter/filter_expression_go_proto"
@@ -166,105 +166,105 @@ func TestSingleLevelAppendSuccess(t *testing.T) {
 		{
 			input: `name = "42"`,
 			m: map[string]appendix{
-				"name": appendix{safesql.New("x.name"), filtervisitor.String, false},
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
 			},
 			output: []string{`(x.name = @fb0)`},
 		},
 		{
 			input: `count > 12`,
 			m: map[string]appendix{
-				"count": appendix{safesql.New("y.countz"), filtervisitor.Integer, false},
+				"count": {safesql.New("y.countz"), filtervisitor.Integer, false},
 			},
 			output: []string{`(y.countz > @fb0)`},
 		},
 		{
 			input: `count > 16183100702751628930`,
 			m: map[string]appendix{
-				"count": appendix{safesql.New("y.countz"), filtervisitor.Integer, false},
+				"count": {safesql.New("y.countz"), filtervisitor.Integer, false},
 			},
 			output: []string{`(y.countz > @fb0)`},
 		},
 		{
 			input: `humidity < 3.14`,
 			m: map[string]appendix{
-				"humidity": appendix{safesql.New("x.humidity"), filtervisitor.Float, false},
+				"humidity": {safesql.New("x.humidity"), filtervisitor.Float, false},
 			},
 			output: []string{`(x.humidity < @fb0)`},
 		},
 		{
 			input: `humidity >= 3`,
 			m: map[string]appendix{
-				"humidity": appendix{safesql.New("x.humidity"), filtervisitor.Float, false},
+				"humidity": {safesql.New("x.humidity"), filtervisitor.Float, false},
 			},
 			output: []string{`(x.humidity >= @fb0)`},
 		},
 		{
 			input: `state != "FIRST"`,
 			m: map[string]appendix{
-				"state": appendix{safesql.New("x.state"), filtervisitor.Integer, false},
+				"state": {safesql.New("x.state"), filtervisitor.Integer, false},
 			},
 			output: []string{`(x.state != @fb0)`},
 		},
 		{
 			input: `state != "FIRST"`,
 			m: map[string]appendix{
-				"state": appendix{safesql.New("x.state"), filtervisitor.Enum, false},
+				"state": {safesql.New("x.state"), filtervisitor.Enum, false},
 			},
 			output: []string{`(x.state != @fb0)`},
 		},
 		{
 			input: `state = FIRST`,
 			m: map[string]appendix{
-				"state": appendix{safesql.New("x.state"), filtervisitor.Enum, false},
+				"state": {safesql.New("x.state"), filtervisitor.Enum, false},
 			},
 			output: []string{`(x.state = @fb0)`},
 		},
 		{
 			input: `state != FIRST`,
 			m: map[string]appendix{
-				"state": appendix{safesql.New("x.state"), filtervisitor.Enum, false},
+				"state": {safesql.New("x.state"), filtervisitor.Enum, false},
 			},
 			output: []string{`(x.state != @fb0)`},
 		},
 		{
 			input: `bit`,
 			m: map[string]appendix{
-				"bit": appendix{safesql.New("x.bit"), filtervisitor.Boolean, false},
+				"bit": {safesql.New("x.bit"), filtervisitor.Boolean, false},
 			},
 			output: []string{`x.bit`},
 		},
 		{
 			input: `bit = false`,
 			m: map[string]appendix{
-				"bit": appendix{safesql.New("x.bit"), filtervisitor.Boolean, false},
+				"bit": {safesql.New("x.bit"), filtervisitor.Boolean, false},
 			},
 			output: []string{`(x.bit = @fb0)`},
 		},
 		{
 			input: `severity > 10`,
 			m: map[string]appendix{
-				"severity": appendix{safesql.New("x.severity"), filtervisitor.Unsigned, false},
+				"severity": {safesql.New("x.severity"), filtervisitor.Unsigned, false},
 			},
 			output: []string{`(x.severity > @fb0)`},
 		},
 		{
 			input: `time > "2012-11-01T22:08:41+00:00"`,
 			m: map[string]appendix{
-				"time": appendix{safesql.New("x.time"), filtervisitor.Timestamp, false},
+				"time": {safesql.New("x.time"), filtervisitor.Timestamp, false},
 			},
 			output: []string{`(x.time > @fb0)`},
 		},
 		{
 			input: `time > "2012-11-01T22:08:41+00:00"`,
 			m: map[string]appendix{
-				"time": appendix{safesql.New("x.proto.time.seconds"), filtervisitor.ProtoTimestamp, false},
+				"time": {safesql.New("x.proto.time.seconds"), filtervisitor.ProtoTimestamp, false},
 			},
 			output: []string{`(x.proto.time.seconds > @fb0)`},
 		},
 		{
 			input: `date > "2012-11-01"`,
 			m: map[string]appendix{
-				"date": appendix{safesql.New("x.date"), filtervisitor.Date, false},
+				"date": {safesql.New("x.date"), filtervisitor.Date, false},
 			},
 			output: []string{`(x.date > @fb0)`},
 		},
@@ -273,75 +273,75 @@ func TestSingleLevelAppendSuccess(t *testing.T) {
 			// with string fields that happen to be date-shaped.
 			input: `dateStr > "2012-11-01"`,
 			m: map[string]appendix{
-				"dateStr": appendix{safesql.New("x.dateStr"), filtervisitor.String, false},
+				"dateStr": {safesql.New("x.dateStr"), filtervisitor.String, false},
 			},
 			output: []string{`(x.dateStr > @fb0)`},
 		},
 		{
 			input: `date != "2012-11-01"`,
 			m: map[string]appendix{
-				"date": appendix{safesql.New("x.date"), filtervisitor.Date, false},
+				"date": {safesql.New("x.date"), filtervisitor.Date, false},
 			},
 			output: []string{`(x.date != @fb0)`},
 		},
 		{
 			input: `name =~ "^match$"`,
 			m: map[string]appendix{
-				"name": appendix{safesql.New("x.name"), filtervisitor.String, false},
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
 			},
 			output: []string{`(REGEXP_CONTAINS(x.name , @fb0))`},
 		},
 		{
 			input: `name !~ "^match$"`,
 			m: map[string]appendix{
-				"name": appendix{safesql.New("x.name"), filtervisitor.String, false},
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
 			},
 			output: []string{`(NOT (REGEXP_CONTAINS(x.name , @fb0)))`},
 		},
 		{
 			input: `foo(count) !~ "^match$"`,
 			m: map[string]appendix{
-				"count": appendix{safesql.New("x.count"), filtervisitor.Integer, false},
-				"foo":   appendix{safesql.New("bar"), filtervisitor.String, false},
+				"count": {safesql.New("x.count"), filtervisitor.Integer, false},
+				"foo":   {safesql.New("bar"), filtervisitor.String, false},
 			},
 			output: []string{`(NOT (REGEXP_CONTAINS(bar(x.count) , @fb0)))`},
 		},
 		{
 			input: `color: "blue"`,
 			m: map[string]appendix{
-				"color": appendix{safesql.New("x.color"), filtervisitor.ArrayType(&filtervisitor.StrConst), false},
+				"color": {safesql.New("x.color"), filtervisitor.ArrayType(&filtervisitor.StrConst), false},
 			},
 			output: []string{`(@fb0 IN x.color)`},
 		},
 		{
 			input: `foo(name)`,
 			m: map[string]appendix{
-				"foo":  appendix{safesql.New("bar"), filtervisitor.Boolean, false},
-				"name": appendix{safesql.New("x.name"), filtervisitor.String, false},
+				"foo":  {safesql.New("bar"), filtervisitor.Boolean, false},
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
 			},
 			output: []string{`bar(x.name)`},
 		},
 		{
 			input: `foo(name, "asdf")`,
 			m: map[string]appendix{
-				"foo":  appendix{safesql.New("bar"), filtervisitor.Boolean, false},
-				"name": appendix{safesql.New("x.name"), filtervisitor.String, false},
+				"foo":  {safesql.New("bar"), filtervisitor.Boolean, false},
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
 			},
 			output: []string{`bar(x.name, @fb0)`},
 		},
 		{
 			input: `foo(name, bar("asdf"))`,
 			m: map[string]appendix{
-				"foo":  appendix{safesql.New("bar"), filtervisitor.Boolean, false},
-				"bar":  appendix{safesql.New("baz"), filtervisitor.Boolean, false},
-				"name": appendix{safesql.New("x.name"), filtervisitor.String, false},
+				"foo":  {safesql.New("bar"), filtervisitor.Boolean, false},
+				"bar":  {safesql.New("baz"), filtervisitor.Boolean, false},
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
 			},
 			output: []string{`bar(x.name, baz(@fb0))`},
 		},
 		{
 			input: `bytesfield = "bbb"`,
 			m: map[string]appendix{
-				"bytesfield": appendix{safesql.New("x.bytesfield"), filtervisitor.Bytes, false},
+				"bytesfield": {safesql.New("x.bytesfield"), filtervisitor.Bytes, false},
 			},
 			output: []string{`(x.bytesfield = @fb0)`},
 			bindings: map[string]any{
@@ -351,7 +351,7 @@ func TestSingleLevelAppendSuccess(t *testing.T) {
 		{
 			input: `bytesfield > "bbb"`,
 			m: map[string]appendix{
-				"bytesfield": appendix{safesql.New("x.bytesfield"), filtervisitor.Bytes, false},
+				"bytesfield": {safesql.New("x.bytesfield"), filtervisitor.Bytes, false},
 			},
 			output: []string{`(x.bytesfield > @fb0)`},
 			bindings: map[string]any{
@@ -361,7 +361,7 @@ func TestSingleLevelAppendSuccess(t *testing.T) {
 		{
 			input: `bytesfield =~ "^match$"`,
 			m: map[string]appendix{
-				"bytesfield": appendix{safesql.New("x.bytesfield"), filtervisitor.Bytes, false},
+				"bytesfield": {safesql.New("x.bytesfield"), filtervisitor.Bytes, false},
 			},
 			output: []string{`(REGEXP_CONTAINS(x.bytesfield , @fb0))`},
 			bindings: map[string]any{
@@ -382,7 +382,7 @@ func TestSingleLevelAppendFailure(t *testing.T) {
 		{
 			`count > 12 AND stat = "12"`,
 			map[string]appendix{
-				"count": appendix{safesql.New("x.count"), filtervisitor.Integer, false},
+				"count": {safesql.New("x.count"), filtervisitor.Integer, false},
 			},
 		},
 		{
@@ -392,7 +392,7 @@ func TestSingleLevelAppendFailure(t *testing.T) {
 		{
 			`name: "1"`,
 			map[string]appendix{
-				"name": appendix{safesql.New("x.name"), filtervisitor.String, false},
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
 			},
 		},
 		{
@@ -402,7 +402,7 @@ func TestSingleLevelAppendFailure(t *testing.T) {
 		{
 			`foo(name)`,
 			map[string]appendix{
-				"name": appendix{safesql.New("x.name"), filtervisitor.String, false},
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
 			},
 		},
 
@@ -410,95 +410,95 @@ func TestSingleLevelAppendFailure(t *testing.T) {
 		{
 			`name >= 42`,
 			map[string]appendix{
-				"name": appendix{safesql.New("x.name"), filtervisitor.String, false},
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
 			},
 		},
 		{
 			`state = 123.32`,
 			map[string]appendix{
-				"state": appendix{safesql.New("x.state"), filtervisitor.Enum, false},
+				"state": {safesql.New("x.state"), filtervisitor.Enum, false},
 			},
 		},
 		{
 			`count <= "12"`,
 			map[string]appendix{
-				"count": appendix{safesql.New("x.count"), filtervisitor.Integer, false},
+				"count": {safesql.New("x.count"), filtervisitor.Integer, false},
 			},
 		},
 		{
 			`name AND count >= 42`,
 			map[string]appendix{
-				"name":  appendix{safesql.New("x.name"), filtervisitor.String, false},
-				"count": appendix{safesql.New("x.count"), filtervisitor.Integer, false},
+				"name":  {safesql.New("x.name"), filtervisitor.String, false},
+				"count": {safesql.New("x.count"), filtervisitor.Integer, false},
 			},
 		},
 		{
 			`name = "blah" AND count`,
 			map[string]appendix{
-				"name":  appendix{safesql.New("x.name"), filtervisitor.String, false},
-				"count": appendix{safesql.New("x.count"), filtervisitor.Integer, false},
+				"name":  {safesql.New("x.name"), filtervisitor.String, false},
+				"count": {safesql.New("x.count"), filtervisitor.Integer, false},
 			},
 		},
 		{
 			`severity > -10`,
 			map[string]appendix{
-				"severity": appendix{safesql.New("x.severity"), filtervisitor.Unsigned, false},
+				"severity": {safesql.New("x.severity"), filtervisitor.Unsigned, false},
 			},
 		},
 		{
 			`NOT name`,
 			map[string]appendix{
-				"name": appendix{safesql.New("x.name"), filtervisitor.String, false},
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
 			},
 		},
 		{
 			`humidity`,
 			map[string]appendix{
-				"humidity": appendix{safesql.New("x.humidity"), filtervisitor.Float, false},
+				"humidity": {safesql.New("x.humidity"), filtervisitor.Float, false},
 			},
 		},
 		{
 			`color: "blue"`,
 			map[string]appendix{
-				"color": appendix{safesql.New("x.color"), filtervisitor.ArrayType(&queryfilterbase.IntConst), false},
+				"color": {safesql.New("x.color"), filtervisitor.ArrayType(&queryfilterbase.IntConst), false},
 			},
 		},
 		{
 			`date > "not a date"`,
 			map[string]appendix{
-				"date": appendix{safesql.New("x.date"), filtervisitor.Date, false},
+				"date": {safesql.New("x.date"), filtervisitor.Date, false},
 			},
 		},
 		{
 			`notastring =~ "^match$"`,
 			map[string]appendix{
-				"notastring": appendix{safesql.New("x.notastring"), filtervisitor.Integer, false},
+				"notastring": {safesql.New("x.notastring"), filtervisitor.Integer, false},
 			},
 		},
 		{
 			`notastring !~ "^match$"`,
 			map[string]appendix{
-				"notastring": appendix{safesql.New("x.notastring"), filtervisitor.Integer, false},
+				"notastring": {safesql.New("x.notastring"), filtervisitor.Integer, false},
 			},
 		},
 		{
 			`bytesfield = stringfield`,
 			map[string]appendix{
-				"bytesfield":  appendix{safesql.New("x.bytesfield"), filtervisitor.Bytes, false},
-				"stringfield": appendix{safesql.New("x.stringfield"), filtervisitor.String, false},
+				"bytesfield":  {safesql.New("x.bytesfield"), filtervisitor.Bytes, false},
+				"stringfield": {safesql.New("x.stringfield"), filtervisitor.String, false},
 			},
 		},
 		{
 			`bytesfield = 12.0`,
 			map[string]appendix{
-				"bytesfield": appendix{safesql.New("x.bytesfield"), filtervisitor.Bytes, false},
+				"bytesfield": {safesql.New("x.bytesfield"), filtervisitor.Bytes, false},
 			},
 		},
 		{
 			`bytesfield = constval`,
 			map[string]appendix{
-				"bytesfield": appendix{safesql.New("x.bytesfield"), filtervisitor.Bytes, false},
-				"constval":   appendix{safesql.New("myconst"), filtervisitor.StrConst, false},
+				"bytesfield": {safesql.New("x.bytesfield"), filtervisitor.Bytes, false},
+				"constval":   {safesql.New("myconst"), filtervisitor.StrConst, false},
 			},
 		},
 		// The below regex syntax is supported by the parser,
@@ -506,13 +506,13 @@ func TestSingleLevelAppendFailure(t *testing.T) {
 		{
 			`name =~ ("foo" AND ("bar" OR "baz"))`,
 			map[string]appendix{
-				"name": appendix{safesql.New("x.name"), filtervisitor.String, false},
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
 			},
 		},
 		{
 			`name =~ (NOT "^re")`,
 			map[string]appendix{
-				"name": appendix{safesql.New("x.name"), filtervisitor.String, false},
+				"name": {safesql.New("x.name"), filtervisitor.String, false},
 			},
 		},
 	}
@@ -525,21 +525,21 @@ func TestMultiLevelAppendSuccess(t *testing.T) {
 		{
 			input: `str = "42"`,
 			m: map[string]appendix{
-				"str": appendix{safesql.New("y.str"), filtervisitor.String, false},
+				"str": {safesql.New("y.str"), filtervisitor.String, false},
 			},
 			output: []string{`(y.str = @fb0)`},
 		},
 		{
 			input: `msg.name = "hello"`,
 			m: map[string]appendix{
-				"msg.name": appendix{safesql.New("y.msg.name"), filtervisitor.String, false},
+				"msg.name": {safesql.New("y.msg.name"), filtervisitor.String, false},
 			},
 			output: []string{`(y.msg.name = @fb0)`},
 		},
 		{
 			input: `recurse.msg.name = "bye"`,
 			m: map[string]appendix{
-				"recurse.msg.name": appendix{safesql.New("y.recurse.msg.name"), filtervisitor.String, false},
+				"recurse.msg.name": {safesql.New("y.recurse.msg.name"), filtervisitor.String, false},
 			},
 			output: []string{`(y.recurse.msg.name = @fb0)`},
 		},
@@ -553,77 +553,77 @@ func TestComplexSuccess(t *testing.T) {
 		{
 			input: `name = "42" count > 42`,
 			m: map[string]appendix{
-				"name":  appendix{safesql.New("z.name"), filtervisitor.String, false},
-				"count": appendix{safesql.New("z.count"), filtervisitor.Integer, false},
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
 			},
 			output: []string{`((z.name = @fb0) AND (z.count > @fb1))`},
 		},
 		{
 			input: `"23" = name AND count > 42`,
 			m: map[string]appendix{
-				"name":  appendix{safesql.New("z.name"), filtervisitor.String, false},
-				"count": appendix{safesql.New("z.count"), filtervisitor.Integer, false},
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
 			},
 			output: []string{`((@fb0 = z.name) AND (z.count > @fb1))`},
 		},
 		{
 			input: `name = "42" OR count != 42`,
 			m: map[string]appendix{
-				"name":  appendix{safesql.New("z.name"), filtervisitor.String, false},
-				"count": appendix{safesql.New("z.count"), filtervisitor.Integer, false},
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
 			},
 			output: []string{`((z.name = @fb0) OR (z.count != @fb1))`},
 		},
 		{
 			input: `name = "42" OR count != 42 OR -state=FIRST`,
 			m: map[string]appendix{
-				"name":  appendix{safesql.New("z.name"), filtervisitor.String, false},
-				"count": appendix{safesql.New("z.count"), filtervisitor.Integer, false},
-				"state": appendix{safesql.New("z.state"), filtervisitor.Enum, false},
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
+				"state": {safesql.New("z.state"), filtervisitor.Enum, false},
 			},
 			output: []string{`((z.name = @fb0) OR (z.count != @fb1) OR NOT (z.state = @fb2))`},
 		},
 		{
 			input: `name = "42" AND count = 1 OR count = 2 OR count = 3`,
 			m: map[string]appendix{
-				"name":  appendix{safesql.New("z.name"), filtervisitor.String, false},
-				"count": appendix{safesql.New("z.count"), filtervisitor.Integer, false},
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
 			},
 			output: []string{`((z.name = @fb0) AND ((z.count = @fb1) OR (z.count = @fb2) OR (z.count = @fb3)))`},
 		},
 		{
 			input: `-name="42"`,
 			m: map[string]appendix{
-				"name": appendix{safesql.New("z.name"), filtervisitor.String, false},
+				"name": {safesql.New("z.name"), filtervisitor.String, false},
 			},
 			output: []string{`NOT (z.name = @fb0)`},
 		},
 		{
 			input: `a AND b OR c AND d OR e`,
 			m: map[string]appendix{
-				"a": appendix{safesql.New("z.a"), filtervisitor.Boolean, false},
-				"b": appendix{safesql.New("z.b"), filtervisitor.Boolean, false},
-				"c": appendix{safesql.New("z.c"), filtervisitor.Boolean, false},
-				"d": appendix{safesql.New("z.d"), filtervisitor.Boolean, false},
-				"e": appendix{safesql.New("z.e"), filtervisitor.Boolean, false},
+				"a": {safesql.New("z.a"), filtervisitor.Boolean, false},
+				"b": {safesql.New("z.b"), filtervisitor.Boolean, false},
+				"c": {safesql.New("z.c"), filtervisitor.Boolean, false},
+				"d": {safesql.New("z.d"), filtervisitor.Boolean, false},
+				"e": {safesql.New("z.e"), filtervisitor.Boolean, false},
 			},
 			output: []string{`(z.a AND (z.b OR z.c) AND (z.d OR z.e))`},
 		},
 		{
 			input: `(count > 1 AND name !~ "^re") OR name =~ "re$" OR state=FIRST`,
 			m: map[string]appendix{
-				"name":  appendix{safesql.New("z.name"), filtervisitor.String, false},
-				"count": appendix{safesql.New("z.count"), filtervisitor.Integer, false},
-				"state": appendix{safesql.New("z.state"), filtervisitor.Enum, false},
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
+				"state": {safesql.New("z.state"), filtervisitor.Enum, false},
 			},
 			output: []string{`(((z.count > @fb0) AND (NOT (REGEXP_CONTAINS(z.name , @fb1)))) OR (REGEXP_CONTAINS(z.name , @fb2)) OR (z.state = @fb3))`},
 		},
 		{
 			input: `(count > 1 AND name !~ "^re") OR name =~ "re$" OR state=FIRST`,
 			m: map[string]appendix{
-				"name":  appendix{safesql.New("z.name"), filtervisitor.String, false},
-				"count": appendix{safesql.New("z.count"), filtervisitor.Integer, false},
-				"state": appendix{safesql.New("z.state"), filtervisitor.Enum, false},
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
+				"state": {safesql.New("z.state"), filtervisitor.Enum, false},
 			},
 			output: []string{`(((z.count > @fb0) AND (NOT (REGEXP_CONTAINS(z.name , @fb1)))) OR (REGEXP_CONTAINS(z.name , @fb2)) OR (z.state = @fb3))`},
 		},
@@ -637,82 +637,82 @@ func TestOptimizedSuccess(t *testing.T) {
 		{
 			input: `name = "42" count > 42`,
 			m: map[string]appendix{
-				"name":  appendix{safesql.New("z.name"), filtervisitor.String, true},
-				"count": appendix{safesql.New("z.count"), filtervisitor.Integer, true},
+				"name":  {safesql.New("z.name"), filtervisitor.String, true},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, true},
 			},
 			output: []string{`((z.name = @fb0) AND (z.count > @fb1))`},
 		},
 		{
 			input: `"23" = name AND count > 42`,
 			m: map[string]appendix{
-				"name":  appendix{safesql.New("z.name"), filtervisitor.String, true},
-				"count": appendix{safesql.New("z.count"), filtervisitor.Integer, true},
+				"name":  {safesql.New("z.name"), filtervisitor.String, true},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, true},
 			},
 			output: []string{`((@fb0 = z.name) AND (z.count > @fb1))`},
 		},
 		{
 			input: `name = "42" OR count != 42`,
 			m: map[string]appendix{
-				"name":  appendix{safesql.New("z.name"), filtervisitor.String, true},
-				"count": appendix{safesql.New("z.count"), filtervisitor.Integer, true},
+				"name":  {safesql.New("z.name"), filtervisitor.String, true},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, true},
 			},
 			output: []string{`((z.name = @fb0) OR (z.count != @fb1))`, `((z.count != @fb0) OR (z.name = @fb1))`},
 		},
 		{
 			input: `name = "42" AND nodes.count = "1" OR nodes.count = "2" OR nodes.count = "3"`,
 			m: map[string]appendix{
-				"name":        appendix{safesql.New("z.name"), filtervisitor.String, true},
-				"nodes.count": appendix{safesql.New("z.count"), filtervisitor.String, true},
+				"name":        {safesql.New("z.name"), filtervisitor.String, true},
+				"nodes.count": {safesql.New("z.count"), filtervisitor.String, true},
 			},
 			output: []string{`((z.name = @fb0) AND ((z.count IN UNNEST (@fb1))))`},
 		},
 		{
 			input: `name = "42" OR nodes.count = "1"`,
 			m: map[string]appendix{
-				"name":        appendix{safesql.New("z.name"), filtervisitor.String, true},
-				"nodes.count": appendix{safesql.New("z.count"), filtervisitor.String, true},
+				"name":        {safesql.New("z.name"), filtervisitor.String, true},
+				"nodes.count": {safesql.New("z.count"), filtervisitor.String, true},
 			},
 			output: []string{`((z.name = @fb0) OR (z.count = @fb1))`, `((z.count = @fb0) OR (z.name = @fb1))`},
 		},
 		{
 			input: `name = "42" OR name = "47" OR nodes.count = "1"`,
 			m: map[string]appendix{
-				"name":        appendix{safesql.New("z.name"), filtervisitor.String, true},
-				"nodes.count": appendix{safesql.New("z.count"), filtervisitor.String, true},
+				"name":        {safesql.New("z.name"), filtervisitor.String, true},
+				"nodes.count": {safesql.New("z.count"), filtervisitor.String, true},
 			},
 			output: []string{`((z.count = @fb0) OR (z.name IN UNNEST (@fb1)))`, `((z.name IN UNNEST (@fb0)) OR (z.count = @fb1))`},
 		},
 		{
 			input: `name = "42" OR nodes.count = 1 OR nodes.count = 2 OR nodes.count = 3`,
 			m: map[string]appendix{
-				"name":        appendix{safesql.New("z.name"), filtervisitor.String, true},
-				"nodes.count": appendix{safesql.New("z.count"), filtervisitor.Integer, true},
+				"name":        {safesql.New("z.name"), filtervisitor.String, true},
+				"nodes.count": {safesql.New("z.count"), filtervisitor.Integer, true},
 			},
 			output: []string{`((z.name = @fb0) OR (z.count IN UNNEST (@fb1)))`, `((z.count IN UNNEST (@fb0)) OR (z.name = @fb1))`},
 		},
 		{
 			input: `nodes.name = "42" OR nodes.name = "44" OR nodes.count = 1 OR nodes.count = 2 OR nodes.count = 3 OR nodes.name = "45"`,
 			m: map[string]appendix{
-				"nodes.name":  appendix{safesql.New("z.name"), filtervisitor.String, true},
-				"nodes.count": appendix{safesql.New("z.count"), filtervisitor.Integer, true},
+				"nodes.name":  {safesql.New("z.name"), filtervisitor.String, true},
+				"nodes.count": {safesql.New("z.count"), filtervisitor.Integer, true},
 			},
 			output: []string{`((z.name IN UNNEST (@fb0)) OR (z.count IN UNNEST (@fb1)))`, `((z.count IN UNNEST (@fb0)) OR (z.name IN UNNEST (@fb1)))`},
 		},
 		{
 			input: `-name="42"`,
 			m: map[string]appendix{
-				"name": appendix{safesql.New("z.name"), filtervisitor.String, true},
+				"name": {safesql.New("z.name"), filtervisitor.String, true},
 			},
 			output: []string{`NOT (z.name = @fb0)`},
 		},
 		{
 			input: `a AND b OR c AND d OR e`,
 			m: map[string]appendix{
-				"a": appendix{safesql.New("z.a"), filtervisitor.Boolean, true},
-				"b": appendix{safesql.New("z.b"), filtervisitor.Boolean, true},
-				"c": appendix{safesql.New("z.c"), filtervisitor.Boolean, true},
-				"d": appendix{safesql.New("z.d"), filtervisitor.Boolean, true},
-				"e": appendix{safesql.New("z.e"), filtervisitor.Boolean, true},
+				"a": {safesql.New("z.a"), filtervisitor.Boolean, true},
+				"b": {safesql.New("z.b"), filtervisitor.Boolean, true},
+				"c": {safesql.New("z.c"), filtervisitor.Boolean, true},
+				"d": {safesql.New("z.d"), filtervisitor.Boolean, true},
+				"e": {safesql.New("z.e"), filtervisitor.Boolean, true},
 			},
 			output: []string{`(z.a AND (z.b OR z.c) AND (z.d OR z.e))`},
 		},
@@ -739,7 +739,7 @@ func TestRestrictionTranslate(t *testing.T) {
 			safesql.New("SELECT x.f FROM b AS x WHERE"),
 			"kind = \"FOO_OLD\"",
 			map[string]appendix{
-				"kind": appendix{safesql.New("z.kind"), filtervisitor.String, true},
+				"kind": {safesql.New("z.kind"), filtervisitor.String, true},
 			},
 			map[string]string{"FOO_OLD": "FOO_NEW"},
 			"SELECT x.f FROM b AS x WHERE(z.kind = @fb0)",
@@ -750,7 +750,7 @@ func TestRestrictionTranslate(t *testing.T) {
 			safesql.New("SELECT x.f FROM b AS x WHERE"),
 			"kind : \"FOO_OLD\"",
 			map[string]appendix{
-				"kind": appendix{safesql.New("z.kind"), filtervisitor.ArrayType(&filtervisitor.String), true},
+				"kind": {safesql.New("z.kind"), filtervisitor.ArrayType(&filtervisitor.String), true},
 			},
 			map[string]string{"FOO_OLD": "FOO_NEW"},
 			"SELECT x.f FROM b AS x WHERE(@fb0 IN z.kind)",
@@ -761,7 +761,7 @@ func TestRestrictionTranslate(t *testing.T) {
 			safesql.New("SELECT x.f FROM b AS x WHERE"),
 			"\"FOO_OLD\" = kind",
 			map[string]appendix{
-				"kind": appendix{safesql.New("z.kind"), filtervisitor.String, true},
+				"kind": {safesql.New("z.kind"), filtervisitor.String, true},
 			},
 			map[string]string{"FOO_OLD": "FOO_NEW"},
 			"SELECT x.f FROM b AS x WHERE(@fb0 = z.kind)",
@@ -772,8 +772,8 @@ func TestRestrictionTranslate(t *testing.T) {
 			safesql.New("SELECT x.f FROM b AS x WHERE"),
 			"\"FOO_OLD\" = other_name",
 			map[string]appendix{
-				"kind":       appendix{safesql.New("z.kind"), filtervisitor.String, true},
-				"other_name": appendix{safesql.New("z.other"), filtervisitor.String, true},
+				"kind":       {safesql.New("z.kind"), filtervisitor.String, true},
+				"other_name": {safesql.New("z.other"), filtervisitor.String, true},
 			},
 			map[string]string{"FOO_OLD": "FOO_NEW"},
 			"SELECT x.f FROM b AS x WHERE(@fb0 = z.other)",
@@ -940,67 +940,67 @@ func TestRestrictionWithFullTextSearch(t *testing.T) {
 		{
 			input: `"full text search"`,
 			m: map[string]appendix{
-				"name":  appendix{safesql.New("z.name"), filtervisitor.String, false},
-				"count": appendix{safesql.New("z.count"), filtervisitor.Integer, false},
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
 			},
 			output: []string{`(SEARCH(TokenizedText, @fb0) OR SEARCH(TokenizedText2, @fb1))`},
 		},
 		{
 			input: `"full text search" AND name = "42" count > 42`,
 			m: map[string]appendix{
-				"name":  appendix{safesql.New("z.name"), filtervisitor.String, false},
-				"count": appendix{safesql.New("z.count"), filtervisitor.Integer, false},
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
 			},
 			output: []string{`((SEARCH(TokenizedText, @fb0) OR SEARCH(TokenizedText2, @fb1)) AND ((z.name = @fb2) AND (z.count > @fb3)))`},
 		},
 		{
 			input: `"full text search" AND "23" = name AND count > 42`,
 			m: map[string]appendix{
-				"name":  appendix{safesql.New("z.name"), filtervisitor.String, false},
-				"count": appendix{safesql.New("z.count"), filtervisitor.Integer, false},
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
 			},
 			output: []string{`((SEARCH(TokenizedText, @fb0) OR SEARCH(TokenizedText2, @fb1)) AND (@fb2 = z.name) AND (z.count > @fb3))`},
 		},
 		{
 			input: `"full text search" AND name = "42" OR count != 42`,
 			m: map[string]appendix{
-				"name":  appendix{safesql.New("z.name"), filtervisitor.String, false},
-				"count": appendix{safesql.New("z.count"), filtervisitor.Integer, false},
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
 			},
 			output: []string{`((SEARCH(TokenizedText, @fb0) OR SEARCH(TokenizedText2, @fb1)) AND ((z.name = @fb2) OR (z.count != @fb3)))`},
 		},
 		{
 			input: `"full text search" AND name = "42" OR count != 42 OR -state=FIRST`,
 			m: map[string]appendix{
-				"name":  appendix{safesql.New("z.name"), filtervisitor.String, false},
-				"count": appendix{safesql.New("z.count"), filtervisitor.Integer, false},
-				"state": appendix{safesql.New("z.state"), filtervisitor.Enum, false},
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
+				"state": {safesql.New("z.state"), filtervisitor.Enum, false},
 			},
 			output: []string{`((SEARCH(TokenizedText, @fb0) OR SEARCH(TokenizedText2, @fb1)) AND ((z.name = @fb2) OR (z.count != @fb3) OR NOT (z.state = @fb4)))`},
 		},
 		{
 			input: `"full text search" AND name = "42" AND count = 1 OR count = 2 OR count = 3`,
 			m: map[string]appendix{
-				"name":  appendix{safesql.New("z.name"), filtervisitor.String, false},
-				"count": appendix{safesql.New("z.count"), filtervisitor.Integer, false},
+				"name":  {safesql.New("z.name"), filtervisitor.String, false},
+				"count": {safesql.New("z.count"), filtervisitor.Integer, false},
 			},
 			output: []string{`((SEARCH(TokenizedText, @fb0) OR SEARCH(TokenizedText2, @fb1)) AND (z.name = @fb2) AND ((z.count = @fb3) OR (z.count = @fb4) OR (z.count = @fb5)))`},
 		},
 		{
 			input: `"full text search" AND -name="42"`,
 			m: map[string]appendix{
-				"name": appendix{safesql.New("z.name"), filtervisitor.String, false},
+				"name": {safesql.New("z.name"), filtervisitor.String, false},
 			},
 			output: []string{`((SEARCH(TokenizedText, @fb0) OR SEARCH(TokenizedText2, @fb1)) AND NOT (z.name = @fb2))`},
 		},
 		{
 			input: `"full text search" AND a AND b OR c AND d OR e`,
 			m: map[string]appendix{
-				"a": appendix{safesql.New("z.a"), filtervisitor.Boolean, false},
-				"b": appendix{safesql.New("z.b"), filtervisitor.Boolean, false},
-				"c": appendix{safesql.New("z.c"), filtervisitor.Boolean, false},
-				"d": appendix{safesql.New("z.d"), filtervisitor.Boolean, false},
-				"e": appendix{safesql.New("z.e"), filtervisitor.Boolean, false},
+				"a": {safesql.New("z.a"), filtervisitor.Boolean, false},
+				"b": {safesql.New("z.b"), filtervisitor.Boolean, false},
+				"c": {safesql.New("z.c"), filtervisitor.Boolean, false},
+				"d": {safesql.New("z.d"), filtervisitor.Boolean, false},
+				"e": {safesql.New("z.e"), filtervisitor.Boolean, false},
 			},
 			output: []string{`((SEARCH(TokenizedText, @fb0) OR SEARCH(TokenizedText2, @fb1)) AND z.a AND (z.b OR z.c) AND (z.d OR z.e))`},
 		},
@@ -1061,14 +1061,14 @@ func TestHasOperatorWithSubstringMatching(t *testing.T) {
 		{
 			input: `name : 42`,
 			m: map[string]appendix{
-				"name": appendix{safesql.New("z.name"), filtervisitor.String, false},
+				"name": {safesql.New("z.name"), filtervisitor.String, false},
 			},
 			output: []string{`(STRPOS(z.name, @fb0) > 0)`},
 		},
 		{
 			input: `name:vrt.43d81b476a52`,
 			m: map[string]appendix{
-				"name": appendix{safesql.New("z.name"), filtervisitor.String, false},
+				"name": {safesql.New("z.name"), filtervisitor.String, false},
 			},
 			output: []string{`(STRPOS(z.name, @fb0) > 0)`},
 		},

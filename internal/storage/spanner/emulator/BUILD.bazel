@@ -49,11 +49,11 @@ go_library(
     importpath = "xmanager_cloud/internal/storage/spanner/emulator",
     visibility = ["//visibility:public"],
     deps = [
-        "@com_google_cloud_go_spanner//:spanner",
-        "@com_google_cloud_go_spanner//admin/database/apiv1:apiv1",
-        "@com_google_cloud_go_spanner//admin/instance/apiv1:apiv1",
-        "@org_golang_google_api//option:option",
         "//internal/storage/spanner/utils:spannerutils",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@com_google_cloud_go_spanner//admin/database/apiv1",
+        "@com_google_cloud_go_spanner//admin/instance/apiv1",
+        "@org_golang_google_api//option",
         "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
         "@org_golang_google_genproto//googleapis/spanner/admin/instance/v1:instance",
         "@org_golang_google_grpc//codes",
@@ -67,6 +67,6 @@ go_test(
     embed = [":emulator"],
     deps = [
         "@com_google_cloud_go_spanner//:spanner",
-        "@org_golang_google_api//iterator:iterator",
+        "@org_golang_google_api//iterator",
     ],
 )

@@ -46,13 +46,16 @@ http_archive(
     ],
 )
 
-load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
+load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
 load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies")
 
 go_rules_dependencies()
+
 go_register_toolchains(version = "1.26.0")
+
 gazelle_dependencies()
+
 rules_proto_dependencies()
 
 # Protobuf (com_google_protobuf) v21.7
@@ -64,7 +67,9 @@ http_archive(
         "https://github.com/protocolbuffers/protobuf/archive/v21.7.tar.gz",
     ],
 )
+
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
+
 protobuf_deps()
 
 # Google APIs (com_google_googleapis)
@@ -76,5 +81,10 @@ http_archive(
         "https://github.com/googleapis/googleapis/archive/2487e45214041d8e1291880455d376cd5c81deef.tar.gz",
     ],
 )
+
 load("@com_google_googleapis//:repository_rules.bzl", "switched_rules_by_language")
-switched_rules_by_language(name = "com_google_googleapis_imports", go = True)
+
+switched_rules_by_language(
+    name = "com_google_googleapis_imports",
+    go = True,
+)

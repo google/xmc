@@ -29,9 +29,9 @@ import (
 var IntConst = filtervisitor.CustomType("INT_CONST")
 
 type ExpOptions struct {
-	UseFullTextSearch         bool
-	UseSubstringTextSearch    bool
-	UseHasOperatorAsContains  bool
+	UseFullTextSearch        bool
+	UseSubstringTextSearch   bool
+	UseHasOperatorAsContains bool
 }
 
 type QueryFilterVisitor interface {
@@ -65,7 +65,6 @@ type QueryFilterVisitor interface {
 	AppendBindingEnum(e string)
 	AppendTrustedSQL(sql safesql.TrustedSQLString)
 }
-
 
 func AppendFilters(qfv QueryFilterVisitor, e *fpb.Expression) error {
 	_, err := filtervisitor.Visit(qfv, e)
@@ -397,7 +396,9 @@ func RestrictionExp(qfv QueryFilterVisitor, r *fpb.Restriction) (filtervisitor.P
 
 	// Standard comparison type safety verification!
 	if !isCompatible && (op == fpb.Restriction_EQUALS || op == fpb.Restriction_NOT_EQUALS) {
-		isNumericOrBool := func(n string) bool { return n == "INTEGER" || n == "UNSIGNED" || n == "FLOAT" || n == "BOOLEAN" || n == "TIMESTAMP" || n == "DATE" || n == "PROTO_TIMESTAMP" }
+		isNumericOrBool := func(n string) bool {
+			return n == "INTEGER" || n == "UNSIGNED" || n == "FLOAT" || n == "BOOLEAN" || n == "TIMESTAMP" || n == "DATE" || n == "PROTO_TIMESTAMP"
+		}
 		isStringy := func(n string) bool { return n == "STRING" || n == "ENUM" || n == "STR_CONST" }
 		if isNumericOrBool(lhsType.Name) && isStringy(rhsType.Name) {
 			isCompatible = true
@@ -492,7 +493,6 @@ func ValueExp(qfv QueryFilterVisitor, val string) (filtervisitor.PrimType, error
 			}
 		}
 	}
-
 
 	// Rule B: Flag unquoted numeric/boolean literals on stringy fields as mismatched types!
 	if !hasQuotes && !qfv.GetIsHAS() && (lastType.Equals(filtervisitor.String) || lastType.Equals(filtervisitor.Bytes) || lastType.Equals(filtervisitor.Enum) || lastType.Equals(filtervisitor.StrConst)) {
