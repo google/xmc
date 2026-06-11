@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,10 +18,10 @@ import (
 	"strings"
 	"testing"
 
-	"googlesql/safesql/go/safesql"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/cmp/cmp"
 	"golang/cmp/cmpopts/cmpopts"
+	"googlesql/safesql/go/safesql"
 	"xmanager_cloud/query_generator/querytools"
 )
 

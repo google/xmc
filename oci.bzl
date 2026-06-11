@@ -17,7 +17,7 @@ def oci_image_for_service(name, binary):
     binary_name = binary.split(":")[-1]
     tarball_target = name + "_tarball"
     tarball_file = name + "_tarball.tar"
-    
+
     service_name = name
     if service_name.endswith("_image"):
         service_name = service_name[:-6]

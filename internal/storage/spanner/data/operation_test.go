@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,13 +17,13 @@ import (
 	"testing"
 	"time"
 
-	lropb "longrunning/operations_go_proto"
-	anypb "protobuf/any_go_proto"
-	statuspb "rpc/status_go_proto"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
+	lropb "longrunning/operations_go_proto"
+	anypb "protobuf/any_go_proto"
+	statuspb "rpc/status_go_proto"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/schema/operationschema"

@@ -104,10 +104,10 @@ go_proto_library(
     importpath = "xmanager_cloud/api/protos/xid",
     proto = ":cloud_xmanager_v1_proto",
     deps = [
-        "@org_golang_google_genproto_googleapis_api//:go_default_library",
-        "@org_golang_google_genproto_googleapis_api//annotations",
         "@com_google_googleapis//google/api:field_behavior_go_proto",
         "@com_google_googleapis//google/api:resource_go_proto",
+        "@org_golang_google_genproto_googleapis_api//:go_default_library",
+        "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
 

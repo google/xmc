@@ -21,8 +21,8 @@ import (
 	"os"
 	"time"
 
-	"go/log"
 	"github.com/redis/go-redis/v9"
+	"go/log"
 )
 
 // TaskResult is the return type of TaskHandler.

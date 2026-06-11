@@ -154,7 +154,6 @@ func (a *Authenticator) createSession(w http.ResponseWriter, r *http.Request, em
 	return nil
 }
 
-
 // HandleLogout logs out the user.
 func (a *Authenticator) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
@@ -297,5 +296,3 @@ func (a *Authenticator) getSameSiteMode(r *http.Request) http.SameSite {
 	}
 	return http.SameSiteLaxMode
 }
-
-
