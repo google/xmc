@@ -23,12 +23,26 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 
+genrule(
+    name = "copy_ess_schema",
+    srcs = ["//internal/storage/spanner/schema:ess-schema.sql"],
+    outs = ["ess-schema.sql"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "copy_xid_schema",
+    srcs = ["//internal/storage/spanner/schema:xid-schema.sql"],
+    outs = ["xid-schema.sql"],
+    cmd = "cp $< $@",
+)
+
 go_library(
     name = "emulator",
     srcs = ["emulator.go"],
     embedsrcs = [
-        "ess-schema.sql",
-        "xid-schema.sql",
+        ":ess-schema.sql",
+        ":xid-schema.sql",
         "ess_messages.pb",
         "xid_messages.pb",
     ],
