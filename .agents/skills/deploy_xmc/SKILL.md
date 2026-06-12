@@ -84,13 +84,13 @@ To allow monitoring and manual intervention, deploy the blueprint groups sequent
      >
      >    | Record Type | Hostname | Target IP |
      >    |:---:|---|---|
-     >    | **A** | `<environment>.dev.xmanageriso.dev` | `<GATEWAY_IP>` |
-     >    | **A** | `api.<environment>.dev.xmanageriso.dev` | `<GATEWAY_IP>` |
-     >    | **A** | `grpc.<environment>.dev.xmanageriso.dev` | `<GATEWAY_IP>` |
+     >    | **A** | `<environment>.example.com` | `<GATEWAY_IP>` |
+     >    | **A** | `api.<environment>.example.com` | `<GATEWAY_IP>` |
+     >    | **A** | `grpc.<environment>.example.com` | `<GATEWAY_IP>` |
      >
      > 2. **OAuth Authorized Redirect URI**:
      >    Please ensure you add the following Redirect URI to your Google Cloud Console OAuth Web Client ID (`<client_id>`) configuration:
-     >    * **`https://api.<environment>.dev.xmanageriso.dev/api/callback`**
+     >    * **`https://api.<environment>.example.com/api/callback`**
      >
      > Once these DNS records are created and the redirect URI is registered in the GCP console, reply to this conversation to proceed with the remaining deployment steps.
 3. **Stop executing tools** and wait for the user to confirm.
@@ -133,4 +133,4 @@ Poll until the Google-managed certificate state reports `ACTIVE`:
 gcloud certificate-manager certificates describe xmc-cert-<environment> --project=<project_id> --format='value(managed.state)'
 ```
 
-Once all checks pass, report the finalized deployment URL (e.g. `https://<environment>.dev.xmanageriso.dev`) to the user.
+Once all checks pass, report the finalized deployment URL (e.g. `https://<environment>.example.com`) to the user.
