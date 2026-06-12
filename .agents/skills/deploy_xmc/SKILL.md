@@ -68,7 +68,7 @@ To allow monitoring and manual intervention, deploy the blueprint groups sequent
 
 ### Step 3: DNS Pause & IP Mapping
 1. Extract the allocated Gateway global static IP from GCP:
-   - Identify the environment name (e.g. `xmcv2`) and GCP project ID (e.g. `xmc-test-project-6`) from the deployment config.
+   - Identify the environment name (e.g. `xmcv2`) and GCP project ID from the deployment config.
    - Run the command to retrieve the IP address:
      ```bash
      gcloud compute addresses describe xmc-gateway-static-ip-<environment> --global --project=<project_id> --format='value(address)'
