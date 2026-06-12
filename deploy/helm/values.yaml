@@ -67,6 +67,12 @@ experimentStateServer:
   authorizedIamRole: "projects/YOUR_GCP_PROJECT_ID/roles/YOUR_ROLE"
   spannerDatabaseName: "projects/YOUR_GCP_PROJECT_ID/instances/YOUR_SPANNER_INSTANCE/databases/YOUR_SPANNER_DATABASE"
 
+# Overrides for the xid-service Spanner database. If empty, the conventional
+# name projects/<projectId>/instances/xmc-<environment>/databases/xids-db-<environment>
+# is used (mirrors experimentStateServer.spannerDatabaseName).
+xidService:
+  spannerDatabaseName: ""
+
 gateway:
   enabled: true
   name: "xmc-gateway"
