@@ -16,7 +16,6 @@
 // The Experiment State Server provides a gRPC API for managing ML experiments.
 package main
 
-
 import (
 	"context"
 	"crypto/tls"
@@ -47,12 +46,12 @@ import (
 	healthgrpc "grpc_proto/health_go_grpc"
 	healthpb "grpc_proto/health_go_proto"
 	authz "xmanager_cloud/auth/auth"
-	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/experiment_state_server/config"
 	gwpb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_gateway_proto"
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
 	"xmanager_cloud/experiment_state_server/server/server"
 	"xmanager_cloud/logging/logging"
+	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/security/keyreloader"
 	ss "xmanager_cloud/storage/spanner/spanner"
 	tq "xmanager_cloud/task_queue/client"
@@ -236,8 +235,6 @@ func main() {
 	httpMux.HandleFunc("/api/logout", oauthAuth.HandleLogout)
 	httpMux.Handle("/api/user", oauthAuth.Authenticate(http.HandlerFunc(oauthAuth.HandleUser)))
 
-
-
 	staticRootFS, err := fs.Sub(embedFS, "xmanager_cloud/experiment_state_server/static")
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create static file system", "error", err)
@@ -284,7 +281,6 @@ func main() {
 		// Delegate to the gRPC-Gateway, secured by OAuth2.
 		authenticatedGwmux.ServeHTTP(w, r)
 	})
-
 
 	// 10. Configure CORS for the HTTP server.
 	// server.

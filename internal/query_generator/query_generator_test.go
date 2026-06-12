@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,10 +18,10 @@ import (
 
 	"api/filter/go/filter"
 	"api/filter/go/filtervisitor"
-	"googlesql/safesql/go/safesql"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/cmp/cmp"
 	"golang/cmp/cmpopts/cmpopts"
+	"googlesql/safesql/go/safesql"
 	"xmanager_cloud/query_generator/predicate"
 
 	"golang/protobuf/v2/testing/protocmp/protocmp"
@@ -150,7 +150,7 @@ func TestGenerateQuery(t *testing.T) {
 		{
 			desc:   "members can be manually specified for user filters",
 			tables: AlbumsTables,
-			members: map[string]Member{"TheGreatestAlbumId": Member{
+			members: map[string]Member{"TheGreatestAlbumId": {
 				Name:         AlbumIDTableField,
 				QueryLiteral: safesql.New("a.AlbumId"),
 				Type:         filtervisitor.String,
@@ -194,7 +194,7 @@ func TestGenerateQuery(t *testing.T) {
 			baseFilterExp:           predicate.Conjunction(predicate.String{Field: string(AlbumSingerIDTableField), Value: "1"}),
 			userFilter:              `ReleaseDate = "2016-12-02"`,
 			allowUnoptimizedOrderBy: true,
-			orderByFields:           []UserOrderedIndex{UserOrderedIndex{TableField: ReleaseDateTableField, SortOrder: Desc}},
+			orderByFields:           []UserOrderedIndex{{TableField: ReleaseDateTableField, SortOrder: Desc}},
 			wantQuery:               spanner.NewStatement(`SELECT a.SingerId, a.AlbumId FROM Albums a WHERE (a.SingerId = @fb0) AND (a.ReleaseDate = @fb1) ORDER BY a.ReleaseDate DESC, a.SingerId, a.AlbumId`),
 		},
 		{
@@ -204,7 +204,7 @@ func TestGenerateQuery(t *testing.T) {
 			baseFilters:             []TableField{AlbumSingerIDTableField},
 			baseFilterExp:           predicate.Conjunction(predicate.String{Field: string(AlbumSingerIDTableField), Value: "1"}),
 			allowUnoptimizedOrderBy: true,
-			orderByFields:           []UserOrderedIndex{UserOrderedIndex{TableField: AlbumSingerIDTableField, SortOrder: Desc}},
+			orderByFields:           []UserOrderedIndex{{TableField: AlbumSingerIDTableField, SortOrder: Desc}},
 			wantQuery:               spanner.NewStatement(`SELECT a.SingerId, a.AlbumId FROM Albums a WHERE (a.SingerId = @fb0) ORDER BY a.SingerId DESC, a.AlbumId`),
 		},
 		{
@@ -215,8 +215,8 @@ func TestGenerateQuery(t *testing.T) {
 			baseFilterExp:           predicate.Conjunction(predicate.String{Field: string(AlbumSingerIDTableField), Value: "1"}),
 			allowUnoptimizedOrderBy: true,
 			orderByFields: []UserOrderedIndex{
-				UserOrderedIndex{TableField: AlbumSingerIDTableField, SortOrder: Desc},
-				UserOrderedIndex{TableField: AlbumIDTableField, SortOrder: Desc},
+				{TableField: AlbumSingerIDTableField, SortOrder: Desc},
+				{TableField: AlbumIDTableField, SortOrder: Desc},
 			},
 			wantQuery: spanner.NewStatement(`SELECT a.SingerId, a.AlbumId FROM Albums a WHERE (a.SingerId = @fb0) ORDER BY a.SingerId DESC, a.AlbumId DESC`),
 		},
@@ -293,7 +293,7 @@ func TestGenerateQueryErrors(t *testing.T) {
 		{
 			desc:   "user filter cannot use a field (singer ID) not specified in members even if it's in the base filters",
 			tables: SingersTables,
-			members: map[string]Member{"SingerName": Member{
+			members: map[string]Member{"SingerName": {
 				Name:         SingerNameTableField,
 				QueryLiteral: safesql.New("s.SingerName"),
 				Type:         filtervisitor.String,
@@ -337,7 +337,7 @@ func TestGenerateQueryErrors(t *testing.T) {
 			baseFilterExp:           predicate.Conjunction(predicate.String{Field: string(AlbumSingerIDTableField), Value: "1"}),
 			userFilter:              `ReleaseDate = "2016-12-02"`,
 			allowUnoptimizedOrderBy: false,
-			orderByFields:           []UserOrderedIndex{UserOrderedIndex{TableField: ReleaseDateTableField, SortOrder: Desc}},
+			orderByFields:           []UserOrderedIndex{{TableField: ReleaseDateTableField, SortOrder: Desc}},
 			wantErrCode:             status.FailedPrecondition,
 		},
 		{
@@ -347,7 +347,7 @@ func TestGenerateQueryErrors(t *testing.T) {
 			baseFilters:             []TableField{SingerIDTableField},
 			baseFilterExp:           predicate.Conjunction(predicate.String{Field: string(SingerIDTableField), Value: "1"}),
 			allowUnoptimizedOrderBy: false,
-			orderByFields:           []UserOrderedIndex{UserOrderedIndex{TableField: SingerNameCountTableField, SortOrder: Desc}},
+			orderByFields:           []UserOrderedIndex{{TableField: SingerNameCountTableField, SortOrder: Desc}},
 			wantErrCode:             status.InvalidArgument,
 		},
 		{
@@ -358,8 +358,8 @@ func TestGenerateQueryErrors(t *testing.T) {
 			baseFilterExp:           predicate.Conjunction(predicate.String{Field: string(AlbumSingerIDTableField), Value: "1"}),
 			allowUnoptimizedOrderBy: false,
 			orderByFields: []UserOrderedIndex{
-				UserOrderedIndex{TableField: AlbumIDTableField, SortOrder: Desc},
-				UserOrderedIndex{TableField: AlbumSingerIDTableField, SortOrder: Desc},
+				{TableField: AlbumIDTableField, SortOrder: Desc},
+				{TableField: AlbumSingerIDTableField, SortOrder: Desc},
 			},
 			wantErrCode: status.FailedPrecondition,
 		},
@@ -497,7 +497,7 @@ func TestGenerateQueryPageTokens(t *testing.T) {
 			tables:       AlbumsTables,
 			selectFields: []TableField{AlbumTitleTableField},
 			userFilter:   `SingerId > "23"`,
-			userOrderBy:  []UserOrderedIndex{UserOrderedIndex{TableField: AlbumIDTableField}},
+			userOrderBy:  []UserOrderedIndex{{TableField: AlbumIDTableField}},
 			wantPTFields: map[TableField]int{
 				AlbumIDTableField:       1,
 				AlbumSingerIDTableField: 2,
@@ -509,7 +509,7 @@ func TestGenerateQueryPageTokens(t *testing.T) {
 			tables:       AlbumsTables,
 			selectFields: []TableField{AlbumTitleTableField},
 			userFilter:   `SingerId > "23"`,
-			userOrderBy:  []UserOrderedIndex{UserOrderedIndex{TableField: AlbumIDTableField, SortOrder: Desc}},
+			userOrderBy:  []UserOrderedIndex{{TableField: AlbumIDTableField, SortOrder: Desc}},
 			wantPTFields: map[TableField]int{
 				AlbumIDTableField:       1,
 				AlbumSingerIDTableField: 2,
@@ -678,7 +678,7 @@ func TestRewritePhrases(t *testing.T) {
 	}
 
 	qg, err := NewQueryGenerator(SingersTables, nil, []TableField{SingerIDTableField}, nil, EnumRewrites(map[string]map[string]string{
-		"SingerName": map[string]string{
+		"SingerName": {
 			"FOO_OLD": "FOO_NEW",
 		},
 	}))
@@ -811,13 +811,13 @@ func TestUpdateNumFiltersIndexed(t *testing.T) {
 		// updateNumFiltersIndexed().
 
 		candidateTables := map[TableName]*candidateTable{
-			AlbumsTableName: &candidateTable{
+			AlbumsTableName: {
 				t: updatedAlbums,
 			},
-			AlbumsByTitleReleaseDateTableName: &candidateTable{
+			AlbumsByTitleReleaseDateTableName: {
 				t: updatedAlbumsByTitleReleaseDate,
 			},
-			AlbumsByTitleAlbumIDReleaseDateTableName: &candidateTable{
+			AlbumsByTitleAlbumIDReleaseDateTableName: {
 				t: updatdAlbumsByTitleAlbumIDReleaseDate,
 			},
 		}
@@ -898,10 +898,10 @@ func TestRemoveIfNullFilterUnsatisfied(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
 			candidateTables := map[TableName]*candidateTable{
-				AlbumsTableName: &candidateTable{
+				AlbumsTableName: {
 					t: Albums,
 				},
-				AlbumsByTitleReleaseDateRatingTableName: &candidateTable{
+				AlbumsByTitleReleaseDateRatingTableName: {
 					t: AlbumsByTitleReleaseDateRating,
 				},
 			}
@@ -938,7 +938,7 @@ func TestGenerateQueryPageTokensWithSortDirectionReturnsExpectedConditionsAndOrd
 		{
 			desc: "one asc orderedIndicesWithSortorder",
 			orderedIndicesWithSortOrder: []UserOrderedIndex{
-				UserOrderedIndex{
+				{
 					TableField: SingerIDTableField,
 					SortOrder:  Asc,
 				},
@@ -949,7 +949,7 @@ func TestGenerateQueryPageTokensWithSortDirectionReturnsExpectedConditionsAndOrd
 		{
 			desc: "one desc orderedIndicesWithSortorder",
 			orderedIndicesWithSortOrder: []UserOrderedIndex{
-				UserOrderedIndex{
+				{
 					TableField: SingerIDTableField,
 					SortOrder:  Desc,
 				},
@@ -960,11 +960,11 @@ func TestGenerateQueryPageTokensWithSortDirectionReturnsExpectedConditionsAndOrd
 		{
 			desc: "multiple orderedIndicesWithSortorder",
 			orderedIndicesWithSortOrder: []UserOrderedIndex{
-				UserOrderedIndex{
+				{
 					TableField: SingerIDTableField,
 					SortOrder:  Asc,
 				},
-				UserOrderedIndex{
+				{
 					TableField: SingerNameTableField,
 					SortOrder:  Desc,
 				},
@@ -975,13 +975,13 @@ func TestGenerateQueryPageTokensWithSortDirectionReturnsExpectedConditionsAndOrd
 		{
 			desc: "orderedIndicesWithSortorder is ignored when orderByFieldsWithSortOrder is present",
 			orderedIndicesWithSortOrder: []UserOrderedIndex{
-				UserOrderedIndex{
+				{
 					TableField: SingerIDTableField,
 					SortOrder:  Desc,
 				},
 			},
 			orderByFieldsWithSortOrder: []UserOrderedIndex{
-				UserOrderedIndex{
+				{
 					TableField: SingerNameTableField,
 					SortOrder:  Desc,
 				},
@@ -992,13 +992,13 @@ func TestGenerateQueryPageTokensWithSortDirectionReturnsExpectedConditionsAndOrd
 		{
 			desc: "userOrder comes before orderedIndicesWithSortorder",
 			orderedIndicesWithSortOrder: []UserOrderedIndex{
-				UserOrderedIndex{
+				{
 					TableField: SingerIDTableField,
 					SortOrder:  Desc,
 				},
 			},
 			userOrderBy: []UserOrderedIndex{
-				UserOrderedIndex{
+				{
 					TableField: SingerNameTableField,
 					SortOrder:  Desc,
 				},
@@ -1009,13 +1009,13 @@ func TestGenerateQueryPageTokensWithSortDirectionReturnsExpectedConditionsAndOrd
 		{
 			desc: "userOrder comes before orderByFieldsWithSortOrder",
 			orderByFieldsWithSortOrder: []UserOrderedIndex{
-				UserOrderedIndex{
+				{
 					TableField: SingerIDTableField,
 					SortOrder:  Asc,
 				},
 			},
 			userOrderBy: []UserOrderedIndex{
-				UserOrderedIndex{
+				{
 					TableField: SingerNameTableField,
 					SortOrder:  Asc,
 				},
@@ -1026,13 +1026,13 @@ func TestGenerateQueryPageTokensWithSortDirectionReturnsExpectedConditionsAndOrd
 		{
 			desc: "user order differ from orderedIndices in sort direction",
 			orderedIndicesWithSortOrder: []UserOrderedIndex{
-				UserOrderedIndex{
+				{
 					TableField: SingerIDTableField,
 					SortOrder:  Asc,
 				},
 			},
 			userOrderBy: []UserOrderedIndex{
-				UserOrderedIndex{
+				{
 					TableField: SingerIDTableField,
 					SortOrder:  Desc,
 				},
@@ -1043,7 +1043,7 @@ func TestGenerateQueryPageTokensWithSortDirectionReturnsExpectedConditionsAndOrd
 		{
 			desc: "user order without sort direction",
 			userOrderBy: []UserOrderedIndex{
-				UserOrderedIndex{
+				{
 					TableField: SingerIDTableField,
 				},
 			},
@@ -1098,7 +1098,7 @@ func TestGenerateQueryPageTokensWithSortDirectionReturnsExpectedConditionsAndOrd
 func TestWhenBothOrderedIndicesPresentFails(t *testing.T) {
 	table := Singers
 	table.OrderedIndexTableFields = []TableField{SingerIDTableField}
-	table.OrderedIndicesWithSortDirection = []UserOrderedIndex{UserOrderedIndex{TableField: SingerIDTableField, SortOrder: Asc}}
+	table.OrderedIndicesWithSortDirection = []UserOrderedIndex{{TableField: SingerIDTableField, SortOrder: Asc}}
 	_, err := NewQueryGenerator([]TableView{table}, nil, nil, nil)
 	if err == nil { // if NO error
 		t.Errorf("NewQueryGenerator() succeeded unexpectedly, want error")
@@ -1108,7 +1108,7 @@ func TestWhenBothOrderedIndicesPresentFails(t *testing.T) {
 func TestWhenBothOrderedFieldsPresentFails(t *testing.T) {
 	table := Singers
 	table.OrderByFields = []TableField{SingerIDTableField}
-	table.OrderByFieldsWithSortDirection = []UserOrderedIndex{UserOrderedIndex{TableField: SingerIDTableField, SortOrder: Asc}}
+	table.OrderByFieldsWithSortDirection = []UserOrderedIndex{{TableField: SingerIDTableField, SortOrder: Asc}}
 	_, err := NewQueryGenerator([]TableView{table}, nil, nil, nil)
 	if err == nil { // if NO error
 		t.Errorf("NewQueryGenerator() succeeded unexpectedly, want error")
@@ -1118,7 +1118,7 @@ func TestWhenBothOrderedFieldsPresentFails(t *testing.T) {
 func TestUserOrderDifferentFromOrderedIndicesWithOrderOptimizierFails(t *testing.T) {
 	singersTable := Singers
 	singersTable.OrderedIndexTableFields = []TableField{SingerIDTableField} // Ascending by default
-	userOrderByFields := []UserOrderedIndex{UserOrderedIndex{TableField: SingerIDTableField, SortOrder: Desc}}
+	userOrderByFields := []UserOrderedIndex{{TableField: SingerIDTableField, SortOrder: Desc}}
 	updatedSingersTable := mustAddSortDirectionToOrderedFieldsAndIndices(t, singersTable)
 
 	tests := []struct {
@@ -1153,7 +1153,7 @@ func TestUserOrderDifferentFromOrderedIndicesWithOrderOptimizierFails(t *testing
 func TestUserOrderDifferentFromOrderedIndicesWithoutOrderOptimizierSucceeds(t *testing.T) {
 	singersTable := Singers
 	singersTable.OrderedIndexTableFields = []TableField{SingerIDTableField} // Ascending by default
-	userOrderByFields := []UserOrderedIndex{UserOrderedIndex{TableField: SingerIDTableField, SortOrder: Desc}}
+	userOrderByFields := []UserOrderedIndex{{TableField: SingerIDTableField, SortOrder: Desc}}
 	updatedSingersTable := mustAddSortDirectionToOrderedFieldsAndIndices(t, singersTable)
 
 	tests := []struct {
@@ -1189,7 +1189,7 @@ func TestUserOrderNotInSelectStatementReturnsExcpectedColumnsAndPageTokens(t *te
 	table := Singers
 	table.OrderedIndexTableFields = []TableField{SingerIDTableField}
 	selectFields := []TableField{SingerIDTableField}
-	userOrder := []UserOrderedIndex{UserOrderedIndex{TableField: SingerNameTableField, SortOrder: Desc}}
+	userOrder := []UserOrderedIndex{{TableField: SingerNameTableField, SortOrder: Desc}}
 	wantQuery := spanner.NewStatement(`SELECT s.SingerId, s.SingerName FROM Singers s ORDER BY s.SingerName DESC, s.SingerId`)
 	wantPageTokens := map[TableField]int{SingerIDTableField: 0, SingerNameTableField: 1}
 
@@ -1238,13 +1238,13 @@ func TestAddSortDirectionToOrderedFieldsAndIndicesCopiesInputTable(t *testing.T)
 	if diff := cmp.Diff(updatedTable.OrderedIndexTableFields, []TableField{}, protocmp.Transform()); diff != "" {
 		t.Errorf("addSortDirectionToOrderedFieldsAndIndices() returned unexpected OrderedIndexTableFields (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff(updatedTable.OrderedIndicesWithSortDirection, []UserOrderedIndex{UserOrderedIndex{TableField: SingerIDTableField, SortOrder: Asc}}, protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(updatedTable.OrderedIndicesWithSortDirection, []UserOrderedIndex{{TableField: SingerIDTableField, SortOrder: Asc}}, protocmp.Transform()); diff != "" {
 		t.Errorf("addSortDirectionToOrderedFieldsAndIndices() returned unexpected OrderedIndicesWithSortDirection (-want +got):\n%s", diff)
 	}
 	if diff := cmp.Diff(updatedTable.OrderByFields, []TableField{}, protocmp.Transform()); diff != "" {
 		t.Errorf("addSortDirectionToOrderedFieldsAndIndices() returned unexpected OrderByFields (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff(updatedTable.OrderByFieldsWithSortDirection, []UserOrderedIndex{UserOrderedIndex{TableField: SingerNameTableField, SortOrder: Asc}}, protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(updatedTable.OrderByFieldsWithSortDirection, []UserOrderedIndex{{TableField: SingerNameTableField, SortOrder: Asc}}, protocmp.Transform()); diff != "" {
 		t.Errorf("addSortDirectionToOrderedFieldsAndIndices() returned unexpected OrderByFieldsWithSortDirection (-want +got):\n%s", diff)
 	}
 }

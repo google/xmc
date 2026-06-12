@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,10 +18,10 @@ import (
 
 	fpb "api/filter/filter_expression_go_proto"
 	"api/filter/go/filtervisitor"
-	"googlesql/safesql/go/safesql"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"xmanager_cloud/query_generator/filter/queryfilter"
+	"googlesql/safesql/go/safesql"
 	"task/go/status"
+	"xmanager_cloud/query_generator/filter/queryfilter"
 )
 
 // Unnester applies unnests to a given query, re-aggregating the unnested fields and

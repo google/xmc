@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -58,58 +58,58 @@ var (
 		NameClause: safesql.New("Xids x"),
 		Cost:       30,
 		Fields: map[querytools.TableField]querytools.Member{
-			bitReversedXidTableField: querytools.Member{
+			bitReversedXidTableField: {
 				Name:         bitReversedXidTableField,
 				QueryLiteral: safesql.New("x.BitReversedXid"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      true,
 			},
-			xidTableField: querytools.Member{
+			xidTableField: {
 				Name:         xidTableField,
 				QueryLiteral: safesql.New("x.Xid"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			parentXidTableField: querytools.Member{
+			parentXidTableField: {
 				Name:         parentXidTableField,
 				QueryLiteral: safesql.New("x.ParentXid"),
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      false,
 			},
-			creatorTableField: querytools.Member{
+			creatorTableField: {
 				Name:         creatorTableField,
 				QueryLiteral: safesql.New("x.Creator"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 			},
-			originatingSystemTableField: querytools.Member{
+			originatingSystemTableField: {
 				Name:         originatingSystemTableField,
 				QueryLiteral: safesql.New("x.OriginatingSystem"),
 				Type:         filtervisitor.Bytes,
 				Selectable:   true,
 			},
-			endpointTableField: querytools.Member{
+			endpointTableField: {
 				Name:         endpointTableField,
 				QueryLiteral: safesql.New("x.Endpoint"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
 			},
-			aclsTableField: querytools.Member{
+			aclsTableField: {
 				Name:         aclsTableField,
 				QueryLiteral: safesql.New("x.Acls"),
 				Type:         filtervisitor.Bytes,
 				Selectable:   true,
 			},
-			createdTableField: querytools.Member{
+			createdTableField: {
 				Name:         createdTableField,
 				QueryLiteral: safesql.New("x.CreateTime"),
 				Type:         filtervisitor.Timestamp,
 				Selectable:   true,
 			},
-			updatedTableField: querytools.Member{
+			updatedTableField: {
 				Name:         updatedTableField,
 				QueryLiteral: safesql.New("x.UpdateTime"),
 				Type:         filtervisitor.Timestamp,
@@ -117,7 +117,7 @@ var (
 			},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
-			querytools.UserOrderedIndex{TableField: bitReversedXidTableField, SortOrder: querytools.Asc},
+			{TableField: bitReversedXidTableField, SortOrder: querytools.Asc},
 		},
 	}
 
@@ -143,8 +143,8 @@ var (
 
 	// XidsOrderByFields is the list of fields that can be used for ordering Xid queries.
 	XidsOrderByFields = []querytools.UserOrderedIndex{
-		querytools.UserOrderedIndex{TableField: createdTableField},
-		querytools.UserOrderedIndex{TableField: updatedTableField},
-		querytools.UserOrderedIndex{TableField: xidTableField},
+		{TableField: createdTableField},
+		{TableField: updatedTableField},
+		{TableField: xidTableField},
 	}
 )

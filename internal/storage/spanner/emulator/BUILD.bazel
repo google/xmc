@@ -12,16 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# gazelle:ignore
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-
-exports_files(
-    [
-        "ess_messages.pb",
-        "xid_messages.pb",
-    ],
-    visibility = ["//visibility:public"],
-)
 
 genrule(
     name = "copy_ess_schema",
@@ -37,23 +28,37 @@ genrule(
     cmd = "cp $< $@",
 )
 
+genrule(
+    name = "copy_ess_messages",
+    srcs = ["//api/protos/experiment:experiment_messages_descriptor"],
+    outs = ["ess_messages.pb"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "copy_xid_messages",
+    srcs = ["//api/protos/xid:xid_messages_descriptor"],
+    outs = ["xid_messages.pb"],
+    cmd = "cp $< $@",
+)
+
 go_library(
     name = "emulator",
     srcs = ["emulator.go"],
     embedsrcs = [
         ":ess-schema.sql",
         ":xid-schema.sql",
-        "ess_messages.pb",
-        "xid_messages.pb",
+        ":ess_messages.pb",
+        ":xid_messages.pb",
     ],
     importpath = "xmanager_cloud/internal/storage/spanner/emulator",
     visibility = ["//visibility:public"],
     deps = [
-        "@com_google_cloud_go_spanner//:spanner",
-        "@com_google_cloud_go_spanner//admin/database/apiv1:apiv1",
-        "@com_google_cloud_go_spanner//admin/instance/apiv1:apiv1",
-        "@org_golang_google_api//option:option",
         "//internal/storage/spanner/utils:spannerutils",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@com_google_cloud_go_spanner//admin/database/apiv1",
+        "@com_google_cloud_go_spanner//admin/instance/apiv1",
+        "@org_golang_google_api//option",
         "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
         "@org_golang_google_genproto//googleapis/spanner/admin/instance/v1:instance",
         "@org_golang_google_grpc//codes",
@@ -67,6 +72,6 @@ go_test(
     embed = [":emulator"],
     deps = [
         "@com_google_cloud_go_spanner//:spanner",
-        "@org_golang_google_api//iterator:iterator",
+        "@org_golang_google_api//iterator",
     ],
 )

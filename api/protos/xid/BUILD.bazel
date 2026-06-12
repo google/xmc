@@ -15,7 +15,13 @@
 # gazelle:ignore
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library", "proto_descriptor_set")
+
+proto_descriptor_set(
+    name = "xid_messages_descriptor",
+    deps = [":xid_messages_proto"],
+    visibility = ["//visibility:public"],
+)
 
 package(default_visibility = ["//visibility:public"])
 
@@ -98,10 +104,10 @@ go_proto_library(
     importpath = "xmanager_cloud/api/protos/xid",
     proto = ":cloud_xmanager_v1_proto",
     deps = [
-        "@org_golang_google_genproto_googleapis_api//:go_default_library",
-        "@org_golang_google_genproto_googleapis_api//annotations",
         "@com_google_googleapis//google/api:field_behavior_go_proto",
         "@com_google_googleapis//google/api:resource_go_proto",
+        "@org_golang_google_genproto_googleapis_api//:go_default_library",
+        "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
 
