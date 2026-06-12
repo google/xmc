@@ -1,6 +1,3 @@
-# Standalone Build Setup
-
-This repository has been migrated from `google3` to standalone Git (supporting Git-on-Borg and GitHub) using a standalone build architecture. All legacy Google dependencies and google3 tools have been decoupled.
 
 ## Protocol Buffers & gRPC Stubs (Step 1)
 
@@ -30,7 +27,7 @@ A set of compatibility packages is defined under `//internal/compat/...` to rout
 
 ## Custom AIP-160 Filter & Parser Engine (Step 3)
 
-The repository includes a custom, zero-dependency AIP-160 compliant filter parsing and query translation engine under `//api/filter/go/filter` and `//api/filter/go/queryfilterbase`. This parser replaces legacy `google3` dependencies with standard Go stubs and includes custom priority logical operator parsing (implicit space-conjunction, explicit `AND`, explicit `OR`), type safety verification, regular expression constraints, and disjunction IN list optimizations.
+The repository includes a custom, zero-dependency AIP-160 compliant filter parsing and query translation engine under `//api/filter/go/filter` and `//api/filter/go/queryfilterbase`. This parser replaces legacy dependencies with standard Go stubs and includes custom priority logical operator parsing (implicit space-conjunction, explicit `AND`, explicit `OR`), type safety verification, regular expression constraints, and disjunction IN list optimizations.
 
 ### Build and Test Commands
 

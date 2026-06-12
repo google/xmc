@@ -14,7 +14,7 @@ This blueprint is created to help deploy XMC leveraging the current topology whi
 
 ## Phase 1: Prerequisites
 
-The blueprint relies on local Helm charts, SQL schemas, and Google3 protocol buffer descriptor files (`.pb`). Because descriptor files are not stored statically in the repository, they must be compiled prior to running the deployment.
+The blueprint relies on local Helm charts, SQL schemas, and protocol buffer descriptor files (`.pb`). Because descriptor files are not stored statically in the repository, they must be compiled prior to running the deployment.
 
 ### Step 1: Generate Proto Descriptors
 Run the following commands from the root of your workspace to compile the protobuf descriptors and copy them to the staging root:

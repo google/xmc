@@ -20,17 +20,18 @@ This solution provides a fully declarative, production-grade infrastructure-as-c
 
 ## Phase 1: Prerequisites
 
-The blueprint relies on local Helm charts, SQL schemas, and Google3 protocol buffer descriptor files (`.pb`). Because descriptor files are not stored statically in the repository, they must be compiled prior to running the deployment.
+The blueprint relies on local Helm charts, SQL schemas, and protocol buffer descriptor files (`.pb`). Because descriptor files are not stored statically in the repository, they must be compiled prior to running the deployment.
 
 ### Step 1: Generate Proto Descriptors
-Run the following commands from the root of your `google3` workspace to compile the protobuf descriptors using Blaze and copy them to the staging root:
+Run the following commands from the root of your workspace to compile the protobuf descriptors and copy them to the staging root:
 
 ```bash
-blaze build //third_party/xmanager_cloud/experiment_state_server/proto:ess_messages_proto_descriptor
-blaze build //third_party/xmanager_cloud/xid_service/proto:xid_messages_proto_descriptor
+# Verify that you have copy of proto descriptors:
+# - internal/storage/spanner/emulator/ess_messages.pb
+# - internal/storage/spanner/emulator/xid_messages.pb
 
-cp blaze-bin/third_party/xmanager_cloud/experiment_state_server/proto/ess_messages.pb third_party/xmanager_cloud/ess_messages.pb
-cp blaze-bin/third_party/xmanager_cloud/xid_service/proto/xid_messages.pb third_party/xmanager_cloud/xid_messages.pb
+cp ./internal/storage/spanner/emulator/ess_messages.pb ./deploy/
+cp ./internal/storage/spanner/emulator/xid_messages.pb ./deploy/
 ```
 
 ---
@@ -91,15 +92,9 @@ The end-to-end provisioning sequence takes between **30 to 45 minutes**. If your
 
 Provisioning with the Cluster Toolkit is split into two phases: **compilation** (generating deployment state files) and **provisioning** (executing the infrastructure setup).
 
-### Step 1: Download the GCluster binary
-Navigate to the master XMC directory and copy the pre-compiled binary:
-```bash
-cd google3/third_party/xmanager_cloud/
-gcloud storage cp gs://xmc-soln-ctk/gcluster xmc_ctk/gcluster
-chmod +x xmc_ctk/gcluster
-```
-> [!NOTE]
-> **Staging Staging Notice**: While the official PR is pending review in the public repository, please pull the compiled binary from this temporary staging bucket. Once merged, this step will be updated to pull from the official releases page!
+### Step 1: Install GCluster tool
+
+See latest docs on [https://docs.cloud.google.com/cluster-toolkit/docs/overview](https://docs.cloud.google.com/cluster-toolkit/docs/overview)
 
 ### Step 2: Compile the Blueprint
 Navigate into the toolkit directory and compile the blueprints to generate the deployment state:
