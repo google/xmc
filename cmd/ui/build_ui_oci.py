@@ -91,10 +91,10 @@ def main():
     # 1. Write a simple multi-stage Dockerfile to temp_build_dir
     dockerfile_path = os.path.join(temp_build_dir, "Dockerfile")
     with open(dockerfile_path, "w") as f:
-        f.write("""FROM node:20-alpine AS builder
+        f.write("""FROM node:22-alpine AS builder
 WORKDIR /app
 COPY . .
-RUN npm install && npx ng build --configuration production
+RUN npm ci --legacy-peer-deps && npx ng build --configuration production
 
 FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
@@ -108,7 +108,7 @@ CMD ["nginx", "-g", "daemon off;"]
     # 2. Build the image using the Docker daemon
     tag = "ui-image:latest"
     print("Building Docker OCI frontend image...")
-    build_cmd = ["docker", "build", "--no-cache", "-t", tag, temp_build_dir]
+    build_cmd = ["docker", "build", "--no-cache", "--platform", "linux/amd64", "-t", tag, temp_build_dir]
     
     try:
         subprocess.run(build_cmd, check=True)
