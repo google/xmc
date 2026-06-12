@@ -34,11 +34,11 @@ go_library(
 go_binary(
     name = "validator",
     srcs = ["validator.go"],
+    visibility = ["//visibility:public"],
     deps = [
         ":redisclient",
-        "//internal/compat/log",
         "//internal/compat/google",
+        "//internal/compat/log",
         "@com_github_redis_go_redis_v9//:go-redis",
     ],
-    visibility = ["//visibility:public"],
 )

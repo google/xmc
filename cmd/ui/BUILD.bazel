@@ -1,3 +1,5 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
 # Standalone BUILD.bazel file for XMC UI
 package(default_visibility = ["//visibility:public"])
 
@@ -81,8 +83,6 @@ chmod +x $@
     visibility = ["//visibility:public"],
 )
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
-
 py_library(
     name = "server",
     srcs = ["server.py"],
@@ -101,7 +101,6 @@ py_test(
 py_test(
     name = "ui_unit_tests",
     srcs = ["run_ui_tests.py"],
-    main = "run_ui_tests.py",
     data = glob([
         "app/**/*",
         "static/**/*",
@@ -114,8 +113,8 @@ py_test(
         "package-lock.json",
         "karma.conf.js",
     ]),
+    main = "run_ui_tests.py",
     tags = [
         "local",
-        "manual",
     ],
 )

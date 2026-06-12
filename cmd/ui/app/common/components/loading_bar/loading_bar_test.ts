@@ -11,53 +11,59 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { cleanState, setupModule, bootstrapTemplate, markForCheckAndFlush } from '../../../testing/test';
+import { Component, signal } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import 'jasmine';
 
-import {getHarness} from '@angular/cdk/testing/catalyst/async';
-import {NoopAnimationsModule} from '@angular/platform-browser/animations';
+import { LoadingBar } from './loading_bar';
+import { LoadingBarHarness } from './testing/loading_bar_harness';
 
-import {LoadingBar} from './loading_bar';
-import {LoadingBarHarness} from './testing/loading_bar_harness';
+@Component({
+  template: '<xmc-loading-bar [isRefreshing]="isRefreshing()" />',
+  imports: [LoadingBar],
+  standalone: true
+})
+class TestHostComponent {
+  isRefreshing = signal(false);
+}
 
 describe('LoadingBar Component', () => {
-  const state = cleanState(async () => {
-    setupModule({
-      imports: [LoadingBar, NoopAnimationsModule],
-    });
+  let fixture: any;
+  let hostInstance: TestHostComponent;
+  let loadingBarHarness: LoadingBarHarness;
 
-    const instance = {isRefreshing: false};
-    bootstrapTemplate(
-        '<xmc-loading-bar [isRefreshing]="isRefreshing" />', instance);
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [TestHostComponent, NoopAnimationsModule]
+    }).compileComponents();
 
-    return {harness: getHarness(LoadingBarHarness), instance};
-  }, beforeEach);
+    fixture = TestBed.createComponent(TestHostComponent);
+    fixture.detectChanges();
+    hostInstance = fixture.componentInstance;
+    const loader = TestbedHarnessEnvironment.loader(fixture);
+    loadingBarHarness = await loader.getHarness(LoadingBarHarness);
+  });
 
   it('should be created and display in buffer mode', async () => {
-    const loadingBarHarness = await state.harness;
-
     expect(loadingBarHarness).toBeDefined();
     expect(await loadingBarHarness.getMode()).toBe('buffer');
   });
 
   it('should not be in refreshing mode by default', async () => {
-    const loadingBarHarness = await state.harness;
-
     expect(await loadingBarHarness.isRefreshing()).toBeFalse();
   });
 
-  it('should not be in refreshing mode when isRefreshing is false',
-     async () => {
-       const loadingBarHarness = await state.harness;
-
-       expect(await loadingBarHarness.isRefreshing()).toBeFalse();
-     });
+  it('should not be in refreshing mode when isRefreshing is false', async () => {
+    hostInstance.isRefreshing.set(false);
+    fixture.detectChanges();
+    expect(await loadingBarHarness.isRefreshing()).toBeFalse();
+  });
 
   it('should be in refreshing mode when isRefreshing is true', async () => {
-    const loadingBarHarness = await state.harness;
-    state.instance.isRefreshing = true;
-    await markForCheckAndFlush();
-
+    hostInstance.isRefreshing.set(true);
+    fixture.detectChanges();
     expect(await loadingBarHarness.isRefreshing()).toBeTrue();
   });
 });

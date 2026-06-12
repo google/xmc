@@ -16,8 +16,8 @@ package redisclient
 import (
 	"context"
 
-	"go/log"
 	"github.com/redis/go-redis/v9"
+	"go/log"
 )
 
 const (
