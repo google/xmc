@@ -22,8 +22,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: experiment-state-server-deployment
-  minReplicas: 3
-  maxReplicas: 10
+  minReplicas: {{ ((.Values.essDeployment).hpa).minReplicas | default 3 }}
+  maxReplicas: {{ ((.Values.essDeployment).hpa).maxReplicas | default 10 }}
   metrics:
   - type: Resource
     resource:
