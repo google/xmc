@@ -126,9 +126,9 @@ spec:
         - name: CLIENT_SECRET_FILE
           value: "/etc/gcp-secrets/client-secret"
         - name: REDIRECT_URL
-          value: "https://{{ include "xmanager-cloud.apiHostname" . }}/api/callback"
+          value: {{ .Values.experimentStateServer.redirectUrl | default (printf "https://%s/api/callback" (include "xmanager-cloud.apiHostname" .)) | quote }}
         - name: FRONTEND_URL
-          value: "https://{{ include "xmanager-cloud.uiHostname" . }}"
+          value: {{ .Values.experimentStateServer.frontendUrl | default (printf "https://%s" (include "xmanager-cloud.uiHostname" .)) | quote }}
         args:
         - "-ess_tls_cert_file="
         - "-ess_tls_key_file="
