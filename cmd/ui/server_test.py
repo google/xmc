@@ -101,7 +101,7 @@ class SPAHandlerTest(unittest.TestCase):
         dict(
             testcase_name='defaults',
             environ={},
-            expected='window.XMC_API_URL="https://api.example.com/v1";',
+            expected='window.XMC_API_URL="";',
         ),
         dict(
             testcase_name='custom_env',

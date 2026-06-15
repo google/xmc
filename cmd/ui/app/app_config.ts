@@ -59,7 +59,7 @@ function initializeAuthFactory(): () => Promise<void> {
              };
              renderer.appendChild(document.body, script);
            } else {
-             console.error('XMC_API_URL is not defined on window.');
+             console.warn('XMC_API_URL is empty or not defined. Skipping auth-check.js.');
              // If no API URL is set, we can't authenticate, but we
              // resolve so app can load in a non-functional state.
              resolve();
