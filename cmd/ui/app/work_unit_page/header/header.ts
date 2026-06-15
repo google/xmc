@@ -27,11 +27,11 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatIcon } from '@angular/material/icon';
 import { RouterModule } from '@angular/router';
-import { type Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
-import { type WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
 import { BehaviorSubject } from 'rxjs';
 import { filter, finalize, switchMap, tap } from 'rxjs/operators';
 
+import { type Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
+import { type WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
 import { ConfirmDialogService } from 'xmanager_cloud/ui/app/common/components/confirmation_dialog/confirmation_dialog_service';
 import { PriorityChip } from 'xmanager_cloud/ui/app/common/components/priority_chip/priority_chip';
 import {
@@ -40,6 +40,7 @@ import {
 } from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
+
 import { WorkUnitPageStore } from '../work_unit_page_store';
 
 /**

@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { cleanState, setupModule, bootstrap, useAutoTick } from '../testing/test';
 import 'jasmine';
 
 import { getHarness } from '@angular/cdk/testing/catalyst/async';
@@ -19,13 +18,14 @@ import { MatButtonHarness } from '@angular/material/button/testing';
 import { MatTableHarness } from '@angular/material/table/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, Params, provideRouter } from '@angular/router';
-import { ListExperimentsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { BehaviorSubject, of } from 'rxjs';
+
+import { ListExperimentsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
 import { EmptyComponent } from '../common/testing_utils/empty_component';
 import { AUTO_REFRESH_INTERVAL_MS, DEFAULT_REFRESH_INTERVAL_MS } from '../service/constants';
 import { ExperimentService } from '../service/experiment_service';
-
+import { bootstrap, cleanState, setupModule, useAutoTick } from '../testing/test';
 import { ExperimentsListPage } from './experiments_list_page';
 
 const MOCK_PAGE_RESULT_1: ListExperimentsResponse = {

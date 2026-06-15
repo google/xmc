@@ -22,6 +22,9 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ActivatedRoute } from '@angular/router';
+import { BehaviorSubject, combineLatest, Observable } from 'rxjs';
+import { filter, finalize, map, shareReplay, switchMap, tap, withLatestFrom } from 'rxjs/operators';
+
 import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
 import { Tag } from 'xmanager_cloud/ui/app/common/components/tag/tag';
 import { ProcessedUrl, processUrls } from 'xmanager_cloud/ui/app/common/url/url_processor';
@@ -29,8 +32,6 @@ import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_serv
 import { FeatureFlagService } from 'xmanager_cloud/ui/app/service/feature_flag_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
-import { BehaviorSubject, combineLatest, Observable } from 'rxjs';
-import { filter, finalize, map, shareReplay, switchMap, tap, withLatestFrom } from 'rxjs/operators';
 
 import { ArtifactsList } from '../common/components/artifacts_list/artifacts_list';
 import {
@@ -48,7 +49,6 @@ import { WorkUnitsStatusBar } from '../common/components/work_units_status_bar/w
 import { XidBadge } from '../common/components/xid_badge/xid_badge';
 import { EditExperimentFormData } from '../side_panel/contents/edit_experiment_form/edit_experiment_form';
 import { SidePanelService } from '../side_panel/side_panel_service';
-
 import { WorkUnitsTable } from './work_units_table/work_units_table';
 
 /**

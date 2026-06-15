@@ -13,12 +13,12 @@
 // limitations under the License.
 import { Routes } from '@angular/router';
 
+import { authGuard } from './auth.guard';
 import { ExperimentPage } from './experiment_page/experiment_page';
 import { ExperimentsListPage } from './experiments_list_page/experiments_list_page';
-import { WorkUnitPage } from './work_unit_page/work_unit_page';
-import { HomePage } from './homepage/home_page';
-import { authGuard } from './auth.guard';
 import { guestGuard } from './guest.guard';
+import { HomePage } from './homepage/home_page';
+import { WorkUnitPage } from './work_unit_page/work_unit_page';
 
 /**
  * The application routes.

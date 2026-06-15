@@ -14,6 +14,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
 import { MatMenuModule } from '@angular/material/menu';
+
 import {
   ExperimentStatus,
   WorkUnitStatus,

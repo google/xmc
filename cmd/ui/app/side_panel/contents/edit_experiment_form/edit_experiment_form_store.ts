@@ -13,11 +13,11 @@
 // limitations under the License.
 import { inject, Injectable, Signal } from '@angular/core';
 import { ComponentStore } from '@ngrx/component-store';
-import { UpdateExperimentRequest } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
 import { EMPTY, Observable } from 'rxjs';
 import { catchError, finalize, switchMap, tap } from 'rxjs/operators';
 
+import { UpdateExperimentRequest } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
 import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 
