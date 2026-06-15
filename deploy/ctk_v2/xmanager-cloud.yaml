@@ -313,9 +313,6 @@ deployment_groups:
       - name: taskSignatureTtlSeconds
         value: $(vars.task_signature_ttl_seconds)
         type: auto
-      - name: useRedisQueue
-        value: $(vars.use_redis_queue)
-        type: auto
       - name: redisAddr
         value: "$(redis.redis_host):$(redis.redis_port)"
       - name: redisPassword
