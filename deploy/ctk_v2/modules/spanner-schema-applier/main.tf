@@ -32,6 +32,10 @@ resource "null_resource" "apply_schema" {
         --project="${var.project_id}" \
         --ddl-file="${var.schema_file}" \
         ${var.proto_descriptors_file != null ? "--proto-descriptors-file=\"${var.proto_descriptors_file}\"" : ""}
+
+      echo "Initializing migration version for ${var.db_type} database..."
+      export GOOGLE_CLOUD_PROJECT="${var.project_id}"
+      run_spanner_migration "${var.instance_name}" "${var.database_name}" "${var.db_type}" "init"
     EOF
   }
 }

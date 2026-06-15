@@ -23,3 +23,9 @@ variable "proto_descriptors_file" {
   description = "Path to the proto descriptors file (optional)"
   default     = null
 }
+
+variable "db_type" {
+  type        = string
+  description = "Database type (e.g. ess or xid)"
+}
+

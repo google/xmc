@@ -129,6 +129,7 @@ deployment_groups:
       database_name: $(db_spanner.database_ids.ess)
       schema_file: $(ghpc_stage("../../internal/storage/spanner/schema/ess-schema.sql"))
       proto_descriptors_file: $(ghpc_stage("../ess_messages.pb"))
+      db_type: ess
 
   - id: apply_xid_schema
     source: ./deploy/ctk_v2/modules/spanner-schema-applier
@@ -139,6 +140,7 @@ deployment_groups:
       database_name: $(db_spanner.database_ids.xid)
       schema_file: $(ghpc_stage("../../internal/storage/spanner/schema/xid-schema.sql"))
       proto_descriptors_file: $(ghpc_stage("../xid_messages.pb"))
+      db_type: xid
 
   - id: private_service_access
     source: modules/network/private-service-access
