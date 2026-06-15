@@ -42,6 +42,21 @@ export default tseslint.config(
           ],
         },
       ],
+      'max-lines-per-function': ['warn', { max: 35, skipComments: true }],
+      'complexity': ['warn', { max: 5 }],
+    },
+  },
+  {
+    files: [
+      '**/*_test.ts',
+      '**/*.d.ts',
+      '**/testing/**',
+      '**/stubs/**',
+      '**/mock_*.ts',
+    ],
+    rules: {
+      'max-lines-per-function': 'off',
+      'complexity': 'off',
     },
   },
   eslintConfigPrettier
