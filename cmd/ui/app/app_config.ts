@@ -34,6 +34,9 @@ function initializeAuthFactory(): () => Promise<void> {
   const document = inject(DOCUMENT);
   return () => new Promise((resolve, reject) => {
            if (window.XMC_API_URL) {
+             if (window.XMC_API_URL.includes('example.com')) {
+               console.warn('XMC_API_URL is using the default fallback value (example.com). API requests may fail.');
+             }
              let baseUrl = window.XMC_API_URL;
              if (baseUrl.endsWith('/v1')) {
                baseUrl = baseUrl.substring(0, baseUrl.length - 3);

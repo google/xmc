@@ -21,7 +21,7 @@ declare global {
 
 /** URL for the Experiment State Server. */
 export const EXPERIMENT_STATE_SERVER_DOMAIN =
-    window.XMC_API_URL || '';
+    window.XMC_API_URL || 'https://api.alpha.example.com/v1';
 
 /** Whether to use the mock data or not. */
 export const USE_MOCK_DATA = new InjectionToken<boolean>('USE_MOCK_DATA', {

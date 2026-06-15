@@ -6,7 +6,7 @@ CONFIG_FILE="/usr/share/nginx/html/config.js"
 echo "Generating runtime config.js at ${CONFIG_FILE}..."
 
 # Set default values if not specified
-API_URL="${XMC_API_URL:-}"
+API_URL="${XMC_API_URL:-https://api.example.com/v1}"
 REFRESH_MS="${XMC_REFRESH_INTERVAL_MS:-30000}"
 CURSOR_PAGINATION="${XMC_DEFAULT_TO_CURSOR_PAGINATION:-false}"
 STATUS_HISTORY="${XMC_STATUS_MESSAGE_HISTORY_ENABLED:-false}"
