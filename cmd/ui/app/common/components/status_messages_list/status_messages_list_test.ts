@@ -11,11 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { setupModule, bootstrap, get, flush } from 'xmanager_cloud/ui/app/testing/test';
 import 'jasmine';
 
 import { getHarness } from '@angular/cdk/testing/catalyst/async';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { of, throwError } from 'rxjs';
+
 import { ListStatusMessagesResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { StatusMessage as StatusMessageProto } from 'xmanager_cloud/experiment_state_server/proto/status_message.jsonpb_decls';
 import { MOCK_HISTORICAL_STATUS_MESSAGES } from 'xmanager_cloud/ui/app/common/mock_data';
@@ -24,7 +25,7 @@ import {
   StatusMessageFilterService,
 } from 'xmanager_cloud/ui/app/service/status_message_filter_service';
 import { StatusMessageService } from 'xmanager_cloud/ui/app/service/status_message_service';
-import { of, throwError } from 'rxjs';
+import { bootstrap, flush, get, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
 import { StatusMessagesList } from './status_messages_list';
 import { StatusMessagesListHarness } from './testing/status_messages_list_harness';

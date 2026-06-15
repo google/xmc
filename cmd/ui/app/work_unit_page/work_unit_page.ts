@@ -19,6 +19,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ActivatedRoute } from '@angular/router';
+
 import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
 import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
 import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
@@ -32,7 +33,6 @@ import {
 } from '../common/components/status_message/status_message';
 import { UrlsWidget } from '../common/components/urls_widget/urls_widget';
 import { ProcessedUrl, processUrls } from '../common/url/url_processor';
-
 import { WorkUnitDetails } from './details/work_unit_details';
 import { Header } from './header/header';
 import { JobsTable } from './jobs_table/jobs_table';

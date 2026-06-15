@@ -15,6 +15,7 @@ import { numBytesToString } from 'javascript/closure/format/format';
 import { MessageFormat } from 'javascript/closure/i18n/messageformat';
 import { declareIcuTemplate } from 'javascript/closure/i18n/messages';
 import { NumberFormat } from 'javascript/closure/i18n/numberformat';
+
 import { ResourceSet } from 'xmanager_cloud/experiment_state_server/proto/resources.jsonpb_decls';
 
 import { ResourceType } from '../resource_chip';

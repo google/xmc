@@ -11,19 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {
-  cleanState,
-  setupModule,
-  bootstrap,
-  get,
-  getEl,
-  setupObservableMatchers,
-} from 'xmanager_cloud/ui/app/testing/test';
 import 'jasmine';
 
 import { getHarness } from '@angular/cdk/testing/catalyst/async';
-import { MatButtonToggleHarness } from '@angular/material/button-toggle/testing';
 import { MatButtonHarness } from '@angular/material/button/testing';
+import { MatButtonToggleHarness } from '@angular/material/button-toggle/testing';
 import { MatInputHarness } from '@angular/material/input/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { of } from 'rxjs';
@@ -31,6 +23,14 @@ import { of } from 'rxjs';
 import { EXPERIMENT_1 } from 'xmanager_cloud/ui/app/common/mock_data';
 import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
 import { SidePanelService } from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
+import {
+  bootstrap,
+  cleanState,
+  get,
+  getEl,
+  setupModule,
+  setupObservableMatchers,
+} from 'xmanager_cloud/ui/app/testing/test';
 
 import { EditExperimentForm, EditExperimentFormData } from './edit_experiment_form';
 

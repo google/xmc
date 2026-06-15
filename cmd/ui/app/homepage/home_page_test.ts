@@ -11,12 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { cleanState, setupModule, bootstrap } from '../testing/test';
 import 'jasmine';
 
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, Params, provideRouter } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
+
+import { bootstrap, cleanState, setupModule } from '../testing/test';
 import { HomePage } from './home_page';
 
 describe('HomePage Component', () => {

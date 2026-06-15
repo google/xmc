@@ -16,6 +16,7 @@ import { ChangeDetectionStrategy, Component, effect, input, ViewChild } from '@a
 import { MatCardModule } from '@angular/material/card';
 import { MatPaginator, MatPaginatorModule } from '@angular/material/paginator';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
+
 import { type ReplicatedJobStatus } from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
 import { type WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
 import {
