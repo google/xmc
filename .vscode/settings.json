@@ -1,0 +1,12 @@
+{
+  "eslint.workingDirectories": [
+    "./cmd/ui"
+  ],
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "eslint.validate": [
+    "typescript",
+    "html"
+  ]
+}
