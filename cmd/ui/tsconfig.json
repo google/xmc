@@ -17,14 +17,13 @@
       "ES2022",
       "dom"
     ],
-    "baseUrl": ".",
     "paths": {
-      "xmanager_cloud/ui/app/*": ["app/*"],
-      "jasmine": ["app/stubs/jasmine.ts"],
-      "javascript/closure/format/format": ["app/stubs/format.ts"],
-      "javascript/closure/i18n/messageformat": ["app/stubs/messageformat.ts"],
-      "javascript/closure/i18n/messages": ["app/stubs/messages.ts"],
-      "javascript/closure/i18n/numberformat": ["app/stubs/numberformat.ts"]
+      "xmanager_cloud/ui/app/*": ["./app/*"],
+      "jasmine": ["./app/stubs/jasmine.ts"],
+      "javascript/closure/format/format": ["./app/stubs/format.ts"],
+      "javascript/closure/i18n/messageformat": ["./app/stubs/messageformat.ts"],
+      "javascript/closure/i18n/messages": ["./app/stubs/messages.ts"],
+      "javascript/closure/i18n/numberformat": ["./app/stubs/numberformat.ts"]
     }
   },
   "include": [
