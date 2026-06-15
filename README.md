@@ -218,19 +218,19 @@ For a direct, hands-on infrastructure deployment:
    ```bash
    helm upgrade --install xmc ./deploy/helm -n xmc --create-namespace -f my-values.yaml
    ```
-   *For details on custom values configurations, see [deploy/helm/values.yaml](file:///usr/local/google/home/atyburcy/Documents/XMC/xmc/deploy/helm/values.yaml).*
+   *For details on custom values configurations, see [deploy/helm/values.yaml](deploy/helm/values.yaml).*
 
 ### 2. Cluster Toolkit Blueprints (Recommended)
 We provide automated HPC Cluster Toolkit blueprints to provision the entire cloud-native resource stack in a single orchestration workflow:
 * **XMC v2 Blueprint**: Configures GKE clusters, Spanner, Redis, static IPs, and Google Cloud Certificate Manager SSL maps.
-* For step-by-step instructions on compilation and group-by-group deployments, see [deploy/ctk_v2/README.md](file:///usr/local/google/home/atyburcy/Documents/XMC/xmc/deploy/ctk_v2/README.md).
+* For step-by-step instructions on compilation and group-by-group deployments, see [deploy/ctk_v2/README.md](deploy/ctk_v2/README.md).
 
 ### 3. Using Antigravity Agent Skill (`deploy_xmc`)
 If you are running an agentic session, you can execute the automated deployment skill:
 ```bash
 /Deploy XMC deploy/ctk_v2/xmanager-cloud-deployment.yaml
 ```
-This skill handles pre-flight CLI checks, sequentially provisions API services, pauses to prompt the user to map DNS records, and executes GKE routing validations. See the detailed skill specification in [SKILL.md](file:///usr/local/google/home/atyburcy/Documents/XMC/xmc/.agents/skills/deploy_xmc/SKILL.md).
+This skill handles pre-flight CLI checks, sequentially provisions API services, pauses to prompt the user to map DNS records, and executes GKE routing validations. See the detailed skill specification in [SKILL.md](.agents/skills/deploy_xmc/SKILL.md).
 
 ---
 
