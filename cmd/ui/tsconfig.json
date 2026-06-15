@@ -17,7 +17,6 @@
       "ES2022",
       "dom"
     ],
-    "baseUrl": ".",
     "paths": {
       "xmanager_cloud/ui/app/*": ["app/*"],
       "jasmine": ["app/stubs/jasmine.ts"],
