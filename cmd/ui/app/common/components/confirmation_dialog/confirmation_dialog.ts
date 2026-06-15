@@ -11,10 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {CommonModule} from '@angular/common';
-import {ChangeDetectionStrategy, Component, inject} from '@angular/core';
-import {MatButtonModule} from '@angular/material/button';
-import {MAT_DIALOG_DATA, MatDialogModule, MatDialogRef} from '@angular/material/dialog';
+import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { MatButtonModule } from '@angular/material/button';
+import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 
 /**
  * Confirmation dialog component.
@@ -24,12 +24,12 @@ import {MAT_DIALOG_DATA, MatDialogModule, MatDialogRef} from '@angular/material/
   standalone: true,
   templateUrl: './confirmation_dialog.ng.html',
   imports: [CommonModule, MatButtonModule, MatDialogModule],
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ConfirmationDialog {
   readonly dialogRef = inject(MatDialogRef<ConfirmationDialog>);
 
-  protected data: {title: string; message: string} = inject(MAT_DIALOG_DATA);
+  protected data: { title: string; message: string } = inject(MAT_DIALOG_DATA);
 
   onConfirm() {
     this.dialogRef.close(true);

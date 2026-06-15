@@ -14,15 +14,15 @@
 import { setupModule, bootstrapTemplate } from 'xmanager_cloud/ui/app/testing/test';
 import 'jasmine';
 
-import {getHarness} from '@angular/cdk/testing/catalyst/async';
-import {NoopAnimationsModule} from '@angular/platform-browser/animations';
-import {provideRouter} from '@angular/router';
-import {ListExperimentsResponse} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { getHarness } from '@angular/cdk/testing/catalyst/async';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { provideRouter } from '@angular/router';
+import { ListExperimentsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
-import {EmptyComponent} from 'xmanager_cloud/ui/app/common/testing_utils/empty_component';
+import { EmptyComponent } from 'xmanager_cloud/ui/app/common/testing_utils/empty_component';
 
-import {ExperimentsTable} from './experiments_table';
-import {ExperimentsTableHarness} from './testing/experiments_table_harness';
+import { ExperimentsTable } from './experiments_table';
+import { ExperimentsTableHarness } from './testing/experiments_table_harness';
 
 const MOCK_EXPERIMENTS: ListExperimentsResponse = {
   experiments: [
@@ -30,7 +30,7 @@ const MOCK_EXPERIMENTS: ListExperimentsResponse = {
       name: 'experiments/12345',
       title: 'My First Experiment',
       tags: ['test', 'important'],
-      status: {activeState: 'ACTIVE'},
+      status: { activeState: 'ACTIVE' },
       priority: 'HIGH',
       notes: 'Some important notes here.',
       resources: [],
@@ -41,7 +41,7 @@ const MOCK_EXPERIMENTS: ListExperimentsResponse = {
       name: 'experiments/67890',
       title: 'Another Experiment',
       tags: [],
-      status: {activeState: 'INACTIVE'},
+      status: { activeState: 'INACTIVE' },
       priority: undefined,
       notes: 'Fewer details.',
       resources: undefined,
@@ -57,7 +57,7 @@ const EMPTY_EXPERIMENTS: ListExperimentsResponse = {
 };
 
 interface TestContext {
-  pageResult: ListExperimentsResponse|undefined;
+  pageResult: ListExperimentsResponse | undefined;
   isFetching: boolean;
 }
 
@@ -65,42 +65,36 @@ describe('ExperimentsTable Component', () => {
   async function setup(context: TestContext) {
     setupModule({
       imports: [ExperimentsTable, NoopAnimationsModule],
-      providers: [
-        provideRouter([
-          {path: 'experiments/:xid', component: EmptyComponent},
-        ]),
-      ],
+      providers: [provideRouter([{ path: 'experiments/:xid', component: EmptyComponent }])],
     });
 
     bootstrapTemplate(
-        `<xmc-experiments-table [pageResult]="pageResult" [isFetching]="isFetching" />`,
-        context,
+      `<xmc-experiments-table [pageResult]="pageResult" [isFetching]="isFetching" />`,
+      context,
     );
     return context;
   }
 
-  it('should show no experiments message for empty experiments array',
-     async () => {
-       await setup({pageResult: EMPTY_EXPERIMENTS, isFetching: false});
-       const harness = await getHarness(ExperimentsTableHarness);
-       expect(await harness.hasNoExperimentsMessage()).toBeTrue();
-     });
+  it('should show no experiments message for empty experiments array', async () => {
+    await setup({ pageResult: EMPTY_EXPERIMENTS, isFetching: false });
+    const harness = await getHarness(ExperimentsTableHarness);
+    expect(await harness.hasNoExperimentsMessage()).toBeTrue();
+  });
 
-  it('should render the table with correct number of rows when not fetching',
-     async () => {
-       await setup({pageResult: MOCK_EXPERIMENTS, isFetching: false});
-       const harness = await getHarness(ExperimentsTableHarness);
-       const table = await harness.getTable();
-       const rows = await table!.getRows({selector: ':not(.detail-row)'});
-       expect(rows.length).toBe(MOCK_EXPERIMENTS.experiments!.length);
+  it('should render the table with correct number of rows when not fetching', async () => {
+    await setup({ pageResult: MOCK_EXPERIMENTS, isFetching: false });
+    const harness = await getHarness(ExperimentsTableHarness);
+    const table = await harness.getTable();
+    const rows = await table!.getRows({ selector: ':not(.detail-row)' });
+    expect(rows.length).toBe(MOCK_EXPERIMENTS.experiments!.length);
 
-       expect(await harness.hasLoadingBar()).toBeFalse();
-       expect(await harness.hasNoExperimentsMessage()).toBeFalse();
-     });
+    expect(await harness.hasLoadingBar()).toBeFalse();
+    expect(await harness.hasNoExperimentsMessage()).toBeFalse();
+  });
 
   describe('Loading states', () => {
     it('should show loading bar', async () => {
-      await setup({pageResult: undefined, isFetching: true});
+      await setup({ pageResult: undefined, isFetching: true });
       const harness = await getHarness(ExperimentsTableHarness);
       expect(await harness.isLoading()).toBeTrue();
       expect(await harness.isTablePresent()).toBeFalse();

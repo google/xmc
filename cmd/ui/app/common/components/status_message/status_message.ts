@@ -11,20 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {CommonModule, DatePipe} from '@angular/common';
-import {ChangeDetectionStrategy, Component, computed, inject, input, signal} from '@angular/core';
-import {toObservable} from '@angular/core/rxjs-interop';
-import {MatButtonModule} from '@angular/material/button';
-import {MatIconModule} from '@angular/material/icon';
-import {MatProgressBarModule} from '@angular/material/progress-bar';
-import {Router, RouterLink} from '@angular/router';
-import {QueueInfo, StructuredMessage} from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
-import {combineLatest} from 'rxjs';
-import {map} from 'rxjs/operators';
+import { CommonModule, DatePipe } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { Router, RouterLink } from '@angular/router';
+import {
+  QueueInfo,
+  StructuredMessage,
+} from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
+import { combineLatest } from 'rxjs';
+import { map } from 'rxjs/operators';
 
-import {formatSource, StatusMessageFilterService} from 'xmanager_cloud/ui/app/service/status_message_filter_service';
-import {parseWorkUnitName} from 'xmanager_cloud/ui/app/common/resource_name_extractor';
-import {ProcessedUrl} from 'xmanager_cloud/ui/app/common/url/url_processor';
+import {
+  formatSource,
+  StatusMessageFilterService,
+} from 'xmanager_cloud/ui/app/service/status_message_filter_service';
+import { parseWorkUnitName } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
+import { ProcessedUrl } from 'xmanager_cloud/ui/app/common/url/url_processor';
 
 const STACK_TRACE_PREVIEW_LINES = 5;
 
@@ -70,34 +76,36 @@ export class StatusMessage {
     if (t === 1) {
       return 100;
     }
-    return 100 * (t - p) / (t - 1);
+    return (100 * (t - p)) / (t - 1);
   }
 
   protected readonly stackTraceLines = computed(
-      () => this.message().auxiliaryInfo?.stackTrace?.split('\n') ?? []);
-  protected readonly stackTracePreview = computed(
-      () => this.stackTraceLines()
-                .slice(0, STACK_TRACE_PREVIEW_LINES)
-                .join('\n'));
-  protected readonly stackTraceMore = computed(
-      () => this.stackTraceLines().slice(STACK_TRACE_PREVIEW_LINES).join('\n'));
-  protected readonly showMoreButton =
-      computed(() => this.stackTraceLines().length > STACK_TRACE_PREVIEW_LINES);
+    () => this.message().auxiliaryInfo?.stackTrace?.split('\n') ?? [],
+  );
+  protected readonly stackTracePreview = computed(() =>
+    this.stackTraceLines().slice(0, STACK_TRACE_PREVIEW_LINES).join('\n'),
+  );
+  protected readonly stackTraceMore = computed(() =>
+    this.stackTraceLines().slice(STACK_TRACE_PREVIEW_LINES).join('\n'),
+  );
+  protected readonly showMoreButton = computed(
+    () => this.stackTraceLines().length > STACK_TRACE_PREVIEW_LINES,
+  );
 
-  protected readonly lineClass =
-      computed<'yellow-vertical-line'|'red-vertical-line'|'blue-vertical-line'|
-               'grey-vertical-line'>(() => {
-        const severity = this.message().severity;
-        if (severity === 'WARNING') {
-          return 'yellow-vertical-line';
-        } else if (severity === 'ERROR' || severity === 'FATAL') {
-          return 'red-vertical-line';
-        } else if (severity === 'DEBUG') {
-          return 'grey-vertical-line';
-        } else {
-          return 'blue-vertical-line';
-        }
-      });
+  protected readonly lineClass = computed<
+    'yellow-vertical-line' | 'red-vertical-line' | 'blue-vertical-line' | 'grey-vertical-line'
+  >(() => {
+    const severity = this.message().severity;
+    if (severity === 'WARNING') {
+      return 'yellow-vertical-line';
+    } else if (severity === 'ERROR' || severity === 'FATAL') {
+      return 'red-vertical-line';
+    } else if (severity === 'DEBUG') {
+      return 'grey-vertical-line';
+    } else {
+      return 'blue-vertical-line';
+    }
+  });
 
   protected readonly urlsForWidget = computed<ProcessedUrl[]>(() => {
     const url = this.message().userFacingUrl;
@@ -113,18 +121,16 @@ export class StatusMessage {
     ];
   });
 
-  protected readonly isVisible$ =
-      combineLatest([
-        toObservable(this.message),
-        toObservable(this.ignoreFilters),
-        this.filterService.severities$,
-        this.filterService.sources$,
-      ])
-          .pipe(map(
-              ([message, ignoreFilters, enabledSeverities, enabledSources]) => {
-                return ignoreFilters ||
-                    this.filterService.isMessageVisible(message);
-              }));
+  protected readonly isVisible$ = combineLatest([
+    toObservable(this.message),
+    toObservable(this.ignoreFilters),
+    this.filterService.severities$,
+    this.filterService.sources$,
+  ]).pipe(
+    map(([message, ignoreFilters, enabledSeverities, enabledSources]) => {
+      return ignoreFilters || this.filterService.isMessageVisible(message);
+    }),
+  );
 
   protected readonly workUnitId = computed(() => {
     if (!this.showWorkUnitId()) {
@@ -150,12 +156,9 @@ export interface StatusWithMessages {
 }
 
 /** Extracts status messages from a status object. */
-export function getStatusMessages(status: StatusWithMessages|undefined):
-    StructuredMessage[] {
+export function getStatusMessages(status: StatusWithMessages | undefined): StructuredMessage[] {
   if (!status) return [];
-  return [
-    status.systemMessage,
-    status.userMessage,
-    status.schedulingInformation,
-  ].filter((msg): msg is StructuredMessage => !!msg?.userFacingText);
+  return [status.systemMessage, status.userMessage, status.schedulingInformation].filter(
+    (msg): msg is StructuredMessage => !!msg?.userFacingText,
+  );
 }

@@ -13,16 +13,16 @@
 // limitations under the License.
 
 import { getTestBed, TestBed, TestModuleMetadata } from '@angular/core/testing';
-import { BrowserDynamicTestingModule, platformBrowserDynamicTesting } from '@angular/platform-browser-dynamic/testing';
+import {
+  BrowserDynamicTestingModule,
+  platformBrowserDynamicTesting,
+} from '@angular/platform-browser-dynamic/testing';
 import { Component } from '@angular/core';
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { By } from '@angular/platform-browser';
 
 // 1. Initialize the Angular testing environment.
-getTestBed().initTestEnvironment(
-  BrowserDynamicTestingModule,
-  platformBrowserDynamicTesting()
-);
+getTestBed().initTestEnvironment(BrowserDynamicTestingModule, platformBrowserDynamicTesting());
 
 let currentFixture: any = null;
 
@@ -92,7 +92,9 @@ export function get(token: any): any {
 // 6. Define getHarness helper
 export async function getHarness(query: any): Promise<any> {
   if (!currentFixture) {
-    throw new Error('getHarness: No active component fixture has been bootstrapped. Call bootstrap(Component) first.');
+    throw new Error(
+      'getHarness: No active component fixture has been bootstrapped. Call bootstrap(Component) first.',
+    );
   }
   const selector = query.hostSelector;
   const elementPrototype = Element.prototype as any;
@@ -173,7 +175,7 @@ export async function trigger(el: HTMLElement, eventName: string, eventData?: an
 export function bootstrapTemplate(template: string, options?: any): any {
   @Component({
     template: template,
-    standalone: false
+    standalone: false,
   })
   class DynamicHostComponent {
     constructor() {
@@ -181,9 +183,11 @@ export function bootstrapTemplate(template: string, options?: any): any {
         for (const key of Object.keys(options)) {
           Object.defineProperty(this, key, {
             get: () => options[key],
-            set: (val) => { options[key] = val; },
+            set: (val) => {
+              options[key] = val;
+            },
             configurable: true,
-            enumerable: true
+            enumerable: true,
           });
         }
       }
@@ -191,7 +195,7 @@ export function bootstrapTemplate(template: string, options?: any): any {
   }
 
   TestBed.configureTestingModule({
-    declarations: [DynamicHostComponent]
+    declarations: [DynamicHostComponent],
   });
 
   return bootstrap(DynamicHostComponent);
@@ -227,7 +231,7 @@ export function setupObservableMatchers() {
               next: (val: any) => {
                 emitted = true;
                 emittedValue = val;
-              }
+              },
             });
 
             await Promise.resolve();
@@ -236,7 +240,7 @@ export function setupObservableMatchers() {
             if (!emitted) {
               resolve({
                 pass: false,
-                message: `Expected Observable to emit ${JSON.stringify(expected)} but it did not emit any value.`
+                message: `Expected Observable to emit ${JSON.stringify(expected)} but it did not emit any value.`,
               });
               return;
             }
@@ -246,10 +250,10 @@ export function setupObservableMatchers() {
               pass,
               message: pass
                 ? `Expected Observable not to emit ${JSON.stringify(expected)}`
-                : `Expected Observable to emit ${JSON.stringify(expected)} but it emitted ${JSON.stringify(emittedValue)}`
+                : `Expected Observable to emit ${JSON.stringify(expected)} but it emitted ${JSON.stringify(emittedValue)}`,
             });
           });
-        }
+        },
       };
     },
     toEmitSequence(util: any, customEqualityTesters: any): any {
@@ -260,7 +264,7 @@ export function setupObservableMatchers() {
             const sub = actual.subscribe({
               next: (val: any) => {
                 emittedValues.push(val);
-              }
+              },
             });
 
             await Promise.resolve();
@@ -271,10 +275,10 @@ export function setupObservableMatchers() {
               pass,
               message: pass
                 ? `Expected Observable not to emit sequence ${JSON.stringify(expectedSequence)}`
-                : `Expected Observable to emit sequence ${JSON.stringify(expectedSequence)} but it emitted ${JSON.stringify(emittedValues)}`
+                : `Expected Observable to emit sequence ${JSON.stringify(expectedSequence)} but it emitted ${JSON.stringify(emittedValues)}`,
             });
           });
-        }
+        },
       };
     },
     toHaveNeverEmitted(util: any, customEqualityTesters: any): any {
@@ -288,7 +292,7 @@ export function setupObservableMatchers() {
               next: (val: any) => {
                 emitted = true;
                 emittedValue = val;
-              }
+              },
             });
 
             await Promise.resolve();
@@ -298,11 +302,11 @@ export function setupObservableMatchers() {
               pass: !emitted,
               message: !emitted
                 ? `Expected Observable to have emitted a value but it did not.`
-                : `Expected Observable not to have emitted any values but it emitted ${JSON.stringify(emittedValue)}`
+                : `Expected Observable not to have emitted any values but it emitted ${JSON.stringify(emittedValue)}`,
             });
           });
-        }
+        },
       };
-    }
+    },
   } as any);
 }

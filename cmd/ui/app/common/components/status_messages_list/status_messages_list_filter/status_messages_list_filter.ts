@@ -11,18 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {ChangeDetectionStrategy, Component, computed, input, output} from '@angular/core';
-import {FormsModule} from '@angular/forms';
-import {MatButtonModule} from '@angular/material/button';
-import {MatNativeDateModule} from '@angular/material/core';
-import {MatDatepickerModule} from '@angular/material/datepicker';
-import {MatFormFieldModule} from '@angular/material/form-field';
-import {MatIconModule} from '@angular/material/icon';
-import {MatInputModule} from '@angular/material/input';
-import {MatSelectModule} from '@angular/material/select';
-import {MatTooltipModule} from '@angular/material/tooltip';
-import {StructuredMessage} from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
-import {ALL_SEVERITIES, ALL_SOURCES, formatSource} from 'xmanager_cloud/ui/app/service/status_message_filter_service';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { MatButtonModule } from '@angular/material/button';
+import { MatNativeDateModule } from '@angular/material/core';
+import { MatDatepickerModule } from '@angular/material/datepicker';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatIconModule } from '@angular/material/icon';
+import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
+import {
+  ALL_SEVERITIES,
+  ALL_SOURCES,
+  formatSource,
+} from 'xmanager_cloud/ui/app/service/status_message_filter_service';
 
 /**
  * Available presets for time filter.
@@ -69,7 +73,7 @@ export class StatusMessagesListFilter {
   readonly severityFilter = input<readonly string[]>([]);
   readonly sourceFilter = input<readonly string[]>([]);
   readonly sortOrder = input<string>('DESC');
-  readonly timeFilter = input<TimeFilterValue>({preset: TimePreset.ALL});
+  readonly timeFilter = input<TimeFilterValue>({ preset: TimePreset.ALL });
 
   readonly severityFilterChange = output<readonly string[]>();
   readonly sourceFilterChange = output<readonly string[]>();
@@ -77,31 +81,37 @@ export class StatusMessagesListFilter {
   readonly timeFilterChange = output<TimeFilterValue>();
   readonly refresh = output<void>();
 
-
-  protected readonly severityOptions = ALL_SEVERITIES.map(
-      sev => ({value: sev, label: this.formatSeverity(sev)}));
-  protected readonly sourceOptions =
-      ALL_SOURCES.map(src => ({value: src, label: formatSource(src)}));
+  protected readonly severityOptions = ALL_SEVERITIES.map((sev) => ({
+    value: sev,
+    label: this.formatSeverity(sev),
+  }));
+  protected readonly sourceOptions = ALL_SOURCES.map((src) => ({
+    value: src,
+    label: formatSource(src),
+  }));
   protected readonly timeOptions = [
-    {value: TimePreset.ALL, label: 'All time'},
-    {value: TimePreset.LAST_1_HOUR, label: 'Last 1 hour'},
-    {value: TimePreset.LAST_24_HOURS, label: 'Last 24 hours'},
-    {value: TimePreset.LAST_7_DAYS, label: 'Last 7 days'},
-    {value: TimePreset.CUSTOM, label: 'Custom range...'},
+    { value: TimePreset.ALL, label: 'All time' },
+    { value: TimePreset.LAST_1_HOUR, label: 'Last 1 hour' },
+    { value: TimePreset.LAST_24_HOURS, label: 'Last 24 hours' },
+    { value: TimePreset.LAST_7_DAYS, label: 'Last 7 days' },
+    { value: TimePreset.CUSTOM, label: 'Custom range...' },
   ];
 
-  protected readonly selectedSeveritiesLabel = computed(
-      () => this.getSelectionLabel(
-          this.severityFilter(), this.severityOptions.length,
-          s => this.formatSeverity(s)));
+  protected readonly selectedSeveritiesLabel = computed(() =>
+    this.getSelectionLabel(this.severityFilter(), this.severityOptions.length, (s) =>
+      this.formatSeverity(s),
+    ),
+  );
 
-  protected readonly selectedSourcesLabel = computed(
-      () => this.getSelectionLabel(
-          this.sourceFilter(), this.sourceOptions.length,
-          s => formatSource(s as StructuredMessage.Source)));
+  protected readonly selectedSourcesLabel = computed(() =>
+    this.getSelectionLabel(this.sourceFilter(), this.sourceOptions.length, (s) =>
+      formatSource(s as StructuredMessage.Source),
+    ),
+  );
 
-  protected readonly customTimeRangeSelected =
-      computed(() => this.timeFilter().preset === TimePreset.CUSTOM);
+  protected readonly customTimeRangeSelected = computed(
+    () => this.timeFilter().preset === TimePreset.CUSTOM,
+  );
 
   protected readonly customStartDate = computed(() => {
     const start = this.timeFilter().start;
@@ -109,15 +119,15 @@ export class StatusMessagesListFilter {
   });
 
   protected readonly customStartTime = computed(() =>
-      this.formatTimeString(this.timeFilter().start));
+    this.formatTimeString(this.timeFilter().start),
+  );
 
   protected readonly customEndDate = computed(() => {
     const end = this.timeFilter().end;
     return end ? new Date(end) : null;
   });
 
-  protected readonly customEndTime = computed(() =>
-      this.formatTimeString(this.timeFilter().end));
+  protected readonly customEndTime = computed(() => this.formatTimeString(this.timeFilter().end));
 
   protected readonly hasInvalidCustomRange = computed(() => {
     const filter = this.timeFilter();
@@ -245,8 +255,10 @@ export class StatusMessagesListFilter {
   }
 
   private getSelectionLabel(
-      selected: readonly string[], allCount: number,
-      formatFn: (s: string) => string): string {
+    selected: readonly string[],
+    allCount: number,
+    formatFn: (s: string) => string,
+  ): string {
     if (selected.length === allCount) return 'All';
     return selected.map(formatFn).join(', ');
   }

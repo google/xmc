@@ -11,20 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {CommonModule} from '@angular/common';
-import {ChangeDetectionStrategy, Component, inject, output} from '@angular/core';
-import {FormControl, FormsModule, ReactiveFormsModule} from '@angular/forms';
-import {MatButtonModule} from '@angular/material/button';
-import {MatCardModule} from '@angular/material/card';
-import {MatFormFieldModule} from '@angular/material/form-field';
-import {MatIconModule} from '@angular/material/icon';
-import {MatInputModule} from '@angular/material/input';
-import {MatMenuModule} from '@angular/material/menu';
-import {MatToolbarModule} from '@angular/material/toolbar';
-import {MatTooltipModule} from '@angular/material/tooltip';
-import {Router, RouterLink} from '@angular/router';
+import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, inject, output } from '@angular/core';
+import { FormControl, FormsModule, ReactiveFormsModule } from '@angular/forms';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatIconModule } from '@angular/material/icon';
+import { MatInputModule } from '@angular/material/input';
+import { MatMenuModule } from '@angular/material/menu';
+import { MatToolbarModule } from '@angular/material/toolbar';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { Router, RouterLink } from '@angular/router';
 
-import {experimentFiltersToQueryParams} from 'xmanager_cloud/ui/app/experiments_list_page/utils/query_params';
+import { experimentFiltersToQueryParams } from 'xmanager_cloud/ui/app/experiments_list_page/utils/query_params';
 
 /**
  * Header component for the XMC UI.

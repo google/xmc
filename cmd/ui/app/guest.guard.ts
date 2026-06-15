@@ -32,6 +32,6 @@ export const guestGuard: CanActivateFn = () => {
         return router.parseUrl('/experiments');
       }
       return true;
-    })
+    }),
   );
 };
