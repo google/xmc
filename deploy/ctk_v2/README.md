@@ -28,16 +28,6 @@ cp ./internal/storage/spanner/emulator/ess_messages.pb ./deploy/
 cp ./internal/storage/spanner/emulator/xid_messages.pb ./deploy/
 ```
 
-### Step 2: Compile the Spanner Migration Tool
-The deployment process uses an internal tool to initialize migration metadata. Compile the migrations binary and make it available in your path under the name `run_spanner_migration`:
-
-```bash
-bazel build //internal/storage/spanner/migrations:migrations
-# Ensure the built binary is executable and accessible as 'run_spanner_migration'
-# e.g., symlink or copy bazel-bin/internal/storage/spanner/migrations/migrations to a directory in your PATH.
-```
-
-
 ---
 
 ## Phase 2: Configuration Variables

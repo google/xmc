@@ -33,9 +33,29 @@ resource "null_resource" "apply_schema" {
         --ddl-file="${var.schema_file}" \
         ${var.proto_descriptors_file != null ? "--proto-descriptors-file=\"${var.proto_descriptors_file}\"" : ""}
 
+      echo "Locating workspace root..."
+      curr_dir="$PWD"
+      workspace_root=""
+      while [[ "$curr_dir" != "/" ]]; do
+        if [[ -f "$curr_dir/WORKSPACE" ]]; then
+          workspace_root="$curr_dir"
+          break
+        fi
+        curr_dir="$(dirname "$curr_dir")"
+      done
+
+      if [[ -z "$workspace_root" ]]; then
+        echo "Error: Could not find WORKSPACE file in parent directories" >&2
+        exit 1
+      fi
+
       echo "Initializing migration version for ${var.db_type} database..."
-      export GOOGLE_CLOUD_PROJECT="${var.project_id}"
-      run_spanner_migration "${var.instance_name}" "${var.database_name}" "${var.db_type}" "init"
+      (cd "$workspace_root" && bazel run //internal/storage/spanner/migrations:migrations -- \
+        --project="${var.project_id}" \
+        --instance="${var.instance_name}" \
+        --database="${var.database_name}" \
+        --migrations_dir="${var.db_type}" \
+        --command="init")
     EOF
   }
 }
