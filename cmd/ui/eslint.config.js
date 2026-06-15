@@ -73,5 +73,25 @@ export default tseslint.config(
       'complexity': 'off',
     },
   },
+  {
+    files: ['**/*.ts'],
+    ignores: [
+      '**/*_test.ts',
+      '**/*.d.ts',
+      '**/testing/**',
+      '**/stubs/**',
+      '**/mock_*.ts',
+      '**/app_config.ts',
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Identifier[name=/^(Mock[A-Z]|mock[A-Z]|mock$)/]',
+          message: 'Identifiers starting with "Mock" or "mock" are not allowed in production files. Move mock classes and data to dedicated testing/mock files, and only reference them in app_config.ts for DI provisioning.',
+        },
+      ],
+    },
+  },
   eslintConfigPrettier
 );
