@@ -158,6 +158,26 @@ Bazel build graphs (`BUILD`, `BUILD.bazel`, `WORKSPACE`, `MODULE.bazel`, and `.b
 * **Target Sorting**: Automatically sorts `srcs`, `deps`, and `data` attribute lists alphabetically to prevent merge conflicts.
 * **Lint Warnings (`-lint=warn`)**: Flags deprecated Bazel syntax (such as legacy `load()` statements), un-pinned external dependencies, unused variable declarations inside `.bzl` macros, and non-canonical label references.
 
+#### 3. License Headers (`addlicense`)
+Source files are checked for proper Apache 2.0 license headers using the **`addlicense`** tool.
+*   Enforces copyright headers on all managed source files (Go, Python, YAML, CSS, etc.).
+*   Automatically ignores `third_party` directories.
+
+#### Development Prerequisites
+To ensure all local pre-commit checks run, install the required toolchains:
+
+*   **`buildifier`** (Bazel formatter):
+    ```bash
+    go install github.com/bazelbuild/buildtools/buildifier@latest
+    ```
+*   **`addlicense`** (License header tool):
+    ```bash
+    go install github.com/google/addlicense@latest
+    ```
+*   **`golangci-lint`** (Go linter):
+    Follow the official [installation guide](https://golangci-lint.run/welcome/#install) to install it on your system.
+    *(Note: if `golangci-lint` is missing, the hook will fallback to standard `gofmt`)*
+
 #### Auto-Fixing Code Locally
 Developers can automatically format their code and fix lint violations locally before pushing by enabling the repository pre-commit hook:
 ```bash
