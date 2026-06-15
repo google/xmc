@@ -26,6 +26,7 @@ import {
 } from './status_message_filter_service';
 
 @Component({
+  standalone: true,
   template: '',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

@@ -1,5 +1,6 @@
 import tseslint from 'typescript-eslint';
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
+import angular from '@angular-eslint/eslint-plugin';
 
 import eslintConfigPrettier from 'eslint-config-prettier';
 
@@ -14,6 +15,7 @@ export default tseslint.config(
     },
     plugins: {
       'simple-import-sort': simpleImportSort,
+      '@angular-eslint': angular,
     },
     rules: {
       '@typescript-eslint/no-unused-vars': [
@@ -56,6 +58,15 @@ export default tseslint.config(
       'max-lines-per-function': ['warn', { max: 35, skipComments: true }],
       'complexity': ['warn', { max: 10, variant: 'modified' }],
       'max-depth': ['error', 3],
+
+      '@angular-eslint/directive-selector': 'off',
+      '@angular-eslint/component-selector': 'off',
+      '@angular-eslint/no-output-on-prefix': 'error',
+      '@angular-eslint/no-input-rename': 'error',
+      '@angular-eslint/no-output-rename': 'error',
+      '@angular-eslint/use-lifecycle-interface': 'error',
+      '@angular-eslint/use-pipe-transform-interface': 'error',
+      '@angular-eslint/prefer-standalone': 'error',
     },
   },
   {
@@ -69,6 +80,7 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
+      '@angular-eslint/prefer-standalone': 'off',
       'max-lines-per-function': 'off',
       'complexity': 'off',
     },
