@@ -96,3 +96,22 @@ private static readonly STATUS_CHIP_MAP = new Map<WorkUnitState, ChipStyle>([
 ### Standalone Architectures
 - Ensure all components, directives, and pipes are standalone (`standalone: true`) by default.
 - Eradicate legacy `@NgModule` orchestrations to keep dependencies flat, predictable, and tree-shakable.
+
+---
+
+## 6. Dependency Injection (DI) & Hermetic Mocking
+
+### Eradicate Embedded Mock Data Antipattern
+- **Pure Production Services**: Never import mock data dictionaries (e.g., `mock_data.ts`) or embed inline mock execution branches (`if (this.useMockData) return this.mock(...)`) inside production Angular service classes. Production services must contain 100% pure real HTTP business logic.
+- **Standalone Mock Classes**: Extract all mock data generation logic and stubbed responses into dedicated standalone mock service classes (e.g., `MockExperimentService extends ExperimentService`) located in dedicated testing folders (e.g., `service/testing/`).
+
+### Application DI Polymorphism
+- Register DI factory providers in the primary application configuration (`app_config.ts`) to dynamically resolve the correct service implementation based on runtime environmental tokens:
+```typescript
+{
+  provide: ExperimentService,
+  useFactory: () => inject(USE_MOCK_DATA) ? new MockExperimentService() : new ExperimentService(),
+}
+```
+- **Why**: This completely decouples mock payloads from production bundles, dramatically reduces production application bundle sizes, enforces clean Separation of Concerns (SRP), and preserves strict compile-time TypeScript type safety.
+- **Independent Testing**: Always construct independent unit testing suites to separately verify both the real HTTP execution contract (using `HttpTestingController`) and the standalone mock service behavior.

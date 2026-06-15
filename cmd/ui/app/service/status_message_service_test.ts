@@ -22,6 +22,7 @@ import { MOCK_HISTORICAL_STATUS_MESSAGES } from 'xmanager_cloud/ui/app/common/mo
 import { cleanState, flush, get, setupModule, setupObservableMatchers } from '../testing/test';
 import { EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA } from './constants';
 import { StatusMessageService } from './status_message_service';
+import { MockStatusMessageService } from './testing/mock_status_message_service';
 
 describe('StatusMessageService', () => {
   beforeAll(setupObservableMatchers);
@@ -84,18 +85,14 @@ describe('StatusMessageService', () => {
     });
   });
 
-  describe('with mock data', () => {
+  describe('MockStatusMessageService', () => {
     const state = cleanState(() => {
       setupModule({
-        providers: [
-          provideHttpClient(),
-          StatusMessageService,
-          { provide: USE_MOCK_DATA, useValue: true },
-        ],
+        providers: [provideHttpClient(), MockStatusMessageService],
       });
 
       return {
-        service: get(StatusMessageService),
+        service: get(MockStatusMessageService),
       };
     }, beforeEach);
 

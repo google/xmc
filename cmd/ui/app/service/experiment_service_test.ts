@@ -21,10 +21,11 @@ import {
   ListExperimentsResponse,
 } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
-import { EXPERIMENT_1 } from '../common/mock_data';
-import { cleanState, flush, get, setupModule, setupObservableMatchers } from '../testing/test';
+import { EXPERIMENT_1, EXPERIMENT_LIST } from '../common/mock_data';
+import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
 import { EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA } from './constants';
 import { ExperimentService } from './experiment_service';
+import { MockExperimentService } from './testing/mock_experiment_service';
 
 describe('ExperimentService Service', () => {
   beforeAll(setupObservableMatchers);
@@ -95,6 +96,33 @@ describe('ExperimentService Service', () => {
       expect(req.request.method).toBe('GET');
 
       req.flush(EXPERIMENT_1);
+    });
+  });
+});
+
+describe('MockExperimentService', () => {
+  const mockState = cleanState(() => {
+    setupModule({
+      providers: [provideHttpClient(), MockExperimentService],
+    });
+
+    return {
+      service: get(MockExperimentService),
+    };
+  }, beforeEach);
+
+  it('should return mock search experiments', (done) => {
+    mockState.service.searchExperiments({ filter: 'me' }).subscribe((response) => {
+      expect(response.experiments).toEqual(EXPERIMENT_LIST.slice(0, 4));
+      expect(response.nextPageToken).toBe('page_2');
+      done();
+    });
+  });
+
+  it('should return mock get experiment', (done) => {
+    mockState.service.getExperiment('1').subscribe((response) => {
+      expect(response).toEqual(EXPERIMENT_1);
+      done();
     });
   });
 });

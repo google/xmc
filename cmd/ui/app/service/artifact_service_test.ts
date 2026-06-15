@@ -25,6 +25,7 @@ import { ARTIFACT_LIST } from '../common/mock_data';
 import { cleanState, flush, get, setupModule, setupObservableMatchers } from '../testing/test';
 import { ArtifactService } from './artifact_service';
 import { EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA } from './constants';
+import { MockArtifactService } from './testing/mock_artifact_service';
 
 describe('ArtifactService Service', () => {
   beforeAll(setupObservableMatchers);
@@ -105,6 +106,26 @@ describe('ArtifactService Service', () => {
       expect(req.request.params.get('orderBy')).toBe('priority');
       expect(req.request.params.get('pageToken')).toBeNull();
       req.flush(page1Response);
+    });
+  });
+});
+
+describe('MockArtifactService', () => {
+  const mockState = cleanState(() => {
+    setupModule({
+      providers: [provideHttpClient(), MockArtifactService],
+    });
+
+    return {
+      service: get(MockArtifactService),
+    };
+  }, beforeEach);
+
+  it('should return mock artifacts', (done) => {
+    mockState.service.listArtifacts({ parent: 'experiments/1' }).subscribe((response) => {
+      expect(response.artifacts).toEqual(ARTIFACT_LIST);
+      expect(response.nextPageToken).toBe('page_token');
+      done();
     });
   });
 });
