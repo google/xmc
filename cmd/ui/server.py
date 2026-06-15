@@ -33,7 +33,10 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
       self.send_header('Content-type', 'application/javascript')
       self.end_headers()
 
-      api_url = os.environ.get('XMC_API_URL', 'https://api.example.com/v1')
+      api_url = os.environ.get('XMC_API_URL')
+      if not api_url:
+        self.log_message("WARNING: XMC_API_URL environment variable is not set. Defaulting to 'https://api.example.com/v1'")
+        api_url = 'https://api.example.com/v1'
 
       refresh_interval_str = os.environ.get('XMC_REFRESH_INTERVAL_MS', '30000')
       try:
