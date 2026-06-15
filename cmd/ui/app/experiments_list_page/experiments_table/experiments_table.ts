@@ -32,19 +32,19 @@ import {StructuredMessage} from 'xmanager_cloud/experiment_state_server/proto/st
 import {combineLatest, Observable} from 'rxjs';
 import {map} from 'rxjs/operators';
 
-import {LoadingBar} from '../../common/components/loading_bar/loading_bar';
-import {PriorityChip} from '../../common/components/priority_chip/priority_chip';
-import {ResourceChip} from '../../common/components/resource_chip/resource_chip';
-import {ResourceChipData, resourceSetsToResourceChipsData} from '../../common/components/resource_chip/utils/resource_set_to_resource_chips';
-import {StatusChip, StatusOption} from '../../common/components/status_chip/status_chip';
-import {StatusMessage} from '../../common/components/status_message/status_message';
-import {StatusMessageFilter} from '../../common/components/status_message_filter/status_message_filter';
-import {Tag} from '../../common/components/tag/tag';
-import {WorkUnitsStatusBar} from '../../common/components/work_units_status_bar/work_units_status_bar';
-import {XidBadge} from '../../common/components/xid_badge/xid_badge';
-import {StatusMessageFilterService} from '../../service/status_message_filter_service';
-import {EditExperimentFormData} from '../../side_panel/contents/edit_experiment_form/edit_experiment_form';
-import {SidePanelService} from '../../side_panel/side_panel_service';
+import {LoadingBar} from 'xmanager_cloud/ui/app/common/components/loading_bar/loading_bar';
+import {PriorityChip} from 'xmanager_cloud/ui/app/common/components/priority_chip/priority_chip';
+import {ResourceChip} from 'xmanager_cloud/ui/app/common/components/resource_chip/resource_chip';
+import {ResourceChipData, resourceSetsToResourceChipsData} from 'xmanager_cloud/ui/app/common/components/resource_chip/utils/resource_set_to_resource_chips';
+import {StatusChip, StatusOption} from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
+import {StatusMessage} from 'xmanager_cloud/ui/app/common/components/status_message/status_message';
+import {StatusMessageFilter} from 'xmanager_cloud/ui/app/common/components/status_message_filter/status_message_filter';
+import {Tag} from 'xmanager_cloud/ui/app/common/components/tag/tag';
+import {WorkUnitsStatusBar} from 'xmanager_cloud/ui/app/common/components/work_units_status_bar/work_units_status_bar';
+import {XidBadge} from 'xmanager_cloud/ui/app/common/components/xid_badge/xid_badge';
+import {StatusMessageFilterService} from 'xmanager_cloud/ui/app/service/status_message_filter_service';
+import {EditExperimentFormData} from 'xmanager_cloud/ui/app/side_panel/contents/edit_experiment_form/edit_experiment_form';
+import {SidePanelService} from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
 
 enum TableColumns {
   XID = 'XID',
