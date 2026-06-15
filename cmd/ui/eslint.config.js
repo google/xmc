@@ -6,6 +6,9 @@ import eslintConfigPrettier from 'eslint-config-prettier';
 export default tseslint.config(
   {
     files: ['**/*.ts'],
+    extends: [
+      ...tseslint.configs.recommended,
+    ],
     languageOptions: {
       parser: tseslint.parser,
     },
@@ -13,6 +16,14 @@ export default tseslint.config(
       'simple-import-sort': simpleImportSort,
     },
     rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
       'simple-import-sort/imports': [
         'error',
         {
@@ -56,6 +67,8 @@ export default tseslint.config(
       '**/mock_*.ts',
     ],
     rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
       'max-lines-per-function': 'off',
       'complexity': 'off',
     },

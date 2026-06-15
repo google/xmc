@@ -56,13 +56,21 @@ export class StatusMessageFilter {
 
   toggleSeverity(severity: StructuredMessage.Severity, isChecked: boolean) {
     const current = new Set(this.filterService.severitiesSubject.value);
-    isChecked ? current.add(severity) : current.delete(severity);
+    if (isChecked) {
+      current.add(severity);
+    } else {
+      current.delete(severity);
+    }
     this.filterService.updateSeverities(current);
   }
 
   toggleSource(source: StructuredMessage.Source, isChecked: boolean) {
     const current = new Set(this.filterService.sourcesSubject.value);
-    isChecked ? current.add(source) : current.delete(source);
+    if (isChecked) {
+      current.add(source);
+    } else {
+      current.delete(source);
+    }
     this.filterService.updateSources(current);
   }
 
