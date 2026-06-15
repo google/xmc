@@ -27,6 +27,29 @@ else
   find . -type f -name "*.go" -exec gofmt -s -w {} +
 fi
 
+# 3. License Check via addlicense
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR)
+if [ -n "$STAGED_FILES" ]; then
+  if which addlicense >/dev/null 2>&1 || [ -f "$HOME/go/bin/addlicense" ]; then
+    echo "--> Running addlicense check..."
+    ADDLICENSE_BIN="addlicense"
+    [ -f "$HOME/go/bin/addlicense" ] && ADDLICENSE_BIN="$HOME/go/bin/addlicense"
+
+    if ! $ADDLICENSE_BIN -check -c "Google LLC" -l apache \
+        -ignore "third_party/**" \
+        -ignore "**/third_party/**" \
+        $STAGED_FILES; then
+      echo "❌ PRE-COMMIT HOOK FAILED: Some staged files are missing proper license headers."
+      echo "   You can run: $ADDLICENSE_BIN -c \"Google LLC\" -l apache <files>"
+      echo "   to add them automatically."
+      exit 1
+    fi
+  else
+    echo "--> WARNING: addlicense not found. License check skipped."
+    echo "    To install: go install github.com/google/addlicense@latest"
+  fi
+fi
+
 # Check if the linters modified any un-staged files
 if ! git diff --quiet; then
   echo ""
