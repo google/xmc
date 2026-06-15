@@ -5,9 +5,21 @@ description: Automates compiling and step-by-step deployment of the XMC v2 Clust
 
 # Deploy XMC Workflow
 
-This skill guides an agent through deploying the XManager on Cloud (XMC) infrastructure using the Cluster Toolkit v2 blueprint. 
+This skill guides the agent through deploying the XManager on Cloud (XMC) infrastructure using the Cluster Toolkit v2 blueprint. It handles validation of local CLI dependencies (pre-flight checks), sequential deployment of resource groups, pausing for manual DNS updates, and automated verification of Kubernetes readiness.
 
-It handles validation of local CLI dependencies (pre-flight checks), sequential deployment of resource groups, pausing for manual DNS updates, and automated verification of kubernetes readiness.
+```mermaid
+graph TD
+    A["1. Pre-flight CLI Checks"] -->|All pass| B["2. Blueprint Compilation"]
+    A -->|Failure| Error1["Report missing dependency to user"]
+    B -->|Success| C["3. Step 1: Deploy APIs ('apis' group)"]
+    C --> D["3. Step 2: Deploy Core ('primary' group)"]
+    D --> E["3. Step 3: Extract IP & DNS Pause"]
+    E -->|User confirms DNS/OAuth updated| F["3. Step 4: Deploy Compute ('compute' group)"]
+    F --> G["3. Step 5: Install Helm ('kubernetes_prereqs' group)"]
+    G --> H["3. Step 6: Deploy App ('xmc_app' group)"]
+    H --> I["4. Verification & Validation"]
+    I -->|All checks pass| J["Report finalized URL to user"]
+```
 
 ---
 
@@ -23,10 +35,11 @@ Before running any compilation or deployment steps, verify that all necessary CL
 | **`terraform`** | `terraform --version` | Prints Terraform version (minimum 1.12.2) |
 | **`ghpc`** | `./cluster-toolkit/ghpc version` | Prints gcluster/ghpc tool version |
 
-If any check fails (command not found or returns error):
-1. **Stop execution immediately**.
-2. Alert the user about the missing/broken CLI dependency.
-3. Suggest instructions for installation.
+> [!CAUTION]
+> **Check Action**: If any check fails (command not found or returns error):
+> 1. **Stop execution immediately**.
+> 2. Alert the user about the missing/broken CLI dependency.
+> 3. Provide installation instructions and do not proceed.
 
 ---
 
@@ -43,18 +56,19 @@ cp ./internal/storage/spanner/emulator/xid_messages.pb ./deploy/
 ```
 
 ### Step 2: Compile the Blueprint
-Compile the blueprint, specifying the overrides config file (e.g. `deploy/ctk_v2/xmanager-cloud-deployment.yaml`) using the `-d` flag:
+Compile the blueprint, specifying the overrides config file (e.g., `deploy/ctk_v2/xmanager-cloud-deployment.yaml`) using the `-d` flag. If the user hasn't specified the overrides file, look for files in `deploy/ctk_v2/` matching `*deployment.yaml`.
 
 ```bash
 ./cluster-toolkit/ghpc create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -l WARNING -w --force
 ```
+
 Confirm that compilation completes successfully and generates the deployment folder `xmc-v2-run` containing the Terraform workspaces.
 
 ---
 
 ## 3. Step-by-Step Deployment
 
-To allow monitoring and manual intervention, deploy the blueprint groups sequentially:
+Deploy the blueprint groups sequentially to allow monitoring and manual intervention.
 
 ### Step 1: Enable APIs (`apis` group)
 ```bash
@@ -67,32 +81,33 @@ To allow monitoring and manual intervention, deploy the blueprint groups sequent
 ```
 
 ### Step 3: DNS Pause & IP Mapping
-1. Extract the allocated Gateway global static IP from GCP:
-   - Identify the environment name (e.g. `xmcv2`) and GCP project ID from the deployment config.
-   - Run the command to retrieve the IP address:
-     ```bash
-     gcloud compute addresses describe xmc-gateway-static-ip-<environment> --global --project=<project_id> --format='value(address)'
-     ```
-2. Prompt the user for manual DNS mapping and OAuth configuration:
-   - Inform the user that the IP has been provisioned.
-   - Present a clear markdown warning asking them to update both their DNS records and Google OAuth client settings:
-     > [!IMPORTANT]
-     > **Manual Configuration Required**
-     >
-     > 1. **DNS Routing Configuration**:
-     >    Please configure the following A records in your authoritative DNS project for the Gateway IP **`<GATEWAY_IP>`**:
-     >
-     >    | Record Type | Hostname | Target IP |
-     >    |:---:|---|---|
-     >    | **A** | `<environment>.example.com` | `<GATEWAY_IP>` |
-     >    | **A** | `api.<environment>.example.com` | `<GATEWAY_IP>` |
-     >    | **A** | `grpc.<environment>.example.com` | `<GATEWAY_IP>` |
-     >
-     > 2. **OAuth Authorized Redirect URI**:
-     >    Please ensure you add the following Redirect URI to your Google Cloud Console OAuth Web Client ID (`<client_id>`) configuration:
-     >    * **`https://api.<environment>.example.com/api/callback`**
-     >
-     > Once these DNS records are created and the redirect URI is registered in the GCP console, reply to this conversation to proceed with the remaining deployment steps.
+1. **Extract static Gateway IP**:
+   Identify the environment name (e.g. `xmcv2`) and GCP project ID from the deployment config. Retrieve the Gateway IP address:
+   ```bash
+   gcloud compute addresses describe xmc-gateway-static-ip-<environment> --global --project=<project_id> --format='value(address)'
+   ```
+
+2. **User Action Request & Pause**:
+   Present the following instruction and **stop execution** until the user confirms DNS and OAuth configuration are complete:
+
+   > [!IMPORTANT]
+   > **Manual Configuration Required**
+   >
+   > 1. **DNS Routing Configuration**:
+   >    Please configure the following A records in your authoritative DNS project for the Gateway IP **`<GATEWAY_IP>`**:
+   >
+   >    | Record Type | Hostname | Target IP |
+   >    |:---:|---|---|
+   >    | **A** | `<environment>.example.com` | `<GATEWAY_IP>` |
+   >    | **A** | `api.<environment>.example.com` | `<GATEWAY_IP>` |
+   >    | **A** | `grpc.<environment>.example.com` | `<GATEWAY_IP>` |
+   >
+   > 2. **OAuth Authorized Redirect URI**:
+   >    Ensure the following Redirect URI is added to your Google Cloud Console OAuth Web Client ID config:
+   >    * **`https://api.<environment>.example.com/api/callback`**
+   >
+   > Once these DNS records are created and the redirect URI is registered in the GCP console, reply to this conversation to proceed with the remaining deployment steps.
+
 3. **Stop executing tools** and wait for the user to confirm.
 
 ### Step 4: Deploy GKE Cluster & Node Pools (`compute` group)
@@ -114,7 +129,7 @@ To allow monitoring and manual intervention, deploy the blueprint groups sequent
 
 ## 4. Verification and Validation
 
-Verify the health and routing of the environment:
+Verify the health, certificate readiness, and routing of the environment:
 
 ### Step 1: Run Verification Script
 ```bash
@@ -133,4 +148,5 @@ Poll until the Google-managed certificate state reports `ACTIVE`:
 gcloud certificate-manager certificates describe xmc-cert-<environment> --project=<project_id> --format='value(managed.state)'
 ```
 
-Once all checks pass, report the finalized deployment URL (e.g. `https://<environment>.example.com`) to the user.
+> [!TIP]
+> Once all checks pass, report the finalized deployment URL (e.g. `https://<environment>.example.com`) to the user.

@@ -225,16 +225,33 @@ We provide automated HPC Cluster Toolkit blueprints to provision the entire clou
 * **XMC v2 Blueprint**: Configures GKE clusters, Spanner, Redis, static IPs, and Google Cloud Certificate Manager SSL maps.
 * For step-by-step instructions on compilation and group-by-group deployments, see [deploy/ctk_v2/README.md](deploy/ctk_v2/README.md).
 
-### 3. Using Antigravity Agent Skill (`deploy_xmc`)
-If you are running an agentic session, you can execute the automated deployment skill:
-```bash
-/Deploy XMC deploy/ctk_v2/xmanager-cloud-deployment.yaml
-```
-This skill handles pre-flight CLI checks, sequentially provisions API services, pauses to prompt the user to map DNS records, and executes GKE routing validations. See the detailed skill specification in [SKILL.md](.agents/skills/deploy_xmc/SKILL.md).
+### 3. Automated Agent Deployment (`deploy_xmc`)
+If you are running an agentic session, the deployment can be fully automated using the `deploy_xmc` skill. For details on how to run this skill, see [Antigravity Agent Workflows](#antigravity-agent-workflows-ai-assisted) below.
+
+---
+
+## Antigravity Agent Workflows (AI-Assisted)
+
+This repository includes pre-configured **Antigravity Agent Skills** located under the [.agents/skills/](.agents/skills/) directory. These skills define structured workflows that allow the agent to automate complex operational and development tasks.
+
+### 1. Automated Blueprint Deployment (`deploy_xmc`)
+The `deploy_xmc` skill compiles and deploys Cluster Toolkit v2 blueprints. It validates system dependencies, deploys GCP resource groups sequentially, pauses to prompt for manual DNS/OAuth registrations, and runs verification checks.
+
+* **How to trigger**: Ask the agent to deploy the environment using the config overrides path, for example:
+  > Deploy XMC using the blueprint configuration at `deploy/ctk_v2/xmanager-cloud-deployment.yaml`
+* **Workflow Details**: See [deploy_xmc/SKILL.md](.agents/skills/deploy_xmc/SKILL.md).
+
+### 2. PR Comment-Driven Development (`pr_comment_workflow`)
+The `pr_comment_workflow` skill automates resolving review comments on Pull Requests. The agent fetches comment context, determines affected packages and GKE deployments, runs unit tests and coverage checks, commits code, replies to the comment, pushes container images, and restarts GKE deployments.
+
+* **How to trigger**: Ask the agent to resolve a specific GitHub discussion/review link, for example:
+  > Address the PR review comment: `https://github.com/google/xmc/pull/15#discussion_r124892`
+* **Workflow Details**: See [pr_comment_workflow/SKILL.md](.agents/skills/pr_comment_workflow/SKILL.md).
 
 ---
 
 ### Configuration Reference
+
 
 The following parameters can be supplied in your Cluster Toolkit overrides file (`xmanager-cloud-deployment.yaml`) or your Helm overrides (`values.yaml`):
 
