@@ -120,24 +120,24 @@ deployment_groups:
           - role: roles/spanner.databaseUser
             member: "serviceAccount:$(workload_service_account.service_account_email)"
 
-  - id: run_ess_migrations
-    source: community/modules/scripts/spanner-migrations-runner
+  - id: apply_ess_schema
+    source: ./deploy/ctk_v2/modules/spanner-schema-applier
     use: [db_spanner]
     settings:
+      project_id: $(vars.project_id)
       instance_name: $(db_spanner.instance_name)
       database_name: $(db_spanner.database_ids.ess)
-      migrations_dir: $(ghpc_stage("../../internal/storage/spanner/migrations"))
-      sub_directory: ess
+      schema_file: $(ghpc_stage("../../internal/storage/spanner/schema/ess-schema.sql"))
       proto_descriptors_file: $(ghpc_stage("../ess_messages.pb"))
 
-  - id: run_xid_migrations
-    source: community/modules/scripts/spanner-migrations-runner
+  - id: apply_xid_schema
+    source: ./deploy/ctk_v2/modules/spanner-schema-applier
     use: [db_spanner]
     settings:
+      project_id: $(vars.project_id)
       instance_name: $(db_spanner.instance_name)
       database_name: $(db_spanner.database_ids.xid)
-      migrations_dir: $(ghpc_stage("../../internal/storage/spanner/migrations"))
-      sub_directory: xid
+      schema_file: $(ghpc_stage("../../internal/storage/spanner/schema/xid-schema.sql"))
       proto_descriptors_file: $(ghpc_stage("../xid_messages.pb"))
 
   - id: private_service_access

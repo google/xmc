@@ -1,4 +1,6 @@
-# XManager on Cloud (XMC) - Cluster Toolkit Deployment Guide
+# DEPRECATED - XManager on Cloud (XMC) - Cluster Toolkit Deployment Guide
+
+Warning - this blueprint is Deprecated - it should not longer be used to create new instances. It is referencing configuration parameters that are no longer valid. Added here for reference only. 
 
 This directory contains the official Google Cloud HPC Cluster Toolkit blueprints and configurations to automate the provisioning of the complete XManager on Cloud (XMC) infrastructure stack.
 
@@ -8,7 +10,7 @@ This blueprint is created to help deploy XMC leveraging the initial topology whi
 1. GKE deployments for experiment state server, actuator and reconciler
 2. Redis queues or Cloud Tasks
 3. Spanner for state storage
-4. Cloud Run for web UI
+4. Cloud Run for web UI + Log Monitor
 5. Pub-Sub for log streams
 6. Public IPs and Managed DNS zones
 
