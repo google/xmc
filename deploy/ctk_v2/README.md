@@ -10,27 +10,7 @@ This blueprint is created to help deploy XMC leveraging the current topology whi
 3. **App-level OAuth2**: Users are authenticated using OAuth2 client credentials and session JWTs managed by the application itself.
 4. **cert-manager with Google Trust Services (GTS)**: Automates the provisioning of TLS certificates.
 
----
-
-## Phase 1: Prerequisites
-
-The blueprint relies on local Helm charts, SQL schemas, and protocol buffer descriptor files (`.pb`). Because descriptor files are not stored statically in the repository, they must be compiled prior to running the deployment.
-
-### Step 1: Generate Proto Descriptors
-Run the following commands from the root of your workspace to compile the protobuf descriptors and copy them to the staging root:
-
-```bash
-# Verify that you have copy of proto descriptors:
-# - internal/storage/spanner/emulator/ess_messages.pb
-# - internal/storage/spanner/emulator/xid_messages.pb
-
-cp ./internal/storage/spanner/emulator/ess_messages.pb ./deploy/
-cp ./internal/storage/spanner/emulator/xid_messages.pb ./deploy/
-```
-
----
-
-## Phase 2: Configuration Variables
+## Phase 1: Configuration Variables
 
 Open `xmanager-cloud-deployment.yaml` and configure the deployment variables to match your target environment.
 
@@ -54,7 +34,7 @@ Open `xmanager-cloud-deployment.yaml` and configure the deployment variables to 
 
 ---
 
-## 🏁 Phase 3: How to Deploy
+## 🏁 Phase 2: How to Deploy
 
 ### Step 1: Compile the Blueprint
 Navigate into your master directory containing the `cluster-toolkit` folder and compile the blueprint:
@@ -74,7 +54,7 @@ Type `a` and press Enter to approve the rollout of each group when prompted by t
 
 ---
 
-## 🧹 Phase 4: How to Destroy
+## 🧹 Phase 3: How to Destroy
 
 To safely tear down all provisioned infrastructure, run:
 

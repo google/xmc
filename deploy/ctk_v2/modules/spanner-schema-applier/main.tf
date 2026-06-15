@@ -26,13 +26,6 @@ resource "null_resource" "apply_schema" {
   provisioner "local-exec" {
     command = <<EOF
       set -e
-      echo "Applying schema ${var.schema_file} to ${var.database_name}..."
-      gcloud spanner databases ddl update "${var.database_name}" \
-        --instance="${var.instance_name}" \
-        --project="${var.project_id}" \
-        --ddl-file="${var.schema_file}" \
-        ${var.proto_descriptors_file != null ? "--proto-descriptors-file=\"${var.proto_descriptors_file}\"" : ""}
-
       echo "Locating workspace root..."
       curr_dir="$PWD"
       workspace_root=""
@@ -47,6 +40,39 @@ resource "null_resource" "apply_schema" {
       if [[ -z "$workspace_root" ]]; then
         echo "Error: Could not find WORKSPACE file in parent directories" >&2
         exit 1
+      fi
+
+      # Determine proto descriptors file path
+      proto_file="${var.proto_descriptors_file != null ? var.proto_descriptors_file : ""}"
+      if [[ -z "$proto_file" ]]; then
+        if [[ "${var.db_type}" == "ess" ]]; then
+          proto_target="//api/protos/experiment:experiment_messages_descriptor"
+          proto_output_rel="bazel-bin/api/protos/experiment/experiment_messages_descriptor.pb"
+        elif [[ "${var.db_type}" == "xid" ]]; then
+          proto_target="//api/protos/xid:xid_messages_descriptor"
+          proto_output_rel="bazel-bin/api/protos/xid/xid_messages_descriptor.pb"
+        else
+          echo "Unknown db_type: ${var.db_type}" >&2
+          exit 1
+        fi
+
+        echo "Building proto descriptors using target $proto_target..."
+        (cd "$workspace_root" && bazel build "$proto_target")
+        proto_file="$workspace_root/$proto_output_rel"
+      fi
+
+      echo "Applying schema ${var.schema_file} to ${var.database_name}..."
+      if [[ -n "$proto_file" ]]; then
+        gcloud spanner databases ddl update "${var.database_name}" \
+          --instance="${var.instance_name}" \
+          --project="${var.project_id}" \
+          --ddl-file="${var.schema_file}" \
+          --proto-descriptors-file="$proto_file"
+      else
+        gcloud spanner databases ddl update "${var.database_name}" \
+          --instance="${var.instance_name}" \
+          --project="${var.project_id}" \
+          --ddl-file="${var.schema_file}"
       fi
 
       echo "Initializing migration version for ${var.db_type} database..."

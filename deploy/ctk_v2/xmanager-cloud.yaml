@@ -108,14 +108,12 @@ deployment_groups:
         ess:
           name: experiment-db-$(vars.environment)
           deletion_protection: false
-          proto_descriptors_file: $(ghpc_stage("../ess_messages.pb"))
           iam_members:
           - role: roles/spanner.databaseUser
             member: "serviceAccount:$(workload_service_account.service_account_email)"
         xid:
           name: xids-db-$(vars.environment)
           deletion_protection: false
-          proto_descriptors_file: $(ghpc_stage("../xid_messages.pb"))
           iam_members:
           - role: roles/spanner.databaseUser
             member: "serviceAccount:$(workload_service_account.service_account_email)"
@@ -128,7 +126,6 @@ deployment_groups:
       instance_name: $(db_spanner.instance_name)
       database_name: $(db_spanner.database_ids.ess)
       schema_file: $(ghpc_stage("../../internal/storage/spanner/schema/ess-schema.sql"))
-      proto_descriptors_file: $(ghpc_stage("../ess_messages.pb"))
       db_type: ess
 
   - id: apply_xid_schema
@@ -139,7 +136,6 @@ deployment_groups:
       instance_name: $(db_spanner.instance_name)
       database_name: $(db_spanner.database_ids.xid)
       schema_file: $(ghpc_stage("../../internal/storage/spanner/schema/xid-schema.sql"))
-      proto_descriptors_file: $(ghpc_stage("../xid_messages.pb"))
       db_type: xid
 
   - id: private_service_access
