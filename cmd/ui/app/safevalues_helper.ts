@@ -16,7 +16,7 @@ export class HtmlSanitizerBuilder {
     return {
       sanitize(html: string): SafeHtml {
         return sanitizer.sanitize(html);
-      }
+      },
     };
   }
 }
@@ -40,7 +40,11 @@ export function trySanitizeUrl(url: string): string {
   return 'about:blank';
 }
 
-export function windowOpen(window: Window, url: string, name?: string, specs?: string): Window | null {
+export function windowOpen(
+  window: Window,
+  url: string,
+  name?: string,
+  specs?: string,
+): Window | null {
   return safeWindow.open(window, url, name, specs);
 }
-

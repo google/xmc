@@ -3,6 +3,8 @@ import tseslint from 'typescript-eslint';
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
 import importPlugin from 'eslint-plugin-import';
 
+import eslintConfigPrettier from 'eslint-config-prettier';
+
 export default tseslint.config(
   {
     files: ['**/*.ts'],
@@ -27,5 +29,6 @@ export default tseslint.config(
         },
       ],
     },
-  }
+  },
+  eslintConfigPrettier
 );

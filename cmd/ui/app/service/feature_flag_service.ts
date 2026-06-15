@@ -11,14 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {Injectable} from '@angular/core';
+import { Injectable } from '@angular/core';
 
-import {FeatureFlags} from './service_types';
+import { FeatureFlags } from './service_types';
 
 /**
  * Service for checking whether a feature flag is enabled.
  */
-@Injectable({providedIn: 'root'})
+@Injectable({ providedIn: 'root' })
 export class FeatureFlagService {
   private readonly flags: FeatureFlags = window.XMC_FEATURE_FLAGS ?? {};
 

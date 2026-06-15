@@ -27,55 +27,50 @@ limitations under the License.
   />
 
   @if (isLoading() && messages().length === 0) {
-    <xmc-loading-bar />
+  <xmc-loading-bar />
   } @else if (loadingError() && messages().length === 0) {
-    <div class="error-state">
-      <mat-icon color="warn">error</mat-icon>
-      <p>{{ loadingError() }}</p>
-    </div>
+  <div class="error-state">
+    <mat-icon color="warn">error</mat-icon>
+    <p>{{ loadingError() }}</p>
+  </div>
   } @else {
-    <div class="messages-list">
-      @if (messages().length === 0) {
-        <div class="empty-state">
-          <mat-icon>info</mat-icon>
-          <p>No status messages found.</p>
+  <div class="messages-list">
+    @if (messages().length === 0) {
+    <div class="empty-state">
+      <mat-icon>info</mat-icon>
+      <p>No status messages found.</p>
+    </div>
+    } @if (messages().length > 0) {
+    <div class="timeline-container">
+      @for (msg of messages(); track $index) {
+      <div class="timeline-item">
+        <div class="timeline-badge" [class]="msg.severity?.toLowerCase() || 'info'"></div>
+        <div class="timeline-content">
+          <xmc-status-message
+            [message]="msg"
+            [ignoreFilters]="true"
+            [showWorkUnitId]="showWorkUnitId()"
+          ></xmc-status-message>
         </div>
-      }
-
-      @if (messages().length > 0) {
-        <div class="timeline-container">
-          @for (msg of messages(); track $index) {
-            <div class="timeline-item">
-              <div class="timeline-badge" [class]="msg.severity?.toLowerCase() || 'info'"></div>
-              <div class="timeline-content">
-                <xmc-status-message
-                  [message]="msg"
-                  [ignoreFilters]="true"
-                  [showWorkUnitId]="showWorkUnitId()"
-                ></xmc-status-message>
-              </div>
-            </div>
-          }
-        </div>
-
-        @if (nextPageToken()) {
-          <div class="load-more-container">
-            <button type="button" mat-stroked-button (click)="loadMore()" [disabled]="isLoading()">
-              @if (isLoading()) {
-                <mat-spinner diameter="20"></mat-spinner>
-              } @else {
-                Load More
-              }
-            </button>
-            @if (loadingError()) {
-              <div class="error-state-inline">
-                <mat-icon color="warn" inline>error</mat-icon>
-                <span>{{ loadingError() }}</span>
-              </div>
-            }
-          </div>
-        }
+      </div>
       }
     </div>
+
+    @if (nextPageToken()) {
+    <div class="load-more-container">
+      <button type="button" mat-stroked-button (click)="loadMore()" [disabled]="isLoading()">
+        @if (isLoading()) {
+        <mat-spinner diameter="20"></mat-spinner>
+        } @else { Load More }
+      </button>
+      @if (loadingError()) {
+      <div class="error-state-inline">
+        <mat-icon color="warn" inline>error</mat-icon>
+        <span>{{ loadingError() }}</span>
+      </div>
+      }
+    </div>
+    } }
+  </div>
   }
 </div>

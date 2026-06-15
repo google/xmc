@@ -13,147 +13,138 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 -->
-@let xid = xid$ | async;
-@let experiment = experiment$ | async;
-@let isExperimentLoading = isExperimentLoading$ | async;
-@let shouldShowExperimentPage = xid && experiment;
+@let xid = xid$ | async; @let experiment = experiment$ | async; @let isExperimentLoading =
+isExperimentLoading$ | async; @let shouldShowExperimentPage = xid && experiment;
 
 <mat-card class="experiment-header-card">
   <mat-card-content>
     @if (isExperimentLoading) {
-      <xmc-loading-bar [isRefreshing]="!!shouldShowExperimentPage" />
-    }
-    @if (shouldShowExperimentPage) {
-      <div class="experiment-title-container">
-        <div class="xid-and-title">
-          <xmc-xid-badge [xid]="xid"></xmc-xid-badge>
-          <h1 class="experiment-title">
-            {{ experiment.title }}
-          </h1>
-        </div>
-
-        <mat-divider [vertical]="true"> </mat-divider>
-
-        <div class="priority-and-status-container">
-          <xmc-priority-chip [priority]="experiment.priority" />
-
-          <xmc-status-chip [status]="getStatusChip(experiment)"></xmc-status-chip>
-          <div class="work-units-status-bar-container">
-            <xmc-work-units-status-bar
-              [stateCounts]="experiment?.status?.childStateCounts ?? []"
-            ></xmc-work-units-status-bar>
-          </div>
-        </div>
-
-        <mat-divider [vertical]="true"> </mat-divider>
-        <div class="actions-container">
-          <button
-            mat-button
-            mat-raised-button
-            (click)="editExperiment(xid)"
-            [disabled]="isEditing$ | async"
-            [class.shimmer]="isEditing$ | async"
-          >
-            <mat-icon>edit</mat-icon>
-            Edit Experiment
-          </button>
-          @if (isExperimentStoppable(experiment)) {
-            <button
-              mat-button
-              mat-raised-button
-              (click)="stopExperiment()"
-              [disabled]="isStopping$ | async"
-              [class.shimmer]="isStopping$ | async"
-            >
-              <mat-icon>stop_circle</mat-icon>
-              Stop Experiment
-            </button>
-          }
-          <button
-            mat-button
-            mat-raised-button
-            (click)="restartExperiment()"
-            [disabled]="isRestarting$ | async"
-            [class.shimmer]="isRestarting$ | async"
-          >
-            <mat-icon>restart_alt</mat-icon>
-            Restart Experiment
-          </button>
-        </div>
-      </div>
-    }
-  </mat-card-content>
-</mat-card>
-
-@if (shouldShowExperimentPage) {
-  @let urls = urls$ | async;
-  @if (urls) {
-    <xmc-urls-widget [urls]="urls" />
-  }
-
-  <mat-card class="metadata-card">
-    <mat-card-content class="experiment-summary-container">
-      <div class="experiment-summary-metadata">
-        <h2 class="secondary-title">Metadata </h2>
-
-        <dl>
-          <div class="key-value-pair">
-            <dt>Author</dt>
-            <dd>{{ experiment.creator }}</dd>
-          </div>
-
-          <div class="key-value-pair">
-            <dt>Created</dt>
-            <dd>{{ experiment.createTime | date: 'short' }}</dd>
-          </div>
-
-          <div class="key-value-pair">
-            <dt>Completed</dt>
-            <dd>
-              {{ experiment.completeTime ? (experiment.completeTime | date: 'short') : '-' }}
-            </dd>
-          </div>
-
-          @if (experiment.tags?.length) {
-            <div class="key-value-pair">
-              <dt>Tags</dt>
-              <dd>
-                @for (tag of experiment.tags; track tag) {
-                  <xmc-tag [text]="tag"> </xmc-tag>
-                }
-              </dd>
-            </div>
-          }
-        </dl>
+    <xmc-loading-bar [isRefreshing]="!!shouldShowExperimentPage" />
+    } @if (shouldShowExperimentPage) {
+    <div class="experiment-title-container">
+      <div class="xid-and-title">
+        <xmc-xid-badge [xid]="xid"></xmc-xid-badge>
+        <h1 class="experiment-title">{{ experiment.title }}</h1>
       </div>
 
       <mat-divider [vertical]="true"> </mat-divider>
 
-      <div class="experiment-summary-notes">
-        <h2 class="secondary-title">Notes </h2>
-        <p>{{ experiment.notes }}</p>
+      <div class="priority-and-status-container">
+        <xmc-priority-chip [priority]="experiment.priority" />
+
+        <xmc-status-chip [status]="getStatusChip(experiment)"></xmc-status-chip>
+        <div class="work-units-status-bar-container">
+          <xmc-work-units-status-bar
+            [stateCounts]="experiment?.status?.childStateCounts ?? []"
+          ></xmc-work-units-status-bar>
+        </div>
       </div>
-    </mat-card-content>
-  </mat-card>
 
-  @let structuredStatusMessage = experiment.status?.structuredStatusMessage;
-  @if (structuredStatusMessage?.userFacingText) {
-    <xmc-status-message [message]="structuredStatusMessage!"></xmc-status-message>
-  }
+      <mat-divider [vertical]="true"> </mat-divider>
+      <div class="actions-container">
+        <button
+          mat-button
+          mat-raised-button
+          (click)="editExperiment(xid)"
+          [disabled]="isEditing$ | async"
+          [class.shimmer]="isEditing$ | async"
+        >
+          <mat-icon>edit</mat-icon>
+          Edit Experiment
+        </button>
+        @if (isExperimentStoppable(experiment)) {
+        <button
+          mat-button
+          mat-raised-button
+          (click)="stopExperiment()"
+          [disabled]="isStopping$ | async"
+          [class.shimmer]="isStopping$ | async"
+        >
+          <mat-icon>stop_circle</mat-icon>
+          Stop Experiment
+        </button>
+        }
+        <button
+          mat-button
+          mat-raised-button
+          (click)="restartExperiment()"
+          [disabled]="isRestarting$ | async"
+          [class.shimmer]="isRestarting$ | async"
+        >
+          <mat-icon>restart_alt</mat-icon>
+          Restart Experiment
+        </button>
+      </div>
+    </div>
+    }
+  </mat-card-content>
+</mat-card>
 
-  <mat-card class="experiment-tabs-section">
-    <mat-tab-group mat-stretch-tabs="false" mat-align-tabs="start">
-      <mat-tab label="Work Units">
-        <xmc-work-units-table [xid]="xid"> </xmc-work-units-table
-      ></mat-tab>
-      <mat-tab label="Artifacts">
-        <xmc-artifacts-list [parentName]="'experiments/' + xid"> </xmc-artifacts-list>
-      </mat-tab>
-      @if (isStatusMessageHistoryEnabled) {
-        <mat-tab label="Status History">
-          <xmc-status-messages-list [parentName]="'experiments/' + xid"></xmc-status-messages-list>
-        </mat-tab>
-      }
-    </mat-tab-group>
-  </mat-card>
+@if (shouldShowExperimentPage) { @let urls = urls$ | async; @if (urls) {
+<xmc-urls-widget [urls]="urls" />
+}
+
+<mat-card class="metadata-card">
+  <mat-card-content class="experiment-summary-container">
+    <div class="experiment-summary-metadata">
+      <h2 class="secondary-title">Metadata</h2>
+
+      <dl>
+        <div class="key-value-pair">
+          <dt>Author</dt>
+          <dd>{{ experiment.creator }}</dd>
+        </div>
+
+        <div class="key-value-pair">
+          <dt>Created</dt>
+          <dd>{{ experiment.createTime | date: 'short' }}</dd>
+        </div>
+
+        <div class="key-value-pair">
+          <dt>Completed</dt>
+          <dd>{{ experiment.completeTime ? (experiment.completeTime | date: 'short') : '-' }}</dd>
+        </div>
+
+        @if (experiment.tags?.length) {
+        <div class="key-value-pair">
+          <dt>Tags</dt>
+          <dd>
+            @for (tag of experiment.tags; track tag) {
+            <xmc-tag [text]="tag"> </xmc-tag>
+            }
+          </dd>
+        </div>
+        }
+      </dl>
+    </div>
+
+    <mat-divider [vertical]="true"> </mat-divider>
+
+    <div class="experiment-summary-notes">
+      <h2 class="secondary-title">Notes</h2>
+      <p>{{ experiment.notes }}</p>
+    </div>
+  </mat-card-content>
+</mat-card>
+
+@let structuredStatusMessage = experiment.status?.structuredStatusMessage; @if
+(structuredStatusMessage?.userFacingText) {
+<xmc-status-message [message]="structuredStatusMessage!"></xmc-status-message>
+}
+
+<mat-card class="experiment-tabs-section">
+  <mat-tab-group mat-stretch-tabs="false" mat-align-tabs="start">
+    <mat-tab label="Work Units">
+      <xmc-work-units-table [xid]="xid"> </xmc-work-units-table
+    ></mat-tab>
+    <mat-tab label="Artifacts">
+      <xmc-artifacts-list [parentName]="'experiments/' + xid"> </xmc-artifacts-list>
+    </mat-tab>
+    @if (isStatusMessageHistoryEnabled) {
+    <mat-tab label="Status History">
+      <xmc-status-messages-list [parentName]="'experiments/' + xid"></xmc-status-messages-list>
+    </mat-tab>
+    }
+  </mat-tab-group>
+</mat-card>
 }

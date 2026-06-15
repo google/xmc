@@ -17,7 +17,7 @@ limitations under the License.
   <mat-label>Items per page</mat-label>
   <mat-select [value]="pageSize()" (selectionChange)="onSelectionChange($event)">
     @for (option of pageSizeOptions(); track option) {
-      <mat-option [value]="option">{{ option }}</mat-option>
+    <mat-option [value]="option">{{ option }}</mat-option>
     }
   </mat-select>
 </mat-form-field>

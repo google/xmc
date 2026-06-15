@@ -27,22 +27,31 @@ else
   find . -type f -name "*.go" -exec gofmt -s -w {} +
 fi
 
-# 3. UI Code Linting (ESLint)
-echo "--> Running UI Linter (ESLint)..."
+# 3. UI Code Formatting & Linting
 STAGED_UI_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^cmd/ui/app/.*\.(ts|html)$' || true)
 
 if [ -n "$STAGED_UI_FILES" ]; then
-  echo "    Staged UI files detected. Running ESLint..."
+  # Run Prettier
+  echo "--> Running UI Formatter (Prettier)..."
+  PRETTIER_BIN="cmd/ui/node_modules/.bin/prettier"
+  if [ -f "$PRETTIER_BIN" ]; then
+    $PRETTIER_BIN --config cmd/ui/.prettierrc --write $STAGED_UI_FILES
+  else
+    echo "    WARNING: Local Prettier not found at $PRETTIER_BIN."
+    echo "    To enable auto-formatting on commit: cd cmd/ui && npm install"
+  fi
+
+  # Run ESLint
+  echo "--> Running UI Linter (ESLint)..."
   ESLINT_BIN="cmd/ui/node_modules/.bin/eslint"
   if [ -f "$ESLINT_BIN" ]; then
-    # Run ESLint with auto-fix on the staged files
     $ESLINT_BIN --config cmd/ui/eslint.config.js --fix $STAGED_UI_FILES
   else
     echo "    WARNING: Local ESLint not found at $ESLINT_BIN."
     echo "    To enable auto-linting on commit: cd cmd/ui && npm install"
   fi
 else
-  echo "    No staged UI files to lint."
+  echo "    No staged UI files to format or lint."
 fi
 
 # Check if the linters modified any un-staged files

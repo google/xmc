@@ -19,16 +19,7 @@ limitations under the License.
   [class.green]="priority() === 'LOW'"
 >
   <div class="priority-chip-content">
-    @switch (priority()) {
-      @case ('HIGH') {
-        High
-      }
-      @case ('NORMAL') {
-        Normal
-      }
-      @case ('LOW') {
-        Low
-      }
+    @switch (priority()) { @case ('HIGH') { High } @case ('NORMAL') { Normal } @case ('LOW') { Low }
     }
   </div>
 </mat-chip>

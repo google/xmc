@@ -14,23 +14,22 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 @if (showFilterToggle) {
-  <div class="filter-toggle">
-    <mat-button-toggle-group
-      [ngModel]="artifactFilter | async"
-      (ngModelChange)="onFilterChange($event)"
-      multiple
-      aria-label="Filter artifacts"
-      [class.empty-filter]="(artifactFilter | async)?.length === 0"
-    >
-      <mat-button-toggle [value]="ArtifactFilter.EXPERIMENT">Experiment</mat-button-toggle>
-      <mat-button-toggle [value]="ArtifactFilter.WORK_UNIT">Work Units</mat-button-toggle>
-    </mat-button-toggle-group>
-  </div>
-}
-@if (showTruncationMessage$ | async) {
-  <div class="truncation-message">
-    A maximum of 950 artifacts are shown, so lower priority artifacts have been truncated.
-  </div>
+<div class="filter-toggle">
+  <mat-button-toggle-group
+    [ngModel]="artifactFilter | async"
+    (ngModelChange)="onFilterChange($event)"
+    multiple
+    aria-label="Filter artifacts"
+    [class.empty-filter]="(artifactFilter | async)?.length === 0"
+  >
+    <mat-button-toggle [value]="ArtifactFilter.EXPERIMENT">Experiment</mat-button-toggle>
+    <mat-button-toggle [value]="ArtifactFilter.WORK_UNIT">Work Units</mat-button-toggle>
+  </mat-button-toggle-group>
+</div>
+} @if (showTruncationMessage$ | async) {
+<div class="truncation-message">
+  A maximum of 950 artifacts are shown, so lower priority artifacts have been truncated.
+</div>
 }
 <div class="pipeline-container">
   <div class="pipeline-column">

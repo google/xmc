@@ -11,20 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {HttpClient, HttpParams} from '@angular/common/http';
-import {inject, Injectable} from '@angular/core';
-import {ListArtifactsRequest, ListArtifactsResponse} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import {ARTIFACT_LIST, WORK_UNIT_1_ARTIFACT_LIST} from 'xmanager_cloud/ui/app/common/mock_data';
-import {Observable, of} from 'rxjs';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { inject, Injectable } from '@angular/core';
+import {
+  ListArtifactsRequest,
+  ListArtifactsResponse,
+} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { ARTIFACT_LIST, WORK_UNIT_1_ARTIFACT_LIST } from 'xmanager_cloud/ui/app/common/mock_data';
+import { Observable, of } from 'rxjs';
 
-import {EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA} from './constants';
+import { EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA } from './constants';
 
 const PAGE_SIZE = 950;
 
 /**
  * Service to fetch artifacts.
  */
-@Injectable({providedIn: 'root'})
+@Injectable({ providedIn: 'root' })
 export class ArtifactService {
   private readonly http = inject(HttpClient);
   private readonly useMockData = inject(USE_MOCK_DATA);
@@ -32,12 +35,11 @@ export class ArtifactService {
   /**
    * Fetch all the artifacts for a resource.
    */
-  listArtifacts(request: ListArtifactsRequest):
-      Observable<ListArtifactsResponse> {
+  listArtifacts(request: ListArtifactsRequest): Observable<ListArtifactsResponse> {
     if (this.useMockData) {
-      const artifacts = request.parent?.includes('workUnits') ?
-          WORK_UNIT_1_ARTIFACT_LIST :
-          ARTIFACT_LIST;
+      const artifacts = request.parent?.includes('workUnits')
+        ? WORK_UNIT_1_ARTIFACT_LIST
+        : ARTIFACT_LIST;
       const result: ListArtifactsResponse = {
         artifacts,
         nextPageToken: 'page_token',
@@ -48,10 +50,8 @@ export class ArtifactService {
     return this.listArtifactsPage(request);
   }
 
-  private listArtifactsPage(
-      request: ListArtifactsRequest,
-      ): Observable<ListArtifactsResponse> {
-    const {parent, filter, orderBy, pageToken} = request;
+  private listArtifactsPage(request: ListArtifactsRequest): Observable<ListArtifactsResponse> {
+    const { parent, filter, orderBy, pageToken } = request;
     let params = new HttpParams();
     // By default, let's try to get all of the artifacts. For now, the server
     // will cap it at 950.
@@ -68,8 +68,8 @@ export class ArtifactService {
       params = params.set('pageToken', pageToken);
     }
     return this.http.get<ListArtifactsResponse>(
-        `${EXPERIMENT_STATE_SERVER_DOMAIN}/${parent}/artifacts:search`,
-        {params, withCredentials: true},
+      `${EXPERIMENT_STATE_SERVER_DOMAIN}/${parent}/artifacts:search`,
+      { params, withCredentials: true },
     );
   }
 }

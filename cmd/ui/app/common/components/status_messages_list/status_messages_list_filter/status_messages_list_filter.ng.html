@@ -25,7 +25,7 @@ limitations under the License.
       >
         <mat-select-trigger>{{ selectedSeveritiesLabel() }}</mat-select-trigger>
         @for (opt of severityOptions; track opt.value) {
-          <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
+        <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
         }
       </mat-select>
     </mat-form-field>
@@ -40,7 +40,7 @@ limitations under the License.
       >
         <mat-select-trigger>{{ selectedSourcesLabel() }}</mat-select-trigger>
         @for (opt of sourceOptions; track opt.value) {
-          <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
+        <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
         }
       </mat-select>
     </mat-form-field>
@@ -53,7 +53,7 @@ limitations under the License.
         data-testid="time-preset-select"
       >
         @for (opt of timeOptions; track opt.value) {
-          <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
+        <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
         }
       </mat-select>
     </mat-form-field>
@@ -81,63 +81,62 @@ limitations under the License.
   </div>
 
   @if (customTimeRangeSelected()) {
-    <div class="custom-time-row">
-      <span class="custom-time-label">Start Time:</span>
-      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="custom-time-field">
-        <input
-          id="custom-date-start"
-          matInput
-          placeholder="MM/DD/YYYY"
-          [matDatepicker]="startPicker"
-          [ngModel]="customStartDate()"
-          (ngModelChange)="onCustomStartChange($event)"
-          aria-label="Start date"
-        />
-        <mat-datepicker #startPicker></mat-datepicker>
-        <mat-datepicker-toggle matSuffix [for]="startPicker"></mat-datepicker-toggle>
-      </mat-form-field>
+  <div class="custom-time-row">
+    <span class="custom-time-label">Start Time:</span>
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="custom-time-field">
+      <input
+        id="custom-date-start"
+        matInput
+        placeholder="MM/DD/YYYY"
+        [matDatepicker]="startPicker"
+        [ngModel]="customStartDate()"
+        (ngModelChange)="onCustomStartChange($event)"
+        aria-label="Start date"
+      />
+      <mat-datepicker #startPicker></mat-datepicker>
+      <mat-datepicker-toggle matSuffix [for]="startPicker"></mat-datepicker-toggle>
+    </mat-form-field>
 
-      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="custom-time-field">
-        <input
-          id="custom-time-start"
-          type="time"
-          matInput
-          [ngModel]="customStartTime()"
-          (ngModelChange)="onCustomStartTimeChange($event)"
-          aria-label="Start time"
-        />
-        <mat-icon matSuffix>access_time</mat-icon>
-      </mat-form-field>
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="custom-time-field">
+      <input
+        id="custom-time-start"
+        type="time"
+        matInput
+        [ngModel]="customStartTime()"
+        (ngModelChange)="onCustomStartTimeChange($event)"
+        aria-label="Start time"
+      />
+      <mat-icon matSuffix>access_time</mat-icon>
+    </mat-form-field>
 
-      <span class="custom-time-label">End Time:</span>
-      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="custom-time-field">
-        <input
-          id="custom-date-end"
-          matInput
-          placeholder="MM/DD/YYYY"
-          [matDatepicker]="endPicker"
-          [ngModel]="customEndDate()"
-          (ngModelChange)="onCustomEndChange($event)"
-          aria-label="End date"
-        />
-        <mat-datepicker #endPicker></mat-datepicker>
-        <mat-datepicker-toggle matSuffix [for]="endPicker"></mat-datepicker-toggle>
-      </mat-form-field>
+    <span class="custom-time-label">End Time:</span>
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="custom-time-field">
+      <input
+        id="custom-date-end"
+        matInput
+        placeholder="MM/DD/YYYY"
+        [matDatepicker]="endPicker"
+        [ngModel]="customEndDate()"
+        (ngModelChange)="onCustomEndChange($event)"
+        aria-label="End date"
+      />
+      <mat-datepicker #endPicker></mat-datepicker>
+      <mat-datepicker-toggle matSuffix [for]="endPicker"></mat-datepicker-toggle>
+    </mat-form-field>
 
-      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="custom-time-field">
-        <input
-          id="custom-time-end"
-          type="time"
-          matInput
-          [ngModel]="customEndTime()"
-          (ngModelChange)="onCustomEndTimeChange($event)"
-          aria-label="End time"
-        />
-        <mat-icon matSuffix>access_time</mat-icon>
-      </mat-form-field>
-    </div>
-    @if (hasInvalidCustomRange()) {
-      <div class="custom-time-error"> Start date/time must be before end date/time. </div>
-    }
-  }
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="custom-time-field">
+      <input
+        id="custom-time-end"
+        type="time"
+        matInput
+        [ngModel]="customEndTime()"
+        (ngModelChange)="onCustomEndTimeChange($event)"
+        aria-label="End time"
+      />
+      <mat-icon matSuffix>access_time</mat-icon>
+    </mat-form-field>
+  </div>
+  @if (hasInvalidCustomRange()) {
+  <div class="custom-time-error">Start date/time must be before end date/time.</div>
+  } }
 </div>

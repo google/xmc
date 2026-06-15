@@ -27,25 +27,25 @@ limitations under the License.
     <div class="filter-column">
       <div class="filter-column-title">Severity</div>
       @for (severity of allSeverities; track severity) {
-        <mat-checkbox
-          [checked]="(filterService.severities$ | async)?.has(severity)"
-          (change)="toggleSeverity(severity, $event.checked)"
-          (click)="$event.stopPropagation()"
-        >
-          {{ formatSeverity(severity) }}
-        </mat-checkbox>
+      <mat-checkbox
+        [checked]="(filterService.severities$ | async)?.has(severity)"
+        (change)="toggleSeverity(severity, $event.checked)"
+        (click)="$event.stopPropagation()"
+      >
+        {{ formatSeverity(severity) }}
+      </mat-checkbox>
       }
     </div>
     <div class="filter-column">
       <div class="filter-column-title">Source</div>
       @for (source of allSources; track source) {
-        <mat-checkbox
-          [checked]="(filterService.sources$ | async)?.has(source)"
-          (change)="toggleSource(source, $event.checked)"
-          (click)="$event.stopPropagation()"
-        >
-          {{ formatSource(source) }}
-        </mat-checkbox>
+      <mat-checkbox
+        [checked]="(filterService.sources$ | async)?.has(source)"
+        (change)="toggleSource(source, $event.checked)"
+        (click)="$event.stopPropagation()"
+      >
+        {{ formatSource(source) }}
+      </mat-checkbox>
       }
     </div>
   </mat-card-content>

@@ -23,17 +23,17 @@ limitations under the License.
           <dd>{{ workUnit().createTime | date: 'short' }}</dd>
         </div>
         @if (workUnit().updateTime) {
-          <div class="key-value-pair">
-            <dt>Last Updated</dt>
-            <dd>{{ workUnit().updateTime | date: 'short' }}</dd>
-          </div>
+        <div class="key-value-pair">
+          <dt>Last Updated</dt>
+          <dd>{{ workUnit().updateTime | date: 'short' }}</dd>
+        </div>
         }
         <div class="key-value-pair">
           <dt>Tags</dt>
           <dd>
             <mat-chip-set>
               @for (tag of workUnit().tags; track tag) {
-                <xmc-tag [text]="tag"></xmc-tag>
+              <xmc-tag [text]="tag"></xmc-tag>
               }
             </mat-chip-set>
           </dd>
