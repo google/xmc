@@ -11,10 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {ChangeDetectionStrategy, Component, input, output} from '@angular/core';
-import {MatOptionModule} from '@angular/material/core';
-import {MatFormFieldModule} from '@angular/material/form-field';
-import {MatSelectChange, MatSelectModule} from '@angular/material/select';
+import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { MatOptionModule } from '@angular/material/core';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatSelectChange, MatSelectModule } from '@angular/material/select';
 /**
  * Reusable component for selecting page size.
  */

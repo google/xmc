@@ -70,7 +70,8 @@
     background-color: $warning-line;
   }
 
-  &.error, &.fatal {
+  &.error,
+  &.fatal {
     background-color: var(--mat-sys-error);
   }
 
@@ -79,7 +80,9 @@
   }
 }
 
-.loading-state, .empty-state, .error-state {
+.loading-state,
+.empty-state,
+.error-state {
   display: flex;
   flex-direction: column;
   align-items: center;

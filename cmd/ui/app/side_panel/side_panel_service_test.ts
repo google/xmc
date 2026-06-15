@@ -14,9 +14,8 @@
 import { setupModule, get, setupObservableMatchers } from '../testing/test';
 import 'jasmine';
 
-
-import {BaseSidePanelData} from './base_side_panel';
-import {SidePanelService} from './side_panel_service';
+import { BaseSidePanelData } from './base_side_panel';
+import { SidePanelService } from './side_panel_service';
 
 class MockSidePanelData implements BaseSidePanelData {
   constructor(readonly id: string) {}
@@ -30,7 +29,7 @@ describe('SidePanelService', () => {
   });
 
   beforeEach(() => {
-    setupModule({providers: [SidePanelService]});
+    setupModule({ providers: [SidePanelService] });
     service = get(SidePanelService);
   });
 

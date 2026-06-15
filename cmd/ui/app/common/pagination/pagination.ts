@@ -35,8 +35,10 @@ export function getInitialPaginationState(pageSize = 10): PaginationState {
  * Reducer function for updating page size in a state object that has a
  * pagination property.
  */
-export function setPageSize<T extends {pagination: PaginationState}>(
-    state: T, pageSize: number): T {
+export function setPageSize<T extends { pagination: PaginationState }>(
+  state: T,
+  pageSize: number,
+): T {
   return {
     ...state,
     pagination: {

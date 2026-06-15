@@ -11,38 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {Experiment} from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
-import {Url} from 'xmanager_cloud/experiment_state_server/proto/url.jsonpb_decls';
-import {WorkUnit} from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
+import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
+import { Url } from 'xmanager_cloud/experiment_state_server/proto/url.jsonpb_decls';
+import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
 
-import {parseExperimentName, parseWorkUnitName} from '../resource_name_extractor';
+import { parseExperimentName, parseWorkUnitName } from '../resource_name_extractor';
 
 /**
  * Interface for Urls after processing.
  */
 export interface ProcessedUrl extends Url {
-  processedUrl: string|undefined;
+  processedUrl: string | undefined;
   icon: string;
 }
 
 /**
  * Processes a list of URLs, replacing placeholders and sorting by priority.
  */
-export function processUrls(
-    urls: Url[], data: Experiment|WorkUnit): ProcessedUrl[] {
+export function processUrls(urls: Url[], data: Experiment | WorkUnit): ProcessedUrl[] {
   return urls
-      .map(url => {
-        const processedUrl = fillPlaceholders(url.url!, data);
-        const icon = url.icon || 'link';
-        return {...url, processedUrl, icon};
-      })
-      .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+    .map((url) => {
+      const processedUrl = fillPlaceholders(url.url!, data);
+      const icon = url.icon || 'link';
+      return { ...url, processedUrl, icon };
+    })
+    .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
 }
 
-function fillPlaceholders(urlString: string, data: Experiment|WorkUnit): string|
-    undefined {
-  let xid: string|undefined;
-  let wid: string|undefined;
+function fillPlaceholders(urlString: string, data: Experiment | WorkUnit): string | undefined {
+  let xid: string | undefined;
+  let wid: string | undefined;
   if (data.name) {
     const wuIds = parseWorkUnitName(data.name);
     if (wuIds) {
@@ -58,10 +56,10 @@ function fillPlaceholders(urlString: string, data: Experiment|WorkUnit): string|
 
   const createTime = data.createTime;
 
-  const replacements: {[key: string]: string|undefined} = {
-    'XID': xid,
-    'WID': wid,
-    'CREATED': createTime,
+  const replacements: { [key: string]: string | undefined } = {
+    XID: xid,
+    WID: wid,
+    CREATED: createTime,
   };
 
   // metatadata fields only exist for WorkUnit
@@ -80,7 +78,7 @@ function fillPlaceholders(urlString: string, data: Experiment|WorkUnit): string|
     const value = replacements[key];
     if (!value) {
       missingValue = true;
-      return match;  // Return the original placeholder on failure
+      return match; // Return the original placeholder on failure
     }
     return value;
   });
