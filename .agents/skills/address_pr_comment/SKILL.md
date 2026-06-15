@@ -1,5 +1,5 @@
 ---
-name: PR Comment Workflow
+name: Address PR Comment
 description: Automates addressing PR comments (fetching context, running tests, measuring coverage, and GKE redeployment).
 ---
 

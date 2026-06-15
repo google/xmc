@@ -8,6 +8,8 @@ import re
 import json
 import urllib.request
 import urllib.parse
+import subprocess
+import shutil
 
 def parse_comment_url(url):
     # Regex for review comment: https://github.com/owner/repo/pull/num#discussion_r123456
@@ -33,21 +35,60 @@ def parse_comment_url(url):
         }
     return None
 
-def post_github_api(endpoint, data, token=None):
-    url = f"https://api.github.com{endpoint}"
-    req = urllib.request.Request(url, method="POST")
-    req.add_header("Accept", "application/vnd.github.v3+json")
-    req.add_header("User-Agent", "XMC-Comment-Replier-Agent")
-    req.add_header("Content-Type", "application/json")
+def call_github_api(endpoint, method="GET", payload=None):
+    # Method 1: Try gh CLI
+    if shutil.which("gh"):
+        try:
+            cmd = ["gh", "api", "-X", method, endpoint]
+            input_data = None
+            if payload:
+                cmd += ["--input", "-"]
+                input_data = json.dumps(payload)
+            
+            res = subprocess.run(
+                cmd,
+                input=input_data,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            return json.loads(res.stdout)
+        except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
+            sys.stderr.write(f"Warning: GitHub CLI API call failed: {e}. Falling back...\n")
+            
+    # Method 2: Try GITHUB_TOKEN
+    token = os.environ.get("GITHUB_TOKEN")
     if token:
-        req.add_header("Authorization", f"token {token}")
-    
-    body = json.dumps(data).encode('utf-8')
-    try:
-        with urllib.request.urlopen(req, data=body) as response:
-            return json.loads(response.read().decode('utf-8'))
-    except Exception as e:
-        sys.stderr.write(f"Error calling GitHub API {url}: {e}\n")
+        try:
+            url = f"https://api.github.com{endpoint}"
+            req = urllib.request.Request(url, method=method)
+            req.add_header("Accept", "application/vnd.github.v3+json")
+            req.add_header("User-Agent", "XMC-Comment-Replier-Agent")
+            req.add_header("Authorization", f"token {token}")
+            
+            body = json.dumps(payload).encode('utf-8') if payload else None
+            if body:
+                req.add_header("Content-Type", "application/json")
+                
+            with urllib.request.urlopen(req, data=body) as response:
+                return json.loads(response.read().decode('utf-8'))
+        except Exception as e:
+            sys.stderr.write(f"Warning: GITHUB_TOKEN API call failed: {e}. Falling back...\n")
+            
+    # Method 3: Try Unauthenticated (GET only)
+    if method == "GET":
+        try:
+            url = f"https://api.github.com{endpoint}"
+            req = urllib.request.Request(url, method=method)
+            req.add_header("Accept", "application/vnd.github.v3+json")
+            req.add_header("User-Agent", "XMC-Comment-Replier-Agent")
+            with urllib.request.urlopen(req) as response:
+                return json.loads(response.read().decode('utf-8'))
+        except Exception as e:
+            sys.stderr.write(f"Error: Unauthenticated GitHub API call failed: {e}\n")
+            sys.exit(1)
+    else:
+        sys.stderr.write("Error: GitHub authentication failed. No credentials found (gh CLI or GITHUB_TOKEN).\n")
         sys.exit(1)
 
 def main():
@@ -61,11 +102,6 @@ def main():
     parsed = parse_comment_url(comment_url)
     if not parsed:
         sys.stderr.write("Could not parse comment URL. Ensure it matches Github comment anchor patterns.\n")
-        sys.exit(1)
-        
-    token = os.environ.get("GITHUB_TOKEN")
-    if not token:
-        sys.stderr.write("GITHUB_TOKEN environment variable is not set.\n")
         sys.exit(1)
         
     if parsed["type"] == "review_comment":
@@ -82,7 +118,7 @@ def main():
             "body": message
         }
         
-    response = post_github_api(endpoint, payload, token)
+    response = call_github_api(endpoint, method="POST", payload=payload)
     print(json.dumps(response, indent=2))
 
 if __name__ == '__main__':

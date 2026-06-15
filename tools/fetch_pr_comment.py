@@ -8,6 +8,8 @@ import re
 import json
 import urllib.request
 import urllib.parse
+import subprocess
+import shutil
 
 def parse_comment_url(url):
     # Regex for review comment: https://github.com/owner/repo/pull/num#discussion_r123456
@@ -33,19 +35,60 @@ def parse_comment_url(url):
         }
     return None
 
-def fetch_github_api(endpoint, token=None):
-    url = f"https://api.github.com{endpoint}"
-    req = urllib.request.Request(url)
-    req.add_header("Accept", "application/vnd.github.v3+json")
-    req.add_header("User-Agent", "XMC-Comment-Fetcher-Agent")
+def call_github_api(endpoint, method="GET", payload=None):
+    # Method 1: Try gh CLI
+    if shutil.which("gh"):
+        try:
+            cmd = ["gh", "api", "-X", method, endpoint]
+            input_data = None
+            if payload:
+                cmd += ["--input", "-"]
+                input_data = json.dumps(payload)
+            
+            res = subprocess.run(
+                cmd,
+                input=input_data,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            return json.loads(res.stdout)
+        except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
+            sys.stderr.write(f"Warning: GitHub CLI API call failed: {e}. Falling back...\n")
+            
+    # Method 2: Try GITHUB_TOKEN
+    token = os.environ.get("GITHUB_TOKEN")
     if token:
-        req.add_header("Authorization", f"token {token}")
-    
-    try:
-        with urllib.request.urlopen(req) as response:
-            return json.loads(response.read().decode('utf-8'))
-    except Exception as e:
-        sys.stderr.write(f"Error calling GitHub API {url}: {e}\n")
+        try:
+            url = f"https://api.github.com{endpoint}"
+            req = urllib.request.Request(url, method=method)
+            req.add_header("Accept", "application/vnd.github.v3+json")
+            req.add_header("User-Agent", "XMC-Comment-Fetcher-Agent")
+            req.add_header("Authorization", f"token {token}")
+            
+            body = json.dumps(payload).encode('utf-8') if payload else None
+            if body:
+                req.add_header("Content-Type", "application/json")
+                
+            with urllib.request.urlopen(req, data=body) as response:
+                return json.loads(response.read().decode('utf-8'))
+        except Exception as e:
+            sys.stderr.write(f"Warning: GITHUB_TOKEN API call failed: {e}. Falling back...\n")
+            
+    # Method 3: Try Unauthenticated (GET only)
+    if method == "GET":
+        try:
+            url = f"https://api.github.com{endpoint}"
+            req = urllib.request.Request(url, method=method)
+            req.add_header("Accept", "application/vnd.github.v3+json")
+            req.add_header("User-Agent", "XMC-Comment-Fetcher-Agent")
+            with urllib.request.urlopen(req) as response:
+                return json.loads(response.read().decode('utf-8'))
+        except Exception as e:
+            sys.stderr.write(f"Error: Unauthenticated GitHub API call failed: {e}\n")
+            sys.exit(1)
+    else:
+        sys.stderr.write("Error: GitHub authentication failed. No credentials found (gh CLI or GITHUB_TOKEN).\n")
         sys.exit(1)
 
 def main():
@@ -59,11 +102,9 @@ def main():
         sys.stderr.write("Could not parse comment URL. Ensure it matches Github comment anchor patterns.\n")
         sys.exit(1)
         
-    token = os.environ.get("GITHUB_TOKEN")
-    
     if parsed["type"] == "review_comment":
         endpoint = f"/repos/{parsed['owner']}/{parsed['repo']}/pulls/comments/{parsed['comment_id']}"
-        data = fetch_github_api(endpoint, token)
+        data = call_github_api(endpoint)
         
         result = {
             "type": "review_comment",
@@ -77,7 +118,7 @@ def main():
         }
     else:
         endpoint = f"/repos/{parsed['owner']}/{parsed['repo']}/issues/comments/{parsed['comment_id']}"
-        data = fetch_github_api(endpoint, token)
+        data = call_github_api(endpoint)
         result = {
             "type": "issue_comment",
             "comment_id": data.get("id"),
