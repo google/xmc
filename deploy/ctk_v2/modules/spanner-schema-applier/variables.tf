@@ -18,11 +18,7 @@ variable "schema_file" {
   description = "Path to the schema SQL file"
 }
 
-variable "proto_descriptors_file" {
-  type        = string
-  description = "Path to the proto descriptors file (optional)"
-  default     = null
-}
+
 
 variable "db_type" {
   type        = string
