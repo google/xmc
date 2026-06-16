@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+{{- if not .Values.gateway.certMap }}
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -41,3 +42,4 @@ spec:
   issuerRef:
     name: {{ if eq .Values.certs.type "letsencrypt" }}"letsencrypt-prod-issuer"{{ else if eq .Values.certs.type "gts" }}"gts-prod-issuer"{{ else }}"self-signed-issuer"{{ end }}
     kind: Issuer
+{{- end }}

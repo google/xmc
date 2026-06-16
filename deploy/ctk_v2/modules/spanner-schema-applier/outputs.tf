@@ -1,0 +1,3 @@
+output "applied" {
+  value = true
+}
