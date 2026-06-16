@@ -4,8 +4,8 @@ on:
   pull_request:
   push:
     branches:
+      - main
       - feature/unit_tests_action
-      - test
   workflow_dispatch:
 
 permissions:
