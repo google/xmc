@@ -29,7 +29,7 @@ describe('App Routes', () => {
   });
 
   it('should route "" to HomePage with guestGuard', () => {
-    const route = routes.find(r => r.path === '');
+    const route = routes.find((r) => r.path === '');
     expect(route).toBeDefined();
     expect(route?.component).toBe(HomePage);
     expect(route?.canActivate).toContain(guestGuard);
@@ -37,21 +37,21 @@ describe('App Routes', () => {
   });
 
   it('should route "experiments" with authGuard and children', () => {
-    const parentRoute = routes.find(r => r.path === 'experiments');
+    const parentRoute = routes.find((r) => r.path === 'experiments');
     expect(parentRoute).toBeDefined();
     expect(parentRoute?.canActivate).toContain(authGuard);
     expect(parentRoute?.children).toBeDefined();
     expect(parentRoute?.children?.length).toBe(3);
 
-    const listChild = parentRoute?.children?.find(r => r.path === '');
+    const listChild = parentRoute?.children?.find((r) => r.path === '');
     expect(listChild).toBeDefined();
     expect(listChild?.component).toBe(ExperimentsListPage);
 
-    const detailChild = parentRoute?.children?.find(r => r.path === ':xid');
+    const detailChild = parentRoute?.children?.find((r) => r.path === ':xid');
     expect(detailChild).toBeDefined();
     expect(detailChild?.component).toBe(ExperimentPage);
 
-    const wuChild = parentRoute?.children?.find(r => r.path === ':xid/workUnits/:wid');
+    const wuChild = parentRoute?.children?.find((r) => r.path === ':xid/workUnits/:wid');
     expect(wuChild).toBeDefined();
     expect(wuChild?.component).toBe(WorkUnitPage);
   });

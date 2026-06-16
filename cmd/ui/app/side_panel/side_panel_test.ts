@@ -11,20 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { cleanState, setupModule, bootstrap, get, getDebugEl, hasEl, flush, setupObservableMatchers } from '../testing/test';
+import {
+  cleanState,
+  setupModule,
+  bootstrap,
+  get,
+  getDebugEl,
+  hasEl,
+  flush,
+  setupObservableMatchers,
+} from '../testing/test';
 import 'jasmine';
 
-import {getHarness} from '@angular/cdk/testing/catalyst/async';
-import {MatSidenavHarness} from '@angular/material/sidenav/testing';
-import {NoopAnimationsModule} from '@angular/platform-browser/animations';
-import {of} from 'rxjs';
+import { getHarness } from '@angular/cdk/testing/catalyst/async';
+import { MatSidenavHarness } from '@angular/material/sidenav/testing';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { of } from 'rxjs';
 
-import {EXPERIMENT_1} from '../common/mock_data';
-import {ExperimentService} from '../service/experiment_service';
+import { EXPERIMENT_1 } from '../common/mock_data';
+import { ExperimentService } from '../service/experiment_service';
 
-import {EditExperimentFormData} from './contents/edit_experiment_form/edit_experiment_form';
-import {SidePanel} from './side_panel';
-import {SidePanelService} from './side_panel_service';
+import { EditExperimentFormData } from './contents/edit_experiment_form/edit_experiment_form';
+import { SidePanel } from './side_panel';
+import { SidePanelService } from './side_panel_service';
 
 describe('SidePanel Component', () => {
   beforeAll(() => {
@@ -32,21 +41,14 @@ describe('SidePanel Component', () => {
   });
 
   const state = cleanState(async () => {
-    const mockExperimentService = jasmine.createSpyObj<ExperimentService>(
-        'ExperimentService',
-        ['getExperiment'],
-    );
-    mockExperimentService.getExperiment.and.returnValue(
-        of(EXPERIMENT_1),
-    );
+    const mockExperimentService = jasmine.createSpyObj<ExperimentService>('ExperimentService', [
+      'getExperiment',
+    ]);
+    mockExperimentService.getExperiment.and.returnValue(of(EXPERIMENT_1));
 
     setupModule({
-      imports: [
-        SidePanel,
-        NoopAnimationsModule,
-      ],
-      providers:
-          [{provide: ExperimentService, useValue: mockExperimentService}],
+      imports: [SidePanel, NoopAnimationsModule],
+      providers: [{ provide: ExperimentService, useValue: mockExperimentService }],
     });
 
     const component = bootstrap(SidePanel);
@@ -68,16 +70,15 @@ describe('SidePanel Component', () => {
     expect(await sidenavHarness.isOpen()).toBeFalse();
   });
 
-  it('should open the sidenav and load the edit experiment form when EditExperimentFormData is added to the store',
-     async () => {
-       const requestA = new EditExperimentFormData('12345');
-       state.service.openSidePanel(requestA);
-       await flush();
+  it('should open the sidenav and load the edit experiment form when EditExperimentFormData is added to the store', async () => {
+    const requestA = new EditExperimentFormData('12345');
+    state.service.openSidePanel(requestA);
+    await flush();
 
-       const sidenavHarness = await getHarness(MatSidenavHarness);
-       expect(await sidenavHarness.isOpen()).toBeTrue();
-       expect(hasEl('xmc-edit-experiment-form')).toBeTrue();
-     });
+    const sidenavHarness = await getHarness(MatSidenavHarness);
+    expect(await sidenavHarness.isOpen()).toBeTrue();
+    expect(hasEl('xmc-edit-experiment-form')).toBeTrue();
+  });
 
   it('should close the sidenav when closeSidePanel is called', async () => {
     const requestA = new EditExperimentFormData('12345');

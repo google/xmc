@@ -14,19 +14,16 @@
 import { setupModule, bootstrap, flush } from 'xmanager_cloud/ui/app/testing/test';
 import 'jasmine';
 
-import {getHarness} from '@angular/cdk/testing/catalyst/async';
-import {NoopAnimationsModule} from '@angular/platform-browser/animations';
-import {StatusMessagesListFilterHarness} from 'xmanager_cloud/ui/app/common/components/status_messages_list/status_messages_list_filter/testing/status_messages_list_filter_harness';
+import { getHarness } from '@angular/cdk/testing/catalyst/async';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { StatusMessagesListFilterHarness } from 'xmanager_cloud/ui/app/common/components/status_messages_list/status_messages_list_filter/testing/status_messages_list_filter_harness';
 
-import {StatusMessagesListFilter} from './status_messages_list_filter';
+import { StatusMessagesListFilter } from './status_messages_list_filter';
 
 describe('StatusMessagesListFilter', () => {
   beforeEach(() => {
     setupModule({
-      imports: [
-        StatusMessagesListFilter,
-        NoopAnimationsModule,
-      ],
+      imports: [StatusMessagesListFilter, NoopAnimationsModule],
     });
   });
 
@@ -37,7 +34,7 @@ describe('StatusMessagesListFilter', () => {
 
   it('should emit severityFilterChange when severity changes', async () => {
     const component = bootstrap(StatusMessagesListFilter);
-    let emitted: readonly string[]|undefined;
+    let emitted: readonly string[] | undefined;
     component.severityFilterChange.subscribe((val) => {
       emitted = val;
     });
@@ -51,7 +48,7 @@ describe('StatusMessagesListFilter', () => {
 
   it('should emit sourceFilterChange when source changes', async () => {
     const component = bootstrap(StatusMessagesListFilter);
-    let emitted: readonly string[]|undefined;
+    let emitted: readonly string[] | undefined;
     component.sourceFilterChange.subscribe((val) => {
       emitted = val;
     });
@@ -65,7 +62,7 @@ describe('StatusMessagesListFilter', () => {
 
   it('should emit sortOrderChange when sort order changes', async () => {
     const component = bootstrap(StatusMessagesListFilter);
-    let emitted: string|undefined;
+    let emitted: string | undefined;
     component.sortOrderChange.subscribe((val) => {
       emitted = val;
     });

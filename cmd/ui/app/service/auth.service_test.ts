@@ -45,7 +45,7 @@ describe('AuthService', () => {
       name: 'Test User',
       pictureUrl: 'pic.jpg',
       sessionExpiresAt: 12345,
-      allowedDomains: ['example.com']
+      allowedDomains: ['example.com'],
     };
 
     state.service.getUser().subscribe((user) => {
@@ -79,7 +79,7 @@ describe('AuthService', () => {
       name: 'Test User',
       pictureUrl: 'pic.jpg',
       sessionExpiresAt: 12345,
-      allowedDomains: ['example.com']
+      allowedDomains: ['example.com'],
     };
 
     state.service.getUser().subscribe();

@@ -14,38 +14,34 @@
 import { setupModule, getDebugEl, bootstrapTemplate } from 'xmanager_cloud/ui/app/testing/test';
 import 'jasmine';
 
-import {getHarness} from '@angular/cdk/testing/catalyst/async';
-import {MatSelectHarness} from '@angular/material/select/testing';
-import {NoopAnimationsModule} from '@angular/platform-browser/animations';
+import { getHarness } from '@angular/cdk/testing/catalyst/async';
+import { MatSelectHarness } from '@angular/material/select/testing';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import {PageSizeSelector} from './page_size_selector';
+import { PageSizeSelector } from './page_size_selector';
 
 describe('PageSizeSelector Component', () => {
   beforeEach(() => {
     setupModule({
-      imports: [
-        PageSizeSelector,
-        NoopAnimationsModule,
-      ],
+      imports: [PageSizeSelector, NoopAnimationsModule],
     });
   });
 
   it('should be created', () => {
-    bootstrapTemplate(
-        '<xmc-page-size-selector [pageSize]="10" [pageSizeOptions]="[10, 20]" />');
+    bootstrapTemplate('<xmc-page-size-selector [pageSize]="10" [pageSizeOptions]="[10, 20]" />');
     expect(getDebugEl(PageSizeSelector)).toBeTruthy();
   });
 
   it('should display the initial page size', async () => {
-    bootstrapTemplate(
-        '<xmc-page-size-selector [pageSize]="10" [pageSizeOptions]="[10, 20]" />');
+    bootstrapTemplate('<xmc-page-size-selector [pageSize]="10" [pageSizeOptions]="[10, 20]" />');
     const select = await getHarness(MatSelectHarness);
     expect(await select.getValueText()).toBe('10');
   });
 
   it('should display page size options', async () => {
     bootstrapTemplate(
-        '<xmc-page-size-selector [pageSize]="10" [pageSizeOptions]="[10, 20, 50]" />');
+      '<xmc-page-size-selector [pageSize]="10" [pageSizeOptions]="[10, 20, 50]" />',
+    );
     const select = await getHarness(MatSelectHarness);
     await select.open();
     const options = await select.getOptions();
@@ -58,11 +54,12 @@ describe('PageSizeSelector Component', () => {
   it('should emit pageSizeChange when selection changes', async () => {
     const outputSpy = jasmine.createSpy('outputSpy');
     bootstrapTemplate(
-        '<xmc-page-size-selector [pageSize]="10" [pageSizeOptions]="[10, 20]" (pageSizeChange)="outputSpy($event)" />',
-        {outputSpy});
+      '<xmc-page-size-selector [pageSize]="10" [pageSizeOptions]="[10, 20]" (pageSizeChange)="outputSpy($event)" />',
+      { outputSpy },
+    );
     const select = await getHarness(MatSelectHarness);
     await select.open();
-    await select.clickOptions({text: '20'});
+    await select.clickOptions({ text: '20' });
     expect(outputSpy).toHaveBeenCalledWith(20);
   });
 });

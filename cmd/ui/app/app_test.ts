@@ -14,12 +14,12 @@
 import { setupModule, bootstrap } from './testing/test';
 import 'jasmine';
 
-import {provideNoopAnimations} from '@angular/platform-browser/animations';
-import {provideRouter} from '@angular/router';
-import {of} from 'rxjs';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { provideRouter } from '@angular/router';
+import { of } from 'rxjs';
 
-import {App} from './app';
-import {AuthService} from './service/auth.service';
+import { App } from './app';
+import { AuthService } from './service/auth.service';
 
 describe('App Component', () => {
   beforeEach(() => {
@@ -30,11 +30,9 @@ describe('App Component', () => {
       providers: [
         provideNoopAnimations(),
         provideRouter([]),
-        {provide: AuthService, useValue: authServiceMock},
+        { provide: AuthService, useValue: authServiceMock },
       ],
-      imports: [
-        App,
-      ],
+      imports: [App],
     });
   });
 

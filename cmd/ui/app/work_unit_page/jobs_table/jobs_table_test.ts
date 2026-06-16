@@ -14,12 +14,12 @@
 
 import 'jasmine';
 
-import {NoopAnimationsModule} from '@angular/platform-browser/animations';
-import {StatusOption} from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
-import {WORK_UNIT_1} from 'xmanager_cloud/ui/app/common/mock_data';
-import {bootstrap, setupModule} from 'xmanager_cloud/ui/app/testing/test';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { StatusOption } from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
+import { WORK_UNIT_1 } from 'xmanager_cloud/ui/app/common/mock_data';
+import { bootstrap, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
-import {JobsTable} from './jobs_table';
+import { JobsTable } from './jobs_table';
 
 describe('JobsTable Component', () => {
   beforeEach(() => {
@@ -48,10 +48,10 @@ describe('JobsTable Component', () => {
     });
 
     expect(displays).toEqual([
-      {status: StatusOption.SUCCESS, replicas: 5},
-      {status: StatusOption.FAILED, replicas: 2},
-      {status: StatusOption.RUNNING, replicas: 8},
-      {status: StatusOption.PENDING, replicas: 2},
+      { status: StatusOption.SUCCESS, replicas: 5 },
+      { status: StatusOption.FAILED, replicas: 2 },
+      { status: StatusOption.RUNNING, replicas: 8 },
+      { status: StatusOption.PENDING, replicas: 2 },
     ]);
   });
 });
