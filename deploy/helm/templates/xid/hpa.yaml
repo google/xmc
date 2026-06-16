@@ -21,8 +21,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: xid-service-deployment
-  minReplicas: {{ ((.Values.xidService).hpa).minReplicas | default 3 }}
-  maxReplicas: {{ ((.Values.xidService).hpa).maxReplicas | default 10 }}
+  minReplicas: {{ .Values.xidService.hpa.minReplicas }}
+  maxReplicas: {{ .Values.xidService.hpa.maxReplicas }}
   metrics:
   - type: Resource
     resource:
