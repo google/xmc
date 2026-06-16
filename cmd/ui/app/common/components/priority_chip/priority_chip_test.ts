@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { setupModule, bootstrap } from '../../../testing/test';
+import { setupModule, bootstrap } from 'xmanager_cloud/ui/app/testing/test';
 import {NoopAnimationsModule} from '@angular/platform-browser/animations';
 
 import {PriorityChip} from './priority_chip';
