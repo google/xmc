@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { setupModule, bootstrap, get, flush } from '../../../testing/test';
+import { setupModule, bootstrap, get, flush } from 'xmanager_cloud/ui/app/testing/test';
 import 'jasmine';
 
 import {getHarness} from '@angular/cdk/testing/catalyst/async';
