@@ -48,6 +48,10 @@ func calculateJobTotals(jobSet *v1alpha2.JobSet) (totalSucceeded, totalFailed, t
 	return
 }
 
+// stuckStartingThreshold is how long a JobSet may stay in STARTING with zero
+// ready pods before the status message warns about likely scheduling problems.
+const stuckStartingThreshold = 5 * time.Minute
+
 func generateStructuredMessage(ctx context.Context, jobSet *v1alpha2.JobSet, state spb.WorkUnitStatus_WorkUnitState, project, location, clusterName, podErrorMsg string) *spb.StructuredMessage {
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, jobSet.Labels)
 
@@ -79,6 +83,16 @@ func generateStructuredMessage(ctx context.Context, jobSet *v1alpha2.JobSet, sta
 		// In the STARTING state, totalActive > totalReady, meaning some jobs are active but not yet ready.
 		// We show the number of active jobs out of total replicas, and separately, how many are ready.
 		msg = fmt.Sprintf("Work unit is starting. %d/%d job(s) active, %d ready.", totalActive, totalReplicas, totalReady)
+		// If nothing has become ready for a prolonged time, the work unit is most
+		// likely unschedulable (quota exhausted, no nodes matching selectors).
+		// Surface that instead of reporting indefinite startup progress.
+		if age := time.Since(jobSet.CreationTimestamp.Time); totalReady == 0 && !jobSet.CreationTimestamp.IsZero() && age > stuckStartingThreshold {
+			msg = fmt.Sprintf(
+				"Work unit has been starting for %s and no pods are ready yet - it may be unschedulable. "+
+					"Check pod events for FailedScheduling or quota errors. %d/%d job(s) active, %d ready.",
+				age.Round(time.Minute), totalActive, totalReplicas, totalReady)
+			msgSeverity = spb.StructuredMessage_WARNING
+		}
 	case spb.WorkUnitStatus_PARTIALLY_FAILED:
 		msg = fmt.Sprintf("Work unit is partially failed. %d failed, %d active, %d succeeded out of %d job(s).", totalFailed, totalActive, totalSucceeded, totalReplicas)
 		msgSeverity = spb.StructuredMessage_WARNING
