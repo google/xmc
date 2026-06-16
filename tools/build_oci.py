@@ -19,6 +19,12 @@ import hashlib
 import json
 from tool_utils import run_tool, HandledError
 
+# Permission modes for files in the container layer.
+# 0o755 represents read/write/execute for owner, read/execute for group/others (standard for executable binaries).
+EXEC_PERMISSION = 0o755
+# 0o644 represents read/write for owner, read-only for group/others (standard for config/data files like certificates).
+FILE_PERMISSION = 0o644
+
 def get_sha256(filepath):
     h = hashlib.sha256()
     with open(filepath, 'rb') as f:
@@ -63,7 +69,7 @@ def build_oci(args):
             info.gid = 0
             info.uname = "root"
             info.gname = "root"
-            info.mode = 0o755
+            info.mode = EXEC_PERMISSION
             with open(real_binary_path, "rb") as f:
                 tar.addfile(info, f)
                 
@@ -73,7 +79,7 @@ def build_oci(args):
                 info_ca.gid = 0
                 info_ca.uname = "root"
                 info_ca.gname = "root"
-                info_ca.mode = 0o644
+                info_ca.mode = FILE_PERMISSION
                 with open(host_ca_path, "rb") as f:
                     tar.addfile(info_ca, f)
     except Exception as e:
