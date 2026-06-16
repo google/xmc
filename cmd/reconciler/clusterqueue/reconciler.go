@@ -81,6 +81,7 @@ type Reconciler struct {
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logging.FromContext(ctx)
 	var cq v1beta1.ClusterQueue
+	// TODO: KUEUE_PAUSE: READ
 	if err := r.Get(logging.Strip(ctx), req.NamespacedName, &cq); err != nil {
 		if errors.IsNotFound(err) {
 			log.Info("ClusterQueue not found, assuming it was deleted", "clusterqueue", req.NamespacedName)

@@ -36,13 +36,14 @@ import (
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/manager/manager"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/source/source"
-	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/common/labels"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
+
+	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 )
 
 var (
@@ -199,6 +200,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	var jobSet v1alpha2.JobSet
 	// This function CANNOT BE CALLED WITHOUT A STRIPPED CONTEXT. If it gets it's hand on an slog,
 	// it blocks the entire logging system for some reason.
+	// TODO: KUEUE_PAUSE: READ
 	if err := r.Get(logging.Strip(ctx), req.NamespacedName, &jobSet); err != nil {
 		if apierrors.IsNotFound(err) {
 			logging.Debug(ctx, "JobSet not found, no action needed", "namespace", req.Namespace, "name", req.Name)
@@ -250,6 +252,7 @@ func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v
 	// Patch the object in the API server
 	// This function CANNOT BE CALLED WITHOUT A STRIPPED CONTEXT. If it gets it's hand on an slog,
 	// it blocks the entire logging system for some reason.
+	// TODO: KUEUE_PAUSE: WRITE
 	if err := r.Patch(logging.Strip(ctx), jobSet, client.MergeFrom(patchBase)); err != nil {
 		return r.handlePatchError(ctx, jobSet, err)
 	}

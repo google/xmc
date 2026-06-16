@@ -171,6 +171,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	var workload v1beta1.Workload
 	// This function CANNOT BE CALLED WITHOUT A STRIPPED CONTEXT. If it gets it's hand on an slog,
 	// it blocks the entire logging system for some reason.
+	// TODO: KUEUE_PAUSE: READ
 	if err := r.Get(logging.Strip(ctx), req.NamespacedName, &workload); err != nil {
 		if apierrors.IsNotFound(err) {
 			logging.Warn(ctx, "Workload not found, no action needed", "workload", req.NamespacedName)

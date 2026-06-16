@@ -79,6 +79,7 @@ func getMultiKueueClusterInfo(ctx context.Context, workload *v1beta1.Workload, m
 	}
 	clusterName := *workload.Status.ClusterName
 	var mc v1beta1.MultiKueueCluster
+	// TODO: KUEUE_PAUSE: READ
 	if err := reader.Get(logging.Strip(ctx), types.NamespacedName{Name: clusterName}, &mc); err != nil {
 		return nil, "", fmt.Errorf("failed to get MultiKueueCluster %s: %w", clusterName, err)
 	}
@@ -135,6 +136,7 @@ func getNodeLabelsFromResourceFlavor(ctx context.Context, flavorName string, rea
 		return nil, nil
 	}
 	var rf v1beta1.ResourceFlavor
+	// TODO: KUEUE_PAUSE: READ
 	err := reader.Get(logging.Strip(ctx), types.NamespacedName{Name: flavorName}, &rf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ResourceFlavor %s: %w", flavorName, err)

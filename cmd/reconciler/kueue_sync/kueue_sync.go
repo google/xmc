@@ -103,6 +103,7 @@ func (r *Reconciler) fetchPendingWorkloadsFromQueue(ctx context.Context, cqName 
 	path := fmt.Sprintf(pendingWorkloadsAPIPathTemplate, cqName)
 	logging.Debug(ctx, "Getting all pending workloads from the ClusterQueue API", "path", path)
 
+	// TODO: KUEUE_PAUSE: READ
 	body, err := r.Clientset.CoreV1().RESTClient().Get().AbsPath(path).Param("limit", limitForPendingWorkloadsAPICall).Do(ctx).Raw()
 
 	if err != nil {
@@ -219,6 +220,7 @@ func (r *Reconciler) createWorkUnitExecutionUpdate(ctx context.Context, jobSet *
 
 func (r *Reconciler) fetchJobSetByName(ctx context.Context, name string, namespace string) (*v1alpha2.JobSet, error) {
 	jobSet := &v1alpha2.JobSet{}
+	// TODO: KUEUE_PAUSE: READ
 	err := r.Client.Get(logging.Strip(ctx), runtimeclient.ObjectKey{Namespace: namespace, Name: name}, jobSet)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get JobSet for workload %s: %w", name, err)
