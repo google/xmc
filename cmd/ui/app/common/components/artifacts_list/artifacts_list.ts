@@ -21,10 +21,10 @@ import {Artifact} from 'xmanager_cloud/experiment_state_server/proto/artifact.js
 import {BehaviorSubject, combineLatest, Observable} from 'rxjs';
 import {map, shareReplay} from 'rxjs/operators';
 
-import {ArtifactService} from '../../../service/artifact_service';
-import {groupAndSortArtifacts} from '../../artifacts/artifact_utils';
-import {ArtifactListItem} from '../../artifacts/interfaces';
-import {parseWorkUnitName} from '../../resource_name_extractor';
+import {ArtifactService} from 'xmanager_cloud/ui/app/service/artifact_service';
+import {groupAndSortArtifacts} from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
+import {ArtifactListItem} from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
+import {parseWorkUnitName} from 'xmanager_cloud/ui/app/common/resource_name_extractor';
 
 import {ArtifactsColumn} from './artifacts_column/artifacts_column';
 

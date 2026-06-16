@@ -19,7 +19,7 @@ import {SnackbarService} from 'xmanager_cloud/ui/app/service/snackbar_service';
 import {WorkUnitsService} from 'xmanager_cloud/ui/app/service/work_units_service';
 import {switchMap, tap} from 'rxjs/operators';
 
-import {getInitialPaginationState, PaginationState, setPageSize} from '../../common/pagination/pagination';
+import {getInitialPaginationState, PaginationState, setPageSize} from 'xmanager_cloud/ui/app/common/pagination/pagination';
 
 /** Interface for the state of the WorkUnitsTable. */
 interface WorkUnitsTableState {
