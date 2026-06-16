@@ -28,12 +28,12 @@ import {WorkUnit} from 'xmanager_cloud/experiment_state_server/proto/work_unit.j
 import {StatusChip, StatusOption} from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
 import {Tag} from 'xmanager_cloud/ui/app/common/components/tag/tag';
 
-import {LoadingBar} from '../../common/components/loading_bar/loading_bar';
-import {PageSizeSelector} from '../../common/components/page_size_selector/page_size_selector';
-import {getStatusMessages, StatusMessage} from '../../common/components/status_message/status_message';
-import {StatusMessageFilter} from '../../common/components/status_message_filter/status_message_filter';
-import {ProcessedUrl, processUrls} from '../../common/url/url_processor';
-import {StatusMessageFilterService} from '../../service/status_message_filter_service';
+import {LoadingBar} from 'xmanager_cloud/ui/app/common/components/loading_bar/loading_bar';
+import {PageSizeSelector} from 'xmanager_cloud/ui/app/common/components/page_size_selector/page_size_selector';
+import {getStatusMessages, StatusMessage} from 'xmanager_cloud/ui/app/common/components/status_message/status_message';
+import {StatusMessageFilter} from 'xmanager_cloud/ui/app/common/components/status_message_filter/status_message_filter';
+import {ProcessedUrl, processUrls} from 'xmanager_cloud/ui/app/common/url/url_processor';
+import {StatusMessageFilterService} from 'xmanager_cloud/ui/app/service/status_message_filter_service';
 
 import {WorkUnitsTableStore} from './work_units_table_store';
 

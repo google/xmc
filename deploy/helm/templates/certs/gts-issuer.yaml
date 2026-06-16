@@ -1,4 +1,4 @@
-{{- if eq .Values.certs.type "gts" }}
+{{- if and (eq .Values.certs.type "gts") (not .Values.gateway.certMap) }}
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:

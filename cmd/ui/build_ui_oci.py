@@ -31,10 +31,10 @@ def get_sha256(filepath):
     return h.hexdigest()
 
 def translate_imports(content):
-    # Replace legacy Google3 Material imports with npm package name
+    # Replace legacy Material imports with npm package name
     content = content.replace("'third_party/javascript/angular_components/material'", "'@angular/material'")
     content = content.replace('"third_party/javascript/angular_components/material"', '"@angular/material"')
-    # Replace legacy Google3 path style consts/custom_colors with root load paths
+    # Replace legacy path style consts/custom_colors with root load paths
     content = content.replace("'third_party/xmanager_cloud/ui/consts'", "'consts'")
     content = content.replace('"third_party/xmanager_cloud/ui/consts"', '"consts"')
     content = content.replace("'third_party/xmanager_cloud/ui/custom_colors'", "'custom_colors'")
@@ -45,7 +45,7 @@ def translate_imports(content):
     return content
 
 def copy_flat(src_dir, dest_dir):
-    """Copies files resolving symlinks and translates Google3 legacy paths into npm package imports."""
+    """Copies files resolving symlinks and translates legacy paths into npm package imports."""
     if os.path.exists(dest_dir):
         shutil.rmtree(dest_dir)
     os.makedirs(dest_dir, exist_ok=True)
@@ -91,10 +91,10 @@ def main():
     # 1. Write a simple multi-stage Dockerfile to temp_build_dir
     dockerfile_path = os.path.join(temp_build_dir, "Dockerfile")
     with open(dockerfile_path, "w") as f:
-        f.write("""FROM node:20-alpine AS builder
+        f.write("""FROM node:22-alpine AS builder
 WORKDIR /app
 COPY . .
-RUN npm install && npx ng build --configuration production
+RUN npm ci --legacy-peer-deps && npx ng build --configuration production
 
 FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf

@@ -1,6 +1,3 @@
-# Standalone Build Setup
-
-This repository has been migrated from `google3` to standalone Git (supporting Git-on-Borg and GitHub) using a standalone build architecture. All legacy Google dependencies and google3 tools have been decoupled.
 
 ## Protocol Buffers & gRPC Stubs (Step 1)
 
@@ -30,7 +27,7 @@ A set of compatibility packages is defined under `//internal/compat/...` to rout
 
 ## Custom AIP-160 Filter & Parser Engine (Step 3)
 
-The repository includes a custom, zero-dependency AIP-160 compliant filter parsing and query translation engine under `//api/filter/go/filter` and `//api/filter/go/queryfilterbase`. This parser replaces legacy `google3` dependencies with standard Go stubs and includes custom priority logical operator parsing (implicit space-conjunction, explicit `AND`, explicit `OR`), type safety verification, regular expression constraints, and disjunction IN list optimizations.
+The repository includes a custom, zero-dependency AIP-160 compliant filter parsing and query translation engine under `//api/filter/go/filter` and `//api/filter/go/queryfilterbase`. This parser replaces legacy dependencies with standard Go stubs and includes custom priority logical operator parsing (implicit space-conjunction, explicit `AND`, explicit `OR`), type safety verification, regular expression constraints, and disjunction IN list optimizations.
 
 ### Build and Test Commands
 
@@ -132,7 +129,6 @@ The **Log Monitor** subscribes to execution log entries on Pub/Sub and updates w
 ## Continuous Integration
 
 [![XMC Unit Tests](https://github.com/google/xmc/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/google/xmc/actions/workflows/unit-tests.yml)
-[![Lint Checks](https://github.com/google/xmc/actions/workflows/lint.yml/badge.svg)](https://github.com/google/xmc/actions/workflows/lint.yml)
 
 Automated unit test suites and code quality checks are executed on:
 * **Pull Requests** targeting any branch.
@@ -141,7 +137,7 @@ Automated unit test suites and code quality checks are executed on:
 
 ### Implemented Linting & Code Quality Rules
 
-To maintain pristine architecture, canonical styling, and avoid common defects across the monorepo, code quality rules are enforced automatically on all Pull Requests via GitHub Actions (`.github/workflows/lint.yml`) and locally via a pre-commit hook (`.githooks/pre-commit`).
+To maintain pristine architecture, canonical styling, and avoid common defects across the monorepo, code quality rules are enforced locally via a pre-commit hook (`.githooks/pre-commit`).
 
 The following specific linting rules and static analysis toolchains are implemented across our supported languages:
 
@@ -207,3 +203,108 @@ To build the entire project codebase or run all decoupled standalone test suites
   bazel run //cmd/reconciler:reconciler_image_push
   bazel run //cmd/xid_service:xid_service_image_push
   ```
+
+---
+
+## Deployment Topologies
+
+XMC supports two deployment topologies using automated HPC Cluster Toolkit blueprints:
+
+### 1. Cluster Toolkit Blueprint v1 ([deploy/ctk_v1](deploy/ctk_v1))
+This is the legacy/initial topology which uses:
+- **GKE Deployments**: Runs the backend services (Reconciler, Actuator, and Experiment State Server) on GKE.
+- **Web UI on Cloud Run**: The frontend UI is hosted separately on Google Cloud Run.
+- **Identity-Aware Proxy (IAP)**: Protects backend services and manages identity/access control at the infrastructure load balancer.
+- **State & Messaging**: Uses Cloud Spanner for state storage, Memorystore Redis or Cloud Tasks for background queues, and Pub/Sub for log streams.
+- **DNS/IP**: Public IPs and Managed DNS zones.
+
+For more details, see the [deploy/ctk_v1/README.md](deploy/ctk_v1/README.md).
+
+### 2. Cluster Toolkit Blueprint v2 ([deploy/ctk_v2](deploy/ctk_v2))
+This is the modern/current topology which consolidates components:
+- **Unified GKE Hosting**: The frontend UI runs inside the GKE cluster itself, instead of Cloud Run.
+- **GKE Gateway API**: Exposes the UI, HTTP API, and gRPC endpoints on a single Global External IP address using Gateway and HTTPRoute resources.
+- **App-level OAuth2**: Users are authenticated using OAuth2 client credentials and session JWTs managed by the application itself, removing infrastructure-level IAP requirements.
+- **cert-manager with Google Trust Services (GTS)**: Automates the provisioning of TLS certificates.
+- **State & Messaging**: Cloud Spanner for state storage and Memorystore Redis for internal queues.
+
+For more details, see the [deploy/ctk_v2/README.md](deploy/ctk_v2/README.md).
+
+---
+
+## Installation & Deployment
+
+XManager on Cloud (XMC) can be installed using one of the following deployment paths depending on your tooling and workflow preferences.
+
+### 1. Terraform and Helm (Hands-on)
+For a direct, hands-on infrastructure deployment:
+1. **Infrastructure**: Deploy the VPC networks, GKE cluster, Cloud Spanner, and Memorystore Redis resources manually or via your organization's custom Terraform pipeline.
+2. **Application Helm Release**: Connect your local `kubectl` to the GKE cluster and deploy the application chart using Helm:
+   ```bash
+   helm upgrade --install xmc ./deploy/helm -n xmc --create-namespace -f my-values.yaml
+   ```
+   *For details on custom values configurations, see [deploy/helm/values.yaml](deploy/helm/values.yaml).*
+
+### 2. Cluster Toolkit Blueprints (Recommended)
+We provide automated HPC Cluster Toolkit blueprints to provision the entire cloud-native resource stack in a single orchestration workflow:
+* **XMC v2 Blueprint**: Configures GKE clusters, Spanner, Redis, static IPs, and Google Cloud Certificate Manager SSL maps.
+* For step-by-step instructions on compilation and group-by-group deployments, see [deploy/ctk_v2/README.md](deploy/ctk_v2/README.md).
+
+### 3. Automated Agent Deployment (`deploy_xmc`)
+If you are running an agentic session, the deployment can be fully automated using the `deploy_xmc` skill. For details on how to run this skill, see [Antigravity Agent Workflows](#antigravity-agent-workflows-ai-assisted) below.
+
+---
+
+## Antigravity Agent Workflows (AI-Assisted)
+
+This repository includes pre-configured **Antigravity Agent Skills** located under the [.agents/skills/](.agents/skills/) directory. These skills define structured workflows that allow the agent to automate complex operational and development tasks.
+
+### 1. Automated Blueprint Deployment (`deploy_xmc`)
+The `deploy_xmc` skill compiles and deploys Cluster Toolkit v2 blueprints. It validates system dependencies, deploys GCP resource groups sequentially, pauses to prompt for manual DNS/OAuth registrations, and runs verification checks.
+
+* **How to trigger**: Ask the agent to deploy the environment using the config overrides path, for example:
+  > Deploy XMC using the blueprint configuration at `deploy/ctk_v2/xmanager-cloud-deployment.yaml`
+* **Workflow Details**: See [deploy_xmc/SKILL.md](.agents/skills/deploy_xmc/SKILL.md).
+
+### 2. PR Comment-Driven Development (`pr_comment_workflow`)
+The `pr_comment_workflow` skill automates resolving review comments on Pull Requests. The agent fetches comment context, determines affected packages and GKE deployments, runs unit tests and coverage checks, commits code, replies to the comment, pushes container images, and restarts GKE deployments.
+
+* **How to trigger**: Ask the agent to resolve a specific GitHub discussion/review link, for example:
+  > Address the PR review comment: `https://github.com/google/xmc/pull/15#discussion_r124892`
+* **Workflow Details**: See [pr_comment_workflow/SKILL.md](.agents/skills/pr_comment_workflow/SKILL.md).
+
+---
+
+### Configuration Reference
+
+
+The following parameters can be supplied in your Cluster Toolkit overrides file (`xmanager-cloud-deployment.yaml`) or your Helm overrides (`values.yaml`):
+
+| Parameter Name | Required? | Default Value | Used By / Description |
+|---|---|---|---|
+| `project_id` | **Yes** | - | Target Google Cloud Project ID |
+| `deployment_name` | **Yes** | - | Unique prefix for resource naming (e.g. `xmc-v2-run`) |
+| `region` | **Yes** | - | Google Cloud region for resource provisioning (e.g. `us-west1`) |
+| `domain_name` | **Yes** | - | Base DNS domain name for external endpoints (e.g. `example.com`) |
+| `environment` | **Yes** | - | Sub-environment descriptor for Spanner database keys (e.g. `dev`) |
+| `iap_client_id` | **Yes** | - | Google OAuth Client ID for identity verification |
+| `iap_client_secret`| **Yes** | - | Google OAuth Client Secret for identity verification |
+| `jwt_secret` | **Yes** | - | Secret key used by ESS backend to sign session cookies |
+| `allowed_emails` | **Yes** | - | Comma-separated list of user emails authorized to log in |
+| `authorized_iam_role`| **Yes** | - | GCP IAM role granted to GKE workload identities |
+| `certs_email` | **Yes** | - | Owner email registered with Google Trust Services (GTS) |
+| `gts_key_id` | **Yes** | - | GTS External Account Binding key ID for certificates |
+| `gts_hmac_key` | **Yes** | - | GTS External Account Binding HMAC secret for certificates |
+| `xid_image` | **Yes** | - | Container image path for the XID service |
+| `actuator_image` | **Yes** | - | Container image path for the Actuator daemon |
+| `ess_image` | **Yes** | - | Container image path for the Experiment State Server (ESS) |
+| `ui_image` | **Yes** | - | Container image path for the Frontend UI portal |
+| `reconciler_image` | **Yes** | - | Container image path for the Kueue Reconciler service |
+| `log_monitor_image`| **Yes** | - | Container image path for the Pub/Sub Log Monitor |
+| `namespace` | No | `"xmc"` | Target Kubernetes namespace for services |
+| `gcp_public_cidrs_access_enabled` | No | `false` | Toggles public endpoints on the GKE Control Plane |
+| `authorized_cidr` | No | `"0.0.0.0/0"`| Authorized IP CIDR allowed to connect to GKE master |
+| `task_signature_ttl_seconds` | No | `86400` | Validity duration of task signature tokens |
+| `use_redis_queue` | No | `true` | Uses Memorystore Redis for internal queues when true |
+| `deploy_redis` | No | `true` | Provisions Memorystore Redis instance when true |
+| `redis_region` | No | - | Memorystore Redis region (defaults to region above) |
