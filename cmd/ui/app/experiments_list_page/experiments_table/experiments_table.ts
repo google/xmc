@@ -11,40 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {ClipboardModule} from '@angular/cdk/clipboard';
-import {CommonModule, DatePipe} from '@angular/common';
-import {ChangeDetectionStrategy, Component, computed, EventEmitter, inject, input, Output} from '@angular/core';
-import {toObservable} from '@angular/core/rxjs-interop';
-import {MatButtonModule} from '@angular/material/button';
-import {MatChipsModule} from '@angular/material/chips';
-import {MatIconModule} from '@angular/material/icon';
-import {MatProgressBarModule} from '@angular/material/progress-bar';
-import {MatProgressSpinnerModule} from '@angular/material/progress-spinner';
-import {MatSortModule, Sort} from '@angular/material/sort';
-import {MatTableModule} from '@angular/material/table';
-import {MatTooltipModule} from '@angular/material/tooltip';
-import {RouterLink} from '@angular/router';
+import { ClipboardModule } from '@angular/cdk/clipboard';
+import { CommonModule, DatePipe } from '@angular/common';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  EventEmitter,
+  inject,
+  input,
+  Output,
+} from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
+import { MatButtonModule } from '@angular/material/button';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatIconModule } from '@angular/material/icon';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatSortModule, Sort } from '@angular/material/sort';
+import { MatTableModule } from '@angular/material/table';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { RouterLink } from '@angular/router';
 import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import {Experiment} from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
-import {Priority} from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
-import {ExperimentStatus} from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
-import {StructuredMessage} from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
-import {combineLatest, Observable} from 'rxjs';
-import {map} from 'rxjs/operators';
+import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
+import { Priority } from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
+import { ExperimentStatus } from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
+import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
+import { combineLatest, Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 
-import {LoadingBar} from 'xmanager_cloud/ui/app/common/components/loading_bar/loading_bar';
-import {PriorityChip} from 'xmanager_cloud/ui/app/common/components/priority_chip/priority_chip';
-import {ResourceChip} from 'xmanager_cloud/ui/app/common/components/resource_chip/resource_chip';
-import {ResourceChipData, resourceSetsToResourceChipsData} from 'xmanager_cloud/ui/app/common/components/resource_chip/utils/resource_set_to_resource_chips';
-import {StatusChip, StatusOption} from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
-import {StatusMessage} from 'xmanager_cloud/ui/app/common/components/status_message/status_message';
-import {StatusMessageFilter} from 'xmanager_cloud/ui/app/common/components/status_message_filter/status_message_filter';
-import {Tag} from 'xmanager_cloud/ui/app/common/components/tag/tag';
-import {WorkUnitsStatusBar} from 'xmanager_cloud/ui/app/common/components/work_units_status_bar/work_units_status_bar';
-import {XidBadge} from 'xmanager_cloud/ui/app/common/components/xid_badge/xid_badge';
-import {StatusMessageFilterService} from 'xmanager_cloud/ui/app/service/status_message_filter_service';
-import {EditExperimentFormData} from 'xmanager_cloud/ui/app/side_panel/contents/edit_experiment_form/edit_experiment_form';
-import {SidePanelService} from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
+import { LoadingBar } from 'xmanager_cloud/ui/app/common/components/loading_bar/loading_bar';
+import { PriorityChip } from 'xmanager_cloud/ui/app/common/components/priority_chip/priority_chip';
+import { ResourceChip } from 'xmanager_cloud/ui/app/common/components/resource_chip/resource_chip';
+import {
+  ResourceChipData,
+  resourceSetsToResourceChipsData,
+} from 'xmanager_cloud/ui/app/common/components/resource_chip/utils/resource_set_to_resource_chips';
+import {
+  StatusChip,
+  StatusOption,
+} from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
+import { StatusMessage } from 'xmanager_cloud/ui/app/common/components/status_message/status_message';
+import { StatusMessageFilter } from 'xmanager_cloud/ui/app/common/components/status_message_filter/status_message_filter';
+import { Tag } from 'xmanager_cloud/ui/app/common/components/tag/tag';
+import { WorkUnitsStatusBar } from 'xmanager_cloud/ui/app/common/components/work_units_status_bar/work_units_status_bar';
+import { XidBadge } from 'xmanager_cloud/ui/app/common/components/xid_badge/xid_badge';
+import { StatusMessageFilterService } from 'xmanager_cloud/ui/app/service/status_message_filter_service';
+import { EditExperimentFormData } from 'xmanager_cloud/ui/app/side_panel/contents/edit_experiment_form/edit_experiment_form';
+import { SidePanelService } from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
 
 enum TableColumns {
   XID = 'XID',
@@ -113,14 +127,12 @@ export class ExperimentsTable {
   readonly displayedColumns = Object.values(TableColumns);
   readonly TableColumns = TableColumns;
 
-  readonly pageResult = input.required<api.ListExperimentsResponse|undefined>();
+  readonly pageResult = input.required<api.ListExperimentsResponse | undefined>();
   readonly isFetching = input.required<boolean>();
   readonly pageSize = input<number>(10);
 
-  readonly isLoading =
-      computed(() => this.isFetching() && !this.pageResult());
-  readonly isRefreshing =
-      computed(() => this.isFetching() && !!this.pageResult());
+  readonly isLoading = computed(() => this.isFetching() && !this.pageResult());
+  readonly isRefreshing = computed(() => this.isFetching() && !!this.pageResult());
 
   @Output() readonly sortChange = new EventEmitter<Sort>();
 
@@ -130,54 +142,45 @@ export class ExperimentsTable {
   readonly tableRows$: Observable<TableRow[]>;
 
   constructor() {
-    this.tableRows$ =
-        combineLatest([
-          toObservable(this.pageResult),
-          this.filterService.severities$,
-          this.filterService.sources$,
-        ])
-            .pipe(
-                map(([pageResult, severities, sources]) => {
-                  const experiments = pageResult?.experiments;
-                  if (!experiments) {
-                    return [];
-                  }
-                  return experiments.map((experiment: Experiment) => {
-                    const message = !!experiment.status?.structuredStatusMessage
-                                          ?.userFacingText ?
-                        experiment.status?.structuredStatusMessage :
-                        undefined;
-                    let isStatusMessageVisible = false;
-                    if (message) {
-                      isStatusMessageVisible =
-                          this.filterService.isMessageVisible(message);
-                    }
-                    return {
-                      name: experiment.name,
-                      xid: experiment.name?.split('/').pop(),
-                      title: experiment.title,
-                      tags: experiment.tags ?? [],
-                      stateCounts: experiment.status?.childStateCounts ?? [],
-                      status: getStatusChipEnum(experiment),
-                      priority: experiment.priority,
-                      notes: experiment.notes,
-                      author: experiment.creator,
-                      resources: experiment.resources ?
-                          resourceSetsToResourceChipsData(
-                              experiment.resources) :
-                          [],
-                      createTime: experiment.createTime ?
-                          new Date(experiment.createTime) :
-                          undefined,
-                      completedTime: experiment.completeTime ?
-                          new Date(experiment.completeTime) :
-                          undefined,
-                      structuredStatusMessage: message,
-                      isStatusMessageVisible,
-                    };
-                  });
-                }),
-            );
+    this.tableRows$ = combineLatest([
+      toObservable(this.pageResult),
+      this.filterService.severities$,
+      this.filterService.sources$,
+    ]).pipe(
+      map(([pageResult, severities, sources]) => {
+        const experiments = pageResult?.experiments;
+        if (!experiments) {
+          return [];
+        }
+        return experiments.map((experiment: Experiment) => {
+          const message = !!experiment.status?.structuredStatusMessage?.userFacingText
+            ? experiment.status?.structuredStatusMessage
+            : undefined;
+          let isStatusMessageVisible = false;
+          if (message) {
+            isStatusMessageVisible = this.filterService.isMessageVisible(message);
+          }
+          return {
+            name: experiment.name,
+            xid: experiment.name?.split('/').pop(),
+            title: experiment.title,
+            tags: experiment.tags ?? [],
+            stateCounts: experiment.status?.childStateCounts ?? [],
+            status: getStatusChipEnum(experiment),
+            priority: experiment.priority,
+            notes: experiment.notes,
+            author: experiment.creator,
+            resources: experiment.resources
+              ? resourceSetsToResourceChipsData(experiment.resources)
+              : [],
+            createTime: experiment.createTime ? new Date(experiment.createTime) : undefined,
+            completedTime: experiment.completeTime ? new Date(experiment.completeTime) : undefined,
+            structuredStatusMessage: message,
+            isStatusMessageVisible,
+          };
+        });
+      }),
+    );
   }
 
   editExperiment(xid: string) {

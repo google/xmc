@@ -13,7 +13,7 @@
 // limitations under the License.
 import 'jasmine';
 
-import {getInitialPaginationState, PaginationState, setPageSize} from './pagination';
+import { getInitialPaginationState, PaginationState, setPageSize } from './pagination';
 
 describe('Pagination', () => {
   describe('getInitialPaginationState', () => {
@@ -42,7 +42,7 @@ describe('Pagination', () => {
 
   describe('setPageSize', () => {
     it('should update page size and reset pagination', () => {
-      const state: {pagination: PaginationState} = {
+      const state: { pagination: PaginationState } = {
         pagination: {
           currentPageToken: 'abc',
           previousTokens: [''],

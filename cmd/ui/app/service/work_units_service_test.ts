@@ -14,18 +14,14 @@
 import { cleanState, setupModule, get } from '../testing/test';
 import 'jasmine';
 
+import { provideHttpClient } from '@angular/common/http';
 
-import {provideHttpClient} from '@angular/common/http';
-
-import {WorkUnitsService} from './work_units_service';
+import { WorkUnitsService } from './work_units_service';
 
 function setup() {
   return cleanState(() => {
     setupModule({
-      providers: [
-        provideHttpClient(),
-        WorkUnitsService,
-      ],
+      providers: [provideHttpClient(), WorkUnitsService],
     });
     return {
       service: get(WorkUnitsService),

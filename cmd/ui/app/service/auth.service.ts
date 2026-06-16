@@ -26,7 +26,7 @@ export interface UserResponse {
 }
 
 @Injectable({
-  providedIn: 'root'
+  providedIn: 'root',
 })
 export class AuthService {
   private http = inject(HttpClient);
@@ -36,7 +36,7 @@ export class AuthService {
     if (!this.user$) {
       this.user$ = this.http.get<UserResponse>('/api/user', { withCredentials: true }).pipe(
         catchError(() => of(null)),
-        shareReplay(1)
+        shareReplay(1),
       );
     }
     return this.user$;

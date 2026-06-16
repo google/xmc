@@ -11,10 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {Component, ChangeDetectionStrategy, inject, computed} from '@angular/core';
-import {ActivatedRoute} from '@angular/router';
-import {windowOpen} from '../safevalues_helper';
-import {toSignal} from '@angular/core/rxjs-interop';
+import { Component, ChangeDetectionStrategy, inject, computed } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
+import { windowOpen } from '../safevalues_helper';
+import { toSignal } from '@angular/core/rxjs-interop';
 
 /**
  * Home page for the XMC UI.
@@ -24,7 +24,7 @@ import {toSignal} from '@angular/core/rxjs-interop';
   standalone: true,
   templateUrl: './home_page.ng.html',
   styleUrl: './home_page.css',
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class HomePage {
   private readonly route = inject(ActivatedRoute);

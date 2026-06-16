@@ -29,8 +29,8 @@ function setup() {
     setupModule({
       providers: [
         { provide: AuthService, useValue: authServiceSpy },
-        { provide: Router, useValue: routerSpy }
-      ]
+        { provide: Router, useValue: routerSpy },
+      ],
     });
     return {
       authServiceSpy,

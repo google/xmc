@@ -23,7 +23,7 @@ import { LoadingBarHarness } from './testing/loading_bar_harness';
 @Component({
   template: '<xmc-loading-bar [isRefreshing]="isRefreshing()" />',
   imports: [LoadingBar],
-  standalone: true
+  standalone: true,
 })
 class TestHostComponent {
   isRefreshing = signal(false);
@@ -36,7 +36,7 @@ describe('LoadingBar Component', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [TestHostComponent, NoopAnimationsModule]
+      imports: [TestHostComponent, NoopAnimationsModule],
     }).compileComponents();
 
     fixture = TestBed.createComponent(TestHostComponent);
