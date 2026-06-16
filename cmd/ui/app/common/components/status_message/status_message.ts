@@ -22,9 +22,9 @@ import {QueueInfo, StructuredMessage} from 'xmanager_cloud/experiment_state_serv
 import {combineLatest} from 'rxjs';
 import {map} from 'rxjs/operators';
 
-import {formatSource, StatusMessageFilterService} from '../../../service/status_message_filter_service';
-import {parseWorkUnitName} from '../../resource_name_extractor';
-import {ProcessedUrl} from '../../url/url_processor';
+import {formatSource, StatusMessageFilterService} from 'xmanager_cloud/ui/app/service/status_message_filter_service';
+import {parseWorkUnitName} from 'xmanager_cloud/ui/app/common/resource_name_extractor';
+import {ProcessedUrl} from 'xmanager_cloud/ui/app/common/url/url_processor';
 
 const STACK_TRACE_PREVIEW_LINES = 5;
 
