@@ -15,15 +15,15 @@
 # gazelle:ignore
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@rules_proto//proto:defs.bzl", "proto_library", "proto_descriptor_set")
+load("@rules_proto//proto:defs.bzl", "proto_descriptor_set", "proto_library")
+
+package(default_visibility = ["//visibility:public"])
 
 proto_descriptor_set(
     name = "xid_messages_descriptor",
-    deps = [":xid_messages_proto"],
     visibility = ["//visibility:public"],
+    deps = [":xid_messages_proto"],
 )
-
-package(default_visibility = ["//visibility:public"])
 
 proto_library(
     name = "xid_messages_proto",
