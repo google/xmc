@@ -45,7 +45,7 @@ spec:
             drop:
             - ALL
         args:
-        - "-spanner_database_name=projects/{{ .Values.projectId }}/instances/xmc-{{ .Values.environment }}/databases/experiment-db-{{ .Values.environment }}"
+        - "-spanner_database_name={{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) }}"
         - "-quota_project_id={{ .Values.projectId }}"
         - "-alsologtostderr"
         - "-batcher_tick_duration=250ms"

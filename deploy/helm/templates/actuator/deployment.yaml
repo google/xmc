@@ -55,7 +55,7 @@ spec:
               key: redis-password
         args:
         - "-port=8080"
-        - "-spanner_database_name=projects/{{ .Values.projectId }}/instances/xmc-{{ .Values.environment }}/databases/experiment-db-{{ .Values.environment }}"
+        - "-spanner_database_name={{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) }}"
         - "-quota_project_id={{ .Values.projectId }}"
         - "-alsologtostderr"
         - "--logtostderr"
