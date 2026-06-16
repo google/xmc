@@ -32,7 +32,7 @@ ess_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/experiment-state-se
 
 essDeployment:
   enabled: true
-  replicas: 2
+  replicas: 1
 
 defaultToCursorPagination: false
 detectInadmissibleWorkUnits: false
@@ -87,7 +87,7 @@ secrets:
   development:
     # A placeholder for default JWT secret key for development environments.
     jwtSecret: "YOUR_JWT_SECRET"
-    clientSecret: "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"
+    clientSecret: "YOUR_CLIENT_SECRET"
 
 ui:
   enabled: true
