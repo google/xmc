@@ -11,8 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {ChangeDetectionStrategy, Component, input} from '@angular/core';
-import {MatChipsModule} from '@angular/material/chips';
+import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { MatChipsModule } from '@angular/material/chips';
 
 /** The resource type */
 export enum ResourceType {
@@ -28,7 +28,7 @@ export enum ResourceType {
   templateUrl: './resource_chip.ng.html',
   styleUrl: './resource_chip.css',
   imports: [MatChipsModule],
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ResourceChip {
   readonly resourceType = input.required<ResourceType>();

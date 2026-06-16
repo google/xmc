@@ -11,42 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {CommonModule} from '@angular/common';
-import {ChangeDetectionStrategy, Component, computed, inject, input, OnDestroy} from '@angular/core';
-import {toObservable} from '@angular/core/rxjs-interop';
-import {AbstractControl, FormControl, FormGroup, FormsModule, ReactiveFormsModule, ValidationErrors, Validators} from '@angular/forms';
-import {MatButtonModule} from '@angular/material/button';
-import {MatButtonToggleModule} from '@angular/material/button-toggle';
-import {MatCheckboxModule} from '@angular/material/checkbox';
-import {MatRippleModule} from '@angular/material/core';
-import {MatFormFieldModule} from '@angular/material/form-field';
-import {MatIconModule} from '@angular/material/icon';
-import {MatInputModule} from '@angular/material/input';
-import {MatProgressSpinner} from '@angular/material/progress-spinner';
-import {MatRadioModule} from '@angular/material/radio';
-import {MatSelectModule} from '@angular/material/select';
-import {Priority} from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
-import {Subscription} from 'rxjs';
+import { CommonModule } from '@angular/common';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  input,
+  OnDestroy,
+} from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
+import {
+  AbstractControl,
+  FormControl,
+  FormGroup,
+  FormsModule,
+  ReactiveFormsModule,
+  ValidationErrors,
+  Validators,
+} from '@angular/forms';
+import { MatButtonModule } from '@angular/material/button';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
+import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatRippleModule } from '@angular/material/core';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatIconModule } from '@angular/material/icon';
+import { MatInputModule } from '@angular/material/input';
+import { MatProgressSpinner } from '@angular/material/progress-spinner';
+import { MatRadioModule } from '@angular/material/radio';
+import { MatSelectModule } from '@angular/material/select';
+import { Priority } from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
+import { Subscription } from 'rxjs';
 
-import {XidBadge} from 'xmanager_cloud/ui/app/common/components/xid_badge/xid_badge';
-import {BaseSidePanelContent, BaseSidePanelData} from 'xmanager_cloud/ui/app/side_panel/base_side_panel';
-import {SidePanelService} from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
+import { XidBadge } from 'xmanager_cloud/ui/app/common/components/xid_badge/xid_badge';
+import {
+  BaseSidePanelContent,
+  BaseSidePanelData,
+} from 'xmanager_cloud/ui/app/side_panel/base_side_panel';
+import { SidePanelService } from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
 
-import {EditExperimentFormStore} from './edit_experiment_form_store';
+import { EditExperimentFormStore } from './edit_experiment_form_store';
 
 /** Represents the data to render the Edit Experiment side panel. */
 export class EditExperimentFormData implements BaseSidePanelData {
   constructor(
-      public xid: string,
-      public onUpdateSuccess?: () => void,
-      public onUpdateStart?: () => void,
-      public onUpdateFinish?: () => void,
+    public xid: string,
+    public onUpdateSuccess?: () => void,
+    public onUpdateStart?: () => void,
+    public onUpdateFinish?: () => void,
   ) {}
 }
 
-function notWhitespaceOnly(control: AbstractControl): ValidationErrors|null {
+function notWhitespaceOnly(control: AbstractControl): ValidationErrors | null {
   const isWhitespace = (control.value || '').trim().length === 0;
-  return isWhitespace ? {'whitespace': true} : null;
+  return isWhitespace ? { whitespace: true } : null;
 }
 
 /** Side panel content for editing an experiment. */
@@ -74,8 +92,7 @@ function notWhitespaceOnly(control: AbstractControl): ValidationErrors|null {
   ],
   providers: [EditExperimentFormStore],
 })
-export class EditExperimentForm implements
-    BaseSidePanelContent<EditExperimentFormData>, OnDestroy {
+export class EditExperimentForm implements BaseSidePanelContent<EditExperimentFormData>, OnDestroy {
   readonly data = input.required<EditExperimentFormData>();
 
   private readonly editExperimentFormStore = inject(EditExperimentFormStore);
@@ -89,21 +106,21 @@ export class EditExperimentForm implements
     const initialExperiment = this.initialExperiment();
 
     return new FormGroup({
-      'name': new FormControl<string>(
-          initialExperiment?.title ?? '',
-          [Validators.required, notWhitespaceOnly]),
-      'notes': new FormControl<string>(initialExperiment?.notes ?? ''),
-      'tags': new FormControl<string>(initialExperiment?.tags?.join(',') ?? ''),
-      'priority':
-          new FormControl<Priority>(initialExperiment?.priority ?? 'NORMAL'),
+      name: new FormControl<string>(initialExperiment?.title ?? '', [
+        Validators.required,
+        notWhitespaceOnly,
+      ]),
+      notes: new FormControl<string>(initialExperiment?.notes ?? ''),
+      tags: new FormControl<string>(initialExperiment?.tags?.join(',') ?? ''),
+      priority: new FormControl<Priority>(initialExperiment?.priority ?? 'NORMAL'),
     });
   });
 
   constructor() {
     this.subscriptions.add(
-        toObservable(this.data).subscribe((data) => {
-          this.editExperimentFormStore.fetchExperiment(data.xid);
-        }),
+      toObservable(this.data).subscribe((data) => {
+        this.editExperimentFormStore.fetchExperiment(data.xid);
+      }),
     );
   }
 
@@ -119,13 +136,13 @@ export class EditExperimentForm implements
 
     const nameControl = formGroup.controls.name;
     if (nameControl.dirty) {
-      updatedExperiment = {...updatedExperiment, title: nameControl.value!};
+      updatedExperiment = { ...updatedExperiment, title: nameControl.value! };
       updateMask.push('title');
     }
 
     const notesControl = formGroup.controls.notes;
     if (notesControl.dirty) {
-      updatedExperiment = {...updatedExperiment, notes: notesControl.value!};
+      updatedExperiment = { ...updatedExperiment, notes: notesControl.value! };
       updateMask.push('notes');
     }
 
@@ -133,9 +150,10 @@ export class EditExperimentForm implements
     if (tagsControl.dirty) {
       updatedExperiment = {
         ...updatedExperiment,
-        tags: tagsControl.value!.split(',')
-                  .map((tag) => tag.trim())
-                  .filter((tag) => tag !== ''),
+        tags: tagsControl
+          .value!.split(',')
+          .map((tag) => tag.trim())
+          .filter((tag) => tag !== ''),
       };
       updateMask.push('tags');
     }
@@ -144,7 +162,7 @@ export class EditExperimentForm implements
     if (priorityControl.dirty) {
       updatedExperiment = {
         ...updatedExperiment,
-        priority: priorityControl.value!
+        priority: priorityControl.value!,
       };
       updateMask.push('priority');
     }

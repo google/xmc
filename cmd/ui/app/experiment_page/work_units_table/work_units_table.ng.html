@@ -14,18 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 @let workUnits = workUnitViews();
-
 @if (isLoading()) {
   <xmc-loading-bar />
 } @else if (error()) {
-  <div class="error-message">Failed to fetch work units: {{ error() }} </div>
+  <div class="error-message">Failed to fetch work units: {{ error() }}</div>
 } @else {
   @if (isRefreshing()) {
     <xmc-loading-bar [isRefreshing]="true" />
   }
   <table mat-table [dataSource]="workUnits ?? []" multiTemplateDataRows>
     <ng-container [matColumnDef]="WorkUnitColumn.ID">
-      <th mat-header-cell *matHeaderCellDef> ID </th>
+      <th mat-header-cell *matHeaderCellDef>ID</th>
       <td mat-cell *matCellDef="let workUnit">
         <a class="work-unit-id" [routerLink]="['workUnits/', getWorkUnitId(workUnit.name)]">
           {{ getWorkUnitId(workUnit.name) }}
@@ -34,7 +33,7 @@ limitations under the License.
     </ng-container>
 
     <ng-container [matColumnDef]="WorkUnitColumn.STATUS">
-      <th mat-header-cell *matHeaderCellDef> Status </th>
+      <th mat-header-cell *matHeaderCellDef>Status</th>
       <td mat-cell *matCellDef="let workUnit">
         <xmc-status-chip
           [status]="getStatusChip(workUnit.currentWorkUnitExecution?.status?.state)"
@@ -43,7 +42,7 @@ limitations under the License.
     </ng-container>
 
     <ng-container [matColumnDef]="WorkUnitColumn.TAGS">
-      <th mat-header-cell *matHeaderCellDef> Tags </th>
+      <th mat-header-cell *matHeaderCellDef>Tags</th>
       <td mat-cell *matCellDef="let workUnit">
         @for (tag of workUnit.tags; track tag) {
           <xmc-tag [text]="tag" [disableLinks]="disableWorkUnitTagLinks()"></xmc-tag>
@@ -52,14 +51,12 @@ limitations under the License.
     </ng-container>
 
     <ng-container [matColumnDef]="WorkUnitColumn.CREATED">
-      <th mat-header-cell *matHeaderCellDef> Created </th>
-      <td mat-cell *matCellDef="let workUnit">
-        {{ workUnit.createTime | date: 'short' }}
-      </td>
+      <th mat-header-cell *matHeaderCellDef>Created</th>
+      <td mat-cell *matCellDef="let workUnit">{{ workUnit.createTime | date: 'short' }}</td>
     </ng-container>
 
     <ng-container [matColumnDef]="WorkUnitColumn.COMPLETED">
-      <th mat-header-cell *matHeaderCellDef> Completed </th>
+      <th mat-header-cell *matHeaderCellDef>Completed</th>
       <td mat-cell *matCellDef="let workUnit">
         @let completeTime = workUnit.currentWorkUnitExecution?.completeTime;
         @if (isValidTime(completeTime)) {

@@ -17,9 +17,7 @@ limitations under the License.
   <div class="{{ message().severity?.toLowerCase() || 'info' }}-message-container">
     <div class="{{ lineClass() }}"></div>
     <div class="{{ message().severity?.toLowerCase() || 'info' }}-message">
-      <div class="text">
-        {{ message().userFacingText }}
-      </div>
+      <div class="text">{{ message().userFacingText }}</div>
       @if (message().auxiliaryInfo?.queueInfo; as queueInfo) {
         <div class="queue-info">
           Position in queue: {{ queueInfo.positionInQueue ?? '?' }} of
@@ -63,8 +61,7 @@ limitations under the License.
         }
       }
       <div class="metadata">
-        {{ formatSource(message().source) }} ·
-        {{ message().createTime | date: 'short' }}
+        {{ formatSource(message().source) }} · {{ message().createTime | date: 'short' }}
         @if (shouldShowOriginLink()) {
           · <a [routerLink]="'/' + message().parent">Origin</a>
         }

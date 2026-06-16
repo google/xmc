@@ -14,14 +14,17 @@
 import { cleanState, setupModule, get, flush, setupObservableMatchers } from '../testing/test';
 import 'jasmine';
 
-import {provideHttpClient} from '@angular/common/http';
-import {HttpTestingController, provideHttpClientTesting} from '@angular/common/http/testing';
-import {ListArtifactsRequest, ListArtifactsResponse} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import {
+  ListArtifactsRequest,
+  ListArtifactsResponse,
+} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
-import {ARTIFACT_LIST} from '../common/mock_data';
+import { ARTIFACT_LIST } from '../common/mock_data';
 
-import {ArtifactService} from './artifact_service';
-import {EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA} from './constants';
+import { ArtifactService } from './artifact_service';
+import { EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA } from './constants';
 
 describe('ArtifactService Service', () => {
   beforeAll(setupObservableMatchers);
@@ -32,7 +35,7 @@ describe('ArtifactService Service', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         ArtifactService,
-        {provide: USE_MOCK_DATA, useValue: false},
+        { provide: USE_MOCK_DATA, useValue: false },
       ],
     });
 
@@ -66,7 +69,7 @@ describe('ArtifactService Service', () => {
       });
 
       const req = state.httpMock.expectOne(
-          `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/artifacts:search?pageSize=950&filter=foo&orderBy=bar`,
+        `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/artifacts:search?pageSize=950&filter=foo&orderBy=bar`,
       );
       expect(req.request.method).toBe('GET');
       expect(req.request.params.get('pageSize')).toBe('950');
@@ -94,7 +97,7 @@ describe('ArtifactService Service', () => {
       });
 
       const req = state.httpMock.expectOne(
-          `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/artifacts:search?pageSize=950&filter=foo&orderBy=priority`,
+        `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/artifacts:search?pageSize=950&filter=foo&orderBy=priority`,
       );
       expect(req.request.method).toBe('GET');
       expect(req.request.params.get('pageSize')).toBe('950');

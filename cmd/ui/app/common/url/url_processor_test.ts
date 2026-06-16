@@ -13,10 +13,10 @@
 // limitations under the License.
 import 'jasmine';
 
-import {Url} from 'xmanager_cloud/experiment_state_server/proto/url.jsonpb_decls';
-import {EXPERIMENT_1, WORK_UNIT_1, WORK_UNIT_2} from 'xmanager_cloud/ui/app/common/mock_data';
+import { Url } from 'xmanager_cloud/experiment_state_server/proto/url.jsonpb_decls';
+import { EXPERIMENT_1, WORK_UNIT_1, WORK_UNIT_2 } from 'xmanager_cloud/ui/app/common/mock_data';
 
-import {processUrls} from './url_processor';
+import { processUrls } from './url_processor';
 
 describe('UrlProcessor', () => {
   it('should process experiment urls and sort by priority', () => {
@@ -74,15 +74,13 @@ describe('UrlProcessor', () => {
     ];
     const processedUrls = processUrls(urls, WORK_UNIT_1);
     expect(processedUrls.length).toBe(1);
-    expect(processedUrls[0].processedUrl)
-        .toBe(`http://test.com/1/1/${WORK_UNIT_1.createTime}`);
+    expect(processedUrls[0].processedUrl).toBe(`http://test.com/1/1/${WORK_UNIT_1.createTime}`);
   });
 
   it('should process work unit urls with metadata', () => {
     const urls: Url[] = [
       {
-        url:
-            'http://test.com/${PROJECT}/${LOCATION}/${CLUSTER}/${RESOURCE_NAME}/${NAMESPACE}/${SERVICE_ACCOUNT}',
+        url: 'http://test.com/${PROJECT}/${LOCATION}/${CLUSTER}/${RESOURCE_NAME}/${NAMESPACE}/${SERVICE_ACCOUNT}',
         displayName: 'Test URL',
         icon: 'link',
         priority: 1,
@@ -90,28 +88,25 @@ describe('UrlProcessor', () => {
     ];
     const processedUrls = processUrls(urls, WORK_UNIT_1);
     expect(processedUrls.length).toBe(1);
-    expect(processedUrls[0].processedUrl)
-        .toBe(
-            `http://test.com/test-project/us-central1/test-cluster/test-resource/test-namespace/test-sa`,
-        );
+    expect(processedUrls[0].processedUrl).toBe(
+      `http://test.com/test-project/us-central1/test-cluster/test-resource/test-namespace/test-sa`,
+    );
   });
 
-  it('should return undefined processedUrl for work unit with missing metadata',
-     () => {
-       const urls: Url[] = [
-         {
-           url:
-               'http://test.com/${PROJECT}/${LOCATION}/${CLUSTER}/${RESOURCE_NAME}/${NAMESPACE}/${SERVICE_ACCOUNT}',
-           displayName: 'Test URL',
-           icon: 'link',
-           priority: 1,
-         },
-       ];
-       const processedUrls = processUrls(urls, WORK_UNIT_2);
-       expect(processedUrls.length).toBe(1);
-       expect(processedUrls[0].processedUrl).toBeUndefined();
-       expect(processedUrls[0].displayName).toBe('Test URL');
-     });
+  it('should return undefined processedUrl for work unit with missing metadata', () => {
+    const urls: Url[] = [
+      {
+        url: 'http://test.com/${PROJECT}/${LOCATION}/${CLUSTER}/${RESOURCE_NAME}/${NAMESPACE}/${SERVICE_ACCOUNT}',
+        displayName: 'Test URL',
+        icon: 'link',
+        priority: 1,
+      },
+    ];
+    const processedUrls = processUrls(urls, WORK_UNIT_2);
+    expect(processedUrls.length).toBe(1);
+    expect(processedUrls[0].processedUrl).toBeUndefined();
+    expect(processedUrls[0].displayName).toBe('Test URL');
+  });
 
   it('should default to link icon if no icon is provided', () => {
     const urls: Url[] = [
