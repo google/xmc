@@ -20,7 +20,7 @@ limitations under the License.
   <a class="side-sections" [routerLink]="['/']">
     <div class="logo-container">
       <img class="logo-image" src="/logo.svg" alt="XManager logo" />
-      <div class="app-name"> XManager </div>
+      <div class="app-name">XManager</div>
     </div>
   </a>
   <mat-form-field appearance="outline" #searchBar class="search-textbox">
@@ -51,8 +51,8 @@ limitations under the License.
 <mat-menu class="search-syntax-menu" #menu="matMenu" xPosition="before">
   <h3>Search Syntax</h3>
   <div>
-    <p> <strong>Full-Text Search:</strong></p>
-    <p>Use strings to search by Title, Tags, or Creator. </p>
+    <p><strong>Full-Text Search:</strong></p>
+    <p>Use strings to search by Title, Tags, or Creator.</p>
     <span class="code-container">
       <code>gemax "my experiment"</code>
     </span>
@@ -61,7 +61,7 @@ limitations under the License.
     <p>
       <strong>Field-Specific Filters:</strong>
     </p>
-    <p> Use comparators (=, !=, >=, <=) for specific fields. </p>
+    <p>Use comparators (=, !=, >=, <=) for specific fields.</p>
     <ul>
       <li>
         <strong>XID: </strong>
@@ -86,12 +86,12 @@ limitations under the License.
     </ul>
   </div>
   <div>
-    <p> <strong>Special Fields:</strong> </p>
+    <p><strong>Special Fields:</strong></p>
     <ul>
       <li>
         <strong>Tags: </strong>
-        <span class="code-container"><code>tags:test</code></span></li
-      >
+        <span class="code-container"><code>tags:test</code></span>
+      </li>
       <li>
         <strong>State: </strong>
         <span class="code-container"><code>active_state = Active</code></span>
@@ -99,7 +99,7 @@ limitations under the License.
     </ul>
   </div>
   <div>
-    <p> <strong>Operators:</strong> Combine queries with AND, OR, and NOT (or -). </p>
+    <p><strong>Operators:</strong> Combine queries with AND, OR, and NOT (or -).</p>
     <ul>
       <li>
         <span class="code-container"><code>tags:llm AND created >= 2025-10-10</code></span>
@@ -110,7 +110,7 @@ limitations under the License.
     </ul>
   </div>
   <div>
-    <p> <strong>Not Supported:</strong> </p>
+    <p><strong>Not Supported:</strong></p>
     <ul>
       <li>Wildcard searches (e.g., title="*gemini")</li>
       <li>Structural searches (e.g., status.active_state = 2)</li>

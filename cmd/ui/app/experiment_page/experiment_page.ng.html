@@ -13,8 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 -->
-@let xid = xid$ | async;
-@let experiment = experiment$ | async;
+@let xid = xid$ | async; @let experiment = experiment$ | async;
 @let isExperimentLoading = isExperimentLoading$ | async;
 @let shouldShowExperimentPage = xid && experiment;
 
@@ -27,9 +26,7 @@ limitations under the License.
       <div class="experiment-title-container">
         <div class="xid-and-title">
           <xmc-xid-badge [xid]="xid"></xmc-xid-badge>
-          <h1 class="experiment-title">
-            {{ experiment.title }}
-          </h1>
+          <h1 class="experiment-title">{{ experiment.title }}</h1>
         </div>
 
         <mat-divider [vertical]="true"> </mat-divider>
@@ -94,7 +91,7 @@ limitations under the License.
   <mat-card class="metadata-card">
     <mat-card-content class="experiment-summary-container">
       <div class="experiment-summary-metadata">
-        <h2 class="secondary-title">Metadata </h2>
+        <h2 class="secondary-title">Metadata</h2>
 
         <dl>
           <div class="key-value-pair">
@@ -109,9 +106,7 @@ limitations under the License.
 
           <div class="key-value-pair">
             <dt>Completed</dt>
-            <dd>
-              {{ experiment.completeTime ? (experiment.completeTime | date: 'short') : '-' }}
-            </dd>
+            <dd>{{ experiment.completeTime ? (experiment.completeTime | date: 'short') : '-' }}</dd>
           </div>
 
           @if (experiment.tags?.length) {
@@ -130,7 +125,7 @@ limitations under the License.
       <mat-divider [vertical]="true"> </mat-divider>
 
       <div class="experiment-summary-notes">
-        <h2 class="secondary-title">Notes </h2>
+        <h2 class="secondary-title">Notes</h2>
         <p>{{ experiment.notes }}</p>
       </div>
     </mat-card-content>

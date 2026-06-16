@@ -11,12 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {Clipboard} from '@angular/cdk/clipboard';
-import {ChangeDetectionStrategy, Component, inject, Input} from '@angular/core';
-import {MatChipsModule} from '@angular/material/chips';
-import {MatIconModule} from '@angular/material/icon';
-import {MatTooltipModule} from '@angular/material/tooltip';
-import {SnackbarService} from 'xmanager_cloud/ui/app/service/snackbar_service';
+import { Clipboard } from '@angular/cdk/clipboard';
+import { ChangeDetectionStrategy, Component, inject, Input } from '@angular/core';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatIconModule } from '@angular/material/icon';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 
 /**
  * Display a XID badge.
@@ -30,11 +30,10 @@ import {SnackbarService} from 'xmanager_cloud/ui/app/service/snackbar_service';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class XidBadge {
-  @Input({required: true}) xid!: string|number;
+  @Input({ required: true }) xid!: string | number;
   constructor(private readonly clipboard: Clipboard) {}
 
   private readonly snackbarService = inject(SnackbarService);
-
 
   copy() {
     if (this.clipboard.copy(String(this.xid))) {

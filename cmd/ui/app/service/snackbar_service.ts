@@ -11,20 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {inject, Injectable} from '@angular/core';
-import {MatSnackBar} from '@angular/material/snack-bar';
+import { inject, Injectable } from '@angular/core';
+import { MatSnackBar } from '@angular/material/snack-bar';
 
 /**
  * Common service to open snackbars.
  */
-@Injectable({providedIn: 'root'})
+@Injectable({ providedIn: 'root' })
 export class SnackbarService {
   private readonly snackBar = inject(MatSnackBar);
 
-  open(
-      message: string,
-      action = 'Close',
-  ) {
+  open(message: string, action = 'Close') {
     this.snackBar.open(message, action);
   }
 }

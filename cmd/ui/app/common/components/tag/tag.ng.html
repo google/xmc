@@ -23,9 +23,8 @@ limitations under the License.
     mat-chip
     target="_blank"
     [routerLink]="['/experiments']"
-    [queryParams]="{'filter': 'tags:&quot;' + encodedTag() + '&quot;'}"
-    >
+    [queryParams]="{ filter: 'tags:&quot;' + encodedTag() + '&quot;' }"
+  >
     <span class="tag-text">{{ text() }}</span>
   </a>
 }
-

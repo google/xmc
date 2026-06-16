@@ -11,9 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {ChangeDetectionStrategy, Component, input} from '@angular/core';
-import {MatChipsModule} from '@angular/material/chips';
-import {Priority} from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
+import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { MatChipsModule } from '@angular/material/chips';
+import { Priority } from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
 
 /**
  * Component for displaying priority as a colored chip.
@@ -28,5 +28,5 @@ import {Priority} from 'xmanager_cloud/experiment_state_server/proto/priority.js
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PriorityChip {
-  readonly priority = input.required<Priority|undefined>();
+  readonly priority = input.required<Priority | undefined>();
 }

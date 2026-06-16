@@ -8,11 +8,10 @@ import { SafeHtml, unwrapHtml } from 'safevalues';
 describe('SafeValues Helper', () => {
   describe('HtmlSanitizerBuilder', () => {
     it('should sanitize unsafe HTML', () => {
-      const sanitizer = new HtmlSanitizerBuilder()
-        .allowClassAttributes()
-        .build();
+      const sanitizer = new HtmlSanitizerBuilder().allowClassAttributes().build();
 
-      const unsafeHtml = '<div>Hello <script>alert(1)</script><img src="x" onerror="alert(2)"></div>';
+      const unsafeHtml =
+        '<div>Hello <script>alert(1)</script><img src="x" onerror="alert(2)"></div>';
       const sanitized: SafeHtml = sanitizer.sanitize(unsafeHtml);
       const unwrapped = unwrapHtml(sanitized).toString();
 
@@ -22,9 +21,7 @@ describe('SafeValues Helper', () => {
     });
 
     it('should preserve class attributes when allowed', () => {
-      const sanitizer = new HtmlSanitizerBuilder()
-        .allowClassAttributes()
-        .build();
+      const sanitizer = new HtmlSanitizerBuilder().allowClassAttributes().build();
 
       const htmlWithClass = '<div class="test-class">Hello</div>';
       const sanitized = sanitizer.sanitize(htmlWithClass);
@@ -63,7 +60,7 @@ describe('SafeValues Helper', () => {
   function setup() {
     return cleanState(() => {
       const mockWindow = {
-        open: jasmine.createSpy('open').and.returnValue({} as Window)
+        open: jasmine.createSpy('open').and.returnValue({} as Window),
       };
       return { mockWindow };
     }, beforeEach);
@@ -74,7 +71,11 @@ describe('SafeValues Helper', () => {
 
     it('should call window.open with parameters', () => {
       const result = windowOpen(state.mockWindow, 'https://example.com', '_blank', 'resizable=yes');
-      expect(state.mockWindow.open).toHaveBeenCalledWith('https://example.com', '_blank', 'resizable=yes');
+      expect(state.mockWindow.open).toHaveBeenCalledWith(
+        'https://example.com',
+        '_blank',
+        'resizable=yes',
+      );
       expect(result).toBeDefined();
     });
   });
