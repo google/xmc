@@ -24,7 +24,7 @@ import {MatToolbarModule} from '@angular/material/toolbar';
 import {MatTooltipModule} from '@angular/material/tooltip';
 import {Router, RouterLink} from '@angular/router';
 
-import {experimentFiltersToQueryParams} from '../../../experiments_list_page/utils/query_params';
+import {experimentFiltersToQueryParams} from 'xmanager_cloud/ui/app/experiments_list_page/utils/query_params';
 
 /**
  * Header component for the XMC UI.
