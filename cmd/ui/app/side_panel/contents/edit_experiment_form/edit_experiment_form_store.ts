@@ -18,8 +18,8 @@ import {Experiment} from 'xmanager_cloud/experiment_state_server/proto/experimen
 import {EMPTY, Observable} from 'rxjs';
 import {catchError, finalize, switchMap, tap} from 'rxjs/operators';
 
-import {ExperimentService} from '../../../service/experiment_service';
-import {SnackbarService} from '../../../service/snackbar_service';
+import {ExperimentService} from 'xmanager_cloud/ui/app/service/experiment_service';
+import {SnackbarService} from 'xmanager_cloud/ui/app/service/snackbar_service';
 
 /** State for the Edit Experiment form. */
 interface EditExperimentFormState {

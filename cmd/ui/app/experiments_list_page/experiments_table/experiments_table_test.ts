@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { setupModule, bootstrapTemplate } from '../../testing/test';
+import { setupModule, bootstrapTemplate } from 'xmanager_cloud/ui/app/testing/test';
 import 'jasmine';
 
 import {getHarness} from '@angular/cdk/testing/catalyst/async';
@@ -19,7 +19,7 @@ import {NoopAnimationsModule} from '@angular/platform-browser/animations';
 import {provideRouter} from '@angular/router';
 import {ListExperimentsResponse} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
-import {EmptyComponent} from '../../common/testing_utils/empty_component';
+import {EmptyComponent} from 'xmanager_cloud/ui/app/common/testing_utils/empty_component';
 
 import {ExperimentsTable} from './experiments_table';
 import {ExperimentsTableHarness} from './testing/experiments_table_harness';

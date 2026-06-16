@@ -45,6 +45,23 @@ if [ -n "$ADDLICENSE_BIN" ] && [ -n "$STAGED_FILES" ]; then
       -ignore "third_party/**" \
       -ignore "**/third_party/**" \
       $STAGED_FILES
+
+# 4. UI Code Linting (ESLint)
+echo "--> Running UI Linter (ESLint)..."
+STAGED_UI_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|html)$' || true)
+
+if [ -n "$STAGED_UI_FILES" ]; then
+  echo "    Staged UI files detected. Running ESLint..."
+  ESLINT_BIN="cmd/ui/node_modules/.bin/eslint"
+  if [ -f "$ESLINT_BIN" ]; then
+    # Run ESLint with auto-fix on the staged files
+    $ESLINT_BIN --config cmd/ui/eslint.config.js --fix $STAGED_UI_FILES
+  else
+    echo "    WARNING: Local ESLint not found at $ESLINT_BIN."
+    echo "    To enable auto-linting on commit: cd cmd/ui && npm install"
+  fi
+else
+  echo "    No staged UI files to lint."
 fi
 
 # Check if the linters modified any un-staged files

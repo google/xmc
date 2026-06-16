@@ -25,11 +25,11 @@ import {type WorkUnit} from 'xmanager_cloud/experiment_state_server/proto/work_u
 import {BehaviorSubject} from 'rxjs';
 import {filter, finalize, switchMap, tap} from 'rxjs/operators';
 
-import {ConfirmDialogService} from '../../common/components/confirmation_dialog/confirmation_dialog_service';
-import {PriorityChip} from '../../common/components/priority_chip/priority_chip';
-import {StatusChip, StatusOption} from '../../common/components/status_chip/status_chip';
-import {SnackbarService} from '../../service/snackbar_service';
-import {WorkUnitsService} from '../../service/work_units_service';
+import {ConfirmDialogService} from 'xmanager_cloud/ui/app/common/components/confirmation_dialog/confirmation_dialog_service';
+import {PriorityChip} from 'xmanager_cloud/ui/app/common/components/priority_chip/priority_chip';
+import {StatusChip, StatusOption} from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
+import {SnackbarService} from 'xmanager_cloud/ui/app/service/snackbar_service';
+import {WorkUnitsService} from 'xmanager_cloud/ui/app/service/work_units_service';
 import {WorkUnitPageStore} from '../work_unit_page_store';
 
 /**
