@@ -10,6 +10,14 @@ import subprocess
 import shutil
 import sys
 
+class GithubAuthError(Exception):
+    """Raised when GitHub authentication fails."""
+    pass
+
+class GithubAPIError(Exception):
+    """Raised when a GitHub API call fails."""
+    pass
+
 def parse_comment_url(url):
     # Regex for review comment: https://github.com/owner/repo/pull/num#discussion_r123456
     match_review = re.search(r'github\.com/([^/]+)/([^/]+)/pull/(\d+)#discussion_r(\d+)', url)
@@ -20,17 +28,6 @@ def parse_comment_url(url):
             "repo": match_review.group(2),
             "pull_number": match_review.group(3),
             "comment_id": int(match_review.group(4))
-        }
-    
-    # Regex for issue comment: https://github.com/owner/repo/pull/num#issuecomment-123456
-    match_issue = re.search(r'github\.com/([^/]+)/([^/]+)/pull/(\d+)#issuecomment-(\d+)', url)
-    if match_issue:
-        return {
-            "type": "issue_comment",
-            "owner": match_issue.group(1),
-            "repo": match_issue.group(2),
-            "pull_number": match_issue.group(3),
-            "comment_id": int(match_issue.group(4))
         }
     return None
 
@@ -84,8 +81,6 @@ def call_github_api(endpoint, method="GET", payload=None, user_agent="XMC-Github
             with urllib.request.urlopen(req) as response:
                 return json.loads(response.read().decode('utf-8'))
         except Exception as e:
-            sys.stderr.write(f"Error: Unauthenticated GitHub API call failed: {e}\n")
-            sys.exit(1)
+            raise GithubAPIError(f"Unauthenticated GitHub API call failed: {e}")
     else:
-        sys.stderr.write("Error: GitHub authentication failed. No credentials found (gh CLI or GITHUB_TOKEN).\n")
-        sys.exit(1)
+        raise GithubAuthError("GitHub authentication failed. No credentials found (gh CLI or GITHUB_TOKEN).")

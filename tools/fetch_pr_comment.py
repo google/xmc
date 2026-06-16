@@ -2,27 +2,24 @@
 # Copyright 2026 Google LLC
 # Helper script to retrieve comment details from GitHub API
 
-import sys
-import json
-from github_utils import parse_comment_url, call_github_api
+import argparse
+from tool_utils import run_tool, HandledError
+from github_utils import parse_comment_url, call_github_api, GithubAuthError, GithubAPIError
 
-
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: fetch_pr_comment.py <comment_url>")
-        sys.exit(1)
-        
-    comment_url = sys.argv[1]
+def fetch_comment(args):
+    comment_url = args.comment_url
     parsed = parse_comment_url(comment_url)
-    if not parsed:
-        sys.stderr.write("Could not parse comment URL. Ensure it matches Github comment anchor patterns.\n")
-        sys.exit(1)
+    if not parsed or parsed["type"] != "review_comment":
+        raise HandledError(
+            "Could not parse Pull Request review comment URL.",
+            "Ensure the URL matches Github PR review comment anchor patterns (e.g. 'https://github.com/owner/repo/pull/num#discussion_r123456')."
+        )
         
-    if parsed["type"] == "review_comment":
+    try:
         endpoint = f"/repos/{parsed['owner']}/{parsed['repo']}/pulls/comments/{parsed['comment_id']}"
         data = call_github_api(endpoint, user_agent="XMC-Comment-Fetcher-Agent")
         
-        result = {
+        return {
             "type": "review_comment",
             "comment_id": data.get("id"),
             "author": data.get("user", {}).get("login"),
@@ -32,21 +29,23 @@ def main():
             "diff_hunk": data.get("diff_hunk"),
             "commit_id": data.get("commit_id")
         }
-    else:
-        endpoint = f"/repos/{parsed['owner']}/{parsed['repo']}/issues/comments/{parsed['comment_id']}"
-        data = call_github_api(endpoint, user_agent="XMC-Comment-Fetcher-Agent")
-        result = {
-            "type": "issue_comment",
-            "comment_id": data.get("id"),
-            "author": data.get("user", {}).get("login"),
-            "body": data.get("body"),
-            "file_path": None,
-            "line": None,
-            "diff_hunk": None,
-            "commit_id": None
-        }
-        
-    print(json.dumps(result, indent=2))
+    except GithubAuthError as e:
+        raise HandledError(
+            str(e),
+            "Please authenticate using the 'gh' CLI (run 'gh auth login') or set the GITHUB_TOKEN environment variable."
+        )
+    except GithubAPIError as e:
+        raise HandledError(
+            str(e),
+            "Ensure the repository and comment ID exist, and that your credentials have appropriate permissions to access the comments."
+        )
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Retrieve comment details (author, body, file path, line, diff hunk, commit id) from a GitHub Pull Request review comment URL."
+    )
+    parser.add_argument("comment_url", help="The URL of the GitHub PR review comment.")
+    run_tool(parser, fetch_comment)
 
 if __name__ == '__main__':
     main()

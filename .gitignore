@@ -10,3 +10,5 @@ cmd/ui/node_modules/
 cmd/ui/.angular/
 cmd/ui/dist/
 cmd/ui/build_tmp/
+
+**__pycache__**

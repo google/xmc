@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
+import argparse
 import os
 import tarfile
 import hashlib
 import json
-import time
+from tool_utils import run_tool, HandledError
 
 def get_sha256(filepath):
     h = hashlib.sha256()
@@ -29,17 +29,18 @@ def get_sha256(filepath):
             h.update(chunk)
     return h.hexdigest()
 
-def main():
-    if len(sys.argv) < 5:
-        print("Usage: build_oci.py <binary_path> <binary_name> <image_tag> <output_tar>")
-        sys.exit(1)
+def build_oci(args):
+    binary_path = args.binary_path
+    binary_name = args.binary_name
+    image_tag = args.image_tag
+    output_tar = args.output_tar
 
-    binary_path = sys.argv[1]
-    binary_name = sys.argv[2]
-    image_tag = sys.argv[3]
-    output_tar = sys.argv[4]
+    if not os.path.exists(binary_path):
+        raise HandledError(
+            f"Binary path not found: {binary_path}",
+            "Ensure that the binary is built and exists at the specified path before running build_oci.py."
+        )
 
-    # 1. Create the layer tarball containing /app/<binary_name> and CA certs
     layer_tar_path = "layer.tar"
     real_binary_path = os.path.realpath(binary_path)
     
@@ -55,30 +56,36 @@ def main():
             host_ca_path = path
             break
 
-    with tarfile.open(layer_tar_path, "w") as tar:
-        # Create tar entry with specific permission and path
-        info = tar.gettarinfo(real_binary_path, arcname=f"app/{binary_name}")
-        info.uid = 0
-        info.gid = 0
-        info.uname = "root"
-        info.gname = "root"
-        info.mode = 0o755
-        with open(real_binary_path, "rb") as f:
-            tar.addfile(info, f)
-            
-        if host_ca_path:
-            info_ca = tar.gettarinfo(host_ca_path, arcname="etc/ssl/certs/ca-certificates.crt")
-            info_ca.uid = 0
-            info_ca.gid = 0
-            info_ca.uname = "root"
-            info_ca.gname = "root"
-            info_ca.mode = 0o644
-            with open(host_ca_path, "rb") as f:
-                tar.addfile(info_ca, f)
+    try:
+        with tarfile.open(layer_tar_path, "w") as tar:
+            info = tar.gettarinfo(real_binary_path, arcname=f"app/{binary_name}")
+            info.uid = 0
+            info.gid = 0
+            info.uname = "root"
+            info.gname = "root"
+            info.mode = 0o755
+            with open(real_binary_path, "rb") as f:
+                tar.addfile(info, f)
+                
+            if host_ca_path:
+                info_ca = tar.gettarinfo(host_ca_path, arcname="etc/ssl/certs/ca-certificates.crt")
+                info_ca.uid = 0
+                info_ca.gid = 0
+                info_ca.uname = "root"
+                info_ca.gname = "root"
+                info_ca.mode = 0o644
+                with open(host_ca_path, "rb") as f:
+                    tar.addfile(info_ca, f)
+    except Exception as e:
+        if os.path.exists(layer_tar_path):
+            os.remove(layer_tar_path)
+        raise HandledError(
+            f"Failed to create layer tarball: {e}",
+            "Check directory write permissions and ensure the binary path is a valid file."
+        )
 
     layer_sha = get_sha256(layer_tar_path)
 
-    # 2. Create the config JSON file
     config = {
         "config": {
             "Entrypoint": [f"/app/{binary_name}"],
@@ -94,14 +101,20 @@ def main():
     }
 
     config_json_path = "config.json"
-    with open(config_json_path, "w") as f:
-        json.dump(config, f)
+    try:
+        with open(config_json_path, "w") as f:
+            json.dump(config, f)
+    except Exception as e:
+        os.remove(layer_tar_path)
+        raise HandledError(
+            f"Failed to write config JSON: {e}",
+            "Check disk space and write permissions in the current working directory."
+        )
 
     config_sha = get_sha256(config_json_path)
     final_config_name = f"{config_sha}.json"
     os.rename(config_json_path, final_config_name)
 
-    # 3. Create the manifest JSON file
     manifest = [
         {
             "Config": final_config_name,
@@ -111,21 +124,51 @@ def main():
     ]
 
     manifest_json_path = "manifest.json"
-    with open(manifest_json_path, "w") as f:
-        json.dump(manifest, f)
+    try:
+        with open(manifest_json_path, "w") as f:
+            json.dump(manifest, f)
+    except Exception as e:
+        os.remove(layer_tar_path)
+        os.remove(final_config_name)
+        raise HandledError(
+            f"Failed to write manifest JSON: {e}",
+            "Check disk space and write permissions in the current working directory."
+        )
 
-    # 4. Pack everything into the final output loadable tarball!
-    with tarfile.open(output_tar, "w") as tar:
-        tar.add(layer_tar_path, arcname=layer_tar_path)
-        tar.add(final_config_name, arcname=final_config_name)
-        tar.add(manifest_json_path, arcname=manifest_json_path)
+    try:
+        with tarfile.open(output_tar, "w") as tar:
+            tar.add(layer_tar_path, arcname=layer_tar_path)
+            tar.add(final_config_name, arcname=final_config_name)
+            tar.add(manifest_json_path, arcname=manifest_json_path)
+    except Exception as e:
+        raise HandledError(
+            f"Failed to compile final OCI tarball: {e}",
+            "Check permissions and ensure the target directory for output_tar exists and is writeable."
+        )
+    finally:
+        if os.path.exists(layer_tar_path):
+            os.remove(layer_tar_path)
+        if os.path.exists(final_config_name):
+            os.remove(final_config_name)
+        if os.path.exists(manifest_json_path):
+            os.remove(manifest_json_path)
 
-    # Clean up intermediate files
-    os.remove(layer_tar_path)
-    os.remove(final_config_name)
-    os.remove(manifest_json_path)
+    return {
+        "output_tar": output_tar,
+        "image_tag": image_tag,
+        "layer_sha256": layer_sha,
+        "config_sha256": config_sha
+    }
 
-    print(f"Successfully built loadable OCI tarball: {output_tar}")
+def main():
+    parser = argparse.ArgumentParser(
+        description="Build a loadable OCI container image tarball containing a binary and optional host CA certificates."
+    )
+    parser.add_argument("binary_path", help="Path to the binary file to package.")
+    parser.add_argument("binary_name", help="Name of the binary inside the container (placed under /app/).")
+    parser.add_argument("image_tag", help="OCI image tag to apply (e.g. 'my-image:latest').")
+    parser.add_argument("output_tar", help="Path where the output OCI tarball should be saved.")
+    run_tool(parser, build_oci)
 
 if __name__ == "__main__":
     main()
