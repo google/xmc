@@ -11,12 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {ChangeDetectionStrategy, Component, input} from '@angular/core';
-import {MatButtonModule} from '@angular/material/button';
-import {MatCardModule} from '@angular/material/card';
-import {MatIconModule} from '@angular/material/icon';
-import {MatTooltipModule} from '@angular/material/tooltip';
-import {ProcessedUrl} from 'xmanager_cloud/ui/app/common/url/url_processor';
+import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatIconModule } from '@angular/material/icon';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { ProcessedUrl } from 'xmanager_cloud/ui/app/common/url/url_processor';
 
 /**
  * Component for displaying URLs.
@@ -26,12 +26,7 @@ import {ProcessedUrl} from 'xmanager_cloud/ui/app/common/url/url_processor';
   standalone: true,
   styleUrl: './urls_widget.scss',
   templateUrl: './urls_widget.ng.html',
-  imports: [
-    MatButtonModule,
-    MatCardModule,
-    MatIconModule,
-    MatTooltipModule,
-  ],
+  imports: [MatButtonModule, MatCardModule, MatIconModule, MatTooltipModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class UrlsWidget {

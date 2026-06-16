@@ -11,14 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {Artifact} from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
+import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 
 /** Represents a collapsible group of artifacts of the same type. */
 export interface ArtifactGroup {
   type: 'group';
   dataType: Artifact.DataType;
   artifacts: Artifact[];
-  groupId: string;  // e.g. 'INPUT-MODEL_SNAPSHOTS'
+  groupId: string; // e.g. 'INPUT-MODEL_SNAPSHOTS'
   icon: string;
 }
 
@@ -29,4 +29,4 @@ export interface ArtifactSingle {
 }
 
 /** Union type for items in the artifact list. */
-export type ArtifactListItem = ArtifactGroup|ArtifactSingle;
+export type ArtifactListItem = ArtifactGroup | ArtifactSingle;

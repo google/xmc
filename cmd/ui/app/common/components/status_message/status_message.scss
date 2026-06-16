@@ -14,7 +14,6 @@
 @use 'third_party/javascript/angular_components/material' as mat;
 @import 'third_party/xmanager_cloud/ui/consts';
 
-
 :host {
   @include mat.button-density(-3);
 }
@@ -112,7 +111,7 @@ xmc-urls-widget {
       (
         track-height: 8px,
         active-indicator-height: 8px,
-        track-shape: 4px
+        track-shape: 4px,
       )
     );
   }

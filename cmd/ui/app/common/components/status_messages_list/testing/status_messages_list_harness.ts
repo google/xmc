@@ -11,13 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {ComponentHarness} from '@angular/cdk/testing';
-import {StatusMessagesListFilterHarness} from 'xmanager_cloud/ui/app/common/components/status_messages_list/status_messages_list_filter/testing/status_messages_list_filter_harness';
+import { ComponentHarness } from '@angular/cdk/testing';
+import { StatusMessagesListFilterHarness } from 'xmanager_cloud/ui/app/common/components/status_messages_list/status_messages_list_filter/testing/status_messages_list_filter_harness';
 
 /** Harness for interacting with <xmc-status-messages-list> in tests. */
 export class StatusMessagesListHarness extends ComponentHarness {
   static hostSelector =
-      'xmc-status-messages-list, [data-component-selector="xmc-status-messages-list"]';
+    'xmc-status-messages-list, [data-component-selector="xmc-status-messages-list"]';
 
   private readonly messagesEls = this.locatorForAll('xmc-status-message');
   private readonly filterEl = this.locatorFor(StatusMessagesListFilterHarness);
@@ -26,8 +26,7 @@ export class StatusMessagesListHarness extends ComponentHarness {
     return this.filterEl();
   }
   private readonly errorEl = this.locatorForOptional('.error-state p');
-  private readonly loadMoreBtn =
-      this.locatorForOptional('.load-more-container button');
+  private readonly loadMoreBtn = this.locatorForOptional('.load-more-container button');
 
   async getMessagesCount(): Promise<number> {
     const els = await this.messagesEls();

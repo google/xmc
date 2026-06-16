@@ -27,6 +27,5 @@ limitations under the License.
   [class.grey]="status() === StatusOption.DESCHEDULING || status() === StatusOption.SCHEDULING"
   [class.black]="status() === StatusOption.STOPPING || status() === StatusOption.STOPPED"
 >
-  {{ replicas() }}
-  {{ status() }}
+  {{ replicas() }} {{ status() }}
 </mat-chip>
