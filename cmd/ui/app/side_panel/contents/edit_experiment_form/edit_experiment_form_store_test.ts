@@ -11,15 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { cleanState, setupModule, get, setupObservableMatchers } from '../../../testing/test';
+import { cleanState, setupModule, get, setupObservableMatchers } from 'xmanager_cloud/ui/app/testing/test';
 import 'jasmine';
 
 import {UpdateExperimentRequest} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import {NEVER, of, throwError} from 'rxjs';
 
-import {EXPERIMENT_1, EXPERIMENT_2} from '../../../common/mock_data';
-import {ExperimentService} from '../../../service/experiment_service';
-import {SnackbarService} from '../../../service/snackbar_service';
+import {EXPERIMENT_1, EXPERIMENT_2} from 'xmanager_cloud/ui/app/common/mock_data';
+import {ExperimentService} from 'xmanager_cloud/ui/app/service/experiment_service';
+import {SnackbarService} from 'xmanager_cloud/ui/app/service/snackbar_service';
 
 import {EditExperimentFormStore} from './edit_experiment_form_store';
 
