@@ -129,7 +129,6 @@ The **Log Monitor** subscribes to execution log entries on Pub/Sub and updates w
 ## Continuous Integration
 
 [![XMC Unit Tests](https://github.com/google/xmc/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/google/xmc/actions/workflows/unit-tests.yml)
-[![Lint Checks](https://github.com/google/xmc/actions/workflows/lint.yml/badge.svg)](https://github.com/google/xmc/actions/workflows/lint.yml)
 
 Automated unit test suites and code quality checks are executed on:
 * **Pull Requests** targeting any branch.
@@ -138,7 +137,7 @@ Automated unit test suites and code quality checks are executed on:
 
 ### Implemented Linting & Code Quality Rules
 
-To maintain pristine architecture, canonical styling, and avoid common defects across the monorepo, code quality rules are enforced automatically on all Pull Requests via GitHub Actions (`.github/workflows/lint.yml`) and locally via a pre-commit hook (`.githooks/pre-commit`).
+To maintain pristine architecture, canonical styling, and avoid common defects across the monorepo, code quality rules are enforced locally via a pre-commit hook (`.githooks/pre-commit`).
 
 The following specific linting rules and static analysis toolchains are implemented across our supported languages:
 
