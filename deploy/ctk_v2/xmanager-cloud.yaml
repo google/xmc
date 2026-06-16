@@ -1,0 +1,364 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+blueprint_name: xmanager-on-cloud-v2
+
+vars:
+  deployment_name: xmc-v2-test
+  project_id:
+
+  region:
+  domain_name:          # Base domain name (e.g. example.com)
+  iap_client_id: ""     # Client ID for internal app OAuth2 flow
+  iap_client_secret: "" # Client Secret for internal app OAuth2 flow
+  jwt_secret: ""        # Secret key used by backend to sign session tokens
+  allowed_emails: ""    # Comma-separated list of allowed user emails
+  authorized_iam_role:  # GCP IAM Role for cluster workloads access
+  certs_email:          # Email registered with cert-manager/GTS
+  gts_key_id:           # GTS External Account Binding key ID
+  gts_hmac_key:         # GTS External Account Binding HMAC secret
+
+  namespace: xmc
+  environment:
+  gcp_public_cidrs_access_enabled: false
+  authorized_cidr: 0.0.0.0/0
+  
+  # Image Settings
+  xid_image:          # Required. Container image for xid service
+  actuator_image:     # Required. Container image for actuator
+  ess_image:          # Required. Container image for experiment state server
+  ui_image:           # Required. Container image for UI
+  reconciler_image:   # Required. Container image for reconciler
+  log_monitor_image:  # Required. Container image for log monitor
+  
+  task_signature_ttl_seconds: 86400
+  use_redis_queue: true
+  deploy_redis: true
+  redis_region:
+
+deployment_groups:
+- group: apis
+  modules:
+  - id: cloud_api
+    source: community/modules/project/service-enablement
+    settings:
+      gcp_service_list:
+      - compute.googleapis.com
+      - container.googleapis.com
+      - spanner.googleapis.com
+      - redis.googleapis.com
+      - iam.googleapis.com
+      - cloudresourcemanager.googleapis.com
+      - servicenetworking.googleapis.com
+
+- group: primary
+  modules:
+  - id: network
+    source: modules/network/vpc
+    settings:
+      network_name: xmc-$(vars.deployment_name)-net
+      subnetworks:
+      - subnet_name: xmc-$(vars.deployment_name)-sub
+        subnet_region: $(vars.region)
+        subnet_ip: 10.0.0.0/16
+      secondary_ranges_list:
+      - subnetwork_name: xmc-$(vars.deployment_name)-sub
+        ranges:
+        - range_name: pods
+          ip_cidr_range: 10.4.0.0/14
+        - range_name: services
+          ip_cidr_range: 10.8.0.0/20
+
+  - id: xmc_gateway_ip
+    source: modules/network/global-static-ip
+    settings:
+      ip_names:
+      - xmc-gateway-static-ip-$(vars.environment)
+
+  - id: workload_service_account
+    source: modules/project/service-account
+    settings:
+      name: xmc-wl-sa
+      project_roles:
+      - logging.logWriter
+      - monitoring.metricWriter
+      - monitoring.viewer
+      - stackdriver.resourceMetadata.writer
+      - storage.objectAdmin
+      - artifactregistry.reader
+      - serviceusage.serviceUsageConsumer
+
+  - id: db_spanner
+    source: modules/database/spanner
+    settings:
+      instance_name: xmc-$(vars.environment)
+      edition: ENTERPRISE
+      databases:
+        ess:
+          name: experiment-db-$(vars.environment)
+          deletion_protection: false
+          iam_members:
+          - role: roles/spanner.databaseUser
+            member: "serviceAccount:$(workload_service_account.service_account_email)"
+        xid:
+          name: xids-db-$(vars.environment)
+          deletion_protection: false
+          iam_members:
+          - role: roles/spanner.databaseUser
+            member: "serviceAccount:$(workload_service_account.service_account_email)"
+
+  - id: apply_ess_schema
+    source: ./deploy/ctk_v2/modules/spanner-schema-applier
+    use: [db_spanner]
+    settings:
+      project_id: $(vars.project_id)
+      instance_name: $(db_spanner.instance_name)
+      database_name: $(db_spanner.database_ids.ess)
+      schema_file: $(ghpc_stage("../../internal/storage/spanner/schema/ess-schema.sql"))
+      db_type: ess
+
+  - id: apply_xid_schema
+    source: ./deploy/ctk_v2/modules/spanner-schema-applier
+    use: [db_spanner]
+    settings:
+      project_id: $(vars.project_id)
+      instance_name: $(db_spanner.instance_name)
+      database_name: $(db_spanner.database_ids.xid)
+      schema_file: $(ghpc_stage("../../internal/storage/spanner/schema/xid-schema.sql"))
+      db_type: xid
+
+  - id: private_service_access
+    source: modules/network/private-service-access
+    use: [network]
+    settings:
+      labels: {}
+
+  - id: redis
+    source: modules/database/redis
+    use: [private_service_access, network]
+    settings:
+      environment: $(vars.environment)
+      region: $(vars.redis_region)
+      deploy_redis: $(vars.deploy_redis)
+
+  - id: xmc_cert_manager
+    source: ./deploy/ctk_v2/modules/cert-manager
+    settings:
+      project_id: $(vars.project_id)
+      environment: $(vars.environment)
+      domain_name: $(vars.domain_name)
+      domains:
+      - "$(vars.environment).$(vars.domain_name)"
+      - "api.$(vars.environment).$(vars.domain_name)"
+      - "grpc.$(vars.environment).$(vars.domain_name)"
+
+- group: compute
+  modules:
+  - id: node_pool_service_account
+    source: modules/project/service-account
+    settings:
+      name: xmc-np-sa
+      project_roles:
+      - logging.logWriter
+      - monitoring.metricWriter
+      - monitoring.viewer
+      - stackdriver.resourceMetadata.writer
+      - storage.objectViewer
+      - artifactregistry.reader
+
+  - id: xmc_wi_binding_ess
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: experiment-server
+
+  - id: xmc_wi_binding_actuator
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: actuator-service-account
+
+  - id: xmc_wi_binding_reconciler
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: reconciler-service-account
+
+  - id: compute_cluster
+    source: modules/scheduler/gke-cluster
+    use: [network, workload_service_account]
+    settings:
+      deployment_name: xmc-$(vars.deployment_name)-$(vars.environment)
+      region: $(vars.region)
+      enable_persistent_disk_csi: true
+      enable_private_endpoint: false
+      gcp_public_cidrs_access_enabled: $(vars.gcp_public_cidrs_access_enabled)
+      configure_workload_identity_sa: true
+      enable_vertical_pod_autoscaling: true
+      master_authorized_networks:
+      - cidr_block: $(vars.authorized_cidr)
+        display_name: Authorized
+
+  - id: compute_pool
+    source: modules/compute/gke-node-pool
+    use: [compute_cluster, node_pool_service_account]
+    settings:
+      machine_type: n2-standard-4
+      static_node_count: 2
+
+- group: kubernetes_prereqs
+  modules:
+  - id: install_cert_manager
+    source: community/modules/management/direct-helm-install
+    use: [compute_cluster]
+    settings:
+      release_name: cert-manager
+      chart_name: oci://quay.io/jetstack/charts/cert-manager
+      chart_version: v1.19.2
+      namespace: cert-manager
+      create_namespace: true
+      set_values:
+      - name: crds.enabled
+        value: "true"
+        type: auto
+      - name: extraArgs[0]
+        value: "--enable-gateway-api"
+        type: string
+
+  - id: install_kueue
+    source: community/modules/management/direct-helm-install
+    use: [compute_cluster]
+    settings:
+      release_name: kueue
+      chart_name: oci://registry.k8s.io/kueue/charts/kueue
+      chart_version: 0.15.0
+      namespace: kueue-system
+      create_namespace: true
+      dependencies: [$(install_cert_manager.release_completion_id)]
+
+  - id: install_jobset
+    source: community/modules/management/direct-helm-install
+    use: [compute_cluster]
+    settings:
+      release_name: jobset
+      chart_name: oci://registry.k8s.io/jobset/charts/jobset
+      chart_version: 0.10.1
+      namespace: jobset-system
+      create_namespace: true
+      dependencies: [$(install_cert_manager.release_completion_id)]
+      set_values:
+      - name: certs.certManager.enabled
+        value: "true"
+
+- group: xmc_app
+  modules:
+
+  - id: xmc_iap_secret
+    source: modules/security/kubernetes-secret
+    use: [compute_cluster]
+    settings:
+      secret_name: iap-oauth-secret
+      data:
+        client_id: $(vars.iap_client_id)
+        client_secret: $(vars.iap_client_secret)
+
+
+  - id: xmc_app_helm
+    source: community/modules/management/direct-helm-install
+    use: [compute_cluster, redis]
+    settings:
+      release_name: xmc-$(vars.deployment_name)-$(vars.environment)
+      chart_name: $(ghpc_stage("../helm"))
+      values_yaml:
+      - $(ghpc_stage("../helm/values.yaml"))
+      create_namespace: false
+      wait: true
+      set_values:
+      - name: essDeployment.enabled
+        value: "true"
+        type: auto
+      - name: projectId
+        value: $(vars.project_id)
+      - name: environment
+        value: $(vars.environment)
+      - name: domainSuffix
+        value: $(vars.domain_name)
+      - name: xid_custom_image
+        value: $(vars.xid_image)
+      - name: actuator_custom_image
+        value: $(vars.actuator_image)
+      - name: ess_custom_image
+        value: $(vars.ess_image)
+      - name: reconciler_custom_image
+        value: $(vars.reconciler_image)
+      - name: log_monitor_custom_image
+        value: $(vars.log_monitor_image)
+      - name: ui.image
+        value: $(vars.ui_image)
+      - name: taskSignatureTtlSeconds
+        value: $(vars.task_signature_ttl_seconds)
+        type: auto
+      - name: redisAddr
+        value: "$(redis.redis_host):$(redis.redis_port)"
+      - name: redisPassword
+        value: $(redis.auth_string)
+      - name: certs.type
+        value: "gts"
+      - name: certs.email
+        value: $(vars.certs_email)
+      - name: certs.gts.keyId
+        value: $(vars.gts_key_id)
+      - name: certs.gts.hmacKey
+        value: $(vars.gts_hmac_key)
+      - name: gateway.staticIp
+        value: "xmc-gateway-static-ip-$(vars.environment)"
+      - name: xmcUrl
+        value: "$(vars.environment).$(vars.domain_name)"
+      - name: gateway.certMap
+        value: $(xmc_cert_manager.certificate_map_name)
+      - name: experimentStateServer.spannerDatabaseName
+        value: "projects/$(vars.project_id)/instances/xmc-$(vars.environment)/databases/$(db_spanner.database_ids.ess)"
+      - name: gcpServiceAccount
+        value: $(workload_service_account.service_account_email)
+      - name: secrets.development.jwtSecret
+        value: $(vars.jwt_secret)
+      - name: secrets.development.clientSecret
+        value: $(vars.iap_client_secret)
+      - name: experimentStateServer.iap.clientId
+        value: $(vars.iap_client_id)
+      - name: experimentStateServer.allowedEmails
+        value: $(vars.allowed_emails)
+        type: string
+      - name: experimentStateServer.authorizedIamRole
+        value: $(vars.authorized_iam_role)
+
+  - id: xmc_sa_annotations
+    source: modules/management/kubectl-apply
+    use: [compute_cluster, workload_service_account]
+    settings:
+      cluster_id: $(compute_cluster.cluster_id)
+      project_id: $(vars.project_id)
+      service_account_annotations:
+        actuator-service-account:
+          namespace: $(vars.namespace)
+          gcp_service_account_email: $(workload_service_account.service_account_email)
+          tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
+        experiment-server:
+          namespace: $(vars.namespace)
+          gcp_service_account_email: $(workload_service_account.service_account_email)
+          tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
+        reconciler-service-account:
+          namespace: $(vars.namespace)
+          gcp_service_account_email: $(workload_service_account.service_account_email)
+          tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
