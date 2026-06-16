@@ -4,10 +4,10 @@ kind: Gateway
 metadata:
   name: {{ .Values.gateway.name }}
   namespace: {{ .Release.Namespace }}
-  {{- if .Values.gateway.certMap }}
   annotations:
+    {{- if .Values.gateway.certMap }}
     networking.gke.io/certmap: {{ .Values.gateway.certMap | quote }}
-  {{- end }}
+    {{- end }}
 spec:
   gatewayClassName: {{ .Values.gateway.className | quote }}
   {{- if .Values.gateway.staticIp }}
@@ -28,8 +28,13 @@ spec:
       allowedRoutes:
         namespaces:
           from: Same
+      {{- if not .Values.gateway.certMap }}
       tls:
         mode: Terminate
         certificateRefs:
           - name: {{ .Values.gateway.sslCertificateName | default "xmc-grpc-tls" | quote }}
+            kind: Secret
+          - name: xmc-bootstrap-tls
+            kind: Secret
+      {{- end }}
 {{- end }}
