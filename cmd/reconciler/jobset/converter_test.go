@@ -499,29 +499,6 @@ func TestGenerateStructuredMessage(t *testing.T) {
 			},
 		},
 		{
-			name: "StartingStateStuckWithoutReadyPods",
-			jobSet: &v1alpha2.JobSet{
-				ObjectMeta: metav1.ObjectMeta{
-					CreationTimestamp: metav1.NewTime(time.Now().Add(-6 * time.Minute)),
-				},
-				Spec: v1alpha2.JobSetSpec{
-					ReplicatedJobs: []v1alpha2.ReplicatedJob{{Replicas: 1}},
-				},
-				Status: v1alpha2.JobSetStatus{
-					ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{{Active: 1, Ready: 0}},
-				},
-			},
-			state: spb.WorkUnitStatus_STARTING,
-			want: &spb.StructuredMessage{
-				UserFacingText: "Work unit has been starting for 6m0s and no pods are ready yet - it may be unschedulable. Check pod events for FailedScheduling or quota errors. 1/1 job(s) active, 0 ready.",
-				UserFacingUrl: &spb.Url{
-					Url: "",
-				},
-				Severity: spb.StructuredMessage_WARNING,
-				Source:   spb.StructuredMessage_KUBERNETES,
-			},
-		},
-		{
 			name: "PartiallyFailedState",
 			jobSet: &v1alpha2.JobSet{
 				ObjectMeta: metav1.ObjectMeta{Name: "partially-failed-jobset", Namespace: "default"},
@@ -696,7 +673,7 @@ func TestGenerateStructuredMessage(t *testing.T) {
 
 			time := time.Now()
 
-			got := generateStructuredMessage(t.Context(), tc.jobSet, tc.state, project, location, clusterName, tc.podErrorMsg)
+			got := generateStructuredMessage(t.Context(), tc.jobSet, tc.state, project, location, clusterName, tc.podErrorMsg, "")
 			if diff := cmp.Diff(tc.want, got, protocmp.Transform(), protocmp.IgnoreFields(&spb.StructuredMessage{}, "create_time")); diff != "" {
 				t.Errorf("generateStructuredStatusMessage() returned diff (-want +got):\n%s", diff)
 			}
@@ -907,7 +884,7 @@ func TestConvertJobSetToWorkUnitExecutionUpdate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			time := time.Now()
 
-			got, err := ConvertJobSetToWorkUnitExecutionUpdate(t.Context(), tc.jobSet, tc.wid, tc.eid, "test-project", "test-location", "test-cluster", tc.podErrorMsg)
+			got, err := ConvertJobSetToWorkUnitExecutionUpdate(t.Context(), tc.jobSet, tc.wid, tc.eid, "test-project", "test-location", "test-cluster", tc.podErrorMsg, "")
 			if (err != nil) != tc.wantErr {
 				t.Errorf("ConvertJobSetToWorkUnitExecutionUpdate() error = %v, wantErr %v", err, tc.wantErr)
 				return

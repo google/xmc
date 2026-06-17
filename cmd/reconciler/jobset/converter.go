@@ -48,11 +48,7 @@ func calculateJobTotals(jobSet *v1alpha2.JobSet) (totalSucceeded, totalFailed, t
 	return
 }
 
-// stuckStartingThreshold is how long a JobSet may stay in STARTING with zero
-// ready pods before the status message warns about likely scheduling problems.
-const stuckStartingThreshold = 5 * time.Minute
-
-func generateStructuredMessage(ctx context.Context, jobSet *v1alpha2.JobSet, state spb.WorkUnitStatus_WorkUnitState, project, location, clusterName, podErrorMsg string) *spb.StructuredMessage {
+func generateStructuredMessage(ctx context.Context, jobSet *v1alpha2.JobSet, state spb.WorkUnitStatus_WorkUnitState, project, location, clusterName, podErrorMsg, startupWarningMsg string) *spb.StructuredMessage {
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, jobSet.Labels)
 
 	totalSucceeded, totalFailed, totalActive, totalReady, totalReplicas := calculateJobTotals(jobSet)
@@ -83,14 +79,12 @@ func generateStructuredMessage(ctx context.Context, jobSet *v1alpha2.JobSet, sta
 		// In the STARTING state, totalActive > totalReady, meaning some jobs are active but not yet ready.
 		// We show the number of active jobs out of total replicas, and separately, how many are ready.
 		msg = fmt.Sprintf("Work unit is starting. %d/%d job(s) active, %d ready.", totalActive, totalReplicas, totalReady)
-		// If nothing has become ready for a prolonged time, the work unit is most
-		// likely unschedulable (quota exhausted, no nodes matching selectors).
-		// Surface that instead of reporting indefinite startup progress.
-		if age := time.Since(jobSet.CreationTimestamp.Time); totalReady == 0 && !jobSet.CreationTimestamp.IsZero() && age > stuckStartingThreshold {
-			msg = fmt.Sprintf(
-				"Work unit has been starting for %s and no pods are ready yet - it may be unschedulable. "+
-					"Check pod events for FailedScheduling or quota errors. %d/%d job(s) active, %d ready.",
-				age.Round(time.Minute), totalActive, totalReplicas, totalReady)
+		// If the scheduler has reported the pods as unschedulable past the startup-check
+		// window, surface that as a warning instead of reporting indefinite startup
+		// progress. The work unit stays in STARTING (not FAILED), so a delayed-but-successful
+		// start - e.g. a node still being provisioned - recovers without being flagged as failed.
+		if startupWarningMsg != "" {
+			msg = startupWarningMsg
 			msgSeverity = spb.StructuredMessage_WARNING
 		}
 	case spb.WorkUnitStatus_PARTIALLY_FAILED:
@@ -199,7 +193,7 @@ func ToWorkUnitState(jobSet *v1alpha2.JobSet) spb.WorkUnitStatus_WorkUnitState {
 }
 
 // ConvertJobSetToWorkUnitExecutionUpdate converts a JobSet to a WorkUnitExecutionUpdate.
-func ConvertJobSetToWorkUnitExecutionUpdate(ctx context.Context, jobSet *v1alpha2.JobSet, wid int64, eid int64, project, location, clusterName, podErrorMsg string) (*storagepkg.WorkUnitExecutionUpdate, error) {
+func ConvertJobSetToWorkUnitExecutionUpdate(ctx context.Context, jobSet *v1alpha2.JobSet, wid int64, eid int64, project, location, clusterName, podErrorMsg, startupWarningMsg string) (*storagepkg.WorkUnitExecutionUpdate, error) {
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, jobSet.Labels)
 
 	var state spb.WorkUnitStatus_WorkUnitState
@@ -224,7 +218,7 @@ func ConvertJobSetToWorkUnitExecutionUpdate(ctx context.Context, jobSet *v1alpha
 		ServiceAccount: getServiceAccountName(jobSet),
 	}
 
-	statusMessage := generateStructuredMessage(ctx, jobSet, state, project, location, clusterName, podErrorMsg)
+	statusMessage := generateStructuredMessage(ctx, jobSet, state, project, location, clusterName, podErrorMsg, startupWarningMsg)
 
 	// If we are about to propagate an error+ message, defer to any existing message. This will
 	// prevent us from continually clobbering log monitor error messages with job state messages.

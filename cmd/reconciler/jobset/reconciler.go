@@ -285,14 +285,14 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	}
 
 	var result ctrl.Result
-	var podErrorMsg string
+	var podErrorMsg, startupWarningMsg string
 	state := ToWorkUnitState(jobSet)
 
 	if state == spb.WorkUnitStatus_STARTING && r.StartupPodErrorCheckEnabled {
-		result, podErrorMsg = r.handleStartupPodChecks(ctx, jobSet)
+		result, podErrorMsg, startupWarningMsg = r.handleStartupPodChecks(ctx, jobSet)
 	}
 
-	update, err := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg)
+	update, err := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg, startupWarningMsg)
 	if err != nil {
 		logging.Error(ctx, "Failed to convert JobSet to WorkUnitExecutionUpdate", "namespace", jobSet.Namespace, "error", err)
 		// we do not want to requeue as fields used in the update are monitored by predicate
@@ -308,19 +308,67 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	return result, nil
 }
 
-func (r *Reconciler) handleStartupPodChecks(ctx context.Context, jobSet *v1alpha2.JobSet) (ctrl.Result, string) {
+func (r *Reconciler) handleStartupPodChecks(ctx context.Context, jobSet *v1alpha2.JobSet) (ctrl.Result, string, string) {
 	age := calculateJobsetStartAge(jobSet)
 	if age < r.StartupPodErrorCheckTime {
 		logging.Debug(ctx, "Skipping startup pod error check for JobSet, age is less than StartupPodErrorCheckTime", "age", age)
-		return ctrl.Result{RequeueAfter: r.StartupPodErrorCheckTime - age}, ""
+		return ctrl.Result{RequeueAfter: r.StartupPodErrorCheckTime - age}, "", ""
 	}
 
 	podErrorMsg, err := r.checkPodsForStartupErrors(ctx, jobSet)
 	if err != nil {
 		logging.Error(ctx, "Failed to check for stuck starting job", "namespace", jobSet.Namespace, "error", err)
-		return ctrl.Result{}, ""
+		return ctrl.Result{}, "", ""
 	}
-	return ctrl.Result{}, podErrorMsg
+	// A hard error (e.g. ImagePullBackOff) fails the work unit immediately.
+	if podErrorMsg != "" {
+		return ctrl.Result{}, podErrorMsg, ""
+	}
+
+	// No hard error: the pods may simply be unschedulable (exhausted quota, no
+	// matching nodes). Surface the scheduler's verdict as a warning while keeping
+	// the work unit in STARTING, and keep re-checking so the message clears if the
+	// pods eventually schedule.
+	warningMsg, err := r.checkPodsForUnschedulable(ctx, jobSet)
+	if err != nil {
+		logging.Error(ctx, "Failed to check for unschedulable pods", "namespace", jobSet.Namespace, "error", err)
+		return ctrl.Result{}, "", ""
+	}
+	if warningMsg != "" {
+		return ctrl.Result{RequeueAfter: r.StartupPodErrorCheckTime}, "", warningMsg
+	}
+	return ctrl.Result{}, "", ""
+}
+
+// checkPodsForUnschedulable returns a human-readable warning if any pod of the
+// JobSet is Pending with a scheduler verdict of Unschedulable (PodScheduled=False).
+// It reads the scheduler's actual condition rather than guessing from elapsed
+// time, so a pod that is merely waiting for a node to be provisioned is not
+// misreported once it schedules.
+func (r *Reconciler) checkPodsForUnschedulable(ctx context.Context, jobSet *v1alpha2.JobSet) (string, error) {
+	logging.Debug(ctx, "Checking pods for unschedulable condition", "namespace", jobSet.Namespace, "jobSet", jobSet.Name)
+	matchFields := client.MatchingFields{
+		v1alpha2.JobSetNameKey: jobSet.Name,
+	}
+	var podList corev1.PodList
+	if err := r.List(logging.Strip(ctx), &podList, client.InNamespace(jobSet.Namespace), matchFields); err != nil {
+		return "", fmt.Errorf("failed to list pods: %w", err)
+	}
+
+	for _, pod := range podList.Items {
+		if pod.Status.Phase != corev1.PodPending {
+			continue
+		}
+		for _, cond := range pod.Status.Conditions {
+			if cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse && cond.Reason == corev1.PodReasonUnschedulable {
+				return fmt.Sprintf(
+					"Work unit may be unschedulable: %s. Check cluster quota and node availability (e.g. kubectl describe pod / clusterqueue).",
+					cond.Message), nil
+			}
+		}
+	}
+	logging.Debug(ctx, "No unschedulable pods found")
+	return "", nil
 }
 
 func (r *Reconciler) checkPodsForStartupErrors(ctx context.Context, jobSet *v1alpha2.JobSet) (string, error) {

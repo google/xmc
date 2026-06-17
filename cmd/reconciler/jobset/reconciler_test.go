@@ -990,6 +990,36 @@ func TestReconcileImagePullBackOff(t *testing.T) {
 			wantState:   spb.WorkUnitStatus_STARTING,
 		},
 		{
+			name:      "Starting more than 120s with Unschedulable pod - STARTING + warning + requeue",
+			jobSetAge: 130 * time.Second,
+			pods: []runtime.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod-unsched",
+						Namespace: "default",
+						Labels: map[string]string{
+							"jobset.sigs.k8s.io/jobset-name": "test-jobset",
+						},
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodPending,
+						Conditions: []corev1.PodCondition{
+							{
+								Type:    corev1.PodScheduled,
+								Status:  corev1.ConditionFalse,
+								Reason:  corev1.PodReasonUnschedulable,
+								Message: "0/3 nodes are available: 3 Insufficient nvidia.com/gpu.",
+							},
+						},
+					},
+				},
+			},
+			// Unschedulable is non-terminal: stay STARTING, warn, and requeue to keep checking.
+			wantRequeue:      true,
+			wantState:        spb.WorkUnitStatus_STARTING,
+			wantErrorMsgPart: "Work unit may be unschedulable",
+		},
+		{
 			name:        "Running state - No Requeue",
 			jobSetAge:   30 * time.Second,
 			wantRequeue: false,
