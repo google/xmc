@@ -74,6 +74,7 @@ if [ -n "$ADDLICENSE_BIN" ] && [ -n "$STAGED_FILES" ]; then
       -ignore "third_party/**" \
       -ignore "**/third_party/**" \
       $STAGED_FILES
+fi
 
 # Check if the linters modified any un-staged files
 if ! git diff --quiet; then
