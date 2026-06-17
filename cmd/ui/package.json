@@ -46,5 +46,8 @@
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "prettier": "^3.8.0",
     "eslint-config-prettier": "^9.1.0"
+  },
+  "overrides": {
+    "esbuild": "0.28.1"
   }
 }
