@@ -20,7 +20,7 @@ compat_go_library(
     importpath = "xmanager_cloud/cmd/reconciler/clusterqueue",
     visibility = ["//visibility:public"],
     deps = [
-        "//internal/kubernetes/api/v1beta1",
+        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
         "//internal/logging",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/runtime",
@@ -39,7 +39,7 @@ compat_go_test(
     embed = [":clusterqueue"],
     deps = [
         "//internal/compat/cmp",
-        "//internal/kubernetes/api/v1beta1",
+        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/types",

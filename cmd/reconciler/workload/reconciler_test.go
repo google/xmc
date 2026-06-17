@@ -32,7 +32,7 @@ import (
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/fake/fake"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/event/event"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/kubernetes/api/v1beta1/v1beta1"
+	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 	storagepkg "xmanager_cloud/storage/storage"
