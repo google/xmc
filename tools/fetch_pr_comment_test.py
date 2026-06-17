@@ -46,7 +46,7 @@ class TestFetchPRComment(unittest.TestCase):
         
         mock_call.return_value = {
             "id": 1234,
-            "user": {"login": "janzak-dev"},
+            "user": {"login": "chad-dev"},
             "body": "Fix this please",
             "path": "tools/build_oci.py",
             "line": 76,
@@ -59,7 +59,7 @@ class TestFetchPRComment(unittest.TestCase):
 
         res = fetch_comment(args)
         self.assertEqual(res["comment_id"], 1234)
-        self.assertEqual(res["author"], "janzak-dev")
+        self.assertEqual(res["author"], "chad-dev")
         self.assertEqual(res["body"], "Fix this please")
         self.assertEqual(res["file_path"], "tools/build_oci.py")
         self.assertEqual(res["line"], 76)
