@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { DOCUMENT } from '@angular/common';
+import { provideHttpClient } from '@angular/common/http';
 import {
   APP_INITIALIZER,
   ApplicationConfig,
@@ -19,13 +20,12 @@ import {
   provideZoneChangeDetection,
   RendererFactory2,
 } from '@angular/core';
-import { provideRouter } from '@angular/router';
-import { provideHttpClient } from '@angular/common/http';
 import { provideAnimations } from '@angular/platform-browser/animations';
-import { HtmlSanitizerBuilder, setElementInnerHtml } from './safevalues_helper';
+import { provideRouter } from '@angular/router';
 
 import { routes } from './app_routes';
 import { AUTH_ERROR_STYLES } from './auth-error.styles';
+import { HtmlSanitizerBuilder, setElementInnerHtml } from './safevalues_helper';
 import { AUTO_REFRESH_INTERVAL_MS, DEFAULT_REFRESH_INTERVAL_MS } from './service/constants';
 
 declare global {

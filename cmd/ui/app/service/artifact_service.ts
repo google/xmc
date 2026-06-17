@@ -13,12 +13,13 @@
 // limitations under the License.
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
+import { Observable, of } from 'rxjs';
+
 import {
   ListArtifactsRequest,
   ListArtifactsResponse,
 } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { ARTIFACT_LIST, WORK_UNIT_1_ARTIFACT_LIST } from 'xmanager_cloud/ui/app/common/mock_data';
-import { Observable, of } from 'rxjs';
 
 import { EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA } from './constants';
 

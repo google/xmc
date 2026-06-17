@@ -13,20 +13,20 @@
 // limitations under the License.
 import { inject, Injectable, Signal } from '@angular/core';
 import { ComponentStore } from '@ngrx/component-store';
+import { switchMap, tap } from 'rxjs/operators';
+
 import {
   ListWorkUnitsRequest,
   ListWorkUnitsResponse,
 } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
-import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
-import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
-import { switchMap, tap } from 'rxjs/operators';
-
 import {
   getInitialPaginationState,
   PaginationState,
   setPageSize,
 } from 'xmanager_cloud/ui/app/common/pagination/pagination';
+import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
+import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
 
 /** Interface for the state of the WorkUnitsTable. */
 interface WorkUnitsTableState {

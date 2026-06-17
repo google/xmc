@@ -11,12 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { setupModule, getDebugEl, bootstrapTemplate } from 'xmanager_cloud/ui/app/testing/test';
 import 'jasmine';
 
 import { getHarness } from '@angular/cdk/testing/catalyst/async';
 import { MatSelectHarness } from '@angular/material/select/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+
+import { bootstrapTemplate, getDebugEl, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
 import { PageSizeSelector } from './page_size_selector';
 

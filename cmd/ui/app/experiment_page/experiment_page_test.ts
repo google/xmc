@@ -11,13 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { cleanState, setupModule, bootstrap } from '../testing/test';
 import 'jasmine';
 
 import { getHarness } from '@angular/cdk/testing/catalyst/async';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, ParamMap, provideRouter } from '@angular/router';
+import { BehaviorSubject, NEVER, of } from 'rxjs';
+
 import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
+import { AutoReloadService } from 'xmanager_cloud/ui/app/common/components/autoreloader/autoreloader_service';
 import { ConfirmDialogService } from 'xmanager_cloud/ui/app/common/components/confirmation_dialog/confirmation_dialog_service';
 import { ArtifactService } from 'xmanager_cloud/ui/app/service/artifact_service';
 import {
@@ -29,10 +31,9 @@ import { FeatureFlagService } from 'xmanager_cloud/ui/app/service/feature_flag_s
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 import { StatusMessageService } from 'xmanager_cloud/ui/app/service/status_message_service';
 import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
-import { AutoReloadService } from 'xmanager_cloud/ui/app/common/components/autoreloader/autoreloader_service';
 import { SidePanelService } from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
-import { BehaviorSubject, NEVER, of } from 'rxjs';
 
+import { bootstrap, cleanState, setupModule } from '../testing/test';
 import { ExperimentPage } from './experiment_page';
 import { ExperimentPageHarness } from './testing/experiment_page_harness';
 

@@ -13,9 +13,10 @@
 // limitations under the License.
 import { DOCUMENT } from '@angular/common';
 import { inject, Injectable, InjectionToken } from '@angular/core';
-import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
 import { BehaviorSubject, combineLatest, EMPTY, Observable, timer } from 'rxjs';
 import { distinctUntilChanged, map, mapTo, pairwise, startWith, switchMap } from 'rxjs/operators';
+
+import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
 
 /** Injection token for the window object. */
 export const WINDOW = new InjectionToken<Window>('WindowToken', {

@@ -13,9 +13,10 @@
 // limitations under the License.
 import { inject, Injectable, Signal } from '@angular/core';
 import { ComponentStore } from '@ngrx/component-store';
-import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { EMPTY } from 'rxjs';
 import { catchError, switchMap, tap } from 'rxjs/operators';
+
+import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
 import {
   getInitialPaginationState,

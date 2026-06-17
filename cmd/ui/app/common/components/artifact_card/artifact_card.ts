@@ -19,14 +19,15 @@ import { MatDivider } from '@angular/material/divider';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
-import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
-import { trySanitizeUrl, windowOpen } from 'xmanager_cloud/ui/app/safevalues_helper';
 
+import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 import {
   formatArtifactDataType,
   getArtifactIcon,
 } from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
 import { parseWorkUnitName } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
+import { trySanitizeUrl, windowOpen } from 'xmanager_cloud/ui/app/safevalues_helper';
+
 import { Tag } from '../tag/tag';
 
 const SHORT_NOTE_MAX_LENGTH = 40;
