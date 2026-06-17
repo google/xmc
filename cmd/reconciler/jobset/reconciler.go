@@ -37,7 +37,7 @@ import (
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/source/source"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/kubernetes/api/v1alpha2/v1alpha2"
+	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/common/labels"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"

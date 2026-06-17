@@ -18,7 +18,7 @@ import (
 
 	"golang/cmp/cmp"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"xmanager_cloud/kubernetes/api/v1alpha2/v1alpha2"
+	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 )
 
 func TestHasCondition(t *testing.T) {
