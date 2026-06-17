@@ -20,7 +20,7 @@ import (
 
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
-	"xmanager_cloud/kubernetes/api/v1beta1/v1beta1"
+	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/logging/logging"
 
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
