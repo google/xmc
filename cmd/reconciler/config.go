@@ -67,7 +67,7 @@ func init() {
 	flag.DurationVar(&kueueSyncTickDuration, "kueue_sync_tick_duration", 60*time.Second, "The tick duration for kueue sync.")
 	flag.IntVar(&maxConcurrentKueueSyncReconciles, "max_concurrent_kueue_sync_reconciles", 1000, "The maximum number of concurrent work unit updates in kueue sync.")
 	flag.DurationVar(&startupPodErrorCheckTime, "startup_pod_error_check_time", 2*time.Minute, "The time to wait before checking for pod errors during startup.")
-	flag.BoolVar(&startupPodErrorCheckEnabled, "startup_pod_error_check_enabled", false, "Whether to enable checking for pod errors during startup.")
+	flag.BoolVar(&startupPodErrorCheckEnabled, "startup_pod_error_check_enabled", true, "Whether to enable checking for pod errors during startup.")
 	flag.Float64Var(&kubeAPIQPS, "kube_api_qps", 100, "Maximum QPS to the API server.")
 	flag.IntVar(&kubeAPIBurst, "kube_api_burst", 200, "Maximum burst for throttle.")
 	flag.BoolVar(&statusMessageHistoryEnabled, "status_message_history_enabled", false, "Whether to enable status message history.")
