@@ -44,3 +44,73 @@ py_test(
     ],
 )
 
+py_test(
+    name = "tool_utils_test",
+    srcs = ["tool_utils_test.py"],
+    imports = ["."],
+    deps = [
+        ":tool_utils",
+    ],
+)
+
+py_library(
+    name = "github_utils_lib",
+    srcs = ["github_utils.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "github_utils_test",
+    srcs = ["github_utils_test.py"],
+    imports = ["."],
+    deps = [
+        ":github_utils_lib",
+    ],
+)
+
+py_library(
+    name = "fetch_pr_comment_lib",
+    srcs = ["fetch_pr_comment.py"],
+    imports = ["."],
+    deps = [
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "fetch_pr_comment_test",
+    srcs = ["fetch_pr_comment_test.py"],
+    imports = ["."],
+    deps = [
+        ":fetch_pr_comment_lib",
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+)
+
+py_library(
+    name = "reply_pr_comment_lib",
+    srcs = ["reply_pr_comment.py"],
+    imports = ["."],
+    deps = [
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "reply_pr_comment_test",
+    srcs = ["reply_pr_comment_test.py"],
+    imports = ["."],
+    deps = [
+        ":reply_pr_comment_lib",
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+)
+
+
