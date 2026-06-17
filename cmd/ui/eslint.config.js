@@ -43,7 +43,8 @@ export default tseslint.config(
         },
       ],
       'max-lines-per-function': ['warn', { max: 35, skipComments: true }],
-      'complexity': ['warn', { max: 5, variant: 'modified' }],
+      'complexity': ['warn', { max: 10, variant: 'modified' }],
+      'max-depth': ['error', 3],
     },
   },
   {
