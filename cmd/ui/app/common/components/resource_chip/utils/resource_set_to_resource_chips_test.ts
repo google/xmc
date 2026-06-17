@@ -16,7 +16,6 @@ import 'jasmine';
 import { ResourceSet } from 'xmanager_cloud/experiment_state_server/proto/resources.jsonpb_decls';
 
 import { ResourceType } from '../resource_chip';
-
 import {
   ResourceChipData,
   resourceSetsToResourceChipsData,

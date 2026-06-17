@@ -13,6 +13,7 @@
 // limitations under the License.
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { MatChipsModule } from '@angular/material/chips';
+
 import { Priority } from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
 
 /**

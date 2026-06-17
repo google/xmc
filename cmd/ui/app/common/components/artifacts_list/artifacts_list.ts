@@ -16,15 +16,15 @@ import { ChangeDetectionStrategy, Component, inject, input, OnInit } from '@angu
 import { FormsModule } from '@angular/forms';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatIconModule } from '@angular/material/icon';
-import { ListArtifactsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 import { BehaviorSubject, combineLatest, Observable } from 'rxjs';
 import { map, shareReplay } from 'rxjs/operators';
 
-import { ArtifactService } from 'xmanager_cloud/ui/app/service/artifact_service';
+import { ListArtifactsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 import { groupAndSortArtifacts } from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
 import { ArtifactListItem } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
 import { parseWorkUnitName } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
+import { ArtifactService } from 'xmanager_cloud/ui/app/service/artifact_service';
 
 import { ArtifactsColumn } from './artifacts_column/artifacts_column';
 

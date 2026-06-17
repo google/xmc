@@ -24,6 +24,17 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { combineLatest, EMPTY, Observable, Subject } from 'rxjs';
+import {
+  catchError,
+  exhaustMap,
+  filter,
+  finalize,
+  startWith,
+  switchMap,
+  tap,
+} from 'rxjs/operators';
+
 import { ListStatusMessagesResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
 import { LoadingBar } from 'xmanager_cloud/ui/app/common/components/loading_bar/loading_bar';
@@ -38,16 +49,6 @@ import {
   ALL_SOURCES,
 } from 'xmanager_cloud/ui/app/service/status_message_filter_service';
 import { StatusMessageService } from 'xmanager_cloud/ui/app/service/status_message_service';
-import { combineLatest, EMPTY, Observable, Subject } from 'rxjs';
-import {
-  catchError,
-  exhaustMap,
-  filter,
-  finalize,
-  startWith,
-  switchMap,
-  tap,
-} from 'rxjs/operators';
 
 const DEFAULT_PAGE_SIZE = 25;
 

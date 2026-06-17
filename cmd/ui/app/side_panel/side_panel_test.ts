@@ -11,16 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {
-  cleanState,
-  setupModule,
-  bootstrap,
-  get,
-  getDebugEl,
-  hasEl,
-  flush,
-  setupObservableMatchers,
-} from '../testing/test';
 import 'jasmine';
 
 import { getHarness } from '@angular/cdk/testing/catalyst/async';
@@ -30,7 +20,16 @@ import { of } from 'rxjs';
 
 import { EXPERIMENT_1 } from '../common/mock_data';
 import { ExperimentService } from '../service/experiment_service';
-
+import {
+  bootstrap,
+  cleanState,
+  flush,
+  get,
+  getDebugEl,
+  hasEl,
+  setupModule,
+  setupObservableMatchers,
+} from '../testing/test';
 import { EditExperimentFormData } from './contents/edit_experiment_form/edit_experiment_form';
 import { SidePanel } from './side_panel';
 import { SidePanelService } from './side_panel_service';

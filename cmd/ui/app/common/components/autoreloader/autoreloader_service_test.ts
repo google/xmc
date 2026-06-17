@@ -11,18 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {
-  cleanState,
-  setupModule,
-  get,
-  setupObservableMatchers,
-  useAutoTick,
-} from 'xmanager_cloud/ui/app/testing/test';
 import 'jasmine';
 
 import { DOCUMENT } from '@angular/common';
-import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
 import { ReplaySubject } from 'rxjs';
+
+import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
+import {
+  cleanState,
+  get,
+  setupModule,
+  setupObservableMatchers,
+  useAutoTick,
+} from 'xmanager_cloud/ui/app/testing/test';
 
 import { AutoReloadService } from './autoreloader_service';
 

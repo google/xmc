@@ -11,10 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { Component, ChangeDetectionStrategy, inject, computed } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
-import { windowOpen } from '../safevalues_helper';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute } from '@angular/router';
+
+import { windowOpen } from '../safevalues_helper';
 
 /**
  * Home page for the XMC UI.
