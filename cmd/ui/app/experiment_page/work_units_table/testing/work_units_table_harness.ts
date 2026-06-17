@@ -17,6 +17,7 @@ import {
   MatTableHarness,
   TableHarnessFilters,
 } from '@angular/material/table/testing';
+
 import { LoadingBarHarness } from 'xmanager_cloud/ui/app/common/components/loading_bar/testing/loading_bar_harness';
 
 /** Harness for interacting with <xmc-work-units-table> in tests. */

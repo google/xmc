@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { cleanState, setupModule, get, flush } from '../testing/test';
 import 'jasmine';
 
-import { TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
+import { TestBed } from '@angular/core/testing';
+
+import { cleanState, flush, get, setupModule } from '../testing/test';
 import { AuthService, UserResponse } from './auth.service';
 
 function setup() {

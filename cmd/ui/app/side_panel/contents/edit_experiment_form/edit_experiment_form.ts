@@ -40,9 +40,9 @@ import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinner } from '@angular/material/progress-spinner';
 import { MatRadioModule } from '@angular/material/radio';
 import { MatSelectModule } from '@angular/material/select';
-import { Priority } from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
 import { Subscription } from 'rxjs';
 
+import { Priority } from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
 import { XidBadge } from 'xmanager_cloud/ui/app/common/components/xid_badge/xid_badge';
 import {
   BaseSidePanelContent,

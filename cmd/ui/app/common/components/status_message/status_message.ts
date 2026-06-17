@@ -18,19 +18,19 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { Router, RouterLink } from '@angular/router';
-import {
-  QueueInfo,
-  StructuredMessage,
-} from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
 import { combineLatest } from 'rxjs';
 import { map } from 'rxjs/operators';
 
 import {
+  QueueInfo,
+  StructuredMessage,
+} from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
+import { parseWorkUnitName } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
+import { ProcessedUrl } from 'xmanager_cloud/ui/app/common/url/url_processor';
+import {
   formatSource,
   StatusMessageFilterService,
 } from 'xmanager_cloud/ui/app/service/status_message_filter_service';
-import { parseWorkUnitName } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
-import { ProcessedUrl } from 'xmanager_cloud/ui/app/common/url/url_processor';
 
 const STACK_TRACE_PREVIEW_LINES = 5;
 

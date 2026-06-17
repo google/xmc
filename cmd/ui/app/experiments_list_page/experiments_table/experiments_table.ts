@@ -32,14 +32,14 @@ import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
+import { combineLatest, Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
+
 import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
 import { Priority } from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
 import { ExperimentStatus } from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
 import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
-import { combineLatest, Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
-
 import { LoadingBar } from 'xmanager_cloud/ui/app/common/components/loading_bar/loading_bar';
 import { PriorityChip } from 'xmanager_cloud/ui/app/common/components/priority_chip/priority_chip';
 import { ResourceChip } from 'xmanager_cloud/ui/app/common/components/resource_chip/resource_chip';

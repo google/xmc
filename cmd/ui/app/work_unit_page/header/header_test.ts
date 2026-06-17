@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { setupModule, bootstrap } from 'xmanager_cloud/ui/app/testing/test';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { RouterModule } from '@angular/router';
-import { EXPERIMENT_1, WORK_UNIT_1 } from 'xmanager_cloud/ui/app/common/mock_data';
 import { of } from 'rxjs';
 
 import { ConfirmDialogService } from 'xmanager_cloud/ui/app/common/components/confirmation_dialog/confirmation_dialog_service';
+import { EXPERIMENT_1, WORK_UNIT_1 } from 'xmanager_cloud/ui/app/common/mock_data';
 import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
-import { WorkUnitPageStore } from '../work_unit_page_store';
+import { bootstrap, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
+import { WorkUnitPageStore } from '../work_unit_page_store';
 import { Header } from './header';
 
 describe('WorkUnitHeader Component', () => {
