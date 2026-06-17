@@ -12,4 +12,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+
 exports_files(["build_oci.py"])
+
+py_library(
+    name = "tool_utils",
+    srcs = ["tool_utils.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "build_oci_lib",
+    srcs = ["build_oci.py"],
+    deps = [
+        ":tool_utils",
+    ],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "build_oci_test",
+    srcs = ["build_oci_test.py"],
+    imports = ["."],
+    deps = [
+        ":build_oci_lib",
+        ":tool_utils",
+    ],
+)
+
