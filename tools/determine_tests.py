@@ -50,7 +50,11 @@ def get_tracked_sources():
         if line.startswith("//"):
             # Convert //path/to:file -> path/to/file or //:file -> file
             pkg_file = line[2:]
-            path = pkg_file.replace(":", "/")
+            if ":" in pkg_file:
+                pkg, file = pkg_file.split(":", 1)
+                path = f"{pkg}/{file}" if pkg else file
+            else:
+                path = pkg_file
             sources.add(path)
     return sources
 
