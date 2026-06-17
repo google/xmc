@@ -18,7 +18,6 @@ import {
   ApplicationConfig,
   inject,
   provideZoneChangeDetection,
-  Renderer2,
   RendererFactory2,
 } from '@angular/core';
 import { provideAnimations } from '@angular/platform-browser/animations';
@@ -41,57 +40,27 @@ function initializeAuthFactory(): () => Promise<void> {
   const document = inject(DOCUMENT);
   return () =>
     new Promise((resolve, reject) => {
-      const baseUrl = getAuthBaseUrl();
+      let baseUrl = window.XMC_API_URL;
       if (!baseUrl) {
         console.warn('XMC_API_URL is empty or not defined. Skipping auth-check.js.');
         resolve();
         return;
       }
-      loadAuthScript(renderer, document, baseUrl, resolve, reject);
+      if (baseUrl.includes('example.com')) {
+        console.warn('XMC_API_URL is using default fallback (example.com).');
+      }
+      baseUrl = baseUrl.replace(/\/v1\/?$/, '');
+
+      const script = renderer.createElement('script');
+      script.src = `${baseUrl}/v1/static/auth-check.js`;
+      script.onload = () => resolve();
+      script.onerror = () => {
+        displayAuthError(document, apiErrorMessage(`${window.XMC_API_URL}`));
+        renderer.removeChild(document.body, script);
+        reject('Failed to load auth-check.js, cannot authenticate with IAP.');
+      };
+      renderer.appendChild(document.body, script);
     });
-}
-
-function getAuthBaseUrl(): string | undefined {
-  let baseUrl = window.XMC_API_URL;
-  if (!baseUrl) {
-    return undefined;
-  }
-  if (baseUrl.includes('example.com')) {
-    console.warn(
-      'XMC_API_URL is using the default fallback value (example.com). API requests may fail.',
-    );
-  }
-  if (baseUrl.endsWith('/v1')) {
-    baseUrl = baseUrl.substring(0, baseUrl.length - 3);
-  } else if (baseUrl.endsWith('/v1/')) {
-    baseUrl = baseUrl.substring(0, baseUrl.length - 4);
-  }
-  return baseUrl;
-}
-
-function loadAuthScript(
-  renderer: Renderer2,
-  document: Document,
-  baseUrl: string,
-  resolve: () => void,
-  reject: (err: string) => void,
-) {
-  const script = renderer.createElement('script');
-  script.src = `${baseUrl}/v1/static/auth-check.js`;
-  script.onload = () => {
-    resolve();
-  };
-  script.onerror = () => {
-    // Display error message to the user.
-    const errorHtml = apiErrorMessage(`${window.XMC_API_URL}`);
-    displayAuthError(document, errorHtml);
-
-    // We reject here to stop app initialization on error,
-    // but still want to remove script to avoid clutter.
-    renderer.removeChild(document.body, script);
-    reject('Failed to load auth-check.js, cannot authenticate with IAP.');
-  };
-  renderer.appendChild(document.body, script);
 }
 
 /**

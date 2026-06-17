@@ -87,34 +87,21 @@ export class AutoReloadService {
     );
 
     const reloader$ = combineLatest([isActive$, isVisibleWithPrevious$]).pipe(
-      switchMap(([isActive, visible]) =>
-        isActive && visible.curr
-          ? timer(
-              this.getInitialDelay(
-                visible,
-                finalOptions.emitOnStart,
-                finalOptions.emitOnVisible,
-                finalOptions.refreshIntervalMs,
-              ),
-              finalOptions.refreshIntervalMs,
-            )
-          : EMPTY,
-      ),
+      switchMap(([isActive, visible]) => {
+        if (isActive && visible.curr) {
+          const justBecameVisible = !visible.prev;
+          const emitImmediately = justBecameVisible
+            ? finalOptions.emitOnVisible
+            : finalOptions.emitOnStart;
+          const initialDelay = emitImmediately ? 0 : finalOptions.refreshIntervalMs;
+          return timer(initialDelay, finalOptions.refreshIntervalMs);
+        }
+        return EMPTY;
+      }),
       mapTo(undefined),
     );
 
     return { reloader$, start: () => isActive$.next(true), stop: () => isActive$.next(false) };
-  }
-
-  private getInitialDelay(
-    visible: { prev: boolean; curr: boolean },
-    emitOnStart: boolean,
-    emitOnVisible: boolean,
-    refreshIntervalMs: number
-  ): number {
-    const justBecameVisible = !visible.prev;
-    const emitImmediately = justBecameVisible ? emitOnVisible : emitOnStart;
-    return emitImmediately ? 0 : refreshIntervalMs;
   }
 
   private getVisibilityObservable(): Observable<boolean> {

@@ -88,7 +88,20 @@ export class ArtifactsList implements OnInit {
       map(([token, artifacts]) => !!token && artifacts.length > 0),
     );
 
-    this.setupPhaseStreams(filteredArtifacts$);
+    this.inputArtifacts$ = filteredArtifacts$.pipe(
+      map((artifacts) => artifacts.filter((a) => a.lifecyclePhase === 'INPUT')),
+      map((artifacts) => groupAndSortArtifacts(artifacts, 'INPUT', this.groupingThreshold())),
+    );
+    this.executionArtifacts$ = filteredArtifacts$.pipe(
+      map((artifacts) => artifacts.filter((a) => a.lifecyclePhase === 'EXECUTION')),
+      map((artifacts) => groupAndSortArtifacts(artifacts, 'EXECUTION', this.groupingThreshold())),
+    );
+    this.outputArtifacts$ = filteredArtifacts$.pipe(
+      map((artifacts) =>
+        artifacts.filter((a) => a.lifecyclePhase === 'OUTPUT' || !a.lifecyclePhase),
+      ),
+      map((artifacts) => groupAndSortArtifacts(artifacts, 'OUTPUT', this.groupingThreshold())),
+    );
   }
 
   private filterArtifacts(artifacts: readonly Artifact[], filter: ArtifactFilter[]): readonly Artifact[] {
@@ -109,23 +122,6 @@ export class ArtifactsList implements OnInit {
       const matchesWorkUnit = filter.includes(ArtifactFilter.WORK_UNIT) && isWorkUnitArtifact;
       return matchesExperiment || matchesWorkUnit;
     });
-  }
-
-  private setupPhaseStreams(filteredArtifacts$: Observable<readonly Artifact[]>) {
-    this.inputArtifacts$ = filteredArtifacts$.pipe(
-      map((artifacts) => artifacts.filter((a) => a.lifecyclePhase === 'INPUT')),
-      map((artifacts) => groupAndSortArtifacts(artifacts, 'INPUT', this.groupingThreshold())),
-    );
-    this.executionArtifacts$ = filteredArtifacts$.pipe(
-      map((artifacts) => artifacts.filter((a) => a.lifecyclePhase === 'EXECUTION')),
-      map((artifacts) => groupAndSortArtifacts(artifacts, 'EXECUTION', this.groupingThreshold())),
-    );
-    this.outputArtifacts$ = filteredArtifacts$.pipe(
-      map((artifacts) =>
-        artifacts.filter((a) => a.lifecyclePhase === 'OUTPUT' || !a.lifecyclePhase),
-      ),
-      map((artifacts) => groupAndSortArtifacts(artifacts, 'OUTPUT', this.groupingThreshold())),
-    );
   }
 
   protected onFilterChange(value: ArtifactFilter[]) {

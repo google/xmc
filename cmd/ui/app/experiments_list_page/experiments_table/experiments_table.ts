@@ -30,7 +30,6 @@ import { map } from 'rxjs/operators';
 import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
 import { Priority } from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
-import { ResourceSet } from 'xmanager_cloud/experiment_state_server/proto/resources.jsonpb_decls';
 import { ExperimentStatus } from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
 import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
 import { LoadingBar } from 'xmanager_cloud/ui/app/common/components/loading_bar/loading_bar';
@@ -165,11 +164,19 @@ function getStatusChipEnum(experiment: Experiment): StatusOption {
   }
 }
 
+/**
+ * Maps an Experiment to a TableRow.
+ * Consolidated to maintain a clean linear mapper.
+ */
 function toTableRow(experiment: Experiment, filterService: StatusMessageFilterService): TableRow {
-  const { message, isVisible } = getStatusMessageData(experiment, filterService);
+  const message = experiment.status?.structuredStatusMessage?.userFacingText
+    ? experiment.status.structuredStatusMessage
+    : undefined;
+  const isVisible = !!message && filterService.isMessageVisible(message);
+
   return {
     name: experiment.name,
-    xid: getXid(experiment.name),
+    xid: experiment.name?.split('/').pop(),
     title: experiment.title,
     tags: experiment.tags || [],
     stateCounts: experiment.status?.childStateCounts || [],
@@ -177,37 +184,15 @@ function toTableRow(experiment: Experiment, filterService: StatusMessageFilterSe
     priority: experiment.priority,
     notes: experiment.notes,
     author: experiment.creator,
-    resources: getResourcesChips(experiment.resources),
-    createTime: parseExperimentDate(experiment.createTime),
-    completedTime: parseExperimentDate(experiment.completeTime),
+    resources: resourceSetsToResourceChipsData(experiment.resources || []),
+    createTime: parseDate(experiment.createTime),
+    completedTime: parseDate(experiment.completeTime),
     structuredStatusMessage: message,
     isStatusMessageVisible: isVisible,
   };
 }
 
-function getXid(name: string | undefined): string | undefined {
-  return name ? name.split('/').pop() : undefined;
-}
-
-function getStatusMessageData(
-  experiment: Experiment,
-  filterService: StatusMessageFilterService,
-): { message: StructuredMessage | undefined; isVisible: boolean } {
-  const status = experiment.status;
-  if (!status) {
-    return { message: undefined, isVisible: false };
-  }
-  const message = status.structuredStatusMessage;
-  if (!message || !message.userFacingText) {
-    return { message: undefined, isVisible: false };
-  }
-  return { message, isVisible: filterService.isMessageVisible(message) };
-}
-
-function getResourcesChips(resources: ResourceSet[] | null | undefined): ResourceChipData[] {
-  return resources ? resourceSetsToResourceChipsData(resources) : [];
-}
-
-function parseExperimentDate(dateStr: string | undefined): Date | undefined {
+function parseDate(dateStr: string | undefined): Date | undefined {
   return dateStr ? new Date(dateStr) : undefined;
 }
+

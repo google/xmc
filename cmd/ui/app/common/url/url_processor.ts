@@ -38,70 +38,37 @@ export function processUrls(urls: Url[], data: Experiment | WorkUnit): Processed
     .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
 }
 
-// eslint-disable-next-line max-lines-per-function
 function fillPlaceholders(urlString: string, data: Experiment | WorkUnit): string | undefined {
-  let xid: string | undefined;
-  let wid: string | undefined;
-  if (data.name) {
-    const wuIds = parseWorkUnitName(data.name);
-    if (wuIds) {
-      xid = wuIds.xid;
-      wid = wuIds.wid;
-    } else {
-      const expId = parseExperimentName(data.name);
-      if (expId) {
-        xid = expId;
-      }
-    }
-  }
+  const wu = data.name ? parseWorkUnitName(data.name) : null;
+  const xid = wu ? wu.xid : (data.name ? parseExperimentName(data.name) : null);
+  const wid = wu ? wu.wid : undefined;
 
-  const createTime = data.createTime;
-
-  const replacements: { [key: string]: string | undefined } = {
+  const replacements: Record<string, string | null | undefined> = {
     XID: xid,
     WID: wid,
-    CREATED: createTime,
+    CREATED: data.createTime,
   };
 
-  // metatadata fields only exist for WorkUnit
-  if ('currentWorkUnitExecution' in data) {
-    Object.assign(replacements, getWorkUnitReplacements(data as WorkUnit));
+  const metadata = ('currentWorkUnitExecution' in data)
+    ? (data as WorkUnit).currentWorkUnitExecution?.metadata
+    : undefined;
+  if (metadata) {
+    replacements['RESOURCE_NAME'] = metadata.resourceName;
+    replacements['NAMESPACE'] = metadata.namespace;
+    replacements['SERVICE_ACCOUNT'] = metadata.serviceAccount;
+    if (metadata.managementCluster) {
+      replacements['PROJECT'] = metadata.managementCluster.project;
+      replacements['LOCATION'] = metadata.managementCluster.location;
+      replacements['CLUSTER'] = metadata.managementCluster.clusterName;
+    }
   }
 
   let missingValue = false;
   const processedUrl = urlString.replace(/\$\{(\w+)\}/g, (match, key) => {
     const value = replacements[key];
-    if (!value) {
-      missingValue = true;
-      return match; // Return the original placeholder on failure
-    }
-    return value;
+    if (!value) missingValue = true;
+    return value || match;
   });
 
   return missingValue ? undefined : processedUrl;
-}
-
-function getWorkUnitReplacements(workUnit: WorkUnit): Record<string, string | undefined> {
-  const execution = workUnit.currentWorkUnitExecution;
-  if (!execution) {
-    return {};
-  }
-  const metadata = execution.metadata;
-  if (!metadata) {
-    return {};
-  }
-  const cluster = metadata.managementCluster;
-  const replacements: Record<string, string | undefined> = {
-    RESOURCE_NAME: metadata.resourceName,
-    NAMESPACE: metadata.namespace,
-    SERVICE_ACCOUNT: metadata.serviceAccount,
-  };
-
-  if (cluster) {
-    replacements['PROJECT'] = cluster.project;
-    replacements['LOCATION'] = cluster.location;
-    replacements['CLUSTER'] = cluster.clusterName;
-  }
-
-  return replacements;
 }

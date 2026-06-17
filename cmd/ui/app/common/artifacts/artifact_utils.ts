@@ -74,33 +74,34 @@ export function formatArtifactDataType(dataType: Artifact.DataType | undefined):
     .join(' ');
 }
 
-/** Groups artifacts by type if they exceed threshold, and sorts by priority. */
-// eslint-disable-next-line max-lines-per-function
-export function groupAndSortArtifacts(
-  artifacts: Artifact[],
-  phase: Artifact.LifecyclePhase | 'OUTPUT' | 'INPUT' | 'EXECUTION',
-  groupingThreshold: number,
-): ArtifactListItem[] {
-  // 1. Sort by priority
-  const sorted = [...artifacts].sort(
+function sortArtifactsByPriority(artifacts: Artifact[]): Artifact[] {
+  return [...artifacts].sort(
     (a, b) =>
       (a.url?.priority ?? Number.MAX_SAFE_INTEGER) - (b.url?.priority ?? Number.MAX_SAFE_INTEGER),
   );
+}
 
-  // 2. Group artifacts by type
+function groupArtifactsByType(artifacts: Artifact[]): Map<Artifact.DataType, Artifact[]> {
   const artifactsByType = new Map<Artifact.DataType, Artifact[]>();
-  for (const artifact of sorted) {
+  for (const artifact of artifacts) {
     const type = artifact.dataType || 'DATA_TYPE_UNSPECIFIED';
     if (!artifactsByType.has(type)) {
       artifactsByType.set(type, []);
     }
     artifactsByType.get(type)!.push(artifact);
   }
+  return artifactsByType;
+}
 
-  // 3. Build result list with groups or singles
+function buildArtifactListItems(
+  sortedArtifacts: Artifact[],
+  artifactsByType: Map<Artifact.DataType, Artifact[]>,
+  phase: string,
+  groupingThreshold: number,
+): ArtifactListItem[] {
   const result: ArtifactListItem[] = [];
   const groupedTypesProcessed = new Set<Artifact.DataType>();
-  for (const artifact of sorted) {
+  for (const artifact of sortedArtifacts) {
     const type = artifact.dataType || 'DATA_TYPE_UNSPECIFIED';
     const group = artifactsByType.get(type)!;
     if (group.length > groupingThreshold) {
@@ -119,4 +120,15 @@ export function groupAndSortArtifacts(
     }
   }
   return result;
+}
+
+/** Groups artifacts by type if they exceed threshold, and sorts by priority. */
+export function groupAndSortArtifacts(
+  artifacts: Artifact[],
+  phase: Artifact.LifecyclePhase | 'OUTPUT' | 'INPUT' | 'EXECUTION',
+  groupingThreshold: number,
+): ArtifactListItem[] {
+  const sorted = sortArtifactsByPriority(artifacts);
+  const artifactsByType = groupArtifactsByType(sorted);
+  return buildArtifactListItems(sorted, artifactsByType, phase, groupingThreshold);
 }

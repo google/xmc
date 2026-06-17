@@ -63,6 +63,7 @@ export class EditExperimentFormData implements BaseSidePanelData {
   ) {}
 }
 
+// Custom validator to prevent whitespace-only input
 function notWhitespaceOnly(control: AbstractControl): ValidationErrors | null {
   const isWhitespace = (control.value || '').trim().length === 0;
   return isWhitespace ? { whitespace: true } : null;
@@ -120,29 +121,20 @@ export class EditExperimentForm implements BaseSidePanelContent<EditExperimentFo
   }
 
   updateExperiment() {
-    const { updatedExperiment, updateMask } = this.getExperimentUpdates();
+    const formGroup = this.editExperimentFormGroup();
+    const initial = this.initialExperiment()!;
+    const { updates, updateMask } = getDirtyFields(formGroup);
 
     this.data().onUpdateStart?.();
     this.editExperimentFormStore.updateExperiment({
       request: {
-        experiment: updatedExperiment,
-        updateMask,
+        experiment: { ...initial, ...updates },
+        updateMask: updateMask.join(','),
       },
       onSuccess: this.data().onUpdateSuccess,
       onFinish: this.data().onUpdateFinish,
     });
     this.sidePanelService.closeSidePanel();
-  }
-
-  private getExperimentUpdates(): { updatedExperiment: Experiment; updateMask: string } {
-    const formGroup = this.editExperimentFormGroup();
-    const initial = this.initialExperiment()!;
-    const { updates, updateMask } = getDirtyFields(formGroup);
-
-    return {
-      updatedExperiment: { ...initial, ...updates },
-      updateMask: updateMask.join(','),
-    };
   }
 
   ngOnDestroy() {
@@ -151,33 +143,12 @@ export class EditExperimentForm implements BaseSidePanelContent<EditExperimentFo
 }
 
 function createExperimentForm(experiment: Experiment | null | undefined): FormGroup {
-  const values = getFormValues(experiment);
   return new FormGroup({
-    name: new FormControl<string>(values.name, [Validators.required, notWhitespaceOnly]),
-    notes: new FormControl<string>(values.notes),
-    tags: new FormControl<string>(values.tags),
-    priority: new FormControl<Priority>(values.priority),
+    name: new FormControl<string>(experiment?.title ?? '', [Validators.required, notWhitespaceOnly]),
+    notes: new FormControl<string>(experiment?.notes ?? ''),
+    tags: new FormControl<string>(experiment?.tags?.join(',') ?? ''),
+    priority: new FormControl<Priority>(experiment?.priority ?? ('NORMAL' as Priority)),
   });
-}
-
-function getFormValues(experiment: Experiment | null | undefined) {
-  if (!experiment) {
-    return { name: '', notes: '', tags: '', priority: 'NORMAL' as Priority };
-  }
-  return {
-    name: fallback(experiment.title, ''),
-    notes: fallback(experiment.notes, ''),
-    tags: getTagsString(experiment.tags),
-    priority: fallback(experiment.priority, 'NORMAL' as Priority),
-  };
-}
-
-function getTagsString(tags: string[] | undefined): string {
-  return tags ? tags.join(',') : '';
-}
-
-function fallback<T>(val: T | undefined | null, def: T): T {
-  return val != null ? val : def;
 }
 
 function getDirtyFields(formGroup: FormGroup): {

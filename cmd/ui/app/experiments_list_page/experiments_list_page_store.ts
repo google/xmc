@@ -13,19 +13,20 @@
 // limitations under the License.
 import { inject, Injectable, Signal } from '@angular/core';
 import { ComponentStore } from '@ngrx/component-store';
-import { EMPTY, Observable } from 'rxjs';
+import { EMPTY } from 'rxjs';
 import { catchError, switchMap, tap } from 'rxjs/operators';
 
 import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-
 import {
   getInitialPaginationState,
+  goToNextPage,
+  goToPreviousPage,
   PaginationState,
   setPageSize,
-} from '../common/pagination/pagination';
-import { ExperimentService } from '../service/experiment_service';
-import { FeatureFlagService } from '../service/feature_flag_service';
-import { SnackbarService } from '../service/snackbar_service';
+} from 'xmanager_cloud/ui/app/common/pagination/pagination';
+import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
+import { FeatureFlagService } from 'xmanager_cloud/ui/app/service/feature_flag_service';
+import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 
 /** State for the experiments list page. */
 export interface ExperimentsListPageState {
@@ -104,94 +105,41 @@ export class ExperimentsListPageStore extends ComponentStore<ExperimentsListPage
   /** Sets the page size. It does not fetch data. */
   readonly setPageSize = this.updater((state, pageSize: number) => setPageSize(state, pageSize));
 
-  // TODO (kartonoe): This is copied from the work units table, we can refactor
-  // it later.
   /** Goes to the next page. It does not fetch data. */
-  readonly goToNextPage = this.updater((state) => {
-    const { pagination } = state;
-
-    if (!pagination.nextPageToken) {
-      return state;
-    }
-
-    return {
-      ...state,
-      pagination: {
-        ...pagination,
-        pageIndex: pagination.pageIndex + 1,
-        currentPageToken: pagination.nextPageToken,
-        previousTokens: [...pagination.previousTokens, pagination.currentPageToken],
-        nextPageToken: undefined,
-      },
-    };
-  });
+  readonly goToNextPage = this.updater((state) => goToNextPage(state));
 
   /** Goes to the previous page. It does not fetch data. */
-  readonly goToPreviousPage = this.updater((state) => {
-    const { pagination } = state;
-    const { previousTokens, pageIndex } = pagination;
-
-    if (previousTokens.length === 0) {
-      return state;
-    }
-
-    return {
-      ...state,
-      pagination: {
-        ...pagination,
-        currentPageToken: previousTokens[previousTokens.length - 1],
-        previousTokens: previousTokens.slice(0, -1),
-        pageIndex: pageIndex - 1,
-      },
-    };
-  });
+  readonly goToPreviousPage = this.updater((state) => goToPreviousPage(state));
 
   /** Fetches the current page of experiments. */
   readonly fetchPage = this.effect((trigger$) =>
     trigger$.pipe(
-      tap(() => {
-        this.patchState({ isLoading: true });
+      tap(() => this.patchState({ isLoading: true })),
+      switchMap(() => {
+        const { filter, pagination, orderBy } = this.get();
+        const request: api.ListExperimentsRequest = {
+          filter,
+          pageSize: pagination.pageSize,
+          pageToken: pagination.currentPageToken || undefined,
+          orderBy,
+        };
+        return this.service.searchExperiments(request).pipe(
+          tap((response) => this.patchState({
+            isLoading: false,
+            pageResult: response,
+            pagination: {
+              ...pagination,
+              nextPageToken: response.nextPageToken,
+            },
+          })),
+          catchError((err) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            this.patchState({ isLoading: false });
+            this.snackbarService.open(`Failed to fetch list of experiments: ${msg}`);
+            return EMPTY;
+          }),
+        );
       }),
-      switchMap(() => this.fetchExperimentsPage()),
     ),
   );
-
-  private fetchExperimentsPage(): Observable<api.ListExperimentsResponse> {
-    const currentState = this.get();
-    const paginationState = currentState.pagination;
-
-    const request: api.ListExperimentsRequest = {
-      filter: currentState.filter,
-      pageSize: paginationState.pageSize,
-      pageToken: paginationState.currentPageToken || undefined,
-      orderBy: currentState.orderBy,
-    };
-
-    return this.service.searchExperiments(request).pipe(
-      tap({
-        next: (response) => this.handleFetchSuccess(response, paginationState),
-        error: (error) => this.handleFetchError(error),
-      }),
-      catchError(() => EMPTY),
-    );
-  }
-
-  private handleFetchSuccess(response: api.ListExperimentsResponse, paginationState: PaginationState) {
-    this.patchState({
-      isLoading: false,
-      pageResult: response,
-      pagination: {
-        ...paginationState,
-        nextPageToken: response.nextPageToken,
-      },
-    });
-  }
-
-  private handleFetchError(error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    this.patchState({ isLoading: false });
-    this.snackbarService.open(
-      `Failed to fetch list of experiments: ${message}`,
-    );
-  }
 }
