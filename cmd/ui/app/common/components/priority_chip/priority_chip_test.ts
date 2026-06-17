@@ -12,22 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { setupModule, bootstrap } from 'xmanager_cloud/ui/app/testing/test';
-import {NoopAnimationsModule} from '@angular/platform-browser/animations';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import {PriorityChip} from './priority_chip';
+import { bootstrap, setupModule } from 'xmanager_cloud/ui/app/testing/test';
+
+import { PriorityChip } from './priority_chip';
 
 describe('PriorityChip Component', () => {
   beforeEach(() => {
     setupModule({
       imports: [
-        NoopAnimationsModule,  // This makes test faster and more stable.
+        NoopAnimationsModule, // This makes test faster and more stable.
       ],
     });
   });
 
   it('should be created', () => {
-    const comp = bootstrap(PriorityChip, {priority: 'HIGH'});
+    const comp = bootstrap(PriorityChip, { priority: 'HIGH' });
     expect(comp).toBeTruthy();
   });
 });

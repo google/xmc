@@ -11,10 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {CommonModule} from '@angular/common';
-import {ChangeDetectionStrategy, Component, computed, input, Signal} from '@angular/core';
-import {MatMenuModule} from '@angular/material/menu';
-import {ExperimentStatus, WorkUnitStatus} from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
+import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
+import { MatMenuModule } from '@angular/material/menu';
+
+import {
+  ExperimentStatus,
+  WorkUnitStatus,
+} from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
 
 /**
  * A horizontal stacked bar.
@@ -34,18 +38,20 @@ export class WorkUnitsStatusBar {
 
   readonly workUnitsCount: Signal<number> = computed(() => {
     return this.stateCounts().reduce(
-        (total, stateCount) => total + Number(stateCount?.count ?? 0), 0);
+      (total, stateCount) => total + Number(stateCount?.count ?? 0),
+      0,
+    );
   });
 
   /** Sort by state so the status bar looks consistent. */
-  readonly sortedStateCounts: Signal<ExperimentStatus.StateCount[]> =
-      computed(() => {
-        return this.stateCounts().sort((a, b) => {
-          return ORDERED_STATES.indexOf(
-                     a.state ?? 'WORK_UNIT_STATE_UNSPECIFIED') -
-              ORDERED_STATES.indexOf(b.state ?? 'WORK_UNIT_STATE_UNSPECIFIED');
-        });
-      });
+  readonly sortedStateCounts: Signal<ExperimentStatus.StateCount[]> = computed(() => {
+    return this.stateCounts().sort((a, b) => {
+      return (
+        ORDERED_STATES.indexOf(a.state ?? 'WORK_UNIT_STATE_UNSPECIFIED') -
+        ORDERED_STATES.indexOf(b.state ?? 'WORK_UNIT_STATE_UNSPECIFIED')
+      );
+    });
+  });
 
   /**
    * Returns the width of the state segment as a percentage of the total work

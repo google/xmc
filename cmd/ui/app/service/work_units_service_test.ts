@@ -11,21 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { cleanState, setupModule, get } from '../testing/test';
 import 'jasmine';
 
+import { provideHttpClient } from '@angular/common/http';
 
-import {provideHttpClient} from '@angular/common/http';
-
-import {WorkUnitsService} from './work_units_service';
+import { cleanState, get, setupModule } from '../testing/test';
+import { WorkUnitsService } from './work_units_service';
 
 function setup() {
   return cleanState(() => {
     setupModule({
-      providers: [
-        provideHttpClient(),
-        WorkUnitsService,
-      ],
+      providers: [provideHttpClient(), WorkUnitsService],
     });
     return {
       service: get(WorkUnitsService),

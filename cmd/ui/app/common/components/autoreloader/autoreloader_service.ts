@@ -11,15 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {DOCUMENT} from '@angular/common';
-import {inject, Injectable, InjectionToken} from '@angular/core';
-import {AUTO_REFRESH_INTERVAL_MS} from 'xmanager_cloud/ui/app/service/constants';
-import {BehaviorSubject, combineLatest, EMPTY, Observable, timer} from 'rxjs';
-import {distinctUntilChanged, map, mapTo, pairwise, startWith, switchMap} from 'rxjs/operators';
+import { DOCUMENT } from '@angular/common';
+import { inject, Injectable, InjectionToken } from '@angular/core';
+import { BehaviorSubject, combineLatest, EMPTY, Observable, timer } from 'rxjs';
+import { distinctUntilChanged, map, mapTo, pairwise, startWith, switchMap } from 'rxjs/operators';
+
+import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
 
 /** Injection token for the window object. */
-export const WINDOW = new InjectionToken<Window>(
-    'WindowToken', {providedIn: 'root', factory: () => window});
+export const WINDOW = new InjectionToken<Window>('WindowToken', {
+  providedIn: 'root',
+  factory: () => window,
+});
 
 /**
  * Control interface for an auto-reloading process.
@@ -57,7 +60,7 @@ export interface CreateReloaderOptions {
 /**
  * Service for creating auto-reload controls.
  */
-@Injectable({providedIn: 'root'})
+@Injectable({ providedIn: 'root' })
 export class AutoReloadService {
   private readonly document: Document = inject(DOCUMENT);
   private readonly window: Window = inject(WINDOW);
@@ -67,9 +70,7 @@ export class AutoReloadService {
    * Creates and returns a control object for a new auto-reload process.
    * @param options Options for creating the reloader.
    */
-  createReloader(
-      options: Partial<CreateReloaderOptions> = {},
-      ): ReloaderControl {
+  createReloader(options: Partial<CreateReloaderOptions> = {}): ReloaderControl {
     const finalOptions = {
       refreshIntervalMs: options.refreshIntervalMs ?? this.refreshIntervalMs,
       emitOnStart: options.emitOnStart ?? true,
@@ -77,48 +78,45 @@ export class AutoReloadService {
     };
     const isActive$ = new BehaviorSubject<boolean>(false);
 
-    const visibility$: Observable<boolean> =
-        new Observable<boolean>(subscriber => {
-          if (typeof this.window.addEventListener !== 'function') {
-            subscriber.next(true);  // If there's no real DOM, assume the page
-                                    // is always visible.
-            return;
-          }
-          const handler = () => {
-            subscriber.next(!this.document.hidden);
-          };
-          this.document.addEventListener('visibilitychange', handler);
-          handler();  // Initial state
+    const visibility$: Observable<boolean> = new Observable<boolean>((subscriber) => {
+      if (typeof this.window.addEventListener !== 'function') {
+        subscriber.next(true); // If there's no real DOM, assume the page
+        // is always visible.
+        return;
+      }
+      const handler = () => {
+        subscriber.next(!this.document.hidden);
+      };
+      this.document.addEventListener('visibilitychange', handler);
+      handler(); // Initial state
 
-          return () => {
-            this.document.removeEventListener('visibilitychange', handler);
-          };
-        }).pipe(distinctUntilChanged());
+      return () => {
+        this.document.removeEventListener('visibilitychange', handler);
+      };
+    }).pipe(distinctUntilChanged());
 
     // Emits {prev: boolean, curr: boolean} for visibility.
     const isVisibleWithPrevious$ = visibility$.pipe(
-        startWith(!this.document.hidden),
-        pairwise(),
-        map(([prev, curr]) => ({prev, curr})),
+      startWith(!this.document.hidden),
+      pairwise(),
+      map(([prev, curr]) => ({ prev, curr })),
     );
 
-    const reloader$ =
-        combineLatest([isActive$, isVisibleWithPrevious$])
-            .pipe(
-                switchMap(([isActive, visible]) => {
-                  if (isActive && visible.curr) {
-                    const justBecameVisible = !visible.prev && visible.curr;
-                    const emitImmediately = justBecameVisible ?
-                        finalOptions.emitOnVisible :
-                        finalOptions.emitOnStart;
-                    const delay =
-                        emitImmediately ? 0 : finalOptions.refreshIntervalMs!;
-                    return timer(delay, finalOptions.refreshIntervalMs);
-                  } else {
-                    return EMPTY;  // If stopped or not visible, do not emit.
-                  }
-                }),
-                mapTo(undefined));
+    const reloader$ = combineLatest([isActive$, isVisibleWithPrevious$]).pipe(
+      switchMap(([isActive, visible]) => {
+        if (isActive && visible.curr) {
+          const justBecameVisible = !visible.prev && visible.curr;
+          const emitImmediately = justBecameVisible
+            ? finalOptions.emitOnVisible
+            : finalOptions.emitOnStart;
+          const delay = emitImmediately ? 0 : finalOptions.refreshIntervalMs!;
+          return timer(delay, finalOptions.refreshIntervalMs);
+        } else {
+          return EMPTY; // If stopped or not visible, do not emit.
+        }
+      }),
+      mapTo(undefined),
+    );
 
     return {
       reloader$,

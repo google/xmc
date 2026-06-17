@@ -11,17 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { cleanState, setupModule, get, setupObservableMatchers } from 'xmanager_cloud/ui/app/testing/test';
 import 'jasmine';
 
-import {UpdateExperimentRequest} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import {NEVER, of, throwError} from 'rxjs';
+import { NEVER, of, throwError } from 'rxjs';
 
-import {EXPERIMENT_1, EXPERIMENT_2} from 'xmanager_cloud/ui/app/common/mock_data';
-import {ExperimentService} from 'xmanager_cloud/ui/app/service/experiment_service';
-import {SnackbarService} from 'xmanager_cloud/ui/app/service/snackbar_service';
+import { UpdateExperimentRequest } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { EXPERIMENT_1, EXPERIMENT_2 } from 'xmanager_cloud/ui/app/common/mock_data';
+import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
+import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
+import {
+  cleanState,
+  get,
+  setupModule,
+  setupObservableMatchers,
+} from 'xmanager_cloud/ui/app/testing/test';
 
-import {EditExperimentFormStore} from './edit_experiment_form_store';
+import { EditExperimentFormStore } from './edit_experiment_form_store';
 
 describe('EditExperimentFormStore', () => {
   beforeAll(() => {
@@ -29,20 +34,17 @@ describe('EditExperimentFormStore', () => {
   });
 
   const state = cleanState(() => {
-    const mockExperimentService = jasmine.createSpyObj<ExperimentService>(
-        'ExperimentService',
-        ['getExperiment', 'updateExperiment'],
-    );
-    const mockSnackbarService = jasmine.createSpyObj<SnackbarService>(
-        'SnackbarService',
-        ['open'],
-    );
+    const mockExperimentService = jasmine.createSpyObj<ExperimentService>('ExperimentService', [
+      'getExperiment',
+      'updateExperiment',
+    ]);
+    const mockSnackbarService = jasmine.createSpyObj<SnackbarService>('SnackbarService', ['open']);
 
     setupModule({
       providers: [
         EditExperimentFormStore,
-        {provide: ExperimentService, useValue: mockExperimentService},
-        {provide: SnackbarService, useValue: mockSnackbarService},
+        { provide: ExperimentService, useValue: mockExperimentService },
+        { provide: SnackbarService, useValue: mockSnackbarService },
       ],
     });
 
@@ -71,16 +73,11 @@ describe('EditExperimentFormStore', () => {
     });
 
     it('should update experiment and reset isLoading on success', () => {
-      state.mockExperimentService.getExperiment.and.returnValue(
-          of(EXPERIMENT_1),
-      );
+      state.mockExperimentService.getExperiment.and.returnValue(of(EXPERIMENT_1));
 
       state.store.fetchExperiment(testXid);
 
-      expect(state.mockExperimentService.getExperiment)
-          .toHaveBeenCalledWith(
-              testXid,
-          );
+      expect(state.mockExperimentService.getExperiment).toHaveBeenCalledWith(testXid);
       expect(state.store.isLoading()).toBeFalse();
       expect(state.store.experiment()).toEqual(EXPERIMENT_1);
       expect(state.mockSnackbarService.open).not.toHaveBeenCalled();
@@ -88,21 +85,17 @@ describe('EditExperimentFormStore', () => {
 
     it('should reset isLoading and show snackbar on error', () => {
       state.mockExperimentService.getExperiment.and.returnValue(
-          throwError(() => new Error('Failed to load')),
+        throwError(() => new Error('Failed to load')),
       );
 
       state.store.fetchExperiment(testXid);
 
-      expect(state.mockExperimentService.getExperiment)
-          .toHaveBeenCalledWith(
-              testXid,
-          );
+      expect(state.mockExperimentService.getExperiment).toHaveBeenCalledWith(testXid);
       expect(state.store.isLoading()).toBeFalse();
       expect(state.store.experiment()).toBeUndefined();
-      expect(state.mockSnackbarService.open)
-          .toHaveBeenCalledWith(
-              'Failed to fetch experiment: Failed to load',
-          );
+      expect(state.mockSnackbarService.open).toHaveBeenCalledWith(
+        'Failed to fetch experiment: Failed to load',
+      );
     });
   });
 
@@ -115,39 +108,34 @@ describe('EditExperimentFormStore', () => {
     it('should set isLoading to true while updating', () => {
       state.mockExperimentService.updateExperiment.and.returnValue(NEVER);
 
-      state.store.updateExperiment({request: testRequest});
+      state.store.updateExperiment({ request: testRequest });
 
       expect(state.store.isLoading()).toBeTrue();
     });
 
     it('should update experiment and reset isLoading on success', () => {
-      state.mockExperimentService.updateExperiment.and.returnValue(
-          of(EXPERIMENT_2),
-      );
+      state.mockExperimentService.updateExperiment.and.returnValue(of(EXPERIMENT_2));
 
-      state.store.updateExperiment({request: testRequest});
+      state.store.updateExperiment({ request: testRequest });
 
-      expect(state.mockExperimentService.updateExperiment)
-          .toHaveBeenCalledWith(testRequest);
+      expect(state.mockExperimentService.updateExperiment).toHaveBeenCalledWith(testRequest);
       expect(state.store.isLoading()).toBeFalse();
       expect(state.store.experiment()).toEqual(EXPERIMENT_2);
     });
 
     it('should reset isLoading and show snackbar on error', () => {
       state.mockExperimentService.updateExperiment.and.returnValue(
-          throwError(() => new Error('Failed to update')),
+        throwError(() => new Error('Failed to update')),
       );
 
-      state.store.updateExperiment({request: testRequest});
+      state.store.updateExperiment({ request: testRequest });
 
-      expect(state.mockExperimentService.updateExperiment)
-          .toHaveBeenCalledWith(testRequest);
+      expect(state.mockExperimentService.updateExperiment).toHaveBeenCalledWith(testRequest);
       expect(state.store.isLoading()).toBeFalse();
       expect(state.store.experiment()).toBeUndefined();
-      expect(state.mockSnackbarService.open)
-          .toHaveBeenCalledWith(
-              'Failed to update experiment: Failed to update',
-          );
+      expect(state.mockSnackbarService.open).toHaveBeenCalledWith(
+        'Failed to update experiment: Failed to update',
+      );
     });
   });
 });

@@ -11,26 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {Injectable} from '@angular/core';
-import {BehaviorSubject, Observable} from 'rxjs';
-import {map} from 'rxjs/operators';
+import { Injectable } from '@angular/core';
+import { BehaviorSubject, Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 
-import {BaseSidePanelData} from './base_side_panel';
+import { BaseSidePanelData } from './base_side_panel';
 
 /** Service for the side panel. */
-@Injectable({providedIn: 'root'})
+@Injectable({ providedIn: 'root' })
 export class SidePanelService {
-  private readonly data$ =
-      new BehaviorSubject<BaseSidePanelData|undefined>(undefined);
+  private readonly data$ = new BehaviorSubject<BaseSidePanelData | undefined>(undefined);
 
   /** Emits the dialog request if it exists, otherwise undefined. */
-  readonly dialogRequest$: Observable<BaseSidePanelData|undefined> =
-      this.data$.asObservable();
+  readonly dialogRequest$: Observable<BaseSidePanelData | undefined> = this.data$.asObservable();
 
   /** Emits true if the side panel is open, else false. */
-  readonly isPanelOpen$: Observable<boolean> = this.data$.pipe(
-      map((data) => data !== undefined),
-  );
+  readonly isPanelOpen$: Observable<boolean> = this.data$.pipe(map((data) => data !== undefined));
 
   /** Opens the side panel as the top most dialog with the given request. */
   openSidePanel(request: BaseSidePanelData) {

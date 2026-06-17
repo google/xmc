@@ -11,13 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { cleanState, setupModule, bootstrap } from '../testing/test';
 import 'jasmine';
 
-import {NoopAnimationsModule} from '@angular/platform-browser/animations';
-import {ActivatedRoute, Params, provideRouter} from '@angular/router';
-import {BehaviorSubject} from 'rxjs';
-import {HomePage} from './home_page';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { ActivatedRoute, Params, provideRouter } from '@angular/router';
+import { BehaviorSubject } from 'rxjs';
+
+import { bootstrap, cleanState, setupModule } from '../testing/test';
+import { HomePage } from './home_page';
 
 describe('HomePage Component', () => {
   const state = cleanState(() => {
@@ -26,14 +27,8 @@ describe('HomePage Component', () => {
     mockRoute.queryParams = queryParams;
 
     setupModule({
-      imports: [
-        HomePage,
-        NoopAnimationsModule,
-      ],
-      providers: [
-        provideRouter([]),
-        {provide: ActivatedRoute, useFactory: () => mockRoute},
-      ]
+      imports: [HomePage, NoopAnimationsModule],
+      providers: [provideRouter([]), { provide: ActivatedRoute, useFactory: () => mockRoute }],
     });
 
     return {
@@ -52,27 +47,33 @@ describe('HomePage Component', () => {
   });
 
   it('should set error message for forbidden error', () => {
-    state.queryParams.next({error: 'forbidden', email: 'user@example.com'});
+    state.queryParams.next({ error: 'forbidden', email: 'user@example.com' });
     const comp = bootstrap(HomePage);
-    expect(comp.errorMessage()).toBe('Your account (user@example.com) is not authorized. Please contact your administrator to request access.');
+    expect(comp.errorMessage()).toBe(
+      'Your account (user@example.com) is not authorized. Please contact your administrator to request access.',
+    );
   });
 
   it('should set error message for permission error', () => {
-    state.queryParams.next({error: 'permission_error'});
+    state.queryParams.next({ error: 'permission_error' });
     const comp = bootstrap(HomePage);
-    expect(comp.errorMessage()).toBe('Failed to verify authorization permissions. Please contact your administrator.');
+    expect(comp.errorMessage()).toBe(
+      'Failed to verify authorization permissions. Please contact your administrator.',
+    );
   });
 
   it('should set generic error message for other errors', () => {
-    state.queryParams.next({error: 'other_error'});
+    state.queryParams.next({ error: 'other_error' });
     const comp = bootstrap(HomePage);
     expect(comp.errorMessage()).toBe('An authentication error occurred. Please try again.');
   });
 
   it('should set error message for forbidden error when email is missing', () => {
-    state.queryParams.next({error: 'forbidden'});
+    state.queryParams.next({ error: 'forbidden' });
     const comp = bootstrap(HomePage);
-    expect(comp.errorMessage()).toBe('Your account () is not authorized. Please contact your administrator to request access.');
+    expect(comp.errorMessage()).toBe(
+      'Your account () is not authorized. Please contact your administrator to request access.',
+    );
   });
 
   it('should redirect user to login endpoint when login is called', () => {
