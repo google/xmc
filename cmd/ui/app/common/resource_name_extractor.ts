@@ -19,7 +19,7 @@ const ARTIFACT_REGEX = /^artifacts\/([^/]+)$/;
  * Parses an experiment name and returns the experiment ID (xid).
  * Expected format: experiments/{xid}
  */
-export function parseExperimentName(name: string): string|null {
+export function parseExperimentName(name: string): string | null {
   const match = name.match(EXPERIMENT_REGEX);
   return match ? match[1] : null;
 }
@@ -29,18 +29,16 @@ export function parseExperimentName(name: string): string|null {
  * (wid).
  * Expected format: experiments/{xid}/workUnits/{wid}
  */
-export function parseWorkUnitName(
-    name: string,
-    ): {xid: string; wid: string}|null {
+export function parseWorkUnitName(name: string): { xid: string; wid: string } | null {
   const match = name.match(WORK_UNIT_REGEX);
-  return match ? {xid: match[1], wid: match[2]} : null;
+  return match ? { xid: match[1], wid: match[2] } : null;
 }
 
 /**
  * Parses an artifact name and returns the artifact ID (aid).
  * Expected format: artifacts/{aid}
  */
-export function parseArtifactName(name: string): string|null {
+export function parseArtifactName(name: string): string | null {
   const match = name.match(ARTIFACT_REGEX);
   return match ? match[1] : null;
 }

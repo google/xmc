@@ -11,9 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {ChangeDetectionStrategy, Component, computed, input} from '@angular/core';
-import {MatChipsModule} from '@angular/material/chips';
-import {RouterLink} from '@angular/router';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { MatChipsModule } from '@angular/material/chips';
+import { RouterLink } from '@angular/router';
 
 /**
  * Display a tag in a chip.
@@ -24,10 +24,12 @@ import {RouterLink} from '@angular/router';
   templateUrl: './tag.ng.html',
   styleUrl: './tag.css',
   imports: [MatChipsModule, RouterLink],
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class Tag {
   readonly text = input.required<string>();
   readonly disableLinks = input(false);
-  readonly encodedTag = computed(() => this.text().trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"'));
+  readonly encodedTag = computed(() =>
+    this.text().trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"'),
+  );
 }

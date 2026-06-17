@@ -11,28 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { setupModule, bootstrap, get, getEl, trigger } from 'xmanager_cloud/ui/app/testing/test';
 import 'jasmine';
 
-import {NoopAnimationsModule} from '@angular/platform-browser/animations';
-import {provideRouter, Router} from '@angular/router';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { provideRouter, Router } from '@angular/router';
 
-import {EmptyComponent} from 'xmanager_cloud/ui/app/common/testing_utils/empty_component';
+import { EmptyComponent } from 'xmanager_cloud/ui/app/common/testing_utils/empty_component';
+import { bootstrap, get, getEl, setupModule, trigger } from 'xmanager_cloud/ui/app/testing/test';
 
-import {Header} from './header';
+import { Header } from './header';
 
 describe('Header Component', () => {
   let router: Router;
 
   beforeEach(() => {
     setupModule({
-      imports: [
-        Header,
-        NoopAnimationsModule,
-      ],
-      providers: [provideRouter([
-        {path: 'experiments', component: EmptyComponent},
-      ])]
+      imports: [Header, NoopAnimationsModule],
+      providers: [provideRouter([{ path: 'experiments', component: EmptyComponent }])],
     });
 
     router = get(Router);
@@ -46,17 +41,16 @@ describe('Header Component', () => {
     expect(getEl('.logo-container').innerText).toBe('XManager');
   });
 
-  it('should navigate to experiments page when search button is clicked',
-     async () => {
-       bootstrap(Header);
+  it('should navigate to experiments page when search button is clicked', async () => {
+    bootstrap(Header);
 
-       const input = getEl<HTMLInputElement>('input');
-       input.value = 'xid:123';
-       await trigger(input, 'input');
-       await trigger(input, 'keyup', {key: 'Enter'});
+    const input = getEl<HTMLInputElement>('input');
+    input.value = 'xid:123';
+    await trigger(input, 'input');
+    await trigger(input, 'keyup', { key: 'Enter' });
 
-       expect(router.navigate).toHaveBeenCalledWith(['/experiments'], {
-         queryParams: {filter: 'xid:123'},
-       });
-     });
+    expect(router.navigate).toHaveBeenCalledWith(['/experiments'], {
+      queryParams: { filter: 'xid:123' },
+    });
+  });
 });

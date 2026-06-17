@@ -11,15 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { setupModule, bootstrap } from './testing/test';
 import 'jasmine';
 
-import {provideNoopAnimations} from '@angular/platform-browser/animations';
-import {provideRouter} from '@angular/router';
-import {of} from 'rxjs';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { provideRouter } from '@angular/router';
+import { of } from 'rxjs';
 
-import {App} from './app';
-import {AuthService} from './service/auth.service';
+import { App } from './app';
+import { AuthService } from './service/auth.service';
+import { bootstrap, setupModule } from './testing/test';
 
 describe('App Component', () => {
   beforeEach(() => {
@@ -30,11 +30,9 @@ describe('App Component', () => {
       providers: [
         provideNoopAnimations(),
         provideRouter([]),
-        {provide: AuthService, useValue: authServiceMock},
+        { provide: AuthService, useValue: authServiceMock },
       ],
-      imports: [
-        App,
-      ],
+      imports: [App],
     });
   });
 

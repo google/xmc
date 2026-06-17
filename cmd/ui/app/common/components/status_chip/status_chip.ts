@@ -11,8 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {ChangeDetectionStrategy, Component, input} from '@angular/core';
-import {MatChipsModule} from '@angular/material/chips';
+import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { MatChipsModule } from '@angular/material/chips';
 
 /**
  * Input options for the status chip.
@@ -43,14 +43,14 @@ export enum StatusOption {
   templateUrl: './status_chip.ng.html',
   styleUrl: './status_chip.css',
   imports: [MatChipsModule],
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class StatusChip {
   readonly status = input.required<StatusOption>();
 
   // Optional number of replicas to display in the chip. Used for replicated
   // jobs in a work unit.
-  readonly replicas = input<number|undefined>(undefined);
+  readonly replicas = input<number | undefined>(undefined);
 
   readonly StatusOption = StatusOption;
 }

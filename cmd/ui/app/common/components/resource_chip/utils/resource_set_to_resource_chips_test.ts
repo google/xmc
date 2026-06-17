@@ -13,32 +13,33 @@
 // limitations under the License.
 import 'jasmine';
 
-import {ResourceSet} from 'xmanager_cloud/experiment_state_server/proto/resources.jsonpb_decls';
+import { ResourceSet } from 'xmanager_cloud/experiment_state_server/proto/resources.jsonpb_decls';
 
-import {ResourceType} from '../resource_chip';
-
-import {ResourceChipData, resourceSetsToResourceChipsData} from './resource_set_to_resource_chips';
+import { ResourceType } from '../resource_chip';
+import {
+  ResourceChipData,
+  resourceSetsToResourceChipsData,
+} from './resource_set_to_resource_chips';
 
 describe('resourceSetsToResourceChipsData', () => {
   it('should return an empty array for empty input', () => {
     expect(resourceSetsToResourceChipsData([])).toEqual([]);
   });
 
-  it('should return an empty array if a ResourceSet has no relevant resources',
-     () => {
-       const resources: ResourceSet[] = [{}];
-       expect(resourceSetsToResourceChipsData(resources)).toEqual([]);
-     });
+  it('should return an empty array if a ResourceSet has no relevant resources', () => {
+    const resources: ResourceSet[] = [{}];
+    expect(resourceSetsToResourceChipsData(resources)).toEqual([]);
+  });
 
   it('should convert CPU resources correctly', () => {
     const resources: ResourceSet[] = [
       {
-        cpuResources: {cpuMillicores: '1500', memoryBytes: '1073741824'},
+        cpuResources: { cpuMillicores: '1500', memoryBytes: '1073741824' },
       },
     ];
     const expected: ResourceChipData[] = [
-      {resourceType: ResourceType.CPU, text: '1.5 cores'},
-      {resourceType: ResourceType.MEMORY, text: '1 GB'},
+      { resourceType: ResourceType.CPU, text: '1.5 cores' },
+      { resourceType: ResourceType.MEMORY, text: '1 GB' },
     ];
     expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
   });
@@ -46,12 +47,12 @@ describe('resourceSetsToResourceChipsData', () => {
   it('should handle CPU resources with zero millicores', () => {
     const resources: ResourceSet[] = [
       {
-        cpuResources: {cpuMillicores: '0', memoryBytes: '512'},
+        cpuResources: { cpuMillicores: '0', memoryBytes: '512' },
       },
     ];
     const expected: ResourceChipData[] = [
-      {resourceType: ResourceType.CPU, text: '0 cores'},
-      {resourceType: ResourceType.MEMORY, text: '512 B'},
+      { resourceType: ResourceType.CPU, text: '0 cores' },
+      { resourceType: ResourceType.MEMORY, text: '512 B' },
     ];
     expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
   });
@@ -59,12 +60,12 @@ describe('resourceSetsToResourceChipsData', () => {
   it('should handle CPU resources with missing millicores', () => {
     const resources: ResourceSet[] = [
       {
-        cpuResources: {memoryBytes: '256'},
+        cpuResources: { memoryBytes: '256' },
       },
     ];
     const expected: ResourceChipData[] = [
-      {resourceType: ResourceType.CPU, text: '0 cores'},
-      {resourceType: ResourceType.MEMORY, text: '256 B'},
+      { resourceType: ResourceType.CPU, text: '0 cores' },
+      { resourceType: ResourceType.MEMORY, text: '256 B' },
     ];
     expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
   });
@@ -72,11 +73,11 @@ describe('resourceSetsToResourceChipsData', () => {
   it('should convert GPU resources correctly', () => {
     const resources: ResourceSet[] = [
       {
-        gpuResources: {count: '2', type: 'NVIDIA_A100'},
+        gpuResources: { count: '2', type: 'NVIDIA_A100' },
       },
     ];
     const expected: ResourceChipData[] = [
-      {resourceType: ResourceType.GPU, text: '2 x NVIDIA_A100'},
+      { resourceType: ResourceType.GPU, text: '2 x NVIDIA_A100' },
     ];
     expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
   });
@@ -84,46 +85,43 @@ describe('resourceSetsToResourceChipsData', () => {
   it('should convert TPU resources correctly', () => {
     const resources: ResourceSet[] = [
       {
-        tpuResources: {topology: '2x2', type: 'V2'},
+        tpuResources: { topology: '2x2', type: 'V2' },
       },
     ];
-    const expected: ResourceChipData[] = [
-      {resourceType: ResourceType.GPU, text: '2x2 x V2'},
-    ];
+    const expected: ResourceChipData[] = [{ resourceType: ResourceType.GPU, text: '2x2 x V2' }];
     expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
   });
 
   it('should handle mixed resources in a single ResourceSet', () => {
     const resources: ResourceSet[] = [
       {
-        cpuResources: {cpuMillicores: '1000', memoryBytes: '2048'},
-        gpuResources: {count: '1', type: 'NVIDIA_V100'},
+        cpuResources: { cpuMillicores: '1000', memoryBytes: '2048' },
+        gpuResources: { count: '1', type: 'NVIDIA_V100' },
       },
     ];
     const expected: ResourceChipData[] = [
-      {resourceType: ResourceType.CPU, text: '1 core'},
-      {resourceType: ResourceType.MEMORY, text: '2 KB'},
-      {resourceType: ResourceType.GPU, text: '1 x NVIDIA_V100'},
+      { resourceType: ResourceType.CPU, text: '1 core' },
+      { resourceType: ResourceType.MEMORY, text: '2 KB' },
+      { resourceType: ResourceType.GPU, text: '1 x NVIDIA_V100' },
     ];
     expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
   });
 
-  it('should handle multiple ResourceSet objects and flatten the result',
-     () => {
-       const resources: ResourceSet[] = [
-         {cpuResources: {cpuMillicores: '500', memoryBytes: '128'}},
-         {gpuResources: {count: '4', type: 'NVIDIA_A100'}},
-         {tpuResources: {topology: '4x4', type: 'V3'}},
-         {cpuResources: {cpuMillicores: '2000', memoryBytes: '4096'}},
-       ];
-       const expected: ResourceChipData[] = [
-         {resourceType: ResourceType.CPU, text: '0.5 cores'},
-         {resourceType: ResourceType.MEMORY, text: '128 B'},
-         {resourceType: ResourceType.GPU, text: '4 x NVIDIA_A100'},
-         {resourceType: ResourceType.GPU, text: '4x4 x V3'},
-         {resourceType: ResourceType.CPU, text: '2 cores'},
-         {resourceType: ResourceType.MEMORY, text: '4 KB'},
-       ];
-       expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
-     });
+  it('should handle multiple ResourceSet objects and flatten the result', () => {
+    const resources: ResourceSet[] = [
+      { cpuResources: { cpuMillicores: '500', memoryBytes: '128' } },
+      { gpuResources: { count: '4', type: 'NVIDIA_A100' } },
+      { tpuResources: { topology: '4x4', type: 'V3' } },
+      { cpuResources: { cpuMillicores: '2000', memoryBytes: '4096' } },
+    ];
+    const expected: ResourceChipData[] = [
+      { resourceType: ResourceType.CPU, text: '0.5 cores' },
+      { resourceType: ResourceType.MEMORY, text: '128 B' },
+      { resourceType: ResourceType.GPU, text: '4 x NVIDIA_A100' },
+      { resourceType: ResourceType.GPU, text: '4x4 x V3' },
+      { resourceType: ResourceType.CPU, text: '2 cores' },
+      { resourceType: ResourceType.MEMORY, text: '4 KB' },
+    ];
+    expect(resourceSetsToResourceChipsData(resources)).toEqual(expected);
+  });
 });

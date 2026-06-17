@@ -12,55 +12,48 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { setupModule, bootstrap } from 'xmanager_cloud/ui/app/testing/test';
-import {NoopAnimationsModule} from '@angular/platform-browser/animations';
-import {RouterModule} from '@angular/router';
-import {EXPERIMENT_1, WORK_UNIT_1} from 'xmanager_cloud/ui/app/common/mock_data';
-import {of} from 'rxjs';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { RouterModule } from '@angular/router';
+import { of } from 'rxjs';
 
-import {ConfirmDialogService} from 'xmanager_cloud/ui/app/common/components/confirmation_dialog/confirmation_dialog_service';
-import {ExperimentService} from 'xmanager_cloud/ui/app/service/experiment_service';
-import {SnackbarService} from 'xmanager_cloud/ui/app/service/snackbar_service';
-import {WorkUnitsService} from 'xmanager_cloud/ui/app/service/work_units_service';
-import {WorkUnitPageStore} from '../work_unit_page_store';
+import { ConfirmDialogService } from 'xmanager_cloud/ui/app/common/components/confirmation_dialog/confirmation_dialog_service';
+import { EXPERIMENT_1, WORK_UNIT_1 } from 'xmanager_cloud/ui/app/common/mock_data';
+import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
+import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
+import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
+import { bootstrap, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
-import {Header} from './header';
+import { WorkUnitPageStore } from '../work_unit_page_store';
+import { Header } from './header';
 
 describe('WorkUnitHeader Component', () => {
   beforeEach(() => {
     setupModule({
       imports: [
-        NoopAnimationsModule,  // This makes test faster and more stable.
+        NoopAnimationsModule, // This makes test faster and more stable.
         RouterModule.forRoot([]),
       ],
       providers: [
         {
           provide: WorkUnitsService,
-          useValue: jasmine.createSpyObj<WorkUnitsService>(
-              'workUnitsService',
-              ['stopWorkUnit', 'restartWorkUnit'],
-              ),
+          useValue: jasmine.createSpyObj<WorkUnitsService>('workUnitsService', [
+            'stopWorkUnit',
+            'restartWorkUnit',
+          ]),
         },
         {
           provide: ExperimentService,
-          useValue: jasmine.createSpyObj<ExperimentService>(
-              'experimentService',
-              ['getExperiment'],
-              ),
+          useValue: jasmine.createSpyObj<ExperimentService>('experimentService', ['getExperiment']),
         },
         {
           provide: SnackbarService,
-          useValue: jasmine.createSpyObj<SnackbarService>(
-              'snackbarService',
-              ['open'],
-              ),
+          useValue: jasmine.createSpyObj<SnackbarService>('snackbarService', ['open']),
         },
         {
           provide: ConfirmDialogService,
-          useValue: jasmine.createSpyObj<ConfirmDialogService>(
-              'confirmDialogService',
-              {open: of(true)},
-              ),
+          useValue: jasmine.createSpyObj<ConfirmDialogService>('confirmDialogService', {
+            open: of(true),
+          }),
         },
         WorkUnitPageStore,
       ],

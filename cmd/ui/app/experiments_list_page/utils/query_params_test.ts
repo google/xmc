@@ -13,15 +13,15 @@
 // limitations under the License.
 import 'jasmine';
 
-import {Params} from '@angular/router';
+import { Params } from '@angular/router';
 
-import {experimentFiltersToQueryParams, queryParamsToExperimentFilters} from './query_params';
+import { experimentFiltersToQueryParams, queryParamsToExperimentFilters } from './query_params';
 
 describe('experimentFiltersToQueryParams', () => {
   it('converts ExperimentFilters to query params', () => {
     const queryParams = experimentFiltersToQueryParams('test query');
     expect(queryParams).toEqual({
-      'filter': 'test query',
+      filter: 'test query',
     });
   });
 });
@@ -29,11 +29,9 @@ describe('experimentFiltersToQueryParams', () => {
 describe('queryParamsToExperimentFilters', () => {
   it('converts query params to ExperimentFilters', () => {
     const queryParams: Params = {
-      'filter': 'test query',
+      filter: 'test query',
     };
     const filters = queryParamsToExperimentFilters(queryParams);
-    expect(filters).toEqual(
-        'test query',
-    );
+    expect(filters).toEqual('test query');
   });
 });

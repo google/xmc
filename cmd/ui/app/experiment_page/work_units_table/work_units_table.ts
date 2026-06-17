@@ -11,31 +11,45 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {CommonModule, DatePipe} from '@angular/common';
-import {ChangeDetectionStrategy, Component, computed, inject, input, OnInit, Signal} from '@angular/core';
-import {toSignal} from '@angular/core/rxjs-interop';
-import {MatButtonModule} from '@angular/material/button';
-import {MatChipsModule} from '@angular/material/chips';
-import {MatIconModule} from '@angular/material/icon';
-import {MatPaginatorModule} from '@angular/material/paginator';
-import {MatProgressBarModule} from '@angular/material/progress-bar';
-import {MatTableModule} from '@angular/material/table';
-import {MatTooltip} from '@angular/material/tooltip';
-import {RouterLink} from '@angular/router';
-import {WorkUnitStatus} from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
-import {StructuredMessage} from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
-import {WorkUnit} from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
-import {StatusChip, StatusOption} from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
-import {Tag} from 'xmanager_cloud/ui/app/common/components/tag/tag';
+import { CommonModule, DatePipe } from '@angular/common';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  input,
+  OnInit,
+  Signal,
+} from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { MatButtonModule } from '@angular/material/button';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatIconModule } from '@angular/material/icon';
+import { MatPaginatorModule } from '@angular/material/paginator';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatTableModule } from '@angular/material/table';
+import { MatTooltip } from '@angular/material/tooltip';
+import { RouterLink } from '@angular/router';
 
-import {LoadingBar} from 'xmanager_cloud/ui/app/common/components/loading_bar/loading_bar';
-import {PageSizeSelector} from 'xmanager_cloud/ui/app/common/components/page_size_selector/page_size_selector';
-import {getStatusMessages, StatusMessage} from 'xmanager_cloud/ui/app/common/components/status_message/status_message';
-import {StatusMessageFilter} from 'xmanager_cloud/ui/app/common/components/status_message_filter/status_message_filter';
-import {ProcessedUrl, processUrls} from 'xmanager_cloud/ui/app/common/url/url_processor';
-import {StatusMessageFilterService} from 'xmanager_cloud/ui/app/service/status_message_filter_service';
+import { WorkUnitStatus } from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
+import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
+import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
+import { LoadingBar } from 'xmanager_cloud/ui/app/common/components/loading_bar/loading_bar';
+import { PageSizeSelector } from 'xmanager_cloud/ui/app/common/components/page_size_selector/page_size_selector';
+import {
+  StatusChip,
+  StatusOption,
+} from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
+import {
+  getStatusMessages,
+  StatusMessage,
+} from 'xmanager_cloud/ui/app/common/components/status_message/status_message';
+import { StatusMessageFilter } from 'xmanager_cloud/ui/app/common/components/status_message_filter/status_message_filter';
+import { Tag } from 'xmanager_cloud/ui/app/common/components/tag/tag';
+import { ProcessedUrl, processUrls } from 'xmanager_cloud/ui/app/common/url/url_processor';
+import { StatusMessageFilterService } from 'xmanager_cloud/ui/app/service/status_message_filter_service';
 
-import {WorkUnitsTableStore} from './work_units_table_store';
+import { WorkUnitsTableStore } from './work_units_table_store';
 
 enum WorkUnitColumn {
   ID = 'ID',
@@ -107,46 +121,45 @@ export class WorkUnitsTable implements OnInit {
   private readonly severities = toSignal(this.filterService.severities$);
   private readonly sources = toSignal(this.filterService.sources$);
 
-  protected readonly workUnitViews: Signal<readonly WorkUnitView[]|undefined> =
-      computed(
-          () => {
-            const workUnits = this.store.workUnits();
-            if (workUnits === undefined) {
-              return undefined;
-            }
-            this.severities();
-            this.sources();
-            return workUnits.map((workUnit) => {
-              const status = workUnit.currentWorkUnitExecution?.status;
-              const messages = getStatusMessages(status);
+  protected readonly workUnitViews: Signal<readonly WorkUnitView[] | undefined> = computed(() => {
+    const workUnits = this.store.workUnits();
+    if (workUnits === undefined) {
+      return undefined;
+    }
+    this.severities();
+    this.sources();
+    return workUnits.map((workUnit) => {
+      const status = workUnit.currentWorkUnitExecution?.status;
+      const messages = getStatusMessages(status);
 
-              let isStatusMessageVisible = false;
-              if (messages.length > 0) {
-                isStatusMessageVisible = messages.some(
-                    message => this.filterService.isMessageVisible(message));
-              }
-              return {
-                ...workUnit,
-                processedUrls: processUrls(workUnit.urls ?? [], workUnit)
-                                   .slice(0, MAX_URLS_DISPLAYED),
-                statusMessages: messages,
-                isStatusMessageVisible,
-              };
-            });
-          },
-      );
+      let isStatusMessageVisible = false;
+      if (messages.length > 0) {
+        isStatusMessageVisible = messages.some((message) =>
+          this.filterService.isMessageVisible(message),
+        );
+      }
+      return {
+        ...workUnit,
+        processedUrls: processUrls(workUnit.urls ?? [], workUnit).slice(0, MAX_URLS_DISPLAYED),
+        statusMessages: messages,
+        isStatusMessageVisible,
+      };
+    });
+  });
   protected readonly pageSize: Signal<number> = this.store.pageSize;
   protected readonly pageIndex: Signal<number> = this.store.pageIndex;
   protected readonly hasNextPage: Signal<boolean> = this.store.hasNextPage;
   protected readonly hasPrevPage: Signal<boolean> = this.store.hasPrevPage;
   protected readonly isFetching: Signal<boolean> = this.store.isLoading;
-  protected readonly error: Signal<string|null> = this.store.error;
+  protected readonly error: Signal<string | null> = this.store.error;
 
-  protected readonly isLoading: Signal<boolean> =
-      computed(() => this.isFetching() && this.workUnitViews() === undefined);
+  protected readonly isLoading: Signal<boolean> = computed(
+    () => this.isFetching() && this.workUnitViews() === undefined,
+  );
 
-  protected readonly isRefreshing: Signal<boolean> =
-      computed(() => this.isFetching() && this.workUnitViews() !== undefined);
+  protected readonly isRefreshing: Signal<boolean> = computed(
+    () => this.isFetching() && this.workUnitViews() !== undefined,
+  );
 
   ngOnInit() {
     this.store.setXid(this.xid());
@@ -212,9 +225,11 @@ export class WorkUnitsTable implements OnInit {
     this.store.fetchPage();
   }
 
-  shouldDisableUrl(url: ProcessedUrl, workUnit: WorkUnitView): string|null {
-    if (url.displayName === GKE_DASHBOARD_DISPLAY_NAME &&
-        workUnit.currentWorkUnitExecution?.status?.state === 'STOPPED') {
+  shouldDisableUrl(url: ProcessedUrl, workUnit: WorkUnitView): string | null {
+    if (
+      url.displayName === GKE_DASHBOARD_DISPLAY_NAME &&
+      workUnit.currentWorkUnitExecution?.status?.state === 'STOPPED'
+    ) {
       return 'There are no GKE resources for stopped work units';
     }
     return null;
