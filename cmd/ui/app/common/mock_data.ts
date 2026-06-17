@@ -52,10 +52,7 @@ export const EXPERIMENT_2: any = {
   createTime: '2026-06-08T01:00:00Z',
 };
 
-export const EXPERIMENT_LIST: any[] = [
-  EXPERIMENT_1,
-  EXPERIMENT_2,
-];
+export const EXPERIMENT_LIST: any[] = [EXPERIMENT_1, EXPERIMENT_2];
 
 export const WORK_UNIT_1: any = {
   name: 'experiments/1/workUnits/1',
@@ -87,12 +84,7 @@ export const WORK_UNIT_4: any = {
   name: 'experiments/1/workUnits/4',
 };
 
-export const WORK_UNIT_LIST: any[] = [
-  WORK_UNIT_1,
-  WORK_UNIT_2,
-  WORK_UNIT_3,
-  WORK_UNIT_4,
-];
+export const WORK_UNIT_LIST: any[] = [WORK_UNIT_1, WORK_UNIT_2, WORK_UNIT_3, WORK_UNIT_4];
 
 export const ARTIFACT_LIST: any[] = [];
 export const WORK_UNIT_1_ARTIFACT_LIST: any[] = [];

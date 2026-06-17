@@ -14,8 +14,9 @@
 
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
-import { AuthService } from './service/auth.service';
 import { catchError, map, of } from 'rxjs';
+
+import { AuthService } from './service/auth.service';
 
 export const authGuard: CanActivateFn = (route, state) => {
   const authService = inject(AuthService);
@@ -32,6 +33,6 @@ export const authGuard: CanActivateFn = (route, state) => {
     catchError(() => {
       router.navigate(['/']);
       return of(false);
-    })
+    }),
   );
 };

@@ -11,21 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {ComponentHarness} from '@angular/cdk/testing';
-import {MatTableHarness} from '@angular/material/table/testing';
-import {LoadingBarHarness} from 'xmanager_cloud/ui/app/common/components/loading_bar/testing/loading_bar_harness';
+import { ComponentHarness } from '@angular/cdk/testing';
+import { MatTableHarness } from '@angular/material/table/testing';
+
+import { LoadingBarHarness } from 'xmanager_cloud/ui/app/common/components/loading_bar/testing/loading_bar_harness';
 
 /** Harness for interacting with <xmc-experiments-table> in tests. */
 export class ExperimentsTableHarness extends ComponentHarness {
-  static hostSelector =
-      'xmc-experiments-table, [data-component-selector="xmc-experiments-table"]';
+  static hostSelector = 'xmc-experiments-table, [data-component-selector="xmc-experiments-table"]';
 
   private readonly _loadingBar = this.locatorForOptional(LoadingBarHarness);
   private readonly _table = this.locatorForOptional(MatTableHarness);
-  private readonly _noExperimentsMessage =
-      this.locatorForOptional('.no-experiments-message');
-  private readonly _tableContainer =
-      this.locatorForOptional('.table-container');
+  private readonly _noExperimentsMessage = this.locatorForOptional('.no-experiments-message');
+  private readonly _tableContainer = this.locatorForOptional('.table-container');
 
   async hasLoadingBar(): Promise<boolean> {
     return !!(await this._loadingBar());
@@ -55,7 +53,7 @@ export class ExperimentsTableHarness extends ComponentHarness {
     return !!(await this._table());
   }
 
-  async getTable(): Promise<MatTableHarness|null> {
+  async getTable(): Promise<MatTableHarness | null> {
     return this._table();
   }
 

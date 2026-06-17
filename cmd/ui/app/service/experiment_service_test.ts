@@ -11,17 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { cleanState, setupModule, get, flush, setupObservableMatchers } from '../testing/test';
 import 'jasmine';
 
-import {provideHttpClient} from '@angular/common/http';
-import {HttpTestingController, provideHttpClientTesting} from '@angular/common/http/testing';
-import {ListExperimentsRequest, ListExperimentsResponse} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 
-import {EXPERIMENT_1} from '../common/mock_data';
+import {
+  ListExperimentsRequest,
+  ListExperimentsResponse,
+} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
-import {EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA} from './constants';
-import {ExperimentService} from './experiment_service';
+import { EXPERIMENT_1 } from '../common/mock_data';
+import { cleanState, flush, get, setupModule, setupObservableMatchers } from '../testing/test';
+import { EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA } from './constants';
+import { ExperimentService } from './experiment_service';
 
 describe('ExperimentService Service', () => {
   beforeAll(setupObservableMatchers);
@@ -32,7 +35,7 @@ describe('ExperimentService Service', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         ExperimentService,
-        {provide: USE_MOCK_DATA, useValue: false},
+        { provide: USE_MOCK_DATA, useValue: false },
       ],
     });
 
@@ -50,10 +53,10 @@ describe('ExperimentService Service', () => {
     const mockResponse: ListExperimentsResponse = {
       experiments: [
         EXPERIMENT_1,
-        {...EXPERIMENT_1, name: 'experiments/2'},
-        {...EXPERIMENT_1, name: 'experiments/3'},
-        {...EXPERIMENT_1, name: 'experiments/4'},
-        {...EXPERIMENT_1, name: 'experiments/5'},
+        { ...EXPERIMENT_1, name: 'experiments/2' },
+        { ...EXPERIMENT_1, name: 'experiments/3' },
+        { ...EXPERIMENT_1, name: 'experiments/4' },
+        { ...EXPERIMENT_1, name: 'experiments/5' },
       ],
       nextPageToken: 'page_2',
     };
@@ -69,7 +72,7 @@ describe('ExperimentService Service', () => {
       });
 
       const req = state.httpMock.expectOne(
-          `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments?pageSize=10&pageToken=page_1&filter=user:me&orderBy=created%20desc`,
+        `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments?pageSize=10&pageToken=page_1&filter=user:me&orderBy=created%20desc`,
       );
       expect(req.request.method).toBe('GET');
       expect(req.request.params.get('filter')).toBe('user:me');
@@ -88,9 +91,7 @@ describe('ExperimentService Service', () => {
         expect(response).toEqual(EXPERIMENT_1);
       });
 
-      const req = state.httpMock.expectOne(
-          `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/${xid}`,
-      );
+      const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/${xid}`);
       expect(req.request.method).toBe('GET');
 
       req.flush(EXPERIMENT_1);

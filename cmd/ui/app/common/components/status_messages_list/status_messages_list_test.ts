@@ -11,27 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { setupModule, bootstrap, get, flush } from 'xmanager_cloud/ui/app/testing/test';
 import 'jasmine';
 
-import {getHarness} from '@angular/cdk/testing/catalyst/async';
-import {provideNoopAnimations} from '@angular/platform-browser/animations';
-import {ListStatusMessagesResponse} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import {StatusMessage as StatusMessageProto} from 'xmanager_cloud/experiment_state_server/proto/status_message.jsonpb_decls';
-import {MOCK_HISTORICAL_STATUS_MESSAGES} from 'xmanager_cloud/ui/app/common/mock_data';
-import {ALL_SEVERITIES, StatusMessageFilterService} from 'xmanager_cloud/ui/app/service/status_message_filter_service';
-import {StatusMessageService} from 'xmanager_cloud/ui/app/service/status_message_service';
-import {of, throwError} from 'rxjs';
+import { getHarness } from '@angular/cdk/testing/catalyst/async';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { of, throwError } from 'rxjs';
 
-import {StatusMessagesList} from './status_messages_list';
-import {StatusMessagesListHarness} from './testing/status_messages_list_harness';
+import { ListStatusMessagesResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { StatusMessage as StatusMessageProto } from 'xmanager_cloud/experiment_state_server/proto/status_message.jsonpb_decls';
+import { MOCK_HISTORICAL_STATUS_MESSAGES } from 'xmanager_cloud/ui/app/common/mock_data';
+import {
+  ALL_SEVERITIES,
+  StatusMessageFilterService,
+} from 'xmanager_cloud/ui/app/service/status_message_filter_service';
+import { StatusMessageService } from 'xmanager_cloud/ui/app/service/status_message_service';
+import { bootstrap, flush, get, setupModule } from 'xmanager_cloud/ui/app/testing/test';
+
+import { StatusMessagesList } from './status_messages_list';
+import { StatusMessagesListHarness } from './testing/status_messages_list_harness';
 
 describe('StatusMessagesList', () => {
   let mockStatusMessageService: jasmine.SpyObj<StatusMessageService>;
 
   beforeEach(() => {
-    mockStatusMessageService =
-        jasmine.createSpyObj('StatusMessageService', ['listStatusMessages']);
+    mockStatusMessageService = jasmine.createSpyObj('StatusMessageService', ['listStatusMessages']);
     mockStatusMessageService.listStatusMessages.and.callFake((req) => {
       let msgs = MOCK_HISTORICAL_STATUS_MESSAGES;
       if (req.filter) {
@@ -48,12 +51,10 @@ describe('StatusMessagesList', () => {
     });
 
     setupModule({
-      imports: [
-        StatusMessagesList,
-      ],
+      imports: [StatusMessagesList],
       providers: [
         provideNoopAnimations(),
-        {provide: StatusMessageService, useValue: mockStatusMessageService},
+        { provide: StatusMessageService, useValue: mockStatusMessageService },
       ],
     });
 
@@ -67,17 +68,16 @@ describe('StatusMessagesList', () => {
   });
 
   it('should display status messages when loaded successfully', async () => {
-    bootstrap(StatusMessagesList, {parentName: 'experiments/1'});
+    bootstrap(StatusMessagesList, { parentName: 'experiments/1' });
     await flush();
 
     const harness = await getHarness(StatusMessagesListHarness);
     expect(await harness.getMessagesCount()).toBe(2);
-    expect(await harness.getMessageText(0))
-        .toContain('Application is being initialized.');
+    expect(await harness.getMessageText(0)).toContain('Application is being initialized.');
   });
 
   it('should filter messages by severity', async () => {
-    bootstrap(StatusMessagesList, {parentName: 'experiments/1'});
+    bootstrap(StatusMessagesList, { parentName: 'experiments/1' });
     await flush();
     const harness = await getHarness(StatusMessagesListHarness);
 
@@ -85,21 +85,21 @@ describe('StatusMessagesList', () => {
     await flush();
 
     expect(await harness.getMessagesCount()).toBe(1);
-    expect(await harness.getMessageText(0))
-        .toContain('Critical failure: connection lost.');
+    expect(await harness.getMessageText(0)).toContain('Critical failure: connection lost.');
   });
 
   it('should load more messages when loadMore is called', async () => {
     mockStatusMessageService.listStatusMessages.and.returnValues(
-        of({
-          statusMessages: MOCK_HISTORICAL_STATUS_MESSAGES,
-          nextPageToken: 'token-1',
-        }),
-        of({
-          statusMessages: MOCK_HISTORICAL_STATUS_MESSAGES,
-          nextPageToken: '',
-        }));
-    bootstrap(StatusMessagesList, {parentName: 'experiments/1'});
+      of({
+        statusMessages: MOCK_HISTORICAL_STATUS_MESSAGES,
+        nextPageToken: 'token-1',
+      }),
+      of({
+        statusMessages: MOCK_HISTORICAL_STATUS_MESSAGES,
+        nextPageToken: '',
+      }),
+    );
+    bootstrap(StatusMessagesList, { parentName: 'experiments/1' });
     await flush();
 
     const harness = await getHarness(StatusMessagesListHarness);
@@ -114,9 +114,10 @@ describe('StatusMessagesList', () => {
 
   it('should display error message when loading fails', async () => {
     mockStatusMessageService.listStatusMessages.and.returnValue(
-        throwError(() => ({message: 'Network error'})));
+      throwError(() => ({ message: 'Network error' })),
+    );
 
-    bootstrap(StatusMessagesList, {parentName: 'experiments/1'});
+    bootstrap(StatusMessagesList, { parentName: 'experiments/1' });
     await flush();
 
     const harness = await getHarness(StatusMessagesListHarness);
@@ -130,15 +131,15 @@ describe('StatusMessagesList', () => {
         content: {
           userFacingText: 'App message',
           severity: 'INFO',
-          source: 'APPLICATION'
-        }
+          source: 'APPLICATION',
+        },
       },
       {
         content: {
           userFacingText: 'K8s message',
           severity: 'ERROR',
-          source: 'KUBERNETES'
-        }
+          source: 'KUBERNETES',
+        },
       },
     ] as StatusMessageProto[];
     mockStatusMessageService.listStatusMessages.and.callFake((req) => {
@@ -146,9 +147,9 @@ describe('StatusMessagesList', () => {
       if (req.filter && req.filter.includes('source = "KUBERNETES"')) {
         msgs = msgs.filter((m) => m.content?.source === 'KUBERNETES');
       }
-      return of({statusMessages: msgs} as ListStatusMessagesResponse);
+      return of({ statusMessages: msgs } as ListStatusMessagesResponse);
     });
-    bootstrap(StatusMessagesList, {parentName: 'experiments/1'});
+    bootstrap(StatusMessagesList, { parentName: 'experiments/1' });
     await flush();
     const harness = await getHarness(StatusMessagesListHarness);
 
@@ -165,39 +166,38 @@ describe('StatusMessagesList', () => {
           userFacingText: 'Msg 1',
           createTime: '2025-10-23T17:40:00Z',
           severity: 'INFO',
-          source: 'APPLICATION'
-        }
+          source: 'APPLICATION',
+        },
       },
       {
         content: {
           userFacingText: 'Msg 2',
           createTime: '2025-10-23T17:41:00Z',
           severity: 'INFO',
-          source: 'APPLICATION'
-        }
+          source: 'APPLICATION',
+        },
       },
     ] as StatusMessageProto[];
-
 
     beforeEach(() => {
       mockStatusMessageService.listStatusMessages.and.callFake((req) => {
         const msgs = [...testMessages];
         if (req.orderBy && req.orderBy.includes('ASC')) {
-          msgs.sort(
-              (a, b) => (a.content?.createTime ||
-                         '').localeCompare(b.content?.createTime || ''));
+          msgs.sort((a, b) =>
+            (a.content?.createTime || '').localeCompare(b.content?.createTime || ''),
+          );
         } else if (req.orderBy && req.orderBy.includes('DESC')) {
-          msgs.sort(
-              (a, b) => (b.content?.createTime ||
-                         '').localeCompare(a.content?.createTime || ''));
+          msgs.sort((a, b) =>
+            (b.content?.createTime || '').localeCompare(a.content?.createTime || ''),
+          );
         }
 
-        return of({statusMessages: msgs} as ListStatusMessagesResponse);
+        return of({ statusMessages: msgs } as ListStatusMessagesResponse);
       });
     });
 
     it('should sort messages in descending order by default', async () => {
-      bootstrap(StatusMessagesList, {parentName: 'experiments/1'});
+      bootstrap(StatusMessagesList, { parentName: 'experiments/1' });
       await flush();
 
       const harness = await getHarness(StatusMessagesListHarness);
@@ -208,7 +208,7 @@ describe('StatusMessagesList', () => {
     });
 
     it('should sort messages in ascending order', async () => {
-      bootstrap(StatusMessagesList, {parentName: 'experiments/1'});
+      bootstrap(StatusMessagesList, { parentName: 'experiments/1' });
       await flush();
       const harness = await getHarness(StatusMessagesListHarness);
 
@@ -222,24 +222,26 @@ describe('StatusMessagesList', () => {
   });
 
   it('should refresh messages and reload on clicking refresh', async () => {
-    bootstrap(StatusMessagesList, {parentName: 'experiments/1'});
+    bootstrap(StatusMessagesList, { parentName: 'experiments/1' });
     await flush();
     const harness = await getHarness(StatusMessagesListHarness);
     const initialMessagesCount = await harness.getMessagesCount();
 
-    mockStatusMessageService.listStatusMessages.and.returnValue(of({
-      statusMessages: [
-        ...MOCK_HISTORICAL_STATUS_MESSAGES,
-        {
-          content: {
-            userFacingText: 'Msg 3',
-            createTime: '2025-10-23T17:42:00Z',
-            severity: 'INFO',
-            source: 'APPLICATION',
-          }
-        },
-      ],
-    } as ListStatusMessagesResponse));
+    mockStatusMessageService.listStatusMessages.and.returnValue(
+      of({
+        statusMessages: [
+          ...MOCK_HISTORICAL_STATUS_MESSAGES,
+          {
+            content: {
+              userFacingText: 'Msg 3',
+              createTime: '2025-10-23T17:42:00Z',
+              severity: 'INFO',
+              source: 'APPLICATION',
+            },
+          },
+        ],
+      } as ListStatusMessagesResponse),
+    );
     const filterHarness = await harness.getFilter();
     await filterHarness.clickRefresh();
     await flush();
@@ -279,15 +281,14 @@ describe('StatusMessagesList', () => {
 
     for (const tc of timePresetCases) {
       it(`should send correct filter to backend for time preset selection: ${tc.presetName}`, async () => {
-        bootstrap(StatusMessagesList, {parentName: 'experiments/1'});
+        bootstrap(StatusMessagesList, { parentName: 'experiments/1' });
         await flush();
         const harness = await getHarness(StatusMessagesListHarness);
 
         await (await harness.getFilter()).selectTimePreset(tc.presetName);
         await flush();
 
-        const lastCall =
-            mockStatusMessageService.listStatusMessages.calls.mostRecent();
+        const lastCall = mockStatusMessageService.listStatusMessages.calls.mostRecent();
         if (tc.expectedFilter) {
           expect(lastCall.args[0].filter).toContain(tc.expectedFilter);
         } else {
@@ -297,7 +298,7 @@ describe('StatusMessagesList', () => {
     }
 
     it('should send correct filter payload for custom time range', async () => {
-      bootstrap(StatusMessagesList, {parentName: 'experiments/1'});
+      bootstrap(StatusMessagesList, { parentName: 'experiments/1' });
       await flush();
       const harness = await getHarness(StatusMessagesListHarness);
 
@@ -309,8 +310,7 @@ describe('StatusMessagesList', () => {
       await filterHarness.clickRefresh();
       await flush();
 
-      const lastCall =
-          mockStatusMessageService.listStatusMessages.calls.mostRecent();
+      const lastCall = mockStatusMessageService.listStatusMessages.calls.mostRecent();
       const startIso = new Date('2025-10-01T00:00:00').toISOString();
       const endIso = new Date('2025-10-02T00:00:00').toISOString();
       expect(lastCall.args[0].filter).toContain(`create_time >= "${startIso}"`);

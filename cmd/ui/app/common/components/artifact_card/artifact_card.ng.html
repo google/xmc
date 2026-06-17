@@ -30,9 +30,7 @@ limitations under the License.
   <div class="card-main-content">
     <mat-icon>{{ getIcon(artifact()) }}</mat-icon>
     <div class="name-type-section">
-      <div class="artifact-title">
-        {{ artifact().url?.displayName || artifact().url?.url }}
-      </div>
+      <div class="artifact-title">{{ artifact().url?.displayName || artifact().url?.url }}</div>
       <div class="artifact-subtitle">
         <span>{{ formatDataType(artifact().dataType) }}</span>
         @let wuInfo = workUnitInfo();
@@ -49,24 +47,22 @@ limitations under the License.
       </div>
     </div>
     @if (!isNoteLong() && artifact().notes) {
-      <div class="notes-section">
-        {{ artifact().notes }}
-      </div>
+      <div class="notes-section">{{ artifact().notes }}</div>
     }
   </div>
 </ng-template>
 
 <ng-template #additionalInfoBody let-info="info">
   @if (info.codeBlock) {
-    <div class="additional-info-code"
-      ><ol class="code-lines">
+    <div class="additional-info-code">
+      <ol class="code-lines">
         @for (line of codeLines(); track $index) {
-          <li
-            ><code>{{ line }}</code></li
-          >
+          <li>
+            <code>{{ line }}</code>
+          </li>
         }
-      </ol></div
-    >
+      </ol>
+    </div>
   } @else if (info.text) {
     <div class="additional-info-text">{{ info.text }}</div>
   }
@@ -76,9 +72,7 @@ limitations under the License.
   <mat-divider></mat-divider>
   <div class="card-lower-content">
     @if (isNoteLong()) {
-      <div class="long-notes-section">
-        {{ artifact().notes }}
-      </div>
+      <div class="long-notes-section">{{ artifact().notes }}</div>
     }
     @if (artifact().tags?.length) {
       <div class="tags-section">
@@ -96,7 +90,7 @@ limitations under the License.
             </mat-expansion-panel-header>
             <ng-container
               [ngTemplateOutlet]="additionalInfoBody"
-              [ngTemplateOutletContext]="{info: info}"
+              [ngTemplateOutletContext]="{ info: info }"
             ></ng-container>
           </mat-expansion-panel>
         } @else {
@@ -105,7 +99,7 @@ limitations under the License.
           }
           <ng-container
             [ngTemplateOutlet]="additionalInfoBody"
-            [ngTemplateOutletContext]="{info: info}"
+            [ngTemplateOutletContext]="{ info: info }"
           ></ng-container>
         }
       </div>

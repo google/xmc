@@ -11,26 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {ComponentHarness} from '@angular/cdk/testing';
-import {MatButtonHarness} from '@angular/material/button/testing';
-import {MatTabGroupHarness} from '@angular/material/tabs/testing';
-import {LoadingBarHarness} from 'xmanager_cloud/ui/app/common/components/loading_bar/testing/loading_bar_harness';
+import { ComponentHarness } from '@angular/cdk/testing';
+import { MatButtonHarness } from '@angular/material/button/testing';
+import { MatTabGroupHarness } from '@angular/material/tabs/testing';
+
+import { LoadingBarHarness } from 'xmanager_cloud/ui/app/common/components/loading_bar/testing/loading_bar_harness';
 
 /** Harness for interacting with <xmc-experiment-page> in tests. */
 export class ExperimentPageHarness extends ComponentHarness {
-  static hostSelector =
-      'xmc-experiment-page, [data-component-selector="xmc-experiment-page"]';
+  static hostSelector = 'xmc-experiment-page, [data-component-selector="xmc-experiment-page"]';
 
   private readonly _loadingBar = this.locatorForOptional(LoadingBarHarness);
   private readonly _title = this.locatorForOptional('.experiment-title');
   private readonly _stopButton = this.locatorForOptional(
-      MatButtonHarness.with({text: /Stop Experiment/}),
+    MatButtonHarness.with({ text: /Stop Experiment/ }),
   );
   private readonly _restartButton = this.locatorFor(
-      MatButtonHarness.with({text: /Restart Experiment/}),
+    MatButtonHarness.with({ text: /Restart Experiment/ }),
   );
   private readonly _editButton = this.locatorFor(
-      MatButtonHarness.with({text: /Edit Experiment/}),
+    MatButtonHarness.with({ text: /Edit Experiment/ }),
   );
   private readonly _tabGroup = this.locatorFor(MatTabGroupHarness);
 
@@ -74,7 +74,7 @@ export class ExperimentPageHarness extends ComponentHarness {
 
   async hasStatusHistoryTab(): Promise<boolean> {
     const tabGroup = await this._tabGroup();
-    const tabs = await tabGroup.getTabs({label: 'Status History'});
+    const tabs = await tabGroup.getTabs({ label: 'Status History' });
     return tabs.length > 0;
   }
 }

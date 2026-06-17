@@ -11,23 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {inject, Injectable, Signal} from '@angular/core';
-import {ComponentStore} from '@ngrx/component-store';
-import {ListWorkUnitsRequest, ListWorkUnitsResponse} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import {WorkUnit} from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
-import {SnackbarService} from 'xmanager_cloud/ui/app/service/snackbar_service';
-import {WorkUnitsService} from 'xmanager_cloud/ui/app/service/work_units_service';
-import {switchMap, tap} from 'rxjs/operators';
+import { inject, Injectable, Signal } from '@angular/core';
+import { ComponentStore } from '@ngrx/component-store';
+import { switchMap, tap } from 'rxjs/operators';
 
-import {getInitialPaginationState, PaginationState, setPageSize} from 'xmanager_cloud/ui/app/common/pagination/pagination';
+import {
+  ListWorkUnitsRequest,
+  ListWorkUnitsResponse,
+} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
+import {
+  getInitialPaginationState,
+  PaginationState,
+  setPageSize,
+} from 'xmanager_cloud/ui/app/common/pagination/pagination';
+import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
+import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
 
 /** Interface for the state of the WorkUnitsTable. */
 interface WorkUnitsTableState {
-  xid: string|null;
-  workUnits: readonly WorkUnit[]|undefined;
+  xid: string | null;
+  workUnits: readonly WorkUnit[] | undefined;
   pagination: PaginationState;
   isLoading: boolean;
-  error: string|null;
+  error: string | null;
 }
 
 /** Initial state for the WorkUnitsTableStore. */
@@ -38,7 +45,6 @@ const INITIAL_STATE: WorkUnitsTableState = {
   isLoading: false,
   error: null,
 };
-
 
 /**
  * Component store for the WorkUnitsTable.
@@ -54,43 +60,33 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
   }
 
   // SELECTORS
-  readonly workUnits: Signal<readonly WorkUnit[]|undefined> = this.selectSignal(
-      (state) => state.workUnits,
+  readonly workUnits: Signal<readonly WorkUnit[] | undefined> = this.selectSignal(
+    (state) => state.workUnits,
   );
 
-  readonly isLoading: Signal<boolean> = this.selectSignal(
-      (state) => state.isLoading,
-  );
+  readonly isLoading: Signal<boolean> = this.selectSignal((state) => state.isLoading);
 
-  readonly error: Signal<string|null> = this.selectSignal(
-      (state) => state.error,
-  );
+  readonly error: Signal<string | null> = this.selectSignal((state) => state.error);
 
-  readonly pageSize: Signal<number> = this.selectSignal(
-      (state) => state.pagination.pageSize,
-  );
+  readonly pageSize: Signal<number> = this.selectSignal((state) => state.pagination.pageSize);
 
-  readonly pageIndex: Signal<number> = this.selectSignal(
-      (state) => state.pagination.pageIndex,
-  );
+  readonly pageIndex: Signal<number> = this.selectSignal((state) => state.pagination.pageIndex);
 
   readonly hasNextPage: Signal<boolean> = this.selectSignal(
-      (state) => !!state.pagination.nextPageToken,
+    (state) => !!state.pagination.nextPageToken,
   );
 
   readonly hasPrevPage: Signal<boolean> = this.selectSignal(
-      (state) => state.pagination.previousTokens.length > 0,
+    (state) => state.pagination.previousTokens.length > 0,
   );
 
   readonly setXid = this.updater((state, xid: string) => ({
-                                   ...state,
-                                   xid,
-                                 }));
+    ...state,
+    xid,
+  }));
 
   /** Sets the page size. It does not fetch data. */
-  readonly setPageSize =
-      this.updater((state, pageSize: number) => setPageSize(state, pageSize));
-
+  readonly setPageSize = this.updater((state, pageSize: number) => setPageSize(state, pageSize));
 
   /**
    * This updater will update page tokens:
@@ -99,7 +95,7 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
    * - Set the next page token to null.
    */
   readonly goToNextPage = this.updater((state) => {
-    const {pagination} = state;
+    const { pagination } = state;
 
     if (!pagination.nextPageToken) {
       return state;
@@ -110,13 +106,12 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
       pagination: {
         ...pagination,
         pageIndex: pagination.pageIndex + 1,
-        currentPageToken: pagination.nextPageToken ?
-            pagination.nextPageToken :
-            pagination.currentPageToken,
-        previousTokens:
-            [...pagination.previousTokens, pagination.currentPageToken],
+        currentPageToken: pagination.nextPageToken
+          ? pagination.nextPageToken
+          : pagination.currentPageToken,
+        previousTokens: [...pagination.previousTokens, pagination.currentPageToken],
         nextPageToken: undefined,
-      }
+      },
     };
   });
 
@@ -127,8 +122,8 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
    * and fetchPage is always called after goToPreviousPage.
    */
   readonly goToPreviousPage = this.updater((state) => {
-    const {pagination} = state;
-    const {previousTokens, pageIndex} = pagination;
+    const { pagination } = state;
+    const { previousTokens, pageIndex } = pagination;
 
     if (previousTokens.length === 0) {
       return state;
@@ -148,49 +143,48 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
     };
   });
 
-
   // EFFECTS
   /**
    * Fetch a page of work units with the current page token.
    * Will update the work units and next page token based on the response.
    */
-  readonly fetchPage = this.effect(
-      (trigger$) => trigger$.pipe(
-          tap(() => {
-            this.patchState({isLoading: true});
-          }),
-          switchMap(() => {
-            const currentState = this.get();
-            const paginationState = currentState.pagination;
-            const request: ListWorkUnitsRequest = {
-              parent: `experiments/${currentState.xid}`,
-              pageSize: paginationState.pageSize,
-              pageToken: paginationState.currentPageToken,
-            };
-            return this.workUnitsService.searchWorkUnits(request).pipe(tap(
-                {
-                  next: (response: ListWorkUnitsResponse) => {
-                    this.patchState({
-                      pagination: {
-                        ...paginationState,
-                        nextPageToken: response.nextPageToken ?? undefined,
-                      },
-                      isLoading: false,
-                      workUnits: response.workUnits ?? [],
-                      error: null,
-                    });
-                  },
-                  error: (error) => {
-                    this.patchState({
-                      error: error.message || error,
-                      isLoading: false,
-                      workUnits: [],
-                    });
-                    this.snackbarService.open(`Failed to fetch work units: ${
-                        error.message || error}`);
-                  },
+  readonly fetchPage = this.effect((trigger$) =>
+    trigger$.pipe(
+      tap(() => {
+        this.patchState({ isLoading: true });
+      }),
+      switchMap(() => {
+        const currentState = this.get();
+        const paginationState = currentState.pagination;
+        const request: ListWorkUnitsRequest = {
+          parent: `experiments/${currentState.xid}`,
+          pageSize: paginationState.pageSize,
+          pageToken: paginationState.currentPageToken,
+        };
+        return this.workUnitsService.searchWorkUnits(request).pipe(
+          tap({
+            next: (response: ListWorkUnitsResponse) => {
+              this.patchState({
+                pagination: {
+                  ...paginationState,
+                  nextPageToken: response.nextPageToken ?? undefined,
                 },
-                ));
+                isLoading: false,
+                workUnits: response.workUnits ?? [],
+                error: null,
+              });
+            },
+            error: (error) => {
+              this.patchState({
+                error: error.message || error,
+                isLoading: false,
+                workUnits: [],
+              });
+              this.snackbarService.open(`Failed to fetch work units: ${error.message || error}`);
+            },
           }),
-          ));
+        );
+      }),
+    ),
+  );
 }

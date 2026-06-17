@@ -12,14 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { cleanState, setupModule } from './testing/test';
 import 'jasmine';
 
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
+
 import { authGuard } from './auth.guard';
 import { AuthService } from './service/auth.service';
+import { cleanState, setupModule } from './testing/test';
 
 function setup() {
   return cleanState(() => {
@@ -29,8 +30,8 @@ function setup() {
     setupModule({
       providers: [
         { provide: AuthService, useValue: authServiceSpy },
-        { provide: Router, useValue: routerSpy }
-      ]
+        { provide: Router, useValue: routerSpy },
+      ],
     });
     return {
       authServiceSpy,
