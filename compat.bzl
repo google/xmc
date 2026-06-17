@@ -161,3 +161,4 @@ def compat_go_test(name, srcs = [], **kwargs):
         srcs = _compat_gen_srcs(name, srcs),
         **kwargs
     )
+# test comment
