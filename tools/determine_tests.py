@@ -104,7 +104,11 @@ def main():
         return
 
     targets = set()
+    run_cmd_tests = False
     for f in changed_files:
+        if f.startswith("internal/"):
+            run_cmd_tests = True
+
         basename = os.path.basename(f)
         if basename in ("BUILD", "BUILD.bazel") or f.endswith(".bzl"):
             pkg = os.path.dirname(f)
@@ -127,7 +131,10 @@ def main():
                 targets.add(f"//{pkg}:all")
 
     if not targets:
-        print("INFO: No source code or build file changes detected. No tests to run.", file=sys.stderr)
+        if run_cmd_tests:
+            print("//cmd/...")
+        else:
+            print("INFO: No source code or build file changes detected. No tests to run.", file=sys.stderr)
         return
 
     # Construct the Bazel query to find reverse dependencies of tests
@@ -137,6 +144,12 @@ def main():
     try:
         test_targets = run_cmd(["bazel", "query", query])
         test_targets_list = [t.strip() for t in test_targets.splitlines() if t.strip()]
+        if run_cmd_tests:
+            test_targets_list.append("//cmd/...")
+        
+        # De-duplicate targets
+        test_targets_list = sorted(list(set(test_targets_list)))
+
         if test_targets_list:
             for target in test_targets_list:
                 print(target)
