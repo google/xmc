@@ -11,12 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {ChangeDetectionStrategy, Component, input} from '@angular/core';
-import {MatExpansionModule} from '@angular/material/expansion';
-import {MatIconModule} from '@angular/material/icon';
-import {formatArtifactDataType} from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
-import {ArtifactListItem} from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
-import {ArtifactCard} from 'xmanager_cloud/ui/app/common/components/artifact_card/artifact_card';
+import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { MatExpansionModule } from '@angular/material/expansion';
+import { MatIconModule } from '@angular/material/icon';
+
+import { formatArtifactDataType } from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
+import { ArtifactListItem } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
+import { ArtifactCard } from 'xmanager_cloud/ui/app/common/components/artifact_card/artifact_card';
 
 /**
  * Component for displaying a column of artifacts within the same lifecycle phase.
@@ -26,11 +27,7 @@ import {ArtifactCard} from 'xmanager_cloud/ui/app/common/components/artifact_car
   standalone: true,
   templateUrl: './artifacts_column.ng.html',
   styleUrl: './artifacts_column.css',
-  imports: [
-    MatIconModule,
-    ArtifactCard,
-    MatExpansionModule,
-  ],
+  imports: [MatIconModule, ArtifactCard, MatExpansionModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ArtifactsColumn {

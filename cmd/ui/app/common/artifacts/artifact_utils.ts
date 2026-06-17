@@ -11,9 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {Artifact} from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
+import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 
-import {ArtifactListItem} from './interfaces';
+import { ArtifactListItem } from './interfaces';
 
 /** Returns the icon for an artifact. */
 export function getArtifactIcon(artifact: Artifact): string {
@@ -81,9 +81,7 @@ export function getArtifactIcon(artifact: Artifact): string {
 }
 
 /** Formats artifact data type for display. */
-export function formatArtifactDataType(
-    dataType: Artifact.DataType|undefined,
-    ): string {
+export function formatArtifactDataType(dataType: Artifact.DataType | undefined): string {
   if (!dataType) {
     return 'Unspecified';
   }
@@ -97,24 +95,24 @@ export function formatArtifactDataType(
     case 'HTML_REPORT':
       return 'HTML Report';
     default:
-      return dataType.split('_')
-          .map(
-              (word) =>
-                  word.charAt(0).toUpperCase() + word.slice(1).toLowerCase(),
-              )
-          .join(' ');
+      return dataType
+        .split('_')
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
   }
 }
 
 /** Groups artifacts by type if they exceed threshold, and sorts by priority. */
 export function groupAndSortArtifacts(
-    artifacts: Artifact[],
-    phase: Artifact.LifecyclePhase|'OUTPUT'|'INPUT'|'EXECUTION',
-    groupingThreshold: number): ArtifactListItem[] {
+  artifacts: Artifact[],
+  phase: Artifact.LifecyclePhase | 'OUTPUT' | 'INPUT' | 'EXECUTION',
+  groupingThreshold: number,
+): ArtifactListItem[] {
   // 1. Sort by priority
   const sorted = [...artifacts].sort(
-      (a, b) => (a.url?.priority ?? Number.MAX_SAFE_INTEGER) -
-          (b.url?.priority ?? Number.MAX_SAFE_INTEGER));
+    (a, b) =>
+      (a.url?.priority ?? Number.MAX_SAFE_INTEGER) - (b.url?.priority ?? Number.MAX_SAFE_INTEGER),
+  );
 
   // 2. Group artifacts by type
   const artifactsByType = new Map<Artifact.DataType, Artifact[]>();
@@ -144,7 +142,7 @@ export function groupAndSortArtifacts(
         groupedTypesProcessed.add(type);
       }
     } else {
-      result.push({type: 'single', artifact});
+      result.push({ type: 'single', artifact });
     }
   }
   return result;

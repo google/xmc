@@ -11,16 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { cleanState, setupModule, get, flush, setupObservableMatchers } from '../testing/test';
 import 'jasmine';
 
-import {provideHttpClient} from '@angular/common/http';
-import {HttpTestingController, provideHttpClientTesting} from '@angular/common/http/testing';
-import {ListStatusMessagesResponse} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import {MOCK_HISTORICAL_STATUS_MESSAGES} from 'xmanager_cloud/ui/app/common/mock_data';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 
-import {EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA} from './constants';
-import {StatusMessageService} from './status_message_service';
+import { ListStatusMessagesResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { MOCK_HISTORICAL_STATUS_MESSAGES } from 'xmanager_cloud/ui/app/common/mock_data';
+
+import { cleanState, flush, get, setupModule, setupObservableMatchers } from '../testing/test';
+import { EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA } from './constants';
+import { StatusMessageService } from './status_message_service';
 
 describe('StatusMessageService', () => {
   beforeAll(setupObservableMatchers);
@@ -32,7 +33,7 @@ describe('StatusMessageService', () => {
           provideHttpClient(),
           provideHttpClientTesting(),
           StatusMessageService,
-          {provide: USE_MOCK_DATA, useValue: false},
+          { provide: USE_MOCK_DATA, useValue: false },
         ],
       });
 
@@ -52,29 +53,30 @@ describe('StatusMessageService', () => {
         nextPageToken: 'token',
       };
 
-      state.service.listStatusMessages({parent: 'experiments/1'})
-          .subscribe(response => {
-            expect(response).toEqual(mockResponse);
-          });
+      state.service.listStatusMessages({ parent: 'experiments/1' }).subscribe((response) => {
+        expect(response).toEqual(mockResponse);
+      });
 
       const req = state.httpMock.expectOne(
-          `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/statusMessages`);
+        `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/statusMessages`,
+      );
       expect(req.request.method).toBe('GET');
       req.flush(mockResponse);
     });
 
     it('should include filters and pagination in query params', async () => {
       state.service
-          .listStatusMessages({
-            parent: 'experiments/1',
-            pageSize: 10,
-            pageToken: 'prev_token',
-            filter: 'severity=ERROR',
-          })
-          .subscribe();
+        .listStatusMessages({
+          parent: 'experiments/1',
+          pageSize: 10,
+          pageToken: 'prev_token',
+          filter: 'severity=ERROR',
+        })
+        .subscribe();
 
-      const req = state.httpMock.expectOne(
-          req => req.url.includes('/experiments/1/statusMessages'));
+      const req = state.httpMock.expectOne((req) =>
+        req.url.includes('/experiments/1/statusMessages'),
+      );
       expect(req.request.params.get('pageSize')).toBe('10');
       expect(req.request.params.get('pageToken')).toBe('prev_token');
       expect(req.request.params.get('filter')).toBe('severity=ERROR');
@@ -88,7 +90,7 @@ describe('StatusMessageService', () => {
         providers: [
           provideHttpClient(),
           StatusMessageService,
-          {provide: USE_MOCK_DATA, useValue: true},
+          { provide: USE_MOCK_DATA, useValue: true },
         ],
       });
 
@@ -98,13 +100,11 @@ describe('StatusMessageService', () => {
     }, beforeEach);
 
     it('should return mock status messages', (done) => {
-      state.service.listStatusMessages({parent: 'experiments/1'})
-          .subscribe(response => {
-            expect(response.statusMessages)
-                .toEqual(MOCK_HISTORICAL_STATUS_MESSAGES);
-            expect(response.nextPageToken).toBe('page_token');
-            done();
-          });
+      state.service.listStatusMessages({ parent: 'experiments/1' }).subscribe((response) => {
+        expect(response.statusMessages).toEqual(MOCK_HISTORICAL_STATUS_MESSAGES);
+        expect(response.nextPageToken).toBe('page_token');
+        done();
+      });
     });
   });
 });

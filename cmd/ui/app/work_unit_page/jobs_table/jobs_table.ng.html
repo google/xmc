@@ -19,16 +19,17 @@ limitations under the License.
       <table mat-table [dataSource]="dataSource" class="table">
         <!-- Name Column -->
         <ng-container matColumnDef="name">
-          <th mat-header-cell *matHeaderCellDef> Name </th>
-          <td mat-cell *matCellDef="let job"> {{ job.name }} </td>
+          <th mat-header-cell *matHeaderCellDef>Name</th>
+          <td mat-cell *matCellDef="let job">{{ job.name }}</td>
         </ng-container>
 
         <!-- Replicas Column -->
         <ng-container matColumnDef="replicas">
-          <th mat-header-cell *matHeaderCellDef> Replicas </th>
+          <th mat-header-cell *matHeaderCellDef>Replicas</th>
           <td mat-cell *matCellDef="let job">
             @for (display of getReplicaDisplays(job); track display.status) {
-              <xmc-status-chip [status]="display.status" [replicas]="display.replicas"> </xmc-status-chip>
+              <xmc-status-chip [status]="display.status" [replicas]="display.replicas">
+              </xmc-status-chip>
             }
           </td>
         </ng-container>

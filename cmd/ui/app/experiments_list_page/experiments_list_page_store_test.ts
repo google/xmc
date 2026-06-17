@@ -11,17 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { cleanState, setupModule, get, setupObservableMatchers } from '../testing/test';
 import 'jasmine';
 
-import {ListExperimentsResponse} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
-import {of, throwError} from 'rxjs';
+import { of, throwError } from 'rxjs';
 
-import {ExperimentService} from '../service/experiment_service';
-import {FeatureFlagService} from '../service/feature_flag_service';
-import {SnackbarService} from '../service/snackbar_service';
+import { ListExperimentsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
-import {ExperimentsListPageState, ExperimentsListPageStore, INITIAL_STATE} from './experiments_list_page_store';
+import { ExperimentService } from '../service/experiment_service';
+import { FeatureFlagService } from '../service/feature_flag_service';
+import { SnackbarService } from '../service/snackbar_service';
+import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
+import {
+  ExperimentsListPageState,
+  ExperimentsListPageStore,
+  INITIAL_STATE,
+} from './experiments_list_page_store';
 
 describe('ExperimentsListPageStore', () => {
   beforeAll(() => {
@@ -29,14 +33,10 @@ describe('ExperimentsListPageStore', () => {
   });
 
   const state = cleanState(() => {
-    const mockExperimentService = jasmine.createSpyObj<ExperimentService>(
-        'ExperimentService',
-        ['searchExperiments'],
-    );
-    const mockSnackbarService = jasmine.createSpyObj<SnackbarService>(
-        'SnackbarService',
-        ['open'],
-    );
+    const mockExperimentService = jasmine.createSpyObj<ExperimentService>('ExperimentService', [
+      'searchExperiments',
+    ]);
+    const mockSnackbarService = jasmine.createSpyObj<SnackbarService>('SnackbarService', ['open']);
     const mockFeatureFlagService = {
       isCursorPaginationEnabled: false,
     };
@@ -44,9 +44,9 @@ describe('ExperimentsListPageStore', () => {
     setupModule({
       providers: [
         ExperimentsListPageStore,
-        {provide: ExperimentService, useValue: mockExperimentService},
-        {provide: SnackbarService, useValue: mockSnackbarService},
-        {provide: FeatureFlagService, useValue: mockFeatureFlagService},
+        { provide: ExperimentService, useValue: mockExperimentService },
+        { provide: SnackbarService, useValue: mockSnackbarService },
+        { provide: FeatureFlagService, useValue: mockFeatureFlagService },
       ],
     });
 
@@ -85,9 +85,7 @@ describe('ExperimentsListPageStore', () => {
         experiments: [],
         nextPageToken: undefined,
       };
-      state.mockExperimentService.searchExperiments.and.returnValue(
-          of(mockResponse),
-      );
+      state.mockExperimentService.searchExperiments.and.returnValue(of(mockResponse));
 
       state.store.fetchPage();
 
@@ -100,8 +98,7 @@ describe('ExperimentsListPageStore', () => {
       const newFilter = 'user:me';
       state.store.setFilter(newFilter);
 
-      const newState: ExperimentsListPageState =
-          state.store.selectSignal((state) => state)();
+      const newState: ExperimentsListPageState = state.store.selectSignal((state) => state)();
       expect(newState).toEqual({
         ...INITIAL_STATE,
         filter: newFilter,
@@ -129,80 +126,75 @@ describe('ExperimentsListPageStore', () => {
       const newOrderBy = 'xid asc';
       state.store.setOrderBy(newOrderBy);
 
-      const newState: ExperimentsListPageState =
-          state.store.selectSignal((state) => state)();
+      const newState: ExperimentsListPageState = state.store.selectSignal((state) => state)();
       expect(newState).toEqual({
         ...INITIAL_STATE,
         orderBy: newOrderBy,
       });
     });
 
-    it('should reset pagination to page 1 when orderBy is set and isCursorPaginationEnabled is true',
-       () => {
-         state.mockFeatureFlagService.isCursorPaginationEnabled = true;
-         state.store.patchState({
-           pagination: {
-             ...INITIAL_STATE.pagination,
-             nextPageToken: 'page2',
-           },
-         });
-         state.store.goToNextPage();
-         expect(state.store.pageIndex()).toBe(1);
+    it('should reset pagination to page 1 when orderBy is set and isCursorPaginationEnabled is true', () => {
+      state.mockFeatureFlagService.isCursorPaginationEnabled = true;
+      state.store.patchState({
+        pagination: {
+          ...INITIAL_STATE.pagination,
+          nextPageToken: 'page2',
+        },
+      });
+      state.store.goToNextPage();
+      expect(state.store.pageIndex()).toBe(1);
 
-         state.store.setOrderBy('xid asc');
+      state.store.setOrderBy('xid asc');
 
-         expect(state.store.pageIndex()).toBe(0);
-         expect(state.store.hasPreviousPage()).toBe(false);
-       });
+      expect(state.store.pageIndex()).toBe(0);
+      expect(state.store.hasPreviousPage()).toBe(false);
+    });
 
-    it('should not reset pagination to page 1 when orderBy is set and isCursorPaginationEnabled is false',
-       () => {
-         state.mockFeatureFlagService.isCursorPaginationEnabled = false;
-         state.store.patchState({
-           pagination: {
-             ...INITIAL_STATE.pagination,
-             nextPageToken: 'page2',
-           },
-         });
-         state.store.goToNextPage();
-         expect(state.store.pageIndex()).toBe(1);
+    it('should not reset pagination to page 1 when orderBy is set and isCursorPaginationEnabled is false', () => {
+      state.mockFeatureFlagService.isCursorPaginationEnabled = false;
+      state.store.patchState({
+        pagination: {
+          ...INITIAL_STATE.pagination,
+          nextPageToken: 'page2',
+        },
+      });
+      state.store.goToNextPage();
+      expect(state.store.pageIndex()).toBe(1);
 
-         state.store.setOrderBy('xid asc');
+      state.store.setOrderBy('xid asc');
 
-         expect(state.store.pageIndex()).toBe(1);
-         expect(state.store.hasPreviousPage()).toBe(true);
-       });
+      expect(state.store.pageIndex()).toBe(1);
+      expect(state.store.hasPreviousPage()).toBe(true);
+    });
   });
 
   describe('goToNextPage', () => {
-    it('should update pagination state correctly when nextPageToken exists',
-       () => {
-         state.store.patchState({
-           pagination: {
-             currentPageToken: 'currToken',
-             previousTokens: ['prevToken'],
-             nextPageToken: 'nextToken',
-             pageSize: 10,
-             pageIndex: 1,
-           },
-         });
+    it('should update pagination state correctly when nextPageToken exists', () => {
+      state.store.patchState({
+        pagination: {
+          currentPageToken: 'currToken',
+          previousTokens: ['prevToken'],
+          nextPageToken: 'nextToken',
+          pageSize: 10,
+          pageIndex: 1,
+        },
+      });
 
-         state.store.goToNextPage();
+      state.store.goToNextPage();
 
-         const newState: ExperimentsListPageState =
-             state.store.selectSignal((state) => state)();
-         expect(newState).toEqual({
-           ...INITIAL_STATE,
-           pagination: {
-             ...INITIAL_STATE.pagination,
-             currentPageToken: 'nextToken',
-             previousTokens: ['prevToken', 'currToken'],
-             nextPageToken: undefined,
-             pageSize: 10,
-             pageIndex: 2,
-           },
-         });
-       });
+      const newState: ExperimentsListPageState = state.store.selectSignal((state) => state)();
+      expect(newState).toEqual({
+        ...INITIAL_STATE,
+        pagination: {
+          ...INITIAL_STATE.pagination,
+          currentPageToken: 'nextToken',
+          previousTokens: ['prevToken', 'currToken'],
+          nextPageToken: undefined,
+          pageSize: 10,
+          pageIndex: 2,
+        },
+      });
+    });
 
     it('should not change state if no nextPageToken exists', () => {
       const initialState = {
@@ -219,114 +211,102 @@ describe('ExperimentsListPageStore', () => {
 
       state.store.goToNextPage();
 
-      const newState: ExperimentsListPageState =
-          state.store.selectSignal((state) => state)();
+      const newState: ExperimentsListPageState = state.store.selectSignal((state) => state)();
       expect(newState).toEqual(initialState);
     });
   });
 
   describe('goToPreviousPage', () => {
-    it('should update pagination state correctly when previousTokens exist',
-       () => {
-         const initialState = {
-           ...INITIAL_STATE,
-           pagination: {
-             currentPageToken: 'currToken',
-             previousTokens: ['prevToken1', 'prevToken2'],
-             nextPageToken: undefined,
-             pageSize: 10,
-             pageIndex: 2,
-           },
-         };
-         state.store.setState(initialState);
+    it('should update pagination state correctly when previousTokens exist', () => {
+      const initialState = {
+        ...INITIAL_STATE,
+        pagination: {
+          currentPageToken: 'currToken',
+          previousTokens: ['prevToken1', 'prevToken2'],
+          nextPageToken: undefined,
+          pageSize: 10,
+          pageIndex: 2,
+        },
+      };
+      state.store.setState(initialState);
 
-         state.store.goToPreviousPage();
+      state.store.goToPreviousPage();
 
-         const newState: ExperimentsListPageState =
-             state.store.selectSignal((state) => state)();
-         expect(newState).toEqual({
-           ...INITIAL_STATE,
-           pagination: {
-             ...INITIAL_STATE.pagination,
-             currentPageToken: 'prevToken2',
-             previousTokens: ['prevToken1'],
-             nextPageToken: undefined,
-             pageSize: 10,
-             pageIndex: 1,
-           },
-         });
-       });
+      const newState: ExperimentsListPageState = state.store.selectSignal((state) => state)();
+      expect(newState).toEqual({
+        ...INITIAL_STATE,
+        pagination: {
+          ...INITIAL_STATE.pagination,
+          currentPageToken: 'prevToken2',
+          previousTokens: ['prevToken1'],
+          nextPageToken: undefined,
+          pageSize: 10,
+          pageIndex: 1,
+        },
+      });
+    });
 
     it('should not change state if no previousTokens exist', () => {
       state.store.setState(INITIAL_STATE);
       state.store.goToPreviousPage();
 
-      expect(state.store.selectSignal((state) => state)())
-          .toEqual(INITIAL_STATE);
+      expect(state.store.selectSignal((state) => state)()).toEqual(INITIAL_STATE);
     });
   });
 
   describe('fetchPage', () => {
     const mockResponse: ListExperimentsResponse = {
-      experiments: [{name: 'experiments/1', title: 'Test Experiment 1'}],
+      experiments: [{ name: 'experiments/1', title: 'Test Experiment 1' }],
       nextPageToken: 'page_2',
     };
 
-    it('should call searchExperiments with correct parameters from state and update the state',
-       () => {
-         const filter = 'owner:test';
-         const pageSize = 50;
-         const currentPageToken = 'abc';
-         state.store.patchState({
-           filter,
-           pagination: {
-             ...INITIAL_STATE.pagination,
-             pageSize,
-             currentPageToken,
-           },
-         });
+    it('should call searchExperiments with correct parameters from state and update the state', () => {
+      const filter = 'owner:test';
+      const pageSize = 50;
+      const currentPageToken = 'abc';
+      state.store.patchState({
+        filter,
+        pagination: {
+          ...INITIAL_STATE.pagination,
+          pageSize,
+          currentPageToken,
+        },
+      });
 
-         state.mockExperimentService.searchExperiments.and.returnValue(
-             of(mockResponse),
-         );
-         state.store.fetchPage();
+      state.mockExperimentService.searchExperiments.and.returnValue(of(mockResponse));
+      state.store.fetchPage();
 
-         expect(
-             state.mockExperimentService.searchExperiments,
-             )
-             .toHaveBeenCalledWith({
-               filter,
-               pageSize,
-               pageToken: currentPageToken,
-               orderBy: 'created desc',
-             });
+      expect(state.mockExperimentService.searchExperiments).toHaveBeenCalledWith({
+        filter,
+        pageSize,
+        pageToken: currentPageToken,
+        orderBy: 'created desc',
+      });
 
-         const newState: ExperimentsListPageState =
-             state.store.selectSignal((state) => state)();
-         expect(newState).toEqual({
-           ...INITIAL_STATE,
-           filter,
-           pagination: {
-             ...INITIAL_STATE.pagination,
-             pageSize,
-             currentPageToken,
-             nextPageToken: 'page_2',
-           },
-           pageResult: mockResponse,
-           isLoading: false,
-         });
-       });
+      const newState: ExperimentsListPageState = state.store.selectSignal((state) => state)();
+      expect(newState).toEqual({
+        ...INITIAL_STATE,
+        filter,
+        pagination: {
+          ...INITIAL_STATE.pagination,
+          pageSize,
+          currentPageToken,
+          nextPageToken: 'page_2',
+        },
+        pageResult: mockResponse,
+        isLoading: false,
+      });
+    });
 
     it('should show a snackbar when searchExperiments throws an error', () => {
       state.mockExperimentService.searchExperiments.and.returnValue(
-          throwError(() => new Error('Some error')),
+        throwError(() => new Error('Some error')),
       );
       state.store.fetchPage();
 
-      expect(state.mockSnackbarService.open)
-          .toHaveBeenCalledWith(
-              'Failed to fetch list of experiments: Some error',
-          );
+      expect(state.mockSnackbarService.open).toHaveBeenCalledWith(
+        'Failed to fetch list of experiments: Some error',
+      );
     });
   });
 });

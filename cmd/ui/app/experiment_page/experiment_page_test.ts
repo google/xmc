@@ -11,27 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { cleanState, setupModule, bootstrap } from '../testing/test';
 import 'jasmine';
 
-import {getHarness} from '@angular/cdk/testing/catalyst/async';
-import {NoopAnimationsModule} from '@angular/platform-browser/animations';
-import {ActivatedRoute, convertToParamMap, ParamMap, provideRouter} from '@angular/router';
-import {Experiment} from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
-import {ConfirmDialogService} from 'xmanager_cloud/ui/app/common/components/confirmation_dialog/confirmation_dialog_service';
-import {ArtifactService} from 'xmanager_cloud/ui/app/service/artifact_service';
-import {AUTO_REFRESH_INTERVAL_MS, DEFAULT_REFRESH_INTERVAL_MS} from 'xmanager_cloud/ui/app/service/constants';
-import {ExperimentService} from 'xmanager_cloud/ui/app/service/experiment_service';
-import {FeatureFlagService} from 'xmanager_cloud/ui/app/service/feature_flag_service';
-import {SnackbarService} from 'xmanager_cloud/ui/app/service/snackbar_service';
-import {StatusMessageService} from 'xmanager_cloud/ui/app/service/status_message_service';
-import {WorkUnitsService} from 'xmanager_cloud/ui/app/service/work_units_service';
-import {AutoReloadService} from 'xmanager_cloud/ui/app/common/components/autoreloader/autoreloader_service';
-import {SidePanelService} from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
-import {BehaviorSubject, NEVER, of} from 'rxjs';
+import { getHarness } from '@angular/cdk/testing/catalyst/async';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { ActivatedRoute, convertToParamMap, ParamMap, provideRouter } from '@angular/router';
+import { BehaviorSubject, NEVER, of } from 'rxjs';
 
-import {ExperimentPage} from './experiment_page';
-import {ExperimentPageHarness} from './testing/experiment_page_harness';
+import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
+import { AutoReloadService } from 'xmanager_cloud/ui/app/common/components/autoreloader/autoreloader_service';
+import { ConfirmDialogService } from 'xmanager_cloud/ui/app/common/components/confirmation_dialog/confirmation_dialog_service';
+import { ArtifactService } from 'xmanager_cloud/ui/app/service/artifact_service';
+import {
+  AUTO_REFRESH_INTERVAL_MS,
+  DEFAULT_REFRESH_INTERVAL_MS,
+} from 'xmanager_cloud/ui/app/service/constants';
+import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
+import { FeatureFlagService } from 'xmanager_cloud/ui/app/service/feature_flag_service';
+import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
+import { StatusMessageService } from 'xmanager_cloud/ui/app/service/status_message_service';
+import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
+import { SidePanelService } from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
+
+import { bootstrap, cleanState, setupModule } from '../testing/test';
+import { ExperimentPage } from './experiment_page';
+import { ExperimentPageHarness } from './testing/experiment_page_harness';
 
 const MOCK_EXPERIMENT: Experiment = {
   name: 'experiments/123',
@@ -41,41 +45,36 @@ const MOCK_EXPERIMENT: Experiment = {
   status: {
     activeState: 'ACTIVE',
     childStateCounts: [
-      {state: 'RUNNING', count: '1'},
-      {state: 'COMPLETED', count: '1'},
+      { state: 'RUNNING', count: '1' },
+      { state: 'COMPLETED', count: '1' },
     ],
   },
 };
 
 describe('ExperimentPage Component', () => {
   const state = cleanState(() => {
-    const experimentService = jasmine.createSpyObj<ExperimentService>(
-        'ExperimentService',
-        ['getExperiment'],
-    );
-    const workUnitsService = jasmine.createSpyObj<WorkUnitsService>(
-        'WorkUnitsService',
-        ['batchStopWorkUnits', 'batchRestartWorkUnits', 'searchWorkUnits'],
-    );
-    const snackbarService = jasmine.createSpyObj<SnackbarService>(
-        'SnackbarService',
-        ['open'],
-    );
+    const experimentService = jasmine.createSpyObj<ExperimentService>('ExperimentService', [
+      'getExperiment',
+    ]);
+    const workUnitsService = jasmine.createSpyObj<WorkUnitsService>('WorkUnitsService', [
+      'batchStopWorkUnits',
+      'batchRestartWorkUnits',
+      'searchWorkUnits',
+    ]);
+    const snackbarService = jasmine.createSpyObj<SnackbarService>('SnackbarService', ['open']);
     const confirmDialogService = jasmine.createSpyObj<ConfirmDialogService>(
-        'ConfirmDialogService',
-        ['open'],
+      'ConfirmDialogService',
+      ['open'],
     );
-    const sidePanelService = jasmine.createSpyObj<SidePanelService>(
-        'SidePanelService',
-        ['openSidePanel'],
-    );
-    const artifactService = jasmine.createSpyObj<ArtifactService>(
-        'ArtifactService',
-        ['listArtifacts'],
-    );
+    const sidePanelService = jasmine.createSpyObj<SidePanelService>('SidePanelService', [
+      'openSidePanel',
+    ]);
+    const artifactService = jasmine.createSpyObj<ArtifactService>('ArtifactService', [
+      'listArtifacts',
+    ]);
     const statusMessageService = jasmine.createSpyObj<StatusMessageService>(
-        'StatusMessageService',
-        ['listStatusMessages'],
+      'StatusMessageService',
+      ['listStatusMessages'],
     );
     const featureFlagService = {
       isStatusMessageHistoryEnabled: true,
@@ -89,14 +88,11 @@ describe('ExperimentPage Component', () => {
     };
 
     experimentService.getExperiment.and.returnValue(of(MOCK_EXPERIMENT));
-    workUnitsService.searchWorkUnits.and.returnValue(of({workUnits: []}));
-    artifactService.listArtifacts.and.returnValue(of({artifacts: []}));
-    statusMessageService.listStatusMessages.and.returnValue(
-        of({statusMessages: []}));
+    workUnitsService.searchWorkUnits.and.returnValue(of({ workUnits: [] }));
+    artifactService.listArtifacts.and.returnValue(of({ artifacts: [] }));
+    statusMessageService.listStatusMessages.and.returnValue(of({ statusMessages: [] }));
 
-    const paramMap = new BehaviorSubject<ParamMap>(
-        convertToParamMap({'xid': '123'}),
-    );
+    const paramMap = new BehaviorSubject<ParamMap>(convertToParamMap({ xid: '123' }));
     const mockActivatedRoute = {
       paramMap: paramMap.asObservable(),
     };
@@ -104,7 +100,7 @@ describe('ExperimentPage Component', () => {
     setupModule({
       imports: [
         ExperimentPage,
-        NoopAnimationsModule,  // This makes test faster and more stable.
+        NoopAnimationsModule, // This makes test faster and more stable.
       ],
       providers: [
         provideRouter([]),
@@ -112,16 +108,16 @@ describe('ExperimentPage Component', () => {
           provide: AUTO_REFRESH_INTERVAL_MS,
           useValue: DEFAULT_REFRESH_INTERVAL_MS,
         },
-        {provide: ExperimentService, useValue: experimentService},
-        {provide: WorkUnitsService, useValue: workUnitsService},
-        {provide: SnackbarService, useValue: snackbarService},
-        {provide: ConfirmDialogService, useValue: confirmDialogService},
-        {provide: SidePanelService, useValue: sidePanelService},
-        {provide: ActivatedRoute, useValue: mockActivatedRoute},
-        {provide: ArtifactService, useValue: artifactService},
-        {provide: FeatureFlagService, useValue: featureFlagService},
-        {provide: StatusMessageService, useValue: statusMessageService},
-        {provide: AutoReloadService, useValue: autoReloadServiceMock},
+        { provide: ExperimentService, useValue: experimentService },
+        { provide: WorkUnitsService, useValue: workUnitsService },
+        { provide: SnackbarService, useValue: snackbarService },
+        { provide: ConfirmDialogService, useValue: confirmDialogService },
+        { provide: SidePanelService, useValue: sidePanelService },
+        { provide: ActivatedRoute, useValue: mockActivatedRoute },
+        { provide: ArtifactService, useValue: artifactService },
+        { provide: FeatureFlagService, useValue: featureFlagService },
+        { provide: StatusMessageService, useValue: statusMessageService },
+        { provide: AutoReloadService, useValue: autoReloadServiceMock },
       ],
     });
 
@@ -154,14 +150,8 @@ describe('ExperimentPage Component', () => {
     await harness.clickStopExperiment();
 
     expect(state.confirmDialogService.open).toHaveBeenCalled();
-    expect(state.workUnitsService.batchStopWorkUnits)
-        .toHaveBeenCalledWith(
-            '123',
-        );
-    expect(state.snackbarService.open)
-        .toHaveBeenCalledWith(
-            'Stopping experiment.',
-        );
+    expect(state.workUnitsService.batchStopWorkUnits).toHaveBeenCalledWith('123');
+    expect(state.snackbarService.open).toHaveBeenCalledWith('Stopping experiment.');
   });
 
   it('should restart experiment when confirmed', async () => {
@@ -173,14 +163,8 @@ describe('ExperimentPage Component', () => {
     await harness.clickRestartExperiment();
 
     expect(state.confirmDialogService.open).toHaveBeenCalled();
-    expect(state.workUnitsService.batchRestartWorkUnits)
-        .toHaveBeenCalledWith(
-            '123',
-        );
-    expect(state.snackbarService.open)
-        .toHaveBeenCalledWith(
-            'Restarting experiment.',
-        );
+    expect(state.workUnitsService.batchRestartWorkUnits).toHaveBeenCalledWith('123');
+    expect(state.snackbarService.open).toHaveBeenCalledWith('Restarting experiment.');
   });
 
   it('should open side panel for editing experiment', async () => {
@@ -203,10 +187,7 @@ describe('ExperimentPage Component', () => {
     });
 
     it('should show refreshing', async () => {
-      state.experimentService.getExperiment.and.returnValues(
-          of(MOCK_EXPERIMENT),
-          NEVER,
-      );
+      state.experimentService.getExperiment.and.returnValues(of(MOCK_EXPERIMENT), NEVER);
       const comp = bootstrap(ExperimentPage);
       comp.refresh();
       const harness = await getHarness(ExperimentPageHarness);
@@ -216,9 +197,7 @@ describe('ExperimentPage Component', () => {
     });
 
     it('should hide loading bar when not fetching', async () => {
-      state.experimentService.getExperiment.and.returnValue(
-          of(MOCK_EXPERIMENT),
-      );
+      state.experimentService.getExperiment.and.returnValue(of(MOCK_EXPERIMENT));
       bootstrap(ExperimentPage);
       const harness = await getHarness(ExperimentPageHarness);
 
@@ -228,24 +207,22 @@ describe('ExperimentPage Component', () => {
   });
 
   describe('Feature flags', () => {
-    it('should show Status History tab if feature flag is enabled',
-       async () => {
-         state.featureFlagService.isStatusMessageHistoryEnabled = true;
+    it('should show Status History tab if feature flag is enabled', async () => {
+      state.featureFlagService.isStatusMessageHistoryEnabled = true;
 
-         bootstrap(ExperimentPage);
-         const harness = await getHarness(ExperimentPageHarness);
+      bootstrap(ExperimentPage);
+      const harness = await getHarness(ExperimentPageHarness);
 
-         expect(await harness.hasStatusHistoryTab()).toBeTrue();
-       });
+      expect(await harness.hasStatusHistoryTab()).toBeTrue();
+    });
 
-    it('should hide Status History tab if feature flag is disabled',
-       async () => {
-         state.featureFlagService.isStatusMessageHistoryEnabled = false;
+    it('should hide Status History tab if feature flag is disabled', async () => {
+      state.featureFlagService.isStatusMessageHistoryEnabled = false;
 
-         bootstrap(ExperimentPage);
-         const harness = await getHarness(ExperimentPageHarness);
+      bootstrap(ExperimentPage);
+      const harness = await getHarness(ExperimentPageHarness);
 
-         expect(await harness.hasStatusHistoryTab()).toBeFalse();
-       });
+      expect(await harness.hasStatusHistoryTab()).toBeFalse();
+    });
   });
 });

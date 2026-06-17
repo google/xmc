@@ -11,55 +11,61 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {inject, Injectable} from '@angular/core';
-import {NavigationEnd, Router} from '@angular/router';
-import {StructuredMessage} from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
-import {BehaviorSubject, Observable} from 'rxjs';
-import {filter} from 'rxjs/operators';
+import { inject, Injectable } from '@angular/core';
+import { NavigationEnd, Router } from '@angular/router';
+import { BehaviorSubject, Observable } from 'rxjs';
+import { filter } from 'rxjs/operators';
+
+import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
 
 const SEVERITIES_STORAGE_KEY_PREFIX = 'xmc-status-filter-severities';
 const SOURCES_STORAGE_KEY_PREFIX = 'xmc-status-filter-sources';
 
 /** All possible severity values excluding unspecified. */
-export const ALL_SEVERITIES: StructuredMessage.Severity[] =
-    ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'FATAL'];
+export const ALL_SEVERITIES: StructuredMessage.Severity[] = [
+  'DEBUG',
+  'INFO',
+  'WARNING',
+  'ERROR',
+  'FATAL',
+];
 /** All possible source values excluding unspecified. */
 export const ALL_SOURCES: StructuredMessage.Source[] = [
-  'XMANAGER_CLIENT', 'XMANAGER_BACKEND', 'ADAPTER', 'KUBERNETES', 'SCHEDULER',
-  'APPLICATION', 'USER_DEFINED'
+  'XMANAGER_CLIENT',
+  'XMANAGER_BACKEND',
+  'ADAPTER',
+  'KUBERNETES',
+  'SCHEDULER',
+  'APPLICATION',
+  'USER_DEFINED',
 ];
 
 /** Default severities to show. */
-const DEFAULT_SEVERITIES =
-    new Set<StructuredMessage.Severity>(['WARNING', 'ERROR', 'FATAL']);
+const DEFAULT_SEVERITIES = new Set<StructuredMessage.Severity>(['WARNING', 'ERROR', 'FATAL']);
 /** Default sources to show. */
 const DEFAULT_SOURCES = new Set<StructuredMessage.Source>(ALL_SOURCES);
 
 /**
  * Service for managing and persisting status message filter preferences.
  */
-@Injectable({providedIn: 'root'})
+@Injectable({ providedIn: 'root' })
 export class StatusMessageFilterService {
   private readonly router = inject(Router);
   private context?: string;
 
-  readonly severitiesSubject =
-      new BehaviorSubject<Set<StructuredMessage.Severity>>(new Set());
-  readonly sourcesSubject =
-      new BehaviorSubject<Set<StructuredMessage.Source>>(new Set());
+  readonly severitiesSubject = new BehaviorSubject<Set<StructuredMessage.Severity>>(new Set());
+  readonly sourcesSubject = new BehaviorSubject<Set<StructuredMessage.Source>>(new Set());
 
   readonly severities$: Observable<Set<StructuredMessage.Severity>> =
-      this.severitiesSubject.asObservable();
-  readonly sources$: Observable<Set<StructuredMessage.Source>> =
-      this.sourcesSubject.asObservable();
+    this.severitiesSubject.asObservable();
+  readonly sources$: Observable<Set<StructuredMessage.Source>> = this.sourcesSubject.asObservable();
 
   constructor() {
     this.router.events
-        .pipe(filter(
-            (event): event is NavigationEnd => event instanceof NavigationEnd))
-        .subscribe((event: NavigationEnd) => {
-          this.updateContextAndLoadFilters(event.urlAfterRedirects);
-        });
+      .pipe(filter((event): event is NavigationEnd => event instanceof NavigationEnd))
+      .subscribe((event: NavigationEnd) => {
+        this.updateContextAndLoadFilters(event.urlAfterRedirects);
+      });
     // Initialize with current URL on service creation.
     this.updateContextAndLoadFilters(this.router.url);
   }
@@ -67,8 +73,7 @@ export class StatusMessageFilterService {
   /** Updates and persists the selected severities for the current context. */
   updateSeverities(severities: Set<StructuredMessage.Severity>): void {
     this.severitiesSubject.next(severities);
-    this.saveToStorage(
-        this.getStorageKey(SEVERITIES_STORAGE_KEY_PREFIX), severities);
+    this.saveToStorage(this.getStorageKey(SEVERITIES_STORAGE_KEY_PREFIX), severities);
   }
 
   /** Updates and persists the selected sources for the current context. */
@@ -102,8 +107,8 @@ export class StatusMessageFilterService {
 
   private getContextFromUrl(url: string): string {
     const path = url.split('?')[0].split('#')[0];
-    const segments = path.split('/').filter(s => s.length > 0);
-    const isDetail = segments.some(segment => /^\d+$/.test(segment));
+    const segments = path.split('/').filter((s) => s.length > 0);
+    const isDetail = segments.some((segment) => /^\d+$/.test(segment));
     const resource = segments.length > 0 ? segments[0] : 'default';
     return `${resource}-${isDetail ? 'detail' : 'list'}`;
   }
@@ -113,9 +118,11 @@ export class StatusMessageFilterService {
     if (this.context !== newContext) {
       this.context = newContext;
       const storedSeverities = this.loadFromStorage<StructuredMessage.Severity>(
-          this.getStorageKey(SEVERITIES_STORAGE_KEY_PREFIX));
+        this.getStorageKey(SEVERITIES_STORAGE_KEY_PREFIX),
+      );
       const storedSources = this.loadFromStorage<StructuredMessage.Source>(
-          this.getStorageKey(SOURCES_STORAGE_KEY_PREFIX));
+        this.getStorageKey(SOURCES_STORAGE_KEY_PREFIX),
+      );
       this.severitiesSubject.next(storedSeverities ?? DEFAULT_SEVERITIES);
       this.sourcesSubject.next(storedSources ?? DEFAULT_SOURCES);
     }
@@ -125,7 +132,7 @@ export class StatusMessageFilterService {
     return `${prefix}-${this.context}`;
   }
 
-  private loadFromStorage<T>(key: string): Set<T>|null {
+  private loadFromStorage<T>(key: string): Set<T> | null {
     const item = window.localStorage.getItem(key);
     if (!item) {
       return null;
@@ -145,8 +152,7 @@ export class StatusMessageFilterService {
 }
 
 /** Formats a status message source into a user-readable string. */
-export function formatSource(source: StructuredMessage.Source|undefined):
-    string {
+export function formatSource(source: StructuredMessage.Source | undefined): string {
   if (!source) {
     return 'Unspecified';
   }

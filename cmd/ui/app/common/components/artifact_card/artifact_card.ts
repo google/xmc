@@ -11,20 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {NgTemplateOutlet} from '@angular/common';
-import {ChangeDetectionStrategy, Component, computed, input, Signal} from '@angular/core';
-import {MatButtonModule} from '@angular/material/button';
-import {MatCardModule} from '@angular/material/card';
-import {MatDivider} from '@angular/material/divider';
-import {MatExpansionModule} from '@angular/material/expansion';
-import {MatIconModule} from '@angular/material/icon';
-import {RouterLink} from '@angular/router';
-import {Artifact} from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
-import {trySanitizeUrl, windowOpen} from 'xmanager_cloud/ui/app/safevalues_helper';
+import { NgTemplateOutlet } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { MatDivider } from '@angular/material/divider';
+import { MatExpansionModule } from '@angular/material/expansion';
+import { MatIconModule } from '@angular/material/icon';
+import { RouterLink } from '@angular/router';
 
-import {formatArtifactDataType, getArtifactIcon} from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
-import {parseWorkUnitName} from 'xmanager_cloud/ui/app/common/resource_name_extractor';
-import {Tag} from '../tag/tag';
+import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
+import {
+  formatArtifactDataType,
+  getArtifactIcon,
+} from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
+import { parseWorkUnitName } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
+import { trySanitizeUrl, windowOpen } from 'xmanager_cloud/ui/app/safevalues_helper';
+
+import { Tag } from '../tag/tag';
 
 const SHORT_NOTE_MAX_LENGTH = 40;
 const ADDITIONAL_INFO_COLLAPSE_THRESHOLD = 200;
@@ -56,20 +60,21 @@ export class ArtifactCard {
   // artifact card.
   readonly isOnExperimentPage = input<boolean>(false);
 
-  protected workUnitInfo: Signal<{routerLink: string; badgeText: string}|null> =
-      computed(() => {
-        const artifact = this.artifact();
-        if (this.isOnExperimentPage() && artifact.parent) {
-          const ids = parseWorkUnitName(artifact.parent);
-          if (ids) {
-            return {
-              routerLink: `/experiments/${ids.xid}/workUnits/${ids.wid}`,
-              badgeText: `WU ${ids.wid}`,
-            };
-          }
+  protected workUnitInfo: Signal<{ routerLink: string; badgeText: string } | null> = computed(
+    () => {
+      const artifact = this.artifact();
+      if (this.isOnExperimentPage() && artifact.parent) {
+        const ids = parseWorkUnitName(artifact.parent);
+        if (ids) {
+          return {
+            routerLink: `/experiments/${ids.xid}/workUnits/${ids.wid}`,
+            badgeText: `WU ${ids.wid}`,
+          };
         }
-        return null;
-      });
+      }
+      return null;
+    },
+  );
 
   protected readonly isNoteLong = computed(() => {
     const notes = this.artifact().notes;
@@ -93,16 +98,15 @@ export class ArtifactCard {
     return !!content && content.length > ADDITIONAL_INFO_COLLAPSE_THRESHOLD;
   });
 
-
   protected getIcon(artifact: Artifact): string {
     return getArtifactIcon(artifact);
   }
 
-  protected formatDataType(dataType: Artifact.DataType|undefined): string {
+  protected formatDataType(dataType: Artifact.DataType | undefined): string {
     return formatArtifactDataType(dataType);
   }
 
-  protected goToUrl(url: string|undefined) {
+  protected goToUrl(url: string | undefined) {
     if (url) {
       const sanitizedUrl = trySanitizeUrl(url);
       if (sanitizedUrl) {

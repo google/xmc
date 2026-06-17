@@ -13,7 +13,11 @@
 // limitations under the License.
 import 'jasmine';
 
-import {parseArtifactName, parseExperimentName, parseWorkUnitName, } from './resource_name_extractor';
+import {
+  parseArtifactName,
+  parseExperimentName,
+  parseWorkUnitName,
+} from './resource_name_extractor';
 
 describe('ResourceNames', () => {
   describe('parseExperimentName', () => {
@@ -50,12 +54,10 @@ describe('ResourceNames', () => {
 
     it('should return null for invalid names', () => {
       expect(parseArtifactName('experiments/123/artifacts/1')).toBeNull();
-      expect(parseArtifactName('experiments/123/workUnits/1/artifacts/1'))
-          .toBeNull();
+      expect(parseArtifactName('experiments/123/workUnits/1/artifacts/1')).toBeNull();
       expect(parseArtifactName('experiments/123')).toBeNull();
       expect(parseArtifactName('experiments/123/workUnits/1')).toBeNull();
-      expect(parseArtifactName('experiments/123/artifacts/1/invalid'))
-          .toBeNull();
+      expect(parseArtifactName('experiments/123/artifacts/1/invalid')).toBeNull();
     });
   });
 });

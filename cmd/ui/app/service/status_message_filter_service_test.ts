@@ -11,21 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { cleanState, setupModule, get } from '../testing/test';
 import 'jasmine';
 
-import {ChangeDetectionStrategy, Component} from '@angular/core';
-import {provideRouter, Router} from '@angular/router';
-import {StructuredMessage} from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
+import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { provideRouter, Router } from '@angular/router';
 
-import {ALL_SOURCES, formatSource, StatusMessageFilterService, } from './status_message_filter_service';
+import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
+
+import { cleanState, get, setupModule } from '../testing/test';
+import {
+  ALL_SOURCES,
+  formatSource,
+  StatusMessageFilterService,
+} from './status_message_filter_service';
 
 @Component({
   template: '',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-class EmptyComp {
-}
+class EmptyComp {}
 
 describe('StatusMessageFilterService', () => {
   const state = cleanState(() => {
@@ -33,25 +37,18 @@ describe('StatusMessageFilterService', () => {
       providers: [
         StatusMessageFilterService,
         provideRouter([
-          {path: 'experiments', component: EmptyComp},
-          {path: 'experiments/:id', component: EmptyComp},
+          { path: 'experiments', component: EmptyComp },
+          { path: 'experiments/:id', component: EmptyComp },
         ]),
       ],
     });
 
     const storage = new Map<string, string>();
-    spyOn(window.localStorage, 'getItem')
-        .and.callFake(
-            (key: string) => storage.get(key) || null,
-        );
-    spyOn(window.localStorage, 'setItem')
-        .and.callFake(
-            (key: string, value: string) => storage.set(key, value),
-        );
-    spyOn(window.localStorage, 'removeItem')
-        .and.callFake(
-            (key: string) => storage.delete(key),
-        );
+    spyOn(window.localStorage, 'getItem').and.callFake((key: string) => storage.get(key) || null);
+    spyOn(window.localStorage, 'setItem').and.callFake((key: string, value: string) =>
+      storage.set(key, value),
+    );
+    spyOn(window.localStorage, 'removeItem').and.callFake((key: string) => storage.delete(key));
 
     return {
       storage,
@@ -75,50 +72,37 @@ describe('StatusMessageFilterService', () => {
 
     it('should load default filters if storage is empty', () => {
       const service = get(StatusMessageFilterService);
-      expect(service.severitiesSubject.value)
-          .toEqual(
-              new Set<StructuredMessage.Severity>(
-                  ['WARNING', 'ERROR', 'FATAL']),
-          );
-      expect(service.sourcesSubject.value)
-          .toEqual(
-              new Set<StructuredMessage.Source>(ALL_SOURCES),
-          );
+      expect(service.severitiesSubject.value).toEqual(
+        new Set<StructuredMessage.Severity>(['WARNING', 'ERROR', 'FATAL']),
+      );
+      expect(service.sourcesSubject.value).toEqual(new Set<StructuredMessage.Source>(ALL_SOURCES));
     });
 
     it('should load filters from storage', () => {
       state.storage.set(
-          'xmc-status-filter-severities-experiments-list',
-          JSON.stringify(['INFO', 'ERROR']),
+        'xmc-status-filter-severities-experiments-list',
+        JSON.stringify(['INFO', 'ERROR']),
       );
       state.storage.set(
-          'xmc-status-filter-sources-experiments-list',
-          JSON.stringify(['KUBERNETES']),
+        'xmc-status-filter-sources-experiments-list',
+        JSON.stringify(['KUBERNETES']),
       );
       const service = get(StatusMessageFilterService);
-      expect(service.severitiesSubject.value)
-          .toEqual(
-              new Set<StructuredMessage.Severity>(['INFO', 'ERROR']),
-          );
-      expect(service.sourcesSubject.value)
-          .toEqual(
-              new Set<StructuredMessage.Source>(['KUBERNETES']),
-          );
+      expect(service.severitiesSubject.value).toEqual(
+        new Set<StructuredMessage.Severity>(['INFO', 'ERROR']),
+      );
+      expect(service.sourcesSubject.value).toEqual(
+        new Set<StructuredMessage.Source>(['KUBERNETES']),
+      );
     });
 
     it('should load default filters if storage data is corrupted', () => {
-      state.storage.set(
-          'xmc-status-filter-severities-experiments-list', 'corrupted-json');
+      state.storage.set('xmc-status-filter-severities-experiments-list', 'corrupted-json');
       const service = get(StatusMessageFilterService);
-      expect(service.severitiesSubject.value)
-          .toEqual(
-              new Set<StructuredMessage.Severity>(
-                  ['WARNING', 'ERROR', 'FATAL']),
-          );
-      expect(
-          state.storage.has('xmc-status-filter-severities-experiments-list'),
-          )
-          .toBeFalse();
+      expect(service.severitiesSubject.value).toEqual(
+        new Set<StructuredMessage.Severity>(['WARNING', 'ERROR', 'FATAL']),
+      );
+      expect(state.storage.has('xmc-status-filter-severities-experiments-list')).toBeFalse();
     });
   });
 
@@ -129,35 +113,28 @@ describe('StatusMessageFilterService', () => {
 
     it('should load default filters if storage is empty', () => {
       const service = get(StatusMessageFilterService);
-      expect(service.severitiesSubject.value)
-          .toEqual(
-              new Set<StructuredMessage.Severity>(
-                  ['WARNING', 'ERROR', 'FATAL']),
-          );
-      expect(service.sourcesSubject.value)
-          .toEqual(
-              new Set<StructuredMessage.Source>(ALL_SOURCES),
-          );
+      expect(service.severitiesSubject.value).toEqual(
+        new Set<StructuredMessage.Severity>(['WARNING', 'ERROR', 'FATAL']),
+      );
+      expect(service.sourcesSubject.value).toEqual(new Set<StructuredMessage.Source>(ALL_SOURCES));
     });
 
     it('should load filters from storage', () => {
       state.storage.set(
-          'xmc-status-filter-severities-experiments-detail',
-          JSON.stringify(['FATAL']),
+        'xmc-status-filter-severities-experiments-detail',
+        JSON.stringify(['FATAL']),
       );
       state.storage.set(
-          'xmc-status-filter-sources-experiments-detail',
-          JSON.stringify(['APPLICATION']),
+        'xmc-status-filter-sources-experiments-detail',
+        JSON.stringify(['APPLICATION']),
       );
       const service = get(StatusMessageFilterService);
-      expect(service.severitiesSubject.value)
-          .toEqual(
-              new Set<StructuredMessage.Severity>(['FATAL']),
-          );
-      expect(service.sourcesSubject.value)
-          .toEqual(
-              new Set<StructuredMessage.Source>(['APPLICATION']),
-          );
+      expect(service.severitiesSubject.value).toEqual(
+        new Set<StructuredMessage.Severity>(['FATAL']),
+      );
+      expect(service.sourcesSubject.value).toEqual(
+        new Set<StructuredMessage.Source>(['APPLICATION']),
+      );
     });
   });
 
@@ -166,48 +143,41 @@ describe('StatusMessageFilterService', () => {
       await state.router.navigateByUrl('/experiments');
       const service = get(StatusMessageFilterService);
       state.storage.set(
-          'xmc-status-filter-severities-experiments-detail',
-          JSON.stringify(['FATAL']),
+        'xmc-status-filter-severities-experiments-detail',
+        JSON.stringify(['FATAL']),
       );
       state.storage.set(
-          'xmc-status-filter-sources-experiments-detail',
-          JSON.stringify(['APPLICATION']),
+        'xmc-status-filter-sources-experiments-detail',
+        JSON.stringify(['APPLICATION']),
       );
 
       await state.router.navigateByUrl('/experiments/123');
 
-      expect(service.severitiesSubject.value)
-          .toEqual(
-              new Set<StructuredMessage.Severity>(['FATAL']),
-          );
-      expect(service.sourcesSubject.value)
-          .toEqual(
-              new Set<StructuredMessage.Source>(['APPLICATION']),
-          );
+      expect(service.severitiesSubject.value).toEqual(
+        new Set<StructuredMessage.Severity>(['FATAL']),
+      );
+      expect(service.sourcesSubject.value).toEqual(
+        new Set<StructuredMessage.Source>(['APPLICATION']),
+      );
     });
 
     it('should switch to list context and load list filters', async () => {
       await state.router.navigateByUrl('/experiments/123');
       const service = get(StatusMessageFilterService);
+      state.storage.set('xmc-status-filter-severities-experiments-list', JSON.stringify(['INFO']));
       state.storage.set(
-          'xmc-status-filter-severities-experiments-list',
-          JSON.stringify(['INFO']),
-      );
-      state.storage.set(
-          'xmc-status-filter-sources-experiments-list',
-          JSON.stringify(['XMANAGER_CLIENT']),
+        'xmc-status-filter-sources-experiments-list',
+        JSON.stringify(['XMANAGER_CLIENT']),
       );
 
       await state.router.navigateByUrl('/experiments');
 
-      expect(service.severitiesSubject.value)
-          .toEqual(
-              new Set<StructuredMessage.Severity>(['INFO']),
-          );
-      expect(service.sourcesSubject.value)
-          .toEqual(
-              new Set<StructuredMessage.Source>(['XMANAGER_CLIENT']),
-          );
+      expect(service.severitiesSubject.value).toEqual(
+        new Set<StructuredMessage.Severity>(['INFO']),
+      );
+      expect(service.sourcesSubject.value).toEqual(
+        new Set<StructuredMessage.Source>(['XMANAGER_CLIENT']),
+      );
     });
   });
 
@@ -219,10 +189,9 @@ describe('StatusMessageFilterService', () => {
       service.updateSeverities(newSeverities);
 
       expect(service.severitiesSubject.value).toEqual(newSeverities);
-      expect(state.storage.get('xmc-status-filter-severities-experiments-list'))
-          .toBe(
-              JSON.stringify(['INFO']),
-          );
+      expect(state.storage.get('xmc-status-filter-severities-experiments-list')).toBe(
+        JSON.stringify(['INFO']),
+      );
     });
 
     it('should update sources and save to storage', async () => {
@@ -232,19 +201,15 @@ describe('StatusMessageFilterService', () => {
       service.updateSources(newSources);
 
       expect(service.sourcesSubject.value).toEqual(newSources);
-      expect(state.storage.get('xmc-status-filter-sources-experiments-list'))
-          .toBe(
-              JSON.stringify(['USER_DEFINED']),
-          );
+      expect(state.storage.get('xmc-status-filter-sources-experiments-list')).toBe(
+        JSON.stringify(['USER_DEFINED']),
+      );
     });
   });
 
   describe('isMessageVisible', () => {
     const severities = new Set<StructuredMessage.Severity>(['INFO', 'WARNING']);
-    const sources = new Set<StructuredMessage.Source>([
-      'APPLICATION',
-      'KUBERNETES',
-    ]);
+    const sources = new Set<StructuredMessage.Source>(['APPLICATION', 'KUBERNETES']);
 
     it('should return true if severity and source match', async () => {
       await state.router.navigateByUrl('/experiments');
@@ -267,10 +232,7 @@ describe('StatusMessageFilterService', () => {
         severity: 'ERROR',
         source: 'APPLICATION',
       };
-      expect(
-          service.isMessageVisible(message),
-          )
-          .toBeFalse();
+      expect(service.isMessageVisible(message)).toBeFalse();
     });
 
     it('should return false if source does not match', async () => {
@@ -282,10 +244,7 @@ describe('StatusMessageFilterService', () => {
         severity: 'INFO',
         source: 'XMANAGER_CLIENT',
       };
-      expect(
-          service.isMessageVisible(message),
-          )
-          .toBeFalse();
+      expect(service.isMessageVisible(message)).toBeFalse();
     });
 
     it('should handle unspecified severity and source', async () => {
@@ -294,10 +253,7 @@ describe('StatusMessageFilterService', () => {
       service.updateSeverities(severities);
       service.updateSources(sources);
       const message: StructuredMessage = {};
-      expect(
-          service.isMessageVisible(message),
-          )
-          .toBeFalse();
+      expect(service.isMessageVisible(message)).toBeFalse();
 
       const severitiesWithUnspecified = new Set<StructuredMessage.Severity>([
         'SEVERITY_UNSPECIFIED',
@@ -309,12 +265,7 @@ describe('StatusMessageFilterService', () => {
       ]);
       service.updateSeverities(severitiesWithUnspecified);
       service.updateSources(sourcesWithUnspecified);
-      expect(
-          service.isMessageVisible(
-              message,
-              ),
-          )
-          .toBeTrue();
+      expect(service.isMessageVisible(message)).toBeTrue();
     });
   });
 

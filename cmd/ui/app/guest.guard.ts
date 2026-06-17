@@ -14,8 +14,9 @@
 
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
-import { AuthService } from './service/auth.service';
 import { map, take } from 'rxjs/operators';
+
+import { AuthService } from './service/auth.service';
 
 /**
  * guestGuard prevents authenticated users from landing on guest-only pages (HomePage),
@@ -32,6 +33,6 @@ export const guestGuard: CanActivateFn = () => {
         return router.parseUrl('/experiments');
       }
       return true;
-    })
+    }),
   );
 };

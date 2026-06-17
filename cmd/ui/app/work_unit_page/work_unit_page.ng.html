@@ -16,8 +16,7 @@ limitations under the License.
 @if (isLoading()) {
   loading...
 } @else {
-  @let experimentVal = experiment();
-  @let workUnitVal = workUnit();
+  @let experimentVal = experiment(); @let workUnitVal = workUnit();
   @if (experimentVal && workUnitVal) {
     <xmc-work-unit-header
       [workUnit]="workUnitVal"
