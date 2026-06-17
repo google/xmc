@@ -9,6 +9,8 @@ GLOBAL_BUILD_FILES = {
     "WORKSPACE",
     "MODULE.bazel",
     "MODULE.bazel.lock",
+    "BUILD",
+    "BUILD.bazel",
     "go.mod",
     "go.sum",
     ".bazelrc",
