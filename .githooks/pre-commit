@@ -56,6 +56,25 @@ else
   echo "    No staged UI files to format or lint."
 fi
 
+# 4. License Check via addlicense
+ADDLICENSE_BIN=""
+if which addlicense >/dev/null 2>&1; then
+  ADDLICENSE_BIN="addlicense"
+elif [ -f "$HOME/go/bin/addlicense" ]; then
+  ADDLICENSE_BIN="$HOME/go/bin/addlicense"
+else
+  echo "--> WARNING: addlicense not found. License check skipped."
+  echo "    To install: go install github.com/google/addlicense@latest"
+fi
+
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR)
+if [ -n "$ADDLICENSE_BIN" ] && [ -n "$STAGED_FILES" ]; then
+  echo "--> Running addlicense to auto-add missing headers..."
+  $ADDLICENSE_BIN -c "Google LLC" -l apache \
+      -ignore "third_party/**" \
+      -ignore "**/third_party/**" \
+      $STAGED_FILES
+
 # Check if the linters modified any un-staged files
 if ! git diff --quiet; then
   echo ""
