@@ -27,7 +27,6 @@ go_library(
         "//api/filter/go/queryfilterbase",
         "//internal/compat/safesql",
         "//internal/compat/spanner",
-        "@com_google_cloud_go_spanner//:spanner",
     ],
 )
 
@@ -45,7 +44,6 @@ go_test(
         "//internal/compat/proto",
         "//internal/compat/safesql",
         "//internal/compat/spanner",
-        "@com_google_cloud_go_spanner//:spanner",
         "//internal/compat/status",
     ],
 )

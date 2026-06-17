@@ -24,7 +24,7 @@ import (
 	clientgoscheme "golang/k8s_io/client_go/v/v0_23/kubernetes/scheme/scheme"
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/fake/fake"
-	kueuev1beta1 "xmanager_cloud/kubernetes/api/v1beta1/v1beta1"
+	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
 func newScheme() *runtime.Scheme {

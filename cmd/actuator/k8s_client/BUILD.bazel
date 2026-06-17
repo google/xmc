@@ -35,7 +35,7 @@ compat_go_library(
         "//internal/compat/spanner",
         "//internal/compat/status",
         "//internal/kubernetes/api/v1alpha2",
-        "//internal/kubernetes/api/v1beta1",
+        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
         "//internal/kubernetes/common:constants",
         "//internal/logging",
         "//internal/storage",

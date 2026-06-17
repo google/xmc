@@ -25,7 +25,7 @@ compat_go_library(
         "//cmd/reconciler/shared",
         "//internal/compat/field_mask",
         "//internal/kubernetes/api/v1alpha2",
-        "//internal/kubernetes/api/v1beta1",
+        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
         "//internal/kubernetes/common/labels",
         "//internal/logging",
         "//internal/storage",

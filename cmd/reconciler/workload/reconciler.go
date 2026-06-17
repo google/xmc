@@ -34,7 +34,7 @@ import (
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/handler/handler"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/source/source"
-	"xmanager_cloud/kubernetes/api/v1beta1/v1beta1"
+	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/kubernetes/common/labels"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 	"xmanager_cloud/logging/logging"

@@ -23,7 +23,7 @@ import (
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
 	fmpb "protobuf/field_mask_go_proto"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/kubernetes/api/v1beta1/v1beta1"
+	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/logging/logging"
 	storagepkg "xmanager_cloud/storage/storage"
 )
