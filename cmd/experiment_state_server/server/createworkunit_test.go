@@ -31,7 +31,7 @@ import (
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	jobsetv1alpha2 "xmanager_cloud/kubernetes/api/v1alpha2/v1alpha2"
+	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
 	tpb "xmanager_cloud/task_queue/proto/task_go_proto"

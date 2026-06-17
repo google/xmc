@@ -30,7 +30,7 @@ import (
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/types/types"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/util/wait/wait"
 	"golang/protobuf/v2/proto/proto"
-	jobsetv1alpha2 "xmanager_cloud/kubernetes/api/v1alpha2/v1alpha2"
+	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	constants "xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 	ee "xmanager_cloud/toollibs/execution_environments/executionenvironments"

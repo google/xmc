@@ -36,6 +36,7 @@ require (
 	k8s.io/apimachinery v0.36.1
 	k8s.io/client-go v0.36.1
 	sigs.k8s.io/controller-runtime v0.24.1
+	sigs.k8s.io/jobset v0.10.1
 	sigs.k8s.io/kueue v0.15.0
 )
 
