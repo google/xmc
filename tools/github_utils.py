@@ -8,7 +8,6 @@ import urllib.request
 import urllib.parse
 import subprocess
 import shutil
-import sys
 
 class GithubAuthError(Exception):
     """Raised when GitHub authentication fails."""
@@ -32,6 +31,8 @@ def parse_comment_url(url):
     return None
 
 def call_github_api(endpoint, method="GET", payload=None, user_agent="XMC-Github-Agent"):
+    errors = []
+    
     # Method 1: Try gh CLI
     if shutil.which("gh"):
         try:
@@ -49,8 +50,10 @@ def call_github_api(endpoint, method="GET", payload=None, user_agent="XMC-Github
                 check=True
             )
             return json.loads(res.stdout)
-        except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
-            sys.stderr.write(f"Warning: GitHub CLI API call failed: {e}. Falling back...\n")
+        except subprocess.CalledProcessError as e:
+            errors.append(f"GitHub CLI failed (exit code {e.returncode}): {e.stderr.strip() if e.stderr else str(e)}")
+        except json.JSONDecodeError as e:
+            errors.append(f"GitHub CLI succeeded but output was not valid JSON: {e}")
             
     # Method 2: Try GITHUB_TOKEN
     token = os.environ.get("GITHUB_TOKEN")
@@ -69,7 +72,7 @@ def call_github_api(endpoint, method="GET", payload=None, user_agent="XMC-Github
             with urllib.request.urlopen(req, data=body) as response:
                 return json.loads(response.read().decode('utf-8'))
         except Exception as e:
-            sys.stderr.write(f"Warning: GITHUB_TOKEN API call failed: {e}. Falling back...\n")
+            errors.append(f"GITHUB_TOKEN request failed: {e}")
             
     # Method 3: Try Unauthenticated (GET only)
     if method == "GET":
@@ -81,6 +84,24 @@ def call_github_api(endpoint, method="GET", payload=None, user_agent="XMC-Github
             with urllib.request.urlopen(req) as response:
                 return json.loads(response.read().decode('utf-8'))
         except Exception as e:
-            raise GithubAPIError(f"Unauthenticated GitHub API call failed: {e}")
+            errors.append(f"Unauthenticated GET request failed: {e}")
     else:
-        raise GithubAuthError("GitHub authentication failed. No credentials found (gh CLI or GITHUB_TOKEN).")
+        errors.append("Unauthenticated requests are not supported for non-GET methods.")
+
+    # If we reached this point, all attempted methods failed.
+    # We raise an appropriate exception with all accumulated errors.
+    error_summary = "; ".join(errors)
+    
+    # If any credential was present but failed, or if no credentials were found and method is POST
+    has_credentials = shutil.which("gh") or token
+    if not has_credentials and method != "GET":
+        raise GithubAuthError(f"GitHub authentication failed. No credentials found (gh CLI or GITHUB_TOKEN). Details: {error_summary}")
+    else:
+        # Credentials were present but failed, or API call failed.
+        # If the failure is likely auth-related (e.g. 401/403/bad credentials), raise GithubAuthError,
+        # otherwise raise GithubAPIError.
+        auth_keywords = ["401", "unauthorized", "403", "authentication", "permission", "credentials"]
+        if any(kw in error_summary.lower() for kw in auth_keywords):
+            raise GithubAuthError(f"GitHub authentication failed: {error_summary}")
+        else:
+            raise GithubAPIError(f"GitHub API call failed: {error_summary}")
