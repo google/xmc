@@ -13,7 +13,7 @@
 // limitations under the License.
 import { inject, Injectable, Signal } from '@angular/core';
 import { ComponentStore } from '@ngrx/component-store';
-import { EMPTY } from 'rxjs';
+import { EMPTY, Observable } from 'rxjs';
 import { catchError, switchMap, tap } from 'rxjs/operators';
 
 import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
@@ -147,43 +147,51 @@ export class ExperimentsListPageStore extends ComponentStore<ExperimentsListPage
   });
 
   /** Fetches the current page of experiments. */
-  readonly fetchPage = this.effect((trigger$) => {
-    return trigger$.pipe(
+  readonly fetchPage = this.effect((trigger$) =>
+    trigger$.pipe(
       tap(() => {
         this.patchState({ isLoading: true });
       }),
-      switchMap(() => {
-        const currentState = this.get();
-        const paginationState = currentState.pagination;
+      switchMap(() => this.fetchExperimentsPage()),
+    ),
+  );
 
-        const request: api.ListExperimentsRequest = {
-          filter: currentState.filter,
-          pageSize: paginationState.pageSize,
-          pageToken: paginationState.currentPageToken || undefined,
-          orderBy: currentState.orderBy,
-        };
+  private fetchExperimentsPage(): Observable<api.ListExperimentsResponse> {
+    const currentState = this.get();
+    const paginationState = currentState.pagination;
 
-        return this.service.searchExperiments(request).pipe(
-          tap((response: api.ListExperimentsResponse) => {
-            this.patchState({ isLoading: false });
-            this.patchState({ pageResult: response });
+    const request: api.ListExperimentsRequest = {
+      filter: currentState.filter,
+      pageSize: paginationState.pageSize,
+      pageToken: paginationState.currentPageToken || undefined,
+      orderBy: currentState.orderBy,
+    };
 
-            this.patchState({
-              pagination: {
-                ...paginationState,
-                nextPageToken: response.nextPageToken,
-              },
-            });
-          }),
-          catchError((error) => {
-            this.patchState({ isLoading: false });
-            this.snackbarService.open(
-              `Failed to fetch list of experiments: ${error.message || error}`,
-            );
-            return EMPTY;
-          }),
-        );
+    return this.service.searchExperiments(request).pipe(
+      tap({
+        next: (response) => this.handleFetchSuccess(response, paginationState),
+        error: (error) => this.handleFetchError(error),
       }),
+      catchError(() => EMPTY),
     );
-  });
+  }
+
+  private handleFetchSuccess(response: api.ListExperimentsResponse, paginationState: PaginationState) {
+    this.patchState({
+      isLoading: false,
+      pageResult: response,
+      pagination: {
+        ...paginationState,
+        nextPageToken: response.nextPageToken,
+      },
+    });
+  }
+
+  private handleFetchError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    this.patchState({ isLoading: false });
+    this.snackbarService.open(
+      `Failed to fetch list of experiments: ${message}`,
+    );
+  }
 }

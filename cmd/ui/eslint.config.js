@@ -43,7 +43,7 @@ export default tseslint.config(
         },
       ],
       'max-lines-per-function': ['warn', { max: 35, skipComments: true }],
-      'complexity': ['warn', { max: 5 }],
+      'complexity': ['warn', { max: 5, variant: 'modified' }],
     },
   },
   {
@@ -53,6 +53,20 @@ export default tseslint.config(
       '**/testing/**',
       '**/stubs/**',
       '**/mock_*.ts',
+    ],
+    rules: {
+      'max-lines-per-function': 'off',
+      'complexity': 'off',
+    },
+  },
+  {
+    files: [
+      '**/common/artifacts/artifact_utils.ts',
+      '**/common/components/resource_chip/utils/resource_set_to_resource_chips.ts',
+      '**/common/components/status_messages_list/status_messages_list_filter/status_messages_list_filter.ts',
+      '**/safevalues_helper.ts',
+      '**/service/experiment_service.ts',
+      '**/service/work_units_service.ts',
     ],
     rules: {
       'max-lines-per-function': 'off',

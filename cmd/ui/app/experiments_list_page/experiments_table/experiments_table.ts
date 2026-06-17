@@ -13,15 +13,7 @@
 // limitations under the License.
 import { ClipboardModule } from '@angular/cdk/clipboard';
 import { CommonModule, DatePipe } from '@angular/common';
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  EventEmitter,
-  inject,
-  input,
-  Output,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatChipsModule } from '@angular/material/chips';
@@ -38,6 +30,7 @@ import { map } from 'rxjs/operators';
 import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
 import { Priority } from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
+import { ResourceSet } from 'xmanager_cloud/experiment_state_server/proto/resources.jsonpb_decls';
 import { ExperimentStatus } from 'xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls';
 import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
 import { LoadingBar } from 'xmanager_cloud/ui/app/common/components/loading_bar/loading_bar';
@@ -134,7 +127,7 @@ export class ExperimentsTable {
   readonly isLoading = computed(() => this.isFetching() && !this.pageResult());
   readonly isRefreshing = computed(() => this.isFetching() && !!this.pageResult());
 
-  @Output() readonly sortChange = new EventEmitter<Sort>();
+  readonly sortChange = output<Sort>();
 
   private readonly sidePanelService = inject(SidePanelService);
   private readonly filterService = inject(StatusMessageFilterService);
@@ -147,38 +140,14 @@ export class ExperimentsTable {
       this.filterService.severities$,
       this.filterService.sources$,
     ]).pipe(
-      map(([pageResult, severities, sources]) => {
+      map(([pageResult, _severities, _sources]) => {
         const experiments = pageResult?.experiments;
         if (!experiments) {
           return [];
         }
-        return experiments.map((experiment: Experiment) => {
-          const message = !!experiment.status?.structuredStatusMessage?.userFacingText
-            ? experiment.status?.structuredStatusMessage
-            : undefined;
-          let isStatusMessageVisible = false;
-          if (message) {
-            isStatusMessageVisible = this.filterService.isMessageVisible(message);
-          }
-          return {
-            name: experiment.name,
-            xid: experiment.name?.split('/').pop(),
-            title: experiment.title,
-            tags: experiment.tags ?? [],
-            stateCounts: experiment.status?.childStateCounts ?? [],
-            status: getStatusChipEnum(experiment),
-            priority: experiment.priority,
-            notes: experiment.notes,
-            author: experiment.creator,
-            resources: experiment.resources
-              ? resourceSetsToResourceChipsData(experiment.resources)
-              : [],
-            createTime: experiment.createTime ? new Date(experiment.createTime) : undefined,
-            completedTime: experiment.completeTime ? new Date(experiment.completeTime) : undefined,
-            structuredStatusMessage: message,
-            isStatusMessageVisible,
-          };
-        });
+        return experiments.map((experiment: Experiment) =>
+          toTableRow(experiment, this.filterService),
+        );
       }),
     );
   }
@@ -194,4 +163,51 @@ function getStatusChipEnum(experiment: Experiment): StatusOption {
   } else {
     return StatusOption.NOT_RUNNING;
   }
+}
+
+function toTableRow(experiment: Experiment, filterService: StatusMessageFilterService): TableRow {
+  const { message, isVisible } = getStatusMessageData(experiment, filterService);
+  return {
+    name: experiment.name,
+    xid: getXid(experiment.name),
+    title: experiment.title,
+    tags: experiment.tags || [],
+    stateCounts: experiment.status?.childStateCounts || [],
+    status: getStatusChipEnum(experiment),
+    priority: experiment.priority,
+    notes: experiment.notes,
+    author: experiment.creator,
+    resources: getResourcesChips(experiment.resources),
+    createTime: parseExperimentDate(experiment.createTime),
+    completedTime: parseExperimentDate(experiment.completeTime),
+    structuredStatusMessage: message,
+    isStatusMessageVisible: isVisible,
+  };
+}
+
+function getXid(name: string | undefined): string | undefined {
+  return name ? name.split('/').pop() : undefined;
+}
+
+function getStatusMessageData(
+  experiment: Experiment,
+  filterService: StatusMessageFilterService,
+): { message: StructuredMessage | undefined; isVisible: boolean } {
+  const status = experiment.status;
+  if (!status) {
+    return { message: undefined, isVisible: false };
+  }
+  const message = status.structuredStatusMessage;
+  if (!message || !message.userFacingText) {
+    return { message: undefined, isVisible: false };
+  }
+  return { message, isVisible: filterService.isMessageVisible(message) };
+}
+
+function getResourcesChips(resources: ResourceSet[] | null | undefined): ResourceChipData[] {
+  return resources ? resourceSetsToResourceChipsData(resources) : [];
+}
+
+function parseExperimentDate(dateStr: string | undefined): Date | undefined {
+  return dateStr ? new Date(dateStr) : undefined;
 }

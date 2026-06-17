@@ -41,15 +41,18 @@ export class HomePage {
     if (!errType) {
       return null;
     }
-    if (errType === 'forbidden') {
-      const email = params['email'] ?? '';
-      return `Your account (${email}) is not authorized. Please contact your administrator to request access.`;
-    } else if (errType === 'permission_error') {
-      return 'Failed to verify authorization permissions. Please contact your administrator.';
-    } else {
-      return 'An authentication error occurred. Please try again.';
-    }
+    return this.getErrorMessageByType(errType, params['email']);
   });
+
+  private getErrorMessageByType(errType: string, email?: string): string {
+    if (errType === 'forbidden') {
+      return `Your account (${email || ''}) is not authorized. Please contact your administrator to request access.`;
+    }
+    if (errType === 'permission_error') {
+      return 'Failed to verify authorization permissions. Please contact your administrator.';
+    }
+    return 'An authentication error occurred. Please try again.';
+  }
 
   login() {
     windowOpen(window, '/api/login', '_self');

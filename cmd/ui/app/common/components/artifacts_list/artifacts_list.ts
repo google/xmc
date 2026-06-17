@@ -65,6 +65,10 @@ export class ArtifactsList implements OnInit {
 
   ngOnInit() {
     this.showFilterToggle = parseWorkUnitName(this.parentName()) === null;
+    this.initializeArtifactStreams();
+  }
+
+  private initializeArtifactStreams() {
     this.artifactsResponse$ = this.artifactService
       .listArtifacts({
         parent: this.parentName(),
@@ -77,35 +81,37 @@ export class ArtifactsList implements OnInit {
       this.artifacts$,
       this.artifactFilter,
     ]).pipe(
-      map(([artifacts, filter]) => {
-        if (
-          !this.showFilterToggle ||
-          (filter.includes(ArtifactFilter.EXPERIMENT) && filter.includes(ArtifactFilter.WORK_UNIT))
-        ) {
-          return artifacts;
-        }
-        if (filter.length === 0) {
-          return [];
-        }
-        return artifacts.filter((artifact) => {
-          const isWorkUnitArtifact = artifact.parent
-            ? parseWorkUnitName(artifact.parent) !== null
-            : false;
-          if (filter.includes(ArtifactFilter.EXPERIMENT) && !isWorkUnitArtifact) {
-            return true;
-          }
-          if (filter.includes(ArtifactFilter.WORK_UNIT) && isWorkUnitArtifact) {
-            return true;
-          }
-          return false;
-        });
-      }),
+      map(([artifacts, filter]) => this.filterArtifacts(artifacts, filter)),
     );
 
     this.showTruncationMessage$ = combineLatest([this.nextPageToken$, filteredArtifacts$]).pipe(
       map(([token, artifacts]) => !!token && artifacts.length > 0),
     );
 
+    this.setupPhaseStreams(filteredArtifacts$);
+  }
+
+  private filterArtifacts(artifacts: readonly Artifact[], filter: ArtifactFilter[]): readonly Artifact[] {
+    if (
+      !this.showFilterToggle ||
+      (filter.includes(ArtifactFilter.EXPERIMENT) && filter.includes(ArtifactFilter.WORK_UNIT))
+    ) {
+      return artifacts;
+    }
+    if (filter.length === 0) {
+      return [];
+    }
+    return artifacts.filter((artifact) => {
+      const isWorkUnitArtifact =
+        !!artifact.parent && parseWorkUnitName(artifact.parent) !== null;
+      const matchesExperiment =
+        filter.includes(ArtifactFilter.EXPERIMENT) && !isWorkUnitArtifact;
+      const matchesWorkUnit = filter.includes(ArtifactFilter.WORK_UNIT) && isWorkUnitArtifact;
+      return matchesExperiment || matchesWorkUnit;
+    });
+  }
+
+  private setupPhaseStreams(filteredArtifacts$: Observable<readonly Artifact[]>) {
     this.inputArtifacts$ = filteredArtifacts$.pipe(
       map((artifacts) => artifacts.filter((a) => a.lifecyclePhase === 'INPUT')),
       map((artifacts) => groupAndSortArtifacts(artifacts, 'INPUT', this.groupingThreshold())),

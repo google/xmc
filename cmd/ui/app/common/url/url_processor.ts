@@ -64,13 +64,7 @@ function fillPlaceholders(urlString: string, data: Experiment | WorkUnit): strin
 
   // metatadata fields only exist for WorkUnit
   if ('currentWorkUnitExecution' in data) {
-    const metadata = (data as WorkUnit).currentWorkUnitExecution?.metadata;
-    replacements['PROJECT'] = metadata?.managementCluster?.project;
-    replacements['LOCATION'] = metadata?.managementCluster?.location;
-    replacements['CLUSTER'] = metadata?.managementCluster?.clusterName;
-    replacements['RESOURCE_NAME'] = metadata?.resourceName;
-    replacements['NAMESPACE'] = metadata?.namespace;
-    replacements['SERVICE_ACCOUNT'] = metadata?.serviceAccount;
+    Object.assign(replacements, getWorkUnitReplacements(data as WorkUnit));
   }
 
   let missingValue = false;
@@ -84,4 +78,29 @@ function fillPlaceholders(urlString: string, data: Experiment | WorkUnit): strin
   });
 
   return missingValue ? undefined : processedUrl;
+}
+
+function getWorkUnitReplacements(workUnit: WorkUnit): Record<string, string | undefined> {
+  const execution = workUnit.currentWorkUnitExecution;
+  if (!execution) {
+    return {};
+  }
+  const metadata = execution.metadata;
+  if (!metadata) {
+    return {};
+  }
+  const cluster = metadata.managementCluster;
+  const replacements: Record<string, string | undefined> = {
+    RESOURCE_NAME: metadata.resourceName,
+    NAMESPACE: metadata.namespace,
+    SERVICE_ACCOUNT: metadata.serviceAccount,
+  };
+
+  if (cluster) {
+    replacements['PROJECT'] = cluster.project;
+    replacements['LOCATION'] = cluster.location;
+    replacements['CLUSTER'] = cluster.clusterName;
+  }
+
+  return replacements;
 }

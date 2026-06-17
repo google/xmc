@@ -13,7 +13,8 @@
 // limitations under the License.
 import { inject, Injectable, Signal } from '@angular/core';
 import { ComponentStore } from '@ngrx/component-store';
-import { switchMap, tap } from 'rxjs/operators';
+import { EMPTY, Observable } from 'rxjs';
+import { catchError, switchMap, tap } from 'rxjs/operators';
 
 import {
   ListWorkUnitsRequest,
@@ -153,38 +154,46 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
       tap(() => {
         this.patchState({ isLoading: true });
       }),
-      switchMap(() => {
-        const currentState = this.get();
-        const paginationState = currentState.pagination;
-        const request: ListWorkUnitsRequest = {
-          parent: `experiments/${currentState.xid}`,
-          pageSize: paginationState.pageSize,
-          pageToken: paginationState.currentPageToken,
-        };
-        return this.workUnitsService.searchWorkUnits(request).pipe(
-          tap({
-            next: (response: ListWorkUnitsResponse) => {
-              this.patchState({
-                pagination: {
-                  ...paginationState,
-                  nextPageToken: response.nextPageToken ?? undefined,
-                },
-                isLoading: false,
-                workUnits: response.workUnits ?? [],
-                error: null,
-              });
-            },
-            error: (error) => {
-              this.patchState({
-                error: error.message || error,
-                isLoading: false,
-                workUnits: [],
-              });
-              this.snackbarService.open(`Failed to fetch work units: ${error.message || error}`);
-            },
-          }),
-        );
-      }),
+      switchMap(() => this.fetchWorkUnitsPage()),
     ),
   );
+
+  private fetchWorkUnitsPage(): Observable<ListWorkUnitsResponse> {
+    const currentState = this.get();
+    const paginationState = currentState.pagination;
+    const request: ListWorkUnitsRequest = {
+      parent: `experiments/${currentState.xid}`,
+      pageSize: paginationState.pageSize,
+      pageToken: paginationState.currentPageToken,
+    };
+    return this.workUnitsService.searchWorkUnits(request).pipe(
+      tap({
+        next: (response) => this.handleFetchSuccess(response, paginationState),
+        error: (error) => this.handleFetchError(error),
+      }),
+      catchError(() => EMPTY),
+    );
+  }
+
+  private handleFetchSuccess(response: ListWorkUnitsResponse, paginationState: PaginationState) {
+    this.patchState({
+      pagination: {
+        ...paginationState,
+        nextPageToken: response.nextPageToken ?? undefined,
+      },
+      isLoading: false,
+      workUnits: response.workUnits ?? [],
+      error: null,
+    });
+  }
+
+  private handleFetchError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    this.patchState({
+      error: message,
+      isLoading: false,
+      workUnits: [],
+    });
+    this.snackbarService.open(`Failed to fetch work units: ${message}`);
+  }
 }
