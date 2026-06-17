@@ -36,12 +36,14 @@ const MSG_CORE_COUNT_ICU = declareIcuTemplate(
 );
 
 /**  Converts a list of ResourceSet to a list of ResourceChipData. */
+// eslint-disable-next-line max-lines-per-function
 export function resourceSetsToResourceChipsData(resources: ResourceSet[]): ResourceChipData[] {
   const coreCountFormatter = new NumberFormat(NumberFormat.Format.COMPACT_SHORT);
   coreCountFormatter.setMaximumFractionDigits(1);
   const coreCountMessage = new MessageFormat(MSG_CORE_COUNT_ICU);
 
   return resources
+    // eslint-disable-next-line max-lines-per-function
     .map((resource: ResourceSet) => {
       const resources: ResourceChipData[] = [];
       if (resource.cpuResources) {

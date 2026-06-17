@@ -38,6 +38,7 @@ export function processUrls(urls: Url[], data: Experiment | WorkUnit): Processed
     .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
 }
 
+// eslint-disable-next-line max-lines-per-function
 function fillPlaceholders(urlString: string, data: Experiment | WorkUnit): string | undefined {
   let xid: string | undefined;
   let wid: string | undefined;

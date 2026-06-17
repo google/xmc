@@ -75,6 +75,7 @@ export function formatArtifactDataType(dataType: Artifact.DataType | undefined):
 }
 
 /** Groups artifacts by type if they exceed threshold, and sorts by priority. */
+// eslint-disable-next-line max-lines-per-function
 export function groupAndSortArtifacts(
   artifacts: Artifact[],
   phase: Artifact.LifecyclePhase | 'OUTPUT' | 'INPUT' | 'EXECUTION',
