@@ -35,7 +35,7 @@ essDeployment:
   replicas: 1
 
 defaultToCursorPagination: false
-detectInadmissibleWorkUnits: false
+detectInadmissibleWorkUnits: true
 startupPodErrorCheckEnabled: true
 statusMessageHistoryEnabled: false
 redisAddr: "YOUR_REDIS_IP:6379"
