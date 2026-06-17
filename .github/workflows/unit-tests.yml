@@ -35,6 +35,8 @@ jobs:
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
+        with:
+          fetch-depth: 0
 
       - name: 'Set up Go'
         uses: 'actions/setup-go@v5'
@@ -66,7 +68,27 @@ jobs:
           restore-keys: |
             bazel-${{ runner.os }}-
 
+      - name: 'Determine Affected Test Targets'
+        id: 'determine-targets'
+        run: |
+          BASE_REF=""
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE_REF="origin/${{ github.base_ref }}"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            BASE_REF="${{ github.event.before }}"
+          fi
+          echo "Determining affected tests against base ref: ${BASE_REF:-HEAD~1}"
+          
+          # Run python script to get affected tests
+          TEST_TARGETS=$(python3 tools/determine_tests.py --base "${BASE_REF:-HEAD~1}")
+          
+          # Save output multiline value safely
+          echo "targets<<EOF" >> $GITHUB_OUTPUT
+          echo "$TEST_TARGETS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: 'Verify Spanner Emulator Endpoint'
+        if: steps.determine-targets.outputs.targets != ''
         run: |
           echo "Verifying Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}..."
           HOST=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f1)
@@ -86,7 +108,11 @@ jobs:
           exit 1
 
       - name: 'Run Unit Tests'
+        if: steps.determine-targets.outputs.targets != ''
         run: |
+          TARGETS=$(echo "${{ steps.determine-targets.outputs.targets }}" | tr '\n' ' ')
+          echo "Running tests for targets: $TARGETS"
+          
           bazel test \
             --repository_cache=~/.cache/bazel-repo \
             --disk_cache=~/.cache/bazel-disk \
@@ -94,7 +120,7 @@ jobs:
             --build_tests_only \
             --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},300,300,300 \
             -- \
-            //...
+            $TARGETS
 
       - name: 'Save Bazel Cache'
         uses: 'actions/cache/save@v4'
