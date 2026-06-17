@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import argparse
-import os
+import posixpath
 import subprocess
 import sys
 
@@ -70,11 +70,11 @@ def get_packages():
     return packages
 
 def find_closest_package(file_path, packages):
-    dirname = os.path.dirname(file_path)
+    dirname = posixpath.dirname(file_path)
     while dirname:
         if dirname in packages:
             return dirname
-        dirname = os.path.dirname(dirname)
+        dirname = posixpath.dirname(dirname)
     if "" in packages:
         return ""
     return None
@@ -113,22 +113,26 @@ def main():
         if f.startswith("internal/"):
             run_cmd_tests = True
 
-        basename = os.path.basename(f)
-        if basename in ("BUILD", "BUILD.bazel") or f.endswith(".bzl"):
-            pkg = os.path.dirname(f)
+        basename = posixpath.basename(f)
+        if basename in ("BUILD", "BUILD.bazel"):
+            pkg = posixpath.dirname(f)
             targets.add(f"//{pkg}:all")
+            continue
+        elif f.endswith(".bzl"):
+            pkg = posixpath.dirname(f)
+            targets.add(f"//{pkg}:{basename}")
             continue
 
         # If it's a tracked source file, add its label
         if f in tracked_sources:
             pkg = find_closest_package(f, packages)
             if pkg is not None:
-                rel_path = os.path.relpath(f, pkg) if pkg else f
+                rel_path = posixpath.relpath(f, pkg) if pkg else f
                 targets.add(f"//{pkg}:{rel_path}")
             continue
 
         # Check if it is a deleted/untracked file with a source extension
-        _, ext = os.path.splitext(f)
+        _, ext = posixpath.splitext(f)
         if ext in SRC_EXTENSIONS:
             pkg = find_closest_package(f, packages)
             if pkg is not None:
