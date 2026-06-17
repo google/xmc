@@ -1,107 +1,104 @@
 # Copyright 2026 Google LLC
 # Shared GitHub API helper utilities
 
-import os
-import re
-import json
+import urllib.error
 import urllib.request
-import urllib.parse
+import json
 import subprocess
 import shutil
+import os
 
-class GithubAuthError(Exception):
-    """Raised when GitHub authentication fails."""
-    pass
-
-class GithubAPIError(Exception):
-    """Raised when a GitHub API call fails."""
-    pass
-
-def parse_comment_url(url):
-    # Regex for review comment: https://github.com/owner/repo/pull/num#discussion_r123456
-    match_review = re.search(r'github\.com/([^/]+)/([^/]+)/pull/(\d+)#discussion_r(\d+)', url)
-    if match_review:
-        return {
-            "type": "review_comment",
-            "owner": match_review.group(1),
-            "repo": match_review.group(2),
-            "pull_number": match_review.group(3),
-            "comment_id": int(match_review.group(4))
-        }
-    return None
+# --- High-Level Orchestrator (Under 30 lines) ---
 
 def call_github_api(endpoint, method="GET", payload=None, user_agent="XMC-Github-Agent"):
     errors = []
     
-    # Method 1: Try gh CLI
+    # 1. Try gh CLI
     if shutil.which("gh"):
         try:
-            cmd = ["gh", "api", "-X", method, endpoint]
-            input_data = None
-            if payload:
-                cmd += ["--input", "-"]
-                input_data = json.dumps(payload)
+            return _call_api_with_gh(endpoint, method, payload, user_agent)
+        except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
+            errors.append(("gh_cli", e))
             
-            res = subprocess.run(
-                cmd,
-                input=input_data,
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            return json.loads(res.stdout)
-        except subprocess.CalledProcessError as e:
-            errors.append(f"GitHub CLI failed (exit code {e.returncode}): {e.stderr.strip() if e.stderr else str(e)}")
-        except json.JSONDecodeError as e:
-            errors.append(f"GitHub CLI succeeded but output was not valid JSON: {e}")
-            
-    # Method 2: Try GITHUB_TOKEN
+    # 2. Try GITHUB_TOKEN
     token = os.environ.get("GITHUB_TOKEN")
     if token:
         try:
-            url = f"https://api.github.com{endpoint}"
-            req = urllib.request.Request(url, method=method)
-            req.add_header("Accept", "application/vnd.github.v3+json")
-            req.add_header("User-Agent", user_agent)
-            req.add_header("Authorization", f"token {token}")
-            
-            body = json.dumps(payload).encode('utf-8') if payload else None
-            if body:
-                req.add_header("Content-Type", "application/json")
-                
-            with urllib.request.urlopen(req, data=body) as response:
-                return json.loads(response.read().decode('utf-8'))
+            return _call_api_with_token(endpoint, method, payload, token, user_agent)
         except Exception as e:
-            errors.append(f"GITHUB_TOKEN request failed: {e}")
+            errors.append(("token_auth", e))
             
-    # Method 3: Try Unauthenticated (GET only)
+    # 3. Try Unauthenticated (GET only)
     if method == "GET":
         try:
-            url = f"https://api.github.com{endpoint}"
-            req = urllib.request.Request(url, method=method)
-            req.add_header("Accept", "application/vnd.github.v3+json")
-            req.add_header("User-Agent", user_agent)
-            with urllib.request.urlopen(req) as response:
-                return json.loads(response.read().decode('utf-8'))
+            return _call_api_unauthenticated(endpoint, user_agent)
         except Exception as e:
-            errors.append(f"Unauthenticated GET request failed: {e}")
+            errors.append(("unauthenticated", e))
     else:
-        errors.append("Unauthenticated requests are not supported for non-GET methods.")
+        errors.append(("unauthenticated", ValueError("Unauthenticated requests not supported for non-GET methods.")))
 
-    # If we reached this point, all attempted methods failed.
-    # We raise an appropriate exception with all accumulated errors.
-    error_summary = "; ".join(errors)
+    # 4. Handle Failure (Orchestrate error raising)
+    _raise_detailed_error(errors)
+
+# --- Lower-Level Execution Helpers ---
+
+def _call_api_with_gh(endpoint, method, payload, user_agent):
+    cmd = ["gh", "api", "-X", method, endpoint]
+    input_data = None
+    if payload:
+        cmd += ["--input", "-"]
+        input_data = json.dumps(payload)
     
-    # If any credential was present but failed, or if no credentials were found and method is POST
-    has_credentials = shutil.which("gh") or token
-    if not has_credentials and method != "GET":
-        raise GithubAuthError(f"GitHub authentication failed. No credentials found (gh CLI or GITHUB_TOKEN). Details: {error_summary}")
+    res = subprocess.run(
+        cmd,
+        input=input_data,
+        capture_output=True,
+        text=True,
+        check=True
+    )
+    return json.loads(res.stdout)
+
+def _call_api_with_token(endpoint, method, payload, token, user_agent):
+    url = f"https://api.github.com{endpoint}"
+    req = urllib.request.Request(url, method=method)
+    req.add_header("Accept", "application/vnd.github.v3+json")
+    req.add_header("User-Agent", user_agent)
+    req.add_header("Authorization", f"token {token}")
+    
+    body = json.dumps(payload).encode('utf-8') if payload else None
+    if body:
+        req.add_header("Content-Type", "application/json")
+        
+    with urllib.request.urlopen(req, data=body) as response:
+        return json.loads(response.read().decode('utf-8'))
+
+def _call_api_unauthenticated(endpoint, user_agent):
+    url = f"https://api.github.com{endpoint}"
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("Accept", "application/vnd.github.v3+json")
+    req.add_header("User-Agent", user_agent)
+    with urllib.request.urlopen(req) as response:
+        return json.loads(response.read().decode('utf-8'))
+
+# --- Error Analysis Helper ---
+
+def _raise_detailed_error(errors):
+    is_auth_failure = False
+    
+    for source, err in errors:
+        if source == "token_auth" and isinstance(err, urllib.error.HTTPError):
+            if err.code in [401, 403]:
+                is_auth_failure = True
+                break
+        elif source == "gh_cli" and isinstance(err, subprocess.CalledProcessError):
+            stderr = err.stderr.decode('utf-8', errors='ignore') if isinstance(err.stderr, bytes) else str(err.stderr)
+            if any(kw in stderr.lower() for kw in ["auth", "login", "credentials"]):
+                is_auth_failure = True
+                break
+
+    error_summary = "; ".join(f"[{source}] {type(err).__name__}: {err}" for source, err in errors)
+    
+    if is_auth_failure:
+        raise GithubAuthError(f"GitHub authentication failed: {error_summary}")
     else:
-        # Credentials were present but failed, or API call failed.
-        # If the failure is likely auth-related (e.g. 401/403/bad credentials), raise GithubAuthError,
-        # otherwise raise GithubAPIError.
-        auth_keywords = ["401", "unauthorized", "403", "authentication", "permission", "credentials"]
-        if any(kw in error_summary.lower() for kw in auth_keywords):
-            raise GithubAuthError(f"GitHub authentication failed: {error_summary}")
-        else:
-            raise GithubAPIError(f"GitHub API call failed: {error_summary}")
+        raise GithubAPIError(f"GitHub API call failed: {error_summary}")
