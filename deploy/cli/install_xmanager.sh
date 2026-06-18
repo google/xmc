@@ -171,6 +171,7 @@ else
   
   git clone --depth 1 --no-checkout "$REPO_URL" "$XMC_PROTOS_SRC_DIR"
   cd "$XMC_PROTOS_SRC_DIR"
+  git sparse-checkout init --cone
   git sparse-checkout set "$SUBDIR"
   git checkout "$BRANCH"
   # Pull subdirectory files to the top-level
