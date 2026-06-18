@@ -41,6 +41,10 @@ parse_github_url() {
   fi
 }
 
+# --- Requirements / Global Constants ---
+MIN_GIT_MAJOR=2
+MIN_GIT_MINOR=25
+
 # Check Git version for sparse-checkout support (Git 2.25+)
 check_git_version() {
   local version
@@ -49,12 +53,12 @@ check_git_version() {
   IFS='.' read -r major minor _ <<< "$version"
   
   if [[ ! "$major" =~ ^[0-9]+$ ]] || [[ ! "$minor" =~ ^[0-9]+$ ]]; then
-    echo "Warning: Could not parse Git version ($version). Git 2.25+ is recommended." >&2
+    echo "Warning: Could not parse Git version ($version). Git ${MIN_GIT_MAJOR}.${MIN_GIT_MINOR}+ is recommended." >&2
     return 0
   fi
   
-  if [ "$major" -lt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -lt 25 ]; }; then
-    echo "Warning: Git version is $version. Git 2.25+ is required for automatic sparse checkout." >&2
+  if [ "$major" -lt "$MIN_GIT_MAJOR" ] || { [ "$major" -eq "$MIN_GIT_MAJOR" ] && [ "$minor" -lt "$MIN_GIT_MINOR" ]; }; then
+    echo "Warning: Git version is $version. Git ${MIN_GIT_MAJOR}.${MIN_GIT_MINOR}+ is required for automatic sparse checkout." >&2
     echo "If downloading remote protos fails, please upgrade Git or download the protos manually and use --protos-loc <local_path>." >&2
   fi
 }
