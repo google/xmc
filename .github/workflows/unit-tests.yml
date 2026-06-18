@@ -29,6 +29,7 @@ permissions:
   pull-requests: read
 
 jobs:
+# This job detects which files changed in the PR or push, and outputs flags for downstream jobs.
   detect-changes:
     name: 'Detect Changed Files'
     runs-on: 'ubuntu-24.04'
@@ -71,6 +72,8 @@ jobs:
             api:
               - 'api/**'
 
+# Test UI job: runs Node.js/Karma tests.
+  # Triggered only when UI files change or API files change (affects overall schema/types).
   test-ui:
     name: 'Test UI'
     needs: detect-changes
@@ -125,6 +128,9 @@ jobs:
             ~/.cache/bazel-disk
           key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
 
+# Test Internal job: runs tests under internal/... (e.g. database client, helper libraries).
+  # Depends on the Spanner Emulator service container.
+  # Triggered when internal code changes, pkg changes, or api changes.
   test-internal:
     name: 'Test Internal'
     needs: detect-changes
@@ -197,6 +203,9 @@ jobs:
             ~/.cache/bazel-disk
           key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
 
+# Test Cmd Backend job: runs backend commands unit tests (actuator, reconciler, etc.).
+  # Depends on Spanner Emulator since some backend commands use database functions.
+  # Triggered if internal/pkg/api change (impacts all commands) or if a specific cmd directory changes.
   test-cmd-backend:
     name: 'Test Cmd Backend'
     needs: detect-changes
@@ -259,9 +268,11 @@ jobs:
       - name: 'Run Backend Cmd Unit Tests'
         run: |
           TARGETS=()
+          # If a core backend component (internal/pkg/api) changed, or manual/merge runs, run ALL backend command tests.
           if [[ "${{ github.event_name }}" == "workflow_dispatch" || "${{ github.event_name }}" == "merge_group" || "${{ needs.detect-changes.outputs.api }}" == "true" || "${{ needs.detect-changes.outputs.internal }}" == "true" || "${{ needs.detect-changes.outputs.pkg }}" == "true" ]]; then
             TARGETS+=("//cmd/actuator/..." "//cmd/experiment_state_server/..." "//cmd/log_monitor/..." "//cmd/reconciler/..." "//cmd/xid_service/...")
           else
+            # Otherwise, run tests only for the specific command folders that changed.
             if [[ "${{ needs.detect-changes.outputs.actuator }}" == "true" ]]; then TARGETS+=("//cmd/actuator/..."); fi
             if [[ "${{ needs.detect-changes.outputs.experiment_state_server }}" == "true" ]]; then TARGETS+=("//cmd/experiment_state_server/..."); fi
             if [[ "${{ needs.detect-changes.outputs.log_monitor }}" == "true" ]]; then TARGETS+=("//cmd/log_monitor/..."); fi
@@ -380,3 +391,31 @@ jobs:
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
           key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+
+# Gating Job: This job acts as a final collector to satisfy required status checks.
+  # Since branch protection requires "Run Unit Tests" check to pass, this job is named accordingly.
+  # It will run always, but fails if any of the test jobs failed.
+  run-tests:
+    name: 'Run Unit Tests'
+    needs: [detect-changes, test-ui, test-internal, test-cmd-backend, test-pkg, test-tools]
+    if: always()
+    runs-on: 'ubuntu-24.04'
+    steps:
+      - name: Check test results
+        run: |
+          RESULTS=(
+            "${{ needs.test-ui.result }}"
+            "${{ needs.test-internal.result }}"
+            "${{ needs.test-cmd-backend.result }}"
+            "${{ needs.test-pkg.result }}"
+            "${{ needs.test-tools.result }}"
+          )
+          
+          for res in "${RESULTS[@]}"; do
+            if [ "$res" = "failure" ] || [ "$res" = "cancelled" ]; then
+              echo "CRITICAL: One or more test jobs failed or was cancelled."
+              exit 1
+            fi
+          done
+          
+          echo "All active test jobs completed successfully."
