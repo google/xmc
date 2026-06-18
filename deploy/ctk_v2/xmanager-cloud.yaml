@@ -30,7 +30,7 @@ vars:
   gts_hmac_key:         # GTS External Account Binding HMAC secret
 
   namespace: xmc
-  environment:
+  environment:          # Required Environment name.
   gcp_public_cidrs_access_enabled: false
   authorized_cidr: 0.0.0.0/0
   
