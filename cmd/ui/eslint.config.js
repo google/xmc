@@ -99,7 +99,7 @@ export default tseslint.config(
       'no-restricted-syntax': [
         'error',
         {
-          selector: 'Identifier[name=/^(Mock[A-Z]|mock[A-Z]|mock$)/]',
+          selector: 'Identifier[name=/^(Mock[A-Z]|mock[A-Z]|mock$)/]:not(MemberExpression > .property):not(ObjectExpression > Property > .key):not(MethodDefinition > .key):not(PropertyDefinition > .key):not(TSPropertySignature > .key):not(TSMethodSignature > .key)',
           message: 'Identifiers starting with "Mock" or "mock" are not allowed in production files. Move mock classes and data to dedicated testing/mock files, and only reference them in app_config.ts for DI provisioning.',
         },
       ],

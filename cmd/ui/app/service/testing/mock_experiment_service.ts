@@ -51,6 +51,9 @@ export class MockExperimentService extends ExperimentService {
   }
 
   override updateExperiment(request: UpdateExperimentRequest): Observable<Experiment> {
-    return of(request.experiment!);
+    if (!request.experiment) {
+      return throwError(() => new Error('Experiment is required for update'));
+    }
+    return of(request.experiment);
   }
 }
