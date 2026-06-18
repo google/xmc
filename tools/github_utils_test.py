@@ -105,8 +105,8 @@ class TestGithubUtils(unittest.TestCase):
         with self.assertRaises(GithubAuthError) as ctx:
             call_github_api("/repos/google/xmc/pulls/comments", method="POST", payload={"body": "hello"})
         
-        self.assertIn("No credentials found", str(ctx.exception))
-        self.assertIn("Unauthenticated requests are not supported for non-GET methods", str(ctx.exception))
+        self.assertIn("GitHub authentication failed", str(ctx.exception))
+        self.assertIn("Unauthenticated requests not supported for non-GET methods", str(ctx.exception))
 
     @patch('shutil.which')
     @patch('os.environ.get')
@@ -121,7 +121,7 @@ class TestGithubUtils(unittest.TestCase):
             call_github_api("/repos/google/xmc/pulls/comments/123", method="GET")
         
         self.assertIn("GitHub API call failed", str(ctx.exception))
-        self.assertIn("Unauthenticated GET request failed: HTTP 404 Not Found", str(ctx.exception))
+        self.assertIn("[unauthenticated] Exception: HTTP 404 Not Found", str(ctx.exception))
 
     @patch('shutil.which')
     @patch('subprocess.run')
@@ -131,7 +131,7 @@ class TestGithubUtils(unittest.TestCase):
         # gh CLI is installed but fails with auth error
         mock_which.return_value = "/usr/bin/gh"
         mock_run.side_effect = subprocess.CalledProcessError(
-            1, "gh api", stderr="Error: To authenticate, please run: gh auth login"
+            1, ["gh", "api"], stderr="Error: To authenticate, please run: gh auth login"
         )
         
         # GITHUB_TOKEN is available but fails with 401 Unauthorized
@@ -142,8 +142,8 @@ class TestGithubUtils(unittest.TestCase):
             call_github_api("/repos/google/xmc/pulls/comments/123", method="GET")
             
         self.assertIn("GitHub authentication failed", str(ctx.exception))
-        self.assertIn("GitHub CLI failed (exit code 1): Error: To authenticate, please run: gh auth login", str(ctx.exception))
-        self.assertIn("GITHUB_TOKEN request failed: HTTP Error 401: Unauthorized", str(ctx.exception))
+        self.assertIn("[gh_cli] CalledProcessError: Command '['gh', 'api']' returned non-zero exit status 1. (stderr: Error: To authenticate, please run: gh auth login)", str(ctx.exception))
+        self.assertIn("[token_auth] Exception: HTTP Error 401: Unauthorized", str(ctx.exception))
 
     @patch('shutil.which')
     @patch('subprocess.run')
@@ -153,7 +153,7 @@ class TestGithubUtils(unittest.TestCase):
         # gh CLI is installed but fails with 404 (not auth related)
         mock_which.return_value = "/usr/bin/gh"
         mock_run.side_effect = subprocess.CalledProcessError(
-            1, "gh api", stderr="gh: Base URI not found (HTTP 404)"
+            1, ["gh", "api"], stderr="gh: Base URI not found (HTTP 404)"
         )
         
         # GITHUB_TOKEN is available but fails with 404
@@ -164,8 +164,8 @@ class TestGithubUtils(unittest.TestCase):
             call_github_api("/repos/google/xmc/pulls/comments/123", method="GET")
             
         self.assertIn("GitHub API call failed", str(ctx.exception))
-        self.assertIn("GitHub CLI failed (exit code 1): gh: Base URI not found (HTTP 404)", str(ctx.exception))
-        self.assertIn("GITHUB_TOKEN request failed: HTTP Error 404: Not Found", str(ctx.exception))
+        self.assertIn("[gh_cli] CalledProcessError: Command '['gh', 'api']' returned non-zero exit status 1. (stderr: gh: Base URI not found (HTTP 404))", str(ctx.exception))
+        self.assertIn("[token_auth] Exception: HTTP Error 404: Not Found", str(ctx.exception))
 
 if __name__ == '__main__':
     unittest.main()

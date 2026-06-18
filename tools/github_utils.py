@@ -7,6 +7,28 @@ import json
 import subprocess
 import shutil
 import os
+import re
+
+class GithubAuthError(Exception):
+    """Raised when GitHub authentication fails."""
+    pass
+
+class GithubAPIError(Exception):
+    """Raised when a GitHub API call fails."""
+    pass
+
+def parse_comment_url(url):
+    # Regex for review comment: https://github.com/owner/repo/pull/num#discussion_r123456
+    match_review = re.search(r'github\.com/([^/]+)/([^/]+)/pull/(\d+)#discussion_r(\d+)', url)
+    if match_review:
+        return {
+            "type": "review_comment",
+            "owner": match_review.group(1),
+            "repo": match_review.group(2),
+            "pull_number": match_review.group(3),
+            "comment_id": int(match_review.group(4))
+        }
+    return None
 
 # --- High-Level Orchestrator (Under 30 lines) ---
 
@@ -95,8 +117,19 @@ def _raise_detailed_error(errors):
             if any(kw in stderr.lower() for kw in ["auth", "login", "credentials"]):
                 is_auth_failure = True
                 break
+        elif source == "unauthenticated" and isinstance(err, ValueError):
+            if "Unauthenticated requests not supported" in str(err):
+                is_auth_failure = True
+                break
 
-    error_summary = "; ".join(f"[{source}] {type(err).__name__}: {err}" for source, err in errors)
+    err_msgs = []
+    for source, err in errors:
+        if isinstance(err, subprocess.CalledProcessError) and err.stderr:
+            stderr_str = err.stderr.decode('utf-8', errors='ignore') if isinstance(err.stderr, bytes) else str(err.stderr)
+            err_msgs.append(f"[{source}] {type(err).__name__}: {err} (stderr: {stderr_str.strip()})")
+        else:
+            err_msgs.append(f"[{source}] {type(err).__name__}: {err}")
+    error_summary = "; ".join(err_msgs)
     
     if is_auth_failure:
         raise GithubAuthError(f"GitHub authentication failed: {error_summary}")
