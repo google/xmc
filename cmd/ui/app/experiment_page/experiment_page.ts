@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, ViewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -26,29 +26,32 @@ import { BehaviorSubject, combineLatest, Observable } from 'rxjs';
 import { filter, finalize, map, shareReplay, switchMap, tap, withLatestFrom } from 'rxjs/operators';
 
 import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
+import { ArtifactsList } from 'xmanager_cloud/ui/app/common/components/artifacts_list/artifacts_list';
+import {
+  AutoReloadService,
+  ReloaderControl,
+} from 'xmanager_cloud/ui/app/common/components/autoreloader/autoreloader_service';
+import { ConfirmDialogService } from 'xmanager_cloud/ui/app/common/components/confirmation_dialog/confirmation_dialog_service';
+import { LoadingBar } from 'xmanager_cloud/ui/app/common/components/loading_bar/loading_bar';
+import { PriorityChip } from 'xmanager_cloud/ui/app/common/components/priority_chip/priority_chip';
+import {
+  StatusChip,
+  StatusOption,
+} from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
+import { StatusMessage } from 'xmanager_cloud/ui/app/common/components/status_message/status_message';
+import { StatusMessagesList } from 'xmanager_cloud/ui/app/common/components/status_messages_list/status_messages_list';
 import { Tag } from 'xmanager_cloud/ui/app/common/components/tag/tag';
+import { UrlsWidget } from 'xmanager_cloud/ui/app/common/components/urls_widget/urls_widget';
+import { WorkUnitsStatusBar } from 'xmanager_cloud/ui/app/common/components/work_units_status_bar/work_units_status_bar';
+import { XidBadge } from 'xmanager_cloud/ui/app/common/components/xid_badge/xid_badge';
 import { ProcessedUrl, processUrls } from 'xmanager_cloud/ui/app/common/url/url_processor';
 import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
 import { FeatureFlagService } from 'xmanager_cloud/ui/app/service/feature_flag_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
+import { EditExperimentFormData } from 'xmanager_cloud/ui/app/side_panel/contents/edit_experiment_form/edit_experiment_form';
+import { SidePanelService } from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
 
-import { ArtifactsList } from '../common/components/artifacts_list/artifacts_list';
-import {
-  AutoReloadService,
-  ReloaderControl,
-} from '../common/components/autoreloader/autoreloader_service';
-import { ConfirmDialogService } from '../common/components/confirmation_dialog/confirmation_dialog_service';
-import { LoadingBar } from '../common/components/loading_bar/loading_bar';
-import { PriorityChip } from '../common/components/priority_chip/priority_chip';
-import { StatusChip, StatusOption } from '../common/components/status_chip/status_chip';
-import { StatusMessage } from '../common/components/status_message/status_message';
-import { StatusMessagesList } from '../common/components/status_messages_list/status_messages_list';
-import { UrlsWidget } from '../common/components/urls_widget/urls_widget';
-import { WorkUnitsStatusBar } from '../common/components/work_units_status_bar/work_units_status_bar';
-import { XidBadge } from '../common/components/xid_badge/xid_badge';
-import { EditExperimentFormData } from '../side_panel/contents/edit_experiment_form/edit_experiment_form';
-import { SidePanelService } from '../side_panel/side_panel_service';
 import { WorkUnitsTable } from './work_units_table/work_units_table';
 
 /**
@@ -83,7 +86,7 @@ import { WorkUnitsTable } from './work_units_table/work_units_table';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ExperimentPage {
-  @ViewChild(WorkUnitsTable) workUnitsTable?: WorkUnitsTable;
+  readonly workUnitsTable = viewChild(WorkUnitsTable);
   protected xid$: Observable<string>;
   protected experiment$: Observable<Experiment>;
   protected isExperimentLoading$ = new BehaviorSubject<boolean>(false);
@@ -104,7 +107,7 @@ export class ExperimentPage {
   private readonly reloader: ReloaderControl = this.autoReloadService.createReloader({
     emitOnStart: false,
   });
-  private destroyRef = inject(DestroyRef);
+  private readonly destroyRef = inject(DestroyRef);
 
   get isStatusMessageHistoryEnabled(): boolean {
     return this.featureFlagService.isStatusMessageHistoryEnabled;
@@ -114,28 +117,8 @@ export class ExperimentPage {
     const route = inject(ActivatedRoute);
 
     this.xid$ = route.paramMap.pipe(map((params) => params.get('xid')!));
-    this.experiment$ = combineLatest([this.xid$, this.refreshTrigger]).pipe(
-      tap(([xid, _]) => {
-        this.isExperimentLoading$.next(true);
-      }),
-      switchMap(([xid, _]) =>
-        this.experimentService.getExperiment(xid).pipe(
-          finalize(() => {
-            this.isExperimentLoading$.next(false);
-          }),
-          tap({
-            error: (error) => {
-              this.snackbarService.open(`Failed to fetch experiment: ${error.message || error}`);
-            },
-          }),
-        ),
-      ),
-      shareReplay(1),
-    );
-
-    this.urls$ = this.experiment$.pipe(
-      map((experiment) => processUrls(experiment?.urls ?? [], experiment)),
-    );
+    this.experiment$ = this.initExperimentStream();
+    this.urls$ = this.initUrlsStream();
 
     this.reloader.reloader$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.refresh();
@@ -148,87 +131,42 @@ export class ExperimentPage {
 
   refresh() {
     this.refreshTrigger.next();
-    this.workUnitsTable?.refresh();
+    this.workUnitsTable()?.refresh();
   }
 
   stopExperiment() {
-    this.confirmDialogService
-      .open({
-        title: 'Stop Experiment',
-        message: 'Are you sure you want to stop all of the work units in this experiment?',
-      })
-      .pipe(
-        takeUntilDestroyed(this.destroyRef),
-        filter((confirm) => confirm),
-        tap(() => {
-          this.isStopping$.next(true);
-        }),
-        withLatestFrom(this.xid$),
-        switchMap(([confirm, xid]) => {
-          return this.workUnitsService.batchStopWorkUnits(xid).pipe(
-            finalize(() => {
-              this.isStopping$.next(false);
-            }),
-          );
-        }),
-      )
-      .subscribe({
-        error: (error) => {
-          this.snackbarService.open(`Failed to stop experiment, error: ${error}`);
-        },
-        next: () => {
-          this.snackbarService.open(`Stopping experiment.`);
-          this.refresh();
-        },
-      });
+    this.executeBatchOperation(
+      /* operationName= */ 'stop experiment',
+      /* confirmTitle= */ 'Stop Experiment',
+      /* confirmMessage= */ 'Are you sure you want to stop all of the work units in this experiment?',
+      /* loadingSubject$= */ this.isStopping$,
+      /* batchAction= */ (xid) => this.workUnitsService.batchStopWorkUnits(xid),
+      /* successMessage= */ 'Stopping experiment.',
+    );
   }
 
   restartExperiment() {
-    this.confirmDialogService
-      .open({
-        title: 'Restart Experiment',
-        message: 'Are you sure you want to restart all of the work units in this experiment?',
-      })
-      .pipe(
-        takeUntilDestroyed(this.destroyRef),
-        filter((confirm) => confirm),
-        tap(() => {
-          this.isRestarting$.next(true);
-        }),
-        withLatestFrom(this.xid$),
-        switchMap(([confirm, xid]) => {
-          return this.workUnitsService.batchRestartWorkUnits(xid).pipe(
-            finalize(() => {
-              this.isRestarting$.next(false);
-            }),
-          );
-        }),
-      )
-      .subscribe({
-        error: (error) => {
-          this.snackbarService.open(`Failed to restart experiment, error: ${error}`);
-        },
-        next: () => {
-          this.snackbarService.open(`Restarting experiment.`);
-          this.refresh();
-        },
-      });
+    this.executeBatchOperation(
+      /* operationName= */ 'restart experiment',
+      /* confirmTitle= */ 'Restart Experiment',
+      /* confirmMessage= */ 'Are you sure you want to restart all of the work units in this experiment?',
+      /* loadingSubject$= */ this.isRestarting$,
+      /* batchAction= */ (xid) => this.workUnitsService.batchRestartWorkUnits(xid),
+      /* successMessage= */ 'Restarting experiment.',
+    );
   }
 
   editExperiment(xid: string) {
     this.sidePanelService.openSidePanel(
       new EditExperimentFormData(
         xid,
-        /* onUpdateSuccess= */
-        () => {
+        /* onUpdateSuccess= */ () => {
           this.refresh();
         },
-        /* onUpdateStart= */
-        () => {
+        /* onUpdateStart= */ () => {
           this.isEditing$.next(true);
         },
-        /* onUpdateFinish= */
-        () => {
+        /* onUpdateFinish= */ () => {
           this.isEditing$.next(false);
         },
       ),
@@ -245,5 +183,75 @@ export class ExperimentPage {
 
   isExperimentStoppable(experiment: Experiment): boolean {
     return experiment?.status?.activeState === 'ACTIVE';
+  }
+
+  private initExperimentStream(): Observable<Experiment> {
+    return combineLatest([this.xid$, this.refreshTrigger]).pipe(
+      tap(() => {
+        this.isExperimentLoading$.next(true);
+      }),
+      switchMap(([xid]) =>
+        this.experimentService.getExperiment(xid).pipe(
+          finalize(() => {
+            this.isExperimentLoading$.next(false);
+          }),
+          tap({
+            error: (error) => {
+              this.snackbarService.open(`Failed to fetch experiment: ${error.message || error}`);
+            },
+          }),
+        ),
+      ),
+      shareReplay(1),
+    );
+  }
+
+  private initUrlsStream(): Observable<ProcessedUrl[]> {
+    return this.experiment$.pipe(
+      map((experiment) => processUrls(experiment?.urls ?? [], experiment)),
+    );
+  }
+
+  private executeBatchOperation(
+    operationName: string,
+    confirmTitle: string,
+    confirmMessage: string,
+    loadingSubject$: BehaviorSubject<boolean>,
+    batchAction: (xid: string) => Observable<unknown>,
+    successMessage: string,
+  ) {
+    this.confirmDialogService
+      .open({
+        title: confirmTitle,
+        message: confirmMessage,
+      })
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        filter((confirm) => confirm),
+        tap(() => {
+          loadingSubject$.next(true);
+        }),
+        withLatestFrom(this.xid$),
+        switchMap(([_, xid]) => {
+          return batchAction(xid).pipe(
+            finalize(() => {
+              loadingSubject$.next(false);
+            }),
+          );
+        }),
+      )
+      .subscribe(this.getBatchObserver(operationName, successMessage));
+  }
+
+  private getBatchObserver(operationName: string, successMessage: string) {
+    return {
+      error: (error: unknown) => {
+        this.snackbarService.open(`Failed to ${operationName}, error: ${error}`);
+      },
+      next: () => {
+        this.snackbarService.open(successMessage);
+        this.refresh();
+      },
+    };
   }
 }
