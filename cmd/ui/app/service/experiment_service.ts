@@ -13,7 +13,7 @@
 // limitations under the License.
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, throwError } from 'rxjs';
 
 import {
   ListExperimentsRequest,
@@ -68,13 +68,16 @@ export class ExperimentService {
    * It returns a new experiment with updated fields.
    */
   updateExperiment(request: UpdateExperimentRequest): Observable<Experiment> {
+    if (!request.experiment) {
+      return throwError(() => new Error('Experiment is required for update'));
+    }
     const paramsMap: Record<string, string> = {};
     if (request.updateMask) {
       paramsMap['updateMask'] = request.updateMask;
     }
     const params = new HttpParams({ fromObject: paramsMap });
     return this.http.patch<Experiment>(
-      `${EXPERIMENT_STATE_SERVER_DOMAIN}/${request.experiment!.name}`,
+      `${EXPERIMENT_STATE_SERVER_DOMAIN}/${request.experiment.name}`,
       request.experiment,
       { params, withCredentials: true },
     );
