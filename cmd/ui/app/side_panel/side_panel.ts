@@ -19,7 +19,7 @@ import {
   OnDestroy,
   OnInit,
   Type,
-  ViewChild,
+  viewChild,
   ViewContainerRef,
 } from '@angular/core';
 import { MatSidenavModule } from '@angular/material/sidenav';
@@ -45,8 +45,9 @@ export class SidePanel implements OnInit, OnDestroy {
 
   private readonly subscriptions = new Subscription();
 
-  @ViewChild('sidePanelContents', { read: ViewContainerRef })
-  sidePanelContentsContainerRef!: ViewContainerRef;
+  readonly sidePanelContentsContainerRef = viewChild.required('sidePanelContents', {
+    read: ViewContainerRef,
+  });
 
   protected readonly isPanelOpen$ = this.sidePanelService.isPanelOpen$;
   protected readonly dialogRequest$ = this.sidePanelService.dialogRequest$;
@@ -54,17 +55,20 @@ export class SidePanel implements OnInit, OnDestroy {
   ngOnInit() {
     this.subscriptions.add(
       this.dialogRequest$.subscribe((request: BaseSidePanelData | undefined) => {
-        if (request) {
-          this.sidePanelContentsContainerRef.clear();
-
-          const componentType = SIDE_PANEL_REGISTRY.get(
-            request.constructor as Type<BaseSidePanelData>,
-          );
-          if (componentType) {
-            const componentRef = this.sidePanelContentsContainerRef.createComponent(componentType);
-            componentRef.setInput('data', request);
-          }
+        if (!request) {
+          return;
         }
+        this.sidePanelContentsContainerRef().clear();
+
+        const componentType = SIDE_PANEL_REGISTRY.get(
+          request.constructor as Type<BaseSidePanelData>,
+        );
+        if (!componentType) {
+          return;
+        }
+        const componentRef =
+          this.sidePanelContentsContainerRef().createComponent(componentType);
+        componentRef.setInput('data', request);
       }),
     );
   }

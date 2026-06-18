@@ -27,7 +27,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatIcon } from '@angular/material/icon';
 import { RouterModule } from '@angular/router';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, Observable } from 'rxjs';
 import { filter, finalize, switchMap, tap } from 'rxjs/operators';
 
 import { type Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
@@ -103,69 +103,69 @@ export class Header {
     }
   }
 
-  stop() {
+  private executeWorkUnitAction(options: {
+    title: string;
+    message: string;
+    actionName: string;
+    actionPrompt: string;
+    indicator$: BehaviorSubject<boolean>;
+    actionFn: () => Observable<unknown>;
+  }) {
     this.confirmDialogService
       .open({
-        title: 'Stop Work Unit',
-        message: 'Please confirm that you want to stop this work unit.',
+        title: options.title,
+        message: options.message,
       })
       .pipe(
         takeUntilDestroyed(this.destroyRef),
         filter((confirm) => confirm),
         tap(() => {
-          this.isStopping$.next(true);
+          options.indicator$.next(true);
         }),
         switchMap(() => {
-          return this.workUnitsService
-            .stopWorkUnit({ xid: this.experimentId(), wid: this.workUnitId() })
-            .pipe(
-              finalize(() => {
-                this.isStopping$.next(false);
-              }),
-            );
+          return options.actionFn().pipe(
+            finalize(() => {
+              options.indicator$.next(false);
+            }),
+          );
         }),
       )
-      .subscribe({
-        error: (error) => {
-          this.snackbarService.open(`Failed to stop work unit, error: ${error}`);
-        },
-        next: () => {
-          this.snackbarService.open(`Stopping work unit.`);
-          this.store.fetchWorkUnitPageData();
-        },
-      });
+      .subscribe(this.getActionObserver(options.actionName, options.actionPrompt));
+  }
+
+  private getActionObserver(actionName: string, actionPrompt: string) {
+    return {
+      error: (error: unknown) => {
+        this.snackbarService.open(`Failed to ${actionName} work unit, error: ${error}`);
+      },
+      next: () => {
+        this.snackbarService.open(actionPrompt);
+        this.store.fetchWorkUnitPageData();
+      },
+    };
+  }
+
+  stop() {
+    this.executeWorkUnitAction({
+      title: 'Stop Work Unit',
+      message: 'Please confirm that you want to stop this work unit.',
+      actionName: 'stop',
+      actionPrompt: 'Stopping work unit.',
+      indicator$: this.isStopping$,
+      actionFn: () =>
+        this.workUnitsService.stopWorkUnit({ xid: this.experimentId(), wid: this.workUnitId() }),
+    });
   }
 
   restart() {
-    this.confirmDialogService
-      .open({
-        title: 'Restart Work Unit',
-        message: 'Please confirm that you want to restart this work unit.',
-      })
-      .pipe(
-        takeUntilDestroyed(this.destroyRef),
-        filter((confirm) => confirm),
-        tap(() => {
-          this.isRestarting$.next(true);
-        }),
-        switchMap(() => {
-          return this.workUnitsService
-            .restartWorkUnit({ xid: this.experimentId(), wid: this.workUnitId() })
-            .pipe(
-              finalize(() => {
-                this.isRestarting$.next(false);
-              }),
-            );
-        }),
-      )
-      .subscribe({
-        error: (error) => {
-          this.snackbarService.open(`Failed to restart work unit, error: ${error}`);
-        },
-        next: () => {
-          this.snackbarService.open(`Restarting work unit.`);
-          this.store.fetchWorkUnitPageData();
-        },
-      });
+    this.executeWorkUnitAction({
+      title: 'Restart Work Unit',
+      message: 'Please confirm that you want to restart this work unit.',
+      actionName: 'restart',
+      actionPrompt: 'Restarting work unit.',
+      indicator$: this.isRestarting$,
+      actionFn: () =>
+        this.workUnitsService.restartWorkUnit({ xid: this.experimentId(), wid: this.workUnitId() }),
+    });
   }
 }
