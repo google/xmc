@@ -71,7 +71,7 @@ check_git_version
 
 # --- Default Parameters ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOCAL_XMC_ROOT="$(realpath "$SCRIPT_DIR/../..")"
+LOCAL_XMC_ROOT="$(python3 -c "import os, sys; print(os.path.abspath(sys.argv[1]))" "$SCRIPT_DIR/../..")"
 
 # Default to local api/protos if run from inside xmc repo, otherwise pull from github
 if [ -d "$LOCAL_XMC_ROOT/api/protos" ]; then
