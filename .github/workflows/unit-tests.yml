@@ -28,50 +28,77 @@ permissions:
   id-token: write
 
 jobs:
-  run-tests:
-    name: 'Run Unit Tests'
+  detect-changes:
+    name: 'Detect Changed Files'
     runs-on: 'ubuntu-24.04'
-    timeout-minutes: 30
-
-    # Use a service container for the Spanner Emulator
-    services:
-      spanner-emulator:
-        image: gcr.io/cloud-spanner-emulator/emulator
-        ports:
-          - 9010:9010
-          - 9020:9020
-
-    env:
-      # We're overriding the test timeout to catch failures with Spanner faster
-      TEST_TIMEOUT_SECONDS: 60
-      SPANNER_CHECK_TIMEOUT: 15
-      SPANNER_EMULATOR_HOST: 127.0.0.1:9010
-
+    outputs:
+      ui: ${{ steps.filter.outputs.ui }}
+      internal: ${{ steps.filter.outputs.internal }}
+      tools: ${{ steps.filter.outputs.tools }}
+      pkg: ${{ steps.filter.outputs.pkg }}
+      api: ${{ steps.filter.outputs.api }}
+      actuator: ${{ steps.filter.outputs.actuator }}
+      experiment_state_server: ${{ steps.filter.outputs.experiment_state_server }}
+      log_monitor: ${{ steps.filter.outputs.log_monitor }}
+      reconciler: ${{ steps.filter.outputs.reconciler }}
+      xid_service: ${{ steps.filter.outputs.xid_service }}
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ui:
+              - 'cmd/ui/**'
+            actuator:
+              - 'cmd/actuator/**'
+            experiment_state_server:
+              - 'cmd/experiment_state_server/**'
+            log_monitor:
+              - 'cmd/log_monitor/**'
+            reconciler:
+              - 'cmd/reconciler/**'
+            xid_service:
+              - 'cmd/xid_service/**'
+            internal:
+              - 'internal/**'
+            tools:
+              - 'tools/**'
+            pkg:
+              - 'pkg/**'
+            api:
+              - 'api/**'
 
+  test-ui:
+    name: 'Test UI'
+    needs: detect-changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'merge_group' ||
+      needs.detect-changes.outputs.ui == 'true' ||
+      needs.detect-changes.outputs.api == 'true'
+    runs-on: 'ubuntu-24.04'
+    timeout-minutes: 20
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@v4'
       - name: 'Set up Go'
         uses: 'actions/setup-go@v5'
         with:
           go-version: '1.26.0'
-
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@v3'
-
       - name: 'Set up Node.js'
         uses: 'actions/setup-node@v4'
         with:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: 'cmd/ui/package-lock.json'
-
       - name: 'Install Node.js dependencies'
         run: npm ci --legacy-peer-deps
         working-directory: cmd/ui
-
       - name: 'Restore Bazel Cache'
-        id: 'cache-bazel-restore'
         uses: 'actions/cache/restore@v4'
         with:
           path: |
@@ -80,14 +107,67 @@ jobs:
           key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
           restore-keys: |
             bazel-${{ runner.os }}-
+      - name: 'Run UI Unit Tests'
+        run: |
+          bazel test \
+            --repository_cache=~/.cache/bazel-repo \
+            --disk_cache=~/.cache/bazel-disk \
+            --test_output=errors \
+            --build_tests_only \
+            //cmd/ui/...
+      - name: 'Save Bazel Cache'
+        uses: 'actions/cache/save@v4'
+        if: always()
+        with:
+          path: |
+            ~/.cache/bazel-repo
+            ~/.cache/bazel-disk
+          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
 
+  test-internal:
+    name: 'Test Internal'
+    needs: detect-changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'merge_group' ||
+      needs.detect-changes.outputs.internal == 'true' ||
+      needs.detect-changes.outputs.pkg == 'true' ||
+      needs.detect-changes.outputs.api == 'true'
+    runs-on: 'ubuntu-24.04'
+    timeout-minutes: 20
+    services:
+      spanner-emulator:
+        image: gcr.io/cloud-spanner-emulator/emulator
+        ports:
+          - 9010:9010
+          - 9020:9020
+    env:
+      TEST_TIMEOUT_SECONDS: 60
+      SPANNER_CHECK_TIMEOUT: 15
+      SPANNER_EMULATOR_HOST: 127.0.0.1:9010
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@v4'
+      - name: 'Set up Go'
+        uses: 'actions/setup-go@v5'
+        with:
+          go-version: '1.26.0'
+      - name: 'Set up Bazel'
+        uses: 'bazelbuild/setup-bazelisk@v3'
+      - name: 'Restore Bazel Cache'
+        uses: 'actions/cache/restore@v4'
+        with:
+          path: |
+            ~/.cache/bazel-repo
+            ~/.cache/bazel-disk
+          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          restore-keys: |
+            bazel-${{ runner.os }}-
       - name: 'Verify Spanner Emulator Endpoint'
         run: |
           echo "Verifying Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}..."
           HOST=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f1)
           PORT=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f2)
-          
-          # Try connecting to the port
           for i in {1..${{ env.SPANNER_CHECK_TIMEOUT }}}; do
             if nc -z "$HOST" "$PORT" >/dev/null 2>&1 || timeout 1s bash -c "cat < /dev/null > /dev/tcp/$HOST/$PORT" 2>/dev/null; then
               echo "Successfully connected to Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}."
@@ -96,11 +176,9 @@ jobs:
             echo "Waiting for Spanner Emulator to start (attempt $i/15)..."
             sleep 1
           done
-          
           echo "CRITICAL: Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }} did not start within ${{ env.SPANNER_CHECK_TIMEOUT }} seconds."
           exit 1
-
-      - name: 'Run Unit Tests'
+      - name: 'Run Internal Unit Tests'
         run: |
           bazel test \
             --repository_cache=~/.cache/bazel-repo \
@@ -108,9 +186,191 @@ jobs:
             --test_output=errors \
             --build_tests_only \
             --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},300,300,300 \
-            -- \
-            //...
+            //internal/...
+      - name: 'Save Bazel Cache'
+        uses: 'actions/cache/save@v4'
+        if: always()
+        with:
+          path: |
+            ~/.cache/bazel-repo
+            ~/.cache/bazel-disk
+          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
 
+  test-cmd-backend:
+    name: 'Test Cmd Backend'
+    needs: detect-changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'merge_group' ||
+      needs.detect-changes.outputs.internal == 'true' ||
+      needs.detect-changes.outputs.pkg == 'true' ||
+      needs.detect-changes.outputs.api == 'true' ||
+      needs.detect-changes.outputs.actuator == 'true' ||
+      needs.detect-changes.outputs.experiment_state_server == 'true' ||
+      needs.detect-changes.outputs.log_monitor == 'true' ||
+      needs.detect-changes.outputs.reconciler == 'true' ||
+      needs.detect-changes.outputs.xid_service == 'true'
+    runs-on: 'ubuntu-24.04'
+    timeout-minutes: 25
+    services:
+      spanner-emulator:
+        image: gcr.io/cloud-spanner-emulator/emulator
+        ports:
+          - 9010:9010
+          - 9020:9020
+    env:
+      TEST_TIMEOUT_SECONDS: 60
+      SPANNER_CHECK_TIMEOUT: 15
+      SPANNER_EMULATOR_HOST: 127.0.0.1:9010
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@v4'
+      - name: 'Set up Go'
+        uses: 'actions/setup-go@v5'
+        with:
+          go-version: '1.26.0'
+      - name: 'Set up Bazel'
+        uses: 'bazelbuild/setup-bazelisk@v3'
+      - name: 'Restore Bazel Cache'
+        uses: 'actions/cache/restore@v4'
+        with:
+          path: |
+            ~/.cache/bazel-repo
+            ~/.cache/bazel-disk
+          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          restore-keys: |
+            bazel-${{ runner.os }}-
+      - name: 'Verify Spanner Emulator Endpoint'
+        run: |
+          echo "Verifying Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}..."
+          HOST=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f1)
+          PORT=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f2)
+          for i in {1..${{ env.SPANNER_CHECK_TIMEOUT }}}; do
+            if nc -z "$HOST" "$PORT" >/dev/null 2>&1 || timeout 1s bash -c "cat < /dev/null > /dev/tcp/$HOST/$PORT" 2>/dev/null; then
+              echo "Successfully connected to Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}."
+              exit 0
+            fi
+            echo "Waiting for Spanner Emulator to start (attempt $i/15)..."
+            sleep 1
+          done
+          echo "CRITICAL: Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }} did not start within ${{ env.SPANNER_CHECK_TIMEOUT }} seconds."
+          exit 1
+      - name: 'Run Backend Cmd Unit Tests'
+        run: |
+          TARGETS=()
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" || "${{ github.event_name }}" == "merge_group" || "${{ needs.detect-changes.outputs.api }}" == "true" || "${{ needs.detect-changes.outputs.internal }}" == "true" || "${{ needs.detect-changes.outputs.pkg }}" == "true" ]]; then
+            TARGETS+=("//cmd/actuator/..." "//cmd/experiment_state_server/..." "//cmd/log_monitor/..." "//cmd/reconciler/..." "//cmd/xid_service/...")
+          else
+            if [[ "${{ needs.detect-changes.outputs.actuator }}" == "true" ]]; then TARGETS+=("//cmd/actuator/..."); fi
+            if [[ "${{ needs.detect-changes.outputs.experiment_state_server }}" == "true" ]]; then TARGETS+=("//cmd/experiment_state_server/..."); fi
+            if [[ "${{ needs.detect-changes.outputs.log_monitor }}" == "true" ]]; then TARGETS+=("//cmd/log_monitor/..."); fi
+            if [[ "${{ needs.detect-changes.outputs.reconciler }}" == "true" ]]; then TARGETS+=("//cmd/reconciler/..."); fi
+            if [[ "${{ needs.detect-changes.outputs.xid_service }}" == "true" ]]; then TARGETS+=("//cmd/xid_service/..."); fi
+          fi
+          
+          if [ ${#TARGETS[@]} -eq 0 ]; then
+            echo "No targets matched."
+            exit 0
+          fi
+          
+          bazel test \
+            --repository_cache=~/.cache/bazel-repo \
+            --disk_cache=~/.cache/bazel-disk \
+            --test_output=errors \
+            --build_tests_only \
+            --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},300,300,300 \
+            -- \
+            "${TARGETS[@]}"
+      - name: 'Save Bazel Cache'
+        uses: 'actions/cache/save@v4'
+        if: always()
+        with:
+          path: |
+            ~/.cache/bazel-repo
+            ~/.cache/bazel-disk
+          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+
+  test-pkg:
+    name: 'Test Pkg'
+    needs: detect-changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'merge_group' ||
+      needs.detect-changes.outputs.pkg == 'true' ||
+      needs.detect-changes.outputs.api == 'true'
+    runs-on: 'ubuntu-24.04'
+    timeout-minutes: 15
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@v4'
+      - name: 'Set up Go'
+        uses: 'actions/setup-go@v5'
+        with:
+          go-version: '1.26.0'
+      - name: 'Set up Bazel'
+        uses: 'bazelbuild/setup-bazelisk@v3'
+      - name: 'Restore Bazel Cache'
+        uses: 'actions/cache/restore@v4'
+        with:
+          path: |
+            ~/.cache/bazel-repo
+            ~/.cache/bazel-disk
+          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          restore-keys: |
+            bazel-${{ runner.os }}-
+      - name: 'Run Pkg Unit Tests'
+        run: |
+          bazel test \
+            --repository_cache=~/.cache/bazel-repo \
+            --disk_cache=~/.cache/bazel-disk \
+            --test_output=errors \
+            --build_tests_only \
+            //pkg/...
+      - name: 'Save Bazel Cache'
+        uses: 'actions/cache/save@v4'
+        if: always()
+        with:
+          path: |
+            ~/.cache/bazel-repo
+            ~/.cache/bazel-disk
+          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+
+  test-tools:
+    name: 'Test Tools'
+    needs: detect-changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'merge_group' ||
+      needs.detect-changes.outputs.tools == 'true' ||
+      needs.detect-changes.outputs.api == 'true'
+    runs-on: 'ubuntu-24.04'
+    timeout-minutes: 15
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@v4'
+      - name: 'Set up Go'
+        uses: 'actions/setup-go@v5'
+        with:
+          go-version: '1.26.0'
+      - name: 'Set up Bazel'
+        uses: 'bazelbuild/setup-bazelisk@v3'
+      - name: 'Restore Bazel Cache'
+        uses: 'actions/cache/restore@v4'
+        with:
+          path: |
+            ~/.cache/bazel-repo
+            ~/.cache/bazel-disk
+          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          restore-keys: |
+            bazel-${{ runner.os }}-
+      - name: 'Run Tools Unit Tests'
+        run: |
+          bazel test \
+            --repository_cache=~/.cache/bazel-repo \
+            --disk_cache=~/.cache/bazel-disk \
+            --test_output=errors \
+            --build_tests_only \
+            //tools/...
       - name: 'Save Bazel Cache'
         uses: 'actions/cache/save@v4'
         if: always()
