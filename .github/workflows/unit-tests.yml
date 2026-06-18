@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# TODO: Reduce duplication in parallel test jobs (e.g., by utilizing a reusable workflow or composite actions).
 name: 'XMC Unit Tests'
 
 on:
