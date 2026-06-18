@@ -46,6 +46,20 @@ get_absolute_path() {
   python3 -c "import os, sys; print(os.path.abspath(sys.argv[1]))" "${1}"
 }
 
+# Clean and copy protos to a specific XManager service package
+copy_protos_to_service() {
+  local proto_subdir="${1}"
+  local service_name="${2}"
+  local dest_dir="${XMANAGER_SRC_DIR}/xmanager_cloud/${service_name}/proto"
+
+  # Clean and recreate destination
+  rm -rf "${dest_dir}"
+  mkdir -p "${dest_dir}"
+
+  # Copy contents robustly (using /. to copy all files including hidden ones)
+  cp -r "${XMC_PROTOS_SRC_DIR}/${proto_subdir}/." "${dest_dir}/"
+}
+
 # --- Requirements / Global Constants ---
 MIN_GIT_MAJOR=2
 MIN_GIT_MINOR=25
@@ -195,14 +209,8 @@ fi
 
 # 4. Replace proto directories in XManager source
 echo "Copying protos into xmanager_cloud..."
-rm -rf "${XMANAGER_SRC_DIR}/xmanager_cloud/xid_service/proto"/*
-rm -rf "${XMANAGER_SRC_DIR}/xmanager_cloud/experiment_state_server/proto"/*
-
-mkdir -p "${XMANAGER_SRC_DIR}/xmanager_cloud/xid_service/proto"
-mkdir -p "${XMANAGER_SRC_DIR}/xmanager_cloud/experiment_state_server/proto"
-
-cp -r "${XMC_PROTOS_SRC_DIR}/xid/"* "${XMANAGER_SRC_DIR}/xmanager_cloud/xid_service/proto/"
-cp -r "${XMC_PROTOS_SRC_DIR}/experiment/"* "${XMANAGER_SRC_DIR}/xmanager_cloud/experiment_state_server/proto/"
+copy_protos_to_service "xid" "xid_service"
+copy_protos_to_service "experiment" "experiment_state_server"
 
 # 5. Adjust proto imports (rewrite third_party/xmanager_cloud/ to xmanager_cloud/)
 echo "Adjusting proto import paths..."
