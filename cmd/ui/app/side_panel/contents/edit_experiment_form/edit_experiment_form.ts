@@ -105,7 +105,7 @@ export class EditExperimentForm implements BaseSidePanelContent<EditExperimentFo
   readonly isLoading = this.editExperimentFormStore.isLoading;
 
   readonly editExperimentFormGroup = computed(() => {
-    return createExperimentForm(this.initialExperiment());
+    return createEditExperimentForm(this.initialExperiment());
   });
 
   constructor() {
@@ -142,7 +142,7 @@ export class EditExperimentForm implements BaseSidePanelContent<EditExperimentFo
   }
 }
 
-function createExperimentForm(experiment: Experiment | null | undefined): FormGroup {
+function createEditExperimentForm(experiment: Experiment | null | undefined): FormGroup {
   return new FormGroup({
     name: new FormControl<string>(experiment?.title ?? '', [Validators.required, notWhitespaceOnly]),
     notes: new FormControl<string>(experiment?.notes ?? ''),
