@@ -114,6 +114,7 @@ def _raise_detailed_error(errors):
                 break
         elif source == "gh_cli" and isinstance(err, subprocess.CalledProcessError):
             stderr = err.stderr.decode('utf-8', errors='ignore') if isinstance(err.stderr, bytes) else str(err.stderr)
+            # list to be extended as we progress
             if any(kw in stderr.lower() for kw in ["auth", "login", "credentials"]):
                 is_auth_failure = True
                 break
