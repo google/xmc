@@ -41,6 +41,11 @@ parse_github_url() {
   fi
 }
 
+# Get absolute path using python
+get_absolute_path() {
+  python3 -c "import os, sys; print(os.path.abspath(sys.argv[1]))" "${1}"
+}
+
 # --- Requirements / Global Constants ---
 MIN_GIT_MAJOR=2
 MIN_GIT_MINOR=25
@@ -75,7 +80,7 @@ check_git_version
 
 # --- Default Parameters ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOCAL_XMC_ROOT="$(python3 -c "import os, sys; print(os.path.abspath(sys.argv[1]))" "${SCRIPT_DIR}/../..")"
+LOCAL_XMC_ROOT="$(get_absolute_path "${SCRIPT_DIR}/../..")"
 
 # Default to local api/protos if run from inside xmc repo, otherwise pull from github
 if [ -d "${LOCAL_XMC_ROOT}/api/protos" ]; then
@@ -120,7 +125,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Resolve VENV_DIR to absolute path
-VENV_DIR="$(python3 -c "import os, sys; print(os.path.abspath(sys.argv[1]))" "${VENV_DIR}")"
+VENV_DIR="$(get_absolute_path "${VENV_DIR}")"
 
 echo "=== Configuration ==="
 echo "Protos Location: ${XMC_PROTOS_LOC}"
