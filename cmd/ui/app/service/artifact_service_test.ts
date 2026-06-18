@@ -15,6 +15,7 @@ import 'jasmine';
 
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { firstValueFrom } from 'rxjs';
 
 import {
   ListArtifactsRequest,
@@ -24,8 +25,7 @@ import {
 import { ARTIFACT_LIST } from '../common/mock_data';
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
 import { ArtifactService } from './artifact_service';
-import { EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA } from './constants';
-import { MockArtifactService } from './testing/mock_artifact_service';
+import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
 
 describe('ArtifactService Service', () => {
   beforeAll(setupObservableMatchers);
@@ -36,7 +36,6 @@ describe('ArtifactService Service', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         ArtifactService,
-        { provide: USE_MOCK_DATA, useValue: false },
       ],
     });
 
@@ -65,9 +64,7 @@ describe('ArtifactService Service', () => {
         artifacts,
       };
 
-      state.service.listArtifacts(request).subscribe((response) => {
-        expect(response).toEqual(expectedResponse);
-      });
+      const responsePromise = firstValueFrom(state.service.listArtifacts(request));
 
       const req = state.httpMock.expectOne(
         `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/artifacts:search?pageSize=950&filter=foo&orderBy=bar`,
@@ -78,6 +75,9 @@ describe('ArtifactService Service', () => {
       expect(req.request.params.get('orderBy')).toBe('bar');
       expect(req.request.params.get('pageToken')).toBeNull();
       req.flush(page1Response);
+
+      const response = await responsePromise;
+      expect(response).toEqual(expectedResponse);
     });
 
     it('should default orderBy to priority when not provided', async () => {
@@ -93,9 +93,7 @@ describe('ArtifactService Service', () => {
         artifacts,
       };
 
-      state.service.listArtifacts(request).subscribe((response) => {
-        expect(response).toEqual(expectedResponse);
-      });
+      const responsePromise = firstValueFrom(state.service.listArtifacts(request));
 
       const req = state.httpMock.expectOne(
         `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/artifacts:search?pageSize=950&filter=foo&orderBy=priority`,
@@ -106,26 +104,9 @@ describe('ArtifactService Service', () => {
       expect(req.request.params.get('orderBy')).toBe('priority');
       expect(req.request.params.get('pageToken')).toBeNull();
       req.flush(page1Response);
-    });
-  });
-});
 
-describe('MockArtifactService', () => {
-  const mockState = cleanState(() => {
-    setupModule({
-      providers: [provideHttpClient(), MockArtifactService],
-    });
-
-    return {
-      service: get(MockArtifactService),
-    };
-  }, beforeEach);
-
-  it('should return mock artifacts', (done) => {
-    mockState.service.listArtifacts({ parent: 'experiments/1' }).subscribe((response) => {
-      expect(response.artifacts).toEqual(ARTIFACT_LIST);
-      expect(response.nextPageToken).toBe('page_token');
-      done();
+      const response = await responsePromise;
+      expect(response).toEqual(expectedResponse);
     });
   });
 });

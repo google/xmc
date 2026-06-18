@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { RouterModule } from '@angular/router';
 import { of } from 'rxjs';
@@ -28,40 +27,37 @@ import { WorkUnitPageStore } from '../work_unit_page_store';
 import { Header } from './header';
 
 describe('WorkUnitHeader Component', () => {
+  let workUnitsServiceSpy: jasmine.SpyObj<WorkUnitsService>;
+  let experimentServiceSpy: jasmine.SpyObj<ExperimentService>;
+  let snackbarServiceSpy: jasmine.SpyObj<SnackbarService>;
+  let confirmDialogServiceSpy: jasmine.SpyObj<ConfirmDialogService>;
+  let workUnitPageStoreSpy: jasmine.SpyObj<WorkUnitPageStore>;
+
   beforeEach(() => {
+    workUnitsServiceSpy = jasmine.createSpyObj<WorkUnitsService>('workUnitsService', [
+      'stopWorkUnit',
+      'restartWorkUnit',
+    ]);
+    experimentServiceSpy = jasmine.createSpyObj<ExperimentService>('experimentService', ['getExperiment']);
+    snackbarServiceSpy = jasmine.createSpyObj<SnackbarService>('snackbarService', ['open']);
+    confirmDialogServiceSpy = jasmine.createSpyObj<ConfirmDialogService>('confirmDialogService', {
+      open: of(true),
+    });
+    workUnitPageStoreSpy = jasmine.createSpyObj<WorkUnitPageStore>('workUnitPageStore', [
+      'fetchWorkUnitPageData',
+    ]);
+
     setupModule({
       imports: [
         NoopAnimationsModule, // This makes test faster and more stable.
         RouterModule.forRoot([]),
       ],
       providers: [
-        {
-          provide: WorkUnitsService,
-          useValue: jasmine.createSpyObj<WorkUnitsService>('workUnitsService', [
-            'stopWorkUnit',
-            'restartWorkUnit',
-          ]),
-        },
-        {
-          provide: ExperimentService,
-          useValue: jasmine.createSpyObj<ExperimentService>('experimentService', ['getExperiment']),
-        },
-        {
-          provide: SnackbarService,
-          useValue: jasmine.createSpyObj<SnackbarService>('snackbarService', ['open']),
-        },
-        {
-          provide: ConfirmDialogService,
-          useValue: jasmine.createSpyObj<ConfirmDialogService>('confirmDialogService', {
-            open: of(true),
-          }),
-        },
-        {
-          provide: WorkUnitPageStore,
-          useValue: jasmine.createSpyObj<WorkUnitPageStore>('workUnitPageStore', [
-            'fetchWorkUnitPageData',
-          ]),
-        },
+        { provide: WorkUnitsService, useValue: workUnitsServiceSpy },
+        { provide: ExperimentService, useValue: experimentServiceSpy },
+        { provide: SnackbarService, useValue: snackbarServiceSpy },
+        { provide: ConfirmDialogService, useValue: confirmDialogServiceSpy },
+        { provide: WorkUnitPageStore, useValue: workUnitPageStoreSpy },
       ],
     });
   });
@@ -79,18 +75,16 @@ describe('WorkUnitHeader Component', () => {
       workUnit: WORK_UNIT_1,
       experiment: EXPERIMENT_1,
     }) as Header;
-    const workUnitsService = TestBed.inject(WorkUnitsService) as jasmine.SpyObj<WorkUnitsService>;
-    const store = TestBed.inject(WorkUnitPageStore) as jasmine.SpyObj<WorkUnitPageStore>;
 
-    workUnitsService.stopWorkUnit.and.returnValue(of({}));
+    workUnitsServiceSpy.stopWorkUnit.and.returnValue(of({}));
 
     comp.stop();
 
-    expect(workUnitsService.stopWorkUnit).toHaveBeenCalledWith({
+    expect(workUnitsServiceSpy.stopWorkUnit).toHaveBeenCalledWith({
       xid: '1',
       wid: '1',
     });
-    expect(store.fetchWorkUnitPageData).toHaveBeenCalled();
+    expect(workUnitPageStoreSpy.fetchWorkUnitPageData).toHaveBeenCalled();
   });
 
   it('should call restartWorkUnit and fetchWorkUnitPageData when restart is confirmed', () => {
@@ -98,17 +92,15 @@ describe('WorkUnitHeader Component', () => {
       workUnit: WORK_UNIT_1,
       experiment: EXPERIMENT_1,
     }) as Header;
-    const workUnitsService = TestBed.inject(WorkUnitsService) as jasmine.SpyObj<WorkUnitsService>;
-    const store = TestBed.inject(WorkUnitPageStore) as jasmine.SpyObj<WorkUnitPageStore>;
 
-    workUnitsService.restartWorkUnit.and.returnValue(of({}));
+    workUnitsServiceSpy.restartWorkUnit.and.returnValue(of({}));
 
     comp.restart();
 
-    expect(workUnitsService.restartWorkUnit).toHaveBeenCalledWith({
+    expect(workUnitsServiceSpy.restartWorkUnit).toHaveBeenCalledWith({
       xid: '1',
       wid: '1',
     });
-    expect(store.fetchWorkUnitPageData).toHaveBeenCalled();
+    expect(workUnitPageStoreSpy.fetchWorkUnitPageData).toHaveBeenCalled();
   });
 });

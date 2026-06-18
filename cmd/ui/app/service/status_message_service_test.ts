@@ -15,6 +15,7 @@ import 'jasmine';
 
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { firstValueFrom } from 'rxjs';
 
 import { ListStatusMessagesResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { MOCK_HISTORICAL_STATUS_MESSAGES } from 'xmanager_cloud/ui/app/common/mock_data';
@@ -25,9 +26,8 @@ import {
   setupObservableMatchers,
 } from 'xmanager_cloud/ui/app/testing/test';
 
-import { EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA } from './constants';
+import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
 import { StatusMessageService } from './status_message_service';
-import { MockStatusMessageService } from './testing/mock_status_message_service';
 
 describe('StatusMessageService', () => {
   beforeAll(setupObservableMatchers);
@@ -39,7 +39,6 @@ describe('StatusMessageService', () => {
           provideHttpClient(),
           provideHttpClientTesting(),
           StatusMessageService,
-          { provide: USE_MOCK_DATA, useValue: false },
         ],
       });
 
@@ -59,26 +58,26 @@ describe('StatusMessageService', () => {
         nextPageToken: 'token',
       };
 
-      state.service.listStatusMessages({ parent: 'experiments/1' }).subscribe((response) => {
-        expect(response).toEqual(mockResponse);
-      });
+      const responsePromise = firstValueFrom(state.service.listStatusMessages({ parent: 'experiments/1' }));
 
       const req = state.httpMock.expectOne(
         `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/statusMessages`,
       );
       expect(req.request.method).toBe('GET');
       req.flush(mockResponse);
+
+      const response = await responsePromise;
+      expect(response).toEqual(mockResponse);
     });
 
     it('should include filters and pagination in query params', async () => {
-      state.service
+      const responsePromise = firstValueFrom(state.service
         .listStatusMessages({
           parent: 'experiments/1',
           pageSize: 10,
           pageToken: 'prev_token',
           filter: 'severity=ERROR',
-        })
-        .subscribe();
+        }));
 
       const req = state.httpMock.expectOne((req) =>
         req.url.includes('/experiments/1/statusMessages'),
@@ -87,26 +86,8 @@ describe('StatusMessageService', () => {
       expect(req.request.params.get('pageToken')).toBe('prev_token');
       expect(req.request.params.get('filter')).toBe('severity=ERROR');
       req.flush({});
-    });
-  });
 
-  describe('MockStatusMessageService', () => {
-    const state = cleanState(() => {
-      setupModule({
-        providers: [provideHttpClient(), MockStatusMessageService],
-      });
-
-      return {
-        service: get(MockStatusMessageService),
-      };
-    }, beforeEach);
-
-    it('should return mock status messages', (done) => {
-      state.service.listStatusMessages({ parent: 'experiments/1' }).subscribe((response) => {
-        expect(response.statusMessages).toEqual(MOCK_HISTORICAL_STATUS_MESSAGES);
-        expect(response.nextPageToken).toBe('page_token');
-        done();
-      });
+      await responsePromise;
     });
   });
 });
