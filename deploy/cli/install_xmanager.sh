@@ -57,7 +57,7 @@ check_git_version() {
     return 0
   fi
   
-  if [ "${major}" -lt "${MIN_GIT_MAJOR}" ] || { [ "${major}" -eq "${MIN_GIT_MAJOR}" ] && [ "${minor}" -lt "${MIN_GIT_MINOR}" ]; }; then
+  if (( major < MIN_GIT_MAJOR || (major == MIN_GIT_MAJOR && minor < MIN_GIT_MINOR) )); then
     echo "Warning: Git version is ${version}. Git ${MIN_GIT_MAJOR}.${MIN_GIT_MINOR}+ is required for automatic sparse checkout." >&2
     echo "If downloading remote protos fails, please upgrade Git or download the protos manually and use --protos-loc <local_path>." >&2
   fi
