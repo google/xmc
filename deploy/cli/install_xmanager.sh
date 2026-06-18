@@ -61,8 +61,7 @@ copy_protos_to_service() {
 }
 
 # --- Requirements / Global Constants ---
-MIN_GIT_MAJOR=2
-MIN_GIT_MINOR=25
+MIN_GIT="2.25"
 
 # Check Git version for sparse-checkout support (Git 2.25+)
 check_git_version() {
@@ -70,14 +69,17 @@ check_git_version() {
   version=$(git --version | awk '{print $3}')
   # Remove trailing patch versions or characters (e.g. 2.34.1.windows.1)
   IFS='.' read -r major minor _ <<< "${version}"
+
+  local min_major min_minor
+  IFS='.' read -r min_major min_minor _ <<< "${MIN_GIT}"
   
   if [[ ! "${major}" =~ ^[0-9]+$ ]] || [[ ! "${minor}" =~ ^[0-9]+$ ]]; then
-    echo "Warning: Could not parse Git version (${version}). Git ${MIN_GIT_MAJOR}.${MIN_GIT_MINOR}+ is recommended." >&2
+    echo "Warning: Could not parse Git version (${version}). Git ${MIN_GIT}+ is recommended." >&2
     return 0
   fi
   
-  if (( major < MIN_GIT_MAJOR || (major == MIN_GIT_MAJOR && minor < MIN_GIT_MINOR) )); then
-    echo "Warning: Git version is ${version}. Git ${MIN_GIT_MAJOR}.${MIN_GIT_MINOR}+ is required for automatic sparse checkout." >&2
+  if (( major < min_major || (major == min_major && minor < min_minor) )); then
+    echo "Warning: Git version is ${version}. Git ${MIN_GIT}+ is required for automatic sparse checkout." >&2
     echo "If downloading remote protos fails, please upgrade Git or download the protos manually and use --protos-loc <local_path>." >&2
   fi
 }
