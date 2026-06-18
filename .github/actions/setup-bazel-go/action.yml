@@ -1,0 +1,31 @@
+name: 'Setup Go and Bazel'
+description: 'Sets up Go, Bazel, and configures caching'
+inputs:
+  go-version:
+    description: 'Go version to set up'
+    required: false
+    default: '1.26.0'
+  cache-key-prefix:
+    description: 'Prefix for cache key'
+    required: false
+    default: 'bazel'
+runs:
+  using: 'composite'
+  steps:
+    - name: 'Checkout'
+      uses: 'actions/checkout@v4'
+    - name: 'Set up Go'
+      uses: 'actions/setup-go@v5'
+      with:
+        go-version: ${{ inputs.go-version }}
+    - name: 'Set up Bazel'
+      uses: 'bazelbuild/setup-bazelisk@v3'
+    - name: 'Bazel Cache'
+      uses: 'actions/cache@v4'
+      with:
+        path: |
+          ~/.cache/bazel-repo
+          ~/.cache/bazel-disk
+        key: ${{ inputs.cache-key-prefix }}-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+        restore-keys: |
+          ${{ inputs.cache-key-prefix }}-${{ runner.os }}-
