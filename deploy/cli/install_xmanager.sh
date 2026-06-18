@@ -142,7 +142,7 @@ source "$VENV_DIR/bin/activate"
 
 echo "Updating pip and installing compile-time dependencies..."
 pip install --upgrade pip
-pip install --index-url https://pypi.org/simple \
+pip install \
   grpcio \
   grpcio-tools \
   google-auth \
