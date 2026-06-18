@@ -116,7 +116,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Resolve VENV_DIR to absolute path
-VENV_DIR="$(realpath -m "$VENV_DIR")"
+VENV_DIR="$(python3 -c "import os, sys; print(os.path.abspath(sys.argv[1]))" "$VENV_DIR")"
 
 echo "=== Configuration ==="
 echo "Protos Location: $XMC_PROTOS_LOC"
