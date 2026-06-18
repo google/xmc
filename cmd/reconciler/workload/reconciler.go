@@ -41,6 +41,7 @@ import (
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
 
+	fmpb "protobuf/field_mask_go_proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	actuatorpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
@@ -198,7 +199,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	if r.DetectInadmissibleWorkUnits {
 		isWorkloadStuck, condition := r.getStuckWorkloadCondition(ctx, &workload, xid, wid, eid)
 		if isWorkloadStuck {
-			update = r.updateWorkUnitExecutionUpdateWithInadmissibleReason(ctx, update, r.getReasonForInadmissibleWorkload(ctx, condition))
+			update = r.updateWorkUnitExecutionUpdateWithInadmissibleReason(ctx, update, wid, eid, r.getReasonForInadmissibleWorkload(ctx, condition))
 		}
 	}
 
@@ -230,9 +231,15 @@ func (r *Reconciler) getReasonForInadmissibleWorkload(ctx context.Context, condi
 	return fmt.Sprintf("Work unit is inadmissible, please check the workload status for more details: %s", condition.Message)
 }
 
-func (r *Reconciler) updateWorkUnitExecutionUpdateWithInadmissibleReason(ctx context.Context, update *storage.WorkUnitExecutionUpdate, reasonForInadmissibleWorkload string) *storage.WorkUnitExecutionUpdate {
+func (r *Reconciler) updateWorkUnitExecutionUpdateWithInadmissibleReason(ctx context.Context, update *storage.WorkUnitExecutionUpdate, wid, eid int64, reasonForInadmissibleWorkload string) *storage.WorkUnitExecutionUpdate {
 	if update == nil {
-		update = &storage.WorkUnitExecutionUpdate{}
+		update = &storage.WorkUnitExecutionUpdate{
+			WID: wid,
+			EID: eid,
+		}
+	}
+	if update.UpdateMask == nil {
+		update.UpdateMask = &fmpb.FieldMask{}
 	}
 	if update.WorkUnitExecution == nil {
 		update.WorkUnitExecution = &actuatorpb.WorkUnitExecution{}
