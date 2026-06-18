@@ -42,6 +42,7 @@ import { MatRadioModule } from '@angular/material/radio';
 import { MatSelectModule } from '@angular/material/select';
 import { Subscription } from 'rxjs';
 
+import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
 import { Priority } from 'xmanager_cloud/experiment_state_server/proto/priority.jsonpb_decls';
 import { XidBadge } from 'xmanager_cloud/ui/app/common/components/xid_badge/xid_badge';
 import {
@@ -62,6 +63,7 @@ export class EditExperimentFormData implements BaseSidePanelData {
   ) {}
 }
 
+// Custom validator to prevent whitespace-only input
 function notWhitespaceOnly(control: AbstractControl): ValidationErrors | null {
   const isWhitespace = (control.value || '').trim().length === 0;
   return isWhitespace ? { whitespace: true } : null;
@@ -103,17 +105,7 @@ export class EditExperimentForm implements BaseSidePanelContent<EditExperimentFo
   readonly isLoading = this.editExperimentFormStore.isLoading;
 
   readonly editExperimentFormGroup = computed(() => {
-    const initialExperiment = this.initialExperiment();
-
-    return new FormGroup({
-      name: new FormControl<string>(initialExperiment?.title ?? '', [
-        Validators.required,
-        notWhitespaceOnly,
-      ]),
-      notes: new FormControl<string>(initialExperiment?.notes ?? ''),
-      tags: new FormControl<string>(initialExperiment?.tags?.join(',') ?? ''),
-      priority: new FormControl<Priority>(initialExperiment?.priority ?? 'NORMAL'),
-    });
+    return createEditExperimentForm(this.initialExperiment());
   });
 
   constructor() {
@@ -130,47 +122,13 @@ export class EditExperimentForm implements BaseSidePanelContent<EditExperimentFo
 
   updateExperiment() {
     const formGroup = this.editExperimentFormGroup();
-    let updatedExperiment = this.initialExperiment()!;
-
-    const updateMask = new Array<string>();
-
-    const nameControl = formGroup.controls.name;
-    if (nameControl.dirty) {
-      updatedExperiment = { ...updatedExperiment, title: nameControl.value! };
-      updateMask.push('title');
-    }
-
-    const notesControl = formGroup.controls.notes;
-    if (notesControl.dirty) {
-      updatedExperiment = { ...updatedExperiment, notes: notesControl.value! };
-      updateMask.push('notes');
-    }
-
-    const tagsControl = formGroup.controls.tags;
-    if (tagsControl.dirty) {
-      updatedExperiment = {
-        ...updatedExperiment,
-        tags: tagsControl
-          .value!.split(',')
-          .map((tag) => tag.trim())
-          .filter((tag) => tag !== ''),
-      };
-      updateMask.push('tags');
-    }
-
-    const priorityControl = formGroup.controls.priority;
-    if (priorityControl.dirty) {
-      updatedExperiment = {
-        ...updatedExperiment,
-        priority: priorityControl.value!,
-      };
-      updateMask.push('priority');
-    }
+    const initial = this.initialExperiment()!;
+    const { updates, updateMask } = getDirtyFields(formGroup);
 
     this.data().onUpdateStart?.();
     this.editExperimentFormStore.updateExperiment({
       request: {
-        experiment: updatedExperiment,
+        experiment: { ...initial, ...updates },
         updateMask: updateMask.join(','),
       },
       onSuccess: this.data().onUpdateSuccess,
@@ -182,4 +140,50 @@ export class EditExperimentForm implements BaseSidePanelContent<EditExperimentFo
   ngOnDestroy() {
     this.subscriptions.unsubscribe();
   }
+}
+
+function createEditExperimentForm(experiment: Experiment | null | undefined): FormGroup {
+  return new FormGroup({
+    name: new FormControl<string>(experiment?.title ?? '', [Validators.required, notWhitespaceOnly]),
+    notes: new FormControl<string>(experiment?.notes ?? ''),
+    tags: new FormControl<string>(experiment?.tags?.join(',') ?? ''),
+    priority: new FormControl<Priority>(experiment?.priority ?? ('NORMAL' as Priority)),
+  });
+}
+
+function getDirtyFields(formGroup: FormGroup): {
+  updates: Partial<Experiment>;
+  updateMask: string[];
+} {
+  const updates: Partial<Experiment> = {};
+  const updateMask: string[] = [];
+  const { name, notes, tags, priority } = formGroup.controls;
+
+  if (name.dirty) {
+    updates.title = name.value;
+    updateMask.push('title');
+  }
+  if (notes.dirty) {
+    updates.notes = notes.value;
+    updateMask.push('notes');
+  }
+  if (tags.dirty) {
+    updates.tags = parseTags(tags.value);
+    updateMask.push('tags');
+  }
+  if (priority.dirty) {
+    updates.priority = priority.value;
+    updateMask.push('priority');
+  }
+  return { updates, updateMask };
+}
+
+function parseTags(tagsValue: string | null): string[] {
+  if (!tagsValue) {
+    return [];
+  }
+  return tagsValue
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter((tag) => tag !== '');
 }

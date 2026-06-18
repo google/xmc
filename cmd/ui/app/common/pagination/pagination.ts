@@ -51,3 +51,47 @@ export function setPageSize<T extends { pagination: PaginationState }>(
     },
   };
 }
+
+/**
+ * Reducer function for going to the next page.
+ */
+export function goToNextPage<T extends { pagination: PaginationState }>(state: T): T {
+  const { pagination } = state;
+
+  if (!pagination.nextPageToken) {
+    return state;
+  }
+
+  return {
+    ...state,
+    pagination: {
+      ...pagination,
+      pageIndex: pagination.pageIndex + 1,
+      currentPageToken: pagination.nextPageToken,
+      previousTokens: [...pagination.previousTokens, pagination.currentPageToken],
+      nextPageToken: undefined,
+    },
+  };
+}
+
+/**
+ * Reducer function for going to the previous page.
+ */
+export function goToPreviousPage<T extends { pagination: PaginationState }>(state: T): T {
+  const { pagination } = state;
+  const { previousTokens, pageIndex } = pagination;
+
+  if (previousTokens.length === 0) {
+    return state;
+  }
+
+  return {
+    ...state,
+    pagination: {
+      ...pagination,
+      currentPageToken: previousTokens[previousTokens.length - 1],
+      previousTokens: previousTokens.slice(0, -1),
+      pageIndex: pageIndex - 1,
+    },
+  };
+}
