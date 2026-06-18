@@ -108,9 +108,9 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          key: bazel-ui-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
           restore-keys: |
-            bazel-${{ runner.os }}-
+            bazel-ui-${{ runner.os }}-
       - name: 'Run UI Unit Tests'
         run: |
           bazel test \
@@ -126,7 +126,7 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          key: bazel-ui-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
 
 # Test Internal job: runs tests under internal/... (e.g. database client, helper libraries).
   # Depends on the Spanner Emulator service container.
@@ -167,9 +167,9 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          key: bazel-internal-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
           restore-keys: |
-            bazel-${{ runner.os }}-
+            bazel-internal-${{ runner.os }}-
       - name: 'Verify Spanner Emulator Endpoint'
         run: |
           echo "Verifying Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}..."
@@ -201,7 +201,7 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          key: bazel-internal-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
 
 # Test Cmd Backend job: runs backend commands unit tests (actuator, reconciler, etc.).
   # Depends on Spanner Emulator since some backend commands use database functions.
@@ -247,9 +247,9 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          key: bazel-cmd-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
           restore-keys: |
-            bazel-${{ runner.os }}-
+            bazel-cmd-${{ runner.os }}-
       - name: 'Verify Spanner Emulator Endpoint'
         run: |
           echo "Verifying Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}..."
@@ -300,7 +300,7 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          key: bazel-cmd-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
 
   test-pkg:
     name: 'Test Pkg'
@@ -327,9 +327,9 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          key: bazel-pkg-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
           restore-keys: |
-            bazel-${{ runner.os }}-
+            bazel-pkg-${{ runner.os }}-
       - name: 'Run Pkg Unit Tests'
         run: |
           bazel test \
@@ -345,7 +345,7 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          key: bazel-pkg-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
 
   test-tools:
     name: 'Test Tools'
@@ -372,9 +372,9 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          key: bazel-tools-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
           restore-keys: |
-            bazel-${{ runner.os }}-
+            bazel-tools-${{ runner.os }}-
       - name: 'Run Tools Unit Tests'
         run: |
           bazel test \
@@ -390,7 +390,7 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          key: bazel-tools-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
 
 # Gating Job: This job acts as a final collector to satisfy required status checks.
   # Since branch protection requires "Run Unit Tests" check to pass, this job is named accordingly.
