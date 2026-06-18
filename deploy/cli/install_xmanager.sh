@@ -161,9 +161,9 @@ if [ -d "$XMC_PROTOS_LOC" ]; then
   echo "Using local protos from: $XMC_PROTOS_LOC"
   mkdir -p "$XMC_PROTOS_SRC_DIR"
   if [ -d "$XMC_PROTOS_LOC/api/protos" ]; then
-    cp -r "$XMC_PROTOS_LOC/api/protos/"* "$XMC_PROTOS_SRC_DIR/"
+    cp -r "$XMC_PROTOS_LOC/api/protos/." "$XMC_PROTOS_SRC_DIR/"
   else
-    cp -r "$XMC_PROTOS_LOC/"* "$XMC_PROTOS_SRC_DIR/"
+    cp -r "$XMC_PROTOS_LOC/." "$XMC_PROTOS_SRC_DIR/"
   fi
 else
   echo "Fetching remote protos from: $XMC_PROTOS_LOC"
