@@ -14,8 +14,8 @@
 import 'jasmine';
 
 import { Url } from 'xmanager_cloud/experiment_state_server/proto/url.jsonpb_decls';
-import { EXPERIMENT_1, WORK_UNIT_1, WORK_UNIT_2 } from 'xmanager_cloud/ui/app/common/mock_data';
 
+import { EXPERIMENT_1, WORK_UNIT_1, WORK_UNIT_2 } from '../mock_data';
 import { processUrls } from './url_processor';
 
 describe('UrlProcessor', () => {

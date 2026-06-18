@@ -17,7 +17,7 @@ import 'jasmine';
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 
-import { cleanState, flush, get, setupModule } from '../testing/test';
+import { cleanState, get, setupModule } from '../testing/test';
 import { AuthService, UserResponse } from './auth.service';
 
 function setup() {
@@ -84,13 +84,13 @@ describe('AuthService', () => {
     };
 
     state.service.getUser().subscribe();
-    let req = state.httpMock.expectOne('/api/user');
-    req.flush(mockUser);
+    const firstReq = state.httpMock.expectOne('/api/user');
+    firstReq.flush(mockUser);
 
     state.service.clearCache();
 
     state.service.getUser().subscribe();
-    req = state.httpMock.expectOne('/api/user');
-    req.flush(mockUser);
+    const secondReq = state.httpMock.expectOne('/api/user');
+    secondReq.flush(mockUser);
   });
 });

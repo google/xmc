@@ -18,8 +18,13 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 
 import { ListStatusMessagesResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { MOCK_HISTORICAL_STATUS_MESSAGES } from 'xmanager_cloud/ui/app/common/mock_data';
+import {
+  cleanState,
+  get,
+  setupModule,
+  setupObservableMatchers,
+} from 'xmanager_cloud/ui/app/testing/test';
 
-import { cleanState, flush, get, setupModule, setupObservableMatchers } from '../testing/test';
 import { EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA } from './constants';
 import { StatusMessageService } from './status_message_service';
 import { MockStatusMessageService } from './testing/mock_status_message_service';

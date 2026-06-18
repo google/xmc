@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { RouterModule } from '@angular/router';
 import { of } from 'rxjs';
@@ -55,7 +56,12 @@ describe('WorkUnitHeader Component', () => {
             open: of(true),
           }),
         },
-        WorkUnitPageStore,
+        {
+          provide: WorkUnitPageStore,
+          useValue: jasmine.createSpyObj<WorkUnitPageStore>('workUnitPageStore', [
+            'fetchWorkUnitPageData',
+          ]),
+        },
       ],
     });
   });
@@ -66,5 +72,43 @@ describe('WorkUnitHeader Component', () => {
       experiment: EXPERIMENT_1,
     });
     expect(comp).toBeTruthy();
+  });
+
+  it('should call stopWorkUnit and fetchWorkUnitPageData when stop is confirmed', () => {
+    const comp = bootstrap(Header, {
+      workUnit: WORK_UNIT_1,
+      experiment: EXPERIMENT_1,
+    }) as Header;
+    const workUnitsService = TestBed.inject(WorkUnitsService) as jasmine.SpyObj<WorkUnitsService>;
+    const store = TestBed.inject(WorkUnitPageStore) as jasmine.SpyObj<WorkUnitPageStore>;
+
+    workUnitsService.stopWorkUnit.and.returnValue(of({}));
+
+    comp.stop();
+
+    expect(workUnitsService.stopWorkUnit).toHaveBeenCalledWith({
+      xid: '1',
+      wid: '1',
+    });
+    expect(store.fetchWorkUnitPageData).toHaveBeenCalled();
+  });
+
+  it('should call restartWorkUnit and fetchWorkUnitPageData when restart is confirmed', () => {
+    const comp = bootstrap(Header, {
+      workUnit: WORK_UNIT_1,
+      experiment: EXPERIMENT_1,
+    }) as Header;
+    const workUnitsService = TestBed.inject(WorkUnitsService) as jasmine.SpyObj<WorkUnitsService>;
+    const store = TestBed.inject(WorkUnitPageStore) as jasmine.SpyObj<WorkUnitPageStore>;
+
+    workUnitsService.restartWorkUnit.and.returnValue(of({}));
+
+    comp.restart();
+
+    expect(workUnitsService.restartWorkUnit).toHaveBeenCalledWith({
+      xid: '1',
+      wid: '1',
+    });
+    expect(store.fetchWorkUnitPageData).toHaveBeenCalled();
   });
 });

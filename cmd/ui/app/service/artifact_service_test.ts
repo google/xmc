@@ -22,7 +22,7 @@ import {
 } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
 import { ARTIFACT_LIST } from '../common/mock_data';
-import { cleanState, flush, get, setupModule, setupObservableMatchers } from '../testing/test';
+import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
 import { ArtifactService } from './artifact_service';
 import { EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA } from './constants';
 import { MockArtifactService } from './testing/mock_artifact_service';
