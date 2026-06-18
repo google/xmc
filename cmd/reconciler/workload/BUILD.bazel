@@ -26,7 +26,6 @@ compat_go_library(
         "//api/protos/experiment:messages_go_proto",
         "//cmd/reconciler/shared",
         "//internal/compat/field_mask",
-        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
         "//internal/kubernetes/common/labels",
         "//internal/logging",
         "//internal/storage",
@@ -45,6 +44,7 @@ compat_go_library(
         "@io_k8s_sigs_controller_runtime//pkg/handler",
         "@io_k8s_sigs_controller_runtime//pkg/predicate",
         "@io_k8s_sigs_controller_runtime//pkg/source",
+        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
@@ -61,7 +61,6 @@ compat_go_test(
         "//internal/compat/cmp",
         "//internal/compat/field_mask",
         "//internal/compat/protocmp",
-        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
         "//internal/kubernetes/common:constants",
         "//internal/storage",
         "@com_github_prometheus_client_golang//prometheus/testutil",
@@ -71,5 +70,6 @@ compat_go_test(
         "@io_k8s_client_go//kubernetes/scheme",
         "@io_k8s_sigs_controller_runtime//:go_default_library",
         "@io_k8s_sigs_controller_runtime//pkg/client/fake",
+        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
     ],
 )

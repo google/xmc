@@ -47,9 +47,9 @@ go_library(
     srcs = ["emulator.go"],
     embedsrcs = [
         "ess-schema.sql",
-        ":ess_messages.pb",
         "xid-schema.sql",
-        ":xid_messages.pb",
+        "ess_messages.pb",
+        "xid_messages.pb",
     ],
     importpath = "xmanager_cloud/internal/storage/spanner/emulator",
     visibility = ["//visibility:public"],
