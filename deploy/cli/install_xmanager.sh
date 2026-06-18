@@ -63,7 +63,7 @@ copy_protos_to_service() {
 # --- Requirements / Global Constants ---
 MIN_GIT="2.25"
 
-# Check Git version for sparse-checkout support (Git 2.25+)
+# Check Git version for sparse-checkout support (Git ${MIN_GIT}+)
 check_git_version() {
   local version
   version=$(git --version | awk '{print $3}')
