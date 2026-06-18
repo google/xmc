@@ -43,7 +43,7 @@ func (p *PublisherClient) Close(ctx context.Context) error {
 }
 
 // AddMessage adds a message to the Redis stream.
-func (p *PublisherClient) AddMessage(ctx context.Context, data string, failedAttempts string) {
+func (p *PublisherClient) AddMessage(ctx context.Context, data string, failedAttempts string) error {
 	args := &redis.XAddArgs{
 		Stream: p.StreamName,
 		MaxLen: DefaultMaxLen,
@@ -56,5 +56,7 @@ func (p *PublisherClient) AddMessage(ctx context.Context, data string, failedAtt
 	err := p.XAdd(ctx, args).Err()
 	if err != nil {
 		log.ErrorContextf(ctx, "Failed to add message to stream %s: %v", p.StreamName, err)
+		return err
 	}
+	return nil
 }

@@ -24,20 +24,11 @@ There were past client incidents with overflowing Kueue instances. Adding an opt
 
 ## Current state
 
-### Communication with Kueue/Control Plane in XMC
-
-Here is a breakdown of the existing communications between XMC services and Kueue/Kubernetes:
+At this moment XMC communicates with Kueue/Kubernetes API in Actuator and Reconciler services.
 
 #### Actuator
 
-Actuator currently takes 4 types of operations ([ref](http://cs/google3/third_party/xmanager_cloud/task_queue/proto/task.proto?l=64)) from the Redis stream `xmc-tasks-stream`:
-
-1. CreateAction  
-2. DeleteAction  
-3. RestartAction  
-4. UpdateAction
-
-These are handled in [`workunit_task_handler`](http://cs/google3/third_party/xmanager_cloud/kubernetes/actuator/workunit_task_handler.go?l=102):
+Actuator currently takes 4 types of operations ([ref](http://cs/google3/third_party/xmanager_cloud/task_queue/proto/task.proto?l=64)) from the Redis stream `xmc-tasks-stream` that are handled in [`workunit_task_handler`](http://cs/google3/third_party/xmanager_cloud/kubernetes/actuator/workunit_task_handler.go?l=102):
 
 * **CreateAction**  
   * **Triggered by:** Creation of the work unit in ESS.  
@@ -47,9 +38,7 @@ These are handled in [`workunit_task_handler`](http://cs/google3/third_party/xma
   * **Effect:** Invokes the dynamic client to delete the JobSet ([ref](http://cs/google3/third_party/xmanager_cloud/kubernetes/actuator/k8s_client/jobset.go?l=152)).  
 * **RestartAction**  
   * **Triggered by:** `BatchRestartWorkUnits` in ESS.  
-  * **Effect:**  
-    1. [Deletes JobSet](http://cs/google3/third_party/xmanager_cloud/kubernetes/actuator/k8s_client/jobset.go?l=208).  
-    2. [Creates new JobSet](http://cs/google3/third_party/xmanager_cloud/kubernetes/actuator/k8s_client/jobset.go?l=221).  
+  * **Effect:** It first [deletes old JobSet](http://cs/google3/third_party/xmanager_cloud/kubernetes/actuator/k8s_client/jobset.go?l=208) and then [creates a new JobSet](http://cs/google3/third_party/xmanager_cloud/kubernetes/actuator/k8s_client/jobset.go?l=221).  
 * **UpdateAction**  
   * **Triggered by:** [Update work unit](http://cs/google3/third_party/xmanager_cloud/experiment_state_server/server/updateworkunit.go?l=77) in ESS.  
   * **Effect:** Updates JobSet priority by calling a dynamic client patch on the JobSet ([ref](http://cs/google3/third_party/xmanager_cloud/kubernetes/actuator/k8s_client/jobset.go?l=258)). This modifies existing JobSet resources to update Kueue-related labels or annotations.
@@ -66,27 +55,27 @@ The Reconciler watches Kubernetes resources and updates Spanner:
 **Summary of Interactions:**
 
 * **Actuator \-\> Kueue:** Submits and manages jobs by creating/updating JobSets tagged for Kueue.  
-* **Reconciler \-\> Kueue:** Reads data from Kueue's API (`Workload` status, `ClusterQueue` list) to monitor job state and queue status.
+* **Reconciler \-\> Kueue:** Reads data from Kueue's API (`Workload` status, `ClusterQueue` list) to monitor job state and queue status. One exception to this is patching the jobset to remove the finalizer.
 
 # Requirements
 
 ## Functional Requirements
 
-* The system **must** implement a Global "STOP" Feature (e.g., a button or toggle in the Admin Panel) that allows an XMC administrator to temporarily halt all Actuator scheduling operations, effectively pausing all interaction with Kueue and the Kubernetes control plane.  
-* The system **must** durably persist the "STOP" state in a database, ensuring the system remains paused even across service restarts or pod rescheduling.  
+* The system **must** implement a global pause feature (a toggle in the Admin Panel) that allows an XMC administrator to temporarily halt all Actuator scheduling operations, effectively pausing all interaction with Kueue and the Kubernetes control plane.  
+* The system **must** durably persist the pause state in a database, ensuring the system remains paused even across service restarts or pod rescheduling.  
 * The system **must** require explicit manual action from an administrator to un-pause the system and resume normal scheduling operations.  
-* The system **must** ensure that operations enqueued during an active pause are retained safely in the Redis stream and automatically picked up and processed once the pause is lifted.  
-* The system **must** pause all operation types (`CreateAction`, `DeleteAction`, `RestartAction`, `UpdateAction`) uniformly to completely halt traffic to Kubernetes during an incident.
+* The system **must** ensure that operations enqueued during an active pause are retained safely in and resumed once the pause is lifted.
 
 ## Non-Functional Requirements
 
-* **Access Control:** Access to the Pause Scheduling toggle **must** be restricted to authorized administrators. User-facing endpoints **must** validate user permissions.  
-* **Reliability & Health Separation:** The system **must** ensure that a "paused" service is still considered "healthy" by the Kubernetes liveness/readiness probes, as pausing is an intended operational state.  
-* **Performance:** The system should employ caching mechanisms for the pause state to minimize database lookups on task processing.
+* Access to the Pause Scheduling toggle **must** be restricted to authorized administrators. User-facing endpoints **must** validate user permissions.  
+* The system **must** ensure that a "paused" service is still considered "healthy" by the Kubernetes liveness/readiness probes, as pausing is an intended operational state.  
+* The system should employ caching mechanisms for the pause state to minimize database lookups on task processing.
 
 ## Out of Scope
 
-* **Automatic Pause/Resume or Throttling:** The system **will not** automatically pause or resume scheduling based on health conditions or queue depth; this is strictly a manual admin function.
+* The system **will not** automatically pause or resume scheduling based on health conditions or queue depth; this is strictly a manual admin function.  
+* The system pause **will not** affect any other system functionalities (e.g. will not block http traffic, will not reject creations of new experiments)
 
 # Design
 
@@ -100,7 +89,7 @@ The Reconciler watches Kubernetes resources and updates Spanner:
 * The existing single Redis stream `xmc-tasks-stream` will be retained without structural changes.  
 * Actuator instances will independently consume the configuration stream via XREAD (without consumer groups) to update their in-memory pause state before pulling or processing incoming operations from `xmc-tasks-stream`.
 
-## Spanner table
+## New Spanner table
 
 To persist the state of the pause we will introduce a new Spanner table in the `experiment-db` database:
 
@@ -116,7 +105,7 @@ The SystemConfig table will be empty until the first configuration is saved into
 
 A migration script will be added to create the table on upgrade and drop it on downgrade.
 
-## Update Actuator Scheduling Pause State Endpoint
+## Pause update endpoint
 
 The Health Service will expose an endpoint to control the Kueue scheduling pause state. This endpoint will verify admin credentials, persist the new state in Spanner, and broadcast the change to Actuator instances via Redis.
 
@@ -124,80 +113,92 @@ The Health Service will expose an endpoint to control the Kueue scheduling pause
 
 * **Endpoint:** `/api/admin/actuator_scheduling_pause`  
 * **HTTP Method:** `PATCH`  
+* **Request Body:** `{"paused": true}`  
 * **Description:** Initiates the process to set the global state for pausing or resuming the scheduling of operations by the Actuator.  
 * **Authentication:** Requires Admin privileges, enforced by the Health Service.
-
-**Request Body:**
-
-```json
-{ "paused": true }
-```
-
-* **paused (boolean, required):** Set to `true` to pause scheduling, `false` to resume.
 
 ### Health Service Handler Logic
 
 1. Receive the `PATCH` request on `/api/admin/actuator_scheduling_pause`.  
-2. Validate the caller's admin membership using `Authorizer.IsUserInGroup`.  
+2. Validate the caller's admin membership to predefined `admin_iam_role` (described in previous tab).  
 3. Perform an atomic update on the `ActuatorSchedulingPaused` column in the SystemConfig table in Spanner.  
-4. If the Spanner update succeeds, publish a pause configuration event (`XADD`) to the Redis broadcast stream xmc-sys-config-stream.  
+4. If the Spanner update succeeds, publish an event to actuator instances via redis streams (described in the next section).   
 5. If both operations succeed, return a `200 OK`. Otherwise, return an appropriate HTTP error status.
 
-### Actuator Redis Broadcast Listener
+## Broadcasting pause to actuator instances
 
-Actuator no longer exposes an internal HTTP endpoint for pause state changes. Instead, each Actuator instance consumes real-time configuration updates from Redis.
+### Redis Stream
 
-#### Actuator Listener Logic
+To send a message from health service to all actuator instances about pause we will create a new redis stream `xmc-pause-stream` with [`XREAD`](https://redis.io/docs/latest/develop/data-types/streams/#listening-for-new-items-with-xread) (no consumer groups). Health service, after saving pause state into the spanner, will publish a message with `XADD` to this redis stream. To prevent the stream from growing indefinitely and consuming unnecessary memory, we will use approximate capping via the `MAXLEN ~ 100` parameter during publishing. 
 
-1. On pod startup, Actuator initializes its stream listener:  
-2. 1\. It queries the Redis stream xmc-sys-config-stream for the latest message ID using XREVRANGE xmc-sys-config-stream \+ \- COUNT 1\. If the stream is empty, it uses 0 as the starting ID; otherwise, it uses the returned message's ID. Let's call this StartID.  
-   * 2\. It performs a synchronous read of the SystemConfig table in Spanner to initialize its in-memory currentPauseState.  
-   * 3\. It spawns a background listener goroutine that calls XREAD on the xmc-sys-config-stream starting from StartID (instead of $) to process any new configuration events.  
-3. When a pause configuration event is received from the stream, the listener parses the new state and updates the Actuator's internal in-memory state variable (protected by `sync.RWMutex`).
+### Actuator Listener Logic
 
-```go
-// Example in-memory state in Actuator
-type PauseState struct {
-    mu     sync.RWMutex
-    Paused bool
-}
-var currentPauseState PauseState
+1. **Initialize State (Spanner):** On pod startup, the Actuator performs a synchronous read of the `SystemConfig` table in Spanner to set the initial value of `currentPauseState.Paused`.  
+2. **Establish Stream Offset (Redis):** The Actuator queries the `xmc-pause-stream` using `XREVRANGE xmc-pause-stream + - COUNT 1` to find the latest message's ID.  
+   * If the stream is empty, it uses `0` as the starting ID.  
+   * Otherwise, it uses the returned message's ID. Let's call this `StartID`.  
+3. **Listen for Updates (Redis):** It spawns a background listener goroutine that runs a streaming read (`XREAD`) on the `xmc-pause-stream` starting from `StartID` to process future configuration events.  
+4. **Trigger State Transition:** When a new configuration event is read from the stream, the listener updates the in-memory cache. If the pause state has changed, it halts or resumes processing
 
-// In XREAD listener goroutine upon receiving an event:
-currentPauseState.mu.Lock()
-currentPauseState.Paused = event.Paused
-currentPauseState.mu.Unlock()
-```
+## Pause scheduling behavior in Actuator
 
-## Notify actuator about change of Pause state
+Enabling `ActuatorSchedulingPaused` stops the Actuator from interacting with Kueue and the Kubernetes control plane. To achieve this we will halt task processing by pausing consumption directly at the task queue reader.
 
-### Selected: Redis Streams with XREAD (no consumer groups)
+Three locations to implement target blocking logic were considered:
 
-* **Mechanism:** Health Service publishes pause state change events to a dedicated Redis stream (xmc-sys-config-stream) using `XADD`. Each Actuator pod runs an independent background goroutine calling XREAD (without consumer groups, starting from `$`) on this stream to receive broadcast events and update its local in-memory mutex.  
+### Option 1: Inside the `redisclient.Consumer` Library Loop (Selected)
+
+* **Mechanism:** The `redisclient.Consumer` interface will expose generic `Pause()` and `Resume()` methods. The library's internal worker consumption loop (see [consumer.go](file:///google/src/cloud/andrzejfudro/xmc-q2/google3/third_party/xmanager_cloud/task_queue_redis/consumer.go)) blocks on a thread-safe channel-based barrier toggle:  
+  - When paused, the loop blocks on a select statement listening to an open Go channel, parking the thread (zero CPU overhead) while still checking target context `Done()` channel to ensure graceful Kubernetes shutdowns.  
+  - Calling `Resume()` closes target channel, instantly unblocking all waiting workers (zero resume latency) without any risk of concurrent panics.  
+  - While paused, target worker context remains active, guaranteeing that currently in-flight executions finish processing and successfully update their acknowledgments (`XACK`) in Redis.  
+  - Once resumed, target workers instantly return to reading new tasks.  
 * **Pros:**  
-  * Natively supports multi-instance fan-out broadcast to all running Actuator pods.  
-  * Completely decouples Health Service from Actuator instances (no need to track pod IPs or manage internal HTTP routing).  
-  * Extremely simple consumer setup with no consumer group management or cleanup overhead.  
-* **Cons:**  
-  * Requires Actuator pods to read initial baseline state from Spanner on startup to ensure they don't miss events while offline.
-
-## Pause button behavior
-
-Enabling `KueueSchedulingPaused` stops the Actuator from interacting with Kueue and the Kubernetes control plane. To achieve this cleanly without modifying publisher or stream topologies, we implement a direct pause on stream consumption.
-
-### Selected: Pause Stream Consumption
-
-* **Mechanism:** We retain the existing single Redis stream `xmc-tasks-stream`. In the Actuator's main stream consumer worker loop within [`workunit_task_handler`](http://cs/google3/third_party/xmanager_cloud/kubernetes/actuator/workunit_task_handler.go?l=102) (specifically before calling `XReadGroup` to pull new tasks), the worker checks currentPauseState`.Paused` via a read lock (currentPauseState`.mu.RLock()`).  
-* If `Paused` is `true`, the worker pauses pulling new messages from the stream (e.g. sleeps for a short interval before retrying), leaving all pending tasks safely queued on `xmc-tasks-stream`.  
-* Once toggled `false`, the worker immediately resumes pulling and dispatching messages to worker goroutines in their original FIFO order.  
-* **Pros:**  
-  * Extreme simplicity: zero changes required to ESS publisher logic, zero changes to Redis stream or consumer group topologies, and zero migration overhead.  
+  * Encapsulates all loop plumbing inside the library, keeping the application code clean.  
+  * Avoids concurrent in-flight processes being killed and resolves duplicate task executions.  
   * Preserves strict task ordering across all operation types.  
-* **Cons:** Deletions and updates are paused alongside creations during an active incident pause.
+* **Cons:** Extends the library's `Consumer` interface with additional methods.
 
-**Reasoning for Selection:** Pausing stream consumption directly in the worker loop ([ref](http://cs/google3/third_party/xmanager_cloud/kubernetes/actuator/workunit_task_handler.go?l=102)) is selected because halting all Kubernetes communication is the exact desired behavior during a Control Plane/Kueue incident. Retaining a single stream drastically simplifies backend architecture and avoids the risk and overhead of stream migrations.
+### Option 2: App-Level Control via Context Cancellation (Prototype)
 
-**Note on Reconciler Patch Operations:** The Reconciler's write operations (specifically, the JobSet Reconciler patching JobSets to remove finalizers) are not paused when the system is stopped. This is intentional: these patches only execute as a consequence of a previous Actuator operation (or manual deletes) and occur very rarely. Allowing finalizer removal to proceed is critical to ensure that resources are cleaned up and do not remain stuck in the cluster during an incident.
+* **Mechanism:** Actuator controls consumption by calling `Cancel()` on target context passed to `redisClient.StartWorker()`. Re-spawns target default worker loops when unpaused.  
+* **Pros:** Leaves target client library interface completely clean and minimal.  
+* **Cons:** **Correctness Bug.** Cancelling target execution context of target running worker causes in-flight tasks to abort and results in failed `XACK` confirmations. Once resumed, target tasks are processed again, introducing duplicate resource creations.
+
+### Option 3: App-Level Custom Worker Loop
+
+* **Mechanism:** Expose raw `ReadMessages` and `ProcessMessage` methods on the interface, and implement target polling loop inside Actuator's `main.go`. Before calling `ReadMessages`, target loop checks the pause state.  
+* **Pros:** Keeps target client library flat and stateless.  
+* **Cons:** High coupling. Actuator has to manually re-implement polling loop boilerplate, error backoffs on network drops, and thread management.
+
+### Note on Reconciler Patch Operations
+
+The Reconciler's write operations (specifically, the JobSet Reconciler patching JobSets to remove finalizers) are not paused when target system is stopped. This is intentional: these patches only execute as a consequence of a previous Actuator operation (or manual deletes) and occur very rarely. Allowing finalizer removal to proceed is critical to ensure that resources are cleaned up and do not remain stuck in the cluster during an incident.
+
+# Fetching pause state for the UI
+
+// TODO: describe that we will extend health status endpoint 
+
+# UI behavior
+
+// TODO: add screenshot showing how it behaves on the UI
+
+# Limitations
+
+### 1. Silent Task Eviction and Loss (due to `MaxLen` cap)
+The publisher client configures `xmc-tasks-stream` with a maximum length cap of 10,000 (`MaxLen: DefaultMaxLen`). During a scheduling pause, if users submit more than 10,000 tasks, Redis will silently evict and delete the oldest unprocessed tasks from the stream to make room for new ones. No error is thrown. This violates the functional requirement that enqueued tasks must be retained safely during the pause.
+* **Mitigation:** Modify the publisher to check the current stream length (`XLEN`) before performing an `XADD` (using an atomic Redis Lua script to avoid race conditions). If `XLEN` is already at the cap (10,000), the write command should fail and return an explicit error to the publisher client (e.g., ESS) so the request can be rejected gracefully instead of silently losing data.
+
+### 2. Redis Memory Exhaustion (OOM)
+If the Redis instance memory limit (2GB) is reached before the 10,000 task cap (e.g., due to large task payloads or other cached keys):
+* Because Memorystore uses the `volatile-lru` eviction policy by default, and our stream keys do not have a TTL (expiration) set, Redis cannot evict the streams to free up space.
+* Instead, it will first evict other TTL-enabled cached keys (leading to collateral damage to other services). Once no TTL keys remain, Redis will behave like `noeviction` and throw OOM write errors for any subsequent `XADD` or `XACK` commands.
+
+### 3. Thundering Herd on Resume
+Once the scheduling pause is deactivated, the Actuator instances will instantly resume task consumption at full capacity to process the backlog of queued tasks. This sudden surge in write and scheduling operations could immediately re-overwhelm the Kubernetes Control Plane and Kueue.
+
+### 4. Reconciler Operations are Unaffected
+The pause only halts task consumption by the Actuator instances. The Reconciler's read/write operations (e.g., syncing Kueue workloads, patching JobSets to remove finalizers) are not stopped. If the Control Plane is in a severely degraded state where all XMC traffic needs to be paused, or if the reconciler itself is causing the degradation, the system cannot achieve a complete pause of all traffic.
 
 # Reliability
 
@@ -217,7 +218,7 @@ When an Actuator pod starts up, it must perform a synchronous read of the System
 
 **Mechanism:** Split the unified stream into separate dedicated Redis streams (e.g. split on the operation type like `xmc-create-tasks-stream`, `xmc-delete-tasks-stream` etc.) to allow selective pausing of create actions.
 
-**Reason for rejection:** During a Kueue/K8s incident, the goal is to halt all traffic, making selective pausing unnecessary. It also would require 
+**Reason for rejection:** Rejected to avoid overengineering. In case of an incident stopping all the operations in actuator is acceptable.
 
 ## Polling Spanner in Actuator
 
@@ -229,13 +230,13 @@ When an Actuator pod starts up, it must perform a synchronous read of the System
 
 **Mechanism:** Actuator pods subscribe to a Redis channel, and Health Service publishes pause events directly to it.
 
-**Reason for rejection:** PubSub offers at-most-once delivery. If a pod is restarting or disconnected during broadcast, it misses the event, leading to inconsistent states across replicas.
+**Reason for rejection:** PubSub offers at-most-once delivery. Delivery of the message via PubSub mechanism cannot be guaranteed.
 
 ## Headless Service \+ HTTP
 
 **Mechanism:** Health Service uses a Kubernetes Headless Service to discover Actuator pod IPs and makes direct HTTP requests to each.
 
-**Reason for rejection:** Extremely complex error handling for partial failures (e.g., retries) and vulnerable to DNS propagation delays, which might cause requests to miss new pods or target terminating ones.
+**Reason for rejection:** Requires adding new service and introduces complex error handling for partial failures.
 
 ## Kubernetes Watch API
 

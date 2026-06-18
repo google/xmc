@@ -20,10 +20,11 @@ import (
 
 // FakeClient is a fake implementation of Redis client for testing. It fits both Publisher and Consumer interfaces.
 type FakeClient struct {
-	mu          sync.Mutex
-	Messages    []string
-	taskHandler func(context.Context, string, string) TaskResult
-	PingError   error
+	mu              sync.Mutex
+	Messages        []string
+	taskHandler     func(context.Context, string, string) TaskResult
+	PingError       error
+	AddMessageError error
 }
 
 // NewFakeClient creates a new FakeClient.
@@ -34,10 +35,14 @@ func NewFakeClient() *FakeClient {
 }
 
 // AddMessage adds a message to the fake client.
-func (c *FakeClient) AddMessage(ctx context.Context, data string, failedAttempts string) {
+func (c *FakeClient) AddMessage(ctx context.Context, data string, failedAttempts string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.AddMessageError != nil {
+		return c.AddMessageError
+	}
 	c.Messages = append(c.Messages, data)
+	return nil
 }
 
 // GetStreamLen returns the number of messages added.

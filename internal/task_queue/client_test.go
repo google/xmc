@@ -270,26 +270,19 @@ func TestEnqueueWorkUnitTask_IdempotencyKeyIsUnique(t *testing.T) {
 	}
 }
 
-func TestEnqueueWorkUnitTask_RedisFailure(t *testing.T) {
+func TestEnqueueWorkUnitTask_OIDCGeneratorFailure(t *testing.T) {
 	ctx := t.Context()
 
 	oldGenerateOIDCToken := generateOIDCToken
-	generateOIDCToken = func(ctx context.Context, serviceAccountEmail string, audience string) (string, error) {
-		return "mock-oidc-token", nil
-	}
 	defer func() {
 		generateOIDCToken = oldGenerateOIDCToken
 	}()
 
-	// Note: currently redisclient.Publisher.AddMessage doesn't return an error, but it might in the future.
-	// For now, we can only test failures in token generation or other parts.
-	// Let's test OIDC token generation failure.
 	generateOIDCToken = func(ctx context.Context, serviceAccountEmail string, audience string) (string, error) {
 		return "", fmt.Errorf("oidc error")
 	}
 
 	c := CreateTaskQueueClient(ctx, t)
-	mockAndConfigureRedisClient(t, c)
 
 	action := &actuatortaskpb.Action{
 		Action: &actuatortaskpb.Action_Create{
@@ -302,6 +295,35 @@ func TestEnqueueWorkUnitTask_RedisFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "oidc error") {
 		t.Errorf("Error message %q does not contain 'oidc error'", err.Error())
+	}
+}
+
+func TestEnqueueWorkUnitTask_RedisAddMessageFailure(t *testing.T) {
+	ctx := t.Context()
+
+	oldGenerateOIDCToken := generateOIDCToken
+	generateOIDCToken = func(ctx context.Context, serviceAccountEmail string, audience string) (string, error) {
+		return "mock-oidc-token", nil
+	}
+	defer func() {
+		generateOIDCToken = oldGenerateOIDCToken
+	}()
+
+	c := CreateTaskQueueClient(ctx, t)
+	fakeRedis := GetFakeRedisClient(c)
+	fakeRedis.AddMessageError = fmt.Errorf("redis xadd error")
+
+	action := &actuatortaskpb.Action{
+		Action: &actuatortaskpb.Action_Create{
+			Create: &actuatortaskpb.CreateAction{},
+		},
+	}
+	err := c.EnqueueWorkUnitTask(ctx, "target", nil, action, "op")
+	if err == nil {
+		t.Fatal("EnqueueWorkUnitTask() succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "redis xadd error") {
+		t.Errorf("Error message %q does not contain 'redis xadd error'", err.Error())
 	}
 }
 

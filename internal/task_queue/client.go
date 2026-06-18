@@ -141,7 +141,10 @@ func (c *Client) EnqueueWorkUnitTask(ctx context.Context, target string, workUni
 		logging.Warn(ctx, "Failed to marshal redis message", "error", err)
 		return fmt.Errorf("failed to marshal redis message: %w", err)
 	}
-	c.redisClient.AddMessage(ctx, string(redisMsg), "0")
+	err = c.redisClient.AddMessage(ctx, string(redisMsg), "0")
+	if err != nil {
+		return fmt.Errorf("failed to add message to redis: %w", err)
+	}
 	return nil
 }
 

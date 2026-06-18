@@ -41,7 +41,7 @@ type Config struct {
 
 // Publisher is an interface for publishing messages to Redis.
 type Publisher interface {
-	AddMessage(ctx context.Context, data string, failedAttempts string)
+	AddMessage(ctx context.Context, data string, failedAttempts string) error
 	Ping(ctx context.Context) error
 	Close(ctx context.Context) error
 }

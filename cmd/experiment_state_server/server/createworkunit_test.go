@@ -141,6 +141,46 @@ func TestCreateWorkUnit_HappyPath(t *testing.T) {
 	}
 }
 
+func TestCreateWorkUnit_RedisFailure(t *testing.T) {
+	ctx := context.Background()
+	cleanup := tq.MockGenerateOIDCTokenForTest()
+	defer cleanup()
+	server, _ := createExperimentStateServer(ctx, t)
+	realTaskQueueClient := tq.CreateTaskQueueClient(ctx, t)
+	server.taskQueueClient = realTaskQueueClient
+	redisFake := tq.GetFakeRedisClient(realTaskQueueClient)
+	redisFake.AddMessageError = fmt.Errorf("redis xadd error")
+
+	exp := &msgpb.Experiment{
+		Title: "test experiment for createworkunit redis failure",
+		Acls: &xidmsgpb.XidAcls{
+			Owners: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
+		},
+	}
+	createdExp := mustCreateExperiment(ctx, t, server, exp)
+
+	workUnit := &msgpb.WorkUnit{
+		WorkUnitType: msgpb.WorkUnit_STANDARD,
+		Executable:   testExecutable,
+	}
+
+	req := &apipb.CreateWorkUnitRequest{
+		Parent:     createdExp.GetName(),
+		WorkUnitId: 1,
+		WorkUnit:   workUnit,
+	}
+	_, err := server.CreateWorkUnit(ctx, req)
+	if err == nil {
+		t.Fatal("CreateWorkUnit() succeeded, want error")
+	}
+	if !errors.Is(err, status.ErrInternal) {
+		t.Errorf("CreateWorkUnit() = error %v, want %v", err, status.ErrInternal)
+	}
+	if !strings.Contains(err.Error(), "redis xadd error") {
+		t.Errorf("Error message %q does not contain 'redis xadd error'", err.Error())
+	}
+}
+
 func TestCreateWorkUnit_ZeroWorkUnitID(t *testing.T) {
 	ctx := context.Background()
 	server, taskQueueClient := createExperimentStateServer(ctx, t)
