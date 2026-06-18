@@ -3,7 +3,7 @@
 ## Introduction
 
 
-(XManager CLI)[https://github.com/google-deepmind/xmanager] is a python library for interacting with Xmanager Cloud (and other Xmanager flavors). This directory is aimed at helping with Xmanager CLI installation specifically for working with XMC backend. 
+[XManager CLI](https://github.com/google-deepmind/xmanager) is a python library for interacting with Xmanager Cloud (and other Xmanager flavors). This directory is aimed at helping with Xmanager CLI installation specifically for working with XMC backend. 
 
 
 ## Installation
