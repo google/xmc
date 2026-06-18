@@ -404,6 +404,7 @@ jobs:
       - name: Check test results
         run: |
           RESULTS=(
+            "${{ needs.detect-changes.result }}"
             "${{ needs.test-ui.result }}"
             "${{ needs.test-internal.result }}"
             "${{ needs.test-cmd-backend.result }}"
