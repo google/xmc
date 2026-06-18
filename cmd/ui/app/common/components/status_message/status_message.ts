@@ -92,19 +92,18 @@ export class StatusMessage {
     () => this.stackTraceLines().length > STACK_TRACE_PREVIEW_LINES,
   );
 
-  protected readonly lineClass = computed<
-    'yellow-vertical-line' | 'red-vertical-line' | 'blue-vertical-line' | 'grey-vertical-line'
-  >(() => {
+  protected readonly lineClass = computed(() => {
     const severity = this.message().severity;
     if (severity === 'WARNING') {
       return 'yellow-vertical-line';
-    } else if (severity === 'ERROR' || severity === 'FATAL') {
-      return 'red-vertical-line';
-    } else if (severity === 'DEBUG') {
-      return 'grey-vertical-line';
-    } else {
-      return 'blue-vertical-line';
     }
+    if (severity === 'ERROR' || severity === 'FATAL') {
+      return 'red-vertical-line';
+    }
+    if (severity === 'DEBUG') {
+      return 'grey-vertical-line';
+    }
+    return 'blue-vertical-line';
   });
 
   protected readonly urlsForWidget = computed<ProcessedUrl[]>(() => {
@@ -127,7 +126,7 @@ export class StatusMessage {
     this.filterService.severities$,
     this.filterService.sources$,
   ]).pipe(
-    map(([message, ignoreFilters, enabledSeverities, enabledSources]) => {
+    map(([message, ignoreFilters]) => {
       return ignoreFilters || this.filterService.isMessageVisible(message);
     }),
   );

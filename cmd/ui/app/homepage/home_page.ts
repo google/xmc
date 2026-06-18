@@ -41,14 +41,14 @@ export class HomePage {
     if (!errType) {
       return null;
     }
+    const email = params['email'] || '';
     if (errType === 'forbidden') {
-      const email = params['email'] ?? '';
       return `Your account (${email}) is not authorized. Please contact your administrator to request access.`;
-    } else if (errType === 'permission_error') {
-      return 'Failed to verify authorization permissions. Please contact your administrator.';
-    } else {
-      return 'An authentication error occurred. Please try again.';
     }
+    if (errType === 'permission_error') {
+      return 'Failed to verify authorization permissions. Please contact your administrator.';
+    }
+    return 'An authentication error occurred. Please try again.';
   });
 
   login() {

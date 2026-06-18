@@ -13,15 +13,7 @@
 // limitations under the License.
 import { ClipboardModule } from '@angular/cdk/clipboard';
 import { CommonModule, DatePipe } from '@angular/common';
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  EventEmitter,
-  inject,
-  input,
-  Output,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatChipsModule } from '@angular/material/chips';
@@ -134,7 +126,7 @@ export class ExperimentsTable {
   readonly isLoading = computed(() => this.isFetching() && !this.pageResult());
   readonly isRefreshing = computed(() => this.isFetching() && !!this.pageResult());
 
-  @Output() readonly sortChange = new EventEmitter<Sort>();
+  readonly sortChange = output<Sort>();
 
   private readonly sidePanelService = inject(SidePanelService);
   private readonly filterService = inject(StatusMessageFilterService);
@@ -147,38 +139,14 @@ export class ExperimentsTable {
       this.filterService.severities$,
       this.filterService.sources$,
     ]).pipe(
-      map(([pageResult, severities, sources]) => {
+      map(([pageResult, _severities, _sources]) => {
         const experiments = pageResult?.experiments;
         if (!experiments) {
           return [];
         }
-        return experiments.map((experiment: Experiment) => {
-          const message = !!experiment.status?.structuredStatusMessage?.userFacingText
-            ? experiment.status?.structuredStatusMessage
-            : undefined;
-          let isStatusMessageVisible = false;
-          if (message) {
-            isStatusMessageVisible = this.filterService.isMessageVisible(message);
-          }
-          return {
-            name: experiment.name,
-            xid: experiment.name?.split('/').pop(),
-            title: experiment.title,
-            tags: experiment.tags ?? [],
-            stateCounts: experiment.status?.childStateCounts ?? [],
-            status: getStatusChipEnum(experiment),
-            priority: experiment.priority,
-            notes: experiment.notes,
-            author: experiment.creator,
-            resources: experiment.resources
-              ? resourceSetsToResourceChipsData(experiment.resources)
-              : [],
-            createTime: experiment.createTime ? new Date(experiment.createTime) : undefined,
-            completedTime: experiment.completeTime ? new Date(experiment.completeTime) : undefined,
-            structuredStatusMessage: message,
-            isStatusMessageVisible,
-          };
-        });
+        return experiments.map((experiment: Experiment) =>
+          toTableRow(experiment, this.filterService),
+        );
       }),
     );
   }
@@ -195,3 +163,36 @@ function getStatusChipEnum(experiment: Experiment): StatusOption {
     return StatusOption.NOT_RUNNING;
   }
 }
+
+/**
+ * Maps an Experiment to a TableRow.
+ * Consolidated to maintain a clean linear mapper.
+ */
+function toTableRow(experiment: Experiment, filterService: StatusMessageFilterService): TableRow {
+  const message = experiment.status?.structuredStatusMessage?.userFacingText
+    ? experiment.status.structuredStatusMessage
+    : undefined;
+  const isVisible = !!message && filterService.isMessageVisible(message);
+
+  return {
+    name: experiment.name,
+    xid: experiment.name?.split('/').pop(),
+    title: experiment.title,
+    tags: experiment.tags || [],
+    stateCounts: experiment.status?.childStateCounts || [],
+    status: getStatusChipEnum(experiment),
+    priority: experiment.priority,
+    notes: experiment.notes,
+    author: experiment.creator,
+    resources: resourceSetsToResourceChipsData(experiment.resources || []),
+    createTime: parseDate(experiment.createTime),
+    completedTime: parseDate(experiment.completeTime),
+    structuredStatusMessage: message,
+    isStatusMessageVisible: isVisible,
+  };
+}
+
+function parseDate(dateStr: string | undefined): Date | undefined {
+  return dateStr ? new Date(dateStr) : undefined;
+}
+
