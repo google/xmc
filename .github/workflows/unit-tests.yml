@@ -86,14 +86,10 @@ jobs:
     runs-on: 'ubuntu-24.04'
     timeout-minutes: 20
     steps:
-      - name: 'Checkout'
-        uses: 'actions/checkout@v4'
-      - name: 'Set up Go'
-        uses: 'actions/setup-go@v5'
+      - name: 'Setup environment'
+        uses: './.github/actions/setup-bazel-go'
         with:
-          go-version: '1.26.0'
-      - name: 'Set up Bazel'
-        uses: 'bazelbuild/setup-bazelisk@v3'
+          cache-key-prefix: 'bazel-ui'
       - name: 'Set up Node.js'
         uses: 'actions/setup-node@v4'
         with:
@@ -103,15 +99,6 @@ jobs:
       - name: 'Install Node.js dependencies'
         run: npm ci --legacy-peer-deps
         working-directory: cmd/ui
-      - name: 'Restore Bazel Cache'
-        uses: 'actions/cache/restore@v4'
-        with:
-          path: |
-            ~/.cache/bazel-repo
-            ~/.cache/bazel-disk
-          key: bazel-ui-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
-          restore-keys: |
-            bazel-ui-${{ runner.os }}-
       - name: 'Run UI Unit Tests'
         run: |
           bazel test \
@@ -120,14 +107,6 @@ jobs:
             --test_output=errors \
             --build_tests_only \
             //cmd/ui/...
-      - name: 'Save Bazel Cache'
-        uses: 'actions/cache/save@v4'
-        if: always()
-        with:
-          path: |
-            ~/.cache/bazel-repo
-            ~/.cache/bazel-disk
-          key: bazel-ui-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
 
 # Test Internal job: runs tests under internal/... (e.g. database client, helper libraries).
   # Depends on the Spanner Emulator service container.
@@ -154,38 +133,12 @@ jobs:
       SPANNER_CHECK_TIMEOUT: 15
       SPANNER_EMULATOR_HOST: 127.0.0.1:9010
     steps:
-      - name: 'Checkout'
-        uses: 'actions/checkout@v4'
-      - name: 'Set up Go'
-        uses: 'actions/setup-go@v5'
+      - name: 'Setup environment'
+        uses: './.github/actions/setup-bazel-go'
         with:
-          go-version: '1.26.0'
-      - name: 'Set up Bazel'
-        uses: 'bazelbuild/setup-bazelisk@v3'
-      - name: 'Restore Bazel Cache'
-        uses: 'actions/cache/restore@v4'
-        with:
-          path: |
-            ~/.cache/bazel-repo
-            ~/.cache/bazel-disk
-          key: bazel-internal-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
-          restore-keys: |
-            bazel-internal-${{ runner.os }}-
+          cache-key-prefix: 'bazel-internal'
       - name: 'Verify Spanner Emulator Endpoint'
-        run: |
-          echo "Verifying Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}..."
-          HOST=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f1)
-          PORT=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f2)
-          for i in {1..${{ env.SPANNER_CHECK_TIMEOUT }}}; do
-            if nc -z "$HOST" "$PORT" >/dev/null 2>&1 || timeout 1s bash -c "cat < /dev/null > /dev/tcp/$HOST/$PORT" 2>/dev/null; then
-              echo "Successfully connected to Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}."
-              exit 0
-            fi
-            echo "Waiting for Spanner Emulator to start (attempt $i/15)..."
-            sleep 1
-          done
-          echo "CRITICAL: Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }} did not start within ${{ env.SPANNER_CHECK_TIMEOUT }} seconds."
-          exit 1
+        run: ./scripts/verify-spanner.sh
       - name: 'Run Internal Unit Tests'
         run: |
           bazel test \
@@ -195,14 +148,6 @@ jobs:
             --build_tests_only \
             --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},300,300,300 \
             //internal/...
-      - name: 'Save Bazel Cache'
-        uses: 'actions/cache/save@v4'
-        if: always()
-        with:
-          path: |
-            ~/.cache/bazel-repo
-            ~/.cache/bazel-disk
-          key: bazel-internal-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
 
 # Test Cmd Backend job: runs backend commands unit tests (actuator, reconciler, etc.).
   # Depends on Spanner Emulator since some backend commands use database functions.
@@ -234,38 +179,12 @@ jobs:
       SPANNER_CHECK_TIMEOUT: 15
       SPANNER_EMULATOR_HOST: 127.0.0.1:9010
     steps:
-      - name: 'Checkout'
-        uses: 'actions/checkout@v4'
-      - name: 'Set up Go'
-        uses: 'actions/setup-go@v5'
+      - name: 'Setup environment'
+        uses: './.github/actions/setup-bazel-go'
         with:
-          go-version: '1.26.0'
-      - name: 'Set up Bazel'
-        uses: 'bazelbuild/setup-bazelisk@v3'
-      - name: 'Restore Bazel Cache'
-        uses: 'actions/cache/restore@v4'
-        with:
-          path: |
-            ~/.cache/bazel-repo
-            ~/.cache/bazel-disk
-          key: bazel-cmd-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
-          restore-keys: |
-            bazel-cmd-${{ runner.os }}-
+          cache-key-prefix: 'bazel-cmd'
       - name: 'Verify Spanner Emulator Endpoint'
-        run: |
-          echo "Verifying Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}..."
-          HOST=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f1)
-          PORT=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f2)
-          for i in {1..${{ env.SPANNER_CHECK_TIMEOUT }}}; do
-            if nc -z "$HOST" "$PORT" >/dev/null 2>&1 || timeout 1s bash -c "cat < /dev/null > /dev/tcp/$HOST/$PORT" 2>/dev/null; then
-              echo "Successfully connected to Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}."
-              exit 0
-            fi
-            echo "Waiting for Spanner Emulator to start (attempt $i/15)..."
-            sleep 1
-          done
-          echo "CRITICAL: Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }} did not start within ${{ env.SPANNER_CHECK_TIMEOUT }} seconds."
-          exit 1
+        run: ./scripts/verify-spanner.sh
       - name: 'Run Backend Cmd Unit Tests'
         run: |
           TARGETS=()
@@ -294,14 +213,6 @@ jobs:
             --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},300,300,300 \
             -- \
             "${TARGETS[@]}"
-      - name: 'Save Bazel Cache'
-        uses: 'actions/cache/save@v4'
-        if: always()
-        with:
-          path: |
-            ~/.cache/bazel-repo
-            ~/.cache/bazel-disk
-          key: bazel-cmd-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
 
   test-pkg:
     name: 'Test Pkg'
@@ -314,23 +225,10 @@ jobs:
     runs-on: 'ubuntu-24.04'
     timeout-minutes: 15
     steps:
-      - name: 'Checkout'
-        uses: 'actions/checkout@v4'
-      - name: 'Set up Go'
-        uses: 'actions/setup-go@v5'
+      - name: 'Setup environment'
+        uses: './.github/actions/setup-bazel-go'
         with:
-          go-version: '1.26.0'
-      - name: 'Set up Bazel'
-        uses: 'bazelbuild/setup-bazelisk@v3'
-      - name: 'Restore Bazel Cache'
-        uses: 'actions/cache/restore@v4'
-        with:
-          path: |
-            ~/.cache/bazel-repo
-            ~/.cache/bazel-disk
-          key: bazel-pkg-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
-          restore-keys: |
-            bazel-pkg-${{ runner.os }}-
+          cache-key-prefix: 'bazel-pkg'
       - name: 'Run Pkg Unit Tests'
         run: |
           bazel test \
@@ -339,14 +237,6 @@ jobs:
             --test_output=errors \
             --build_tests_only \
             //pkg/...
-      - name: 'Save Bazel Cache'
-        uses: 'actions/cache/save@v4'
-        if: always()
-        with:
-          path: |
-            ~/.cache/bazel-repo
-            ~/.cache/bazel-disk
-          key: bazel-pkg-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
 
   test-tools:
     name: 'Test Tools'
@@ -359,23 +249,10 @@ jobs:
     runs-on: 'ubuntu-24.04'
     timeout-minutes: 15
     steps:
-      - name: 'Checkout'
-        uses: 'actions/checkout@v4'
-      - name: 'Set up Go'
-        uses: 'actions/setup-go@v5'
+      - name: 'Setup environment'
+        uses: './.github/actions/setup-bazel-go'
         with:
-          go-version: '1.26.0'
-      - name: 'Set up Bazel'
-        uses: 'bazelbuild/setup-bazelisk@v3'
-      - name: 'Restore Bazel Cache'
-        uses: 'actions/cache/restore@v4'
-        with:
-          path: |
-            ~/.cache/bazel-repo
-            ~/.cache/bazel-disk
-          key: bazel-tools-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
-          restore-keys: |
-            bazel-tools-${{ runner.os }}-
+          cache-key-prefix: 'bazel-tools'
       - name: 'Run Tools Unit Tests'
         run: |
           bazel test \
@@ -384,14 +261,6 @@ jobs:
             --test_output=errors \
             --build_tests_only \
             //tools/...
-      - name: 'Save Bazel Cache'
-        uses: 'actions/cache/save@v4'
-        if: always()
-        with:
-          path: |
-            ~/.cache/bazel-repo
-            ~/.cache/bazel-disk
-          key: bazel-tools-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
 
 # Gating Job: This job acts as a final collector to satisfy required status checks.
   # Since branch protection requires "Run Unit Tests" check to pass, this job is named accordingly.
