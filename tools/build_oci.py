@@ -84,7 +84,7 @@ def build_oci(args):
     arch = detect_elf_architecture(real_binary_path)
     if not arch:
         raise HandledError(
-            f"The binary at {binary_path} is not a valid Linux ELF file.",
+            f"The binary at {binary_path} is not a valid Linux ELF file, or its architecture is unsupported.",
             "When building container images, please ensure the binary is cross-compiled for Linux (e.g. using --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64)."
         )
 
