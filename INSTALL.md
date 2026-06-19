@@ -122,7 +122,7 @@ Supply these parameters in your Cluster Toolkit overrides file (`xmanager-cloud-
 | `iap_client_secret`| **Yes** | - | Google OAuth Client Secret for identity verification |
 | `jwt_secret` | **Yes** | - | Secret key used by ESS backend to sign session cookies |
 | `allowed_emails` | Conditional | - | Comma-separated list of user emails authorized to log in - required when `authorized_iam_role` is not provided |
-| `authorized_iam_role`| **Yes** | - | GCP IAM role granted to GKE workload identities - required when `allowed_emails` are not provided |
+| `authorized_iam_role`| Conditional | - | GCP IAM role granted to GKE workload identities - required when `allowed_emails` are not provided |
 | `certs_email` | **Yes** | - | Owner email registered with Google Trust Services (GTS) |
 | `gts_key_id` | **Yes** | - | GTS External Account Binding key ID for certificates |
 | `gts_hmac_key` | **Yes** | - | GTS External Account Binding HMAC secret for certificates |
