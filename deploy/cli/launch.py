@@ -22,6 +22,8 @@ from xmanager import xm
 from xmanager import xm_cloud
 
 PROJECT_ID = os.environ.get("PROJECT_ID")
+if not PROJECT_ID:
+  raise ValueError("PROJECT_ID environment variable is not set. Please configure it in your .env file.")
 REGISTRY_NAME = "xmc"
 CONTAINER_REGISTRY = f"us-docker.pkg.dev/{PROJECT_ID}/{REGISTRY_NAME}"
 
