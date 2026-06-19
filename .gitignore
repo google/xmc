@@ -17,3 +17,6 @@ cmd/ui/build_tmp/
 
 # deployment files
 *-deployment.yaml
+
+# Compiled Cluster Toolkit deployments
+/ctk-out/
