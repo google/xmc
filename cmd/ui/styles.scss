@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 @use '@angular/material' as mat;
-@import "@angular/material/prebuilt-themes/indigo-pink";
+@import '@angular/material/prebuilt-themes/azure-blue';
 @import 'custom_colors';
-
 
 html {
   background-color: var(--mat-sys-surface, #f8f9fa);
@@ -47,11 +46,6 @@ body {
   left: -100px;
   height: 100%;
   width: 320px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.4),
-    transparent
-  );
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
   animation: shimmer-loading 1.2s infinite linear;
 }
