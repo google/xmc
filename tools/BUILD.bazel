@@ -27,11 +27,11 @@ py_library(
 py_library(
     name = "build_oci_lib",
     srcs = ["build_oci.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
     deps = [
         ":tool_utils",
     ],
-    imports = ["."],
-    visibility = ["//visibility:public"],
 )
 
 py_test(
@@ -73,11 +73,11 @@ py_library(
     name = "fetch_pr_comment_lib",
     srcs = ["fetch_pr_comment.py"],
     imports = ["."],
+    visibility = ["//visibility:public"],
     deps = [
         ":github_utils_lib",
         ":tool_utils",
     ],
-    visibility = ["//visibility:public"],
 )
 
 py_test(
@@ -95,11 +95,11 @@ py_library(
     name = "reply_pr_comment_lib",
     srcs = ["reply_pr_comment.py"],
     imports = ["."],
+    visibility = ["//visibility:public"],
     deps = [
         ":github_utils_lib",
         ":tool_utils",
     ],
-    visibility = ["//visibility:public"],
 )
 
 py_test(
@@ -107,10 +107,8 @@ py_test(
     srcs = ["reply_pr_comment_test.py"],
     imports = ["."],
     deps = [
-        ":reply_pr_comment_lib",
         ":github_utils_lib",
+        ":reply_pr_comment_lib",
         ":tool_utils",
     ],
 )
-
-
