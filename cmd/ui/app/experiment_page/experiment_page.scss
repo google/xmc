@@ -73,6 +73,10 @@ h1 {
 
   .experiment-summary-notes {
     flex: 1 1 0;
+
+    p {
+      white-space: pre-wrap;
+    }
   }
 }
 
