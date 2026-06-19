@@ -40,7 +40,7 @@ def detect_elf_architecture(binary_path):
     try:
         with open(binary_path, "rb") as f:
             header = f.read(64)
-            if len(header) < 18:
+            if len(header) < 52:
                 return None
             # Check ELF magic bytes: \x7f ELF
             if header[0:4] != b"\x7fELF":
