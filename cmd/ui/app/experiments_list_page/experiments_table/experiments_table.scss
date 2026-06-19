@@ -98,6 +98,7 @@ tr:active {
 .mat-column-Notes {
   width: 200px;
   white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 .mat-column-Resources {
