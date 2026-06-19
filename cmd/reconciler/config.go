@@ -57,7 +57,7 @@ var (
 
 func init() {
 	flag.BoolVar(&createNewNamespaces, "create_new_namespaces", true, "Whether a new namespace can be created when creating new Work Units.")
-	flag.BoolVar(&detectInadmissibleWorkUnits, "detect_inadmissible_work_units", false, "Whether to detect inadmissible work units by inspecting Workload objects.")
+	flag.BoolVar(&detectInadmissibleWorkUnits, "detect_inadmissible_work_units", true, "Whether to detect inadmissible work units by inspecting Workload objects.")
 	flag.StringVar(&spannerDatabaseName, "spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db", "The name of the Spanner database.")
 	flag.StringVar(&quotaProjectID, "quota_project_id", "xmc-test-project-1", "The ID of the quota project to use.")
 	flag.DurationVar(&batcherTickDuration, "batcher_tick_duration", 250*time.Millisecond, "The tick duration for the batch processor.")
