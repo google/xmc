@@ -66,6 +66,18 @@ spec:
         ports:
         - containerPort: 50051
           name: grpc-port
+        livenessProbe:
+          grpc:
+            port: 50051
+            service: xmc.XidService
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          grpc:
+            port: 50051
+            service: xmc.XidService
+          initialDelaySeconds: 5
+          periodSeconds: 10
         resources:
           requests:
             cpu: "500m"
