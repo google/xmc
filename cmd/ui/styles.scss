@@ -46,6 +46,9 @@ body {
   left: -100px;
   height: 100%;
   width: 320px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  background: linear-gradient(90deg,
+        transparent,
+        rgba(255, 255, 255, 0.4),
+        transparent);
   animation: shimmer-loading 1.2s infinite linear;
 }
