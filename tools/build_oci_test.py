@@ -17,6 +17,7 @@ from unittest.mock import patch, mock_open, MagicMock
 import os
 import tarfile
 import json
+import tempfile
 
 from build_oci import build_oci, detect_elf_architecture, EXEC_PERMISSION, FILE_PERMISSION
 from tool_utils import HandledError
@@ -75,8 +76,13 @@ class TestBuildOci(unittest.TestCase):
     @patch('builtins.open', new_callable=mock_open)
     @patch('hashlib.sha256')
     @patch('os.rename')
-    @patch('os.remove')
-    def test_build_oci_success_amd64(self, mock_remove, mock_rename, mock_sha, mock_builtin_open, mock_tarfile_open, mock_realpath, mock_exists):
+    @patch('tempfile.TemporaryDirectory')
+    def test_build_oci_success_amd64(self, mock_tempdir_class, mock_rename, mock_sha, mock_builtin_open, mock_tarfile_open, mock_realpath, mock_exists):
+        # Mock TemporaryDirectory context manager
+        mock_tempdir = MagicMock()
+        mock_tempdir.__enter__.return_value = "/tmp/mock-dir"
+        mock_tempdir_class.return_value = mock_tempdir
+
         # 1. Prepare ELF header for AMD64
         elf_header = bytearray(64)
         elf_header[0:4] = b"\x7fELF"
@@ -86,8 +92,6 @@ class TestBuildOci(unittest.TestCase):
         # 2. Mock paths exists checks
         def exists_side_effect(path):
             if path in ("/path/to/binary", "/etc/ssl/certs/ca-certificates.crt"):
-                return True
-            if path in ("layer.tar", "config.json", "manifest.json", "configsha.json"):
                 return True
             return False
             
@@ -151,10 +155,8 @@ class TestBuildOci(unittest.TestCase):
         parsed_config = json.loads("".join(written_config))
         self.assertEqual(parsed_config["architecture"], "amd64")
 
-        # Check clean-up is executed
-        mock_remove.assert_any_call("layer.tar")
-        mock_remove.assert_any_call("configsha.json")
-        mock_remove.assert_any_call("manifest.json")
+        # Verify rename was called inside the mock directory
+        mock_rename.assert_called_once_with("/tmp/mock-dir/config.json", "/tmp/mock-dir/configsha.json")
 
     @patch('os.path.exists')
     @patch('os.path.realpath')
@@ -162,8 +164,13 @@ class TestBuildOci(unittest.TestCase):
     @patch('builtins.open', new_callable=mock_open)
     @patch('hashlib.sha256')
     @patch('os.rename')
-    @patch('os.remove')
-    def test_build_oci_success_arm64(self, mock_remove, mock_rename, mock_sha, mock_builtin_open, mock_tarfile_open, mock_realpath, mock_exists):
+    @patch('tempfile.TemporaryDirectory')
+    def test_build_oci_success_arm64(self, mock_tempdir_class, mock_rename, mock_sha, mock_builtin_open, mock_tarfile_open, mock_realpath, mock_exists):
+        # Mock TemporaryDirectory context manager
+        mock_tempdir = MagicMock()
+        mock_tempdir.__enter__.return_value = "/tmp/mock-dir"
+        mock_tempdir_class.return_value = mock_tempdir
+
         # 1. Prepare ELF header for ARM64
         elf_header = bytearray(64)
         elf_header[0:4] = b"\x7fELF"
@@ -173,8 +180,6 @@ class TestBuildOci(unittest.TestCase):
         # 2. Mock paths exists checks
         def exists_side_effect(path):
             if path in ("/path/to/binary", "/etc/ssl/certs/ca-certificates.crt"):
-                return True
-            if path in ("layer.tar", "config.json", "manifest.json", "configsha.json"):
                 return True
             return False
             
