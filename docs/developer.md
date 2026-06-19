@@ -77,7 +77,7 @@ This test suite executes the following verified tests:
 - `//internal/security:security_test` (Hot-reloaded certificates and programmatic key conversions)
 - `//internal/task_queue:task_queue_test` (Cloud Tasks actuation payloads and OIDC assertion queues)
 - `//internal/validator:validator_test` (AIP-compliant list parameter schema validations)
-- All custom AIP-160 Query Generator unit tests listed under Step 3.
+- All custom AIP-160 Query Generator unit tests listed under the Custom AIP-160 Filter & Parser Engine section.
 
 ### Running Spanner Database Health Unit Tests
 
