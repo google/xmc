@@ -40,7 +40,7 @@ def detect_elf_architecture(binary_path):
     try:
         with open(binary_path, "rb") as f:
             header = f.read(64)
-            if len(header) < 18:
+            if len(header) < 52:
                 return None
             # Check ELF magic bytes: \x7f ELF
             if header[0:4] != b"\x7fELF":
@@ -84,7 +84,7 @@ def build_oci(args):
     arch = detect_elf_architecture(real_binary_path)
     if not arch:
         raise HandledError(
-            f"The binary at {binary_path} is not a valid Linux ELF file.",
+            f"The binary at {binary_path} is not a valid Linux ELF file, or its architecture is unsupported.",
             "When building container images, please ensure the binary is cross-compiled for Linux (e.g. using --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64)."
         )
 
