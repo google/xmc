@@ -18,12 +18,20 @@ runs:
         go-version: ${{ inputs.go-version }}
     - name: 'Set up Bazel'
       uses: 'bazelbuild/setup-bazelisk@v3'
-    - name: 'Bazel Cache'
+    - name: 'Bazel Repo Cache (Shared)'
       uses: 'actions/cache@v4'
       with:
-        path: |
-          ~/.cache/bazel-repo
-          ~/.cache/bazel-disk
-        key: ${{ inputs.cache-key-prefix }}-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+        path: ~/.cache/bazel-repo
+        key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
         restore-keys: |
-          ${{ inputs.cache-key-prefix }}-${{ runner.os }}-
+          bazel-repo-${{ runner.os }}-
+          bazel-${{ runner.os }}-
+    - name: 'Bazel Disk Cache (Job-Specific)'
+      uses: 'actions/cache@v4'
+      with:
+        path: ~/.cache/bazel-disk
+        key: ${{ inputs.cache-key-prefix }}-disk-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+        restore-keys: |
+          ${{ inputs.cache-key-prefix }}-disk-${{ runner.os }}-
+          bazel-${{ runner.os }}-
+
