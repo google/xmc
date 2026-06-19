@@ -18,7 +18,6 @@ metadata:
   labels:
     app: xid-service
 spec:
-  replicas: 1
   strategy:
     type: Recreate
   selector:

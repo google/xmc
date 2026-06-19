@@ -32,7 +32,6 @@ ess_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/experiment-state-se
 
 essDeployment:
   enabled: true
-  replicas: 1
   hpa:
     minReplicas: 3
     maxReplicas: 10

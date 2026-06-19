@@ -20,7 +20,6 @@ metadata:
   labels:
     app: experiment-state-server
 spec:
-  replicas: {{ .Values.essDeployment.replicas | default 1 }}
   strategy:
     type: RollingUpdate
   selector:
