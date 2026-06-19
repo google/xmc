@@ -17,6 +17,7 @@ import os
 import tarfile
 import hashlib
 import json
+import struct
 from tool_utils import run_tool, HandledError
 
 # Permission modes for files in the container layer.
@@ -50,9 +51,9 @@ def detect_elf_architecture(binary_path):
             # Go binaries for linux are almost always little-endian (class 2, data 1).
             ei_data = header[5]
             if ei_data == 1: # Little endian
-                e_machine = header[18] | (header[19] << 8)
+                e_machine, = struct.unpack("<H", header[18:20])
             elif ei_data == 2: # Big endian
-                e_machine = (header[18] << 8) | header[19]
+                e_machine, = struct.unpack(">H", header[18:20])
             else:
                 return None
             
