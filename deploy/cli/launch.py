@@ -34,7 +34,7 @@ def main(argv: Sequence[str]) -> None:
 
   # Create an experiment.
   with xm_cloud.create_experiment(
-      experiment_title="My XMC experiment - " + os.environ.get("USER"),
+      experiment_title=f"My XMC experiment - {os.environ.get('USER', 'unknown')}",
       # Specify ACLs to allow specific users (in this example, all authenticated
       # users) to read the experiment.
       acls=xm_cloud.Acls(
