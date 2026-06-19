@@ -21,8 +21,8 @@ import (
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
-	epb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	epb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
 func TestGKEName(t *testing.T) {
