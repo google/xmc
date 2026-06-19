@@ -35,6 +35,39 @@ def get_sha256(filepath):
             h.update(chunk)
     return h.hexdigest()
 
+def detect_elf_architecture(binary_path):
+    """Detects architecture of an ELF binary. Returns 'amd64', 'arm64', or None."""
+    try:
+        with open(binary_path, "rb") as f:
+            header = f.read(64)
+            if len(header) < 18:
+                return None
+            # Check ELF magic bytes: \x7f ELF
+            if header[0:4] != b"\x7fELF":
+                return None
+            
+            # e_machine is at offset 18 (2 bytes)
+            # Go binaries for linux are almost always little-endian (class 2, data 1).
+            ei_data = header[5]
+            if ei_data == 1: # Little endian
+                e_machine = header[18] | (header[19] << 8)
+            elif ei_data == 2: # Big endian
+                e_machine = (header[18] << 8) | header[19]
+            else:
+                return None
+            
+            if e_machine == 62: # EM_X86_64
+                return "amd64"
+            elif e_machine == 183: # EM_AARCH64
+                return "arm64"
+            elif e_machine == 3: # EM_386
+                return "386"
+            elif e_machine == 40: # EM_ARM
+                return "arm"
+    except Exception:
+        pass
+    return None
+
 def build_oci(args):
     binary_path = args.binary_path
     binary_name = args.binary_name
@@ -47,8 +80,15 @@ def build_oci(args):
             "Ensure that the binary is built and exists at the specified path before running build_oci.py."
         )
 
-    layer_tar_path = "layer.tar"
     real_binary_path = os.path.realpath(binary_path)
+    arch = detect_elf_architecture(real_binary_path)
+    if not arch:
+        raise HandledError(
+            f"The binary at {binary_path} is not a valid Linux ELF file.",
+            "When building container images, please ensure the binary is cross-compiled for Linux (e.g. using --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64)."
+        )
+
+    layer_tar_path = "layer.tar"
     
     ca_paths = [
         "/etc/ssl/certs/ca-certificates.crt",
@@ -98,7 +138,7 @@ def build_oci(args):
             "Env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"]
         },
         "created": "1970-01-01T00:00:00Z",
-        "architecture": "amd64",
+        "architecture": arch,
         "os": "linux",
         "rootfs": {
             "type": "layers",

@@ -210,6 +210,20 @@ To build the entire project codebase or run all decoupled standalone test suites
             //cmd/xid_service:xid_service_image_tarball
   ```
 
+- **Cross-compiling OCI images**:
+  If you are building images on an ARM processor (e.g. Apple Silicon Mac) but deploying to AMD64 servers, cross-compile the Go services by passing `--config=linux_amd64`:
+  ```bash
+  bazel build --config=linux_amd64 //cmd/actuator:actuator_image_tarball \
+            //cmd/experiment_state_server:experiment_state_server_image_tarball \
+            //cmd/log_monitor:log_monitor_image_tarball \
+            //cmd/reconciler:reconciler_image_tarball \
+            //cmd/xid_service:xid_service_image_tarball
+  ```
+  For the UI image, specify the target platform via the `XMC_UI_PLATFORM` environment variable:
+  ```bash
+  XMC_UI_PLATFORM=linux/amd64 bazel build //cmd/ui:ui_image_tarball
+  ```
+
 - **Push all OCI images to GCP Artifact Registry**:
   Define the environment variables and run the corresponding push targets:
   ```bash

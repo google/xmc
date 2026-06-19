@@ -115,14 +115,16 @@ CMD ["nginx", "-g", "daemon off;"]
     # hosts (Apple Silicon) silently produces an image that won't run on
     # amd64 clusters, so warn in that case.
     target_platform = os.environ.get("XMC_UI_PLATFORM")
+    if not target_platform and platform.machine().lower() in ("arm64", "aarch64"):
+        print(
+            "INFO: Building on an ARM host without XMC_UI_PLATFORM set. "
+            "Defaulting target platform to 'linux/amd64' for deployment compatibility. "
+            "To build for a different platform, set XMC_UI_PLATFORM (e.g. XMC_UI_PLATFORM=linux/arm64)."
+        )
+        target_platform = "linux/amd64"
+
     if target_platform:
         build_cmd[3:3] = ["--platform", target_platform]
-    elif platform.machine().lower() in ("arm64", "aarch64"):
-        print(
-            "WARNING: building on an ARM host without XMC_UI_PLATFORM set - "
-            "the image will be arm64. If your cluster runs amd64 nodes, set "
-            "XMC_UI_PLATFORM=linux/amd64."
-        )
     
     try:
         subprocess.run(build_cmd, check=True)

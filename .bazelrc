@@ -1,1 +1,5 @@
 # Restoring default Bazel options
+
+# Cross-compilation platform shortcuts
+build:linux_amd64 --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64
+build:linux_arm64 --platforms=@io_bazel_rules_go//go/toolchain:linux_arm64
