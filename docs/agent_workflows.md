@@ -1,6 +1,6 @@
-# Antigravity Agent Workflows (AI-Assisted)
+# Agent Workflows (AI-Assisted)
 
-This repository includes pre-configured **Antigravity Agent Skills** located under the [.agents/skills/](../.agents/skills) directory. These skills define structured workflows that allow the agent to automate complex operational and development tasks.
+This repository includes pre-configured **Agent Skills** located under the [.agents/skills/](../.agents/skills) directory. These skills define structured workflows that allow the agent to automate complex operational and development tasks.
 
 > [!WARNING]
 > Do not modify the skill definition markdown files (`SKILL.md`) in the `.agents` folder directly.
