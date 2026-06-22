@@ -26,7 +26,19 @@ import { provideRouter } from '@angular/router';
 import { routes } from './app_routes';
 import { AUTH_ERROR_STYLES } from './auth-error.styles';
 import { HtmlSanitizerBuilder, setElementInnerHtml } from './safevalues_helper';
-import { AUTO_REFRESH_INTERVAL_MS, DEFAULT_REFRESH_INTERVAL_MS } from './service/constants';
+import { ArtifactService } from './service/artifact_service';
+import {
+  AUTO_REFRESH_INTERVAL_MS,
+  DEFAULT_REFRESH_INTERVAL_MS,
+  USE_MOCK_DATA,
+} from './service/constants';
+import { ExperimentService } from './service/experiment_service';
+import { StatusMessageService } from './service/status_message_service';
+import { MockArtifactService } from './service/testing/mock_artifact_service';
+import { MockExperimentService } from './service/testing/mock_experiment_service';
+import { MockStatusMessageService } from './service/testing/mock_status_message_service';
+import { MockWorkUnitsService } from './service/testing/mock_work_units_service';
+import { WorkUnitsService } from './service/work_units_service';
 
 declare global {
   interface Window {
@@ -80,6 +92,25 @@ export const appConfig: ApplicationConfig = {
     {
       provide: AUTO_REFRESH_INTERVAL_MS,
       useValue: window.XMC_REFRESH_INTERVAL_MS ?? DEFAULT_REFRESH_INTERVAL_MS,
+    },
+    {
+      provide: ExperimentService,
+      useFactory: () =>
+        inject(USE_MOCK_DATA) ? new MockExperimentService() : new ExperimentService(),
+    },
+    {
+      provide: ArtifactService,
+      useFactory: () => (inject(USE_MOCK_DATA) ? new MockArtifactService() : new ArtifactService()),
+    },
+    {
+      provide: WorkUnitsService,
+      useFactory: () =>
+        inject(USE_MOCK_DATA) ? new MockWorkUnitsService() : new WorkUnitsService(),
+    },
+    {
+      provide: StatusMessageService,
+      useFactory: () =>
+        inject(USE_MOCK_DATA) ? new MockStatusMessageService() : new StatusMessageService(),
     },
   ],
 };

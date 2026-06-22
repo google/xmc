@@ -172,7 +172,8 @@ pip install \
   grpcio-tools \
   google-auth \
   googleapis-common-protos \
-  requests
+  requests \
+  python-dotenv
 
 # 2. Clone repositories
 echo "Cloning XManager repo (branch: ${XMANAGER_BRANCH})..."

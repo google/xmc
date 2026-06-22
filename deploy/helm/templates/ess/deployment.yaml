@@ -80,14 +80,16 @@ spec:
         - containerPort: 8080
           name: http-port
         readinessProbe:
-          tcpSocket:
-              port: 8080
+          httpGet:
+            path: /readyz
+            port: 8080
           initialDelaySeconds: 5
-          periodSeconds: 5
+          periodSeconds: 10
         livenessProbe:
-          tcpSocket:
-              port: 8080
-          initialDelaySeconds: 5
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 10
           periodSeconds: 10
         resources:
           requests:
