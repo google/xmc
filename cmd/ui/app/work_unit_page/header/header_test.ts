@@ -27,35 +27,37 @@ import { WorkUnitPageStore } from '../work_unit_page_store';
 import { Header } from './header';
 
 describe('WorkUnitHeader Component', () => {
+  let workUnitsServiceSpy: jasmine.SpyObj<WorkUnitsService>;
+  let experimentServiceSpy: jasmine.SpyObj<ExperimentService>;
+  let snackbarServiceSpy: jasmine.SpyObj<SnackbarService>;
+  let confirmDialogServiceSpy: jasmine.SpyObj<ConfirmDialogService>;
+  let workUnitPageStoreSpy: jasmine.SpyObj<WorkUnitPageStore>;
+
   beforeEach(() => {
+    workUnitsServiceSpy = jasmine.createSpyObj<WorkUnitsService>('workUnitsService', [
+      'stopWorkUnit',
+      'restartWorkUnit',
+    ]);
+    experimentServiceSpy = jasmine.createSpyObj<ExperimentService>('experimentService', ['getExperiment']);
+    snackbarServiceSpy = jasmine.createSpyObj<SnackbarService>('snackbarService', ['open']);
+    confirmDialogServiceSpy = jasmine.createSpyObj<ConfirmDialogService>('confirmDialogService', {
+      open: of(true),
+    });
+    workUnitPageStoreSpy = jasmine.createSpyObj<WorkUnitPageStore>('workUnitPageStore', [
+      'fetchWorkUnitPageData',
+    ]);
+
     setupModule({
       imports: [
         NoopAnimationsModule, // This makes test faster and more stable.
         RouterModule.forRoot([]),
       ],
       providers: [
-        {
-          provide: WorkUnitsService,
-          useValue: jasmine.createSpyObj<WorkUnitsService>('workUnitsService', [
-            'stopWorkUnit',
-            'restartWorkUnit',
-          ]),
-        },
-        {
-          provide: ExperimentService,
-          useValue: jasmine.createSpyObj<ExperimentService>('experimentService', ['getExperiment']),
-        },
-        {
-          provide: SnackbarService,
-          useValue: jasmine.createSpyObj<SnackbarService>('snackbarService', ['open']),
-        },
-        {
-          provide: ConfirmDialogService,
-          useValue: jasmine.createSpyObj<ConfirmDialogService>('confirmDialogService', {
-            open: of(true),
-          }),
-        },
-        WorkUnitPageStore,
+        { provide: WorkUnitsService, useValue: workUnitsServiceSpy },
+        { provide: ExperimentService, useValue: experimentServiceSpy },
+        { provide: SnackbarService, useValue: snackbarServiceSpy },
+        { provide: ConfirmDialogService, useValue: confirmDialogServiceSpy },
+        { provide: WorkUnitPageStore, useValue: workUnitPageStoreSpy },
       ],
     });
   });
@@ -66,5 +68,39 @@ describe('WorkUnitHeader Component', () => {
       experiment: EXPERIMENT_1,
     });
     expect(comp).toBeTruthy();
+  });
+
+  it('should call stopWorkUnit and fetchWorkUnitPageData when stop is confirmed', () => {
+    const comp = bootstrap(Header, {
+      workUnit: WORK_UNIT_1,
+      experiment: EXPERIMENT_1,
+    }) as Header;
+
+    workUnitsServiceSpy.stopWorkUnit.and.returnValue(of({}));
+
+    comp.stop();
+
+    expect(workUnitsServiceSpy.stopWorkUnit).toHaveBeenCalledWith({
+      xid: '1',
+      wid: '1',
+    });
+    expect(workUnitPageStoreSpy.fetchWorkUnitPageData).toHaveBeenCalled();
+  });
+
+  it('should call restartWorkUnit and fetchWorkUnitPageData when restart is confirmed', () => {
+    const comp = bootstrap(Header, {
+      workUnit: WORK_UNIT_1,
+      experiment: EXPERIMENT_1,
+    }) as Header;
+
+    workUnitsServiceSpy.restartWorkUnit.and.returnValue(of({}));
+
+    comp.restart();
+
+    expect(workUnitsServiceSpy.restartWorkUnit).toHaveBeenCalledWith({
+      xid: '1',
+      wid: '1',
+    });
+    expect(workUnitPageStoreSpy.fetchWorkUnitPageData).toHaveBeenCalled();
   });
 });

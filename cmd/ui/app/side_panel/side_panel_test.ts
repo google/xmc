@@ -24,7 +24,6 @@ import {
   bootstrap,
   cleanState,
   flush,
-  get,
   getDebugEl,
   hasEl,
   setupModule,
@@ -70,8 +69,8 @@ describe('SidePanel Component', () => {
   });
 
   it('should open the sidenav and load the edit experiment form when EditExperimentFormData is added to the store', async () => {
-    const requestA = new EditExperimentFormData('12345');
-    state.service.openSidePanel(requestA);
+    const request = new EditExperimentFormData('12345');
+    state.service.openSidePanel(request);
     await flush();
 
     const sidenavHarness = await getHarness(MatSidenavHarness);
@@ -80,8 +79,8 @@ describe('SidePanel Component', () => {
   });
 
   it('should close the sidenav when closeSidePanel is called', async () => {
-    const requestA = new EditExperimentFormData('12345');
-    state.service.openSidePanel(requestA);
+    const request = new EditExperimentFormData('12345');
+    state.service.openSidePanel(request);
     await flush();
 
     state.service.closeSidePanel();

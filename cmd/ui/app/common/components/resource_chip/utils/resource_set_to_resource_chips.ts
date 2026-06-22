@@ -35,6 +35,7 @@ const MSG_CORE_COUNT_ICU = declareIcuTemplate(
   },
 );
 
+/** Converts a list of ResourceSet to a list of ResourceChipData. */
 export function resourceSetsToResourceChipsData(resources: ResourceSet[]): ResourceChipData[] {
   const formatter = new NumberFormat(NumberFormat.Format.COMPACT_SHORT);
   formatter.setMaximumFractionDigits(1);

@@ -39,6 +39,8 @@
   },
   "exclude": [
     "**/*_test.ts",
-    "app/testing"
+    "app/testing",
+    "node_modules.bak",
+    "node_modules.bak/**"
   ]
 }
