@@ -42,12 +42,14 @@ def _parse_telemetry(comments):
     records = []
     pattern = re.compile(r'<!--\s*xmc-telemetry:\s*(\{.*?\})\s*-->')
     for comment in comments:
-        body = comment.get("body", "")
+        body = comment.get("body") or ""
         match = pattern.search(body)
         if not match:
             continue
         try:
             data = json.loads(match.group(1))
+            if not isinstance(data, dict):
+                continue
             github_username = data.get("git_username")
             ldap = GITHUB_TO_LDAP_MAP.get(github_username, "external/unmapped")
             records.append({
@@ -58,7 +60,7 @@ def _parse_telemetry(comments):
                 "pr_number": data.get("pr_number"),
                 "comment_id": data.get("comment_id")
             })
-        except (json.JSONDecodeError, KeyError):
+        except (json.JSONDecodeError, KeyError, AttributeError):
             continue
     return records
 

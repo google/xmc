@@ -82,6 +82,30 @@ class TestExtractTelemetry(unittest.TestCase):
         res = _parse_telemetry(comments)
         self.assertEqual(len(res), 0)
 
+    def test_parse_telemetry_none_body(self):
+        comments = [
+            {
+                "id": 5,
+                "body": None
+            }
+        ]
+        res = _parse_telemetry(comments)
+        self.assertEqual(len(res), 0)
+
+    def test_parse_telemetry_non_dict_payload(self):
+        comments = [
+            {
+                "id": 6,
+                "body": "done\n\n<!-- xmc-telemetry: [1, 2, 3] -->"
+            },
+            {
+                "id": 7,
+                "body": 'done\n\n<!-- xmc-telemetry: "not_a_dictionary" -->'
+            }
+        ]
+        res = _parse_telemetry(comments)
+        self.assertEqual(len(res), 0)
+
     @patch('extract_telemetry._fetch_comments')
     @patch('extract_telemetry._parse_telemetry')
     def test_extract_telemetry_orchestration(self, mock_parse, mock_fetch):
