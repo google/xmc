@@ -26,16 +26,26 @@ GITHUB_TO_LDAP_MAP = {
 
 def _fetch_comments(owner: str, repo: str, since: str = None):
     """Fetches review comments from the repository via GitHub API."""
-    endpoint = f"/repos/{owner}/{repo}/pulls/comments?per_page=100"
-    if since:
-        endpoint += f"&since={since}"
-    try:
-        return call_github_api(endpoint, user_agent="XMC-Telemetry-Extractor")
-    except Exception as e:
-        raise HandledError(
-            f"Failed to fetch repository comments: {str(e)}",
-            "Ensure the GITHUB_TOKEN environment variable is set and has appropriate read permissions."
-        )
+    comments = []
+    page = 1
+    while True:
+        endpoint = f"/repos/{owner}/{repo}/pulls/comments?per_page=100&page={page}"
+        if since:
+            endpoint += f"&since={since}"
+        try:
+            batch = call_github_api(endpoint, user_agent="XMC-Telemetry-Extractor")
+        except Exception as e:
+            raise HandledError(
+                f"Failed to fetch repository comments: {str(e)}",
+                "Ensure the GITHUB_TOKEN environment variable is set and has appropriate read permissions."
+            )
+        if not batch:
+            break
+        comments.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    return comments
 
 def _parse_telemetry(comments):
     """Parses and formats telemetry records from the raw comment objects."""

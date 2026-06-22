@@ -25,7 +25,30 @@ class TestExtractTelemetry(unittest.TestCase):
         res = _fetch_comments("google", "xmc", "2026-06-22T00:00:00Z")
         self.assertEqual(len(res), 1)
         mock_call.assert_called_once_with(
-            "/repos/google/xmc/pulls/comments?per_page=100&since=2026-06-22T00:00:00Z",
+            "/repos/google/xmc/pulls/comments?per_page=100&page=1&since=2026-06-22T00:00:00Z",
+            user_agent="XMC-Telemetry-Extractor"
+        )
+
+    @patch('extract_telemetry.call_github_api')
+    def test_fetch_comments_pagination(self, mock_call):
+        # Page 1: returns 100 comments, Page 2: returns 5 comments, Page 3: empty
+        page1_batch = [{"id": i, "body": "comment"} for i in range(100)]
+        page2_batch = [{"id": i + 100, "body": "comment"} for i in range(5)]
+        mock_call.side_effect = [
+            page1_batch,
+            page2_batch,
+            []
+        ]
+        
+        res = _fetch_comments("google", "xmc")
+        self.assertEqual(len(res), 105)
+        
+        mock_call.assert_any_call(
+            "/repos/google/xmc/pulls/comments?per_page=100&page=1",
+            user_agent="XMC-Telemetry-Extractor"
+        )
+        mock_call.assert_any_call(
+            "/repos/google/xmc/pulls/comments?per_page=100&page=2",
             user_agent="XMC-Telemetry-Extractor"
         )
 
