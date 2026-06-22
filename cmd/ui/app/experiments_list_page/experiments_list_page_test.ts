@@ -21,11 +21,19 @@ import { ActivatedRoute, Params, provideRouter } from '@angular/router';
 import { BehaviorSubject, of } from 'rxjs';
 
 import { ListExperimentsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { EmptyComponent } from 'xmanager_cloud/ui/app/common/testing_utils/empty_component';
+import {
+  AUTO_REFRESH_INTERVAL_MS,
+  DEFAULT_REFRESH_INTERVAL_MS,
+} from 'xmanager_cloud/ui/app/service/constants';
+import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
+import {
+  bootstrap,
+  cleanState,
+  setupModule,
+  useAutoTick,
+} from 'xmanager_cloud/ui/app/testing/test';
 
-import { EmptyComponent } from '../common/testing_utils/empty_component';
-import { AUTO_REFRESH_INTERVAL_MS, DEFAULT_REFRESH_INTERVAL_MS } from '../service/constants';
-import { ExperimentService } from '../service/experiment_service';
-import { bootstrap, cleanState, setupModule, useAutoTick } from '../testing/test';
 import { ExperimentsListPage } from './experiments_list_page';
 
 const MOCK_PAGE_RESULT_1: ListExperimentsResponse = {

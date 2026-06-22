@@ -16,11 +16,16 @@ import 'jasmine';
 import { of, throwError } from 'rxjs';
 
 import { ListExperimentsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
+import { FeatureFlagService } from 'xmanager_cloud/ui/app/service/feature_flag_service';
+import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
+import {
+  cleanState,
+  get,
+  setupModule,
+  setupObservableMatchers,
+} from 'xmanager_cloud/ui/app/testing/test';
 
-import { ExperimentService } from '../service/experiment_service';
-import { FeatureFlagService } from '../service/feature_flag_service';
-import { SnackbarService } from '../service/snackbar_service';
-import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
 import {
   ExperimentsListPageState,
   ExperimentsListPageStore,

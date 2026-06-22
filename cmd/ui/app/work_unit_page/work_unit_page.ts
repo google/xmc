@@ -12,7 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, Signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  OnInit,
+  Signal,
+} from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
@@ -64,7 +71,7 @@ import { WorkUnitPageStore } from './work_unit_page_store';
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [WorkUnitPageStore],
 })
-export class WorkUnitPage {
+export class WorkUnitPage implements OnInit {
   private readonly store = inject(WorkUnitPageStore);
   private readonly route = inject(ActivatedRoute);
   private readonly featureFlagService = inject(FeatureFlagService);

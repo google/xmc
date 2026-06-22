@@ -15,6 +15,7 @@ import 'jasmine';
 
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { firstValueFrom } from 'rxjs';
 
 import {
   ListExperimentsRequest,
@@ -22,8 +23,8 @@ import {
 } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
 import { EXPERIMENT_1 } from '../common/mock_data';
-import { cleanState, flush, get, setupModule, setupObservableMatchers } from '../testing/test';
-import { EXPERIMENT_STATE_SERVER_DOMAIN, USE_MOCK_DATA } from './constants';
+import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
+import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
 import { ExperimentService } from './experiment_service';
 
 describe('ExperimentService Service', () => {
@@ -35,7 +36,6 @@ describe('ExperimentService Service', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         ExperimentService,
-        { provide: USE_MOCK_DATA, useValue: false },
       ],
     });
 
@@ -67,9 +67,7 @@ describe('ExperimentService Service', () => {
         pageSize: 10,
         pageToken: 'page_1',
       };
-      state.service.searchExperiments(request).subscribe((response) => {
-        expect(response).toEqual(mockResponse);
-      });
+      const responsePromise = firstValueFrom(state.service.searchExperiments(request));
 
       const req = state.httpMock.expectOne(
         `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments?pageSize=10&pageToken=page_1&filter=user:me&orderBy=created%20desc`,
@@ -81,20 +79,24 @@ describe('ExperimentService Service', () => {
       expect(req.request.params.get('orderBy')).toBe('created desc');
 
       req.flush(mockResponse);
+
+      const response = await responsePromise;
+      expect(response).toEqual(mockResponse);
     });
   });
 
   describe('getExperiment', () => {
     it('should make api call correctly', async () => {
       const xid = '1';
-      state.service.getExperiment(xid).subscribe((response) => {
-        expect(response).toEqual(EXPERIMENT_1);
-      });
+      const responsePromise = firstValueFrom(state.service.getExperiment(xid));
 
       const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/${xid}`);
       expect(req.request.method).toBe('GET');
 
       req.flush(EXPERIMENT_1);
+
+      const response = await responsePromise;
+      expect(response).toEqual(EXPERIMENT_1);
     });
   });
 });
