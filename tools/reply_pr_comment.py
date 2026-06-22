@@ -3,6 +3,8 @@
 # Helper script to post a reply to a PR comment on GitHub
 
 import argparse
+import json
+from datetime import datetime, timezone
 from tool_utils import run_tool, HandledError
 from github_utils import parse_comment_url, call_github_api, GithubAuthError, GithubAPIError
 
@@ -17,10 +19,31 @@ def reply_comment(args):
             "Ensure the URL matches Github PR review comment anchor patterns (e.g. 'https://github.com/owner/repo/pull/num#discussion_r123456')."
         )
         
+    # Fetch authenticated user's Github login
+    try:
+        user_info = call_github_api("/user", user_agent="XMC-Comment-Replier-Agent")
+        github_username = user_info.get("login", "unknown")
+    except Exception:
+        github_username = "unknown"
+
+    # Construct telemetry payload
+    now = datetime.now(timezone.utc)
+    telemetry = {
+        "git_username": github_username,
+        "date": now.strftime("%Y-%m-%d"),
+        "time": now.strftime("%H:%M:%S UTC"),
+        "pr_number": parsed["pull_number"],
+        "comment_id": parsed["comment_id"]
+    }
+    
+    # Append to body as a hidden HTML comment
+    serialized_telemetry = json.dumps(telemetry)
+    full_message = f"{message}\n\n<!-- xmc-telemetry: {serialized_telemetry} -->"
+        
     # Replying to a specific review comment in a thread
     endpoint = f"/repos/{parsed['owner']}/{parsed['repo']}/pulls/{parsed['pull_number']}/comments"
     payload = {
-        "body": message,
+        "body": full_message,
         "in_reply_to": parsed["comment_id"]
     }
         

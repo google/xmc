@@ -1,0 +1,102 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import unittest
+from unittest.mock import MagicMock, patch
+from extract_telemetry import extract_telemetry, _fetch_comments, _parse_telemetry
+from tool_utils import HandledError
+
+class TestExtractTelemetry(unittest.TestCase):
+
+    @patch('extract_telemetry.call_github_api')
+    def test_fetch_comments_success(self, mock_call):
+        mock_call.return_value = [{"id": 1, "body": "comment"}]
+        res = _fetch_comments("google", "xmc", "2026-06-22T00:00:00Z")
+        self.assertEqual(len(res), 1)
+        mock_call.assert_called_once_with(
+            "/repos/google/xmc/pulls/comments?per_page=100&since=2026-06-22T00:00:00Z",
+            user_agent="XMC-Telemetry-Extractor"
+        )
+
+    @patch('extract_telemetry.call_github_api')
+    def test_fetch_comments_error(self, mock_call):
+        mock_call.side_effect = Exception("API error")
+        with self.assertRaises(HandledError) as ctx:
+            _fetch_comments("google", "xmc")
+        self.assertIn("Failed to fetch repository comments", ctx.exception.message)
+
+    def test_parse_telemetry_valid(self):
+        comments = [
+            {
+                "id": 1,
+                "body": 'done\n\n<!-- xmc-telemetry: {"git_username": "atyburcy", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234} -->'
+            }
+        ]
+        res = _parse_telemetry(comments)
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0]["github_username"], "atyburcy")
+        self.assertEqual(res[0]["google_ldap"], "atyburcy")
+        self.assertEqual(res[0]["pr_number"], "29")
+        self.assertEqual(res[0]["comment_id"], 1234)
+
+    def test_parse_telemetry_unmapped_user(self):
+        comments = [
+            {
+                "id": 2,
+                "body": 'done\n\n<!-- xmc-telemetry: {"git_username": "external_contributor", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "30", "comment_id": 5678} -->'
+            }
+        ]
+        res = _parse_telemetry(comments)
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0]["github_username"], "external_contributor")
+        self.assertEqual(res[0]["google_ldap"], "external/unmapped")
+
+    def test_parse_telemetry_no_block(self):
+        comments = [
+            {
+                "id": 3,
+                "body": "Normal review comment"
+            }
+        ]
+        res = _parse_telemetry(comments)
+        self.assertEqual(len(res), 0)
+
+    def test_parse_telemetry_corrupted_json(self):
+        comments = [
+            {
+                "id": 4,
+                "body": "done\n\n<!-- xmc-telemetry: {corrupted_json} -->"
+            }
+        ]
+        res = _parse_telemetry(comments)
+        self.assertEqual(len(res), 0)
+
+    @patch('extract_telemetry._fetch_comments')
+    @patch('extract_telemetry._parse_telemetry')
+    def test_extract_telemetry_orchestration(self, mock_parse, mock_fetch):
+        args = MagicMock()
+        args.owner = "google"
+        args.repo = "xmc"
+        args.since = "since_date"
+        
+        mock_fetch.return_value = [{"id": 1}]
+        mock_parse.return_value = [{"ldap": "mapped"}]
+        
+        res = extract_telemetry(args)
+        self.assertEqual(res, [{"ldap": "mapped"}])
+        mock_fetch.assert_called_once_with("google", "xmc", "since_date")
+        mock_parse.assert_called_once_with([{"id": 1}])
+
+if __name__ == '__main__':
+    unittest.main()
