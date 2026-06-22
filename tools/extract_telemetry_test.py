@@ -71,6 +71,23 @@ class TestExtractTelemetry(unittest.TestCase):
         self.assertEqual(res[0]["github_username"], "atyburcy")
         self.assertEqual(res[0]["pr_number"], "29")
         self.assertEqual(res[0]["comment_id"], 1234)
+        self.assertEqual(res[0]["skill_name"], "NA")
+        self.assertEqual(res[0]["skill_commit_id"], "NA")
+
+    def test_parse_telemetry_with_skill_metadata(self):
+        comments = [
+            {
+                "id": 8,
+                "body": 'done\n\n<!-- xmc-telemetry: {"git_username": "atyburcy", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234, "skill_name": "address_pr_comment", "skill_commit_id": "mock_hash"} -->'
+            }
+        ]
+        res = _parse_telemetry(comments)
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0]["github_username"], "atyburcy")
+        self.assertEqual(res[0]["pr_number"], "29")
+        self.assertEqual(res[0]["comment_id"], 1234)
+        self.assertEqual(res[0]["skill_name"], "address_pr_comment")
+        self.assertEqual(res[0]["skill_commit_id"], "mock_hash")
 
     def test_parse_telemetry_no_block(self):
         comments = [

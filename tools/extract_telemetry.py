@@ -61,7 +61,9 @@ def _parse_telemetry(comments):
                 "time": data.get("time"),
                 "github_username": data.get("git_username"),
                 "pr_number": data.get("pr_number"),
-                "comment_id": data.get("comment_id")
+                "comment_id": data.get("comment_id"),
+                "skill_name": data.get("skill_name") or "NA",
+                "skill_commit_id": data.get("skill_commit_id") or "NA"
             })
         except (json.JSONDecodeError, KeyError, AttributeError):
             continue

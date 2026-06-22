@@ -4,6 +4,7 @@
 
 import argparse
 import json
+import subprocess
 from datetime import datetime, timezone
 from tool_utils import run_tool, HandledError
 from github_utils import parse_comment_url, call_github_api, GithubAuthError, GithubAPIError
@@ -26,6 +27,16 @@ def reply_comment(args):
     except Exception:
         github_username = "unknown"
 
+    # Fetch latest commit ID of the SKILL.md file
+    try:
+        skill_commit_id = subprocess.check_output(
+            ["git", "log", "-1", "--format=%H", "--", ".agents/skills/address_pr_comment/SKILL.md"],
+            text=True,
+            stderr=subprocess.DEVNULL
+        ).strip()
+    except Exception:
+        skill_commit_id = "unknown"
+
     # Construct telemetry payload
     now = datetime.now(timezone.utc)
     telemetry = {
@@ -33,7 +44,9 @@ def reply_comment(args):
         "date": now.strftime("%Y-%m-%d"),
         "time": now.strftime("%H:%M:%S UTC"),
         "pr_number": parsed["pull_number"],
-        "comment_id": parsed["comment_id"]
+        "comment_id": parsed["comment_id"],
+        "skill_name": "address_pr_comment",
+        "skill_commit_id": skill_commit_id
     }
     
     # Append to body as a hidden HTML comment

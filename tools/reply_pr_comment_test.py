@@ -37,7 +37,11 @@ class TestReplyPRComment(unittest.TestCase):
     @patch('reply_pr_comment.parse_comment_url')
     @patch('reply_pr_comment.call_github_api')
     @patch('reply_pr_comment.datetime')
-    def test_reply_comment_success(self, mock_datetime, mock_call, mock_parse):
+    @patch('reply_pr_comment.subprocess.check_output')
+    def test_reply_comment_success(self, mock_git, mock_datetime, mock_call, mock_parse):
+        # Mock git command output for SKILL.md commit hash
+        mock_git.return_value = "mock_skill_commit_id"
+
         # Mock datetime to have a fixed string output
         mock_now = MagicMock()
         mock_now.strftime.side_effect = lambda fmt: {
@@ -71,7 +75,7 @@ class TestReplyPRComment(unittest.TestCase):
             user_agent="XMC-Comment-Replier-Agent"
         )
         
-        expected_body = 'done\n\n<!-- xmc-telemetry: {"git_username": "test_user", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234} -->'
+        expected_body = 'done\n\n<!-- xmc-telemetry: {"git_username": "test_user", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234, "skill_name": "address_pr_comment", "skill_commit_id": "mock_skill_commit_id"} -->'
         mock_call.assert_any_call(
             "/repos/google/xmc/pulls/29/comments",
             method="POST",
@@ -82,7 +86,11 @@ class TestReplyPRComment(unittest.TestCase):
     @patch('reply_pr_comment.parse_comment_url')
     @patch('reply_pr_comment.call_github_api')
     @patch('reply_pr_comment.datetime')
-    def test_reply_comment_user_fetch_fails_gracefully(self, mock_datetime, mock_call, mock_parse):
+    @patch('reply_pr_comment.subprocess.check_output')
+    def test_reply_comment_user_fetch_fails_gracefully(self, mock_git, mock_datetime, mock_call, mock_parse):
+        # Mock git command output
+        mock_git.return_value = "mock_skill_commit_id"
+
         # Mock datetime to have a fixed string output
         mock_now = MagicMock()
         mock_now.strftime.side_effect = lambda fmt: {
@@ -112,7 +120,7 @@ class TestReplyPRComment(unittest.TestCase):
         res = reply_comment(args)
         self.assertEqual(res["id"], 5678)
         
-        expected_body = 'done\n\n<!-- xmc-telemetry: {"git_username": "unknown", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234} -->'
+        expected_body = 'done\n\n<!-- xmc-telemetry: {"git_username": "unknown", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234, "skill_name": "address_pr_comment", "skill_commit_id": "mock_skill_commit_id"} -->'
         mock_call.assert_any_call(
             "/repos/google/xmc/pulls/29/comments",
             method="POST",
