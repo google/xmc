@@ -423,7 +423,13 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 								Spec: batchv1.JobSpec{
 									Template: corev1.PodTemplateSpec{
 										Spec: corev1.PodSpec{
-											Containers: []corev1.Container{{}},
+											Containers: []corev1.Container{
+												{
+													Ports: []corev1.ContainerPort{
+														{ContainerPort: 8080},
+													},
+												},
+											},
 										},
 									},
 								},
@@ -447,6 +453,7 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 											Containers: []corev1.Container{
 												{
 													Ports: []corev1.ContainerPort{
+														{ContainerPort: 8080},
 														{ContainerPort: tpuICIPort},
 														{ContainerPort: tpuMetricsPort},
 													},

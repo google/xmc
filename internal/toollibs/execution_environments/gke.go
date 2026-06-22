@@ -227,10 +227,11 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 		replicatedJob.Template.Spec.Template.Spec.Containers[0].Resources = resourceRequirements
 
 		if job.Spec.Resources.GetTpuResources() != nil {
-			replicatedJob.Template.Spec.Template.Spec.Containers[0].Ports = []corev1.ContainerPort{
-				{ContainerPort: tpuICIPort},
-				{ContainerPort: tpuMetricsPort},
-			}
+			container := &replicatedJob.Template.Spec.Template.Spec.Containers[0]
+			container.Ports = append(container.Ports,
+				corev1.ContainerPort{ContainerPort: tpuICIPort},
+				corev1.ContainerPort{ContainerPort: tpuMetricsPort},
+			)
 		}
 
 		if err := updateNodeSelector(job.Spec.Resources, &replicatedJob.Template.Spec.Template.Spec); err != nil {
