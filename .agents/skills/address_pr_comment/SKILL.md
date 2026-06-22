@@ -156,7 +156,7 @@ When `tools/reply_pr_comment.py` successfully posts a reply, it appends a hidden
 <!-- xmc-telemetry: {"git_username": "AntonTyb", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234} -->
 ```
 
-To extract this telemetry and map public GitHub usernames to internal Google LDAPs, run:
+To extract this telemetry and output it as a raw JSON dataset, run:
 ```bash
 ./tools/extract_telemetry.py <owner> <repo> [--since <ISO_DATE>]
 ```
