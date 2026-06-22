@@ -100,16 +100,67 @@ jobs:
           echo "CRITICAL: Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }} did not start within ${{ env.SPANNER_CHECK_TIMEOUT }} seconds."
           exit 1
 
-      - name: 'Run Unit Tests'
+      - name: 'Run Unit Tests with Coverage'
         run: |
-          bazel test \
+          bazel coverage \
             --repository_cache=~/.cache/bazel-repo \
             --disk_cache=~/.cache/bazel-disk \
             --test_output=errors \
             --build_tests_only \
             --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},300,300,300 \
+            --combined_report=lcov \
             -- \
             //...
+
+      - name: 'Enforce Coverage Thresholds'
+        # Skip this step if the PR has the 'bypass:coverage' label
+        if: ${{ success() && !contains(github.event.pull_request.labels.*.name, 'bypass:coverage') }}
+        run: |
+          echo "=== Checking Coverage Thresholds ==="
+          
+          # 1. Check Go Coverage
+          GO_LCOV="bazel-out/_coverage/_coverage_report.dat"
+          if [ -f "$GO_LCOV" ]; then
+            echo "Go Coverage Report found."
+            lines_hit=$(grep -E '^LH:' "$GO_LCOV" | awk -F: '{sum+=$2} END {print sum}')
+            lines_found=$(grep -E '^LF:' "$GO_LCOV" | awk -F: '{sum+=$2} END {print sum}')
+            if [ "$lines_found" -gt 0 ]; then
+              go_cov=$(awk -v hit="$lines_hit" -v found="$lines_found" 'BEGIN {printf "%.2f", (hit/found)*100}')
+              echo "Go Coverage: $go_cov%"
+              is_below=$(awk -v cov="$go_cov" 'BEGIN {print (cov < 80.0) ? 1 : 0}')
+              if [ "$is_below" -eq 1 ]; then
+                echo "❌ ERROR: Go coverage ($go_cov%) is below the 80% threshold."
+                exit 1
+              fi
+            else
+              echo "⚠️ WARNING: No lines found in Go coverage report."
+            fi
+          else
+            echo "⚠️ WARNING: Go coverage report not found at $GO_LCOV"
+          fi
+          
+          # 2. Check UI (TypeScript) Coverage
+          UI_LCOV="cmd/ui/coverage/xmc-ui/lcov.info"
+          if [ -f "$UI_LCOV" ]; then
+            echo "UI Coverage Report found."
+            lines_hit=$(grep -E '^LH:' "$UI_LCOV" | awk -F: '{sum+=$2} END {print sum}')
+            lines_found=$(grep -E '^LF:' "$UI_LCOV" | awk -F: '{sum+=$2} END {print sum}')
+            if [ "$lines_found" -gt 0 ]; then
+              ui_cov=$(awk -v hit="$lines_hit" -v found="$lines_found" 'BEGIN {printf "%.2f", (hit/found)*100}')
+              echo "UI Coverage: $ui_cov%"
+              is_below=$(awk -v cov="$ui_cov" 'BEGIN {print (cov < 80.0) ? 1 : 0}')
+              if [ "$is_below" -eq 1 ]; then
+                echo "❌ ERROR: UI coverage ($ui_cov%) is below the 80% threshold."
+                exit 1
+              fi
+            else
+              echo "⚠️ WARNING: No lines found in UI coverage report."
+            fi
+          else
+            echo "⚠️ WARNING: UI coverage report not found at $UI_LCOV"
+          fi
+          
+          echo "✅ All coverage thresholds passed!"
 
       - name: 'Save Bazel Cache'
         uses: 'actions/cache/save@v4'

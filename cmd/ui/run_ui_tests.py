@@ -30,12 +30,23 @@ def main():
   except Exception:
     user_home = os.path.expanduser('~')
 
+  # Prepare environment, adding ~/.local/bin to PATH if it exists
+  env = os.environ.copy()
+  local_bin = os.path.join(user_home, '.local', 'bin')
+  if os.path.exists(local_bin):
+    env['PATH'] = f"{local_bin}:{env.get('PATH', '')}"
+
+  # Detect if running under 'bazel coverage'
+  extra_args = ''
+  if 'COVERAGE_DIR' in env:
+    extra_args = ' --code-coverage'
+
   # Check if NVM exists in the user's real home and source it
   nvm_sh = os.path.join(user_home, '.nvm', 'nvm.sh')
   if os.path.exists(nvm_sh):
-    cmd = f'source {nvm_sh} && npx ng test --watch=false'
+    cmd = f'source {nvm_sh} && npx ng test --watch=false{extra_args}'
   else:
-    cmd = 'npx ng test --watch=false'
+    cmd = f'npx ng test --watch=false{extra_args}'
 
   print(f'Executing Angular tests in physical workspace: {real_ui_dir}')
 
@@ -45,6 +56,7 @@ def main():
       shell=True,
       executable='/bin/bash',
       cwd=real_ui_dir,
+      env=env,
       check=False,
   )
   sys.exit(res.returncode)
