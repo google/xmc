@@ -69,7 +69,6 @@ spec:
         livenessProbe:
           grpc:
             port: 50051
-            service: xmc.XidService
           initialDelaySeconds: 10
           periodSeconds: 10
         readinessProbe:

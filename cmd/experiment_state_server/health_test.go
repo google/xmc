@@ -94,7 +94,7 @@ func TestActiveHealthCheck(t *testing.T) {
 			var xidClient xidgrpcpb.XidServiceClient = &fakeXidClient{}
 			handler := activeHealthCheck(spClient, xidClient, tqClient)
 
-			req := httptest.NewRequest("GET", "/healthz", nil)
+			req := httptest.NewRequest("GET", "/readyz", nil)
 			rr := httptest.NewRecorder()
 
 			handler.ServeHTTP(rr, req)
@@ -110,5 +110,24 @@ func TestActiveHealthCheck(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestLivenessCheck(t *testing.T) {
+	handler := livenessCheck()
+
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("livenessCheck() status code = %v, want %v", rr.Code, http.StatusOK)
+	}
+
+	gotBody := rr.Body.String()
+	wantBody := "OK"
+	if gotBody != wantBody {
+		t.Errorf("livenessCheck() body = %q, want %q", gotBody, wantBody)
 	}
 }
