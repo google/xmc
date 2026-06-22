@@ -27,13 +27,15 @@ def reply_comment(args):
     except Exception:
         github_username = "unknown"
 
-    # Fetch latest commit ID of the SKILL.md file
+    # Fetch latest commit ID of the SKILL.md file (using :/ to resolve from repo root)
     try:
         skill_commit_id = subprocess.check_output(
-            ["git", "log", "-1", "--format=%H", "--", ".agents/skills/address_pr_comment/SKILL.md"],
+            ["git", "log", "-1", "--format=%H", "--", ":/.agents/skills/address_pr_comment/SKILL.md"],
             text=True,
             stderr=subprocess.DEVNULL
         ).strip()
+        if not skill_commit_id:
+            skill_commit_id = "unknown"
     except Exception:
         skill_commit_id = "unknown"
 
