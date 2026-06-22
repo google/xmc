@@ -19,10 +19,6 @@ import re
 from github_utils import call_github_api
 from tool_utils import run_tool, HandledError
 
-# A mapping of public GitHub usernames to internal Google LDAPs.
-GITHUB_TO_LDAP_MAP = {
-    "atyburcy": "atyburcy",
-}
 
 def _fetch_comments(owner: str, repo: str, since: str = None):
     """Fetches review comments from the repository via GitHub API."""
@@ -60,13 +56,10 @@ def _parse_telemetry(comments):
             data = json.loads(match.group(1))
             if not isinstance(data, dict):
                 continue
-            github_username = data.get("git_username")
-            ldap = GITHUB_TO_LDAP_MAP.get(github_username, "external/unmapped")
             records.append({
                 "date": data.get("date"),
                 "time": data.get("time"),
-                "github_username": github_username,
-                "google_ldap": ldap,
+                "github_username": data.get("git_username"),
                 "pr_number": data.get("pr_number"),
                 "comment_id": data.get("comment_id")
             })
@@ -77,7 +70,18 @@ def _parse_telemetry(comments):
 def extract_telemetry(args):
     """Main orchestrator for extracting telemetry records."""
     comments = _fetch_comments(args.owner, args.repo, args.since)
-    return _parse_telemetry(comments)
+    records = _parse_telemetry(comments)
+    if args.output:
+        try:
+            with open(args.output, "w") as f:
+                json.dump(records, f, indent=2)
+            return f"Successfully wrote {len(records)} records to {args.output}"
+        except IOError as e:
+            raise HandledError(
+                f"Failed to write output file: {str(e)}",
+                "Ensure the directory path exists and you have write permissions."
+            )
+    return records
 
 def main():
     parser = argparse.ArgumentParser(
@@ -86,6 +90,7 @@ def main():
     parser.add_argument("owner", help="GitHub repository owner (e.g. google).")
     parser.add_argument("repo", help="GitHub repository name (e.g. xmc).")
     parser.add_argument("--since", help="Only show telemetry since this date/time (ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ).")
+    parser.add_argument("-o", "--output", help="Path to write the extracted telemetry raw JSON file.")
     run_tool(parser, extract_telemetry)
 
 if __name__ == '__main__':

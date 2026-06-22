@@ -69,21 +69,8 @@ class TestExtractTelemetry(unittest.TestCase):
         res = _parse_telemetry(comments)
         self.assertEqual(len(res), 1)
         self.assertEqual(res[0]["github_username"], "atyburcy")
-        self.assertEqual(res[0]["google_ldap"], "atyburcy")
         self.assertEqual(res[0]["pr_number"], "29")
         self.assertEqual(res[0]["comment_id"], 1234)
-
-    def test_parse_telemetry_unmapped_user(self):
-        comments = [
-            {
-                "id": 2,
-                "body": 'done\n\n<!-- xmc-telemetry: {"git_username": "external_contributor", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "30", "comment_id": 5678} -->'
-            }
-        ]
-        res = _parse_telemetry(comments)
-        self.assertEqual(len(res), 1)
-        self.assertEqual(res[0]["github_username"], "external_contributor")
-        self.assertEqual(res[0]["google_ldap"], "external/unmapped")
 
     def test_parse_telemetry_no_block(self):
         comments = [
@@ -136,14 +123,37 @@ class TestExtractTelemetry(unittest.TestCase):
         args.owner = "google"
         args.repo = "xmc"
         args.since = "since_date"
+        args.output = None
         
         mock_fetch.return_value = [{"id": 1}]
-        mock_parse.return_value = [{"ldap": "mapped"}]
+        mock_parse.return_value = [{"username": "user"}]
         
         res = extract_telemetry(args)
-        self.assertEqual(res, [{"ldap": "mapped"}])
+        self.assertEqual(res, [{"username": "user"}])
         mock_fetch.assert_called_once_with("google", "xmc", "since_date")
         mock_parse.assert_called_once_with([{"id": 1}])
+
+    @patch('extract_telemetry._fetch_comments')
+    @patch('builtins.open', new_callable=MagicMock)
+    @patch('extract_telemetry.json.dump')
+    def test_extract_telemetry_write_file(self, mock_dump, mock_open, mock_fetch):
+        args = MagicMock()
+        args.owner = "google"
+        args.repo = "xmc"
+        args.since = None
+        args.output = "output.json"
+
+        mock_fetch.return_value = [
+            {
+                "id": 1,
+                "body": 'done\n\n<!-- xmc-telemetry: {"git_username": "atyburcy", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234} -->'
+            }
+        ]
+
+        res = extract_telemetry(args)
+        self.assertEqual(res, "Successfully wrote 1 records to output.json")
+        mock_open.assert_called_once_with("output.json", "w")
+        mock_dump.assert_called_once()
 
 if __name__ == '__main__':
     unittest.main()
