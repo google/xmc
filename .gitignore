@@ -11,8 +11,12 @@ cmd/ui/.angular/
 cmd/ui/dist/
 cmd/ui/build_tmp/
 
+**__pycache__**
 # proto binaries
 *.pb
 
 # deployment files
 *-deployment.yaml
+
+# Compiled Cluster Toolkit deployments
+/ctk-out/

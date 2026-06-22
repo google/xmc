@@ -54,6 +54,7 @@ func (s *Storage) ListXidEntries(ctx context.Context, pageSize int32, pageToken,
 		return nil, "", err
 	}
 
+	// Generate the statement with pagination
 	stmt, pageOffset, err := liststatement.ListStatement(ctx, listParams)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
