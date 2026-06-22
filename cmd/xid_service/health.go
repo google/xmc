@@ -35,6 +35,7 @@ const (
 // RegisterHealthServer registers the health server on the gRPC server.
 func RegisterHealthServer(s *grpc.Server) *health.Server {
 	healthServer := health.NewServer()
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthgrpc.RegisterHealthServer(s, healthServer)
 	return healthServer
 }
