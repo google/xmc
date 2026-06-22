@@ -63,12 +63,12 @@ class TestExtractTelemetry(unittest.TestCase):
         comments = [
             {
                 "id": 1,
-                "body": 'done\n\n<!-- xmc-telemetry: {"git_username": "atyburcy", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234} -->'
+                "body": 'done\n\n<!-- xmc-telemetry: {"git_username": "chad", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234} -->'
             }
         ]
         res = _parse_telemetry(comments)
         self.assertEqual(len(res), 1)
-        self.assertEqual(res[0]["github_username"], "atyburcy")
+        self.assertEqual(res[0]["github_username"], "chad")
         self.assertEqual(res[0]["pr_number"], "29")
         self.assertEqual(res[0]["comment_id"], 1234)
         self.assertEqual(res[0]["skill_name"], "NA")
@@ -78,12 +78,12 @@ class TestExtractTelemetry(unittest.TestCase):
         comments = [
             {
                 "id": 8,
-                "body": 'done\n\n<!-- xmc-telemetry: {"git_username": "atyburcy", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234, "skill_name": "address_pr_comment", "skill_commit_id": "mock_hash"} -->'
+                "body": 'done\n\n<!-- xmc-telemetry: {"git_username": "chad", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234, "skill_name": "address_pr_comment", "skill_commit_id": "mock_hash"} -->'
             }
         ]
         res = _parse_telemetry(comments)
         self.assertEqual(len(res), 1)
-        self.assertEqual(res[0]["github_username"], "atyburcy")
+        self.assertEqual(res[0]["github_username"], "chad")
         self.assertEqual(res[0]["pr_number"], "29")
         self.assertEqual(res[0]["comment_id"], 1234)
         self.assertEqual(res[0]["skill_name"], "address_pr_comment")
@@ -163,7 +163,7 @@ class TestExtractTelemetry(unittest.TestCase):
         mock_fetch.return_value = [
             {
                 "id": 1,
-                "body": 'done\n\n<!-- xmc-telemetry: {"git_username": "atyburcy", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234} -->'
+                "body": 'done\n\n<!-- xmc-telemetry: {"git_username": "chad", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234} -->'
             }
         ]
 
