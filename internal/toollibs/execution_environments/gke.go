@@ -283,6 +283,9 @@ func parseTotalChips(topology string) (int, error) {
 		if err != nil {
 			return 0, fmt.Errorf("invalid TPU topology dimension %q in %q: %w", d, topology, err)
 		}
+		if v <= 0 {
+			return 0, fmt.Errorf("invalid TPU topology dimension %d in %q: must be greater than 0", v, topology)
+		}
 		totalChips *= v
 	}
 	return totalChips, nil

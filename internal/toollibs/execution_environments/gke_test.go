@@ -742,6 +742,10 @@ func TestTPUNodesPerSlice(t *testing.T) {
 		{name: "multi_host_4x4x4", topology: "4x4x4", want: 16},
 		{name: "multi_host_4x4", topology: "4x4", want: 4},
 		{name: "invalid_topology", topology: "abc", wantErr: true},
+		{name: "zero_dimension", topology: "2x0", wantErr: true},
+		{name: "negative_dimension", topology: "2x-2", wantErr: true},
+		{name: "leading_zero_dimension", topology: "0x4", wantErr: true},
+		{name: "leading_negative_dimension", topology: "-4x4", wantErr: true},
 	}
 
 	for _, tc := range tests {
