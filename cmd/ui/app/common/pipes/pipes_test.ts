@@ -18,7 +18,7 @@ import { SecurityContext } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { DomSanitizer } from '@angular/platform-browser';
 
-import { SafeUrlPipe } from './safe_url_pipe';
+import { SafeUrlPipe, SplitPipe } from './pipes';
 
 describe('SafeUrlPipe', () => {
   let pipe: SafeUrlPipe;
@@ -64,5 +64,41 @@ describe('SafeUrlPipe', () => {
     expect(sanitizer.sanitize(SecurityContext.URL, pipe.transform(null))).toBe('');
     expect(sanitizer.sanitize(SecurityContext.URL, pipe.transform(undefined))).toBe('');
     expect(sanitizer.sanitize(SecurityContext.URL, pipe.transform(''))).toBe('');
+  });
+});
+
+describe('SplitPipe', () => {
+  let pipe: SplitPipe;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [SplitPipe],
+    });
+    pipe = TestBed.inject(SplitPipe);
+  });
+
+  it('should create an instance', () => {
+    expect(pipe).toBeTruthy();
+  });
+
+  it('should split string by newline by default', () => {
+    const value = 'line1\nline2\nline3';
+    expect(pipe.transform(value)).toEqual(['line1', 'line2', 'line3']);
+  });
+
+  it('should split string by custom delimiter', () => {
+    const value = 'item1,item2,item3';
+    expect(pipe.transform(value, ',')).toEqual(['item1', 'item2', 'item3']);
+  });
+
+  it('should return empty array for null, undefined, or empty string', () => {
+    expect(pipe.transform(null)).toEqual([]);
+    expect(pipe.transform(undefined)).toEqual([]);
+    expect(pipe.transform('')).toEqual([]);
+  });
+
+  it('should return single element array if delimiter is not found', () => {
+    const value = 'single_line';
+    expect(pipe.transform(value)).toEqual(['single_line']);
   });
 });

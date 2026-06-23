@@ -13,6 +13,28 @@
 // limitations under the License.
 
 import { Pipe, PipeTransform } from '@angular/core';
+import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
+
+import { trySanitizeUrl } from 'xmanager_cloud/ui/app/safevalues_helper';
+
+/**
+ * A pipe that sanitizes a URL and wraps it in a SafeUrl to bypass Angular's Built-in HTML sanitization.
+ */
+@Pipe({
+  name: 'safeUrl',
+  standalone: true,
+})
+export class SafeUrlPipe implements PipeTransform {
+  constructor(private readonly sanitizer: DomSanitizer) {}
+
+  transform(value: string | null | undefined): SafeUrl {
+    if (!value) {
+      return '';
+    }
+    const sanitized = trySanitizeUrl(value);
+    return this.sanitizer.bypassSecurityTrustUrl(sanitized);
+  }
+}
 
 /**
  * A pipe that splits a string into an array of strings by a given delimiter.

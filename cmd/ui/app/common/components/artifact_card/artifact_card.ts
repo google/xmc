@@ -26,8 +26,7 @@ import {
   hasPayloadContent,
 } from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
 import { PayloadType, TypedArtifact } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
-import { SafeUrlPipe } from 'xmanager_cloud/ui/app/common/pipes/safe_url_pipe';
-import { SplitPipe } from 'xmanager_cloud/ui/app/common/pipes/split_pipe';
+import { SafeUrlPipe, SplitPipe } from 'xmanager_cloud/ui/app/common/pipes/pipes';
 import { parseWorkUnitName } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
 import { trySanitizeUrl, windowOpen } from 'xmanager_cloud/ui/app/safevalues_helper';
 
