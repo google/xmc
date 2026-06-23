@@ -41,6 +41,13 @@ func TestGetArtifact_HappyPath(t *testing.T) {
 		Url: &msgpb.Url{
 			Url: "http://www.google.com",
 		},
+		Payload: &msgpb.ArtifactPayload{
+			Type: &msgpb.ArtifactPayload_Url{
+				Url: &msgpb.UrlArtifact{
+					Url: "http://www.google.com",
+				},
+			},
+		},
 		Acls: &xidmsgpb.XidAcls{
 			Writers: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
 		},

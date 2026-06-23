@@ -84,6 +84,13 @@ func MergeArtifacts(current, updated *pb.Artifact, updateMask *fieldmaskpb.Field
 				return nil, fmt.Errorf("url field cannot be nil: %w", status.ErrInvalidArgument)
 			}
 			merged.Url = updated.Url
+			merged.Priority = updated.Url.Priority
+		case "priority":
+			merged.Priority = updated.Priority
+			if merged.Url == nil {
+				merged.Url = &pb.Url{}
+			}
+			merged.Url.Priority = updated.Priority
 		case "tags":
 			if updated.Tags == nil {
 				return nil, fmt.Errorf("tags field cannot be nil: %w", status.ErrInvalidArgument)

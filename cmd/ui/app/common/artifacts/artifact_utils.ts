@@ -11,112 +11,149 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
+import {
+  Artifact,
+  CodeSourceArtifact,
+  ManagedXprofArtifact,
+  TextArtifact,
+  UrlArtifact,
+} from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 
-import { ArtifactListItem } from './interfaces';
+import { ArtifactListItem, PayloadType, TypedArtifact } from './interfaces';
 
-const ARTIFACT_ICON_MAP: Record<string, string> = {
-  'URL': 'link',
-  'FILE': 'insert_drive_file',
-  'DIRECTORY': 'folder',
-  'MODEL_SNAPSHOTS': 'save',
-  'INFERENCE_MODEL': 'hub',
-  'ML_DATASET': 'dataset',
-  'EMBEDDING': 'data_array',
-  'VIDEO': 'videocam',
-  'IMAGE': 'image',
-  'AUDIO': 'audiotrack',
-  'HTML_REPORT': 'html',
-  'TEXT': 'description',
-  'POINT_CLOUD': 'grain',
-  'MESH': 'view_in_ar',
-  'DATA_SCHEMA': 'schema',
-  'DATA_STATISTICS': 'monitoring',
-  'CONTAINER_IMAGE': 'developer_board',
-  'CODE_SOURCE': 'code',
-  'CONFIGURATION': 'settings',
-  'EVENT_LOGS': 'receipt_long',
-  'METRICS': 'analytics',
-  'TEST_RESULTS': 'checklist',
-  'PROMPT_TEMPLATE': 'article',
-  'VECTOR_INDEX': 'search',
-  'TOKENIZER': 'token',
-  'PIPELINE_GRAPH': 'account_tree',
-};
-
-/** Returns the icon for an artifact. */
-export function getArtifactIcon(artifact: Artifact): string {
-  if (artifact.url?.icon) {
-    return artifact.url.icon;
-  }
-  return ARTIFACT_ICON_MAP[artifact.dataType || ''] ?? 'link';
+export interface ArtifactDisplayProperties {
+  typeName: string;
+  icon: string;
+  url: string;
+  displayName: string;
 }
 
-const SPECIAL_DATA_TYPE_LABELS: Record<string, string> = {
-  'DATA_TYPE_UNSPECIFIED': 'Unspecified',
-  'URL': 'URL',
-  'ML_DATASET': 'ML Dataset',
-  'HTML_REPORT': 'HTML Report',
-};
-
-/** Formats artifact data type for display. */
-export function formatArtifactDataType(dataType: Artifact.DataType | undefined): string {
-  if (!dataType) {
-    return 'Unspecified';
+/** Converts a raw Artifact to a TypedArtifact directly */
+export function toTypedArtifact(artifact: Artifact): TypedArtifact {
+  const payload = artifact.payload;
+  if (payload) {
+    if ('managedXprof' in payload && payload.managedXprof) {
+      return { type: PayloadType.MANAGED_XPROF, artifact, payload: payload.managedXprof };
+    }
+    if ('codeSource' in payload && payload.codeSource) {
+      return { type: PayloadType.CODE_SOURCE, artifact, payload: payload.codeSource };
+    }
+    if ('text' in payload && payload.text) {
+      return { type: PayloadType.TEXT, artifact, payload: payload.text };
+    }
+    if ('url' in payload && payload.url) {
+      return { type: PayloadType.URL, artifact, payload: payload.url };
+    }
   }
-  const specialLabel = SPECIAL_DATA_TYPE_LABELS[dataType];
-  if (specialLabel) {
-    return specialLabel;
-  }
-  return dataType
-    .split('_')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(' ');
+  return { type: PayloadType.UNKNOWN, artifact };
 }
 
-function sortArtifactsByPriority(artifacts: Artifact[]): Artifact[] {
-  return [...artifacts].sort(
-    (a, b) =>
-      (a.url?.priority ?? Number.MAX_SAFE_INTEGER) - (b.url?.priority ?? Number.MAX_SAFE_INTEGER),
-  );
+/**
+ * Returns UI display properties (icon, url, type name, display name)
+ * for the given typed artifact.
+ */
+export function getArtifactDisplayProperties(
+  typedArtifact: TypedArtifact,
+): ArtifactDisplayProperties {
+  switch (typedArtifact.type) {
+    case PayloadType.MANAGED_XPROF:
+      return {
+        typeName: 'Managed Xprof',
+        icon: 'query_stats',
+        url: typedArtifact.payload.xprof?.xprofUrl ?? '',
+        displayName: typedArtifact.payload.displayName || '',
+      };
+    case PayloadType.CODE_SOURCE:
+      return {
+        typeName: 'Code Source',
+        icon: 'code',
+        url: typedArtifact.payload.codeUrl ?? '',
+        displayName: typedArtifact.payload.title || '',
+      };
+    case PayloadType.TEXT:
+      return {
+        typeName: 'Text',
+        icon: 'description',
+        url: '',
+        displayName: typedArtifact.payload.title || '',
+      };
+    case PayloadType.URL:
+      return {
+        typeName: 'URL',
+        icon: typedArtifact.payload.icon || 'link',
+        url: typedArtifact.payload.url ?? '',
+        displayName: typedArtifact.payload.displayName || typedArtifact.payload.url || '',
+      };
+    case PayloadType.UNKNOWN:
+    default:
+      return {
+        typeName: 'Unknown',
+        icon: 'link',
+        url: '',
+        displayName: '',
+      };
+  }
 }
 
-function groupArtifactsByType(artifacts: Artifact[]): Map<Artifact.DataType, Artifact[]> {
-  const artifactsByType = new Map<Artifact.DataType, Artifact[]>();
-  for (const artifact of artifacts) {
-    const type = artifact.dataType || 'DATA_TYPE_UNSPECIFIED';
+/** Returns whether the typed artifact has payload content to display. */
+export function hasPayloadContent(typedArtifact: TypedArtifact): boolean {
+  return typedArtifact.type !== PayloadType.UNKNOWN;
+}
+
+/** Sorts artifacts by priority, then creation time. */
+function sortArtifactsByPriority(
+  typedArtifacts: TypedArtifact[],
+): TypedArtifact[] {
+  return [...typedArtifacts].sort((a, b) => {
+    const priorityA = a.artifact.priority ?? Number.MAX_SAFE_INTEGER;
+    const priorityB = b.artifact.priority ?? Number.MAX_SAFE_INTEGER;
+    if (priorityA !== priorityB) {
+      return priorityA - priorityB;
+    }
+
+    // Tie-breaker: sort chronologically by creation time
+    const timeA = a.artifact.createTime ? new Date(a.artifact.createTime).getTime() : 0;
+    const timeB = b.artifact.createTime ? new Date(b.artifact.createTime).getTime() : 0;
+    return timeA - timeB;
+  });
+}
+
+function groupArtifactsByType(typedArtifacts: TypedArtifact[]): Map<PayloadType, TypedArtifact[]> {
+  const artifactsByType = new Map<PayloadType, TypedArtifact[]>();
+  for (const item of typedArtifacts) {
+    const type = item.type;
     if (!artifactsByType.has(type)) {
       artifactsByType.set(type, []);
     }
-    artifactsByType.get(type)!.push(artifact);
+    artifactsByType.get(type)!.push(item);
   }
   return artifactsByType;
 }
 
 function buildArtifactListItems(
-  sortedArtifacts: Artifact[],
-  artifactsByType: Map<Artifact.DataType, Artifact[]>,
-  phase: string,
+  sortedArtifacts: TypedArtifact[],
+  artifactsByType: Map<PayloadType, TypedArtifact[]>,
+  phase: Artifact.LifecyclePhase | 'OUTPUT' | 'INPUT' | 'EXECUTION',
   groupingThreshold: number,
 ): ArtifactListItem[] {
   const result: ArtifactListItem[] = [];
-  const groupedTypesProcessed = new Set<Artifact.DataType>();
-  for (const artifact of sortedArtifacts) {
-    const type = artifact.dataType || 'DATA_TYPE_UNSPECIFIED';
+  const groupedTypesProcessed = new Set<PayloadType>();
+  for (const item of sortedArtifacts) {
+    const type = item.type;
     const group = artifactsByType.get(type)!;
     if (group.length > groupingThreshold) {
       if (!groupedTypesProcessed.has(type)) {
         result.push({
           type: 'group',
-          dataType: type,
+          payloadType: type,
           artifacts: group,
           groupId: `${phase}-${type}`,
-          icon: getArtifactIcon(group[0]),
+          icon: getArtifactDisplayProperties(group[0]).icon,
         });
         groupedTypesProcessed.add(type);
       }
     } else {
-      result.push({ type: 'single', artifact });
+      result.push({ type: 'single', artifact: item });
     }
   }
   return result;
@@ -124,7 +161,7 @@ function buildArtifactListItems(
 
 /** Groups artifacts by type if they exceed threshold, and sorts by priority. */
 export function groupAndSortArtifacts(
-  artifacts: Artifact[],
+  artifacts: TypedArtifact[],
   phase: Artifact.LifecyclePhase | 'OUTPUT' | 'INPUT' | 'EXECUTION',
   groupingThreshold: number,
 ): ArtifactListItem[] {

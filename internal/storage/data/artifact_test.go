@@ -27,6 +27,7 @@ import (
 func TestMergeArtifacts(t *testing.T) {
 	current := &pb.Artifact{
 		Url:            &pb.Url{Url: "http://current.com", Priority: 100},
+		Priority:       100,
 		Tags:           []string{"current_tag"},
 		Notes:          "Current notes",
 		LifecyclePhase: pb.Artifact_INPUT,
@@ -40,6 +41,7 @@ func TestMergeArtifacts(t *testing.T) {
 	}
 	updated := &pb.Artifact{
 		Url:            &pb.Url{Url: "http://updated.com", Priority: 200},
+		Priority:       200,
 		Tags:           []string{"updated_tag"},
 		Notes:          "Updated notes",
 		LifecyclePhase: pb.Artifact_OUTPUT,
@@ -67,6 +69,7 @@ func TestMergeArtifacts(t *testing.T) {
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"acls"}},
 			want: &pb.Artifact{
 				Url:            current.Url,
+				Priority:       100,
 				Tags:           current.Tags,
 				Notes:          current.Notes,
 				LifecyclePhase: current.LifecyclePhase,
@@ -82,6 +85,28 @@ func TestMergeArtifacts(t *testing.T) {
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"url"}},
 			want: &pb.Artifact{
 				Url:            updated.Url,
+				Priority:       200,
+				Tags:           current.Tags,
+				Notes:          current.Notes,
+				LifecyclePhase: current.LifecyclePhase,
+				DataType:       current.DataType,
+				MimeType:       current.MimeType,
+				Acls:           current.Acls,
+			},
+		},
+		{
+			name:       "update priority",
+			current:    current,
+			updated:    updated,
+			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"priority"}},
+			want: &pb.Artifact{
+				Url: &pb.Url{
+					Url:         current.Url.Url,
+					Icon:        current.Url.Icon,
+					DisplayName: current.Url.DisplayName,
+					Priority:    200,
+				},
+				Priority:       200,
 				Tags:           current.Tags,
 				Notes:          current.Notes,
 				LifecyclePhase: current.LifecyclePhase,
@@ -97,6 +122,7 @@ func TestMergeArtifacts(t *testing.T) {
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"tags"}},
 			want: &pb.Artifact{
 				Url:            current.Url,
+				Priority:       100,
 				Tags:           updated.Tags,
 				Notes:          current.Notes,
 				LifecyclePhase: current.LifecyclePhase,
@@ -112,6 +138,7 @@ func TestMergeArtifacts(t *testing.T) {
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"notes"}},
 			want: &pb.Artifact{
 				Url:            current.Url,
+				Priority:       100,
 				Tags:           current.Tags,
 				Notes:          updated.Notes,
 				LifecyclePhase: current.LifecyclePhase,
@@ -127,6 +154,7 @@ func TestMergeArtifacts(t *testing.T) {
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"lifecycle_phase"}},
 			want: &pb.Artifact{
 				Url:            current.Url,
+				Priority:       100,
 				Tags:           current.Tags,
 				Notes:          current.Notes,
 				LifecyclePhase: updated.LifecyclePhase,
@@ -142,6 +170,7 @@ func TestMergeArtifacts(t *testing.T) {
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"data_type"}},
 			want: &pb.Artifact{
 				Url:            current.Url,
+				Priority:       100,
 				Tags:           current.Tags,
 				Notes:          current.Notes,
 				LifecyclePhase: current.LifecyclePhase,
@@ -157,6 +186,7 @@ func TestMergeArtifacts(t *testing.T) {
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"mime_type"}},
 			want: &pb.Artifact{
 				Url:            current.Url,
+				Priority:       100,
 				Tags:           current.Tags,
 				Notes:          current.Notes,
 				LifecyclePhase: current.LifecyclePhase,
@@ -172,6 +202,7 @@ func TestMergeArtifacts(t *testing.T) {
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"notes", "tags"}},
 			want: &pb.Artifact{
 				Url:            current.Url,
+				Priority:       100,
 				Tags:           updated.Tags,
 				Notes:          updated.Notes,
 				LifecyclePhase: current.LifecyclePhase,

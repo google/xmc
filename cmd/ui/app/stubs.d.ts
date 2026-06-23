@@ -100,6 +100,18 @@ declare module 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_dec
   export interface Artifact {
     [key: string]: any;
   }
+  export interface CodeSourceArtifact {
+    [key: string]: any;
+  }
+  export interface ManagedXprofArtifact {
+    [key: string]: any;
+  }
+  export interface TextArtifact {
+    [key: string]: any;
+  }
+  export interface UrlArtifact {
+    [key: string]: any;
+  }
 }
 declare module 'xmanager_cloud/experiment_state_server/proto/resources.jsonpb_decls' {
   export interface ResourceSet {

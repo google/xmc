@@ -1567,12 +1567,32 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
+			name: "payload_missing",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{
+						Url: "http://example.com",
+					},
+				},
+			},
+			wantErr: nil,
+		},
+		{
 			name: "valid_request_exp_parent",
 			req: &essapipb.CreateArtifactRequest{
 				Parent: "experiments/123",
 				Artifact: &essmsgpb.Artifact{
 					Url: &essmsgpb.Url{
 						Url: "http://example.com",
+					},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_Text{
+							Text: &essmsgpb.TextArtifact{
+								Title: "title",
+								Text:  "text",
+							},
+						},
 					},
 				},
 			},
@@ -1585,6 +1605,14 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 				Artifact: &essmsgpb.Artifact{
 					Url: &essmsgpb.Url{
 						Url: "http://example.com",
+					},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_Text{
+							Text: &essmsgpb.TextArtifact{
+								Title: "title",
+								Text:  "text",
+							},
+						},
 					},
 				},
 			},
@@ -1750,6 +1778,41 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 							Text: &essmsgpb.TextArtifact{
 								Title: "title",
 								Text:  "text",
+							},
+						},
+					},
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "payload_url_missing_url",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_Url{
+							Url: &essmsgpb.UrlArtifact{
+								DisplayName: "Example Link",
+							},
+						},
+					},
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "valid_request_with_url_payload",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_Url{
+							Url: &essmsgpb.UrlArtifact{
+								Url:         "http://example.com",
+								DisplayName: "Example Link",
 							},
 						},
 					},
