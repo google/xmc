@@ -1488,3 +1488,292 @@ func TestGetPriorityClassName(t *testing.T) {
 		})
 	}
 }
+
+func TestConstructJobSet_GPU_MultiReplica(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnit1",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name: "job1",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_GpuResources{
+										GpuResources: &esspb.GpuResources{
+											Type:  "H100",
+											Count: 8,
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+							},
+							Replicas: 4,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if len(got.Spec.ReplicatedJobs) != 1 {
+		t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
+	}
+	rj := got.Spec.ReplicatedJobs[0]
+
+	if rj.Replicas != 1 {
+		t.Errorf("Expected ReplicatedJob.Replicas to be reset to 1, got %d", rj.Replicas)
+	}
+	if rj.Template.Spec.Parallelism == nil || *rj.Template.Spec.Parallelism != 4 {
+		t.Errorf("Expected Parallelism=4, got %v", rj.Template.Spec.Parallelism)
+	}
+	if rj.Template.Spec.Completions == nil || *rj.Template.Spec.Completions != 4 {
+		t.Errorf("Expected Completions=4, got %v", rj.Template.Spec.Completions)
+	}
+	if rj.Template.Spec.CompletionMode == nil || *rj.Template.Spec.CompletionMode != batchv1.IndexedCompletion {
+		t.Errorf("Expected CompletionMode=Indexed, got %v", rj.Template.Spec.CompletionMode)
+	}
+}
+
+func TestConstructJobSet_GPU_DefaultReplica(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnit1",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name: "job1",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_GpuResources{
+										GpuResources: &esspb.GpuResources{
+											Type:  "T4",
+											Count: 1,
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	rj := got.Spec.ReplicatedJobs[0]
+
+	if rj.Replicas != 1 {
+		t.Errorf("Expected ReplicatedJob.Replicas=1, got %d", rj.Replicas)
+	}
+	if rj.Template.Spec.Parallelism == nil || *rj.Template.Spec.Parallelism != 1 {
+		t.Errorf("Expected Parallelism=1, got %v", rj.Template.Spec.Parallelism)
+	}
+	if rj.Template.Spec.Completions == nil || *rj.Template.Spec.Completions != 1 {
+		t.Errorf("Expected Completions=1, got %v", rj.Template.Spec.Completions)
+	}
+	if rj.Template.Spec.CompletionMode == nil || *rj.Template.Spec.CompletionMode != batchv1.IndexedCompletion {
+		t.Errorf("Expected CompletionMode=Indexed, got %v", rj.Template.Spec.CompletionMode)
+	}
+}
+
+func TestConstructJobSet_TPU_SingleHost(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnit1",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name: "job1",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_TpuResources{
+										TpuResources: &esspb.TpuResources{
+											Type:     "tpu-v6e-slice",
+											Topology: "2x2",
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+							},
+							Replicas: 1,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	rj := got.Spec.ReplicatedJobs[0]
+
+	if rj.Template.Spec.Parallelism == nil || *rj.Template.Spec.Parallelism != 1 {
+		t.Errorf("Expected Parallelism=1, got %v", rj.Template.Spec.Parallelism)
+	}
+	if rj.Template.Spec.Completions == nil || *rj.Template.Spec.Completions != 1 {
+		t.Errorf("Expected Completions=1, got %v", rj.Template.Spec.Completions)
+	}
+	if rj.Template.Spec.CompletionMode == nil || *rj.Template.Spec.CompletionMode != batchv1.IndexedCompletion {
+		t.Errorf("Expected CompletionMode=Indexed, got %v", rj.Template.Spec.CompletionMode)
+	}
+
+	podSpec := rj.Template.Spec.Template.Spec
+	if podSpec.NodeSelector["cloud.google.com/gke-tpu-accelerator"] != "tpu-v6e-slice" {
+		t.Errorf("Expected tpu-accelerator NodeSelector=%q, got %q", "tpu-v6e-slice", podSpec.NodeSelector["cloud.google.com/gke-tpu-accelerator"])
+	}
+	if podSpec.NodeSelector["cloud.google.com/gke-tpu-topology"] != "2x2" {
+		t.Errorf("Expected tpu-topology NodeSelector=%q, got %q", "2x2", podSpec.NodeSelector["cloud.google.com/gke-tpu-topology"])
+	}
+
+	tpuRes := podSpec.Containers[0].Resources.Limits["google.com/tpu"]
+	wantTPU := resource.MustParse("4")
+	if tpuRes.Cmp(wantTPU) != 0 {
+		t.Errorf("Expected google.com/tpu limit=%v, got %v", wantTPU, tpuRes)
+	}
+
+	if len(podSpec.Containers[0].Ports) != 2 || podSpec.Containers[0].Ports[0].ContainerPort != 8471 || podSpec.Containers[0].Ports[1].ContainerPort != 8431 {
+		t.Errorf("Expected TPU container ports [8471, 8431], got %v", podSpec.Containers[0].Ports)
+	}
+
+	if _, hasAnnotation := got.Annotations["alpha.jobset.sigs.k8s.io/exclusive-topology"]; hasAnnotation {
+		t.Error("Single-host TPU should NOT have exclusive-topology annotation")
+	}
+}
+
+func TestConstructJobSet_TPU_MultiHost(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnit1",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name: "job1",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_TpuResources{
+										TpuResources: &esspb.TpuResources{
+											Type:     "tpu-v4-podslice",
+											Topology: "2x2x4",
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+							},
+							Replicas: 1,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	rj := got.Spec.ReplicatedJobs[0]
+
+	if rj.Template.Spec.Parallelism == nil || *rj.Template.Spec.Parallelism != 4 {
+		t.Errorf("Expected Parallelism=4, got %v", rj.Template.Spec.Parallelism)
+	}
+	if rj.Template.Spec.Completions == nil || *rj.Template.Spec.Completions != 4 {
+		t.Errorf("Expected Completions=4, got %v", rj.Template.Spec.Completions)
+	}
+	if rj.Template.Spec.CompletionMode == nil || *rj.Template.Spec.CompletionMode != batchv1.IndexedCompletion {
+		t.Errorf("Expected CompletionMode=Indexed, got %v", rj.Template.Spec.CompletionMode)
+	}
+
+	podSpec := rj.Template.Spec.Template.Spec
+	tpuRes := podSpec.Containers[0].Resources.Limits["google.com/tpu"]
+	wantTPU := resource.MustParse("4")
+	if tpuRes.Cmp(wantTPU) != 0 {
+		t.Errorf("Expected google.com/tpu limit=%v, got %v", wantTPU, tpuRes)
+	}
+
+	if len(podSpec.Containers[0].Ports) != 2 || podSpec.Containers[0].Ports[0].ContainerPort != 8471 || podSpec.Containers[0].Ports[1].ContainerPort != 8431 {
+		t.Errorf("Expected TPU container ports [8471, 8431], got %v", podSpec.Containers[0].Ports)
+	}
+
+	wantAnnotation := "cloud.google.com/gke-nodepool"
+	if got.Annotations["alpha.jobset.sigs.k8s.io/exclusive-topology"] != wantAnnotation {
+		t.Errorf("Expected exclusive-topology annotation=%q, got %q", wantAnnotation, got.Annotations["alpha.jobset.sigs.k8s.io/exclusive-topology"])
+	}
+}
+
+func TestConstructJobSet_TPU_MultiSlice(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnit1",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name: "job1",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_TpuResources{
+										TpuResources: &esspb.TpuResources{
+											Type:     "tpu-v4-podslice",
+											Topology: "2x2x4",
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+							},
+							Replicas: 2,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	rj := got.Spec.ReplicatedJobs[0]
+
+	if rj.Replicas != 2 {
+		t.Errorf("Expected ReplicatedJob.Replicas to stay at 2 for multi-slice TPU, got %d", rj.Replicas)
+	}
+	if rj.Template.Spec.Parallelism == nil || *rj.Template.Spec.Parallelism != 4 {
+		t.Errorf("Expected Parallelism=4 (nodes per slice), got %v", rj.Template.Spec.Parallelism)
+	}
+	if rj.Template.Spec.Completions == nil || *rj.Template.Spec.Completions != 4 {
+		t.Errorf("Expected Completions=4 (nodes per slice), got %v", rj.Template.Spec.Completions)
+	}
+	if rj.Template.Spec.CompletionMode == nil || *rj.Template.Spec.CompletionMode != batchv1.IndexedCompletion {
+		t.Errorf("Expected CompletionMode=Indexed, got %v", rj.Template.Spec.CompletionMode)
+	}
+
+	wantAnnotation := "cloud.google.com/gke-nodepool"
+	if got.Annotations["alpha.jobset.sigs.k8s.io/exclusive-topology"] != wantAnnotation {
+		t.Errorf("Expected exclusive-topology annotation=%q, got %q", wantAnnotation, got.Annotations["alpha.jobset.sigs.k8s.io/exclusive-topology"])
+	}
+}
