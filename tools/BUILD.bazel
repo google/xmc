@@ -112,3 +112,25 @@ py_test(
         ":tool_utils",
     ],
 )
+
+py_library(
+    name = "extract_telemetry_lib",
+    srcs = ["extract_telemetry.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+)
+
+py_test(
+    name = "extract_telemetry_test",
+    srcs = ["extract_telemetry_test.py"],
+    imports = ["."],
+    deps = [
+        ":extract_telemetry_lib",
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+)

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { Clipboard } from '@angular/cdk/clipboard';
-import { ChangeDetectionStrategy, Component, inject, Input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -31,13 +31,12 @@ import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service'
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class XidBadge {
-  @Input({ required: true }) xid!: string | number;
-  constructor(private readonly clipboard: Clipboard) {}
-
+  readonly xid = input.required<string | number>();
+  private readonly clipboard = inject(Clipboard);
   private readonly snackbarService = inject(SnackbarService);
 
-  copy() {
-    if (this.clipboard.copy(String(this.xid))) {
+  copy(): void {
+    if (this.clipboard.copy(String(this.xid()))) {
       this.snackbarService.open('Copied XID to clipboard.');
     }
   }

@@ -20,6 +20,8 @@ import (
 	batchv1 "golang/k8s_io/api/v/v0_23/batch/v1/v1"
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
+	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
+	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	epb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -178,9 +180,13 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 				Spec: jobsetv1alpha2.JobSetSpec{
 					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
 						{
-							Name: "test-job",
+							Name:     "test-job",
+							Replicas: 1,
 							Template: batchv1.JobTemplateSpec{
 								Spec: batchv1.JobSpec{
+									Parallelism:    proto.Int32(1),
+									Completions:    proto.Int32(1),
+									CompletionMode: completionModePtr(batchv1.IndexedCompletion),
 									Template: corev1.PodTemplateSpec{
 										Spec: corev1.PodSpec{
 											Containers: []corev1.Container{
@@ -195,6 +201,275 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 											},
 											NodeSelector: map[string]string{
 												nvidiaNodeSelectorKey: "nvidia-tesla-t4",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "tpu_resources_multi_host",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{
+						Jobset: &epb.JobSetExecutable{
+							Jobs: []*epb.KubernetesJob{
+								{
+									Name: "test-job",
+									Spec: &epb.ExecutableSpec{
+										Resources: &epb.ResourceSet{
+											Resources: &epb.ResourceSet_TpuResources{
+												TpuResources: &epb.TpuResources{
+													Type:     "tpu-v4-podslice",
+													Topology: "2x2x4",
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "test-job",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{{}},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantJobSet: &jobsetv1alpha2.JobSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						exclusiveTopologyAnnotation: exclusiveTopologyValue,
+					},
+				},
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "test-job",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Parallelism:    proto.Int32(4),
+									Completions:    proto.Int32(4),
+									CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Ports: []corev1.ContainerPort{
+														{ContainerPort: tpuICIPort},
+														{ContainerPort: tpuMetricsPort},
+													},
+													Resources: corev1.ResourceRequirements{
+														Limits: corev1.ResourceList{
+															tpuResourceKey: resource.MustParse("4"),
+														},
+														Requests: corev1.ResourceList{
+															tpuResourceKey: resource.MustParse("4"),
+														},
+													},
+												},
+											},
+											NodeSelector: map[string]string{
+												tpuAcceleratorSelectorKey: "tpu-v4-podslice",
+												tpuTopologySelectorKey:    "2x2x4",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "tpu_resources_multi_host_2d",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{
+						Jobset: &epb.JobSetExecutable{
+							Jobs: []*epb.KubernetesJob{
+								{
+									Name: "test-job",
+									Spec: &epb.ExecutableSpec{
+										Resources: &epb.ResourceSet{
+											Resources: &epb.ResourceSet_TpuResources{
+												TpuResources: &epb.TpuResources{
+													Type:     "tpu-v5-lite-podslice",
+													Topology: "2x4",
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "test-job",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{{}},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantJobSet: &jobsetv1alpha2.JobSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						exclusiveTopologyAnnotation: exclusiveTopologyValue,
+					},
+				},
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "test-job",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Parallelism:    proto.Int32(2),
+									Completions:    proto.Int32(2),
+									CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Ports: []corev1.ContainerPort{
+														{ContainerPort: tpuICIPort},
+														{ContainerPort: tpuMetricsPort},
+													},
+													Resources: corev1.ResourceRequirements{
+														Limits: corev1.ResourceList{
+															tpuResourceKey: resource.MustParse("4"),
+														},
+														Requests: corev1.ResourceList{
+															tpuResourceKey: resource.MustParse("4"),
+														},
+													},
+												},
+											},
+											NodeSelector: map[string]string{
+												tpuAcceleratorSelectorKey: "tpu-v5-lite-podslice",
+												tpuTopologySelectorKey:    "2x4",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "tpu_resources_single_host",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{
+						Jobset: &epb.JobSetExecutable{
+							Jobs: []*epb.KubernetesJob{
+								{
+									Name: "test-job",
+									Spec: &epb.ExecutableSpec{
+										Resources: &epb.ResourceSet{
+											Resources: &epb.ResourceSet_TpuResources{
+												TpuResources: &epb.TpuResources{
+													Type:     "tpu-v6e-slice",
+													Topology: "2x2",
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "test-job",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Ports: []corev1.ContainerPort{
+														{ContainerPort: 8080},
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantJobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "test-job",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Parallelism:    proto.Int32(1),
+									Completions:    proto.Int32(1),
+									CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Ports: []corev1.ContainerPort{
+														{ContainerPort: 8080},
+														{ContainerPort: tpuICIPort},
+														{ContainerPort: tpuMetricsPort},
+													},
+													Resources: corev1.ResourceRequirements{
+														Limits: corev1.ResourceList{
+															tpuResourceKey: resource.MustParse("4"),
+														},
+														Requests: corev1.ResourceList{
+															tpuResourceKey: resource.MustParse("4"),
+														},
+													},
+												},
+											},
+											NodeSelector: map[string]string{
+												tpuAcceleratorSelectorKey: "tpu-v6e-slice",
+												tpuTopologySelectorKey:    "2x2",
 											},
 										},
 									},
@@ -304,9 +579,13 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 							},
 						},
 						{
-							Name: "test-job-gpu",
+							Name:     "test-job-gpu",
+							Replicas: 1,
 							Template: batchv1.JobTemplateSpec{
 								Spec: batchv1.JobSpec{
+									Parallelism:    proto.Int32(1),
+									Completions:    proto.Int32(1),
+									CompletionMode: completionModePtr(batchv1.IndexedCompletion),
 									Template: corev1.PodTemplateSpec{
 										Spec: corev1.PodSpec{
 											Containers: []corev1.Container{
@@ -322,6 +601,85 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 											NodeSelector: map[string]string{
 												nvidiaNodeSelectorKey: "nvidia-tesla-t4",
 											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "ephemeral_storage",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{
+						Jobset: &epb.JobSetExecutable{
+							Jobs: []*epb.KubernetesJob{
+								{
+									Name: "test-job",
+									Spec: &epb.ExecutableSpec{
+										Resources: &epb.ResourceSet{
+											Resources: &epb.ResourceSet_CpuResources{
+												CpuResources: &epb.CpuResources{
+													CpuMillicores: 500,
+													MemoryBytes:   1024,
+												},
+											},
+											EphemeralStorageBytes: 10737418240,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "test-job",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers:   []corev1.Container{{}},
+											NodeSelector: map[string]string{},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantJobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "test-job",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Resources: corev1.ResourceRequirements{
+														Limits: corev1.ResourceList{
+															corev1.ResourceMemory:           resource.MustParse("1024"),
+															corev1.ResourceEphemeralStorage: resource.MustParse("10737418240"),
+														},
+														Requests: corev1.ResourceList{
+															corev1.ResourceCPU:              resource.MustParse("500m"),
+															corev1.ResourceMemory:           resource.MustParse("1024"),
+															corev1.ResourceEphemeralStorage: resource.MustParse("10737418240"),
+														},
+													},
+												},
+											},
+											NodeSelector: map[string]string{},
 										},
 									},
 								},
@@ -375,4 +733,41 @@ func TestIsRegistered(t *testing.T) {
 	if _, ok := executionEnvironments[name]; !ok {
 		t.Errorf("Execution environment %q is not registered", name)
 	}
+}
+
+func TestTPUNodesPerSlice(t *testing.T) {
+	tests := []struct {
+		name     string
+		topology string
+		want     int
+		wantErr  bool
+	}{
+		{name: "single_chip", topology: "1x1", want: 1},
+		{name: "single_host_2x2", topology: "2x2", want: 1},
+		{name: "multi_host_2x4", topology: "2x4", want: 2},
+		{name: "multi_host_2x2x4", topology: "2x2x4", want: 4},
+		{name: "multi_host_4x4x4", topology: "4x4x4", want: 16},
+		{name: "multi_host_4x4", topology: "4x4", want: 4},
+		{name: "invalid_topology", topology: "abc", wantErr: true},
+		{name: "zero_dimension", topology: "2x0", wantErr: true},
+		{name: "negative_dimension", topology: "2x-2", wantErr: true},
+		{name: "leading_zero_dimension", topology: "0x4", wantErr: true},
+		{name: "leading_negative_dimension", topology: "-4x4", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tpuNodesPerSlice(tc.topology)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("tpuNodesPerSlice(%q) error = %v, wantErr %v", tc.topology, err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Errorf("tpuNodesPerSlice(%q) = %d, want %d", tc.topology, got, tc.want)
+			}
+		})
+	}
+}
+
+func completionModePtr(m batchv1.CompletionMode) *batchv1.CompletionMode {
+	return &m
 }

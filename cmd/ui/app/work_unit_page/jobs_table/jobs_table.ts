@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, effect, input, ViewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, input, viewChild } from '@angular/core';
 import { MatCardModule } from '@angular/material/card';
 import { MatPaginator, MatPaginatorModule } from '@angular/material/paginator';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
@@ -44,16 +44,16 @@ export class JobsTable {
   readonly StatusOption = StatusOption;
 
   dataSource = new MatTableDataSource<ReplicatedJobStatus>();
-  @ViewChild(MatPaginator)
-  set matPaginator(paginator: MatPaginator) {
-    this.dataSource.paginator = paginator;
-  }
+  readonly matPaginator = viewChild(MatPaginator);
   readonly displayedColumns = ['name', 'replicas'];
 
   constructor() {
     // Update the table data whenever the workUnit input changes.
     effect(() => {
       this.dataSource.data = getReplicatedJobs(this.workUnit());
+    });
+    effect(() => {
+      this.dataSource.paginator = this.matPaginator() ?? null;
     });
   }
 

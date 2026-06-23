@@ -14,25 +14,91 @@
 import 'jasmine';
 
 import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { firstValueFrom } from 'rxjs';
 
-import { cleanState, get, setupModule } from '../testing/test';
+import { WORK_UNIT_1, WORK_UNIT_LIST } from 'xmanager_cloud/ui/app/common/mock_data';
+import {
+  cleanState,
+  get,
+  setupModule,
+  setupObservableMatchers,
+} from 'xmanager_cloud/ui/app/testing/test';
+
+import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
 import { WorkUnitsService } from './work_units_service';
 
-function setup() {
-  return cleanState(() => {
-    setupModule({
-      providers: [provideHttpClient(), WorkUnitsService],
-    });
-    return {
-      service: get(WorkUnitsService),
-    };
-  }, beforeEach);
-}
-
 describe('WorkUnitsService', () => {
-  const state = setup();
+  beforeAll(setupObservableMatchers);
 
-  it('should be instantiated', () => {
-    expect(state.service).toBeTruthy();
+  describe('with real data', () => {
+    const state = cleanState(() => {
+      setupModule({
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          WorkUnitsService,
+        ],
+      });
+
+      return {
+        service: get(WorkUnitsService),
+        httpMock: get(HttpTestingController),
+      };
+    }, beforeEach);
+
+    afterEach(() => {
+      state.httpMock.verify();
+    });
+
+    it('should be instantiated', () => {
+      expect(state.service).toBeTruthy();
+    });
+
+    it('should fetch work units from the server', async () => {
+      const mockResponse = {
+        workUnits: WORK_UNIT_LIST,
+      };
+
+      const responsePromise = firstValueFrom(state.service.searchWorkUnits({ parent: 'experiments/1' }));
+
+      const req = state.httpMock.expectOne(
+        `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/workUnits`,
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush(mockResponse);
+
+      const response = await responsePromise;
+      expect(response).toEqual(mockResponse);
+    });
+
+    it('should include filters and pagination in query params', async () => {
+      const responsePromise = firstValueFrom(state.service
+        .searchWorkUnits({
+          parent: 'experiments/1',
+          pageSize: 10,
+          pageToken: 'prev_token',
+        }));
+
+      const req = state.httpMock.expectOne((req) => req.url.includes('/experiments/1/workUnits'));
+      expect(req.request.params.get('pageSize')).toBe('10');
+      expect(req.request.params.get('pageToken')).toBe('prev_token');
+      req.flush({});
+
+      await responsePromise;
+    });
+
+    it('should fetch a single work unit', async () => {
+      const responsePromise = firstValueFrom(state.service.getWorkUnit({ name: 'experiments/1/workUnits/1' }));
+
+      const req = state.httpMock.expectOne(
+        `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/workUnits/1`,
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush(WORK_UNIT_1);
+
+      const response = await responsePromise;
+      expect(response).toEqual(WORK_UNIT_1);
+    });
   });
 });

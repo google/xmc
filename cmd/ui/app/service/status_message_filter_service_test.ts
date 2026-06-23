@@ -17,8 +17,8 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { provideRouter, Router } from '@angular/router';
 
 import { StructuredMessage } from 'xmanager_cloud/experiment_state_server/proto/structured_message.jsonpb_decls';
+import { cleanState, get, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
-import { cleanState, get, setupModule } from '../testing/test';
 import {
   ALL_SOURCES,
   formatSource,
@@ -26,6 +26,7 @@ import {
 } from './status_message_filter_service';
 
 @Component({
+  standalone: true,
   template: '',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

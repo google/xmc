@@ -32,8 +32,8 @@ import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service'
 import { StatusMessageService } from 'xmanager_cloud/ui/app/service/status_message_service';
 import { WorkUnitsService } from 'xmanager_cloud/ui/app/service/work_units_service';
 import { SidePanelService } from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
+import { bootstrap, cleanState, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
-import { bootstrap, cleanState, setupModule } from '../testing/test';
 import { ExperimentPage } from './experiment_page';
 import { ExperimentPageHarness } from './testing/experiment_page_harness';
 

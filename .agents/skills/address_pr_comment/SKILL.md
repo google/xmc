@@ -150,6 +150,17 @@ export GITHUB_TOKEN="your_github_token"
 ./tools/reply_pr_comment.py "<github_comment_url>" "code changed"
 ```
 
+### Usage Telemetry Tracking
+When `tools/reply_pr_comment.py` successfully posts a reply, it appends a hidden HTML comment block containing public usage metadata (authenticated GitHub user, comment ID, PR number, and UTC timestamp) to the comment body:
+```html
+<!-- xmc-telemetry: {"git_username": "Chad", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234} -->
+```
+
+To extract this telemetry and output it as a raw JSON dataset, run:
+```bash
+./tools/extract_telemetry.py <owner> <repo> [--since <ISO_DATE>]
+```
+
 ---
 
 ## 6. Build, Push, and GKE Redeployment

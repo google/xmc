@@ -59,3 +59,25 @@ You can verify the installation is working correctly by checking imports:
 python3 -c "import xmanager_cloud"
 python3 -c "import xmanager_cloud.experiment_state_server.experiment_state_api"
 ```
+
+## Launching Experiments
+
+The directory includes a toy experiment launcher `launch.py` to test and interact with XManager on Cloud (XMC).
+
+### 1. Configure the Environment Variables
+Before running the launcher, create a `.env` file in the root of the `xmc` repository by copying the example template:
+
+```bash
+cp ../../.env.example ../../.env
+```
+
+Open the newly created `../../.env` file and customize it with your specific details (such as your `PROJECT_ID`, `IAP_CLIENT_ID`, and domain endpoints).
+
+### 2. Run the Launcher
+With the Python virtual environment active and the `.env` file configured, execute the `launch.py` script:
+
+```bash
+python launch.py
+```
+
+`launch.py` automatically uses `python-dotenv` to locate the `.env` file in parent directories, load the variables, and start the experiment without needing manual prompt input.

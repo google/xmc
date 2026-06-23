@@ -16,9 +16,13 @@ package executionenvironments
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
+	batchv1 "golang/k8s_io/api/v/v0_23/batch/v1/v1"
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
+	"golang/protobuf/v2/proto/proto"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
 	epb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -46,6 +50,19 @@ const (
 
 	nvidiaGPUKey          = "nvidia.com/gpu"
 	nvidiaNodeSelectorKey = "cloud.google.com/gke-accelerator"
+
+	tpuResourceKey            = "google.com/tpu"
+	tpuAcceleratorSelectorKey = "cloud.google.com/gke-tpu-accelerator"
+	tpuTopologySelectorKey    = "cloud.google.com/gke-tpu-topology"
+
+	// TPU generations v3-v6e all use 4 chips/node for multi-host.
+	tpuMultiHostChipsPerNode = 4
+
+	tpuICIPort     = 8471
+	tpuMetricsPort = 8431
+
+	exclusiveTopologyAnnotation = "alpha.jobset.sigs.k8s.io/exclusive-topology"
+	exclusiveTopologyValue      = "cloud.google.com/gke-nodepool"
 )
 
 var (
@@ -127,17 +144,36 @@ func resourceRequirements(resourceSet *epb.ResourceSet) (corev1.ResourceRequirem
 	} else if gpuRes := resourceSet.GetGpuResources(); gpuRes != nil {
 		resourceRequirements.Limits[nvidiaGPUKey] = resource.MustParse(fmt.Sprintf("%d", gpuRes.GetCount()))
 	} else if tpuRes := resourceSet.GetTpuResources(); tpuRes != nil {
-		// TODO - Implement TPU support.
-		return resourceRequirements, fmt.Errorf("TPU support is not implemented yet")
+		chipsPerNode, err := tpuChipsPerNode(tpuRes.GetTopology())
+		if err != nil {
+			return resourceRequirements, err
+		}
+		chips := resource.MustParse(strconv.Itoa(chipsPerNode))
+		resourceRequirements.Limits[tpuResourceKey] = chips
+		resourceRequirements.Requests[tpuResourceKey] = chips
 	}
+
+	if storageBytes := resourceSet.GetEphemeralStorageBytes(); storageBytes > 0 {
+		storage := resource.MustParse(fmt.Sprintf("%d", storageBytes))
+		resourceRequirements.Requests[corev1.ResourceEphemeralStorage] = storage
+		resourceRequirements.Limits[corev1.ResourceEphemeralStorage] = storage
+	}
+
 	return resourceRequirements, nil
 }
 
 // updateNodeSelector updates the node selector for the given resource set.
 func updateNodeSelector(resourceSet *epb.ResourceSet, podSpec *corev1.PodSpec) error {
 	if tpuRes := resourceSet.GetTpuResources(); tpuRes != nil {
-		// TODO - Implement TPU support.
-		return fmt.Errorf("TPU support is not implemented yet")
+		if podSpec.NodeSelector == nil {
+			podSpec.NodeSelector = make(map[string]string)
+		}
+		podSpec.NodeSelector[tpuAcceleratorSelectorKey] = tpuRes.GetType()
+		podSpec.NodeSelector[tpuTopologySelectorKey] = tpuRes.GetTopology()
+		// TODO(b/470040109) - Ironwood (TPU7x) requires cloud.google.com/placement-policy-name in the
+		// nodeSelector. The value is a user-created workload policy name, which needs to be plumbed
+		// through the TpuResources proto.
+		return nil
 	}
 
 	gpuRes := resourceSet.GetGpuResources()
@@ -190,12 +226,93 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 		}
 		replicatedJob.Template.Spec.Template.Spec.Containers[0].Resources = resourceRequirements
 
+		if job.Spec.Resources.GetTpuResources() != nil {
+			container := &replicatedJob.Template.Spec.Template.Spec.Containers[0]
+			container.Ports = append(container.Ports,
+				corev1.ContainerPort{ContainerPort: tpuICIPort},
+				corev1.ContainerPort{ContainerPort: tpuMetricsPort},
+			)
+		}
+
 		if err := updateNodeSelector(job.Spec.Resources, &replicatedJob.Template.Spec.Template.Spec); err != nil {
 			return nil, err
+		}
+
+		if tpuRes := job.Spec.Resources.GetTpuResources(); tpuRes != nil {
+			nodesPerSlice, err := tpuNodesPerSlice(tpuRes.GetTopology())
+			if err != nil {
+				return nil, err
+			}
+			nodes := int32(nodesPerSlice)
+			completionMode := batchv1.IndexedCompletion
+			replicatedJob.Template.Spec.Parallelism = proto.Int32(nodes)
+			replicatedJob.Template.Spec.Completions = proto.Int32(nodes)
+			replicatedJob.Template.Spec.CompletionMode = &completionMode
+
+			if nodesPerSlice > 1 {
+				if jobSet.Annotations == nil {
+					jobSet.Annotations = make(map[string]string)
+				}
+				jobSet.Annotations[exclusiveTopologyAnnotation] = exclusiveTopologyValue
+			}
+		} else if job.Spec.Resources.GetGpuResources() != nil {
+			// For GPU jobs, we use Replicas to specify the number of nodes, defaulting to 1 if unset.
+			nodes := replicatedJob.Replicas
+			if nodes < 1 {
+				nodes = 1
+			}
+			completionMode := batchv1.IndexedCompletion
+			replicatedJob.Template.Spec.Parallelism = proto.Int32(nodes)
+			replicatedJob.Template.Spec.Completions = proto.Int32(nodes)
+			replicatedJob.Template.Spec.CompletionMode = &completionMode
+			// For indexed completion, Replicas must be 1.
+			replicatedJob.Replicas = 1
 		}
 	}
 
 	return jobSet, nil
+}
+
+func parseTotalChips(topology string) (int, error) {
+	if topology == "" {
+		return 0, fmt.Errorf("invalid TPU topology: %q", topology)
+	}
+	dims := strings.Split(topology, "x")
+	totalChips := 1
+	for _, d := range dims {
+		v, err := strconv.Atoi(d)
+		if err != nil {
+			return 0, fmt.Errorf("invalid TPU topology dimension %q in %q: %w", d, topology, err)
+		}
+		if v <= 0 {
+			return 0, fmt.Errorf("invalid TPU topology dimension %d in %q: must be greater than 0", v, topology)
+		}
+		totalChips *= v
+	}
+	return totalChips, nil
+}
+
+func tpuChipsPerNode(topology string) (int, error) {
+	totalChips, err := parseTotalChips(topology)
+	if err != nil {
+		return 0, err
+	}
+	if totalChips <= tpuMultiHostChipsPerNode {
+		return totalChips, nil
+	}
+	return tpuMultiHostChipsPerNode, nil
+}
+
+func tpuNodesPerSlice(topology string) (int, error) {
+	totalChips, err := parseTotalChips(topology)
+	if err != nil {
+		return 0, err
+	}
+	chipsPerNode, err := tpuChipsPerNode(topology)
+	if err != nil {
+		return 0, err
+	}
+	return totalChips / chipsPerNode, nil
 }
 
 // InjectOnExperimentCreation injects the environment on experiment creation.

@@ -13,7 +13,7 @@
 // limitations under the License.
 import 'jasmine';
 
-import { get, setupModule, setupObservableMatchers } from '../testing/test';
+import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
 import { BaseSidePanelData } from './base_side_panel';
 import { SidePanelService } from './side_panel_service';
 
@@ -22,74 +22,73 @@ class MockSidePanelData implements BaseSidePanelData {
 }
 
 describe('SidePanelService', () => {
-  let service: SidePanelService;
-
   beforeAll(() => {
     setupObservableMatchers();
   });
 
-  beforeEach(() => {
+  const state = cleanState(() => {
     setupModule({ providers: [SidePanelService] });
-    service = get(SidePanelService);
-  });
+    const service = get(SidePanelService);
+    return { service };
+  }, beforeEach);
 
   it('should be created', () => {
-    expect(service).toBeTruthy();
+    expect(state.service).toBeTruthy();
   });
 
   describe('Initial State', () => {
     it('should initialize with an empty requests array', async () => {
-      await expectAsync(service.dialogRequest$).toEmit(undefined);
+      await expectAsync(state.service.dialogRequest$).toEmit(undefined);
     });
   });
 
   describe('dialogRequest$', () => {
     it('should emit undefined when no requests are present', async () => {
-      service.closeSidePanel();
+      state.service.closeSidePanel();
 
-      await expectAsync(service.dialogRequest$).toEmit(undefined);
+      await expectAsync(state.service.dialogRequest$).toEmit(undefined);
     });
 
     it('should emit the last request when one request is present', async () => {
       const request1 = new MockSidePanelData('req1');
-      service.openSidePanel(request1);
+      state.service.openSidePanel(request1);
 
-      await expectAsync(service.dialogRequest$).toEmit(request1);
+      await expectAsync(state.service.dialogRequest$).toEmit(request1);
     });
   });
 
   describe('isPanelOpen$', () => {
     it('should emit true when a request is present', async () => {
       const request1 = new MockSidePanelData('req1');
-      service.openSidePanel(request1);
+      state.service.openSidePanel(request1);
 
-      await expectAsync(service.isPanelOpen$).toEmit(true);
+      await expectAsync(state.service.isPanelOpen$).toEmit(true);
     });
 
     it('should emit false when no request is present', async () => {
-      service.closeSidePanel();
+      state.service.closeSidePanel();
 
-      await expectAsync(service.isPanelOpen$).toEmit(false);
+      await expectAsync(state.service.isPanelOpen$).toEmit(false);
     });
   });
 
   describe('openSidePanel', () => {
     it('should set the request to the state', async () => {
       const request1 = new MockSidePanelData('req1');
-      service.openSidePanel(request1);
+      state.service.openSidePanel(request1);
 
-      await expectAsync(service.dialogRequest$).toEmit(request1);
+      await expectAsync(state.service.dialogRequest$).toEmit(request1);
     });
   });
 
   describe('closeSidePanel', () => {
     it('should remove the request from the state', async () => {
       const request1 = new MockSidePanelData('req1');
-      service.openSidePanel(request1);
+      state.service.openSidePanel(request1);
 
-      service.closeSidePanel();
+      state.service.closeSidePanel();
 
-      await expectAsync(service.dialogRequest$).toEmit(undefined);
+      await expectAsync(state.service.dialogRequest$).toEmit(undefined);
     });
   });
 });
