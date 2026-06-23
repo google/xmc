@@ -61,6 +61,7 @@ deployment_groups:
       - iam.googleapis.com
       - cloudresourcemanager.googleapis.com
       - servicenetworking.googleapis.com
+      - certificatemanager.googleapis.com
 
 - group: primary
   modules:
@@ -206,6 +207,7 @@ deployment_groups:
       gcp_public_cidrs_access_enabled: $(vars.gcp_public_cidrs_access_enabled)
       configure_workload_identity_sa: true
       enable_vertical_pod_autoscaling: true
+      enable_inference_gateway: true
       master_authorized_networks:
       - cidr_block: $(vars.authorized_cidr)
         display_name: Authorized
