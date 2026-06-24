@@ -106,7 +106,7 @@ XMC relies on GKE Gateway API to expose HTTP, HTTPS, and gRPC endpoints external
 If you are deploying to a development, staging, or testing environment and do not have a dedicated corporate/personal domain name, you have two options to provision DNS records:
 
 ##### Option A: Using a Shared Custom Domain (e.g. `example.com`)
-If your organization maintains a delegated DNS zone (e.g. in Cloud DNS) for development clusters:
+If your organization maintains a delegated DNS zone (e.g. in [Cloud DNS](https://console.cloud.google.com/net-services/dns/zones)) for development clusters:
 1. Set the `domain_name` variable in your configuration to the shared technical domain (e.g. `example.com`).
 2. Segment your setup using a unique `environment` suffix (e.g. `my-dev`). The blueprints automatically route the endpoints to:
    - UI: `my-dev.example.com`
