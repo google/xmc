@@ -316,19 +316,21 @@ deployment_groups:
       - name: redisPassword
         value: $(redis.auth_string)
       - name: certs.type
-        value: "gts"
+        value: "self-signed"
       - name: certs.email
         value: $(vars.certs_email)
       - name: certs.gts.keyId
         value: $(vars.gts_key_id)
       - name: certs.gts.hmacKey
         value: $(vars.gts_hmac_key)
+      - name: gateway.className
+        value: "gke-l7-rilb"
       - name: gateway.staticIp
-        value: "xmc-gateway-static-ip-$(vars.environment)"
+        value: ""
       - name: xmcUrl
         value: "$(vars.environment).$(vars.domain_name)"
       - name: gateway.certMap
-        value: $(xmc_cert_manager.certificate_map_name)
+        value: ""
       - name: experimentStateServer.spannerDatabaseName
         value: "projects/$(vars.project_id)/instances/xmc-$(vars.environment)/databases/$(db_spanner.database_ids.ess)"
       - name: gcpServiceAccount
