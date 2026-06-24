@@ -2,9 +2,12 @@
 
 This guide details the three paths to install and deploy XManager on Cloud (XMC):
 
-1. **Automated Agent Deployment**: Using the pre-configured `deploy_xmc` agent skill.
+1. **Automated Agent Deployment**: Using the pre-configured [deploy_xmc skill](.agents/skills/deploy_xmc/SKILL.md).
 2. **Cluster Toolkit Blueprint v2**: The recommended manual pathway using automated orchestration blueprints.
 3. **Terraform and Helm**: The direct, hands-on infrastructure deployment pathway.
+
+> [!IMPORTANT]
+> **Working Directory**: All commands in this guide must be executed from the root of the `xmc` repository directory.
 
 ---
 
@@ -18,7 +21,20 @@ Before launching any deployment pathway, ensure you have the following CLI tools
 | **`kubectl`** | `kubectl version --client` | Prints Kubernetes client version |
 | **`helm`** | `helm version` | Prints Helm client version |
 | **`terraform`** | `terraform --version` | Prints Terraform version (minimum 1.12.2) |
-| **`ghpc`** | `./cluster-toolkit/ghpc version` | Prints gcluster/ghpc tool version |
+| **`gcluster`** | `./cluster-toolkit/gcluster version` | Prints gcluster tool version |
+
+### Installing HPC Cluster Toolkit (gcluster)
+
+If you do not have `gcluster` installed locally, you must clone and build the Google Cloud HPC Toolkit:
+1. Clone the repository into a directory named `cluster-toolkit` at the root of this workspace:
+   ```bash
+   git clone https://github.com/GoogleCloudPlatform/hpc-toolkit.git cluster-toolkit
+   ```
+2. Navigate into the folder and build the tool:
+   ```bash
+   cd cluster-toolkit && make && cd ..
+   ```
+This compiles the toolkit and produces the `./cluster-toolkit/gcluster` CLI binary.
 
 ---
 
@@ -26,7 +42,15 @@ Before launching any deployment pathway, ensure you have the following CLI tools
 
 Before executing any deployment pathway, follow these configuration steps to prepare your environment. The steps described in this section assume a highly privileged access to a GCP project and limited constrains stemming from organization policies. Please check your organization policies regarding the resources you are allowed to create - most companies will have very specific requriements around domain registration and certificats management. 
 
-### 1. Build and Push Container Images
+### 1. Copy Configuration Template
+
+Copy the blueprint configuration override template to create your deployment overrides configuration file:
+```bash
+cp deploy/ctk_v2/xmc-deployment-template.yaml deploy/ctk_v2/xmanager-cloud-deployment.yaml
+```
+You will configure your deployment variables by editing `deploy/ctk_v2/xmanager-cloud-deployment.yaml`.
+
+### 2. Build and Push Container Images
 
 The XMC services require OCI container images built from the codebase. You must build and push these images to Google Artifact Registry (or another registry of your choice) before deploying.
 
@@ -34,18 +58,18 @@ The XMC services require OCI container images built from the codebase. You must 
    ```bash
    gcloud artifacts repositories create xmc \
        --repository-format=docker \
-       --location=<region> \
+       --location=<LOCATION> \
        --description="XMC Container Images"
    ```
 
 2. **Configure Docker authentication** to access the repository:
    ```bash
-   gcloud auth configure-docker <region>-docker.pkg.dev
+   gcloud auth configure-docker <LOCATION>-docker.pkg.dev
    ```
 
 3. **Set environmental variables** specifying your target registry path, environment name suffix, and tag:
    ```bash
-   export XMC_ACR_TARGET="<region>-docker.pkg.dev/<project_id>/xmc"
+   export XMC_ACR_TARGET="<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc"
    export XMC_ENV="dev"  # Match your deployment environment name
    export BUILD_TAG="latest"
    ```
@@ -62,15 +86,15 @@ The XMC services require OCI container images built from the codebase. You must 
 
 5. **Update image variables** in your deployment configuration file (e.g. `xmanager-cloud-deployment.yaml`, copy of [xmc-deployment-template.yaml](deploy/ctk_v2/xmc-deployment-template.yaml)):
    ```yaml
-   xid_image: "<region>-docker.pkg.dev/<project_id>/xmc/xid-service-dev:latest"
-   actuator_image: "<region>-docker.pkg.dev/<project_id>/xmc/actuator-dev:latest"
-   ess_image: "<region>-docker.pkg.dev/<project_id>/xmc/experiment-state-server-dev:latest"
-   ui_image: "<region>-docker.pkg.dev/<project_id>/xmc/ui-dev:latest"
-   reconciler_image: "<region>-docker.pkg.dev/<project_id>/xmc/reconciler-dev:latest"
-   log_monitor_image: "<region>-docker.pkg.dev/<project_id>/xmc/log-monitor-dev:latest"
+   xid_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/xid-service-dev:latest"
+   actuator_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/actuator-dev:latest"
+   ess_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/experiment-state-server-dev:latest"
+   ui_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/ui-dev:latest"
+   reconciler_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/reconciler-dev:latest"
+   log_monitor_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/log-monitor-dev:latest"
    ```
 
-### 2. DNS and Domain Name Configuration
+### 3. DNS and Domain Name Configuration
 
 XMC relies on GKE Gateway API to expose HTTP, HTTPS, and gRPC endpoints externally on a single global external static IP address.
 
@@ -157,7 +181,7 @@ To configure this:
    ```
    *Note: Creating these Endpoints automatically registers public DNS A records pointing to `<gateway_external_ip>` under the `cloud.goog` zone.*
 
-### 3. OAuth2 Client (IAP Credentials) Setup
+### 4. OAuth2 Client (IAP Credentials) Setup
 
 XMC uses an application-level [Google OAuth2 flow](https://developers.google.com/identity/protocols/oauth2). This requires Google OAuth 2.0 Web Client credentials (configured via `iap_client_id` and `iap_client_secret`).
 
@@ -179,7 +203,7 @@ XMC uses an application-level [Google OAuth2 flow](https://developers.google.com
 
 For detailed guidance, refer to the [OAuth 2.0 APIs Credentials Documentation](https://support.google.com/cloud/answer/6158849).
 
-### 4. cert-manager and Google Trust Services (GTS) Setup
+### 5. cert-manager and Google Trust Services (GTS) Setup
 
 To configure SSL, XMC needs Google Trust Services (GTS) External Account Binding (EAB) credentials.
 
@@ -210,12 +234,18 @@ gts_hmac_key: "your-gts-hmac-key"
 
 If you are running an AI-assisted agent session, the agent can automate the entire deployment of the Cluster Toolkit v2 blueprint. 
 
+### Skill Integration and Agent Setup
+
+JETS automatically registers agent skills that are defined within the workspace:
+- **Location**: The deployment skill is located in the [deploy_xmc skill](.agents/skills/deploy_xmc/SKILL.md) directory.
+- **Integration**: To equip your agent session with this skill, ensure the `.agents/` directory is present in the root of the workspace. The agent automatically scans this folder upon startup and registers the workflows. No manual import is needed.
+
 ### How to Trigger
 Instruct the agent:
 > Deploy XMC using the blueprint configuration at `deploy/ctk_v2/xmanager-cloud-deployment.yaml`
 
 ### How the Agent Deploys under the Hood:
-1. **Pre-flight Check**: Validates the presence of `gcloud`, `kubectl`, `helm`, `terraform`, and `ghpc`.
+1. **Pre-flight Check**: Validates the presence of `gcloud`, `kubectl`, `helm`, `terraform`, and `gcluster`.
 2. **Copy Protobuf Descriptors**: Staged proto structures required by the application:
    ```bash
    cp ./internal/storage/spanner/emulator/ess_messages.pb ./deploy/
@@ -223,15 +253,15 @@ Instruct the agent:
    ```
 3. **Blueprint Compilation**:
    ```bash
-   ./cluster-toolkit/ghpc create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
+   ./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
    ```
 4. **Deploy APIs (`apis` group)**:
    ```bash
-   ./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only apis --auto-approve
+   ./cluster-toolkit/gcluster deploy ctk-out/xmc-v2-run --only apis --auto-approve
    ```
 5. **Deploy Core Infrastructure (`primary` group)**:
    ```bash
-   ./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only primary --auto-approve
+   ./cluster-toolkit/gcluster deploy ctk-out/xmc-v2-run --only primary --auto-approve
    ```
 6. **Extract Static IP & Pause for DNS / OAuth Settings**:
    The agent retrieves the global external static IP:
@@ -246,15 +276,15 @@ Instruct the agent:
    > Once done, reply to the agent to resume execution.
 7. **Deploy Compute Cluster (`compute` group)**:
    ```bash
-   ./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only compute --auto-approve
+   ./cluster-toolkit/gcluster deploy ctk-out/xmc-v2-run --only compute --auto-approve
    ```
 8. **Install Kubernetes Prerequisites (`kubernetes_prereqs` group)**:
    ```bash
-   ./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only kubernetes_prereqs --auto-approve
+   ./cluster-toolkit/gcluster deploy ctk-out/xmc-v2-run --only kubernetes_prereqs --auto-approve
    ```
 9. **Deploy Application (`xmc_app` group)**:
    ```bash
-   ./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only xmc_app --auto-approve
+   ./cluster-toolkit/gcluster deploy ctk-out/xmc-v2-run --only xmc_app --auto-approve
    ```
 10. **Post-Deployment Verification**:
     The agent runs:
@@ -270,7 +300,7 @@ Instruct the agent:
 We provide automated HPC Cluster Toolkit blueprints to compile and deploy the entire GCP and GKE stack:
 
 1. **Step-by-step Compilation**: Follow the step-by-step instructions on compilation and group-by-group deployments in the [deploy/ctk_v2/README.md](deploy/ctk_v2/README.md).
-2. **Execute Deployment**: Run `ghpc deploy` command groups sequentially, checking resource state transitions as you go.
+2. **Execute Deployment**: Run `gcluster deploy` command groups sequentially, checking resource state transitions as you go.
 
 ---
 

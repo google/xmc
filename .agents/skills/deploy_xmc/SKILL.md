@@ -33,7 +33,7 @@ Before running any compilation or deployment steps, verify that all necessary CL
 | **`kubectl`** | `kubectl version --client` | Prints Kubernetes client version |
 | **`helm`** | `helm version` | Prints Helm client version |
 | **`terraform`** | `terraform --version` | Prints Terraform version (minimum 1.12.2) |
-| **`ghpc`** | `./cluster-toolkit/ghpc version` | Prints gcluster/ghpc tool version |
+| **`gcluster`** | `./cluster-toolkit/gcluster version` | Prints gcluster tool version |
 
 > [!CAUTION]
 > **Check Action**: If any check fails (command not found or returns error):
@@ -59,7 +59,7 @@ cp ./internal/storage/spanner/emulator/xid_messages.pb ./deploy/
 Compile the blueprint, specifying the overrides config file (e.g., `deploy/ctk_v2/xmanager-cloud-deployment.yaml`) using the `-d` flag. If the user hasn't specified the overrides file, look for files in `deploy/ctk_v2/` matching `*deployment.yaml`.
 
 ```bash
-./cluster-toolkit/ghpc create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
+./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
 ```
 
 Confirm that compilation completes successfully and generates the deployment folder `xmc-v2-run` inside `ctk-out/` containing the Terraform workspaces.
@@ -72,12 +72,12 @@ Deploy the blueprint groups sequentially to allow monitoring and manual interven
 
 ### Step 1: Enable APIs (`apis` group)
 ```bash
-./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only apis --auto-approve
+./cluster-toolkit/gcluster deploy ctk-out/xmc-v2-run --only apis --auto-approve
 ```
 
 ### Step 2: Deploy Core Infrastructure & IP (`primary` group)
 ```bash
-./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only primary --auto-approve
+./cluster-toolkit/gcluster deploy ctk-out/xmc-v2-run --only primary --auto-approve
 ```
 
 ### Step 3: DNS Pause & IP Mapping
@@ -112,17 +112,17 @@ Deploy the blueprint groups sequentially to allow monitoring and manual interven
 
 ### Step 4: Deploy GKE Cluster & Node Pools (`compute` group)
 ```bash
-./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only compute --auto-approve
+./cluster-toolkit/gcluster deploy ctk-out/xmc-v2-run --only compute --auto-approve
 ```
 
 ### Step 5: Install GKE System Helm Charts (`kubernetes_prereqs` group)
 ```bash
-./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only kubernetes_prereqs --auto-approve
+./cluster-toolkit/gcluster deploy ctk-out/xmc-v2-run --only kubernetes_prereqs --auto-approve
 ```
 
 ### Step 6: Deploy XMC Application (`xmc_app` group)
 ```bash
-./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only xmc_app --auto-approve
+./cluster-toolkit/gcluster deploy ctk-out/xmc-v2-run --only xmc_app --auto-approve
 ```
 
 ---
