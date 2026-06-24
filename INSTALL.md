@@ -40,7 +40,7 @@ This compiles the toolkit and produces the `./cluster-toolkit/gcluster` CLI bina
 
 ## Pre-Deployment Setup
 
-Before executing any deployment pathway, follow these configuration steps to prepare your environment. The steps described in this section assume a highly privileged access to a GCP project and limited constrains stemming from organization policies. Please check your organization policies regarding the resources you are allowed to create - most companies will have very specific requriements around domain registration and certificats management. 
+Before executing any deployment pathway, follow these configuration steps to prepare your environment. The steps described in this section assume highly privileged access to a GCP project and limited constraints stemming from organization policies. Please check your organization policies regarding the resources you are allowed to create - most companies will have very specific requirements around domain registration and certificates management. 
 
 ### 1. Copy Configuration Template
 
@@ -67,7 +67,7 @@ The XMC services require OCI container images built from the codebase. You must 
    gcloud auth configure-docker <LOCATION>-docker.pkg.dev
    ```
 
-3. **Set environmental variables** specifying your target registry path, environment name suffix, and tag:
+3. **Set environment variables** specifying your target registry path, environment name suffix, and tag:
    ```bash
    export XMC_ACR_TARGET="<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc"
    export XMC_ENV="dev"  # Match your deployment environment name
