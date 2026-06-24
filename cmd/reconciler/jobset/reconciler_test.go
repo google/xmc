@@ -990,36 +990,6 @@ func TestReconcileImagePullBackOff(t *testing.T) {
 			wantState:   spb.WorkUnitStatus_STARTING,
 		},
 		{
-			name:      "Starting more than 120s with Unschedulable pod - STARTING + warning + requeue",
-			jobSetAge: 130 * time.Second,
-			pods: []runtime.Object{
-				&corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "pod-unsched",
-						Namespace: "default",
-						Labels: map[string]string{
-							"jobset.sigs.k8s.io/jobset-name": "test-jobset",
-						},
-					},
-					Status: corev1.PodStatus{
-						Phase: corev1.PodPending,
-						Conditions: []corev1.PodCondition{
-							{
-								Type:    corev1.PodScheduled,
-								Status:  corev1.ConditionFalse,
-								Reason:  corev1.PodReasonUnschedulable,
-								Message: "0/3 nodes are available: 3 Insufficient nvidia.com/gpu.",
-							},
-						},
-					},
-				},
-			},
-			// Unschedulable is non-terminal: stay STARTING, warn, and requeue to keep checking.
-			wantRequeue:      true,
-			wantState:        spb.WorkUnitStatus_STARTING,
-			wantErrorMsgPart: "Work unit may be unschedulable",
-		},
-		{
 			name:        "Running state - No Requeue",
 			jobSetAge:   30 * time.Second,
 			wantRequeue: false,
@@ -1097,6 +1067,122 @@ func TestReconcileImagePullBackOff(t *testing.T) {
 				if strings.Contains(msg, "Failed to pull the container image") {
 					t.Errorf("Expected message not to contain 'Failed to pull the container image', got %q", msg)
 				}
+			}
+		})
+	}
+}
+
+// TestReconcileUnschedulablePods verifies that a JobSet whose pods report an
+// Unschedulable verdict stays in STARTING with a WARNING, requeues only until
+// unschedulablePodsCheckTime (so it does not loop forever), and that a single
+// shared pod fetch drives both startup checks.
+func TestReconcileUnschedulablePods(t *testing.T) {
+	scheme, err := newScheme()
+	if err != nil {
+		t.Fatalf("Failed to create scheme: %v", err)
+	}
+
+	jobSet := &v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-jobset",
+			Namespace: "default",
+			Labels: map[string]string{
+				constants.ExperimentIDLabel:      "123",
+				constants.WorkUnitIDLabel:        "1",
+				constants.ExecutionIDLabel:       "1",
+				"jobset.sigs.k8s.io/jobset-name": "test-jobset",
+			},
+		},
+		Spec: v1alpha2.JobSetSpec{
+			ReplicatedJobs: []v1alpha2.ReplicatedJob{{Name: "worker", Replicas: 1}},
+		},
+		Status: v1alpha2.JobSetStatus{
+			ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{
+				{Name: "worker", Active: 1, Ready: 0, Succeeded: 0, Failed: 0},
+			},
+		},
+	}
+	unschedulablePod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-unsched",
+			Namespace: "default",
+			Labels:    map[string]string{"jobset.sigs.k8s.io/jobset-name": "test-jobset"},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodPending,
+			Conditions: []corev1.PodCondition{{
+				Type:    corev1.PodScheduled,
+				Status:  corev1.ConditionFalse,
+				Reason:  corev1.PodReasonUnschedulable,
+				Message: "0/3 nodes are available: 3 Insufficient nvidia.com/gpu.",
+			}},
+		},
+	}
+
+	tests := []struct {
+		name        string
+		jobSetAge   time.Duration
+		wantRequeue bool
+	}{
+		{
+			name:        "Unschedulable before unschedulablePodsCheckTime - warn + requeue",
+			jobSetAge:   130 * time.Second,
+			wantRequeue: true,
+		},
+		{
+			name:        "Unschedulable past unschedulablePodsCheckTime - warn, no requeue",
+			jobSetAge:   6 * time.Minute,
+			wantRequeue: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			js := jobSet.DeepCopy()
+			js.CreationTimestamp = metav1.Time{Time: time.Now().Add(-tc.jobSetAge)}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithRuntimeObjects(js, unschedulablePod.DeepCopy()).
+				WithIndex(&corev1.Pod{}, v1alpha2.JobSetNameKey, func(obj client.Object) []string {
+					return []string{obj.(*corev1.Pod).Labels[v1alpha2.JobSetNameKey]}
+				}).
+				Build()
+			batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
+			r := &Reconciler{
+				Client:                      fakeClient,
+				Scheme:                      scheme,
+				Batcher:                     batcher,
+				StartupPodErrorCheckEnabled: true,
+				StartupPodErrorCheckTime:    2 * time.Minute,
+			}
+
+			req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-jobset", Namespace: "default"}}
+			res, err := r.Reconcile(context.Background(), req)
+			if err != nil {
+				t.Fatalf("Reconcile() failed: %v", err)
+			}
+
+			if tc.wantRequeue {
+				if res.RequeueAfter <= 0 || res.RequeueAfter > unschedulablePodsCheckTime {
+					t.Errorf("RequeueAfter %v out of expected range (0, %v]", res.RequeueAfter, unschedulablePodsCheckTime)
+				}
+			} else if res.RequeueAfter != 0 {
+				t.Errorf("Expected RequeueAfter 0 past threshold, got %v", res.RequeueAfter)
+			}
+
+			batcher.UpdatesMu.Lock()
+			defer batcher.UpdatesMu.Unlock()
+			update := batcher.Updates[123][1][shared.JobsetSource]
+			if got := update.WorkUnitExecution.GetStatus().GetState(); got != spb.WorkUnitStatus_STARTING {
+				t.Errorf("Expected state STARTING, got %v", got)
+			}
+			msg := update.WorkUnitExecution.GetStatus().GetSystemMessage()
+			if !strings.Contains(msg.GetUserFacingText(), "Work unit may be unschedulable") {
+				t.Errorf("Expected unschedulable warning, got %q", msg.GetUserFacingText())
+			}
+			if msg.GetSeverity() != spb.StructuredMessage_WARNING {
+				t.Errorf("Expected severity WARNING, got %v", msg.GetSeverity())
 			}
 		})
 	}
