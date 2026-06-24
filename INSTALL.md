@@ -24,7 +24,7 @@ Before launching any deployment pathway, ensure you have the following CLI tools
 
 ## Pre-Deployment Setup
 
-Before executing any deployment pathway, follow these configuration steps to prepare your environment. The steps described in this section assume a highly privileged access to a GCP project and limited constrains stemming from organization policies. Please check your organization policies regarding the resources you are allowed to create - most companies will have very specific requriements around domain registration and certificats management. 
+Before executing any deployment pathway, follow these configuration steps to prepare your environment. The steps described in this section assume highly privileged access to a GCP project and limited constraints stemming from organization policies. Please check your organization policies regarding the resources you are allowed to create - most companies will have very specific requirements around domain registration and certificates management. 
 
 ### 1. Build and Push Container Images
 
