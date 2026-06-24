@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import { Pipe, PipeTransform } from '@angular/core';
-import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 
 import { trySanitizeUrl } from 'xmanager_cloud/ui/app/safevalues_helper';
 
@@ -25,14 +24,11 @@ import { trySanitizeUrl } from 'xmanager_cloud/ui/app/safevalues_helper';
   standalone: true,
 })
 export class SafeUrlPipe implements PipeTransform {
-  constructor(private readonly sanitizer: DomSanitizer) {}
-
-  transform(value: string | null | undefined): SafeUrl {
+  transform(value: string | null | undefined): string {
     if (!value) {
       return '';
     }
-    const sanitized = trySanitizeUrl(value);
-    return this.sanitizer.bypassSecurityTrustUrl(sanitized);
+    return trySanitizeUrl(value);
   }
 }
 

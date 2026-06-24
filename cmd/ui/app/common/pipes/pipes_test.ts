@@ -14,21 +14,17 @@
 
 import 'jasmine';
 
-import { SecurityContext } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { DomSanitizer } from '@angular/platform-browser';
 
 import { SafeUrlPipe, SplitPipe } from './pipes';
 
 describe('SafeUrlPipe', () => {
   let pipe: SafeUrlPipe;
-  let sanitizer: DomSanitizer;
 
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [SafeUrlPipe],
     });
-    sanitizer = TestBed.inject(DomSanitizer);
     pipe = TestBed.inject(SafeUrlPipe);
   });
 
@@ -38,32 +34,28 @@ describe('SafeUrlPipe', () => {
 
   it('should return safe URL for a valid HTTPS URL', () => {
     const url = 'https://example.com/some/path';
-    const safeUrl = pipe.transform(url);
-    expect(sanitizer.sanitize(SecurityContext.URL, safeUrl)).toBe(url);
+    expect(pipe.transform(url)).toBe(url);
   });
 
   it('should return safe URL for a valid HTTP URL', () => {
     const url = 'http://localhost:8080/test';
-    const safeUrl = pipe.transform(url);
-    expect(sanitizer.sanitize(SecurityContext.URL, safeUrl)).toBe(url);
+    expect(pipe.transform(url)).toBe(url);
   });
 
   it('should return safe URL for relative paths', () => {
     const relativePath = '/some/relative/path';
-    const safeUrl = pipe.transform(relativePath);
-    expect(sanitizer.sanitize(SecurityContext.URL, safeUrl)).toBe(relativePath);
+    expect(pipe.transform(relativePath)).toBe(relativePath);
   });
 
   it('should sanitize javascript URL to about:blank', () => {
     const url = 'javascript:alert(1)';
-    const safeUrl = pipe.transform(url);
-    expect(sanitizer.sanitize(SecurityContext.URL, safeUrl)).toBe('about:blank');
+    expect(pipe.transform(url)).toBe('about:blank');
   });
 
   it('should return empty string for null, undefined, or empty string', () => {
-    expect(sanitizer.sanitize(SecurityContext.URL, pipe.transform(null))).toBe('');
-    expect(sanitizer.sanitize(SecurityContext.URL, pipe.transform(undefined))).toBe('');
-    expect(sanitizer.sanitize(SecurityContext.URL, pipe.transform(''))).toBe('');
+    expect(pipe.transform(null)).toBe('');
+    expect(pipe.transform(undefined)).toBe('');
+    expect(pipe.transform('')).toBe('');
   });
 });
 
