@@ -31,7 +31,13 @@ limitations under the License.
       }
     <div class="name-type-section">
       <div class="artifact-title">
+      @if (displayProperties().url) {
+      <a [href]="displayProperties().url | safeUrl" target="_blank" style="text-decoration: none; color: inherit">
         {{ displayProperties().displayName }}
+      </a>
+      } @else {
+      {{ displayProperties().displayName }}
+      }
       </div>
       <div class="artifact-subtitle">
         <span>{{ displayProperties().typeName }}</span>
