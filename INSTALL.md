@@ -43,7 +43,7 @@ The XMC services require OCI container images built from the codebase. You must 
    gcloud auth configure-docker <region>-docker.pkg.dev
    ```
 
-3. **Set environmental variables** specifying your target registry path, environment name suffix, and tag:
+3. **Set environment variables** specifying your target registry path, environment name suffix, and tag:
    ```bash
    export XMC_ACR_TARGET="<region>-docker.pkg.dev/<project_id>/xmc"
    export XMC_ENV="dev"  # Match your deployment environment name
