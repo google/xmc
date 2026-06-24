@@ -22,6 +22,190 @@ Before launching any deployment pathway, ensure you have the following CLI tools
 
 ---
 
+## Pre-Deployment Setup
+
+Before executing any deployment pathway, follow these configuration steps to prepare your environment. The steps described in this section assume a highly privileged access to a GCP project and limited constrains stemming from organization policies. Please check your organization policies regarding the resources you are allowed to create - most companies will have very specific requriements around domain registration and certificats management. 
+
+### 1. Build and Push Container Images
+
+The XMC services require OCI container images built from the codebase. You must build and push these images to Google Artifact Registry (or another registry of your choice) before deploying.
+
+1. **Create an Artifact Registry repository** in your GCP project:
+   ```bash
+   gcloud artifacts repositories create xmc \
+       --repository-format=docker \
+       --location=<region> \
+       --description="XMC Container Images"
+   ```
+
+2. **Configure Docker authentication** to access the repository:
+   ```bash
+   gcloud auth configure-docker <region>-docker.pkg.dev
+   ```
+
+3. **Set environmental variables** specifying your target registry path, environment name suffix, and tag:
+   ```bash
+   export XMC_ACR_TARGET="<region>-docker.pkg.dev/<project_id>/xmc"
+   export XMC_ENV="dev"  # Match your deployment environment name
+   export BUILD_TAG="latest"
+   ```
+
+4. **Build and push the images** using the generated Bazel targets:
+   ```bash
+   bazel run //cmd/xid_service:xid_service_image_push
+   bazel run //cmd/actuator:actuator_image_push
+   bazel run //cmd/experiment_state_server:experiment_state_server_image_push
+   bazel run //cmd/ui:ui_image_push
+   bazel run //cmd/reconciler:reconciler_image_push
+   bazel run //cmd/log_monitor:log_monitor_image_push
+   ```
+
+5. **Update image variables** in your deployment configuration file (e.g. `xmanager-cloud-deployment.yaml`, copy of [xmc-deployment-template.yaml](deploy/ctk_v2/xmc-deployment-template.yaml)):
+   ```yaml
+   xid_image: "<region>-docker.pkg.dev/<project_id>/xmc/xid-service-dev:latest"
+   actuator_image: "<region>-docker.pkg.dev/<project_id>/xmc/actuator-dev:latest"
+   ess_image: "<region>-docker.pkg.dev/<project_id>/xmc/experiment-state-server-dev:latest"
+   ui_image: "<region>-docker.pkg.dev/<project_id>/xmc/ui-dev:latest"
+   reconciler_image: "<region>-docker.pkg.dev/<project_id>/xmc/reconciler-dev:latest"
+   log_monitor_image: "<region>-docker.pkg.dev/<project_id>/xmc/log-monitor-dev:latest"
+   ```
+
+### 2. DNS and Domain Name Configuration
+
+XMC relies on GKE Gateway API to expose HTTP, HTTPS, and gRPC endpoints externally on a single global external static IP address.
+
+#### Why a domain is required
+- **Gateway Routing**: The Gateway routes incoming traffic to the appropriate service (e.g. UI, ESS backend, or gRPC) using HTTP host headers.
+- **TLS/SSL Provisioning**: Google Trust Services (GTS) or Let's Encrypt requires a valid, publicly resolvable DNS domain to verify domain ownership (via ACME HTTP/DNS challenges) before issuing certificates.
+
+#### Using GKE Gateway Technical Domains in Non-Production Environments
+If you are deploying to a development, staging, or testing environment and do not have a dedicated corporate/personal domain name, you have two options to provision DNS records:
+
+##### Option A: Using a Shared Custom Domain (e.g. `example.com`)
+If your organization maintains a delegated DNS zone (e.g. in Cloud DNS) for development clusters:
+1. Set the `domain_name` variable in your configuration to the shared technical domain (e.g. `example.com`).
+2. Segment your setup using a unique `environment` suffix (e.g. `my-dev`). The blueprints automatically route the endpoints to:
+   - UI: `my-dev.example.com`
+   - API: `api.my-dev.example.com`
+   - gRPC: `grpc.my-dev.example.com`
+3. Map the Gateway's static IP (retrieved during deployment) to these domain names by adding **A records** in the DNS managed zone of your shared domain.
+
+##### Option B: Using Google Cloud-provided Endpoints Domains (`cloud.goog`)
+If you do not have any custom domain or DNS zone, you can use Google Cloud Endpoints to register free public DNS records under Google's managed `cloud.goog` domain.
+
+The domain names will have the following structure:
+- UI: `<environment>.endpoints.<project_id>.cloud.goog`
+- API: `api.<environment>.endpoints.<project_id>.cloud.goog`
+- gRPC: `grpc.<environment>.endpoints.<project_id>.cloud.goog`
+
+To configure this:
+1. In your configuration file (e.g. `xmanager-cloud-deployment.yaml`), set the `domain_name` variable to:
+   ```yaml
+   domain_name: "endpoints.<project_id>.cloud.goog"
+   ```
+   *(Replace `<project_id>` with your Google Cloud Project ID)*
+
+2. After compiling and deploying the core infrastructure to retrieve the Gateway's global static IP address (Step 6 of the deployment process), you must register the three subdomains. Create three YAML configuration files containing the Endpoint configurations:
+
+   **`ui-dns.yaml`**:
+   ```yaml
+   swagger: "2.0"
+   info:
+     description: "UI DNS for XMC"
+     title: "XMC UI DNS"
+     version: "1.0.0"
+   host: "<environment>.endpoints.<project_id>.cloud.goog"
+   x-google-endpoints:
+   - name: "<environment>.endpoints.<project_id>.cloud.goog"
+     target: "<gateway_external_ip>"
+   paths: {}
+   ```
+
+   **`api-dns.yaml`**:
+   ```yaml
+   swagger: "2.0"
+   info:
+     description: "API DNS for XMC"
+     title: "XMC API DNS"
+     version: "1.0.0"
+   host: "api.<environment>.endpoints.<project_id>.cloud.goog"
+   x-google-endpoints:
+   - name: "api.<environment>.endpoints.<project_id>.cloud.goog"
+     target: "<gateway_external_ip>"
+   paths: {}
+   ```
+
+   **`grpc-dns.yaml`**:
+   ```yaml
+   swagger: "2.0"
+   info:
+     description: "gRPC DNS for XMC"
+     title: "XMC gRPC DNS"
+     version: "1.0.0"
+   host: "grpc.<environment>.endpoints.<project_id>.cloud.goog"
+   x-google-endpoints:
+   - name: "grpc.<environment>.endpoints.<project_id>.cloud.goog"
+     target: "<gateway_external_ip>"
+   paths: {}
+   ```
+
+3. Deploy these service configurations to Google Cloud Endpoints:
+   ```bash
+   gcloud endpoints services deploy ui-dns.yaml
+   gcloud endpoints services deploy api-dns.yaml
+   gcloud endpoints services deploy grpc-dns.yaml
+   ```
+   *Note: Creating these Endpoints automatically registers public DNS A records pointing to `<gateway_external_ip>` under the `cloud.goog` zone.*
+
+### 3. OAuth2 Client (IAP Credentials) Setup
+
+XMC uses an application-level [Google OAuth2 flow](https://developers.google.com/identity/protocols/oauth2). This requires Google OAuth 2.0 Web Client credentials (configured via `iap_client_id` and `iap_client_secret`).
+
+#### Step-by-Step Creation Guide
+1. Navigate to the **[APIs & Services > Credentials](https://console.cloud.google.com/apis/credentials)** console page.
+2. Select your Google Cloud project.
+3. Configure the **OAuth consent screen** if not done previously (choose **Internal** for restricted/private access, fill in App Name, User support email, and developer contact).
+4. On the Credentials page, click **+ Create Credentials** > **OAuth client ID**.
+5. Select **Web application** as the application type.
+6. Name your client (e.g., `XMC Web Application`).
+7. Under **Authorized redirect URIs**, add:
+   - `https://api.<environment>.<domain>/api/callback`
+   *(Substitute `<environment>` and `<domain>` with your configured suffix and domain, e.g. `https://api.xmc.example.com/api/callback`)*.
+8. Click **Create** and copy the resulting **Client ID** and **Client Secret** into your `xmanager-cloud-deployment.yaml`:
+   ```yaml
+   iap_client_id: "YOUR_OAUTH_CLIENT_ID"
+   iap_client_secret: "YOUR_OAUTH_CLIENT_SECRET"
+   ```
+
+For detailed guidance, refer to the [OAuth 2.0 APIs Credentials Documentation](https://support.google.com/cloud/answer/6158849).
+
+### 4. cert-manager and Google Trust Services (GTS) Setup
+
+To configure SSL, XMC needs Google Trust Services (GTS) External Account Binding (EAB) credentials.
+
+#### How to Obtain GTS EAB Keys
+1. Enable the Public CA API in your Google Cloud Project:
+   ```bash
+   gcloud services enable publicca.googleapis.com
+   ```
+2. Request a new External Account Key:
+   ```bash
+   gcloud publicca external-account-keys create
+   ```
+3. The command will output a `keyId` and `b64MacKey` (HMAC key). Map these to:
+   - **`gts_key_id`** / **`certs.gts.keyId`**: Alphanumeric ID string (e.g. `a1b2c3d4e5f6g7h8i9j0`).
+   - **`gts_hmac_key`** / **`certs.gts.hmacKey`**: Base64-encoded HMAC key secret (e.g. `A1b2C3d4E5f6G7h8I9j0K1l2==`).
+   - **`certs_email`**: A valid email address registered with GTS to receive certificate expiration alerts (e.g., `admin@example.com`).
+
+Configure these in your `xmanager-cloud-deployment.yaml`:
+```yaml
+certs_email: "your-email@example.com"
+gts_key_id: "your-gts-key-id"
+gts_hmac_key: "your-gts-hmac-key"
+```
+
+---
+
 ## Approach 1: Automated Agent Deployment (deploy_xmc)
 
 If you are running an AI-assisted agent session, the agent can automate the entire deployment of the Cluster Toolkit v2 blueprint. 
