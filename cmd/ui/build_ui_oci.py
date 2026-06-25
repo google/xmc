@@ -100,7 +100,7 @@ RUN npm ci --legacy-peer-deps && npx ng build --configuration production
 FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist/browser /usr/share/nginx/html
-RUN chmod -R o+r /usr/share/nginx/html
+RUN chmod -R o+rX /usr/share/nginx/html
 COPY generate_config.sh /docker-entrypoint.d/generate_config.sh
 RUN chmod +x /docker-entrypoint.d/generate_config.sh
 EXPOSE 8080
