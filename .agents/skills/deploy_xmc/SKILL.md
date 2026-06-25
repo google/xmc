@@ -15,10 +15,12 @@ graph TD
     C --> D["3. Step 2: Deploy Core ('primary' group)"]
     D --> E["3. Step 3: Extract IP & DNS Pause"]
     E -->|User confirms DNS/OAuth updated| F["3. Step 4: Deploy Compute ('compute' group)"]
-    F --> G["3. Step 5: Install Helm ('kubernetes_prereqs' group)"]
-    G --> H["3. Step 6: Deploy App ('xmc_app' group)"]
-    H --> I["4. Verification & Validation"]
-    I -->|All checks pass| J["Report finalized URL to user"]
+    F --> G["3. Step 5: Enable GKE Gateway API"]
+    G --> H["3. Step 6: Install Helm ('kubernetes_prereqs' group)"]
+    H --> I["3. Step 7: Build & Push Images"]
+    I --> J["3. Step 8: Deploy App ('xmc_app' group)"]
+    J --> K["4. Verification & Validation"]
+    K -->|All checks pass| L["Report finalized URL to user"]
 ```
 
 ---
@@ -107,7 +109,7 @@ Deploy the blueprint groups sequentially to allow monitoring and manual interven
 ./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only compute --auto-approve
 ```
 
-### Step 4.5: Enable GKE Gateway API standard channel
+### Step 5: Enable GKE Gateway API standard channel
 Since GKE has Gateway API disabled by default, you must enable it on the newly created GKE cluster before deploying the application (which relies on `Gateway` and `HTTPRoute` resources). Run:
 
 ```bash
@@ -119,12 +121,12 @@ gcloud container clusters update <cluster_name> \
 > [!NOTE]
 > The default `<cluster_name>` format is `xmc-<deployment_name>-<environment>`.
 
-### Step 5: Install GKE System Helm Charts (`kubernetes_prereqs` group)
+### Step 6: Install GKE System Helm Charts (`kubernetes_prereqs` group)
 ```bash
 ./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only kubernetes_prereqs --auto-approve
 ```
 
-### Step 6: Build and Push XMC Service Images
+### Step 7: Build and Push XMC Service Images
 Before deploying the application Helm chart, build and push all 6 service Docker images to GCP Artifact Registry. You must set the project's target registry and environment variables:
 
 ```bash
@@ -139,7 +141,7 @@ bazel run //cmd/ui:ui_image_push
 bazel run //cmd/xid_service:xid_service_image_push
 ```
 
-### Step 7: Deploy XMC Application (`xmc_app` group)
+### Step 8: Deploy XMC Application (`xmc_app` group)
 ```bash
 ./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only xmc_app --auto-approve
 ```
