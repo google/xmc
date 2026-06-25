@@ -140,7 +140,7 @@ spec:
         - "-ess_actuator_url=https://actuator.api.{{ .Values.environment }}.{{ .Values.domainSuffix }}/actuate"
         - "-ess_endpoint_url=http://api.{{ .Values.environment }}.{{ .Values.domainSuffix }}"
         - "-ess_quota_project_id={{ .Values.projectId }}"
-        - "-ess_service_account={{ .Values.gcpServiceAccount }}"
+        - "-ess_service_account={{ required "gcpServiceAccount is required" .Values.gcpServiceAccount }}"
         - "-ess_signature_ttl_seconds={{ .Values.taskSignatureTtlSeconds }}"
         - "-ess_allowed_origins={{ .Values.experimentStateServer.allowedOrigins }}"
         - "-alsologtostderr"

@@ -54,7 +54,7 @@ Compile the blueprint, specifying the overrides config file (e.g., `deploy/ctk_v
 ./cluster-toolkit/ghpc create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
 ```
 
-Confirm that compilation completes successfully and generates the deployment folder named after your `<deployment_name>` (e.g., `ctk-out/<deployment_name>`) containing the Terraform workspaces.
+Confirm that compilation completes successfully and generates the deployment folder named after your `<deployment_name>` inside `ctk-out/` containing the Terraform workspaces.
 
 ---
 
@@ -107,7 +107,7 @@ Deploy the blueprint groups sequentially to allow monitoring and manual interven
 ./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only compute --auto-approve
 ```
 
-### Step 4.5: Enable GKE Gateway API standard channel manually
+### Step 4.5: Enable GKE Gateway API standard channel
 Since GKE has Gateway API disabled by default, you must enable it on the newly created GKE cluster before deploying the application (which relies on `Gateway` and `HTTPRoute` resources). Run:
 
 ```bash
@@ -128,7 +128,7 @@ gcloud container clusters update <cluster_name> \
 Before deploying the application Helm chart, build and push all 6 service Docker images to GCP Artifact Registry. You must set the project's target registry and environment variables:
 
 ```bash
-export XMC_ACR_TARGET="us-docker.pkg.dev/<project_id>/xmc"
+export XMC_ACR_TARGET="us-docker.pkg.dev/<project_id>/<xmc_registry_name>"
 export XMC_ENV="<environment>"
 
 bazel run //cmd/actuator:actuator_image_push
@@ -168,4 +168,4 @@ gcloud certificate-manager certificates describe xmc-cert-<environment> --projec
 ```
 
 > [!TIP]
-> Once all checks pass, report the finalized deployment URL (e.g. `https://<environment>.<domain_name>`) to the user.
+> Once all checks pass, report the finalized deployment URL (e.g. `https://<environment>.example.com`) to the user.

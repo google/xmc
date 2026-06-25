@@ -38,11 +38,11 @@ Instruct the agent:
    ```
 3. **Deploy APIs (`apis` group)**:
    ```bash
-   ./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only apis --auto-approve
+   ./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only apis --auto-approve
    ```
 4. **Deploy Core Infrastructure (`primary` group)**:
    ```bash
-   ./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only primary --auto-approve
+   ./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only primary --auto-approve
    ```
 5. **Extract Static IP & Pause for DNS / OAuth Settings**:
    The agent retrieves the global external static IP:
@@ -57,20 +57,20 @@ Instruct the agent:
    > Once done, reply to the agent to resume execution.
 6. **Deploy Compute Cluster (`compute` group)**:
    ```bash
-   ./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only compute --auto-approve
+   ./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only compute --auto-approve
    ```
 7. **Enable GKE Gateway API standard channel**:
    Before deploying the system Helm charts, the GKE cluster must have the standard Gateway API controller addon enabled:
    ```bash
-   gcloud container clusters update xmc-v2-test-<environment> --gateway-api=standard --region=<region> --project=<project_id>
+   gcloud container clusters update <cluster_name> --gateway-api=standard --region=<region> --project=<project_id>
    ```
 8. **Install Kubernetes Prerequisites (`kubernetes_prereqs` group)**:
    ```bash
-   ./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only kubernetes_prereqs --auto-approve
+   ./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only kubernetes_prereqs --auto-approve
    ```
 9. **Deploy Application (`xmc_app` group)**:
    ```bash
-   ./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only xmc_app --auto-approve
+   ./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only xmc_app --auto-approve
    ```
 10. **Post-Deployment Verification**:
     The agent runs:
