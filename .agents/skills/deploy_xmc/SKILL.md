@@ -33,7 +33,7 @@ Before running any compilation or deployment steps, verify that all necessary CL
 | **`kubectl`** | `kubectl version --client` | Prints Kubernetes client version |
 | **`helm`** | `helm version` | Prints Helm client version |
 | **`terraform`** | `terraform --version` | Prints Terraform version (minimum 1.12.2) |
-| **`ghpc`** | `./cluster-toolkit/ghpc version` | Prints gcluster/ghpc tool version |
+| **`ghpc`** | `./cluster-toolkit/ghpc --version` | Prints gcluster/ghpc tool version |
 
 > [!CAUTION]
 > **Check Action**: If any check fails (command not found or returns error):
@@ -47,22 +47,14 @@ Before running any compilation or deployment steps, verify that all necessary CL
 
 The blueprint relies on local Helm charts, database migrations, and proto descriptors.
 
-### Step 1: Copy Protobuf Descriptors
-Ensure that `ess_messages.pb` and `xid_messages.pb` are copied to the `deploy/` staging directory:
-
-```bash
-cp ./internal/storage/spanner/emulator/ess_messages.pb ./deploy/
-cp ./internal/storage/spanner/emulator/xid_messages.pb ./deploy/
-```
-
-### Step 2: Compile the Blueprint
+### Step 1: Compile the Blueprint
 Compile the blueprint, specifying the overrides config file (e.g., `deploy/ctk_v2/xmanager-cloud-deployment.yaml`) using the `-d` flag. If the user hasn't specified the overrides file, look for files in `deploy/ctk_v2/` matching `*deployment.yaml`.
 
 ```bash
 ./cluster-toolkit/ghpc create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
 ```
 
-Confirm that compilation completes successfully and generates the deployment folder `xmc-v2-run` inside `ctk-out/` containing the Terraform workspaces.
+Confirm that compilation completes successfully and generates the deployment folder named after your `<deployment_name>` (e.g., `ctk-out/<deployment_name>`) containing the Terraform workspaces.
 
 ---
 
@@ -72,12 +64,12 @@ Deploy the blueprint groups sequentially to allow monitoring and manual interven
 
 ### Step 1: Enable APIs (`apis` group)
 ```bash
-./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only apis --auto-approve
+./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only apis --auto-approve
 ```
 
 ### Step 2: Deploy Core Infrastructure & IP (`primary` group)
 ```bash
-./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only primary --auto-approve
+./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only primary --auto-approve
 ```
 
 ### Step 3: DNS Pause & IP Mapping
@@ -104,7 +96,7 @@ Deploy the blueprint groups sequentially to allow monitoring and manual interven
    >
    > 2. **OAuth Authorized Redirect URI**:
    >    Ensure the following Redirect URI is added to your Google Cloud Console OAuth Web Client ID config:
-   >    * **`https://api.<environment>.example.com/api/callback`**
+   >    * **`https://<environment>.example.com/api/callback`**
    >
    > Once these DNS records are created and the redirect URI is registered in the GCP console, reply to this conversation to proceed with the remaining deployment steps.
 
@@ -112,17 +104,44 @@ Deploy the blueprint groups sequentially to allow monitoring and manual interven
 
 ### Step 4: Deploy GKE Cluster & Node Pools (`compute` group)
 ```bash
-./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only compute --auto-approve
+./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only compute --auto-approve
 ```
+
+### Step 4.5: Enable GKE Gateway API standard channel manually
+Since GKE has Gateway API disabled by default, you must enable it on the newly created GKE cluster before deploying the application (which relies on `Gateway` and `HTTPRoute` resources). Run:
+
+```bash
+gcloud container clusters update <cluster_name> \
+    --gateway-api=standard \
+    --region=<region> \
+    --project=<project_id>
+```
+> [!NOTE]
+> The default `<cluster_name>` format is `xmc-<deployment_name>-<environment>`.
 
 ### Step 5: Install GKE System Helm Charts (`kubernetes_prereqs` group)
 ```bash
-./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only kubernetes_prereqs --auto-approve
+./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only kubernetes_prereqs --auto-approve
 ```
 
-### Step 6: Deploy XMC Application (`xmc_app` group)
+### Step 6: Build and Push XMC Service Images
+Before deploying the application Helm chart, build and push all 6 service Docker images to GCP Artifact Registry. You must set the project's target registry and environment variables:
+
 ```bash
-./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only xmc_app --auto-approve
+export XMC_ACR_TARGET="us-docker.pkg.dev/<project_id>/xmc"
+export XMC_ENV="<environment>"
+
+bazel run //cmd/actuator:actuator_image_push
+bazel run //cmd/experiment_state_server:experiment_state_server_image_push
+bazel run //cmd/log_monitor:log_monitor_image_push
+bazel run //cmd/reconciler:reconciler_image_push
+bazel run //cmd/ui:ui_image_push
+bazel run //cmd/xid_service:xid_service_image_push
+```
+
+### Step 7: Deploy XMC Application (`xmc_app` group)
+```bash
+./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only xmc_app --auto-approve
 ```
 
 ---
@@ -149,4 +168,4 @@ gcloud certificate-manager certificates describe xmc-cert-<environment> --projec
 ```
 
 > [!TIP]
-> Once all checks pass, report the finalized deployment URL (e.g. `https://<environment>.example.com`) to the user.
+> Once all checks pass, report the finalized deployment URL (e.g. `https://<environment>.<domain_name>`) to the user.

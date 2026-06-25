@@ -32,24 +32,19 @@ Instruct the agent:
 
 ### How the Agent Deploys under the Hood:
 1. **Pre-flight Check**: Validates the presence of `gcloud`, `kubectl`, `helm`, `terraform`, and `ghpc`.
-2. **Copy Protobuf Descriptors**: Staged proto structures required by the application:
-   ```bash
-   cp ./internal/storage/spanner/emulator/ess_messages.pb ./deploy/
-   cp ./internal/storage/spanner/emulator/xid_messages.pb ./deploy/
-   ```
-3. **Blueprint Compilation**:
+2. **Blueprint Compilation**:
    ```bash
    ./cluster-toolkit/ghpc create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
    ```
-4. **Deploy APIs (`apis` group)**:
+3. **Deploy APIs (`apis` group)**:
    ```bash
    ./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only apis --auto-approve
    ```
-5. **Deploy Core Infrastructure (`primary` group)**:
+4. **Deploy Core Infrastructure (`primary` group)**:
    ```bash
    ./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only primary --auto-approve
    ```
-6. **Extract Static IP & Pause for DNS / OAuth Settings**:
+5. **Extract Static IP & Pause for DNS / OAuth Settings**:
    The agent retrieves the global external static IP:
    ```bash
    gcloud compute addresses describe xmc-gateway-static-ip-<environment> --global --project=<project_id> --format='value(address)'
@@ -57,12 +52,17 @@ Instruct the agent:
    > [!IMPORTANT]
    > The agent will pause here and ask you to:
    > - Configure **A records** in your authoritative DNS for the external IP (e.g. `<environment>.example.com`, `api.<environment>.example.com`, `grpc.<environment>.example.com`).
-   > - Add the OAuth redirect URI in your GCP Console: `https://api.<environment>.example.com/api/callback`.
+   > - Add the OAuth redirect URI in your GCP Console: `https://<environment>.example.com/api/callback`.
    >
    > Once done, reply to the agent to resume execution.
-7. **Deploy Compute Cluster (`compute` group)**:
+6. **Deploy Compute Cluster (`compute` group)**:
    ```bash
    ./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run --only compute --auto-approve
+   ```
+7. **Enable GKE Gateway API standard channel**:
+   Before deploying the system Helm charts, the GKE cluster must have the standard Gateway API controller addon enabled:
+   ```bash
+   gcloud container clusters update xmc-v2-test-<environment> --gateway-api=standard --region=<region> --project=<project_id>
    ```
 8. **Install Kubernetes Prerequisites (`kubernetes_prereqs` group)**:
    ```bash
