@@ -107,6 +107,14 @@ deployment_groups:
       project_id: $(vars.project_id)
       service_account_email: $(workload_service_account.service_account_email)
 
+  - id: log_monitor_service_account
+    source: modules/project/service-account
+    settings:
+      name: xmc-lm-sa
+      project_roles:
+      - serviceusage.serviceUsageConsumer
+      - monitoring.metricWriter
+
   - id: db_spanner
     source: modules/database/spanner
     settings:
@@ -119,6 +127,8 @@ deployment_groups:
           iam_members:
           - role: roles/spanner.databaseUser
             member: "serviceAccount:$(workload_service_account.service_account_email)"
+          - role: roles/spanner.databaseUser
+            member: $(log_monitor_service_account.service_account_iam_email)
         xid:
           name: xids-db-$(vars.environment)
           deletion_protection: false
@@ -310,8 +320,6 @@ deployment_groups:
         value: $(vars.ess_image)
       - name: reconciler_custom_image
         value: $(vars.reconciler_image)
-      - name: log_monitor_custom_image
-        value: $(vars.log_monitor_image)
       - name: ui.image
         value: $(vars.ui_image)
       - name: taskSignatureTtlSeconds
@@ -370,3 +378,13 @@ deployment_groups:
           namespace: $(vars.namespace)
           gcp_service_account_email: $(workload_service_account.service_account_email)
           tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
+
+  - id: log_monitor
+    source: ./deploy/terraform/modules/log_monitor
+    use: [log_monitor_service_account]
+    settings:
+      project_id: $(vars.project_id)
+      region: $(vars.region)
+      environment: $(vars.environment)
+      image_url: $(vars.log_monitor_image)
+      service_account_email: $(log_monitor_service_account.service_account_email)

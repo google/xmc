@@ -27,10 +27,9 @@ variable "image_url" {
   description = "The URL of the container image to deploy."
 }
 
-variable "log_monitor_gsa_name" {
+variable "service_account_email" {
   type        = string
-  description = "The name of the service account to use for the Cloud Run service."
-  default     = "log-monitor-sa"
+  description = "The email of the pre-existing service account to use for the Cloud Run service."
 }
 
 variable "pubsub_topic_name" {
