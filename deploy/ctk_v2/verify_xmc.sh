@@ -23,22 +23,27 @@ echo "========================================="
 get_var() {
   local var_name="${1}"
   local file="${2}"
-  grep -E "^\s*${var_name}:" "${file}" | awk '{print $2}' | tr -d '"' | tr -d "'"
+  grep -E "^\s*${var_name}:" "${file}" | head -n 1 | awk '{print $2}' | tr -d '"' | tr -d "'"
 }
 
 verify_log_monitor() {
   echo -e "\n--- 7. Cloud Run Log Monitor Status ---"
-  local SVC_NAME="xmc-log-monitor-${ENVIRONMENT}"
-  echo "Checking Cloud Run Service: ${SVC_NAME} in ${REGION}..."
-
-  # Guard: Check if the service exists
-  if ! gcloud run services describe "${SVC_NAME}" --platform managed --region "${REGION}" --project "${PROJECT_ID}" >/dev/null 2>&1; then
-    echo "❌ Log Monitor Cloud Run service ${SVC_NAME} not found."
+  if [ -z "${ENVIRONMENT}" ] || [ -z "${REGION}" ] || [ -z "${PROJECT_ID}" ]; then
+    echo "⚠️ Skipping Log Monitor check: ENVIRONMENT, REGION, or PROJECT_ID is not set."
     return
   fi
 
-  # Main logic
-  local STATUS=$(gcloud run services describe "${SVC_NAME}" --platform managed --region "${REGION}" --project "${PROJECT_ID}" --format=json | grep -B 1 '"type": "Ready"' | grep '"status"' | awk -F'"' '{print $4}')
+  local SVC_NAME="xmc-log-monitor-${ENVIRONMENT}"
+  echo "Checking Cloud Run Service: ${SVC_NAME} in ${REGION}..."
+
+  # Retrieve the Ready condition status (also checks for service existence)
+  local STATUS=$(gcloud run services list --filter="metadata.name=${SVC_NAME} AND status.conditions.type=Ready" --flatten="status.conditions" --format="value(status.conditions.status)" --platform managed --region "${REGION}" --project "${PROJECT_ID}")
+
+  if [ -z "${STATUS}" ]; then
+    echo "❌ Log Monitor Cloud Run service ${SVC_NAME} not found or status is unavailable."
+    return
+  fi
+
   echo "Service Status (Ready): ${STATUS}"
 
   if [ "${STATUS}" != "True" ]; then
@@ -52,9 +57,9 @@ verify_log_monitor() {
 # --- Auto-detect config ---
 CONFIG_FILE="$(dirname "$0")/xmanager-cloud-deployment.yaml"
 if [ -f "${CONFIG_FILE}" ]; then
-  ENVIRONMENT=$(get_var "environment" "${CONFIG_FILE}")
-  REGION=$(get_var "region" "${CONFIG_FILE}")
-  PROJECT_ID=$(get_var "project_id" "${CONFIG_FILE}")
+  ENVIRONMENT="${ENVIRONMENT:-$(get_var "environment" "${CONFIG_FILE}")}"
+  REGION="${REGION:-$(get_var "region" "${CONFIG_FILE}")}"
+  PROJECT_ID="${PROJECT_ID:-$(get_var "project_id" "${CONFIG_FILE}")}"
 fi
 
 echo -e "\n--- 1. Pod Status ---"
