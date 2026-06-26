@@ -236,27 +236,27 @@ If you are running an AI-assisted agent session, the agent can automate the enti
 
 ### Skill Integration and Agent Setup
 
-JETS automatically registers agent skills that are defined within the workspace:
+Agent skill for deploying XMC is defined within the workspace:
 - **Location**: The deployment skill is located in the [deploy_xmc skill](.agents/skills/deploy_xmc/SKILL.md) directory.
-- **Integration**: To equip your agent session with this skill, ensure the `.agents/` directory is present in the root of the workspace. The agent automatically scans this folder upon startup and registers the workflows. No manual import is needed.
+- **Integration**: To equip your agent session with this skill, ensure the `.agents/` directory is present in the root of the workspace. The agent automatically scans this folder upon startup and registers the workflows. No manual import should be needed.
 
 ### How to Trigger
 Instruct the agent:
 > Deploy XMC using the blueprint configuration at `deploy/ctk_v2/xmanager-cloud-deployment.yaml`
 
 ### How the Agent Deploys under the Hood:
-1. **Pre-flight Check**: Validates the presence of `gcloud`, `kubectl`, `helm`, `terraform`, and `ghpc`.
+1. **Pre-flight Check**: Validates the presence of `gcloud`, `kubectl`, `helm`, `terraform`, and `gcluster`.
 2. **Blueprint Compilation**:
    ```bash
    ./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
    ```
 3. **Deploy APIs (`apis` group)**:
    ```bash
-   ./cluster-toolkit/gcluster deploy ctk-out/xmc-v2-run --only apis --auto-approve
+   ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only apis --auto-approve
    ```
 4. **Deploy Core Infrastructure (`primary` group)**:
    ```bash
-   ./cluster-toolkit/gcluster deploy ctk-out/xmc-v2-run --only primary --auto-approve
+   ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only primary --auto-approve
    ```
 5. **Extract Static IP & Pause for DNS / OAuth Settings**:
    The agent retrieves the global external static IP:
@@ -271,7 +271,7 @@ Instruct the agent:
    > Once done, reply to the agent to resume execution.
 6. **Deploy Compute Cluster (`compute` group)**:
    ```bash
-   ./cluster-toolkit/gcluster deploy ctk-out/xmc-v2-run --only compute --auto-approve
+   ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only compute --auto-approve
    ```
 7. **Enable GKE Gateway API standard channel**:
    Before deploying the system Helm charts, the GKE cluster must have the standard Gateway API controller addon enabled:
@@ -280,11 +280,11 @@ Instruct the agent:
    ```
 8. **Install Kubernetes Prerequisites (`kubernetes_prereqs` group)**:
    ```bash
-   ./cluster-toolkit/gcluster deploy ctk-out/xmc-v2-run --only kubernetes_prereqs --auto-approve
+   ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only kubernetes_prereqs --auto-approve
    ```
 9. **Deploy Application (`xmc_app` group)**:
    ```bash
-   ./cluster-toolkit/gcluster deploy ctk-out/xmc-v2-run --only xmc_app --auto-approve
+   ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only xmc_app --auto-approve
    ```
 10. **Post-Deployment Verification**:
     The agent runs:
