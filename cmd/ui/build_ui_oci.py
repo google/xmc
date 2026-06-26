@@ -110,20 +110,24 @@ CMD ["nginx", "-g", "daemon off;"]
     # 2. Build the image using the Docker daemon
     tag = "ui-image:latest"
     print("Building Docker OCI frontend image...")
-    build_cmd = ["docker", "build", "--no-cache", "-t", tag, temp_build_dir]
+    build_cmd = ["docker", "build", "--no-cache"]
     # Optional target platform override (e.g. XMC_UI_PLATFORM=linux/amd64).
     # Without it, docker builds for the host architecture - which on ARM
     # hosts (Apple Silicon) silently produces an image that won't run on
     # amd64 clusters, so warn in that case.
     target_platform = os.environ.get("XMC_UI_PLATFORM")
-    if target_platform:
-        build_cmd[3:3] = ["--platform", target_platform]
-    elif platform.machine().lower() in ("arm64", "aarch64"):
+    if not target_platform and platform.machine().lower() in ("arm64", "aarch64"):
         print(
-            "WARNING: building on an ARM host without XMC_UI_PLATFORM set - "
-            "the image will be arm64. If your cluster runs amd64 nodes, set "
-            "XMC_UI_PLATFORM=linux/amd64."
+            "INFO: Building on an ARM host without XMC_UI_PLATFORM set. "
+            "Defaulting target platform to 'linux/amd64' for deployment compatibility. "
+            "To build for a different platform, set XMC_UI_PLATFORM (e.g. XMC_UI_PLATFORM=linux/arm64)."
         )
+        target_platform = "linux/amd64"
+
+    if target_platform:
+        build_cmd.extend(["--platform", target_platform])
+
+    build_cmd.extend(["-t", tag, temp_build_dir])
     
     try:
         subprocess.run(build_cmd, check=True)
