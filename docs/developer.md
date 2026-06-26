@@ -24,7 +24,7 @@ This will build the following targets:
 - `//api/protos/task_queue:task_go_proto` (Task queue message stubs)
 
 - **Cross-compiling OCI images**:
-  If you are building images on an ARM processor (e.g. Apple Silicon Mac) but deploying to AMD64 servers, cross-compile the Go services by passing `--config=linux_amd64`:
+  By default the `build` command uses build host architecture for target deployment processor architecture (i.e. running `bazel build` on an ARM processor will build ARM OCI images). To enforce a specific target deployment platform (for example `arm` vs `amd64`) please use the `--config` flag. For example adding `--config=linux_amd64` will ensure that the Go services are built for the `amd64` architecture:
   ```bash
   bazel build --config=linux_amd64 //cmd/actuator:actuator_image_tarball \
             //cmd/experiment_state_server:experiment_state_server_image_tarball \
