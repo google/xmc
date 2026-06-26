@@ -35,7 +35,7 @@ Before running any compilation or deployment steps, verify that all necessary CL
 | **`kubectl`** | `kubectl version --client` | Prints Kubernetes client version |
 | **`helm`** | `helm version` | Prints Helm client version |
 | **`terraform`** | `terraform --version` | Prints Terraform version (minimum 1.12.2) |
-| **`ghpc`** | `./cluster-toolkit/ghpc --version` | Prints gcluster/ghpc tool version |
+| **`gcluster`** | `./cluster-toolkit/gcluster --version` | Prints gcluster tool version |
 
 > [!CAUTION]
 > **Check Action**: If any check fails (command not found or returns error):
@@ -53,7 +53,7 @@ The blueprint relies on local Helm charts, database migrations, and proto descri
 Compile the blueprint, specifying the overrides config file (e.g., `deploy/ctk_v2/xmanager-cloud-deployment.yaml`) using the `-d` flag. If the user hasn't specified the overrides file, look for files in `deploy/ctk_v2/` matching `*deployment.yaml`.
 
 ```bash
-./cluster-toolkit/ghpc create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
+./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
 ```
 
 Confirm that compilation completes successfully and generates the deployment folder named after your `<deployment_name>` inside `ctk-out/` containing the Terraform workspaces.
@@ -66,12 +66,12 @@ Deploy the blueprint groups sequentially to allow monitoring and manual interven
 
 ### Step 1: Enable APIs (`apis` group)
 ```bash
-./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only apis --auto-approve
+./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only apis --auto-approve
 ```
 
 ### Step 2: Deploy Core Infrastructure & IP (`primary` group)
 ```bash
-./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only primary --auto-approve
+./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only primary --auto-approve
 ```
 
 ### Step 3: DNS Pause & IP Mapping
@@ -106,7 +106,7 @@ Deploy the blueprint groups sequentially to allow monitoring and manual interven
 
 ### Step 4: Deploy GKE Cluster & Node Pools (`compute` group)
 ```bash
-./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only compute --auto-approve
+./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only compute --auto-approve
 ```
 
 ### Step 5: Enable GKE Gateway API standard channel
@@ -123,7 +123,7 @@ gcloud container clusters update <cluster_name> \
 
 ### Step 6: Install GKE System Helm Charts (`kubernetes_prereqs` group)
 ```bash
-./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only kubernetes_prereqs --auto-approve
+./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only kubernetes_prereqs --auto-approve
 ```
 
 ### Step 7: Build and Push XMC Service Images
@@ -143,7 +143,7 @@ bazel run //cmd/xid_service:xid_service_image_push
 
 ### Step 8: Deploy XMC Application (`xmc_app` group)
 ```bash
-./cluster-toolkit/ghpc deploy ctk-out/<deployment_name> --only xmc_app --auto-approve
+./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only xmc_app --auto-approve
 ```
 
 ---
