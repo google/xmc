@@ -61,6 +61,7 @@ deployment_groups:
       - iam.googleapis.com
       - cloudresourcemanager.googleapis.com
       - servicenetworking.googleapis.com
+      - certificatemanager.googleapis.com
 
 - group: primary
   modules:
@@ -98,6 +99,13 @@ deployment_groups:
       - storage.objectAdmin
       - artifactregistry.reader
       - serviceusage.serviceUsageConsumer
+
+  - id: workload_sa_token_creator
+    source: ./deploy/ctk_v2/modules/self-token-creator
+    use: [workload_service_account]
+    settings:
+      project_id: $(vars.project_id)
+      service_account_email: $(workload_service_account.service_account_email)
 
   - id: db_spanner
     source: modules/database/spanner

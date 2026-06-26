@@ -40,15 +40,15 @@ Open `xmanager-cloud-deployment.yaml` and configure the deployment variables to 
 Navigate into your master directory containing the `cluster-toolkit` folder and compile the blueprint:
 
 ```bash
-./cluster-toolkit/ghpc create deploy/ctk_v2/xmanager-cloud.yaml -d deploy/ctk_v2/xmanager-cloud-deployment.yaml -l WARNING -w --force
+./cluster-toolkit/ghpc create deploy/ctk_v2/xmanager-cloud.yaml -d deploy/ctk_v2/xmanager-cloud-deployment.yaml -o ctk-out -l WARNING -w --force
 ```
-This command compiles the modules and generates the `xmc-v2-run` deployment folder containing the generated Terraform code.
+This command compiles the modules and generates the `xmc-v2-run` deployment folder inside `ctk-out/` containing the generated Terraform code.
 
 ### Step 2: Provision the Infrastructure
 Execute the deployment to begin provisioning:
 
 ```bash
-./cluster-toolkit/ghpc deploy xmc-v2-run
+./cluster-toolkit/ghpc deploy ctk-out/xmc-v2-run
 ```
 Type `a` and press Enter to approve the rollout of each group when prompted by the CLI.
 
@@ -59,7 +59,7 @@ Type `a` and press Enter to approve the rollout of each group when prompted by t
 To safely tear down all provisioned infrastructure, run:
 
 ```bash
-./cluster-toolkit/ghpc destroy xmc-v2-run --robust
+./cluster-toolkit/ghpc destroy ctk-out/xmc-v2-run --robust
 ```
 
 ---

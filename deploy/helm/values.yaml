@@ -32,10 +32,12 @@ ess_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/experiment-state-se
 
 essDeployment:
   enabled: true
-  replicas: 1
+  hpa:
+    minReplicas: 3
+    maxReplicas: 10
 
 defaultToCursorPagination: false
-detectInadmissibleWorkUnits: false
+detectInadmissibleWorkUnits: true
 startupPodErrorCheckEnabled: true
 statusMessageHistoryEnabled: false
 redisAddr: "YOUR_REDIS_IP:6379"
@@ -72,6 +74,9 @@ experimentStateServer:
 # is used (mirrors experimentStateServer.spannerDatabaseName).
 xidService:
   spannerDatabaseName: ""
+  hpa:
+    minReplicas: 3
+    maxReplicas: 10
 
 gateway:
   enabled: true

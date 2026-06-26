@@ -77,11 +77,37 @@ export class AutoReloadService {
       emitOnVisible: options.emitOnVisible ?? true,
     };
     const isActive$ = new BehaviorSubject<boolean>(false);
+    const visibility$ = this.getVisibilityObservable();
 
-    const visibility$: Observable<boolean> = new Observable<boolean>((subscriber) => {
+    // Emits {prev: boolean, curr: boolean} for visibility.
+    const isVisibleWithPrevious$ = visibility$.pipe(
+      startWith(!this.document.hidden),
+      pairwise(),
+      map(([prev, curr]) => ({ prev, curr })),
+    );
+
+    const reloader$ = combineLatest([isActive$, isVisibleWithPrevious$]).pipe(
+      switchMap(([isActive, visible]) => {
+        if (isActive && visible.curr) {
+          const justBecameVisible = !visible.prev;
+          const emitImmediately = justBecameVisible
+            ? finalOptions.emitOnVisible
+            : finalOptions.emitOnStart;
+          const initialDelay = emitImmediately ? 0 : finalOptions.refreshIntervalMs;
+          return timer(initialDelay, finalOptions.refreshIntervalMs);
+        }
+        return EMPTY;
+      }),
+      mapTo(undefined),
+    );
+
+    return { reloader$, start: () => isActive$.next(true), stop: () => isActive$.next(false) };
+  }
+
+  private getVisibilityObservable(): Observable<boolean> {
+    return new Observable<boolean>((subscriber) => {
       if (typeof this.window.addEventListener !== 'function') {
-        subscriber.next(true); // If there's no real DOM, assume the page
-        // is always visible.
+        subscriber.next(true); // If there's no real DOM, assume the page is always visible.
         return;
       }
       const handler = () => {
@@ -94,34 +120,5 @@ export class AutoReloadService {
         this.document.removeEventListener('visibilitychange', handler);
       };
     }).pipe(distinctUntilChanged());
-
-    // Emits {prev: boolean, curr: boolean} for visibility.
-    const isVisibleWithPrevious$ = visibility$.pipe(
-      startWith(!this.document.hidden),
-      pairwise(),
-      map(([prev, curr]) => ({ prev, curr })),
-    );
-
-    const reloader$ = combineLatest([isActive$, isVisibleWithPrevious$]).pipe(
-      switchMap(([isActive, visible]) => {
-        if (isActive && visible.curr) {
-          const justBecameVisible = !visible.prev && visible.curr;
-          const emitImmediately = justBecameVisible
-            ? finalOptions.emitOnVisible
-            : finalOptions.emitOnStart;
-          const delay = emitImmediately ? 0 : finalOptions.refreshIntervalMs!;
-          return timer(delay, finalOptions.refreshIntervalMs);
-        } else {
-          return EMPTY; // If stopped or not visible, do not emit.
-        }
-      }),
-      mapTo(undefined),
-    );
-
-    return {
-      reloader$,
-      start: () => isActive$.next(true),
-      stop: () => isActive$.next(false),
-    };
   }
 }

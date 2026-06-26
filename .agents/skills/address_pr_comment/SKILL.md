@@ -1,5 +1,5 @@
 ---
-name: PR Comment Workflow
+name: Address PR Comment
 description: Automates addressing PR comments (fetching context, running tests, measuring coverage, and GKE redeployment).
 ---
 
@@ -20,6 +20,18 @@ graph TD
     I --> J["Agent performs Kubectl Rollout Restart"]
     J --> K["Agent reports status & updates PR comment"]
 ```
+
+---
+
+## Guidelines for Using CLI Tools
+
+When invoking helper tools under `tools/` (e.g. `fetch_pr_comment.py`, `reply_pr_comment.py`, `build_oci.py`):
+1. **Do not read tool source code**: You should not open or read the Python source code of these tools.
+2. **Use `--help`**: To learn about the tool's usage, options, and parameters, run it with the `--help` flag (e.g. `./tools/fetch_pr_comment.py --help`).
+3. **Parse Structured Output & Handle Errors**: All tools output structured JSON. Check the process exit code:
+   - **Exit code 0 (Success)**: The requested data is in the `"result"` field of the stdout JSON.
+   - **Exit code 1 (Handled Error)**: Read `"message"` and `"instruction"` from the JSON output. Follow the `"instruction"` step-by-step to fix the input, credentials, or environment.
+   - **Exit code 2 (Unhandled Error)**: The tool encountered an unexpected bug. Inspect the `"message"` and `"traceback"` fields to analyze the cause.
 
 ---
 
@@ -136,6 +148,17 @@ The agent runs the helper script `tools/reply_pr_comment.py` to notify the revie
 ```bash
 export GITHUB_TOKEN="your_github_token"
 ./tools/reply_pr_comment.py "<github_comment_url>" "code changed"
+```
+
+### Usage Telemetry Tracking
+When `tools/reply_pr_comment.py` successfully posts a reply, it appends a hidden HTML comment block containing public usage metadata (authenticated GitHub user, comment ID, PR number, and UTC timestamp) to the comment body:
+```html
+<!-- xmc-telemetry: {"git_username": "Chad", "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29", "comment_id": 1234} -->
+```
+
+To extract this telemetry and output it as a raw JSON dataset, run:
+```bash
+./tools/extract_telemetry.py <owner> <repo> [--since <ISO_DATE>]
 ```
 
 ---

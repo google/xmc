@@ -263,7 +263,8 @@ func main() {
 		http.StripPrefix("/v1/static/", staticServer).ServeHTTP(w, r)
 	})
 
-	httpMux.HandleFunc("/healthz", activeHealthCheck(spannerClient, xidClient, taskQueueClient))
+	httpMux.HandleFunc("/readyz", activeHealthCheck(spannerClient, xidClient, taskQueueClient))
+	httpMux.HandleFunc("/healthz", livenessCheck())
 
 	// Secure the private gRPC-Gateway endpoints with the Authenticate middleware.
 	authenticatedGwmux := oauthAuth.Authenticate(gwmux)

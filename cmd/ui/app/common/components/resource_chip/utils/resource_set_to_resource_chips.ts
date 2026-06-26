@@ -35,48 +35,39 @@ const MSG_CORE_COUNT_ICU = declareIcuTemplate(
   },
 );
 
-/**  Converts a list of ResourceSet to a list of ResourceChipData. */
+/** Converts a list of ResourceSet to a list of ResourceChipData. */
 export function resourceSetsToResourceChipsData(resources: ResourceSet[]): ResourceChipData[] {
-  const coreCountFormatter = new NumberFormat(NumberFormat.Format.COMPACT_SHORT);
-  coreCountFormatter.setMaximumFractionDigits(1);
-  const coreCountMessage = new MessageFormat(MSG_CORE_COUNT_ICU);
+  const formatter = new NumberFormat(NumberFormat.Format.COMPACT_SHORT);
+  formatter.setMaximumFractionDigits(1);
+  const msg = new MessageFormat(MSG_CORE_COUNT_ICU);
 
-  return resources
-    .map((resource: ResourceSet) => {
-      const resources: ResourceChipData[] = [];
-      if (resource.cpuResources) {
-        const numCores = resource.cpuResources.cpuMillicores
-          ? Number(resource.cpuResources.cpuMillicores) / 1000
-          : 0;
-
-        resources.push({
+  return resources.flatMap((res) => {
+    const chips: ResourceChipData[] = [];
+    if (res.cpuResources) {
+      const cores = Number(res.cpuResources.cpuMillicores ?? 0) / 1000;
+      chips.push(
+        {
           resourceType: ResourceType.CPU,
-          text: coreCountMessage.format({
-            NUM_CORES: numCores,
-            FORMATTED_CORES: coreCountFormatter.format(numCores),
-          }),
-        });
-        resources.push({
+          text: msg.format({ NUM_CORES: cores, FORMATTED_CORES: formatter.format(cores) }),
+        },
+        {
           resourceType: ResourceType.MEMORY,
-          text: numBytesToString(Number(resource.cpuResources.memoryBytes), 2),
-        });
-      }
-
-      if (resource.gpuResources) {
-        resources.push({
-          resourceType: ResourceType.GPU,
-          text: `${resource.gpuResources.count} x ${resource.gpuResources.type}`,
-        });
-      }
-
-      if (resource.tpuResources) {
-        resources.push({
-          resourceType: ResourceType.GPU,
-          text: `${resource.tpuResources.topology} x ${resource.tpuResources.type}`,
-        });
-      }
-
-      return resources;
-    })
-    .flat();
+          text: numBytesToString(Number(res.cpuResources.memoryBytes), 2),
+        }
+      );
+    }
+    if (res.gpuResources) {
+      chips.push({
+        resourceType: ResourceType.GPU,
+        text: `${res.gpuResources.count} x ${res.gpuResources.type}`,
+      });
+    }
+    if (res.tpuResources) {
+      chips.push({
+        resourceType: ResourceType.GPU,
+        text: `${res.tpuResources.topology} x ${res.tpuResources.type}`,
+      });
+    }
+    return chips;
+  });
 }

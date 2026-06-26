@@ -68,3 +68,11 @@ func activeHealthCheck(spClient *spanner.Client, xidClient xidgrpcpb.XidServiceC
 		w.Write([]byte("OK"))
 	}
 }
+
+// livenessCheck performs a lightweight check to verify the server is responsive.
+func livenessCheck() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	}
+}

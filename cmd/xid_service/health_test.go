@@ -17,7 +17,7 @@ import (
 	"context"
 	"testing"
 
-	"golang/grpc/health/health"
+	"golang/grpc/grpc"
 	healthpb "grpc_proto/health_go_proto"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 )
@@ -27,7 +27,7 @@ func TestUpdateHealthStatus(t *testing.T) {
 
 	t.Run("SERVING when spanner ok", func(t *testing.T) {
 		xidClient, _, _ := emulator.SetupWithEmulator(ctx, t)
-		healthServer := health.NewServer()
+		healthServer := RegisterHealthServer(grpc.NewServer())
 
 		updateHealthStatus(ctx, xidClient, healthServer)
 
@@ -38,12 +38,21 @@ func TestUpdateHealthStatus(t *testing.T) {
 		if resp.Status != healthpb.HealthCheckResponse_SERVING {
 			t.Errorf("healthServer.Check(%q).Status = %v, want %v", xidServiceHealthCheckName, resp.Status, healthpb.HealthCheckResponse_SERVING)
 		}
+
+		// Also check empty service name remains SERVING
+		respEmpty, err := healthServer.Check(ctx, &healthpb.HealthCheckRequest{Service: ""})
+		if err != nil {
+			t.Fatalf("healthServer.Check(%q) failed: %v", "", err)
+		}
+		if respEmpty.Status != healthpb.HealthCheckResponse_SERVING {
+			t.Errorf("healthServer.Check(%q).Status = %v, want %v", "", respEmpty.Status, healthpb.HealthCheckResponse_SERVING)
+		}
 	})
 
 	t.Run("NOT_SERVING when spanner down", func(t *testing.T) {
 		xidClient, _, _ := emulator.SetupWithEmulator(ctx, t)
 		xidClient.Close()
-		healthServer := health.NewServer()
+		healthServer := RegisterHealthServer(grpc.NewServer())
 
 		updateHealthStatus(ctx, xidClient, healthServer)
 
@@ -53,6 +62,15 @@ func TestUpdateHealthStatus(t *testing.T) {
 		}
 		if resp.Status != healthpb.HealthCheckResponse_NOT_SERVING {
 			t.Errorf("healthServer.Check(%q).Status = %v, want %v", xidServiceHealthCheckName, resp.Status, healthpb.HealthCheckResponse_NOT_SERVING)
+		}
+
+		// Empty service name should STILL be SERVING even if Spanner is down
+		respEmpty, err := healthServer.Check(ctx, &healthpb.HealthCheckRequest{Service: ""})
+		if err != nil {
+			t.Fatalf("healthServer.Check(%q) failed: %v", "", err)
+		}
+		if respEmpty.Status != healthpb.HealthCheckResponse_SERVING {
+			t.Errorf("healthServer.Check(%q).Status = %v, want %v", "", respEmpty.Status, healthpb.HealthCheckResponse_SERVING)
 		}
 	})
 }

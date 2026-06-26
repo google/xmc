@@ -139,19 +139,11 @@ export class StatusMessagesList {
     this.isLoading.set(true);
     this.loadingError.set(undefined);
 
-    const severity = this.severityFilter();
-    const source = this.sourceFilter();
-    if (severity.length === 0 || source.length === 0) {
+    const filterString = this.buildQueryFilter();
+    if (filterString === null) {
       this.isLoading.set(false);
       return EMPTY;
     }
-
-    const parts = [
-      this.buildFilterClause('severity', severity, ALL_SEVERITIES.length),
-      this.buildFilterClause('source', source, ALL_SOURCES.length),
-      this.buildTimeFilterClause(),
-    ].filter((p): p is string => !!p);
-    const filterString = parts.join(' AND ') || undefined;
 
     const orderBy = `create_time ${this.sortOrder()}`;
 
@@ -160,25 +152,42 @@ export class StatusMessagesList {
         parent,
         pageSize: DEFAULT_PAGE_SIZE,
         pageToken: token,
-        filter: filterString,
+        filter: filterString || undefined,
         orderBy,
       })
       .pipe(
         tap({
-          next: (response: ListStatusMessagesResponse) => {
-            const structuredMessages = (response.statusMessages || [])
-              .map((msg) => msg.content)
-              .filter((msg): msg is StructuredMessage => !!msg);
-            this.messages.update((msgs) => [...msgs, ...structuredMessages]);
-            this.nextPageToken.set(response.nextPageToken);
-          },
-          error: (err: { message?: string }) => {
-            this.loadingError.set(err.message || 'Failed to load status messages');
-          },
+          next: (response) => this.handleFetchSuccess(response),
+          error: (err) => this.handleFetchError(err),
         }),
         finalize(() => this.isLoading.set(false)),
         catchError(() => EMPTY),
       );
+  }
+
+  private buildQueryFilter(): string | null {
+    const severity = this.severityFilter();
+    const source = this.sourceFilter();
+    if (severity.length === 0 || source.length === 0) {
+      return null;
+    }
+    return [
+      this.buildFilterClause('severity', severity, ALL_SEVERITIES.length),
+      this.buildFilterClause('source', source, ALL_SOURCES.length),
+      this.buildTimeFilterClause(),
+    ].filter((p): p is string => !!p).join(' AND ');
+  }
+
+  private handleFetchSuccess(response: ListStatusMessagesResponse) {
+    const structuredMessages = (response.statusMessages || [])
+      .map((msg) => msg.content)
+      .filter((msg): msg is StructuredMessage => !!msg);
+    this.messages.update((msgs) => [...msgs, ...structuredMessages]);
+    this.nextPageToken.set(response.nextPageToken);
+  }
+
+  private handleFetchError(err: { message?: string }) {
+    this.loadingError.set(err.message || 'Failed to load status messages');
   }
 
   private buildFilterClause(
@@ -199,39 +208,43 @@ export class StatusMessagesList {
     switch (time.preset) {
       case TimePreset.ALL:
         return undefined;
-      case TimePreset.CUSTOM: {
-        const startDate = time.start ? new Date(time.start) : null;
-        if (startDate && !isNaN(startDate.getTime())) {
-          parts.push(`create_time >= "${startDate.toISOString()}"`);
-        }
-        const endDate = time.end ? new Date(time.end) : null;
-        if (endDate && !isNaN(endDate.getTime())) {
-          parts.push(`create_time <= "${endDate.toISOString()}"`);
-        }
+      case TimePreset.CUSTOM:
+        this.addCustomTimeFilter(time, parts);
         break;
-      }
-      case TimePreset.LAST_1_HOUR: {
-        const filterDate = new Date(this.baseTimestamp);
-        filterDate.setHours(filterDate.getHours() - 1);
-        parts.push(`create_time >= "${filterDate.toISOString()}"`);
+      case TimePreset.LAST_1_HOUR:
+        this.addRelativeTimeFilter(1, parts);
         break;
-      }
-      case TimePreset.LAST_24_HOURS: {
-        const filterDate = new Date(this.baseTimestamp);
-        filterDate.setHours(filterDate.getHours() - 24);
-        parts.push(`create_time >= "${filterDate.toISOString()}"`);
+      case TimePreset.LAST_24_HOURS:
+        this.addRelativeTimeFilter(24, parts);
         break;
-      }
-      case TimePreset.LAST_7_DAYS: {
-        const filterDate = new Date(this.baseTimestamp);
-        filterDate.setDate(filterDate.getDate() - 7);
-        parts.push(`create_time >= "${filterDate.toISOString()}"`);
+      case TimePreset.LAST_7_DAYS:
+        this.addRelativeTimeFilter(24 * 7, parts);
         break;
-      }
       default:
         break;
     }
 
     return parts.length > 0 ? parts.join(' AND ') : undefined;
+  }
+
+  private addCustomTimeFilter(time: TimeFilterValue, parts: string[]) {
+    this.addDateBound('>=', time.start, parts);
+    this.addDateBound('<=', time.end, parts);
+  }
+
+  private addDateBound(operator: string, dateStr: string | undefined, parts: string[]) {
+    if (!dateStr) {
+      return;
+    }
+    const date = new Date(dateStr);
+    if (!isNaN(date.getTime())) {
+      parts.push(`create_time ${operator} "${date.toISOString()}"`);
+    }
+  }
+
+  private addRelativeTimeFilter(hours: number, parts: string[]) {
+    const filterDate = new Date(this.baseTimestamp);
+    filterDate.setHours(filterDate.getHours() - hours);
+    parts.push(`create_time >= "${filterDate.toISOString()}"`);
   }
 }

@@ -17,9 +17,9 @@ import (
 	"context"
 	"testing"
 
+	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
 	epb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 )
 
 type mockEnv struct {

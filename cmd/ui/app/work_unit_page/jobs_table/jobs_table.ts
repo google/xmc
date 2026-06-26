@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, effect, input, ViewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, input, viewChild } from '@angular/core';
 import { MatCardModule } from '@angular/material/card';
 import { MatPaginator, MatPaginatorModule } from '@angular/material/paginator';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
@@ -44,48 +44,60 @@ export class JobsTable {
   readonly StatusOption = StatusOption;
 
   dataSource = new MatTableDataSource<ReplicatedJobStatus>();
-  @ViewChild(MatPaginator)
-  set matPaginator(paginator: MatPaginator) {
-    this.dataSource.paginator = paginator;
-  }
+  readonly matPaginator = viewChild(MatPaginator);
   readonly displayedColumns = ['name', 'replicas'];
 
   constructor() {
     // Update the table data whenever the workUnit input changes.
     effect(() => {
-      const workUnit = this.workUnit();
-      const jobs =
-        workUnit?.currentWorkUnitExecution?.status?.detailedStatus?.jobsetStatus
-          ?.replicatedJobsStatus || [];
-      this.dataSource.data = jobs;
+      this.dataSource.data = getReplicatedJobs(this.workUnit());
+    });
+    effect(() => {
+      this.dataSource.paginator = this.matPaginator() ?? null;
     });
   }
 
   getReplicaDisplays(job: ReplicatedJobStatus): ReplicaStatusDisplay[] {
     const displays: ReplicaStatusDisplay[] = [];
-    const succeeded = Number(job.succeeded ?? 0);
-    if (succeeded > 0) {
-      displays.push({ status: StatusOption.SUCCESS, replicas: succeeded });
-    }
-    const failed = Number(job.failed ?? 0);
-    if (failed > 0) {
-      displays.push({ status: StatusOption.FAILED, replicas: failed });
-    }
+    this.addDisplay(displays, StatusOption.SUCCESS, job.succeeded);
+    this.addDisplay(displays, StatusOption.FAILED, job.failed);
+    this.addDisplay(displays, StatusOption.RUNNING, job.ready);
 
-    // Running replicas are both active and ready, while pending replicas are
-    // active but not yet ready.
-    // E.G. if we have 10 replicas running and 2 are pending, we would
-    // expect to see 12 replicas active and 10 replicas ready.
-    const active = Number(job.active ?? 0);
-    const ready = Number(job.ready ?? 0);
+    const active = Number(job.active || 0);
+    const ready = Number(job.ready || 0);
     const pending = Math.max(active - ready, 0);
 
-    if (ready > 0) {
-      displays.push({ status: StatusOption.RUNNING, replicas: ready });
-    }
     if (pending > 0) {
       displays.push({ status: StatusOption.PENDING, replicas: pending });
     }
     return displays;
   }
+
+  private addDisplay(
+    displays: ReplicaStatusDisplay[],
+    status: StatusOption,
+    countVal: string | number | undefined,
+  ) {
+    const count = Number(countVal || 0);
+    if (count > 0) {
+      displays.push({ status, replicas: count });
+    }
+  }
+}
+
+function getReplicatedJobs(workUnit: WorkUnit): ReplicatedJobStatus[] {
+  const jobset = getJobsetStatus(workUnit);
+  return jobset?.replicatedJobsStatus || [];
+}
+
+function getJobsetStatus(workUnit: WorkUnit) {
+  const execution = workUnit.currentWorkUnitExecution;
+  if (!execution) {
+    return null;
+  }
+  const status = execution.status;
+  if (!status) {
+    return null;
+  }
+  return status.detailedStatus?.jobsetStatus;
 }

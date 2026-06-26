@@ -20,7 +20,6 @@ metadata:
   labels:
     app: experiment-state-server
 spec:
-  replicas: {{ .Values.essDeployment.replicas | default 1 }}
   strategy:
     type: RollingUpdate
   selector:
@@ -80,14 +79,16 @@ spec:
         - containerPort: 8080
           name: http-port
         readinessProbe:
-          tcpSocket:
-              port: 8080
+          httpGet:
+            path: /readyz
+            port: 8080
           initialDelaySeconds: 5
-          periodSeconds: 5
+          periodSeconds: 10
         livenessProbe:
-          tcpSocket:
-              port: 8080
-          initialDelaySeconds: 5
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 10
           periodSeconds: 10
         resources:
           requests:
@@ -138,7 +139,7 @@ spec:
         - "-ess_actuator_url=https://actuator.api.{{ .Values.environment }}.{{ .Values.domainSuffix }}/actuate"
         - "-ess_endpoint_url=http://api.{{ .Values.environment }}.{{ .Values.domainSuffix }}"
         - "-ess_quota_project_id={{ .Values.projectId }}"
-        - "-ess_service_account=xmc-ess-sa-{{ .Values.environment }}@{{ .Values.projectId }}.iam.gserviceaccount.com"
+        - "-ess_service_account={{ required "gcpServiceAccount is required" .Values.gcpServiceAccount }}"
         - "-ess_signature_ttl_seconds={{ .Values.taskSignatureTtlSeconds }}"
         - "-ess_allowed_origins={{ .Values.experimentStateServer.allowedOrigins }}"
         - "-alsologtostderr"
