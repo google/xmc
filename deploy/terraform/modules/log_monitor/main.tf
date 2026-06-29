@@ -36,12 +36,6 @@ resource "google_project_service_identity" "pubsub_sa" {
 }
 
 
-resource "google_service_account" "log_monitor_gsa" {
-  project      = google_project_service.run_api.project
-  account_id   = "${var.log_monitor_gsa_name}-${var.environment}"
-  display_name = "XManager on Cloud - Log Monitor Service Account (${var.environment})"
-}
-
 resource "google_cloud_run_v2_service" "log_monitor" {
   provider            = google-beta
   project             = google_project_service.run_api.project
@@ -52,7 +46,7 @@ resource "google_cloud_run_v2_service" "log_monitor" {
   ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
-    service_account = google_service_account.log_monitor_gsa.email
+    service_account = var.service_account_email
 
     scaling {
       # min instance is added so that the service is always active and can
@@ -180,5 +174,5 @@ resource "google_pubsub_subscription_iam_member" "log_monitor_subscriber" {
   project      = var.project_id
   subscription = google_pubsub_subscription.log_monitor_subscription.name
   role         = "roles/pubsub.subscriber"
-  member       = "serviceAccount:${google_service_account.log_monitor_gsa.email}"
+  member       = "serviceAccount:${var.service_account_email}"
 }
