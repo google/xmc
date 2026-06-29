@@ -1820,6 +1820,58 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 			},
 			wantErr: nil,
 		},
+		{
+			name: "invalid_request_with_test_payload_missing_title",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_TestArtifact{
+							TestArtifact: &essmsgpb.TestArtifact{
+								Command: "python3 main.py",
+							},
+						},
+					},
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_request_with_test_payload_missing_command",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_TestArtifact{
+							TestArtifact: &essmsgpb.TestArtifact{
+								Title: "my test run",
+							},
+						},
+					},
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "valid_request_with_test_payload",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_TestArtifact{
+							TestArtifact: &essmsgpb.TestArtifact{
+								Title:   "my test run",
+								Command: "python3 main.py",
+							},
+						},
+					},
+				},
+			},
+			wantErr: nil,
+		},
 	}
 
 	for _, tc := range tests {

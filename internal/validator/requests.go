@@ -453,6 +453,13 @@ func validatePayload(payload *essmsgpb.ArtifactPayload) error {
 		if p.Url.GetUrl() == "" {
 			return fmt.Errorf("artifact.payload.url.url must be set: %w", status.ErrInvalidArgument)
 		}
+	case *essmsgpb.ArtifactPayload_TestArtifact:
+		if p.TestArtifact.GetTitle() == "" {
+			return fmt.Errorf("artifact.payload.test_artifact.title must be set: %w", status.ErrInvalidArgument)
+		}
+		if p.TestArtifact.GetCommand() == "" {
+			return fmt.Errorf("artifact.payload.test_artifact.command must be set: %w", status.ErrInvalidArgument)
+		}
 	}
 	return nil
 }

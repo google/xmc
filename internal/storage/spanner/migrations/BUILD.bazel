@@ -43,6 +43,8 @@ compat_go_library(
         "ess/004_artifactpayload.up.sql",
         "ess/005_urlartifact.down.sql",
         "ess/005_urlartifact.up.sql",
+        "ess/006_testartifact.down.sql",
+        "ess/006_testartifact.up.sql",
         "xid/001_baseline.down.sql",
         "xid/001_baseline.up.sql",
         ":ess_messages.pb",

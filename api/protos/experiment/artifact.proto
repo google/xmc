@@ -163,6 +163,7 @@ message ArtifactPayload {
     CodeSourceArtifact code_source = 2;
     TextArtifact text = 3;
     UrlArtifact url = 4;
+    TestArtifact test_artifact = 5;
   }
 }
 
@@ -198,4 +199,10 @@ message UrlArtifact {
   string icon = 2 [(google.api.field_behavior) = OPTIONAL];
   string display_name = 3 [(google.api.field_behavior) = OPTIONAL];
 }
+
+message TestArtifact {
+  string title = 1 [(google.api.field_behavior) = REQUIRED];
+  string command = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
 

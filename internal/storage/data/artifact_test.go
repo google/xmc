@@ -249,6 +249,43 @@ func TestMergeArtifacts(t *testing.T) {
 			},
 		},
 		{
+			name: "update test payload",
+			current: &pb.Artifact{
+				Url: current.Url,
+				Payload: &pb.ArtifactPayload{
+					Type: &pb.ArtifactPayload_TestArtifact{
+						TestArtifact: &pb.TestArtifact{
+							Title:   "current-title",
+							Command: "current-command",
+						},
+					},
+				},
+			},
+			updated: &pb.Artifact{
+				Url: current.Url,
+				Payload: &pb.ArtifactPayload{
+					Type: &pb.ArtifactPayload_TestArtifact{
+						TestArtifact: &pb.TestArtifact{
+							Title:   "updated-title",
+							Command: "updated-command",
+						},
+					},
+				},
+			},
+			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"payload"}},
+			want: &pb.Artifact{
+				Url: current.Url,
+				Payload: &pb.ArtifactPayload{
+					Type: &pb.ArtifactPayload_TestArtifact{
+						TestArtifact: &pb.TestArtifact{
+							Title:   "updated-title",
+							Command: "updated-command",
+						},
+					},
+				},
+			},
+		},
+		{
 			name:       "empty mask",
 			current:    current,
 			updated:    updated,

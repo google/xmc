@@ -86,6 +86,9 @@ limitations under the License.
     @case (PayloadType.URL) {
     <ng-container [ngTemplateOutlet]="urlTemplate" [ngTemplateOutletContext]="{ url: art.payload }"></ng-container>
     }
+    @case (PayloadType.TEST_ARTIFACT) {
+    <ng-container [ngTemplateOutlet]="testArtifactTemplate" [ngTemplateOutletContext]="{ testArtifact: art.payload }"></ng-container>
+    }
     }
   </div>
 </ng-template>
@@ -151,4 +154,14 @@ limitations under the License.
       </a>
     </div>
   </div>
+</ng-template>
+
+<!-- 5. Test Artifact Template -->
+<ng-template #testArtifactTemplate let-testArtifact="testArtifact">
+  @if (testArtifact.command) {
+  <div class="payload-detail-section">
+    <div class="payload-detail-title">Test Command</div>
+    <pre class="payload-detail-code"><code>{{ testArtifact.command }}</code></pre>
+  </div>
+  }
 </ng-template>

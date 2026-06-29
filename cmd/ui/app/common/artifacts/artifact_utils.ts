@@ -17,6 +17,7 @@ import {
   ManagedXprofArtifact,
   TextArtifact,
   UrlArtifact,
+  TestArtifact,
 } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 
 import { ArtifactListItem, PayloadType, TypedArtifact } from './interfaces';
@@ -43,6 +44,9 @@ export function toTypedArtifact(artifact: Artifact): TypedArtifact {
     }
     if ('url' in payload && payload.url) {
       return { type: PayloadType.URL, artifact, payload: payload.url };
+    }
+    if ('testArtifact' in payload && payload.testArtifact) {
+      return { type: PayloadType.TEST_ARTIFACT, artifact, payload: payload.testArtifact };
     }
   }
   return { type: PayloadType.UNKNOWN, artifact };
@@ -83,6 +87,13 @@ export function getArtifactDisplayProperties(
         icon: typedArtifact.payload.icon || 'link',
         url: typedArtifact.payload.url ?? '',
         displayName: typedArtifact.payload.displayName || typedArtifact.payload.url || '',
+      };
+    case PayloadType.TEST_ARTIFACT:
+      return {
+        typeName: 'Test Artifact',
+        icon: 'science',
+        url: '',
+        displayName: typedArtifact.payload.title || '',
       };
     case PayloadType.UNKNOWN:
     default:

@@ -17,6 +17,7 @@ import {
   ManagedXprofArtifact,
   TextArtifact,
   UrlArtifact,
+  TestArtifact,
 } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 
 export enum PayloadType {
@@ -24,6 +25,7 @@ export enum PayloadType {
   CODE_SOURCE = 'codeSource',
   TEXT = 'text',
   URL = 'url',
+  TEST_ARTIFACT = 'testArtifact',
   UNKNOWN = 'unknown',
 }
 
@@ -51,6 +53,11 @@ export interface UrlTypedArtifact extends BaseTypedArtifact {
   payload: UrlArtifact;
 }
 
+export interface TestArtifactTypedArtifact extends BaseTypedArtifact {
+  type: PayloadType.TEST_ARTIFACT;
+  payload: TestArtifact;
+}
+
 export interface UnknownTypedArtifact extends BaseTypedArtifact {
   type: PayloadType.UNKNOWN;
 }
@@ -60,6 +67,7 @@ export type TypedArtifact =
   | CodeSourceTypedArtifact
   | TextTypedArtifact
   | UrlTypedArtifact
+  | TestArtifactTypedArtifact
   | UnknownTypedArtifact;
 
 /** Represents a collapsible group of artifacts of the same payload type. */

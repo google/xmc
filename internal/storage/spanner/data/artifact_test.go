@@ -271,6 +271,54 @@ func TestArtifactRowToProto_WithTextPayload(t *testing.T) {
 	}
 }
 
+func TestArtifactRowToProto_WithTestPayload(t *testing.T) {
+	payload := &pb.ArtifactPayload{
+		Type: &pb.ArtifactPayload_TestArtifact{
+			TestArtifact: &pb.TestArtifact{
+				Title:   "test-title",
+				Command: "test-command",
+			},
+		},
+	}
+	want := proto.Clone(&testArtifact).(*pb.Artifact)
+	want.Payload = payload
+
+	keys := []string{"Xid", "WorkUnitId", "ArtifactId", "Url", "Icon", "DisplayName", "Priority", "Tags", "Notes", "LifecyclePhase", "DataType", "MimeType", "AdditionalInfo", "Payload", "CreateTime", "UpdateTime"}
+	values := []any{
+		int64(123),
+		int64(456),
+		int64(789),
+		want.Url.Url,
+		want.Url.Icon,
+		want.Url.DisplayName,
+		int64(want.Url.Priority),
+		want.Tags,
+		want.Notes,
+		want.LifecyclePhase,
+		want.DataType,
+		want.MimeType,
+		want.AdditionalInfo,
+		spanner.NullProtoMessage{ProtoMessageVal: payload, Valid: true},
+		testArtTime,
+		testArtTime,
+	}
+
+	row, err := spanner.NewRow(keys, values)
+	if err != nil {
+		t.Fatalf("Failed to create Spanner row: %v", err)
+	}
+
+	got, err := ArtifactRowToProto(row)
+	if err != nil {
+		t.Fatalf("Failed to convert Spanner row to Artifact proto: %v", err)
+	}
+
+	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		t.Errorf("ArtifactRowToProto() returned unexpected diff (-want +got):\n%s", diff)
+	}
+}
+
+
 func TestArtifactRowToProto_MissingColumn(t *testing.T) {
 	keys := []string{"Xid"}
 	values := []any{int64(123)}
