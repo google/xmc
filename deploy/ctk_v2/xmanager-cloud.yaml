@@ -260,7 +260,7 @@ deployment_groups:
     settings:
       release_name: kueue
       chart_name: oci://registry.k8s.io/kueue/charts/kueue
-      chart_version: 0.15.0
+      chart_version: 0.18.2
       namespace: kueue-system
       create_namespace: true
       dependencies: [$(install_cert_manager.release_completion_id)]
