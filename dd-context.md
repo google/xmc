@@ -31,3 +31,12 @@ got answer:
 Hi Andrzej,
 Thanks for asking. Currently pausing is an local workload feature - ie. it corresponds to the single workload and researcher ability to pause it. But regarding those more admin centric features definitely option no. 1 seems more robust from the researcher perspective as XMC can still serve as a single point of experimentation we allow so they don't need to be tracking infra pause consistently or during pause keep separate tracking of what they want to run next.
 """
+
+asked my PM what is expected time of the pause - they said it might be around 24 hours. During this time there might be hundreds of jobs scheduled. While it is not that much we need to also plan for HPO, then each of those hundred experiment might schedule another hundreds of jobsets. So in the worst case we can expect thousands of jobsets to be created while the pause is active.
+
+
+
+---
+
+
+health service design doc: health-service-dd.md

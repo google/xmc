@@ -85,7 +85,7 @@ The Reconciler watches Kubernetes resources and updates Spanner:
 
 * We will add toggle for Pausing All Scheduling inside XMC Admin Panel  
 * We will create a new Spanner table SystemConfig to persist the state of the Pause toggle.  
-* A new API endpoint will be exposed on the Health Service to allow admins to change the setting. Health Service will persist the state in Spanner SystemConfig and publish a pause event to a dedicated Redis broadcast stream (e.g., xmc-sys-config-stream) via `XADD`.  
+* A new API endpoint will be exposed on the Health Service to allow admins to change the setting. Health Service will persist the state in Spanner SystemConfig and publish a pause event to a dedicated Redis broadcast stream (e.g., `xmc-pause-stream`) via `XADD`.  
 * The existing single Redis stream `xmc-tasks-stream` will be retained without structural changes.  
 * Actuator instances will independently consume the configuration stream via XREAD (without consumer groups) to update their in-memory pause state before pulling or processing incoming operations from `xmc-tasks-stream`.
 
@@ -185,20 +185,13 @@ The Reconciler's write operations (specifically, the JobSet Reconciler patching 
 
 # Limitations
 
-### 1. Silent Task Eviction and Loss (due to `MaxLen` cap)
-The publisher client configures `xmc-tasks-stream` with a maximum length cap of 10,000 (`MaxLen: DefaultMaxLen`). During a scheduling pause, if users submit more than 10,000 tasks, Redis will silently evict and delete the oldest unprocessed tasks from the stream to make room for new ones. No error is thrown. This violates the functional requirement that enqueued tasks must be retained safely during the pause.
-* **Mitigation:** Modify the publisher to check the current stream length (`XLEN`) before performing an `XADD` (using an atomic Redis Lua script to avoid race conditions). If `XLEN` is already at the cap (10,000), the write command should fail and return an explicit error to the publisher client (e.g., ESS) so the request can be rejected gracefully instead of silently losing data.
+// TODO: analyze potential limitations, capacity limits, memory limits, and thundering herd risks
 
-### 2. Redis Memory Exhaustion (OOM)
-If the Redis instance memory limit (2GB) is reached before the 10,000 task cap (e.g., due to large task payloads or other cached keys):
-* Because Memorystore uses the `volatile-lru` eviction policy by default, and our stream keys do not have a TTL (expiration) set, Redis cannot evict the streams to free up space.
-* Instead, it will first evict other TTL-enabled cached keys (leading to collateral damage to other services). Once no TTL keys remain, Redis will behave like `noeviction` and throw OOM write errors for any subsequent `XADD` or `XACK` commands.
+# Verified Assumptions & Unknowns
 
-### 3. Thundering Herd on Resume
-Once the scheduling pause is deactivated, the Actuator instances will instantly resume task consumption at full capacity to process the backlog of queued tasks. This sudden surge in write and scheduling operations could immediately re-overwhelm the Kubernetes Control Plane and Kueue.
+// TODO: document any verified assumptions and unknowns discovered during design analysis
 
-### 4. Reconciler Operations are Unaffected
-The pause only halts task consumption by the Actuator instances. The Reconciler's read/write operations (e.g., syncing Kueue workloads, patching JobSets to remove finalizers) are not stopped. If the Control Plane is in a severely degraded state where all XMC traffic needs to be paused, or if the reconciler itself is causing the degradation, the system cannot achieve a complete pause of all traffic.
+
 
 # Reliability
 
