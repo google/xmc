@@ -362,11 +362,12 @@ func TestCalculateJobTotals(t *testing.T) {
 
 func TestGenerateStructuredMessage(t *testing.T) {
 	tests := []struct {
-		name        string
-		jobSet      *v1alpha2.JobSet
-		state       spb.WorkUnitStatus_WorkUnitState
-		podErrorMsg string
-		want        *spb.StructuredMessage
+		name              string
+		jobSet            *v1alpha2.JobSet
+		state             spb.WorkUnitStatus_WorkUnitState
+		podErrorMsg       string
+		startupWarningMsg string
+		want              *spb.StructuredMessage
 	}{
 		{
 			name: "RunningState",
@@ -495,6 +496,27 @@ func TestGenerateStructuredMessage(t *testing.T) {
 					Url: "",
 				},
 				Severity: spb.StructuredMessage_DEBUG,
+				Source:   spb.StructuredMessage_KUBERNETES,
+			},
+		},
+		{
+			name: "StartingStateWithStartupWarning",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{{Replicas: 1}},
+				},
+				Status: v1alpha2.JobSetStatus{
+					ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{{Active: 1, Ready: 0}},
+				},
+			},
+			state:             spb.WorkUnitStatus_STARTING,
+			startupWarningMsg: "Work unit may be unschedulable: 0/3 nodes are available.",
+			want: &spb.StructuredMessage{
+				UserFacingText: "Work unit may be unschedulable: 0/3 nodes are available.",
+				UserFacingUrl: &spb.Url{
+					Url: "",
+				},
+				Severity: spb.StructuredMessage_WARNING,
 				Source:   spb.StructuredMessage_KUBERNETES,
 			},
 		},
@@ -673,7 +695,7 @@ func TestGenerateStructuredMessage(t *testing.T) {
 
 			time := time.Now()
 
-			got := generateStructuredMessage(t.Context(), tc.jobSet, tc.state, project, location, clusterName, tc.podErrorMsg)
+			got := generateStructuredMessage(t.Context(), tc.jobSet, tc.state, project, location, clusterName, tc.podErrorMsg, tc.startupWarningMsg)
 			if diff := cmp.Diff(tc.want, got, protocmp.Transform(), protocmp.IgnoreFields(&spb.StructuredMessage{}, "create_time")); diff != "" {
 				t.Errorf("generateStructuredStatusMessage() returned diff (-want +got):\n%s", diff)
 			}
@@ -687,13 +709,14 @@ func TestGenerateStructuredMessage(t *testing.T) {
 
 func TestConvertJobSetToWorkUnitExecutionUpdate(t *testing.T) {
 	tests := []struct {
-		name        string
-		jobSet      *v1alpha2.JobSet
-		wid         int64
-		eid         int64
-		podErrorMsg string
-		want        *storagepkg.WorkUnitExecutionUpdate
-		wantErr     bool
+		name              string
+		jobSet            *v1alpha2.JobSet
+		wid               int64
+		eid               int64
+		podErrorMsg       string
+		startupWarningMsg string
+		want              *storagepkg.WorkUnitExecutionUpdate
+		wantErr           bool
 	}{
 		{
 			name: "successful conversion",
@@ -884,7 +907,7 @@ func TestConvertJobSetToWorkUnitExecutionUpdate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			time := time.Now()
 
-			got, err := ConvertJobSetToWorkUnitExecutionUpdate(t.Context(), tc.jobSet, tc.wid, tc.eid, "test-project", "test-location", "test-cluster", tc.podErrorMsg)
+			got, err := ConvertJobSetToWorkUnitExecutionUpdate(t.Context(), tc.jobSet, tc.wid, tc.eid, "test-project", "test-location", "test-cluster", tc.podErrorMsg, tc.startupWarningMsg)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("ConvertJobSetToWorkUnitExecutionUpdate() error = %v, wantErr %v", err, tc.wantErr)
 				return
