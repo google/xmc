@@ -205,3 +205,55 @@ Based on direct user requirements, we introduced the following refinements and r
 5.  **Refined Resumption Backpressure Signal:** Swapped raw `XLEN` queue size queries with Redis consumer group `lag + pending` unacknowledged count evaluations, providing a highly accurate indicator of unprocessed control plane backlog.
 6.  **Skipped Audit Logging:** Removed all audit logging definitions and verification tests.
 7.  **Removed Alerting & Capping Overrides:** Removed the dedicated Redis configuration and memory limits configuration guidelines, and removed the corresponding eviction prevention tests.
+
+---
+
+## Iteration 9: Draining Worker Architecture Shift to Health Service (2026-06-30)
+
+### 1. Architectural Decisions & Rationale
+
+We shifted the resumption draining worker and the periodic stuck task recovery loops from the Kubernetes Reconciler to the **Health Service** container:
+
+1. **Separation of Concerns:** Keep the Reconciler focused strictly on Kubernetes resource synchronization (JobSets/Workloads) and offload custom database/Redis enqueuing.
+2. **Single-Replica Deployment & No Leader Election:** To simplify coordination, the Health Service is deployed as a single instance (`replicas: 1`). This eliminates the requirement for complex Kubernetes leader election during the initial phase.
+3. **Trigger-with-Fallback Execution:**
+   - **Internal Trigger (No Polling):** An internal Go channel (`drainSignal`) immediately wakes up the background goroutine to start draining the `PausedTasks` table when the admin API toggles `paused = false`.
+   - **Startup Recovery:** On container boot, if Spanner indicates the system is unpaused, the Health Service automatically sends a signal to `drainSignal` to drain any tasks that remained in `PausedTasks` due to a crash.
+   - **Periodic Heartbeat:** A slow periodic ticker (e.g., every 5 minutes) triggers a check of `PausedTasks` as a fallback to recover from any transient errors or missed signals, eliminating database polling load during normal operations.
+4. **Consistency:** Renamed all remaining Reconciler draining worker references to the Health Service draining worker.
+
+## Iteration 9: Revision 2 & 3 (Security Validation, ESS Sync & Final Approval)
+
+### 1. Reviewer Feedback Summary
+
+#### Architect Reviewer (FATAL - Revision 2)
+* **ESS Startup Race Condition:** A race condition exists at ESS startup where a pause event could be published and committed concurrently with ESS boot, resulting in ESS missing the event and enqueuing tasks despite the pause.
+* **Actuator Broadcast Stream Redundancy:** Confirmed that the broadcast stream is only for ESS instances to sync cache, and Actuator remains stateless (resolved typo).
+* **Multi-Replica rolling update safety:** rolling updates could briefly spawn a second replica, causing dual draining.
+
+#### QA Reviewer (FATAL - Revision 2)
+* **Incomplete Security Validation:** Missing explicit test scenarios for input validation, session management scope checks, and BFF validation (CSRF token verification, custom cookies/headers, CORS policy limits, and secure HTTP headers).
+* **Redis configuration parameters:** Recommended documenting Redis isolation, dedicated instance guidelines, and specific `maxmemory` guidelines.
+
+#### Developer Reviewer (LGTM)
+* Approved Revision 2 with no comments.
+
+---
+
+### 2. Architectural Decisions & Final Adjustments
+
+We resolved all reviewer concerns in Revision 3, 4, and 5:
+
+1. **Reversed ESS Startup Order:** ESS now queries the Redis stream offset (using `XREVRANGE`) *first*, performs the Spanner synchronous settings read *second*, and spawns the background `XREAD` listener *third*. This mathematically eliminates the startup race condition.
+2. **Kubernetes Rollout Strategy 'Recreate':** Health Service Helm templates configure `strategy.type: Recreate` on the deployment to guarantee a single replica is active even during updates, avoiding leader election.
+3. **Completed Security Verification Plan:** Expanded the Verification Plan to explicitly detail Input Validation, Session Management scope verification, and BFF validation (CSRF, CORS, secure HTTP headers nosniff/DENY).
+4. **Redis Infrastructure Guidelines:** Documented Redis isolation requirements, `maxmemory-policy noeviction` enforcement, and a recommended `maxmemory 2GB` limit.
+5. **Idempotency Updates:** Actuator `CreateWorkUnit` handles GKE `AlreadyExists` errors gracefully, treating them as successful when matching the target execution ID.
+6. **Corrected Table References:** Unified all occurrences of `SystemConfig` to `SystemSettings`.
+7. **Transition Orphan DB Verification:** Added database row deletion verification to the Verification Plan for transition orphans.
+
+### 3. Reviewer Final Approvals (Revision 5)
+* **Architect Reviewer:** LGTM
+* **QA Reviewer:** LGTM
+* **Developer Reviewer:** LGTM
+
