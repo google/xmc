@@ -12,14 +12,6 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
-ALTER PROTO BUNDLE INSERT (
-  cloud.xmanager.v1.Action,
-  cloud.xmanager.v1.CreateAction,
-  cloud.xmanager.v1.DeleteAction,
-  cloud.xmanager.v1.RestartAction,
-  cloud.xmanager.v1.UpdateAction
-);
-
 CREATE TABLE SystemSettings (
   Id INT64 NOT NULL,
   ActuatorSchedulingPaused BOOL NOT NULL DEFAULT (FALSE)
@@ -30,7 +22,7 @@ CREATE TABLE PausedTasks (
   WorkUnitId INT64 NOT NULL,
   TaskId STRING(MAX) NOT NULL,
   Target STRING(MAX) NOT NULL,
-  Action cloud.xmanager.v1.Action NOT NULL,
+  Action BYTES(MAX) NOT NULL,
   OperationName STRING(MAX) NOT NULL,
   TraceId STRING(MAX) NOT NULL,
   CreateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE)

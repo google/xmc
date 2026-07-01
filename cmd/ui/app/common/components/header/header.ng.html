@@ -45,6 +45,16 @@ limitations under the License.
       <mat-icon>info</mat-icon>
     </button>
   </mat-form-field>
+  
+  <mat-slide-toggle
+    class="pause-toggle"
+    [checked]="isPaused"
+    (change)="togglePause()"
+    color="primary"
+  >
+    Pause Scheduling
+  </mat-slide-toggle>
+
   <div class="side-sections"></div>
 </mat-toolbar>
 

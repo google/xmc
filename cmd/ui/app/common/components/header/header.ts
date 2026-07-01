@@ -22,9 +22,11 @@ import { MatInputModule } from '@angular/material/input';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { Router, RouterLink } from '@angular/router';
 
 import { experimentFiltersToQueryParams } from 'xmanager_cloud/ui/app/experiments_list_page/utils/query_params';
+import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
 
 /**
  * Header component for the XMC UI.
@@ -48,13 +50,16 @@ import { experimentFiltersToQueryParams } from 'xmanager_cloud/ui/app/experiment
     MatFormFieldModule,
     MatTooltipModule,
     MatCardModule,
+    MatSlideToggleModule,
   ],
 })
 export class Header {
   readonly userInput = new FormControl<string>('');
   readonly menuToggle = output<void>();
+  isPaused = false;
 
   private readonly router = inject(Router);
+  private readonly experimentService = inject(ExperimentService);
 
   searchExperiments() {
     this.router.navigate(['/experiments'], {
@@ -64,5 +69,18 @@ export class Header {
 
   toggleSidenav() {
     this.menuToggle.emit();
+  }
+
+  togglePause() {
+    const nextPauseState = !this.isPaused;
+    this.experimentService.updateSchedulingPause(nextPauseState).subscribe({
+      next: () => {
+        this.isPaused = nextPauseState;
+        console.log('Successfully updated scheduling pause:', this.isPaused);
+      },
+      error: (err) => {
+        console.error('Failed to update scheduling pause:', err);
+      }
+    });
   }
 }
