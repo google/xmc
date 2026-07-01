@@ -24,9 +24,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	timestamppb "protobuf/timestamp_go_proto"
+	"google.golang.org/protobuf/proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	client "xmanager_cloud/task_queue/client"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
+	"xmanager_cloud/storage/state/state"
 	"xmanager_cloud/storage/storage"
 	taskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	"xmanager_cloud/validator/validator"
@@ -58,10 +60,15 @@ func (s *Storage) GetSchedulingPause(ctx context.Context) (bool, error) {
 // BufferPausedTask writes a task payload to the PausedTasks table and updates the parent WorkUnit state to GLOBAL_PAUSE in a single transaction.
 func (s *Storage) BufferPausedTask(ctx context.Context, task *storage.PausedTask, workUnitStateUpdate *storage.WorkUnitExecutionUpdate) error {
 	_, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		actionBytes, marshalErr := proto.Marshal(task.Action)
+		if marshalErr != nil {
+			return fmt.Errorf("failed to marshal action: %w", marshalErr)
+		}
+
 		// 1. Insert into PausedTasks
 		taskMutation := spanner.Insert("PausedTasks",
 			[]string{"BitReversedXid", "WorkUnitId", "TaskId", "Target", "Action", "OperationName", "TraceId", "CreateTime"},
-			[]any{task.BitReversedXid, task.WorkUnitID, task.TaskID, task.Target, task.Action, task.OperationName, task.TraceID, spanner.CommitTimestamp},
+			[]any{task.BitReversedXid, task.WorkUnitID, task.TaskID, task.Target, actionBytes, task.OperationName, task.TraceID, spanner.CommitTimestamp},
 		)
 
 		// 2. Query WorkUnit row to get details
@@ -106,12 +113,13 @@ func (s *Storage) BufferPausedTask(ctx context.Context, task *storage.PausedTask
 			return fmt.Errorf("work unit with BitReversedXid=%d, WorkUnitId=%d not found", task.BitReversedXid, task.WorkUnitID)
 		}
 
+		oldState := wuStatus.State
+
 		// 3. Update the state to GLOBAL_PAUSE
 		wuStatus.State = essmsgpb.WorkUnitStatus_GLOBAL_PAUSE
 		now := time.Now()
 		wuStatus.UpdateTime = timestamppb.New(now)
 		wuStatus.StateUpdateTime = timestamppb.New(now)
-
 
 		exec := &essmsgpb.WorkUnitExecution{
 			Name:       validator.ConstructWorkUnitExecutionName(reverseBits(task.BitReversedXid), task.WorkUnitID, executionID),
@@ -124,7 +132,35 @@ func (s *Storage) BufferPausedTask(ctx context.Context, task *storage.PausedTask
 
 		wuMutation := spannerdata.CurrentWorkUnitExecutionProtoToUpdateMutation(reverseBits(task.BitReversedXid), task.WorkUnitID, executionID, exec)
 
-		txn.BufferWrite([]*spanner.Mutation{taskMutation, wuMutation})
+		// 4. Update the parent Experiment's denormalized state counts
+		xid := reverseBits(task.BitReversedXid)
+		exp, err := s.fetchExperimentTransaction(ctx, xid, txn)
+		if err != nil {
+			return fmt.Errorf("failed to fetch experiment: %w", err)
+		}
+
+		var executionDeltas []*state.WorkUnitStateDelta
+		executionDeltas = append(executionDeltas, &state.WorkUnitStateDelta{
+			CurrentState:   &oldState,
+			NewState:       essmsgpb.WorkUnitStatus_GLOBAL_PAUSE.Enum(),
+			CurrentMessage: nil,
+			NewMessage:     nil,
+		})
+
+		exp, err = state.DenormalizeWorkUnitStatus(ctx, exp, executionDeltas)
+		if err != nil {
+			return fmt.Errorf("failed to update experiment status: %w", err)
+		}
+
+		exp.UpdateTime = timestamppb.New(now)
+		exp.Status.LastChildStatusUpdateTime = timestamppb.New(now)
+		exp.Status.UpdateTime = timestamppb.New(now)
+		expMutation, err := spannerdata.ExperimentProtoToStatusUpdateMutation(exp)
+		if err != nil {
+			return err
+		}
+
+		txn.BufferWrite([]*spanner.Mutation{taskMutation, wuMutation, expMutation})
 		return nil
 	})
 	return err
@@ -159,8 +195,13 @@ func (s *Storage) FetchPausedTasksBatch(ctx context.Context, limit int) ([]*stor
 		if err := r.ColumnByName("Target", &task.Target); err != nil {
 			return err
 		}
-		if err := r.ColumnByName("Action", &task.Action); err != nil {
+		var actionBytes []byte
+		if err := r.ColumnByName("Action", &actionBytes); err != nil {
 			return err
+		}
+		task.Action = &taskpb.Action{}
+		if err := proto.Unmarshal(actionBytes, task.Action); err != nil {
+			return fmt.Errorf("failed to unmarshal action: %w", err)
 		}
 		if err := r.ColumnByName("OperationName", &task.OperationName); err != nil {
 			return err
@@ -241,6 +282,8 @@ func (s *Storage) CompletePausedTask(ctx context.Context, key storage.PausedTask
 			return nil
 		}
 
+		oldState := wuStatus.State
+
 		// 3. Update status state
 		wuStatus.State = targetState
 		now := time.Now()
@@ -258,7 +301,35 @@ func (s *Storage) CompletePausedTask(ctx context.Context, key storage.PausedTask
 
 		wuMutation := spannerdata.CurrentWorkUnitExecutionProtoToUpdateMutation(reverseBits(key.BitReversedXid), key.WorkUnitID, executionID, exec)
 
-		txn.BufferWrite([]*spanner.Mutation{deleteMutation, wuMutation})
+		// 4. Update the parent Experiment's denormalized state counts
+		xid := reverseBits(key.BitReversedXid)
+		exp, err := s.fetchExperimentTransaction(ctx, xid, txn)
+		if err != nil {
+			return fmt.Errorf("failed to fetch experiment: %w", err)
+		}
+
+		var executionDeltas []*state.WorkUnitStateDelta
+		executionDeltas = append(executionDeltas, &state.WorkUnitStateDelta{
+			CurrentState:   &oldState,
+			NewState:       targetState.Enum(),
+			CurrentMessage: nil,
+			NewMessage:     nil,
+		})
+
+		exp, err = state.DenormalizeWorkUnitStatus(ctx, exp, executionDeltas)
+		if err != nil {
+			return fmt.Errorf("failed to update experiment status: %w", err)
+		}
+
+		exp.UpdateTime = timestamppb.New(now)
+		exp.Status.LastChildStatusUpdateTime = timestamppb.New(now)
+		exp.Status.UpdateTime = timestamppb.New(now)
+		expMutation, err := spannerdata.ExperimentProtoToStatusUpdateMutation(exp)
+		if err != nil {
+			return err
+		}
+
+		txn.BufferWrite([]*spanner.Mutation{deleteMutation, wuMutation, expMutation})
 		return nil
 	})
 	return err
@@ -267,70 +338,127 @@ func (s *Storage) CompletePausedTask(ctx context.Context, key storage.PausedTask
 // ScanAndRecoverWorkUnits scans for stuck work units and pauses or schedules them based on the current pause state.
 func (s *Storage) ScanAndRecoverWorkUnits(ctx context.Context, paused bool) error {
 	if paused {
-		// System is paused: find stuck scheduling/starting work units and pause them
-		stmt := spanner.NewStatement(`
-			SELECT BitReversedXid, WorkUnitId, ExecutionId, ExecutionCreateTime, ExecutionMetadata, WorkUnitStatus
-			FROM WorkUnits
-			WHERE WorkUnitStatus.state IN (1, 2, 3, 7) -- INITIALIZING, SCHEDULING, STARTING, RESTARTING
-		`)
-		iter := s.client.Single().Query(ctx, stmt)
-		defer iter.Stop()
+		_, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+			// System is paused: find stuck scheduling/starting work units and pause them
+			stmt := spanner.NewStatement(`
+				SELECT BitReversedXid, WorkUnitId, ExecutionId, ExecutionCreateTime, ExecutionMetadata, WorkUnitStatus
+				FROM WorkUnits
+				WHERE WorkUnitStatus.state IN (1, 2, 3, 7) -- INITIALIZING, SCHEDULING, STARTING, RESTARTING
+			`)
+			iter := txn.Query(ctx, stmt)
+			defer iter.Stop()
 
-		var mutations []*spanner.Mutation
-		now := time.Now()
-		err := iter.Do(func(r *spanner.Row) error {
-			var bitReversedXid int64
-			var workUnitID int64
-			var executionID int64
-			var createTime spanner.NullTime
-			var metadata *essmsgpb.WorkUnitExecutionMetadata
-			var wuStatus *essmsgpb.WorkUnitStatus
+			now := time.Now()
+			type recoveryUpdate struct {
+				bitReversedXid int64
+				workUnitID     int64
+				executionID    int64
+				exec           *essmsgpb.WorkUnitExecution
+				oldState       essmsgpb.WorkUnitStatus_WorkUnitState
+			}
+			var updates []recoveryUpdate
 
-			if err := r.ColumnByName("BitReversedXid", &bitReversedXid); err != nil {
-				return err
-			}
-			if err := r.ColumnByName("WorkUnitId", &workUnitID); err != nil {
-				return err
-			}
-			if err := r.ColumnByName("ExecutionId", &executionID); err != nil {
-				return err
-			}
-			if err := r.ColumnByName("ExecutionCreateTime", &createTime); err != nil {
-				return err
-			}
-			if err := r.ColumnByName("ExecutionMetadata", &metadata); err != nil {
-				return err
-			}
-			if err := r.ColumnByName("WorkUnitStatus", &wuStatus); err != nil {
+			err := iter.Do(func(r *spanner.Row) error {
+				var bitReversedXid int64
+				var workUnitID int64
+				var executionID int64
+				var createTime spanner.NullTime
+				var metadata *essmsgpb.WorkUnitExecutionMetadata
+				var wuStatus *essmsgpb.WorkUnitStatus
+
+				if err := r.ColumnByName("BitReversedXid", &bitReversedXid); err != nil {
+					return err
+				}
+				if err := r.ColumnByName("WorkUnitId", &workUnitID); err != nil {
+					return err
+				}
+				if err := r.ColumnByName("ExecutionId", &executionID); err != nil {
+					return err
+				}
+				if err := r.ColumnByName("ExecutionCreateTime", &createTime); err != nil {
+					return err
+				}
+				if err := r.ColumnByName("ExecutionMetadata", &metadata); err != nil {
+					return err
+				}
+				if err := r.ColumnByName("WorkUnitStatus", &wuStatus); err != nil {
+					return err
+				}
+
+				oldState := wuStatus.State
+				wuStatus.State = essmsgpb.WorkUnitStatus_GLOBAL_PAUSE
+				wuStatus.UpdateTime = timestamppb.New(now)
+				wuStatus.StateUpdateTime = timestamppb.New(now)
+
+				exec := &essmsgpb.WorkUnitExecution{
+					Name:       validator.ConstructWorkUnitExecutionName(reverseBits(bitReversedXid), workUnitID, executionID),
+					CreateTime: timestamppb.New(createTime.Time),
+					UpdateTime: timestamppb.New(now),
+					Status:     wuStatus,
+					State:      essmsgpb.WorkUnitExecution_ACTIVE,
+					Metadata:   metadata,
+				}
+
+				updates = append(updates, recoveryUpdate{
+					bitReversedXid: bitReversedXid,
+					workUnitID:     workUnitID,
+					executionID:    executionID,
+					exec:           exec,
+					oldState:       oldState,
+				})
+				return nil
+			})
+			if err != nil {
 				return err
 			}
 
-			wuStatus.State = essmsgpb.WorkUnitStatus_GLOBAL_PAUSE
-			wuStatus.UpdateTime = timestamppb.New(now)
-			wuStatus.StateUpdateTime = timestamppb.New(now)
-
-			exec := &essmsgpb.WorkUnitExecution{
-				Name:       validator.ConstructWorkUnitExecutionName(reverseBits(bitReversedXid), workUnitID, executionID),
-				CreateTime: timestamppb.New(createTime.Time),
-				UpdateTime: timestamppb.New(now),
-				Status:     wuStatus,
-				State:      essmsgpb.WorkUnitExecution_ACTIVE,
-				Metadata:   metadata,
+			if len(updates) == 0 {
+				return nil
 			}
 
-			mut := spannerdata.CurrentWorkUnitExecutionProtoToUpdateMutation(reverseBits(bitReversedXid), workUnitID, executionID, exec)
-			mutations = append(mutations, mut)
+			// Group updates by Experiment (XID) so we only fetch/update each experiment once
+			expUpdates := make(map[int64][]*state.WorkUnitStateDelta)
+			var mutations []*spanner.Mutation
+
+			for _, upd := range updates {
+				xid := reverseBits(upd.bitReversedXid)
+				expUpdates[xid] = append(expUpdates[xid], &state.WorkUnitStateDelta{
+					CurrentState:   &upd.oldState,
+					NewState:       essmsgpb.WorkUnitStatus_GLOBAL_PAUSE.Enum(),
+					CurrentMessage: nil,
+					NewMessage:     nil,
+				})
+
+				mut := spannerdata.CurrentWorkUnitExecutionProtoToUpdateMutation(xid, upd.workUnitID, upd.executionID, upd.exec)
+				mutations = append(mutations, mut)
+			}
+
+			// Update parent experiments
+			for xid, deltas := range expUpdates {
+				exp, err := s.fetchExperimentTransaction(ctx, xid, txn)
+				if err != nil {
+					return fmt.Errorf("failed to fetch experiment %d: %w", xid, err)
+				}
+
+				exp, err = state.DenormalizeWorkUnitStatus(ctx, exp, deltas)
+				if err != nil {
+					return fmt.Errorf("failed to denormalize status for experiment %d: %w", xid, err)
+				}
+
+				exp.UpdateTime = timestamppb.New(now)
+				exp.Status.LastChildStatusUpdateTime = timestamppb.New(now)
+				exp.Status.UpdateTime = timestamppb.New(now)
+				expMutation, err := spannerdata.ExperimentProtoToStatusUpdateMutation(exp)
+				if err != nil {
+					return err
+				}
+				mutations = append(mutations, expMutation)
+			}
+
+			txn.BufferWrite(mutations)
 			return nil
 		})
-		if err != nil {
-			return err
-		}
-
-		if len(mutations) > 0 {
-			_, err = s.client.Apply(ctx, mutations)
-			return err
-		}
-		return nil
+		return err
 	} else {
 		// System is unpaused: find work units in GLOBAL_PAUSE and buffer them in PausedTasks if not already buffered
 		stmt := spanner.NewStatement(`
