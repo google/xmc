@@ -17,7 +17,7 @@ load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
 genrule(
     name = "copy_ess_messages",
-    srcs = ["//api/protos/experiment:experiment_messages_descriptor"],
+    srcs = ["//api/protos/task_queue:task_messages_descriptor"],
     outs = ["ess_messages.pb"],
     cmd = "cp $< $@",
 )
@@ -41,6 +41,9 @@ compat_go_library(
         "ess/003_status_messages.up.sql",
         "ess/004_artifactpayload.down.sql",
         "ess/004_artifactpayload.up.sql",
+        "ess/005_pause_resume.down.sql",
+        "ess/005_pause_resume.up.sql",
+
         "xid/001_baseline.down.sql",
         "xid/001_baseline.up.sql",
         ":ess_messages.pb",

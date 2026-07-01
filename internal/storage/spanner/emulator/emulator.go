@@ -43,7 +43,7 @@ var (
 	xidDescriptors []byte
 	//go:embed ess-schema.sql
 	essSchema string
-	//go:embed ess_messages.pb
+	//go:embed task_messages.pb
 	essDescriptors []byte
 )
 

@@ -56,6 +56,7 @@ import (
 	ss "xmanager_cloud/storage/spanner/spanner"
 	tq "xmanager_cloud/task_queue/client"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
+	"github.com/redis/go-redis/v9"
 )
 
 //go:embed xmanager_cloud/experiment_state_server/static/*
@@ -171,8 +172,19 @@ func main() {
 	}
 	defer taskQueueClient.Close()
 
+	// 6.1. Initialize Redis Client for coordination
+	redisOptions := &redis.Options{Addr: cfg.RedisAddr}
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+	if redisPassword != "" {
+		redisOptions.Password = redisPassword
+	}
+	redisClient := redis.NewClient(redisOptions)
+	defer redisClient.Close()
+
 	// 7. Set up the gRPC server.
 	experimentStateServer := server.New(storage, &cfg, auth, xidClient, taskQueueClient)
+	experimentStateServer.Start(ctx, redisClient, os.Getenv("POD_NAME"))
+
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {

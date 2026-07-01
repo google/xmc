@@ -23,9 +23,12 @@ import (
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/task_queue/client"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+
+
 )
 
 // CreateWorkUnit orchestrates the creation of a new work unit for an experiment.
@@ -141,27 +144,49 @@ func (s *Server) CreateWorkUnit(ctx context.Context, req *apipb.CreateWorkUnitRe
 		return nil, fmt.Errorf("failed to fetch experiment: %w (%v)", status.ErrInternal, err)
 	}
 
-	// 9. Enqueue the work unit for scheduling.
-	err = s.taskQueueClient.EnqueueWorkUnitTask(ctx, newWorkUnit.GetCurrentWorkUnitExecution().GetName(), newWorkUnit, client.CreateAction(exp.GetPriority(), email), operation.GetName())
-	if err != nil {
-		log.ErrorContextf(ctx, "Failed to enqueue work unit for scheduling %s: %v", newWorkUnit.GetName(), err)
-		enqueueErr := err
-		_, _, eid, err := validator.ValidateWorkUnitExecutionName(newWorkUnit.GetCurrentWorkUnitExecution().GetName())
-		if err != nil {
-			log.ErrorContextf(ctx, "Failed to validate work unit execution name: %v", err)
-			return nil, fmt.Errorf("failed to validate work unit execution name: %w (%v)", status.ErrInternal, err)
+	// 9. Enqueue or Buffer the work unit for scheduling.
+	action := client.CreateAction(exp.GetPriority(), email)
+	if s.localPaused.Load() {
+		logging.Info(ctx, "Scheduling is globally paused. Buffering task in Spanner.", "work_unit", newWorkUnit.GetName())
+		traceID, _ := logging.OperationID(ctx)
+		task := &storage.PausedTask{
+			BitReversedXid: reverseBits(xid),
+			WorkUnitID:     wid,
+			TaskID:         newWorkUnit.GetCurrentWorkUnitExecution().GetName(),
+			Target:         newWorkUnit.GetCurrentWorkUnitExecution().GetName(),
+			Action:         action,
+			OperationName:  operation.GetName(),
+			TraceID:        traceID,
 		}
 
-		if statusMsgErr := s.updateWorkUnitExecutionStatusMessage(ctx, xid, wid, eid, &msgpb.StructuredMessage{
-			UserFacingText: "Work unit was created but could not be scheduled for execution. Please restart the work unit.",
-			Severity:       msgpb.StructuredMessage_FATAL,
-			Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,
-		}, false); statusMsgErr != nil {
-			logging.Error(ctx, "Failed to update work unit execution status message after failed create attempt", "error", statusMsgErr)
+		err = s.storage.BufferPausedTask(ctx, task, nil)
+		if err != nil {
+			logging.Error(ctx, "Failed to buffer paused task in Spanner", "error", err)
+			return nil, fmt.Errorf("failed to buffer paused task: %w", err)
 		}
-		logging.Error(ctx, "Failed to enqueue work unit for scheduling", "error", enqueueErr)
-		return nil, fmt.Errorf("failed to enqueue work unit for scheduling: %w (%v)", status.ErrInternal, enqueueErr)
+	} else {
+		err = s.taskQueueClient.EnqueueWorkUnitTask(ctx, newWorkUnit.GetCurrentWorkUnitExecution().GetName(), newWorkUnit, action, operation.GetName())
+		if err != nil {
+			log.ErrorContextf(ctx, "Failed to enqueue work unit for scheduling %s: %v", newWorkUnit.GetName(), err)
+			enqueueErr := err
+			_, _, eid, err := validator.ValidateWorkUnitExecutionName(newWorkUnit.GetCurrentWorkUnitExecution().GetName())
+			if err != nil {
+				log.ErrorContextf(ctx, "Failed to validate work unit execution name: %v", err)
+				return nil, fmt.Errorf("failed to validate work unit execution name: %w (%v)", status.ErrInternal, err)
+			}
+
+			if statusMsgErr := s.updateWorkUnitExecutionStatusMessage(ctx, xid, wid, eid, &msgpb.StructuredMessage{
+				UserFacingText: "Work unit was created but could not be scheduled for execution. Please restart the work unit.",
+				Severity:       msgpb.StructuredMessage_FATAL,
+				Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,
+			}, false); statusMsgErr != nil {
+				logging.Error(ctx, "Failed to update work unit execution status message after failed create attempt", "error", statusMsgErr)
+			}
+			logging.Error(ctx, "Failed to enqueue work unit for scheduling", "error", enqueueErr)
+			return nil, fmt.Errorf("failed to enqueue work unit for scheduling: %w (%v)", status.ErrInternal, enqueueErr)
+		}
 	}
+
 
 	// 10. Return the successful response.
 	logging.Info(ctx, "Created work unit", "work_unit", newWorkUnit.GetName())

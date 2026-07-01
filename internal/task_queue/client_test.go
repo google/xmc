@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/tink-crypto/tink-go/v2/jwt"
@@ -209,64 +208,14 @@ func TestEnqueueWorkUnitTask(t *testing.T) {
 			if payload.GetMetadata() == nil {
 				t.Fatal("Payload Metadata should not be nil")
 			}
-			wantIdempotencyKeyPrefix := fmt.Sprintf("%s_%s_", tc.target, tc.actionType)
-			if !strings.HasPrefix(payload.GetMetadata().GetIdempotencyKey(), wantIdempotencyKeyPrefix) {
-				t.Errorf("IdempotencyKey got %q, want prefix %q", payload.GetMetadata().GetIdempotencyKey(), wantIdempotencyKeyPrefix)
+			wantIdempotencyKey := fmt.Sprintf("%s_%s", tc.target, tc.actionType)
+			if payload.GetMetadata().GetIdempotencyKey() != wantIdempotencyKey {
+				t.Errorf("IdempotencyKey got %q, want %q", payload.GetMetadata().GetIdempotencyKey(), wantIdempotencyKey)
 			}
 			if payload.GetMetadata().GetOperationName() != operationName {
 				t.Errorf("OperationName got %q, want %q", payload.GetMetadata().GetOperationName(), operationName)
 			}
 		})
-	}
-}
-
-func TestEnqueueWorkUnitTask_IdempotencyKeyIsUnique(t *testing.T) {
-	ctx := t.Context()
-
-	oldGenerateOIDCToken := generateOIDCToken
-	generateOIDCToken = func(ctx context.Context, serviceAccountEmail string, audience string) (string, error) {
-		return "mock-oidc-token", nil
-	}
-	defer func() {
-		generateOIDCToken = oldGenerateOIDCToken
-	}()
-
-	c := CreateTaskQueueClient(ctx, t)
-	redisClient := mockAndConfigureRedisClient(t, c)
-
-	action := &actuatortaskpb.Action{
-		Action: &actuatortaskpb.Action_Create{
-			Create: &actuatortaskpb.CreateAction{},
-		},
-	}
-	target := "experiments/123/workUnits/1"
-	workUnit := &essmsgpb.WorkUnit{Name: "experiments/123/workUnits/1"}
-	operationName := "op1"
-
-	err1 := c.EnqueueWorkUnitTask(ctx, target, workUnit, action, operationName)
-	// Idempotency key uses time with nanosecond precision, but sleep to be sure.
-	time.Sleep(2 * time.Nanosecond)
-	err2 := c.EnqueueWorkUnitTask(ctx, target, workUnit, action, operationName)
-
-	if err1 != nil || err2 != nil {
-		t.Fatalf("EnqueueWorkUnitTask failed, err1: %v, err2: %v", err1, err2)
-	}
-
-	if len(redisClient.Messages) != 2 {
-		t.Fatalf("Expected 2 messages, got %d", len(redisClient.Messages))
-	}
-
-	var redisTask1, redisTask2 interfaces.RedisTask
-	json.Unmarshal([]byte(redisClient.Messages[0]), &redisTask1)
-	json.Unmarshal([]byte(redisClient.Messages[1]), &redisTask2)
-
-	payload1 := &actuatortaskpb.ActuatorPayload{}
-	protojson.Unmarshal(redisTask1.Payload, payload1)
-	payload2 := &actuatortaskpb.ActuatorPayload{}
-	protojson.Unmarshal(redisTask2.Payload, payload2)
-
-	if payload1.GetMetadata().GetIdempotencyKey() == payload2.GetMetadata().GetIdempotencyKey() {
-		t.Errorf("Idempotency keys are identical, but should be unique: %q", payload1.GetMetadata().GetIdempotencyKey())
 	}
 }
 
@@ -328,8 +277,8 @@ func TestEnqueueWorkUnitTask_RedisAddMessageFailure(t *testing.T) {
 }
 
 func TestGenerateIdempotencyKeyUnknown(t *testing.T) {
-	key := generateIdempotencyKey("target", &actuatortaskpb.Action{}, time.Now())
-	if !strings.HasPrefix(key, "target_UNKNOWN_") {
-		t.Errorf("generateIdempotencyKey with unknown action got %q, want prefix %q", key, "target_UNKNOWN_")
+	key := generateIdempotencyKey("target", &actuatortaskpb.Action{})
+	if key != "target_UNKNOWN" {
+		t.Errorf("generateIdempotencyKey with unknown action got %q, want %q", key, "target_UNKNOWN")
 	}
 }

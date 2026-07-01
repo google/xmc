@@ -52,6 +52,13 @@ func (c *FakeClient) GetStreamLen(ctx context.Context, stream string) (int64, er
 	return int64(len(c.Messages)), nil
 }
 
+// GetQueueDepth returns the number of messages added.
+func (c *FakeClient) GetQueueDepth(ctx context.Context) (int64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return int64(len(c.Messages)), nil
+}
+
 // InitializeClient is a fake implementation of RedisClient.InitializeClient.
 func (c *FakeClient) InitializeClient(ctx context.Context) {}
 

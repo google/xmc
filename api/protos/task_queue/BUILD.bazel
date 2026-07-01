@@ -15,7 +15,7 @@
 # gazelle:ignore
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_descriptor_set", "proto_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -57,4 +57,10 @@ go_library(
     name = "task_queue",
     embed = [":cloud_xmanager_v1_go_proto"],
     importpath = "xmanager_cloud/api/protos/task_queue",
+)
+
+proto_descriptor_set(
+    name = "task_messages_descriptor",
+    visibility = ["//visibility:public"],
+    deps = [":task_proto"],
 )

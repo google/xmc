@@ -79,6 +79,11 @@ type FakeClient struct {
 	// EnqueueFunc is an optional function that will be called by EnqueueWorkUnitTask.
 	// If set, it will be called instead of returning EnqueueErr.
 	EnqueueFunc func(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error
+
+	// GetQueueDepthErr is the error that will be returned by GetQueueDepth.
+	GetQueueDepthErr error
+	// MockQueueDepth is the mocked value returned by GetQueueDepth.
+	MockQueueDepth int64
 }
 
 // EnqueueWorkUnitTask captures the input and returns the configured error.
@@ -105,6 +110,17 @@ func (c *FakeClient) EnqueueWorkUnitTask(ctx context.Context, target string, wor
 // Close is a no-op for the mock client.
 func (c *FakeClient) Close() error {
 	return nil
+}
+
+// GetQueueDepth returns the mocked queue depth or the length of EnqueuedTasks.
+func (c *FakeClient) GetQueueDepth(ctx context.Context) (int64, error) {
+	if c.GetQueueDepthErr != nil {
+		return 0, c.GetQueueDepthErr
+	}
+	if c.MockQueueDepth > 0 {
+		return c.MockQueueDepth, nil
+	}
+	return int64(len(c.EnqueuedTasks)), nil
 }
 
 // CreateTaskQueueClient creates a task queue client for testing.

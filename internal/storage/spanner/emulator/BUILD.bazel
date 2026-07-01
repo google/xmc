@@ -29,9 +29,9 @@ genrule(
 )
 
 genrule(
-    name = "copy_ess_messages",
-    srcs = ["//api/protos/experiment:experiment_messages_descriptor"],
-    outs = ["ess_messages.pb"],
+    name = "copy_task_messages",
+    srcs = ["//api/protos/task_queue:task_messages_descriptor"],
+    outs = ["task_messages.pb"],
     cmd = "cp $< $@",
 )
 
@@ -48,7 +48,7 @@ go_library(
     embedsrcs = [
         "ess-schema.sql",
         "xid-schema.sql",
-        "ess_messages.pb",
+        "task_messages.pb",
         "xid_messages.pb",
     ],
     importpath = "xmanager_cloud/internal/storage/spanner/emulator",

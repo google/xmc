@@ -77,5 +77,6 @@ use_repo(
     "org_golang_x_oauth2",
     "org_golang_x_sync",
     "org_golang_x_text",
+    "org_golang_x_time",
     "xyz_gomodules_jsonpatch_v2",
 )

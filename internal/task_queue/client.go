@@ -98,7 +98,7 @@ func (c *Client) EnqueueWorkUnitTask(ctx context.Context, target string, workUni
 	}
 
 	metadata := &actuatortaskpb.Metadata{
-		IdempotencyKey: proto.String(generateIdempotencyKey(target, action, now.AsTime())),
+		IdempotencyKey: proto.String(generateIdempotencyKey(target, action)),
 		OperationName:  proto.String(operationName),
 		TraceId:        proto.String(traceID),
 	}
@@ -165,7 +165,15 @@ func (c *Client) PingRedis(ctx context.Context) error {
 	return c.redisClient.Ping(ctx)
 }
 
-func generateIdempotencyKey(target string, action *actuatortaskpb.Action, curTime time.Time) string {
+// GetQueueDepth returns the total number of unread and pending messages in the Redis stream.
+func (c *Client) GetQueueDepth(ctx context.Context) (int64, error) {
+	if c.redisClient == nil {
+		return 0, fmt.Errorf("redis client is nil")
+	}
+	return c.redisClient.GetQueueDepth(ctx)
+}
+
+func generateIdempotencyKey(target string, action *actuatortaskpb.Action) string {
 	var actionType string
 	switch action.GetAction().(type) {
 	case *actuatortaskpb.Action_Create:
@@ -179,7 +187,7 @@ func generateIdempotencyKey(target string, action *actuatortaskpb.Action, curTim
 	default:
 		actionType = "UNKNOWN"
 	}
-	return fmt.Sprintf("%s_%s_%s", target, actionType, curTime.Format(time.RFC3339Nano))
+	return fmt.Sprintf("%s_%s", target, actionType)
 }
 
 func calculateSHA256(payload []byte) string {

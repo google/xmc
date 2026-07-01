@@ -16,6 +16,7 @@ package server
 
 import (
 	"context"
+	"sync/atomic"
 
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
@@ -35,11 +36,15 @@ type Server struct {
 	auth            auth.AuthorizerInterface
 	xidClient       xidgrpcpb.XidServiceClient
 	taskQueueClient taskQueueClientInterface
+
+	localPaused     atomic.Bool
+	drainSignal     chan struct{}
 }
 
 type taskQueueClientInterface interface {
 	EnqueueWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error
 	Close() error
+	GetQueueDepth(ctx context.Context) (int64, error)
 }
 
 // New creates a new instance of the Experiment State Server.
@@ -50,5 +55,7 @@ func New(storage storage.Storage, cfg *config.Config, auth auth.AuthorizerInterf
 		auth:            auth,
 		xidClient:       xidClient,
 		taskQueueClient: taskQueueClient,
+		drainSignal:     make(chan struct{}, 1),
 	}
 }
+

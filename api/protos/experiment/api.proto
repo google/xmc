@@ -349,6 +349,14 @@ service ExperimentStateService {
     };
     option (google.api.method_signature) = "parent";
   }
+
+  // Pauses or resumes all scheduling activities globally.
+  rpc UpdateSchedulingPause(UpdateSchedulingPauseRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      patch: "/v1/admin/scheduling_pause"
+      body: "*"
+    };
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -725,3 +733,8 @@ message ListStatusMessagesResponse {
   // The page token to use for the next request.
   string next_page_token = 2;
 }
+
+message UpdateSchedulingPauseRequest {
+  bool paused = 1 [(google.api.field_behavior) = REQUIRED];
+}
+

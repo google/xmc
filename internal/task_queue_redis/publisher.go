@@ -60,3 +60,19 @@ func (p *PublisherClient) AddMessage(ctx context.Context, data string, failedAtt
 	}
 	return nil
 }
+
+// GetQueueDepth returns the total number of unread and pending messages in the stream.
+func (p *PublisherClient) GetQueueDepth(ctx context.Context) (int64, error) {
+	groups, err := p.Client.XInfoGroups(ctx, p.StreamName).Result()
+	if err != nil {
+		return 0, err
+	}
+	for _, g := range groups {
+		if g.Name == "actuator-group" {
+			return g.Lag + g.Pending, nil
+		}
+	}
+	// If the group doesn't exist yet, it means no messages have been consumed yet.
+	// So all messages in the stream are unread.
+	return p.Client.XLen(ctx, p.StreamName).Result()
+}

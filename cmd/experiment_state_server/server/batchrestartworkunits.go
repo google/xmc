@@ -21,6 +21,7 @@ import (
 
 	"task/go/status"
 	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/task_queue/client"
 	"xmanager_cloud/validator/validator"
 
@@ -28,6 +29,8 @@ import (
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+
+
 )
 
 // BatchRestartWorkUnits sends a request to restart a work unit.
@@ -188,13 +191,34 @@ func (s *Server) enqueueWorkUnitRestart(ctx context.Context, oldExecutionName st
 		s.stopOperationOnError(ctx, operation, err)
 	}()
 
-	// 2. Enqueue the work unit for restarting.
-	logging.Info(ctx, "Add restart request for work unit to the queue")
-	err = s.taskQueueClient.EnqueueWorkUnitTask(ctx, oldExecutionName, newWU, client.RestartAction(experimentPriority, email), operation.GetName())
-	if err != nil {
-		logging.Error(ctx, "Failed to enqueue restart request for work unit", "error", err)
-		return nil, fmt.Errorf("failed to enqueue restart request for work unit %s: %w (%v)", newWU.GetName(), status.ErrInternal, err)
+	// 2. Enqueue or Buffer the work unit for restarting.
+	action := client.RestartAction(experimentPriority, email)
+	if s.localPaused.Load() {
+		logging.Info(ctx, "Scheduling is globally paused. Buffering restart task in Spanner.", "work_unit", newWU.GetName())
+		traceID, _ := logging.OperationID(ctx)
+		task := &storage.PausedTask{
+			BitReversedXid: reverseBits(xid),
+			WorkUnitID:     wid,
+			TaskID:         newWU.GetCurrentWorkUnitExecution().GetName(),
+			Target:         oldExecutionName,
+			Action:         action,
+			OperationName:  operation.GetName(),
+			TraceID:        traceID,
+		}
+
+		err = s.storage.BufferPausedTask(ctx, task, nil)
+		if err != nil {
+			logging.Error(ctx, "Failed to buffer paused task in Spanner", "error", err)
+			return nil, fmt.Errorf("failed to buffer paused task: %w", err)
+		}
+	} else {
+		err = s.taskQueueClient.EnqueueWorkUnitTask(ctx, oldExecutionName, newWU, action, operation.GetName())
+		if err != nil {
+			logging.Error(ctx, "Failed to enqueue restart request for work unit", "error", err)
+			return nil, fmt.Errorf("failed to enqueue restart request for work unit %s: %w (%v)", newWU.GetName(), status.ErrInternal, err)
+		}
 	}
+
 
 	// 3. Return the successful response.
 	logging.Info(ctx, "Added restart request for work unit to the queue", "operation", operation.GetName())

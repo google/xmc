@@ -16,6 +16,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"math/bits"
+
 
 	"golang/grpc/metadata/metadata"
 	"golang/uuid/uuid"
@@ -212,3 +214,8 @@ func (s *Server) defaultExecutionEnvironment() (ee.Environment, error) {
 	}
 	return executionEnv, nil
 }
+
+func reverseBits(x int64) int64 {
+	return int64(bits.Reverse64(uint64(x)))
+}
+

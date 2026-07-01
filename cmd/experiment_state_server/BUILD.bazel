@@ -55,6 +55,8 @@ compat_go_library(
         "//internal/task_queue:client",
         "//pkg/auth/oauth2",
         "//pkg/auth/oauth2/mock",
+        "@com_github_redis_go_redis_v9//:go-redis",
+
         "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
         "@com_github_rs_cors//:go_default_library",
         "@com_google_cloud_go_spanner//:spanner",

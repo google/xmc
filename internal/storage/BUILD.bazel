@@ -24,6 +24,7 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
+        "//api/protos/task_queue:task_go_proto",
         "//api/protos/xid:messages_go_proto",
         "//internal/compat/field_mask",
         "//internal/compat/longrunning",

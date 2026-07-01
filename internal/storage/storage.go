@@ -22,6 +22,7 @@ import (
 	longrunningpb "longrunning/operations_go_proto"
 	fmpb "protobuf/field_mask_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	taskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
@@ -222,4 +223,49 @@ type Storage interface {
 
 	// UpdateXidEntry updates an XidEntry with the given update mask.
 	UpdateXidEntry(ctx context.Context, update *XidEntryUpdate) (*xidmsgpb.XidEntry, error)
+
+	// -----------------------
+	// Workload Pause/Resume Methods
+	// -----------------------
+
+	// UpdateSchedulingPause updates the global scheduling pause state in SystemSettings.
+	UpdateSchedulingPause(ctx context.Context, paused bool) error
+
+	// GetSchedulingPause retrieves the global scheduling pause state.
+	GetSchedulingPause(ctx context.Context) (bool, error)
+
+	// BufferPausedTask writes a task payload to the PausedTasks table and updates the parent WorkUnit state to GLOBAL_PAUSE in a single transaction.
+	BufferPausedTask(ctx context.Context, task *PausedTask, workUnitStateUpdate *WorkUnitExecutionUpdate) error
+
+	// FetchPausedTasksBatch retrieves up to `limit` tasks from PausedTasks sorted by CreateTime.
+	FetchPausedTasksBatch(ctx context.Context, limit int) ([]*PausedTask, error)
+
+	// DeletePausedTasks deletes a batch of tasks from PausedTasks.
+	DeletePausedTasks(ctx context.Context, keys []PausedTaskKey) error
+
+	// CompletePausedTask atomically deletes the task from PausedTasks and updates the parent WorkUnit state to targetState.
+	CompletePausedTask(ctx context.Context, key PausedTaskKey, targetState essmsgpb.WorkUnitStatus_WorkUnitState) error
+
+	// ScanAndRecoverWorkUnits scans for stuck work units and recovers them based on the current pause state.
+	ScanAndRecoverWorkUnits(ctx context.Context, paused bool) error
 }
+
+// PausedTask represents a paused task action buffered in Spanner.
+type PausedTask struct {
+	BitReversedXid int64
+	WorkUnitID     int64
+	TaskID         string
+	Target         string
+	Action         *taskpb.Action
+	OperationName  string
+	TraceID        string
+	CreateTime     time.Time
+}
+
+// PausedTaskKey represents the primary key for a PausedTask.
+type PausedTaskKey struct {
+	BitReversedXid int64
+	WorkUnitID     int64
+	TaskID         string
+}
+

@@ -44,6 +44,7 @@ type Publisher interface {
 	AddMessage(ctx context.Context, data string, failedAttempts string) error
 	Ping(ctx context.Context) error
 	Close(ctx context.Context) error
+	GetQueueDepth(ctx context.Context) (int64, error)
 }
 
 // Consumer is an interface for consuming messages from Redis.
