@@ -1,33 +1,17 @@
 ---
 name: Deploy XMC
-description: Automates compiling and step-by-step deployment of the XMC v2 Cluster Toolkit blueprint, including pre-flight checks, DNS pause prompts, and verification.
+description: Automates compiling and step-by-step deployment of the XMC v2 Cluster Toolkit blueprint, including pre-flight checks, DNS updates, and verification.
 ---
 
 # Deploy XMC Workflow
 
-This skill guides the agent through deploying the XManager on Cloud (XMC) infrastructure using the Cluster Toolkit v2 blueprint. It handles validation of local CLI dependencies (pre-flight checks), sequential deployment of resource groups, pausing for manual DNS updates, and automated verification of Kubernetes readiness.
-
-```mermaid
-graph TD
-    A["1. Pre-flight CLI Checks"] -->|All pass| B["2. Blueprint Compilation"]
-    A -->|Failure| Error1["Report missing dependency to user"]
-    B -->|Success| C["3. Step 1: Deploy APIs ('apis' group)"]
-    C --> D["3. Step 2: Deploy Core ('primary' group)"]
-    D --> E["3. Step 3: Extract IP & DNS Pause"]
-    E -->|User confirms DNS/OAuth updated| F["3. Step 4: Deploy Compute ('compute' group)"]
-    F --> G["3. Step 5: Enable GKE Gateway API"]
-    G --> H["3. Step 6: Install Helm ('kubernetes_prereqs' group)"]
-    H --> I["3. Step 7: Build & Push Images"]
-    I --> J["3. Step 8: Deploy App ('xmc_app' group)"]
-    J --> K["4. Verification & Validation"]
-    K -->|All checks pass| L["Report finalized URL to user"]
-```
+This skill guides the agent through deploying the XManager on Cloud (XMC) infrastructure using the automated `deploy_xmc.sh` script. The script handles compilation, GCP resource provisioning, DNS setup (either automated or manual), and container builds.
 
 ---
 
 ## 1. Pre-flight CLI Checks
 
-Before running any compilation or deployment steps, verify that all necessary CLI tools are installed and operational:
+Before running the deployment, verify that all necessary CLI tools are installed and operational:
 
 | CLI Tool | Verification Command | Expected Successful Outcome |
 | :--- | :--- | :--- |
@@ -35,7 +19,8 @@ Before running any compilation or deployment steps, verify that all necessary CL
 | **`kubectl`** | `kubectl version --client` | Prints Kubernetes client version |
 | **`helm`** | `helm version` | Prints Helm client version |
 | **`terraform`** | `terraform --version` | Prints Terraform version (minimum 1.12.2) |
-| **`gcluster`** | `./cluster-toolkit/gcluster --version` | Prints gcluster tool version |
+| **`bazel`** | `bazel --version` | Prints Bazel version |
+| **`ghpc`** | `./cluster-toolkit/ghpc --version` | Prints GHPC tool version |
 
 > [!CAUTION]
 > **Check Action**: If any check fails (command not found or returns error):
@@ -45,129 +30,68 @@ Before running any compilation or deployment steps, verify that all necessary CL
 
 ---
 
-## 2. Blueprint Compilation
+## 2. Pre-flight Verification
 
-The blueprint relies on local Helm charts, database migrations, and proto descriptors.
-
-### Step 1: Compile the Blueprint
-Compile the blueprint, specifying the overrides config file (e.g., `deploy/ctk_v2/xmanager-cloud-deployment.yaml`) using the `-d` flag. If the user hasn't specified the overrides file, look for files in `deploy/ctk_v2/` matching `*deployment.yaml`.
+Always run the deployment script in check-only mode first to validate your active GCP project alignment, configurations, and `.env` file synchronization.
 
 ```bash
-./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
+./deploy/ctk_v2/deploy_xmc.sh \
+  --config <deployment_config_path> \
+  --check-only
 ```
 
-Confirm that compilation completes successfully and generates the deployment folder named after your `<deployment_name>` inside `ctk-out/` containing the Terraform workspaces.
+*Note: If you plan to use automated DNS, add `--dns-project <project>` and `--dns-zone <zone>` to the check command to verify Cloud DNS access.*
 
 ---
 
-## 3. Step-by-Step Deployment
+## 3. Deploying XMC
 
-Deploy the blueprint groups sequentially to allow monitoring and manual intervention.
+Run the script to execute the end-to-end deployment. Choose one of the two modes below based on the DNS setup.
 
-### Step 1: Enable APIs (`apis` group)
-```bash
-./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only apis --auto-approve
-```
-
-### Step 2: Deploy Core Infrastructure & IP (`primary` group)
-```bash
-./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only primary --auto-approve
-```
-
-### Step 3: DNS Pause & IP Mapping
-1. **Extract static Gateway IP**:
-   Identify the environment name (e.g. `xmcv2`) and GCP project ID from the deployment config. Retrieve the Gateway IP address:
-   ```bash
-   gcloud compute addresses describe xmc-gateway-static-ip-<environment> --global --project=<project_id> --format='value(address)'
-   ```
-
-2. **User Action Request & Pause**:
-   Present the following instruction and **stop execution** until the user confirms DNS and OAuth configuration are complete:
-
-   > [!IMPORTANT]
-   > **Manual Configuration Required**
-   >
-   > 1. **DNS Routing Configuration**:
-   >    Please configure the following A records in your authoritative DNS project for the Gateway IP **`<GATEWAY_IP>`**:
-   >
-   >    | Record Type | Hostname | Target IP |
-   >    |:---:|---|---|
-   >    | **A** | `<environment>.example.com` | `<GATEWAY_IP>` |
-   >    | **A** | `api.<environment>.example.com` | `<GATEWAY_IP>` |
-   >    | **A** | `grpc.<environment>.example.com` | `<GATEWAY_IP>` |
-   >
-   > 2. **OAuth Authorized Redirect URI**:
-   >    Ensure the following Redirect URI is added to your Google Cloud Console OAuth Web Client ID config:
-   >    * **`https://<environment>.example.com/api/callback`**
-   >
-   > Once these DNS records are created and the redirect URI is registered in the GCP console, reply to this conversation to proceed with the remaining deployment steps.
-
-3. **Stop executing tools** and wait for the user to confirm.
-
-### Step 4: Deploy GKE Cluster & Node Pools (`compute` group)
-```bash
-./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only compute --auto-approve
-```
-
-### Step 5: Enable GKE Gateway API standard channel
-Since GKE has Gateway API disabled by default, you must enable it on the newly created GKE cluster before deploying the application (which relies on `Gateway` and `HTTPRoute` resources). Run:
+### Mode A: Automated DNS (Google Cloud DNS)
+Use this if the target domain's authoritative DNS zone is hosted on Google Cloud DNS and you have permissions to modify it.
 
 ```bash
-gcloud container clusters update <cluster_name> \
-    --gateway-api=standard \
-    --region=<region> \
-    --project=<project_id>
-```
-> [!NOTE]
-> The default `<cluster_name>` format is `xmc-<deployment_name>-<environment>`.
-
-### Step 6: Install GKE System Helm Charts (`kubernetes_prereqs` group)
-```bash
-./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only kubernetes_prereqs --auto-approve
+./deploy/ctk_v2/deploy_xmc.sh \
+  --config <deployment_config_path> \
+  --dns-project <dns_project_id> \
+  --dns-zone <dns_managed_zone_name>
 ```
 
-### Step 7: Build and Push XMC Service Images
-Before deploying the application Helm chart, build and push all 6 service Docker images to GCP Artifact Registry. You must set the project's target registry and environment variables:
+### Mode B: Manual DNS (Custom DNS Providers)
+Use this if your DNS is managed externally (e.g., Route53, GoDaddy) or you do not have write access to the GCP DNS zone.
 
-```bash
-export XMC_ACR_TARGET="us-docker.pkg.dev/<project_id>/<xmc_registry_name>"
-export XMC_ENV="<environment>"
-
-bazel run //cmd/actuator:actuator_image_push
-bazel run //cmd/experiment_state_server:experiment_state_server_image_push
-bazel run //cmd/log_monitor:log_monitor_image_push
-bazel run //cmd/reconciler:reconciler_image_push
-bazel run //cmd/ui:ui_image_push
-bazel run //cmd/xid_service:xid_service_image_push
-```
-
-### Step 8: Deploy XMC Application (`xmc_app` group)
-```bash
-./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only xmc_app --auto-approve
-```
+1.  **Run the script without DNS arguments:**
+    ```bash
+    ./deploy/ctk_v2/deploy_xmc.sh --config <deployment_config_path>
+    ```
+2.  **Wait for the pause:** The script will deploy the core network, extract the Gateway IP, print the DNS/OAuth instructions, and **pause**.
+3.  **Perform manual setup:** Configure your external DNS provider with the A records pointing to the printed IP, and add the Redirect URI in the Google Cloud Console.
+4.  **Resume:** Press `Enter` in the terminal to continue the GKE and application deployment.
 
 ---
 
-## 4. Verification and Validation
+## 4. Post-Deployment OAuth Configuration
 
-Verify the health, certificate readiness, and routing of the environment:
+Once the deployment completes successfully:
 
-### Step 1: Run Verification Script
+1.  Instruct the user to register the Redirect URI in the Google Cloud Console OAuth Web Client ID config:
+    *   **`https://<environment>.<domain_name>/api/callback`**
+2.  Provide them with the environment URL:
+    *   **`https://<environment>.<domain_name>`**
+
+---
+
+## 5. Error Handling & Resumption
+
+If the script fails at any step, identify the failing step from the logs, fix the underlying issue, and resume from the failed step:
+
 ```bash
-./deploy/ctk_v2/verify_xmc.sh
+./deploy/ctk_v2/deploy_xmc.sh \
+  --config <deployment_config_path> \
+  --start-from <failed_step>
 ```
 
-### Step 2: Gateway Status Check
-Poll until the GKE Gateway status reports `Programmed: True`:
-```bash
-kubectl get gateway xmc-gateway -n xmc -o jsonpath='{.status.conditions[?(@.type=="Programmed")].status}'
-```
+*Note: Add DNS arguments to the resume command if using Mode A.*
 
-### Step 3: GTS Certificate Check
-Poll until the Google-managed certificate state reports `ACTIVE`:
-```bash
-gcloud certificate-manager certificates describe xmc-cert-<environment> --project=<project_id> --format='value(managed.state)'
-```
-
-> [!TIP]
-> Once all checks pass, report the finalized deployment URL (e.g. `https://<environment>.example.com`) to the user.
+*Valid steps: `compile`, `apis`, `primary`, `compute`, `gateway-api`, `prereqs`, `images`, `app`, `verify`*
