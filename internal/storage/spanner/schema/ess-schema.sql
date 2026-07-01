@@ -55,14 +55,7 @@ CREATE PROTO BUNDLE (
   cloud.xmanager.v1.WorkUnitExecutionMetadata,
   cloud.xmanager.v1.WorkUnitExecutionMetadata.WorkUnitExecutionType,
   cloud.xmanager.v1.WorkUnitExecution,
-  cloud.xmanager.v1.WorkUnitExecution.WorkUnitExecutionState,
-
-  -- Protos used in PausedTasks
-  cloud.xmanager.v1.Action,
-  cloud.xmanager.v1.CreateAction,
-  cloud.xmanager.v1.DeleteAction,
-  cloud.xmanager.v1.RestartAction,
-  cloud.xmanager.v1.UpdateAction,
+  cloud.xmanager.v1.WorkUnitExecution.WorkUnitExecutionState
 );
 
 -- Table that holds the core experiments data.
@@ -351,7 +344,7 @@ CREATE TABLE PausedTasks (
   WorkUnitId INT64 NOT NULL,
   TaskId STRING(MAX) NOT NULL,
   Target STRING(MAX) NOT NULL,
-  Action cloud.xmanager.v1.Action NOT NULL,
+  Action BYTES(MAX) NOT NULL,
   OperationName STRING(MAX) NOT NULL,
   TraceId STRING(MAX) NOT NULL,
   CreateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE)

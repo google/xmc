@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	timestamppb "protobuf/timestamp_go_proto"
+	"google.golang.org/protobuf/proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	client "xmanager_cloud/task_queue/client"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
@@ -58,10 +59,15 @@ func (s *Storage) GetSchedulingPause(ctx context.Context) (bool, error) {
 // BufferPausedTask writes a task payload to the PausedTasks table and updates the parent WorkUnit state to GLOBAL_PAUSE in a single transaction.
 func (s *Storage) BufferPausedTask(ctx context.Context, task *storage.PausedTask, workUnitStateUpdate *storage.WorkUnitExecutionUpdate) error {
 	_, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		actionBytes, marshalErr := proto.Marshal(task.Action)
+		if marshalErr != nil {
+			return fmt.Errorf("failed to marshal action: %w", marshalErr)
+		}
+
 		// 1. Insert into PausedTasks
 		taskMutation := spanner.Insert("PausedTasks",
 			[]string{"BitReversedXid", "WorkUnitId", "TaskId", "Target", "Action", "OperationName", "TraceId", "CreateTime"},
-			[]any{task.BitReversedXid, task.WorkUnitID, task.TaskID, task.Target, task.Action, task.OperationName, task.TraceID, spanner.CommitTimestamp},
+			[]any{task.BitReversedXid, task.WorkUnitID, task.TaskID, task.Target, actionBytes, task.OperationName, task.TraceID, spanner.CommitTimestamp},
 		)
 
 		// 2. Query WorkUnit row to get details
@@ -159,8 +165,13 @@ func (s *Storage) FetchPausedTasksBatch(ctx context.Context, limit int) ([]*stor
 		if err := r.ColumnByName("Target", &task.Target); err != nil {
 			return err
 		}
-		if err := r.ColumnByName("Action", &task.Action); err != nil {
+		var actionBytes []byte
+		if err := r.ColumnByName("Action", &actionBytes); err != nil {
 			return err
+		}
+		task.Action = &taskpb.Action{}
+		if err := proto.Unmarshal(actionBytes, task.Action); err != nil {
+			return fmt.Errorf("failed to unmarshal action: %w", err)
 		}
 		if err := r.ColumnByName("OperationName", &task.OperationName); err != nil {
 			return err

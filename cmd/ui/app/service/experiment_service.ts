@@ -82,4 +82,15 @@ export class ExperimentService {
       { params, withCredentials: true },
     );
   }
+
+  /**
+   * Pauses or resumes scheduling globally.
+   */
+  updateSchedulingPause(paused: boolean): Observable<void> {
+    return this.http.patch<void>(
+      `${EXPERIMENT_STATE_SERVER_DOMAIN}/admin/scheduling_pause`,
+      { paused },
+      { withCredentials: true },
+    );
+  }
 }

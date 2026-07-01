@@ -15,11 +15,3 @@
 DROP INDEX PausedTasksByCreateTime;
 DROP TABLE PausedTasks;
 DROP TABLE SystemSettings;
-
-ALTER PROTO BUNDLE DELETE (
-  cloud.xmanager.v1.Action,
-  cloud.xmanager.v1.CreateAction,
-  cloud.xmanager.v1.DeleteAction,
-  cloud.xmanager.v1.RestartAction,
-  cloud.xmanager.v1.UpdateAction
-);
