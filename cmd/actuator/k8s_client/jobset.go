@@ -30,11 +30,12 @@ import (
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/types/types"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/util/wait/wait"
 	"golang/protobuf/v2/proto/proto"
-	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	constants "xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 	ee "xmanager_cloud/toollibs/execution_environments/executionenvironments"
 	"xmanager_cloud/validator/validator"
+
+	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
@@ -326,6 +327,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 						Annotations: annotations,
 					},
 					Spec: corev1.PodSpec{
+						ServiceAccountName: job.GetServiceAccount(),
 						Containers: []corev1.Container{
 							{
 								Name:                     job.GetName(),

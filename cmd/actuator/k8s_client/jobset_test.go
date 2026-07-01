@@ -31,9 +31,10 @@ import (
 	dynamicfake "golang/k8s_io/client_go/v/v0_23/dynamic/fake/fake"
 	clientgotesting "golang/k8s_io/client_go/v/v0_23/testing/testing"
 	"golang/protobuf/v2/proto/proto"
-	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	constants "xmanager_cloud/kubernetes/common/constants"
+
+	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 )
 
 const testOperationName = "experiments/1/workUnits/1/operations/1"
@@ -237,9 +238,10 @@ func TestConstructJobSet(t *testing.T) {
 								Args:        map[string]string{"arg1": "val1"},
 								EnvVars:     map[string]string{"env1": "val1"},
 							},
-							Replicas:    2,
-							RetryLimit:  1,
-							Annotations: map[string]string{"anno1": "val1"},
+							Replicas:       2,
+							RetryLimit:     1,
+							Annotations:    map[string]string{"anno1": "val1"},
+							ServiceAccount: "my-service-account",
 						},
 					},
 				},
@@ -331,6 +333,7 @@ func TestConstructJobSet(t *testing.T) {
 									Annotations: jobAnnotations,
 								},
 								Spec: corev1.PodSpec{
+									ServiceAccountName: "my-service-account",
 									Containers: []corev1.Container{
 										{
 											Name:                     "job1",
