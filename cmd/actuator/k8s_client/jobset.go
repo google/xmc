@@ -282,10 +282,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 		args = append(args, fmt.Sprintf("--%s=%s", k, v))
 	}
 
-	var command []string
-	if len(job.GetSpec().GetCommand()) > 0 {
-		command = job.GetSpec().GetCommand()
-	}
+	command := job.GetSpec().GetCommand()
 
 	retryLimit := job.GetRetryLimit()
 
