@@ -123,6 +123,9 @@ message KubernetesJob {
   // ordering of jobs within the JobSet. If a job depends upon another job, it
   // must be specified after the dependent job in the list of jobs.
   DependencyOrder dependency_order = 7;
+  // The Kubernetes Service Account (KSA) to run the Job as. If not set, the
+  // namespace's default KSA is used.
+  string service_account = 8;
 }
 
 message ExecutableSpec {
