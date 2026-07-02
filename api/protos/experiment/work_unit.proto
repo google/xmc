@@ -134,6 +134,8 @@ message ExecutableSpec {
   map<string, string> args = 3;
   // The environment variables to set for the executable.
   map<string, string> env_vars = 4;
+  // The command to run in the container (overwrites ENTRYPOINT).
+  repeated string command = 5;
 }
 
 // SchedulingConstraints contains the scheduling constraints for the

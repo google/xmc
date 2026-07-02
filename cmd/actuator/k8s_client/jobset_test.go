@@ -236,6 +236,7 @@ func TestConstructJobSet(t *testing.T) {
 								DockerImage: "foo/bar",
 								Args:        map[string]string{"arg1": "val1"},
 								EnvVars:     map[string]string{"env1": "val1"},
+								Command:     []string{"bash", "-c", "echo hello"},
 							},
 							Replicas:    2,
 							RetryLimit:  1,
@@ -338,6 +339,7 @@ func TestConstructJobSet(t *testing.T) {
 											ImagePullPolicy:          corev1.PullAlways,
 											TerminationMessagePath:   "/dev/termination-log",
 											TerminationMessagePolicy: corev1.TerminationMessageReadFile,
+											Command:                  []string{"bash", "-c", "echo hello"},
 											Args:                     []string{"--arg1=val1"},
 											Env: []corev1.EnvVar{
 												{Name: "env1", Value: "val1"},

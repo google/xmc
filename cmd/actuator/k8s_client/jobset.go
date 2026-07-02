@@ -282,6 +282,8 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 		args = append(args, fmt.Sprintf("--%s=%s", k, v))
 	}
 
+	command := job.GetSpec().GetCommand()
+
 	retryLimit := job.GetRetryLimit()
 
 	// Merge job annotations with default annotations.
@@ -333,6 +335,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 								ImagePullPolicy:          corev1.PullAlways,
 								TerminationMessagePath:   "/dev/termination-log",
 								TerminationMessagePolicy: corev1.TerminationMessageReadFile,
+								Command:                  command,
 								Args:                     args,
 								Env:                      envVars,
 								SecurityContext:          defaultSecurityContext(),
