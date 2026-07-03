@@ -492,6 +492,137 @@ func TestConstructJobSet(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_CustomEnvVars(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnit1",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name: "job1",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_CpuResources{
+										CpuResources: &esspb.CpuResources{
+											CpuMillicores: 100,
+											MemoryBytes:   1024,
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+								EnvVars:     map[string]string{"env_vars_key": "env_vars_val"},
+								Env: []*esspb.EnvVar{
+									{
+										Name: "literal_env",
+										Source: &esspb.EnvVar_Value{
+											Value: "literal_val",
+										},
+									},
+									{
+										Name: "field_ref_env",
+										Source: &esspb.EnvVar_ValueFrom{
+											ValueFrom: &esspb.EnvVarSource{
+												Reference: &esspb.EnvVarSource_FieldRef{
+													FieldRef: &esspb.FieldRef{
+														FieldPath:  "status.podIP",
+														ApiVersion: "v1",
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+							Replicas: 1,
+						},
+					},
+				},
+			},
+		},
+	}
+	namespace := "test-namespace"
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", namespace, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if len(got.Spec.ReplicatedJobs) != 1 {
+		t.Fatalf("Expected 1 ReplicatedJob, got %d", len(got.Spec.ReplicatedJobs))
+	}
+
+	container := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers[0]
+
+	wantEnv := []corev1.EnvVar{
+		{Name: "env_vars_key", Value: "env_vars_val"},
+		{Name: "literal_env", Value: "literal_val"},
+		{
+			Name: "field_ref_env",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath:  "status.podIP",
+					APIVersion: "v1",
+				},
+			},
+		},
+		{Name: constants.XmcEnvVarManagedBy, Value: "true"},
+		{
+			Name: constants.XmcEnvVarNamespace,
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "metadata.namespace",
+				},
+			},
+		},
+		{
+			Name: constants.XmcEnvVarQueueName,
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: fmt.Sprintf("metadata.labels['%s']", kueueQueueLabel),
+				},
+			},
+		},
+		{
+			Name: constants.XmcEnvVarExperimentID,
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: fmt.Sprintf("metadata.labels['%s']", constants.ExperimentIDLabel),
+				},
+			},
+		},
+		{
+			Name: constants.XmcEnvVarWorkUnitID,
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: fmt.Sprintf("metadata.labels['%s']", constants.WorkUnitIDLabel),
+				},
+			},
+		},
+		{
+			Name: constants.XmcEnvVarExecutionID,
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: fmt.Sprintf("metadata.labels['%s']", constants.ExecutionIDLabel),
+				},
+			},
+		},
+		{
+			Name: constants.XmcEnvVarAuthor,
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: fmt.Sprintf("metadata.annotations['%s']", constants.AuthorAnnotation),
+				},
+			},
+		},
+	}
+
+	if diff := cmp.Diff(wantEnv, container.Env); diff != "" {
+		t.Errorf("container.Env returned diff (-want +got):\n%s", diff)
+	}
+}
+
 func TestConstructJobSet_GPU_GKE(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := &esspb.WorkUnit{
