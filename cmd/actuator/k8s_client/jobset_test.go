@@ -520,6 +520,8 @@ func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 											Value: "literal_val",
 										},
 									},
+									// nil entries should be safely ignored.
+									nil,
 									{
 										Name: "field_ref_env",
 										Source: &esspb.EnvVar_ValueFrom{

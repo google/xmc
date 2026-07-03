@@ -492,6 +492,9 @@ func generateEnvVars(job *esspb.KubernetesJob) []corev1.EnvVar {
 		envVars = append(envVars, corev1.EnvVar{Name: k, Value: v})
 	}
 	for _, ev := range job.GetSpec().GetEnv() {
+		if ev == nil {
+			continue
+		}
 		k8sEnvVar := corev1.EnvVar{Name: ev.Name}
 		switch src := ev.GetSource().(type) {
 		case *esspb.EnvVar_Value:
