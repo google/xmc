@@ -522,6 +522,13 @@ func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 									},
 									// nil entries should be safely ignored.
 									nil,
+									// empty name entries should be ignored.
+									{
+										Name: "",
+										Source: &esspb.EnvVar_Value{
+											Value: "empty_name_val",
+										},
+									},
 									{
 										Name: "field_ref_env",
 										Source: &esspb.EnvVar_ValueFrom{
