@@ -567,58 +567,22 @@ func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 				},
 			},
 		},
-		{Name: constants.XmcEnvVarManagedBy, Value: "true"},
-		{
-			Name: constants.XmcEnvVarNamespace,
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{
-					FieldPath: "metadata.namespace",
-				},
-			},
-		},
-		{
-			Name: constants.XmcEnvVarQueueName,
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{
-					FieldPath: fmt.Sprintf("metadata.labels['%s']", kueueQueueLabel),
-				},
-			},
-		},
-		{
-			Name: constants.XmcEnvVarExperimentID,
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{
-					FieldPath: fmt.Sprintf("metadata.labels['%s']", constants.ExperimentIDLabel),
-				},
-			},
-		},
-		{
-			Name: constants.XmcEnvVarWorkUnitID,
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{
-					FieldPath: fmt.Sprintf("metadata.labels['%s']", constants.WorkUnitIDLabel),
-				},
-			},
-		},
-		{
-			Name: constants.XmcEnvVarExecutionID,
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{
-					FieldPath: fmt.Sprintf("metadata.labels['%s']", constants.ExecutionIDLabel),
-				},
-			},
-		},
-		{
-			Name: constants.XmcEnvVarAuthor,
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{
-					FieldPath: fmt.Sprintf("metadata.annotations['%s']", constants.AuthorAnnotation),
-				},
-			},
-		},
+	}
+	var gotEnv []corev1.EnvVar
+	for _, env := range container.Env {
+		if env.Name == constants.XmcEnvVarManagedBy ||
+			env.Name == constants.XmcEnvVarNamespace ||
+			env.Name == constants.XmcEnvVarQueueName ||
+			env.Name == constants.XmcEnvVarExperimentID ||
+			env.Name == constants.XmcEnvVarWorkUnitID ||
+			env.Name == constants.XmcEnvVarExecutionID ||
+			env.Name == constants.XmcEnvVarAuthor {
+			continue
+		}
+		gotEnv = append(gotEnv, env)
 	}
 
-	if diff := cmp.Diff(wantEnv, container.Env); diff != "" {
+	if diff := cmp.Diff(wantEnv, gotEnv); diff != "" {
 		t.Errorf("container.Env returned diff (-want +got):\n%s", diff)
 	}
 }

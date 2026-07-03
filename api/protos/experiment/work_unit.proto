@@ -138,6 +138,7 @@ message FieldRef {
 message EnvVarSource {
   oneof reference {
     FieldRef field_ref = 1;
+    // Add here other env reference cases.
   }
 }
 
