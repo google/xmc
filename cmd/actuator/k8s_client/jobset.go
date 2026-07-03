@@ -499,17 +499,20 @@ func generateEnvVars(job *esspb.KubernetesJob) []corev1.EnvVar {
 		switch src := ev.GetSource().(type) {
 		case *esspb.EnvVar_Value:
 			k8sEnvVar.Value = src.Value
+			envVars = append(envVars, k8sEnvVar)
 		case *esspb.EnvVar_ValueFrom:
-			if src.ValueFrom != nil && src.ValueFrom.GetFieldRef() != nil {
-				k8sEnvVar.ValueFrom = &corev1.EnvVarSource{
-					FieldRef: &corev1.ObjectFieldSelector{
-						FieldPath:  src.ValueFrom.GetFieldRef().FieldPath,
-						APIVersion: src.ValueFrom.GetFieldRef().ApiVersion,
-					},
+			if src.ValueFrom != nil {
+				if fieldRef := src.ValueFrom.GetFieldRef(); fieldRef != nil {
+					k8sEnvVar.ValueFrom = &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{
+							FieldPath:  fieldRef.FieldPath,
+							APIVersion: fieldRef.ApiVersion,
+						},
+					}
+					envVars = append(envVars, k8sEnvVar)
 				}
 			}
 		}
-		envVars = append(envVars, k8sEnvVar)
 	}
 	envVars = append(envVars, corev1.EnvVar{Name: constants.XmcEnvVarManagedBy, Value: "true"})
 

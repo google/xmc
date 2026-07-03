@@ -535,6 +535,30 @@ func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 											},
 										},
 									},
+									{
+										Name: "nil_value_from_env",
+										Source: &esspb.EnvVar_ValueFrom{
+											ValueFrom: nil,
+										},
+									},
+									{
+										Name: "nil_field_ref_env",
+										Source: &esspb.EnvVar_ValueFrom{
+											ValueFrom: &esspb.EnvVarSource{
+												Reference: nil,
+											},
+										},
+									},
+									{
+										Name: "nil_inner_field_ref_env",
+										Source: &esspb.EnvVar_ValueFrom{
+											ValueFrom: &esspb.EnvVarSource{
+												Reference: &esspb.EnvVarSource_FieldRef{
+													FieldRef: nil,
+												},
+											},
+										},
+									},
 								},
 							},
 							Replicas: 1,
