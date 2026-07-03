@@ -103,5 +103,5 @@ if __name__ == "__main__":
   print(f"XMC_CLIENT_SA: {os.environ.get('XMC_CLIENT_SA')}")
   print(f"IAP_CLIENT_ID: {os.environ.get('IAP_CLIENT_ID')}")
   print(f"PROJECT_ID: {os.environ.get('PROJECT_ID')}")
-  print(f"CONTAINER_REGISTRY: {os.environ.get('CONTAINER_REGISTRY')}")
+  print(f"CONTAINER_REGISTRY: {CONTAINER_REGISTRY}")
   app.run(main)
