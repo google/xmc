@@ -40,20 +40,19 @@ func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, s
 		return "", "", err
 	}
 
-	// Try to parse the token using our custom JWT secret first.
-	jwtSecret := a.jwtSecret
-	if len(jwtSecret) == 0 {
-		jwtSecret = []byte("default-jwt-secret-for-local-dev-only-12345")
-	}
-	claims, parseErr := oauth2.ParseSessionToken(jwt, jwtSecret)
-	if parseErr == nil && claims != nil {
-		if claims.Email == "" {
-			return "", "", fmt.Errorf("email in custom session token is empty: %w", status.ErrUnauthenticated)
+	// Try to parse the token using our custom JWT secret first, if one is configured.
+	// When no secret is set we deliberately skip this path (rather than falling back to
+	// a hardcoded value) and defer to IAP validation below.
+	if len(a.jwtSecret) > 0 {
+		claims, parseErr := oauth2.ParseSessionToken(jwt, a.jwtSecret)
+		if parseErr == nil && claims != nil {
+			if claims.Email == "" {
+				return "", "", fmt.Errorf("email in custom session token is empty: %w", status.ErrUnauthenticated)
+			}
+			return claims.Email, claims.Email, nil
 		}
-		return claims.Email, claims.Email, nil
+		logging.Info(ctx, "Custom ParseSessionToken failed", "error", parseErr, "jwtSecretLength", len(a.jwtSecret))
 	}
-
-	logging.Info(ctx, "Custom ParseSessionToken failed", "error", parseErr, "jwtSecretLength", len(jwtSecret))
 
 	payload, err := validateJWT(ctx, jwt, a.iapIssuer, a.iapAudiences)
 	if err != nil {

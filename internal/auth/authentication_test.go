@@ -62,7 +62,7 @@ func TestAuthenticateUserFromContext_Unauthenticated(t *testing.T) {
 }
 
 func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
-	a := &Authorizer{iapAudiences: []string{"other_audience", "test_audience"}, iapIssuer: "https://cloud.google.com/iap"}
+	a := &Authorizer{iapAudiences: []string{"other_audience", "test_audience"}, iapIssuer: "https://cloud.google.com/iap", jwtSecret: []byte("default-jwt-secret-for-local-dev-only-12345")}
 	ctx := context.Background()
 
 	oldValidate := validate
