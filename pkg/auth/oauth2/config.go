@@ -27,6 +27,11 @@ import (
 // LoadConfig fails fast instead of silently signing tokens with this known value.
 const devOnlyJWTSecret = "default-jwt-secret-for-local-dev-only-12345"
 
+// minJWTSecretLen is the minimum length (bytes) required for JWT_SECRET when
+// authentication is enabled, so operators cannot configure a weak, easily
+// brute-forced HS256 signing key. 32 bytes matches the HS256 output size.
+const minJWTSecretLen = 32
+
 // Config holds the configuration properties for OAuth2 and the authorization checks.
 type Config struct {
 	Port                  string
@@ -77,6 +82,8 @@ func LoadConfig() (*Config, error) {
 		} else {
 			return nil, fmt.Errorf("JWT_SECRET must be set (via JWT_SECRET or JWT_SECRET_FILE) when authentication is enabled")
 		}
+	} else if !mockAuth && !disableAuth && len(jwtSecret) < minJWTSecretLen {
+		return nil, fmt.Errorf("JWT_SECRET must be at least %d bytes when authentication is enabled", minJWTSecretLen)
 	}
 
 	frontendURL := getEnv("FRONTEND_URL", "http://localhost:8080")

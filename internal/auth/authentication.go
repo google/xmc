@@ -15,6 +15,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -51,7 +52,13 @@ func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, s
 			}
 			return claims.Email, claims.Email, nil
 		}
-		logging.Info(ctx, "Custom ParseSessionToken failed", "error", parseErr, "jwtSecretLength", len(a.jwtSecret))
+		// A plain ErrInvalidToken is the expected outcome for a token that simply
+		// isn't one of ours (e.g. an IAP-issued RS256 token), so we don't log it —
+		// that would spam logs on every IAP request. Only surface unexpected
+		// failures, such as an expired custom session token.
+		if parseErr != nil && !errors.Is(parseErr, oauth2.ErrInvalidToken) {
+			logging.Info(ctx, "Custom session token parsing failed", "error", parseErr)
+		}
 	}
 
 	payload, err := validateJWT(ctx, jwt, a.iapIssuer, a.iapAudiences)
