@@ -67,7 +67,7 @@ get_config_val() {
   local val
 
   # Read value using simple grep + cut + sed pipeline (consistent with xmc_functions.sh)
-  val=$(grep -E "^[[:space:]]*${key}:" "$CONFIG_PATH" | head -n 1 | cut -d':' -f2- | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+  val=$(grep -E "^[[:space:]]*${key}:" "$CONFIG_PATH" | head -n 1 | cut -d':' -f2- | sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
 
   if [[ -z "$val" ]]; then
     error_exit "Required configuration field '$key' is missing from '$CONFIG_PATH'."
@@ -89,6 +89,7 @@ run_gcluster_deploy() {
 # Pre-flight Checks
 run_checks() {
   log_info "Running pre-flight dependency checks..."
+  local cmd
 
   # 1. Verify Binaries
   for cmd in python3 gcloud kubectl helm terraform bazel; do
@@ -103,7 +104,12 @@ run_checks() {
   # 2. Check Terraform version (>= 1.12.2)
   local tf_version
   tf_version=$(terraform --version | head -n 1 | cut -d'v' -f2)
-  if [[ "$(printf '%s\n%s' '1.12.2' "$tf_version" | sort -V | head -n1)" != "1.12.2" ]]; then
+  if ! python3 -c '
+import sys, re
+def parse_version(v):
+    return tuple(map(int, re.findall(r"\d+", v)[:3]))
+sys.exit(0 if parse_version(sys.argv[1]) >= parse_version(sys.argv[2]) else 1)
+' "$tf_version" "1.12.2"; then
     error_exit "Terraform version must be >= 1.12.2. Found: $tf_version"
   fi
 
@@ -126,6 +132,7 @@ run_checks() {
 apply_dns_records() {
   local ip="$1"
   log_info "Verifying Cloud DNS record states in project '$DNS_PROJECT', zone '$DNS_ZONE'..."
+  local subdomain
   
   # End domains with dot for DNS A-records
   local d_app="$XMC_ENVIRONMENT.$XMC_DOMAIN_NAME."
@@ -187,8 +194,9 @@ step_primary() {
   
   # Fetch IP
   local gw_ip_name="xmc-gateway-static-ip-$XMC_ENVIRONMENT"
+  local GATEWAY_IP
   log_info "Extracting static Gateway IP ($gw_ip_name)..."
-  GATEWAY_IP=$(gcloud compute addresses describe "$gw_ip_name" --global --project="$XMC_PROJECT_ID" --format='value(address)' 2>/dev/null || echo "")
+  GATEWAY_IP=$(gcloud compute addresses describe "$gw_ip_name" --global --project="$XMC_PROJECT_ID" --format='value(address)')
   
   if [[ -z "$GATEWAY_IP" ]]; then
     error_exit "Failed to extract gateway IP address."
@@ -216,7 +224,7 @@ step_gateway_api() {
   log_info "Checking if GKE Gateway API is enabled on cluster '$cluster_name'..."
   
   local gw_enabled
-  gw_enabled=$(gcloud container clusters describe "$cluster_name" --region="$XMC_REGION" --project="$XMC_PROJECT_ID" --format='value(gatewayConfig.enabled)' 2>/dev/null || echo "False")
+  gw_enabled=$(gcloud container clusters describe "$cluster_name" --region="$XMC_REGION" --project="$XMC_PROJECT_ID" --format='value(gatewayConfig.enabled)')
   
   if [[ "$gw_enabled" != "True" ]]; then
     log_info "Enabling GKE Gateway API (standard channel)..."
@@ -281,8 +289,9 @@ step_verify() {
 
   log_info "Verifying Certificate manager state (15m timeout)..."
   local cert_state=""
-  for ((i=0; i<90; i++)); do
-    cert_state=$(gcloud certificate-manager certificates describe "xmc-cert-$XMC_ENVIRONMENT" --project="$XMC_PROJECT_ID" --format='value(managed.state)' 2>/dev/null)
+  for ((i=1; i<=90; i++)); do
+    cert_state=$(gcloud certificate-manager certificates describe "xmc-cert-$XMC_ENVIRONMENT" --project="$XMC_PROJECT_ID" --format='value(managed.state)' 2>/dev/null || echo "PENDING")
+    log_info "Checking certificate status (attempt $i/90): $cert_state"
     [[ "$cert_state" == "ACTIVE" ]] && break
     sleep 10
   done
