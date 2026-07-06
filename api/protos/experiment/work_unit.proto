@@ -134,10 +134,18 @@ message FieldRef {
   string api_version = 2; // optional
 }
 
+// Selects a key of a Secret (matches YAML 'secretKeyRef').
+message SecretKeyRef {
+  string name = 1;
+  string key = 2;
+  optional bool optional = 3;
+}
+
 // Represents the source of an environment variable's reference value.
 message EnvVarSource {
   oneof reference {
     FieldRef field_ref = 1;
+    SecretKeyRef secret_key_ref = 2;
     // Add here other env reference cases.
   }
 }

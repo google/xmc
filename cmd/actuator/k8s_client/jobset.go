@@ -486,6 +486,39 @@ func boolPtr(b bool) *bool {
 	return &b
 }
 
+func parseEnvVarSource(src *esspb.EnvVarSource) *corev1.EnvVarSource {
+	if src == nil {
+		return nil
+	}
+	switch ref := src.GetReference().(type) {
+	case *esspb.EnvVarSource_FieldRef:
+		if ref.FieldRef == nil {
+			return nil
+		}
+		return &corev1.EnvVarSource{
+			FieldRef: &corev1.ObjectFieldSelector{
+				FieldPath:  ref.FieldRef.FieldPath,
+				APIVersion: ref.FieldRef.ApiVersion,
+			},
+		}
+	case *esspb.EnvVarSource_SecretKeyRef:
+		if ref.SecretKeyRef == nil {
+			return nil
+		}
+		return &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: ref.SecretKeyRef.Name,
+				},
+				Key:      ref.SecretKeyRef.Key,
+				Optional: ref.SecretKeyRef.Optional,
+			},
+		}
+	default:
+		return nil
+	}
+}
+
 func generateEnvVars(job *esspb.KubernetesJob) []corev1.EnvVar {
 	var envVars []corev1.EnvVar
 	for k, v := range job.GetSpec().GetEnvVars() {
@@ -501,13 +534,8 @@ func generateEnvVars(job *esspb.KubernetesJob) []corev1.EnvVar {
 			k8sEnvVar.Value = src.Value
 			envVars = append(envVars, k8sEnvVar)
 		case *esspb.EnvVar_ValueFrom:
-			if fieldRef := src.ValueFrom.GetFieldRef(); fieldRef != nil {
-				k8sEnvVar.ValueFrom = &corev1.EnvVarSource{
-					FieldRef: &corev1.ObjectFieldSelector{
-						FieldPath:  fieldRef.FieldPath,
-						APIVersion: fieldRef.ApiVersion,
-					},
-				}
+			if k8sSource := parseEnvVarSource(src.ValueFrom); k8sSource != nil {
+				k8sEnvVar.ValueFrom = k8sSource
 				envVars = append(envVars, k8sEnvVar)
 			}
 		}
