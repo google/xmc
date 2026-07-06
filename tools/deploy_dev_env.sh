@@ -66,7 +66,7 @@ get_config_val() {
   local regex="$2"
   local val
 
-  # Read value using simple grep + cut + sed pipeline (consistent with xmc_functions.sh)
+  # Read value using simple grep + cut + sed pipeline
   val=$(grep -E "^[[:space:]]*${key}:" "$CONFIG_PATH" | head -n 1 | cut -d':' -f2- | sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
 
   if [[ -z "$val" ]]; then
@@ -128,7 +128,7 @@ sys.exit(0 if parse_version(sys.argv[1]) >= parse_version(sys.argv[2]) else 1)
   log_success "All pre-flight checks passed."
 }
 
-# Automate DNS Records Configuration (Fail if records exist)
+# Automate DNS Records Configuration (skips if pointing to correct IP, fails on conflict)
 apply_dns_records() {
   local ip="$1"
   log_info "Verifying Cloud DNS record states in project '$DNS_PROJECT', zone '$DNS_ZONE'..."
@@ -147,7 +147,7 @@ apply_dns_records() {
 
   for subdomain in "$d_app" "$d_api" "$d_grpc"; do
     local existing_ip
-    existing_ip=$(gcloud dns record-sets list --zone="$DNS_ZONE" --project="$DNS_PROJECT" --name="$subdomain" --format="value(rrdatas)" 2>/dev/null || echo "")
+    existing_ip=$(gcloud dns record-sets list --zone="$DNS_ZONE" --project="$DNS_PROJECT" --name="$subdomain" --type=A --format="value(rrdatas)" 2>/dev/null || echo "")
     
     if [[ "$existing_ip" == "$ip" ]]; then
       log_info "DNS record for '$subdomain' already points to $ip. Skipping."
@@ -226,7 +226,7 @@ step_gateway_api() {
   local gw_enabled
   gw_enabled=$(gcloud container clusters describe "$cluster_name" --region="$XMC_REGION" --project="$XMC_PROJECT_ID" --format='value(gatewayConfig.enabled)')
   
-  if [[ "$gw_enabled" != "True" ]]; then
+  if [[ "${gw_enabled,,}" != "true" ]]; then
     log_info "Enabling GKE Gateway API (standard channel)..."
     gcloud container clusters update "$cluster_name" \
         --gateway-api=standard \
@@ -321,23 +321,28 @@ DNS_ZONE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config|-c)
+      [[ $# -lt 2 ]] && error_exit "Option $1 requires an argument."
       CONFIG_PATH="$2"
       shift 2
       ;;
 
     --start-from|-s)
+      [[ $# -lt 2 ]] && error_exit "Option $1 requires an argument."
       START_STEP="$2"
       shift 2
       ;;
     --only)
+      [[ $# -lt 2 ]] && error_exit "Option $1 requires an argument."
       ONLY_STEP="$2"
       shift 2
       ;;
     --dns-project)
+      [[ $# -lt 2 ]] && error_exit "Option $1 requires an argument."
       DNS_PROJECT="$2"
       shift 2
       ;;
     --dns-zone)
+      [[ $# -lt 2 ]] && error_exit "Option $1 requires an argument."
       DNS_ZONE="$2"
       shift 2
       ;;
@@ -368,7 +373,7 @@ fi
 
 # Load variables safely (using strict whitelist filters)
 XMC_DEPLOYMENT_NAME=$(get_config_val "deployment_name" "^[a-zA-Z0-9_-]+$")
-XMC_PROJECT_ID=$(get_config_val "project_id" "^[a-z0-9:-]+$")
+XMC_PROJECT_ID=$(get_config_val "project_id" "^[a-z0-9:.-]+$")
 XMC_ENVIRONMENT=$(get_config_val "environment" "^[a-zA-Z0-9_-]+$")
 XMC_REGION=$(get_config_val "region" "^[a-z0-9-]+$")
 XMC_DOMAIN_NAME=$(get_config_val "domain_name" "^[a-zA-Z0-9.-]+$")

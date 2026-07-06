@@ -111,7 +111,7 @@ To run **only** a single specific step (e.g. rebuild/push images or run verify t
   --dns-zone <dns_managed_zone_name> \
   --only <step>
 ```
-*Valid steps: `compile`, `images`, `apis`, `primary`, `compute`, `gateway-api`, `prereqs`, `app`, `verify`*
+*Valid steps: `check`, `compile`, `images`, `apis`, `primary`, `compute`, `gateway-api`, `prereqs`, `app`, `verify`*
 
 ---
 
