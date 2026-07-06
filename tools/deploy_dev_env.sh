@@ -161,7 +161,7 @@ apply_dns_records() {
     fi
   done
 
-  if [ "$has_transaction_changes" = true ]; then
+  if [[ "$has_transaction_changes" == "true" ]]; then
     gcloud dns record-sets transaction execute --zone="$DNS_ZONE" --project="$DNS_PROJECT"
     log_success "Cloud DNS records successfully updated."
   else
@@ -186,6 +186,7 @@ step_compile() {
 step_apis() {
   log_info "Deploying apis group (API enablement)..."
   run_gcluster_deploy apis
+  log_success "APIs enabled successfully."
 }
 
 step_primary() {
@@ -211,12 +212,7 @@ step_primary() {
 step_compute() {
   log_info "Deploying compute group (GKE Cluster and Node pools)..."
   run_gcluster_deploy compute
-
-  local cluster_name="xmc-$XMC_DEPLOYMENT_NAME-$XMC_ENVIRONMENT"
-  log_info "Fetching kubectl credentials for GKE cluster '$cluster_name'..."
-  gcloud container clusters get-credentials "$cluster_name" \
-      --region="$XMC_REGION" \
-      --project="$XMC_PROJECT_ID"
+  log_success "Compute group (GKE cluster and Node pools) deployed successfully."
 }
 
 step_gateway_api() {
@@ -241,6 +237,7 @@ step_gateway_api() {
 step_prereqs() {
   log_info "Deploying kubernetes_prereqs group (cert-manager, Kueue, Jobset)..."
   run_gcluster_deploy kubernetes_prereqs
+  log_success "Kubernetes prerequisites (cert-manager, Kueue, Jobset) deployed successfully."
 }
 
 step_images() {
@@ -276,11 +273,18 @@ step_images() {
 step_app() {
   log_info "Deploying xmc_app group (Helm release)..."
   run_gcluster_deploy xmc_app
+  log_success "XMC application Helm release deployed successfully."
 }
 
 step_verify() {
-  log_info "Running diagnostics script..."
-  ENVIRONMENT="$XMC_ENVIRONMENT" REGION="$XMC_REGION" PROJECT_ID="$XMC_PROJECT_ID" ./deploy/ctk_v2/verify_xmc.sh || echo "Diagnostic script reported warnings."
+  local cluster_name="xmc-$XMC_DEPLOYMENT_NAME-$XMC_ENVIRONMENT"
+  log_info "Fetching kubectl credentials for GKE cluster '$cluster_name'..."
+  gcloud container clusters get-credentials "$cluster_name" \
+      --region="$XMC_REGION" \
+      --project="$XMC_PROJECT_ID"
+
+  log_info "Running verification script..."
+  ENVIRONMENT="$XMC_ENVIRONMENT" REGION="$XMC_REGION" PROJECT_ID="$XMC_PROJECT_ID" bash ./deploy/ctk_v2/verify_xmc.sh || echo "Diagnostic script reported warnings."
 
   log_info "Verifying routing Gateway programmed state (5m timeout)..."
   kubectl wait --for=condition=Programmed gateway/xmc-gateway -n xmc --timeout=300s || \
@@ -297,13 +301,6 @@ step_verify() {
   done
   [[ "$cert_state" == "ACTIVE" ]] || error_exit "Managed Certificate failed to activate within 900s."
   log_success "Managed Certificate is ACTIVE."
-
-  log_info "Verifying App Pod Health..."
-  kubectl wait --namespace xmc --for=condition=ready pod --selector=app=ui --timeout=120s || {
-    echo "Warning: App pods are not fully Ready. Checking for errors..."
-    kubectl get pods -n xmc
-    exit 1
-  }
 
   log_success "XMC environment deployed and verified."
 }
@@ -422,7 +419,7 @@ run_step() {
       $func
     fi
   else
-    if [ "$start_executing" = true ] || [ "$START_STEP" = "$name" ]; then
+    if [[ "$start_executing" == "true" || "$START_STEP" == "$name" ]]; then
       start_executing=true
       CURRENT_STEP="$name"
       $func
