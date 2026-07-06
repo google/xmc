@@ -63,6 +63,7 @@ func ArtifactRowToProto(row *spanner.Row) (*pb.Artifact, error) {
 	if err := row.ColumnByName("Priority", &priority); err != nil {
 		return nil, fmt.Errorf("failed to read column Priority: %w", err)
 	}
+	artifact.Priority = int32(priority)
 	artifact.Url.Priority = int32(priority)
 	if err := row.ColumnByName("Tags", &artifact.Tags); err != nil {
 		return nil, fmt.Errorf("failed to read column Tags: %w", err)
@@ -137,7 +138,7 @@ func ArtifactProtoToInsertMutation(art *pb.Artifact) (*spanner.Mutation, error) 
 			art.Url.Url,                       // Url
 			art.Url.Icon,                      // Icon
 			art.Url.DisplayName,               // DisplayName
-			int64(art.Url.Priority),           // Priority
+			getPriority(art),                  // Priority
 			art.Tags,                          // Tags
 			art.Notes,                         // Notes
 			art.LifecyclePhase,                // LifecyclePhase
@@ -175,7 +176,7 @@ func ArtifactProtoToUpdateMutation(art *pb.Artifact) (*spanner.Mutation, error) 
 			art.Url.Url,                       // Url
 			art.Url.Icon,                      // Icon
 			art.Url.DisplayName,               // DisplayName
-			int64(art.Url.Priority),           // Priority
+			getPriority(art),                  // Priority
 			art.Tags,                          // Tags
 			art.Notes,                         // Notes
 			art.LifecyclePhase,                // LifecyclePhase
@@ -230,7 +231,23 @@ func getSearchableContent(payload *pb.ArtifactPayload) string {
 				parts = append(parts, p.Text.Text)
 			}
 		}
+	case *pb.ArtifactPayload_Url:
+		if p.Url != nil {
+			if p.Url.Url != "" {
+				parts = append(parts, p.Url.Url)
+			}
+			if p.Url.DisplayName != "" {
+				parts = append(parts, p.Url.DisplayName)
+			}
+		}
 	}
 
 	return strings.Join(parts, " ")
+}
+
+func getPriority(art *pb.Artifact) int64 {
+	if art.GetPriority() != 0 {
+		return int64(art.GetPriority())
+	}
+	return int64(art.GetUrl().GetPriority())
 }

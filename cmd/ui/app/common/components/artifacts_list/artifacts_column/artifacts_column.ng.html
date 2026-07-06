@@ -18,7 +18,7 @@ limitations under the License.
   @if (items().length === 0) {
     <div class="no-artifacts">No artifacts found.</div>
   } @else {
-    @for (item of items(); track item.type === 'group' ? item.groupId : item.artifact.name) {
+    @for (item of items(); track item.type === 'group' ? item.groupId : item.artifact.artifact.name) {
       @if (item.type === 'single') {
         <xmc-artifact-card [artifact]="item.artifact" [isOnExperimentPage]="isOnExperimentPage()" />
       } @else if (item.type === 'group') {
@@ -27,12 +27,12 @@ limitations under the License.
             <div class="group-header-main">
               <mat-icon class="group-icon">{{ item.icon }}</mat-icon>
               <div class="group-title">
-                {{ formatDataType(item.dataType) }} ({{ item.artifacts.length }})
+                {{ getArtifactDisplayProperties(item.artifacts[0]).typeName }} ({{ item.artifacts.length }})
               </div>
             </div>
           </mat-expansion-panel-header>
           <div class="grouped-artifacts-list">
-            @for (artifact of item.artifacts; track artifact.name) {
+            @for (artifact of item.artifacts; track artifact.artifact.name) {
               <xmc-artifact-card
                 [artifact]="artifact"
                 [isOnExperimentPage]="isOnExperimentPage()"

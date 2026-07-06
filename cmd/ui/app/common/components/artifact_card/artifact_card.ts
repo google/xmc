@@ -22,16 +22,18 @@ import { RouterLink } from '@angular/router';
 
 import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 import {
-  formatArtifactDataType,
-  getArtifactIcon,
+  getArtifactDisplayProperties,
+  hasPayloadContent,
 } from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
+import { PayloadType, TypedArtifact } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
+import { SafeUrlPipe, SplitPipe } from 'xmanager_cloud/ui/app/common/pipes/pipes';
 import { parseWorkUnitName } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
 import { trySanitizeUrl, windowOpen } from 'xmanager_cloud/ui/app/safevalues_helper';
 
 import { Tag } from '../tag/tag';
 
 const SHORT_NOTE_MAX_LENGTH = 40;
-const ADDITIONAL_INFO_COLLAPSE_THRESHOLD = 200;
+export const ADDITIONAL_INFO_COLLAPSE_THRESHOLD = 200;
 
 /**
  * Component for displaying a single artifact card.
@@ -49,22 +51,34 @@ const ADDITIONAL_INFO_COLLAPSE_THRESHOLD = 200;
     MatIconModule,
     NgTemplateOutlet,
     RouterLink,
+    SafeUrlPipe,
+    SplitPipe,
     Tag,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ArtifactCard {
-  readonly artifact = input.required<Artifact>();
+  readonly artifact = input.required<TypedArtifact>();
   // Whether the artifact is on the experiment page. If so, we add a toggle to
   // show or hide work unit artifacts, and show the work unit badge on the
   // artifact card.
   readonly isOnExperimentPage = input<boolean>(false);
 
+  readonly collapseThreshold = ADDITIONAL_INFO_COLLAPSE_THRESHOLD;
+  protected readonly PayloadType = PayloadType;
+
+  protected readonly displayProperties = computed(() =>
+    getArtifactDisplayProperties(this.artifact())
+  );
+
+  protected readonly tags = computed(() => this.artifact().artifact.tags ?? []);
+  protected readonly notes = computed(() => this.artifact().artifact.notes ?? '');
+
   protected workUnitInfo: Signal<{ routerLink: string; badgeText: string } | null> = computed(
     () => {
-      const artifact = this.artifact();
-      if (this.isOnExperimentPage() && artifact.parent) {
-        const ids = parseWorkUnitName(artifact.parent);
+      const art = this.artifact();
+      if (this.isOnExperimentPage() && art.artifact.parent) {
+        const ids = parseWorkUnitName(art.artifact.parent);
         if (ids) {
           return {
             routerLink: `/experiments/${ids.xid}/workUnits/${ids.wid}`,
@@ -77,41 +91,13 @@ export class ArtifactCard {
   );
 
   protected readonly isNoteLong = computed(() => {
-    const notes = this.artifact().notes;
+    const notes = this.notes();
     return !!notes && notes.length > SHORT_NOTE_MAX_LENGTH;
   });
 
-  protected readonly additionalInfoContent = computed(() => {
-    const info = this.artifact().additionalInfo;
-    if (!info) return null;
-    return info.codeBlock ?? info.text ?? null;
-  });
+  protected readonly hasPayloadContent = computed(() =>
+    hasPayloadContent(this.artifact())
+  );
 
-  protected readonly codeLines = computed(() => {
-    const info = this.artifact().additionalInfo;
-    if (!info?.codeBlock) return [];
-    return info.codeBlock.split('\n');
-  });
 
-  protected readonly isAdditionalInfoLong = computed(() => {
-    const content = this.additionalInfoContent();
-    return !!content && content.length > ADDITIONAL_INFO_COLLAPSE_THRESHOLD;
-  });
-
-  protected getIcon(artifact: Artifact): string {
-    return getArtifactIcon(artifact);
-  }
-
-  protected formatDataType(dataType: Artifact.DataType | undefined): string {
-    return formatArtifactDataType(dataType);
-  }
-
-  protected goToUrl(url: string | undefined) {
-    if (url) {
-      const sanitizedUrl = trySanitizeUrl(url);
-      if (sanitizedUrl) {
-        windowOpen(window, sanitizedUrl, '_blank');
-      }
-    }
-  }
 }

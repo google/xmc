@@ -206,6 +206,11 @@ func FillArtifactNullValues(art *essmsgpb.Artifact) *essmsgpb.Artifact {
 	if art.GetTags() == nil {
 		art.Tags = []string{}
 	}
+	if art.Priority == 0 && art.Url != nil && art.Url.Priority != 0 {
+		art.Priority = art.Url.Priority
+	} else if art.Priority != 0 && art.Url != nil && art.Url.Priority == 0 {
+		art.Url.Priority = art.Priority
+	}
 	return art
 }
 
@@ -454,6 +459,10 @@ func validatePayload(payload *essmsgpb.ArtifactPayload) error {
 		}
 		if p.Text.GetText() == "" {
 			return fmt.Errorf("artifact.payload.text.text must be set: %w", status.ErrInvalidArgument)
+		}
+	case *essmsgpb.ArtifactPayload_Url:
+		if p.Url.GetUrl() == "" {
+			return fmt.Errorf("artifact.payload.url.url must be set: %w", status.ErrInvalidArgument)
 		}
 	}
 	return nil

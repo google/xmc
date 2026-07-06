@@ -86,6 +86,7 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 		Name:           name,
 		Parent:         req.GetParent(),
 		Url:            artifact.Url,
+		Priority:       artifact.Priority,
 		Tags:           artifact.Tags,
 		Notes:          artifact.Notes,
 		LifecyclePhase: artifact.LifecyclePhase,

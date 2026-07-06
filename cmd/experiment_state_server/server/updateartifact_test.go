@@ -108,6 +108,13 @@ func TestUpdateArtifact_HappyPath(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			artifact := &msgpb.Artifact{
 				Url: &msgpb.Url{Url: "http://www.google.com"},
+				Payload: &msgpb.ArtifactPayload{
+					Type: &msgpb.ArtifactPayload_Url{
+						Url: &msgpb.UrlArtifact{
+							Url: "http://www.google.com",
+						},
+					},
+				},
 				Acls: &xidmsgpb.XidAcls{
 					Owners: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
 				},

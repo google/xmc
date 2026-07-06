@@ -98,68 +98,60 @@
       flex-wrap: wrap;
     }
 
-    .additional-info-section {
+    .payload-detail-section {
       margin-top: 8px;
 
-      .additional-info-panel {
+      .payload-detail-panel {
         box-shadow: none;
         border: 1px solid var(--mat-sys-outline-variant);
         border-radius: 8px;
       }
 
-      .additional-info-title {
+      .payload-detail-title {
         font-weight: 500;
         color: var(--mat-sys-on-surface);
         margin-bottom: 6px;
       }
 
-      .additional-info-code {
+      pre.payload-detail-code {
         background-color: var(--mat-sys-surface-container);
         border: 1px solid var(--mat-sys-outline-variant);
         border-radius: 8px;
         margin: 0;
         overflow: auto;
+        padding: 8px 0;
+        counter-reset: line;
+        white-space: pre-wrap;
 
-        .code-lines {
-          margin: 0;
-          padding: 8px 0;
-          list-style: none;
-          counter-reset: line;
+        code {
+          display: block;
+          padding: 0 12px 0 0;
+          counter-increment: line;
+          font-family: 'Roboto Mono', 'Fira Code', 'Consolas', monospace;
+          font-size: 12px;
+          line-height: 1.6;
+          white-space: pre-wrap;
+          word-break: break-word;
 
-          li {
-            display: block;
-            padding: 0 12px 0 0;
-            counter-increment: line;
-            font-family: 'Roboto Mono', 'Fira Code', 'Consolas', monospace;
-            font-size: 12px;
-            line-height: 1.6;
-            white-space: pre-wrap;
-            word-break: break-word;
+          &::before {
+            content: counter(line);
+            display: inline-block;
+            width: 36px;
+            padding-right: 12px;
+            text-align: right;
+            color: var(--mat-sys-on-surface-variant);
+            border-right: 1px solid var(--mat-sys-outline-variant);
+            margin-right: 12px;
+            user-select: none;
+          }
 
-            &::before {
-              content: counter(line);
-              display: inline-block;
-              width: 36px;
-              padding-right: 12px;
-              text-align: right;
-              color: var(--mat-sys-on-surface-variant);
-              border-right: 1px solid var(--mat-sys-outline-variant);
-              margin-right: 12px;
-              user-select: none;
-            }
-
-            code {
-              font-family: inherit;
-            }
-
-            &:hover {
-              background-color: var(--mat-sys-surface-container-high);
-            }
+          &:hover {
+            background-color: var(--mat-sys-surface-container-high);
           }
         }
       }
 
-      .additional-info-text {
+      .payload-detail-text {
         line-height: 1.5;
         overflow-wrap: break-word;
         white-space: pre-wrap;

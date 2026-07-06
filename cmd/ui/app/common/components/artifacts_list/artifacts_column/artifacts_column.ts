@@ -15,8 +15,8 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatIconModule } from '@angular/material/icon';
 
-import { formatArtifactDataType } from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
-import { ArtifactListItem } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
+import { getArtifactDisplayProperties } from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
+import { ArtifactListItem, PayloadType } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
 import { ArtifactCard } from 'xmanager_cloud/ui/app/common/components/artifact_card/artifact_card';
 
 /**
@@ -35,5 +35,6 @@ export class ArtifactsColumn {
   readonly items = input.required<readonly ArtifactListItem[]>();
   readonly isOnExperimentPage = input<boolean>(false);
 
-  protected readonly formatDataType = formatArtifactDataType;
+  protected readonly getArtifactDisplayProperties = getArtifactDisplayProperties;
+  protected readonly PayloadType = PayloadType;
 }

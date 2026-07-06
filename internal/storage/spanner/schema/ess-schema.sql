@@ -38,6 +38,7 @@ CREATE PROTO BUNDLE (
   cloud.xmanager.v1.XProfUIInstance,
   cloud.xmanager.v1.CodeSourceArtifact,
   cloud.xmanager.v1.TextArtifact,
+  cloud.xmanager.v1.UrlArtifact,
 
   -- Protos used in Operations
   google.rpc.Status,

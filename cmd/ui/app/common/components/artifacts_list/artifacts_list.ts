@@ -21,7 +21,7 @@ import { map, shareReplay } from 'rxjs/operators';
 
 import { ListArtifactsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
-import { groupAndSortArtifacts } from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
+import { groupAndSortArtifacts, toTypedArtifact } from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
 import { ArtifactListItem } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
 import { parseWorkUnitName } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
 import { ArtifactService } from 'xmanager_cloud/ui/app/service/artifact_service';
@@ -89,18 +89,24 @@ export class ArtifactsList implements OnInit {
     );
 
     this.inputArtifacts$ = filteredArtifacts$.pipe(
-      map((artifacts) => artifacts.filter((a) => a.lifecyclePhase === 'INPUT')),
-      map((artifacts) => groupAndSortArtifacts(artifacts, 'INPUT', this.groupingThreshold())),
+      map((artifacts) => {
+        const typed = artifacts.filter((a) => a.lifecyclePhase === 'INPUT').map(toTypedArtifact);
+        return groupAndSortArtifacts(typed, 'INPUT', this.groupingThreshold());
+      }),
     );
     this.executionArtifacts$ = filteredArtifacts$.pipe(
-      map((artifacts) => artifacts.filter((a) => a.lifecyclePhase === 'EXECUTION')),
-      map((artifacts) => groupAndSortArtifacts(artifacts, 'EXECUTION', this.groupingThreshold())),
+      map((artifacts) => {
+        const typed = artifacts.filter((a) => a.lifecyclePhase === 'EXECUTION').map(toTypedArtifact);
+        return groupAndSortArtifacts(typed, 'EXECUTION', this.groupingThreshold());
+      }),
     );
     this.outputArtifacts$ = filteredArtifacts$.pipe(
-      map((artifacts) =>
-        artifacts.filter((a) => a.lifecyclePhase === 'OUTPUT' || !a.lifecyclePhase),
-      ),
-      map((artifacts) => groupAndSortArtifacts(artifacts, 'OUTPUT', this.groupingThreshold())),
+      map((artifacts) => {
+        const typed = artifacts
+          .filter((a) => a.lifecyclePhase === 'OUTPUT' || !a.lifecyclePhase)
+          .map(toTypedArtifact);
+        return groupAndSortArtifacts(typed, 'OUTPUT', this.groupingThreshold());
+      }),
     );
   }
 

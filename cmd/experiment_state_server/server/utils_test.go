@@ -219,6 +219,13 @@ func mustCreateArtifact(ctx context.Context, t *testing.T, server *Server, paren
 			Url: &essmsgpb.Url{
 				Url: "http://www.google.com",
 			},
+			Payload: &essmsgpb.ArtifactPayload{
+				Type: &essmsgpb.ArtifactPayload_Url{
+					Url: &essmsgpb.UrlArtifact{
+						Url: "http://www.google.com",
+					},
+				},
+			},
 			Acls: &xidmsgpb.XidAcls{
 				Writers: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
 			},

@@ -11,21 +11,70 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
+import {
+  Artifact,
+  CodeSourceArtifact,
+  ManagedXprofArtifact,
+  TextArtifact,
+  UrlArtifact,
+} from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 
-/** Represents a collapsible group of artifacts of the same type. */
+export enum PayloadType {
+  MANAGED_XPROF = 'managedXprof',
+  CODE_SOURCE = 'codeSource',
+  TEXT = 'text',
+  URL = 'url',
+  UNKNOWN = 'unknown',
+}
+
+export interface BaseTypedArtifact {
+  artifact: Artifact;
+}
+
+export interface ManagedXprofTypedArtifact extends BaseTypedArtifact {
+  type: PayloadType.MANAGED_XPROF;
+  payload: ManagedXprofArtifact;
+}
+
+export interface CodeSourceTypedArtifact extends BaseTypedArtifact {
+  type: PayloadType.CODE_SOURCE;
+  payload: CodeSourceArtifact;
+}
+
+export interface TextTypedArtifact extends BaseTypedArtifact {
+  type: PayloadType.TEXT;
+  payload: TextArtifact;
+}
+
+export interface UrlTypedArtifact extends BaseTypedArtifact {
+  type: PayloadType.URL;
+  payload: UrlArtifact;
+}
+
+export interface UnknownTypedArtifact extends BaseTypedArtifact {
+  type: PayloadType.UNKNOWN;
+}
+
+export type TypedArtifact =
+  | ManagedXprofTypedArtifact
+  | CodeSourceTypedArtifact
+  | TextTypedArtifact
+  | UrlTypedArtifact
+  | UnknownTypedArtifact;
+
+/** Represents a collapsible group of artifacts of the same payload type. */
 export interface ArtifactGroup {
   type: 'group';
-  dataType: Artifact.DataType;
-  artifacts: Artifact[];
-  groupId: string; // e.g. 'INPUT-MODEL_SNAPSHOTS'
+  payloadType: PayloadType;
+  artifacts: TypedArtifact[];
+  groupId: string;
   icon: string;
 }
 
 /** Represents a single artifact that is not part of a group. */
 export interface ArtifactSingle {
   type: 'single';
-  artifact: Artifact;
+  artifact: TypedArtifact;
 }
 
 /** Union type for items in the artifact list. */

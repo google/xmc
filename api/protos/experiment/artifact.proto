@@ -142,7 +142,11 @@ message Artifact {
   AdditionalInfo additional_info = 12 [(google.api.field_behavior) = OPTIONAL, deprecated = true];
 
   // Strongly-typed polymorphic payload.
-  ArtifactPayload payload = 13 [(google.api.field_behavior) = OPTIONAL];
+  ArtifactPayload payload = 13 [(google.api.field_behavior) = REQUIRED];
+
+  // Priority of the artifact. Lower numbers indicate higher priority. This is used
+  // to determine the order in which artifacts are displayed in the UI.
+  int32 priority = 14 [(google.api.field_behavior) = OPTIONAL];
 
   // The timestamp of the artifact creation.
   google.protobuf.Timestamp create_time = 10
@@ -158,6 +162,7 @@ message ArtifactPayload {
     ManagedXprofArtifact managed_xprof = 1;
     CodeSourceArtifact code_source = 2;
     TextArtifact text = 3;
+    UrlArtifact url = 4;
   }
 }
 
@@ -186,5 +191,11 @@ message ManagedXprofArtifact {
 message XProfUIInstance {
   // The url of the xprof UI.
   string xprof_url = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message UrlArtifact {
+  string url = 1 [(google.api.field_behavior) = REQUIRED];
+  string icon = 2 [(google.api.field_behavior) = OPTIONAL];
+  string display_name = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
