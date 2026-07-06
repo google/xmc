@@ -492,6 +492,134 @@ func TestConstructJobSet(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_CustomEnvVars(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnit1",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name: "job1",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_CpuResources{
+										CpuResources: &esspb.CpuResources{
+											CpuMillicores: 100,
+											MemoryBytes:   1024,
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+								EnvVars:     map[string]string{"env_vars_key": "env_vars_val"},
+								Env: []*esspb.EnvVar{
+									{
+										Name: "literal_env",
+										Source: &esspb.EnvVar_Value{
+											Value: "literal_val",
+										},
+									},
+									// nil entries should be safely ignored.
+									nil,
+									// empty name entries should be ignored.
+									{
+										Name: "",
+										Source: &esspb.EnvVar_Value{
+											Value: "empty_name_val",
+										},
+									},
+									{
+										Name: "field_ref_env",
+										Source: &esspb.EnvVar_ValueFrom{
+											ValueFrom: &esspb.EnvVarSource{
+												Reference: &esspb.EnvVarSource_FieldRef{
+													FieldRef: &esspb.FieldRef{
+														FieldPath:  "status.podIP",
+														ApiVersion: "v1",
+													},
+												},
+											},
+										},
+									},
+									{
+										Name: "nil_value_from_env",
+										Source: &esspb.EnvVar_ValueFrom{
+											ValueFrom: nil,
+										},
+									},
+									{
+										Name: "nil_field_ref_env",
+										Source: &esspb.EnvVar_ValueFrom{
+											ValueFrom: &esspb.EnvVarSource{
+												Reference: nil,
+											},
+										},
+									},
+									{
+										Name: "nil_inner_field_ref_env",
+										Source: &esspb.EnvVar_ValueFrom{
+											ValueFrom: &esspb.EnvVarSource{
+												Reference: &esspb.EnvVarSource_FieldRef{
+													FieldRef: nil,
+												},
+											},
+										},
+									},
+								},
+							},
+							Replicas: 1,
+						},
+					},
+				},
+			},
+		},
+	}
+	namespace := "test-namespace"
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", namespace, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if len(got.Spec.ReplicatedJobs) != 1 {
+		t.Fatalf("Expected 1 ReplicatedJob, got %d", len(got.Spec.ReplicatedJobs))
+	}
+
+	container := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers[0]
+
+	wantEnv := []corev1.EnvVar{
+		{Name: "env_vars_key", Value: "env_vars_val"},
+		{Name: "literal_env", Value: "literal_val"},
+		{
+			Name: "field_ref_env",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath:  "status.podIP",
+					APIVersion: "v1",
+				},
+			},
+		},
+	}
+	var gotEnv []corev1.EnvVar
+	for _, env := range container.Env {
+		if env.Name == constants.XmcEnvVarManagedBy ||
+			env.Name == constants.XmcEnvVarNamespace ||
+			env.Name == constants.XmcEnvVarQueueName ||
+			env.Name == constants.XmcEnvVarExperimentID ||
+			env.Name == constants.XmcEnvVarWorkUnitID ||
+			env.Name == constants.XmcEnvVarExecutionID ||
+			env.Name == constants.XmcEnvVarAuthor {
+			continue
+		}
+		gotEnv = append(gotEnv, env)
+	}
+
+	if diff := cmp.Diff(wantEnv, gotEnv); diff != "" {
+		t.Errorf("container.Env returned diff (-want +got):\n%s", diff)
+	}
+}
+
 func TestConstructJobSet_GPU_GKE(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := &esspb.WorkUnit{
