@@ -30,11 +30,12 @@ import (
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/types/types"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/util/wait/wait"
 	"golang/protobuf/v2/proto/proto"
-	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	constants "xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 	ee "xmanager_cloud/toollibs/execution_environments/executionenvironments"
 	"xmanager_cloud/validator/validator"
+
+	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
@@ -282,6 +283,8 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 		args = append(args, fmt.Sprintf("--%s=%s", k, v))
 	}
 
+	command := job.GetSpec().GetCommand()
+
 	retryLimit := job.GetRetryLimit()
 
 	// Merge job annotations with default annotations.
@@ -326,6 +329,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 						Annotations: annotations,
 					},
 					Spec: corev1.PodSpec{
+						ServiceAccountName: job.GetServiceAccount(),
 						Containers: []corev1.Container{
 							{
 								Name:                     job.GetName(),
@@ -333,6 +337,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 								ImagePullPolicy:          corev1.PullAlways,
 								TerminationMessagePath:   "/dev/termination-log",
 								TerminationMessagePolicy: corev1.TerminationMessageReadFile,
+								Command:                  command,
 								Args:                     args,
 								Env:                      envVars,
 								SecurityContext:          defaultSecurityContext(),
@@ -485,6 +490,27 @@ func generateEnvVars(job *esspb.KubernetesJob) []corev1.EnvVar {
 	var envVars []corev1.EnvVar
 	for k, v := range job.GetSpec().GetEnvVars() {
 		envVars = append(envVars, corev1.EnvVar{Name: k, Value: v})
+	}
+	for _, ev := range job.GetSpec().GetEnv() {
+		if ev == nil || ev.Name == "" {
+			continue
+		}
+		k8sEnvVar := corev1.EnvVar{Name: ev.Name}
+		switch src := ev.GetSource().(type) {
+		case *esspb.EnvVar_Value:
+			k8sEnvVar.Value = src.Value
+			envVars = append(envVars, k8sEnvVar)
+		case *esspb.EnvVar_ValueFrom:
+			if fieldRef := src.ValueFrom.GetFieldRef(); fieldRef != nil {
+				k8sEnvVar.ValueFrom = &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath:  fieldRef.FieldPath,
+						APIVersion: fieldRef.ApiVersion,
+					},
+				}
+				envVars = append(envVars, k8sEnvVar)
+			}
+		}
 	}
 	envVars = append(envVars, corev1.EnvVar{Name: constants.XmcEnvVarManagedBy, Value: "true"})
 

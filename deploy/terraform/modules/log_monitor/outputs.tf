@@ -15,8 +15,3 @@ output "service_url" {
   value       = google_cloud_run_v2_service.log_monitor.uri
   description = "The URL of the deployed Cloud Run service."
 }
-
-output "log_monitor_principal" {
-  description = "The principal of log monitor service account."
-  value       = "serviceAccount:${google_service_account.log_monitor_gsa.email}"
-}

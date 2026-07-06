@@ -100,6 +100,21 @@ deployment_groups:
       - artifactregistry.reader
       - serviceusage.serviceUsageConsumer
 
+  - id: workload_sa_token_creator
+    source: ./deploy/ctk_v2/modules/self-token-creator
+    use: [workload_service_account]
+    settings:
+      project_id: $(vars.project_id)
+      service_account_email: $(workload_service_account.service_account_email)
+
+  - id: log_monitor_service_account
+    source: modules/project/service-account
+    settings:
+      name: xmc-lm-sa
+      project_roles:
+      - serviceusage.serviceUsageConsumer
+      - monitoring.metricWriter
+
   - id: db_spanner
     source: modules/database/spanner
     settings:
@@ -112,6 +127,8 @@ deployment_groups:
           iam_members:
           - role: roles/spanner.databaseUser
             member: "serviceAccount:$(workload_service_account.service_account_email)"
+          - role: roles/spanner.databaseUser
+            member: $(log_monitor_service_account.service_account_iam_email)
         xid:
           name: xids-db-$(vars.environment)
           deletion_protection: false
@@ -207,7 +224,6 @@ deployment_groups:
       gcp_public_cidrs_access_enabled: $(vars.gcp_public_cidrs_access_enabled)
       configure_workload_identity_sa: true
       enable_vertical_pod_autoscaling: true
-      enable_inference_gateway: true
       master_authorized_networks:
       - cidr_block: $(vars.authorized_cidr)
         display_name: Authorized
@@ -244,7 +260,7 @@ deployment_groups:
     settings:
       release_name: kueue
       chart_name: oci://registry.k8s.io/kueue/charts/kueue
-      chart_version: 0.15.0
+      chart_version: 0.18.2
       namespace: kueue-system
       create_namespace: true
       dependencies: [$(install_cert_manager.release_completion_id)]
@@ -255,7 +271,7 @@ deployment_groups:
     settings:
       release_name: jobset
       chart_name: oci://registry.k8s.io/jobset/charts/jobset
-      chart_version: 0.10.1
+      chart_version: 0.12.0
       namespace: jobset-system
       create_namespace: true
       dependencies: [$(install_cert_manager.release_completion_id)]
@@ -304,8 +320,6 @@ deployment_groups:
         value: $(vars.ess_image)
       - name: reconciler_custom_image
         value: $(vars.reconciler_image)
-      - name: log_monitor_custom_image
-        value: $(vars.log_monitor_image)
       - name: ui.image
         value: $(vars.ui_image)
       - name: taskSignatureTtlSeconds
@@ -364,3 +378,13 @@ deployment_groups:
           namespace: $(vars.namespace)
           gcp_service_account_email: $(workload_service_account.service_account_email)
           tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
+
+  - id: log_monitor
+    source: ./deploy/terraform/modules/log_monitor
+    use: [log_monitor_service_account]
+    settings:
+      project_id: $(vars.project_id)
+      region: $(vars.region)
+      environment: $(vars.environment)
+      image_url: $(vars.log_monitor_image)
+      service_account_email: $(log_monitor_service_account.service_account_email)

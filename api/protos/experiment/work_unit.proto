@@ -123,6 +123,38 @@ message KubernetesJob {
   // ordering of jobs within the JobSet. If a job depends upon another job, it
   // must be specified after the dependent job in the list of jobs.
   DependencyOrder dependency_order = 7;
+  // The Kubernetes Service Account (KSA) to run the Job as. If not set, the
+  // namespace's default KSA is used.
+  string service_account = 8;
+}
+
+// Selects a field of the Pod (matches YAML 'fieldRef').
+message FieldRef {
+  string field_path = 1; // e.g. "status.podIP" or "metadata.name"
+  string api_version = 2; // optional
+}
+
+// Represents the source of an environment variable's reference value.
+message EnvVarSource {
+  oneof reference {
+    FieldRef field_ref = 1;
+    // Add here other env reference cases.
+  }
+}
+
+// Represents a single environment variable definition.
+message EnvVar {
+  // The name of the environment variable (e.g., "POD_IP")
+  string name = 1;
+
+  // The source of the environment variable's value
+  oneof source {
+    // Hardcoded string value
+    string value = 2;
+
+    // Reference to a Pod field
+    EnvVarSource value_from = 3;
+  }
 }
 
 message ExecutableSpec {
@@ -133,7 +165,12 @@ message ExecutableSpec {
   // The arguments to pass to the executable.
   map<string, string> args = 3;
   // The environment variables to set for the executable.
-  map<string, string> env_vars = 4;
+  // Deprecated: Use env instead, which supports structured environment variables.
+  map<string, string> env_vars = 4 [deprecated = true];
+  // The command to run in the container (overwrites ENTRYPOINT).
+  repeated string command = 5;
+  // The structured environment variables, supporting downward API.
+  repeated EnvVar env = 6;
 }
 
 // SchedulingConstraints contains the scheduling constraints for the

@@ -80,7 +80,7 @@ spec:
         {{- if .Values.redisReadBatchSize }}
         - "-redis_read_batch_size={{ .Values.redisReadBatchSize }}"
         {{- end }}
-        - "--xmanager_service_account=xmc-ess-sa-{{ .Values.environment }}@{{ .Values.projectId }}.iam.gserviceaccount.com"
+        - "--xmanager_service_account={{ required "gcpServiceAccount is required" .Values.gcpServiceAccount }}"
         - "--audience=https://actuator.api.{{ .Values.environment }}.{{ .Values.domainSuffix }}/actuate"
         resources:
           requests:
