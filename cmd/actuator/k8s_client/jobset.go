@@ -275,6 +275,14 @@ func jobSetToUnstructured(jobSet *jobsetv1alpha2.JobSet) (*unstructured.Unstruct
 	return jobSetUnstructured, nil
 }
 
+// primaryContainerName returns the primary container name for a job, defaulting to the job name if unset.
+func primaryContainerName(job *esspb.KubernetesJob) string {
+	if name := job.GetSpec().GetName(); name != "" {
+		return name
+	}
+	return job.GetName()
+}
+
 func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLabels map[string]string, jobAnnotations map[string]string) jobsetv1alpha2.ReplicatedJob {
 	retryLimit := job.GetRetryLimit()
 
@@ -300,10 +308,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 		activeDeadlineSeconds = proto.Int64(job.GetActiveDeadlineSeconds())
 	}
 
-	primaryName := job.GetSpec().GetName()
-	if primaryName == "" {
-		primaryName = job.GetName()
-	}
+	primaryName := primaryContainerName(job)
 
 	return jobsetv1alpha2.ReplicatedJob{
 		Name:      job.GetName(),
@@ -338,10 +343,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 }
 
 func buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
-	primaryName := job.GetSpec().GetName()
-	if primaryName == "" {
-		primaryName = job.GetName()
-	}
+	primaryName := primaryContainerName(job)
 	containers := []corev1.Container{
 		buildContainer(primaryName, job.GetSpec()),
 	}
