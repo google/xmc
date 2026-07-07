@@ -2073,3 +2073,43 @@ func TestValidateExecutableSpec_RFC1123Name(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateContainerNamesUnique_ResolvedSidecarName(t *testing.T) {
+	tests := []struct {
+		name    string
+		job     *essmsgpb.KubernetesJob
+		wantErr bool
+	}{
+		{
+			name: "valid_resolved_sidecar_name",
+			job: &essmsgpb.KubernetesJob{
+				Name: "worker",
+				Spec: &essmsgpb.ExecutableSpec{Name: "main"},
+				Sidecars: []*essmsgpb.ExecutableSpec{
+					{},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "resolved_default_sidecar_name_too_long",
+			job: &essmsgpb.KubernetesJob{
+				Name: "a1234567890123456789012345678901234567890123456789012345678",
+				Spec: &essmsgpb.ExecutableSpec{Name: "main"},
+				Sidecars: []*essmsgpb.ExecutableSpec{
+					{},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateContainerNamesUnique(tc.job)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateContainerNamesUnique() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}

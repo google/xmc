@@ -504,6 +504,12 @@ func validateContainerNamesUnique(job *essmsgpb.KubernetesJob) error {
 
 	for i, sidecar := range job.GetSidecars() {
 		name := jobsetutil.SidecarContainerName(job, sidecar, i)
+		if len(name) > 63 {
+			return fmt.Errorf("work_unit.executable.jobset.jobs sidecar container name %q cannot be longer than 63 characters: %w", name, status.ErrInvalidArgument)
+		}
+		if !jobNameRegex.MatchString(name) {
+			return fmt.Errorf("work_unit.executable.jobset.jobs sidecar container name %q must be a valid DNS label (RFC 1123): %w", name, status.ErrInvalidArgument)
+		}
 		if names[name] {
 			return fmt.Errorf("work_unit.executable.jobset.jobs container name %q must be unique within the pod: %w", name, status.ErrInvalidArgument)
 		}
