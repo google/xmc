@@ -145,17 +145,19 @@ func (s *Storage) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*e
 func getWorkUnitResources(wu *essmsgpb.WorkUnit) []*essmsgpb.ResourceSet {
 	var resources []*essmsgpb.ResourceSet
 	for _, job := range wu.GetExecutable().GetJobset().GetJobs() {
-		if job.GetSpec().GetResources() == nil {
-			continue
-		}
-		jobRes := job.GetSpec().GetResources()
 		replicas := job.GetReplicas()
 		if replicas == 0 {
 			replicas = 1
 		}
-
-		for i := 0; i < int(replicas); i++ {
-			resources = append(resources, jobRes)
+		specs := []*essmsgpb.ExecutableSpec{job.GetSpec()}
+		specs = append(specs, job.GetSidecars()...)
+		for _, spec := range specs {
+			if spec.GetResources() == nil {
+				continue
+			}
+			for i := 0; i < int(replicas); i++ {
+				resources = append(resources, spec.GetResources())
+			}
 		}
 	}
 

@@ -386,6 +386,56 @@ func TestGetWorkUnitResources(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "resources_with_sidecars",
+			wu: &essmsgpb.WorkUnit{
+				Executable: &essmsgpb.Executable{
+					Type: &essmsgpb.Executable_Jobset{
+						Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Spec: &essmsgpb.ExecutableSpec{
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{
+												CpuResources: &essmsgpb.CpuResources{
+													CpuMillicores: 1000,
+													MemoryBytes:   1024,
+												},
+											},
+											EphemeralStorageBytes: 1024,
+										},
+									},
+									Sidecars: []*essmsgpb.ExecutableSpec{
+										{
+											Resources: &essmsgpb.ResourceSet{
+												Resources: &essmsgpb.ResourceSet_CpuResources{
+													CpuResources: &essmsgpb.CpuResources{
+														CpuMillicores: 500,
+														MemoryBytes:   512,
+													},
+												},
+												EphemeralStorageBytes: 512,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: []*essmsgpb.ResourceSet{
+				{
+					Resources: &essmsgpb.ResourceSet_CpuResources{
+						CpuResources: &essmsgpb.CpuResources{
+							CpuMillicores: 1500,
+							MemoryBytes:   1536,
+						},
+					},
+					EphemeralStorageBytes: 1536,
+				},
+			},
+		},
 	}
 
 	for _, tc := range tests {

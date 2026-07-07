@@ -1910,3 +1910,39 @@ func TestConstructJobSet_TPU_MultiSlice(t *testing.T) {
 		t.Errorf("Expected exclusive-topology annotation=%q, got %q", wantAnnotation, got.Annotations["alpha.jobset.sigs.k8s.io/exclusive-topology"])
 	}
 }
+
+func TestConstructJobSet_WithSidecars(t *testing.T) {
+	ctx, client, _ := setupTestClient(true, &alwaysPassingPreconditionsValidator{})
+	workUnit := createTestWorkUnit("test-namespace")
+	workUnit.Executable.GetJobset().Jobs[0].Sidecars = []*esspb.ExecutableSpec{
+		{
+			Name:        "sidecar-1",
+			DockerImage: "sidecar-image:v1",
+			Command:     []string{"/bin/sidecar"},
+			Resources: &esspb.ResourceSet{
+				Resources: &esspb.ResourceSet_CpuResources{
+					CpuResources: &esspb.CpuResources{
+						CpuMillicores: 50,
+						MemoryBytes:   512,
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	containers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers
+	if len(containers) != 2 {
+		t.Fatalf("Expected 2 containers (primary + sidecar), got %d", len(containers))
+	}
+	if containers[0].Name != "job1" || containers[1].Name != "sidecar-1" {
+		t.Errorf("Container names mismatch: got [%s, %s], want [job1, sidecar-1]", containers[0].Name, containers[1].Name)
+	}
+	if containers[1].Image != "sidecar-image:v1" {
+		t.Errorf("Sidecar image mismatch: got %q, want %q", containers[1].Image, "sidecar-image:v1")
+	}
+}

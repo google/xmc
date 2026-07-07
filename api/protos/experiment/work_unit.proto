@@ -126,6 +126,8 @@ message KubernetesJob {
   // The Kubernetes Service Account (KSA) to run the Job as. If not set, the
   // namespace's default KSA is used.
   string service_account = 8;
+  // Sidecar / auxiliary containers to run alongside the primary container in each Pod.
+  repeated ExecutableSpec sidecars = 9;
 }
 
 // Selects a field of the Pod (matches YAML 'fieldRef').
@@ -171,6 +173,9 @@ message ExecutableSpec {
   repeated string command = 5;
   // The structured environment variables, supporting downward API.
   repeated EnvVar env = 6;
+  // Optional name for the container. If unset, defaults to the job name for the primary container,
+  // or '<job_name>-sidecar-<index>' for sidecars.
+  string name = 7;
 }
 
 // SchedulingConstraints contains the scheduling constraints for the

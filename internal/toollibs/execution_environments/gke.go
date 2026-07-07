@@ -216,22 +216,11 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 			return nil, fmt.Errorf("no resources found to annotate for job %s", job.Name)
 		}
 
-		resourceRequirements, err := resourceRequirements(job.Spec.Resources)
-		if err != nil {
-			return nil, err
-		}
-
 		if len(replicatedJob.Template.Spec.Template.Spec.Containers) == 0 {
 			return nil, fmt.Errorf("no containers found to annotate")
 		}
-		replicatedJob.Template.Spec.Template.Spec.Containers[0].Resources = resourceRequirements
-
-		if job.Spec.Resources.GetTpuResources() != nil {
-			container := &replicatedJob.Template.Spec.Template.Spec.Containers[0]
-			container.Ports = append(container.Ports,
-				corev1.ContainerPort{ContainerPort: tpuICIPort},
-				corev1.ContainerPort{ContainerPort: tpuMetricsPort},
-			)
+		if err := annotateContainers(replicatedJob, job); err != nil {
+			return nil, err
 		}
 
 		if err := updateNodeSelector(job.Spec.Resources, &replicatedJob.Template.Spec.Template.Spec); err != nil {
@@ -325,6 +314,29 @@ func (g *GKE) InjectOnExperimentCreation(ctx context.Context, essServer spb.Expe
 func (g *GKE) InjectOnWorkUnitCreation(ctx context.Context, essServer spb.ExperimentStateServiceServer, workUnit *epb.WorkUnit) (*epb.WorkUnit, error) {
 	workUnit.Urls = append(workUnit.GetUrls(), workUnitURLs...)
 	return workUnit, nil
+}
+
+func annotateContainers(replicatedJob *jobsetv1alpha2.ReplicatedJob, job *epb.KubernetesJob) error {
+	specs := []*epb.ExecutableSpec{job.Spec}
+	specs = append(specs, job.Sidecars...)
+	for idx := range replicatedJob.Template.Spec.Template.Spec.Containers {
+		if idx >= len(specs) || specs[idx].GetResources() == nil {
+			continue
+		}
+		reqs, err := resourceRequirements(specs[idx].GetResources())
+		if err != nil {
+			return err
+		}
+		replicatedJob.Template.Spec.Template.Spec.Containers[idx].Resources = reqs
+		if specs[idx].GetResources().GetTpuResources() != nil {
+			container := &replicatedJob.Template.Spec.Template.Spec.Containers[idx]
+			container.Ports = append(container.Ports,
+				corev1.ContainerPort{ContainerPort: tpuICIPort},
+				corev1.ContainerPort{ContainerPort: tpuMetricsPort},
+			)
+		}
+	}
+	return nil
 }
 
 func init() {
