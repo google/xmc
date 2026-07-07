@@ -22,6 +22,7 @@ import (
 	"task/go/status"
 	essapipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/kubernetes/common/jobsetutil"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmessagespb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -498,17 +499,11 @@ func validateResourceSet(res *essmsgpb.ResourceSet, prefix string) error {
 
 func validateContainerNamesUnique(job *essmsgpb.KubernetesJob) error {
 	names := make(map[string]bool)
-	primaryName := job.GetSpec().GetName()
-	if primaryName == "" {
-		primaryName = job.GetName()
-	}
+	primaryName := jobsetutil.PrimaryContainerName(job)
 	names[primaryName] = true
 
 	for i, sidecar := range job.GetSidecars() {
-		name := sidecar.GetName()
-		if name == "" {
-			name = fmt.Sprintf("%s-sidecar-%d", job.GetName(), i)
-		}
+		name := jobsetutil.SidecarContainerName(job, sidecar, i)
 		if names[name] {
 			return fmt.Errorf("work_unit.executable.jobset.jobs container name %q must be unique within the pod: %w", name, status.ErrInvalidArgument)
 		}

@@ -19,6 +19,7 @@ import (
 	"golang/cmp/cmp"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
 func TestHasCondition(t *testing.T) {
@@ -167,5 +168,28 @@ func TestFindConditionWithType(t *testing.T) {
 				t.Errorf("FindConditionWithType(%v, %q) returned diff (-want +got):\n%s", tc.jobSet, tc.conditionType, diff)
 			}
 		})
+	}
+}
+
+func TestContainerNames(t *testing.T) {
+	job := &esspb.KubernetesJob{
+		Name: "my-job",
+		Spec: &esspb.ExecutableSpec{},
+	}
+	if got := PrimaryContainerName(job); got != "my-job" {
+		t.Errorf("PrimaryContainerName() = %q, want %q", got, "my-job")
+	}
+	job.Spec.Name = "primary"
+	if got := PrimaryContainerName(job); got != "primary" {
+		t.Errorf("PrimaryContainerName() = %q, want %q", got, "primary")
+	}
+
+	sidecar := &esspb.ExecutableSpec{}
+	if got := SidecarContainerName(job, sidecar, 0); got != "my-job-sidecar-0" {
+		t.Errorf("SidecarContainerName() = %q, want %q", got, "my-job-sidecar-0")
+	}
+	sidecar.Name = "sidecar-a"
+	if got := SidecarContainerName(job, sidecar, 0); got != "sidecar-a" {
+		t.Errorf("SidecarContainerName() = %q, want %q", got, "sidecar-a")
 	}
 }

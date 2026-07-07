@@ -35,6 +35,7 @@ compat_go_library(
         "//internal/compat/spanner",
         "//internal/compat/status",
         "//internal/kubernetes/common:constants",
+        "//internal/kubernetes/common:jobsetutil",
         "//internal/logging",
         "//internal/storage",
         "//internal/toollibs/execution_environments",

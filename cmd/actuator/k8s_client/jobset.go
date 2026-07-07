@@ -31,6 +31,7 @@ import (
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/util/wait/wait"
 	"golang/protobuf/v2/proto/proto"
 	constants "xmanager_cloud/kubernetes/common/constants"
+	"xmanager_cloud/kubernetes/common/jobsetutil"
 	"xmanager_cloud/logging/logging"
 	ee "xmanager_cloud/toollibs/execution_environments/executionenvironments"
 	"xmanager_cloud/validator/validator"
@@ -275,14 +276,6 @@ func jobSetToUnstructured(jobSet *jobsetv1alpha2.JobSet) (*unstructured.Unstruct
 	return jobSetUnstructured, nil
 }
 
-// primaryContainerName returns the primary container name for a job, defaulting to the job name if unset.
-func primaryContainerName(job *esspb.KubernetesJob) string {
-	if name := job.GetSpec().GetName(); name != "" {
-		return name
-	}
-	return job.GetName()
-}
-
 func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLabels map[string]string, jobAnnotations map[string]string) jobsetv1alpha2.ReplicatedJob {
 	retryLimit := job.GetRetryLimit()
 
@@ -308,7 +301,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 		activeDeadlineSeconds = proto.Int64(job.GetActiveDeadlineSeconds())
 	}
 
-	primaryName := primaryContainerName(job)
+	primaryName := jobsetutil.PrimaryContainerName(job)
 
 	return jobsetv1alpha2.ReplicatedJob{
 		Name:      job.GetName(),
@@ -343,15 +336,12 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 }
 
 func buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
-	primaryName := primaryContainerName(job)
+	primaryName := jobsetutil.PrimaryContainerName(job)
 	containers := []corev1.Container{
 		buildContainer(primaryName, job.GetSpec()),
 	}
 	for i, sidecar := range job.GetSidecars() {
-		sidecarName := sidecar.GetName()
-		if sidecarName == "" {
-			sidecarName = fmt.Sprintf("%s-sidecar-%d", job.GetName(), i)
-		}
+		sidecarName := jobsetutil.SidecarContainerName(job, sidecar, i)
 		containers = append(containers, buildContainer(sidecarName, sidecar))
 	}
 	return containers
