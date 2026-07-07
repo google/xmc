@@ -566,6 +566,44 @@ func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 											},
 										},
 									},
+									{
+										Name: "secret_ref_env_opt",
+										Source: &esspb.EnvVar_ValueFrom{
+											ValueFrom: &esspb.EnvVarSource{
+												Reference: &esspb.EnvVarSource_SecretKeyRef{
+													SecretKeyRef: &esspb.SecretKeyRef{
+														Name:     "my-secret",
+														Key:      "my-key",
+														Optional: boolPtr(true),
+													},
+												},
+											},
+										},
+									},
+									{
+										Name: "secret_ref_env_req",
+										Source: &esspb.EnvVar_ValueFrom{
+											ValueFrom: &esspb.EnvVarSource{
+												Reference: &esspb.EnvVarSource_SecretKeyRef{
+													SecretKeyRef: &esspb.SecretKeyRef{
+														Name:     "other-secret",
+														Key:      "other-key",
+														Optional: nil,
+													},
+												},
+											},
+										},
+									},
+									{
+										Name: "nil_inner_secret_key_ref_env",
+										Source: &esspb.EnvVar_ValueFrom{
+											ValueFrom: &esspb.EnvVarSource{
+												Reference: &esspb.EnvVarSource_SecretKeyRef{
+													SecretKeyRef: nil,
+												},
+											},
+										},
+									},
 								},
 							},
 							Replicas: 1,
@@ -597,6 +635,30 @@ func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 				FieldRef: &corev1.ObjectFieldSelector{
 					FieldPath:  "status.podIP",
 					APIVersion: "v1",
+				},
+			},
+		},
+		{
+			Name: "secret_ref_env_opt",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "my-secret",
+					},
+					Key:      "my-key",
+					Optional: boolPtr(true),
+				},
+			},
+		},
+		{
+			Name: "secret_ref_env_req",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "other-secret",
+					},
+					Key:      "other-key",
+					Optional: nil,
 				},
 			},
 		},
