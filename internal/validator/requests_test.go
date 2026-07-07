@@ -2020,3 +2020,56 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateExecutableSpec_RFC1123Name(t *testing.T) {
+	validRes := &essmsgpb.ResourceSet{
+		Resources: &essmsgpb.ResourceSet_CpuResources{
+			CpuResources: &essmsgpb.CpuResources{
+				CpuMillicores: 100,
+				MemoryBytes:   1024,
+			},
+		},
+	}
+	tests := []struct {
+		name    string
+		spec    *essmsgpb.ExecutableSpec
+		wantErr bool
+	}{
+		{
+			name: "valid_name",
+			spec: &essmsgpb.ExecutableSpec{
+				Name:        "worker-1",
+				DockerImage: "gcr.io/test",
+				Resources:   validRes,
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid_name_uppercase",
+			spec: &essmsgpb.ExecutableSpec{
+				Name:        "Worker_1",
+				DockerImage: "gcr.io/test",
+				Resources:   validRes,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid_name_too_long",
+			spec: &essmsgpb.ExecutableSpec{
+				Name:        "a1234567890123456789012345678901234567890123456789012345678901234",
+				DockerImage: "gcr.io/test",
+				Resources:   validRes,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateExecutableSpec(tc.spec, "spec")
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateExecutableSpec() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}

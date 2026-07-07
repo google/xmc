@@ -451,6 +451,14 @@ func validateExecutableSpec(spec *essmsgpb.ExecutableSpec, prefix string) error 
 	if spec == nil {
 		return fmt.Errorf("%s cannot be nil: %w", prefix, status.ErrInvalidArgument)
 	}
+	if name := spec.GetName(); name != "" {
+		if len(name) > 63 {
+			return fmt.Errorf("%s.name cannot be longer than 63 characters: %w", prefix, status.ErrInvalidArgument)
+		}
+		if !jobNameRegex.MatchString(name) {
+			return fmt.Errorf("%s.name %q must be a valid DNS label (RFC 1123): %w", prefix, name, status.ErrInvalidArgument)
+		}
+	}
 	if spec.GetDockerImage() == "" {
 		return fmt.Errorf("%s.docker_image cannot be empty: %w", prefix, status.ErrInvalidArgument)
 	}
