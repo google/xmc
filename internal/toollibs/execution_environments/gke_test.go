@@ -850,3 +850,26 @@ func TestInjectOnJobSetCreation_WithSidecars(t *testing.T) {
 		t.Errorf("Sidecar container CPU request mismatch: got %v", containers[1].Resources.Requests[corev1.ResourceCPU])
 	}
 }
+
+func TestAnnotateContainersMismatchError(t *testing.T) {
+	replicatedJob := &jobsetv1alpha2.ReplicatedJob{
+		Template: batchv1.JobTemplateSpec{
+			Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{Name: "c1"}},
+					},
+				},
+			},
+		},
+	}
+	job := &epb.KubernetesJob{
+		Spec: &epb.ExecutableSpec{Name: "c1"},
+		Sidecars: []*epb.ExecutableSpec{
+			{Name: "sidecar1"},
+		},
+	}
+	if err := annotateContainers(replicatedJob, job); err == nil {
+		t.Errorf("expected error for mismatched container count (1) and spec count (2), got nil")
+	}
+}

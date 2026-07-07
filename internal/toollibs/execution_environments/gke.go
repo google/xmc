@@ -319,6 +319,9 @@ func (g *GKE) InjectOnWorkUnitCreation(ctx context.Context, essServer spb.Experi
 func annotateContainers(replicatedJob *jobsetv1alpha2.ReplicatedJob, job *epb.KubernetesJob) error {
 	specs := []*epb.ExecutableSpec{job.Spec}
 	specs = append(specs, job.Sidecars...)
+	if len(replicatedJob.Template.Spec.Template.Spec.Containers) != len(specs) {
+		return fmt.Errorf("number of containers in replicated job (%d) does not match number of specs (%d)", len(replicatedJob.Template.Spec.Template.Spec.Containers), len(specs))
+	}
 	for idx := range replicatedJob.Template.Spec.Template.Spec.Containers {
 		if idx >= len(specs) || specs[idx].GetResources() == nil {
 			continue
