@@ -103,7 +103,7 @@ run_checks() {
 
   # 2. Check Terraform version (>= 1.12.2)
   local tf_version
-  tf_version=$(terraform --version | head -n 1 | cut -d'v' -f2)
+  tf_version=$(terraform --version | sed -n '1p' | cut -d'v' -f2)
   if ! python3 -c '
 import sys, re
 def parse_version(v):

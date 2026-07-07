@@ -33,6 +33,7 @@ vars:
   environment:
   gcp_public_cidrs_access_enabled: false
   authorized_cidr: 0.0.0.0/0
+  deletion_protection: false
   
   # Image Settings
   xid_image:          # Required. Container image for xid service
@@ -123,7 +124,7 @@ deployment_groups:
       databases:
         ess:
           name: experiment-db-$(vars.environment)
-          deletion_protection: false
+          deletion_protection: $(vars.deletion_protection)
           iam_members:
           - role: roles/spanner.databaseUser
             member: "serviceAccount:$(workload_service_account.service_account_email)"
@@ -131,7 +132,7 @@ deployment_groups:
             member: $(log_monitor_service_account.service_account_iam_email)
         xid:
           name: xids-db-$(vars.environment)
-          deletion_protection: false
+          deletion_protection: $(vars.deletion_protection)
           iam_members:
           - role: roles/spanner.databaseUser
             member: "serviceAccount:$(workload_service_account.service_account_email)"
@@ -388,3 +389,4 @@ deployment_groups:
       environment: $(vars.environment)
       image_url: $(vars.log_monitor_image)
       service_account_email: $(log_monitor_service_account.service_account_email)
+      deletion_protection: $(vars.deletion_protection)

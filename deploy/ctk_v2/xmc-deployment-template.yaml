@@ -61,6 +61,9 @@ vars:
   # Toggles public endpoints access on GKE Control Plane
   gcp_public_cidrs_access_enabled: false
 
+  # If true, deletion protection will be enabled on supported resources (databases, Cloud Run)
+  deletion_protection: false
+
   # The physical address range allowed to call the GKE control plane
   authorized_cidr: 0.0.0.0/0
 

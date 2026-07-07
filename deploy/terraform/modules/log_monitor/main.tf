@@ -41,7 +41,7 @@ resource "google_cloud_run_v2_service" "log_monitor" {
   project             = google_project_service.run_api.project
   name                = "xmc-log-monitor-${var.environment}"
   location            = var.region
-  deletion_protection = !var.is_dev_environment
+  deletion_protection = var.deletion_protection
 
   ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
