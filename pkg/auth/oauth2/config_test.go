@@ -157,6 +157,33 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_JWTSecretValidation(t *testing.T) {
+	const longSecret = "this-is-a-sufficiently-long-jwt-secret-value" // >= 32 bytes
+
+	tests := []struct {
+		name      string
+		mockAuth  string
+		jwtSecret string
+		wantErr   bool
+	}{
+		{name: "auth enabled, missing secret", mockAuth: "false", jwtSecret: "", wantErr: true},
+		{name: "auth enabled, secret too short", mockAuth: "false", jwtSecret: "short-secret", wantErr: true},
+		{name: "auth enabled, secret long enough", mockAuth: "false", jwtSecret: longSecret, wantErr: false},
+		{name: "dev mode, short secret allowed", mockAuth: "true", jwtSecret: "short-secret", wantErr: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("MOCK_AUTH", tc.mockAuth)
+			t.Setenv("DISABLE_AUTHENTICATION", "false")
+			t.Setenv("CLIENT_SECRET", "client-secret")
+			t.Setenv("JWT_SECRET", tc.jwtSecret)
+			if _, err := LoadConfig(); (err != nil) != tc.wantErr {
+				t.Fatalf("LoadConfig() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestParseCommaSpaceSeparated(t *testing.T) {
 	tests := []struct {
 		name     string

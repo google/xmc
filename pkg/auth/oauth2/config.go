@@ -21,6 +21,17 @@ import (
 	"strings"
 )
 
+// devOnlyJWTSecret is a well-known, non-secret value used to sign session tokens
+// only in local/dev mode (MOCK_AUTH or DISABLE_AUTHENTICATION). It must never be
+// used when authentication is enabled: when JWT_SECRET is unset in that case,
+// LoadConfig fails fast instead of silently signing tokens with this known value.
+const devOnlyJWTSecret = "default-jwt-secret-for-local-dev-only-12345"
+
+// minJWTSecretLen is the minimum length (bytes) required for JWT_SECRET when
+// authentication is enabled, so operators cannot configure a weak, easily
+// brute-forced HS256 signing key. 32 bytes matches the HS256 output size.
+const minJWTSecretLen = 32
+
 // Config holds the configuration properties for OAuth2 and the authorization checks.
 type Config struct {
 	Port                  string
@@ -50,6 +61,7 @@ type Config struct {
 func LoadConfig() (*Config, error) {
 	port := getEnv("PORT", "8080")
 	mockAuth := getEnvBool("MOCK_AUTH", false)
+	disableAuth := getEnvBool("DISABLE_AUTHENTICATION", false)
 
 	allowedDomains := parseCommaSpaceSeparated(getEnv("ALLOWED_DOMAINS", ""))
 	allowedEmails := parseCommaSpaceSeparated(getEnv("ALLOWED_EMAILS", ""))
@@ -59,9 +71,19 @@ func LoadConfig() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load CLIENT_SECRET: %w", err)
 	}
-	jwtSecret, err := getEnvOrFile("JWT_SECRET", "default-jwt-secret-for-local-dev-only-12345")
+	jwtSecret, err := getEnvOrFile("JWT_SECRET", "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to load JWT_SECRET: %w", err)
+	}
+	if jwtSecret == "" {
+		if mockAuth || disableAuth {
+			// Local/dev only: no real secret configured, but auth is off anyway.
+			jwtSecret = devOnlyJWTSecret
+		} else {
+			return nil, fmt.Errorf("JWT_SECRET must be set (via JWT_SECRET or JWT_SECRET_FILE) when authentication is enabled")
+		}
+	} else if !mockAuth && !disableAuth && len(jwtSecret) < minJWTSecretLen {
+		return nil, fmt.Errorf("JWT_SECRET must be at least %d bytes when authentication is enabled", minJWTSecretLen)
 	}
 
 	frontendURL := getEnv("FRONTEND_URL", "http://localhost:8080")
@@ -84,7 +106,7 @@ func LoadConfig() (*Config, error) {
 	return &Config{
 		Port:                  port,
 		MockAuth:              mockAuth,
-		DisableAuthentication: getEnvBool("DISABLE_AUTHENTICATION", false),
+		DisableAuthentication: disableAuth,
 		AllowedDomains:        allowedDomains,
 		AllowedEmails:         allowedEmails,
 		AllowedOrigins:        allowedOrigins,
