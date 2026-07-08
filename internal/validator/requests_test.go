@@ -1519,6 +1519,96 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 			},
 			wantErr: status.ErrInvalidArgument,
 		},
+		{
+			name: "valid_job_with_sidecars",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Name:        "main-container",
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+												CpuMillicores: 1,
+												MemoryBytes:   1,
+											}},
+										},
+									},
+									Sidecars: []*essmsgpb.ExecutableSpec{
+										{
+											Name:        "sidecar-container",
+											DockerImage: "sidecar-image",
+											Resources: &essmsgpb.ResourceSet{
+												Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+													CpuMillicores: 1,
+													MemoryBytes:   1,
+												}},
+											},
+										},
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "invalid_sidecar_duplicate_container_name",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Name:        "same-name",
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+												CpuMillicores: 1,
+												MemoryBytes:   1,
+											}},
+										},
+									},
+									Sidecars: []*essmsgpb.ExecutableSpec{
+										{
+											Name:        "same-name",
+											DockerImage: "sidecar-image",
+											Resources: &essmsgpb.ResourceSet{
+												Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+													CpuMillicores: 1,
+													MemoryBytes:   1,
+												}},
+											},
+										},
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1926,6 +2016,99 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 			err := ValidateCreateArtifactRequest(tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ValidateCreateArtifactRequest(%v) returned unexpected error: %v, want %v", tc.req, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateExecutableSpec_RFC1123Name(t *testing.T) {
+	validRes := &essmsgpb.ResourceSet{
+		Resources: &essmsgpb.ResourceSet_CpuResources{
+			CpuResources: &essmsgpb.CpuResources{
+				CpuMillicores: 100,
+				MemoryBytes:   1024,
+			},
+		},
+	}
+	tests := []struct {
+		name    string
+		spec    *essmsgpb.ExecutableSpec
+		wantErr bool
+	}{
+		{
+			name: "valid_name",
+			spec: &essmsgpb.ExecutableSpec{
+				Name:        "worker-1",
+				DockerImage: "gcr.io/test",
+				Resources:   validRes,
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid_name_uppercase",
+			spec: &essmsgpb.ExecutableSpec{
+				Name:        "Worker_1",
+				DockerImage: "gcr.io/test",
+				Resources:   validRes,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid_name_too_long",
+			spec: &essmsgpb.ExecutableSpec{
+				Name:        "a1234567890123456789012345678901234567890123456789012345678901234",
+				DockerImage: "gcr.io/test",
+				Resources:   validRes,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateExecutableSpec(tc.spec, "spec")
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateExecutableSpec() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateContainerNamesUnique_ResolvedSidecarName(t *testing.T) {
+	tests := []struct {
+		name    string
+		job     *essmsgpb.KubernetesJob
+		wantErr bool
+	}{
+		{
+			name: "valid_resolved_sidecar_name",
+			job: &essmsgpb.KubernetesJob{
+				Name: "worker",
+				Spec: &essmsgpb.ExecutableSpec{Name: "main"},
+				Sidecars: []*essmsgpb.ExecutableSpec{
+					{},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "resolved_default_sidecar_name_too_long",
+			job: &essmsgpb.KubernetesJob{
+				Name: "a1234567890123456789012345678901234567890123456789012345678",
+				Spec: &essmsgpb.ExecutableSpec{Name: "main"},
+				Sidecars: []*essmsgpb.ExecutableSpec{
+					{},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateContainerNamesUnique(tc.job)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateContainerNamesUnique() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}

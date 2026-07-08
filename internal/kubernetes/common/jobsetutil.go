@@ -15,9 +15,29 @@
 package jobsetutil
 
 import (
+	"fmt"
+
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
+
+// PrimaryContainerName returns the primary container name for a job, defaulting to the job name if unset.
+func PrimaryContainerName(job *esspb.KubernetesJob) string {
+	if name := job.GetSpec().GetName(); name != "" {
+		return name
+	}
+	return job.GetName()
+}
+
+// SidecarContainerName returns the container name for a sidecar at the given index,
+// defaulting to "<jobName>-sidecar-<i>" if unset.
+func SidecarContainerName(job *esspb.KubernetesJob, sidecar *esspb.ExecutableSpec, idx int) string {
+	if name := sidecar.GetName(); name != "" {
+		return name
+	}
+	return fmt.Sprintf("%s-sidecar-%d", job.GetName(), idx)
+}
 
 // HasCondition checks if a JobSet has a condition of the given type and status.
 func HasCondition(jobSet *v1alpha2.JobSet, conditionType v1alpha2.JobSetConditionType, status metav1.ConditionStatus) bool {

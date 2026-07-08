@@ -22,6 +22,7 @@ import (
 	"task/go/status"
 	essapipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/kubernetes/common/jobsetutil"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmessagespb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -324,38 +325,17 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 		}
 		jobNames[job.Name] = true
 
-		if job.Spec.DockerImage == "" {
-			return fmt.Errorf("work_unit.executable.jobset.jobs.spec.docker_image cannot be empty: %w", status.ErrInvalidArgument)
+		if err := validateExecutableSpec(job.Spec, "work_unit.executable.jobset.jobs.spec"); err != nil {
+			return err
 		}
-		if job.Spec.Resources == nil {
-			return fmt.Errorf("work_unit.executable.jobset.jobs.spec.resources cannot be nil: %w", status.ErrInvalidArgument)
-		}
-		if job.Spec.Resources.GetResources() == nil {
-			return fmt.Errorf("work_unit.executable.jobset.jobs.spec.resources.resources cannot be nil: %w", status.ErrInvalidArgument)
-		}
-		if job.Spec.Resources.GetCpuResources() != nil {
-			if job.Spec.Resources.GetCpuResources().GetCpuMillicores() < 1 {
-				return fmt.Errorf("work_unit.executable.jobset.jobs.spec.resources.cpu_resources.cpu_millicores must be greater than 0: %w", status.ErrInvalidArgument)
-			}
-			if job.Spec.Resources.GetCpuResources().GetMemoryBytes() < 1 {
-				return fmt.Errorf("work_unit.executable.jobset.jobs.spec.resources.cpu_resources.memory_bytes must be greater than 0: %w", status.ErrInvalidArgument)
+		for i, sidecar := range job.GetSidecars() {
+			prefix := fmt.Sprintf("work_unit.executable.jobset.jobs.sidecars[%d]", i)
+			if err := validateExecutableSpec(sidecar, prefix); err != nil {
+				return err
 			}
 		}
-		if job.Spec.Resources.GetGpuResources() != nil {
-			if job.Spec.Resources.GetGpuResources().GetType() == "" {
-				return fmt.Errorf("work_unit.executable.jobset.jobs.spec.resources.gpu_resources.type cannot be empty: %w", status.ErrInvalidArgument)
-			}
-			if job.Spec.Resources.GetGpuResources().GetCount() < 1 {
-				return fmt.Errorf("work_unit.executable.jobset.jobs.spec.resources.gpu_resources.count must be greater than 0: %w", status.ErrInvalidArgument)
-			}
-		}
-		if job.Spec.Resources.GetTpuResources() != nil {
-			if job.Spec.Resources.GetTpuResources().GetType() == "" {
-				return fmt.Errorf("work_unit.executable.jobset.jobs.spec.resources.tpu_resources.type cannot be empty: %w", status.ErrInvalidArgument)
-			}
-			if job.Spec.Resources.GetTpuResources().GetTopology() == "" {
-				return fmt.Errorf("work_unit.executable.jobset.jobs.spec.resources.tpu_resources.topology cannot be empty: %w", status.ErrInvalidArgument)
-			}
+		if err := validateContainerNamesUnique(job); err != nil {
+			return err
 		}
 
 		if sa := job.GetServiceAccount(); sa != "" {
@@ -464,6 +444,76 @@ func validatePayload(payload *essmsgpb.ArtifactPayload) error {
 		if p.Url.GetUrl() == "" {
 			return fmt.Errorf("artifact.payload.url.url must be set: %w", status.ErrInvalidArgument)
 		}
+	}
+	return nil
+}
+
+func validateExecutableSpec(spec *essmsgpb.ExecutableSpec, prefix string) error {
+	if spec == nil {
+		return fmt.Errorf("%s cannot be nil: %w", prefix, status.ErrInvalidArgument)
+	}
+	if name := spec.GetName(); name != "" {
+		if len(name) > 63 {
+			return fmt.Errorf("%s.name cannot be longer than 63 characters: %w", prefix, status.ErrInvalidArgument)
+		}
+		if !jobNameRegex.MatchString(name) {
+			return fmt.Errorf("%s.name %q must be a valid DNS label (RFC 1123): %w", prefix, name, status.ErrInvalidArgument)
+		}
+	}
+	if spec.GetDockerImage() == "" {
+		return fmt.Errorf("%s.docker_image cannot be empty: %w", prefix, status.ErrInvalidArgument)
+	}
+	if spec.GetResources() == nil || spec.GetResources().GetResources() == nil {
+		return fmt.Errorf("%s.resources.resources cannot be nil: %w", prefix, status.ErrInvalidArgument)
+	}
+	return validateResourceSet(spec.GetResources(), prefix+".resources")
+}
+
+func validateResourceSet(res *essmsgpb.ResourceSet, prefix string) error {
+	if cpu := res.GetCpuResources(); cpu != nil {
+		if cpu.GetCpuMillicores() < 1 {
+			return fmt.Errorf("%s.cpu_resources.cpu_millicores must be greater than 0: %w", prefix, status.ErrInvalidArgument)
+		}
+		if cpu.GetMemoryBytes() < 1 {
+			return fmt.Errorf("%s.cpu_resources.memory_bytes must be greater than 0: %w", prefix, status.ErrInvalidArgument)
+		}
+	}
+	if gpu := res.GetGpuResources(); gpu != nil {
+		if gpu.GetType() == "" {
+			return fmt.Errorf("%s.gpu_resources.type cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		}
+		if gpu.GetCount() < 1 {
+			return fmt.Errorf("%s.gpu_resources.count must be greater than 0: %w", prefix, status.ErrInvalidArgument)
+		}
+	}
+	if tpu := res.GetTpuResources(); tpu != nil {
+		if tpu.GetType() == "" {
+			return fmt.Errorf("%s.tpu_resources.type cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		}
+		if tpu.GetTopology() == "" {
+			return fmt.Errorf("%s.tpu_resources.topology cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		}
+	}
+	return nil
+}
+
+func validateContainerNamesUnique(job *essmsgpb.KubernetesJob) error {
+	names := make(map[string]bool)
+	primaryName := jobsetutil.PrimaryContainerName(job)
+	names[primaryName] = true
+
+	for i, sidecar := range job.GetSidecars() {
+		name := jobsetutil.SidecarContainerName(job, sidecar, i)
+		if len(name) > 63 {
+			return fmt.Errorf("work_unit.executable.jobset.jobs sidecar container name %q cannot be longer than 63 characters: %w", name, status.ErrInvalidArgument)
+		}
+		if !jobNameRegex.MatchString(name) {
+			return fmt.Errorf("work_unit.executable.jobset.jobs sidecar container name %q must be a valid DNS label (RFC 1123): %w", name, status.ErrInvalidArgument)
+		}
+		if names[name] {
+			return fmt.Errorf("work_unit.executable.jobset.jobs container name %q must be unique within the pod: %w", name, status.ErrInvalidArgument)
+		}
+		names[name] = true
 	}
 	return nil
 }

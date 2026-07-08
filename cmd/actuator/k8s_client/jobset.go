@@ -31,6 +31,7 @@ import (
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/util/wait/wait"
 	"golang/protobuf/v2/proto/proto"
 	constants "xmanager_cloud/kubernetes/common/constants"
+	"xmanager_cloud/kubernetes/common/jobsetutil"
 	"xmanager_cloud/logging/logging"
 	ee "xmanager_cloud/toollibs/execution_environments/executionenvironments"
 	"xmanager_cloud/validator/validator"
@@ -276,15 +277,6 @@ func jobSetToUnstructured(jobSet *jobsetv1alpha2.JobSet) (*unstructured.Unstruct
 }
 
 func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLabels map[string]string, jobAnnotations map[string]string) jobsetv1alpha2.ReplicatedJob {
-	envVars := generateEnvVars(job)
-
-	var args []string
-	for k, v := range job.GetSpec().GetArgs() {
-		args = append(args, fmt.Sprintf("--%s=%s", k, v))
-	}
-
-	command := job.GetSpec().GetCommand()
-
 	retryLimit := job.GetRetryLimit()
 
 	// Merge job annotations with default annotations.
@@ -309,6 +301,8 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 		activeDeadlineSeconds = proto.Int64(job.GetActiveDeadlineSeconds())
 	}
 
+	primaryName := jobsetutil.PrimaryContainerName(job)
+
 	return jobsetv1alpha2.ReplicatedJob{
 		Name:      job.GetName(),
 		Replicas:  job.GetReplicas(),
@@ -320,7 +314,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 			},
 			Spec: batchv1.JobSpec{
 				BackoffLimit:            &retryLimit,
-				PodFailurePolicy:        podFailurePolicy(job.GetName()),
+				PodFailurePolicy:        podFailurePolicy(primaryName),
 				TTLSecondsAfterFinished: proto.Int32(defaultTTLSeconds),
 				ActiveDeadlineSeconds:   activeDeadlineSeconds,
 				Template: corev1.PodTemplateSpec{
@@ -330,28 +324,46 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 					},
 					Spec: corev1.PodSpec{
 						ServiceAccountName: job.GetServiceAccount(),
-						Containers: []corev1.Container{
-							{
-								Name:                     job.GetName(),
-								Image:                    job.GetSpec().GetDockerImage(),
-								ImagePullPolicy:          corev1.PullAlways,
-								TerminationMessagePath:   "/dev/termination-log",
-								TerminationMessagePolicy: corev1.TerminationMessageReadFile,
-								Command:                  command,
-								Args:                     args,
-								Env:                      envVars,
-								SecurityContext:          defaultSecurityContext(),
-								VolumeMounts:             defaultVolumeMounts(),
-								// Resources should be injected by the execution environment.
-							},
-						},
-						RestartPolicy:   corev1.RestartPolicyNever,
-						SecurityContext: defaultPodSecurityContext(),
-						Volumes:         defaultVolumes(),
+						Containers:         buildContainersForJob(job),
+						RestartPolicy:      corev1.RestartPolicyNever,
+						SecurityContext:    defaultPodSecurityContext(),
+						Volumes:            defaultVolumes(),
 					},
 				},
 			},
 		},
+	}
+}
+
+func buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
+	primaryName := jobsetutil.PrimaryContainerName(job)
+	containers := []corev1.Container{
+		buildContainer(primaryName, job.GetSpec()),
+	}
+	for i, sidecar := range job.GetSidecars() {
+		sidecarName := jobsetutil.SidecarContainerName(job, sidecar, i)
+		containers = append(containers, buildContainer(sidecarName, sidecar))
+	}
+	return containers
+}
+
+func buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Container {
+	envVars := generateEnvVarsForSpec(spec)
+	var args []string
+	for k, v := range spec.GetArgs() {
+		args = append(args, fmt.Sprintf("--%s=%s", k, v))
+	}
+	return corev1.Container{
+		Name:                     containerName,
+		Image:                    spec.GetDockerImage(),
+		ImagePullPolicy:          corev1.PullAlways,
+		TerminationMessagePath:   "/dev/termination-log",
+		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
+		Command:                  spec.GetCommand(),
+		Args:                     args,
+		Env:                      envVars,
+		SecurityContext:          defaultSecurityContext(),
+		VolumeMounts:             defaultVolumeMounts(),
 	}
 }
 
@@ -520,11 +532,15 @@ func parseEnvVarSource(src *esspb.EnvVarSource) *corev1.EnvVarSource {
 }
 
 func generateEnvVars(job *esspb.KubernetesJob) []corev1.EnvVar {
+	return generateEnvVarsForSpec(job.GetSpec())
+}
+
+func generateEnvVarsForSpec(spec *esspb.ExecutableSpec) []corev1.EnvVar {
 	var envVars []corev1.EnvVar
-	for k, v := range job.GetSpec().GetEnvVars() {
+	for k, v := range spec.GetEnvVars() {
 		envVars = append(envVars, corev1.EnvVar{Name: k, Value: v})
 	}
-	for _, ev := range job.GetSpec().GetEnv() {
+	for _, ev := range spec.GetEnv() {
 		if ev == nil || ev.Name == "" {
 			continue
 		}

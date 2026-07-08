@@ -14,6 +14,7 @@
 package executionenvironments
 
 import (
+	"context"
 	"testing"
 
 	"golang/cmp/cmp"
@@ -770,4 +771,105 @@ func TestTPUNodesPerSlice(t *testing.T) {
 
 func completionModePtr(m batchv1.CompletionMode) *batchv1.CompletionMode {
 	return &m
+}
+
+func TestInjectOnJobSetCreation_WithSidecars(t *testing.T) {
+	gke := &GKE{}
+	ctx := context.Background()
+	workUnit := &epb.WorkUnit{
+		Executable: &epb.Executable{
+			Type: &epb.Executable_Jobset{
+				Jobset: &epb.JobSetExecutable{
+					Jobs: []*epb.KubernetesJob{
+						{
+							Name: "test-job",
+							Spec: &epb.ExecutableSpec{
+								Resources: &epb.ResourceSet{
+									Resources: &epb.ResourceSet_CpuResources{
+										CpuResources: &epb.CpuResources{
+											CpuMillicores: 1000,
+											MemoryBytes:   1024,
+										},
+									},
+								},
+							},
+							Sidecars: []*epb.ExecutableSpec{
+								{
+									Resources: &epb.ResourceSet{
+										Resources: &epb.ResourceSet_CpuResources{
+											CpuResources: &epb.CpuResources{
+												CpuMillicores: 200,
+												MemoryBytes:   256,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	jobSet := &jobsetv1alpha2.JobSet{
+		Spec: jobsetv1alpha2.JobSetSpec{
+			ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+				{
+					Name: "test-job",
+					Template: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers: []corev1.Container{
+										{Name: "primary"},
+										{Name: "sidecar"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := gke.InjectOnJobSetCreation(ctx, workUnit, jobSet)
+	if err != nil {
+		t.Fatalf("InjectOnJobSetCreation() error = %v", err)
+	}
+
+	containers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers
+	if len(containers) != 2 {
+		t.Fatalf("Expected 2 containers, got %d", len(containers))
+	}
+	if containers[0].Resources.Requests[corev1.ResourceCPU] != resource.MustParse("1000m") {
+		t.Errorf("Primary container CPU request mismatch: got %v", containers[0].Resources.Requests[corev1.ResourceCPU])
+	}
+	if containers[1].Resources.Requests[corev1.ResourceCPU] != resource.MustParse("200m") {
+		t.Errorf("Sidecar container CPU request mismatch: got %v", containers[1].Resources.Requests[corev1.ResourceCPU])
+	}
+}
+
+func TestAnnotateContainersMismatchError(t *testing.T) {
+	replicatedJob := &jobsetv1alpha2.ReplicatedJob{
+		Template: batchv1.JobTemplateSpec{
+			Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{Name: "c1"}},
+					},
+				},
+			},
+		},
+	}
+	job := &epb.KubernetesJob{
+		Spec: &epb.ExecutableSpec{Name: "c1"},
+		Sidecars: []*epb.ExecutableSpec{
+			{Name: "sidecar1"},
+		},
+	}
+	if err := annotateContainers(replicatedJob, job); err == nil {
+		t.Errorf("expected error for mismatched container count (1) and spec count (2), got nil")
+	}
 }
