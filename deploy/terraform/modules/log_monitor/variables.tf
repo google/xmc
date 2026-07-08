@@ -61,8 +61,8 @@ variable "environment" {
   description = "The environment name."
 }
 
-variable "is_dev_environment" {
-  description = "If true, deletion protection will be disabled on created resources."
+variable "deletion_protection" {
+  description = "If true, deletion protection will be enabled on created resources."
   type        = bool
   default     = false
 }

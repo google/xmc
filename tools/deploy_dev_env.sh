@@ -67,7 +67,7 @@ get_config_val() {
   local val
 
   # Read value using simple grep + cut + sed pipeline
-  val=$(grep -E "^[[:space:]]*${key}:" "$CONFIG_PATH" | head -n 1 | cut -d':' -f2- | sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+  val=$(grep -E "^[[:space:]]*${key}:" "$CONFIG_PATH" | head -n 1 | cut -d':' -f2- | sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//") || true
 
   if [[ -z "$val" ]]; then
     error_exit "Required configuration field '$key' is missing from '$CONFIG_PATH'."
@@ -103,7 +103,7 @@ run_checks() {
 
   # 2. Check Terraform version (>= 1.12.2)
   local tf_version
-  tf_version=$(terraform --version | head -n 1 | cut -d'v' -f2)
+  tf_version=$(terraform version -json | python3 -c 'import sys, json; print(json.load(sys.stdin)["terraform_version"])')
   if ! python3 -c '
 import sys, re
 def parse_version(v):
@@ -376,9 +376,6 @@ XMC_REGION=$(get_config_val "region" "^[a-z0-9-]+$")
 XMC_DOMAIN_NAME=$(get_config_val "domain_name" "^[a-zA-Z0-9.-]+$")
 export XMC_ACR_TARGET=$(get_config_val "xmc_acr_target" "^[a-zA-Z0-9./:-]+$")
 
-# Run validations
-run_checks
-
 # Trap custom errors to show which line/command crashed
 on_error() {
   local parent_lineno="$1"
@@ -395,6 +392,9 @@ on_error() {
   exit 1
 }
 trap 'on_error ${LINENO} $?' ERR
+
+# Run validations
+run_checks
 
 # Validate step name if provided
 if [[ -n "$START_STEP" || -n "$ONLY_STEP" ]]; then
