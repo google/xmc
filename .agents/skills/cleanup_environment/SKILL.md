@@ -15,7 +15,7 @@ This skill guides you through destroying an XManager on Cloud (XMC) environment 
 Before starting the teardown, verify you are operating on the correct environment:
 
 1.  **Context Check & Spanner Warning**: 
-    *   **Always explicitly confirm** with the user before starting. Ask the user to confirm: *"Are you sure you want to clean up the environment '<environment_name>'? **This will permanently delete the GKE cluster and the Cloud Spanner instance, including all databases and all backups.**"*
+    *   **Always explicitly confirm** with the user before starting. Use the `ask_question` tool to ask the user to confirm: *"Are you sure you want to clean up the environment '<environment_name>'? **This will permanently delete the GKE cluster and the Cloud Spanner instance, including all databases and all backups.**"*
 2.  **Formulate & Present a Cleanup Plan**:
     *   Check for the deployment directory in the current working directory under `./ctk-out/` (e.g., `./ctk-out/my-dev`).
         > [!IMPORTANT]
@@ -26,7 +26,7 @@ Before starting the teardown, verify you are operating on the correct environmen
         *   **GKE Cluster**: The GKE cluster and all running applications.
         *   **VPC Network**: VPC network, subnetworks, routers, and static IPs.
         *   **Local Config / Deployment Directory** (e.g., `ctk-out/<deployment_name>` and Kubeconfig contexts)
-    *   Ask for explicit user approval on this plan before executing any destructive commands.
+    *   Ask for explicit user approval on this plan using the `ask_question` tool before executing any destructive commands.
 3.  **Verify Cluster Connection** (if cloud cleanup is needed): Run `kubectl get nodes` to ensure you are targeting the correct active cluster.
 4.  **Identify GCP Project** (if cloud cleanup is needed): Open the compiled configuration file at `ctk-out/<deployment_name>/primary/terraform.tfvars` to identify the target `project_id`.
 5.  **Check Deletion Protection** (if cloud cleanup is needed):
