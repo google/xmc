@@ -74,7 +74,12 @@ The automated deployment script (`deploy_dev_env.sh`) creates Cloud DNS A record
     *   If they are not found in the deployment context or config, **you MUST stop and ask the user** to provide:
         *   **DNS Project ID** (the GCP project hosting the DNS zone).
         *   **DNS Managed Zone Name** (the name of the Cloud DNS managed zone).
-2.  **Delete the records**:
+2.  **Inspect active records** to find the exact ones to delete:
+    ```bash
+    gcloud dns record-sets list --zone=<dns_zone_name> --project=<dns_project_id>
+    ```
+    *(Note: If no DNS records matching the environment are found in the list, skip the delete commands below and inform the user that the DNS records were not found.)*
+3.  **Delete the records** found that are related to the environment we are cleaning up:
     ```bash
     gcloud dns record-sets delete <environment>.<domain_name>. --type=A --zone=<dns_zone_name> --project=<dns_project_id> --quiet
     gcloud dns record-sets delete api.<environment>.<domain_name>. --type=A --zone=<dns_zone_name> --project=<dns_project_id> --quiet
@@ -113,7 +118,7 @@ If the destroy gets stuck on the `xmc_app` group (often due to Helm release dele
 If the destroy fails because GKE node pools are stuck deleting (which prevents subnetwork deletion):
 1.  **Force delete the GKE cluster** manually:
     ```bash
-    gcloud container clusters delete xmc-<deployment_name>-<environment> --region=<region> --project=<project_id> --quiet
+    gcloud container clusters delete xmc-<deployment_name>-<environment> --location=<location> --project=<project_id> --quiet
     ```
 2.  **Retry destroy** skipping both `xmc_app` and `kubernetes_prereqs` (since the cluster is already gone):
     ```bash
