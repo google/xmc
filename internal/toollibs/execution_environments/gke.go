@@ -316,13 +316,11 @@ func (g *GKE) InjectOnWorkUnitCreation(ctx context.Context, essServer spb.Experi
 	return workUnit, nil
 }
 
-func annotateContainers(replicatedJob *jobsetv1alpha2.ReplicatedJob, job *epb.KubernetesJob) error {
-	specs := []*epb.ExecutableSpec{job.Spec}
-	specs = append(specs, job.Sidecars...)
-	if len(replicatedJob.Template.Spec.Template.Spec.Containers) != len(specs) {
-		return fmt.Errorf("number of containers in replicated job (%d) does not match number of specs (%d)", len(replicatedJob.Template.Spec.Template.Spec.Containers), len(specs))
+func annotateContainerList(containers []corev1.Container, specs []*epb.ExecutableSpec) error {
+	if len(containers) != len(specs) {
+		return fmt.Errorf("number of containers in replicated job (%d) does not match number of specs (%d)", len(containers), len(specs))
 	}
-	for idx := range replicatedJob.Template.Spec.Template.Spec.Containers {
+	for idx := range containers {
 		if idx >= len(specs) || specs[idx].GetResources() == nil {
 			continue
 		}
@@ -330,14 +328,25 @@ func annotateContainers(replicatedJob *jobsetv1alpha2.ReplicatedJob, job *epb.Ku
 		if err != nil {
 			return err
 		}
-		replicatedJob.Template.Spec.Template.Spec.Containers[idx].Resources = reqs
+		containers[idx].Resources = reqs
 		if specs[idx].GetResources().GetTpuResources() != nil {
-			container := &replicatedJob.Template.Spec.Template.Spec.Containers[idx]
-			container.Ports = append(container.Ports,
+			containers[idx].Ports = append(containers[idx].Ports,
 				corev1.ContainerPort{ContainerPort: tpuICIPort},
 				corev1.ContainerPort{ContainerPort: tpuMetricsPort},
 			)
 		}
+	}
+	return nil
+}
+
+func annotateContainers(replicatedJob *jobsetv1alpha2.ReplicatedJob, job *epb.KubernetesJob) error {
+	specs := []*epb.ExecutableSpec{job.Spec}
+	specs = append(specs, job.Sidecars...)
+	if err := annotateContainerList(replicatedJob.Template.Spec.Template.Spec.Containers, specs); err != nil {
+		return err
+	}
+	if err := annotateContainerList(replicatedJob.Template.Spec.Template.Spec.InitContainers, job.InitContainers); err != nil {
+		return err
 	}
 	return nil
 }

@@ -39,6 +39,15 @@ func SidecarContainerName(job *esspb.KubernetesJob, sidecar *esspb.ExecutableSpe
 	return fmt.Sprintf("%s-sidecar-%d", job.GetName(), idx)
 }
 
+// InitContainerName returns the container name for an init container at the given index,
+// defaulting to "<jobName>-init-<i>" if unset.
+func InitContainerName(job *esspb.KubernetesJob, initContainer *esspb.ExecutableSpec, idx int) string {
+	if name := initContainer.GetName(); name != "" {
+		return name
+	}
+	return fmt.Sprintf("%s-init-%d", job.GetName(), idx)
+}
+
 // HasCondition checks if a JobSet has a condition of the given type and status.
 func HasCondition(jobSet *v1alpha2.JobSet, conditionType v1alpha2.JobSetConditionType, status metav1.ConditionStatus) bool {
 	for _, condition := range jobSet.Status.Conditions {

@@ -334,6 +334,12 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 				return err
 			}
 		}
+		for i, initContainer := range job.GetInitContainers() {
+			prefix := fmt.Sprintf("work_unit.executable.jobset.jobs.init_containers[%d]", i)
+			if err := validateExecutableSpec(initContainer, prefix); err != nil {
+				return err
+			}
+		}
 		if err := validateContainerNamesUnique(job); err != nil {
 			return err
 		}
@@ -497,23 +503,35 @@ func validateResourceSet(res *essmsgpb.ResourceSet, prefix string) error {
 	return nil
 }
 
+func validateContainerName(names map[string]bool, name, containerType string) error {
+	if len(name) > 63 {
+		return fmt.Errorf("work_unit.executable.jobset.jobs %s container name %q cannot be longer than 63 characters: %w", containerType, name, status.ErrInvalidArgument)
+	}
+	if !jobNameRegex.MatchString(name) {
+		return fmt.Errorf("work_unit.executable.jobset.jobs %s container name %q must be a valid DNS label (RFC 1123): %w", containerType, name, status.ErrInvalidArgument)
+	}
+	if names[name] {
+		return fmt.Errorf("work_unit.executable.jobset.jobs container name %q must be unique within the pod: %w", name, status.ErrInvalidArgument)
+	}
+	names[name] = true
+	return nil
+}
+
 func validateContainerNamesUnique(job *essmsgpb.KubernetesJob) error {
 	names := make(map[string]bool)
-	primaryName := jobsetutil.PrimaryContainerName(job)
-	names[primaryName] = true
+	names[jobsetutil.PrimaryContainerName(job)] = true
 
 	for i, sidecar := range job.GetSidecars() {
 		name := jobsetutil.SidecarContainerName(job, sidecar, i)
-		if len(name) > 63 {
-			return fmt.Errorf("work_unit.executable.jobset.jobs sidecar container name %q cannot be longer than 63 characters: %w", name, status.ErrInvalidArgument)
+		if err := validateContainerName(names, name, "sidecar"); err != nil {
+			return err
 		}
-		if !jobNameRegex.MatchString(name) {
-			return fmt.Errorf("work_unit.executable.jobset.jobs sidecar container name %q must be a valid DNS label (RFC 1123): %w", name, status.ErrInvalidArgument)
+	}
+	for i, initContainer := range job.GetInitContainers() {
+		name := jobsetutil.InitContainerName(job, initContainer, i)
+		if err := validateContainerName(names, name, "init"); err != nil {
+			return err
 		}
-		if names[name] {
-			return fmt.Errorf("work_unit.executable.jobset.jobs container name %q must be unique within the pod: %w", name, status.ErrInvalidArgument)
-		}
-		names[name] = true
 	}
 	return nil
 }

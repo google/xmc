@@ -2008,3 +2008,39 @@ func TestConstructJobSet_WithSidecars(t *testing.T) {
 		t.Errorf("Sidecar image mismatch: got %q, want %q", containers[1].Image, "sidecar-image:v1")
 	}
 }
+
+func TestConstructJobSet_WithInitContainers(t *testing.T) {
+	ctx, client, _ := setupTestClient(true, &alwaysPassingPreconditionsValidator{})
+	workUnit := createTestWorkUnit("test-namespace")
+	workUnit.Executable.GetJobset().Jobs[0].InitContainers = []*esspb.ExecutableSpec{
+		{
+			Name:        "init-1",
+			DockerImage: "init-image:v1",
+			Command:     []string{"/bin/init"},
+			Resources: &esspb.ResourceSet{
+				Resources: &esspb.ResourceSet_CpuResources{
+					CpuResources: &esspb.CpuResources{
+						CpuMillicores: 50,
+						MemoryBytes:   512,
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	initContainers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.InitContainers
+	if len(initContainers) != 1 {
+		t.Fatalf("Expected 1 init container, got %d", len(initContainers))
+	}
+	if initContainers[0].Name != "init-1" {
+		t.Errorf("InitContainer name mismatch: got %q, want %q", initContainers[0].Name, "init-1")
+	}
+	if initContainers[0].Image != "init-image:v1" {
+		t.Errorf("InitContainer image mismatch: got %q, want %q", initContainers[0].Image, "init-image:v1")
+	}
+}

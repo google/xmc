@@ -192,4 +192,13 @@ func TestContainerNames(t *testing.T) {
 	if got := SidecarContainerName(job, sidecar, 0); got != "sidecar-a" {
 		t.Errorf("SidecarContainerName() = %q, want %q", got, "sidecar-a")
 	}
+
+	initContainer := &esspb.ExecutableSpec{}
+	if got := InitContainerName(job, initContainer, 0); got != "my-job-init-0" {
+		t.Errorf("InitContainerName() = %q, want %q", got, "my-job-init-0")
+	}
+	initContainer.Name = "init-a"
+	if got := InitContainerName(job, initContainer, 0); got != "init-a" {
+		t.Errorf("InitContainerName() = %q, want %q", got, "init-a")
+	}
 }

@@ -851,6 +851,78 @@ func TestInjectOnJobSetCreation_WithSidecars(t *testing.T) {
 	}
 }
 
+func TestInjectOnJobSetCreation_WithInitContainers(t *testing.T) {
+	g := &GKE{}
+	workUnit := &epb.WorkUnit{
+		Executable: &epb.Executable{
+			Type: &epb.Executable_Jobset{
+				Jobset: &epb.JobSetExecutable{
+					Jobs: []*epb.KubernetesJob{
+						{
+							Name: "job-1",
+							Spec: &epb.ExecutableSpec{
+								Resources: &epb.ResourceSet{
+									Resources: &epb.ResourceSet_CpuResources{
+										CpuResources: &epb.CpuResources{
+											CpuMillicores: 1000,
+											MemoryBytes:   1024,
+										},
+									},
+								},
+							},
+							InitContainers: []*epb.ExecutableSpec{
+								{
+									Resources: &epb.ResourceSet{
+										Resources: &epb.ResourceSet_CpuResources{
+											CpuResources: &epb.CpuResources{
+												CpuMillicores: 300,
+												MemoryBytes:   512,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	jobSet := &jobsetv1alpha2.JobSet{
+		Spec: jobsetv1alpha2.JobSetSpec{
+			ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+				{
+					Name: "job-1",
+					Template: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers:     []corev1.Container{{Name: "main"}},
+									InitContainers: []corev1.Container{{Name: "init"}},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := g.InjectOnJobSetCreation(context.Background(), workUnit, jobSet)
+	if err != nil {
+		t.Fatalf("InjectOnJobSetCreation() returned error: %v", err)
+	}
+
+	initContainers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.InitContainers
+	if len(initContainers) != 1 {
+		t.Fatalf("Expected 1 init container, got %d", len(initContainers))
+	}
+	if initContainers[0].Resources.Requests[corev1.ResourceCPU] != resource.MustParse("300m") {
+		t.Errorf("Init container CPU request mismatch: got %v", initContainers[0].Resources.Requests[corev1.ResourceCPU])
+	}
+}
+
 func TestAnnotateContainersMismatchError(t *testing.T) {
 	replicatedJob := &jobsetv1alpha2.ReplicatedJob{
 		Template: batchv1.JobTemplateSpec{
