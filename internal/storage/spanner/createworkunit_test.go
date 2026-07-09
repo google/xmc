@@ -477,8 +477,8 @@ func TestGetWorkUnitResources(t *testing.T) {
 				{
 					Resources: &essmsgpb.ResourceSet_CpuResources{
 						CpuResources: &essmsgpb.CpuResources{
-							CpuMillicores: 1200,
-							MemoryBytes:   1280,
+							CpuMillicores: 1000,
+							MemoryBytes:   1024,
 						},
 					},
 				},

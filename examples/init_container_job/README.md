@@ -6,11 +6,11 @@ This directory contains a complete validation example for running **Init Contain
 
 1. **[init_step.py](./init_step.py)**:
    - Python script that runs as the init container (`init-setup`).
-   - Simulates pre-processing or environment initialization by logging messages and creating a completion marker file `/tmp/init_ready.flag`.
+   - Simulates pre-processing or environment initialization by logging messages and creating a completion marker file `/dev/disk-scratch/init_ready.flag`.
 
 2. **[worker.py](./worker.py)**:
    - Python script that runs as the primary application container (`primary-worker`).
-   - Verifies that `/tmp/init_ready.flag` was created by the init container before performing work.
+   - Verifies that `/dev/disk-scratch/init_ready.flag` was created by the init container before performing work.
 
 3. **[Dockerfile](./Dockerfile)**:
    - Packages `init_step.py` and `worker.py` into a minimal Python 3.11 container image.

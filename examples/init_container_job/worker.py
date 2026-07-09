@@ -9,7 +9,7 @@ import time
 def main() -> None:
   pod_name = os.environ.get("HOSTNAME", "unknown-pod")
   prefix = os.environ.get("POD_PREFIX", "primary-worker")
-  flag_path = "/tmp/init_ready.flag"
+  flag_path = "/dev/disk-scratch/init_ready.flag"
 
   print(
       f"[{prefix} | {pod_name}] Starting primary worker execution...",

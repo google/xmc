@@ -10,7 +10,7 @@ def main() -> None:
   prefix = os.environ.get("POD_PREFIX", "init-setup")
   print(f"[{prefix} | {pod_name}] Starting initialization step...", flush=True)
 
-  flag_path = "/tmp/init_ready.flag"
+  flag_path = "/dev/disk-scratch/init_ready.flag"
   with open(flag_path, "w", encoding="utf-8") as f:
     f.write(f"Initialized by {prefix} on {pod_name}\n")
 
