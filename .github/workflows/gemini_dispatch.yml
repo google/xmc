@@ -83,6 +83,8 @@ jobs:
       id-token: 'write'
       issues: 'write'
       pull-requests: 'write'
+      actions: 'read'
+
     with:
       additional_context: '${{ needs.dispatch.outputs.additional_context }}'
     secrets: 'inherit'
