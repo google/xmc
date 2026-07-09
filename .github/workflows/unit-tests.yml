@@ -119,3 +119,12 @@ jobs:
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
           key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+
+  investigate-failures:
+    needs: run-tests
+    if: failure() && github.event.pull_request.head.repo.fork == false
+    uses: ./.github/workflows/gemini_investigate.yml
+    with:
+      failed_run_id: ${{ github.run_id }}
+    secrets: inherit
+

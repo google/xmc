@@ -1,0 +1,114 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'Gemini Failure Investigator'
+
+on:
+  workflow_call:
+    inputs:
+      failed_run_id:
+        type: 'string'
+        description: 'The Run ID of the failed workflow to investigate. Defaults to current run.'
+        required: false
+      additional_context:
+        type: 'string'
+        description: 'Any additional context from the request'
+        required: false
+
+defaults:
+  run:
+    shell: 'bash'
+
+jobs:
+  investigate:
+    runs-on: 'ubuntu-latest'
+    environment: janzak-dev-test
+    timeout-minutes: 10
+
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      issues: 'write'
+      pull-requests: 'write'
+      actions: 'read' # Required to read failed logs
+    steps:
+      - name: 'Checkout repository'
+        uses: 'actions/checkout@v4'
+
+      - name: 'Fetch failed logs'
+        env:
+          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+          RUN_ID: '${{ inputs.failed_run_id || github.run_id }}'
+          REPO: '${{ github.repository }}'
+        run: |-
+          mkdir -p .gemini
+          echo "Fetching failed logs for run $RUN_ID..."
+          # Try to get the failed logs using GH CLI
+          gh run view "$RUN_ID" --log-failed --repo "$REPO" > .gemini/failed_logs.txt || true
+          
+          # Fallback if no logs retrieved
+          if [ ! -s .gemini/failed_logs.txt ]; then
+            echo "No failed log traces retrieved. Providing workspace fallback message." > .gemini/failed_logs.txt
+          fi
+
+      - name: 'Run Gemini Failure Investigator'
+        uses: 'google-github-actions/run-gemini-cli@v0'
+        id: 'gemini_investigator'
+        env:
+          GEMINI_CLI_TRUST_WORKSPACE: 'true'
+          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+          PULL_REQUEST_NUMBER: '${{ github.event.pull_request.number || github.event.issue.number }}'
+          REPOSITORY: '${{ github.repository }}'
+        with:
+          gcp_location: '${{ vars.GOOGLE_CLOUD_LOCATION || "us-central1" }}'
+          gcp_project_id: '${{ vars.PROJECT_ID }}'
+          gcp_service_account: '${{ vars.SERVICE_ACCOUNT }}'
+          gcp_workload_identity_provider: '${{ vars.WORKLOAD_IDENTITY_PROVIDER }}'
+          gemini_model: '${{ vars.GEMINI_MODEL || "gemini-1.5-pro" }}'
+          use_vertex_ai: 'true'
+          workflow_name: 'gemini-investigate'
+          settings: |-
+            {
+              "model": {
+                "maxSessionTurns": 15
+              },
+              "mcpServers": {
+                "github": {
+                  "command": "docker",
+                  "args": [
+                    "run",
+                    "-i",
+                    "--rm",
+                    "-e",
+                    "GITHUB_PERSONAL_ACCESS_TOKEN",
+                    "ghcr.io/github/github-mcp-server:v0.27.0"
+                  ],
+                  "includeTools": [
+                    "add_issue_comment",
+                    "pull_request_read"
+                  ],
+                  "env": {
+                    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+                  }
+                }
+              },
+              "tools": {
+                "core": [
+                  "run_shell_command(cat)",
+                  "run_shell_command(grep)",
+                  "run_shell_command(head)"
+                ]
+              }
+            }
+          prompt: '/gemini-investigate'
