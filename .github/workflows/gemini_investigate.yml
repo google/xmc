@@ -71,11 +71,12 @@ jobs:
           PULL_REQUEST_NUMBER: '${{ github.event.pull_request.number || github.event.issue.number }}'
           REPOSITORY: '${{ github.repository }}'
         with:
-          gcp_location: '${{ vars.GOOGLE_CLOUD_LOCATION || "us-central1" }}'
+          gcp_location: ${{ vars.GOOGLE_CLOUD_LOCATION || 'us-central1' }}
           gcp_project_id: '${{ vars.PROJECT_ID }}'
           gcp_service_account: '${{ vars.SERVICE_ACCOUNT }}'
           gcp_workload_identity_provider: '${{ vars.WORKLOAD_IDENTITY_PROVIDER }}'
-          gemini_model: '${{ vars.GEMINI_MODEL || "gemini-1.5-pro" }}'
+          gemini_model: ${{ vars.GEMINI_MODEL || 'gemini-1.5-pro' }}
+
           use_vertex_ai: 'true'
           workflow_name: 'gemini-investigate'
           settings: |-

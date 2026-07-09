@@ -68,11 +68,12 @@ jobs:
           REPOSITORY: '${{ github.repository }}'
           ADDITIONAL_CONTEXT: '${{ inputs.additional_context }}'
         with:
-          gcp_location: '${{ vars.GOOGLE_CLOUD_LOCATION || "us-central1" }}'
+          gcp_location: ${{ vars.GOOGLE_CLOUD_LOCATION || 'us-central1' }}
           gcp_project_id: '${{ vars.PROJECT_ID }}'
           gcp_service_account: '${{ vars.SERVICE_ACCOUNT }}'
           gcp_workload_identity_provider: '${{ vars.WORKLOAD_IDENTITY_PROVIDER }}'
-          gemini_model: '${{ vars.GEMINI_MODEL || "gemini-1.5-pro" }}'
+          gemini_model: ${{ vars.GEMINI_MODEL || 'gemini-1.5-pro' }}
+
           use_vertex_ai: 'true'
           workflow_name: 'gemini-review'
           settings: |-
