@@ -300,11 +300,8 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 		if job.Name == "" {
 			return fmt.Errorf("work_unit.executable.jobset.jobs.name cannot be empty: %w", status.ErrInvalidArgument)
 		}
-		if len(job.Name) > 63 {
-			return fmt.Errorf("work_unit.executable.jobset.jobs.name cannot be longer than 63 characters: %w", status.ErrInvalidArgument)
-		}
-		if !jobNameRegex.MatchString(job.Name) {
-			return fmt.Errorf("work_unit.executable.jobset.jobs.name must be a valid DNS label (RFC 1123): %w", status.ErrInvalidArgument)
+		if err := validateDNSLabel(job.Name, "work_unit.executable.jobset.jobs.name"); err != nil {
+			return err
 		}
 		if jobNames[job.Name] {
 			return fmt.Errorf("work_unit.executable.jobset.jobs.name must be unique: %w", status.ErrInvalidArgument)
@@ -459,11 +456,8 @@ func validateExecutableSpec(spec *essmsgpb.ExecutableSpec, prefix string) error 
 		return fmt.Errorf("%s cannot be nil: %w", prefix, status.ErrInvalidArgument)
 	}
 	if name := spec.GetName(); name != "" {
-		if len(name) > 63 {
-			return fmt.Errorf("%s.name cannot be longer than 63 characters: %w", prefix, status.ErrInvalidArgument)
-		}
-		if !jobNameRegex.MatchString(name) {
-			return fmt.Errorf("%s.name %q must be a valid DNS label (RFC 1123): %w", prefix, name, status.ErrInvalidArgument)
+		if err := validateDNSLabel(name, prefix+".name"); err != nil {
+			return err
 		}
 	}
 	if spec.GetDockerImage() == "" {
@@ -503,12 +497,19 @@ func validateResourceSet(res *essmsgpb.ResourceSet, prefix string) error {
 	return nil
 }
 
-func validateContainerName(names map[string]bool, name, containerType string) error {
+func validateDNSLabel(name, desc string) error {
 	if len(name) > 63 {
-		return fmt.Errorf("work_unit.executable.jobset.jobs %s container name %q cannot be longer than 63 characters: %w", containerType, name, status.ErrInvalidArgument)
+		return fmt.Errorf("%s %q cannot be longer than 63 characters: %w", desc, name, status.ErrInvalidArgument)
 	}
 	if !jobNameRegex.MatchString(name) {
-		return fmt.Errorf("work_unit.executable.jobset.jobs %s container name %q must be a valid DNS label (RFC 1123): %w", containerType, name, status.ErrInvalidArgument)
+		return fmt.Errorf("%s %q must be a valid DNS label (RFC 1123): %w", desc, name, status.ErrInvalidArgument)
+	}
+	return nil
+}
+
+func validateContainerName(names map[string]bool, name, containerType string) error {
+	if err := validateDNSLabel(name, fmt.Sprintf("work_unit.executable.jobset.jobs %s container name", containerType)); err != nil {
+		return err
 	}
 	if names[name] {
 		return fmt.Errorf("work_unit.executable.jobset.jobs container name %q must be unique within the pod: %w", name, status.ErrInvalidArgument)
