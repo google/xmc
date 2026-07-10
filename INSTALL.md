@@ -1,10 +1,11 @@
 # Installation & Deployment Guide
 
-This guide details the three paths to install and deploy XManager on Cloud (XMC):
+This guide details how to install a fresh deployment of XManager on Cloud (XMC) as well as how to upgrade existing installations to newer versions:
 
-1. **Automated Agent Deployment**: Using the pre-configured [deploy_xmc skill](.agents/skills/deploy_xmc/SKILL.md).
-2. **Cluster Toolkit Blueprint v2**: The recommended manual pathway using automated orchestration blueprints.
+1. **Automated Agent Deployment**: Using the pre-configured [deploy_xmc skill](.agents/skills/deploy_xmc/SKILL.md) for fresh installations.
+2. **Cluster Toolkit Blueprint v2**: The recommended manual pathway for fresh installations using automated orchestration blueprints.
 3. **Terraform and Helm**: The direct, hands-on infrastructure deployment pathway.
+4. **Upgrading an Existing Installation**: Step-by-step instructions for upgrading existing deployments, running incremental Cloud Spanner schema migrations, building updated container images, and rolling out application upgrades.
 
 > [!IMPORTANT]
 > **Working Directory**: All commands in this guide must be executed from the root of the `xmc` repository directory.
@@ -318,6 +319,192 @@ For direct control over your infrastructure:
    helm upgrade --install xmc ./deploy/helm -n xmc --create-namespace -f my-values.yaml
    ```
    *For details on configuring values, refer to [deploy/helm/values.yaml](deploy/helm/values.yaml).*
+
+---
+
+## Upgrading an Existing Installation
+
+When updating an existing XMC installation to a newer version or release branch, infrastructure resources (such as VPC networks, GKE clusters, Spanner instances, and OAuth configuration) remain in place. Upgrading requires applying incremental database schema migrations, building updated container images, and rolling out application workload updates to your Kubernetes cluster.
+
+Follow this step-by-step workflow to upgrade an existing XMC deployment:
+
+### Step 1: Pull the Latest Codebase
+
+Navigate to the root of your `xmc` repository workspace and update your local repository:
+
+```bash
+git checkout main
+git pull origin main
+```
+*(If deploying a specific release tag or release branch, check out that tag/branch instead.)*
+
+### Step 2: Build and Push Updated Container Images
+
+Rebuild all XMC OCI container images from the updated source code and push them to your Google Artifact Registry repository so that Kubernetes workloads pull the updated service binaries:
+
+```bash
+export XMC_ACR_TARGET="<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc"
+export XMC_ENV="<ENVIRONMENT>"  # Match your deployment environment tag
+export BUILD_TAG="latest"
+
+bazel run //cmd/xid_service:xid_service_image_push
+bazel run //cmd/actuator:actuator_image_push
+bazel run //cmd/experiment_state_server:experiment_state_server_image_push
+bazel run //cmd/ui:ui_image_push
+bazel run //cmd/reconciler:reconciler_image_push
+bazel run //cmd/log_monitor:log_monitor_image_push
+```
+
+### Step 3: Run Database Schema Migrations
+
+Existing Cloud Spanner databases (`ess` and `xid`) must be upgraded to apply any new incremental DDL migrations introduced in the updated version.
+
+XMC provides a dedicated self-contained CLI migration tool (`//internal/storage/spanner/migrations:migrations`) built on top of [golang-migrate](https://github.com/golang-migrate/migrate) that integrates with Bazel and handles Spanner proto-descriptor updates automatically for DDL execution.
+
+#### Directory Structure
+
+Migration files are embedded into the migration binary and are organized in the codebase under `internal/storage/spanner/migrations/` by service component:
+
+- `internal/storage/spanner/migrations/ess/`: Experiment State Server (`ess`) database migrations.
+- `internal/storage/spanner/migrations/xid/`: XID Service (`xid`) database migrations.
+
+Each directory contains sequential pairs of `.up.sql` and `.down.sql` migration scripts prefixed with a 3-digit sequential version number (e.g., `001_baseline.up.sql`, `002_artifactinfo.up.sql`).
+
+#### Migrations Runner CLI Flags
+
+The migration tool is executed using `bazel run`:
+
+```bash
+bazel run //internal/storage/spanner/migrations:migrations -- [FLAGS] [ARG]
+```
+
+| Flag | Description | Mandatory |
+| :--- | :--- | :--- |
+| `--command` | The migration command to execute: `up`, `down`, `version`, `force`, `init`, `create`. | Yes |
+| `--migrations_dir` | Name of the migration directory (`ess` or `xid`). | Yes |
+| `--project` | Google Cloud Project ID. | Yes (except `create`) |
+| `--instance` | Spanner Instance ID. | Yes (except `create`) |
+| `--database` | Spanner Database ID. | Yes (except `create`) |
+
+#### Inspect Current Schema Version (`version`)
+
+Before applying migrations, inspect the current schema version and check if either database is marked as "dirty":
+
+```bash
+# Check ESS database schema version
+bazel run //internal/storage/spanner/migrations:migrations -- \
+  --project="<PROJECT_ID>" \
+  --instance="<SPANNER_INSTANCE_ID>" \
+  --database="<ESS_DATABASE_ID>" \
+  --migrations_dir="ess" \
+  --command="version"
+
+# Check XID database schema version
+bazel run //internal/storage/spanner/migrations:migrations -- \
+  --project="<PROJECT_ID>" \
+  --instance="<SPANNER_INSTANCE_ID>" \
+  --database="<XID_DATABASE_ID>" \
+  --migrations_dir="xid" \
+  --command="version"
+```
+
+#### Apply Pending Migrations (`up`)
+
+Run the `up` command against both the `ess` and `xid` databases to apply all pending schema migrations sequentially:
+
+```bash
+# Apply all pending migrations for ESS database
+bazel run //internal/storage/spanner/migrations:migrations -- \
+  --project="<PROJECT_ID>" \
+  --instance="<SPANNER_INSTANCE_ID>" \
+  --database="<ESS_DATABASE_ID>" \
+  --migrations_dir="ess" \
+  --command="up"
+
+# Apply all pending migrations for XID database
+bazel run //internal/storage/spanner/migrations:migrations -- \
+  --project="<PROJECT_ID>" \
+  --instance="<SPANNER_INSTANCE_ID>" \
+  --database="<XID_DATABASE_ID>" \
+  --migrations_dir="xid" \
+  --command="up"
+```
+
+To apply only a specific number of incremental migration steps (e.g., the next 2 migrations), pass the step count as a positional argument:
+
+```bash
+bazel run //internal/storage/spanner/migrations:migrations -- \
+  --project="<PROJECT_ID>" \
+  --instance="<SPANNER_INSTANCE_ID>" \
+  --database="<ESS_DATABASE_ID>" \
+  --migrations_dir="ess" \
+  --command="up" \
+  2
+```
+
+#### Additional Migration Commands & Troubleshooting
+
+- **Revert Applied Migrations (`down`)**:
+  To roll back applied migrations, run `down` with the number of steps to revert (defaults to `1`). The command previews SQL changes and prompts for confirmation:
+  ```bash
+  bazel run //internal/storage/spanner/migrations:migrations -- \
+    --project="<PROJECT_ID>" \
+    --instance="<SPANNER_INSTANCE_ID>" \
+    --database="<ESS_DATABASE_ID>" \
+    --migrations_dir="ess" \
+    --command="down" \
+    1
+  ```
+- **Clear a Dirty State (`force`)**:
+  If a migration fails halfway through execution, the schema version table is marked as "dirty" to prevent accidental data corruption. After inspecting and manually resolving the underlying database state, clear the dirty flag by forcing the schema version number:
+  ```bash
+  bazel run //internal/storage/spanner/migrations:migrations -- \
+    --project="<PROJECT_ID>" \
+    --instance="<SPANNER_INSTANCE_ID>" \
+    --database="<ESS_DATABASE_ID>" \
+    --migrations_dir="ess" \
+    --command="force" \
+    <TARGET_VERSION>
+  ```
+- **Fresh Installation Initialization (`init`)**:
+  > [!NOTE]
+  > The `init` command initializes the schema version in the database migration table to the latest available migration version *without* executing any SQL files. This command is intended strictly for **fresh installations** where the full schema has already been created from baseline DDL files (`internal/storage/spanner/schema/ess-schema.sql` or `internal/storage/spanner/schema/xid-schema.sql`). Do not run `init` when upgrading an existing installation.
+- **Create New Migration Files (`create`)**:
+  For developers adding schema changes to XMC, generate a new pair of sequential `.up.sql` and `.down.sql` files inside `internal/storage/spanner/migrations/<migrations_dir>/`:
+  ```bash
+  bazel run //internal/storage/spanner/migrations:migrations -- \
+    --migrations_dir="ess" \
+    --command="create" \
+    add_user_table
+  ```
+
+### Step 4: Upgrade Application Workloads
+
+Once database schemas and container images are updated, upgrade the Kubernetes workloads in your GKE cluster.
+
+#### Option A: Using Cluster Toolkit Blueprint v2 (Recommended)
+
+Re-run deployment for the application group (`xmc_app`) to roll out updated deployments and services:
+
+```bash
+./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only xmc_app --auto-approve
+```
+
+#### Option B: Using Direct Helm Upgrade
+
+If managing workloads via direct Helm releases, point your `kubectl` context to your GKE cluster and upgrade the `xmc` Helm chart:
+
+```bash
+helm upgrade --install xmc ./deploy/helm -n xmc --create-namespace -f my-values.yaml
+```
+
+### Step 5: Post-Upgrade Verification
+
+Run the verification script from the repository root to verify that all upgraded pods are running, endpoints respond correctly, and Gateway TLS certificates remain healthy:
+
+```bash
+./deploy/ctk_v2/verify_xmc.sh
+```
 
 ---
 
