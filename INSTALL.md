@@ -455,8 +455,8 @@ bazel run //internal/storage/spanner/migrations:migrations -- \
     --command="down" \
     1
   ```
-- **Clear a Dirty State (`force`)**:
-  If a migration fails halfway through execution, the schema version table is marked as "dirty" to prevent accidental data corruption. After inspecting and manually resolving the underlying database state, clear the dirty flag by forcing the schema version number:
+- **Clear a Dirty State or Adopt an Existing Database (`force`)**:
+  If a migration fails halfway through execution, the schema version table is marked as "dirty". Additionally, if you are upgrading an existing database that was created before the migration system was introduced, you must use this command to set the initial schema version (e.g., 1) so that subsequent migrations can be applied. After resolving the database state, force the schema version number:
   ```bash
   bazel run //internal/storage/spanner/migrations:migrations -- \
     --project="<PROJECT_ID>" \
