@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -276,7 +277,58 @@ func jobSetToUnstructured(jobSet *jobsetv1alpha2.JobSet) (*unstructured.Unstruct
 	return jobSetUnstructured, nil
 }
 
-func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLabels map[string]string, jobAnnotations map[string]string) jobsetv1alpha2.ReplicatedJob {
+func resolvePodRestartPolicy(jobPolicy, defaultPolicy esspb.RestartPolicy) corev1.RestartPolicy {
+	effective := jobPolicy
+	if effective == esspb.RestartPolicy_RESTART_POLICY_UNSPECIFIED {
+		effective = defaultPolicy
+	}
+	switch effective {
+	case esspb.RestartPolicy_ON_FAILURE, esspb.RestartPolicy_ALWAYS:
+		return corev1.RestartPolicyOnFailure
+	default:
+		return corev1.RestartPolicyNever
+	}
+}
+
+func buildFailurePolicy(jobSetSpec *esspb.JobSetExecutable) *jobsetv1alpha2.FailurePolicy {
+	if jobSetSpec == nil {
+		return &jobsetv1alpha2.FailurePolicy{
+			MaxRestarts: 0,
+			Rules:       []jobsetv1alpha2.FailurePolicyRule{},
+		}
+	}
+	switch jobSetSpec.GetRestartPolicy() {
+	case esspb.RestartPolicy_ALWAYS:
+		return &jobsetv1alpha2.FailurePolicy{
+			MaxRestarts: math.MaxInt32,
+			Rules: []jobsetv1alpha2.FailurePolicyRule{
+				{
+					Action: jobsetv1alpha2.RestartJobSet,
+				},
+			},
+		}
+	case esspb.RestartPolicy_ON_FAILURE:
+		maxRestarts := jobSetSpec.GetMaxRestarts()
+		if maxRestarts <= 0 {
+			maxRestarts = 3
+		}
+		return &jobsetv1alpha2.FailurePolicy{
+			MaxRestarts: maxRestarts,
+			Rules: []jobsetv1alpha2.FailurePolicyRule{
+				{
+					Action: jobsetv1alpha2.RestartJobSet,
+				},
+			},
+		}
+	default:
+		return &jobsetv1alpha2.FailurePolicy{
+			MaxRestarts: 0,
+			Rules:       []jobsetv1alpha2.FailurePolicyRule{},
+		}
+	}
+}
+
+func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, defaultPolicy esspb.RestartPolicy, jobLabels map[string]string, jobAnnotations map[string]string) jobsetv1alpha2.ReplicatedJob {
 	retryLimit := job.GetRetryLimit()
 
 	// Merge job annotations with default annotations.
@@ -325,7 +377,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 					Spec: corev1.PodSpec{
 						ServiceAccountName: job.GetServiceAccount(),
 						Containers:         buildContainersForJob(job),
-						RestartPolicy:      corev1.RestartPolicyNever,
+						RestartPolicy:      resolvePodRestartPolicy(job.GetRestartPolicy(), defaultPolicy),
 						SecurityContext:    defaultPodSecurityContext(),
 						Volumes:            defaultVolumes(),
 					},
@@ -402,9 +454,12 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 	}
 
 	var replicatedJobs []jobsetv1alpha2.ReplicatedJob
-	if workUnit.GetExecutable().GetJobset() != nil {
-		for _, job := range workUnit.GetExecutable().GetJobset().GetJobs() {
-			replicatedJobs = append(replicatedJobs, k8sJobToReplicatedJob(ctx, job, jobLabels, jobSetAnnotations))
+	jobSetSpec := workUnit.GetExecutable().GetJobset()
+	var defaultRestartPolicy esspb.RestartPolicy
+	if jobSetSpec != nil {
+		defaultRestartPolicy = jobSetSpec.GetRestartPolicy()
+		for _, job := range jobSetSpec.GetJobs() {
+			replicatedJobs = append(replicatedJobs, k8sJobToReplicatedJob(ctx, job, defaultRestartPolicy, jobLabels, jobSetAnnotations))
 		}
 	}
 
@@ -426,12 +481,7 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 			SuccessPolicy: &jobsetv1alpha2.SuccessPolicy{
 				Operator: jobsetv1alpha2.OperatorAll,
 			},
-			FailurePolicy: &jobsetv1alpha2.FailurePolicy{
-				// JobSet-level restarts are disabled (MaxRestarts: 0) to comply with the XMC
-				// contract, which expects a work unit to execute at most once.
-				MaxRestarts: 0,
-				Rules:       []jobsetv1alpha2.FailurePolicyRule{},
-			},
+			FailurePolicy:           buildFailurePolicy(jobSetSpec),
 			TTLSecondsAfterFinished: proto.Int32(defaultTTLSeconds),
 		},
 	}

@@ -287,6 +287,40 @@ func TestToWorkUnitState(t *testing.T) {
 			jobSet: &v1alpha2.JobSet{},
 			want:   spb.WorkUnitStatus_SCHEDULING,
 		},
+		{
+			name: "Restarting with Active and Ready pods -> RUNNING",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{Name: "test", Replicas: 1},
+					},
+				},
+				Status: v1alpha2.JobSetStatus{
+					Restarts: 1,
+					ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{
+						{Name: "test", Active: 1, Ready: 1},
+					},
+				},
+			},
+			want: spb.WorkUnitStatus_RUNNING,
+		},
+		{
+			name: "Restarting with Active but 0 Ready pods -> STARTING",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{Name: "test", Replicas: 1},
+					},
+				},
+				Status: v1alpha2.JobSetStatus{
+					Restarts: 2,
+					ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{
+						{Name: "test", Active: 1, Ready: 0},
+					},
+				},
+			},
+			want: spb.WorkUnitStatus_STARTING,
+		},
 	}
 
 	for _, tc := range testCases {

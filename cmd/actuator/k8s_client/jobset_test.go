@@ -15,6 +15,7 @@ package k8sclient
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"testing"
 	"time"
@@ -2006,5 +2007,81 @@ func TestConstructJobSet_WithSidecars(t *testing.T) {
 	}
 	if containers[1].Image != "sidecar-image:v1" {
 		t.Errorf("Sidecar image mismatch: got %q, want %q", containers[1].Image, "sidecar-image:v1")
+	}
+}
+
+func TestConstructJobSet_RestartPolicies(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	testCases := []struct {
+		name             string
+		jobSetPolicy     esspb.RestartPolicy
+		maxRestarts      int32
+		jobPolicy        esspb.RestartPolicy
+		wantMaxRestarts  int32
+		wantPodRestart   corev1.RestartPolicy
+		wantRecreateRule bool
+	}{
+		{
+			name:            "Never",
+			jobSetPolicy:    esspb.RestartPolicy_NEVER,
+			wantMaxRestarts: 0,
+			wantPodRestart:  corev1.RestartPolicyNever,
+		},
+		{
+			name:             "OnFailure default max restarts",
+			jobSetPolicy:     esspb.RestartPolicy_ON_FAILURE,
+			wantMaxRestarts:  3,
+			wantPodRestart:   corev1.RestartPolicyOnFailure,
+			wantRecreateRule: true,
+		},
+		{
+			name:             "OnFailure custom max restarts",
+			jobSetPolicy:     esspb.RestartPolicy_ON_FAILURE,
+			maxRestarts:      5,
+			wantMaxRestarts:  5,
+			wantPodRestart:   corev1.RestartPolicyOnFailure,
+			wantRecreateRule: true,
+		},
+		{
+			name:             "Always",
+			jobSetPolicy:     esspb.RestartPolicy_ALWAYS,
+			wantMaxRestarts:  math.MaxInt32,
+			wantPodRestart:   corev1.RestartPolicyOnFailure,
+			wantRecreateRule: true,
+		},
+		{
+			name:             "Per job override to Never",
+			jobSetPolicy:     esspb.RestartPolicy_ALWAYS,
+			jobPolicy:        esspb.RestartPolicy_NEVER,
+			wantMaxRestarts:  math.MaxInt32,
+			wantPodRestart:   corev1.RestartPolicyNever,
+			wantRecreateRule: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			workUnit := createTestWorkUnit("test-namespace")
+			js := workUnit.GetExecutable().GetJobset()
+			js.RestartPolicy = tc.jobSetPolicy
+			js.MaxRestarts = tc.maxRestarts
+			if tc.jobPolicy != esspb.RestartPolicy_RESTART_POLICY_UNSPECIFIED {
+				js.GetJobs()[0].RestartPolicy = tc.jobPolicy
+			}
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+			if err != nil {
+				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+			}
+			if got.Spec.FailurePolicy.MaxRestarts != tc.wantMaxRestarts {
+				t.Errorf("MaxRestarts = %d, want %d", got.Spec.FailurePolicy.MaxRestarts, tc.wantMaxRestarts)
+			}
+			hasRule := len(got.Spec.FailurePolicy.Rules) > 0 && got.Spec.FailurePolicy.Rules[0].Action == jobsetv1alpha2.RestartJobSet
+			if hasRule != tc.wantRecreateRule {
+				t.Errorf("hasRecreateRule = %v, want %v", hasRule, tc.wantRecreateRule)
+			}
+			podRestart := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.RestartPolicy
+			if podRestart != tc.wantPodRestart {
+				t.Errorf("Pod RestartPolicy = %v, want %v", podRestart, tc.wantPodRestart)
+			}
+		})
 	}
 }

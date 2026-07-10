@@ -75,11 +75,24 @@ message Executable {
   }
 }
 
+// Specifies the restart policy for a JobSet or individual Job when pods fail.
+enum RestartPolicy {
+  RESTART_POLICY_UNSPECIFIED = 0;
+  NEVER = 1;
+  ON_FAILURE = 2;
+  ALWAYS = 3;
+}
+
 // A JobSetExecutable is a collection of KubernetesJobs that are run together
 // as a JobSet resource.
 message JobSetExecutable {
   // The Jobs that make up the JobSet.
   repeated KubernetesJob jobs = 1;
+  // Default restart policy for all Jobs in the JobSet.
+  RestartPolicy restart_policy = 2;
+  // Maximum number of times the JobSet can be restarted if an ON_FAILURE policy is used.
+  // Defaults to 3 if unspecified when ON_FAILURE is active.
+  int32 max_restarts = 3;
 }
 
 // A KubernetesJob is a single Kubernetes Job that is run as part of a
@@ -128,6 +141,8 @@ message KubernetesJob {
   string service_account = 8;
   // Sidecar / auxiliary containers to run alongside the primary container in each Pod.
   repeated ExecutableSpec sidecars = 9;
+  // Optional per-Job restart policy override. If UNSPECIFIED, inherits JobSetExecutable.restart_policy.
+  RestartPolicy restart_policy = 11;
 }
 
 // Selects a field of the Pod (matches YAML 'fieldRef').
