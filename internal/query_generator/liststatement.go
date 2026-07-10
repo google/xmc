@@ -17,7 +17,6 @@ package liststatement
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	fepb "api/filter/filter_expression_go_proto"
@@ -77,7 +76,7 @@ func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, 
 		EnforceValidStrings:            true,
 	}.Build(), params.Filter)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to parse filter %s, %w: %w", params.Filter, err, status.ErrInvalidArgument)
+		return nil, fmt.Errorf("failed to parse filter %s, %w: %w", params.Filter, err, status.ErrInvalidArgument)
 	}
 
 	logging.Info(ctx, "Parsed filter", "filter", exp)
@@ -85,7 +84,7 @@ func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, 
 	// 2. Convert the orderBy string to a list of ordered indices.
 	orderedIndices, err := generateOrderBy(ctx, params.OrderBy, params.ValidOrderByFields)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to parse orderBy %s, %w: %w", params.OrderBy, err, status.ErrInvalidArgument)
+		return nil, fmt.Errorf("failed to parse orderBy %s, %w: %w", params.OrderBy, err, status.ErrInvalidArgument)
 	}
 
 	// 3. Generate the query.
@@ -111,7 +110,7 @@ func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, 
 	// However, this is not trivial, and our SQL logic is very simple, so we just do it here for now.
 	stmt.SQL, err = deduplicateSelectColumns(stmt.SQL)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to deduplicate select columns: %w", err)
+		return nil, fmt.Errorf("failed to deduplicate select columns: %w", err)
 	}
 
 	logging.Info(ctx, "Generated query SQL", "sql", stmt.SQL)

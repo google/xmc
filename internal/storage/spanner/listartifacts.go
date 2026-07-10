@@ -69,8 +69,7 @@ func (s *Storage) ListArtifacts(ctx context.Context, parent string, pageSize int
 		ValidOrderByFields:    artifactschema.ArtifactsOrderByFields,
 	}
 
-	err := listParams.DecodePageToken(pageToken)
-	if err != nil {
+	if err := listParams.DecodePageToken(pageToken); err != nil {
 		return nil, "", err
 	}
 
@@ -135,6 +134,23 @@ func extractArtifactCursor(artifact *essmsgpb.Artifact) (map[string]any, error) 
 	}
 	if artifact.UpdateTime != nil {
 		cursor["updated"] = artifact.UpdateTime.AsTime()
+	}
+	var displayName string
+	if artifact.GetUrl() != nil && artifact.GetUrl().GetDisplayName() != "" {
+		displayName = artifact.GetUrl().GetDisplayName()
+	}
+	if displayName != "" {
+		cursor["display_name"] = displayName
+	}
+
+	var priority int64
+	if artifact.GetPriority() != 0 {
+		priority = int64(artifact.GetPriority())
+	} else if artifact.GetUrl() != nil {
+		priority = int64(artifact.GetUrl().GetPriority())
+	}
+	if priority != 0 {
+		cursor["priority"] = priority
 	}
 
 	return cursor, nil
