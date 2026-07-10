@@ -276,6 +276,9 @@ func ApplyPagination[T any](results []T, pageSize int32, extractCursor func(T) (
 		if err != nil {
 			return nil, "", err
 		}
+		if token == "" {
+			return nil, "", fmt.Errorf("failed to encode next page token: cursor is empty")
+		}
 		nextPageToken = token
 	}
 	return results, nextPageToken, nil
