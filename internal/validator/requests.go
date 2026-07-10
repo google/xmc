@@ -514,7 +514,6 @@ func validateContainerName(names map[string]bool, name, containerType string) er
 	if names[name] {
 		return fmt.Errorf("work_unit.executable.jobset.jobs %s container name %q must be unique within the pod: %w", containerType, name, status.ErrInvalidArgument)
 	}
-	names[name] = true
 	return nil
 }
 
@@ -527,12 +526,14 @@ func validateContainerNamesUnique(job *essmsgpb.KubernetesJob) error {
 		if err := validateContainerName(names, name, "sidecar"); err != nil {
 			return err
 		}
+		names[name] = true
 	}
 	for i, initContainer := range job.GetInitContainers() {
 		name := jobsetutil.InitContainerName(job, initContainer, i)
 		if err := validateContainerName(names, name, "init"); err != nil {
 			return err
 		}
+		names[name] = true
 	}
 	return nil
 }
