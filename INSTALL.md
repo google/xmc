@@ -480,7 +480,7 @@ bazel run //internal/storage/spanner/migrations:migrations -- \
 - **Manual Schema Check (`gcloud`)**:
   In case a manual check is needed for the current spanner schema:
   ```bash
-  gcloud spanner databases ddl describe --project=<PROJECT_ID> --instance=<SPANNER_INSTANCE_ID> <DATABASE>
+  gcloud spanner databases ddl describe --project=<PROJECT_ID> --instance=<SPANNER_INSTANCE_ID> <ESS_DATABASE_ID|XID_DATABASE_ID>
   ```
 
 ### Step 4: Upgrade Application Workloads
