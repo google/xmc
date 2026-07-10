@@ -62,8 +62,7 @@ func (s *Storage) ListWorkUnits(ctx context.Context, parent string, pageSize int
 		ValidOrderByFields:    workunitschema.WorkUnitOrderByFields,
 	}
 
-	err := listParams.DecodePageToken(pageToken)
-	if err != nil {
+	if err := listParams.DecodePageToken(pageToken); err != nil {
 		return nil, "", err
 	}
 

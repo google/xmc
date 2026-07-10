@@ -76,49 +76,7 @@ func TestListXidEntries(t *testing.T) {
 	}
 }
 
-func TestListXidEntries_OffsetPagination(t *testing.T) {
-	ctx := context.Background()
-	xidClient, _ := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(xidClient)
-
-	// Create some entries
-	for i := 0; i < 5; i++ {
-		entry := &xidpb.XidEntry{
-			Creator: proto.String(fmt.Sprintf("creator-%d", i)),
-			Origin: &xidpb.OriginatingSystem{
-				Endpoint: proto.String("test-endpoint"),
-			},
-			Acls: &xidpb.XidAcls{},
-		}
-		_, err := storage.CreateXidEntry(ctx, entry)
-		if err != nil {
-			t.Fatalf("CreateXidEntry failed: %v", err)
-		}
-	}
-
-	// List first page
-	gotEntries1, nextPageToken, err := storage.ListXidEntries(ctx, 3, "", "", "xid", 0)
-	if err != nil {
-		t.Fatalf("ListXidEntries failed: %v", err)
-	}
-	if len(gotEntries1) != 3 {
-		t.Errorf("ListXidEntries page 1 returned %d entries, want 3", len(gotEntries1))
-	}
-	if nextPageToken == "" {
-		t.Errorf("ListXidEntries page 1 returned empty nextPageToken, want non-empty")
-	}
-
-	// List second page
-	gotEntries2, _, err := storage.ListXidEntries(ctx, 3, nextPageToken, "", "xid", 0)
-	if err != nil {
-		t.Fatalf("ListXidEntries failed: %v", err)
-	}
-	if len(gotEntries2) != 2 {
-		t.Errorf("ListXidEntries page 2 returned %d entries, want 2", len(gotEntries2))
-	}
-}
-
-func TestListXidEntries_CursorPagination(t *testing.T) {
+func TestListXidEntries_Pagination(t *testing.T) {
 	ctx := context.Background()
 	xidClient, _ := emulator.Setup(ctx, t)
 	storage, _ := NewStorage(xidClient)

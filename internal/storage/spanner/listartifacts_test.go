@@ -77,45 +77,7 @@ func TestListArtifacts(t *testing.T) {
 	}
 }
 
-func TestListArtifacts_OffsetPagination(t *testing.T) {
-	ctx := context.Background()
-	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
-
-	// Create parent experiment
-	createAndStoreExperiment(ctx, t, storage, blankExperimentProto(1))
-
-	// Create some artifacts
-	for i := 1; i < 6; i++ {
-		createAndStoreArtifact(ctx, t, storage, blankArtifactProto(1, int64(i)))
-	}
-
-	// List first page
-	gotArtifacts1, nextPageToken, err := storage.ListArtifacts(ctx, "", 3, "", "", "artifact_id", 0)
-	if err != nil {
-		t.Fatalf("ListArtifacts failed: %v", err)
-	}
-	if len(gotArtifacts1) != 3 {
-		t.Errorf("ListArtifacts page 1 returned %d artifacts, want 3", len(gotArtifacts1))
-	}
-	if nextPageToken == "" {
-		t.Errorf("ListArtifacts page 1 returned empty nextPageToken, want non-empty")
-	}
-
-	// List second page
-	gotArtifacts2, _, err := storage.ListArtifacts(ctx, "", 3, nextPageToken, "", "artifact_id", 0)
-	if err != nil {
-		t.Fatalf("ListArtifacts failed: %v", err)
-	}
-	if len(gotArtifacts2) != 2 {
-		t.Errorf("ListArtifacts page 2 returned %d artifacts, want 2", len(gotArtifacts2))
-	}
-}
-
-func TestListArtifacts_CursorPagination(t *testing.T) {
+func TestListArtifacts_Pagination(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
 	storage, err := NewStorage(essClient)

@@ -49,8 +49,7 @@ func (s *Storage) ListXidEntries(ctx context.Context, pageSize int32, pageToken,
 		ValidOrderByFields:    xidschema.XidsOrderByFields,
 	}
 
-	err := listParams.DecodePageToken(pageToken)
-	if err != nil {
+	if err := listParams.DecodePageToken(pageToken); err != nil {
 		return nil, "", err
 	}
 

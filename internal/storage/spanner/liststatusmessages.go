@@ -63,8 +63,7 @@ func (s *Storage) ListStatusMessages(ctx context.Context, parent string, pageSiz
 		ValidOrderByFields:  statusmessageschema.StatusMessagesOrderByFields,
 	}
 
-	err := listParams.DecodePageToken(pageToken)
-	if err != nil {
+	if err := listParams.DecodePageToken(pageToken); err != nil {
 		return nil, "", err
 	}
 

@@ -77,39 +77,7 @@ func TestListExperiments(t *testing.T) {
 	}
 }
 
-func TestListExperiments_OffsetPagination(t *testing.T) {
-	ctx := context.Background()
-	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
-
-	// Create some experiments.
-	for i := 1; i < 6; i++ {
-		createBlankExperiment(ctx, t, storage, int64(i))
-	}
-
-	// List first page.
-	gotExperiments1, nextPageToken, err := storage.ListExperiments(ctx, 3, "", "", "xid", 0)
-	if err != nil {
-		t.Fatalf("ListExperiments failed: %v", err)
-	}
-	if len(gotExperiments1) != 3 {
-		t.Errorf("ListExperiments page 1 returned %d experiments, want 3", len(gotExperiments1))
-	}
-	if nextPageToken == "" {
-		t.Errorf("ListExperiments page 1 returned empty nextPageToken, want non-empty")
-	}
-
-	// List second page.
-	gotExperiments2, _, err := storage.ListExperiments(ctx, 3, nextPageToken, "", "xid", 0)
-	if err != nil {
-		t.Fatalf("ListExperiments failed: %v", err)
-	}
-	if len(gotExperiments2) != 2 {
-		t.Errorf("ListExperiments page 2 returned %d experiments, want 2", len(gotExperiments2))
-	}
-}
-
-func TestListExperiments_CursorPagination(t *testing.T) {
+func TestListExperiments_Pagination(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
 	storage, _ := NewStorage(essClient)

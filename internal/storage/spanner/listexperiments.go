@@ -49,8 +49,7 @@ func (s *Storage) ListExperiments(ctx context.Context, pageSize int32, pageToken
 		ValidOrderByFields:    experimentschema.ExperimentsOrderByFields,
 	}
 
-	err := listParams.DecodePageToken(pageToken)
-	if err != nil {
+	if err := listParams.DecodePageToken(pageToken); err != nil {
 		return nil, "", err
 	}
 

@@ -66,11 +66,6 @@ resource "google_cloud_run_v2_service" "ui_service" {
       }
 
       env {
-        name  = "XMC_DEFAULT_TO_CURSOR_PAGINATION"
-        value = var.enable_cursor_pagination
-      }
-
-      env {
         name  = "XMC_STATUS_MESSAGE_HISTORY_ENABLED"
         value = var.enable_status_message_history
       }
