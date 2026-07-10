@@ -171,7 +171,7 @@ func TestFindConditionWithType(t *testing.T) {
 	}
 }
 
-func TestContainerNames(t *testing.T) {
+func TestPrimaryContainerName(t *testing.T) {
 	job := &esspb.KubernetesJob{
 		Name: "my-job",
 		Spec: &esspb.ExecutableSpec{},
@@ -183,7 +183,12 @@ func TestContainerNames(t *testing.T) {
 	if got := PrimaryContainerName(job); got != "primary" {
 		t.Errorf("PrimaryContainerName() = %q, want %q", got, "primary")
 	}
+}
 
+func TestSidecarContainerName(t *testing.T) {
+	job := &esspb.KubernetesJob{
+		Name: "my-job",
+	}
 	sidecar := &esspb.ExecutableSpec{}
 	if got := SidecarContainerName(job, sidecar, 0); got != "my-job-sidecar-0" {
 		t.Errorf("SidecarContainerName() = %q, want %q", got, "my-job-sidecar-0")
@@ -192,7 +197,12 @@ func TestContainerNames(t *testing.T) {
 	if got := SidecarContainerName(job, sidecar, 0); got != "sidecar-a" {
 		t.Errorf("SidecarContainerName() = %q, want %q", got, "sidecar-a")
 	}
+}
 
+func TestInitContainerName(t *testing.T) {
+	job := &esspb.KubernetesJob{
+		Name: "my-job",
+	}
 	initContainer := &esspb.ExecutableSpec{}
 	if got := InitContainerName(job, initContainer, 0); got != "my-job-init-0" {
 		t.Errorf("InitContainerName() = %q, want %q", got, "my-job-init-0")
