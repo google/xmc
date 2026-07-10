@@ -68,6 +68,10 @@ def main(argv: Sequence[str]) -> None:
                 queue_name=queue_name
             ),
             jobset=work_unit_pb2.JobSetExecutable(
+                network=work_unit_pb2.JobSetExecutable.Network(
+                    enable_dns_hostnames=True,
+                    publish_not_ready_addresses=True,
+                ),
                 jobs=[
                     # Pod Role 1: 2 parallel replicas, each running primary + sidecar container
                     work_unit_pb2.KubernetesJob(

@@ -470,6 +470,11 @@ func TestConstructJobSet(t *testing.T) {
 					},
 				},
 			},
+			Network: &jobsetv1alpha2.Network{
+				EnableDNSHostnames:       boolPtr(true),
+				Subdomain:                "xmc-operation-123-456",
+				PublishNotReadyAddresses: boolPtr(true),
+			},
 			Suspend: boolPtr(false),
 			SuccessPolicy: &jobsetv1alpha2.SuccessPolicy{
 				Operator: jobsetv1alpha2.OperatorAll,
@@ -2044,3 +2049,166 @@ func TestConstructJobSet_WithInitContainers(t *testing.T) {
 		t.Errorf("InitContainer image mismatch: got %q, want %q", initContainers[0].Image, "init-image:v1")
 	}
 }
+
+func minimalExecutableSpec() *esspb.ExecutableSpec {
+	return &esspb.ExecutableSpec{
+		DockerImage: "foo/bar",
+		Resources: &esspb.ResourceSet{
+			Resources: &esspb.ResourceSet_CpuResources{
+				CpuResources: &esspb.CpuResources{
+					CpuMillicores: 100,
+					MemoryBytes:   1024,
+				},
+			},
+		},
+	}
+}
+
+func TestConstructJobSet_DefaultNetworkMultiJob(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnitMulti",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name: "job1",
+							Spec: minimalExecutableSpec(),
+						},
+						{
+							Name: "job2",
+							Spec: minimalExecutableSpec(),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if got.Spec.Network == nil {
+		t.Fatalf("Expected Spec.Network to be populated for multi-job WorkUnit, got nil")
+	}
+	if got.Spec.Network.EnableDNSHostnames == nil || !*got.Spec.Network.EnableDNSHostnames {
+		t.Errorf("Expected EnableDNSHostnames to be true, got %v", got.Spec.Network.EnableDNSHostnames)
+	}
+	if got.Spec.Network.PublishNotReadyAddresses == nil || !*got.Spec.Network.PublishNotReadyAddresses {
+		t.Errorf("Expected PublishNotReadyAddresses to be true, got %v", got.Spec.Network.PublishNotReadyAddresses)
+	}
+	wantSubdomain := got.Name
+	if got.Spec.Network.Subdomain != wantSubdomain {
+		t.Errorf("Subdomain mismatch: got %q, want %q", got.Spec.Network.Subdomain, wantSubdomain)
+	}
+}
+
+func TestConstructJobSet_SingleJobNoNetwork(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnitSingle",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name:     "job1",
+							Replicas: 1,
+							Spec:     minimalExecutableSpec(),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if got.Spec.Network != nil {
+		t.Errorf("Expected Spec.Network to be nil for single-replica single-job WorkUnit, got %+v", got.Spec.Network)
+	}
+}
+
+func TestConstructJobSet_ExplicitNetworkOverride(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	enableDNS := true
+	publishNotReady := false
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnitOverride",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Network: &esspb.JobSetExecutable_Network{
+						EnableDnsHostnames:       &enableDNS,
+						Subdomain:                "custom-subdomain",
+						PublishNotReadyAddresses: &publishNotReady,
+					},
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name:     "job1",
+							Replicas: 1,
+							Spec:     minimalExecutableSpec(),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if got.Spec.Network == nil {
+		t.Fatalf("Expected Spec.Network to be populated when explicitly set, got nil")
+	}
+	if got.Spec.Network.EnableDNSHostnames == nil || !*got.Spec.Network.EnableDNSHostnames {
+		t.Errorf("Expected EnableDNSHostnames to be true, got %v", got.Spec.Network.EnableDNSHostnames)
+	}
+	if got.Spec.Network.Subdomain != "custom-subdomain" {
+		t.Errorf("Subdomain mismatch: got %q, want %q", got.Spec.Network.Subdomain, "custom-subdomain")
+	}
+	if got.Spec.Network.PublishNotReadyAddresses == nil || *got.Spec.Network.PublishNotReadyAddresses {
+		t.Errorf("Expected PublishNotReadyAddresses to be false, got %v", got.Spec.Network.PublishNotReadyAddresses)
+	}
+}
+
+func TestConstructJobSet_MultiReplicaNetwork(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnitMultiReplica",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name:     "job1",
+							Replicas: 2,
+							Spec:     minimalExecutableSpec(),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if got.Spec.Network == nil {
+		t.Fatalf("Expected Spec.Network to be populated for multi-replica WorkUnit, got nil")
+	}
+	if got.Spec.Network.EnableDNSHostnames == nil || !*got.Spec.Network.EnableDNSHostnames {
+		t.Errorf("Expected EnableDNSHostnames to be true, got %v", got.Spec.Network.EnableDNSHostnames)
+	}
+}
+

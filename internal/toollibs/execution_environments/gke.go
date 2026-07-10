@@ -193,6 +193,18 @@ func updateNodeSelector(resourceSet *epb.ResourceSet, podSpec *corev1.PodSpec) e
 	return nil
 }
 
+// ensureJobSetNetworkConfigured guarantees stable DNS resolution for multi-node workloads.
+func ensureJobSetNetworkConfigured(jobSet *jobsetv1alpha2.JobSet) {
+	if jobSet.Spec.Network != nil {
+		return
+	}
+	jobSet.Spec.Network = &jobsetv1alpha2.Network{
+		EnableDNSHostnames:       proto.Bool(true),
+		Subdomain:                jobSet.Name,
+		PublishNotReadyAddresses: proto.Bool(true),
+	}
+}
+
 // InjectOnJobSetCreation annotates the given job requirements with the execution environment's
 // specific resources.
 func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit, jobSet *jobsetv1alpha2.JobSet) (*jobsetv1alpha2.JobSet, error) {
@@ -243,6 +255,7 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 					jobSet.Annotations = make(map[string]string)
 				}
 				jobSet.Annotations[exclusiveTopologyAnnotation] = exclusiveTopologyValue
+				ensureJobSetNetworkConfigured(jobSet)
 			}
 		} else if job.Spec.Resources.GetGpuResources() != nil {
 			// For GPU jobs, we use Replicas to specify the number of nodes, defaulting to 1 if unset.
@@ -254,6 +267,9 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 			replicatedJob.Template.Spec.Parallelism = proto.Int32(nodes)
 			replicatedJob.Template.Spec.Completions = proto.Int32(nodes)
 			replicatedJob.Template.Spec.CompletionMode = &completionMode
+			if nodes > 1 {
+				ensureJobSetNetworkConfigured(jobSet)
+			}
 			// For indexed completion, Replicas must be 1.
 			replicatedJob.Replicas = 1
 		}
