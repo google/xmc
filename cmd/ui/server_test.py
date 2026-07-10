@@ -148,16 +148,6 @@ class SPAHandlerTest(unittest.TestCase):
             environ={},
             expected=(
                 'window.XMC_FEATURE_FLAGS={'
-                '"cursorPaginationEnabled": false, '
-                '"statusMessageHistoryEnabled": false};'
-            ),
-        ),
-        dict(
-            testcase_name='cursor_pagination_true',
-            environ={'XMC_DEFAULT_TO_CURSOR_PAGINATION': 'true'},
-            expected=(
-                'window.XMC_FEATURE_FLAGS={'
-                '"cursorPaginationEnabled": true, '
                 '"statusMessageHistoryEnabled": false};'
             ),
         ),
@@ -166,26 +156,7 @@ class SPAHandlerTest(unittest.TestCase):
             environ={'XMC_STATUS_MESSAGE_HISTORY_ENABLED': 'true'},
             expected=(
                 'window.XMC_FEATURE_FLAGS={'
-                '"cursorPaginationEnabled": false, '
                 '"statusMessageHistoryEnabled": true};'
-            ),
-        ),
-        dict(
-            testcase_name='cursor_pagination_false',
-            environ={'XMC_DEFAULT_TO_CURSOR_PAGINATION': 'false'},
-            expected=(
-                'window.XMC_FEATURE_FLAGS={'
-                '"cursorPaginationEnabled": false, '
-                '"statusMessageHistoryEnabled": false};'
-            ),
-        ),
-        dict(
-            testcase_name='cursor_pagination_other',
-            environ={'XMC_DEFAULT_TO_CURSOR_PAGINATION': '1'},
-            expected=(
-                'window.XMC_FEATURE_FLAGS={'
-                '"cursorPaginationEnabled": false, '
-                '"statusMessageHistoryEnabled": false};'
             ),
         ),
     ]

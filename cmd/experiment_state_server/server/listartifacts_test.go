@@ -224,35 +224,4 @@ func TestListArtifacts_DependencyFailures(t *testing.T) {
 	}
 }
 
-func TestListArtifacts_DefaultToCursorPagination(t *testing.T) {
-	ctx := context.Background()
-	mockStorage := &storage.MockStorage{}
 
-	testCases := []struct {
-		name                      string
-		defaultToCursorPagination bool
-	}{
-		{
-			name:                      "DefaultToCursorTrue",
-			defaultToCursorPagination: true,
-		},
-		{
-			name:                      "DefaultToCursorFalse",
-			defaultToCursorPagination: false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := &config.Config{DefaultToCursorPagination: tc.defaultToCursorPagination}
-			server := New(mockStorage, cfg, createTestAuthorizer(ctx, t), &mockXidClient{}, nil)
-			_, err := server.ListArtifacts(ctx, &apipb.ListArtifactsRequest{PageSize: 10})
-			if err != nil {
-				t.Fatalf("ListArtifacts() returned an unexpected error: %v", err)
-			}
-			if mockStorage.GotDefaultToCursorPaginationArtifacts != tc.defaultToCursorPagination {
-				t.Errorf("ListArtifacts() passed defaultToCursorPagination to storage: got %v, want %v", mockStorage.GotDefaultToCursorPaginationArtifacts, tc.defaultToCursorPagination)
-			}
-		})
-	}
-}

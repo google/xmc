@@ -31,7 +31,7 @@ import (
 )
 
 // ListXidEntries returns a paginated list of XidEntry protos based on the provided filter and order.
-func (s *Storage) ListXidEntries(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration, defaultToCursorPagination bool) ([]*xidpb.XidEntry, string, error) {
+func (s *Storage) ListXidEntries(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*xidpb.XidEntry, string, error) {
 	// 1. Normalize the filter.
 	normalizedFilter, err := normalizer.Normalize(filter, s.xidsQueryGen.Tables()[0])
 	if err != nil {
@@ -49,7 +49,7 @@ func (s *Storage) ListXidEntries(ctx context.Context, pageSize int32, pageToken,
 		ValidOrderByFields:    xidschema.XidsOrderByFields,
 	}
 
-	isCursor, err := listParams.DecodePageToken(pageToken, defaultToCursorPagination)
+	isCursor, err := listParams.DecodePageToken(pageToken)
 	if err != nil {
 		return nil, "", err
 	}

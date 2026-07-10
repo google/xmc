@@ -42,9 +42,7 @@ describe('ExperimentsListPageStore', () => {
       'searchExperiments',
     ]);
     const mockSnackbarService = jasmine.createSpyObj<SnackbarService>('SnackbarService', ['open']);
-    const mockFeatureFlagService = {
-      isCursorPaginationEnabled: false,
-    };
+    const mockFeatureFlagService = {};
 
     setupModule({
       providers: [
@@ -138,8 +136,7 @@ describe('ExperimentsListPageStore', () => {
       });
     });
 
-    it('should reset pagination to page 1 when orderBy is set and isCursorPaginationEnabled is true', () => {
-      state.mockFeatureFlagService.isCursorPaginationEnabled = true;
+    it('should reset pagination to page 1 when orderBy is set', () => {
       state.store.patchState({
         pagination: {
           ...INITIAL_STATE.pagination,
@@ -153,23 +150,6 @@ describe('ExperimentsListPageStore', () => {
 
       expect(state.store.pageIndex()).toBe(0);
       expect(state.store.hasPreviousPage()).toBe(false);
-    });
-
-    it('should not reset pagination to page 1 when orderBy is set and isCursorPaginationEnabled is false', () => {
-      state.mockFeatureFlagService.isCursorPaginationEnabled = false;
-      state.store.patchState({
-        pagination: {
-          ...INITIAL_STATE.pagination,
-          nextPageToken: 'page2',
-        },
-      });
-      state.store.goToNextPage();
-      expect(state.store.pageIndex()).toBe(1);
-
-      state.store.setOrderBy('xid asc');
-
-      expect(state.store.pageIndex()).toBe(1);
-      expect(state.store.hasPreviousPage()).toBe(true);
     });
   });
 

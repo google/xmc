@@ -37,38 +37,12 @@ describe('FeatureFlagService', () => {
   describe('when XMC_FEATURE_FLAGS is undefined', () => {
     const state = setup();
 
-    it('isCursorPaginationEnabled should be false', () => {
-      expect(state.service.isCursorPaginationEnabled).toBeFalse();
-    });
-
-    it('isFeatureEnabled("cursorPaginationEnabled") should be false', () => {
-      expect(state.service.isFeatureEnabled('cursorPaginationEnabled')).toBeFalse();
-    });
-
     it('isStatusMessageHistoryEnabled should be false', () => {
       expect(state.service.isStatusMessageHistoryEnabled).toBeFalse();
     });
   });
 
   describe('when XMC_FEATURE_FLAGS is defined', () => {
-    describe('when cursorPaginationEnabled is true', () => {
-      const state = setup({ cursorPaginationEnabled: true });
-
-      it('isCursorPaginationEnabled should be true if cursorPaginationEnabled is true', () => {
-        expect(state.service.isCursorPaginationEnabled).toBeTrue();
-        expect(state.service.isFeatureEnabled('cursorPaginationEnabled')).toBeTrue();
-      });
-    });
-
-    describe('when cursorPaginationEnabled is false', () => {
-      const state = setup({ cursorPaginationEnabled: false });
-
-      it('isCursorPaginationEnabled should be false if cursorPaginationEnabled is false', () => {
-        expect(state.service.isCursorPaginationEnabled).toBeFalse();
-        expect(state.service.isFeatureEnabled('cursorPaginationEnabled')).toBeFalse();
-      });
-    });
-
     describe('when statusMessageHistoryEnabled is true', () => {
       const state = setup({ statusMessageHistoryEnabled: true });
 

@@ -37,7 +37,6 @@ type Config struct {
 	HTTPAudience              string
 	GRPCAudience              string
 	DisableAuthentication     bool
-	DefaultToCursorPagination bool
 }
 
 var cfg Config
@@ -93,7 +92,6 @@ func (c *Config) registerFlags(fs *flag.FlagSet) {
 	)
 	fs.StringVar(&c.Audience, "xid_audience", "https://test-xmanager-gcp.corp.goog", "The audience of the IAP JWT.")
 	fs.BoolVar(&c.DisableAuthentication, "xid_disable_authentication", false, "Disables authentication for testing.")
-	fs.BoolVar(&c.DefaultToCursorPagination, "xid_default_to_cursor_pagination", false, "Whether to use cursor-based pagination by default when no page token is provided.")
 }
 
 // Validate checks if the Config is valid.

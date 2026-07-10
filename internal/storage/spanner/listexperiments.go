@@ -29,7 +29,7 @@ import (
 )
 
 // ListExperiments returns a paginated list of Experiment protos based on the provided filter and order.
-func (s *Storage) ListExperiments(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration, defaultToCursorPagination bool) ([]*essmsgpb.Experiment, string, error) {
+func (s *Storage) ListExperiments(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.Experiment, string, error) {
 	logging.Info(ctx, "List experiments", "pageSize", pageSize, "pageToken", pageToken, "filter", filter, "orderBy", orderBy, "staleness", staleness)
 
 	// 1. Normalize the filter.
@@ -49,7 +49,7 @@ func (s *Storage) ListExperiments(ctx context.Context, pageSize int32, pageToken
 		ValidOrderByFields:    experimentschema.ExperimentsOrderByFields,
 	}
 
-	isCursor, err := listParams.DecodePageToken(pageToken, defaultToCursorPagination)
+	isCursor, err := listParams.DecodePageToken(pageToken)
 	if err != nil {
 		return nil, "", err
 	}

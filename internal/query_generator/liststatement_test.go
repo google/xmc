@@ -482,52 +482,35 @@ func TestIsCursorPageToken(t *testing.T) {
 	testCases := []struct {
 		name           string
 		pageToken      string
-		defaultOnEmpty bool
 		want           bool
 	}{
 		{
-			name:           "empty token, default false",
-			pageToken:      "",
-			defaultOnEmpty: false,
-			want:           false,
-		},
-		{
 			name:           "empty token, default true",
 			pageToken:      "",
-			defaultOnEmpty: true,
 			want:           true,
-		},
-		{
-			name:           "offset token, default false",
-			pageToken:      "100",
-			defaultOnEmpty: false,
-			want:           false,
 		},
 		{
 			name:           "offset token, default true",
 			pageToken:      "100",
-			defaultOnEmpty: true,
 			want:           false,
 		},
 		{
 			name:           "cursor token, default false",
 			pageToken:      "eyJhIjoib25lIiwiYiI6Mn0",
-			defaultOnEmpty: false,
 			want:           true,
 		},
 		{
 			name:           "random string token, default true",
 			pageToken:      "random",
-			defaultOnEmpty: true,
 			want:           true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := IsCursorPageToken(tc.pageToken, tc.defaultOnEmpty)
+			got := IsCursorPageToken(tc.pageToken)
 			if got != tc.want {
-				t.Errorf("IsCursorPageToken(%q, %v) = %v, want %v", tc.pageToken, tc.defaultOnEmpty, got, tc.want)
+				t.Errorf("IsCursorPageToken(%q) = %v, want %v", tc.pageToken, got, tc.want)
 			}
 		})
 	}
@@ -725,44 +708,32 @@ func TestListParams_DecodePageToken(t *testing.T) {
 	testCases := []struct {
 		name            string
 		pageToken       string
-		defaultToCursor bool
 		wantIsCursor    bool
 		wantOffset      int64
 		wantAfterCursor map[string]any
 		wantErr         bool
 	}{
 		{
-			name:            "empty token, default offset",
-			pageToken:       "",
-			defaultToCursor: false,
-			wantIsCursor:    false,
-			wantOffset:      0,
-		},
-		{
 			name:            "empty token, default cursor",
 			pageToken:       "",
-			defaultToCursor: true,
 			wantIsCursor:    true,
 			wantAfterCursor: nil,
 		},
 		{
 			name:            "offset token",
 			pageToken:       "100",
-			defaultToCursor: true, // Should still be offset
 			wantIsCursor:    false,
 			wantOffset:      100,
 		},
 		{
 			name:            "cursor token",
 			pageToken:       "eyJhIjoib25lIiwiYiI6Mn0",
-			defaultToCursor: false, // Should still be cursor
 			wantIsCursor:    true,
 			wantAfterCursor: map[string]any{"a": "one", "b": 2.0},
 		},
 		{
 			name:            "invalid offset token",
 			pageToken:       "abc",
-			defaultToCursor: false, // IsCursorPageToken will return true for "abc"
 			wantIsCursor:    true,
 			wantErr:         true, // DecodeAfterCursorPageToken will fail
 		},
@@ -771,7 +742,7 @@ func TestListParams_DecodePageToken(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			params := &ListParams{}
-			gotIsCursor, err := params.DecodePageToken(tc.pageToken, tc.defaultToCursor)
+			gotIsCursor, err := params.DecodePageToken(tc.pageToken)
 
 			if tc.wantErr {
 				if err == nil {

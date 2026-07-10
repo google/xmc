@@ -29,7 +29,7 @@ import (
 )
 
 // ListWorkUnits returns a paginated list of WorkUnit protos based on the provided filter and order.
-func (s *Storage) ListWorkUnits(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration, defaultToCursorPagination bool) ([]*essmsgpb.WorkUnit, string, error) {
+func (s *Storage) ListWorkUnits(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.WorkUnit, string, error) {
 	ctx = logging.WithExperimentName(ctx, parent)
 	logging.Info(ctx, "Fetch work units", "parent", parent, "pageSize", pageSize, "pageToken", pageToken, "filter", filter, "orderBy", orderBy, "staleness", staleness)
 
@@ -62,7 +62,7 @@ func (s *Storage) ListWorkUnits(ctx context.Context, parent string, pageSize int
 		ValidOrderByFields:    workunitschema.WorkUnitOrderByFields,
 	}
 
-	isCursor, err := listParams.DecodePageToken(pageToken, defaultToCursorPagination)
+	isCursor, err := listParams.DecodePageToken(pageToken)
 	if err != nil {
 		return nil, "", err
 	}

@@ -107,9 +107,9 @@ type Storage interface {
 
 	// ListExperiments retrieves a list of experiments matching the given filter. Staleness should
 	// be set to 0 for strong reads, and up to 15 seconds for stale reads.
-	// If pageToken is empty, defaultToCursorPagination determines the pagination type. Otherwise,
+	// If pageToken is empty, it uses cursor pagination by default. Otherwise,
 	// the pagination type is determined by the format of the non-empty pageToken.
-	ListExperiments(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration, defaultToCursorPagination bool) ([]*essmsgpb.Experiment, string, error)
+	ListExperiments(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.Experiment, string, error)
 
 	// UpdateExperiment updates an experiment with the given update mask. It returns both the
 	// original and updated experiments, so that the caller can choose whether to perform
@@ -131,9 +131,9 @@ type Storage interface {
 
 	// ListWorkUnits retrieves a list of work units matching the given filter. Staleness should
 	// be set to 0 for strong reads, and up to 15 seconds for stale reads.
-	// If pageToken is empty, defaultToCursorPagination determines the pagination type. Otherwise,
+	// If pageToken is empty, it uses cursor pagination by default. Otherwise,
 	// the pagination type is determined by the format of the non-empty pageToken.
-	ListWorkUnits(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration, defaultToCursorPagination bool) ([]*essmsgpb.WorkUnit, string, error)
+	ListWorkUnits(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.WorkUnit, string, error)
 
 	// UpdateWorkUnit updates a work unit with the given update mask. It returns both the
 	// original and updated work units, so that the caller can choose whether to perform
@@ -165,7 +165,7 @@ type Storage interface {
 
 	// ListStatusMessages retrieves a list of status messages for an experiment or work unit. Staleness should
 	// be set to 0 for strong reads, and up to 15 seconds for stale reads.
-	// If pageToken is empty, defaultToCursorPagination determines the pagination type. Otherwise,
+	// If pageToken is empty, it defaults to cursor pagination. Otherwise,
 	// the pagination type is determined by the format of the non-empty pageToken.
 	ListStatusMessages(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.StatusMessage, string, error)
 
@@ -181,9 +181,9 @@ type Storage interface {
 
 	// ListArtifacts retrieves a list of artifacts matching the given filter. Staleness should be set
 	// to 0 for strong reads, and up to 15 seconds for stale reads.
-	// If pageToken is empty, defaultToCursorPagination determines the pagination type. Otherwise,
+	// If pageToken is empty, it uses cursor pagination by default. Otherwise,
 	// the pagination type is determined by the format of the non-empty pageToken.
-	ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration, defaultToCursorPagination bool) ([]*essmsgpb.Artifact, string, error)
+	ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.Artifact, string, error)
 
 	// UpdateArtifact updates an artifact with the given update mask.
 	UpdateArtifact(ctx context.Context, update *ArtifactUpdate) (originalArtifact *essmsgpb.Artifact, updatedArtifact *essmsgpb.Artifact, err error)
@@ -216,9 +216,9 @@ type Storage interface {
 
 	// ListXidEntries retrieves a paginated and filtered list of XidEntries. Staleness should
 	// be set to 0 for strong reads, and up to 15 seconds for stale reads.
-	// If pageToken is empty, defaultToCursorPagination determines the pagination type. Otherwise,
+	// If pageToken is empty, it uses cursor pagination by default. Otherwise,
 	// the pagination type is determined by the format of the non-empty pageToken.
-	ListXidEntries(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration, defaultToCursorPagination bool) ([]*xidmsgpb.XidEntry, string, error)
+	ListXidEntries(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*xidmsgpb.XidEntry, string, error)
 
 	// UpdateXidEntry updates an XidEntry with the given update mask.
 	UpdateXidEntry(ctx context.Context, update *XidEntryUpdate) (*xidmsgpb.XidEntry, error)

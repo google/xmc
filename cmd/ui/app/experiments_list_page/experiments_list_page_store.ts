@@ -91,16 +91,11 @@ export class ExperimentsListPageStore extends ComponentStore<ExperimentsListPage
   }));
 
   /** Sets the orderBy. It does not fetch data. */
-  readonly setOrderBy = this.updater((state, orderBy: string) => {
-    const setPagination = this.featureFlagService.isCursorPaginationEnabled
-      ? { pagination: getInitialPaginationState(state.pagination.pageSize) }
-      : {};
-    return {
-      ...state,
-      orderBy,
-      ...setPagination,
-    };
-  });
+  readonly setOrderBy = this.updater((state, orderBy: string) => ({
+    ...state,
+    orderBy,
+    pagination: getInitialPaginationState(state.pagination.pageSize),
+  }));
 
   /** Sets the page size. It does not fetch data. */
   readonly setPageSize = this.updater((state, pageSize: number) => setPageSize(state, pageSize));

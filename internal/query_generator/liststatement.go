@@ -61,8 +61,8 @@ type ListParams struct {
 
 // DecodePageToken decodes the page token and updates the ListParams with the result.
 // It returns true if the token was a cursor-based token.
-func (p *ListParams) DecodePageToken(pageToken string, defaultToCursor bool) (bool, error) {
-	isCursor := IsCursorPageToken(pageToken, defaultToCursor)
+func (p *ListParams) DecodePageToken(pageToken string) (bool, error) {
+	isCursor := IsCursorPageToken(pageToken)
 	if isCursor {
 		afterCursor, err := DecodeAfterCursorPageToken(pageToken)
 		if err != nil {
@@ -276,11 +276,11 @@ func ApplyOffsetPagination[T any](results []T, pageSize int32, currentOffset int
 }
 
 // IsCursorPageToken returns true if the page token is likely a cursor based pagination token.
-// If the page token is empty, it returns defaultOnEmpty.
+// If the page token is empty, it defaults to true.
 // If the page token has a numeric value, we assume it is an offset based pagination token.
-func IsCursorPageToken(pageToken string, defaultOnEmpty bool) bool {
+func IsCursorPageToken(pageToken string) bool {
 	if pageToken == "" {
-		return defaultOnEmpty
+		return true
 	}
 	// Offset tokens are expected to be numeric. Any non-numeric token is considered
 	// a cursor-based page token.

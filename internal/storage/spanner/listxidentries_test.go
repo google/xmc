@@ -52,7 +52,7 @@ func TestListXidEntries(t *testing.T) {
 	}
 
 	// List all entries
-	gotEntries, _, err := storage.ListXidEntries(ctx, 10, "", "", "", 0, false)
+	gotEntries, _, err := storage.ListXidEntries(ctx, 10, "", "", "", 0)
 	if err != nil {
 		t.Fatalf("ListXidEntries failed: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestListXidEntries_OffsetPagination(t *testing.T) {
 	}
 
 	// List first page
-	gotEntries1, nextPageToken, err := storage.ListXidEntries(ctx, 3, "", "", "xid", 0, false)
+	gotEntries1, nextPageToken, err := storage.ListXidEntries(ctx, 3, "", "", "xid", 0)
 	if err != nil {
 		t.Fatalf("ListXidEntries failed: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestListXidEntries_OffsetPagination(t *testing.T) {
 	}
 
 	// List second page
-	gotEntries2, _, err := storage.ListXidEntries(ctx, 3, nextPageToken, "", "xid", 0, false)
+	gotEntries2, _, err := storage.ListXidEntries(ctx, 3, nextPageToken, "", "xid", 0)
 	if err != nil {
 		t.Fatalf("ListXidEntries failed: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestListXidEntries_CursorPagination(t *testing.T) {
 			var gotCounts []int
 			var pageToken string
 			for i := 0; i < len(tc.wantCounts); i++ {
-				xidEntries, nextPageToken, err := storage.ListXidEntries(ctx, int32(tc.pageSize), pageToken, "", "xid", 0, true)
+				xidEntries, nextPageToken, err := storage.ListXidEntries(ctx, int32(tc.pageSize), pageToken, "", "xid", 0)
 				if err != nil {
 					t.Fatalf("ListXidEntries failed: %v", err)
 				}
@@ -251,7 +251,7 @@ func TestListXidEntries_FilterFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, _, err := storage.ListXidEntries(ctx, 10, "", tc.filter, "", 0, false)
+			got, _, err := storage.ListXidEntries(ctx, 10, "", tc.filter, "", 0)
 			if err != nil {
 				t.Fatalf("ListXidEntries with filter=%q failed: %v", tc.filter, err)
 			}
@@ -330,7 +330,7 @@ func TestListXidEntries_OrderByFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, _, err := storage.ListXidEntries(ctx, 10, "", "", tc.orderBy, 0, false)
+			got, _, err := storage.ListXidEntries(ctx, 10, "", "", tc.orderBy, 0)
 			if err != nil {
 				t.Fatalf("ListXidEntries with orderBy=%q failed: %v", tc.orderBy, err)
 			}
@@ -377,7 +377,7 @@ func TestListXidEntries_Complex(t *testing.T) {
 	orderBy := "created desc"
 	pageSize := int32(2)
 
-	gotPage1, page1Token, err := storage.ListXidEntries(ctx, pageSize, "", filter, orderBy, 0, false)
+	gotPage1, page1Token, err := storage.ListXidEntries(ctx, pageSize, "", filter, orderBy, 0)
 	if err != nil {
 		t.Fatalf("ListXidEntries page 1 failed: %v", err)
 	}
@@ -391,7 +391,7 @@ func TestListXidEntries_Complex(t *testing.T) {
 	}
 
 	// List page 2
-	gotPage2, page2Token, err := storage.ListXidEntries(ctx, pageSize, page1Token, filter, orderBy, 0, false)
+	gotPage2, page2Token, err := storage.ListXidEntries(ctx, pageSize, page1Token, filter, orderBy, 0)
 	if err != nil {
 		t.Fatalf("ListXidEntries page 2 failed: %v", err)
 	}

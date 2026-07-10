@@ -29,7 +29,7 @@ import (
 )
 
 // ListArtifacts returns a paginated list of Artifact protos based on the provided filter and order.
-func (s *Storage) ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration, defaultToCursorPagination bool) ([]*essmsgpb.Artifact, string, error) {
+func (s *Storage) ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.Artifact, string, error) {
 	logging.Info(ctx, "List artifacts", "pageSize", pageSize, "pageToken", pageToken, "filter", filter, "orderBy", orderBy, "staleness", staleness)
 
 	// 1. Ensure the results are filtered to the artifact's parent if present.
@@ -69,7 +69,7 @@ func (s *Storage) ListArtifacts(ctx context.Context, parent string, pageSize int
 		ValidOrderByFields:    artifactschema.ArtifactsOrderByFields,
 	}
 
-	isCursor, err := listParams.DecodePageToken(pageToken, defaultToCursorPagination)
+	isCursor, err := listParams.DecodePageToken(pageToken)
 	if err != nil {
 		return nil, "", err
 	}
