@@ -128,6 +128,8 @@ message KubernetesJob {
   string service_account = 8;
   // Sidecar / auxiliary containers to run alongside the primary container in each Pod.
   repeated ExecutableSpec sidecars = 9;
+  // Init containers to run before primary and sidecar containers start.
+  repeated ExecutableSpec init_containers = 10;
 }
 
 // Selects a field of the Pod (matches YAML 'fieldRef').
@@ -182,7 +184,7 @@ message ExecutableSpec {
   // The structured environment variables, supporting downward API.
   repeated EnvVar env = 6;
   // Optional name for the container. If unset, defaults to the job name for the primary container,
-  // or '<job_name>-sidecar-<index>' for sidecars.
+  // '<job_name>-sidecar-<index>' for sidecars, or '<job_name>-init-<index>' for init containers.
   string name = 7;
 }
 
