@@ -72,7 +72,7 @@ The XMC services require OCI container images built from the codebase. You must 
    ```bash
    export XMC_ACR_TARGET="<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc"
    export XMC_ENV="dev"  # Match your deployment environment name
-   export BUILD_TAG="latest"
+   export BUILD_TAG="<IMAGE_TAG>"
    ```
 
 4. **Build and push the images** using the generated Bazel targets:
@@ -87,12 +87,12 @@ The XMC services require OCI container images built from the codebase. You must 
 
 5. **Update image variables** in your deployment configuration file (e.g. `xmanager-cloud-deployment.yaml`, copy of [xmc-deployment-template.yaml](deploy/ctk_v2/xmc-deployment-template.yaml)):
    ```yaml
-   xid_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/xid-service-dev:latest"
-   actuator_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/actuator-dev:latest"
-   ess_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/experiment-state-server-dev:latest"
-   ui_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/ui-dev:latest"
-   reconciler_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/reconciler-dev:latest"
-   log_monitor_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/log-monitor-dev:latest"
+   xid_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/xid-service-dev:<IMAGE_TAG>"
+   actuator_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/actuator-dev:<IMAGE_TAG>"
+   ess_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/experiment-state-server-dev:<IMAGE_TAG>"
+   ui_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/ui-dev:<IMAGE_TAG>"
+   reconciler_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/reconciler-dev:<IMAGE_TAG>"
+   log_monitor_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/log-monitor-dev:<IMAGE_TAG>"
    ```
 
 ### 3. DNS and Domain Name Configuration
@@ -340,12 +340,12 @@ git pull origin main
 
 ### Step 2: Build and Push Updated Container Images
 
-Rebuild all XMC OCI container images from the updated source code and push them to your Google Artifact Registry repository so that Kubernetes workloads pull the updated service binaries. Note that if you use a custom BUILD_TAG, you must also update your deployment configuration file (e.g., xmanager-cloud-deployment.yaml or values.yaml) with the new tags before upgrading:
+Rebuild all XMC OCI container images from the updated source code and push them to your Google Artifact Registry repository specifying your target release tag (`<IMAGE_TAG>`) so that Kubernetes workloads pull the updated service binaries. Ensure you also update your deployment configuration file (e.g., `xmanager-cloud-deployment.yaml` or `values.yaml`) with the new `<IMAGE_TAG>` before upgrading:
 
 ```bash
 export XMC_ACR_TARGET="<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc"
 export XMC_ENV="<ENVIRONMENT>"  # Match your deployment environment tag
-export BUILD_TAG="latest"
+export BUILD_TAG="<IMAGE_TAG>"
 
 bazel run //cmd/xid_service:xid_service_image_push
 bazel run //cmd/actuator:actuator_image_push
