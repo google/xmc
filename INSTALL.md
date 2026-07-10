@@ -340,7 +340,7 @@ git pull origin main
 
 ### Step 2: Build and Push Updated Container Images
 
-Rebuild all XMC OCI container images from the updated source code and push them to your Google Artifact Registry repository so that Kubernetes workloads pull the updated service binaries:
+Rebuild all XMC OCI container images from the updated source code and push them to your Google Artifact Registry repository so that Kubernetes workloads pull the updated service binaries. Note that if you use a custom BUILD_TAG, you must also update your deployment configuration file (e.g., xmanager-cloud-deployment.yaml or values.yaml) with the new tags before upgrading:
 
 ```bash
 export XMC_ACR_TARGET="<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc"
