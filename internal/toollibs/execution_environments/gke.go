@@ -316,38 +316,47 @@ func (g *GKE) InjectOnWorkUnitCreation(ctx context.Context, essServer spb.Experi
 	return workUnit, nil
 }
 
-func annotateContainerList(containers []corev1.Container, specs []*epb.ExecutableSpec) error {
+func annotateContainerList(containers []corev1.Container, specs []*epb.ExecutableSpec) ([]corev1.Container, error) {
 	if len(containers) != len(specs) {
-		return fmt.Errorf("number of containers in replicated job (%d) does not match number of specs (%d)", len(containers), len(specs))
+		return nil, fmt.Errorf("number of containers in replicated job (%d) does not match number of specs (%d)", len(containers), len(specs))
 	}
-	for idx := range containers {
+	if len(containers) == 0 {
+		return containers, nil
+	}
+	result := make([]corev1.Container, len(containers))
+	copy(result, containers)
+	for idx := range result {
 		if idx >= len(specs) || specs[idx].GetResources() == nil {
 			continue
 		}
 		reqs, err := resourceRequirements(specs[idx].GetResources())
 		if err != nil {
-			return err
+			return nil, err
 		}
-		containers[idx].Resources = reqs
+		result[idx].Resources = reqs
 		if specs[idx].GetResources().GetTpuResources() != nil {
-			containers[idx].Ports = append(containers[idx].Ports,
+			result[idx].Ports = append(result[idx].Ports,
 				corev1.ContainerPort{ContainerPort: tpuICIPort},
 				corev1.ContainerPort{ContainerPort: tpuMetricsPort},
 			)
 		}
 	}
-	return nil
+	return result, nil
 }
 
 func annotateContainers(replicatedJob *jobsetv1alpha2.ReplicatedJob, job *epb.KubernetesJob) error {
 	specs := []*epb.ExecutableSpec{job.Spec}
 	specs = append(specs, job.Sidecars...)
-	if err := annotateContainerList(replicatedJob.Template.Spec.Template.Spec.Containers, specs); err != nil {
+	containers, err := annotateContainerList(replicatedJob.Template.Spec.Template.Spec.Containers, specs)
+	if err != nil {
 		return err
 	}
-	if err := annotateContainerList(replicatedJob.Template.Spec.Template.Spec.InitContainers, job.InitContainers); err != nil {
+	initContainers, err := annotateContainerList(replicatedJob.Template.Spec.Template.Spec.InitContainers, job.InitContainers)
+	if err != nil {
 		return err
 	}
+	replicatedJob.Template.Spec.Template.Spec.Containers = containers
+	replicatedJob.Template.Spec.Template.Spec.InitContainers = initContainers
 	return nil
 }
 

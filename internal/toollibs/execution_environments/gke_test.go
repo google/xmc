@@ -945,3 +945,43 @@ func TestAnnotateContainersMismatchError(t *testing.T) {
 		t.Errorf("expected error for mismatched container count (1) and spec count (2), got nil")
 	}
 }
+
+func TestAnnotateContainersInitContainerErrorNoPartialMutation(t *testing.T) {
+	replicatedJob := &jobsetv1alpha2.ReplicatedJob{
+		Template: batchv1.JobTemplateSpec{
+			Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers:     []corev1.Container{{Name: "c1"}},
+						InitContainers: []corev1.Container{{Name: "init"}},
+					},
+				},
+			},
+		},
+	}
+	job := &epb.KubernetesJob{
+		Spec: &epb.ExecutableSpec{
+			Name: "c1",
+			Resources: &epb.ResourceSet{
+				Resources: &epb.ResourceSet_CpuResources{
+					CpuResources: &epb.CpuResources{
+						CpuMillicores: 1000,
+						MemoryBytes:   1024,
+					},
+				},
+			},
+		},
+		InitContainers: []*epb.ExecutableSpec{
+			{Name: "init-1"},
+			{Name: "init-2"}, // Mismatched init container count causes error
+		},
+	}
+
+	err := annotateContainers(replicatedJob, job)
+	if err == nil {
+		t.Fatalf("expected error due to init container count mismatch, got nil")
+	}
+	if len(replicatedJob.Template.Spec.Template.Spec.Containers[0].Resources.Requests) != 0 {
+		t.Errorf("expected main container resources to remain unmutated after init container error, got %v", replicatedJob.Template.Spec.Template.Spec.Containers[0].Resources.Requests)
+	}
+}
