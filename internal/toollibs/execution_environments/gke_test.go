@@ -262,6 +262,10 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 					},
 				},
 				Spec: jobsetv1alpha2.JobSetSpec{
+					Network: &jobsetv1alpha2.Network{
+						EnableDNSHostnames:       proto.Bool(true),
+						PublishNotReadyAddresses: proto.Bool(true),
+					},
 					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
 						{
 							Name: "test-job",
@@ -351,6 +355,10 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 					},
 				},
 				Spec: jobsetv1alpha2.JobSetSpec{
+					Network: &jobsetv1alpha2.Network{
+						EnableDNSHostnames:       proto.Bool(true),
+						PublishNotReadyAddresses: proto.Bool(true),
+					},
 					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
 						{
 							Name: "test-job",
