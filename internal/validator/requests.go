@@ -512,7 +512,7 @@ func validateContainerName(names map[string]bool, name, containerType string) er
 		return err
 	}
 	if names[name] {
-		return fmt.Errorf("work_unit.executable.jobset.jobs container name %q must be unique within the pod: %w", name, status.ErrInvalidArgument)
+		return fmt.Errorf("work_unit.executable.jobset.jobs %s container name %q must be unique within the pod: %w", containerType, name, status.ErrInvalidArgument)
 	}
 	names[name] = true
 	return nil
