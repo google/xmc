@@ -261,6 +261,10 @@ func EncodeAfterCursorPageToken(afterCursor map[string]any) (string, error) {
 
 // ApplyPagination handles the truncation of results and generation of the next page token for cursor-based pagination.
 func ApplyPagination[T any](results []T, pageSize int32, extractCursor func(T) (map[string]any, error)) ([]T, string, error) {
+	if pageSize <= 0 {
+		return nil, "", fmt.Errorf("pageSize must be greater than zero")
+	}
+
 	nextPageToken := ""
 	if len(results) > int(pageSize) {
 		results = results[:pageSize]

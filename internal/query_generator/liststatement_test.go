@@ -339,11 +339,31 @@ func TestApplyPagination(t *testing.T) {
 			wantResults:        []int{1, 2, 3, 4, 5},
 			wantToken:          "eyJpZCI6NX0",
 		},
+		{
+			name:               "zero page size",
+			results:            []int{1, 2},
+			pageSize:           0,
+			wantResults:        nil,
+			wantToken:          "",
+		},
+		{
+			name:               "negative page size",
+			results:            []int{1, 2},
+			pageSize:           -1,
+			wantResults:        nil,
+			wantToken:          "",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			gotResults, gotToken, err := ApplyPagination(tc.results, tc.pageSize, extractCursor)
+			if tc.pageSize <= 0 {
+				if err == nil {
+					t.Errorf("ApplyPagination() with pageSize %d got nil error, want error", tc.pageSize)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("ApplyPagination() returned an unexpected error: %v", err)
 			}
