@@ -324,6 +324,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 					},
 					Spec: corev1.PodSpec{
 						ServiceAccountName: job.GetServiceAccount(),
+						InitContainers:     buildInitContainersForJob(job),
 						Containers:         buildContainersForJob(job),
 						RestartPolicy:      corev1.RestartPolicyNever,
 						SecurityContext:    defaultPodSecurityContext(),
@@ -333,6 +334,15 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 			},
 		},
 	}
+}
+
+func buildInitContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
+	var initContainers []corev1.Container
+	for i, initContainer := range job.GetInitContainers() {
+		name := jobsetutil.InitContainerName(job, initContainer, i)
+		initContainers = append(initContainers, buildContainer(name, initContainer))
+	}
+	return initContainers
 }
 
 func buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {

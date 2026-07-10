@@ -151,6 +151,7 @@ func getWorkUnitResources(wu *essmsgpb.WorkUnit) []*essmsgpb.ResourceSet {
 		}
 		specs := []*essmsgpb.ExecutableSpec{job.GetSpec()}
 		specs = append(specs, job.GetSidecars()...)
+		specs = append(specs, job.GetInitContainers()...)
 		for _, spec := range specs {
 			if spec.GetResources() == nil {
 				continue
