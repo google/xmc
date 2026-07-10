@@ -62,12 +62,12 @@ func (s *Storage) ListWorkUnits(ctx context.Context, parent string, pageSize int
 		ValidOrderByFields:    workunitschema.WorkUnitOrderByFields,
 	}
 
-	isCursor, err := listParams.DecodePageToken(pageToken)
+	err := listParams.DecodePageToken(pageToken)
 	if err != nil {
 		return nil, "", err
 	}
 
-	stmt, pageOffset, err := ls.ListStatement(ctx, listParams)
+	stmt, err := ls.ListStatement(ctx, listParams)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
@@ -94,7 +94,7 @@ func (s *Storage) ListWorkUnits(ctx context.Context, parent string, pageSize int
 	}
 
 	// 5. If there are more results than the page size, return the next page token.
-	workUnits, nextPageToken, err := ls.ApplyPagination(workUnits, pageSize, pageOffset, isCursor, extractWorkUnitCursor)
+	workUnits, nextPageToken, err := ls.ApplyPagination(workUnits, pageSize, extractWorkUnitCursor)
 	if err != nil {
 		return nil, "", err
 	}

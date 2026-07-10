@@ -63,12 +63,12 @@ func (s *Storage) ListStatusMessages(ctx context.Context, parent string, pageSiz
 		ValidOrderByFields:  statusmessageschema.StatusMessagesOrderByFields,
 	}
 
-	isCursor, err := listParams.DecodePageToken(pageToken, true)
+	err := listParams.DecodePageToken(pageToken)
 	if err != nil {
 		return nil, "", err
 	}
 
-	stmt, pageOffset, err := ls.ListStatement(ctx, listParams)
+	stmt, err := ls.ListStatement(ctx, listParams)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
@@ -88,7 +88,7 @@ func (s *Storage) ListStatusMessages(ctx context.Context, parent string, pageSiz
 		return nil, "", fmt.Errorf("failed to read status messages: %w", err)
 	}
 
-	pagedMessages, nextPageToken, err := ls.ApplyPagination(messages, pageSize, pageOffset, isCursor, extractStatusMessageCursor)
+	pagedMessages, nextPageToken, err := ls.ApplyPagination(messages, pageSize, extractStatusMessageCursor)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to paginate status messages: %w", err)
 	}

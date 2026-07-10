@@ -35,7 +35,6 @@ import (
 // ListParams contains the parameters for a list query.
 type ListParams struct {
 	PageSize   int32
-	PageOffset int64
 	Filter     string
 	OrderBy    string
 
@@ -60,31 +59,17 @@ type ListParams struct {
 }
 
 // DecodePageToken decodes the page token and updates the ListParams with the result.
-// It returns true if the token was a cursor-based token.
-func (p *ListParams) DecodePageToken(pageToken string) (bool, error) {
-	isCursor := IsCursorPageToken(pageToken)
-	if isCursor {
-		afterCursor, err := DecodeAfterCursorPageToken(pageToken)
-		if err != nil {
-			return false, err
-		}
-		p.AfterCursor = afterCursor
-	} else {
-		pageOffset, err := DecodeOffsetPageToken(pageToken)
-		if err != nil {
-			return false, err
-		}
-		p.PageOffset = pageOffset
+func (p *ListParams) DecodePageToken(pageToken string) error {
+	afterCursor, err := DecodeAfterCursorPageToken(pageToken)
+	if err != nil {
+		return err
 	}
-	return isCursor, nil
+	p.AfterCursor = afterCursor
+	return nil
 }
 
 // ListStatement returns a Spanner statement for the given list parameters.
-func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, int64, error) {
-	if len(params.AfterCursor) > 0 && params.PageOffset != 0 {
-		return nil, 0, fmt.Errorf("only one of offset-based or cursor-based pagination can be used")
-	}
-
+func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, error) {
 	// 1. Parse the filter as an EBNF expression.
 	exp, err := aipfilter.ParseExpressionWithOptions(fepb.ExpressionParserOptions_builder{
 		RejectLegacyOperatorPrecedence: true,
@@ -104,7 +89,6 @@ func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, 
 	}
 
 	// 3. Generate the query.
-	pageOffset := params.PageOffset
 	pageSizeWithExtra := params.PageSize + 1
 
 	var ptFields map[querytools.TableField]any
@@ -115,9 +99,9 @@ func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, 
 		}
 	}
 
-	stmt, _, _, err := params.QueryGen.GenerateQuery(params.DefaultSelectFields, params.DefaultFullTextFields, nil, exp, orderedIndices, int(pageSizeWithExtra), int(pageOffset), ptFields, nil)
+	stmt, _, _, err := params.QueryGen.GenerateQuery(params.DefaultSelectFields, params.DefaultFullTextFields, nil, exp, orderedIndices, int(pageSizeWithExtra), 0, ptFields, nil)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to generate query: %w", err)
+		return nil, fmt.Errorf("failed to generate query: %w", err)
 	}
 
 	// 5. Ensure the query does not have duplicated select fields. This is a workaround; the query generator
@@ -134,7 +118,7 @@ func ListStatement(ctx context.Context, params ListParams) (*spanner.Statement, 
 	logging.Info(ctx, "Generated query params", "params", stmt.Params)
 
 	// 6. Return the results.
-	return stmt, pageOffset, nil
+	return stmt, nil
 }
 
 // generateOrderBy splits the orderBy string by commas, trims whitespace, and returns an error for invalid segments.
@@ -248,46 +232,6 @@ func deduplicateSelectColumns(query string) (string, error) {
 	return selectClause + uniqueColumnsStr + fromAndRestClause, nil
 }
 
-// DecodeOffsetPageToken extracts the numeric offset from a page token.
-func DecodeOffsetPageToken(pageToken string) (int64, error) {
-	if pageToken == "" {
-		return 0, nil
-	}
-	offset, err := strconv.ParseInt(pageToken, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse pageToken %s, %w: %w", pageToken, err, status.ErrInvalidArgument)
-	}
-	return offset, nil
-}
-
-// EncodeOffsetPageToken encodes a numeric offset into a page token.
-func EncodeOffsetPageToken(pageOffset int64) string {
-	return strconv.FormatInt(pageOffset, 10)
-}
-
-// ApplyOffsetPagination handles the truncation of results and generation of the next page token for offset-based pagination.
-func ApplyOffsetPagination[T any](results []T, pageSize int32, currentOffset int64) ([]T, string) {
-	nextPageToken := ""
-	if len(results) > int(pageSize) {
-		results = results[:pageSize]
-		nextPageToken = EncodeOffsetPageToken(currentOffset + int64(pageSize))
-	}
-	return results, nextPageToken
-}
-
-// IsCursorPageToken returns true if the page token is likely a cursor based pagination token.
-// If the page token is empty, it defaults to true.
-// If the page token has a numeric value, we assume it is an offset based pagination token.
-func IsCursorPageToken(pageToken string) bool {
-	if pageToken == "" {
-		return true
-	}
-	// Offset tokens are expected to be numeric. Any non-numeric token is considered
-	// a cursor-based page token.
-	_, err := strconv.ParseInt(pageToken, 10, 64)
-	return err != nil
-}
-
 // DecodeAfterCursorPageToken extracts the cursor map from a page token.
 func DecodeAfterCursorPageToken(pageToken string) (map[string]any, error) {
 	if pageToken == "" {
@@ -316,11 +260,15 @@ func EncodeAfterCursorPageToken(afterCursor map[string]any) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(data), nil
 }
 
-// ApplyAfterCursorPagination handles the truncation of results and generation of the next page token for cursor-based pagination.
-func ApplyAfterCursorPagination[T any](results []T, pageSize int32, lastItemCursor map[string]any) ([]T, string, error) {
+// ApplyPagination handles the truncation of results and generation of the next page token for cursor-based pagination.
+func ApplyPagination[T any](results []T, pageSize int32, extractCursor func(T) (map[string]any, error)) ([]T, string, error) {
 	nextPageToken := ""
 	if len(results) > int(pageSize) {
 		results = results[:pageSize]
+		lastItemCursor, err := extractCursor(results[int(pageSize)-1])
+		if err != nil {
+			return nil, "", err
+		}
 		token, err := EncodeAfterCursorPageToken(lastItemCursor)
 		if err != nil {
 			return nil, "", err
@@ -328,22 +276,4 @@ func ApplyAfterCursorPagination[T any](results []T, pageSize int32, lastItemCurs
 		nextPageToken = token
 	}
 	return results, nextPageToken, nil
-}
-
-// ApplyPagination handles both offset and cursor based pagination.
-func ApplyPagination[T any](results []T, pageSize int32, pageOffset int64, isCursorPagination bool, extractCursor func(T) (map[string]any, error)) ([]T, string, error) {
-	if !isCursorPagination {
-		results, nextPageToken := ApplyOffsetPagination(results, pageSize, pageOffset)
-		return results, nextPageToken, nil
-	}
-
-	var lastItemCursor map[string]any
-	if len(results) > int(pageSize) {
-		var err error
-		lastItemCursor, err = extractCursor(results[int(pageSize)-1])
-		if err != nil {
-			return nil, "", err
-		}
-	}
-	return ApplyAfterCursorPagination(results, pageSize, lastItemCursor)
 }

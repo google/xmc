@@ -31,7 +31,6 @@ func TestListStatement(t *testing.T) {
 		params     ListParams
 		tables     []querytools.TableView
 		wantStmt   *spanner.Statement
-		wantOffset int64
 		wantErr    bool
 	}{
 		{
@@ -54,7 +53,6 @@ func TestListStatement(t *testing.T) {
 			wantStmt: &spanner.Statement{
 				SQL: "SELECT a.AlbumTitle, a.SingerId, a.AlbumId FROM Albums a ORDER BY a.SingerId, a.AlbumId LIMIT 11",
 			},
-			wantOffset: 0,
 		},
 		{
 			name: "with filter",
@@ -78,7 +76,6 @@ func TestListStatement(t *testing.T) {
 				SQL:    "SELECT a.AlbumId, a.ReleaseDate FROM Albums@{FORCE_INDEX=AlbumsByTitleReleaseDate} a WHERE (a.AlbumTitle = @fb0) ORDER BY a.AlbumTitle, a.ReleaseDate LIMIT 11",
 				Params: map[string]any{"fb0": "foo"},
 			},
-			wantOffset: 0,
 		},
 		{
 			name: "with order by",
@@ -101,7 +98,6 @@ func TestListStatement(t *testing.T) {
 			wantStmt: &spanner.Statement{
 				SQL: "SELECT a.AlbumId, a.AlbumTitle, a.SingerId FROM Albums a ORDER BY a.AlbumTitle, a.SingerId, a.AlbumId LIMIT 11",
 			},
-			wantOffset: 0,
 		},
 		{
 			name: "with order by desc",
@@ -124,30 +120,6 @@ func TestListStatement(t *testing.T) {
 			wantStmt: &spanner.Statement{
 				SQL: "SELECT a.AlbumId, a.AlbumTitle, a.SingerId FROM Albums a ORDER BY a.AlbumTitle DESC, a.SingerId, a.AlbumId LIMIT 11",
 			},
-			wantOffset: 0,
-		},
-		{
-			name: "with page offset",
-			params: ListParams{
-				PageSize:   10,
-				PageOffset: 20,
-				DefaultSelectFields: []querytools.TableField{
-					querytools.AlbumTitleTableField,
-				},
-				ValidOrderByFields: []querytools.UserOrderedIndex{
-					{TableField: querytools.AlbumTitleTableField},
-					{TableField: querytools.ReleaseDateTableField},
-				},
-				IndexOrderByFields: []querytools.UserOrderedIndex{
-					{TableField: querytools.SingerIDTableField, SortOrder: querytools.Asc},
-					{TableField: querytools.AlbumIDTableField, SortOrder: querytools.Asc},
-				},
-			},
-			tables: querytools.AlbumsTables,
-			wantStmt: &spanner.Statement{
-				SQL: "SELECT a.AlbumTitle, a.SingerId, a.AlbumId FROM Albums a ORDER BY a.SingerId, a.AlbumId LIMIT 11 OFFSET 20",
-			},
-			wantOffset: 20,
 		},
 		{
 			name: "full text search",
@@ -174,7 +146,6 @@ func TestListStatement(t *testing.T) {
 				SQL:    "SELECT a.AlbumId, a.SingerId FROM Albums a WHERE (SEARCH(a.AlbumTitle, @fb0)) ORDER BY a.SingerId, a.AlbumId LIMIT 11",
 				Params: map[string]any{"fb0": "foo"},
 			},
-			wantOffset: 0,
 		},
 		{
 			name: "with after cursor",
@@ -205,25 +176,12 @@ func TestListStatement(t *testing.T) {
 					"val21": "album1",
 				},
 			},
-			wantOffset: 0,
 		},
 		{
 			name: "invalid filter",
 			params: ListParams{
 				PageSize: 10,
 				Filter:   `invalid = field`,
-			},
-			tables:  querytools.AlbumsTables,
-			wantErr: true,
-		},
-		{
-			name: "both page offset and after cursor error",
-			params: ListParams{
-				PageSize:   10,
-				PageOffset: 20,
-				AfterCursor: map[string]any{
-					string(querytools.SingerIDTableField): "singer1",
-				},
 			},
 			tables:  querytools.AlbumsTables,
 			wantErr: true,
@@ -250,7 +208,7 @@ func TestListStatement(t *testing.T) {
 				t.Fatalf("Failed to create query generator: %v", err)
 			}
 			tc.params.QueryGen = qg
-			stmt, offset, err := ListStatement(ctx, tc.params)
+			stmt, err := ListStatement(ctx, tc.params)
 
 			if tc.wantErr {
 				if err == nil {
@@ -265,10 +223,6 @@ func TestListStatement(t *testing.T) {
 
 			if diff := cmp.Diff(tc.wantStmt, stmt, cmpopts.EquateEmpty()); diff != "" {
 				t.Errorf("ListStatement() returned diff (-want +got):\n%s", diff)
-			}
-
-			if offset != tc.wantOffset {
-				t.Errorf("ListStatement() returned offset %d, want %d", offset, tc.wantOffset)
 			}
 		})
 	}
@@ -359,285 +313,6 @@ func TestGenerateOrderBy(t *testing.T) {
 	}
 }
 
-func TestDecodeOffsetPageToken(t *testing.T) {
-	testCases := []struct {
-		name      string
-		pageToken string
-		want      int64
-		wantErr   bool
-	}{
-		{
-			name:      "empty token",
-			pageToken: "",
-			want:      0,
-		},
-		{
-			name:      "valid token",
-			pageToken: "100",
-			want:      100,
-		},
-		{
-			name:      "invalid token",
-			pageToken: "abc",
-			wantErr:   true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := DecodeOffsetPageToken(tc.pageToken)
-			if tc.wantErr {
-				if err == nil {
-					t.Errorf("DecodeOffsetPageToken(%q) got nil error, want error", tc.pageToken)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("DecodeOffsetPageToken(%q) returned an unexpected error: %v", tc.pageToken, err)
-			}
-			if got != tc.want {
-				t.Errorf("DecodeOffsetPageToken(%q) = %d, want %d", tc.pageToken, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestEncodeOffsetPageToken(t *testing.T) {
-	testCases := []struct {
-		name       string
-		pageOffset int64
-		want       string
-	}{
-		{
-			name:       "zero offset",
-			pageOffset: 0,
-			want:       "0",
-		},
-		{
-			name:       "positive offset",
-			pageOffset: 123,
-			want:       "123",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := EncodeOffsetPageToken(tc.pageOffset)
-			if got != tc.want {
-				t.Errorf("EncodeOffsetPageToken(%d) = %q, want %q", tc.pageOffset, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestApplyOffsetPagination(t *testing.T) {
-	testCases := []struct {
-		name          string
-		results       []int
-		pageSize      int32
-		currentOffset int64
-		wantResults   []int
-		wantToken     string
-	}{
-		{
-			name:          "no truncation",
-			results:       []int{1, 2, 3},
-			pageSize:      5,
-			currentOffset: 10,
-			wantResults:   []int{1, 2, 3},
-			wantToken:     "",
-		},
-		{
-			name:          "with truncation",
-			results:       []int{1, 2, 3, 4, 5, 6},
-			pageSize:      5,
-			currentOffset: 10,
-			wantResults:   []int{1, 2, 3, 4, 5},
-			wantToken:     "15",
-		},
-		{
-			name:          "empty results",
-			results:       []int{},
-			pageSize:      5,
-			currentOffset: 10,
-			wantResults:   []int{},
-			wantToken:     "",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			gotResults, gotToken := ApplyOffsetPagination(tc.results, tc.pageSize, tc.currentOffset)
-			if diff := cmp.Diff(tc.wantResults, gotResults); diff != "" {
-				t.Errorf("ApplyOffsetPagination() results diff (-want +got):\n%s", diff)
-			}
-			if gotToken != tc.wantToken {
-				t.Errorf("ApplyOffsetPagination() token got %q, want %q", gotToken, tc.wantToken)
-			}
-		})
-	}
-}
-
-func TestIsCursorPageToken(t *testing.T) {
-	testCases := []struct {
-		name           string
-		pageToken      string
-		want           bool
-	}{
-		{
-			name:           "empty token, default true",
-			pageToken:      "",
-			want:           true,
-		},
-		{
-			name:           "offset token, default true",
-			pageToken:      "100",
-			want:           false,
-		},
-		{
-			name:           "cursor token, default false",
-			pageToken:      "eyJhIjoib25lIiwiYiI6Mn0",
-			want:           true,
-		},
-		{
-			name:           "random string token, default true",
-			pageToken:      "random",
-			want:           true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := IsCursorPageToken(tc.pageToken)
-			if got != tc.want {
-				t.Errorf("IsCursorPageToken(%q) = %v, want %v", tc.pageToken, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestDecodeAfterCursorPageToken(t *testing.T) {
-	testCases := []struct {
-		name      string
-		pageToken string
-		want      map[string]any
-		wantErr   bool
-	}{
-		{
-			name:      "empty token",
-			pageToken: "",
-			want:      nil,
-		},
-		{
-			name:      "valid token",
-			pageToken: "eyJhIjoib25lIiwiYiI6Mn0",            // base64url for {"a":"one","b":2}
-			want:      map[string]any{"a": "one", "b": 2.0}, // JSON numbers are float64
-		},
-		{
-			name:      "invalid base64",
-			pageToken: "invalid/base64",
-			wantErr:   true,
-		},
-		{
-			name:      "invalid json",
-			pageToken: "YWJj", // base64 for "abc"
-			wantErr:   true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := DecodeAfterCursorPageToken(tc.pageToken)
-			if tc.wantErr {
-				if err == nil {
-					t.Errorf("DecodeAfterCursorPageToken(%q) got nil error, want error", tc.pageToken)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("DecodeAfterCursorPageToken(%q) returned an unexpected error: %v", tc.pageToken, err)
-			}
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("DecodeAfterCursorPageToken(%q) diff (-want +got):\n%s", tc.pageToken, diff)
-			}
-		})
-	}
-}
-
-func TestEncodeAfterCursorPageToken(t *testing.T) {
-	testCases := []struct {
-		name        string
-		afterCursor map[string]any
-		want        string
-	}{
-		{
-			name:        "empty map",
-			afterCursor: nil,
-			want:        "",
-		},
-		{
-			name:        "valid map",
-			afterCursor: map[string]any{"a": "one", "b": 2},
-			want:        "eyJhIjoib25lIiwiYiI6Mn0",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := EncodeAfterCursorPageToken(tc.afterCursor)
-			if err != nil {
-				t.Fatalf("EncodeAfterCursorPageToken(%v) returned an unexpected error: %v", tc.afterCursor, err)
-			}
-			if got != tc.want {
-				t.Errorf("EncodeAfterCursorPageToken(%v) = %q, want %q", tc.afterCursor, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestApplyAfterCursorPagination(t *testing.T) {
-	testCases := []struct {
-		name           string
-		results        []int
-		pageSize       int32
-		lastItemCursor map[string]any
-		wantResults    []int
-		wantToken      string
-	}{
-		{
-			name:           "no truncation",
-			results:        []int{1, 2, 3},
-			pageSize:       5,
-			lastItemCursor: map[string]any{"id": 3},
-			wantResults:    []int{1, 2, 3},
-			wantToken:      "",
-		},
-		{
-			name:           "with truncation",
-			results:        []int{1, 2, 3, 4, 5, 6},
-			pageSize:       5,
-			lastItemCursor: map[string]any{"id": 5},
-			wantResults:    []int{1, 2, 3, 4, 5},
-			wantToken:      "eyJpZCI6NX0",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			gotResults, gotToken, err := ApplyAfterCursorPagination(tc.results, tc.pageSize, tc.lastItemCursor)
-			if err != nil {
-				t.Fatalf("ApplyAfterCursorPagination() returned an unexpected error: %v", err)
-			}
-			if diff := cmp.Diff(tc.wantResults, gotResults); diff != "" {
-				t.Errorf("ApplyAfterCursorPagination() results diff (-want +got):\n%s", diff)
-			}
-			if gotToken != tc.wantToken {
-				t.Errorf("ApplyAfterCursorPagination() token got %q, want %q", gotToken, tc.wantToken)
-			}
-		})
-	}
-}
-
 func TestApplyPagination(t *testing.T) {
 	extractCursor := func(id int) (map[string]any, error) {
 		return map[string]any{"id": id}, nil
@@ -647,42 +322,20 @@ func TestApplyPagination(t *testing.T) {
 		name               string
 		results            []int
 		pageSize           int32
-		pageOffset         int64
-		isCursorPagination bool
 		wantResults        []int
 		wantToken          string
 	}{
 		{
-			name:               "offset pagination, no truncation",
+			name:               "no truncation",
 			results:            []int{1, 2, 3},
 			pageSize:           5,
-			pageOffset:         10,
-			isCursorPagination: false,
 			wantResults:        []int{1, 2, 3},
 			wantToken:          "",
 		},
 		{
-			name:               "offset pagination, with truncation",
+			name:               "with truncation",
 			results:            []int{1, 2, 3, 4, 5, 6},
 			pageSize:           5,
-			pageOffset:         10,
-			isCursorPagination: false,
-			wantResults:        []int{1, 2, 3, 4, 5},
-			wantToken:          "15",
-		},
-		{
-			name:               "cursor pagination, no truncation",
-			results:            []int{1, 2, 3},
-			pageSize:           5,
-			isCursorPagination: true,
-			wantResults:        []int{1, 2, 3},
-			wantToken:          "",
-		},
-		{
-			name:               "cursor pagination, with truncation",
-			results:            []int{1, 2, 3, 4, 5, 6},
-			pageSize:           5,
-			isCursorPagination: true,
 			wantResults:        []int{1, 2, 3, 4, 5},
 			wantToken:          "eyJpZCI6NX0",
 		},
@@ -690,7 +343,7 @@ func TestApplyPagination(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotResults, gotToken, err := ApplyPagination(tc.results, tc.pageSize, tc.pageOffset, tc.isCursorPagination, extractCursor)
+			gotResults, gotToken, err := ApplyPagination(tc.results, tc.pageSize, extractCursor)
 			if err != nil {
 				t.Fatalf("ApplyPagination() returned an unexpected error: %v", err)
 			}
@@ -708,41 +361,30 @@ func TestListParams_DecodePageToken(t *testing.T) {
 	testCases := []struct {
 		name            string
 		pageToken       string
-		wantIsCursor    bool
-		wantOffset      int64
 		wantAfterCursor map[string]any
 		wantErr         bool
 	}{
 		{
 			name:            "empty token, default cursor",
 			pageToken:       "",
-			wantIsCursor:    true,
 			wantAfterCursor: nil,
-		},
-		{
-			name:            "offset token",
-			pageToken:       "100",
-			wantIsCursor:    false,
-			wantOffset:      100,
 		},
 		{
 			name:            "cursor token",
 			pageToken:       "eyJhIjoib25lIiwiYiI6Mn0",
-			wantIsCursor:    true,
 			wantAfterCursor: map[string]any{"a": "one", "b": 2.0},
 		},
 		{
-			name:            "invalid offset token",
-			pageToken:       "abc",
-			wantIsCursor:    true,
-			wantErr:         true, // DecodeAfterCursorPageToken will fail
+			name:            "invalid base64 token",
+			pageToken:       "invalid/base64",
+			wantErr:         true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			params := &ListParams{}
-			gotIsCursor, err := params.DecodePageToken(tc.pageToken)
+			err := params.DecodePageToken(tc.pageToken)
 
 			if tc.wantErr {
 				if err == nil {
@@ -752,12 +394,6 @@ func TestListParams_DecodePageToken(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("DecodePageToken(%q) returned an unexpected error: %v", tc.pageToken, err)
-			}
-			if gotIsCursor != tc.wantIsCursor {
-				t.Errorf("DecodePageToken(%q) returned isCursor %v, want %v", tc.pageToken, gotIsCursor, tc.wantIsCursor)
-			}
-			if params.PageOffset != tc.wantOffset {
-				t.Errorf("DecodePageToken(%q) offset = %d, want %d", tc.pageToken, params.PageOffset, tc.wantOffset)
 			}
 			if diff := cmp.Diff(tc.wantAfterCursor, params.AfterCursor); diff != "" {
 				t.Errorf("DecodePageToken(%q) afterCursor diff (-want +got):\n%s", tc.pageToken, diff)
