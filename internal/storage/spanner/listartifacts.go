@@ -136,12 +136,10 @@ func extractArtifactCursor(artifact *essmsgpb.Artifact) (map[string]any, error) 
 		cursor["updated"] = artifact.UpdateTime.AsTime()
 	}
 	var displayName string
-	if artifact.GetUrl() != nil && artifact.GetUrl().GetDisplayName() != "" {
+	if artifact.GetUrl() != nil {
 		displayName = artifact.GetUrl().GetDisplayName()
 	}
-	if displayName != "" {
-		cursor["display_name"] = displayName
-	}
+	cursor["display_name"] = displayName
 
 	var priority int64
 	if artifact.GetPriority() != 0 {
@@ -149,9 +147,7 @@ func extractArtifactCursor(artifact *essmsgpb.Artifact) (map[string]any, error) 
 	} else if artifact.GetUrl() != nil {
 		priority = int64(artifact.GetUrl().GetPriority())
 	}
-	if priority != 0 {
-		cursor["priority"] = priority
-	}
+	cursor["priority"] = priority
 
 	return cursor, nil
 }
