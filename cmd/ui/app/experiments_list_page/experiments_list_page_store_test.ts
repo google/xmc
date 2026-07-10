@@ -17,7 +17,6 @@ import { of, throwError } from 'rxjs';
 
 import { ListExperimentsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
-import { FeatureFlagService } from 'xmanager_cloud/ui/app/service/feature_flag_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 import {
   cleanState,
@@ -42,14 +41,12 @@ describe('ExperimentsListPageStore', () => {
       'searchExperiments',
     ]);
     const mockSnackbarService = jasmine.createSpyObj<SnackbarService>('SnackbarService', ['open']);
-    const mockFeatureFlagService = {};
 
     setupModule({
       providers: [
         ExperimentsListPageStore,
         { provide: ExperimentService, useValue: mockExperimentService },
         { provide: SnackbarService, useValue: mockSnackbarService },
-        { provide: FeatureFlagService, useValue: mockFeatureFlagService },
       ],
     });
 
@@ -59,7 +56,6 @@ describe('ExperimentsListPageStore', () => {
       store,
       mockExperimentService,
       mockSnackbarService,
-      mockFeatureFlagService,
     };
   }, beforeEach);
 
