@@ -135,7 +135,6 @@ func extractArtifactCursor(artifact *essmsgpb.Artifact) (map[string]any, error) 
 	if artifact.UpdateTime != nil {
 		cursor["updated"] = artifact.UpdateTime.AsTime()
 	}
-
 	var displayName string
 	if artifact.GetUrl() != nil && artifact.GetUrl().GetDisplayName() != "" {
 		displayName = artifact.GetUrl().GetDisplayName()
