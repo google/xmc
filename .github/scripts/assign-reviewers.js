@@ -71,6 +71,15 @@ const selectRandomReviewers = (candidates, count) => {
 };
 
 /**
+ * Pure function: Checks whether the PR is in an open state where reviewers can be assigned.
+ * @param {string} prState - State of the pull request (e.g., 'open', 'closed', 'merged').
+ * @returns {boolean} True if the PR is open, false otherwise.
+ */
+const isPullRequestOpen = (prState) => {
+  return (prState || '').toLowerCase() === 'open';
+};
+
+/**
  * Pure function: Checks whether existing reviewers or teams are already assigned to the PR.
  * @param {number} existingReviewersCount - Total count of requested reviewers and teams.
  * @returns {boolean} True if reviewers already assigned and auto-assignment should be skipped.
@@ -88,6 +97,7 @@ const run = async ({ github, context, core }) => {
   const { owner, repo } = context.repo;
   let prNumber;
   let prAuthor;
+  let prState;
   let existingReviewersCount = 0;
 
   if (context.eventName === 'workflow_dispatch') {
@@ -99,15 +109,22 @@ const run = async ({ github, context, core }) => {
       pull_number: prNumber
     });
     prAuthor = pr.user.login;
+    prState = pr.state;
     const requestedReviewers = pr.requested_reviewers || [];
     const requestedTeams = pr.requested_teams || [];
     existingReviewersCount = requestedReviewers.length + requestedTeams.length;
   } else {
     prNumber = context.payload.pull_request.number;
     prAuthor = context.payload.pull_request.user.login;
+    prState = context.payload.pull_request.state || 'open';
     const requestedReviewers = context.payload.pull_request.requested_reviewers || [];
     const requestedTeams = context.payload.pull_request.requested_teams || [];
     existingReviewersCount = requestedReviewers.length + requestedTeams.length;
+  }
+
+  if (!isPullRequestOpen(prState)) {
+    core.info(`PR #${prNumber} is not open (state: ${prState}). Skipping reviewer assignment.`);
+    return;
   }
 
   if (shouldSkipAssignment(existingReviewersCount)) {
@@ -157,6 +174,7 @@ module.exports = {
   parseReviewersFromOwners,
   filterEligibleReviewers,
   selectRandomReviewers,
+  isPullRequestOpen,
   shouldSkipAssignment,
   run
 };

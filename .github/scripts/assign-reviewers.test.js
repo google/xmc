@@ -18,6 +18,7 @@ const {
   parseReviewersFromOwners,
   filterEligibleReviewers,
   selectRandomReviewers,
+  isPullRequestOpen,
   shouldSkipAssignment
 } = require('./assign-reviewers');
 
@@ -74,4 +75,12 @@ test('shouldSkipAssignment returns true when reviewers or teams are already assi
 
 test('shouldSkipAssignment returns false when no reviewers or teams are assigned', () => {
   assert.strictEqual(shouldSkipAssignment(0), false);
+});
+
+test('isPullRequestOpen returns true only when state is open', () => {
+  assert.strictEqual(isPullRequestOpen('open'), true);
+  assert.strictEqual(isPullRequestOpen('OPEN'), true);
+  assert.strictEqual(isPullRequestOpen('closed'), false);
+  assert.strictEqual(isPullRequestOpen('merged'), false);
+  assert.strictEqual(isPullRequestOpen(''), false);
 });
