@@ -330,7 +330,10 @@ You can perform the upgrade either using the automated script (recommended for d
 
 ### Option A: Automated Upgrade (upgrade_dev_env.sh)
 
-To upgrade an existing running XMC environment on GKE to the latest code in your current local branch (`HEAD`), you can use the automated upgrade script:
+> [!WARNING]
+> The automated upgrade script is designed **only for development and testing environments**. It builds and pushes images directly from your local workspace and triggers rolling restarts which are not suitable for production deployments. For production environments, follow the manual upgrade steps (Option B) to ensure proper release management.
+
+To upgrade an existing running XMC development environment on GKE to the latest code in your current local branch (`HEAD`), you can use the automated upgrade script:
 
 #### Using the Upgrade Script Directly
 

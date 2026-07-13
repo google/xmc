@@ -253,6 +253,7 @@ step_app() {
   fi
 
   log_info "Running gcluster deploy for group 'xmc_app'..."
+  # We use --download-dependencies to prevent interactive prompts for downloading terraform/plugins in automated or non-interactive environments.
   ./cluster-toolkit/gcluster --download-dependencies deploy "ctk-out/$XMC_DEPLOYMENT_NAME" --only xmc_app --auto-approve
 
   # 2. Perform a rolling rollout restart of all XMC service deployments so pods pull newly pushed :latest images

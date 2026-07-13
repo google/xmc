@@ -49,7 +49,7 @@ If the `.env` file **does not exist**:
    - Run `gcloud config list` to find the active GCP project ID.
    - Run `gcloud container clusters list` to find available GKE clusters.
    - Run `kubectl config current-context` to find the current active GKE cluster context.
-   - Check if `deploy/ctk_v2/xmanager-cloud-deployment.yaml` exists and read `deployment_name` and `environment` from it.
+   - Check for deployment configuration YAML files in `deploy/ctk_v2/` (e.g., `deploy/ctk_v2/xmanager-cloud-deployment.yaml` or other custom deployment configs) and read `deployment_name` and `environment` from them.
    - Run `gcloud iam service-accounts list` to find the service accounts in the project.
 2. **Propose Proposed Values**:
    - Draft a proposed `.env` configuration file using the discovered project ID, GKE cluster name, region, namespace, environment name, deployment name (`XMC_DEPLOYMENT_NAME`), and OAuth client SA details.
@@ -98,17 +98,18 @@ If no migrations were pending, or if the user approved running migrations:
     ./tools/upgrade_dev_env.sh --env .env --start-from migrate --run-migrations
     ```
 
-### Step 4: Resuming or Running Specific Steps
-To resume from a failed phase (`check`, `migrate`, `images`, `app`, `verify`):
-```bash
-./tools/upgrade_dev_env.sh --env .env --start-from <failed_step>
-```
+### Resuming or Running Specific Steps (Advanced / Troubleshooting)
+If the upgrade fails at a specific phase, or if you need to rerun a specific part of the workflow:
 
-To execute **only** one specific step:
-```bash
-./tools/upgrade_dev_env.sh --env .env --only <step>
-```
-*Valid steps: `check`, `migrate`, `images`, `app`, `verify`*
+*   **Resume from a specific step**: To resume from a failed phase (`check`, `migrate`, `images`, `app`, `verify`):
+    ```bash
+    ./tools/upgrade_dev_env.sh --env .env --start-from <failed_step>
+    ```
+*   **Execute a single step**: To execute **only** one specific step:
+    ```bash
+    ./tools/upgrade_dev_env.sh --env .env --only <step>
+    ```
+    *Valid steps: `check`, `migrate`, `images`, `app`, `verify`*
 
 
 
