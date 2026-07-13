@@ -1,15 +1,15 @@
 ---
 name: Upgrade XMC Environment
-description: Upgrades an existing XManager on Cloud (XMC) environment on GKE to the latest current branch state using local .env configuration.
+description: Upgrades an existing XManager on Cloud (XMC) environment on GKE to the latest current branch state using the deployment configuration YAML.
 ---
 
 # Upgrade XMC Environment Workflow
 
-This skill guides the agent through upgrading an existing deployed XManager on Cloud (XMC) environment on Google Kubernetes Engine (GKE) so that it runs the latest code from the current local repository branch (`HEAD`), leveraging the local `.env` configuration file in the repository root.
+This skill guides the agent through upgrading an existing deployed XManager on Cloud (XMC) environment on Google Kubernetes Engine (GKE) so that it runs the latest code from the current local repository branch (`HEAD`), leveraging the deployment configuration YAML file.
 
 ```mermaid
 graph TD
-    Start[Start Upgrade] --> CheckEnv["Check .env configuration"]
+    Start[Start Upgrade] --> CheckEnv["Check configuration YAML"]
     CheckEnv --> CheckRun["Run ./tools/upgrade_dev_env.sh --only check"]
     CheckRun --> MigrateCheck["Run ./tools/upgrade_dev_env.sh --only migrate"]
     MigrateCheck -->|No pending migrations| AutoRun["Run ./tools/upgrade_dev_env.sh --start-from images"]
@@ -41,21 +41,16 @@ Before running any upgrade step, verify that the required CLI tools are installe
 > 2. Alert the user about the missing/broken CLI dependency.
 > 3. Provide installation instructions and do not proceed.
 
-### Configuration File Verification (.env)
-Check if the `.env` file exists in the repository root.
+### Configuration File Verification (YAML)
+Verify that the deployment configuration YAML file exists. By default, the script looks for `deploy/ctk_v2/xmanager-cloud-deployment.yaml`.
 
-If the `.env` file **does not exist**:
-1. **Gather Context**:
-   - Run `gcloud config list` to find the active GCP project ID.
-   - Run `gcloud container clusters list` to find available GKE clusters.
-   - Run `kubectl config current-context` to find the current active GKE cluster context.
-   - Check for deployment configuration YAML files in `deploy/ctk_v2/` (e.g., `deploy/ctk_v2/xmanager-cloud-deployment.yaml` or other custom deployment configs) and read `deployment_name` and `environment` from them.
-   - Run `gcloud iam service-accounts list` to find the service accounts in the project.
-2. **Propose Proposed Values**:
-   - Draft a proposed `.env` configuration file using the discovered project ID, GKE cluster name, region, namespace, environment name, deployment name (`XMC_DEPLOYMENT_NAME`), and OAuth client SA details.
-3. **Prompt User**:
-   - Stop execution, explicitly inform the user that the `.env` configuration file is missing, and present the proposed configuration content.
-   - Ask the user if they would like you to automatically create the `.env` file with these proposed values. Do not proceed until you have received confirmation.
+If you need to use a custom configuration file, you must pass it using the `--config` (or `-c`) flag.
+
+If no configuration file is found at the default path:
+1. **Search for alternatives**: Check if there are any other `*-deployment.yaml` files in `deploy/ctk_v2/`.
+2. **Handle missing config**:
+   - If other configuration files are found, ask the user which one they want to use and run the script with `--config <path>`.
+   - If no configuration files are found, **stop execution** and instruct the user to create a deployment configuration (referring to `INSTALL.md` or the `deploy_xmc` skill) before upgrading.
 
 ---
 
@@ -64,15 +59,15 @@ If the `.env` file **does not exist**:
 Use the automated upgrade tool (`./tools/upgrade_dev_env.sh`) to execute the environment upgrade.
 
 ### Step 1: Run Configuration & Authentication Checks
-Validate configuration in `.env`, authenticate with Google Cloud and GKE, and verify that the target Kubernetes namespace exists:
+Validate configuration in YAML, authenticate with Google Cloud and GKE, and verify that the target Kubernetes namespace exists:
 ```bash
-./tools/upgrade_dev_env.sh --env .env --only check
+./tools/upgrade_dev_env.sh --only check
 ```
 
 ### Step 2: Check for Pending Database Migrations
 Verify if there are any pending Spanner database migrations:
 ```bash
-./tools/upgrade_dev_env.sh --env .env --only migrate
+./tools/upgrade_dev_env.sh --only migrate
 ```
 
 > [!IMPORTANT]
@@ -90,12 +85,12 @@ If no migrations were pending, or if the user approved running migrations:
 *   **Case A: No pending migrations**:
     Run the upgrade starting from the `images` step (skipping migration step):
     ```bash
-    ./tools/upgrade_dev_env.sh --env .env --start-from images
+    ./tools/upgrade_dev_env.sh --start-from images
     ```
 *   **Case B: User approved migrations**:
     Run the upgrade starting from `migrate` step and authorize migration execution:
     ```bash
-    ./tools/upgrade_dev_env.sh --env .env --start-from migrate --run-migrations
+    ./tools/upgrade_dev_env.sh --start-from migrate --run-migrations
     ```
 
 ### Resuming or Running Specific Steps (Advanced / Troubleshooting)
@@ -103,11 +98,11 @@ If the upgrade fails at a specific phase, or if you need to rerun a specific par
 
 *   **Resume from a specific step**: To resume from a failed phase (`check`, `migrate`, `images`, `app`, `restart`, `verify`):
     ```bash
-    ./tools/upgrade_dev_env.sh --env .env --start-from <failed_step>
+    ./tools/upgrade_dev_env.sh --start-from <failed_step>
     ```
 *   **Execute a single step**: To execute **only** one specific step:
     ```bash
-    ./tools/upgrade_dev_env.sh --env .env --only <step>
+    ./tools/upgrade_dev_env.sh --only <step>
     ```
     *Valid steps: `check`, `migrate`, `images`, `app`, `restart`, `verify`*
 

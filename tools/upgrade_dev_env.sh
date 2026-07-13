@@ -29,10 +29,10 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
 # --- Help Menu ---
 show_help() {
-  echo "Usage: $0 [--env <path_to_dotenv>] [options]"
+  echo "Usage: $0 [--config <path_to_yaml>] [options]"
   echo
   echo "Options:"
-  echo "  --env, -e <path>          Path to .env file (Default: ./.env in repository root)"
+  echo "  --config, -c <path>       Path to deployment config YAML file (Default: deploy/ctk_v2/xmanager-cloud-deployment.yaml)"
   echo "  --start-from, -s <step>   Start/resume upgrade from this step onwards"
   echo "  --only <step>             Execute ONLY this specific step and exit"
   echo "                             Steps: check, migrate, images, app, restart, verify"
@@ -56,34 +56,56 @@ log_success() {
   echo -e "\n\033[0;32m[SUCCESS] $1\033[0m"
 }
 
-load_env() {
-  local env_file="$1"
-  if [[ ! -f "$env_file" ]]; then
-    error_exit "Environment configuration file '$env_file' not found. Please copy '.env.example' to '.env' and populate your target environment parameters."
+load_config() {
+  local config_file="$1"
+  if [[ ! -f "$config_file" ]]; then
+    error_exit "Configuration file '$config_file' not found. Please ensure you have deployed the environment using Cluster Toolkit."
   fi
-  log_info "Loading environment variables from '$env_file'..."
-  set -o allexport
-  # shellcheck disable=SC1090
-  source "$env_file"
-  set +o allexport
+  log_info "Loading configuration from '$config_file'..."
 
-  # Validate required environment variables
-  if [[ -z "${PROJECT_ID:-}" ]]; then
-    error_exit "PROJECT_ID is missing or empty in '$env_file'."
-  fi
-  if [[ -z "${GKE_CLUSTER:-}" ]]; then
-    error_exit "GKE_CLUSTER is missing or empty in '$env_file'."
-  fi
-  if [[ -z "${XMC_DEPLOYMENT_NAME:-}" ]]; then
-    error_exit "XMC_DEPLOYMENT_NAME is missing or empty in '$env_file'."
+  # Parse YAML using python
+  local yaml_vars
+  yaml_vars=$(python3 -c "
+import yaml, sys
+try:
+    with open(sys.argv[1]) as f:
+        data = yaml.safe_load(f)
+    vars = data.get('vars', {})
+    for k, v in vars.items():
+        if isinstance(v, (str, int, float, bool)):
+            print(f\"XMC_VAR_{k}='{v}'\")
+except Exception as e:
+    print(f'Error parsing YAML: {e}', file=sys.stderr)
+    sys.exit(1)
+" "$config_file" 2>/dev/null)
+
+  if [[ $? -ne 0 ]] || [[ -z "$yaml_vars" ]]; then
+    error_exit "Failed to parse configuration file '$config_file' or it contains no variables."
   fi
 
-  # Apply defaults for optional or derived variables
-  export K8S_NAMESPACE="${K8S_NAMESPACE:-xmc}"
-  export GCP_REGION="${GCP_REGION:-us-central1}"
-  export XMANAGER_ENV="${XMANAGER_ENV:-dev}"
-  export XMC_REGISTRY_NAME="${XMC_REGISTRY_NAME:-xmc}"
-  export XMC_REGISTRY="${XMC_REGISTRY:-us-docker.pkg.dev/${PROJECT_ID}/${XMC_REGISTRY_NAME}}"
+  eval "$yaml_vars"
+
+  # Map YAML variables to script variables with env overrides support
+  export PROJECT_ID="${PROJECT_ID:-${XMC_VAR_project_id:-}}"
+  export XMC_DEPLOYMENT_NAME="${XMC_DEPLOYMENT_NAME:-${XMC_VAR_deployment_name:-}}"
+  export GCP_REGION="${GCP_REGION:-${XMC_VAR_region:-us-central1}}"
+  export XMANAGER_ENV="${XMANAGER_ENV:-${XMC_VAR_environment:-dev}}"
+  export K8S_NAMESPACE="${K8S_NAMESPACE:-${XMC_VAR_namespace:-xmc}}"
+  
+  # Derive GKE cluster name
+  export GKE_CLUSTER="xmc-${XMC_DEPLOYMENT_NAME}-${XMANAGER_ENV}"
+
+  # Validate required variables
+  if [[ -z "$PROJECT_ID" ]]; then
+    error_exit "project_id is missing in vars of '$config_file'."
+  fi
+  if [[ -z "$XMC_DEPLOYMENT_NAME" ]]; then
+    error_exit "deployment_name is missing in vars of '$config_file'."
+  fi
+
+  # Apply defaults for other variables
+  export XMC_REGISTRY_NAME="xmc"
+  export XMC_REGISTRY="us-docker.pkg.dev/${PROJECT_ID}/${XMC_REGISTRY_NAME}"
   export XMC_ACR_TARGET="${XMC_ACR_TARGET:-${XMC_REGISTRY}}"
 }
 
@@ -294,15 +316,15 @@ step_verify() {
 
 # --- Execution Entrypoint ---
 
-ENV_FILE="./.env"
+CONFIG_FILE="deploy/ctk_v2/xmanager-cloud-deployment.yaml"
 START_STEP=""
 ONLY_STEP=""
 RUN_MIGRATIONS=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --env|-e)
-      ENV_FILE="$2"
+    --config|-c)
+      CONFIG_FILE="$2"
       shift 2
       ;;
     --start-from|-s)
@@ -326,7 +348,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-load_env "$ENV_FILE"
+load_config "$CONFIG_FILE"
 
 STEPS=("check" "migrate" "images" "app" "restart" "verify")
 

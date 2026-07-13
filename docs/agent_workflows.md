@@ -29,9 +29,9 @@ The `pr_comment_workflow` skill automates resolving review comments on Pull Requ
 
 ## 3. Automated Environment Upgrade (`upgrade_xmc`)
 
-The `upgrade_xmc` skill automates upgrading an existing XMC environment on GKE to run the latest code from the current branch (`HEAD`), leveraging a local `.env` configuration file in the repository root. It validates system dependencies, checks and runs pending database migrations, builds and pushes updated OCI container images using Bazel, upgrades the application workloads using Cluster Toolkit (`gcluster`), triggers a rolling restart of all GKE workloads, and runs verification checks.
+The `upgrade_xmc` skill automates upgrading an existing XMC environment on GKE to run the latest code from the current branch (`HEAD`), leveraging the deployment configuration YAML file (default: `deploy/ctk_v2/xmanager-cloud-deployment.yaml`). It validates system dependencies, checks and runs pending database migrations, builds and pushes updated OCI container images using Bazel, upgrades the application workloads using Cluster Toolkit (`gcluster`), triggers a rolling restart of all GKE workloads, and runs verification checks.
 
 * **How to trigger**: Ask the agent to upgrade the environment, for example:
-  > Upgrade my XMC environment using the local `.env` file
+  > Upgrade my XMC environment
 * **Workflow Details**: See [upgrade_xmc/SKILL.md](../.agents/skills/upgrade_xmc/SKILL.md).
 

@@ -337,21 +337,23 @@ To upgrade an existing running XMC development environment on GKE to the latest 
 
 #### Using the Upgrade Script Directly
 
-Ensure your environment variables are set in a local `.env` file in the root of the repository (copied from `.env.example`). Then run:
+By default, the script uses the deployment configuration file at `deploy/ctk_v2/xmanager-cloud-deployment.yaml`. You can specify a custom configuration file using the `--config` (or `-c`) flag.
+
+Run the upgrade script:
 ```bash
 # Run pre-flight verification checks
-./tools/upgrade_dev_env.sh --env .env --only check
+./tools/upgrade_dev_env.sh --only check
 
-# Upgrade environment end-to-end (rebuilds/pushes images, upgrades Helm release, and triggers rolling pod restarts)
-./tools/upgrade_dev_env.sh --env .env
+# Upgrade environment end-to-end (checks migrations, rebuilds/pushes images, deploys app workloads, and restarts services)
+./tools/upgrade_dev_env.sh
 ```
 
 #### Automated Agent Upgrade (`upgrade_xmc` skill)
 
 If you are running an agent session, the agent will automatically use the upgrade script. Ask the agent:
-> Upgrade my XMC environment using the local `.env` file
+> Upgrade my XMC environment
 
-The agent will automatically authenticate, compile and push updated OCI container images from your current branch, upgrade any Helm chart templates (`./deploy/helm`), initiate a rolling rollout restart across the 6 microservices (`actuator`, `experiment-state-server`, `log-monitor`, `reconciler`, `ui`, `xid-service`), and verify deployment rollout health.
+The agent will automatically authenticate, check for database migrations, compile and push updated OCI container images from your current branch, upgrade the application workloads using Cluster Toolkit (`gcluster`), initiate a rolling rollout restart across the microservices, and verify deployment rollout health.
 
 ### Option B: Manual Upgrade Steps
 
