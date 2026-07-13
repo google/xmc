@@ -33,7 +33,6 @@ show_help() {
   echo
   echo "Options:"
   echo "  --env, -e <path>          Path to .env file (Default: ./.env in repository root)"
-  echo "  --values, -f <path>       Optional path to custom Helm values.yaml file"
   echo "  --start-from, -s <step>   Start/resume upgrade from this step onwards"
   echo "  --only <step>             Execute ONLY this specific step and exit"
   echo "                             Steps: check, migrate, images, app, verify"
@@ -75,6 +74,9 @@ load_env() {
   if [[ -z "${GKE_CLUSTER:-}" ]]; then
     error_exit "GKE_CLUSTER is missing or empty in '$env_file'."
   fi
+  if [[ -z "${XMC_DEPLOYMENT_NAME:-}" ]]; then
+    error_exit "XMC_DEPLOYMENT_NAME is missing or empty in '$env_file'."
+  fi
 
   # Apply defaults for optional or derived variables
   export K8S_NAMESPACE="${K8S_NAMESPACE:-xmc}"
@@ -83,7 +85,6 @@ load_env() {
   export XMC_REGISTRY_NAME="${XMC_REGISTRY_NAME:-xmc}"
   export XMC_REGISTRY="${XMC_REGISTRY:-us-docker.pkg.dev/${PROJECT_ID}/${XMC_REGISTRY_NAME}}"
   export XMC_ACR_TARGET="${XMC_ACR_TARGET:-${XMC_REGISTRY}}"
-  export HELM_RELEASE="${HELM_RELEASE:-xmc}"
 }
 
 # --- Step Implementations ---
@@ -96,6 +97,11 @@ step_check() {
   for cmd in gcloud kubectl helm bazel; do
     command -v "$cmd" >/dev/null 2>&1 || error_exit "Required CLI tool '$cmd' is not installed or not in PATH."
   done
+
+  # Verify local cluster-toolkit binary
+  if [[ ! -f "./cluster-toolkit/gcluster" || ! -x "./cluster-toolkit/gcluster" ]]; then
+    error_exit "Local cluster-toolkit binary './cluster-toolkit/gcluster' not found or is not executable."
+  fi
 
   # 2. Configure target GCP project
   log_info "Verifying gcloud target project ($PROJECT_ID)..."
@@ -250,23 +256,18 @@ step_images() {
 }
 
 step_app() {
-  log_info "Upgrading XMC Kubernetes application workloads in namespace '$K8S_NAMESPACE'..."
+  log_info "Upgrading XMC Kubernetes application workloads using Cluster Toolkit..."
 
-  # 1. Upgrade existing Helm release if present
-  if helm status "$HELM_RELEASE" -n "$K8S_NAMESPACE" >/dev/null 2>&1; then
-    log_info "Existing Helm release '$HELM_RELEASE' detected. Upgrading release to match local './deploy/helm' templates..."
-    if [[ -n "${VALUES_FILE:-}" && -f "$VALUES_FILE" ]]; then
-      log_info "Applying custom values from '$VALUES_FILE'..."
-      helm upgrade "$HELM_RELEASE" ./deploy/helm -n "$K8S_NAMESPACE" -f "$VALUES_FILE"
-    else
-      helm upgrade "$HELM_RELEASE" ./deploy/helm -n "$K8S_NAMESPACE" --reuse-values
-    fi
-    log_success "Helm release '$HELM_RELEASE' upgraded successfully."
-  else
-    log_info "No existing Helm release '$HELM_RELEASE' found in namespace '$K8S_NAMESPACE' (environment may be gcluster/manifest managed)."
+  # 1. Upgrade application workloads using gcluster
+  if [[ ! -d "ctk-out/$XMC_DEPLOYMENT_NAME" ]]; then
+    error_exit "Deployment directory 'ctk-out/$XMC_DEPLOYMENT_NAME' not found. Ensure the environment has been deployed first."
   fi
 
+  log_info "Running gcluster deploy for group 'xmc_app'..."
+  ./cluster-toolkit/gcluster --download-dependencies deploy "ctk-out/$XMC_DEPLOYMENT_NAME" --only xmc_app --auto-approve
+
   # 2. Perform a rolling rollout restart of all XMC service deployments so pods pull newly pushed :latest images
+  # (gcluster deploy might not trigger restart if image tags didn't change, so we force it)
   log_info "Triggering rolling restart across XMC service deployments to run newly pushed container images..."
   local deploy
   for deploy in actuator experiment-state-server log-monitor reconciler ui xid-service; do
@@ -300,7 +301,6 @@ step_verify() {
 # --- Execution Entrypoint ---
 
 ENV_FILE="./.env"
-VALUES_FILE=""
 START_STEP=""
 ONLY_STEP=""
 RUN_MIGRATIONS=false
@@ -309,10 +309,6 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --env|-e)
       ENV_FILE="$2"
-      shift 2
-      ;;
-    --values|-f)
-      VALUES_FILE="$2"
       shift 2
       ;;
     --start-from|-s)

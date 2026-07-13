@@ -49,10 +49,10 @@ If the `.env` file **does not exist**:
    - Run `gcloud config list` to find the active GCP project ID.
    - Run `gcloud container clusters list` to find available GKE clusters.
    - Run `kubectl config current-context` to find the current active GKE cluster context.
-   - Run `helm list -A` to discover active Helm releases and namespaces.
+   - Check if `deploy/ctk_v2/xmanager-cloud-deployment.yaml` exists and read `deployment_name` and `environment` from it.
    - Run `gcloud iam service-accounts list` to find the service accounts in the project.
 2. **Propose Proposed Values**:
-   - Draft a proposed `.env` configuration file using the discovered project ID, GKE cluster name, region, namespace, environment name, active Helm release name, and OAuth client SA details.
+   - Draft a proposed `.env` configuration file using the discovered project ID, GKE cluster name, region, namespace, environment name, deployment name (`XMC_DEPLOYMENT_NAME`), and OAuth client SA details.
 3. **Prompt User**:
    - Stop execution, explicitly inform the user that the `.env` configuration file is missing, and present the proposed configuration content.
    - Ask the user if they would like you to automatically create the `.env` file with these proposed values. Do not proceed until you have received confirmation.
