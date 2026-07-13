@@ -99,11 +99,29 @@ message JobSetExecutable {
     optional bool publish_not_ready_addresses = 3;
   }
 
+  // Coordinator configuration for the JobSet (`coordinator`).
+  // Defines which pod can be marked as the coordinator for the JobSet workload,
+  // prompting the JobSet controller to inject stable endpoint annotations (`jobset.sigs.k8s.io/coordinator`).
+  message Coordinator {
+    // Name of the ReplicatedJob which contains the coordinator pod.
+    string replicated_job = 1;
+
+    // Index of the Job which contains the coordinator pod (i.e., for a ReplicatedJob
+    // with N replicas, there are Job indexes 0 to N-1). Defaults to 0 if unset.
+    optional int32 job_index = 2;
+
+    // Job completion index of the coordinator pod. Defaults to 0 if unset.
+    optional int32 pod_index = 3;
+  }
+
   // The Jobs that make up the JobSet.
   repeated KubernetesJob jobs = 1;
 
   // Network configuration for the JobSet (DNS hostnames, unready address publishing).
   Network network = 2;
+
+  // Coordinator configuration for the JobSet.
+  Coordinator coordinator = 3;
 }
 
 // A KubernetesJob is a single Kubernetes Job that is run as part of a

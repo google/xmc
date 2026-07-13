@@ -434,6 +434,7 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		Spec: jobsetv1alpha2.JobSetSpec{
 			ReplicatedJobs: replicatedJobs,
 			Network:        buildJobSetNetwork(workUnit, jobSetName),
+			Coordinator:    buildJobSetCoordinator(workUnit),
 			Suspend:        boolPtr(false),
 			SuccessPolicy: &jobsetv1alpha2.SuccessPolicy{
 				Operator: jobsetv1alpha2.OperatorAll,
@@ -555,6 +556,29 @@ func buildJobSetNetwork(workUnit *esspb.WorkUnit, jobSetName string) *jobsetv1al
 		Subdomain:                subdomain,
 		PublishNotReadyAddresses: boolPtr(publishNotReady),
 	}
+}
+
+// buildJobSetCoordinator builds the JobSet Coordinator specification or returns nil.
+func buildJobSetCoordinator(workUnit *esspb.WorkUnit) *jobsetv1alpha2.Coordinator {
+	if !shouldEnableJobSetCoordinator(workUnit) {
+		return nil
+	}
+
+	coord := workUnit.GetExecutable().GetJobset().GetCoordinator()
+	return &jobsetv1alpha2.Coordinator{
+		ReplicatedJob: coord.GetReplicatedJob(),
+		JobIndex:      int(coord.GetJobIndex()),
+		PodIndex:      int(coord.GetPodIndex()),
+	}
+}
+
+// shouldEnableJobSetCoordinator returns true if the WorkUnit specifies a valid coordinator.
+func shouldEnableJobSetCoordinator(workUnit *esspb.WorkUnit) bool {
+	if workUnit == nil || workUnit.GetExecutable() == nil || workUnit.GetExecutable().GetJobset() == nil {
+		return false
+	}
+	coord := workUnit.GetExecutable().GetJobset().GetCoordinator()
+	return coord != nil && coord.GetReplicatedJob() != ""
 }
 
 func boolPtr(b bool) *bool {

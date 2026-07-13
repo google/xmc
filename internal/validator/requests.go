@@ -293,6 +293,7 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 		return fmt.Errorf("work_unit.executable.jobset.jobs cannot contain more than 8 jobs: %w", status.ErrInvalidArgument)
 	}
 	jobNames := make(map[string]bool)
+	jobMap := make(map[string]*essmsgpb.KubernetesJob)
 	for _, job := range wu.GetExecutable().GetJobset().Jobs {
 		if job.GetReplicas() < 1 {
 			return fmt.Errorf("work_unit.executable.jobset.jobs.replicas must be greater than 0: %w", status.ErrInvalidArgument)
@@ -324,6 +325,7 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 			}
 		}
 		jobNames[job.Name] = true
+		jobMap[job.Name] = job
 
 		if err := validateExecutableSpec(job.Spec, "work_unit.executable.jobset.jobs.spec"); err != nil {
 			return err
@@ -352,6 +354,9 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 				return fmt.Errorf("work_unit.executable.jobset.jobs.service_account %q must be a valid DNS subdomain (RFC 1123): %w", sa, status.ErrInvalidArgument)
 			}
 		}
+	}
+	if err := validateJobSetCoordinator(wu.GetExecutable().GetJobset().GetCoordinator(), jobMap); err != nil {
+		return err
 	}
 	if queueName := wu.GetExecutable().GetSchedulingConstraints().GetQueueName(); queueName == "" {
 		return fmt.Errorf("work_unit.executable.scheduling_constraints.queue_name cannot be empty: %w", status.ErrInvalidArgument)
@@ -518,6 +523,29 @@ func validateJobSetNetwork(net *essmsgpb.JobSetExecutable_Network) error {
 		if err := validateDNSLabel(sub, "work_unit.executable.jobset.network.subdomain"); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func validateJobSetCoordinator(coord *essmsgpb.JobSetExecutable_Coordinator, jobs map[string]*essmsgpb.KubernetesJob) error {
+	if coord == nil {
+		return nil
+	}
+	if coord.GetReplicatedJob() == "" {
+		return fmt.Errorf("work_unit.executable.jobset.coordinator.replicated_job cannot be empty: %w", status.ErrInvalidArgument)
+	}
+	job, ok := jobs[coord.GetReplicatedJob()]
+	if !ok {
+		return fmt.Errorf("work_unit.executable.jobset.coordinator.replicated_job %q must match a valid job name in the JobSet: %w", coord.GetReplicatedJob(), status.ErrInvalidArgument)
+	}
+	if coord.GetJobIndex() < 0 {
+		return fmt.Errorf("work_unit.executable.jobset.coordinator.job_index cannot be negative: %w", status.ErrInvalidArgument)
+	}
+	if coord.GetJobIndex() >= job.GetReplicas() {
+		return fmt.Errorf("work_unit.executable.jobset.coordinator.job_index %d must be less than replicas (%d) for job %q: %w", coord.GetJobIndex(), job.GetReplicas(), job.GetName(), status.ErrInvalidArgument)
+	}
+	if coord.GetPodIndex() < 0 {
+		return fmt.Errorf("work_unit.executable.jobset.coordinator.pod_index cannot be negative: %w", status.ErrInvalidArgument)
 	}
 	return nil
 }

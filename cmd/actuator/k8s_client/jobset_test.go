@@ -2267,3 +2267,73 @@ func TestShouldEnableJobSetNetwork_Conditions(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_WithCoordinator(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnitWithCoordinator",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Coordinator: &esspb.JobSetExecutable_Coordinator{
+						ReplicatedJob: "head",
+						JobIndex:      proto.Int32(0),
+						PodIndex:      proto.Int32(0),
+					},
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name:     "head",
+							Replicas: 1,
+							Spec:     minimalExecutableSpec(),
+						},
+						{
+							Name:     "worker",
+							Replicas: 4,
+							Spec:     minimalExecutableSpec(),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if got.Spec.Coordinator == nil {
+		t.Fatalf("Expected Spec.Coordinator to be populated, got nil")
+	}
+	if got.Spec.Coordinator.ReplicatedJob != "head" {
+		t.Errorf("ReplicatedJob mismatch: got %q, want %q", got.Spec.Coordinator.ReplicatedJob, "head")
+	}
+	if got.Spec.Coordinator.JobIndex != 0 {
+		t.Errorf("JobIndex mismatch: got %d, want %d", got.Spec.Coordinator.JobIndex, 0)
+	}
+	if got.Spec.Coordinator.PodIndex != 0 {
+		t.Errorf("PodIndex mismatch: got %d, want %d", got.Spec.Coordinator.PodIndex, 0)
+	}
+}
+
+func TestShouldEnableJobSetCoordinator(t *testing.T) {
+	if got := shouldEnableJobSetCoordinator(nil); got {
+		t.Errorf("shouldEnableJobSetCoordinator(nil) = true, want false")
+	}
+	if got := shouldEnableJobSetCoordinator(&esspb.WorkUnit{Executable: nil}); got {
+		t.Errorf("shouldEnableJobSetCoordinator(nil Executable) = true, want false")
+	}
+	if got := shouldEnableJobSetCoordinator(&esspb.WorkUnit{Executable: &esspb.Executable{}}); got {
+		t.Errorf("shouldEnableJobSetCoordinator(nil Jobset) = true, want false")
+	}
+	if got := shouldEnableJobSetCoordinator(&esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{Coordinator: nil}}}}); got {
+		t.Errorf("shouldEnableJobSetCoordinator(nil Coordinator) = true, want false")
+	}
+	if got := shouldEnableJobSetCoordinator(&esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{Coordinator: &esspb.JobSetExecutable_Coordinator{ReplicatedJob: ""}}}}}); got {
+		t.Errorf("shouldEnableJobSetCoordinator(empty ReplicatedJob) = true, want false")
+	}
+	if got := shouldEnableJobSetCoordinator(&esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{Coordinator: &esspb.JobSetExecutable_Coordinator{ReplicatedJob: "worker"}}}}}); !got {
+		t.Errorf("shouldEnableJobSetCoordinator(valid Coordinator) = false, want true")
+	}
+}
+
+
