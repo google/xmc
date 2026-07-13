@@ -36,7 +36,8 @@ show_help() {
   echo "  --values, -f <path>       Optional path to custom Helm values.yaml file"
   echo "  --start-from, -s <step>   Start/resume upgrade from this step onwards"
   echo "  --only <step>             Execute ONLY this specific step and exit"
-  echo "                             Steps: check, images, app, verify"
+  echo "                             Steps: check, migrate, images, app, verify"
+  echo "  --run-migrations          Automatically run pending migrations if detected"
   echo "  -h, --help                Show this message"
   exit 0
 }
@@ -122,6 +123,112 @@ step_check() {
   log_success "All pre-flight checks and authentication steps passed successfully."
 }
 
+step_migrate() {
+  log_info "Checking for pending database migrations..."
+
+  local spanner_instance="xmc-${XMANAGER_ENV}"
+  local ess_db="experiment-db-${XMANAGER_ENV}"
+  local xid_db="xids-db-${XMANAGER_ENV}"
+
+  # Check ESS
+  local max_ess_version=0
+  if ls internal/storage/spanner/migrations/ess/*.up.sql >/dev/null 2>&1; then
+    max_ess_version=$(ls internal/storage/spanner/migrations/ess/*.up.sql | xargs -n 1 basename | cut -d'_' -f1 | sed 's/^0*//' | sort -rn | head -n 1)
+  fi
+  max_ess_version="${max_ess_version:-0}"
+
+  log_info "Fetching current ESS database version..."
+  local ess_version_out
+  ess_version_out=$(bazel run //internal/storage/spanner/migrations:migrations -- \
+    --project="$PROJECT_ID" \
+    --instance="$spanner_instance" \
+    --database="$ess_db" \
+    --migrations_dir="ess" \
+    --command="version" 2>/dev/null || echo "Version: 0, Dirty: false")
+  
+  local current_ess_version
+  current_ess_version=$(echo "$ess_version_out" | grep -oE "Version: [0-9]+" | cut -d' ' -f2 || echo "0")
+  current_ess_version="${current_ess_version:-0}"
+  
+  local ess_dirty
+  ess_dirty=$(echo "$ess_version_out" | grep -oE "Dirty: (true|false)" | cut -d' ' -f2 || echo "false")
+
+  if [[ "$ess_dirty" == "true" ]]; then
+    error_exit "ESS database is in a DIRTY state. Please resolve manually before proceeding."
+  fi
+
+  # Check XID
+  local max_xid_version=0
+  if ls internal/storage/spanner/migrations/xid/*.up.sql >/dev/null 2>&1; then
+    max_xid_version=$(ls internal/storage/spanner/migrations/xid/*.up.sql | xargs -n 1 basename | cut -d'_' -f1 | sed 's/^0*//' | sort -rn | head -n 1)
+  fi
+  max_xid_version="${max_xid_version:-0}"
+
+  log_info "Fetching current XID database version..."
+  local xid_version_out
+  xid_version_out=$(bazel run //internal/storage/spanner/migrations:migrations -- \
+    --project="$PROJECT_ID" \
+    --instance="$spanner_instance" \
+    --database="$xid_db" \
+    --migrations_dir="xid" \
+    --command="version" 2>/dev/null || echo "Version: 0, Dirty: false")
+  
+  local current_xid_version
+  current_xid_version=$(echo "$xid_version_out" | grep -oE "Version: [0-9]+" | cut -d' ' -f2 || echo "0")
+  current_xid_version="${current_xid_version:-0}"
+  
+  local xid_dirty
+  xid_dirty=$(echo "$xid_version_out" | grep -oE "Dirty: (true|false)" | cut -d' ' -f2 || echo "false")
+
+  if [[ "$xid_dirty" == "true" ]]; then
+    error_exit "XID database is in a DIRTY state. Please resolve manually before proceeding."
+  fi
+
+  log_info "ESS database version: current=$current_ess_version, available=$max_ess_version"
+  log_info "XID database version: current=$current_xid_version, available=$max_xid_version"
+
+  local has_pending=false
+  if (( max_ess_version > current_ess_version )) || (( max_xid_version > current_xid_version )); then
+    has_pending=true
+  fi
+
+  if [[ "$has_pending" == "true" ]]; then
+    log_info "Pending migrations detected!"
+    if [[ "$RUN_MIGRATIONS" == "true" ]]; then
+      log_info "Running pending migrations as requested..."
+      
+      if (( max_ess_version > current_ess_version )); then
+        log_info "Running ESS migrations..."
+        bazel run //internal/storage/spanner/migrations:migrations -- \
+          --project="$PROJECT_ID" \
+          --instance="$spanner_instance" \
+          --database="$ess_db" \
+          --migrations_dir="ess" \
+          --command="up"
+      fi
+
+      if (( max_xid_version > current_xid_version )); then
+        log_info "Running XID migrations..."
+        bazel run //internal/storage/spanner/migrations:migrations -- \
+          --project="$PROJECT_ID" \
+          --instance="$spanner_instance" \
+          --database="$xid_db" \
+          --migrations_dir="xid" \
+          --command="up"
+      fi
+      log_success "Migrations applied successfully."
+    else
+      echo "STATUS: PENDING_MIGRATIONS"
+      echo "ESS: current=$current_ess_version, available=$max_ess_version"
+      echo "XID: current=$current_xid_version, available=$max_xid_version"
+      # Exit with code 10 to signal pending migrations to the agent
+      exit 10
+    fi
+  else
+    log_success "No pending migrations found. Databases are up to date."
+  fi
+}
+
 step_images() {
   log_info "Rebuilding and pushing latest XMC microservice OCI images to '$XMC_ACR_TARGET'..."
   export XMC_ENV="$XMANAGER_ENV"
@@ -196,6 +303,7 @@ ENV_FILE="./.env"
 VALUES_FILE=""
 START_STEP=""
 ONLY_STEP=""
+RUN_MIGRATIONS=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -215,6 +323,10 @@ while [[ $# -gt 0 ]]; do
       ONLY_STEP="$2"
       shift 2
       ;;
+    --run-migrations)
+      RUN_MIGRATIONS=true
+      shift
+      ;;
     -h|--help)
       show_help
       ;;
@@ -226,22 +338,23 @@ done
 
 load_env "$ENV_FILE"
 
-STEPS=("check" "images" "app" "verify")
+STEPS=("check" "migrate" "images" "app" "verify")
 
 if [[ -n "$START_STEP" ]]; then
   case "$START_STEP" in
-    check|images|app|verify) ;;
-    *) error_exit "Invalid step '$START_STEP' for --start-from. Valid steps: check, images, app, verify" ;;
+    check|migrate|images|app|verify) ;;
+    *) error_exit "Invalid step '$START_STEP' for --start-from. Valid steps: check, migrate, images, app, verify" ;;
   esac
 fi
 
 if [[ -n "$ONLY_STEP" ]]; then
   case "$ONLY_STEP" in
     check) step_check ;;
+    migrate) step_migrate ;;
     images) step_images ;;
     app) step_app ;;
     verify) step_verify ;;
-    *) error_exit "Invalid step '$ONLY_STEP' for --only. Valid steps: check, images, app, verify" ;;
+    *) error_exit "Invalid step '$ONLY_STEP' for --only. Valid steps: check, migrate, images, app, verify" ;;
   esac
   exit 0
 fi
@@ -258,6 +371,7 @@ for step in "${STEPS[@]}"; do
   if [[ "$SHOULD_RUN" == "true" ]]; then
     case "$step" in
       check) step_check ;;
+      migrate) step_migrate ;;
       images) step_images ;;
       app) step_app ;;
       verify) step_verify ;;

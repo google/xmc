@@ -11,8 +11,13 @@ This skill guides the agent through upgrading an existing deployed XManager on C
 graph TD
     Start[Start Upgrade] --> CheckEnv["Check .env configuration"]
     CheckEnv --> CheckRun["Run ./tools/upgrade_dev_env.sh --only check"]
-    CheckRun --> AutoRun["Run ./tools/upgrade_dev_env.sh --env .env"]
-    AutoRun --> Verify[Verification & Validation]
+    CheckRun --> MigrateCheck["Run ./tools/upgrade_dev_env.sh --only migrate"]
+    MigrateCheck -->|No pending migrations| AutoRun["Run ./tools/upgrade_dev_env.sh --start-from images"]
+    MigrateCheck -->|Pending migrations (Exit 10)| PromptUser["Prompt User to run migrations"]
+    PromptUser -->|User declines| Abort["Abort Upgrade"]
+    PromptUser -->|User approves| AutoRunMigrate["Run ./tools/upgrade_dev_env.sh --start-from migrate --run-migrations"]
+    AutoRunMigrate --> Verify[Verification & Validation]
+    AutoRun --> Verify
     Verify -->|All checks pass| L["Report completed upgrade & healthy rollout"]
 ```
 
@@ -56,7 +61,7 @@ If the `.env` file **does not exist**:
 
 ## 2. Automated Dev Upgrade (`upgrade_dev_env.sh`)
 
-Use the automated upgrade tool (`./tools/upgrade_dev_env.sh`) to execute the environment upgrade end-to-end using your `.env` file in the repository root.
+Use the automated upgrade tool (`./tools/upgrade_dev_env.sh`) to execute the environment upgrade.
 
 ### Step 1: Run Configuration & Authentication Checks
 Validate configuration in `.env`, authenticate with Google Cloud and GKE, and verify that the target Kubernetes namespace exists:
@@ -64,27 +69,48 @@ Validate configuration in `.env`, authenticate with Google Cloud and GKE, and ve
 ./tools/upgrade_dev_env.sh --env .env --only check
 ```
 
-### Step 2: Execute End-to-End Upgrade
-Run the full upgrade pipeline (pre-flight checks, building & pushing all 6 microservice container images from current branch `HEAD`, upgrading Helm templates, restarting deployments, and verifying rollout health):
+### Step 2: Check for Pending Database Migrations
+Verify if there are any pending Spanner database migrations:
 ```bash
-./tools/upgrade_dev_env.sh --env .env
+./tools/upgrade_dev_env.sh --env .env --only migrate
 ```
 
-### Step 3: Resuming or Running Specific Steps
-To resume from a failed phase (`check`, `images`, `app`, `verify`):
+> [!IMPORTANT]
+> **Migration Decision**:
+> *   **If the command succeeds (Exit 0)**: No pending migrations are found. Proceed to Step 3.
+> *   **If the command exits with code 10**: Pending migrations were detected.
+>     1.  **Stop execution** and communicate the pending migrations status to the user.
+>     2.  **Ask the user** if they want to run the pending migrations.
+>     3.  **If user says YES**: Proceed to Step 3 and append `--run-migrations` flag to the command.
+>     4.  **If user says NO**: Abort the upgrade workflow and report to the user that upgrade was cancelled due to declined migrations.
+
+### Step 3: Execute Upgrade
+If no migrations were pending, or if the user approved running migrations:
+
+*   **Case A: No pending migrations**:
+    Run the upgrade starting from the `images` step (skipping migration step):
+    ```bash
+    ./tools/upgrade_dev_env.sh --env .env --start-from images
+    ```
+*   **Case B: User approved migrations**:
+    Run the upgrade starting from `migrate` step and authorize migration execution:
+    ```bash
+    ./tools/upgrade_dev_env.sh --env .env --start-from migrate --run-migrations
+    ```
+
+### Step 4: Resuming or Running Specific Steps
+To resume from a failed phase (`check`, `migrate`, `images`, `app`, `verify`):
 ```bash
 ./tools/upgrade_dev_env.sh --env .env --start-from <failed_step>
 ```
 
-To execute **only** one specific step (for example, only rebuilding and pushing images or only restarting/upgrading application workloads):
+To execute **only** one specific step:
 ```bash
 ./tools/upgrade_dev_env.sh --env .env --only <step>
 ```
-*Valid steps: `check`, `images`, `app`, `verify`*
+*Valid steps: `check`, `migrate`, `images`, `app`, `verify`*
 
 
-
-## 4. Verification and Validation
 
 ## 4. Verification and Validation
 
