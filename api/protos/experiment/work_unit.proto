@@ -154,6 +154,10 @@ message KubernetesJob {
   repeated ExecutableSpec sidecars = 9;
   // Init containers to run before primary and sidecar containers start.
   repeated ExecutableSpec init_containers = 10;
+
+  // Node selector labels to apply to all Pods in this Kubernetes Job.
+  // This allows pinning specific jobs (e.g., head vs worker) to distinct node pools.
+  map<string, string> node_selector = 11;
 }
 
 // Selects a field of the Pod (matches YAML 'fieldRef').

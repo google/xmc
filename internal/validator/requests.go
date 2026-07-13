@@ -343,6 +343,9 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 		if err := validateContainerNamesUnique(job); err != nil {
 			return err
 		}
+		if err := validateNodeSelector(job); err != nil {
+			return err
+		}
 
 		if sa := job.GetServiceAccount(); sa != "" {
 			if len(sa) > 253 {
@@ -495,6 +498,25 @@ func validateResourceSet(res *essmsgpb.ResourceSet, prefix string) error {
 		}
 		if tpu.GetTopology() == "" {
 			return fmt.Errorf("%s.tpu_resources.topology cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		}
+	}
+	return nil
+}
+
+// validateNodeSelector validates all key-value pairs in a Kubernetes job's node_selector map.
+func validateNodeSelector(job *essmsgpb.KubernetesJob) error {
+	for key, val := range job.GetNodeSelector() {
+		if key == "" {
+			return fmt.Errorf("work_unit.executable.jobset.jobs.node_selector key cannot be empty: %w", status.ErrInvalidArgument)
+		}
+		if len(key) > 316 {
+			return fmt.Errorf("work_unit.executable.jobset.jobs.node_selector key %q exceeds maximum 316 characters: %w", key, status.ErrInvalidArgument)
+		}
+		if len(val) > 63 {
+			return fmt.Errorf("work_unit.executable.jobset.jobs.node_selector value %q for key %q exceeds 63 characters: %w", val, key, status.ErrInvalidArgument)
+		}
+		if err := validateDNSLabel(key, fmt.Sprintf("work_unit.executable.jobset.jobs.node_selector[%s]", key)); err != nil && !strings.Contains(key, "/") {
+			return err
 		}
 	}
 	return nil
