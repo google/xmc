@@ -49,7 +49,7 @@ const (
 	// defaultTTLSeconds is the default time-to-live for JobSet and Jobs after finishing.
 	defaultTTLSeconds = 7 * 24 * 60 * 60 // 7 days
 	// DefaultRestartsOnFailure is the default maximum number of restarts when a JobSet's RestartPolicy is ON_FAILURE.
-	DefaultRestartsOnFailure = 3
+	DefaultRestartsOnFailure int32 = 3
 )
 
 var (
@@ -314,9 +314,9 @@ func buildFailurePolicy(jobSetSpec *esspb.JobSetExecutable) *jobsetv1alpha2.Fail
 			},
 		}
 	case esspb.RestartPolicy_ON_FAILURE:
-		maxRestarts := jobSetSpec.GetMaxRestarts()
-		if maxRestarts <= 0 {
-			maxRestarts = DefaultRestartsOnFailure
+		var maxRestarts int32 = DefaultRestartsOnFailure
+		if jobSetSpec.MaxRestarts != nil && *jobSetSpec.MaxRestarts >= 0 {
+			maxRestarts = *jobSetSpec.MaxRestarts
 		}
 		return &jobsetv1alpha2.FailurePolicy{
 			MaxRestarts: maxRestarts,

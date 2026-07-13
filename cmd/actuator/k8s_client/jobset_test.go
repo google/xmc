@@ -2019,7 +2019,7 @@ func TestConstructJobSet_RestartPolicies(t *testing.T) {
 	testCases := []struct {
 		name             string
 		jobSetPolicy     esspb.RestartPolicy
-		maxRestarts      int32
+		maxRestarts      *int32
 		jobPolicy        esspb.RestartPolicy
 		wantMaxRestarts  int32
 		wantPodRestart   corev1.RestartPolicy
@@ -2041,8 +2041,24 @@ func TestConstructJobSet_RestartPolicies(t *testing.T) {
 		{
 			name:             "OnFailure custom max restarts",
 			jobSetPolicy:     esspb.RestartPolicy_ON_FAILURE,
-			maxRestarts:      5,
+			maxRestarts:      proto.Int32(5),
 			wantMaxRestarts:  5,
+			wantPodRestart:   corev1.RestartPolicyOnFailure,
+			wantRecreateRule: true,
+		},
+		{
+			name:             "OnFailure explicit zero max restarts",
+			jobSetPolicy:     esspb.RestartPolicy_ON_FAILURE,
+			maxRestarts:      proto.Int32(0),
+			wantMaxRestarts:  0,
+			wantPodRestart:   corev1.RestartPolicyOnFailure,
+			wantRecreateRule: true,
+		},
+		{
+			name:             "OnFailure negative max restarts defaults",
+			jobSetPolicy:     esspb.RestartPolicy_ON_FAILURE,
+			maxRestarts:      proto.Int32(-1),
+			wantMaxRestarts:  DefaultRestartsOnFailure,
 			wantPodRestart:   corev1.RestartPolicyOnFailure,
 			wantRecreateRule: true,
 		},

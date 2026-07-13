@@ -116,7 +116,7 @@ message JobSetExecutable {
   RestartPolicy restart_policy = 3;
   // Maximum number of times the JobSet can be restarted if an ON_FAILURE policy is used.
   // Defaults to 3 if unspecified when ON_FAILURE is active.
-  int32 max_restarts = 4;
+  optional int32 max_restarts = 4;
 }
 
 // A KubernetesJob is a single Kubernetes Job that is run as part of a
