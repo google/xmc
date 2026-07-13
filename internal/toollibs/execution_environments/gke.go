@@ -195,7 +195,10 @@ func updateNodeSelector(resourceSet *epb.ResourceSet, podSpec *corev1.PodSpec) e
 }
 
 // updateTolerations adds necessary tolerations to the pod spec for the given resource set.
-func updateTolerations(resourceSet *epb.ResourceSet, podSpec *corev1.PodSpec) error {
+func updateTolerations(resourceSet *epb.ResourceSet, podSpec *corev1.PodSpec) {
+	if podSpec == nil {
+		return
+	}
 	if tpuRes := resourceSet.GetTpuResources(); tpuRes != nil {
 		toleration := corev1.Toleration{
 			Key:      tpuResourceKey,
@@ -204,9 +207,7 @@ func updateTolerations(resourceSet *epb.ResourceSet, podSpec *corev1.PodSpec) er
 			Effect:   corev1.TaintEffectNoSchedule,
 		}
 		podSpec.Tolerations = append(podSpec.Tolerations, toleration)
-		return nil
 	}
-	return nil
 }
 
 // InjectOnJobSetCreation annotates the given job requirements with the execution environment's
@@ -243,9 +244,7 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 			return nil, err
 		}
 
-		if err := updateTolerations(job.Spec.Resources, &replicatedJob.Template.Spec.Template.Spec); err != nil {
-			return nil, err
-		}
+		updateTolerations(job.Spec.Resources, &replicatedJob.Template.Spec.Template.Spec)
 
 		if tpuRes := job.Spec.Resources.GetTpuResources(); tpuRes != nil {
 			nodesPerSlice, err := tpuNodesPerSlice(tpuRes.GetTopology())
