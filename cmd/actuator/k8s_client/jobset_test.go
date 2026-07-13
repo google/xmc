@@ -1850,6 +1850,10 @@ func TestConstructJobSet_TPU_SingleHost(t *testing.T) {
 		t.Errorf("Expected TPU container ports [8471, 8431], got %v", podSpec.Containers[0].Ports)
 	}
 
+	if len(podSpec.Tolerations) != 1 || podSpec.Tolerations[0].Key != "google.com/tpu" || podSpec.Tolerations[0].Value != "present" || podSpec.Tolerations[0].Effect != corev1.TaintEffectNoSchedule {
+		t.Errorf("Expected google.com/tpu=present:NoSchedule toleration, got %v", podSpec.Tolerations)
+	}
+
 	if _, hasAnnotation := got.Annotations["alpha.jobset.sigs.k8s.io/exclusive-topology"]; hasAnnotation {
 		t.Error("Single-host TPU should NOT have exclusive-topology annotation")
 	}
@@ -1912,6 +1916,10 @@ func TestConstructJobSet_TPU_MultiHost(t *testing.T) {
 		t.Errorf("Expected TPU container ports [8471, 8431], got %v", podSpec.Containers[0].Ports)
 	}
 
+	if len(podSpec.Tolerations) != 1 || podSpec.Tolerations[0].Key != "google.com/tpu" || podSpec.Tolerations[0].Value != "present" || podSpec.Tolerations[0].Effect != corev1.TaintEffectNoSchedule {
+		t.Errorf("Expected google.com/tpu=present:NoSchedule toleration, got %v", podSpec.Tolerations)
+	}
+
 	wantAnnotation := "cloud.google.com/gke-nodepool"
 	if got.Annotations["alpha.jobset.sigs.k8s.io/exclusive-topology"] != wantAnnotation {
 		t.Errorf("Expected exclusive-topology annotation=%q, got %q", wantAnnotation, got.Annotations["alpha.jobset.sigs.k8s.io/exclusive-topology"])
@@ -1970,6 +1978,11 @@ func TestConstructJobSet_TPU_MultiSlice(t *testing.T) {
 	wantAnnotation := "cloud.google.com/gke-nodepool"
 	if got.Annotations["alpha.jobset.sigs.k8s.io/exclusive-topology"] != wantAnnotation {
 		t.Errorf("Expected exclusive-topology annotation=%q, got %q", wantAnnotation, got.Annotations["alpha.jobset.sigs.k8s.io/exclusive-topology"])
+	}
+
+	podSpec := rj.Template.Spec.Template.Spec
+	if len(podSpec.Tolerations) != 1 || podSpec.Tolerations[0].Key != "google.com/tpu" || podSpec.Tolerations[0].Value != "present" || podSpec.Tolerations[0].Effect != corev1.TaintEffectNoSchedule {
+		t.Errorf("Expected google.com/tpu=present:NoSchedule toleration, got %v", podSpec.Tolerations)
 	}
 }
 

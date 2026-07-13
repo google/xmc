@@ -292,6 +292,14 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 												tpuAcceleratorSelectorKey: "tpu-v4-podslice",
 												tpuTopologySelectorKey:    "2x2x4",
 											},
+											Tolerations: []corev1.Toleration{
+												{
+													Key:      "google.com/tpu",
+													Operator: corev1.TolerationOpEqual,
+													Value:    "present",
+													Effect:   corev1.TaintEffectNoSchedule,
+												},
+											},
 										},
 									},
 								},
@@ -380,6 +388,14 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 											NodeSelector: map[string]string{
 												tpuAcceleratorSelectorKey: "tpu-v5-lite-podslice",
 												tpuTopologySelectorKey:    "2x4",
+											},
+											Tolerations: []corev1.Toleration{
+												{
+													Key:      "google.com/tpu",
+													Operator: corev1.TolerationOpEqual,
+													Value:    "present",
+													Effect:   corev1.TaintEffectNoSchedule,
+												},
 											},
 										},
 									},
@@ -471,6 +487,14 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 											NodeSelector: map[string]string{
 												tpuAcceleratorSelectorKey: "tpu-v6e-slice",
 												tpuTopologySelectorKey:    "2x2",
+											},
+											Tolerations: []corev1.Toleration{
+												{
+													Key:      "google.com/tpu",
+													Operator: corev1.TolerationOpEqual,
+													Value:    "present",
+													Effect:   corev1.TaintEffectNoSchedule,
+												},
 											},
 										},
 									},

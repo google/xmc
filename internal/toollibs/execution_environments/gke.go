@@ -52,6 +52,7 @@ const (
 	nvidiaNodeSelectorKey = "cloud.google.com/gke-accelerator"
 
 	tpuResourceKey            = "google.com/tpu"
+	tpuTolerationValue        = "present"
 	tpuAcceleratorSelectorKey = "cloud.google.com/gke-tpu-accelerator"
 	tpuTopologySelectorKey    = "cloud.google.com/gke-tpu-topology"
 
@@ -193,6 +194,21 @@ func updateNodeSelector(resourceSet *epb.ResourceSet, podSpec *corev1.PodSpec) e
 	return nil
 }
 
+// updateTolerations adds necessary tolerations to the pod spec for the given resource set.
+func updateTolerations(resourceSet *epb.ResourceSet, podSpec *corev1.PodSpec) error {
+	if tpuRes := resourceSet.GetTpuResources(); tpuRes != nil {
+		toleration := corev1.Toleration{
+			Key:      tpuResourceKey,
+			Operator: corev1.TolerationOpEqual,
+			Value:    tpuTolerationValue,
+			Effect:   corev1.TaintEffectNoSchedule,
+		}
+		podSpec.Tolerations = append(podSpec.Tolerations, toleration)
+		return nil
+	}
+	return nil
+}
+
 // InjectOnJobSetCreation annotates the given job requirements with the execution environment's
 // specific resources.
 func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit, jobSet *jobsetv1alpha2.JobSet) (*jobsetv1alpha2.JobSet, error) {
@@ -224,6 +240,10 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 		}
 
 		if err := updateNodeSelector(job.Spec.Resources, &replicatedJob.Template.Spec.Template.Spec); err != nil {
+			return nil, err
+		}
+
+		if err := updateTolerations(job.Spec.Resources, &replicatedJob.Template.Spec.Template.Spec); err != nil {
 			return nil, err
 		}
 

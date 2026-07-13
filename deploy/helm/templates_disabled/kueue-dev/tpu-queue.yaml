@@ -17,6 +17,11 @@ metadata:
   name: tpu-flavor
 spec:
   nodeLabels: {}
+  tolerations:
+  - key: "google.com/tpu"
+    operator: "Equal"
+    value: "present"
+    effect: "NoSchedule"
 ---
 apiVersion: kueue.x-k8s.io/v1beta1
 kind: ClusterQueue
