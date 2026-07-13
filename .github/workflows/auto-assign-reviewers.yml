@@ -16,7 +16,13 @@ name: 'Auto Assign PR Reviewers'
 
 on:
   pull_request:
-    types: [opened, ready_for_review]
+    types: [opened, ready_for_review, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull Request Number to assign reviewers to'
+        required: true
+        type: string
 
 permissions:
   pull-requests: write
@@ -26,7 +32,7 @@ jobs:
   assign-reviewers:
     name: 'Assign Two Reviewers from OWNERS'
     runs-on: 'ubuntu-24.04'
-    if: github.event.pull_request.draft == false
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
     steps:
       - name: 'Checkout repository'
         uses: 'actions/checkout@v4'
@@ -63,9 +69,23 @@ jobs:
               return shuffled.slice(0, Math.min(count, candidates.length));
             };
 
-            const prAuthor = context.payload.pull_request.user.login;
-            const prNumber = context.payload.pull_request.number;
             const { owner, repo } = context.repo;
+            let prNumber;
+            let prAuthor;
+
+            if (context.eventName === 'workflow_dispatch') {
+              prNumber = parseInt(context.payload.inputs.pr_number, 10);
+              core.info(`Manual workflow_dispatch triggered for PR #${prNumber}`);
+              const { data: pr } = await github.rest.pulls.get({
+                owner: owner,
+                repo: repo,
+                pull_number: prNumber
+              });
+              prAuthor = pr.user.login;
+            } else {
+              prNumber = context.payload.pull_request.number;
+              prAuthor = context.payload.pull_request.user.login;
+            }
 
             core.info(`Processing PR #${prNumber} opened by @${prAuthor}`);
 
