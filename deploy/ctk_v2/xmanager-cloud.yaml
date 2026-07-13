@@ -303,6 +303,7 @@ deployment_groups:
       - $(ghpc_stage("../helm/values.yaml"))
       create_namespace: false
       wait: true
+      timeout: 600 # 10 minutes
       set_values:
       - name: essDeployment.enabled
         value: "true"
