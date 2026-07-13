@@ -24,6 +24,9 @@
 
 set -Eeo pipefail
 
+# Ensure the script is executed from the repository root directory
+cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
+
 # --- Help Menu ---
 show_help() {
   echo "Usage: $0 [--env <path_to_dotenv>] [options]"
@@ -216,8 +219,9 @@ step_verify() {
 
     if kubectl get deployment "$deploy_name" -n "$K8S_NAMESPACE" >/dev/null 2>&1; then
       local replicas ready_replicas
-      replicas=$(kubectl get deployment "$deploy_name" -n "$K8S_NAMESPACE" -o jsonpath='{.spec.replicas}')
-      ready_replicas=$(kubectl get deployment "$deploy_name" -n "$K8S_NAMESPACE" -o jsonpath='{.status.readyReplicas}')
+      replicas=$(kubectl get deployment "$deploy_name" -n "$K8S_NAMESPACE" -o jsonpath='{.spec.replicas}' 2>/dev/null)
+      replicas="${replicas:-0}"
+      ready_replicas=$(kubectl get deployment "$deploy_name" -n "$K8S_NAMESPACE" -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
       ready_replicas="${ready_replicas:-0}"
 
       if [[ "$replicas" -eq "$ready_replicas" && "$ready_replicas" -gt 0 ]]; then
@@ -273,6 +277,13 @@ done
 load_env "$ENV_FILE"
 
 STEPS=("check" "images" "app" "verify")
+
+if [[ -n "$START_STEP" ]]; then
+  case "$START_STEP" in
+    check|images|app|verify) ;;
+    *) error_exit "Invalid step '$START_STEP' for --start-from. Valid steps: check, images, app, verify" ;;
+  esac
+fi
 
 if [[ -n "$ONLY_STEP" ]]; then
   case "$ONLY_STEP" in
