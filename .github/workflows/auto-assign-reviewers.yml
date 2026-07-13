@@ -42,6 +42,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
+            const NUM_REVIEWERS_TO_ASSIGN = 2;
 
             const parseReviewersFromOwners = (content) => {
               const lines = content.split(/\r?\n/);
@@ -108,7 +109,7 @@ jobs:
               return;
             }
 
-            const selectedReviewers = selectRandomReviewers(candidates, 2);
+            const selectedReviewers = selectRandomReviewers(candidates, NUM_REVIEWERS_TO_ASSIGN);
             core.info(`Selected reviewers to assign: ${selectedReviewers.join(', ')}`);
 
             try {
