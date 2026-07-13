@@ -29,7 +29,7 @@ import (
 )
 
 // ListWorkUnits returns a paginated list of WorkUnit protos based on the provided filter and order.
-func (s *Storage) ListWorkUnits(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration, defaultToCursorPagination bool) ([]*essmsgpb.WorkUnit, string, error) {
+func (s *Storage) ListWorkUnits(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.WorkUnit, string, error) {
 	ctx = logging.WithExperimentName(ctx, parent)
 	logging.Info(ctx, "Fetch work units", "parent", parent, "pageSize", pageSize, "pageToken", pageToken, "filter", filter, "orderBy", orderBy, "staleness", staleness)
 
@@ -62,12 +62,11 @@ func (s *Storage) ListWorkUnits(ctx context.Context, parent string, pageSize int
 		ValidOrderByFields:    workunitschema.WorkUnitOrderByFields,
 	}
 
-	isCursor, err := listParams.DecodePageToken(pageToken, defaultToCursorPagination)
-	if err != nil {
+	if err := listParams.DecodePageToken(pageToken); err != nil {
 		return nil, "", err
 	}
 
-	stmt, pageOffset, err := ls.ListStatement(ctx, listParams)
+	stmt, err := ls.ListStatement(ctx, listParams)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
@@ -94,7 +93,7 @@ func (s *Storage) ListWorkUnits(ctx context.Context, parent string, pageSize int
 	}
 
 	// 5. If there are more results than the page size, return the next page token.
-	workUnits, nextPageToken, err := ls.ApplyPagination(workUnits, pageSize, pageOffset, isCursor, extractWorkUnitCursor)
+	workUnits, nextPageToken, err := ls.ApplyPagination(workUnits, pageSize, extractWorkUnitCursor)
 	if err != nil {
 		return nil, "", err
 	}

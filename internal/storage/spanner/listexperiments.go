@@ -29,7 +29,7 @@ import (
 )
 
 // ListExperiments returns a paginated list of Experiment protos based on the provided filter and order.
-func (s *Storage) ListExperiments(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration, defaultToCursorPagination bool) ([]*essmsgpb.Experiment, string, error) {
+func (s *Storage) ListExperiments(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.Experiment, string, error) {
 	logging.Info(ctx, "List experiments", "pageSize", pageSize, "pageToken", pageToken, "filter", filter, "orderBy", orderBy, "staleness", staleness)
 
 	// 1. Normalize the filter.
@@ -49,12 +49,11 @@ func (s *Storage) ListExperiments(ctx context.Context, pageSize int32, pageToken
 		ValidOrderByFields:    experimentschema.ExperimentsOrderByFields,
 	}
 
-	isCursor, err := listParams.DecodePageToken(pageToken, defaultToCursorPagination)
-	if err != nil {
+	if err := listParams.DecodePageToken(pageToken); err != nil {
 		return nil, "", err
 	}
 
-	stmt, pageOffset, err := ls.ListStatement(ctx, listParams)
+	stmt, err := ls.ListStatement(ctx, listParams)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
@@ -80,7 +79,7 @@ func (s *Storage) ListExperiments(ctx context.Context, pageSize int32, pageToken
 	}
 
 	// 4. If there are more results than the page size, return the next page token.
-	experiments, nextPageToken, err := ls.ApplyPagination(experiments, pageSize, pageOffset, isCursor, extractExperimentCursor)
+	experiments, nextPageToken, err := ls.ApplyPagination(experiments, pageSize, extractExperimentCursor)
 	if err != nil {
 		return nil, "", err
 	}

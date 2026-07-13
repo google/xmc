@@ -65,7 +65,6 @@ spec:
         - "-xid_quota_project_id={{ .Values.projectId }}"
         - "-xid_spanner_database_name=projects/{{ .Values.projectId }}/instances/xmc-{{ .Values.environment }}/databases/xids-db-{{ .Values.environment }}"
         - "-alsologtostderr"
-        - "-xid_default_to_cursor_pagination={{ .Values.defaultToCursorPagination }}"
         # Flags to disable internalVCSdependencies.
         - "--enforce_kernel_ipv6_support=false"
         - "--enable_streamz_rpc_service=false"

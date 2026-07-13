@@ -267,23 +267,4 @@ func TestSearchXidEntries_AuthFailure(t *testing.T) {
 	}
 }
 
-func TestListXidEntries_DefaultToCursorPagination(t *testing.T) {
-	ctx := context.Background()
-	storage := &storage.MockStorage{}
-	cfg := config.Config{DefaultToCursorPagination: true}
-	server := NewXIDServer(cfg, &auth.MockAuth{}, storage)
 
-	req := &apipb.ListXidEntriesRequest{PageSize: proto.Int32(10)}
-	_, _ = server.ListXidEntries(ctx, req)
-
-	if !storage.GotDefaultToCursorPaginationXIDs {
-		t.Errorf("ListXidEntries() passed DefaultToCursorPagination=%v to storage, want %v", storage.GotDefaultToCursorPaginationXIDs, true)
-	}
-
-	cfg.DefaultToCursorPagination = false
-	server = NewXIDServer(cfg, &auth.MockAuth{}, storage)
-	_, _ = server.ListXidEntries(ctx, req)
-	if storage.GotDefaultToCursorPaginationXIDs {
-		t.Errorf("ListXidEntries() passed DefaultToCursorPagination=%v to storage, want %v", storage.GotDefaultToCursorPaginationXIDs, false)
-	}
-}

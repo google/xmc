@@ -44,11 +44,9 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
       except ValueError:
         refresh_interval = 30000
 
-      cursor_pagination = os.environ.get('XMC_DEFAULT_TO_CURSOR_PAGINATION', 'false').lower() == 'true'
       status_history = os.environ.get('XMC_STATUS_MESSAGE_HISTORY_ENABLED', 'false').lower() == 'true'
 
       feature_flags = {
-          'cursorPaginationEnabled': cursor_pagination,
           'statusMessageHistoryEnabled': status_history,
       }
 

@@ -17,7 +17,6 @@ import { of, throwError } from 'rxjs';
 
 import { ListExperimentsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
-import { FeatureFlagService } from 'xmanager_cloud/ui/app/service/feature_flag_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 import {
   cleanState,
@@ -42,16 +41,12 @@ describe('ExperimentsListPageStore', () => {
       'searchExperiments',
     ]);
     const mockSnackbarService = jasmine.createSpyObj<SnackbarService>('SnackbarService', ['open']);
-    const mockFeatureFlagService = {
-      isCursorPaginationEnabled: false,
-    };
 
     setupModule({
       providers: [
         ExperimentsListPageStore,
         { provide: ExperimentService, useValue: mockExperimentService },
         { provide: SnackbarService, useValue: mockSnackbarService },
-        { provide: FeatureFlagService, useValue: mockFeatureFlagService },
       ],
     });
 
@@ -61,7 +56,6 @@ describe('ExperimentsListPageStore', () => {
       store,
       mockExperimentService,
       mockSnackbarService,
-      mockFeatureFlagService,
     };
   }, beforeEach);
 
@@ -138,8 +132,7 @@ describe('ExperimentsListPageStore', () => {
       });
     });
 
-    it('should reset pagination to page 1 when orderBy is set and isCursorPaginationEnabled is true', () => {
-      state.mockFeatureFlagService.isCursorPaginationEnabled = true;
+    it('should reset pagination to page 1 when orderBy is set', () => {
       state.store.patchState({
         pagination: {
           ...INITIAL_STATE.pagination,
@@ -153,23 +146,6 @@ describe('ExperimentsListPageStore', () => {
 
       expect(state.store.pageIndex()).toBe(0);
       expect(state.store.hasPreviousPage()).toBe(false);
-    });
-
-    it('should not reset pagination to page 1 when orderBy is set and isCursorPaginationEnabled is false', () => {
-      state.mockFeatureFlagService.isCursorPaginationEnabled = false;
-      state.store.patchState({
-        pagination: {
-          ...INITIAL_STATE.pagination,
-          nextPageToken: 'page2',
-        },
-      });
-      state.store.goToNextPage();
-      expect(state.store.pageIndex()).toBe(1);
-
-      state.store.setOrderBy('xid asc');
-
-      expect(state.store.pageIndex()).toBe(1);
-      expect(state.store.hasPreviousPage()).toBe(true);
     });
   });
 

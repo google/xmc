@@ -289,24 +289,4 @@ func createExperimentStateServerWithMockXid(ctx context.Context, t *testing.T) (
 	return New(storage, &cfg, createTestAuthorizer(ctx, t), xidClient, taskQueueClient), xidClient
 }
 
-func TestListWorkUnits_DefaultToCursorPagination(t *testing.T) {
-	ctx := context.Background()
-	storage := &storage.MockStorage{}
-	cfg := &config.Config{DefaultToCursorPagination: true}
-	server := New(storage, cfg, createTestAuthorizer(ctx, t), &mockXidClient{
-		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
-	}, nil)
 
-	req := &apipb.ListWorkUnitsRequest{Parent: "experiments/1", PageSize: 10}
-	_, _ = server.ListWorkUnits(ctx, req)
-
-	if !storage.GotDefaultToCursorPaginationWorkUnits {
-		t.Errorf("ListWorkUnits() passed DefaultToCursorPagination to storage: got %v, want %v", storage.GotDefaultToCursorPaginationWorkUnits, true)
-	}
-
-	cfg.DefaultToCursorPagination = false
-	_, _ = server.ListWorkUnits(ctx, req)
-	if storage.GotDefaultToCursorPaginationWorkUnits {
-		t.Errorf("ListWorkUnits() passed DefaultToCursorPagination to storage: got %v, want %v", storage.GotDefaultToCursorPaginationWorkUnits, false)
-	}
-}

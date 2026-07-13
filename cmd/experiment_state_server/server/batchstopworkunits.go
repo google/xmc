@@ -64,7 +64,7 @@ func (s *Server) BatchStopWorkUnits(ctx context.Context, req *apipb.BatchStopWor
 	}
 
 	// 4. Retrieve the list of work units to stop from the storage layer.
-	workUnits, _, err := s.storage.ListWorkUnits(ctx, req.Parent, math.MaxInt32, "", req.GetFilter(), "", 0, s.cfg.DefaultToCursorPagination)
+	workUnits, _, err := s.storage.ListWorkUnits(ctx, req.Parent, math.MaxInt32, "", req.GetFilter(), "", 0)
 	if err != nil {
 		logging.Error(ctx, "Failed to list work units", "error", err, "filter", req.GetFilter())
 		return nil, fmt.Errorf("failed to list work units: %w (%v)", status.ErrInternal, err)
