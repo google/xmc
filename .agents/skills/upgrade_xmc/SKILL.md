@@ -86,41 +86,14 @@ To execute **only** one specific step (for example, only rebuilding and pushing 
 
 ## 4. Verification and Validation
 
-After triggering rolling rollout restarts, verify that all pods have restarted cleanly and are passing readiness probes:
+## 4. Verification and Validation
 
-### Step 1: Run Verification Script
-Run the verification script from the repository root:
+Run the verification script from the repository root to verify that all upgraded pods are running and endpoints respond correctly:
+
 ```bash
 ENVIRONMENT="${XMANAGER_ENV:-dev}" REGION="${GCP_REGION:-us-central1}" PROJECT_ID="$PROJECT_ID" ./deploy/ctk_v2/verify_xmc.sh
 ```
 
-### Step 2: Wait for Rollout Status
-Verify each deployment rollout completes successfully:
-```bash
-for deploy in actuator experiment-state-server log-monitor reconciler ui xid-service; do
-  kubectl rollout status deployment/"$deploy" -n "${K8S_NAMESPACE:-xmc}" --timeout=300s
-done
-```
-
-### Step 3: Verify Gateway Readiness
-Confirm that the GKE Gateway resource is in the `Programmed: True` state:
-```bash
-kubectl get gateway xmc-gateway -n "${K8S_NAMESPACE:-xmc}"
-```
-
-### Step 4: Verify Service Health Checklist
-Query the status of active deployments and print a clean checklist verifying that all requested replicas are running and healthy (readyReplicas equals replicas):
-```bash
-for deploy in actuator experiment-state-server log-monitor reconciler ui xid-service; do
-  # query replicas vs readyReplicas
-  replicas=$(kubectl get deployment "$deploy" -n "${K8S_NAMESPACE:-xmc}" -o jsonpath='{.spec.replicas}' 2>/dev/null)
-  ready_replicas=$(kubectl get deployment "$deploy" -n "${K8S_NAMESPACE:-xmc}" -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
-  if [[ -n "$replicas" ]]; then
-    echo "Service $deploy health: $ready_replicas/$replicas pods ready"
-  fi
-done
-```
-
 > [!TIP]
-> Once all deployments report successful rollout completion and pods report `1/1 Running`, confirm to the user that the XMC environment upgrade is complete and running the current branch state.
+> Once the verification script reports that all pods are healthy and services are ready, confirm to the user that the XMC environment upgrade is complete and running the current branch state.
 

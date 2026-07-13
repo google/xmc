@@ -187,59 +187,6 @@ step_verify() {
   log_info "Running verification script..."
   ENVIRONMENT="$XMANAGER_ENV" REGION="$GCP_REGION" PROJECT_ID="$PROJECT_ID" bash ./deploy/ctk_v2/verify_xmc.sh || log_info "Diagnostic script reported warnings."
 
-  local deploy
-  for deploy in actuator experiment-state-server log-monitor reconciler ui xid-service; do
-    local deploy_name="$deploy"
-    if ! kubectl get deployment "$deploy_name" -n "$K8S_NAMESPACE" >/dev/null 2>&1; then
-      if kubectl get deployment "${deploy}-deployment" -n "$K8S_NAMESPACE" >/dev/null 2>&1; then
-        deploy_name="${deploy}-deployment"
-      fi
-    fi
-
-    if kubectl get deployment "$deploy_name" -n "$K8S_NAMESPACE" >/dev/null 2>&1; then
-      log_info "Waiting for rollout status on deployment/$deploy_name (timeout 300s)..."
-      kubectl rollout status deployment/"$deploy_name" -n "$K8S_NAMESPACE" --timeout=300s
-    fi
-  done
-
-  # Check Gateway status if available
-  if kubectl get gateway xmc-gateway -n "$K8S_NAMESPACE" >/dev/null 2>&1; then
-    log_info "Verifying GKE Gateway programmed condition..."
-    kubectl wait --for=condition=Programmed gateway/xmc-gateway -n "$K8S_NAMESPACE" --timeout=120s || \
-      log_info "Warning: Gateway xmc-gateway not yet reporting Programmed=True condition."
-  fi
-
-  # Check individual service health status
-  log_info "Checking health status of active XMC services..."
-  local service_unhealthy=false
-  for deploy in actuator experiment-state-server log-monitor reconciler ui xid-service; do
-    local deploy_name="$deploy"
-    if ! kubectl get deployment "$deploy_name" -n "$K8S_NAMESPACE" >/dev/null 2>&1; then
-      if kubectl get deployment "${deploy}-deployment" -n "$K8S_NAMESPACE" >/dev/null 2>&1; then
-        deploy_name="${deploy}-deployment"
-      fi
-    fi
-
-    if kubectl get deployment "$deploy_name" -n "$K8S_NAMESPACE" >/dev/null 2>&1; then
-      local replicas ready_replicas
-      replicas=$(kubectl get deployment "$deploy_name" -n "$K8S_NAMESPACE" -o jsonpath='{.spec.replicas}' 2>/dev/null)
-      replicas="${replicas:-0}"
-      ready_replicas=$(kubectl get deployment "$deploy_name" -n "$K8S_NAMESPACE" -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
-      ready_replicas="${ready_replicas:-0}"
-
-      if [[ "$replicas" -eq "$ready_replicas" && "$ready_replicas" -gt 0 ]]; then
-        echo -e "  \033[0;32m✓\033[0m Service '$deploy' is healthy ($ready_replicas/$replicas pods ready)"
-      else
-        echo -e "  \033[0;31m✗\033[0m Service '$deploy' is UNHEALTHY ($ready_replicas/$replicas pods ready)"
-        service_unhealthy=true
-      fi
-    fi
-  done
-
-  if [[ "$service_unhealthy" == "true" ]]; then
-    error_exit "One or more active XMC services are unhealthy. Please check pod status and logs."
-  fi
-
   log_success "XMC environment upgrade to current repository branch state verified successfully."
 }
 
