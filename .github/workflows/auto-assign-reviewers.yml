@@ -36,7 +36,32 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const yaml = require('js-yaml');
+
+            const parseReviewersFromOwners = (content) => {
+              const lines = content.split(/\r?\n/);
+              const reviewers = [];
+              let inReviewersSection = false;
+
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed.startsWith('#') || !trimmed) continue;
+                if (trimmed.startsWith('reviewers:')) {
+                  inReviewersSection = true;
+                  continue;
+                }
+                if (inReviewersSection && trimmed.startsWith('- ')) {
+                  reviewers.push(trimmed.substring(2).trim());
+                } else if (inReviewersSection && trimmed.endsWith(':')) {
+                  inReviewersSection = false;
+                }
+              }
+              return reviewers;
+            };
+
+            const selectRandomReviewers = (candidates, count) => {
+              const shuffled = [...candidates].sort(() => 0.5 - Math.random());
+              return shuffled.slice(0, Math.min(count, candidates.length));
+            };
 
             const prAuthor = context.payload.pull_request.user.login;
             const prNumber = context.payload.pull_request.number;
@@ -49,10 +74,7 @@ jobs:
               return;
             }
 
-            const ownersContent = fs.readFileSync('OWNERS', 'utf8');
-            const ownersData = yaml.load(ownersContent) || {};
-            const rawReviewers = ownersData.reviewers || [];
-
+            const rawReviewers = parseReviewersFromOwners(fs.readFileSync('OWNERS', 'utf8'));
             if (rawReviewers.length === 0) {
               core.warning('No reviewers defined in OWNERS file.');
               return;
@@ -66,10 +88,7 @@ jobs:
               return;
             }
 
-            const numReviewersToAssign = Math.min(2, candidates.length);
-            const shuffled = [...candidates].sort(() => 0.5 - Math.random());
-            const selectedReviewers = shuffled.slice(0, numReviewersToAssign);
-
+            const selectedReviewers = selectRandomReviewers(candidates, 2);
             core.info(`Selected reviewers to assign: ${selectedReviewers.join(', ')}`);
 
             try {
