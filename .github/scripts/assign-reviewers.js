@@ -17,70 +17,11 @@ const fs = require('fs');
 const NUM_REVIEWERS_TO_ASSIGN = 2;
 
 /**
- * Pure function: Parses a flat text OWNERS file containing one username per line.
- * Strips comments and trims whitespace.
- * @param {string} content - Raw string content of the OWNERS file.
- * @returns {string[]} Array of reviewer candidate usernames.
- */
-const parseReviewersFromOwners = (content) => {
-  return (content || '')
-    .split(/\r?\n/)
-    .map(line => line.split('#')[0].trim())
-    .filter(Boolean);
-};
-
-/**
- * Pure function: Filters out the PR author from the candidate reviewer list.
- * @param {string[]} candidates - Array of candidate usernames.
- * @param {string} prAuthor - Username of the PR author.
- * @returns {string[]} Filtered array of eligible reviewers.
- */
-const filterEligibleReviewers = (candidates, prAuthor) => {
-  const authorLower = (prAuthor || '').toLowerCase();
-  return candidates.filter(r => (r || '').toLowerCase() !== authorLower);
-};
-
-/**
- * Pure function: Selects up to `count` random reviewers using the Fisher-Yates (Knuth) shuffle algorithm.
- * @param {string[]} candidates - Array of eligible candidate usernames.
- * @param {number} count - Maximum number of reviewers to select.
- * @returns {string[]} Randomly selected reviewers.
- */
-const selectRandomReviewers = (candidates, count) => {
-  const shuffled = [...candidates];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const temp = shuffled[i];
-    shuffled[i] = shuffled[j];
-    shuffled[j] = temp;
-  }
-  return shuffled.slice(0, Math.min(count, shuffled.length));
-};
-
-/**
- * Pure function: Checks whether the PR is in an open state where reviewers can be assigned.
- * @param {string} prState - State of the pull request (e.g., 'open', 'closed', 'merged').
- * @returns {boolean} True if the PR is open, false otherwise.
- */
-const isPullRequestOpen = (prState) => {
-  return (prState || '').toLowerCase() === 'open';
-};
-
-/**
- * Pure function: Checks whether existing reviewers or teams are already assigned to the PR.
- * @param {number} existingReviewersCount - Total count of requested reviewers and teams.
- * @returns {boolean} True if reviewers already assigned and auto-assignment should be skipped.
- */
-const shouldSkipAssignment = (existingReviewersCount) => {
-  return existingReviewersCount > 0;
-};
-
-/**
  * Orchestrator: Coordinates reading the OWNERS file, calling pure parsing/selection functions,
  * and calling the GitHub REST API to assign reviewers.
  * @param {Object} params - Context and tools injected by actions/github-script.
  */
-const run = async ({ github, context, core }) => {
+async function run({ github, context, core }) {
   const { owner, repo } = context.repo;
   let prNumber;
   let prAuthor;
@@ -154,7 +95,66 @@ const run = async ({ github, context, core }) => {
   } catch (error) {
     core.setFailed(`Failed to assign reviewers via GitHub API: ${error.message}`);
   }
-};
+}
+
+/**
+ * Pure function: Parses a flat text OWNERS file containing one username per line.
+ * Strips comments and trims whitespace.
+ * @param {string} content - Raw string content of the OWNERS file.
+ * @returns {string[]} Array of reviewer candidate usernames.
+ */
+function parseReviewersFromOwners(content) {
+  return (content || '')
+    .split(/\r?\n/)
+    .map(line => line.split('#')[0].trim())
+    .filter(Boolean);
+}
+
+/**
+ * Pure function: Filters out the PR author from the candidate reviewer list.
+ * @param {string[]} candidates - Array of candidate usernames.
+ * @param {string} prAuthor - Username of the PR author.
+ * @returns {string[]} Filtered array of eligible reviewers.
+ */
+function filterEligibleReviewers(candidates, prAuthor) {
+  const authorLower = (prAuthor || '').toLowerCase();
+  return candidates.filter(r => (r || '').toLowerCase() !== authorLower);
+}
+
+/**
+ * Pure function: Selects up to `count` random reviewers using the Fisher-Yates (Knuth) shuffle algorithm.
+ * @param {string[]} candidates - Array of eligible candidate usernames.
+ * @param {number} count - Maximum number of reviewers to select.
+ * @returns {string[]} Randomly selected reviewers.
+ */
+function selectRandomReviewers(candidates, count) {
+  const shuffled = [...candidates];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const temp = shuffled[i];
+    shuffled[i] = shuffled[j];
+    shuffled[j] = temp;
+  }
+  return shuffled.slice(0, Math.min(count, shuffled.length));
+}
+
+/**
+ * Pure function: Checks whether the PR is in an open state where reviewers can be assigned.
+ * @param {string} prState - State of the pull request (e.g., 'open', 'closed', 'merged').
+ * @returns {boolean} True if the PR is open, false otherwise.
+ */
+function isPullRequestOpen(prState) {
+  return (prState || '').toLowerCase() === 'open';
+}
+
+/**
+ * Pure function: Checks whether existing reviewers or teams are already assigned to the PR.
+ * @param {number} existingReviewersCount - Total count of requested reviewers and teams.
+ * @returns {boolean} True if reviewers already assigned and auto-assignment should be skipped.
+ */
+function shouldSkipAssignment(existingReviewersCount) {
+  return existingReviewersCount > 0;
+}
 
 module.exports = {
   NUM_REVIEWERS_TO_ASSIGN,
