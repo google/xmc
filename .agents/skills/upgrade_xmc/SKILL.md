@@ -101,7 +101,7 @@ If no migrations were pending, or if the user approved running migrations:
 ### Resuming or Running Specific Steps (Advanced / Troubleshooting)
 If the upgrade fails at a specific phase, or if you need to rerun a specific part of the workflow:
 
-*   **Resume from a specific step**: To resume from a failed phase (`check`, `migrate`, `images`, `app`, `verify`):
+*   **Resume from a specific step**: To resume from a failed phase (`check`, `migrate`, `images`, `app`, `restart`, `verify`):
     ```bash
     ./tools/upgrade_dev_env.sh --env .env --start-from <failed_step>
     ```
@@ -109,7 +109,7 @@ If the upgrade fails at a specific phase, or if you need to rerun a specific par
     ```bash
     ./tools/upgrade_dev_env.sh --env .env --only <step>
     ```
-    *Valid steps: `check`, `migrate`, `images`, `app`, `verify`*
+    *Valid steps: `check`, `migrate`, `images`, `app`, `restart`, `verify`*
 
 
 

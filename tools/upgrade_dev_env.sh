@@ -35,7 +35,7 @@ show_help() {
   echo "  --env, -e <path>          Path to .env file (Default: ./.env in repository root)"
   echo "  --start-from, -s <step>   Start/resume upgrade from this step onwards"
   echo "  --only <step>             Execute ONLY this specific step and exit"
-  echo "                             Steps: check, migrate, images, app, verify"
+  echo "                             Steps: check, migrate, images, app, restart, verify"
   echo "  --run-migrations          Automatically run pending migrations if detected"
   echo "  -h, --help                Show this message"
   exit 0
@@ -256,7 +256,11 @@ step_app() {
   # We use --download-dependencies to prevent interactive prompts for downloading terraform/plugins in automated or non-interactive environments.
   ./cluster-toolkit/gcluster --download-dependencies deploy "ctk-out/$XMC_DEPLOYMENT_NAME" --only xmc_app --auto-approve
 
-  # 2. Perform a rolling rollout restart of all XMC service deployments so pods pull newly pushed :latest images
+  log_success "Application upgrade initiated."
+}
+
+step_restart() {
+  # Perform a rolling rollout restart of all XMC service deployments so pods pull newly pushed :latest images
   # (gcluster deploy might not trigger restart if image tags didn't change, so we force it)
   log_info "Triggering rolling restart across XMC service deployments to run newly pushed container images..."
   local deploy
@@ -276,7 +280,7 @@ step_app() {
     fi
   done
 
-  log_success "Application upgrade and rolling deployment restarts initiated."
+  log_success "Rolling deployment restarts initiated."
 }
 
 step_verify() {
@@ -324,12 +328,12 @@ done
 
 load_env "$ENV_FILE"
 
-STEPS=("check" "migrate" "images" "app" "verify")
+STEPS=("check" "migrate" "images" "app" "restart" "verify")
 
 if [[ -n "$START_STEP" ]]; then
   case "$START_STEP" in
-    check|migrate|images|app|verify) ;;
-    *) error_exit "Invalid step '$START_STEP' for --start-from. Valid steps: check, migrate, images, app, verify" ;;
+    check|migrate|images|app|restart|verify) ;;
+    *) error_exit "Invalid step '$START_STEP' for --start-from. Valid steps: check, migrate, images, app, restart, verify" ;;
   esac
 fi
 
@@ -339,8 +343,9 @@ if [[ -n "$ONLY_STEP" ]]; then
     migrate) step_migrate ;;
     images) step_images ;;
     app) step_app ;;
+    restart) step_restart ;;
     verify) step_verify ;;
-    *) error_exit "Invalid step '$ONLY_STEP' for --only. Valid steps: check, migrate, images, app, verify" ;;
+    *) error_exit "Invalid step '$ONLY_STEP' for --only. Valid steps: check, migrate, images, app, restart, verify" ;;
   esac
   exit 0
 fi
@@ -360,6 +365,7 @@ for step in "${STEPS[@]}"; do
       migrate) step_migrate ;;
       images) step_images ;;
       app) step_app ;;
+      restart) step_restart ;;
       verify) step_verify ;;
     esac
   fi
