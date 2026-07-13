@@ -75,7 +75,7 @@ jobs:
 
             if (context.eventName === 'workflow_dispatch') {
               prNumber = parseInt(context.payload.inputs.pr_number, 10);
-              core.info(`Manual workflow_dispatch triggered for PR #${prNumber}`);
+              core.info(`Workflow dispatch triggered for PR #${prNumber}`);
               const { data: pr } = await github.rest.pulls.get({
                 owner: owner,
                 repo: repo,
