@@ -285,6 +285,10 @@ func resolvePodRestartPolicy(jobPolicy, defaultPolicy esspb.RestartPolicy) corev
 		effective = defaultPolicy
 	}
 	switch effective {
+	// Kubernetes Job pod templates only support "OnFailure" and "Never".
+	// "Always" is not a supported restartPolicy value specifically on Job pod templates,
+	// so both ON_FAILURE and ALWAYS are mapped to corev1.RestartPolicyOnFailure here.
+	// (For ALWAYS, JobSet-level restarts are handled via FailurePolicy with MaxInt32 restarts).
 	case esspb.RestartPolicy_ON_FAILURE, esspb.RestartPolicy_ALWAYS:
 		return corev1.RestartPolicyOnFailure
 	default:
