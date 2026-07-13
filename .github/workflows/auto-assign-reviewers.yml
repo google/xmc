@@ -66,8 +66,14 @@ jobs:
             };
 
             const selectRandomReviewers = (candidates, count) => {
-              const shuffled = [...candidates].sort(() => 0.5 - Math.random());
-              return shuffled.slice(0, Math.min(count, candidates.length));
+              const shuffled = [...candidates];
+              for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                const temp = shuffled[i];
+                shuffled[i] = shuffled[j];
+                shuffled[j] = temp;
+              }
+              return shuffled.slice(0, Math.min(count, shuffled.length));
             };
 
             const { owner, repo } = context.repo;
