@@ -410,6 +410,30 @@ func TestExtractArtifactCursor(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid_artifact_with_url_and_priority",
+			artifact: &essmsgpb.Artifact{
+				Name:       "artifacts/456",
+				Parent:     "experiments/123/workUnits/1",
+				CreateTime: nowProto,
+				UpdateTime: nowProto,
+				Url: &essmsgpb.Url{
+					DisplayName: "test-display",
+					Priority:    10,
+				},
+				Priority: 5,
+			},
+			want: map[string]any{
+				"xid":          int64(123),
+				"work_unit_id": int64(1),
+				"artifact_id":  int64(456),
+				"created":      now,
+				"updated":      now,
+				"display_name": "test-display",
+				"priority":     int64(5),
+			},
+			wantErr: false,
+		},
+		{
 			name: "valid_artifact_experiment_parent",
 			artifact: &essmsgpb.Artifact{
 				Name:       "artifacts/456",
