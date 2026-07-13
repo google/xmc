@@ -1,0 +1,16 @@
+# XMC Code Ownership & Reviewer Pool
+# Used by automated PR reviewer assignment workflow.
+
+reviewers:
+  - AntonTyb
+  - andrzejfudro
+  - janzak-dev
+  - pachopepe
+  - VLukiantsev
+
+approvers:
+  - AntonTyb
+  - andrzejfudro
+  - janzak-dev
+  - pachopepe
+  - VLukiantsev
