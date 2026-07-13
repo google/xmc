@@ -35,8 +35,9 @@ graph TD
 
 ---
 
-## 1. Pre-flight CLI Checks
+## 1. Pre-flight CLI & Config Checks
 
+### CLI Tool Checks
 Before running any upgrade step, verify that the required CLI tools are installed and operational:
 
 | CLI Tool | Verification Command | Expected Successful Outcome |
@@ -47,10 +48,26 @@ Before running any upgrade step, verify that the required CLI tools are installe
 | **`bazel`** | `bazel --version` | Prints Bazel version |
 
 > [!CAUTION]
-> **Check Action**: If any check fails (command not found or returns error):
+> **Check Action**: If any CLI check fails (command not found or returns error):
 > 1. **Stop execution immediately**.
 > 2. Alert the user about the missing/broken CLI dependency.
 > 3. Provide installation instructions and do not proceed.
+
+### Configuration File Verification (.env)
+Check if the `.env` file exists in the repository root.
+
+If the `.env` file **does not exist**:
+1. **Gather Context**:
+   - Run `gcloud config list` to find the active GCP project ID.
+   - Run `gcloud container clusters list` to find available GKE clusters.
+   - Run `kubectl config current-context` to find the current active GKE cluster context.
+   - Run `helm list -A` to discover active Helm releases and namespaces.
+   - Run `gcloud iam service-accounts list` to find the service accounts in the project.
+2. **Propose Proposed Values**:
+   - Draft a proposed `.env` configuration file using the discovered project ID, GKE cluster name, region, namespace, environment name, active Helm release name, and OAuth client SA details.
+3. **Prompt User**:
+   - Stop execution, explicitly inform the user that the `.env` configuration file is missing, and present the proposed configuration content.
+   - Ask the user if they would like you to automatically create the `.env` file with these proposed values. Do not proceed until you have received confirmation.
 
 ---
 
@@ -146,5 +163,19 @@ Confirm that the GKE Gateway resource is in the `Programmed: True` state:
 kubectl get gateway xmc-gateway -n "${K8S_NAMESPACE:-xmc}"
 ```
 
+### Step 3: Verify Service Health Checklist
+Query the status of active deployments and print a clean checklist verifying that all requested replicas are running and healthy (readyReplicas equals replicas):
+```bash
+for deploy in actuator experiment-state-server log-monitor reconciler ui xid-service; do
+  # query replicas vs readyReplicas
+  replicas=$(kubectl get deployment "$deploy" -n "${K8S_NAMESPACE:-xmc}" -o jsonpath='{.spec.replicas}' 2>/dev/null)
+  ready_replicas=$(kubectl get deployment "$deploy" -n "${K8S_NAMESPACE:-xmc}" -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
+  if [[ -n "$replicas" ]]; then
+    echo "Service $deploy health: $ready_replicas/$replicas pods ready"
+  fi
+done
+```
+
 > [!TIP]
 > Once all deployments report successful rollout completion and pods report `1/1 Running`, confirm to the user that the XMC environment upgrade is complete and running the current branch state.
+
