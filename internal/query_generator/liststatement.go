@@ -264,6 +264,9 @@ func ApplyPagination[T any](results []T, pageSize int32, extractCursor func(T) (
 	if pageSize <= 0 {
 		return nil, "", fmt.Errorf("pageSize must be greater than zero")
 	}
+	if extractCursor == nil {
+		return nil, "", fmt.Errorf("extractCursor function cannot be nil")
+	}
 
 	nextPageToken := ""
 	if len(results) > int(pageSize) {
