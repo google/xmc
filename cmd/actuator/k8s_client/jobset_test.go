@@ -1742,6 +1742,56 @@ func TestConstructJobSet_GPU_MultiReplica(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_GPU_MultiReplica_WithCoordinator(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnit1",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Coordinator: &esspb.JobSetExecutable_Coordinator{
+						ReplicatedJob: "job1",
+						JobIndex:      proto.Int32(2),
+						PodIndex:      proto.Int32(0),
+					},
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name: "job1",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_GpuResources{
+										GpuResources: &esspb.GpuResources{
+											Type:  "H100",
+											Count: 8,
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+							},
+							Replicas: 4,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if got.Spec.Coordinator == nil {
+		t.Fatalf("Expected Coordinator to be set, got nil")
+	}
+	if got.Spec.Coordinator.JobIndex != 0 {
+		t.Errorf("Expected Coordinator.JobIndex to be mapped to 0, got %d", got.Spec.Coordinator.JobIndex)
+	}
+	if got.Spec.Coordinator.PodIndex != 2 {
+		t.Errorf("Expected Coordinator.PodIndex to be mapped to 2, got %d", got.Spec.Coordinator.PodIndex)
+	}
+}
+
 func TestConstructJobSet_GPU_DefaultReplica(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := &esspb.WorkUnit{

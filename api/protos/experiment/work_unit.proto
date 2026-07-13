@@ -108,6 +108,10 @@ message JobSetExecutable {
 
     // Index of the Job which contains the coordinator pod (i.e., for a ReplicatedJob
     // with N replicas, there are Job indexes 0 to N-1). Defaults to 0 if unset.
+    // Note: For GPU and TPU workloads, multi-replica jobs (Replicas: N) are typically converted
+    // by the execution environment into single-replica multi-pod jobs (Replicas: 1, Parallelism: N).
+    // When this conversion occurs, the actuator automatically maps `job_index` to `0` and
+    // `pod_index` to the original `job_index` (plus any specified `pod_index`).
     optional int32 job_index = 2;
 
     // Job completion index of the coordinator pod. Defaults to 0 if unset.

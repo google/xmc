@@ -454,7 +454,27 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		logging.Error(ctx, "Failed to get execution environment", "execution_environment", c.RuntimeConfig.DefaultExecutionEnvironment)
 		return nil, fmt.Errorf("failed to get execution environment: %q", c.RuntimeConfig.DefaultExecutionEnvironment)
 	}
-	return executionEnv.InjectOnJobSetCreation(ctx, workUnit, jobSet)
+	jobSet, err = executionEnv.InjectOnJobSetCreation(ctx, workUnit, jobSet)
+	if err != nil {
+		return nil, err
+	}
+	ensureCoordinatorIndicesValid(jobSet)
+	return jobSet, nil
+}
+
+// ensureCoordinatorIndicesValid adjusts Coordinator indices if the execution environment collapsed a multi-replica job to a multi-pod job.
+func ensureCoordinatorIndicesValid(jobSet *jobsetv1alpha2.JobSet) {
+	if jobSet == nil || jobSet.Spec.Coordinator == nil {
+		return
+	}
+	coord := jobSet.Spec.Coordinator
+	for _, rj := range jobSet.Spec.ReplicatedJobs {
+		if rj.Name == coord.ReplicatedJob && rj.Replicas == 1 && coord.JobIndex > 0 {
+			coord.PodIndex = coord.JobIndex + coord.PodIndex
+			coord.JobIndex = 0
+			return
+		}
+	}
 }
 
 func ensureQueueName(workUnit *esspb.WorkUnit, namespace string) {
