@@ -2212,3 +2212,58 @@ func TestConstructJobSet_MultiReplicaNetwork(t *testing.T) {
 	}
 }
 
+func TestShouldEnableJobSetNetwork_NilChecks(t *testing.T) {
+	if got := shouldEnableJobSetNetwork(&esspb.WorkUnit{Executable: nil}); got {
+		t.Errorf("shouldEnableJobSetNetwork(nil Executable) = true, want false")
+	}
+	if got := shouldEnableJobSetNetwork(&esspb.WorkUnit{Executable: &esspb.Executable{}}); got {
+		t.Errorf("shouldEnableJobSetNetwork(nil Jobset) = true, want false")
+	}
+}
+
+func TestShouldEnableJobSetNetwork_Conditions(t *testing.T) {
+	trueVal, falseVal := true, false
+	tests := []struct {
+		name string
+		wu   *esspb.WorkUnit
+		want bool
+	}{
+		{
+			name: "explicit_true",
+			wu: &esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{
+				Network: &esspb.JobSetExecutable_Network{EnableDnsHostnames: &trueVal},
+			}}}},
+			want: true,
+		},
+		{
+			name: "explicit_false",
+			wu: &esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{
+				Network: &esspb.JobSetExecutable_Network{EnableDnsHostnames: &falseVal},
+				Jobs:    []*esspb.KubernetesJob{{Replicas: 2}},
+			}}}},
+			want: false,
+		},
+		{
+			name: "multi_job",
+			wu: &esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{
+				Jobs: []*esspb.KubernetesJob{{Name: "j1"}, {Name: "j2"}},
+			}}}},
+			want: true,
+		},
+		{
+			name: "multi_replica",
+			wu: &esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{
+				Jobs: []*esspb.KubernetesJob{{Replicas: 2}},
+			}}}},
+			want: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldEnableJobSetNetwork(tc.wu); got != tc.want {
+				t.Errorf("shouldEnableJobSetNetwork() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+

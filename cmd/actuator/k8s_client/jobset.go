@@ -508,12 +508,20 @@ func priorityToString(priority esspb.Priority) string {
 
 // shouldEnableJobSetNetwork determines if stable DNS hostnames should be enabled.
 func shouldEnableJobSetNetwork(workUnit *esspb.WorkUnit) bool {
-	net := workUnit.GetExecutable().GetJobset().GetNetwork()
-	if net != nil && net.EnableDnsHostnames != nil {
+	exec := workUnit.GetExecutable()
+	if exec == nil {
+		return false
+	}
+	jobset := exec.GetJobset()
+	if jobset == nil {
+		return false
+	}
+
+	if net := jobset.GetNetwork(); net != nil && net.EnableDnsHostnames != nil {
 		return *net.EnableDnsHostnames
 	}
 
-	jobs := workUnit.GetExecutable().GetJobset().GetJobs()
+	jobs := jobset.GetJobs()
 	if len(jobs) > 1 {
 		return true
 	}
