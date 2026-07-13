@@ -2034,7 +2034,7 @@ func TestConstructJobSet_RestartPolicies(t *testing.T) {
 		{
 			name:             "OnFailure default max restarts",
 			jobSetPolicy:     esspb.RestartPolicy_ON_FAILURE,
-			wantMaxRestarts:  3,
+			wantMaxRestarts:  DefaultRestartsOnFailure,
 			wantPodRestart:   corev1.RestartPolicyOnFailure,
 			wantRecreateRule: true,
 		},
