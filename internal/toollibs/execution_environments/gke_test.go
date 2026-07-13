@@ -490,6 +490,192 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 			},
 		},
 		{
+			name: "tpu_resources_with_custom_ports_dedup",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{
+						Jobset: &epb.JobSetExecutable{
+							Jobs: []*epb.KubernetesJob{
+								{
+									Name: "test-job",
+									Spec: &epb.ExecutableSpec{
+										Resources: &epb.ResourceSet{
+											Resources: &epb.ResourceSet_TpuResources{
+												TpuResources: &epb.TpuResources{
+													Type:     "tpu-v6e-slice",
+													Topology: "2x2",
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "test-job",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Ports: []corev1.ContainerPort{
+														{Name: "worker", ContainerPort: 29005},
+														{Name: "data", ContainerPort: 29006},
+														{Name: "ici", ContainerPort: tpuICIPort},
+														{Name: "metrics", ContainerPort: 8080},
+													},
+												},
+											},
+											NodeSelector: map[string]string{},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantJobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "test-job",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Parallelism:    proto.Int32(1),
+									Completions:    proto.Int32(1),
+									CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Ports: []corev1.ContainerPort{
+														{Name: "worker", ContainerPort: 29005},
+														{Name: "data", ContainerPort: 29006},
+														{Name: "ici", ContainerPort: tpuICIPort},
+														{Name: "metrics", ContainerPort: 8080},
+														{ContainerPort: tpuMetricsPort},
+													},
+													Resources: corev1.ResourceRequirements{
+														Limits: corev1.ResourceList{
+															tpuResourceKey: resource.MustParse("4"),
+														},
+														Requests: corev1.ResourceList{
+															tpuResourceKey: resource.MustParse("4"),
+														},
+													},
+												},
+											},
+											NodeSelector: map[string]string{
+												tpuAcceleratorSelectorKey: "tpu-v6e-slice",
+												tpuTopologySelectorKey:    "2x2",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "cpu_resources_with_custom_ports",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{
+						Jobset: &epb.JobSetExecutable{
+							Jobs: []*epb.KubernetesJob{
+								{
+									Name: "pathways-head",
+									Spec: &epb.ExecutableSpec{
+										Resources: &epb.ResourceSet{
+											Resources: &epb.ResourceSet_CpuResources{
+												CpuResources: &epb.CpuResources{
+													CpuMillicores: 2000,
+													MemoryBytes:   4096,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "pathways-head",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Ports: []corev1.ContainerPort{
+														{Name: "proxy", ContainerPort: 29000},
+														{Name: "rm-1", ContainerPort: 29001},
+														{Name: "rm-2", ContainerPort: 29002},
+													},
+												},
+											},
+											NodeSelector: map[string]string{},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantJobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "pathways-head",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Ports: []corev1.ContainerPort{
+														{Name: "proxy", ContainerPort: 29000},
+														{Name: "rm-1", ContainerPort: 29001},
+														{Name: "rm-2", ContainerPort: 29002},
+													},
+													Resources: corev1.ResourceRequirements{
+														Limits: corev1.ResourceList{
+															corev1.ResourceMemory: resource.MustParse("4096"),
+														},
+														Requests: corev1.ResourceList{
+															corev1.ResourceCPU:    resource.MustParse("2000m"),
+															corev1.ResourceMemory: resource.MustParse("4096"),
+														},
+													},
+												},
+											},
+											NodeSelector: map[string]string{},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "multiple_replicated_jobs",
 			workUnit: &epb.WorkUnit{
 				Executable: &epb.Executable{

@@ -2267,3 +2267,74 @@ func TestShouldEnableJobSetNetwork_Conditions(t *testing.T) {
 	}
 }
 
+func TestBuildContainerPorts_ExplicitAndDefault(t *testing.T) {
+	ctx, client, _ := setupTestClient(true, &alwaysPassingPreconditionsValidator{})
+	workUnit := createTestWorkUnit("test-namespace")
+
+	workUnit.Executable.GetJobset().Jobs[0].Spec.Ports = []*esspb.ContainerPort{
+		{Name: "http", ContainerPort: 8080, Protocol: "TCP"},
+		{Name: "metrics", ContainerPort: 8431},
+		{Name: "dns", ContainerPort: 53, Protocol: "UDP"},
+		{Name: "sctp-port", ContainerPort: 9999, Protocol: "SCTP", HostPort: 9999},
+	}
+
+	workUnit.Executable.GetJobset().Jobs[0].Sidecars = []*esspb.ExecutableSpec{
+		{
+			Name:        "sidecar-1",
+			DockerImage: "sidecar-image:v1",
+			Ports: []*esspb.ContainerPort{
+				{Name: "sidecar-port", ContainerPort: 9090, Protocol: "TCP"},
+			},
+		},
+	}
+
+	workUnit.Executable.GetJobset().Jobs[0].InitContainers = []*esspb.ExecutableSpec{
+		{
+			Name:        "init-1",
+			DockerImage: "init-image:v1",
+			Command:     []string{"/bin/init"},
+			Ports: []*esspb.ContainerPort{
+				{Name: "init-port", ContainerPort: 29001, Protocol: "TCP"},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	podSpec := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
+	if len(podSpec.InitContainers) != 1 {
+		t.Fatalf("Expected 1 init container, got %d", len(podSpec.InitContainers))
+	}
+	if len(podSpec.InitContainers[0].Ports) != 1 || podSpec.InitContainers[0].Ports[0].ContainerPort != 29001 {
+		t.Errorf("Init container port mismatch: got %+v", podSpec.InitContainers[0].Ports)
+	}
+
+	if len(podSpec.Containers) != 2 {
+		t.Fatalf("Expected 2 containers, got %d", len(podSpec.Containers))
+	}
+	primaryPorts := podSpec.Containers[0].Ports
+	if len(primaryPorts) != 4 {
+		t.Fatalf("Expected 4 ports on primary container, got %d", len(primaryPorts))
+	}
+	if primaryPorts[0].Name != "http" || primaryPorts[0].ContainerPort != 8080 || primaryPorts[0].Protocol != corev1.ProtocolTCP {
+		t.Errorf("Primary port 0 mismatch: got %+v", primaryPorts[0])
+	}
+	if primaryPorts[1].Name != "metrics" || primaryPorts[1].ContainerPort != 8431 || primaryPorts[1].Protocol != corev1.ProtocolTCP {
+		t.Errorf("Primary port 1 mismatch (expected TCP default): got %+v", primaryPorts[1])
+	}
+	if primaryPorts[2].Name != "dns" || primaryPorts[2].ContainerPort != 53 || primaryPorts[2].Protocol != corev1.ProtocolUDP {
+		t.Errorf("Primary port 2 mismatch: got %+v", primaryPorts[2])
+	}
+	if primaryPorts[3].Name != "sctp-port" || primaryPorts[3].ContainerPort != 9999 || primaryPorts[3].Protocol != corev1.ProtocolSCTP || primaryPorts[3].HostPort != 9999 {
+		t.Errorf("Primary port 3 mismatch: got %+v", primaryPorts[3])
+	}
+
+	sidecarPorts := podSpec.Containers[1].Ports
+	if len(sidecarPorts) != 1 || sidecarPorts[0].ContainerPort != 9090 {
+		t.Errorf("Sidecar ports mismatch: got %+v", sidecarPorts)
+	}
+}
+

@@ -357,8 +357,29 @@ func buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
 	return containers
 }
 
+func buildContainerPorts(spec *esspb.ExecutableSpec) []corev1.ContainerPort {
+	if len(spec.GetPorts()) == 0 {
+		return nil
+	}
+	ports := make([]corev1.ContainerPort, 0, len(spec.GetPorts()))
+	for _, p := range spec.GetPorts() {
+		protocol := corev1.ProtocolTCP
+		if p.GetProtocol() != "" {
+			protocol = corev1.Protocol(p.GetProtocol())
+		}
+		ports = append(ports, corev1.ContainerPort{
+			Name:          p.GetName(),
+			ContainerPort: p.GetContainerPort(),
+			Protocol:      protocol,
+			HostPort:      p.GetHostPort(),
+		})
+	}
+	return ports
+}
+
 func buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Container {
 	envVars := generateEnvVarsForSpec(spec)
+	ports := buildContainerPorts(spec)
 	var args []string
 	for k, v := range spec.GetArgs() {
 		args = append(args, fmt.Sprintf("--%s=%s", k, v))
@@ -372,6 +393,7 @@ func buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Con
 		Command:                  spec.GetCommand(),
 		Args:                     args,
 		Env:                      envVars,
+		Ports:                    ports,
 		SecurityContext:          defaultSecurityContext(),
 		VolumeMounts:             defaultVolumeMounts(),
 	}

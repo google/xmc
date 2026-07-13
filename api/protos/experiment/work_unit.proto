@@ -193,6 +193,19 @@ message EnvVar {
   }
 }
 
+// Represents a network port exposed by a container in a Pod.
+// Maps cleanly to Kubernetes corev1.ContainerPort.
+message ContainerPort {
+  // Optional name for the port. Must be 1-15 characters, alphanumeric/hyphens.
+  string name = 1;
+  // Number of port to expose on the pod's IP address (1-65535).
+  int32 container_port = 2 [(google.api.field_behavior) = REQUIRED];
+  // Protocol for port. Must be UDP, TCP, or SCTP. Defaults to TCP if unspecified.
+  string protocol = 3;
+  // Number of port to expose on the host (if host port forwarding is required).
+  int32 host_port = 4;
+}
+
 message ExecutableSpec {
   // The resources required to run the executable.
   ResourceSet resources = 1;
@@ -210,6 +223,8 @@ message ExecutableSpec {
   // Optional name for the container. If unset, defaults to the job name for the primary container,
   // '<job_name>-sidecar-<index>' for sidecars, or '<job_name>-init-<index>' for init containers.
   string name = 7;
+  // List of ports exposed from the container.
+  repeated ContainerPort ports = 8;
 }
 
 // SchedulingConstraints contains the scheduling constraints for the
