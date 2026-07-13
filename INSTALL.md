@@ -339,6 +339,9 @@ To upgrade an existing running XMC development environment on GKE to the latest 
 
 By default, the script uses the deployment configuration file at `deploy/ctk_v2/xmanager-cloud-deployment.yaml`. You can specify a custom configuration file using the `--config` (or `-c`) flag.
 
+> [!TIP]
+> You can optionally create a local `.env` file in the root of the repository (copied from `.env.example`) to define environment variable overrides (e.g., `PROJECT_ID`, `K8S_NAMESPACE`, `XMANAGER_ENV`) without modifying the tracked deployment YAML configuration.
+
 Run the upgrade script:
 ```bash
 # Run pre-flight verification checks

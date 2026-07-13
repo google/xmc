@@ -63,6 +63,15 @@ load_config() {
   fi
   log_info "Loading configuration from '$config_file'..."
 
+  # Optionally load .env overrides if present
+  if [[ -f "./.env" ]]; then
+    log_info "Loading environment overrides from './.env'..."
+    set -o allexport
+    # shellcheck disable=SC1091
+    source "./.env"
+    set +o allexport
+  fi
+
   # Parse YAML using python
   local yaml_vars
   yaml_vars=$(python3 -c "

@@ -46,6 +46,8 @@ Verify that the deployment configuration YAML file exists. By default, the scrip
 
 If you need to use a custom configuration file, you must pass it using the `--config` (or `-c`) flag.
 
+You can optionally create a local `.env` file (copied from `.env.example`) to define environment variable overrides (e.g., `PROJECT_ID`, `K8S_NAMESPACE`, `XMANAGER_ENV`) without modifying the tracked deployment YAML configuration.
+
 If no configuration file is found at the default path:
 1. **Search for alternatives**: Check if there are any other `*-deployment.yaml` files in `deploy/ctk_v2/`.
 2. **Handle missing config**:
