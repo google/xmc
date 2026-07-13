@@ -54,9 +54,9 @@ test('filterEligibleReviewers excludes the PR author', () => {
 });
 
 test('filterEligibleReviewers excludes the PR author case-insensitively', () => {
-  const candidates = ['AntonTyb', 'VLukiantsev', 'janzak-dev'];
-  const result = filterEligibleReviewers(candidates, 'vlukiantsev');
-  assert.deepStrictEqual(result, ['AntonTyb', 'janzak-dev']);
+  const candidates = ['Alice', 'Bob', 'Charlie'];
+  const result = filterEligibleReviewers(candidates, 'bob');
+  assert.deepStrictEqual(result, ['Alice', 'Charlie']);
 });
 
 test('selectRandomReviewers returns up to count elements and preserves candidate pool elements', () => {
