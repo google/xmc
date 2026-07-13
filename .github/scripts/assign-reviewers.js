@@ -23,32 +23,12 @@ const NUM_REVIEWERS_TO_ASSIGN = 2;
  */
 async function run({ github, context, core }) {
   const { owner, repo } = context.repo;
-  let prNumber;
-  let prAuthor;
-  let prState;
-  let existingReviewersCount = 0;
-
-  if (context.eventName === 'workflow_dispatch') {
-    prNumber = parseInt(context.payload.inputs.pr_number, 10);
-    core.info(`Workflow dispatch triggered for PR #${prNumber}`);
-    const { data: pr } = await github.rest.pulls.get({
-      owner: owner,
-      repo: repo,
-      pull_number: prNumber
-    });
-    prAuthor = pr.user.login;
-    prState = pr.state;
-    const requestedReviewers = pr.requested_reviewers || [];
-    const requestedTeams = pr.requested_teams || [];
-    existingReviewersCount = requestedReviewers.length + requestedTeams.length;
-  } else {
-    prNumber = context.payload.pull_request.number;
-    prAuthor = context.payload.pull_request.user.login;
-    prState = context.payload.pull_request.state || 'open';
-    const requestedReviewers = context.payload.pull_request.requested_reviewers || [];
-    const requestedTeams = context.payload.pull_request.requested_teams || [];
-    existingReviewersCount = requestedReviewers.length + requestedTeams.length;
-  }
+  const {
+    prNumber,
+    prAuthor,
+    prState,
+    existingReviewersCount
+  } = await getPullRequestMetadata(github, context, core);
 
   if (!isPullRequestOpen(prState)) {
     core.info(`PR #${prNumber} is not open (state: ${prState}). Skipping reviewer assignment.`);
@@ -156,6 +136,42 @@ function shouldSkipAssignment(existingReviewersCount) {
   return existingReviewersCount > 0;
 }
 
+/**
+ * Helper to extract PR details based on the trigger event.
+ * @param {Object} github - GitHub REST API client.
+ * @param {Object} context - Actions workflow execution context.
+ * @param {Object} core - Actions core logger/utilities.
+ * @returns {Promise<Object>} Extracted metadata object.
+ */
+async function getPullRequestMetadata(github, context, core) {
+  const isDispatch = context.eventName === 'workflow_dispatch';
+  const prNumber = isDispatch
+    ? parseInt(context.payload.inputs.pr_number, 10)
+    : context.payload.pull_request.number;
+
+  let prData = context.payload.pull_request;
+
+  if (isDispatch) {
+    core.info(`Workflow dispatch triggered for PR #${prNumber}`);
+    const { data } = await github.rest.pulls.get({
+      owner: context.repo.owner,
+      repo: context.repo.repo,
+      pull_number: prNumber
+    });
+    prData = data;
+  }
+
+  const requestedReviewers = prData.requested_reviewers || [];
+  const requestedTeams = prData.requested_teams || [];
+
+  return {
+    prNumber,
+    prAuthor: prData.user.login,
+    prState: prData.state || 'open',
+    existingReviewersCount: requestedReviewers.length + requestedTeams.length
+  };
+}
+
 module.exports = {
   NUM_REVIEWERS_TO_ASSIGN,
   parseReviewersFromOwners,
@@ -163,5 +179,6 @@ module.exports = {
   selectRandomReviewers,
   isPullRequestOpen,
   shouldSkipAssignment,
+  getPullRequestMetadata,
   run
 };
