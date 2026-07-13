@@ -87,6 +87,51 @@ load_env() {
   export XMC_ACR_TARGET="${XMC_ACR_TARGET:-${XMC_REGISTRY}}"
 }
 
+get_migration_status() {
+  local db_name="$1"
+  local migrations_dir="$2"
+  local spanner_instance="$3"
+
+  local max_version=0
+  if ls internal/storage/spanner/migrations/"$migrations_dir"/*.up.sql >/dev/null 2>&1; then
+    max_version=$(ls internal/storage/spanner/migrations/"$migrations_dir"/*.up.sql | xargs -n 1 basename | cut -d'_' -f1 | sed 's/^0*//' | sort -rn | head -n 1)
+  fi
+  MIGRATION_MAX="${max_version:-0}"
+
+  log_info "Fetching current $migrations_dir database version..."
+  local version_out
+  version_out=$(bazel run //internal/storage/spanner/migrations:migrations -- \
+    --project="$PROJECT_ID" \
+    --instance="$spanner_instance" \
+    --database="$db_name" \
+    --migrations_dir="$migrations_dir" \
+    --command="version" 2>/dev/null || echo "Version: 0, Dirty: false")
+  
+  MIGRATION_CURRENT=$(echo "$version_out" | grep -oE "Version: [0-9]+" | cut -d' ' -f2 || echo "0")
+  MIGRATION_CURRENT="${MIGRATION_CURRENT:-0}"
+  
+  local dirty
+  dirty=$(echo "$version_out" | grep -oE "Dirty: (true|false)" | cut -d' ' -f2 || echo "false")
+
+  if [[ "$dirty" == "true" ]]; then
+    error_exit "$migrations_dir database is in a DIRTY state. Please resolve manually before proceeding."
+  fi
+}
+
+run_migration() {
+  local db_name="$1"
+  local migrations_dir="$2"
+  local spanner_instance="$3"
+
+  log_info "Running $migrations_dir migrations..."
+  bazel run //internal/storage/spanner/migrations:migrations -- \
+    --project="$PROJECT_ID" \
+    --instance="$spanner_instance" \
+    --database="$db_name" \
+    --migrations_dir="$migrations_dir" \
+    --command="up"
+}
+
 # --- Step Implementations ---
 
 step_check() {
@@ -137,58 +182,14 @@ step_migrate() {
   local xid_db="xids-db-${XMANAGER_ENV}"
 
   # Check ESS
-  local max_ess_version=0
-  if ls internal/storage/spanner/migrations/ess/*.up.sql >/dev/null 2>&1; then
-    max_ess_version=$(ls internal/storage/spanner/migrations/ess/*.up.sql | xargs -n 1 basename | cut -d'_' -f1 | sed 's/^0*//' | sort -rn | head -n 1)
-  fi
-  max_ess_version="${max_ess_version:-0}"
-
-  log_info "Fetching current ESS database version..."
-  local ess_version_out
-  ess_version_out=$(bazel run //internal/storage/spanner/migrations:migrations -- \
-    --project="$PROJECT_ID" \
-    --instance="$spanner_instance" \
-    --database="$ess_db" \
-    --migrations_dir="ess" \
-    --command="version" 2>/dev/null || echo "Version: 0, Dirty: false")
-  
-  local current_ess_version
-  current_ess_version=$(echo "$ess_version_out" | grep -oE "Version: [0-9]+" | cut -d' ' -f2 || echo "0")
-  current_ess_version="${current_ess_version:-0}"
-  
-  local ess_dirty
-  ess_dirty=$(echo "$ess_version_out" | grep -oE "Dirty: (true|false)" | cut -d' ' -f2 || echo "false")
-
-  if [[ "$ess_dirty" == "true" ]]; then
-    error_exit "ESS database is in a DIRTY state. Please resolve manually before proceeding."
-  fi
+  get_migration_status "$ess_db" "ess" "$spanner_instance"
+  local current_ess_version="$MIGRATION_CURRENT"
+  local max_ess_version="$MIGRATION_MAX"
 
   # Check XID
-  local max_xid_version=0
-  if ls internal/storage/spanner/migrations/xid/*.up.sql >/dev/null 2>&1; then
-    max_xid_version=$(ls internal/storage/spanner/migrations/xid/*.up.sql | xargs -n 1 basename | cut -d'_' -f1 | sed 's/^0*//' | sort -rn | head -n 1)
-  fi
-  max_xid_version="${max_xid_version:-0}"
-
-  log_info "Fetching current XID database version..."
-  local xid_version_out
-  xid_version_out=$(bazel run //internal/storage/spanner/migrations:migrations -- \
-    --project="$PROJECT_ID" \
-    --instance="$spanner_instance" \
-    --database="$xid_db" \
-    --migrations_dir="xid" \
-    --command="version" 2>/dev/null || echo "Version: 0, Dirty: false")
-  
-  local current_xid_version
-  current_xid_version=$(echo "$xid_version_out" | grep -oE "Version: [0-9]+" | cut -d' ' -f2 || echo "0")
-  current_xid_version="${current_xid_version:-0}"
-  
-  local xid_dirty
-  xid_dirty=$(echo "$xid_version_out" | grep -oE "Dirty: (true|false)" | cut -d' ' -f2 || echo "false")
-
-  if [[ "$xid_dirty" == "true" ]]; then
-    error_exit "XID database is in a DIRTY state. Please resolve manually before proceeding."
-  fi
+  get_migration_status "$xid_db" "xid" "$spanner_instance"
+  local current_xid_version="$MIGRATION_CURRENT"
+  local max_xid_version="$MIGRATION_MAX"
 
   log_info "ESS database version: current=$current_ess_version, available=$max_ess_version"
   log_info "XID database version: current=$current_xid_version, available=$max_xid_version"
@@ -204,23 +205,11 @@ step_migrate() {
       log_info "Running pending migrations as requested..."
       
       if (( max_ess_version > current_ess_version )); then
-        log_info "Running ESS migrations..."
-        bazel run //internal/storage/spanner/migrations:migrations -- \
-          --project="$PROJECT_ID" \
-          --instance="$spanner_instance" \
-          --database="$ess_db" \
-          --migrations_dir="ess" \
-          --command="up"
+        run_migration "$ess_db" "ess" "$spanner_instance"
       fi
 
       if (( max_xid_version > current_xid_version )); then
-        log_info "Running XID migrations..."
-        bazel run //internal/storage/spanner/migrations:migrations -- \
-          --project="$PROJECT_ID" \
-          --instance="$spanner_instance" \
-          --database="$xid_db" \
-          --migrations_dir="xid" \
-          --command="up"
+        run_migration "$xid_db" "xid" "$spanner_instance"
       fi
       log_success "Migrations applied successfully."
     else
