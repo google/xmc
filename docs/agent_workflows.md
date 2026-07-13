@@ -24,3 +24,14 @@ The `pr_comment_workflow` skill automates resolving review comments on Pull Requ
 * **How to trigger**: Ask the agent to resolve a specific GitHub discussion/review link, for example:
   > Address the PR review comment: `https://github.com/google/xmc/pull/15#discussion_r124892`
 * **Workflow Details**: See [address_pr_comment/SKILL.md](../.agents/skills/address_pr_comment/SKILL.md).
+
+---
+
+## 3. Automated Environment Upgrade (`upgrade_xmc`)
+
+The `upgrade_xmc` skill automates upgrading an existing XMC environment on GKE to run the latest code from the current branch (`HEAD`), leveraging a local `.env` configuration file in the repository root. It validates system dependencies, builds and pushes updated OCI container images using Bazel, upgrades the Helm release if present, triggers a rolling restart of all GKE workloads, and runs verification checks.
+
+* **How to trigger**: Ask the agent to upgrade the environment, for example:
+  > Upgrade my XMC environment using the local `.env` file
+* **Workflow Details**: See [upgrade_xmc/SKILL.md](../.agents/skills/upgrade_xmc/SKILL.md).
+
