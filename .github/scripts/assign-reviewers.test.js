@@ -17,7 +17,8 @@ const assert = require('node:assert');
 const {
   parseReviewersFromOwners,
   filterEligibleReviewers,
-  selectRandomReviewers
+  selectRandomReviewers,
+  shouldSkipAssignment
 } = require('./assign-reviewers');
 
 test('parseReviewersFromOwners parses reviewers correctly', () => {
@@ -58,4 +59,13 @@ test('selectRandomReviewers returns up to count elements and preserves candidate
   selected.forEach(reviewer => {
     assert.ok(candidates.includes(reviewer));
   });
+});
+
+test('shouldSkipAssignment returns true when reviewers or teams are already assigned', () => {
+  assert.strictEqual(shouldSkipAssignment(2), true);
+  assert.strictEqual(shouldSkipAssignment(1), true);
+});
+
+test('shouldSkipAssignment returns false when no reviewers or teams are assigned', () => {
+  assert.strictEqual(shouldSkipAssignment(0), false);
 });

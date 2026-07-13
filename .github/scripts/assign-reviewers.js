@@ -70,6 +70,15 @@ const selectRandomReviewers = (candidates, count) => {
 };
 
 /**
+ * Pure function: Checks whether existing reviewers or teams are already assigned to the PR.
+ * @param {number} existingReviewersCount - Total count of requested reviewers and teams.
+ * @returns {boolean} True if reviewers already assigned and auto-assignment should be skipped.
+ */
+const shouldSkipAssignment = (existingReviewersCount) => {
+  return existingReviewersCount > 0;
+};
+
+/**
  * Orchestrator: Coordinates reading the OWNERS file, calling pure parsing/selection functions,
  * and calling the GitHub REST API to assign reviewers.
  * @param {Object} params - Context and tools injected by actions/github-script.
@@ -78,6 +87,7 @@ const run = async ({ github, context, core }) => {
   const { owner, repo } = context.repo;
   let prNumber;
   let prAuthor;
+  let existingReviewersCount = 0;
 
   if (context.eventName === 'workflow_dispatch') {
     prNumber = parseInt(context.payload.inputs.pr_number, 10);
@@ -88,9 +98,20 @@ const run = async ({ github, context, core }) => {
       pull_number: prNumber
     });
     prAuthor = pr.user.login;
+    const requestedReviewers = pr.requested_reviewers || [];
+    const requestedTeams = pr.requested_teams || [];
+    existingReviewersCount = requestedReviewers.length + requestedTeams.length;
   } else {
     prNumber = context.payload.pull_request.number;
     prAuthor = context.payload.pull_request.user.login;
+    const requestedReviewers = context.payload.pull_request.requested_reviewers || [];
+    const requestedTeams = context.payload.pull_request.requested_teams || [];
+    existingReviewersCount = requestedReviewers.length + requestedTeams.length;
+  }
+
+  if (shouldSkipAssignment(existingReviewersCount)) {
+    core.info(`PR #${prNumber} already has ${existingReviewersCount} reviewer(s) or team(s) assigned. Skipping auto-assignment.`);
+    return;
   }
 
   core.info(`Processing PR #${prNumber} opened by @${prAuthor}`);
@@ -135,5 +156,6 @@ module.exports = {
   parseReviewersFromOwners,
   filterEligibleReviewers,
   selectRandomReviewers,
+  shouldSkipAssignment,
   run
 };
