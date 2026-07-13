@@ -49,7 +49,8 @@ const parseReviewersFromOwners = (content) => {
  * @returns {string[]} Filtered array of eligible reviewers.
  */
 const filterEligibleReviewers = (candidates, prAuthor) => {
-  return candidates.filter(r => r !== prAuthor);
+  const authorLower = (prAuthor || '').toLowerCase();
+  return candidates.filter(r => (r || '').toLowerCase() !== authorLower);
 };
 
 /**
