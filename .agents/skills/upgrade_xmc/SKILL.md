@@ -88,7 +88,13 @@ To execute **only** one specific step (for example, only rebuilding and pushing 
 
 After triggering rolling rollout restarts, verify that all pods have restarted cleanly and are passing readiness probes:
 
-### Step 1: Wait for Rollout Status
+### Step 1: Run Verification Script
+Run the verification script from the repository root:
+```bash
+ENVIRONMENT="${XMANAGER_ENV:-dev}" REGION="${GCP_REGION:-us-central1}" PROJECT_ID="$PROJECT_ID" ./deploy/ctk_v2/verify_xmc.sh
+```
+
+### Step 2: Wait for Rollout Status
 Verify each deployment rollout completes successfully:
 ```bash
 for deploy in actuator experiment-state-server log-monitor reconciler ui xid-service; do
@@ -96,13 +102,13 @@ for deploy in actuator experiment-state-server log-monitor reconciler ui xid-ser
 done
 ```
 
-### Step 2: Verify Gateway Readiness
+### Step 3: Verify Gateway Readiness
 Confirm that the GKE Gateway resource is in the `Programmed: True` state:
 ```bash
 kubectl get gateway xmc-gateway -n "${K8S_NAMESPACE:-xmc}"
 ```
 
-### Step 3: Verify Service Health Checklist
+### Step 4: Verify Service Health Checklist
 Query the status of active deployments and print a clean checklist verifying that all requested replicas are running and healthy (readyReplicas equals replicas):
 ```bash
 for deploy in actuator experiment-state-server log-monitor reconciler ui xid-service; do

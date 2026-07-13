@@ -184,6 +184,9 @@ step_app() {
 step_verify() {
   log_info "Verifying rollout completion and cluster health in namespace '$K8S_NAMESPACE'..."
 
+  log_info "Running verification script..."
+  ENVIRONMENT="$XMANAGER_ENV" REGION="$GCP_REGION" PROJECT_ID="$PROJECT_ID" bash ./deploy/ctk_v2/verify_xmc.sh || log_info "Diagnostic script reported warnings."
+
   local deploy
   for deploy in actuator experiment-state-server log-monitor reconciler ui xid-service; do
     local deploy_name="$deploy"
