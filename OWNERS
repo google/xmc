@@ -1,16 +1,9 @@
-# XMC Code Ownership & Reviewer Pool
+# XMC PR Reviewer Pool
 # Used by automated PR reviewer assignment workflow.
+# One GitHub username per line. Comments starting with # are ignored.
 
-reviewers:
-  - AntonTyb
-  - andrzejfudro
-  - janzak-dev
-  - pachopepe
-  - VLukiantsev
-
-approvers:
-  - AntonTyb
-  - andrzejfudro
-  - janzak-dev
-  - pachopepe
-  - VLukiantsev
+AntonTyb
+andrzejfudro
+janzak-dev
+pachopepe
+VLukiantsev

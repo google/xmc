@@ -22,26 +22,23 @@ const {
   shouldSkipAssignment
 } = require('./assign-reviewers');
 
-test('parseReviewersFromOwners parses reviewers correctly', () => {
+test('parseReviewersFromOwners parses flat text reviewers correctly and strips comments', () => {
   const sampleOwners = `
-# Sample OWNERS file
-reviewers:
-  - alice
-  - bob
-  - charlie
+# Sample OWNERS file with one username per line
+alice # frontend lead
+bob
+charlie
 
-approvers:
-  - dave
-  - eve
+# another comment
 `;
   const result = parseReviewersFromOwners(sampleOwners);
   assert.deepStrictEqual(result, ['alice', 'bob', 'charlie']);
 });
 
-test('parseReviewersFromOwners returns empty array if no reviewers defined', () => {
+test('parseReviewersFromOwners returns empty array if no usernames defined', () => {
   const sampleOwners = `
-approvers:
-  - dave
+# Just comments
+# and blank lines
 `;
   const result = parseReviewersFromOwners(sampleOwners);
   assert.deepStrictEqual(result, []);

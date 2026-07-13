@@ -17,29 +17,16 @@ const fs = require('fs');
 const NUM_REVIEWERS_TO_ASSIGN = 2;
 
 /**
- * Pure function: Parses all usernames under the `reviewers:` section of an OWNERS YAML string.
+ * Pure function: Parses a flat text OWNERS file containing one username per line.
+ * Strips comments and trims whitespace.
  * @param {string} content - Raw string content of the OWNERS file.
  * @returns {string[]} Array of reviewer candidate usernames.
  */
 const parseReviewersFromOwners = (content) => {
-  const lines = content.split(/\r?\n/);
-  const reviewers = [];
-  let inReviewersSection = false;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('#') || !trimmed) continue;
-    if (trimmed.startsWith('reviewers:')) {
-      inReviewersSection = true;
-      continue;
-    }
-    if (inReviewersSection && trimmed.startsWith('- ')) {
-      reviewers.push(trimmed.substring(2).trim());
-    } else if (inReviewersSection && trimmed.endsWith(':')) {
-      inReviewersSection = false;
-    }
-  }
-  return reviewers;
+  return (content || '')
+    .split(/\r?\n/)
+    .map(line => line.split('#')[0].trim())
+    .filter(Boolean);
 };
 
 /**
