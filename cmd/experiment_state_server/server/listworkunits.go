@@ -84,7 +84,7 @@ func (s *Server) listWorkUnitsWithStaleness(ctx context.Context, req *apipb.List
 	}
 
 	// 3. Get the list of WorkUnits from the storage layer.
-	workUnits, nextPageToken, err := s.storage.ListWorkUnits(ctx, req.GetParent(), req.GetPageSize(), req.GetPageToken(), req.GetFilter(), req.GetOrderBy(), staleness, s.cfg.DefaultToCursorPagination)
+	workUnits, nextPageToken, err := s.storage.ListWorkUnits(ctx, req.GetParent(), req.GetPageSize(), req.GetPageToken(), req.GetFilter(), req.GetOrderBy(), staleness)
 	if err != nil {
 		statusErr, ok := status.FromError(err)
 		if !ok {

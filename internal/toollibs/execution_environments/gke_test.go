@@ -262,6 +262,10 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 					},
 				},
 				Spec: jobsetv1alpha2.JobSetSpec{
+					Network: &jobsetv1alpha2.Network{
+						EnableDNSHostnames:       proto.Bool(true),
+						PublishNotReadyAddresses: proto.Bool(true),
+					},
 					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
 						{
 							Name: "test-job",
@@ -351,6 +355,10 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 					},
 				},
 				Spec: jobsetv1alpha2.JobSetSpec{
+					Network: &jobsetv1alpha2.Network{
+						EnableDNSHostnames:       proto.Bool(true),
+						PublishNotReadyAddresses: proto.Bool(true),
+					},
 					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
 						{
 							Name: "test-job",
@@ -851,6 +859,78 @@ func TestInjectOnJobSetCreation_WithSidecars(t *testing.T) {
 	}
 }
 
+func TestInjectOnJobSetCreation_WithInitContainers(t *testing.T) {
+	g := &GKE{}
+	workUnit := &epb.WorkUnit{
+		Executable: &epb.Executable{
+			Type: &epb.Executable_Jobset{
+				Jobset: &epb.JobSetExecutable{
+					Jobs: []*epb.KubernetesJob{
+						{
+							Name: "job-1",
+							Spec: &epb.ExecutableSpec{
+								Resources: &epb.ResourceSet{
+									Resources: &epb.ResourceSet_CpuResources{
+										CpuResources: &epb.CpuResources{
+											CpuMillicores: 1000,
+											MemoryBytes:   1024,
+										},
+									},
+								},
+							},
+							InitContainers: []*epb.ExecutableSpec{
+								{
+									Resources: &epb.ResourceSet{
+										Resources: &epb.ResourceSet_CpuResources{
+											CpuResources: &epb.CpuResources{
+												CpuMillicores: 300,
+												MemoryBytes:   512,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	jobSet := &jobsetv1alpha2.JobSet{
+		Spec: jobsetv1alpha2.JobSetSpec{
+			ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+				{
+					Name: "job-1",
+					Template: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers:     []corev1.Container{{Name: "main"}},
+									InitContainers: []corev1.Container{{Name: "init"}},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := g.InjectOnJobSetCreation(context.Background(), workUnit, jobSet)
+	if err != nil {
+		t.Fatalf("InjectOnJobSetCreation() returned error: %v", err)
+	}
+
+	initContainers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.InitContainers
+	if len(initContainers) != 1 {
+		t.Fatalf("Expected 1 init container, got %d", len(initContainers))
+	}
+	if initContainers[0].Resources.Requests[corev1.ResourceCPU] != resource.MustParse("300m") {
+		t.Errorf("Init container CPU request mismatch: got %v", initContainers[0].Resources.Requests[corev1.ResourceCPU])
+	}
+}
+
 func TestAnnotateContainersMismatchError(t *testing.T) {
 	replicatedJob := &jobsetv1alpha2.ReplicatedJob{
 		Template: batchv1.JobTemplateSpec{
@@ -873,3 +953,164 @@ func TestAnnotateContainersMismatchError(t *testing.T) {
 		t.Errorf("expected error for mismatched container count (1) and spec count (2), got nil")
 	}
 }
+
+func TestAnnotateContainersInitContainerErrorNoPartialMutation(t *testing.T) {
+	replicatedJob := &jobsetv1alpha2.ReplicatedJob{
+		Template: batchv1.JobTemplateSpec{
+			Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers:     []corev1.Container{{Name: "c1"}},
+						InitContainers: []corev1.Container{{Name: "init"}},
+					},
+				},
+			},
+		},
+	}
+	job := &epb.KubernetesJob{
+		Spec: &epb.ExecutableSpec{
+			Name: "c1",
+			Resources: &epb.ResourceSet{
+				Resources: &epb.ResourceSet_CpuResources{
+					CpuResources: &epb.CpuResources{
+						CpuMillicores: 1000,
+						MemoryBytes:   1024,
+					},
+				},
+			},
+		},
+		InitContainers: []*epb.ExecutableSpec{
+			{Name: "init-1"},
+			{Name: "init-2"}, // Mismatched init container count causes error
+		},
+	}
+
+	err := annotateContainers(replicatedJob, job)
+	if err == nil {
+		t.Fatalf("expected error due to init container count mismatch, got nil")
+	}
+	if len(replicatedJob.Template.Spec.Template.Spec.Containers[0].Resources.Requests) != 0 {
+		t.Errorf("expected main container resources to remain unmutated after init container error, got %v", replicatedJob.Template.Spec.Template.Spec.Containers[0].Resources.Requests)
+	}
+}
+
+func TestInjectOnJobSetCreation_NetworkInjectionTPUMultiHost(t *testing.T) {
+	g := &GKE{}
+	workUnit := &epb.WorkUnit{
+		Executable: &epb.Executable{
+			Type: &epb.Executable_Jobset{
+				Jobset: &epb.JobSetExecutable{
+					Jobs: []*epb.KubernetesJob{
+						{
+							Name: "tpu-job",
+							Spec: &epb.ExecutableSpec{
+								Resources: &epb.ResourceSet{
+									Resources: &epb.ResourceSet_TpuResources{
+										TpuResources: &epb.TpuResources{
+											Type:     "tpu-v5-lite-podslice",
+											Topology: "2x4",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	jobSet := &jobsetv1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-jobset"},
+		Spec: jobsetv1alpha2.JobSetSpec{
+			ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+				{
+					Name: "tpu-job",
+					Template: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers: []corev1.Container{{Name: "main"}},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := g.InjectOnJobSetCreation(context.Background(), workUnit, jobSet)
+	if err != nil {
+		t.Fatalf("InjectOnJobSetCreation() returned error: %v", err)
+	}
+
+	if got.Spec.Network == nil {
+		t.Fatalf("Expected Spec.Network to be injected for multi-host TPU slice, got nil")
+	}
+	if got.Spec.Network.EnableDNSHostnames == nil || !*got.Spec.Network.EnableDNSHostnames {
+		t.Errorf("Expected EnableDNSHostnames to be true, got %v", got.Spec.Network.EnableDNSHostnames)
+	}
+	if got.Spec.Network.Subdomain != "test-jobset" {
+		t.Errorf("Subdomain mismatch: got %q, want %q", got.Spec.Network.Subdomain, "test-jobset")
+	}
+}
+
+func TestInjectOnJobSetCreation_NetworkInjectionGPUMultiNode(t *testing.T) {
+	g := &GKE{}
+	workUnit := &epb.WorkUnit{
+		Executable: &epb.Executable{
+			Type: &epb.Executable_Jobset{
+				Jobset: &epb.JobSetExecutable{
+					Jobs: []*epb.KubernetesJob{
+						{
+							Name: "gpu-job",
+							Spec: &epb.ExecutableSpec{
+								Resources: &epb.ResourceSet{
+									Resources: &epb.ResourceSet_GpuResources{
+										GpuResources: &epb.GpuResources{
+											Type:  "T4",
+											Count: 8,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	jobSet := &jobsetv1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-gpu-jobset"},
+		Spec: jobsetv1alpha2.JobSetSpec{
+			ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+				{
+					Name:     "gpu-job",
+					Replicas: 2,
+					Template: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers: []corev1.Container{{Name: "main"}},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := g.InjectOnJobSetCreation(context.Background(), workUnit, jobSet)
+	if err != nil {
+		t.Fatalf("InjectOnJobSetCreation() returned error: %v", err)
+	}
+
+	if got.Spec.Network == nil {
+		t.Fatalf("Expected Spec.Network to be injected for multi-node GPU job, got nil")
+	}
+	if got.Spec.Network.EnableDNSHostnames == nil || !*got.Spec.Network.EnableDNSHostnames {
+		t.Errorf("Expected EnableDNSHostnames to be true, got %v", got.Spec.Network.EnableDNSHostnames)
+	}
+}
+

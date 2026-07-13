@@ -31,7 +31,7 @@ import (
 )
 
 // ListXidEntries returns a paginated list of XidEntry protos based on the provided filter and order.
-func (s *Storage) ListXidEntries(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration, defaultToCursorPagination bool) ([]*xidpb.XidEntry, string, error) {
+func (s *Storage) ListXidEntries(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*xidpb.XidEntry, string, error) {
 	// 1. Normalize the filter.
 	normalizedFilter, err := normalizer.Normalize(filter, s.xidsQueryGen.Tables()[0])
 	if err != nil {
@@ -49,13 +49,12 @@ func (s *Storage) ListXidEntries(ctx context.Context, pageSize int32, pageToken,
 		ValidOrderByFields:    xidschema.XidsOrderByFields,
 	}
 
-	isCursor, err := listParams.DecodePageToken(pageToken, defaultToCursorPagination)
-	if err != nil {
+	if err := listParams.DecodePageToken(pageToken); err != nil {
 		return nil, "", err
 	}
 
 	// Generate the statement with pagination
-	stmt, pageOffset, err := liststatement.ListStatement(ctx, listParams)
+	stmt, err := liststatement.ListStatement(ctx, listParams)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
@@ -82,7 +81,7 @@ func (s *Storage) ListXidEntries(ctx context.Context, pageSize int32, pageToken,
 	}
 
 	// 4. If there are more results than the page size, return the next page token.
-	xidEntries, nextPageToken, err := liststatement.ApplyPagination(xidEntries, pageSize, pageOffset, isCursor, extractXidEntryCursor)
+	xidEntries, nextPageToken, err := liststatement.ApplyPagination(xidEntries, pageSize, extractXidEntryCursor)
 	if err != nil {
 		return nil, "", err
 	}

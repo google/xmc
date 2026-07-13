@@ -75,7 +75,7 @@ func (s *Server) listArtifactsWithStaleness(ctx context.Context, req *apipb.List
 	}
 
 	// 3. Get the list of Artifacts from the storage layer.
-	artifacts, nextPageToken, err := s.storage.ListArtifacts(ctx, req.GetParent(), req.GetPageSize(), req.GetPageToken(), req.GetFilter(), req.GetOrderBy(), staleness, s.cfg.DefaultToCursorPagination)
+	artifacts, nextPageToken, err := s.storage.ListArtifacts(ctx, req.GetParent(), req.GetPageSize(), req.GetPageToken(), req.GetFilter(), req.GetOrderBy(), staleness)
 	if err != nil {
 		statusErr, ok := status.FromError(err)
 		if !ok {

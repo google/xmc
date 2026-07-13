@@ -57,7 +57,7 @@ func (s *XIDServer) listXidEntriesWithStaleness(ctx context.Context, in *apipb.L
 	}
 
 	// 3. Get the list of XidEntries from the storage layer.
-	xids, nextPageToken, err := s.storage.ListXidEntries(ctx, in.GetPageSize(), in.GetPageToken(), in.GetFilter(), in.GetOrderBy(), staleness, s.config.DefaultToCursorPagination)
+	xids, nextPageToken, err := s.storage.ListXidEntries(ctx, in.GetPageSize(), in.GetPageToken(), in.GetFilter(), in.GetOrderBy(), staleness)
 	if err != nil {
 		statusErr, ok := status.FromError(err)
 		if ok {

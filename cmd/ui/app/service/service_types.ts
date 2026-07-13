@@ -15,7 +15,6 @@
  * Feature flags for the XManager UI.
  */
 export interface FeatureFlags {
-  cursorPaginationEnabled?: boolean;
   statusMessageHistoryEnabled?: boolean;
 }
 

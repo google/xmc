@@ -1565,6 +1565,51 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 			wantErr: nil,
 		},
 		{
+			name: "valid_with_init_containers",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Name:        "main-container",
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+												CpuMillicores: 1,
+												MemoryBytes:   1,
+											}},
+										},
+									},
+									InitContainers: []*essmsgpb.ExecutableSpec{
+										{
+											Name:        "init-container",
+											DockerImage: "init-image",
+											Resources: &essmsgpb.ResourceSet{
+												Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+													CpuMillicores: 1,
+													MemoryBytes:   1,
+												}},
+											},
+										},
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: nil,
+		},
+		{
 			name: "invalid_sidecar_duplicate_container_name",
 			req: &essapipb.CreateWorkUnitRequest{
 				Parent: "experiments/123",
@@ -2102,6 +2147,42 @@ func TestValidateContainerNamesUnique_ResolvedSidecarName(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "valid_init_container_name",
+			job: &essmsgpb.KubernetesJob{
+				Name: "worker",
+				Spec: &essmsgpb.ExecutableSpec{Name: "main"},
+				InitContainers: []*essmsgpb.ExecutableSpec{
+					{Name: "init-db"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "init_container_name_conflicts_with_primary",
+			job: &essmsgpb.KubernetesJob{
+				Name: "worker",
+				Spec: &essmsgpb.ExecutableSpec{Name: "main"},
+				InitContainers: []*essmsgpb.ExecutableSpec{
+					{Name: "main"},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "init_container_name_conflicts_with_sidecar",
+			job: &essmsgpb.KubernetesJob{
+				Name: "worker",
+				Spec: &essmsgpb.ExecutableSpec{Name: "main"},
+				Sidecars: []*essmsgpb.ExecutableSpec{
+					{Name: "sidecar-a"},
+				},
+				InitContainers: []*essmsgpb.ExecutableSpec{
+					{Name: "sidecar-a"},
+				},
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -2113,3 +2194,48 @@ func TestValidateContainerNamesUnique_ResolvedSidecarName(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateJobSetNetwork(t *testing.T) {
+	tests := []struct {
+		name    string
+		network *essmsgpb.JobSetExecutable_Network
+		wantErr bool
+	}{
+		{
+			name:    "nil network",
+			network: nil,
+			wantErr: false,
+		},
+		{
+			name: "valid subdomain",
+			network: &essmsgpb.JobSetExecutable_Network{
+				Subdomain: "valid-subdomain-123",
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid subdomain with uppercase",
+			network: &essmsgpb.JobSetExecutable_Network{
+				Subdomain: "Invalid-Subdomain",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid subdomain with special characters",
+			network: &essmsgpb.JobSetExecutable_Network{
+				Subdomain: "invalid_subdomain",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateJobSetNetwork(tc.network)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateJobSetNetwork() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+

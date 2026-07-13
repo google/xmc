@@ -71,7 +71,7 @@ func (s *Server) listExperimentsWithStaleness(ctx context.Context, req *apipb.Li
 	}
 
 	// 3. Get the list of Experiments from the storage layer.
-	experiments, nextPageToken, err := s.storage.ListExperiments(ctx, req.GetPageSize(), req.GetPageToken(), req.GetFilter(), req.GetOrderBy(), staleness, s.cfg.DefaultToCursorPagination)
+	experiments, nextPageToken, err := s.storage.ListExperiments(ctx, req.GetPageSize(), req.GetPageToken(), req.GetFilter(), req.GetOrderBy(), staleness)
 	if err != nil {
 		statusErr, ok := status.FromError(err)
 		if !ok {

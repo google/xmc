@@ -376,6 +376,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, defaul
 					},
 					Spec: corev1.PodSpec{
 						ServiceAccountName: job.GetServiceAccount(),
+						InitContainers:     buildInitContainersForJob(job),
 						Containers:         buildContainersForJob(job),
 						RestartPolicy:      resolvePodRestartPolicy(job.GetRestartPolicy(), defaultPolicy),
 						SecurityContext:    defaultPodSecurityContext(),
@@ -385,6 +386,15 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, defaul
 			},
 		},
 	}
+}
+
+func buildInitContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
+	var initContainers []corev1.Container
+	for i, initContainer := range job.GetInitContainers() {
+		name := jobsetutil.InitContainerName(job, initContainer, i)
+		initContainers = append(initContainers, buildContainer(name, initContainer))
+	}
+	return initContainers
 }
 
 func buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
@@ -463,13 +473,14 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		}
 	}
 
+	jobSetName := buildJobSetName(target)
 	jobSet := &jobsetv1alpha2.JobSet{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: jobsetv1alpha2.GroupVersion.String(),
 			Kind:       "JobSet",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        buildJobSetName(target),
+			Name:        jobSetName,
 			Namespace:   namespace,
 			Labels:      jobSetLabels,
 			Annotations: jobSetAnnotations,
@@ -477,6 +488,7 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		},
 		Spec: jobsetv1alpha2.JobSetSpec{
 			ReplicatedJobs: replicatedJobs,
+			Network:        buildJobSetNetwork(workUnit, jobSetName),
 			Suspend:        boolPtr(false),
 			SuccessPolicy: &jobsetv1alpha2.SuccessPolicy{
 				Operator: jobsetv1alpha2.OperatorAll,
@@ -541,6 +553,57 @@ func priorityToString(priority esspb.Priority) string {
 		return "low"
 	default:
 		return "low"
+	}
+}
+
+// shouldEnableJobSetNetwork determines if stable DNS hostnames should be enabled.
+func shouldEnableJobSetNetwork(workUnit *esspb.WorkUnit) bool {
+	exec := workUnit.GetExecutable()
+	if exec == nil {
+		return false
+	}
+	jobset := exec.GetJobset()
+	if jobset == nil {
+		return false
+	}
+
+	if net := jobset.GetNetwork(); net != nil && net.EnableDnsHostnames != nil {
+		return *net.EnableDnsHostnames
+	}
+
+	jobs := jobset.GetJobs()
+	if len(jobs) > 1 {
+		return true
+	}
+	for _, job := range jobs {
+		if job.GetReplicas() > 1 {
+			return true
+		}
+	}
+	return false
+}
+
+// buildJobSetNetwork builds the JobSet Network specification or returns nil.
+func buildJobSetNetwork(workUnit *esspb.WorkUnit, jobSetName string) *jobsetv1alpha2.Network {
+	if !shouldEnableJobSetNetwork(workUnit) {
+		return nil
+	}
+
+	net := workUnit.GetExecutable().GetJobset().GetNetwork()
+	subdomain := jobSetName
+	if net != nil && net.GetSubdomain() != "" {
+		subdomain = net.GetSubdomain()
+	}
+
+	publishNotReady := true
+	if net != nil && net.PublishNotReadyAddresses != nil {
+		publishNotReady = *net.PublishNotReadyAddresses
+	}
+
+	return &jobsetv1alpha2.Network{
+		EnableDNSHostnames:       boolPtr(true),
+		Subdomain:                subdomain,
+		PublishNotReadyAddresses: boolPtr(publishNotReady),
 	}
 }
 

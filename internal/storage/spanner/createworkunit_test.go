@@ -436,6 +436,54 @@ func TestGetWorkUnitResources(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "work unit with init containers",
+			wu: &essmsgpb.WorkUnit{
+				Executable: &essmsgpb.Executable{
+					Type: &essmsgpb.Executable_Jobset{
+						Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{
+												CpuResources: &essmsgpb.CpuResources{
+													CpuMillicores: 1000,
+													MemoryBytes:   1024,
+												},
+											},
+										},
+									},
+									InitContainers: []*essmsgpb.ExecutableSpec{
+										{
+											Resources: &essmsgpb.ResourceSet{
+												Resources: &essmsgpb.ResourceSet_CpuResources{
+													CpuResources: &essmsgpb.CpuResources{
+														CpuMillicores: 200,
+														MemoryBytes:   256,
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: []*essmsgpb.ResourceSet{
+				{
+					Resources: &essmsgpb.ResourceSet_CpuResources{
+						CpuResources: &essmsgpb.CpuResources{
+							CpuMillicores: 1200,
+							MemoryBytes:   1280,
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range tests {

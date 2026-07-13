@@ -281,6 +281,9 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 	if wu.GetExecutable().GetJobset() == nil {
 		return fmt.Errorf("work_unit.executable.jobset cannot be nil: %w", status.ErrInvalidArgument)
 	}
+	if err := validateJobSetNetwork(wu.GetExecutable().GetJobset().GetNetwork()); err != nil {
+		return err
+	}
 	// This is a limitation of Kueue; see
 	// https://github.com/kubernetes-sigs/kueue/blob/bacde9cdbc87bef550bb559c5b81c8c7d001c58a/apis/kueue/v1beta1/workload_types.go#L42
 	if len(wu.GetExecutable().GetJobset().Jobs) < 1 {
@@ -300,11 +303,8 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 		if job.Name == "" {
 			return fmt.Errorf("work_unit.executable.jobset.jobs.name cannot be empty: %w", status.ErrInvalidArgument)
 		}
-		if len(job.Name) > 63 {
-			return fmt.Errorf("work_unit.executable.jobset.jobs.name cannot be longer than 63 characters: %w", status.ErrInvalidArgument)
-		}
-		if !jobNameRegex.MatchString(job.Name) {
-			return fmt.Errorf("work_unit.executable.jobset.jobs.name must be a valid DNS label (RFC 1123): %w", status.ErrInvalidArgument)
+		if err := validateDNSLabel(job.Name, "work_unit.executable.jobset.jobs.name"); err != nil {
+			return err
 		}
 		if jobNames[job.Name] {
 			return fmt.Errorf("work_unit.executable.jobset.jobs.name must be unique: %w", status.ErrInvalidArgument)
@@ -331,6 +331,12 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 		for i, sidecar := range job.GetSidecars() {
 			prefix := fmt.Sprintf("work_unit.executable.jobset.jobs.sidecars[%d]", i)
 			if err := validateExecutableSpec(sidecar, prefix); err != nil {
+				return err
+			}
+		}
+		for i, initContainer := range job.GetInitContainers() {
+			prefix := fmt.Sprintf("work_unit.executable.jobset.jobs.init_containers[%d]", i)
+			if err := validateExecutableSpec(initContainer, prefix); err != nil {
 				return err
 			}
 		}
@@ -453,11 +459,8 @@ func validateExecutableSpec(spec *essmsgpb.ExecutableSpec, prefix string) error 
 		return fmt.Errorf("%s cannot be nil: %w", prefix, status.ErrInvalidArgument)
 	}
 	if name := spec.GetName(); name != "" {
-		if len(name) > 63 {
-			return fmt.Errorf("%s.name cannot be longer than 63 characters: %w", prefix, status.ErrInvalidArgument)
-		}
-		if !jobNameRegex.MatchString(name) {
-			return fmt.Errorf("%s.name %q must be a valid DNS label (RFC 1123): %w", prefix, name, status.ErrInvalidArgument)
+		if err := validateDNSLabel(name, prefix+".name"); err != nil {
+			return err
 		}
 	}
 	if spec.GetDockerImage() == "" {
@@ -497,21 +500,53 @@ func validateResourceSet(res *essmsgpb.ResourceSet, prefix string) error {
 	return nil
 }
 
+func validateDNSLabel(name, desc string) error {
+	if len(name) > 63 {
+		return fmt.Errorf("%s %q cannot be longer than 63 characters: %w", desc, name, status.ErrInvalidArgument)
+	}
+	if !jobNameRegex.MatchString(name) {
+		return fmt.Errorf("%s %q must be a valid DNS label (RFC 1123): %w", desc, name, status.ErrInvalidArgument)
+	}
+	return nil
+}
+
+func validateJobSetNetwork(net *essmsgpb.JobSetExecutable_Network) error {
+	if net == nil {
+		return nil
+	}
+	if sub := net.GetSubdomain(); sub != "" {
+		if err := validateDNSLabel(sub, "work_unit.executable.jobset.network.subdomain"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateContainerName(names map[string]bool, name, containerType string) error {
+	if err := validateDNSLabel(name, fmt.Sprintf("work_unit.executable.jobset.jobs %s container name", containerType)); err != nil {
+		return err
+	}
+	if names[name] {
+		return fmt.Errorf("work_unit.executable.jobset.jobs %s container name %q must be unique within the pod: %w", containerType, name, status.ErrInvalidArgument)
+	}
+	return nil
+}
+
 func validateContainerNamesUnique(job *essmsgpb.KubernetesJob) error {
 	names := make(map[string]bool)
-	primaryName := jobsetutil.PrimaryContainerName(job)
-	names[primaryName] = true
+	names[jobsetutil.PrimaryContainerName(job)] = true
 
 	for i, sidecar := range job.GetSidecars() {
 		name := jobsetutil.SidecarContainerName(job, sidecar, i)
-		if len(name) > 63 {
-			return fmt.Errorf("work_unit.executable.jobset.jobs sidecar container name %q cannot be longer than 63 characters: %w", name, status.ErrInvalidArgument)
+		if err := validateContainerName(names, name, "sidecar"); err != nil {
+			return err
 		}
-		if !jobNameRegex.MatchString(name) {
-			return fmt.Errorf("work_unit.executable.jobset.jobs sidecar container name %q must be a valid DNS label (RFC 1123): %w", name, status.ErrInvalidArgument)
-		}
-		if names[name] {
-			return fmt.Errorf("work_unit.executable.jobset.jobs container name %q must be unique within the pod: %w", name, status.ErrInvalidArgument)
+		names[name] = true
+	}
+	for i, initContainer := range job.GetInitContainers() {
+		name := jobsetutil.InitContainerName(job, initContainer, i)
+		if err := validateContainerName(names, name, "init"); err != nil {
+			return err
 		}
 		names[name] = true
 	}

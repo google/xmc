@@ -15,11 +15,12 @@ This directory contains a complete validation example for running multi-pod and 
    - Builds the Docker image for `linux/amd64` and pushes it to Artifact Registry (`us-docker.pkg.dev/<PROJECT_ID>/xmc/multipod-counter:latest`).
 
 4. **[launch.py](./launch.py)**:
-   - XManager CLI launch script that creates a multi-pod and sidecar WorkUnit on XMC with **two distinct Pod templates** in the JobSet:
+   - XManager CLI launch script that creates a multi-pod and sidecar WorkUnit on XMC with **deterministic DNS hostnames** (`enable_dns_hostnames=True`, `publish_not_ready_addresses=True`) and **two distinct Pod templates** in the JobSet:
      - **Pod Role 1 (`counter-workers`)**: 2 parallel Pod replicas (`replicas = 2`). Each Pod contains:
        - Primary Container: `primary-counter` running `multipod-counter:latest`.
        - Sidecar Container: `sidecar-counter` running `multipod-counter:latest`.
      - **Pod Role 2 (`secondary-counter`)**: 1 Pod replica (`replicas = 1`) running a second distinct role in the same WorkUnit (`secondary-counter`).
+     - Replicas discover and resolve peer pod FQDNs immediately (`<jobset>-<replicated-job>-<job-idx>-<pod-idx>.<subdomain>`).
 
 ---
 
