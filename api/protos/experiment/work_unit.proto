@@ -78,6 +78,51 @@ message Executable {
 // A JobSetExecutable is a collection of KubernetesJobs that are run together
 // as a JobSet resource.
 message JobSetExecutable {
+  // Strategy to use when restarting the JobSet or its child Jobs.
+  enum RestartStrategy {
+    RESTART_STRATEGY_UNSPECIFIED = 0;
+    // Recreate all Jobs as soon as their previous iteration is deleted.
+    RECREATE = 1;
+    // Ensure all Jobs and Pods from the previous iteration are deleted before creating new Jobs.
+    BLOCKING_RECREATE = 2;
+    // Restart healthy Pods in-place and recreate failed Pods when no Job has failed.
+    IN_PLACE_RESTART = 3;
+  }
+
+  // Action the JobSet controller takes when a FailurePolicyRule matches.
+  enum FailurePolicyAction {
+    FAILURE_POLICY_ACTION_UNSPECIFIED = 0;
+    FAIL_JOB_SET = 1;
+    RESTART_JOB_SET = 2;
+    RESTART_JOB_SET_AND_IGNORE_MAX_RESTARTS = 3;
+    RESTART_JOB = 4;
+    RESTART_JOB_AND_IGNORE_MAX_RESTARTS = 5;
+  }
+
+  // FailurePolicyRule defines an action to execute if a child job fails matching specific criteria.
+  message FailurePolicyRule {
+    // Name of the failure policy rule. If empty, defaulted by the JobSet controller.
+    string name = 1;
+    // Action to take when this rule is matched.
+    FailurePolicyAction action = 2 [(google.api.field_behavior) = REQUIRED];
+    // List of job failure reasons that satisfy this rule. Empty list matches any reason.
+    repeated string on_job_failure_reasons = 3;
+    // List of RE2 regex patterns on job failure messages that satisfy this rule. Empty list matches any message.
+    repeated string on_job_failure_message_patterns = 4;
+    // Names of ReplicatedJobs this rule applies to. Empty list applies to all ReplicatedJobs.
+    repeated string target_replicated_jobs = 5;
+  }
+
+  // FailurePolicy configures JobSet-level failure handling, restart limits, and restart rules.
+  message FailurePolicy {
+    // Maximum number of JobSet restarts allowed. Defaults to 0 (no restarts) if not set.
+    int32 max_restarts = 1;
+    // Strategy to use when restarting the JobSet. Defaults to RECREATE if unset.
+    RestartStrategy restart_strategy = 2;
+    // List of rules evaluated in order when a child job fails. First matching rule executes.
+    repeated FailurePolicyRule rules = 3;
+  }
+
   // Network configuration for the JobSet (`network`).
   message Network {
     // Whether to enable DNS hostnames for pods in the JobSet
@@ -104,6 +149,9 @@ message JobSetExecutable {
 
   // Network configuration for the JobSet (DNS hostnames, unready address publishing).
   Network network = 2;
+
+  // Failure policy configuration for the JobSet (restarts, strategies, rules).
+  FailurePolicy failure_policy = 3;
 }
 
 // A KubernetesJob is a single Kubernetes Job that is run as part of a

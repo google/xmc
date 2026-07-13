@@ -72,7 +72,11 @@ func generateStructuredMessage(ctx context.Context, jobSet *v1alpha2.JobSet, sta
 		}
 	case spb.WorkUnitStatus_RUNNING:
 		if totalReady == totalActive {
-			msg = fmt.Sprintf("Work unit is running. %d/%d job(s) active and ready.", totalActive, totalReplicas)
+			if jobSet.Status.Restarts > 0 {
+				msg = fmt.Sprintf("Work unit is running (restarts: %d). %d/%d job(s) active and ready.", jobSet.Status.Restarts, totalActive, totalReplicas)
+			} else {
+				msg = fmt.Sprintf("Work unit is running. %d/%d job(s) active and ready.", totalActive, totalReplicas)
+			}
 		} else {
 			msg = fmt.Sprintf("Work unit is running. %d/%d job(s) active, %d ready.", totalActive, totalReplicas, totalReady)
 		}

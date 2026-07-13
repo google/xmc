@@ -391,6 +391,27 @@ func TestGenerateStructuredMessage(t *testing.T) {
 			},
 		},
 		{
+			name: "RunningStateWithRestarts",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{{Replicas: 2}},
+				},
+				Status: v1alpha2.JobSetStatus{
+					Restarts:             2,
+					ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{{Active: 2, Ready: 2}},
+				},
+			},
+			state: spb.WorkUnitStatus_RUNNING,
+			want: &spb.StructuredMessage{
+				UserFacingText: "Work unit is running (restarts: 2). 2/2 job(s) active and ready.",
+				UserFacingUrl: &spb.Url{
+					Url: "",
+				},
+				Severity: spb.StructuredMessage_DEBUG,
+				Source:   spb.StructuredMessage_KUBERNETES,
+			},
+		},
+		{
 			name: "FailedCondition",
 			jobSet: &v1alpha2.JobSet{
 				ObjectMeta: metav1.ObjectMeta{Name: "failed-jobset", Namespace: "default"},
@@ -980,6 +1001,15 @@ func TestConvertK8sJobSetStatusToProto(t *testing.T) {
 						Active:    4,
 					},
 				},
+			},
+		},
+		{
+			name: "with restarts",
+			k8sStatus: v1alpha2.JobSetStatus{
+				Restarts: 3,
+			},
+			want: &spb.JobSetStatus{
+				Restarts: 3,
 			},
 		},
 		{

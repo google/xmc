@@ -438,12 +438,7 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 			SuccessPolicy: &jobsetv1alpha2.SuccessPolicy{
 				Operator: jobsetv1alpha2.OperatorAll,
 			},
-			FailurePolicy: &jobsetv1alpha2.FailurePolicy{
-				// JobSet-level restarts are disabled (MaxRestarts: 0) to comply with the XMC
-				// contract, which expects a work unit to execute at most once.
-				MaxRestarts: 0,
-				Rules:       []jobsetv1alpha2.FailurePolicyRule{},
-			},
+			FailurePolicy:           buildJobSetFailurePolicy(workUnit),
 			TTLSecondsAfterFinished: proto.Int32(defaultTTLSeconds),
 		},
 	}
@@ -770,5 +765,79 @@ func dependencyStatus(ctx context.Context, state esspb.KubernetesJob_DependencyO
 	default:
 		logging.Warn(ctx, "Unknown dependency status, defaulting to Ready", "status", state)
 		return jobsetv1alpha2.DependencyReady
+	}
+}
+
+func buildJobSetFailurePolicy(workUnit *esspb.WorkUnit) *jobsetv1alpha2.FailurePolicy {
+	exec := workUnit.GetExecutable()
+	if exec == nil || exec.GetJobset() == nil {
+		return defaultFailurePolicy()
+	}
+	fp := exec.GetJobset().GetFailurePolicy()
+	if fp == nil {
+		return defaultFailurePolicy()
+	}
+
+	return &jobsetv1alpha2.FailurePolicy{
+		MaxRestarts:     fp.GetMaxRestarts(),
+		RestartStrategy: parseJobSetRestartStrategy(fp.GetRestartStrategy()),
+		Rules:           buildFailurePolicyRules(fp.GetRules()),
+	}
+}
+
+func defaultFailurePolicy() *jobsetv1alpha2.FailurePolicy {
+	return &jobsetv1alpha2.FailurePolicy{
+		MaxRestarts: 0,
+		Rules:       []jobsetv1alpha2.FailurePolicyRule{},
+	}
+}
+
+func parseJobSetRestartStrategy(strategy esspb.JobSetExecutable_RestartStrategy) jobsetv1alpha2.JobSetRestartStrategy {
+	switch strategy {
+	case esspb.JobSetExecutable_BLOCKING_RECREATE:
+		return jobsetv1alpha2.BlockingRecreate
+	case esspb.JobSetExecutable_IN_PLACE_RESTART:
+		return jobsetv1alpha2.InPlaceRestart
+	case esspb.JobSetExecutable_RECREATE, esspb.JobSetExecutable_RESTART_STRATEGY_UNSPECIFIED:
+		fallthrough
+	default:
+		return jobsetv1alpha2.Recreate
+	}
+}
+
+func buildFailurePolicyRules(protoRules []*esspb.JobSetExecutable_FailurePolicyRule) []jobsetv1alpha2.FailurePolicyRule {
+	if len(protoRules) == 0 {
+		return []jobsetv1alpha2.FailurePolicyRule{}
+	}
+	rules := make([]jobsetv1alpha2.FailurePolicyRule, 0, len(protoRules))
+	for _, pr := range protoRules {
+		if pr == nil {
+			continue
+		}
+		rules = append(rules, jobsetv1alpha2.FailurePolicyRule{
+			Name:                        pr.GetName(),
+			Action:                      parseFailurePolicyAction(pr.GetAction()),
+			OnJobFailureReasons:         pr.GetOnJobFailureReasons(),
+			OnJobFailureMessagePatterns: pr.GetOnJobFailureMessagePatterns(),
+			TargetReplicatedJobs:        pr.GetTargetReplicatedJobs(),
+		})
+	}
+	return rules
+}
+
+func parseFailurePolicyAction(action esspb.JobSetExecutable_FailurePolicyAction) jobsetv1alpha2.FailurePolicyAction {
+	switch action {
+	case esspb.JobSetExecutable_RESTART_JOB_SET:
+		return jobsetv1alpha2.RestartJobSet
+	case esspb.JobSetExecutable_RESTART_JOB_SET_AND_IGNORE_MAX_RESTARTS:
+		return jobsetv1alpha2.RestartJobSetAndIgnoreMaxRestarts
+	case esspb.JobSetExecutable_RESTART_JOB:
+		return jobsetv1alpha2.RestartJob
+	case esspb.JobSetExecutable_RESTART_JOB_AND_IGNORE_MAX_RESTARTS:
+		return jobsetv1alpha2.RestartJobAndIgnoreMaxRestarts
+	case esspb.JobSetExecutable_FAIL_JOB_SET, esspb.JobSetExecutable_FAILURE_POLICY_ACTION_UNSPECIFIED:
+		fallthrough
+	default:
+		return jobsetv1alpha2.FailJobSet
 	}
 }

@@ -2267,3 +2267,80 @@ func TestShouldEnableJobSetNetwork_Conditions(t *testing.T) {
 	}
 }
 
+func TestBuildJobSetFailurePolicy(t *testing.T) {
+	tests := []struct {
+		name string
+		wu   *esspb.WorkUnit
+		want *jobsetv1alpha2.FailurePolicy
+	}{
+		{
+			name: "nil executable",
+			wu:   &esspb.WorkUnit{Name: "wu-1"},
+			want: &jobsetv1alpha2.FailurePolicy{
+				MaxRestarts: 0,
+				Rules:       []jobsetv1alpha2.FailurePolicyRule{},
+			},
+		},
+		{
+			name: "nil failure policy",
+			wu: &esspb.WorkUnit{
+				Executable: &esspb.Executable{
+					Type: &esspb.Executable_Jobset{
+						Jobset: &esspb.JobSetExecutable{},
+					},
+				},
+			},
+			want: &jobsetv1alpha2.FailurePolicy{
+				MaxRestarts: 0,
+				Rules:       []jobsetv1alpha2.FailurePolicyRule{},
+			},
+		},
+		{
+			name: "custom failure policy with rules and restart strategy",
+			wu: &esspb.WorkUnit{
+				Executable: &esspb.Executable{
+					Type: &esspb.Executable_Jobset{
+						Jobset: &esspb.JobSetExecutable{
+							FailurePolicy: &esspb.JobSetExecutable_FailurePolicy{
+								MaxRestarts:     3,
+								RestartStrategy: esspb.JobSetExecutable_IN_PLACE_RESTART,
+								Rules: []*esspb.JobSetExecutable_FailurePolicyRule{
+									{
+										Name:                        "rule1",
+										Action:                      esspb.JobSetExecutable_RESTART_JOB_SET,
+										OnJobFailureReasons:         []string{"Reason1"},
+										OnJobFailureMessagePatterns: []string{".*error.*"},
+										TargetReplicatedJobs:        []string{"job1"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: &jobsetv1alpha2.FailurePolicy{
+				MaxRestarts:     3,
+				RestartStrategy: jobsetv1alpha2.InPlaceRestart,
+				Rules: []jobsetv1alpha2.FailurePolicyRule{
+					{
+						Name:                        "rule1",
+						Action:                      jobsetv1alpha2.RestartJobSet,
+						OnJobFailureReasons:         []string{"Reason1"},
+						OnJobFailureMessagePatterns: []string{".*error.*"},
+						TargetReplicatedJobs:        []string{"job1"},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildJobSetFailurePolicy(tc.wu)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("buildJobSetFailurePolicy() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+

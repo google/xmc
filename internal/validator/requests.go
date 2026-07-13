@@ -353,6 +353,9 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 			}
 		}
 	}
+	if err := validateJobSetFailurePolicy(wu.GetExecutable().GetJobset().GetFailurePolicy(), jobNames); err != nil {
+		return err
+	}
 	if queueName := wu.GetExecutable().GetSchedulingConstraints().GetQueueName(); queueName == "" {
 		return fmt.Errorf("work_unit.executable.scheduling_constraints.queue_name cannot be empty: %w", status.ErrInvalidArgument)
 	} else if len(queueName) > maxQueueNameLen {
@@ -549,6 +552,56 @@ func validateContainerNamesUnique(job *essmsgpb.KubernetesJob) error {
 			return err
 		}
 		names[name] = true
+	}
+	return nil
+}
+
+func validateJobSetFailurePolicy(fp *essmsgpb.JobSetExecutable_FailurePolicy, jobNames map[string]bool) error {
+	if fp == nil {
+		return nil
+	}
+	if fp.GetMaxRestarts() < 0 {
+		return fmt.Errorf("work_unit.executable.jobset.failure_policy.max_restarts cannot be negative: %w", status.ErrInvalidArgument)
+	}
+	for i, rule := range fp.GetRules() {
+		prefix := fmt.Sprintf("work_unit.executable.jobset.failure_policy.rules[%d]", i)
+		if err := validateFailurePolicyRule(rule, prefix, jobNames); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateFailurePolicyRule(rule *essmsgpb.JobSetExecutable_FailurePolicyRule, prefix string, jobNames map[string]bool) error {
+	if rule == nil {
+		return fmt.Errorf("%s cannot be nil: %w", prefix, status.ErrInvalidArgument)
+	}
+	if rule.GetAction() == essmsgpb.JobSetExecutable_FAILURE_POLICY_ACTION_UNSPECIFIED {
+		return fmt.Errorf("%s.action is required and cannot be unspecified: %w", prefix, status.ErrInvalidArgument)
+	}
+	if name := rule.GetName(); name != "" && !jobNameRegex.MatchString(name) {
+		return fmt.Errorf("%s.name %q must be a valid DNS label (RFC 1123): %w", prefix, name, status.ErrInvalidArgument)
+	}
+	if err := validateRuleRegexPatterns(rule.GetOnJobFailureMessagePatterns(), prefix); err != nil {
+		return err
+	}
+	return validateRuleTargetJobs(rule.GetTargetReplicatedJobs(), prefix, jobNames)
+}
+
+func validateRuleRegexPatterns(patterns []string, prefix string) error {
+	for j, pattern := range patterns {
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf("%s.on_job_failure_message_patterns[%d] %q is not a valid RE2 regex: %v: %w", prefix, j, pattern, err, status.ErrInvalidArgument)
+		}
+	}
+	return nil
+}
+
+func validateRuleTargetJobs(targetJobs []string, prefix string, jobNames map[string]bool) error {
+	for j, targetJob := range targetJobs {
+		if !jobNames[targetJob] {
+			return fmt.Errorf("%s.target_replicated_jobs[%d] %q does not match any job in work_unit.executable.jobset.jobs: %w", prefix, j, targetJob, status.ErrInvalidArgument)
+		}
 	}
 	return nil
 }

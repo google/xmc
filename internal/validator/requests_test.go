@@ -2239,3 +2239,105 @@ func TestValidateJobSetNetwork(t *testing.T) {
 	}
 }
 
+func TestValidateJobSetFailurePolicy(t *testing.T) {
+	jobNames := map[string]bool{
+		"pathways-head": true,
+		"worker":        true,
+	}
+
+	tests := []struct {
+		name    string
+		fp      *essmsgpb.JobSetExecutable_FailurePolicy
+		wantErr bool
+	}{
+		{
+			name:    "nil policy",
+			fp:      nil,
+			wantErr: false,
+		},
+		{
+			name: "valid recreate policy with rules",
+			fp: &essmsgpb.JobSetExecutable_FailurePolicy{
+				MaxRestarts:     3,
+				RestartStrategy: essmsgpb.JobSetExecutable_RECREATE,
+				Rules: []*essmsgpb.JobSetExecutable_FailurePolicyRule{
+					{
+						Name:                        "rule1",
+						Action:                      essmsgpb.JobSetExecutable_RESTART_JOB_SET,
+						OnJobFailureMessagePatterns: []string{".*error.*"},
+						TargetReplicatedJobs:        []string{"pathways-head", "worker"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "negative max restarts",
+			fp: &essmsgpb.JobSetExecutable_FailurePolicy{
+				MaxRestarts: -1,
+			},
+			wantErr: true,
+		},
+		{
+			name: "unspecified rule action",
+			fp: &essmsgpb.JobSetExecutable_FailurePolicy{
+				MaxRestarts: 1,
+				Rules: []*essmsgpb.JobSetExecutable_FailurePolicyRule{
+					{
+						Action: essmsgpb.JobSetExecutable_FAILURE_POLICY_ACTION_UNSPECIFIED,
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid rule name",
+			fp: &essmsgpb.JobSetExecutable_FailurePolicy{
+				MaxRestarts: 1,
+				Rules: []*essmsgpb.JobSetExecutable_FailurePolicyRule{
+					{
+						Name:   "INVALID_NAME",
+						Action: essmsgpb.JobSetExecutable_RESTART_JOB,
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid regex pattern",
+			fp: &essmsgpb.JobSetExecutable_FailurePolicy{
+				MaxRestarts: 1,
+				Rules: []*essmsgpb.JobSetExecutable_FailurePolicyRule{
+					{
+						Action:                      essmsgpb.JobSetExecutable_RESTART_JOB,
+						OnJobFailureMessagePatterns: []string{"[unclosed"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid target replicated job",
+			fp: &essmsgpb.JobSetExecutable_FailurePolicy{
+				MaxRestarts: 1,
+				Rules: []*essmsgpb.JobSetExecutable_FailurePolicyRule{
+					{
+						Action:               essmsgpb.JobSetExecutable_RESTART_JOB,
+						TargetReplicatedJobs: []string{"unknown-job"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateJobSetFailurePolicy(tc.fp, jobNames)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateJobSetFailurePolicy() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
