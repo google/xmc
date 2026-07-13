@@ -35,11 +35,17 @@ def main(argv: Sequence[str]) -> None:
   if len(argv) > 1:
     raise app.UsageError("Too many command-line arguments.")
 
-  project_id = os.environ.get("PROJECT_ID")
-  image_path = os.environ.get(
-      "IMAGE_PATH",
-      f"us-docker.pkg.dev/{project_id}/xmc/per-job-node-selector:latest",
-  )
+  image_path = os.environ.get("IMAGE_PATH")
+  if not image_path:
+    project_id = os.environ.get("PROJECT_ID")
+    if not project_id:
+      raise ValueError(
+          "PROJECT_ID environment variable must be set if IMAGE_PATH is not"
+          " provided."
+      )
+    image_path = (
+        f"us-docker.pkg.dev/{project_id}/xmc/per-job-node-selector:latest"
+    )
   queue_name = os.environ.get("QUEUE_NAME", "cpu-queue")
 
   print(f"Creating per-job node_selector experiment using image: {image_path}")
