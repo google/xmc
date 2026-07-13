@@ -73,12 +73,13 @@ load_env() {
   fi
 
   # Apply defaults for optional or derived variables
-  K8S_NAMESPACE="${K8S_NAMESPACE:-xmc}"
-  GCP_REGION="${GCP_REGION:-us-central1}"
-  XMANAGER_ENV="${XMANAGER_ENV:-dev}"
-  XMC_REGISTRY_NAME="${XMC_REGISTRY_NAME:-xmc}"
-  XMC_REGISTRY="${XMC_REGISTRY:-us-docker.pkg.dev/${PROJECT_ID}/${XMC_REGISTRY_NAME}}"
-  XMC_ACR_TARGET="${XMC_ACR_TARGET:-${XMC_REGISTRY}}"
+  export K8S_NAMESPACE="${K8S_NAMESPACE:-xmc}"
+  export GCP_REGION="${GCP_REGION:-us-central1}"
+  export XMANAGER_ENV="${XMANAGER_ENV:-dev}"
+  export XMC_REGISTRY_NAME="${XMC_REGISTRY_NAME:-xmc}"
+  export XMC_REGISTRY="${XMC_REGISTRY:-us-docker.pkg.dev/${PROJECT_ID}/${XMC_REGISTRY_NAME}}"
+  export XMC_ACR_TARGET="${XMC_ACR_TARGET:-${XMC_REGISTRY}}"
+  export HELM_RELEASE="${HELM_RELEASE:-xmc}"
 }
 
 # --- Step Implementations ---
@@ -142,17 +143,17 @@ step_app() {
   log_info "Upgrading XMC Kubernetes application workloads in namespace '$K8S_NAMESPACE'..."
 
   # 1. Upgrade existing Helm release if present
-  if helm status xmc -n "$K8S_NAMESPACE" >/dev/null 2>&1; then
-    log_info "Existing Helm release 'xmc' detected. Upgrading release to match local './deploy/helm' templates..."
+  if helm status "$HELM_RELEASE" -n "$K8S_NAMESPACE" >/dev/null 2>&1; then
+    log_info "Existing Helm release '$HELM_RELEASE' detected. Upgrading release to match local './deploy/helm' templates..."
     if [[ -n "${VALUES_FILE:-}" && -f "$VALUES_FILE" ]]; then
       log_info "Applying custom values from '$VALUES_FILE'..."
-      helm upgrade xmc ./deploy/helm -n "$K8S_NAMESPACE" -f "$VALUES_FILE"
+      helm upgrade "$HELM_RELEASE" ./deploy/helm -n "$K8S_NAMESPACE" -f "$VALUES_FILE"
     else
-      helm upgrade xmc ./deploy/helm -n "$K8S_NAMESPACE" --reuse-values
+      helm upgrade "$HELM_RELEASE" ./deploy/helm -n "$K8S_NAMESPACE" --reuse-values
     fi
-    log_success "Helm release 'xmc' upgraded successfully."
+    log_success "Helm release '$HELM_RELEASE' upgraded successfully."
   else
-    log_info "No existing Helm release 'xmc' found in namespace '$K8S_NAMESPACE' (environment may be gcluster/manifest managed)."
+    log_info "No existing Helm release '$HELM_RELEASE' found in namespace '$K8S_NAMESPACE' (environment may be gcluster/manifest managed)."
   fi
 
   # 2. Perform a rolling rollout restart of all XMC service deployments so pods pull newly pushed :latest images
