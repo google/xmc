@@ -495,6 +495,50 @@ func TestArtifactProtoToInsertMutation_WithUrlPayload(t *testing.T) {
 	}
 }
 
+func TestArtifactProtoToInsertMutation_WithChartPayload(t *testing.T) {
+	payload := &pb.ArtifactPayload{
+		Type: &pb.ArtifactPayload_Chart{
+			Chart: &pb.ChartArtifact{
+				Title:       "Test Dashboard",
+				MetricNames: []string{"accuracy", "loss"},
+			},
+		},
+	}
+	art := proto.Clone(&testArtifact).(*pb.Artifact)
+	art.Payload = payload
+
+	want := spanner.Insert(
+		artifactschema.ArtifactTableName,
+		artifactschema.ArtifactColumns,
+		[]any{
+			int64(123),
+			spanner.NullInt64{Int64: 456, Valid: true},
+			int64(789),
+			art.Url.Url,
+			art.Url.Icon,
+			art.Url.DisplayName,
+			int64(art.Url.Priority),
+			art.Tags,
+			art.Notes,
+			art.LifecyclePhase,
+			art.DataType,
+			art.MimeType,
+			art.AdditionalInfo,
+			art.Payload,
+			"Test Dashboard accuracy loss", // SearchableContent calculated from payload
+			art.CreateTime.AsTime(),
+			art.UpdateTime.AsTime(),
+		},
+	)
+	got, err := ArtifactProtoToInsertMutation(art)
+	if err != nil {
+		t.Fatalf("ArtifactProtoToInsertMutation() returned unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(want, got, protocmp.Transform(), cmp.AllowUnexported(spanner.Mutation{})); diff != "" {
+		t.Errorf("ArtifactProtoToInsertMutation() returned unexpected diff (-want +got):\n%s", diff)
+	}
+}
+
 func TestArtifactProtoToUpdateMutation(t *testing.T) {
 	art := &testArtifact
 	want := spanner.Update(
