@@ -343,7 +343,11 @@ func ensureTpuContainerPorts(existing []corev1.ContainerPort) []corev1.Container
 			hasMetrics = true
 		}
 	}
-	result := existing
+	if hasICI && hasMetrics {
+		return existing
+	}
+	result := make([]corev1.ContainerPort, len(existing), len(existing)+2)
+	copy(result, existing)
 	if !hasICI {
 		result = append(result, corev1.ContainerPort{ContainerPort: tpuICIPort})
 	}

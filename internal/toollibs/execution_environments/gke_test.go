@@ -1300,3 +1300,58 @@ func TestInjectOnJobSetCreation_NetworkInjectionGPUMultiNode(t *testing.T) {
 	}
 }
 
+func TestEnsureTpuContainerPorts(t *testing.T) {
+	tests := []struct {
+		name     string
+		existing []corev1.ContainerPort
+		want     []corev1.ContainerPort
+	}{
+		{
+			name:     "empty_existing",
+			existing: nil,
+			want: []corev1.ContainerPort{
+				{ContainerPort: tpuICIPort},
+				{ContainerPort: tpuMetricsPort},
+			},
+		},
+		{
+			name: "has_ici_only",
+			existing: []corev1.ContainerPort{
+				{ContainerPort: tpuICIPort},
+			},
+			want: []corev1.ContainerPort{
+				{ContainerPort: tpuICIPort},
+				{ContainerPort: tpuMetricsPort},
+			},
+		},
+		{
+			name: "has_both_already",
+			existing: []corev1.ContainerPort{
+				{ContainerPort: tpuICIPort},
+				{ContainerPort: tpuMetricsPort},
+			},
+			want: []corev1.ContainerPort{
+				{ContainerPort: tpuICIPort},
+				{ContainerPort: tpuMetricsPort},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ensureTpuContainerPorts(tc.existing)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("ensureTpuContainerPorts() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+
+	existingArr := make([]corev1.ContainerPort, 1, 5)
+	existingArr[0] = corev1.ContainerPort{Name: "http", ContainerPort: 80}
+	_ = ensureTpuContainerPorts(existingArr)
+	fullArr := existingArr[:cap(existingArr)]
+	if len(existingArr) != 1 || existingArr[0].ContainerPort != 80 || (cap(existingArr) > 1 && fullArr[1].ContainerPort != 0) {
+		t.Errorf("ensureTpuContainerPorts mutated existing slice underlying array: %+v", fullArr)
+	}
+}
+
