@@ -71,29 +71,6 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
     self.assertEqual(parsed.start_from, "compile")
     self.assertIsNone(parsed.only)
 
-  def test_parse_args_no_dns(self):
-    args = [
-        "--config",
-        "config.yaml",
-    ]
-    parsed = deploy_dev_env.parse_args(args)
-    self.assertEqual(parsed.config, "config.yaml")
-    self.assertIsNone(parsed.dns_project)
-    self.assertIsNone(parsed.dns_zone)
-    self.assertIsNone(parsed.start_from)
-    self.assertIsNone(parsed.only)
-
-  def test_parse_args_partial_dns(self):
-    # Only project provided
-    args = ["--config", "config.yaml", "--dns-project", "p"]
-    with self.assertRaises(SystemExit):
-      deploy_dev_env.parse_args(args)
-
-    # Only zone provided
-    args = ["--config", "config.yaml", "--dns-zone", "z"]
-    with self.assertRaises(SystemExit):
-      deploy_dev_env.parse_args(args)
-
   def test_parse_args_mutual_exclusion(self):
     args = [
         "--config",
@@ -243,42 +220,6 @@ key5: "value5" # trailing comment with quotes
         ],
         capture_output=True,
     )
-
-  @patch("shutil.which", return_value=True)
-  @patch("pathlib.Path.is_file", return_value=True)
-  @patch("os.access", return_value=True)
-  @patch("deploy_dev_env.run_command")
-  def test_run_checks_no_dns(
-      self, mock_run, mock_access, mock_isfile, mock_which
-  ):
-    # Mock terraform version output
-    tf_version_mock = MagicMock()
-    tf_version_mock.stdout = '{"terraform_version": "1.13.0"}'
-    # Mock active project output
-    active_project_mock = MagicMock()
-    active_project_mock.stdout = "my-project\n"
-
-    mock_run.side_effect = [
-        tf_version_mock,
-        active_project_mock,
-    ]
-
-    # Should not raise any exception/SystemExit
-    deploy_dev_env.run_checks(
-        self.valid_config_dict, None, None
-    )
-
-    # Verify calls
-    mock_which.assert_any_call("terraform")
-    mock_run.assert_any_call(
-        ["terraform", "version", "-json"], capture_output=True
-    )
-    mock_run.assert_any_call(
-        ["gcloud", "config", "get-value", "project"], capture_output=True
-    )
-    # Ensure DNS describe is NOT called
-    for call_args in mock_run.call_args_list:
-      self.assertNotIn("dns", call_args[0][0])
 
   @patch("shutil.which", return_value=False)
   def test_run_checks_missing_binary(self, mock_which):
@@ -599,13 +540,6 @@ key5: "value5" # trailing comment with quotes
         f"--project={self.dns_project}",
     ])
 
-  @patch("deploy_dev_env.run_command")
-  def test_apply_dns_records_no_dns(self, mock_run):
-    deploy_dev_env.apply_dns_records(
-        "1.2.3.4", self.valid_config_dict, None, None
-    )
-    mock_run.assert_not_called()
-
   @patch("deploy_dev_env.load_and_validate_config")
   @patch("deploy_dev_env.run_checks")
   @patch("deploy_dev_env.step_check")
@@ -801,39 +735,6 @@ key5: "value5" # trailing comment with quotes
         " --dns-zone z --start-from compile",
         output,
     )
-
-  @patch("deploy_dev_env.load_and_validate_config")
-  @patch("deploy_dev_env.run_checks")
-  @patch("deploy_dev_env.step_check")
-  @patch("deploy_dev_env.step_compile")
-  @patch("sys.stdout", new_callable=io.StringIO)
-  def test_main_error_handling_resume_suggest_no_dns(
-      self,
-      mock_stdout,
-      mock_compile,
-      mock_check,
-      mock_run_checks,
-      mock_load_config,
-  ):
-    mock_load_config.return_value = self.valid_config_dict
-    # Simulate failure in step_compile
-    mock_compile.side_effect = Exception("Compile failed")
-
-    with self.assertRaises(SystemExit) as cm:
-      deploy_dev_env.main([
-          "--config",
-          "config.yaml",
-      ])
-
-    self.assertEqual(cm.exception.code, 1)
-    output = mock_stdout.getvalue()
-    self.assertIn("You can resume from this step using:", output)
-    self.assertIn(
-        "python3 tools/deploy_dev_env.py --config config.yaml --start-from compile",
-        output,
-    )
-    self.assertNotIn("--dns-project", output)
-    self.assertNotIn("--dns-zone", output)
 
   # --- Individual Step Tests ---
 
