@@ -1,0 +1,90 @@
+suite_name: cleanup_environment_skill
+skills:
+  - cleanup_environment
+
+cases:
+  - name: standard_cleanup_success
+    description: "Tests successful cleanup flow: dry-run, user confirmation, and execution."
+    prompt: "Please clean up the XMC environment 'dev-env'."
+    workspace_setup:
+      files:
+        - path: ctk-out/dev-env/primary/terraform.tfvars
+          content: |
+            project_id = "test-project"
+            deletion_protection = false
+    tool_mocks:
+      - command: "python3 tools/cleanup_env.py --env dev-env --dry-run"
+        stdout: |
+          [DRY RUN] Would list backups for instance xmc-dev-env in project test-project
+          [DRY RUN] Would run: ./cluster-toolkit/gcluster destroy ctk-out/dev-env --auto-approve
+          [DRY RUN] Would remove directory: ctk-out/dev-env
+        exit_code: 0
+      - command: "python3 tools/cleanup_env.py --env dev-env"
+        stdout: |
+          {
+            "status": "success",
+            "result": "Environment dev-env cleaned up successfully."
+          }
+        exit_code: 0
+    outcome_assertions:
+      - "The agent ran the cleanup script with --dry-run first."
+      - "The agent asked the user for confirmation before executing the actual cleanup."
+      - "The agent executed the cleanup script after confirmation."
+      - "The agent reported success."
+
+  - name: deletion_protection_warning
+    description: "Tests that the agent stops and warns the user if deletion protection is enabled."
+    prompt: "Please clean up the XMC environment 'protected-env'."
+    workspace_setup:
+      files:
+        - path: ctk-out/protected-env/primary/terraform.tfvars
+          content: |
+            project_id = "test-project"
+            deletion_protection = true
+    tool_mocks:
+      - command: "python3 tools/cleanup_env.py --env protected-env --dry-run"
+        stdout: |
+          {
+            "status": "error",
+            "error_type": "handled",
+            "message": "Deletion protection is enabled in terraform.tfvars.",
+            "instruction": "Disable deletion protection in your configuration or use --force."
+          }
+        exit_code: 1
+    outcome_assertions:
+      - "The agent ran the cleanup script with --dry-run."
+      - "The agent stopped execution and warned the user about deletion protection."
+      - "The agent did NOT attempt to run the actual cleanup without --force."
+
+  - name: mitigation_xmc_app_timeout
+    description: "Tests that the agent retries with --skip-xmc-app if the destroy fails on xmc_app."
+    prompt: "Clean up the environment 'dev-env'."
+    workspace_setup:
+      files:
+        - path: ctk-out/dev-env/primary/terraform.tfvars
+          content: |
+            project_id = "test-project"
+            deletion_protection = false
+    tool_mocks:
+      - command: "python3 tools/cleanup_env.py --env dev-env --dry-run"
+        stdout: "[DRY RUN] ..."
+        exit_code: 0
+      - command: "python3 tools/cleanup_env.py --env dev-env"
+        stdout: |
+          {
+            "status": "error",
+            "error_type": "handled",
+            "message": "gcluster destroy failed on xmc_app",
+            "instruction": "The destroy got stuck on xmc_app. Retry with --skip-xmc-app."
+          }
+        exit_code: 1
+      - command: "python3 tools/cleanup_env.py --env dev-env --skip-xmc-app"
+        stdout: |
+          {
+            "status": "success",
+            "result": "Environment dev-env cleaned up successfully."
+          }
+        exit_code: 0
+    outcome_assertions:
+      - "The agent ran the cleanup script."
+      - "Upon failure, the agent followed the instruction to retry with --skip-xmc-app."
