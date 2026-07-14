@@ -1,0 +1,114 @@
+suite_name: cleanup_environment_skill_original
+skills:
+  - cleanup_environment
+
+cases:
+  - name: standard_cleanup_success
+    description: "Tests successful cleanup flow using raw CLI commands (Option B)."
+    prompt: "Please clean up the XMC environment 'dev-env' in project 'test-project'. The DNS zone is 'my-zone'."
+    workspace_setup:
+      files:
+        - path: ctk-out/dev-env/primary/terraform.tfvars
+          content: |
+            project_id = "test-project"
+            deletion_protection = false
+    tool_mocks:
+      # 1. List Spanner backups (returns empty)
+      - command: "gcloud spanner backups list --instance=xmc-dev-env --project=test-project"
+        stdout: "No backups found."
+        exit_code: 0
+      # 2. Run standard destroy
+      - command: "./cluster-toolkit/gcluster destroy ctk-out/dev-env --auto-approve"
+        stdout: "Destroying resources..."
+        exit_code: 0
+      # 3. List DNS records to find matching ones
+      - command: "gcloud dns record-sets list --zone=my-zone --project=test-project"
+        stdout: |
+          NAME TYPE TTL DATA
+          dev-env.domain.com. A 300 1.2.3.4
+          api.dev-env.domain.com. A 300 1.2.3.4
+          grpc.dev-env.domain.com. A 300 1.2.3.4
+          other.domain.com. A 300 5.6.7.8
+        exit_code: 0
+      # 4. Delete DNS records (must mock all of them)
+      - command: "gcloud dns record-sets delete dev-env.domain.com. --type=A --zone=my-zone --project=test-project --quiet"
+        exit_code: 0
+      - command: "gcloud dns record-sets delete api.dev-env.domain.com. --type=A --zone=my-zone --project=test-project --quiet"
+        exit_code: 0
+      - command: "gcloud dns record-sets delete grpc.dev-env.domain.com. --type=A --zone=my-zone --project=test-project --quiet"
+        exit_code: 0
+      # 5. List kubeconfig contexts
+      - command: "kubectl config get-contexts -o name"
+        stdout: |
+          gke_test-project_us-central1_xmc-dev-env
+          some-other-context
+        exit_code: 0
+      # 6. Delete kubeconfig context and cluster
+      - command: "kubectl config delete-context gke_test-project_us-central1_xmc-dev-env"
+        exit_code: 0
+      - command: "kubectl config delete-cluster gke_test-project_us-central1_xmc-dev-env"
+        exit_code: 0
+      # 7. Delete deployment folder (if done via terminal)
+      - command: "rm -rf ctk-out/dev-env"
+        exit_code: 0
+    outcome_assertions:
+      - "The agent listed Spanner backups."
+      - "The agent ran gcluster destroy."
+      - "The agent listed and deleted the 3 matching DNS records."
+      - "The agent cleaned up the kubeconfig context."
+      - "The agent removed the local deployment directory."
+
+  - name: deletion_protection_warning
+    description: "Tests that the agent stops if deletion protection is enabled (Option B)."
+    prompt: "Please clean up the XMC environment 'protected-env' in project 'test-project'."
+    workspace_setup:
+      files:
+        - path: ctk-out/protected-env/primary/terraform.tfvars
+          content: |
+            project_id = "test-project"
+            deletion_protection = true
+    # In the original skill, the agent checks the file manually.
+    # No tool mocks are needed for the check itself if it just reads the file using tools.
+    # But we expect it to NOT run the destroy command.
+    tool_mocks: []
+    outcome_assertions:
+      - "The agent read the terraform.tfvars file."
+      - "The agent detected deletion_protection is true."
+      - "The agent stopped and warned the user."
+      - "The agent did NOT run gcluster destroy."
+
+  - name: mitigation_xmc_app_timeout
+    description: "Tests that the agent retries with skip flag upon Helm timeout (Option B)."
+    prompt: "Please clean up the XMC environment 'dev-env' in project 'test-project'. The DNS zone is 'my-zone'."
+    workspace_setup:
+      files:
+        - path: ctk-out/dev-env/primary/terraform.tfvars
+          content: |
+            project_id = "test-project"
+            deletion_protection = false
+    tool_mocks:
+      # 1. List Spanner backups (returns empty)
+      - command: "gcloud spanner backups list --instance=xmc-dev-env --project=test-project"
+        stdout: "No backups found."
+        exit_code: 0
+      # 2. Run standard destroy (fails with xmc_app error)
+      - command: "./cluster-toolkit/gcluster destroy ctk-out/dev-env --auto-approve"
+        stderr: "Error: Helm release xmc_app deletion timed out"
+        exit_code: 1
+      # 3. Retry destroy with skip xmc_app
+      - command: "./cluster-toolkit/gcluster destroy ctk-out/dev-env --auto-approve --skip xmc_app"
+        stdout: "Destroying resources (skipping xmc_app)..."
+        exit_code: 0
+      # (Remaining commands follow as in success case...)
+      - command: "gcloud dns record-sets list --zone=my-zone --project=test-project"
+        stdout: ""
+        exit_code: 0
+      - command: "kubectl config get-contexts -o name"
+        stdout: ""
+        exit_code: 0
+      - command: "rm -rf ctk-out/dev-env"
+        exit_code: 0
+    outcome_assertions:
+      - "The agent attempted standard gcluster destroy."
+      - "Upon xmc_app failure, the agent retried with --skip-xmc-app."
+      - "The agent completed the remaining cleanup steps."
