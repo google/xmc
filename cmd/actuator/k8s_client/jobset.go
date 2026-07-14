@@ -769,11 +769,7 @@ func dependencyStatus(ctx context.Context, state esspb.KubernetesJob_DependencyO
 }
 
 func buildJobSetFailurePolicy(workUnit *esspb.WorkUnit) *jobsetv1alpha2.FailurePolicy {
-	exec := workUnit.GetExecutable()
-	if exec == nil || exec.GetJobset() == nil {
-		return defaultFailurePolicy()
-	}
-	fp := exec.GetJobset().GetFailurePolicy()
+	fp := workUnit.GetExecutable().GetJobset().GetFailurePolicy()
 	if fp == nil {
 		return defaultFailurePolicy()
 	}
