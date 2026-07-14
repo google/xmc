@@ -404,6 +404,9 @@ func (r *Reconciler) checkTPUTopologyMismatch(ctx context.Context, pod *corev1.P
 		logging.Warn(ctx, "Failed to discover available TPU topologies in cluster", "error", err)
 		return ""
 	}
+	if len(availTopologies) == 0 {
+		return "" // Fall back to generic warning to avoid false positives during autoscaling from zero.
+	}
 
 	for _, avail := range availTopologies {
 		if avail == reqTopology {
