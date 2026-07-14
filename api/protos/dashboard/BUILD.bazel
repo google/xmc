@@ -1,0 +1,33 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_descriptor_set", "proto_library")
+
+package(default_visibility = ["//visibility:public"])
+
+proto_descriptor_set(
+    name = "dashboard_messages_descriptor",
+    visibility = ["//visibility:public"],
+    deps = [":dashboard_messages_proto"],
+)
+
+proto_library(
+    name = "dashboard_messages_proto",
+    srcs = ["messages.proto"],
+    import_prefix = "third_party/xmanager_cloud/dashboard_service/proto",
+    strip_import_prefix = "/api/protos/dashboard",
+    deps = [
+        "@com_google_googleapis//google/api:field_behavior_proto",
+        "@com_google_googleapis//google/api:resource_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "messages_go_proto",
+    importpath = "xmanager_cloud/dashboard_service/proto/api_go_proto",
+    proto = ":dashboard_messages_proto",
+    deps = [
+        "@org_golang_google_genproto_googleapis_api//:go_default_library",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+    ],
+)
