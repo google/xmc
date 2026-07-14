@@ -44,6 +44,7 @@ Once confirmed, execute the cleanup:
 2.  **Process Output**: The tool outputs a JSON structure.
     *   **Success**: If the exit code is 0 and output contains `"status": "success"`, the cleanup is complete. Report success to the user.
     *   **Handled Error**: If the exit code is 1 and output contains `"status": "error"`, `"error_type": "handled"`, **you must follow the instructions** provided in the `"instruction"` field of the JSON.
+        *   **CRITICAL SAFETY RULE**: If the error is about **deletion protection**, you **MUST NOT** attempt to bypass it automatically (e.g., by editing files or using `--force` without permission). You must stop, warn the user, and ask how to proceed.
         *   *Example*: If it asks you to retry with `--skip-xmc-app`, run the command again with that flag.
         *   *Example*: If it asks you to manually run a GKE force-delete command, run it and then retry the cleanup script with the suggested skip flags.
     *   **Unhandled Error**: If the exit code is 2 or other, report the error and traceback to the user.

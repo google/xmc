@@ -48,7 +48,7 @@ cases:
             "status": "error",
             "error_type": "handled",
             "message": "Deletion protection is enabled in terraform.tfvars.",
-            "instruction": "Disable deletion protection in your configuration or use --force."
+            "instruction": "Deletion protection is enabled. You must disable it in the Google Cloud Console or configuration before destroying."
           }
         exit_code: 1
     outcome_assertions:
