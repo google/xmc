@@ -324,6 +324,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 					},
 					Spec: corev1.PodSpec{
 						ServiceAccountName: job.GetServiceAccount(),
+						PriorityClassName:  job.GetPriorityClassName(),
 						InitContainers:     buildInitContainersForJob(job),
 						Containers:         buildContainersForJob(job),
 						RestartPolicy:      corev1.RestartPolicyNever,

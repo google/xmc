@@ -352,6 +352,14 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 				return fmt.Errorf("work_unit.executable.jobset.jobs.service_account %q must be a valid DNS subdomain (RFC 1123): %w", sa, status.ErrInvalidArgument)
 			}
 		}
+		if pcn := job.GetPriorityClassName(); pcn != "" {
+			if len(pcn) > 253 {
+				return fmt.Errorf("work_unit.executable.jobset.jobs.priority_class_name cannot be longer than 253 characters: %w", status.ErrInvalidArgument)
+			}
+			if !serviceAccountRegex.MatchString(pcn) {
+				return fmt.Errorf("work_unit.executable.jobset.jobs.priority_class_name %q must be a valid DNS subdomain (RFC 1123): %w", pcn, status.ErrInvalidArgument)
+			}
+		}
 	}
 	if queueName := wu.GetExecutable().GetSchedulingConstraints().GetQueueName(); queueName == "" {
 		return fmt.Errorf("work_unit.executable.scheduling_constraints.queue_name cannot be empty: %w", status.ErrInvalidArgument)

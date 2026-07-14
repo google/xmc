@@ -2212,6 +2212,55 @@ func TestConstructJobSet_MultiReplicaNetwork(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_PriorityClassName(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnitPriorityClassName",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name:              "pathways-head",
+							Replicas:          1,
+							Spec:              minimalExecutableSpec(),
+							PriorityClassName: "very-high",
+						},
+						{
+							Name:              "worker",
+							Replicas:          1,
+							Spec:              minimalExecutableSpec(),
+							PriorityClassName: "",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	priorities := Priorities{
+		ExperimentPriority: esspb.Priority_HIGH,
+		WorkUnitPriority:   esspb.Priority_NORMAL,
+	}
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, priorities)
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if got.ObjectMeta.Labels[kueuePriorityClassLabel] != "exp-high-wu-medium" {
+		t.Errorf("Expected kueuePriorityClassLabel to be %q, got %q", "exp-high-wu-medium", got.ObjectMeta.Labels[kueuePriorityClassLabel])
+	}
+	if len(got.Spec.ReplicatedJobs) != 2 {
+		t.Fatalf("Expected 2 replicated jobs, got %d", len(got.Spec.ReplicatedJobs))
+	}
+	if got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.PriorityClassName != "very-high" {
+		t.Errorf("Expected pathways-head PriorityClassName %q, got %q", "very-high", got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.PriorityClassName)
+	}
+	if got.Spec.ReplicatedJobs[1].Template.Spec.Template.Spec.PriorityClassName != "" {
+		t.Errorf("Expected worker PriorityClassName %q, got %q", "", got.Spec.ReplicatedJobs[1].Template.Spec.Template.Spec.PriorityClassName)
+	}
+}
+
 func TestShouldEnableJobSetNetwork_NilChecks(t *testing.T) {
 	if got := shouldEnableJobSetNetwork(&esspb.WorkUnit{Executable: nil}); got {
 		t.Errorf("shouldEnableJobSetNetwork(nil Executable) = true, want false")
