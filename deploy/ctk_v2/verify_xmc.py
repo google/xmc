@@ -32,12 +32,11 @@ def _extract_yaml_val(content: str, key: str) -> str | None:
   Returns:
     Extracted value stripped of quotes, or None if key missing/empty.
   """
-  pattern = re.compile(rf"^\s*{key}:\s*['\"]?(.*?)['\"]?\s*$", re.MULTILINE)
+  pattern = re.compile(rf"^\s*{key}:\s*['\"]?([^'\"#\s]+)", re.MULTILINE)
   match = pattern.search(content)
   if not match:
     return None
-  val = match.group(1).strip()
-  return val if val else None
+  return match.group(1)
 
 
 def _resolve_config(
@@ -89,10 +88,11 @@ def _run_command(cmd: list[str]) -> str:
     res = subprocess.run(
         cmd,
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
         text=True,
         check=False,
     )
+    if res.returncode != 0:
+      return ""
     return res.stdout
   except Exception:  # pylint: disable=broad-except
     return ""
