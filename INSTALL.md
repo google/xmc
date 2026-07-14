@@ -12,10 +12,7 @@ This guide details how to install a fresh deployment of XManager on Cloud (XMC) 
 
 ---
 
-
-
 ## Prerequisites
-
 
 Before launching any deployment pathway, ensure you have the following CLI tools installed:
 
