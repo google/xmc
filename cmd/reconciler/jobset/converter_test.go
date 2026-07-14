@@ -394,16 +394,16 @@ func TestGenerateStructuredMessage(t *testing.T) {
 			name: "RunningStateWithRestarts",
 			jobSet: &v1alpha2.JobSet{
 				Spec: v1alpha2.JobSetSpec{
-					ReplicatedJobs: []v1alpha2.ReplicatedJob{{Replicas: 2}},
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{{Replicas: 5}},
 				},
 				Status: v1alpha2.JobSetStatus{
-					Restarts:             2,
-					ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{{Active: 2, Ready: 2}},
+					Restarts:             3,
+					ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{{Active: 4, Ready: 4}},
 				},
 			},
 			state: spb.WorkUnitStatus_RUNNING,
 			want: &spb.StructuredMessage{
-				UserFacingText: "Work unit is running (restarts: 2). 2/2 job(s) active and ready.",
+				UserFacingText: "Work unit is running (restarts: 3). 4/5 job(s) active and ready.",
 				UserFacingUrl: &spb.Url{
 					Url: "",
 				},
