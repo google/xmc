@@ -18,17 +18,19 @@ import argparse
 import io
 import json
 import os
+import pathlib
 import subprocess
 import unittest
 from unittest.mock import MagicMock, mock_open, patch, call, ANY
 
 import sys
 # Import the module under test
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+sys.path.insert(0, str(pathlib.Path(__file__).parent.resolve()))
 import deploy_dev_env
 
 
 class TestDeployDevEnv(unittest.TestCase):
+  """Unit tests for deploy_dev_env.py."""
 
   def setUp(self):
     self.valid_config_yaml = """
@@ -86,14 +88,14 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
     with self.assertRaises(SystemExit):
       deploy_dev_env.parse_args(args)
 
-  @patch("os.path.exists", return_value=True)
+  @patch("pathlib.Path.exists", return_value=True)
   def test_load_and_validate_config_success(self, mock_exists):
     mo = mock_open(read_data=self.valid_config_yaml)
     with patch("builtins.open", mo):
       config = deploy_dev_env.load_and_validate_config("dummy.yaml")
       self.assertEqual(config, self.valid_config_dict)
 
-  @patch("os.path.exists", return_value=True)
+  @patch("pathlib.Path.exists", return_value=True)
   def test_load_and_validate_config_missing_key(self, mock_exists):
     invalid_yaml = """
 deployment_name: xmc-dev
@@ -108,7 +110,7 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
       with self.assertRaises(SystemExit):
         deploy_dev_env.load_and_validate_config("dummy.yaml")
 
-  @patch("os.path.exists", return_value=True)
+  @patch("pathlib.Path.exists", return_value=True)
   def test_load_and_validate_config_invalid_value(self, mock_exists):
     invalid_yaml = """
 deployment_name: xmc-dev! # Invalid character
@@ -123,8 +125,57 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
       with self.assertRaises(SystemExit):
         deploy_dev_env.load_and_validate_config("dummy.yaml")
 
+  @patch("pathlib.Path.exists", return_value=True)
+  def test_load_config_success(self, mock_exists):
+    yaml_content = """
+key1: value1
+key2: "value2#with#hash"
+key3: 'value3#with#hash'
+key4: value4 # trailing comment
+key5: "value5" # trailing comment with quotes
+# comment line
+  key6: value6 # indented key
+"""
+    mo = mock_open(read_data=yaml_content)
+    with patch("builtins.open", mo):
+      config = deploy_dev_env._load_config("dummy.yaml")
+      expected = {
+          "key1": "value1",
+          "key2": "value2#with#hash",
+          "key3": "value3#with#hash",
+          "key4": "value4",
+          "key5": "value5",
+          "key6": "value6",
+      }
+      self.assertEqual(config, expected)
+
+  def test_validate_config_success(self):
+    config = {
+        "deployment_name": "xmc-dev",
+        "project_id": "my-project",
+        "environment": "dev",
+        "region": "us-central1",
+        "domain_name": "example.com",
+        "xmc_acr_target": "us-central1-docker.pkg.dev/my-project/xmc",
+        "extra_key": "ignored",
+    }
+    validated = deploy_dev_env._validate_config(config, "dummy.yaml")
+    self.assertEqual(validated, self.valid_config_dict)
+
+  def test_validate_config_missing_key(self):
+    config = {
+        "deployment_name": "xmc-dev",
+        # project_id is missing
+        "environment": "dev",
+        "region": "us-central1",
+        "domain_name": "example.com",
+        "xmc_acr_target": "us-central1-docker.pkg.dev/my-project/xmc",
+    }
+    with self.assertRaises(SystemExit):
+      deploy_dev_env._validate_config(config, "dummy.yaml")
+
   @patch("shutil.which", return_value=True)
-  @patch("os.path.isfile", return_value=True)
+  @patch("pathlib.Path.is_file", return_value=True)
   @patch("os.access", return_value=True)
   @patch("deploy_dev_env.run_command")
   def test_run_checks_success(
@@ -178,7 +229,7 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
       )
 
   @patch("shutil.which", return_value=True)
-  @patch("os.path.isfile", return_value=True)
+  @patch("pathlib.Path.is_file", return_value=True)
   @patch("os.access", return_value=True)
   @patch("deploy_dev_env.run_command")
   def test_run_checks_tf_version_low(
@@ -194,7 +245,7 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
       )
 
   @patch("shutil.which", return_value=True)
-  @patch("os.path.isfile", return_value=True)
+  @patch("pathlib.Path.is_file", return_value=True)
   @patch("os.access", return_value=True)
   @patch("deploy_dev_env.run_command")
   def test_run_checks_project_mismatch(
@@ -212,13 +263,177 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
           self.valid_config_dict, self.dns_project, self.dns_zone
       )
 
+  @patch("shutil.which", return_value=True)
+  @patch("pathlib.Path.is_file", return_value=True)
+  @patch("os.access", return_value=True)
+  def test_verify_binaries_success(self, mock_access, mock_is_file, mock_which):
+    # Should not raise
+    deploy_dev_env._verify_binaries()
+
+  @patch("shutil.which", side_effect=lambda bin: bin != "terraform")
+  def test_verify_binaries_missing_binary(self, mock_which):
+    with self.assertRaises(SystemExit):
+      deploy_dev_env._verify_binaries()
+
+  @patch("shutil.which", return_value=True)
+  @patch("pathlib.Path.is_file", return_value=False)
+  def test_verify_binaries_missing_gcluster(self, mock_is_file, mock_which):
+    with self.assertRaises(SystemExit):
+      deploy_dev_env._verify_binaries()
+
+  @patch("deploy_dev_env.run_command")
+  def test_check_terraform_version_success(self, mock_run):
+    tf_version_mock = MagicMock()
+    tf_version_mock.stdout = '{"terraform_version": "1.12.2"}'
+    mock_run.return_value = tf_version_mock
+    # Should not raise
+    deploy_dev_env._check_terraform_version()
+
+  @patch("deploy_dev_env.run_command")
+  def test_check_terraform_version_too_low(self, mock_run):
+    tf_version_mock = MagicMock()
+    tf_version_mock.stdout = '{"terraform_version": "1.12.1"}'
+    mock_run.return_value = tf_version_mock
+    with self.assertRaises(SystemExit):
+      deploy_dev_env._check_terraform_version()
+
+  @patch("deploy_dev_env.run_command")
+  def test_check_gcp_project_alignment_success(self, mock_run):
+    active_project_mock = MagicMock()
+    active_project_mock.stdout = "my-project\n"
+    mock_run.return_value = active_project_mock
+    # Should not raise
+    deploy_dev_env._check_gcp_project_alignment("my-project")
+
+  @patch("deploy_dev_env.run_command")
+  def test_check_gcp_project_alignment_mismatch(self, mock_run):
+    active_project_mock = MagicMock()
+    active_project_mock.stdout = "different-project\n"
+    mock_run.return_value = active_project_mock
+    with self.assertRaises(SystemExit):
+      deploy_dev_env._check_gcp_project_alignment("my-project")
+
+  @patch("deploy_dev_env.run_command")
+  def test_check_dns_access_success(self, mock_run):
+    # Should not raise
+    deploy_dev_env._check_dns_access(self.dns_project, self.dns_zone)
+    mock_run.assert_called_once_with(
+        [
+            "gcloud",
+            "dns",
+            "managed-zones",
+            "describe",
+            self.dns_zone,
+            f"--project={self.dns_project}",
+        ],
+        capture_output=True,
+    )
+
+  @patch(
+      "deploy_dev_env.run_command",
+      side_effect=subprocess.CalledProcessError(1, "cmd"),
+  )
+  def test_check_dns_access_failure(self, mock_run):
+    with self.assertRaises(SystemExit):
+      deploy_dev_env._check_dns_access(self.dns_project, self.dns_zone)
+
+  @patch("deploy_dev_env.run_command")
+  def test_dns_transaction_abort_success(self, mock_run):
+    deploy_dev_env._dns_transaction_abort(self.dns_project, self.dns_zone)
+    mock_run.assert_called_once_with(
+        [
+            "gcloud",
+            "dns",
+            "record-sets",
+            "transaction",
+            "abort",
+            f"--zone={self.dns_zone}",
+            f"--project={self.dns_project}",
+        ],
+        capture_output=True,
+    )
+
+  @patch(
+      "deploy_dev_env.run_command",
+      side_effect=subprocess.CalledProcessError(1, "cmd"),
+  )
+  def test_dns_transaction_abort_ignores_failure(self, mock_run):
+    # Should not raise
+    deploy_dev_env._dns_transaction_abort(self.dns_project, self.dns_zone)
+
+  @patch("deploy_dev_env.run_command")
+  def test_dns_transaction_start(self, mock_run):
+    deploy_dev_env._dns_transaction_start(self.dns_project, self.dns_zone)
+    mock_run.assert_called_once_with([
+        "gcloud",
+        "dns",
+        "record-sets",
+        "transaction",
+        "start",
+        f"--zone={self.dns_zone}",
+        f"--project={self.dns_project}",
+    ])
+
+  @patch("deploy_dev_env.run_command")
+  def test_dns_transaction_execute(self, mock_run):
+    deploy_dev_env._dns_transaction_execute(self.dns_project, self.dns_zone)
+    mock_run.assert_called_once_with([
+        "gcloud",
+        "dns",
+        "record-sets",
+        "transaction",
+        "execute",
+        f"--zone={self.dns_zone}",
+        f"--project={self.dns_project}",
+    ])
+
+  @patch("deploy_dev_env.run_command")
+  def test_dns_get_existing_ip_found(self, mock_run):
+    mock_res = MagicMock()
+    mock_res.stdout = "1.2.3.4\n"
+    mock_run.return_value = mock_res
+    ip = deploy_dev_env._dns_get_existing_ip(
+        "dev.example.com.", self.dns_project, self.dns_zone
+    )
+    self.assertEqual(ip, "1.2.3.4")
+
+  @patch(
+      "deploy_dev_env.run_command",
+      side_effect=subprocess.CalledProcessError(1, "cmd"),
+  )
+  def test_dns_get_existing_ip_not_found(self, mock_run):
+    ip = deploy_dev_env._dns_get_existing_ip(
+        "dev.example.com.", self.dns_project, self.dns_zone
+    )
+    self.assertEqual(ip, "")
+
+  @patch("deploy_dev_env.run_command")
+  def test_dns_add_record(self, mock_run):
+    deploy_dev_env._dns_add_record(
+        "dev.example.com.", "1.2.3.4", self.dns_project, self.dns_zone
+    )
+    mock_run.assert_called_once_with([
+        "gcloud",
+        "dns",
+        "record-sets",
+        "transaction",
+        "add",
+        "1.2.3.4",
+        "--name=dev.example.com.",
+        "--ttl=300",
+        "--type=A",
+        f"--zone={self.dns_zone}",
+        f"--project={self.dns_project}",
+    ])
+
   @patch("deploy_dev_env.run_command")
   def test_apply_dns_records_all_exist_correct(self, mock_run):
     # Mock DNS list calls to return the correct IP
     list_mock = MagicMock()
     list_mock.stdout = "1.2.3.4\n"
 
-    # gcloud dns record-sets transaction abort (might fail/pass, we mock success)
+    # gcloud dns record-sets transaction abort (might fail/pass, we mock
+    # success)
     abort_mock = MagicMock()
     start_mock = MagicMock()
 
@@ -263,15 +478,18 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
       )
 
     # Verify transaction was aborted
-    mock_run.assert_any_call([
-        "gcloud",
-        "dns",
-        "record-sets",
-        "transaction",
-        "abort",
-        f"--zone={self.dns_zone}",
-        f"--project={self.dns_project}",
-    ])
+    mock_run.assert_any_call(
+        [
+            "gcloud",
+            "dns",
+            "record-sets",
+            "transaction",
+            "abort",
+            f"--zone={self.dns_zone}",
+            f"--project={self.dns_project}",
+        ],
+        capture_output=True,
+    )
 
   @patch("deploy_dev_env.run_command")
   def test_apply_dns_records_create_all(self, mock_run):
@@ -279,7 +497,8 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
     list_mock_empty = MagicMock()
     list_mock_empty.stdout = ""
 
-    # We expect interleaved calls: abort, start, list, add, list, add, list, add, execute
+    # We expect interleaved calls: abort, start, list, add, list, add, list,
+    # add, execute
     mock_run.side_effect = [
         MagicMock(),  # initial abort
         MagicMock(),  # transaction start
@@ -487,7 +706,12 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
   @patch("deploy_dev_env.step_compile")
   @patch("sys.stdout", new_callable=io.StringIO)
   def test_main_error_handling_resume_suggest(
-      self, mock_stdout, mock_compile, mock_check, mock_run_checks, mock_load_config
+      self,
+      mock_stdout,
+      mock_compile,
+      mock_check,
+      mock_run_checks,
+      mock_load_config,
   ):
     mock_load_config.return_value = self.valid_config_dict
     # Simulate failure in step_compile
@@ -516,7 +740,12 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
 
   @patch("deploy_dev_env.run_command")
   def test_step_compile(self, mock_run):
-    deploy_dev_env.step_compile(self.valid_config_dict, self.dns_project, self.dns_zone, "my-config.yaml")
+    deploy_dev_env.step_compile(
+        self.valid_config_dict,
+        self.dns_project,
+        self.dns_zone,
+        "my-config.yaml",
+    )
     mock_run.assert_called_once_with([
         './cluster-toolkit/gcluster',
         'create',
@@ -540,7 +769,9 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
 
     mock_run.side_effect = [deploy_res, ip_res]
 
-    deploy_dev_env.step_primary(self.valid_config_dict, self.dns_project, self.dns_zone)
+    deploy_dev_env.step_primary(
+        self.valid_config_dict, self.dns_project, self.dns_zone
+    )
 
     mock_run.assert_has_calls([
         call([
@@ -574,7 +805,9 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
 
     mock_run.side_effect = [describe_res, update_res]
 
-    deploy_dev_env.step_gateway_api(self.valid_config_dict, self.dns_project, self.dns_zone)
+    deploy_dev_env.step_gateway_api(
+        self.valid_config_dict, self.dns_project, self.dns_zone
+    )
 
     mock_run.assert_has_calls([
         call([
@@ -605,7 +838,9 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
     describe_res.stdout = 'true\n'
     mock_run.return_value = describe_res
 
-    deploy_dev_env.step_gateway_api(self.valid_config_dict, self.dns_project, self.dns_zone)
+    deploy_dev_env.step_gateway_api(
+        self.valid_config_dict, self.dns_project, self.dns_zone
+    )
 
     mock_run.assert_called_once()
     self.assertIn('describe', mock_run.call_args[0][0])
@@ -617,7 +852,9 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
 
     mock_run.side_effect = [auth_res] + [bazel_res] * 6
 
-    deploy_dev_env.step_images(self.valid_config_dict, self.dns_project, self.dns_zone)
+    deploy_dev_env.step_images(
+        self.valid_config_dict, self.dns_project, self.dns_zone
+    )
 
     self.assertEqual(mock_run.call_count, 7)
     mock_run.assert_any_call([
@@ -643,7 +880,9 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
 
     mock_run.side_effect = [cred_res, verify_res, wait_res, cert_res]
 
-    deploy_dev_env.step_verify(self.valid_config_dict, self.dns_project, self.dns_zone)
+    deploy_dev_env.step_verify(
+        self.valid_config_dict, self.dns_project, self.dns_zone
+    )
 
     self.assertEqual(mock_run.call_count, 4)
     mock_run.assert_any_call([
@@ -676,6 +915,92 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
         '--project=my-project',
         '--format=value(managed.state)',
     ], capture_output=True)
+
+  @patch("deploy_dev_env.run_command")
+  def test_wait_for_gateway_programmed_success(self, mock_run):
+    deploy_dev_env._wait_for_gateway_programmed()
+    mock_run.assert_called_once_with([
+        "kubectl",
+        "wait",
+        "--for=condition=Programmed",
+        "gateway/xmc-gateway",
+        "-n",
+        "xmc",
+        "--timeout=300s",
+    ])
+
+  @patch(
+      "deploy_dev_env.run_command",
+      side_effect=subprocess.CalledProcessError(1, "cmd"),
+  )
+  def test_wait_for_gateway_programmed_failure(self, mock_run):
+    with self.assertRaises(RuntimeError):
+      deploy_dev_env._wait_for_gateway_programmed()
+
+  @patch("deploy_dev_env.run_command")
+  @patch("time.sleep")
+  def test_wait_for_cert_active_success_first_attempt(
+      self, mock_sleep, mock_run
+  ):
+    mock_res = MagicMock()
+    mock_res.stdout = "ACTIVE\n"
+    mock_run.return_value = mock_res
+    deploy_dev_env._wait_for_cert_active("my-project", "my-cert")
+    mock_run.assert_called_once()
+    mock_sleep.assert_not_called()
+
+  @patch("deploy_dev_env.run_command")
+  @patch("time.sleep")
+  def test_wait_for_cert_active_success_after_retries(
+      self, mock_sleep, mock_run
+  ):
+    pending_res = MagicMock()
+    pending_res.stdout = "PENDING\n"
+    active_res = MagicMock()
+    active_res.stdout = "ACTIVE\n"
+    mock_run.side_effect = [pending_res, pending_res, active_res]
+    deploy_dev_env._wait_for_cert_active("my-project", "my-cert")
+    self.assertEqual(mock_run.call_count, 3)
+    self.assertEqual(mock_sleep.call_count, 2)
+
+  @patch("deploy_dev_env.run_command")
+  @patch("time.sleep")
+  def test_wait_for_cert_active_transient_error_retry(
+      self, mock_sleep, mock_run
+  ):
+    # Simulate a NOT_FOUND error (transient) then success
+    err = subprocess.CalledProcessError(1, "cmd")
+    err.stderr = "Resource not found"
+    active_res = MagicMock()
+    active_res.stdout = "ACTIVE\n"
+    mock_run.side_effect = [err, active_res]
+    deploy_dev_env._wait_for_cert_active("my-project", "my-cert")
+    self.assertEqual(mock_run.call_count, 2)
+    mock_sleep.assert_called_once_with(10)
+
+  @patch("deploy_dev_env.run_command")
+  @patch("time.sleep")
+  def test_wait_for_cert_active_fatal_error_propagation(
+      self, mock_sleep, mock_run
+  ):
+    # Simulate a Permission Denied error (fatal)
+    err = subprocess.CalledProcessError(1, "cmd")
+    err.stderr = "Permission denied"
+    mock_run.side_effect = [err]
+    with self.assertRaises(subprocess.CalledProcessError):
+      deploy_dev_env._wait_for_cert_active("my-project", "my-cert")
+    mock_sleep.assert_not_called()
+
+  @patch("deploy_dev_env.run_command")
+  @patch("time.sleep")
+  def test_wait_for_cert_active_timeout(self, mock_sleep, mock_run):
+    pending_res = MagicMock()
+    pending_res.stdout = "PENDING\n"
+    mock_run.return_value = pending_res
+    with self.assertRaises(RuntimeError):
+      deploy_dev_env._wait_for_cert_active("my-project", "my-cert")
+    self.assertEqual(mock_run.call_count, 90)
+    self.assertEqual(mock_sleep.call_count, 90)
 
 
 if __name__ == "__main__":

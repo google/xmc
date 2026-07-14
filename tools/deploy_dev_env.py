@@ -18,12 +18,13 @@
 import argparse
 import json
 import os
+import pathlib
 import re
 import shutil
 import subprocess
 import sys
 import time
-from typing import Any, Dict, List
+from typing import Any, Optional
 
 # ANSI Color Codes
 RED = "\033[0;31m"
@@ -34,18 +35,38 @@ BOLD = "\033[1m"
 
 
 def log_info(msg: str) -> None:
+  """Logs an informational message to stdout.
+
+  Args:
+      msg: The message to log.
+  """
   print(f"\n{BLUE}[INFO] {msg}{NC}")
 
 
 def log_success(msg: str) -> None:
+  """Logs a success message to stdout.
+
+  Args:
+      msg: The message to log.
+  """
   print(f"\n{GREEN}[SUCCESS] {msg}{NC}")
 
 
 def log_error(msg: str) -> None:
+  """Logs an error message to stderr.
+
+  Args:
+      msg: The message to log.
+  """
   print(f"\n{RED}[ERROR] {msg}{NC}", file=sys.stderr)
 
 
 def error_exit(msg: str) -> None:
+  """Logs an error message and exits with status 1.
+
+  Args:
+      msg: The error message to log.
+  """
   log_error(msg)
   sys.exit(1)
 
@@ -75,8 +96,15 @@ CONFIG_VALIDATION_SCHEMAS = {
 }
 
 
-def parse_args(args: List[str]) -> argparse.Namespace:
-  """Parses command line arguments."""
+def parse_args(args: list[str]) -> argparse.Namespace:
+  """Parses command line arguments.
+
+  Args:
+      args: A list of command line arguments to parse.
+
+  Returns:
+      An argparse.Namespace object containing the parsed arguments.
+  """
   parser = argparse.ArgumentParser(
       description="XMC v2 Dev Environment Deployment Script"
   )
@@ -112,40 +140,75 @@ def parse_args(args: List[str]) -> argparse.Namespace:
   return parsed_args
 
 
-def load_and_validate_config(config_path: str) -> Dict[str, str]:
-  """Loads and validates the configuration file (simple parser to avoid PyYAML dep)."""
-  if not os.path.exists(config_path):
+def _load_config(config_path: str) -> dict[str, str]:
+  """Loads the configuration file using a custom parser.
+
+  This avoids a dependency on PyYAML. It handles simple key-value pairs,
+  ignores comments, and correctly handles quoted values that may contain
+  hash characters.
+
+  Args:
+      config_path: Path to the YAML configuration file.
+
+  Returns:
+      A dictionary containing the parsed configuration keys and values.
+  """
+  path = pathlib.Path(config_path)
+  if not path.exists():
     error_exit(f"Configuration file not found at '{config_path}'.")
 
   config = {}
-  # Match "key: value" possibly indented, ignoring trailing comments
-  pattern = re.compile(r"^\s*([a-zA-Z0-9_-]+)\s*:\s*(.*?)\s*(?:#.*)?$")
-
   try:
     with open(config_path, "r") as f:
       for line in f:
-        # Skip empty lines or comment-only lines
         line_stripped = line.strip()
         if not line_stripped or line_stripped.startswith("#"):
           continue
-        match = pattern.match(line)
-        if match:
-          k, v = match.groups()
-          v = v.strip()
-          # Strip quotes if present
-          if (v.startswith('"') and v.endswith('"')) or (
-              v.startswith("'") and v.endswith("'")
-          ):
-            v = v[1:-1]
-          # First match wins (similar to bash grep | head -n 1)
-          if k not in config:
-            config[k] = v
+
+        if ":" not in line:
+          continue
+
+        parts = line.split(":", 1)
+        k = parts[0].strip()
+        v = parts[1].strip()
+
+        # Handle quoted values
+        if (v.startswith('"') and v.count('"') >= 2) or (
+            v.startswith("'") and v.count("'") >= 2
+        ):
+          quote_char = v[0]
+          end_quote_idx = v.find(quote_char, 1)
+          if end_quote_idx != -1:
+            v = v[1:end_quote_idx]
+        else:
+          # Unquoted value, strip trailing comments
+          if "#" in v:
+            v = v.split("#", 1)[0].strip()
+
+        # First match wins (similar to bash grep | head -n 1)
+        if k not in config:
+          config[k] = v
   except Exception as e:
     error_exit(f"Failed to read configuration file: {e}")
 
   if not config:
     error_exit("Configuration file is empty or invalid.")
 
+  return config
+
+
+def _validate_config(
+    config: dict[str, str], config_path: str
+) -> dict[str, str]:
+  """Validates the configuration dict against schemas.
+
+  Args:
+      config: The configuration dictionary to validate.
+      config_path: Path to the configuration file (used for error messages).
+
+  Returns:
+      A dictionary containing only the validated configuration keys.
+  """
   validated_config = {}
   for key, pattern_str in CONFIG_VALIDATION_SCHEMAS.items():
     val = config.get(key)
@@ -165,10 +228,37 @@ def load_and_validate_config(config_path: str) -> Dict[str, str]:
   return validated_config
 
 
+def load_and_validate_config(config_path: str) -> dict[str, str]:
+  """Loads and validates the configuration file.
+
+  Args:
+      config_path: Path to the configuration file.
+
+  Returns:
+      A dictionary containing the validated configuration.
+  """
+  config = _load_config(config_path)
+  return _validate_config(config, config_path)
+
+
 def run_command(
-    cmd: List[str], env: Dict[str, str] = None, capture_output: bool = False
+    cmd: list[str],
+    env: Optional[dict[str, str]] = None,
+    capture_output: bool = False,
 ) -> subprocess.CompletedProcess:
-  """Helper to run shell commands."""
+  """Helper to run shell commands.
+
+  Args:
+      cmd: The command to run as a list of strings.
+      env: Optional environment variables to merge with current env.
+      capture_output: Whether to capture stdout/stderr.
+
+  Returns:
+      A subprocess.CompletedProcess object.
+
+  Raises:
+      subprocess.CalledProcessError: If the command fails.
+  """
   log_info(f"Running: {' '.join(cmd)}")
   try:
     # Merge current env with provided env
@@ -194,15 +284,20 @@ def run_command(
     raise e
 
 
-def parse_version(v: str) -> tuple:
+def parse_version(v: str) -> tuple[int, ...]:
+  """Parses a version string into a tuple of integers.
+
+  Args:
+      v: The version string (e.g., "1.12.2").
+
+  Returns:
+      A tuple of integers representing the version.
+  """
   return tuple(map(int, re.findall(r"\d+", v)[:3]))
 
 
-def run_checks(config: Dict[str, Any], dns_project: str, dns_zone: str) -> None:
-  """Performs pre-flight checks."""
-  log_info("Running pre-flight dependency checks...")
-
-  # 1. Verify Binaries
+def _verify_binaries() -> None:
+  """Verifies required CLI binaries are installed and gcluster is executable."""
   required_binaries = [
       "python3",
       "gcloud",
@@ -215,16 +310,16 @@ def run_checks(config: Dict[str, Any], dns_project: str, dns_zone: str) -> None:
     if not shutil.which(binary):
       error_exit(f"CLI dependency '{binary}' is required but not installed.")
 
-  local_gcluster = "./cluster-toolkit/gcluster"
-  if not os.path.isfile(local_gcluster) or not os.access(
-      local_gcluster, os.X_OK
-  ):
+  local_gcluster = pathlib.Path("./cluster-toolkit/gcluster")
+  if not local_gcluster.is_file() or not os.access(local_gcluster, os.X_OK):
     error_exit(
         f"Local cluster-toolkit binary '{local_gcluster}' not found or is not"
         " executable."
     )
 
-  # 2. Check Terraform version (>= 1.12.2)
+
+def _check_terraform_version() -> None:
+  """Checks if Terraform version is >= 1.12.2."""
   try:
     tf_version_out = run_command(
         ["terraform", "version", "-json"], capture_output=True
@@ -239,20 +334,33 @@ def run_checks(config: Dict[str, Any], dns_project: str, dns_zone: str) -> None:
   except Exception as e:
     error_exit(f"Failed to check Terraform version: {e}")
 
-  # 3. Check active GCP Project alignment
+
+def _check_gcp_project_alignment(config_project_id: str) -> None:
+  """Checks if active gcloud project matches config project.
+
+  Args:
+      config_project_id: The project ID expected from configuration.
+  """
   try:
     active_project = run_command(
         ["gcloud", "config", "get-value", "project"], capture_output=True
     ).stdout.strip()
-    if active_project != config["project_id"]:
+    if active_project != config_project_id:
       error_exit(
           f"Active gcloud project ('{active_project}') does not match config"
-          f" project ('{config['project_id']}'). Please switch project first."
+          f" project ('{config_project_id}'). Please switch project first."
       )
   except subprocess.CalledProcessError as e:
     error_exit(f"Failed to get active gcloud project: {e}")
 
-  # 4. Check DNS project access
+
+def _check_dns_access(dns_project: str, dns_zone: str) -> None:
+  """Verifies access to Cloud DNS project and zone.
+
+  Args:
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+  """
   log_info(
       f"Verifying access to Cloud DNS project '{dns_project}' and zone"
       f" '{dns_zone}'..."
@@ -275,26 +383,30 @@ def run_checks(config: Dict[str, Any], dns_project: str, dns_zone: str) -> None:
         f" '{dns_project}'. Check your permissions."
     )
 
+
+def run_checks(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+  """Performs pre-flight checks.
+
+  Args:
+      config: The loaded configuration dictionary.
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+  """
+  log_info("Running pre-flight dependency checks...")
+  _verify_binaries()
+  _check_terraform_version()
+  _check_gcp_project_alignment(config["project_id"])
+  _check_dns_access(dns_project, dns_zone)
   log_success("All pre-flight checks passed.")
 
 
-def apply_dns_records(
-    ip: str, config: Dict[str, Any], dns_project: str, dns_zone: str
-) -> None:
-  """Automates DNS record configuration."""
-  log_info(
-      f"Verifying Cloud DNS record states in project '{dns_project}', zone"
-      f" '{dns_zone}'..."
-  )
+def _dns_transaction_abort(dns_project: str, dns_zone: str) -> None:
+  """Aborts any active DNS transaction.
 
-  # End domains with dot for DNS A-records
-  d_app = f"{config['environment']}.{config['domain_name']}."
-  d_api = f"api.{config['environment']}.{config['domain_name']}."
-  d_grpc = f"grpc.{config['environment']}.{config['domain_name']}."
-
-  subdomains = [d_app, d_api, d_grpc]
-
-  # Initialize transaction (abort existing if any)
+  Args:
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+  """
   try:
     run_command(
         [
@@ -311,6 +423,14 @@ def apply_dns_records(
   except subprocess.CalledProcessError:
     pass  # Ignore if no transaction was active
 
+
+def _dns_transaction_start(dns_project: str, dns_zone: str) -> None:
+  """Starts a new DNS transaction.
+
+  Args:
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+  """
   run_command([
       "gcloud",
       "dns",
@@ -321,44 +441,124 @@ def apply_dns_records(
       f"--project={dns_project}",
   ])
 
+
+def _dns_transaction_execute(dns_project: str, dns_zone: str) -> None:
+  """Executes the active DNS transaction.
+
+  Args:
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+  """
+  run_command([
+      "gcloud",
+      "dns",
+      "record-sets",
+      "transaction",
+      "execute",
+      f"--zone={dns_zone}",
+      f"--project={dns_project}",
+  ])
+
+
+def _dns_get_existing_ip(
+    subdomain: str, dns_project: str, dns_zone: str
+) -> str:
+  """Gets the existing IP for a subdomain.
+
+  Args:
+      subdomain: The subdomain to check (must end with a dot).
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+
+  Returns:
+      The existing IP address as a string, or empty string if not found.
+  """
+  try:
+    out = run_command(
+        [
+            "gcloud",
+            "dns",
+            "record-sets",
+            "list",
+            f"--zone={dns_zone}",
+            f"--project={dns_project}",
+            f"--name={subdomain}",
+            "--type=A",
+            "--format=value(rrdatas)",
+        ],
+        capture_output=True,
+    ).stdout.strip()
+    return out
+  except subprocess.CalledProcessError:
+    return ""
+
+
+def _dns_add_record(
+    subdomain: str, ip: str, dns_project: str, dns_zone: str
+) -> None:
+  """Adds a record to the active DNS transaction.
+
+  Args:
+      subdomain: The subdomain for the record (must end with a dot).
+      ip: The target IP address.
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+  """
+  log_info(f"Creating new DNS record: {subdomain} -> {ip}")
+  run_command([
+      "gcloud",
+      "dns",
+      "record-sets",
+      "transaction",
+      "add",
+      ip,
+      f"--name={subdomain}",
+      "--ttl=300",
+      "--type=A",
+      f"--zone={dns_zone}",
+      f"--project={dns_project}",
+  ])
+
+
+def apply_dns_records(
+    ip: str, config: dict[str, Any], dns_project: str, dns_zone: str
+) -> None:
+  """Automates DNS record configuration.
+
+  Args:
+      ip: The target IP address for the DNS records.
+      config: The loaded configuration dictionary.
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+  """
+  log_info(
+      f"Verifying Cloud DNS record states in project '{dns_project}', zone"
+      f" '{dns_zone}'..."
+  )
+
+  # End domains with dot for DNS A-records
+  d_app = f"{config['environment']}.{config['domain_name']}."
+  d_api = f"api.{config['environment']}.{config['domain_name']}."
+  d_grpc = f"grpc.{config['environment']}.{config['domain_name']}."
+
+  subdomains = [d_app, d_api, d_grpc]
+
+  _dns_transaction_abort(dns_project, dns_zone)
+  _dns_transaction_start(dns_project, dns_zone)
+
   has_transaction_changes = False
   transaction_aborted = False
 
   try:
     for subdomain in subdomains:
-      # Get existing IP
-      existing_ip = ""
-      try:
-        out = run_command(
-            [
-                "gcloud",
-                "dns",
-                "record-sets",
-                "list",
-                f"--zone={dns_zone}",
-                f"--project={dns_project}",
-                f"--name={subdomain}",
-                "--type=A",
-                "--format=value(rrdatas)",
-            ],
-            capture_output=True,
-        ).stdout.strip()
-        existing_ip = out
-      except subprocess.CalledProcessError:
-        pass
+      existing_ip = _dns_get_existing_ip(subdomain, dns_project, dns_zone)
 
       if existing_ip == ip:
-        log_info(f"DNS record for '{subdomain}' already points to {ip}. Skipping.")
+        log_info(
+            f"DNS record for '{subdomain}' already points to {ip}. Skipping."
+        )
       elif existing_ip:
-        run_command([
-            "gcloud",
-            "dns",
-            "record-sets",
-            "transaction",
-            "abort",
-            f"--zone={dns_zone}",
-            f"--project={dns_project}",
-        ])
+        _dns_transaction_abort(dns_project, dns_zone)
         transaction_aborted = True
         error_exit(
             f"DNS record for '{subdomain}' already exists but points to a"
@@ -367,65 +567,30 @@ def apply_dns_records(
             f" it to {ip}."
         )
       else:
-        log_info(f"Creating new DNS record: {subdomain} -> {ip}")
-        run_command([
-            "gcloud",
-            "dns",
-            "record-sets",
-            "transaction",
-            "add",
-            ip,
-            f"--name={subdomain}",
-            "--ttl=300",
-            "--type=A",
-            f"--zone={dns_zone}",
-            f"--project={dns_project}",
-        ])
+        _dns_add_record(subdomain, ip, dns_project, dns_zone)
         has_transaction_changes = True
 
     if has_transaction_changes:
-      run_command([
-          "gcloud",
-          "dns",
-          "record-sets",
-          "transaction",
-          "execute",
-          f"--zone={dns_zone}",
-          f"--project={dns_project}",
-      ])
+      _dns_transaction_execute(dns_project, dns_zone)
       log_success("Cloud DNS records successfully updated.")
     else:
-      run_command([
-          "gcloud",
-          "dns",
-          "record-sets",
-          "transaction",
-          "abort",
-          f"--zone={dns_zone}",
-          f"--project={dns_project}",
-      ])
+      _dns_transaction_abort(dns_project, dns_zone)
       transaction_aborted = True
       log_success("Cloud DNS records are already up to date.")
 
   except Exception as e:
     if not transaction_aborted:
-      try:
-        run_command([
-            "gcloud",
-            "dns",
-            "record-sets",
-            "transaction",
-            "abort",
-            f"--zone={dns_zone}",
-            f"--project={dns_project}",
-        ])
-      except subprocess.CalledProcessError:
-        pass
+      _dns_transaction_abort(dns_project, dns_zone)
     raise e
 
 
 def run_gcluster_deploy(deployment_name: str, group: str) -> None:
-  """Runs gcluster deploy for a specific group."""
+  """Runs gcluster deploy for a specific group.
+
+  Args:
+      deployment_name: The name of the deployment.
+      group: The deployment group to deploy.
+  """
   run_command([
       "./cluster-toolkit/gcluster",
       "deploy",
@@ -439,16 +604,31 @@ def run_gcluster_deploy(deployment_name: str, group: str) -> None:
 # --- Steps implementation ---
 
 
-def step_check(config: Dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def step_check(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+  """Verifies pre-flight checks (noop step for status check).
+
+  Args:
+      config: The loaded configuration dictionary.
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+  """
   log_success("Pre-flight checks verified.")
 
 
 def step_compile(
-    config: Dict[str, Any],
+    config: dict[str, Any],
     dns_project: str,
     dns_zone: str,
     config_path: str,
 ) -> None:
+  """Compiles the XMC blueprint using gcluster.
+
+  Args:
+      config: The loaded configuration dictionary.
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+      config_path: Path to the configuration file.
+  """
   log_info("Compiling XMC blueprint using gcluster...")
   run_command([
       "./cluster-toolkit/gcluster",
@@ -466,15 +646,32 @@ def step_compile(
   log_success("Blueprint compiled successfully under 'ctk-out/'.")
 
 
-def step_apis(config: Dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def step_apis(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+  """Deploys the APIs group (API enablement).
+
+  Args:
+      config: The loaded configuration dictionary.
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+  """
   log_info("Deploying apis group (API enablement)...")
   run_gcluster_deploy(config["deployment_name"], "apis")
   log_success("APIs enabled successfully.")
 
 
 def step_primary(
-    config: Dict[str, Any], dns_project: str, dns_zone: str
+    config: dict[str, Any], dns_project: str, dns_zone: str
 ) -> None:
+  """Deploys the primary group (Network, Databases & certs) and configures DNS.
+
+  Args:
+      config: The loaded configuration dictionary.
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+
+  Raises:
+      RuntimeError: If Gateway IP extraction fails.
+  """
   log_info("Deploying primary group (Network, Databases & certs)...")
   run_gcluster_deploy(config["deployment_name"], "primary")
 
@@ -505,16 +702,35 @@ def step_primary(
 
 
 def step_compute(
-    config: Dict[str, Any], dns_project: str, dns_zone: str
+    config: dict[str, Any], dns_project: str, dns_zone: str
 ) -> None:
+  """Deploys the compute group (GKE Cluster and Node pools).
+
+  Args:
+      config: The loaded configuration dictionary.
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+  """
   log_info("Deploying compute group (GKE Cluster and Node pools)...")
   run_gcluster_deploy(config["deployment_name"], "compute")
-  log_success("Compute group (GKE cluster and Node pools) deployed successfully.")
+  log_success(
+      "Compute group (GKE cluster and Node pools) deployed successfully."
+  )
 
 
 def step_gateway_api(
-    config: Dict[str, Any], dns_project: str, dns_zone: str
+    config: dict[str, Any], dns_project: str, dns_zone: str
 ) -> None:
+  """Enables GKE Gateway API on the cluster if not already enabled.
+
+  Args:
+      config: The loaded configuration dictionary.
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+
+  Raises:
+      RuntimeError: If cluster description fails.
+  """
   cluster_name = f"xmc-{config['deployment_name']}-{config['environment']}"
   log_info(
       f"Checking if GKE Gateway API is enabled on cluster '{cluster_name}'..."
@@ -554,8 +770,19 @@ def step_gateway_api(
     log_info("Gateway API standard channel is already enabled.")
 
 
-def step_prereqs(config: Dict[str, Any], dns_project: str, dns_zone: str) -> None:
-  log_info("Deploying kubernetes_prereqs group (cert-manager, Kueue, Jobset)...")
+def step_prereqs(
+    config: dict[str, Any], dns_project: str, dns_zone: str
+) -> None:
+  """Deploys kubernetes_prereqs group (cert-manager, Kueue, Jobset).
+
+  Args:
+      config: The loaded configuration dictionary.
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+  """
+  log_info(
+      "Deploying kubernetes_prereqs group (cert-manager, Kueue, Jobset)..."
+  )
   run_gcluster_deploy(config["deployment_name"], "kubernetes_prereqs")
   log_success(
       "Kubernetes prerequisites (cert-manager, Kueue, Jobset) deployed"
@@ -563,7 +790,16 @@ def step_prereqs(config: Dict[str, Any], dns_project: str, dns_zone: str) -> Non
   )
 
 
-def step_images(config: Dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def step_images(
+    config: dict[str, Any], dns_project: str, dns_zone: str
+) -> None:
+  """Builds and pushes XMC service images.
+
+  Args:
+      config: The loaded configuration dictionary.
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+  """
   log_info("Configuring Docker registry authorization for registry...")
   acr_target = config["xmc_acr_target"]
   registry_host = acr_target.split("/")[0]
@@ -603,13 +839,103 @@ def step_images(config: Dict[str, Any], dns_project: str, dns_zone: str) -> None
   log_success("All images built and pushed.")
 
 
-def step_app(config: Dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def step_app(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+  """Deploys xmc_app group (Helm release).
+
+  Args:
+      config: The loaded configuration dictionary.
+      dns_project: GCP Project ID hosting the DNS zone.
+      dns_zone: Cloud DNS Managed Zone name.
+  """
   log_info("Deploying xmc_app group (Helm release)...")
   run_gcluster_deploy(config["deployment_name"], "xmc_app")
   log_success("XMC application Helm release deployed successfully.")
 
 
-def step_verify(config: Dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def _wait_for_gateway_programmed() -> None:
+  """Waits for the GKE Gateway to be programmed.
+
+  Raises:
+      RuntimeError: If the Gateway is not programmed within 300 seconds.
+  """
+  log_info("Verifying routing Gateway programmed state (5m timeout)...")
+  try:
+    run_command([
+        "kubectl",
+        "wait",
+        "--for=condition=Programmed",
+        "gateway/xmc-gateway",
+        "-n",
+        "xmc",
+        "--timeout=300s",
+    ])
+  except subprocess.CalledProcessError as e:
+    raise RuntimeError(
+        "GKE Gateway failed to program within 300s. Run: kubectl describe"
+        " gateway xmc-gateway -n xmc"
+    ) from e
+  log_success("GKE Gateway is Programmed.")
+
+
+def _wait_for_cert_active(project_id: str, cert_name: str) -> None:
+  """Polls Certificate Manager until the certificate is ACTIVE.
+
+  Args:
+      project_id: GCP Project ID.
+      cert_name: Name of the certificate to check.
+
+  Raises:
+      RuntimeError: If the certificate does not become ACTIVE within 15 minutes.
+      subprocess.CalledProcessError: If a fatal gcloud command error occurs.
+  """
+  log_info("Verifying Certificate manager state (15m timeout)...")
+  cert_state = ""
+  for i in range(1, 91):
+    try:
+      cert_state = run_command(
+          [
+              "gcloud",
+              "certificate-manager",
+              "certificates",
+              "describe",
+              cert_name,
+              f"--project={project_id}",
+              "--format=value(managed.state)",
+          ],
+          capture_output=True,
+      ).stdout.strip()
+    except subprocess.CalledProcessError as e:
+      # If it's a "NOT_FOUND" error, we assume it's transient (not created yet)
+      # and treat it as PENDING.
+      # Otherwise, we propagate the error immediately.
+      stderr = e.stderr or ""
+      if "NOT_FOUND" in stderr or "not found" in stderr.lower():
+        cert_state = "PENDING"
+      else:
+        log_error(f"Fatal error checking certificate status: {stderr}")
+        raise e
+
+    log_info(f"Checking certificate status (attempt {i}/90): {cert_state}")
+    if cert_state == "ACTIVE":
+      break
+    time.sleep(10)
+
+  if cert_state != "ACTIVE":
+    raise RuntimeError("Managed Certificate failed to activate within 900s.")
+
+  log_success("Managed Certificate is ACTIVE.")
+
+
+def step_verify(
+    config: dict[str, Any], dns_project: str, dns_zone: str
+) -> None:
+  """Verifies the deployed XMC environment.
+
+  Args:
+      config: The loaded configuration dictionary.
+      dns_project: GCP Project ID hosting the DNS zone (unused).
+      dns_zone: Cloud DNS Managed Zone name (unused).
+  """
   cluster_name = f"xmc-{config['deployment_name']}-{config['environment']}"
   log_info(f"Fetching kubectl credentials for GKE cluster '{cluster_name}'...")
   run_command([
@@ -633,57 +959,18 @@ def step_verify(config: Dict[str, Any], dns_project: str, dns_zone: str) -> None
   except subprocess.CalledProcessError:
     print("Diagnostic script reported warnings.")
 
-  log_info("Verifying routing Gateway programmed state (5m timeout)...")
-  try:
-    run_command([
-        "kubectl",
-        "wait",
-        "--for=condition=Programmed",
-        "gateway/xmc-gateway",
-        "-n",
-        "xmc",
-        "--timeout=300s",
-    ])
-  except subprocess.CalledProcessError as e:
-    raise RuntimeError(
-        "GKE Gateway failed to program within 300s. Run: kubectl describe"
-        " gateway xmc-gateway -n xmc"
-    ) from e
-  log_success("GKE Gateway is Programmed.")
-
-  log_info("Verifying Certificate manager state (15m timeout)...")
+  _wait_for_gateway_programmed()
   cert_name = f"xmc-cert-{config['environment']}"
-  cert_state = ""
-  for i in range(1, 91):
-    try:
-      cert_state = run_command(
-          [
-              "gcloud",
-              "certificate-manager",
-              "certificates",
-              "describe",
-              cert_name,
-              f"--project={config['project_id']}",
-              "--format=value(managed.state)",
-          ],
-          capture_output=True,
-      ).stdout.strip()
-    except subprocess.CalledProcessError:
-      cert_state = "PENDING"
-
-    log_info(f"Checking certificate status (attempt {i}/90): {cert_state}")
-    if cert_state == "ACTIVE":
-      break
-    time.sleep(10)
-
-  if cert_state != "ACTIVE":
-    raise RuntimeError("Managed Certificate failed to activate within 900s.")
-
-  log_success("Managed Certificate is ACTIVE.")
+  _wait_for_cert_active(config["project_id"], cert_name)
   log_success("XMC environment deployed and verified.")
 
 
-def main(argv: List[str]) -> None:
+def main(argv: list[str]) -> None:
+  """Main entry point for the deployment script.
+
+  Args:
+      argv: Command line arguments.
+  """
   args = parse_args(argv)
   config = load_and_validate_config(args.config)
 
@@ -739,19 +1026,17 @@ def main(argv: List[str]) -> None:
     sys.exit(1)
 
   # Print success message if all steps executed succeeded
-  print(f"\n{GREEN}========================================================{NC}")
+  print(f"\n{GREEN}" + "=" * 56 + f"{NC}")
   print(f"{GREEN}Deployment Completed Successfully!{NC}")
-  print(f"{GREEN}========================================================{NC}")
-  print(
-      f"Final URL: {BOLD}https://{config['environment']}.{config['domain_name']}{NC}"
-  )
+  print(f"{GREEN}" + "=" * 56 + f"{NC}")
+  env = config["environment"]
+  dom = config["domain_name"]
+  print(f"Final URL: {BOLD}https://{env}.{dom}{NC}")
   print()
   print(f"{BOLD}Post-Deployment Action Required (OAuth Setup):{NC}")
   print("Add this redirect URI in your GCloud Console OAuth Client ID config:")
-  print(
-      f"  - {BOLD}https://{config['environment']}.{config['domain_name']}/api/callback{NC}"
-  )
-  print(f"{GREEN}========================================================{NC}")
+  print(f"  - {BOLD}https://{env}.{dom}/api/callback{NC}")
+  print(f"{GREEN}" + "=" * 56 + f"{NC}")
 
 
 if __name__ == "__main__":
