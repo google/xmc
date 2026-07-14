@@ -116,11 +116,15 @@ def parse_args(args: list[str]) -> argparse.Namespace:
   )
   parser.add_argument(
       "--dns-project",
-      required=True,
-      help="GCP Project ID hosting the DNS zone (Required)",
+      required=False,
+      default=None,
+      help="GCP Project ID hosting the DNS zone (Optional)",
   )
   parser.add_argument(
-      "--dns-zone", required=True, help="Cloud DNS Managed Zone name (Required)"
+      "--dns-zone",
+      required=False,
+      default=None,
+      help="Cloud DNS Managed Zone name (Optional)",
   )
   parser.add_argument(
       "--start-from",
@@ -136,6 +140,9 @@ def parse_args(args: list[str]) -> argparse.Namespace:
 
   if parsed_args.start_from and parsed_args.only:
     parser.error("Cannot specify both --start-from and --only.")
+
+  if (parsed_args.dns_project is not None) != (parsed_args.dns_zone is not None):
+    parser.error("Must specify both --dns-project and --dns-zone, or neither.")
 
   return parsed_args
 
@@ -354,13 +361,18 @@ def _check_gcp_project_alignment(config_project_id: str) -> None:
     error_exit(f"Failed to get active gcloud project: {e}")
 
 
-def _check_dns_access(dns_project: str, dns_zone: str) -> None:
+def _check_dns_access(
+    dns_project: Optional[str], dns_zone: Optional[str]
+) -> None:
   """Verifies access to Cloud DNS project and zone.
 
   Args:
       dns_project: GCP Project ID hosting the DNS zone.
       dns_zone: Cloud DNS Managed Zone name.
   """
+  if not dns_project or not dns_zone:
+    log_info("DNS project or zone not provided. Skipping DNS access verification.")
+    return
   log_info(
       f"Verifying access to Cloud DNS project '{dns_project}' and zone"
       f" '{dns_zone}'..."
@@ -384,7 +396,9 @@ def _check_dns_access(dns_project: str, dns_zone: str) -> None:
     )
 
 
-def run_checks(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def run_checks(
+    config: dict[str, Any], dns_project: Optional[str], dns_zone: Optional[str]
+) -> None:
   """Performs pre-flight checks.
 
   Args:
@@ -396,17 +410,24 @@ def run_checks(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
   _verify_binaries()
   _check_terraform_version()
   _check_gcp_project_alignment(config["project_id"])
-  _check_dns_access(dns_project, dns_zone)
+  if dns_project and dns_zone:
+    _check_dns_access(dns_project, dns_zone)
+  else:
+    log_info("DNS project or zone not provided. Skipping DNS access verification.")
   log_success("All pre-flight checks passed.")
 
 
-def _dns_transaction_abort(dns_project: str, dns_zone: str) -> None:
+def _dns_transaction_abort(
+    dns_project: Optional[str], dns_zone: Optional[str]
+) -> None:
   """Aborts any active DNS transaction.
 
   Args:
       dns_project: GCP Project ID hosting the DNS zone.
       dns_zone: Cloud DNS Managed Zone name.
   """
+  if not dns_project or not dns_zone:
+    return
   try:
     run_command(
         [
@@ -424,13 +445,17 @@ def _dns_transaction_abort(dns_project: str, dns_zone: str) -> None:
     pass  # Ignore if no transaction was active
 
 
-def _dns_transaction_start(dns_project: str, dns_zone: str) -> None:
+def _dns_transaction_start(
+    dns_project: Optional[str], dns_zone: Optional[str]
+) -> None:
   """Starts a new DNS transaction.
 
   Args:
       dns_project: GCP Project ID hosting the DNS zone.
       dns_zone: Cloud DNS Managed Zone name.
   """
+  if not dns_project or not dns_zone:
+    return
   run_command([
       "gcloud",
       "dns",
@@ -442,13 +467,17 @@ def _dns_transaction_start(dns_project: str, dns_zone: str) -> None:
   ])
 
 
-def _dns_transaction_execute(dns_project: str, dns_zone: str) -> None:
+def _dns_transaction_execute(
+    dns_project: Optional[str], dns_zone: Optional[str]
+) -> None:
   """Executes the active DNS transaction.
 
   Args:
       dns_project: GCP Project ID hosting the DNS zone.
       dns_zone: Cloud DNS Managed Zone name.
   """
+  if not dns_project or not dns_zone:
+    return
   run_command([
       "gcloud",
       "dns",
@@ -461,7 +490,7 @@ def _dns_transaction_execute(dns_project: str, dns_zone: str) -> None:
 
 
 def _dns_get_existing_ip(
-    subdomain: str, dns_project: str, dns_zone: str
+    subdomain: str, dns_project: Optional[str], dns_zone: Optional[str]
 ) -> str:
   """Gets the existing IP for a subdomain.
 
@@ -473,6 +502,8 @@ def _dns_get_existing_ip(
   Returns:
       The existing IP address as a string, or empty string if not found.
   """
+  if not dns_project or not dns_zone:
+    return ""
   try:
     out = run_command(
         [
@@ -494,7 +525,10 @@ def _dns_get_existing_ip(
 
 
 def _dns_add_record(
-    subdomain: str, ip: str, dns_project: str, dns_zone: str
+    subdomain: str,
+    ip: str,
+    dns_project: Optional[str],
+    dns_zone: Optional[str],
 ) -> None:
   """Adds a record to the active DNS transaction.
 
@@ -504,6 +538,8 @@ def _dns_add_record(
       dns_project: GCP Project ID hosting the DNS zone.
       dns_zone: Cloud DNS Managed Zone name.
   """
+  if not dns_project or not dns_zone:
+    return
   log_info(f"Creating new DNS record: {subdomain} -> {ip}")
   run_command([
       "gcloud",
@@ -521,7 +557,10 @@ def _dns_add_record(
 
 
 def apply_dns_records(
-    ip: str, config: dict[str, Any], dns_project: str, dns_zone: str
+    ip: str,
+    config: dict[str, Any],
+    dns_project: Optional[str],
+    dns_zone: Optional[str],
 ) -> None:
   """Automates DNS record configuration.
 
@@ -531,6 +570,10 @@ def apply_dns_records(
       dns_project: GCP Project ID hosting the DNS zone.
       dns_zone: Cloud DNS Managed Zone name.
   """
+  if not dns_project or not dns_zone:
+    log_info("DNS project or zone not provided. Skipping DNS record automation.")
+    return
+
   log_info(
       f"Verifying Cloud DNS record states in project '{dns_project}', zone"
       f" '{dns_zone}'..."
@@ -554,9 +597,9 @@ def apply_dns_records(
       existing_ip = _dns_get_existing_ip(subdomain, dns_project, dns_zone)
 
       if existing_ip == ip:
-        log_info(
-            f"DNS record for '{subdomain}' already points to {ip}. Skipping."
-        )
+         log_info(
+             f"DNS record for '{subdomain}' already points to {ip}. Skipping."
+         )
       elif existing_ip:
         _dns_transaction_abort(dns_project, dns_zone)
         transaction_aborted = True
@@ -604,7 +647,9 @@ def run_gcluster_deploy(deployment_name: str, group: str) -> None:
 # --- Steps implementation ---
 
 
-def step_check(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def step_check(
+    config: dict[str, Any], dns_project: Optional[str], dns_zone: Optional[str]
+) -> None:
   """Verifies pre-flight checks (noop step for status check).
 
   Args:
@@ -617,8 +662,8 @@ def step_check(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
 
 def step_compile(
     config: dict[str, Any],
-    dns_project: str,
-    dns_zone: str,
+    dns_project: Optional[str],
+    dns_zone: Optional[str],
     config_path: str,
 ) -> None:
   """Compiles the XMC blueprint using gcluster.
@@ -646,7 +691,9 @@ def step_compile(
   log_success("Blueprint compiled successfully under 'ctk-out/'.")
 
 
-def step_apis(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def step_apis(
+    config: dict[str, Any], dns_project: Optional[str], dns_zone: Optional[str]
+) -> None:
   """Deploys the APIs group (API enablement).
 
   Args:
@@ -660,7 +707,7 @@ def step_apis(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
 
 
 def step_primary(
-    config: dict[str, Any], dns_project: str, dns_zone: str
+    config: dict[str, Any], dns_project: Optional[str], dns_zone: Optional[str]
 ) -> None:
   """Deploys the primary group (Network, Databases & certs) and configures DNS.
 
@@ -702,7 +749,7 @@ def step_primary(
 
 
 def step_compute(
-    config: dict[str, Any], dns_project: str, dns_zone: str
+    config: dict[str, Any], dns_project: Optional[str], dns_zone: Optional[str]
 ) -> None:
   """Deploys the compute group (GKE Cluster and Node pools).
 
@@ -719,7 +766,7 @@ def step_compute(
 
 
 def step_gateway_api(
-    config: dict[str, Any], dns_project: str, dns_zone: str
+    config: dict[str, Any], dns_project: Optional[str], dns_zone: Optional[str]
 ) -> None:
   """Enables GKE Gateway API on the cluster if not already enabled.
 
@@ -771,7 +818,7 @@ def step_gateway_api(
 
 
 def step_prereqs(
-    config: dict[str, Any], dns_project: str, dns_zone: str
+    config: dict[str, Any], dns_project: Optional[str], dns_zone: Optional[str]
 ) -> None:
   """Deploys kubernetes_prereqs group (cert-manager, Kueue, Jobset).
 
@@ -791,7 +838,7 @@ def step_prereqs(
 
 
 def step_images(
-    config: dict[str, Any], dns_project: str, dns_zone: str
+    config: dict[str, Any], dns_project: Optional[str], dns_zone: Optional[str]
 ) -> None:
   """Builds and pushes XMC service images.
 
@@ -839,7 +886,9 @@ def step_images(
   log_success("All images built and pushed.")
 
 
-def step_app(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def step_app(
+    config: dict[str, Any], dns_project: Optional[str], dns_zone: Optional[str]
+) -> None:
   """Deploys xmc_app group (Helm release).
 
   Args:
@@ -927,7 +976,7 @@ def _wait_for_cert_active(project_id: str, cert_name: str) -> None:
 
 
 def step_verify(
-    config: dict[str, Any], dns_project: str, dns_zone: str
+    config: dict[str, Any], dns_project: Optional[str], dns_zone: Optional[str]
 ) -> None:
   """Verifies the deployed XMC environment.
 
@@ -1011,7 +1060,11 @@ def main(argv: list[str]) -> None:
       step_map[step]()
   except Exception as e:
     log_error(f"Command failed during step '{current_step}': {e}")
-    dns_args = f"--dns-project {args.dns_project} --dns-zone {args.dns_zone} "
+    dns_args = ""
+    if args.dns_project:
+      dns_args += f"--dns-project {args.dns_project} "
+    if args.dns_zone:
+      dns_args += f"--dns-zone {args.dns_zone} "
     # Suggest resume command
     resume_cmd = (
         f"python3 tools/deploy_dev_env.py --config {args.config} {dns_args}"
