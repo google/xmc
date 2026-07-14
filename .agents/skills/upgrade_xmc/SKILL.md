@@ -115,7 +115,7 @@ If the upgrade fails at a specific phase, or if you need to rerun a specific par
 Run the verification script from the repository root to verify that all upgraded pods are running and endpoints respond correctly:
 
 ```bash
-ENVIRONMENT="${XMANAGER_ENV:-dev}" REGION="${GCP_REGION:-us-central1}" PROJECT_ID="$PROJECT_ID" ./deploy/ctk_v2/verify_xmc.sh
+ENVIRONMENT="${XMANAGER_ENV:-dev}" REGION="${GCP_REGION:-us-central1}" PROJECT_ID="$PROJECT_ID" python3 ./deploy/ctk_v2/verify_xmc.py
 ```
 
 > [!TIP]
