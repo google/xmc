@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -360,9 +361,17 @@ func buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
 func buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Container {
 	envVars := generateEnvVarsForSpec(spec)
 	var args []string
-	for k, v := range spec.GetArgs() {
-		args = append(args, fmt.Sprintf("--%s=%s", k, v))
+	if len(spec.GetArgs()) > 0 {
+		keys := make([]string, 0, len(spec.GetArgs()))
+		for k := range spec.GetArgs() {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			args = append(args, fmt.Sprintf("--%s=%s", k, spec.GetArgs()[k]))
+		}
 	}
+	args = append(args, spec.GetArgsList()...)
 	return corev1.Container{
 		Name:                     containerName,
 		Image:                    spec.GetDockerImage(),
