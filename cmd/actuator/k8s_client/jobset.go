@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	batchv1 "golang/k8s_io/api/v/v0_23/batch/v1/v1"
@@ -364,8 +365,15 @@ func buildContainerPorts(spec *esspb.ExecutableSpec) []corev1.ContainerPort {
 	ports := make([]corev1.ContainerPort, 0, len(spec.GetPorts()))
 	for _, p := range spec.GetPorts() {
 		protocol := corev1.ProtocolTCP
-		if p.GetProtocol() != "" {
-			protocol = corev1.Protocol(p.GetProtocol())
+		switch strings.ToUpper(p.GetProtocol()) {
+		case "UDP":
+			protocol = corev1.ProtocolUDP
+		case "SCTP":
+			protocol = corev1.ProtocolSCTP
+		case "TCP", "":
+			protocol = corev1.ProtocolTCP
+		default:
+			protocol = corev1.Protocol(strings.ToUpper(p.GetProtocol()))
 		}
 		ports = append(ports, corev1.ContainerPort{
 			Name:          p.GetName(),

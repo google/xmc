@@ -2276,6 +2276,9 @@ func TestBuildContainerPorts_ExplicitAndDefault(t *testing.T) {
 		{Name: "metrics", ContainerPort: 8431},
 		{Name: "dns", ContainerPort: 53, Protocol: "UDP"},
 		{Name: "sctp-port", ContainerPort: 9999, Protocol: "SCTP", HostPort: 9999},
+		{Name: "http-lower", ContainerPort: 8081, Protocol: "tcp"},
+		{Name: "dns-lower", ContainerPort: 54, Protocol: "udp"},
+		{Name: "sctp-lower", ContainerPort: 10000, Protocol: "sctp"},
 	}
 
 	workUnit.Executable.GetJobset().Jobs[0].Sidecars = []*esspb.ExecutableSpec{
@@ -2316,8 +2319,8 @@ func TestBuildContainerPorts_ExplicitAndDefault(t *testing.T) {
 		t.Fatalf("Expected 2 containers, got %d", len(podSpec.Containers))
 	}
 	primaryPorts := podSpec.Containers[0].Ports
-	if len(primaryPorts) != 4 {
-		t.Fatalf("Expected 4 ports on primary container, got %d", len(primaryPorts))
+	if len(primaryPorts) != 7 {
+		t.Fatalf("Expected 7 ports on primary container, got %d", len(primaryPorts))
 	}
 	if primaryPorts[0].Name != "http" || primaryPorts[0].ContainerPort != 8080 || primaryPorts[0].Protocol != corev1.ProtocolTCP {
 		t.Errorf("Primary port 0 mismatch: got %+v", primaryPorts[0])
@@ -2330,6 +2333,15 @@ func TestBuildContainerPorts_ExplicitAndDefault(t *testing.T) {
 	}
 	if primaryPorts[3].Name != "sctp-port" || primaryPorts[3].ContainerPort != 9999 || primaryPorts[3].Protocol != corev1.ProtocolSCTP || primaryPorts[3].HostPort != 9999 {
 		t.Errorf("Primary port 3 mismatch: got %+v", primaryPorts[3])
+	}
+	if primaryPorts[4].Name != "http-lower" || primaryPorts[4].ContainerPort != 8081 || primaryPorts[4].Protocol != corev1.ProtocolTCP {
+		t.Errorf("Primary port 4 mismatch (expected normalized TCP): got %+v", primaryPorts[4])
+	}
+	if primaryPorts[5].Name != "dns-lower" || primaryPorts[5].ContainerPort != 54 || primaryPorts[5].Protocol != corev1.ProtocolUDP {
+		t.Errorf("Primary port 5 mismatch (expected normalized UDP): got %+v", primaryPorts[5])
+	}
+	if primaryPorts[6].Name != "sctp-lower" || primaryPorts[6].ContainerPort != 10000 || primaryPorts[6].Protocol != corev1.ProtocolSCTP {
+		t.Errorf("Primary port 6 mismatch (expected normalized SCTP): got %+v", primaryPorts[6])
 	}
 
 	sidecarPorts := podSpec.Containers[1].Ports
