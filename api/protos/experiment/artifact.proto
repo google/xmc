@@ -20,6 +20,7 @@ import "google/api/resource.proto";
 import "google/protobuf/timestamp.proto";
 import "third_party/xmanager_cloud/experiment_state_server/proto/url.proto";
 import "third_party/xmanager_cloud/xid_service/proto/messages.proto";
+import "third_party/xmanager_cloud/dashboard_service/proto/messages.proto";
 
 option java_multiple_files = true;
 
@@ -163,6 +164,7 @@ message ArtifactPayload {
     CodeSourceArtifact code_source = 2;
     TextArtifact text = 3;
     UrlArtifact url = 4;
+    ChartArtifact chart = 5;
   }
 }
 
@@ -197,5 +199,33 @@ message UrlArtifact {
   string url = 1 [(google.api.field_behavior) = REQUIRED];
   string icon = 2 [(google.api.field_behavior) = OPTIONAL];
   string display_name = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Represents the logical dashboard configuration.
+message ChartArtifact {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    PROVISIONING = 1;
+    // all requests to all dashboard tools succeeded 
+    SUCCESS = 2;
+    // no dashboard created in any tool
+    FAILED = 3;
+  }
+
+  // Optional custom title for the dashboard. If empty, the server constructs one 
+  // using parent work unit ID (e.g. metrics_w002).
+  string title = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // List of metric keys or patterns visualized in this dashboard.
+  repeated string metric_names = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // The created chart instance
+  Chart chart = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Async provisioning status.
+  Status status = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Detailed error message if status is FAILED.
+  string error_message = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
