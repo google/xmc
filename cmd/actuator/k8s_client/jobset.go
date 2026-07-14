@@ -361,14 +361,15 @@ func buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
 func buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Container {
 	envVars := generateEnvVarsForSpec(spec)
 	var args []string
-	if len(spec.GetArgs()) > 0 {
-		keys := make([]string, 0, len(spec.GetArgs()))
-		for k := range spec.GetArgs() {
+	specArgs := spec.GetArgs()
+	if len(specArgs) > 0 {
+		keys := make([]string, 0, len(specArgs))
+		for k := range specArgs {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			args = append(args, fmt.Sprintf("--%s=%s", k, spec.GetArgs()[k]))
+			args = append(args, fmt.Sprintf("--%s=%s", k, specArgs[k]))
 		}
 	}
 	args = append(args, spec.GetArgsList()...)
