@@ -13,10 +13,10 @@ graph TD
     CheckEnv --> CheckRun["Run ./tools/upgrade_dev_env.sh --only check"]
     CheckRun --> MigrateCheck["Run ./tools/upgrade_dev_env.sh --only migrate"]
     MigrateCheck -->|No pending migrations| AutoRun["Run ./tools/upgrade_dev_env.sh --start-from images"]
-    MigrateCheck -->|Pending migrations (Exit 10)| PromptUser["Prompt User to run migrations"]
+    MigrateCheck -->|"Pending migrations (Exit 10)"| PromptUser["Prompt User to run migrations"]
     PromptUser -->|User declines| Abort["Abort Upgrade"]
     PromptUser -->|User approves| AutoRunMigrate["Run ./tools/upgrade_dev_env.sh --start-from migrate --run-migrations"]
-    AutoRunMigrate --> Verify[Verification & Validation]
+    AutoRunMigrate --> Verify["Verification & Validation"]
     AutoRun --> Verify
     Verify -->|All checks pass| L["Report completed upgrade & healthy rollout"]
 ```
