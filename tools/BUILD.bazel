@@ -134,3 +134,19 @@ py_test(
         ":tool_utils",
     ],
 )
+
+py_library(
+    name = "deploy_dev_env_lib",
+    srcs = ["deploy_dev_env.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "deploy_dev_env_test",
+    srcs = ["deploy_dev_env_test.py"],
+    imports = ["."],
+    deps = [
+        ":deploy_dev_env_lib",
+    ],
+)
