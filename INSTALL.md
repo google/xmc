@@ -12,7 +12,29 @@ This guide details how to install a fresh deployment of XManager on Cloud (XMC) 
 
 ---
 
+## Configuration Variables
+
+Use the form below to configure the variables used in this guide. Once entered, they will be updated in all commands and configuration snippets throughout the page.
+
+| Variable | Description | Value |
+| :--- | :--- | :--- |
+| **GCP Project ID** | The ID of your Google Cloud Project. | <input value="[*PROJECT_ID?YOUR_PROJECT_ID*]"> |
+| **Region** | The GCP region for resources (e.g. us-central1). | <input value="[*REGION?us-central1*]"> |
+| **Environment** | Suffix for environment resource isolation (e.g. dev, prod). | <input value="[*ENVIRONMENT?dev*]"> |
+| **Domain Name** | Base DNS domain name for external endpoints. | <input value="[*DOMAIN_NAME?example.com*]"> |
+| **Image Tag** | The tag of the container images to deploy. | <input value="[*IMAGE_TAG?latest*]"> |
+| **Spanner Instance** | The ID of the Cloud Spanner instance. | <input value="[*SPANNER_INSTANCE_ID?xmc-instance*]"> |
+| **ESS Database** | The ID of the ESS Spanner database. | <input value="[*ESS_DATABASE_ID?ess*]"> |
+| **XID Database** | The ID of the XID Spanner database. | <input value="[*XID_DATABASE_ID?xid*]"> |
+| **Gateway External IP** | The external IP of the GKE Gateway (available after step 6). | <input value="[*GATEWAY_EXTERNAL_IP?YOUR_GATEWAY_IP*]"> |
+| **Deployment Name** | Unique prefix for resource naming. | <input value="[*DEPLOYMENT_NAME?xmc-deployment*]"> |
+| **Cluster Name** | The name of the GKE cluster. | <input value="[*CLUSTER_NAME?xmc-cluster*]"> |
+| **Deployment Config Path** | Path to your deployment configuration file. | <input value="[*DEPLOYMENT_CONFIG_PATH?deploy/ctk_v2/xmanager-cloud-deployment.yaml*]"> |
+
+---
+
 ## Prerequisites
+
 
 Before launching any deployment pathway, ensure you have the following CLI tools installed:
 
@@ -59,20 +81,20 @@ The XMC services require OCI container images built from the codebase. You must 
    ```bash
    gcloud artifacts repositories create xmc \
        --repository-format=docker \
-       --location=<LOCATION> \
+       --location=[*REGION*] \
        --description="XMC Container Images"
    ```
 
 2. **Configure Docker authentication** to access the repository:
    ```bash
-   gcloud auth configure-docker <LOCATION>-docker.pkg.dev
+   gcloud auth configure-docker [*REGION*]-docker.pkg.dev
    ```
 
 3. **Set environment variables** specifying your target registry path, environment name suffix, and tag:
    ```bash
-   export XMC_ACR_TARGET="<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc"
-   export XMC_ENV="dev"  # Match your deployment environment name
-   export BUILD_TAG="<IMAGE_TAG>"
+   export XMC_ACR_TARGET="[*REGION*]-docker.pkg.dev/[*PROJECT_ID*]/xmc"
+   export XMC_ENV="[*ENVIRONMENT*]"  # Match your deployment environment name
+   export BUILD_TAG="[*IMAGE_TAG*]"
    ```
 
 4. **Build and push the images** using the generated Bazel targets:
@@ -87,12 +109,12 @@ The XMC services require OCI container images built from the codebase. You must 
 
 5. **Update image variables** in your deployment configuration file (e.g. `xmanager-cloud-deployment.yaml`, copy of [xmc-deployment-template.yaml](deploy/ctk_v2/xmc-deployment-template.yaml)):
    ```yaml
-   xid_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/xid-service-dev:<IMAGE_TAG>"
-   actuator_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/actuator-dev:<IMAGE_TAG>"
-   ess_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/experiment-state-server-dev:<IMAGE_TAG>"
-   ui_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/ui-dev:<IMAGE_TAG>"
-   reconciler_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/reconciler-dev:<IMAGE_TAG>"
-   log_monitor_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/log-monitor-dev:<IMAGE_TAG>"
+   xid_image: "[*REGION*]-docker.pkg.dev/[*PROJECT_ID*]/xmc/xid-service-[*ENVIRONMENT*]:[*IMAGE_TAG*]"
+   actuator_image: "[*REGION*]-docker.pkg.dev/[*PROJECT_ID*]/xmc/actuator-[*ENVIRONMENT*]:[*IMAGE_TAG*]"
+   ess_image: "[*REGION*]-docker.pkg.dev/[*PROJECT_ID*]/xmc/experiment-state-server-[*ENVIRONMENT*]:[*IMAGE_TAG*]"
+   ui_image: "[*REGION*]-docker.pkg.dev/[*PROJECT_ID*]/xmc/ui-[*ENVIRONMENT*]:[*IMAGE_TAG*]"
+   reconciler_image: "[*REGION*]-docker.pkg.dev/[*PROJECT_ID*]/xmc/reconciler-[*ENVIRONMENT*]:[*IMAGE_TAG*]"
+   log_monitor_image: "[*REGION*]-docker.pkg.dev/[*PROJECT_ID*]/xmc/log-monitor-[*ENVIRONMENT*]:[*IMAGE_TAG*]"
    ```
 
 ### 3. DNS and Domain Name Configuration
@@ -119,16 +141,16 @@ If your organization maintains a delegated DNS zone (e.g. in [Cloud DNS](https:/
 If you do not have any custom domain or DNS zone, you can use Google Cloud Endpoints to register free public DNS records under Google's managed `cloud.goog` domain.
 
 The domain names will have the following structure:
-- UI: `<environment>.endpoints.<project_id>.cloud.goog`
-- API: `api.<environment>.endpoints.<project_id>.cloud.goog`
-- gRPC: `grpc.<environment>.endpoints.<project_id>.cloud.goog`
+- UI: `[*ENVIRONMENT*].endpoints.[*PROJECT_ID*].cloud.goog`
+- API: `api.[*ENVIRONMENT*].endpoints.[*PROJECT_ID*].cloud.goog`
+- gRPC: `grpc.[*ENVIRONMENT*].endpoints.[*PROJECT_ID*].cloud.goog`
 
 To configure this:
 1. In your configuration file (e.g. `xmanager-cloud-deployment.yaml`), set the `domain_name` variable to:
    ```yaml
-   domain_name: "endpoints.<project_id>.cloud.goog"
+   domain_name: "endpoints.[*PROJECT_ID*].cloud.goog"
    ```
-   *(Replace `<project_id>` with your Google Cloud Project ID)*
+   *(Populated from **PROJECT_ID**)*
 
 2. After compiling and deploying the core infrastructure to retrieve the Gateway's global static IP address (Step 6 of the deployment process), you must register the three subdomains. Create three YAML configuration files containing the Endpoint configurations:
 
@@ -139,10 +161,10 @@ To configure this:
      description: "UI DNS for XMC"
      title: "XMC UI DNS"
      version: "1.0.0"
-   host: "<environment>.endpoints.<project_id>.cloud.goog"
+   host: "[*ENVIRONMENT*].endpoints.[*PROJECT_ID*].cloud.goog"
    x-google-endpoints:
-   - name: "<environment>.endpoints.<project_id>.cloud.goog"
-     target: "<gateway_external_ip>"
+   - name: "[*ENVIRONMENT*].endpoints.[*PROJECT_ID*].cloud.goog"
+     target: "[*GATEWAY_EXTERNAL_IP*]"
    paths: {}
    ```
 
@@ -153,10 +175,10 @@ To configure this:
      description: "API DNS for XMC"
      title: "XMC API DNS"
      version: "1.0.0"
-   host: "api.<environment>.endpoints.<project_id>.cloud.goog"
+   host: "api.[*ENVIRONMENT*].endpoints.[*PROJECT_ID*].cloud.goog"
    x-google-endpoints:
-   - name: "api.<environment>.endpoints.<project_id>.cloud.goog"
-     target: "<gateway_external_ip>"
+   - name: "api.[*ENVIRONMENT*].endpoints.[*PROJECT_ID*].cloud.goog"
+     target: "[*GATEWAY_EXTERNAL_IP*]"
    paths: {}
    ```
 
@@ -167,10 +189,10 @@ To configure this:
      description: "gRPC DNS for XMC"
      title: "XMC gRPC DNS"
      version: "1.0.0"
-   host: "grpc.<environment>.endpoints.<project_id>.cloud.goog"
+   host: "grpc.[*ENVIRONMENT*].endpoints.[*PROJECT_ID*].cloud.goog"
    x-google-endpoints:
-   - name: "grpc.<environment>.endpoints.<project_id>.cloud.goog"
-     target: "<gateway_external_ip>"
+   - name: "grpc.[*ENVIRONMENT*].endpoints.[*PROJECT_ID*].cloud.goog"
+     target: "[*GATEWAY_EXTERNAL_IP*]"
    paths: {}
    ```
 
@@ -180,7 +202,7 @@ To configure this:
    gcloud endpoints services deploy api-dns.yaml
    gcloud endpoints services deploy grpc-dns.yaml
    ```
-   *Note: Creating these Endpoints automatically registers public DNS A records pointing to `<gateway_external_ip>` under the `cloud.goog` zone.*
+   *Note: Creating these Endpoints automatically registers public DNS A records pointing to `[*GATEWAY_EXTERNAL_IP*]` under the `cloud.goog` zone.*
 
 ### 4. OAuth2 Client (IAP Credentials) Setup
 
@@ -194,8 +216,8 @@ XMC uses an application-level [Google OAuth2 flow](https://developers.google.com
 5. Select **Web application** as the application type.
 6. Name your client (e.g., `XMC Web Application`).
 7. Under **Authorized redirect URIs**, add:
-   - `https://api.<environment>.<domain>/api/callback`
-   *(Substitute `<environment>` and `<domain>` with your configured suffix and domain, e.g. `https://api.xmc.example.com/api/callback`)*.
+   - `https://api.[*ENVIRONMENT*].[*DOMAIN_NAME*]/api/callback`
+   *(Populated from **ENVIRONMENT** and **DOMAIN_NAME**)*.
 8. Click **Create** and copy the resulting **Client ID** and **Client Secret** into your `xmanager-cloud-deployment.yaml`:
    ```yaml
    iap_client_id: "YOUR_OAUTH_CLIENT_ID"
@@ -249,43 +271,43 @@ Instruct the agent:
 1. **Pre-flight Check**: Validates the presence of `gcloud`, `kubectl`, `helm`, `terraform`, and `gcluster`.
 2. **Blueprint Compilation**:
    ```bash
-   ./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
+   ./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d [*DEPLOYMENT_CONFIG_PATH*] -o ctk-out -l WARNING -w --force
    ```
 3. **Deploy APIs (`apis` group)**:
    ```bash
-   ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only apis --auto-approve
+   ./cluster-toolkit/gcluster deploy ctk-out/[*DEPLOYMENT_NAME*] --only apis --auto-approve
    ```
 4. **Deploy Core Infrastructure (`primary` group)**:
    ```bash
-   ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only primary --auto-approve
+   ./cluster-toolkit/gcluster deploy ctk-out/[*DEPLOYMENT_NAME*] --only primary --auto-approve
    ```
 5. **Extract Static IP & Pause for DNS / OAuth Settings**:
    The agent retrieves the global external static IP:
    ```bash
-   gcloud compute addresses describe xmc-gateway-static-ip-<environment> --global --project=<project_id> --format='value(address)'
+   gcloud compute addresses describe xmc-gateway-static-ip-[*ENVIRONMENT*] --global --project=[*PROJECT_ID*] --format='value(address)'
    ```
    > [!IMPORTANT]
    > The agent will pause here and ask you to:
-   > - Configure **A records** in your authoritative DNS for the external IP (e.g. `<environment>.example.com`, `api.<environment>.example.com`, `grpc.<environment>.example.com`).
-   > - Add the OAuth redirect URI in your GCP Console: `https://<environment>.example.com/api/callback`.
+   > - Configure **A records** in your authoritative DNS for the external IP (e.g. `[*ENVIRONMENT*].[*DOMAIN_NAME*]`, `api.[*ENVIRONMENT*].[*DOMAIN_NAME*]`, `grpc.[*ENVIRONMENT*].[*DOMAIN_NAME*]`).
+   > - Add the OAuth redirect URI in your GCP Console: `https://api.[*ENVIRONMENT*].[*DOMAIN_NAME*]/api/callback`.
    >
    > Once done, reply to the agent to resume execution.
 6. **Deploy Compute Cluster (`compute` group)**:
    ```bash
-   ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only compute --auto-approve
+   ./cluster-toolkit/gcluster deploy ctk-out/[*DEPLOYMENT_NAME*] --only compute --auto-approve
    ```
 7. **Enable GKE Gateway API standard channel**:
    Before deploying the system Helm charts, the GKE cluster must have the standard Gateway API controller addon enabled:
    ```bash
-   gcloud container clusters update <cluster_name> --gateway-api=standard --region=<region> --project=<project_id>
+   gcloud container clusters update [*CLUSTER_NAME*] --gateway-api=standard --region=[*REGION*] --project=[*PROJECT_ID*]
    ```
 8. **Install Kubernetes Prerequisites (`kubernetes_prereqs` group)**:
    ```bash
-   ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only kubernetes_prereqs --auto-approve
+   ./cluster-toolkit/gcluster deploy ctk-out/[*DEPLOYMENT_NAME*] --only kubernetes_prereqs --auto-approve
    ```
 9. **Deploy Application (`xmc_app` group)**:
    ```bash
-   ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only xmc_app --auto-approve
+   ./cluster-toolkit/gcluster deploy ctk-out/[*DEPLOYMENT_NAME*] --only xmc_app --auto-approve
    ```
 10. **Post-Deployment Verification**:
     The agent runs:
@@ -343,9 +365,9 @@ git pull origin main
 Rebuild all XMC OCI container images from the updated source code and push them to your Google Artifact Registry repository specifying your target release tag (`<IMAGE_TAG>`) so that Kubernetes workloads pull the updated service binaries. Ensure you also update your deployment configuration file (e.g., `xmanager-cloud-deployment.yaml` or `values.yaml`) with the new `<IMAGE_TAG>` before upgrading:
 
 ```bash
-export XMC_ACR_TARGET="<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc"
-export XMC_ENV="<ENVIRONMENT>"  # Match your deployment environment tag
-export BUILD_TAG="<IMAGE_TAG>"
+export XMC_ACR_TARGET="[*REGION*]-docker.pkg.dev/[*PROJECT_ID*]/xmc"
+export XMC_ENV="[*ENVIRONMENT*]"  # Match your deployment environment tag
+export BUILD_TAG="[*IMAGE_TAG*]"
 
 bazel run //cmd/xid_service:xid_service_image_push
 bazel run //cmd/actuator:actuator_image_push
@@ -393,17 +415,17 @@ Before applying migrations, inspect the current schema version and check if eith
 ```bash
 # Check ESS database schema version
 bazel run //internal/storage/spanner/migrations:migrations -- \
-  --project="<PROJECT_ID>" \
-  --instance="<SPANNER_INSTANCE_ID>" \
-  --database="<ESS_DATABASE_ID>" \
+  --project="[*PROJECT_ID*]" \
+  --instance="[*SPANNER_INSTANCE_ID*]" \
+  --database="[*ESS_DATABASE_ID*]" \
   --migrations_dir="ess" \
   --command="version"
 
 # Check XID database schema version
 bazel run //internal/storage/spanner/migrations:migrations -- \
-  --project="<PROJECT_ID>" \
-  --instance="<SPANNER_INSTANCE_ID>" \
-  --database="<XID_DATABASE_ID>" \
+  --project="[*PROJECT_ID*]" \
+  --instance="[*SPANNER_INSTANCE_ID*]" \
+  --database="[*XID_DATABASE_ID*]" \
   --migrations_dir="xid" \
   --command="version"
 ```
@@ -415,17 +437,17 @@ Run the `up` command against both the `ess` and `xid` databases to apply all pen
 ```bash
 # Apply all pending migrations for ESS database
 bazel run //internal/storage/spanner/migrations:migrations -- \
-  --project="<PROJECT_ID>" \
-  --instance="<SPANNER_INSTANCE_ID>" \
-  --database="<ESS_DATABASE_ID>" \
+  --project="[*PROJECT_ID*]" \
+  --instance="[*SPANNER_INSTANCE_ID*]" \
+  --database="[*ESS_DATABASE_ID*]" \
   --migrations_dir="ess" \
   --command="up"
 
 # Apply all pending migrations for XID database
 bazel run //internal/storage/spanner/migrations:migrations -- \
-  --project="<PROJECT_ID>" \
-  --instance="<SPANNER_INSTANCE_ID>" \
-  --database="<XID_DATABASE_ID>" \
+  --project="[*PROJECT_ID*]" \
+  --instance="[*SPANNER_INSTANCE_ID*]" \
+  --database="[*XID_DATABASE_ID*]" \
   --migrations_dir="xid" \
   --command="up"
 ```
@@ -434,9 +456,9 @@ To apply only a specific number of incremental migration steps (e.g., the next 2
 
 ```bash
 bazel run //internal/storage/spanner/migrations:migrations -- \
-  --project="<PROJECT_ID>" \
-  --instance="<SPANNER_INSTANCE_ID>" \
-  --database="<ESS_DATABASE_ID>" \
+  --project="[*PROJECT_ID*]" \
+  --instance="[*SPANNER_INSTANCE_ID*]" \
+  --database="[*ESS_DATABASE_ID*]" \
   --migrations_dir="ess" \
   --command="up" \
   2
@@ -448,9 +470,9 @@ bazel run //internal/storage/spanner/migrations:migrations -- \
   To roll back applied migrations, run `down` with the number of steps to revert (defaults to `1`). The command previews SQL changes and prompts for confirmation:
   ```bash
   bazel run //internal/storage/spanner/migrations:migrations -- \
-    --project="<PROJECT_ID>" \
-    --instance="<SPANNER_INSTANCE_ID>" \
-    --database="<ESS_DATABASE_ID>" \
+    --project="[*PROJECT_ID*]" \
+    --instance="[*SPANNER_INSTANCE_ID*]" \
+    --database="[*ESS_DATABASE_ID*]" \
     --migrations_dir="ess" \
     --command="down" \
     1
@@ -459,12 +481,12 @@ bazel run //internal/storage/spanner/migrations:migrations -- \
   If a migration fails halfway through execution, the schema version table is marked as "dirty". Additionally, if you are upgrading an existing database that was created before the migration system was introduced, you must use this command to set the initial schema version (e.g., 1) so that subsequent migrations can be applied. After resolving the database state, force the schema version number:
   ```bash
   bazel run //internal/storage/spanner/migrations:migrations -- \
-    --project="<PROJECT_ID>" \
-    --instance="<SPANNER_INSTANCE_ID>" \
-    --database="<ESS_DATABASE_ID>" \
+    --project="[*PROJECT_ID*]" \
+    --instance="[*SPANNER_INSTANCE_ID*]" \
+    --database="[*ESS_DATABASE_ID*]" \
     --migrations_dir="ess" \
     --command="force" \
-    <TARGET_VERSION>
+    [*TARGET_VERSION?1*]
   ```
 - **Fresh Installation Initialization (`init`)**:
   > [!NOTE]
@@ -480,7 +502,11 @@ bazel run //internal/storage/spanner/migrations:migrations -- \
 - **Manual Schema Check (`gcloud`)**:
   In case a manual check is needed for the current spanner schema:
   ```bash
-  gcloud spanner databases ddl describe --project=<PROJECT_ID> --instance=<SPANNER_INSTANCE_ID> <ESS_DATABASE_ID|XID_DATABASE_ID>
+  # For ESS database
+  gcloud spanner databases ddl describe --project=[*PROJECT_ID*] --instance=[*SPANNER_INSTANCE_ID*] [*ESS_DATABASE_ID*]
+
+  # For XID database
+  gcloud spanner databases ddl describe --project=[*PROJECT_ID*] --instance=[*SPANNER_INSTANCE_ID*] [*XID_DATABASE_ID*]
   ```
 
 ### Step 4: Upgrade Application Workloads
@@ -492,7 +518,7 @@ Once database schemas and container images are updated, upgrade the Kubernetes w
 Re-run deployment for the application group (`xmc_app`) to roll out updated deployments and services:
 
 ```bash
-./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only xmc_app --auto-approve
+./cluster-toolkit/gcluster deploy ctk-out/[*DEPLOYMENT_NAME*] --only xmc_app --auto-approve
 ```
 
 #### Option B: Using Direct Helm Upgrade
