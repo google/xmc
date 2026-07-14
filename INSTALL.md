@@ -397,8 +397,8 @@ Before applying migrations, inspect the current schema version and check if eith
 # Check ESS database schema version
 bazel run //internal/storage/spanner/migrations:migrations -- \
   --project="[*PROJECT_ID*]" \
-  --instance="[*SPANNER_INSTANCE_ID?xmc-instance*]" \
-  --database="[*ESS_DATABASE_ID?ess*]" \
+  --instance="[*SPANNER_INSTANCE_ID?xmc-dev*]" \
+  --database="[*ESS_DATABASE_ID?experiment-db-dev*]" \
   --migrations_dir="ess" \
   --command="version"
 
@@ -406,7 +406,7 @@ bazel run //internal/storage/spanner/migrations:migrations -- \
 bazel run //internal/storage/spanner/migrations:migrations -- \
   --project="[*PROJECT_ID*]" \
   --instance="[*SPANNER_INSTANCE_ID*]" \
-  --database="[*XID_DATABASE_ID?xid*]" \
+  --database="[*XID_DATABASE_ID?xids-db-dev*]" \
   --migrations_dir="xid" \
   --command="version"
 ```
