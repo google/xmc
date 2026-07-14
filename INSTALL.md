@@ -12,26 +12,7 @@ This guide details how to install a fresh deployment of XManager on Cloud (XMC) 
 
 ---
 
-## Configuration Variables
 
-Use the form below to configure the variables used in this guide. Once entered, they will be updated in all commands and configuration snippets throughout the page.
-
-| Variable | Description | Value |
-| :--- | :--- | :--- |
-| **GCP Project ID** | The ID of your Google Cloud Project. | [*PROJECT_ID?YOUR_PROJECT_ID*] |
-| **Region** | The GCP region for resources (e.g. us-central1). | [*REGION?us-central1*] |
-| **Environment** | Suffix for environment resource isolation (e.g. dev, prod). | [*ENVIRONMENT?dev*] |
-| **Domain Name** | Base DNS domain name for external endpoints. | [*DOMAIN_NAME?example.com*] |
-| **Image Tag** | The tag of the container images to deploy. | [*IMAGE_TAG?latest*] |
-| **Spanner Instance** | The ID of the Cloud Spanner instance. | [*SPANNER_INSTANCE_ID?xmc-instance*] |
-| **ESS Database** | The ID of the ESS Spanner database. | [*ESS_DATABASE_ID?ess*] |
-| **XID Database** | The ID of the XID Spanner database. | [*XID_DATABASE_ID?xid*] |
-| **Gateway External IP** | The external IP of the GKE Gateway (available after step 6). | [*GATEWAY_EXTERNAL_IP?YOUR_GATEWAY_IP*] |
-| **Deployment Name** | Unique prefix for resource naming. | [*DEPLOYMENT_NAME?xmc-deployment*] |
-| **Cluster Name** | The name of the GKE cluster. | [*CLUSTER_NAME?xmc-cluster*] |
-| **Deployment Config Path** | Path to your deployment configuration file. | [*DEPLOYMENT_CONFIG_PATH?deploy/ctk_v2/xmanager-cloud-deployment.yaml*] |
-
----
 
 ## Prerequisites
 
@@ -81,7 +62,7 @@ The XMC services require OCI container images built from the codebase. You must 
    ```bash
    gcloud artifacts repositories create xmc \
        --repository-format=docker \
-       --location=[*REGION*] \
+       --location=[*REGION?us-central1*] \
        --description="XMC Container Images"
    ```
 
@@ -92,9 +73,9 @@ The XMC services require OCI container images built from the codebase. You must 
 
 3. **Set environment variables** specifying your target registry path, environment name suffix, and tag:
    ```bash
-   export XMC_ACR_TARGET="[*REGION*]-docker.pkg.dev/[*PROJECT_ID*]/xmc"
-   export XMC_ENV="[*ENVIRONMENT*]"  # Match your deployment environment name
-   export BUILD_TAG="[*IMAGE_TAG*]"
+   export XMC_ACR_TARGET="[*REGION*]-docker.pkg.dev/[*PROJECT_ID?YOUR_PROJECT_ID*]/xmc"
+   export XMC_ENV="[*ENVIRONMENT?dev*]"  # Match your deployment environment name
+   export BUILD_TAG="[*IMAGE_TAG?latest*]"
    ```
 
 4. **Build and push the images** using the generated Bazel targets:
@@ -164,7 +145,7 @@ To configure this:
    host: "[*ENVIRONMENT*].endpoints.[*PROJECT_ID*].cloud.goog"
    x-google-endpoints:
    - name: "[*ENVIRONMENT*].endpoints.[*PROJECT_ID*].cloud.goog"
-     target: "[*GATEWAY_EXTERNAL_IP*]"
+     target: "[*GATEWAY_EXTERNAL_IP?YOUR_GATEWAY_IP*]"
    paths: {}
    ```
 
@@ -216,7 +197,7 @@ XMC uses an application-level [Google OAuth2 flow](https://developers.google.com
 5. Select **Web application** as the application type.
 6. Name your client (e.g., `XMC Web Application`).
 7. Under **Authorized redirect URIs**, add:
-   - `https://api.[*ENVIRONMENT*].[*DOMAIN_NAME*]/api/callback`
+   - `https://api.[*ENVIRONMENT*].[*DOMAIN_NAME?example.com*]/api/callback`
    *(Populated from **ENVIRONMENT** and **DOMAIN_NAME**)*.
 8. Click **Create** and copy the resulting **Client ID** and **Client Secret** into your `xmanager-cloud-deployment.yaml`:
    ```yaml
@@ -271,11 +252,11 @@ Instruct the agent:
 1. **Pre-flight Check**: Validates the presence of `gcloud`, `kubectl`, `helm`, `terraform`, and `gcluster`.
 2. **Blueprint Compilation**:
    ```bash
-   ./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d [*DEPLOYMENT_CONFIG_PATH*] -o ctk-out -l WARNING -w --force
+   ./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d [*DEPLOYMENT_CONFIG_PATH?deploy/ctk_v2/xmanager-cloud-deployment.yaml*] -o ctk-out -l WARNING -w --force
    ```
 3. **Deploy APIs (`apis` group)**:
    ```bash
-   ./cluster-toolkit/gcluster deploy ctk-out/[*DEPLOYMENT_NAME*] --only apis --auto-approve
+   ./cluster-toolkit/gcluster deploy ctk-out/[*DEPLOYMENT_NAME?xmc-deployment*] --only apis --auto-approve
    ```
 4. **Deploy Core Infrastructure (`primary` group)**:
    ```bash
@@ -299,7 +280,7 @@ Instruct the agent:
 7. **Enable GKE Gateway API standard channel**:
    Before deploying the system Helm charts, the GKE cluster must have the standard Gateway API controller addon enabled:
    ```bash
-   gcloud container clusters update [*CLUSTER_NAME*] --gateway-api=standard --region=[*REGION*] --project=[*PROJECT_ID*]
+   gcloud container clusters update [*CLUSTER_NAME?xmc-cluster*] --gateway-api=standard --region=[*REGION*] --project=[*PROJECT_ID*]
    ```
 8. **Install Kubernetes Prerequisites (`kubernetes_prereqs` group)**:
    ```bash
@@ -416,8 +397,8 @@ Before applying migrations, inspect the current schema version and check if eith
 # Check ESS database schema version
 bazel run //internal/storage/spanner/migrations:migrations -- \
   --project="[*PROJECT_ID*]" \
-  --instance="[*SPANNER_INSTANCE_ID*]" \
-  --database="[*ESS_DATABASE_ID*]" \
+  --instance="[*SPANNER_INSTANCE_ID?xmc-instance*]" \
+  --database="[*ESS_DATABASE_ID?ess*]" \
   --migrations_dir="ess" \
   --command="version"
 
@@ -425,7 +406,7 @@ bazel run //internal/storage/spanner/migrations:migrations -- \
 bazel run //internal/storage/spanner/migrations:migrations -- \
   --project="[*PROJECT_ID*]" \
   --instance="[*SPANNER_INSTANCE_ID*]" \
-  --database="[*XID_DATABASE_ID*]" \
+  --database="[*XID_DATABASE_ID?xid*]" \
   --migrations_dir="xid" \
   --command="version"
 ```
