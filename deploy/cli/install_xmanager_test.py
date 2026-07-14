@@ -96,6 +96,14 @@ class TestInstallXmanager(unittest.TestCase):
         install_xmanager.check_git_version()
         self.assertEqual(stderr.getvalue(), "")
 
+  def test_check_git_version_macos(self) -> None:
+    """Test check_git_version with macOS git version format."""
+    mock_res = mock.Mock(stdout="git version 2.39.3 (Apple Git-146)")
+    with mock.patch("subprocess.run", return_value=mock_res):
+      with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+        install_xmanager.check_git_version()
+        self.assertEqual(stderr.getvalue(), "")
+
   def test_check_git_version_old(self) -> None:
     """Test check_git_version with old version 2.20.0."""
     mock_res = mock.Mock(stdout="git version 2.20.0")
@@ -130,6 +138,14 @@ class TestInstallXmanager(unittest.TestCase):
         install_xmanager.retrieve_protos(str(src), dst)
         self.assertTrue((dst / "experiment").is_dir())
         self.assertTrue((dst / "xid").is_dir())
+
+  def test_retrieve_protos_nonexistent_local(self) -> None:
+    """Test retrieve_protos with non-existent local directory path."""
+    with tempfile.TemporaryDirectory() as tmp_dst_str:
+      dst = Path(tmp_dst_str)
+      non_existent_src = dst / "does_not_exist"
+      with self.assertRaises(SystemExit):
+        install_xmanager.retrieve_protos(str(non_existent_src), dst)
 
   def test_retrieve_protos_missing_dirs(self) -> None:
     """Test retrieve_protos raises SystemExit when experiment or xid missing."""

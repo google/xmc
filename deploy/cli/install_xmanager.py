@@ -61,9 +61,11 @@ def check_git_version() -> None:
         text=True,
         check=True,
     )
-    version_str = res.stdout.strip().split()[-1]
-    parts = version_str.split(".")
-    major, minor = int(parts[0]), int(parts[1])
+    match = re.search(r"(\d+)\.(\d+)(?:\.\d+)?", res.stdout)
+    if not match:
+      raise ValueError("Could not find version pattern")
+    major, minor = int(match.group(1)), int(match.group(2))
+    version_str = match.group(0)
   except (subprocess.SubprocessError, IndexError, ValueError):
     sys.stderr.write(
         "Warning: Could not parse Git version. Git 2.25+ is recommended.\n"
@@ -279,19 +281,26 @@ def _fetch_remote_protos(protos_loc: str, xmc_protos_dir: Path) -> None:
       check=True,
   )
 
-  cwd = os.getcwd()
-  try:
-    os.chdir(xmc_protos_dir)
-    subprocess.run(["git", "sparse-checkout", "init", "--cone"], check=True)
-    subprocess.run(["git", "sparse-checkout", "set", subdir], check=True)
-    subprocess.run(["git", "checkout", branch], check=True)
+  subprocess.run(
+      ["git", "sparse-checkout", "init", "--cone"],
+      cwd=xmc_protos_dir,
+      check=True,
+  )
+  subprocess.run(
+      ["git", "sparse-checkout", "set", subdir],
+      cwd=xmc_protos_dir,
+      check=True,
+  )
+  subprocess.run(
+      ["git", "checkout", branch],
+      cwd=xmc_protos_dir,
+      check=True,
+  )
 
-    subdir_path = xmc_protos_dir / subdir
-    if subdir_path.exists():
-      for item in subdir_path.iterdir():
-        shutil.move(str(item), str(xmc_protos_dir / item.name))
-  finally:
-    os.chdir(cwd)
+  subdir_path = xmc_protos_dir / subdir
+  if subdir_path.exists():
+    for item in subdir_path.iterdir():
+      shutil.move(str(item), str(xmc_protos_dir / item.name))
 
 
 def retrieve_protos(protos_loc: str, xmc_protos_dir: Path) -> None:
@@ -301,15 +310,17 @@ def retrieve_protos(protos_loc: str, xmc_protos_dir: Path) -> None:
       protos_loc: Local path or GitHub URL for protos.
       xmc_protos_dir: Target directory to populate with proto files.
   """
-  local_path = Path(protos_loc)
-  if local_path.is_dir():
+  if protos_loc.startswith(("http://", "https://")):
+    _fetch_remote_protos(protos_loc, xmc_protos_dir)
+  else:
+    local_path = Path(protos_loc)
+    if not local_path.is_dir():
+      error_exit(f"Local protos directory not found: {protos_loc}")
     sys.stdout.write(f"Using local protos from: {protos_loc}\n")
     xmc_protos_dir.mkdir(parents=True, exist_ok=True)
     api_protos = local_path / "api" / "protos"
     src = api_protos if api_protos.is_dir() else local_path
     shutil.copytree(src, xmc_protos_dir, dirs_exist_ok=True)
-  else:
-    _fetch_remote_protos(protos_loc, xmc_protos_dir)
 
   exp_dir = xmc_protos_dir / "experiment"
   xid_dir = xmc_protos_dir / "xid"

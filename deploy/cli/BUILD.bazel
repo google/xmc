@@ -28,9 +28,6 @@ py_binary(
     srcs = ["install_xmanager.py"],
     imports = ["."],
     visibility = ["//visibility:public"],
-    deps = [
-        ":install_xmanager_lib",
-    ],
 )
 
 py_test(
