@@ -803,20 +803,12 @@ func TestTPUNodesPerSlice(t *testing.T) {
 
 func TestUpdateTolerations(t *testing.T) {
 	t.Run("nil podSpec does not panic", func(t *testing.T) {
-		updateTolerations(&epb.ResourceSet{
-			Resources: &epb.ResourceSet_TpuResources{
-				TpuResources: &epb.TpuResources{Topology: "2x2"},
-			},
-		}, nil)
+		updateTolerations(nil)
 	})
 
-	t.Run("appends TPU toleration when TPU resources are present", func(t *testing.T) {
+	t.Run("appends TPU toleration", func(t *testing.T) {
 		podSpec := &corev1.PodSpec{}
-		updateTolerations(&epb.ResourceSet{
-			Resources: &epb.ResourceSet_TpuResources{
-				TpuResources: &epb.TpuResources{Topology: "2x2"},
-			},
-		}, podSpec)
+		updateTolerations(podSpec)
 
 		want := []corev1.Toleration{
 			{
@@ -828,14 +820,6 @@ func TestUpdateTolerations(t *testing.T) {
 		}
 		if diff := cmp.Diff(want, podSpec.Tolerations); diff != "" {
 			t.Errorf("updateTolerations() returned unexpected tolerations diff (-want +got):\n%s", diff)
-		}
-	})
-
-	t.Run("no toleration appended when no TPU resources", func(t *testing.T) {
-		podSpec := &corev1.PodSpec{}
-		updateTolerations(&epb.ResourceSet{}, podSpec)
-		if len(podSpec.Tolerations) != 0 {
-			t.Errorf("updateTolerations() appended tolerations when no TPU resources requested: %v", podSpec.Tolerations)
 		}
 	})
 }
