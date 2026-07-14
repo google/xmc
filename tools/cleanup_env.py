@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from typing import Dict, List
@@ -55,20 +56,22 @@ def parse_tfvars(tfvars_path: str) -> Dict[str, str]:
   return config
 
 
-def cleanup_env(args):
-  """Main cleanup logic."""
-  deployment_name = args.env
+def _get_deployment_dir(deployment_name: str) -> str:
+  """Resolves and validates the deployment directory."""
   ctk_out_dir = os.path.abspath(
       os.path.join(os.getcwd(), 'ctk-out', deployment_name)
   )
-
   if not os.path.exists(ctk_out_dir):
     raise HandledError(
         f"Deployment directory not found: {ctk_out_dir}",
         "No active cloud environment was deployed from this folder. Nothing to"
         " clean up.",
     )
+  return ctk_out_dir
 
+
+def _load_config(ctk_out_dir: str) -> Dict[str, str]:
+  """Loads and validates the configuration from terraform.tfvars."""
   tfvars_path = os.path.join(ctk_out_dir, 'primary', 'terraform.tfvars')
   if not os.path.exists(tfvars_path):
     raise HandledError(
@@ -84,10 +87,13 @@ def cleanup_env(args):
         "project_id not found in terraform.tfvars",
         "Cannot proceed without project_id. Check your configuration.",
     )
+  return config
 
-  # Check deletion protection
+
+def _check_deletion_protection(config: Dict[str, str], force: bool):
+  """Checks if deletion protection is enabled and raises error if not forced."""
   deletion_protection = config.get('deletion_protection') == 'true'
-  if deletion_protection and not args.force:
+  if deletion_protection and not force:
     raise HandledError(
         "Deletion protection is enabled in terraform.tfvars.",
         "Disable deletion protection in your configuration, run gcluster"
@@ -95,10 +101,12 @@ def cleanup_env(args):
         " (note: destroy will likely fail if resources are protected).",
     )
 
-  environment_name = args.environment_name or deployment_name
-  spanner_instance = f"xmc-{environment_name}"
 
-  # Step 1: Delete Spanner Backups
+def _delete_spanner_backups(
+    environment_name: str, project_id: str, dry_run: bool
+):
+  """Lists and deletes Spanner backups for the environment."""
+  spanner_instance = f"xmc-{environment_name}"
   print(f"Checking for Spanner backups in instance {spanner_instance}...")
   list_backups_cmd = [
       "gcloud",
@@ -110,7 +118,7 @@ def cleanup_env(args):
       "--format=json",
   ]
 
-  if args.dry_run:
+  if dry_run:
     print(
         f"[DRY RUN] Would list backups for instance {spanner_instance} in"
         f" project {project_id}"
@@ -119,9 +127,11 @@ def cleanup_env(args):
   else:
     res = run_command(list_backups_cmd)
     if res.returncode != 0:
-      # If the instance doesn't exist, we don't need to delete backups.
       if "NOT_FOUND" in res.stderr or "Instance not found" in res.stderr:
-        print(f"Spanner instance {spanner_instance} not found. Skipping backup deletion.")
+        print(
+            f"Spanner instance {spanner_instance} not found. Skipping backup"
+            " deletion."
+        )
         backups = []
       else:
         print(
@@ -141,7 +151,6 @@ def cleanup_env(args):
   if backups:
     print(f"Found {len(backups)} backup(s). Deleting...")
     for backup in backups:
-      # name format: projects/PROJECT_ID/instances/INSTANCE_ID/backups/BACKUP_ID
       backup_name = backup.get('name')
       backup_id = backup_name.split('/')[-1]
       print(f"Deleting backup {backup_id}...")
@@ -155,7 +164,7 @@ def cleanup_env(args):
           f"--project={project_id}",
           "--quiet",
       ]
-      res = run_command(delete_backup_cmd, dry_run=args.dry_run)
+      res = run_command(delete_backup_cmd, dry_run=dry_run)
       if res.returncode != 0:
         raise HandledError(
             f"Failed to delete backup {backup_id}: {res.stderr}",
@@ -165,7 +174,16 @@ def cleanup_env(args):
   else:
     print("No Spanner backups found.")
 
-  # Step 2: Run Standard Destroy
+
+def _run_gcluster_destroy(
+    ctk_out_dir: str,
+    deployment_name: str,
+    environment_name: str,
+    project_id: str,
+    config: Dict[str, str],
+    args,
+):
+  """Runs gcluster destroy and handles failures."""
   gcluster_path = os.path.join(os.getcwd(), 'cluster-toolkit', 'gcluster')
   if not os.path.exists(gcluster_path) and not args.dry_run:
     raise HandledError(
@@ -185,117 +203,113 @@ def cleanup_env(args):
   res = run_command(destroy_cmd, dry_run=args.dry_run)
 
   if res.returncode != 0:
-    # Check for common failure modes
     if "xmc_app" in res.stderr and not args.skip_xmc_app:
       raise HandledError(
           f"gcluster destroy failed on xmc_app: {res.stderr}",
           "The destroy got stuck on xmc_app. Retry with --skip-xmc-app.",
       )
-    
-    # Suggest GKE force delete
+
     cluster_name = f"xmc-{deployment_name}-{environment_name}"
-    # Try to get region from config
     region = config.get('region') or config.get('zone')
     location_str = f"--location={region}" if region else ""
-    
+
     raise HandledError(
         f"gcluster destroy failed: {res.stderr}",
         f"If GKE is stuck, try force deleting the GKE cluster:\n"
-        f"  gcloud container clusters delete {cluster_name} {location_str} --project={project_id} --quiet\n"
-        f"And then rerun this script with: --skip xmc_app,kubernetes_prereqs"
+        f"  gcloud container clusters delete {cluster_name} {location_str}"
+        f" --project={project_id} --quiet\n"
+        f"And then rerun this script with: --skip xmc_app,kubernetes_prereqs",
     )
 
   print("gcluster destroy completed successfully.")
 
-  # Step 3: Delete Cloud DNS Records
-  dns_zone = args.dns_zone
-  dns_project = args.dns_project or project_id
 
-  if dns_zone:
-    print(f"Cleaning up DNS records in zone {dns_zone}...")
-    list_dns_cmd = [
-        "gcloud",
-        "dns",
-        "record-sets",
-        "list",
-        f"--zone={dns_zone}",
-        f"--project={dns_project}",
-        "--format=json",
-    ]
-
-    if args.dry_run:
-      print(
-          f"[DRY RUN] Would list DNS records for zone {dns_zone} in project"
-          f" {dns_project}"
-      )
-      records = []
-    else:
-      res = run_command(list_dns_cmd)
-      if res.returncode != 0:
-        print(
-            f"Warning: Failed to list DNS records: {res.stderr}",
-            file=sys.stderr,
-        )
-        records = []
-      else:
-        try:
-          records = json.loads(res.stdout)
-        except Exception as e:
-          print(
-              f"Warning: Failed to parse DNS records: {e}", file=sys.stderr
-          )
-          records = []
-
-    # We need to find the domain name to delete.
-    # We look for records that start with our environment name.
-    records_to_delete = []
-    for record in records:
-      name = record.get('name')
-      type = record.get('type')
-      # Match name like: env.domain.com., api.env.domain.com., grpc.env.domain.com.
-      if type == 'A' and (
-          name.startswith(f"{environment_name}.")
-          or name.startswith(f"api.{environment_name}.")
-          or name.startswith(f"grpc.{environment_name}.")
-      ):
-        records_to_delete.append(record)
-
-    if records_to_delete:
-      print(f"Found {len(records_to_delete)} DNS record(s) to delete.")
-      for record in records_to_delete:
-        name = record.get('name')
-        type = record.get('type')
-        print(f"Deleting DNS record {name} ({type})...")
-        delete_dns_cmd = [
-            "gcloud",
-            "dns",
-            "record-sets",
-            "delete",
-            name,
-            f"--type={type}",
-            f"--zone={dns_zone}",
-            f"--project={dns_project}",
-            "--quiet",
-        ]
-        res = run_command(delete_dns_cmd, dry_run=args.dry_run)
-        if res.returncode != 0:
-          print(
-              f"Warning: Failed to delete DNS record {name}: {res.stderr}",
-              file=sys.stderr,
-          )
-    else:
-      print("No matching DNS records found to delete.")
-  else:
+def _delete_dns_records(
+    environment_name: str, dns_zone: str, dns_project: str, dry_run: bool
+):
+  """Lists and deletes DNS records matching the environment."""
+  if not dns_zone:
     print(
         "DNS zone not specified. Skipping DNS cleanup. (Use --dns-zone to"
         " enable)"
     )
+    return
 
-  # Step 4: Local Configurations & Files Cleanup
-  # 1. Kubeconfig Contexts
+  print(f"Cleaning up DNS records in zone {dns_zone}...")
+  list_dns_cmd = [
+      "gcloud",
+      "dns",
+      "record-sets",
+      "list",
+      f"--zone={dns_zone}",
+      f"--project={dns_project}",
+      "--format=json",
+  ]
+
+  if dry_run:
+    print(
+        f"[DRY RUN] Would list DNS records for zone {dns_zone} in project"
+        f" {dns_project}"
+    )
+    records = []
+  else:
+    res = run_command(list_dns_cmd)
+    if res.returncode != 0:
+      print(
+          f"Warning: Failed to list DNS records: {res.stderr}",
+          file=sys.stderr,
+      )
+      records = []
+    else:
+      try:
+        records = json.loads(res.stdout)
+      except Exception as e:
+        print(f"Warning: Failed to parse DNS records: {e}", file=sys.stderr)
+        records = []
+
+  records_to_delete = []
+  for record in records:
+    name = record.get('name')
+    type = record.get('type')
+    if type == 'A' and (
+        name.startswith(f"{environment_name}.")
+        or name.startswith(f"api.{environment_name}.")
+        or name.startswith(f"grpc.{environment_name}.")
+    ):
+      records_to_delete.append(record)
+
+  if records_to_delete:
+    print(f"Found {len(records_to_delete)} DNS record(s) to delete.")
+    for record in records_to_delete:
+      name = record.get('name')
+      type = record.get('type')
+      print(f"Deleting DNS record {name} ({type})...")
+      delete_dns_cmd = [
+          "gcloud",
+          "dns",
+          "record-sets",
+          "delete",
+          name,
+          f"--type={type}",
+          f"--zone={dns_zone}",
+          f"--project={dns_project}",
+          "--quiet",
+      ]
+      res = run_command(delete_dns_cmd, dry_run=dry_run)
+      if res.returncode != 0:
+        print(
+            f"Warning: Failed to delete DNS record {name}: {res.stderr}",
+            file=sys.stderr,
+        )
+  else:
+    print("No matching DNS records found to delete.")
+
+
+def _cleanup_kubeconfig(environment_name: str, dry_run: bool):
+  """Deletes kubeconfig contexts matching the environment."""
   print("Cleaning up kubeconfig contexts...")
   list_contexts_cmd = ["kubectl", "config", "get-contexts", "-o", "name"]
-  if args.dry_run:
+  if dry_run:
     print("[DRY RUN] Would list kubeconfig contexts")
     contexts = []
   else:
@@ -316,20 +330,21 @@ def cleanup_env(args):
       print(f"Deleting kubeconfig context and cluster: {context}")
       delete_context_cmd = ["kubectl", "config", "delete-context", context]
       delete_cluster_cmd = ["kubectl", "config", "delete-cluster", context]
-      run_command(delete_context_cmd, dry_run=args.dry_run)
-      run_command(delete_cluster_cmd, dry_run=args.dry_run)
+      run_command(delete_context_cmd, dry_run=dry_run)
+      run_command(delete_cluster_cmd, dry_run=dry_run)
       cleaned_contexts += 1
-  
+
   if cleaned_contexts == 0:
     print("No matching kubeconfig contexts found.")
 
-  # 2. Delete Deployment Folder
+
+def _delete_deployment_dir(ctk_out_dir: str, dry_run: bool):
+  """Removes the local deployment directory."""
   print(f"Removing deployment directory: {ctk_out_dir}...")
-  if args.dry_run:
+  if dry_run:
     print(f"[DRY RUN] Would remove directory: {ctk_out_dir}")
   else:
     try:
-      import shutil
       shutil.rmtree(ctk_out_dir)
       print(f"Removed deployment directory: {ctk_out_dir}")
     except Exception as e:
@@ -337,6 +352,38 @@ def cleanup_env(args):
           f"Failed to remove deployment directory {ctk_out_dir}: {e}",
           "Please manually delete the directory.",
       )
+
+
+def cleanup_env(args):
+  """Main cleanup logic."""
+  deployment_name = args.env
+  environment_name = args.environment_name or deployment_name
+
+  ctk_out_dir = _get_deployment_dir(deployment_name)
+  config = _load_config(ctk_out_dir)
+  project_id = config.get('project_id')
+
+  _check_deletion_protection(config, args.force)
+
+  _delete_spanner_backups(environment_name, project_id, args.dry_run)
+
+  _run_gcluster_destroy(
+      ctk_out_dir,
+      deployment_name,
+      environment_name,
+      project_id,
+      config,
+      args,
+  )
+
+  dns_project = args.dns_project or project_id
+  _delete_dns_records(
+      environment_name, args.dns_zone, dns_project, args.dry_run
+  )
+
+  _cleanup_kubeconfig(environment_name, args.dry_run)
+
+  _delete_deployment_dir(ctk_out_dir, args.dry_run)
 
   return f"Environment {deployment_name} cleaned up successfully."
 
