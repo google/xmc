@@ -435,9 +435,7 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 			ReplicatedJobs: replicatedJobs,
 			Network:        buildJobSetNetwork(workUnit, jobSetName),
 			Suspend:        boolPtr(false),
-			SuccessPolicy: &jobsetv1alpha2.SuccessPolicy{
-				Operator: jobsetv1alpha2.OperatorAll,
-			},
+			SuccessPolicy: buildJobSetSuccessPolicy(workUnit),
 			FailurePolicy: &jobsetv1alpha2.FailurePolicy{
 				// JobSet-level restarts are disabled (MaxRestarts: 0) to comply with the XMC
 				// contract, which expects a work unit to execute at most once.
@@ -555,6 +553,44 @@ func buildJobSetNetwork(workUnit *esspb.WorkUnit, jobSetName string) *jobsetv1al
 		Subdomain:                subdomain,
 		PublishNotReadyAddresses: boolPtr(publishNotReady),
 	}
+}
+
+func buildJobSetSuccessPolicy(workUnit *esspb.WorkUnit) *jobsetv1alpha2.SuccessPolicy {
+	exec := workUnit.GetExecutable()
+	if exec == nil || exec.GetJobset() == nil {
+		return &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAll}
+	}
+	policy := exec.GetJobset().GetSuccessPolicy()
+	if policy != nil {
+		return translateSuccessPolicy(policy)
+	}
+	if hasJobNamed(exec.GetJobset().GetJobs(), "pathways-head") {
+		return &jobsetv1alpha2.SuccessPolicy{
+			Operator:             jobsetv1alpha2.OperatorAll,
+			TargetReplicatedJobs: []string{"pathways-head"},
+		}
+	}
+	return &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAll}
+}
+
+func translateSuccessPolicy(policy *esspb.JobSetExecutable_SuccessPolicy) *jobsetv1alpha2.SuccessPolicy {
+	operator := jobsetv1alpha2.OperatorAll
+	if policy.GetOperator() == esspb.JobSetExecutable_SuccessPolicy_ANY {
+		operator = jobsetv1alpha2.OperatorAny
+	}
+	return &jobsetv1alpha2.SuccessPolicy{
+		Operator:             operator,
+		TargetReplicatedJobs: policy.GetTargetReplicatedJobs(),
+	}
+}
+
+func hasJobNamed(jobs []*esspb.KubernetesJob, name string) bool {
+	for _, job := range jobs {
+		if job.GetName() == name {
+			return true
+		}
+	}
+	return false
 }
 
 func boolPtr(b bool) *bool {

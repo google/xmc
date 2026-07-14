@@ -99,11 +99,36 @@ message JobSetExecutable {
     optional bool publish_not_ready_addresses = 3;
   }
 
+  // Policy for determining when the JobSet has succeeded (`success_policy`).
+  message SuccessPolicy {
+    enum Operator {
+      OPERATOR_UNSPECIFIED = 0;
+      // All target replicated jobs must succeed for the JobSet to succeed.
+      ALL = 1;
+      // Any single target replicated job succeeding marks the JobSet as successful.
+      ANY = 2;
+    }
+    // Determines whether ALL or ANY of the target replicated jobs must succeed.
+    // Defaults to ALL when target_replicated_jobs is specified or when unspecified.
+    Operator operator = 1;
+
+    // Names of the KubernetesJobs (replicated jobs) that this policy applies to.
+    // If not set, applies to all jobs in the JobSet unless automatic defaulting triggers.
+    // For example, setting target_replicated_jobs to ["pathways-head"] with Operator ALL
+    // ensures the JobSet succeeds as soon as "pathways-head" succeeds, which signals the
+    // JobSet controller to clean up and terminate any background worker servers.
+    repeated string target_replicated_jobs = 2;
+  }
+
   // The Jobs that make up the JobSet.
   repeated KubernetesJob jobs = 1;
 
   // Network configuration for the JobSet (DNS hostnames, unready address publishing).
   Network network = 2;
+
+  // Success policy for the JobSet. If not specified, defaults to requiring all jobs to succeed,
+  // unless a known leader role like "pathways-head" is detected in jobs.
+  optional SuccessPolicy success_policy = 3;
 }
 
 // A KubernetesJob is a single Kubernetes Job that is run as part of a

@@ -284,6 +284,9 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 	if err := validateJobSetNetwork(wu.GetExecutable().GetJobset().GetNetwork()); err != nil {
 		return err
 	}
+	if err := validateJobSetSuccessPolicy(wu.GetExecutable().GetJobset().GetSuccessPolicy(), wu.GetExecutable().GetJobset().GetJobs()); err != nil {
+		return err
+	}
 	// This is a limitation of Kueue; see
 	// https://github.com/kubernetes-sigs/kueue/blob/bacde9cdbc87bef550bb559c5b81c8c7d001c58a/apis/kueue/v1beta1/workload_types.go#L42
 	if len(wu.GetExecutable().GetJobset().Jobs) < 1 {
@@ -521,6 +524,25 @@ func validateJobSetNetwork(net *essmsgpb.JobSetExecutable_Network) error {
 	if sub := net.GetSubdomain(); sub != "" {
 		if err := validateDNSLabel(sub, "work_unit.executable.jobset.network.subdomain"); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func validateJobSetSuccessPolicy(policy *essmsgpb.JobSetExecutable_SuccessPolicy, jobs []*essmsgpb.KubernetesJob) error {
+	if policy == nil {
+		return nil
+	}
+	jobNames := make(map[string]bool, len(jobs))
+	for _, j := range jobs {
+		jobNames[j.GetName()] = true
+	}
+	for i, target := range policy.GetTargetReplicatedJobs() {
+		if target == "" {
+			return fmt.Errorf("work_unit.executable.jobset.success_policy.target_replicated_jobs[%d] cannot be empty: %w", i, status.ErrInvalidArgument)
+		}
+		if !jobNames[target] {
+			return fmt.Errorf("work_unit.executable.jobset.success_policy.target_replicated_jobs[%d] %q does not match any job in work_unit.executable.jobset.jobs: %w", i, target, status.ErrInvalidArgument)
 		}
 	}
 	return nil

@@ -1666,6 +1666,51 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 	}
 }
 
+func createValidReqWithSuccessPolicy(policy *essmsgpb.JobSetExecutable_SuccessPolicy) *essapipb.CreateWorkUnitRequest {
+	return &essapipb.CreateWorkUnitRequest{
+		Parent: "experiments/123",
+		WorkUnit: &essmsgpb.WorkUnit{
+			Executable: &essmsgpb.Executable{
+				SchedulingConstraints: &essmsgpb.SchedulingConstraints{QueueName: "queue"},
+				Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+					SuccessPolicy: policy,
+					Jobs: []*essmsgpb.KubernetesJob{{
+						Name:     "pathways-head",
+						Replicas: 1,
+						Spec: &essmsgpb.ExecutableSpec{
+							DockerImage: "image",
+							Resources: &essmsgpb.ResourceSet{
+								Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{CpuMillicores: 1, MemoryBytes: 1}},
+							},
+						},
+					}},
+				}},
+			},
+			WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+		},
+	}
+}
+
+func TestValidateCreateWorkUnitRequest_SuccessPolicy(t *testing.T) {
+	tests := []struct {
+		name    string
+		policy  *essmsgpb.JobSetExecutable_SuccessPolicy
+		wantErr error
+	}{
+		{"valid_policy", &essmsgpb.JobSetExecutable_SuccessPolicy{Operator: essmsgpb.JobSetExecutable_SuccessPolicy_ALL, TargetReplicatedJobs: []string{"pathways-head"}}, nil},
+		{"empty_target", &essmsgpb.JobSetExecutable_SuccessPolicy{TargetReplicatedJobs: []string{""}}, status.ErrInvalidArgument},
+		{"unknown_job", &essmsgpb.JobSetExecutable_SuccessPolicy{TargetReplicatedJobs: []string{"non-existent"}}, status.ErrInvalidArgument},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateCreateWorkUnitRequest(createValidReqWithSuccessPolicy(tc.policy))
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateCreateWorkUnitRequest() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateCreateArtifactRequest(t *testing.T) {
 	tests := []struct {
 		name    string

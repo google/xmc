@@ -2267,3 +2267,55 @@ func TestShouldEnableJobSetNetwork_Conditions(t *testing.T) {
 	}
 }
 
+func TestBuildJobSetSuccessPolicy(t *testing.T) {
+	tests := []struct {
+		name string
+		wu   *esspb.WorkUnit
+		want *jobsetv1alpha2.SuccessPolicy
+	}{
+		{"nil_exec", &esspb.WorkUnit{}, &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAll}},
+		{"explicit_any", &esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{SuccessPolicy: &esspb.JobSetExecutable_SuccessPolicy{Operator: esspb.JobSetExecutable_SuccessPolicy_ANY, TargetReplicatedJobs: []string{"w"}}}}}}, &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAny, TargetReplicatedJobs: []string{"w"}}},
+		{"default_pathways", &esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{Jobs: []*esspb.KubernetesJob{{Name: "pathways-head"}, {Name: "workers"}}}}}}, &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAll, TargetReplicatedJobs: []string{"pathways-head"}}},
+		{"fallback_all", &esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{Jobs: []*esspb.KubernetesJob{{Name: "job1"}}}}}}, &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAll}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, buildJobSetSuccessPolicy(tc.wu)); diff != "" {
+				t.Errorf("buildJobSetSuccessPolicy() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestConstructJobSet_SuccessPolicy(t *testing.T) {
+	ctx, client, _ := setupTestClient(true, &alwaysPassingPreconditionsValidator{})
+	wu := &esspb.WorkUnit{
+		Executable: &esspb.Executable{
+			SchedulingConstraints: &esspb.SchedulingConstraints{QueueName: "test-queue"},
+			Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{
+				Jobs: []*esspb.KubernetesJob{{
+					Name:     "pathways-head",
+					Replicas: 1,
+					Spec: &esspb.ExecutableSpec{
+						DockerImage: "img",
+						Resources: &esspb.ResourceSet{
+							Resources: &esspb.ResourceSet_CpuResources{CpuResources: &esspb.CpuResources{CpuMillicores: 100, MemoryBytes: 1024}},
+						},
+					},
+				}},
+			}},
+		},
+	}
+	jobSet, err := client.constructJobSet(ctx, wu, "experiments/1/workUnits/1/executions/1", "user", "test-queue", time.Now(), Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() unexpected error: %v", err)
+	}
+	want := &jobsetv1alpha2.SuccessPolicy{
+		Operator:             jobsetv1alpha2.OperatorAll,
+		TargetReplicatedJobs: []string{"pathways-head"},
+	}
+	if diff := cmp.Diff(want, jobSet.Spec.SuccessPolicy); diff != "" {
+		t.Errorf("SuccessPolicy mismatch (-want +got):\n%s", diff)
+	}
+}
+
