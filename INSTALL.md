@@ -18,18 +18,18 @@ Use the form below to configure the variables used in this guide. Once entered, 
 
 | Variable | Description | Value |
 | :--- | :--- | :--- |
-| **GCP Project ID** | The ID of your Google Cloud Project. | <input value="[*PROJECT_ID?YOUR_PROJECT_ID*]"> |
-| **Region** | The GCP region for resources (e.g. us-central1). | <input value="[*REGION?us-central1*]"> |
-| **Environment** | Suffix for environment resource isolation (e.g. dev, prod). | <input value="[*ENVIRONMENT?dev*]"> |
-| **Domain Name** | Base DNS domain name for external endpoints. | <input value="[*DOMAIN_NAME?example.com*]"> |
-| **Image Tag** | The tag of the container images to deploy. | <input value="[*IMAGE_TAG?latest*]"> |
-| **Spanner Instance** | The ID of the Cloud Spanner instance. | <input value="[*SPANNER_INSTANCE_ID?xmc-instance*]"> |
-| **ESS Database** | The ID of the ESS Spanner database. | <input value="[*ESS_DATABASE_ID?ess*]"> |
-| **XID Database** | The ID of the XID Spanner database. | <input value="[*XID_DATABASE_ID?xid*]"> |
-| **Gateway External IP** | The external IP of the GKE Gateway (available after step 6). | <input value="[*GATEWAY_EXTERNAL_IP?YOUR_GATEWAY_IP*]"> |
-| **Deployment Name** | Unique prefix for resource naming. | <input value="[*DEPLOYMENT_NAME?xmc-deployment*]"> |
-| **Cluster Name** | The name of the GKE cluster. | <input value="[*CLUSTER_NAME?xmc-cluster*]"> |
-| **Deployment Config Path** | Path to your deployment configuration file. | <input value="[*DEPLOYMENT_CONFIG_PATH?deploy/ctk_v2/xmanager-cloud-deployment.yaml*]"> |
+| **GCP Project ID** | The ID of your Google Cloud Project. | [*PROJECT_ID?YOUR_PROJECT_ID*] |
+| **Region** | The GCP region for resources (e.g. us-central1). | [*REGION?us-central1*] |
+| **Environment** | Suffix for environment resource isolation (e.g. dev, prod). | [*ENVIRONMENT?dev*] |
+| **Domain Name** | Base DNS domain name for external endpoints. | [*DOMAIN_NAME?example.com*] |
+| **Image Tag** | The tag of the container images to deploy. | [*IMAGE_TAG?latest*] |
+| **Spanner Instance** | The ID of the Cloud Spanner instance. | [*SPANNER_INSTANCE_ID?xmc-instance*] |
+| **ESS Database** | The ID of the ESS Spanner database. | [*ESS_DATABASE_ID?ess*] |
+| **XID Database** | The ID of the XID Spanner database. | [*XID_DATABASE_ID?xid*] |
+| **Gateway External IP** | The external IP of the GKE Gateway (available after step 6). | [*GATEWAY_EXTERNAL_IP?YOUR_GATEWAY_IP*] |
+| **Deployment Name** | Unique prefix for resource naming. | [*DEPLOYMENT_NAME?xmc-deployment*] |
+| **Cluster Name** | The name of the GKE cluster. | [*CLUSTER_NAME?xmc-cluster*] |
+| **Deployment Config Path** | Path to your deployment configuration file. | [*DEPLOYMENT_CONFIG_PATH?deploy/ctk_v2/xmanager-cloud-deployment.yaml*] |
 
 ---
 
