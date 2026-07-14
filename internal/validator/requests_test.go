@@ -1077,6 +1077,38 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
+			name: "tpu_topology_invalid",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_TpuResources{TpuResources: &essmsgpb.TpuResources{
+												Type:     "tpu",
+												Topology: "invalid-topology",
+											}},
+										},
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
 			name: "valid_request",
 			req: &essapipb.CreateWorkUnitRequest{
 				Parent: "experiments/123",
@@ -2269,6 +2301,34 @@ func TestValidateJobSetNetwork(t *testing.T) {
 			err := validateJobSetNetwork(tc.network)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("validateJobSetNetwork() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateTPUTopology(t *testing.T) {
+	tests := []struct {
+		name     string
+		topology string
+		wantErr  bool
+	}{
+		{name: "valid 2x2", topology: "2x2", wantErr: false},
+		{name: "valid 2x2x4", topology: "2x2x4", wantErr: false},
+		{name: "valid 8x8", topology: "8x8", wantErr: false},
+		{name: "valid single dimension", topology: "4", wantErr: false},
+		{name: "empty topology", topology: "", wantErr: true},
+		{name: "invalid characters", topology: "abc", wantErr: true},
+		{name: "negative dimension", topology: "-2x2", wantErr: true},
+		{name: "zero dimension", topology: "0x4", wantErr: true},
+		{name: "trailing x", topology: "2x", wantErr: true},
+		{name: "leading x", topology: "x2", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateTPUTopology(tc.topology, "prefix")
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateTPUTopology(%q) error = %v, wantErr %v", tc.topology, err, tc.wantErr)
 			}
 		})
 	}

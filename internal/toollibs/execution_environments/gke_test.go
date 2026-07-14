@@ -44,8 +44,80 @@ func TestGKEDescription(t *testing.T) {
 
 func TestGKEIsCompatibleWithWorkUnit(t *testing.T) {
 	gke := &GKE{}
-	if ok, reason := gke.IsCompatibleWithWorkUnit(nil); !ok {
-		t.Errorf("IsCompatibleWithWorkUnit(nil) = false (reason: %s), want true", reason)
+	tests := []struct {
+		name       string
+		workUnit   *epb.WorkUnit
+		wantOK     bool
+		wantReason string
+	}{
+		{
+			name:     "nil work unit",
+			workUnit: nil,
+			wantOK:   true,
+		},
+		{
+			name:     "work unit without jobset",
+			workUnit: &epb.WorkUnit{},
+			wantOK:   true,
+		},
+		{
+			name: "work unit with valid TPU topology",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{Jobset: &epb.JobSetExecutable{
+						Jobs: []*epb.KubernetesJob{
+							{
+								Name: "job1",
+								Spec: &epb.ExecutableSpec{
+									Resources: &epb.ResourceSet{
+										Resources: &epb.ResourceSet_TpuResources{TpuResources: &epb.TpuResources{
+											Type:     "tpu-v6e-slice",
+											Topology: "2x2",
+										}},
+									},
+								},
+							},
+						},
+					}},
+				},
+			},
+			wantOK: true,
+		},
+		{
+			name: "work unit with invalid TPU topology",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{Jobset: &epb.JobSetExecutable{
+						Jobs: []*epb.KubernetesJob{
+							{
+								Name: "job1",
+								Spec: &epb.ExecutableSpec{
+									Resources: &epb.ResourceSet{
+										Resources: &epb.ResourceSet_TpuResources{TpuResources: &epb.TpuResources{
+											Type:     "tpu-v6e-slice",
+											Topology: "invalid",
+										}},
+									},
+								},
+							},
+						},
+					}},
+				},
+			},
+			wantOK: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, reason := gke.IsCompatibleWithWorkUnit(tc.workUnit)
+			if ok != tc.wantOK {
+				t.Errorf("IsCompatibleWithWorkUnit() ok = %v (reason: %s), want %v", ok, reason, tc.wantOK)
+			}
+			if !tc.wantOK && tc.wantReason != "" && reason != tc.wantReason {
+				t.Errorf("IsCompatibleWithWorkUnit() reason = %q, want %q", reason, tc.wantReason)
+			}
+		})
 	}
 }
 
