@@ -245,6 +245,7 @@ def run_command(
     cmd: list[str],
     env: Optional[dict[str, str]] = None,
     capture_output: bool = False,
+    log_on_error: bool = True,
 ) -> subprocess.CompletedProcess:
   """Helper to run shell commands.
 
@@ -252,6 +253,7 @@ def run_command(
       cmd: The command to run as a list of strings.
       env: Optional environment variables to merge with current env.
       capture_output: Whether to capture stdout/stderr.
+      log_on_error: Whether to log errors to stderr on failure.
 
   Returns:
       A subprocess.CompletedProcess object.
@@ -275,11 +277,12 @@ def run_command(
     )
     return result
   except subprocess.CalledProcessError as e:
-    log_error(f"Command failed: {' '.join(cmd)}")
-    if e.stdout:
-      log_error(f"Captured Stdout:\n{e.stdout}")
-    if e.stderr:
-      log_error(f"Captured Stderr:\n{e.stderr}")
+    if log_on_error:
+      log_error(f"Command failed: {' '.join(cmd)}")
+      if e.stdout:
+        log_error(f"Captured Stdout:\n{e.stdout}")
+      if e.stderr:
+        log_error(f"Captured Stderr:\n{e.stderr}")
     # Re-raise to be caught by the orchestrator for error reporting
     raise e
 
@@ -419,6 +422,7 @@ def _dns_transaction_abort(dns_project: str, dns_zone: str) -> None:
             f"--project={dns_project}",
         ],
         capture_output=True,
+        log_on_error=False,
     )
   except subprocess.CalledProcessError:
     pass  # Ignore if no transaction was active
@@ -473,24 +477,21 @@ def _dns_get_existing_ip(
   Returns:
       The existing IP address as a string, or empty string if not found.
   """
-  try:
-    out = run_command(
-        [
-            "gcloud",
-            "dns",
-            "record-sets",
-            "list",
-            f"--zone={dns_zone}",
-            f"--project={dns_project}",
-            f"--name={subdomain}",
-            "--type=A",
-            "--format=value(rrdatas)",
-        ],
-        capture_output=True,
-    ).stdout.strip()
-    return out
-  except subprocess.CalledProcessError:
-    return ""
+  out = run_command(
+      [
+          "gcloud",
+          "dns",
+          "record-sets",
+          "list",
+          f"--zone={dns_zone}",
+          f"--project={dns_project}",
+          f"--name={subdomain}",
+          "--type=A",
+          "--format=value(rrdatas)",
+      ],
+      capture_output=True,
+  ).stdout.strip()
+  return out
 
 
 def _dns_add_record(
@@ -903,6 +904,7 @@ def _wait_for_cert_active(project_id: str, cert_name: str) -> None:
               "--format=value(managed.state)",
           ],
           capture_output=True,
+          log_on_error=False,
       ).stdout.strip()
     except subprocess.CalledProcessError as e:
       # If it's a "NOT_FOUND" error, we assume it's transient (not created yet)
@@ -955,7 +957,11 @@ def step_verify(
       "PROJECT_ID": config["project_id"],
   }
   try:
-    run_command(["bash", "./deploy/ctk_v2/verify_xmc.sh"], env=env_vars)
+    run_command(
+        ["bash", "./deploy/ctk_v2/verify_xmc.sh"],
+        env=env_vars,
+        log_on_error=False,
+    )
   except subprocess.CalledProcessError:
     print("Diagnostic script reported warnings.")
 

@@ -351,6 +351,7 @@ key5: "value5" # trailing comment with quotes
             f"--project={self.dns_project}",
         ],
         capture_output=True,
+        log_on_error=False,
     )
 
   @patch(
@@ -397,11 +398,11 @@ key5: "value5" # trailing comment with quotes
     )
     self.assertEqual(ip, "1.2.3.4")
 
-  @patch(
-      "deploy_dev_env.run_command",
-      side_effect=subprocess.CalledProcessError(1, "cmd"),
-  )
+  @patch("deploy_dev_env.run_command")
   def test_dns_get_existing_ip_not_found(self, mock_run):
+    mock_res = MagicMock()
+    mock_res.stdout = ""
+    mock_run.return_value = mock_res
     ip = deploy_dev_env._dns_get_existing_ip(
         "dev.example.com.", self.dns_project, self.dns_zone
     )
@@ -489,6 +490,7 @@ key5: "value5" # trailing comment with quotes
             f"--project={self.dns_project}",
         ],
         capture_output=True,
+        log_on_error=False,
     )
 
   @patch("deploy_dev_env.run_command")
@@ -895,7 +897,7 @@ key5: "value5" # trailing comment with quotes
         '--project=my-project',
     ])
     mock_run.assert_any_call(
-        ['bash', './deploy/ctk_v2/verify_xmc.sh'], env=ANY
+        ['bash', './deploy/ctk_v2/verify_xmc.sh'], env=ANY, log_on_error=False
     )
     mock_run.assert_any_call([
         'kubectl',
@@ -914,7 +916,7 @@ key5: "value5" # trailing comment with quotes
         'xmc-cert-dev',
         '--project=my-project',
         '--format=value(managed.state)',
-    ], capture_output=True)
+    ], capture_output=True, log_on_error=False)
 
   @patch("deploy_dev_env.run_command")
   def test_wait_for_gateway_programmed_success(self, mock_run):
