@@ -25,7 +25,7 @@ import {
   setPageSize,
 } from 'xmanager_cloud/ui/app/common/pagination/pagination';
 import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
-import { FeatureFlagService } from 'xmanager_cloud/ui/app/service/feature_flag_service';
+
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 
 /** State for the experiments list page. */
@@ -59,7 +59,7 @@ export const INITIAL_STATE: ExperimentsListPageState = {
 export class ExperimentsListPageStore extends ComponentStore<ExperimentsListPageState> {
   private readonly service = inject(ExperimentService);
   private readonly snackbarService = inject(SnackbarService);
-  private readonly featureFlagService = inject(FeatureFlagService);
+
 
   constructor() {
     super(INITIAL_STATE);
@@ -91,16 +91,11 @@ export class ExperimentsListPageStore extends ComponentStore<ExperimentsListPage
   }));
 
   /** Sets the orderBy. It does not fetch data. */
-  readonly setOrderBy = this.updater((state, orderBy: string) => {
-    const setPagination = this.featureFlagService.isCursorPaginationEnabled
-      ? { pagination: getInitialPaginationState(state.pagination.pageSize) }
-      : {};
-    return {
-      ...state,
-      orderBy,
-      ...setPagination,
-    };
-  });
+  readonly setOrderBy = this.updater((state, orderBy: string) => ({
+    ...state,
+    orderBy,
+    pagination: getInitialPaginationState(state.pagination.pageSize),
+  }));
 
   /** Sets the page size. It does not fetch data. */
   readonly setPageSize = this.updater((state, pageSize: number) => setPageSize(state, pageSize));

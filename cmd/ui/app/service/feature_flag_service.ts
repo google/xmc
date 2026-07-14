@@ -32,13 +32,6 @@ export class FeatureFlagService {
   }
 
   /**
-   * Returns whether cursor pagination is enabled.
-   */
-  get isCursorPaginationEnabled(): boolean {
-    return this.isFeatureEnabled('cursorPaginationEnabled');
-  }
-
-  /**
    * Returns whether status message history is enabled.
    */
   get isStatusMessageHistoryEnabled(): boolean {

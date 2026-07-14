@@ -51,7 +51,7 @@ func TestListExperiments(t *testing.T) {
 	}
 
 	// List all experiments.
-	gotExperiments, _, err := storage.ListExperiments(ctx, 10, "", "", "", 0, true)
+	gotExperiments, _, err := storage.ListExperiments(ctx, 10, "", "", "", 0)
 	if err != nil {
 		t.Fatalf("ListExperiments failed: %v", err)
 	}
@@ -77,39 +77,7 @@ func TestListExperiments(t *testing.T) {
 	}
 }
 
-func TestListExperiments_OffsetPagination(t *testing.T) {
-	ctx := context.Background()
-	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
-
-	// Create some experiments.
-	for i := 1; i < 6; i++ {
-		createBlankExperiment(ctx, t, storage, int64(i))
-	}
-
-	// List first page.
-	gotExperiments1, nextPageToken, err := storage.ListExperiments(ctx, 3, "", "", "xid", 0, false)
-	if err != nil {
-		t.Fatalf("ListExperiments failed: %v", err)
-	}
-	if len(gotExperiments1) != 3 {
-		t.Errorf("ListExperiments page 1 returned %d experiments, want 3", len(gotExperiments1))
-	}
-	if nextPageToken == "" {
-		t.Errorf("ListExperiments page 1 returned empty nextPageToken, want non-empty")
-	}
-
-	// List second page.
-	gotExperiments2, _, err := storage.ListExperiments(ctx, 3, nextPageToken, "", "xid", 0, false)
-	if err != nil {
-		t.Fatalf("ListExperiments failed: %v", err)
-	}
-	if len(gotExperiments2) != 2 {
-		t.Errorf("ListExperiments page 2 returned %d experiments, want 2", len(gotExperiments2))
-	}
-}
-
-func TestListExperiments_CursorPagination(t *testing.T) {
+func TestListExperiments_Pagination(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
 	storage, _ := NewStorage(essClient)
@@ -133,7 +101,7 @@ func TestListExperiments_CursorPagination(t *testing.T) {
 			var gotCounts []int
 			var pageToken string
 			for i := 0; i < len(tc.wantCounts); i++ {
-				experiments, nextPageToken, err := storage.ListExperiments(ctx, int32(tc.pageSize), pageToken, "", "xid", 0, true)
+				experiments, nextPageToken, err := storage.ListExperiments(ctx, int32(tc.pageSize), pageToken, "", "xid", 0)
 				if err != nil {
 					t.Fatalf("ListExperiments failed: %v", err)
 				}
@@ -172,7 +140,7 @@ func TestListExperiments_Filter(t *testing.T) {
 	createAndStoreExperiment(ctx, t, storage, exp2)
 
 	// List with filter.
-	gotExperiments, _, err := storage.ListExperiments(ctx, 10, "", "creator=\"creator-1\"", "", 0, true)
+	gotExperiments, _, err := storage.ListExperiments(ctx, 10, "", "creator=\"creator-1\"", "", 0)
 	if err != nil {
 		t.Fatalf("ListExperiments failed: %v", err)
 	}
@@ -199,7 +167,7 @@ func TestListExperiments_OrderBy(t *testing.T) {
 	}
 
 	// List with orderBy xid desc.
-	gotExperiments, _, err := storage.ListExperiments(ctx, 10, "", "", "xid desc", 0, true)
+	gotExperiments, _, err := storage.ListExperiments(ctx, 10, "", "", "xid desc", 0)
 	if err != nil {
 		t.Fatalf("ListExperiments failed: %v", err)
 	}
@@ -245,7 +213,7 @@ func TestListExperiments_Complex(t *testing.T) {
 	orderBy := "created desc"
 	pageSize := int32(2)
 
-	gotPage1, page1Token, err := storage.ListExperiments(ctx, pageSize, "", filter, orderBy, 0, true)
+	gotPage1, page1Token, err := storage.ListExperiments(ctx, pageSize, "", filter, orderBy, 0)
 	if err != nil {
 		t.Fatalf("ListExperiments page 1 failed: %v", err)
 	}
@@ -263,7 +231,7 @@ func TestListExperiments_Complex(t *testing.T) {
 	}
 
 	// List page 2.
-	gotPage2, page2Token, err := storage.ListExperiments(ctx, pageSize, page1Token, filter, orderBy, 0, true)
+	gotPage2, page2Token, err := storage.ListExperiments(ctx, pageSize, page1Token, filter, orderBy, 0)
 	if err != nil {
 		t.Fatalf("ListExperiments page 2 failed: %v", err)
 	}
@@ -325,7 +293,7 @@ func TestListExperiments_FilterFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotExperiments, _, err := storage.ListExperiments(ctx, 10, "", tc.filter, "xid", 0, true)
+			gotExperiments, _, err := storage.ListExperiments(ctx, 10, "", tc.filter, "xid", 0)
 			if err != nil {
 				t.Fatalf("ListExperiments failed: %v", err)
 			}
@@ -368,7 +336,7 @@ func TestListExperiments_OrderByFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotExperiments, _, err := storage.ListExperiments(ctx, 10, "", "", tc.orderBy, 0, true)
+			gotExperiments, _, err := storage.ListExperiments(ctx, 10, "", "", tc.orderBy, 0)
 			if err != nil {
 				t.Fatalf("ListExperiments failed: %v", err)
 			}

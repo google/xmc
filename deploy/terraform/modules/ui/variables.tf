@@ -55,11 +55,6 @@ variable "refresh_interval_ms" {
   default     = "30000"
 }
 
-variable "enable_cursor_pagination" {
-  description = "If true, the UI will use cursor pagination, offset pagination otherwise."
-  type        = bool
-  default     = false
-}
 
 variable "enable_status_message_history" {
   description = "If true, the UI will display status message history tab."

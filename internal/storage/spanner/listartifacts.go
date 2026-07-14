@@ -29,7 +29,7 @@ import (
 )
 
 // ListArtifacts returns a paginated list of Artifact protos based on the provided filter and order.
-func (s *Storage) ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration, defaultToCursorPagination bool) ([]*essmsgpb.Artifact, string, error) {
+func (s *Storage) ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.Artifact, string, error) {
 	logging.Info(ctx, "List artifacts", "pageSize", pageSize, "pageToken", pageToken, "filter", filter, "orderBy", orderBy, "staleness", staleness)
 
 	// 1. Ensure the results are filtered to the artifact's parent if present.
@@ -69,12 +69,11 @@ func (s *Storage) ListArtifacts(ctx context.Context, parent string, pageSize int
 		ValidOrderByFields:    artifactschema.ArtifactsOrderByFields,
 	}
 
-	isCursor, err := listParams.DecodePageToken(pageToken, defaultToCursorPagination)
-	if err != nil {
+	if err := listParams.DecodePageToken(pageToken); err != nil {
 		return nil, "", err
 	}
 
-	stmt, pageOffset, err := ls.ListStatement(ctx, listParams)
+	stmt, err := ls.ListStatement(ctx, listParams)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
@@ -102,7 +101,7 @@ func (s *Storage) ListArtifacts(ctx context.Context, parent string, pageSize int
 	}
 
 	// 5. If there are more results than the page size, return the next page token.
-	artifacts, nextPageToken, err := ls.ApplyPagination(artifacts, pageSize, pageOffset, isCursor, extractArtifactCursor)
+	artifacts, nextPageToken, err := ls.ApplyPagination(artifacts, pageSize, extractArtifactCursor)
 	if err != nil {
 		return nil, "", err
 	}
@@ -136,6 +135,19 @@ func extractArtifactCursor(artifact *essmsgpb.Artifact) (map[string]any, error) 
 	if artifact.UpdateTime != nil {
 		cursor["updated"] = artifact.UpdateTime.AsTime()
 	}
+	var displayName string
+	if artifact.GetUrl() != nil {
+		displayName = artifact.GetUrl().GetDisplayName()
+	}
+	cursor["display_name"] = displayName
+
+	var priority int64
+	if artifact.GetPriority() != 0 {
+		priority = int64(artifact.GetPriority())
+	} else if artifact.GetUrl() != nil {
+		priority = int64(artifact.GetUrl().GetPriority())
+	}
+	cursor["priority"] = priority
 
 	return cursor, nil
 }

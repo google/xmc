@@ -46,7 +46,7 @@ func TestListWorkUnits(t *testing.T) {
 	}
 
 	// List all work units
-	gotWorkUnits, _, err := storage.ListWorkUnits(ctx, exp.GetName(), 10, "", "", "", 0, false)
+	gotWorkUnits, _, err := storage.ListWorkUnits(ctx, exp.GetName(), 10, "", "", "", 0)
 	if err != nil {
 		t.Fatalf("ListWorkUnits failed: %v", err)
 	}
@@ -70,54 +70,7 @@ func TestListWorkUnits(t *testing.T) {
 	}
 }
 
-func TestListWorkUnits_OffsetPagination(t *testing.T) {
-	ctx := context.Background()
-	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
-
-	// Create one experiment and some work units for it.
-	xid := int64(2)
-	exp := createBlankExperiment(ctx, t, storage, xid)
-	for i := 0; i < 5; i++ {
-		createBlankWorkUnit(ctx, t, storage, xid, int64(i+1))
-	}
-
-	tests := []struct {
-		pageSize   int
-		wantCounts []int
-	}{
-		{3, []int{3, 2}},
-		{5, []int{5}},
-		{6, []int{5}},
-		{1, []int{1, 1, 1, 1, 1}},
-	}
-
-	for _, tc := range tests {
-		t.Run(fmt.Sprintf("pageSize=%d", tc.pageSize), func(t *testing.T) {
-			var gotCounts []int
-			var pageToken string
-			for i := 0; i < 10; i++ { // Limit iterations to avoid infinite loops.
-				workUnits, nextPageToken, err := storage.ListWorkUnits(ctx, exp.GetName(), int32(tc.pageSize), pageToken, "", "created", 0, false)
-				if err != nil {
-					t.Fatalf("ListWorkUnits failed: %v", err)
-				}
-				gotCounts = append(gotCounts, len(workUnits))
-				pageToken = nextPageToken
-				if nextPageToken == "" {
-					break
-				}
-			}
-			if diff := cmp.Diff(tc.wantCounts, gotCounts); diff != "" {
-				t.Errorf("ListWorkUnits returned unexpected page counts (-want +got):\n%s", diff)
-			}
-		})
-	}
-}
-
-func TestListWorkUnits_CursorPagination(t *testing.T) {
+func TestListWorkUnits_Pagination(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
 	storage, err := NewStorage(essClient)
@@ -146,7 +99,7 @@ func TestListWorkUnits_CursorPagination(t *testing.T) {
 			var gotCounts []int
 			var pageToken string
 			for i := 0; i < len(tc.wantCounts); i++ {
-				workUnits, nextPageToken, err := storage.ListWorkUnits(ctx, exp.GetName(), int32(tc.pageSize), pageToken, "", "created", 0, true)
+				workUnits, nextPageToken, err := storage.ListWorkUnits(ctx, exp.GetName(), int32(tc.pageSize), pageToken, "", "created", 0)
 				if err != nil {
 					t.Fatalf("ListWorkUnits failed: %v", err)
 				}
@@ -202,7 +155,7 @@ func TestListWorkUnits_Filter(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.filter, func(t *testing.T) {
-			gotWorkUnits, _, err := storage.ListWorkUnits(ctx, exp.GetName(), 10, "", tc.filter, "", 0, false)
+			gotWorkUnits, _, err := storage.ListWorkUnits(ctx, exp.GetName(), 10, "", tc.filter, "", 0)
 			if err != nil {
 				t.Fatalf("ListWorkUnits failed: %v", err)
 			}
@@ -245,7 +198,7 @@ func TestListWorkUnits_OrderBy(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.orderBy, func(t *testing.T) {
-			gotWorkUnits, _, err := storage.ListWorkUnits(ctx, exp.GetName(), 10, "", "", tc.orderBy, 0, false)
+			gotWorkUnits, _, err := storage.ListWorkUnits(ctx, exp.GetName(), 10, "", "", tc.orderBy, 0)
 			if err != nil {
 				t.Fatalf("ListWorkUnits failed: %v", err)
 			}
@@ -279,7 +232,7 @@ func TestListWorkUnits_ParentFiltering(t *testing.T) {
 	createBlankWorkUnit(ctx, t, storage, xid2, 1)
 
 	// List work units for exp1.
-	gotWorkUnits, _, err := storage.ListWorkUnits(ctx, exp1.GetName(), 10, "", "", "", 0, false)
+	gotWorkUnits, _, err := storage.ListWorkUnits(ctx, exp1.GetName(), 10, "", "", "", 0)
 	if err != nil {
 		t.Fatalf("ListWorkUnits failed: %v", err)
 	}
@@ -303,7 +256,7 @@ func TestListWorkUnits_InvalidParent(t *testing.T) {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
 
-	_, _, err = storage.ListWorkUnits(ctx, "invalid-parent", 10, "", "", "", 0, false)
+	_, _, err = storage.ListWorkUnits(ctx, "invalid-parent", 10, "", "", "", 0)
 	if err == nil {
 		t.Errorf("ListWorkUnits with invalid parent succeeded, want error")
 	}

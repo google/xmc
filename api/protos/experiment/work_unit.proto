@@ -78,8 +78,32 @@ message Executable {
 // A JobSetExecutable is a collection of KubernetesJobs that are run together
 // as a JobSet resource.
 message JobSetExecutable {
+  // Network configuration for the JobSet (`network`).
+  message Network {
+    // Whether to enable DNS hostnames for pods in the JobSet
+    // (`network.enableDNSHostnames`).
+    // When true, the JobSet controller provisions a Headless Service so pods
+    // can discover and communicate with each other using deterministic FQDNs:
+    // <jobset-name>-<replicated-job-name>-<job-index>-<pod-index>.<subdomain>
+    optional bool enable_dns_hostnames = 1;
+
+    // Custom subdomain name for the JobSet Headless Service
+    // (`network.subdomain`).
+    // If omitted and enable_dns_hostnames is true, defaults to the JobSet name.
+    string subdomain = 2;
+
+    // Whether to publish DNS records for pods before they become Ready
+    // (`network.publishNotReadyAddresses`).
+    // Critical for multi-pod/distributed rendezvous (PyTorch DDP, JAX, MPI)
+    // so worker pods can resolve each other during container initialization.
+    optional bool publish_not_ready_addresses = 3;
+  }
+
   // The Jobs that make up the JobSet.
   repeated KubernetesJob jobs = 1;
+
+  // Network configuration for the JobSet (DNS hostnames, unready address publishing).
+  Network network = 2;
 }
 
 // A KubernetesJob is a single Kubernetes Job that is run as part of a

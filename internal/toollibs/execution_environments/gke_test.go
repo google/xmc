@@ -262,6 +262,10 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 					},
 				},
 				Spec: jobsetv1alpha2.JobSetSpec{
+					Network: &jobsetv1alpha2.Network{
+						EnableDNSHostnames:       proto.Bool(true),
+						PublishNotReadyAddresses: proto.Bool(true),
+					},
 					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
 						{
 							Name: "test-job",
@@ -359,6 +363,10 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 					},
 				},
 				Spec: jobsetv1alpha2.JobSetSpec{
+					Network: &jobsetv1alpha2.Network{
+						EnableDNSHostnames:       proto.Bool(true),
+						PublishNotReadyAddresses: proto.Bool(true),
+					},
 					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
 						{
 							Name: "test-job",
@@ -1048,3 +1056,124 @@ func TestAnnotateContainersInitContainerErrorNoPartialMutation(t *testing.T) {
 		t.Errorf("expected main container resources to remain unmutated after init container error, got %v", replicatedJob.Template.Spec.Template.Spec.Containers[0].Resources.Requests)
 	}
 }
+
+func TestInjectOnJobSetCreation_NetworkInjectionTPUMultiHost(t *testing.T) {
+	g := &GKE{}
+	workUnit := &epb.WorkUnit{
+		Executable: &epb.Executable{
+			Type: &epb.Executable_Jobset{
+				Jobset: &epb.JobSetExecutable{
+					Jobs: []*epb.KubernetesJob{
+						{
+							Name: "tpu-job",
+							Spec: &epb.ExecutableSpec{
+								Resources: &epb.ResourceSet{
+									Resources: &epb.ResourceSet_TpuResources{
+										TpuResources: &epb.TpuResources{
+											Type:     "tpu-v5-lite-podslice",
+											Topology: "2x4",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	jobSet := &jobsetv1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-jobset"},
+		Spec: jobsetv1alpha2.JobSetSpec{
+			ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+				{
+					Name: "tpu-job",
+					Template: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers: []corev1.Container{{Name: "main"}},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := g.InjectOnJobSetCreation(context.Background(), workUnit, jobSet)
+	if err != nil {
+		t.Fatalf("InjectOnJobSetCreation() returned error: %v", err)
+	}
+
+	if got.Spec.Network == nil {
+		t.Fatalf("Expected Spec.Network to be injected for multi-host TPU slice, got nil")
+	}
+	if got.Spec.Network.EnableDNSHostnames == nil || !*got.Spec.Network.EnableDNSHostnames {
+		t.Errorf("Expected EnableDNSHostnames to be true, got %v", got.Spec.Network.EnableDNSHostnames)
+	}
+	if got.Spec.Network.Subdomain != "test-jobset" {
+		t.Errorf("Subdomain mismatch: got %q, want %q", got.Spec.Network.Subdomain, "test-jobset")
+	}
+}
+
+func TestInjectOnJobSetCreation_NetworkInjectionGPUMultiNode(t *testing.T) {
+	g := &GKE{}
+	workUnit := &epb.WorkUnit{
+		Executable: &epb.Executable{
+			Type: &epb.Executable_Jobset{
+				Jobset: &epb.JobSetExecutable{
+					Jobs: []*epb.KubernetesJob{
+						{
+							Name: "gpu-job",
+							Spec: &epb.ExecutableSpec{
+								Resources: &epb.ResourceSet{
+									Resources: &epb.ResourceSet_GpuResources{
+										GpuResources: &epb.GpuResources{
+											Type:  "T4",
+											Count: 8,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	jobSet := &jobsetv1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-gpu-jobset"},
+		Spec: jobsetv1alpha2.JobSetSpec{
+			ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+				{
+					Name:     "gpu-job",
+					Replicas: 2,
+					Template: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers: []corev1.Container{{Name: "main"}},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := g.InjectOnJobSetCreation(context.Background(), workUnit, jobSet)
+	if err != nil {
+		t.Fatalf("InjectOnJobSetCreation() returned error: %v", err)
+	}
+
+	if got.Spec.Network == nil {
+		t.Fatalf("Expected Spec.Network to be injected for multi-node GPU job, got nil")
+	}
+	if got.Spec.Network.EnableDNSHostnames == nil || !*got.Spec.Network.EnableDNSHostnames {
+		t.Errorf("Expected EnableDNSHostnames to be true, got %v", got.Spec.Network.EnableDNSHostnames)
+	}
+}
+

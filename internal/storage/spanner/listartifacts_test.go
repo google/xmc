@@ -51,7 +51,7 @@ func TestListArtifacts(t *testing.T) {
 	}
 
 	// List all artifacts
-	gotArtifacts, _, err := storage.ListArtifacts(ctx, "", 10, "", "", "", 0, false)
+	gotArtifacts, _, err := storage.ListArtifacts(ctx, "", 10, "", "", "", 0)
 	if err != nil {
 		t.Fatalf("ListArtifacts failed: %v", err)
 	}
@@ -77,45 +77,7 @@ func TestListArtifacts(t *testing.T) {
 	}
 }
 
-func TestListArtifacts_OffsetPagination(t *testing.T) {
-	ctx := context.Background()
-	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
-
-	// Create parent experiment
-	createAndStoreExperiment(ctx, t, storage, blankExperimentProto(1))
-
-	// Create some artifacts
-	for i := 1; i < 6; i++ {
-		createAndStoreArtifact(ctx, t, storage, blankArtifactProto(1, int64(i)))
-	}
-
-	// List first page
-	gotArtifacts1, nextPageToken, err := storage.ListArtifacts(ctx, "", 3, "", "", "artifact_id", 0, false)
-	if err != nil {
-		t.Fatalf("ListArtifacts failed: %v", err)
-	}
-	if len(gotArtifacts1) != 3 {
-		t.Errorf("ListArtifacts page 1 returned %d artifacts, want 3", len(gotArtifacts1))
-	}
-	if nextPageToken == "" {
-		t.Errorf("ListArtifacts page 1 returned empty nextPageToken, want non-empty")
-	}
-
-	// List second page
-	gotArtifacts2, _, err := storage.ListArtifacts(ctx, "", 3, nextPageToken, "", "artifact_id", 0, false)
-	if err != nil {
-		t.Fatalf("ListArtifacts failed: %v", err)
-	}
-	if len(gotArtifacts2) != 2 {
-		t.Errorf("ListArtifacts page 2 returned %d artifacts, want 2", len(gotArtifacts2))
-	}
-}
-
-func TestListArtifacts_CursorPagination(t *testing.T) {
+func TestListArtifacts_Pagination(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
 	storage, err := NewStorage(essClient)
@@ -145,7 +107,7 @@ func TestListArtifacts_CursorPagination(t *testing.T) {
 			var gotCounts []int
 			var pageToken string
 			for i := 0; i < len(tc.wantCounts); i++ {
-				artifacts, nextPageToken, err := storage.ListArtifacts(ctx, "", int32(tc.pageSize), pageToken, "", "artifact_id", 0, true)
+				artifacts, nextPageToken, err := storage.ListArtifacts(ctx, "", int32(tc.pageSize), pageToken, "", "artifact_id", 0)
 				if err != nil {
 					t.Fatalf("ListArtifacts failed: %v", err)
 				}
@@ -188,7 +150,7 @@ func TestListArtifacts_Filter(t *testing.T) {
 	createAndStoreArtifact(ctx, t, storage, art2)
 
 	// List with filter
-	gotArtifacts, _, err := storage.ListArtifacts(ctx, "", 10, "", `display_name="display-1"`, "", 0, false)
+	gotArtifacts, _, err := storage.ListArtifacts(ctx, "", 10, "", `display_name="display-1"`, "", 0)
 	if err != nil {
 		t.Fatalf("ListArtifacts failed: %v", err)
 	}
@@ -222,7 +184,7 @@ func TestListArtifacts_OrderBy(t *testing.T) {
 	}
 
 	// List with orderBy priority desc
-	gotArtifacts, _, err := storage.ListArtifacts(ctx, "", 10, "", "", "priority desc", 0, false)
+	gotArtifacts, _, err := storage.ListArtifacts(ctx, "", 10, "", "", "priority desc", 0)
 	if err != nil {
 		t.Fatalf("ListArtifacts failed: %v", err)
 	}
@@ -274,7 +236,7 @@ func TestListArtifacts_Complex(t *testing.T) {
 	orderBy := "display_name desc"
 	pageSize := int32(2)
 
-	gotPage1, page1Token, err := storage.ListArtifacts(ctx, "", pageSize, "", filter, orderBy, 0, false)
+	gotPage1, page1Token, err := storage.ListArtifacts(ctx, "", pageSize, "", filter, orderBy, 0)
 	if err != nil {
 		t.Fatalf("ListArtifacts page 1 failed: %v", err)
 	}
@@ -292,7 +254,7 @@ func TestListArtifacts_Complex(t *testing.T) {
 	}
 
 	// List page 2
-	gotPage2, page2Token, err := storage.ListArtifacts(ctx, "", pageSize, page1Token, filter, orderBy, 0, false)
+	gotPage2, page2Token, err := storage.ListArtifacts(ctx, "", pageSize, page1Token, filter, orderBy, 0)
 	if err != nil {
 		t.Fatalf("ListArtifacts page 2 failed: %v", err)
 	}
@@ -353,7 +315,7 @@ func TestListArtifacts_FilterFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotArtifacts, _, err := storage.ListArtifacts(ctx, "", 10, "", tc.filter, "artifact_id", 0, false)
+			gotArtifacts, _, err := storage.ListArtifacts(ctx, "", 10, "", tc.filter, "artifact_id", 0)
 			if err != nil {
 				t.Fatalf("ListArtifacts failed: %v", err)
 			}
@@ -402,7 +364,7 @@ func TestListArtifacts_OrderByFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotArtifacts, _, err := storage.ListArtifacts(ctx, "", 10, "", "", tc.orderBy, 0, false)
+			gotArtifacts, _, err := storage.ListArtifacts(ctx, "", 10, "", "", tc.orderBy, 0)
 			if err != nil {
 				t.Fatalf("ListArtifacts failed: %v", err)
 			}
@@ -442,6 +404,32 @@ func TestExtractArtifactCursor(t *testing.T) {
 				"artifact_id":  int64(456),
 				"created":      now,
 				"updated":      now,
+				"display_name": "",
+				"priority":     int64(0),
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid_artifact_with_url_and_priority",
+			artifact: &essmsgpb.Artifact{
+				Name:       "artifacts/456",
+				Parent:     "experiments/123/workUnits/1",
+				CreateTime: nowProto,
+				UpdateTime: nowProto,
+				Url: &essmsgpb.Url{
+					DisplayName: "test-display",
+					Priority:    10,
+				},
+				Priority: 5,
+			},
+			want: map[string]any{
+				"xid":          int64(123),
+				"work_unit_id": int64(1),
+				"artifact_id":  int64(456),
+				"created":      now,
+				"updated":      now,
+				"display_name": "test-display",
+				"priority":     int64(5),
 			},
 			wantErr: false,
 		},
@@ -459,6 +447,8 @@ func TestExtractArtifactCursor(t *testing.T) {
 				"artifact_id":  int64(456),
 				"created":      now,
 				"updated":      now,
+				"display_name": "",
+				"priority":     int64(0),
 			},
 			wantErr: false,
 		},
@@ -472,6 +462,8 @@ func TestExtractArtifactCursor(t *testing.T) {
 				"xid":          int64(123),
 				"work_unit_id": int64(0),
 				"artifact_id":  int64(456),
+				"display_name": "",
+				"priority":     int64(0),
 			},
 			wantErr: false,
 		},

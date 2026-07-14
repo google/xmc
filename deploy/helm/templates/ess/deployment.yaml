@@ -143,7 +143,6 @@ spec:
         - "-ess_signature_ttl_seconds={{ .Values.taskSignatureTtlSeconds }}"
         - "-ess_allowed_origins={{ .Values.experimentStateServer.allowedOrigins }}"
         - "-alsologtostderr"
-        - "-ess_default_to_cursor_pagination={{ .Values.defaultToCursorPagination }}"
         - "-ess_status_message_history_enabled={{ .Values.statusMessageHistoryEnabled }}"
         - "-redis_addr={{ .Values.redisAddr }}"
         # Flags to disable internalVCSdependencies.

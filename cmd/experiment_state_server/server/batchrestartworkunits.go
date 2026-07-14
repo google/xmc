@@ -61,7 +61,7 @@ func (s *Server) BatchRestartWorkUnits(ctx context.Context, req *apipb.BatchRest
 	}
 
 	// 4. Get the list of work units to restart.
-	workUnits, _, err := s.storage.ListWorkUnits(ctx, req.GetParent(), math.MaxInt32, "", req.GetFilter(), "", 0, s.cfg.DefaultToCursorPagination)
+	workUnits, _, err := s.storage.ListWorkUnits(ctx, req.GetParent(), math.MaxInt32, "", req.GetFilter(), "", 0)
 	if err != nil {
 		logging.Error(ctx, "Failed to list work units", "error", err, "filter", req.GetFilter())
 		return nil, fmt.Errorf("failed to list work units: %w (%v)", status.ErrInternal, err)

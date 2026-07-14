@@ -2194,3 +2194,48 @@ func TestValidateContainerNamesUnique_ResolvedSidecarName(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateJobSetNetwork(t *testing.T) {
+	tests := []struct {
+		name    string
+		network *essmsgpb.JobSetExecutable_Network
+		wantErr bool
+	}{
+		{
+			name:    "nil network",
+			network: nil,
+			wantErr: false,
+		},
+		{
+			name: "valid subdomain",
+			network: &essmsgpb.JobSetExecutable_Network{
+				Subdomain: "valid-subdomain-123",
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid subdomain with uppercase",
+			network: &essmsgpb.JobSetExecutable_Network{
+				Subdomain: "Invalid-Subdomain",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid subdomain with special characters",
+			network: &essmsgpb.JobSetExecutable_Network{
+				Subdomain: "invalid_subdomain",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateJobSetNetwork(tc.network)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateJobSetNetwork() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+

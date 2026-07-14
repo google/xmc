@@ -281,6 +281,9 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 	if wu.GetExecutable().GetJobset() == nil {
 		return fmt.Errorf("work_unit.executable.jobset cannot be nil: %w", status.ErrInvalidArgument)
 	}
+	if err := validateJobSetNetwork(wu.GetExecutable().GetJobset().GetNetwork()); err != nil {
+		return err
+	}
 	// This is a limitation of Kueue; see
 	// https://github.com/kubernetes-sigs/kueue/blob/bacde9cdbc87bef550bb559c5b81c8c7d001c58a/apis/kueue/v1beta1/workload_types.go#L42
 	if len(wu.GetExecutable().GetJobset().Jobs) < 1 {
@@ -503,6 +506,18 @@ func validateDNSLabel(name, desc string) error {
 	}
 	if !jobNameRegex.MatchString(name) {
 		return fmt.Errorf("%s %q must be a valid DNS label (RFC 1123): %w", desc, name, status.ErrInvalidArgument)
+	}
+	return nil
+}
+
+func validateJobSetNetwork(net *essmsgpb.JobSetExecutable_Network) error {
+	if net == nil {
+		return nil
+	}
+	if sub := net.GetSubdomain(); sub != "" {
+		if err := validateDNSLabel(sub, "work_unit.executable.jobset.network.subdomain"); err != nil {
+			return err
+		}
 	}
 	return nil
 }

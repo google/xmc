@@ -73,10 +73,7 @@ type MockStorage struct {
 	UpdateWorkUnitOperationErr              error
 	UpdateWorkUnitOperationCalls            int
 	GotOperationUpdate                      *OperationUpdate
-	GotDefaultToCursorPaginationExperiments bool
-	GotDefaultToCursorPaginationArtifacts   bool
-	GotDefaultToCursorPaginationXIDs        bool
-	GotDefaultToCursorPaginationWorkUnits   bool
+
 	ListStatusMessagesResp                  []*essmsgpb.StatusMessage
 	ListStatusMessagesErr                   error
 }
@@ -102,8 +99,7 @@ func (s *MockStorage) UpdateXidEntry(ctx context.Context, update *XidEntryUpdate
 }
 
 // ListXidEntries mocks XID entry listing.
-func (s *MockStorage) ListXidEntries(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration, defaultToCursorPagination bool) ([]*msgpb.XidEntry, string, error) {
-	s.GotDefaultToCursorPaginationXIDs = defaultToCursorPagination
+func (s *MockStorage) ListXidEntries(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*msgpb.XidEntry, string, error) {
 	return s.ListXidEntriesResp, s.ListXidEntriesNextPageToken, s.ListErr
 }
 
@@ -141,8 +137,7 @@ func (s *MockStorage) FetchArtifact(ctx context.Context, aid int64) (*essmsgpb.A
 }
 
 // ListArtifacts mocks artifact listing.
-func (s *MockStorage) ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken string, filter string, orderBy string, staleness time.Duration, defaultToCursorPagination bool) ([]*essmsgpb.Artifact, string, error) {
-	s.GotDefaultToCursorPaginationArtifacts = defaultToCursorPagination
+func (s *MockStorage) ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken string, filter string, orderBy string, staleness time.Duration) ([]*essmsgpb.Artifact, string, error) {
 	return s.ListArtifactsResp, s.NextPageToken, s.ListArtifactsErr
 }
 
@@ -197,8 +192,7 @@ func (s *MockStorage) RestartWorkUnitExecutions(ctx context.Context, requester s
 }
 
 // ListWorkUnits mocks listing work units.
-func (s *MockStorage) ListWorkUnits(ctx context.Context, parent string, pageSize int32, pageToken string, filter string, orderBy string, staleness time.Duration, defaultToCursorPagination bool) ([]*essmsgpb.WorkUnit, string, error) {
-	s.GotDefaultToCursorPaginationWorkUnits = defaultToCursorPagination
+func (s *MockStorage) ListWorkUnits(ctx context.Context, parent string, pageSize int32, pageToken string, filter string, orderBy string, staleness time.Duration) ([]*essmsgpb.WorkUnit, string, error) {
 	return s.ListWorkUnitsResp, s.NextPageToken, s.ListWorkUnitsErr
 }
 
@@ -216,8 +210,7 @@ func (s *MockStorage) ListWorkUnitExecutions(ctx context.Context, xid int64, wid
 }
 
 // ListExperiments mocks listing experiments.
-func (s *MockStorage) ListExperiments(ctx context.Context, pageSize int32, pageToken string, filter string, orderBy string, staleness time.Duration, defaultToCursorPagination bool) ([]*essmsgpb.Experiment, string, error) {
-	s.GotDefaultToCursorPaginationExperiments = defaultToCursorPagination
+func (s *MockStorage) ListExperiments(ctx context.Context, pageSize int32, pageToken string, filter string, orderBy string, staleness time.Duration) ([]*essmsgpb.Experiment, string, error) {
 	return s.ListExperimentsResp, s.NextPageToken, s.ListExperimentsErr
 }
 

@@ -1,0 +1,9 @@
+# XMC PR Reviewer Pool
+# Used by automated PR reviewer assignment workflow.
+# One GitHub username per line. Comments starting with # are ignored.
+
+AntonTyb
+andrzejfudro
+janzak-dev
+pachopepe
+VLukiantsev

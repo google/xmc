@@ -48,7 +48,6 @@ type Config struct {
 	SigningKeyFile              string
 	SignatureTTLSeconds         int
 	AllowedOrigins              string
-	DefaultToCursorPagination   bool
 	StatusMessageHistoryEnabled bool
 	RedisAddr                   string
 }
@@ -80,7 +79,6 @@ func init() {
 	flag.IntVar(&cfg.SignatureTTLSeconds, "ess_signature_ttl_seconds", client.DefaultSignatureTTLSeconds, fmt.Sprintf("The expiration time (in seconds) for task signatures. Default: %d seconds.", client.DefaultSignatureTTLSeconds))
 	flag.StringVar(&cfg.AllowedOrigins, "ess_allowed_origins", "", "Comma-separated list of allowed origins for CORS.")
 	// Feature flags.
-	flag.BoolVar(&cfg.DefaultToCursorPagination, "ess_default_to_cursor_pagination", false, "Whether to use cursor-based pagination by default when no page token is provided.")
 	flag.BoolVar(&cfg.StatusMessageHistoryEnabled, "ess_status_message_history_enabled", false, "Whether to enable status message history.")
 	flag.StringVar(&cfg.RedisAddr, "redis_addr", "", "The address of the Redis instance.")
 }
