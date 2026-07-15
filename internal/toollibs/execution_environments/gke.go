@@ -52,6 +52,7 @@ const (
 	nvidiaNodeSelectorKey = "cloud.google.com/gke-accelerator"
 
 	tpuResourceKey            = "google.com/tpu"
+	tpuTolerationValue        = "present"
 	tpuAcceleratorSelectorKey = "cloud.google.com/gke-tpu-accelerator"
 	tpuTopologySelectorKey    = "cloud.google.com/gke-tpu-topology"
 
@@ -193,6 +194,20 @@ func updateNodeSelector(resourceSet *epb.ResourceSet, podSpec *corev1.PodSpec) e
 	return nil
 }
 
+// updateTolerations adds necessary TPU tolerations to the pod spec.
+func updateTolerations(podSpec *corev1.PodSpec) {
+	if podSpec == nil {
+		return
+	}
+	toleration := corev1.Toleration{
+		Key:      tpuResourceKey,
+		Operator: corev1.TolerationOpEqual,
+		Value:    tpuTolerationValue,
+		Effect:   corev1.TaintEffectNoSchedule,
+	}
+	podSpec.Tolerations = append(podSpec.Tolerations, toleration)
+}
+
 // ensureJobSetNetworkConfigured guarantees stable DNS resolution for multi-node workloads.
 func ensureJobSetNetworkConfigured(jobSet *jobsetv1alpha2.JobSet) {
 	if jobSet.Spec.Network != nil {
@@ -240,6 +255,7 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 		}
 
 		if tpuRes := job.Spec.Resources.GetTpuResources(); tpuRes != nil {
+			updateTolerations(&replicatedJob.Template.Spec.Template.Spec)
 			nodesPerSlice, err := tpuNodesPerSlice(tpuRes.GetTopology())
 			if err != nil {
 				return nil, err
