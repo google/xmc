@@ -23,7 +23,7 @@ This root guidelines document defines high-level universal engineering principle
 
 ### Language-Specific Rules
 - 🐹 [Go (Golang)](rules/languages/golang.md): Idiomatic Go style, clean interfaces, lowercase error wrapping (`%w`), concurrency safety (`context.Context`, mutexes), and table-driven testing.
-- 🟦 [TypeScript & Modern Angular](rules/languages/typescript_javascript.md): TypeScript strictness, modern Angular signals and control flow (`@if`, `@for`, `@switch`), state immutability, declarative styling maps, and DI polymorphism.
+- 🟦 [TypeScript & Modern Angular](rules/languages/typescript_javascript.md): Prefer TypeScript over JavaScript, TypeScript strictness, modern Angular signals and control flow (`@if`, `@for`, `@switch`), state immutability, declarative styling maps, and DI polymorphism.
 - 🐍 [Python](rules/languages/python.md): PEP 8 Python style guide, standard library preference, explicit public API type hints, docstrings, `unittest` framework, and Python tooling over shell scripts.
 - 🐚 [Shell Scripting](rules/languages/shell.md): Minimal shell script scope (`set -euo pipefail`), double-quoting variables (`"$VAR"`), restricting Shell to thin entrypoints while deferring logic to Python.
 - 📝 [Markdown Documentation](rules/languages/markdown.md): GFM formatting, heading hierarchy, clickable relative links, accurate contract representation, and synchronized documentation updates.

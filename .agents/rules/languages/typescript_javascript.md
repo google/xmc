@@ -5,6 +5,7 @@ This document defines core architectural, structural, and stylistic standards fo
 ---
 
 ## 1. TypeScript Strictness & Style
+- **Prefer TypeScript over JavaScript**: Prefer writing TypeScript (`.ts`) over plain JavaScript (`.js`) whenever viable across frontend modules, services, and web tooling.
 - **TypeScript Strictness**: Enforce strict type checking across all files. Explicitly type public method signatures, class parameters, and service return types.
 - **Default Immutability (`const` over `let`)**: Declare variables as `const` by default. Reserve `let` strictly for scopes where variable reassignment is structurally required (e.g., loop index counters).
 - **Constructive Initialization**: Use ternary expressions (`cond ? a : b`), object/array spread syntax (`...`), and default nullish fallbacks (`||`, `??`) to eliminate imperative variable reassignment chains.
