@@ -6,8 +6,8 @@ This document provides standards for skill architecture, workflow automation, an
 
 ## 1. Extracting Complex Logic to Executable Python Scripts
 - **Executable Scripts over Inline Commands**: Never embed multi-step parsing logic, complex conditional sequences, string manipulation, or procedural shell scripts directly inside Markdown skill definitions or YAML workflow configs.
-- **Predictable & Testable Execution**: Extract complex logic into dedicated Python scripts located in `scripts/` subdirectories.
-- **Automated Verification**: Accompany every extracted script with unit tests (e.g., `script_test.py` utilizing `unittest`) to verify correctness, parameter validation, and exception handling without relying on manual trial-and-error.
+- **Predictable & Testable Execution**: Extract complex logic into dedicated Python scripts located in `tools/` or skill-specific script directories.
+- **Automated Verification**: Accompany every extracted script with unit tests (e.g., `tool_name_test.py` utilizing `unittest`) to verify correctness, parameter validation, and exception handling without relying on manual trial-and-error.
 
 ## 2. DRY & KISS in Skill Design
 - **Shared Utilities**: When multiple skills or automation playbooks share common setup, verification, or deployment steps, extract the common execution into shared Python modules or reusable scripts.
