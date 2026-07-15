@@ -333,11 +333,11 @@ You can perform the upgrade either using the automated script (recommended for d
 > [!WARNING]
 > The automated upgrade script is designed **only for development and testing environments**. It builds and pushes images directly from your local workspace and triggers rolling restarts which are not suitable for production deployments. For production environments, follow the manual upgrade steps (Option B) to ensure proper release management.
 
-To upgrade an existing running XMC development environment on GKE to the latest code in your current local branch (`HEAD`), you can use the automated upgrade script:
+To upgrade an existing running XMC development environment on GKE to the latest code in your current local branch (`HEAD`) or a specified git tag/branch, you can use the automated upgrade script:
 
 #### Using the Upgrade Script Directly
 
-By default, the script uses the deployment configuration file at `deploy/ctk_v2/xmanager-cloud-deployment.yaml`. You can specify a custom configuration file using the `--config` (or `-c`) flag.
+By default, the script uses the deployment configuration file at `deploy/ctk_v2/xmanager-cloud-deployment.yaml`. You can specify a custom configuration file using the `--config` (or `-c`) flag. You can also specify a target git reference (tag, branch, or commit SHA) using the `--git-ref` (or `-r`), `--tag` (`-t`), or `--branch` (`-b`) flag.
 
 > [!TIP]
 > You can optionally define environment variable overrides (e.g., `PROJECT_ID`, `K8S_NAMESPACE`, `XMANAGER_ENV`) in your active shell before running the script to bypass values defined in the YAML configuration. You can copy `.env.example` to `.env` and export them:
@@ -352,14 +352,17 @@ Run the upgrade script:
 
 # Upgrade environment end-to-end (checks migrations, rebuilds/pushes images, deploys app workloads, and restarts services)
 ./tools/upgrade_dev_env.sh
+
+# Upgrade to a specific git tag or release branch
+./tools/upgrade_dev_env.sh --git-ref v1.2.0
 ```
 
 #### Automated Agent Upgrade (`upgrade_xmc` skill)
 
 If you are running an agent session, the agent will automatically use the upgrade script. Ask the agent:
-> Upgrade my XMC environment
+> Upgrade my XMC environment to v1.2.0
 
-The agent will automatically authenticate, check for database migrations, compile and push updated OCI container images from your current branch, upgrade the application workloads using Cluster Toolkit (`gcluster`), initiate a rolling rollout restart across the microservices, and verify deployment rollout health.
+The agent will automatically authenticate, check for database migrations, compile and push updated OCI container images from your current branch (or specified git tag/branch), upgrade the application workloads using Cluster Toolkit (`gcluster`), initiate a rolling rollout restart across the microservices, and verify deployment rollout health.
 
 ### Option B: Manual Upgrade Steps
 

@@ -17,7 +17,7 @@
 # XMC Environment Upgrade Script (upgrade_dev_env.sh)
 # ==============================================================================
 # Upgrades an existing deployed XManager on Cloud (XMC) GKE environment to
-# match the latest code in the current repository branch.
+# match the latest code in the current repository branch (or a specified git tag/branch).
 #
 # Leverages the local .env file in the repository root for configuration.
 # ==============================================================================
@@ -33,9 +33,12 @@ show_help() {
   echo
   echo "Options:"
   echo "  --config, -c <path>       Path to deployment config YAML file (Default: deploy/ctk_v2/xmanager-cloud-deployment.yaml)"
+  echo "  --git-ref, -r <ref>       Git tag, branch, or commit SHA to check out before upgrading"
+  echo "  --tag, -t <tag>           Alias for --git-ref <tag>"
+  echo "  --branch, -b <branch>     Alias for --git-ref <branch>"
   echo "  --start-from, -s <step>   Start/resume upgrade from this step onwards"
   echo "  --only <step>             Execute ONLY this specific step and exit"
-  echo "                             Steps: check, migrate, images, app, restart, verify"
+  echo "                             Steps: checkout, check, migrate, images, app, restart, verify"
   echo "  --run-migrations          Automatically run pending migrations if detected"
   echo "  -h, --help                Show this message"
   exit 0
@@ -157,6 +160,38 @@ run_migration() {
 
 # --- Step Implementations ---
 
+step_checkout() {
+  if [[ -z "$GIT_REF" ]]; then
+    log_info "No --git-ref specified; continuing upgrade with current git working state ($(git rev-parse --abbrev-ref HEAD 2>/dev/null || git rev-parse --short HEAD))."
+    return 0
+  fi
+
+  log_info "Verifying git reference '$GIT_REF' before starting upgrade..."
+  if ! git rev-parse --verify --quiet "${GIT_REF}^{commit}" >/dev/null 2>&1; then
+    log_info "Git reference '$GIT_REF' not found locally. Attempting fetch from origin..."
+    git fetch origin "$GIT_REF" --tags 2>/dev/null || true
+    if ! git rev-parse --verify --quiet "${GIT_REF}^{commit}" >/dev/null 2>&1; then
+      error_exit "Git reference '$GIT_REF' does not exist locally or on remote origin."
+    fi
+  fi
+
+  local current_head target_commit
+  current_head=$(git rev-parse HEAD)
+  target_commit=$(git rev-parse --verify "${GIT_REF}^{commit}")
+
+  if [[ "$current_head" == "$target_commit" ]]; then
+    log_success "Repository is already checked out at git ref '$GIT_REF' ($target_commit)."
+  else
+    if [[ -n $(git status --porcelain -uno) ]]; then
+      error_exit "Git working directory has uncommitted modifications in tracked files. Please commit, stash, or revert your changes before upgrading to git ref '$GIT_REF'."
+    fi
+    log_info "Checking out git ref '$GIT_REF' ($target_commit)..."
+    git checkout "$GIT_REF"
+    log_success "Successfully checked out '$GIT_REF'. Re-executing upgrade script from target ref..."
+    exec "$0" "$@"
+  fi
+}
+
 step_check() {
   log_info "Running pre-flight dependency and authentication checks..."
 
@@ -264,7 +299,7 @@ step_images() {
   log_info "Pushing xid_service image..."
   bazel run //cmd/xid_service:xid_service_image_push
 
-  log_success "All 6 XMC service container images compiled and pushed from current branch state."
+  log_success "All 6 XMC service container images compiled and pushed from ${GIT_REF:-current branch state}."
 }
 
 step_app() {
@@ -312,12 +347,13 @@ step_verify() {
   log_info "Running verification script..."
   ENVIRONMENT="$XMANAGER_ENV" REGION="$GCP_REGION" PROJECT_ID="$PROJECT_ID" bash ./deploy/ctk_v2/verify_xmc.sh || log_info "Diagnostic script reported warnings."
 
-  log_success "XMC environment upgrade to current repository branch state verified successfully."
+  log_success "XMC environment upgrade to ${GIT_REF:-current branch state} verified successfully."
 }
 
 # --- Execution Entrypoint ---
 
 CONFIG_FILE="deploy/ctk_v2/xmanager-cloud-deployment.yaml"
+GIT_REF=""
 START_STEP=""
 ONLY_STEP=""
 RUN_MIGRATIONS=false
@@ -326,6 +362,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --config|-c)
       CONFIG_FILE="$2"
+      shift 2
+      ;;
+    --git-ref|-r|--tag|-t|--branch|-b)
+      GIT_REF="$2"
       shift 2
       ;;
     --start-from|-s)
@@ -349,16 +389,34 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ -n "$START_STEP" ]]; then
+  case "$START_STEP" in
+    checkout|check|migrate|images|app|restart|verify) ;;
+    *) error_exit "Invalid step '$START_STEP' for --start-from. Valid steps: checkout, check, migrate, images, app, restart, verify" ;;
+  esac
+fi
+
+if [[ -n "$ONLY_STEP" ]]; then
+  case "$ONLY_STEP" in
+    checkout)
+      step_checkout
+      exit 0
+      ;;
+    check|migrate|images|app|restart|verify) ;;
+    *) error_exit "Invalid step '$ONLY_STEP' for --only. Valid steps: checkout, check, migrate, images, app, restart, verify" ;;
+  esac
+fi
+
+if [[ -z "$START_STEP" || "$START_STEP" == "checkout" ]]; then
+  step_checkout
+  if [[ "$START_STEP" == "checkout" ]]; then
+    START_STEP="check"
+  fi
+fi
+
 load_config "$CONFIG_FILE"
 
 STEPS=("check" "migrate" "images" "app" "restart" "verify")
-
-if [[ -n "$START_STEP" ]]; then
-  case "$START_STEP" in
-    check|migrate|images|app|restart|verify) ;;
-    *) error_exit "Invalid step '$START_STEP' for --start-from. Valid steps: check, migrate, images, app, restart, verify" ;;
-  esac
-fi
 
 if [[ -n "$ONLY_STEP" ]]; then
   case "$ONLY_STEP" in
@@ -368,7 +426,6 @@ if [[ -n "$ONLY_STEP" ]]; then
     app) step_app ;;
     restart) step_restart ;;
     verify) step_verify ;;
-    *) error_exit "Invalid step '$ONLY_STEP' for --only. Valid steps: check, migrate, images, app, restart, verify" ;;
   esac
   exit 0
 fi

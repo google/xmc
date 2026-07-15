@@ -1,11 +1,11 @@
 ---
 name: Upgrade XMC Environment
-description: Upgrades an existing XManager on Cloud (XMC) environment on GKE to the latest current branch state using the deployment configuration YAML.
+description: Upgrades an existing XManager on Cloud (XMC) environment on GKE to the latest current branch state or a specified git tag/branch using the deployment configuration YAML.
 ---
 
 # Upgrade XMC Environment Workflow
 
-This skill guides the agent through upgrading an existing deployed XManager on Cloud (XMC) environment on Google Kubernetes Engine (GKE) so that it runs the latest code from the current local repository branch (`HEAD`), leveraging the deployment configuration YAML file.
+This skill guides the agent through upgrading an existing deployed XManager on Cloud (XMC) environment on Google Kubernetes Engine (GKE) so that it runs the latest code from the current local repository branch (`HEAD`) or a specified git tag/branch, leveraging the deployment configuration YAML file.
 
 ```mermaid
 graph TD
@@ -58,19 +58,21 @@ If no configuration file is found at the default path:
 
 ## 2. Automated Dev Upgrade (`upgrade_dev_env.sh`)
 
-Use the automated upgrade tool (`./tools/upgrade_dev_env.sh`) to execute the environment upgrade.
+Use the automated upgrade tool (`./tools/upgrade_dev_env.sh`) to execute the environment upgrade. If the user specifies a target version, tag, or branch name (e.g., "Upgrade to v1.2.0" or "Upgrade using branch release-1.2"), you MUST pass `--git-ref <tag_or_branch>` (or `--tag <tag>`, `--branch <branch>`) when invoking `./tools/upgrade_dev_env.sh`.
 
 ### Step 1: Run Configuration & Authentication Checks
 Validate configuration in YAML, authenticate with Google Cloud and GKE, and verify that the target Kubernetes namespace exists:
 ```bash
 ./tools/upgrade_dev_env.sh --only check
 ```
+*(If upgrading to a specific git reference, pass `--git-ref <tag_or_branch>` alongside `--only check` and subsequent commands: `./tools/upgrade_dev_env.sh --git-ref <tag_or_branch> --only check`)*
 
 ### Step 2: Check for Pending Database Migrations
 Verify if there are any pending Spanner database migrations:
 ```bash
 ./tools/upgrade_dev_env.sh --only migrate
 ```
+*(Remember to include `--git-ref <tag_or_branch>` if a target version was specified.)*
 
 > [!IMPORTANT]
 > **Migration Decision**:
@@ -94,6 +96,7 @@ If no migrations were pending, or if the user approved running migrations:
     ```bash
     ./tools/upgrade_dev_env.sh --start-from migrate --run-migrations
     ```
+*(Include `--git-ref <tag_or_branch>` if a target version was specified.)*
 
 ### Resuming or Running Specific Steps (Advanced / Troubleshooting)
 If the upgrade fails at a specific phase, or if you need to rerun a specific part of the workflow:
@@ -119,5 +122,5 @@ ENVIRONMENT="${XMANAGER_ENV:-dev}" REGION="${GCP_REGION:-us-central1}" PROJECT_I
 ```
 
 > [!TIP]
-> Once the verification script reports that all pods are healthy and services are ready, confirm to the user that the XMC environment upgrade is complete and running the current branch state.
+> Once the verification script reports that all pods are healthy and services are ready, confirm to the user that the XMC environment upgrade is complete and running the current branch state (or specified git tag/branch).
 
