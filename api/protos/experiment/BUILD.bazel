@@ -44,6 +44,7 @@ proto_library(
     import_prefix = "third_party/xmanager_cloud/experiment_state_server/proto",
     strip_import_prefix = "/api/protos/experiment",
     deps = [
+        "//api/protos/dashboard:dashboard_messages_proto",
         "//api/protos/xid:xid_messages_proto",
         "@com_google_googleapis//google/api:field_behavior_proto",
         "@com_google_googleapis//google/api:resource_proto",
@@ -57,6 +58,7 @@ go_proto_library(
     importpath = "xmanager_cloud/experiment_state_server/proto/messages_go_proto",
     proto = ":experiment_messages_proto",
     deps = [
+        "//api/protos/dashboard:messages_go_proto",
         "//api/protos/xid:messages_go_proto",
         "@org_golang_google_genproto_googleapis_api//:go_default_library",
         "@org_golang_google_genproto_googleapis_api//annotations",
@@ -132,6 +134,7 @@ proto_library(
     import_prefix = "third_party/xmanager_cloud/experiment_state_server/proto",
     strip_import_prefix = "/api/protos/experiment",
     deps = [
+        "//api/protos/dashboard:dashboard_messages_proto",
         "//api/protos/xid:xid_messages_proto",
         "@com_google_googleapis//google/api:annotations_proto",
         "@com_google_googleapis//google/api:client_proto",
@@ -154,6 +157,7 @@ go_proto_library(
     importpath = "xmanager_cloud/api/protos/experiment",
     proto = ":cloud_xmanager_v1_proto",
     deps = [
+        "//api/protos/dashboard:messages_go_proto",
         "//api/protos/xid:messages_go_proto",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@com_google_googleapis//google/api:field_behavior_go_proto",

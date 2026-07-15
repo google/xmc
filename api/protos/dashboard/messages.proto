@@ -1,0 +1,251 @@
+syntax = "proto3";
+
+package cloud.xmanager.v1;
+
+option go_package = "xmanager_cloud/dashboard_service/proto/api_go_proto";
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/timestamp.proto";
+
+// Resource definition for Dashboard (AIP-123 / AIP-133)
+message Dashboard {
+  option (google.api.resource) = {
+    type: "cloud.xmanager.googleapis.com/Dashboard"
+    pattern: "dashboards/{dashboard}"
+    singular: "dashboard"
+    plural: "dashboards"
+  };
+
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  string title = 2 [(google.api.field_behavior) = REQUIRED];
+  string description = 3 [(google.api.field_behavior) = OPTIONAL];
+  string owner = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  repeated Chart charts = 5 [(google.api.field_behavior) = OPTIONAL];
+  LayoutSpec chart_layout = 6 [(google.api.field_behavior) = OPTIONAL];
+  google.protobuf.Timestamp create_time = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp update_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Resource definition for Chart (AIP-123 / AIP-133)
+message Chart {
+  option (google.api.resource) = {
+    type: "cloud.xmanager.googleapis.com/Chart"
+    pattern: "experiments/{experiment}/workUnits/{wid}/charts/{chart}"
+    pattern: "charts/{chart}"
+    singular: "chart"
+    plural: "charts"
+  };
+
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  string title = 2 [(google.api.field_behavior) = REQUIRED];
+  string description = 3 [(google.api.field_behavior) = OPTIONAL];
+  int64 xid = 4 [(google.api.field_behavior) = REQUIRED];
+  int64 wid = 5 [(google.api.field_behavior) = REQUIRED];
+  repeated PlotSpec plots = 6 [(google.api.field_behavior) = REQUIRED];
+  LayoutSpec plot_layout = 7 [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.Timestamp create_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+  google.protobuf.Timestamp update_time = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+enum PlotType {
+  PLOT_TYPE_UNSPECIFIED = 0;
+  SUMMARY_BOX = 1;
+  SCATTER = 2;
+  BAR = 3;
+  HISTOGRAM = 4;
+}
+
+message GridPosition {
+  string item_id = 1;
+  int32 x = 2;
+  int32 y = 3;
+  int32 width = 4;
+  int32 height = 5;
+}
+
+message LayoutSpec {
+  enum LayoutType {
+    LAYOUT_TYPE_UNSPECIFIED = 0;
+    GRID = 1;
+    WRAP = 2;
+    SIDE_BY_SIDE = 3;
+    STACKED = 4;
+  }
+  LayoutType type = 1 [(google.api.field_behavior) = REQUIRED];
+  int32 columns = 2 [(google.api.field_behavior) = OPTIONAL];
+  repeated GridPosition positions = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message PlotSpec {
+  string plot_id = 1 [(google.api.field_behavior) = REQUIRED];
+  string title = 2 [(google.api.field_behavior) = OPTIONAL];
+  PlotType type = 3 [(google.api.field_behavior) = REQUIRED];
+  DataSpec data = 4 [(google.api.field_behavior) = REQUIRED];
+  MappingSpec mapping = 5 [(google.api.field_behavior) = OPTIONAL];
+  repeated GeomSpec geoms = 6 [(google.api.field_behavior) = OPTIONAL];
+  StatSpec stats = 7 [(google.api.field_behavior) = OPTIONAL];
+  CoordSpec coords = 8 [(google.api.field_behavior) = OPTIONAL];
+  FacetSpec facets = 9 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message DataSpec {
+  message DataRange {
+    oneof start {
+      int64 start_iteration = 1;
+      google.protobuf.Timestamp start_time = 2;
+    }
+    oneof end {
+      int64 end_iteration = 3;
+      google.protobuf.Timestamp end_time = 4;
+    }
+  }
+  repeated string metrics = 1 [(google.api.field_behavior) = REQUIRED];
+  repeated DataRange ranges = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message MappingSpec {
+  string x = 1 [(google.api.field_behavior) = OPTIONAL];
+  string y = 2 [(google.api.field_behavior) = OPTIONAL];
+  string color = 3 [(google.api.field_behavior) = OPTIONAL];
+  string group = 4 [(google.api.field_behavior) = OPTIONAL];
+  string size = 5 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message GeomSpec {
+  enum GeomType {
+    GEOM_TYPE_UNSPECIFIED = 0;
+    LINE = 1;
+    POINT = 2;
+    BAR = 3;
+    AREA = 4;
+    RIBBON = 5;
+    HLINE = 6;
+    VLINE = 7;
+  }
+  message StyleSpec {
+    string color = 1 [(google.api.field_behavior) = OPTIONAL];
+    double opacity = 2 [(google.api.field_behavior) = OPTIONAL];
+    double size = 3 [(google.api.field_behavior) = OPTIONAL];
+    string line_style = 4 [(google.api.field_behavior) = OPTIONAL];
+  }
+  GeomType type = 1 [(google.api.field_behavior) = REQUIRED];
+  double yintercept = 2 [(google.api.field_behavior) = OPTIONAL];
+  double xintercept = 3 [(google.api.field_behavior) = OPTIONAL];
+  StyleSpec style = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message StatSpec {
+  enum StatType {
+    STAT_TYPE_UNSPECIFIED = 0;
+    IDENTITY = 1;
+    SUMMARY = 2;
+    DOWNSAMPLE = 3;
+    SMOOTH = 4;
+    FORECAST = 5;
+  }
+  enum Aggregation {
+    AGG_UNSPECIFIED = 0;
+    MEAN = 1;
+    MEDIAN = 2;
+    MIN = 3;
+    MAX = 4;
+    SUM = 5;
+    MEAN_CI_95 = 6;
+  }
+  message SmoothConfig {
+    enum Algorithm {
+      EXPONENTIAL = 0;
+      MOVING_AVERAGE = 1;
+    }
+    Algorithm algorithm = 1 [(google.api.field_behavior) = REQUIRED];
+    double alpha = 2 [(google.api.field_behavior) = OPTIONAL];
+    int32 window_size = 3 [(google.api.field_behavior) = OPTIONAL];
+  }
+  message ForecastConfig {
+    double alpha = 1 [(google.api.field_behavior) = OPTIONAL];
+    double beta = 2 [(google.api.field_behavior) = OPTIONAL];
+    int32 steps_ahead = 3 [(google.api.field_behavior) = REQUIRED];
+  }
+  StatType type = 1 [(google.api.field_behavior) = REQUIRED];
+  Aggregation aggregation = 2 [(google.api.field_behavior) = OPTIONAL];
+  SmoothConfig smooth = 3 [(google.api.field_behavior) = OPTIONAL];
+  ForecastConfig forecast = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message CoordSpec {
+  enum ScaleType {
+    SCALE_TYPE_UNSPECIFIED = 0;
+    LINEAR = 1;
+    LOG = 2;
+    SYMLOG = 3;
+  }
+  ScaleType x_scale = 1 [(google.api.field_behavior) = OPTIONAL];
+  ScaleType y_scale = 2 [(google.api.field_behavior) = OPTIONAL];
+  double y_min = 3 [(google.api.field_behavior) = OPTIONAL];
+  double y_max = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message FacetSpec {
+  enum FacetType {
+    FACET_TYPE_UNSPECIFIED = 0;
+    WRAP = 1;
+    GRID = 2;
+  }
+  FacetType type = 1 [(google.api.field_behavior) = REQUIRED];
+  repeated string facet_by = 2 [(google.api.field_behavior) = REQUIRED];
+  int32 ncol = 3 [(google.api.field_behavior) = OPTIONAL];
+  int32 nrow = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message ChartData {
+  message SummaryBoxValue {
+    string metric_name = 1;
+    double latest_value = 2;
+    double min_value = 3;
+    double max_value = 4;
+    double mean_value = 5;
+    int64 latest_iteration = 6;
+    google.protobuf.Timestamp latest_timestamp = 7;
+  }
+
+  message SeriesPoint {
+    int64 iteration = 1;
+    google.protobuf.Timestamp timestamp = 2;
+    double avg_value = 3;
+    double min_value = 4;
+    double max_value = 5;
+  }
+
+  message SeriesData {
+    string metric_name = 1;
+    string work_unit_id = 2;
+    int64 xid = 3;
+    repeated SeriesPoint points = 4;
+  }
+
+  message BarBucket {
+    string category_or_bin = 1;
+    double value_or_count = 2;
+  }
+
+  message BarData {
+    string metric_name = 1;
+    repeated BarBucket buckets = 2;
+  }
+
+  message PlotData {
+    string plot_id = 1;
+    PlotType type = 2;
+    oneof content {
+      SummaryBoxValue summary_data = 3;
+      SeriesData scatter_series = 4;
+      BarData bar_data = 5;
+    }
+  }
+
+  string name = 1;
+  int64 xid = 2;
+  int64 wid = 3;
+  repeated PlotData plots_data = 4;
+}

@@ -191,7 +191,7 @@ step_check() {
 
   # 5. Verify target Kubernetes namespace exists
   if ! kubectl get namespace "$K8S_NAMESPACE" >/dev/null 2>&1; then
-    error_exit "Kubernetes namespace '$K8S_NAMESPACE' does not exist on cluster '$GKE_CLUSTER'. Ensure XMC has been deployed first (e.g. via deploy_dev_env.sh or INSTALL.md)."
+    error_exit "Kubernetes namespace '$K8S_NAMESPACE' does not exist on cluster '$GKE_CLUSTER'. Ensure XMC has been deployed first (e.g. via deploy_dev_env.py or INSTALL.md)."
   fi
 
   log_success "All pre-flight checks and authentication steps passed successfully."
@@ -310,7 +310,7 @@ step_verify() {
   log_info "Verifying rollout completion and cluster health in namespace '$K8S_NAMESPACE'..."
 
   log_info "Running verification script..."
-  ENVIRONMENT="$XMANAGER_ENV" REGION="$GCP_REGION" PROJECT_ID="$PROJECT_ID" bash ./deploy/ctk_v2/verify_xmc.sh || log_info "Diagnostic script reported warnings."
+  ENVIRONMENT="$XMANAGER_ENV" REGION="$GCP_REGION" PROJECT_ID="$PROJECT_ID" python3 ./deploy/ctk_v2/verify_xmc.py || log_info "Diagnostic script reported warnings."
 
   log_success "XMC environment upgrade to current repository branch state verified successfully."
 }

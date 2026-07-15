@@ -13,10 +13,10 @@ graph TD
     CheckEnv --> CheckRun["Run ./tools/upgrade_dev_env.sh --only check"]
     CheckRun --> MigrateCheck["Run ./tools/upgrade_dev_env.sh --only migrate"]
     MigrateCheck -->|No pending migrations| AutoRun["Run ./tools/upgrade_dev_env.sh --start-from images"]
-    MigrateCheck -->|Pending migrations (Exit 10)| PromptUser["Prompt User to run migrations"]
+    MigrateCheck -->|"Pending migrations (Exit 10)"| PromptUser["Prompt User to run migrations"]
     PromptUser -->|User declines| Abort["Abort Upgrade"]
     PromptUser -->|User approves| AutoRunMigrate["Run ./tools/upgrade_dev_env.sh --start-from migrate --run-migrations"]
-    AutoRunMigrate --> Verify[Verification & Validation]
+    AutoRunMigrate --> Verify["Verification & Validation"]
     AutoRun --> Verify
     Verify -->|All checks pass| L["Report completed upgrade & healthy rollout"]
 ```
@@ -115,7 +115,7 @@ If the upgrade fails at a specific phase, or if you need to rerun a specific par
 Run the verification script from the repository root to verify that all upgraded pods are running and endpoints respond correctly:
 
 ```bash
-ENVIRONMENT="${XMANAGER_ENV:-dev}" REGION="${GCP_REGION:-us-central1}" PROJECT_ID="$PROJECT_ID" ./deploy/ctk_v2/verify_xmc.sh
+ENVIRONMENT="${XMANAGER_ENV:-dev}" REGION="${GCP_REGION:-us-central1}" PROJECT_ID="$PROJECT_ID" python3 ./deploy/ctk_v2/verify_xmc.py
 ```
 
 > [!TIP]

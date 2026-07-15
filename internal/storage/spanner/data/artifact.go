@@ -240,6 +240,15 @@ func getSearchableContent(payload *pb.ArtifactPayload) string {
 				parts = append(parts, p.Url.DisplayName)
 			}
 		}
+	case *pb.ArtifactPayload_Chart:
+		if p.Chart != nil {
+			if p.Chart.Title != "" {
+				parts = append(parts, p.Chart.Title)
+			}
+			if len(p.Chart.MetricNames) > 0 {
+				parts = append(parts, p.Chart.MetricNames...)
+			}
+		}
 	}
 
 	return strings.Join(parts, " ")
