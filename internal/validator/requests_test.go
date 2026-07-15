@@ -2323,6 +2323,13 @@ func TestValidateJobVolumes(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "gs_prefix_only_bucket_name",
+			volumes: []*essmsgpb.Volume{
+				{Name: "gcs", Source: &essmsgpb.Volume_Gcs{Gcs: &essmsgpb.GcsVolumeSource{Bucket: "gs://"}}},
+			},
+			wantErr: true,
+		},
+		{
 			name: "relative_host_path",
 			volumes: []*essmsgpb.Volume{
 				{Name: "hp", Source: &essmsgpb.Volume_HostPath{HostPath: &essmsgpb.HostPathVolumeSource{Path: "relative/path"}}},

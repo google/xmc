@@ -606,8 +606,9 @@ func validateVolumeSource(v *essmsgpb.Volume, prefix string) error {
 		return validateDNSLabel(pvc.GetClaimName(), prefix+".persistent_volume_claim.claim_name")
 	}
 	if gcs := v.GetGcs(); gcs != nil {
-		if gcs.GetBucket() == "" {
-			return fmt.Errorf("%s.gcs.bucket cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		bucket := strings.TrimPrefix(gcs.GetBucket(), "gs://")
+		if bucket == "" {
+			return fmt.Errorf("%s.gcs.bucket must be a valid GCS bucket name: %w", prefix, status.ErrInvalidArgument)
 		}
 		return nil
 	}
