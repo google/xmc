@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/protobuf/proto"
+	"golang/protobuf/v2/proto/proto"
 
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/unstructured/unstructured"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
