@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { NgTemplateOutlet } from '@angular/common';
+import { JsonPipe, NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -44,6 +44,7 @@ export const ADDITIONAL_INFO_COLLAPSE_THRESHOLD = 200;
   templateUrl: './artifact_card.ng.html',
   styleUrl: './artifact_card.css',
   imports: [
+    JsonPipe,
     MatButtonModule,
     MatCardModule,
     MatDivider,
