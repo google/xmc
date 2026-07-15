@@ -2291,6 +2291,10 @@ func createWorkUnitWithVolumesAndMounts() *esspb.WorkUnit {
 		{Name: "gcs-data", Source: &esspb.Volume_Gcs{Gcs: &esspb.GcsVolumeSource{Bucket: "gs://my-bucket", ReadOnly: proto.Bool(false), MountOptions: []string{"implicit-dirs"}}}},
 		{Name: "gcs-data-nil", Source: &esspb.Volume_Gcs{Gcs: &esspb.GcsVolumeSource{Bucket: "gs://my-bucket-nil"}}},
 		{Name: "host-data", Source: &esspb.Volume_HostPath{HostPath: &esspb.HostPathVolumeSource{Path: "/tmp/host", Type: "Directory"}}},
+		{Name: "sec-data-zero", Source: &esspb.Volume_Secret{Secret: &esspb.SecretVolumeSource{SecretName: "my-secret-zero", DefaultMode: proto.Int32(0), Optional: proto.Bool(true)}}},
+		{Name: "sec-data-nil", Source: &esspb.Volume_Secret{Secret: &esspb.SecretVolumeSource{SecretName: "my-secret-nil"}}},
+		{Name: "cm-data-zero", Source: &esspb.Volume_ConfigMap{ConfigMap: &esspb.ConfigMapVolumeSource{Name: "my-cm-zero", DefaultMode: proto.Int32(0), Optional: proto.Bool(false)}}},
+		{Name: "cm-data-nil", Source: &esspb.Volume_ConfigMap{ConfigMap: &esspb.ConfigMapVolumeSource{Name: "my-cm-nil"}}},
 	}
 	job.Spec.VolumeMounts = []*esspb.VolumeMount{
 		{Name: "ram-scratch", MountPath: "/dev/ram-scratch", ReadOnly: proto.Bool(false)},
@@ -2320,6 +2324,18 @@ func verifyCustomVolumes(t *testing.T, volumes []corev1.Volume) {
 	}
 	if hp := volMap["host-data"].HostPath; hp == nil || hp.Path != "/tmp/host" {
 		t.Errorf("Expected host-data HostPath volume, got: %+v", hp)
+	}
+	if sec := volMap["sec-data-zero"].Secret; sec == nil || sec.SecretName != "my-secret-zero" || sec.DefaultMode == nil || *sec.DefaultMode != 0 || sec.Optional == nil || !*sec.Optional {
+		t.Errorf("Expected sec-data-zero Secret volume with DefaultMode 0 and Optional true, got: %+v", sec)
+	}
+	if sec := volMap["sec-data-nil"].Secret; sec == nil || sec.SecretName != "my-secret-nil" || sec.DefaultMode != nil || sec.Optional != nil {
+		t.Errorf("Expected sec-data-nil Secret volume with DefaultMode nil and Optional nil, got: %+v", sec)
+	}
+	if cm := volMap["cm-data-zero"].ConfigMap; cm == nil || cm.LocalObjectReference.Name != "my-cm-zero" || cm.DefaultMode == nil || *cm.DefaultMode != 0 || cm.Optional == nil || *cm.Optional {
+		t.Errorf("Expected cm-data-zero ConfigMap volume with DefaultMode 0 and Optional false, got: %+v", cm)
+	}
+	if cm := volMap["cm-data-nil"].ConfigMap; cm == nil || cm.LocalObjectReference.Name != "my-cm-nil" || cm.DefaultMode != nil || cm.Optional != nil {
+		t.Errorf("Expected cm-data-nil ConfigMap volume with DefaultMode nil and Optional nil, got: %+v", cm)
 	}
 }
 

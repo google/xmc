@@ -865,29 +865,19 @@ func buildEmptyDirVolumeSource(ed *esspb.EmptyDirVolumeSource) *corev1.EmptyDirV
 }
 
 func buildSecretVolumeSource(sec *esspb.SecretVolumeSource) *corev1.SecretVolumeSource {
-	src := &corev1.SecretVolumeSource{
-		SecretName: sec.GetSecretName(),
+	return &corev1.SecretVolumeSource{
+		SecretName:  sec.GetSecretName(),
+		DefaultMode: sec.DefaultMode,
+		Optional:    sec.Optional,
 	}
-	if sec.DefaultMode != nil {
-		src.DefaultMode = proto.Int32(sec.GetDefaultMode())
-	}
-	if sec.Optional != nil {
-		src.Optional = proto.Bool(sec.GetOptional())
-	}
-	return src
 }
 
 func buildConfigMapVolumeSource(cm *esspb.ConfigMapVolumeSource) *corev1.ConfigMapVolumeSource {
-	src := &corev1.ConfigMapVolumeSource{
+	return &corev1.ConfigMapVolumeSource{
 		LocalObjectReference: corev1.LocalObjectReference{Name: cm.GetName()},
+		DefaultMode:          cm.DefaultMode,
+		Optional:             cm.Optional,
 	}
-	if cm.DefaultMode != nil {
-		src.DefaultMode = proto.Int32(cm.GetDefaultMode())
-	}
-	if cm.Optional != nil {
-		src.Optional = proto.Bool(cm.GetOptional())
-	}
-	return src
 }
 
 func buildNFSVolumeSource(nfs *esspb.NfsVolumeSource) *corev1.NFSVolumeSource {
