@@ -328,10 +328,10 @@ def extract_migration_version(sql_files: list[Path]) -> int:
   max_version = 0
   for path in sql_files:
     prefix = path.name.split("_")[0]
-    cleaned = prefix.lstrip("0")
-    version = int(cleaned) if cleaned else 0
-    if version > max_version:
-      max_version = version
+    if prefix.isdigit():
+      version = int(prefix)
+      if version > max_version:
+        max_version = version
   return max_version
 
 
@@ -458,7 +458,10 @@ def step_images(config: Config) -> None:
       "Rebuilding and pushing latest XMC microservice OCI images to"
       f" '{config.acr_target}'..."
   )
-  env = {"XMC_ENV": config.environment}
+  env = {
+      "XMC_ENV": config.environment,
+      "XMC_ACR_TARGET": config.acr_target,
+  }
 
   targets = [
       ("actuator", "//cmd/actuator:actuator_image_push"),
@@ -655,6 +658,7 @@ def run_pipeline(
 
 def main(args_list: Optional[list[str]] = None) -> None:
   """Main entrypoint for the upgrade script."""
+  os.chdir(Path(__file__).resolve().parent.parent)
   args = parse_args(args_list)
   config = load_config(args.config, run_migrations=args.run_migrations)
   run_pipeline(args, config, STEPS)
