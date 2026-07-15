@@ -10,7 +10,7 @@ This skill guides the agent through deploying the XManager on Cloud (XMC) infras
 > [!IMPORTANT]
 > **Enforced Choice Prompt**:
 > Before executing any checks, compilation, or deployment commands, you **MUST ask the user** to choose their preferred deployment method:
-> *   **Option 1: Automated Dev Setup**: Uses the `./tools/deploy_dev_env.sh` script to automate all steps.
+> *   **Option 1: Automated Dev Setup**: Uses the `python3 ./tools/deploy_dev_env.py` script to automate all steps.
 > *   **Option 2: Manual Step-by-Step Deployment**: Manually compiles and deploys each group using `gcluster`.
 >
 > Stop execution and wait for the user to respond with their selection. Do not proceed to any other section of this workflow without their explicit choice.
@@ -20,7 +20,7 @@ graph TD
     Start[Choose Deployment Method] -->|Option 1| Auto[Automated Dev Setup]
     Start -->|Option 2| Manual[Manual Step-by-Step]
     
-    Auto --> AutoRun["Run ./tools/deploy_dev_env.sh"]
+    Auto --> AutoRun["Run python3 ./tools/deploy_dev_env.py"]
     AutoRun --> Verify[Verification & Validation]
     
     Manual --> A["1. Pre-flight CLI Checks"]
@@ -61,7 +61,7 @@ Before running any compilation or deployment steps, verify that all necessary CL
 
 ---
 
-## 2. Option 1: Automated Dev Setup (deploy_dev_env.sh)
+## 2. Option 1: Automated Dev Setup (deploy_dev_env.py)
 
 Use the automated script to execute the deployment end-to-end. The script handles registry credentials config (`gcloud auth configure-docker`), code compilation, GKE setup, and app deployment.
 
@@ -77,7 +77,7 @@ Use the automated script to execute the deployment end-to-end. The script handle
 ### Step 1: Check configurations
 Always run the checks first to validate active GCP project alignment and CLI tools:
 ```bash
-./tools/deploy_dev_env.sh \
+python3 ./tools/deploy_dev_env.py \
   --config <deployment_config_path> \
   --dns-project <dns_project_id> \
   --dns-zone <dns_managed_zone_name> \
@@ -87,7 +87,7 @@ Always run the checks first to validate active GCP project alignment and CLI too
 ### Step 2: Deploy
 Run the automated deployment script by providing the DNS project and zone details:
 ```bash
-./tools/deploy_dev_env.sh \
+python3 ./tools/deploy_dev_env.py \
   --config <deployment_config_path> \
   --dns-project <dns_project_id> \
   --dns-zone <dns_managed_zone_name>
@@ -96,7 +96,7 @@ Run the automated deployment script by providing the DNS project and zone detail
 ### Step 3: Resuming or Running Specific Steps
 To resume from a failed step, run:
 ```bash
-./tools/deploy_dev_env.sh \
+python3 ./tools/deploy_dev_env.py \
   --config <deployment_config_path> \
   --dns-project <dns_project_id> \
   --dns-zone <dns_managed_zone_name> \
@@ -105,7 +105,7 @@ To resume from a failed step, run:
 
 To run **only** a single specific step (e.g. rebuild/push images or run verify tests), run:
 ```bash
-./tools/deploy_dev_env.sh \
+python3 ./tools/deploy_dev_env.py \
   --config <deployment_config_path> \
   --dns-project <dns_project_id> \
   --dns-zone <dns_managed_zone_name> \

@@ -191,7 +191,7 @@ step_check() {
 
   # 5. Verify target Kubernetes namespace exists
   if ! kubectl get namespace "$K8S_NAMESPACE" >/dev/null 2>&1; then
-    error_exit "Kubernetes namespace '$K8S_NAMESPACE' does not exist on cluster '$GKE_CLUSTER'. Ensure XMC has been deployed first (e.g. via deploy_dev_env.sh or INSTALL.md)."
+    error_exit "Kubernetes namespace '$K8S_NAMESPACE' does not exist on cluster '$GKE_CLUSTER'. Ensure XMC has been deployed first (e.g. via deploy_dev_env.py or INSTALL.md)."
   fi
 
   log_success "All pre-flight checks and authentication steps passed successfully."
