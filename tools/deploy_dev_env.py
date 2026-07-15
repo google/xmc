@@ -958,7 +958,7 @@ def step_verify(
   }
   try:
     run_command(
-        ["bash", "./deploy/ctk_v2/verify_xmc.sh"],
+        ["python3", "./deploy/ctk_v2/verify_xmc.py"],
         env=env_vars,
         log_on_error=False,
     )

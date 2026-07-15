@@ -897,7 +897,7 @@ key5: "value5" # trailing comment with quotes
         '--project=my-project',
     ])
     mock_run.assert_any_call(
-        ['bash', './deploy/ctk_v2/verify_xmc.sh'], env=ANY, log_on_error=False
+        ['python3', './deploy/ctk_v2/verify_xmc.py'], env=ANY, log_on_error=False
     )
     mock_run.assert_any_call([
         'kubectl',
