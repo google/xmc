@@ -106,6 +106,25 @@ class TestUpgradeDevEnv(unittest.TestCase):
                 check=False,
             )
 
+    def test_start_from_with_git_ref(self):
+        result = self.run_script(
+            ["--git-ref", self.current_head, "--start-from", "images"]
+        )
+        self.assertIn(
+            f"Repository is already checked out at git ref '{self.current_head}'",
+            result.stdout,
+        )
+
+    def test_start_from_with_nonexistent_git_ref(self):
+        result = self.run_script(
+            ["--git-ref", "nonexistent-ref-xyz-99999", "--start-from", "images"]
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(
+            "Git reference 'nonexistent-ref-xyz-99999' does not exist locally or on remote origin.",
+            result.stderr,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

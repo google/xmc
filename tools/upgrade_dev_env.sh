@@ -428,7 +428,7 @@ if [[ -n "$ONLY_STEP" ]]; then
   esac
 fi
 
-if [[ -z "$START_STEP" || "$START_STEP" == "checkout" ]]; then
+if [[ -n "$GIT_REF" || -z "$START_STEP" || "$START_STEP" == "checkout" ]]; then
   step_checkout
   if [[ "$START_STEP" == "checkout" ]]; then
     START_STEP="check"
