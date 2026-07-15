@@ -22,8 +22,8 @@ This root guidelines document defines high-level universal engineering principle
 - 🔍 [PR Review & GitHub Bot Workflow](rules/pr_review_and_github.md): Automated AI code review checklist and GitHub non-draft PR bot workflow guidelines (~2 min wait, comment fetching, fix diff proposals).
 
 ### Language-Specific Rules
-- 🐹 [Go (Golang)](rules/languages/golang.md): Google Go style guide, clean interfaces, lowercase error wrapping (`%w`), concurrency safety (`context.Context`, mutexes), and table-driven testing.
+- 🐹 [Go (Golang)](rules/languages/golang.md): Idiomatic Go style, clean interfaces, lowercase error wrapping (`%w`), concurrency safety (`context.Context`, mutexes), and table-driven testing.
 - 🟦 [TypeScript & Modern Angular](rules/languages/typescript_javascript.md): TypeScript strictness, Angular 22 signals and control flow (`@if`, `@for`, `@switch`), state immutability, declarative styling maps, and DI polymorphism.
-- 🐍 [Python](rules/languages/python.md): Google Python style guide, standard library preference, explicit public API type hints, docstrings, `unittest` framework, and Python tooling over shell scripts.
+- 🐍 [Python](rules/languages/python.md): PEP 8 Python style guide, standard library preference, explicit public API type hints, docstrings, `unittest` framework, and Python tooling over shell scripts.
 - 🐚 [Shell Scripting](rules/languages/shell.md): Minimal shell script scope (`set -euo pipefail`), double-quoting variables (`"$VAR"`), restricting Shell to thin entrypoints while deferring logic to Python.
 - 📝 [Markdown Documentation](rules/languages/markdown.md): GFM formatting, heading hierarchy, clickable relative links, accurate contract representation, and synchronized documentation updates.

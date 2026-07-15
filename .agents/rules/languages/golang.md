@@ -5,7 +5,7 @@ This document defines coding standards and conventions for Go development across
 ---
 
 ## 1. Style & Conventions
-- **Google Go Style Guide**: Strictly follow the Google Go Style Guide (`go/go-style/guide`) and style decisions (`go/go-style/decisions`).
+- **Idiomatic Go Style Guide**: Strictly follow standard Go conventions and Effective Go style recommendations.
 - **Simplicity & Readability**: Keep Go code clean, explicit, and idiomatic. Avoid unnecessary reflection or overly abstract abstractions.
 
 ## 2. Interface Design
