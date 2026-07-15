@@ -27,6 +27,8 @@ set -Eeo pipefail
 # Ensure the script is executed from the repository root directory
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
+ORIGINAL_ARGS=("$@")
+
 # --- Help Menu ---
 show_help() {
   echo "Usage: $0 [--config <path_to_yaml>] [options]"
@@ -167,17 +169,19 @@ step_checkout() {
   fi
 
   log_info "Verifying git reference '$GIT_REF' before starting upgrade..."
-  if ! git rev-parse --verify --quiet "${GIT_REF}^{commit}" >/dev/null 2>&1; then
+  if ! git rev-parse --verify --quiet "${GIT_REF}^{commit}" >/dev/null 2>&1 && \
+     ! git rev-parse --verify --quiet "origin/${GIT_REF}^{commit}" >/dev/null 2>&1; then
     log_info "Git reference '$GIT_REF' not found locally. Attempting fetch from origin..."
     git fetch origin "$GIT_REF" --tags 2>/dev/null || true
-    if ! git rev-parse --verify --quiet "${GIT_REF}^{commit}" >/dev/null 2>&1; then
+    if ! git rev-parse --verify --quiet "${GIT_REF}^{commit}" >/dev/null 2>&1 && \
+       ! git rev-parse --verify --quiet "origin/${GIT_REF}^{commit}" >/dev/null 2>&1; then
       error_exit "Git reference '$GIT_REF' does not exist locally or on remote origin."
     fi
   fi
 
   local current_head target_commit
   current_head=$(git rev-parse HEAD)
-  target_commit=$(git rev-parse --verify "${GIT_REF}^{commit}")
+  target_commit=$(git rev-parse --verify "${GIT_REF}^{commit}" 2>/dev/null || git rev-parse --verify "origin/${GIT_REF}^{commit}")
 
   if [[ "$current_head" == "$target_commit" ]]; then
     log_success "Repository is already checked out at git ref '$GIT_REF' ($target_commit)."
@@ -187,8 +191,25 @@ step_checkout() {
     fi
     log_info "Checking out git ref '$GIT_REF' ($target_commit)..."
     git checkout "$GIT_REF"
+
+    # Strip git-ref arguments before re-executing to ensure backward compatibility
+    # with older versions of the script that do not support these flags.
+    local new_args=()
+    local i=0
+    while [[ $i -lt ${#ORIGINAL_ARGS[@]} ]]; do
+      case "${ORIGINAL_ARGS[i]}" in
+        --git-ref|-r|--tag|-t|--branch|-b)
+          ((i+=2))
+          ;;
+        *)
+          new_args+=("${ORIGINAL_ARGS[i]}")
+          ((i+=1))
+          ;;
+      esac
+    done
+
     log_success "Successfully checked out '$GIT_REF'. Re-executing upgrade script from target ref..."
-    exec "$0" "$@"
+    exec "tools/upgrade_dev_env.sh" "${new_args[@]}"
   fi
 }
 

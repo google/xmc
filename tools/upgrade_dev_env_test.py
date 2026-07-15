@@ -85,6 +85,27 @@ class TestUpgradeDevEnv(unittest.TestCase):
             result.stderr,
         )
 
+    def test_only_checkout_remote_ref(self):
+        remote_ref = "test-remote-only-ref-unit"
+        subprocess.run(
+            ["git", "update-ref", f"refs/remotes/origin/{remote_ref}", self.current_head],
+            cwd=self.repo_root,
+            check=True,
+        )
+        try:
+            result = self.run_script(["--git-ref", remote_ref, "--only", "checkout"])
+            self.assertEqual(result.returncode, 0)
+            self.assertIn(
+                f"Repository is already checked out at git ref '{remote_ref}'",
+                result.stdout,
+            )
+        finally:
+            subprocess.run(
+                ["git", "update-ref", "-d", f"refs/remotes/origin/{remote_ref}"],
+                cwd=self.repo_root,
+                check=False,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
