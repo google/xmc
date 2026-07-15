@@ -52,8 +52,8 @@ function processUser(user: User | null) {
 - **Eradicate Production Mock Branches**: Never embed static mock datasets or conditional mock execution branches (`if (useMock)`) inside production application code or service layers. Decouple mocks using Dependency Injection (DI) factory providers.
 
 ## 5. Strict Testing Coverage & PR Granularity
-- **Strict Coverage Requirements**: All feature additions, bug fixes, and refactoring efforts must include comprehensive unit and integration test coverage. Never reduce assertions or mask test failures.
-- **Small, Focused PRs**: Keep Pull Requests small, localized, and logically split. Each PR should address a single cohesive task or refactoring step to enable fast, high-quality reviews.
+- **Strict Coverage Requirements**: All feature additions, bug fixes, and code modifications must include comprehensive unit and integration test coverage. Never reduce assertions or mask test failures.
+- **Small, Focused PRs**: Keep Pull Requests small, localized, and logically split. Each PR should address a single cohesive task or change step to enable fast, high-quality reviews.
 - **System Contract & API Changes**:
   - **Mandatory User Confirmation**: Seek explicit user confirmation before introducing breaking changes to public APIs, protobuf schemas, CLI flags, or core system contracts.
   - **Documentation Alignment**: Synchronize design documents, specifications, and inline API references within the exact same pull request whenever system contracts or behaviors change.

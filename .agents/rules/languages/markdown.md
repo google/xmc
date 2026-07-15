@@ -7,7 +7,7 @@ This document establishes formatting and maintenance standards for Markdown file
 ## 1. Markdown Formatting & Structure
 - **GitHub Flavored Markdown (GFM)**: Follow GitHub Flavored Markdown specifications to ensure consistent rendering across web UIs, editors, and AI agents.
 - **Clear Heading Hierarchy**: Maintain clean, logical heading levels (`#`, `##`, `###`). Do not skip heading levels.
-- **Fenced Code Blocks**: Always specify the target language identifier on fenced code blocks (e.g., ```typescript, ```go, ```python, ```bash).
+- **Fenced Code Blocks**: Always specify the target language identifier on fenced code blocks (e.g., `typescript`, `go`, `python`, `bash`).
 - **Clickable Relative Links**: Use standard Markdown relative links (`[text](relative/path/file.md)`) for internal repository cross-references.
 
 ## 2. System Contracts & Documentation Alignment

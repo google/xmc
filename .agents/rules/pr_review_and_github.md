@@ -11,7 +11,7 @@ This document defines standards for automated AI Pull Request reviews and GitHub
   - **Linear Control Flow**: Inspect control flow to ensure early guard clauses are used and no redundant `else` blocks follow terminating return or throw statements.
   - **State Immutability**: Ensure array operations construct shallow copies (`[...arr]`) before mutating, sorting, or filtering signal/observable data.
   - **Dependency Injection & Hermetic Testing**: Confirm production code contains no inline static mock datasets or `if (useMock)` execution flags, verifying mocks are supplied via DI factory providers.
-  - **Test Coverage**: Validate that all new features, bug fixes, or refactoring steps are accompanied by passing unit or integration tests.
+  - **Test Coverage**: Validate that all new features, bug fixes, or code modifications are accompanied by passing unit or integration tests.
   - **Documentation Alignment**: Verify inline docstrings, API specifications, and design documents are updated to reflect any contract adjustments.
 - **Actionable & Constructive Feedback**: Provide concrete code suggestions or diff blocks when highlighting non-compliant code during reviews.
 

@@ -1,6 +1,6 @@
 # TypeScript & Modern Angular UI Guidelines
 
-This document defines core architectural, structural, and stylistic standards for TypeScript and Angular frontend code in the XManager UI (`cmd/ui/app/`), incorporating all Phase 1 and Phase 2 refactoring best practices.
+This document defines core architectural, structural, and stylistic standards for TypeScript and Angular frontend code in the XManager UI (`cmd/ui/app/`), incorporating modern Angular architecture and clean code best practices.
 
 ---
 
@@ -8,7 +8,7 @@ This document defines core architectural, structural, and stylistic standards fo
 - **TypeScript Strictness**: Enforce strict type checking across all files. Explicitly type public method signatures, class parameters, and service return types.
 - **Default Immutability (`const` over `let`)**: Declare variables as `const` by default. Reserve `let` strictly for scopes where variable reassignment is structurally required (e.g., loop index counters).
 - **Constructive Initialization**: Use ternary expressions (`cond ? a : b`), object/array spread syntax (`...`), and default nullish fallbacks (`||`, `??`) to eliminate imperative variable reassignment chains.
-- **Clean Import Tree**: Refactor imports utilizing more than two parent directory traversals (`../../../`). Use qualified project TypeScript path mapping aliases (e.g., `xmanager_cloud/ui/app/...`) or localized flat relative paths (`./utils`, `../common`).
+- **Clean Import Tree**: Avoid imports utilizing more than two parent directory traversals (`../../../`). Use qualified project TypeScript path mapping aliases (e.g., `xmanager_cloud/ui/app/...`) or localized flat relative paths (`./utils`, `../common`).
 
 ## 2. State Management & Signal Immutability
 - **CRITICAL - Signal Data Immutability**: Never mutate state objects or arrays returned by Angular signals or RxJS observables in-place.
@@ -23,7 +23,7 @@ const sorted = [...this.stateCounts()].sort(comparator);
 - **ComponentStore Updaters & Effects**: Keep Ngrx/ComponentStore callback logic linear. Decompose lengthy success or error handling callbacks inside stream operators into dedicated private handler methods (`handleUpdateSuccess`, `handleFetchError`).
 - **Optional Execution**: Execute optional event callbacks using optional chaining (`options?.onSuccess?.()`).
 
-## 3. Angular 22 Modernization Standards
+## 3. Modern Angular Standards
 - **Built-in Template Control Flow**: Exclusively use modern Angular built-in block control flow (`@if`, `@for`, `@switch`) over legacy structural directives (`*ngIf`, `*ngFor`, `*ngSwitch`).
 - **Modern Signal APIs**: Standardize component inputs, outputs, models, and queries to functional signal primitives (`input()`, `output()`, `model()`, `viewChild()`). Completely eliminate legacy decorators (`@Input`, `@Output`, `@ViewChild`). When capturing queries such as `MatPaginator`, use `viewChild()` and handle assignments inside an explicit `effect()`.
 - **Standalone Architecture**: Ensure components, directives, and pipes are standalone (`standalone: true`) by default. Eliminate legacy `@NgModule` declarations to keep dependencies flat and tree-shakable.
