@@ -154,6 +154,80 @@ message KubernetesJob {
   repeated ExecutableSpec sidecars = 9;
   // Init containers to run before primary and sidecar containers start.
   repeated ExecutableSpec init_containers = 10;
+  // Custom volumes available to containers in the pod.
+  repeated Volume volumes = 11;
+}
+
+// Represents a volume that can be mounted by containers in a KubernetesJob.
+message Volume {
+  // Volume name used for referencing in volume mounts.
+  string name = 1;
+
+  // The source of the volume.
+  oneof source {
+    PersistentVolumeClaimVolumeSource persistent_volume_claim = 2;
+    GcsVolumeSource gcs = 3;
+    HostPathVolumeSource host_path = 4;
+    EmptyDirVolumeSource empty_dir = 5;
+    SecretVolumeSource secret = 6;
+    ConfigMapVolumeSource config_map = 7;
+    NfsVolumeSource nfs = 8;
+  }
+}
+
+// PersistentVolumeClaim volume source.
+message PersistentVolumeClaimVolumeSource {
+  // Name of the PersistentVolumeClaim in the same namespace as the pod.
+  string claim_name = 1;
+  // If true, the volume will be mounted as read-only.
+  optional bool read_only = 2;
+}
+
+// GCS volume source backed by GKE GCS FUSE CSI driver (gcs.csi.storage.gke.io).
+message GcsVolumeSource {
+  // The GCS bucket name (e.g., "my-bucket" or "gs://my-bucket").
+  string bucket = 1;
+  // Optional mount options passed to the GCS FUSE CSI driver (e.g., "implicit-dirs", "only-dir=subpath").
+  repeated string mount_options = 2;
+  // If true, the bucket is mounted read-only.
+  optional bool read_only = 3;
+}
+
+// HostPath volume source.
+message HostPathVolumeSource {
+  // Path of the directory or file on the host node.
+  string path = 1;
+  // Type for HostPath (e.g., "DirectoryOrCreate", "Directory", "File").
+  string type = 2;
+}
+
+// EmptyDir volume source.
+message EmptyDirVolumeSource {
+  // Storage medium backing this directory ("" for disk, "Memory" for ram/tmpfs).
+  string medium = 1;
+  // Total size limit required for this EmptyDir volume in bytes.
+  int64 size_limit_bytes = 2;
+}
+
+// Secret volume source.
+message SecretVolumeSource {
+  string secret_name = 1;
+  optional int32 default_mode = 2; // Octal file permission mode (e.g., 0400 = 256)
+  optional bool optional = 3;
+}
+
+// ConfigMap volume source.
+message ConfigMapVolumeSource {
+  string name = 1;
+  optional int32 default_mode = 2;
+  optional bool optional = 3;
+}
+
+// NFS volume source.
+message NfsVolumeSource {
+  string server = 1;
+  string path = 2;
+  optional bool read_only = 3;
 }
 
 // Selects a field of the Pod (matches YAML 'fieldRef').
@@ -193,6 +267,19 @@ message EnvVar {
   }
 }
 
+// Represents a volume mount inside a container.
+message VolumeMount {
+  // This must match the name of a Volume in the KubernetesJob, or one of the default
+  // scratch volumes ("ram-scratch", "disk-scratch", "dev-shm-scratch").
+  string name = 1;
+  // Path inside the container where the volume should be mounted. Must be absolute and not contain ':'.
+  string mount_path = 2;
+  // Mounted read-only if true, read-write otherwise.
+  optional bool read_only = 3;
+  // Sub-path inside the volume from which the container's volume should be mounted. Defaults to "" (root).
+  string sub_path = 4;
+}
+
 message ExecutableSpec {
   // The resources required to run the executable.
   ResourceSet resources = 1;
@@ -210,6 +297,8 @@ message ExecutableSpec {
   // Optional name for the container. If unset, defaults to the job name for the primary container,
   // '<job_name>-sidecar-<index>' for sidecars, or '<job_name>-init-<index>' for init containers.
   string name = 7;
+  // Volume mounts to mount volumes into this container.
+  repeated VolumeMount volume_mounts = 8;
 }
 
 // SchedulingConstraints contains the scheduling constraints for the

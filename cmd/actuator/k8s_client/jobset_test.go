@@ -2267,3 +2267,69 @@ func TestShouldEnableJobSetNetwork_Conditions(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_CustomVolumesAndMounts(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := createWorkUnitWithVolumesAndMounts()
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-ns", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+	if len(got.Spec.ReplicatedJobs) != 1 {
+		t.Fatalf("Expected 1 ReplicatedJob, got %d", len(got.Spec.ReplicatedJobs))
+	}
+	podSpec := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
+	verifyCustomVolumes(t, podSpec.Volumes)
+	verifyCustomVolumeMounts(t, podSpec.Containers[0].VolumeMounts)
+}
+
+func createWorkUnitWithVolumesAndMounts() *esspb.WorkUnit {
+	wu := createTestWorkUnit("test-ns")
+	job := wu.Executable.GetJobset().GetJobs()[0]
+	job.Volumes = []*esspb.Volume{
+		{Name: "ram-scratch", Source: &esspb.Volume_EmptyDir{EmptyDir: &esspb.EmptyDirVolumeSource{Medium: "Memory", SizeLimitBytes: 1048576}}},
+		{Name: "pvc-data", Source: &esspb.Volume_PersistentVolumeClaim{PersistentVolumeClaim: &esspb.PersistentVolumeClaimVolumeSource{ClaimName: "my-claim", ReadOnly: proto.Bool(true)}}},
+		{Name: "gcs-data", Source: &esspb.Volume_Gcs{Gcs: &esspb.GcsVolumeSource{Bucket: "gs://my-bucket", ReadOnly: proto.Bool(false), MountOptions: []string{"implicit-dirs"}}}},
+		{Name: "host-data", Source: &esspb.Volume_HostPath{HostPath: &esspb.HostPathVolumeSource{Path: "/tmp/host", Type: "Directory"}}},
+	}
+	job.Spec.VolumeMounts = []*esspb.VolumeMount{
+		{Name: "ram-scratch", MountPath: "/dev/ram-scratch", ReadOnly: proto.Bool(false)},
+		{Name: "pvc-data", MountPath: "/mnt/pvc", ReadOnly: proto.Bool(true)},
+		{Name: "gcs-data", MountPath: "/mnt/gcs", SubPath: "sub"},
+	}
+	return wu
+}
+
+func verifyCustomVolumes(t *testing.T, volumes []corev1.Volume) {
+	t.Helper()
+	volMap := make(map[string]corev1.Volume)
+	for _, v := range volumes {
+		volMap[v.Name] = v
+	}
+	if volMap["ram-scratch"].EmptyDir == nil || volMap["ram-scratch"].EmptyDir.SizeLimit == nil {
+		t.Errorf("Expected overridden ram-scratch volume with SizeLimit, got: %+v", volMap["ram-scratch"])
+	}
+	if pvc := volMap["pvc-data"].PersistentVolumeClaim; pvc == nil || pvc.ClaimName != "my-claim" || !pvc.ReadOnly {
+		t.Errorf("Expected pvc-data volume with ClaimName 'my-claim' and ReadOnly true, got: %+v", pvc)
+	}
+	if csi := volMap["gcs-data"].CSI; csi == nil || csi.Driver != "gcs.csi.storage.gke.io" || csi.VolumeAttributes["bucketName"] != "my-bucket" {
+		t.Errorf("Expected gcs-data CSI volume, got: %+v", csi)
+	}
+	if hp := volMap["host-data"].HostPath; hp == nil || hp.Path != "/tmp/host" {
+		t.Errorf("Expected host-data HostPath volume, got: %+v", hp)
+	}
+}
+
+func verifyCustomVolumeMounts(t *testing.T, mounts []corev1.VolumeMount) {
+	t.Helper()
+	mountMap := make(map[string]corev1.VolumeMount)
+	for _, m := range mounts {
+		mountMap[m.Name] = m
+	}
+	if mountMap["pvc-data"].MountPath != "/mnt/pvc" || !mountMap["pvc-data"].ReadOnly {
+		t.Errorf("Expected pvc-data mount at /mnt/pvc ReadOnly, got: %+v", mountMap["pvc-data"])
+	}
+	if mountMap["gcs-data"].MountPath != "/mnt/gcs" || mountMap["gcs-data"].SubPath != "sub" {
+		t.Errorf("Expected gcs-data mount at /mnt/gcs with SubPath 'sub', got: %+v", mountMap["gcs-data"])
+	}
+}
+

@@ -18,11 +18,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	batchv1 "golang/k8s_io/api/v/v0_23/batch/v1/v1"
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
+	resource "golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/unstructured/unstructured"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
@@ -328,7 +330,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 						Containers:         buildContainersForJob(job),
 						RestartPolicy:      corev1.RestartPolicyNever,
 						SecurityContext:    defaultPodSecurityContext(),
-						Volumes:            defaultVolumes(),
+						Volumes:            generateVolumesForJob(job),
 					},
 				},
 			},
@@ -373,7 +375,7 @@ func buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Con
 		Args:                     args,
 		Env:                      envVars,
 		SecurityContext:          defaultSecurityContext(),
-		VolumeMounts:             defaultVolumeMounts(),
+		VolumeMounts:             generateVolumeMountsForSpec(spec),
 	}
 }
 
@@ -758,6 +760,188 @@ func defaultVolumeMounts() []corev1.VolumeMount {
 			Name:      "dev-shm-scratch",
 			MountPath: "/dev/shm",
 		},
+	}
+}
+
+func generateVolumesForJob(job *esspb.KubernetesJob) []corev1.Volume {
+	volumes := defaultVolumes()
+	volIndex := make(map[string]int, len(volumes))
+	for i, v := range volumes {
+		volIndex[v.Name] = i
+	}
+	for _, v := range job.GetVolumes() {
+		vol := buildVolumeFromProto(v)
+		if idx, exists := volIndex[v.GetName()]; exists {
+			volumes[idx] = vol
+			continue
+		}
+		volIndex[v.GetName()] = len(volumes)
+		volumes = append(volumes, vol)
+	}
+	return volumes
+}
+
+func buildVolumeFromProto(v *esspb.Volume) corev1.Volume {
+	vol := corev1.Volume{Name: v.GetName()}
+	if pvc := v.GetPersistentVolumeClaim(); pvc != nil {
+		vol.PersistentVolumeClaim = buildPVCVolumeSource(pvc)
+		return vol
+	}
+	if gcs := v.GetGcs(); gcs != nil {
+		vol.CSI = buildGCSVolumeSource(gcs)
+		return vol
+	}
+	if hp := v.GetHostPath(); hp != nil {
+		vol.HostPath = buildHostPathVolumeSource(hp)
+		return vol
+	}
+	if ed := v.GetEmptyDir(); ed != nil {
+		vol.EmptyDir = buildEmptyDirVolumeSource(ed)
+		return vol
+	}
+	if sec := v.GetSecret(); sec != nil {
+		vol.Secret = buildSecretVolumeSource(sec)
+		return vol
+	}
+	if cm := v.GetConfigMap(); cm != nil {
+		vol.ConfigMap = buildConfigMapVolumeSource(cm)
+		return vol
+	}
+	if nfs := v.GetNfs(); nfs != nil {
+		vol.NFS = buildNFSVolumeSource(nfs)
+		return vol
+	}
+	return vol
+}
+
+func buildPVCVolumeSource(pvc *esspb.PersistentVolumeClaimVolumeSource) *corev1.PersistentVolumeClaimVolumeSource {
+	var readOnly bool
+	if pvc.ReadOnly != nil {
+		readOnly = pvc.GetReadOnly()
+	}
+	return &corev1.PersistentVolumeClaimVolumeSource{
+		ClaimName: pvc.GetClaimName(),
+		ReadOnly:  readOnly,
+	}
+}
+
+func buildGCSVolumeSource(gcs *esspb.GcsVolumeSource) *corev1.CSIVolumeSource {
+	bucket := strings.TrimPrefix(gcs.GetBucket(), "gs://")
+	var readOnly bool
+	if gcs.ReadOnly != nil {
+		readOnly = gcs.GetReadOnly()
+	}
+	attrs := map[string]string{
+		"bucketName": bucket,
+	}
+	if len(gcs.GetMountOptions()) > 0 {
+		attrs["mountOptions"] = strings.Join(gcs.GetMountOptions(), ",")
+	}
+	return &corev1.CSIVolumeSource{
+		Driver:           "gcs.csi.storage.gke.io",
+		ReadOnly:         proto.Bool(readOnly),
+		VolumeAttributes: attrs,
+	}
+}
+
+func buildHostPathVolumeSource(hp *esspb.HostPathVolumeSource) *corev1.HostPathVolumeSource {
+	var hpType corev1.HostPathType
+	if hp.GetType() != "" {
+		hpType = corev1.HostPathType(hp.GetType())
+	}
+	return &corev1.HostPathVolumeSource{
+		Path: hp.GetPath(),
+		Type: &hpType,
+	}
+}
+
+func buildEmptyDirVolumeSource(ed *esspb.EmptyDirVolumeSource) *corev1.EmptyDirVolumeSource {
+	medium := corev1.StorageMedium(ed.GetMedium())
+	var sizeLimit *resource.Quantity
+	if ed.GetSizeLimitBytes() > 0 {
+		q := resource.NewQuantity(ed.GetSizeLimitBytes(), resource.BinarySI)
+		sizeLimit = q
+	}
+	return &corev1.EmptyDirVolumeSource{
+		Medium:    medium,
+		SizeLimit: sizeLimit,
+	}
+}
+
+func buildSecretVolumeSource(sec *esspb.SecretVolumeSource) *corev1.SecretVolumeSource {
+	src := &corev1.SecretVolumeSource{
+		SecretName: sec.GetSecretName(),
+	}
+	if sec.DefaultMode != nil {
+		src.DefaultMode = proto.Int32(sec.GetDefaultMode())
+	}
+	if sec.Optional != nil {
+		src.Optional = proto.Bool(sec.GetOptional())
+	}
+	return src
+}
+
+func buildConfigMapVolumeSource(cm *esspb.ConfigMapVolumeSource) *corev1.ConfigMapVolumeSource {
+	src := &corev1.ConfigMapVolumeSource{
+		LocalObjectReference: corev1.LocalObjectReference{Name: cm.GetName()},
+	}
+	if cm.DefaultMode != nil {
+		src.DefaultMode = proto.Int32(cm.GetDefaultMode())
+	}
+	if cm.Optional != nil {
+		src.Optional = proto.Bool(cm.GetOptional())
+	}
+	return src
+}
+
+func buildNFSVolumeSource(nfs *esspb.NfsVolumeSource) *corev1.NFSVolumeSource {
+	var readOnly bool
+	if nfs.ReadOnly != nil {
+		readOnly = nfs.GetReadOnly()
+	}
+	return &corev1.NFSVolumeSource{
+		Server:   nfs.GetServer(),
+		Path:     nfs.GetPath(),
+		ReadOnly: readOnly,
+	}
+}
+
+func generateVolumeMountsForSpec(spec *esspb.ExecutableSpec) []corev1.VolumeMount {
+	mounts := defaultVolumeMounts()
+	mountIndex := make(map[string]int, len(mounts))
+	for i, m := range mounts {
+		mountIndex[m.Name] = i
+		mountIndex[m.MountPath] = i
+	}
+	for _, vm := range spec.GetVolumeMounts() {
+		m := buildVolumeMountFromProto(vm)
+		if idx, exists := mountIndex[vm.GetName()]; exists {
+			mountIndex[vm.GetMountPath()] = idx
+			mounts[idx] = m
+			continue
+		}
+		if idx, exists := mountIndex[vm.GetMountPath()]; exists {
+			mountIndex[vm.GetName()] = idx
+			mounts[idx] = m
+			continue
+		}
+		mountIndex[vm.GetName()] = len(mounts)
+		mountIndex[vm.GetMountPath()] = len(mounts)
+		mounts = append(mounts, m)
+	}
+	return mounts
+}
+
+func buildVolumeMountFromProto(vm *esspb.VolumeMount) corev1.VolumeMount {
+	var readOnly bool
+	if vm.ReadOnly != nil {
+		readOnly = vm.GetReadOnly()
+	}
+	return corev1.VolumeMount{
+		Name:      vm.GetName(),
+		MountPath: vm.GetMountPath(),
+		ReadOnly:  readOnly,
+		SubPath:   vm.GetSubPath(),
 	}
 }
 

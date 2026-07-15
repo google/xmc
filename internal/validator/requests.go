@@ -325,18 +325,22 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 		}
 		jobNames[job.Name] = true
 
-		if err := validateExecutableSpec(job.Spec, "work_unit.executable.jobset.jobs.spec"); err != nil {
+		validVols, err := validateJobVolumes(job.GetVolumes(), "work_unit.executable.jobset.jobs.volumes")
+		if err != nil {
+			return err
+		}
+		if err := validateExecutableSpec(job.Spec, "work_unit.executable.jobset.jobs.spec", validVols); err != nil {
 			return err
 		}
 		for i, sidecar := range job.GetSidecars() {
 			prefix := fmt.Sprintf("work_unit.executable.jobset.jobs.sidecars[%d]", i)
-			if err := validateExecutableSpec(sidecar, prefix); err != nil {
+			if err := validateExecutableSpec(sidecar, prefix, validVols); err != nil {
 				return err
 			}
 		}
 		for i, initContainer := range job.GetInitContainers() {
 			prefix := fmt.Sprintf("work_unit.executable.jobset.jobs.init_containers[%d]", i)
-			if err := validateExecutableSpec(initContainer, prefix); err != nil {
+			if err := validateExecutableSpec(initContainer, prefix, validVols); err != nil {
 				return err
 			}
 		}
@@ -458,7 +462,7 @@ func validatePayload(payload *essmsgpb.ArtifactPayload) error {
 	return nil
 }
 
-func validateExecutableSpec(spec *essmsgpb.ExecutableSpec, prefix string) error {
+func validateExecutableSpec(spec *essmsgpb.ExecutableSpec, prefix string, validVolumes ...map[string]bool) error {
 	if spec == nil {
 		return fmt.Errorf("%s cannot be nil: %w", prefix, status.ErrInvalidArgument)
 	}
@@ -472,6 +476,13 @@ func validateExecutableSpec(spec *essmsgpb.ExecutableSpec, prefix string) error 
 	}
 	if spec.GetResources() == nil || spec.GetResources().GetResources() == nil {
 		return fmt.Errorf("%s.resources.resources cannot be nil: %w", prefix, status.ErrInvalidArgument)
+	}
+	var volMap map[string]bool
+	if len(validVolumes) > 0 {
+		volMap = validVolumes[0]
+	}
+	if err := validateVolumeMounts(spec.GetVolumeMounts(), prefix, volMap); err != nil {
+		return err
 	}
 	return validateResourceSet(spec.GetResources(), prefix+".resources")
 }
@@ -553,6 +564,122 @@ func validateContainerNamesUnique(job *essmsgpb.KubernetesJob) error {
 			return err
 		}
 		names[name] = true
+	}
+	return nil
+}
+
+func validateJobVolumes(volumes []*essmsgpb.Volume, prefix string) (map[string]bool, error) {
+	validNames := map[string]bool{
+		"ram-scratch":     true,
+		"disk-scratch":    true,
+		"dev-shm-scratch": true,
+	}
+	seenCustomNames := make(map[string]bool)
+	for i, v := range volumes {
+		volPrefix := fmt.Sprintf("%s[%d]", prefix, i)
+		if v.GetName() == "" {
+			return nil, fmt.Errorf("%s.name cannot be empty: %w", volPrefix, status.ErrInvalidArgument)
+		}
+		if err := validateDNSLabel(v.GetName(), volPrefix+".name"); err != nil {
+			return nil, err
+		}
+		if seenCustomNames[v.GetName()] {
+			return nil, fmt.Errorf("%s.name %q must be unique within the job: %w", volPrefix, v.GetName(), status.ErrInvalidArgument)
+		}
+		seenCustomNames[v.GetName()] = true
+		validNames[v.GetName()] = true
+		if err := validateVolumeSource(v, volPrefix); err != nil {
+			return nil, err
+		}
+	}
+	return validNames, nil
+}
+
+func validateVolumeSource(v *essmsgpb.Volume, prefix string) error {
+	if v.GetSource() == nil {
+		return fmt.Errorf("%s must have a source specified: %w", prefix, status.ErrInvalidArgument)
+	}
+	if pvc := v.GetPersistentVolumeClaim(); pvc != nil {
+		if pvc.GetClaimName() == "" {
+			return fmt.Errorf("%s.persistent_volume_claim.claim_name cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		}
+		return validateDNSLabel(pvc.GetClaimName(), prefix+".persistent_volume_claim.claim_name")
+	}
+	if gcs := v.GetGcs(); gcs != nil {
+		if gcs.GetBucket() == "" {
+			return fmt.Errorf("%s.gcs.bucket cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		}
+		return nil
+	}
+	if hp := v.GetHostPath(); hp != nil {
+		if hp.GetPath() == "" {
+			return fmt.Errorf("%s.host_path.path cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		}
+		if !strings.HasPrefix(hp.GetPath(), "/") {
+			return fmt.Errorf("%s.host_path.path %q must be an absolute path: %w", prefix, hp.GetPath(), status.ErrInvalidArgument)
+		}
+		return nil
+	}
+	if ed := v.GetEmptyDir(); ed != nil {
+		if ed.GetSizeLimitBytes() < 0 {
+			return fmt.Errorf("%s.empty_dir.size_limit_bytes cannot be negative: %w", prefix, status.ErrInvalidArgument)
+		}
+		return nil
+	}
+	return validateRemainingVolumeSources(v, prefix)
+}
+
+func validateRemainingVolumeSources(v *essmsgpb.Volume, prefix string) error {
+	if sec := v.GetSecret(); sec != nil {
+		if sec.GetSecretName() == "" {
+			return fmt.Errorf("%s.secret.secret_name cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		}
+		return nil
+	}
+	if cm := v.GetConfigMap(); cm != nil {
+		if cm.GetName() == "" {
+			return fmt.Errorf("%s.config_map.name cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		}
+		return nil
+	}
+	if nfs := v.GetNfs(); nfs != nil {
+		if nfs.GetServer() == "" {
+			return fmt.Errorf("%s.nfs.server cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		}
+		if nfs.GetPath() == "" {
+			return fmt.Errorf("%s.nfs.path cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		}
+		return nil
+	}
+	return nil
+}
+
+func validateVolumeMounts(mounts []*essmsgpb.VolumeMount, prefix string, validVolumes map[string]bool) error {
+	seenPaths := make(map[string]bool)
+	for i, vm := range mounts {
+		mPrefix := fmt.Sprintf("%s.volume_mounts[%d]", prefix, i)
+		if vm.GetName() == "" {
+			return fmt.Errorf("%s.name cannot be empty: %w", mPrefix, status.ErrInvalidArgument)
+		}
+		if validVolumes != nil && !validVolumes[vm.GetName()] {
+			return fmt.Errorf("%s.name %q must reference a defined job volume or default scratch volume: %w", mPrefix, vm.GetName(), status.ErrInvalidArgument)
+		}
+		if vm.GetMountPath() == "" {
+			return fmt.Errorf("%s.mount_path cannot be empty: %w", mPrefix, status.ErrInvalidArgument)
+		}
+		if !strings.HasPrefix(vm.GetMountPath(), "/") {
+			return fmt.Errorf("%s.mount_path %q must be an absolute path: %w", mPrefix, vm.GetMountPath(), status.ErrInvalidArgument)
+		}
+		if strings.Contains(vm.GetMountPath(), ":") {
+			return fmt.Errorf("%s.mount_path %q cannot contain ':': %w", mPrefix, vm.GetMountPath(), status.ErrInvalidArgument)
+		}
+		if vm.GetMountPath() == "/dev/termination-log" {
+			return fmt.Errorf("%s.mount_path %q collides with reserved termination-log path: %w", mPrefix, vm.GetMountPath(), status.ErrInvalidArgument)
+		}
+		if seenPaths[vm.GetMountPath()] {
+			return fmt.Errorf("%s.mount_path %q cannot be duplicated in the same container: %w", mPrefix, vm.GetMountPath(), status.ErrInvalidArgument)
+		}
+		seenPaths[vm.GetMountPath()] = true
 	}
 	return nil
 }
