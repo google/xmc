@@ -218,7 +218,7 @@ Verify the health, certificate readiness, and routing of the environment:
 
 ### Step 1: Run Verification Script
 ```bash
-./deploy/ctk_v2/verify_xmc.sh
+python3 ./deploy/ctk_v2/verify_xmc.py
 ```
 
 ### Step 2: Gateway Status Check

@@ -284,7 +284,7 @@ step_verify() {
       --project="$XMC_PROJECT_ID"
 
   log_info "Running verification script..."
-  ENVIRONMENT="$XMC_ENVIRONMENT" REGION="$XMC_REGION" PROJECT_ID="$XMC_PROJECT_ID" bash ./deploy/ctk_v2/verify_xmc.sh || echo "Diagnostic script reported warnings."
+  ENVIRONMENT="$XMC_ENVIRONMENT" REGION="$XMC_REGION" PROJECT_ID="$XMC_PROJECT_ID" python3 ./deploy/ctk_v2/verify_xmc.py || echo "Diagnostic script reported warnings."
 
   log_info "Verifying routing Gateway programmed state (5m timeout)..."
   kubectl wait --for=condition=Programmed gateway/xmc-gateway -n xmc --timeout=300s || \
