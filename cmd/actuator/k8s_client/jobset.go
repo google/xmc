@@ -827,10 +827,6 @@ func buildPVCVolumeSource(pvc *esspb.PersistentVolumeClaimVolumeSource) *corev1.
 
 func buildGCSVolumeSource(gcs *esspb.GcsVolumeSource) *corev1.CSIVolumeSource {
 	bucket := strings.TrimPrefix(gcs.GetBucket(), "gs://")
-	var readOnly bool
-	if gcs.ReadOnly != nil {
-		readOnly = gcs.GetReadOnly()
-	}
 	attrs := map[string]string{
 		"bucketName": bucket,
 	}
@@ -839,7 +835,7 @@ func buildGCSVolumeSource(gcs *esspb.GcsVolumeSource) *corev1.CSIVolumeSource {
 	}
 	return &corev1.CSIVolumeSource{
 		Driver:           "gcs.csi.storage.gke.io",
-		ReadOnly:         proto.Bool(readOnly),
+		ReadOnly:         gcs.ReadOnly,
 		VolumeAttributes: attrs,
 	}
 }

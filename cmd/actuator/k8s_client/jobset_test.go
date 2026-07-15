@@ -2289,6 +2289,7 @@ func createWorkUnitWithVolumesAndMounts() *esspb.WorkUnit {
 		{Name: "ram-scratch", Source: &esspb.Volume_EmptyDir{EmptyDir: &esspb.EmptyDirVolumeSource{Medium: "Memory", SizeLimitBytes: 1048576}}},
 		{Name: "pvc-data", Source: &esspb.Volume_PersistentVolumeClaim{PersistentVolumeClaim: &esspb.PersistentVolumeClaimVolumeSource{ClaimName: "my-claim", ReadOnly: proto.Bool(true)}}},
 		{Name: "gcs-data", Source: &esspb.Volume_Gcs{Gcs: &esspb.GcsVolumeSource{Bucket: "gs://my-bucket", ReadOnly: proto.Bool(false), MountOptions: []string{"implicit-dirs"}}}},
+		{Name: "gcs-data-nil", Source: &esspb.Volume_Gcs{Gcs: &esspb.GcsVolumeSource{Bucket: "gs://my-bucket-nil"}}},
 		{Name: "host-data", Source: &esspb.Volume_HostPath{HostPath: &esspb.HostPathVolumeSource{Path: "/tmp/host", Type: "Directory"}}},
 	}
 	job.Spec.VolumeMounts = []*esspb.VolumeMount{
@@ -2311,8 +2312,11 @@ func verifyCustomVolumes(t *testing.T, volumes []corev1.Volume) {
 	if pvc := volMap["pvc-data"].PersistentVolumeClaim; pvc == nil || pvc.ClaimName != "my-claim" || !pvc.ReadOnly {
 		t.Errorf("Expected pvc-data volume with ClaimName 'my-claim' and ReadOnly true, got: %+v", pvc)
 	}
-	if csi := volMap["gcs-data"].CSI; csi == nil || csi.Driver != "gcs.csi.storage.gke.io" || csi.VolumeAttributes["bucketName"] != "my-bucket" {
-		t.Errorf("Expected gcs-data CSI volume, got: %+v", csi)
+	if csi := volMap["gcs-data"].CSI; csi == nil || csi.Driver != "gcs.csi.storage.gke.io" || csi.VolumeAttributes["bucketName"] != "my-bucket" || csi.ReadOnly == nil || *csi.ReadOnly {
+		t.Errorf("Expected gcs-data CSI volume with ReadOnly false, got: %+v", csi)
+	}
+	if csi := volMap["gcs-data-nil"].CSI; csi == nil || csi.Driver != "gcs.csi.storage.gke.io" || csi.VolumeAttributes["bucketName"] != "my-bucket-nil" || csi.ReadOnly != nil {
+		t.Errorf("Expected gcs-data-nil CSI volume with ReadOnly nil, got: %+v", csi)
 	}
 	if hp := volMap["host-data"].HostPath; hp == nil || hp.Path != "/tmp/host" {
 		t.Errorf("Expected host-data HostPath volume, got: %+v", hp)
