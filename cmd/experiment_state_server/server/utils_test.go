@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"golang/protobuf/v2/proto/proto"
+
 	"go/log"
 	googlespanner "golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/cmp/cmp"
@@ -473,4 +475,10 @@ func TestPropagateIAPJWT_NoIncomingMetadata(t *testing.T) {
 	if ok {
 		t.Errorf("expected no outgoing metadata, but got some")
 	}
+}
+
+func modifyProto[T proto.Message](m T, f func(T)) T {
+	cloned := proto.Clone(m).(T)
+	f(cloned)
+	return cloned
 }

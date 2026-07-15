@@ -1160,4 +1160,3 @@ func TestInjectOnJobSetCreation_NetworkInjectionGPUMultiNode(t *testing.T) {
 		t.Errorf("Expected EnableDNSHostnames to be true, got %v", got.Spec.Network.EnableDNSHostnames)
 	}
 }
-

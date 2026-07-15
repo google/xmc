@@ -42,6 +42,7 @@ go_test(
         "requests_test.go",
     ],
     embed = [":validator"],
+    shard_count = 10,
     deps = [
         "//api/protos/experiment:api_go_proto",
         "//api/protos/experiment:messages_go_proto",
