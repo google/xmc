@@ -4,14 +4,13 @@ We will add features to this script as we progress with the implementation of
 the XMC client.
 """
 
-from collections.abc import Sequence
 import logging
 import os
+from collections.abc import Sequence
 
-from absl import app
 import dotenv
-from xmanager import xm
-from xmanager import xm_cloud
+from absl import app
+from xmanager import xm, xm_cloud
 
 # Suppress python-dotenv parsing warnings for non-key-value lines in the .env file.
 logging.getLogger("dotenv.main").setLevel(logging.ERROR)
@@ -34,12 +33,8 @@ def main(argv: Sequence[str]) -> None:
 
     # Create an experiment.
     with xm_cloud.create_experiment(
-        experiment_title=(
-            f"My XMC experiment - {os.environ.get('USER', 'unknown')}"
-        ),
-        acls=xm_cloud.Acls(
-            owners=[xm_cloud.Acls.Role(all_authenticated_users=True)]
-        ),
+        experiment_title=(f"My XMC experiment - {os.environ.get('USER', 'unknown')}"),
+        acls=xm_cloud.Acls(owners=[xm_cloud.Acls.Role(all_authenticated_users=True)]),
         urls=[
             xm_cloud.Url(
                 url="https://www.google.com",
@@ -48,16 +43,18 @@ def main(argv: Sequence[str]) -> None:
             )
         ],
     ) as experiment:
-        executables = experiment.package([
-            xm.container(
-                image_path=(
-                    f"us-docker.pkg.dev/{PROJECT_ID}/xmc/example-container:latest"
-                ),
-                executor_spec=xm_cloud.KubernetesJobExecutorSpec(
-                    container_registry=CONTAINER_REGISTRY,
-                ),
-            )
-        ])
+        executables = experiment.package(
+            [
+                xm.container(
+                    image_path=(
+                        f"us-docker.pkg.dev/{PROJECT_ID}/xmc/example-container:latest"
+                    ),
+                    executor_spec=xm_cloud.KubernetesJobExecutorSpec(
+                        container_registry=CONTAINER_REGISTRY,
+                    ),
+                )
+            ]
+        )
 
         for executable in executables:
             experiment.add(

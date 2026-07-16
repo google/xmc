@@ -17,56 +17,57 @@ import http.server
 import json
 import os
 
+
 class SPAHandler(http.server.SimpleHTTPRequestHandler):
-  """Custom request handler that supports SPA routing fallbacks and config.js."""
+    """Custom request handler that supports SPA routing fallbacks and config.js."""
 
-  def do_GET(self):
-    """Handles GET requests for SPA routing, health checks, and config generation."""
-    if self.path == '/healthz':
-      self.send_response(200, 'OK')
-      self.send_header('Content-type', 'text/plain')
-      self.end_headers()
-      self.wfile.write(b'OK')
-      return
+    def do_GET(self):
+        """Handles GET requests for SPA routing, health checks, and config."""
+        if self.path == "/healthz":
+            self.send_response(200, "OK")
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+            return
 
-    if self.path == '/config.js':
-      self.send_response(200)
-      self.send_header('Content-type', 'application/javascript')
-      self.end_headers()
+        if self.path == "/config.js":
+            self.send_response(200)
+            self.send_header("Content-type", "application/javascript")
+            self.end_headers()
 
-      api_url = os.environ.get('XMC_API_URL')
-      if not api_url:
-        self.log_message(
-            'WARNING: XMC_API_URL environment variable is not set. Defaulting'
-            " to 'https://api.example.com/v1'"
-        )
-        api_url = 'https://api.example.com/v1'
+            api_url = os.environ.get("XMC_API_URL")
+            if not api_url:
+                self.log_message(
+                    "WARNING: XMC_API_URL environment variable is not set. Defaulting"
+                    " to 'https://api.example.com/v1'"
+                )
+                api_url = "https://api.example.com/v1"
 
-      refresh_interval_str = os.environ.get('XMC_REFRESH_INTERVAL_MS', '30000')
-      try:
-        refresh_interval = int(refresh_interval_str)
-      except ValueError:
-        refresh_interval = 30000
+            refresh_interval_str = os.environ.get("XMC_REFRESH_INTERVAL_MS", "30000")
+            try:
+                refresh_interval = int(refresh_interval_str)
+            except ValueError:
+                refresh_interval = 30000
 
-      status_history = (
-          os.environ.get('XMC_STATUS_MESSAGE_HISTORY_ENABLED', 'false').lower()
-          == 'true'
-      )
+            status_history = (
+                os.environ.get("XMC_STATUS_MESSAGE_HISTORY_ENABLED", "false").lower()
+                == "true"
+            )
 
-      feature_flags = {
-          'statusMessageHistoryEnabled': status_history,
-      }
+            feature_flags = {
+                "statusMessageHistoryEnabled": status_history,
+            }
 
-      config_content = (
-          f'window.XMC_API_URL="{api_url}";\n'
-          f'window.XMC_REFRESH_INTERVAL_MS={refresh_interval};\n'
-          f'window.XMC_FEATURE_FLAGS={json.dumps(feature_flags)};\n'
-      )
-      self.wfile.write(config_content.encode('utf-8'))
-      return
+            config_content = (
+                f'window.XMC_API_URL="{api_url}";\n'
+                f"window.XMC_REFRESH_INTERVAL_MS={refresh_interval};\n"
+                f"window.XMC_FEATURE_FLAGS={json.dumps(feature_flags)};\n"
+            )
+            self.wfile.write(config_content.encode("utf-8"))
+            return
 
-    translated_path = self.translate_path(self.path)
-    if not os.path.exists(translated_path):
-      self.path = '/index.html'
+        translated_path = self.translate_path(self.path)
+        if not os.path.exists(translated_path):
+            self.path = "/index.html"
 
-    super().do_GET()
+        super().do_GET()

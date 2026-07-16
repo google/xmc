@@ -16,9 +16,9 @@
 """Helper script to post a reply to a PR comment on GitHub."""
 
 import argparse
-from datetime import datetime, timezone
 import json
 import subprocess
+from datetime import datetime, timezone
 
 from github_utils import (
     GithubAPIError,
@@ -45,9 +45,7 @@ def reply_comment(args):
 
     # Fetch authenticated user's Github login
     try:
-        user_info = call_github_api(
-            "/user", user_agent="XMC-Comment-Replier-Agent"
-        )
+        user_info = call_github_api("/user", user_agent="XMC-Comment-Replier-Agent")
         github_username = user_info.get("login", "unknown")
     except Exception:
         github_username = "unknown"

@@ -67,9 +67,7 @@ def call_github_api(
     token = os.environ.get("GITHUB_TOKEN")
     if token:
         try:
-            return _call_api_with_token(
-                endpoint, method, payload, token, user_agent
-            )
+            return _call_api_with_token(endpoint, method, payload, token, user_agent)
         except Exception as e:
             errors.append(("token_auth", e))
 
@@ -80,12 +78,14 @@ def call_github_api(
         except Exception as e:
             errors.append(("unauthenticated", e))
     else:
-        errors.append((
-            "unauthenticated",
-            ValueError(
-                "Unauthenticated requests not supported for non-GET methods."
-            ),
-        ))
+        errors.append(
+            (
+                "unauthenticated",
+                ValueError(
+                    "Unauthenticated requests not supported for non-GET methods."
+                ),
+            )
+        )
 
     # 4. Handle Failure
     _raise_detailed_error(errors)
@@ -140,18 +140,13 @@ def _raise_detailed_error(errors):
             if err.code in [401, 403]:
                 is_auth_failure = True
                 break
-        elif source == "gh_cli" and isinstance(
-            err, subprocess.CalledProcessError
-        ):
+        elif source == "gh_cli" and isinstance(err, subprocess.CalledProcessError):
             stderr = (
                 err.stderr.decode("utf-8", errors="ignore")
                 if isinstance(err.stderr, bytes)
                 else str(err.stderr)
             )
-            if any(
-                kw in stderr.lower()
-                for kw in ["auth", "login", "credentials"]
-            ):
+            if any(kw in stderr.lower() for kw in ["auth", "login", "credentials"]):
                 is_auth_failure = True
                 break
         elif source == "unauthenticated" and isinstance(err, ValueError):
@@ -168,8 +163,7 @@ def _raise_detailed_error(errors):
                 else str(err.stderr)
             )
             err_msgs.append(
-                f"[{source}] {type(err).__name__}: {err} (stderr:"
-                f" {stderr_str.strip()})"
+                f"[{source}] {type(err).__name__}: {err} (stderr: {stderr_str.strip()})"
             )
         else:
             err_msgs.append(f"[{source}] {type(err).__name__}: {err}")

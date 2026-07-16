@@ -119,9 +119,7 @@ def build_oci(args):
 
         try:
             with tarfile.open(layer_tar_path, "w") as tar:
-                info = tar.gettarinfo(
-                    real_binary_path, arcname=f"app/{binary_name}"
-                )
+                info = tar.gettarinfo(real_binary_path, arcname=f"app/{binary_name}")
                 info.uid = 0
                 info.gid = 0
                 info.uname = "root"

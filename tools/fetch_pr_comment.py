@@ -43,9 +43,7 @@ def fetch_comment(args):
         repo = parsed["repo"]
         comment_id = parsed["comment_id"]
         endpoint = f"/repos/{owner}/{repo}/pulls/comments/{comment_id}"
-        data = call_github_api(
-            endpoint, user_agent="XMC-Comment-Fetcher-Agent"
-        )
+        data = call_github_api(endpoint, user_agent="XMC-Comment-Fetcher-Agent")
 
         return {
             "type": "review_comment",
@@ -79,9 +77,7 @@ def main():
             " commit id) from a GitHub Pull Request review comment URL."
         )
     )
-    parser.add_argument(
-        "comment_url", help="The URL of the GitHub PR review comment."
-    )
+    parser.add_argument("comment_url", help="The URL of the GitHub PR review comment.")
     run_tool(parser, fetch_comment)
 
 

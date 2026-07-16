@@ -61,20 +61,20 @@ class TestExtractTelemetry(unittest.TestCase):
         mock_call.side_effect = Exception("API error")
         with self.assertRaises(HandledError) as ctx:
             _fetch_comments("google", "xmc")
-        self.assertIn(
-            "Failed to fetch repository comments", ctx.exception.message
-        )
+        self.assertIn("Failed to fetch repository comments", ctx.exception.message)
 
     def test_parse_telemetry_valid(self):
         """Test parsing valid telemetry JSON block from comment."""
-        comments = [{
-            "id": 1,
-            "body": (
-                "done\n\n<!-- xmc-telemetry: {\"git_username\": \"chad\","
-                ' "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number":'
-                ' "29", "comment_id": 1234} -->'
-            ),
-        }]
+        comments = [
+            {
+                "id": 1,
+                "body": (
+                    'done\n\n<!-- xmc-telemetry: {"git_username": "chad",'
+                    ' "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number":'
+                    ' "29", "comment_id": 1234} -->'
+                ),
+            }
+        ]
         res = _parse_telemetry(comments)
         self.assertEqual(len(res), 1)
         self.assertEqual(res[0]["github_username"], "chad")
@@ -85,15 +85,17 @@ class TestExtractTelemetry(unittest.TestCase):
 
     def test_parse_telemetry_with_skill_metadata(self):
         """Test parsing telemetry comment block containing skill metadata."""
-        comments = [{
-            "id": 8,
-            "body": (
-                "done\n\n<!-- xmc-telemetry: {\"git_username\": \"chad\","
-                ' "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number":'
-                ' "29", "comment_id": 1234, "skill_name": "address_pr_comment",'
-                ' "skill_commit_id": "mock_hash"} -->'
-            ),
-        }]
+        comments = [
+            {
+                "id": 8,
+                "body": (
+                    'done\n\n<!-- xmc-telemetry: {"git_username": "chad",'
+                    ' "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number":'
+                    ' "29", "comment_id": 1234, "skill_name": "address_pr_comment",'
+                    ' "skill_commit_id": "mock_hash"} -->'
+                ),
+            }
+        ]
         res = _parse_telemetry(comments)
         self.assertEqual(len(res), 1)
         self.assertEqual(res[0]["github_username"], "chad")
@@ -110,10 +112,12 @@ class TestExtractTelemetry(unittest.TestCase):
 
     def test_parse_telemetry_corrupted_json(self):
         """Test comment with malformed telemetry JSON produces empty output."""
-        comments = [{
-            "id": 4,
-            "body": "done\n\n<!-- xmc-telemetry: {corrupted_json} -->",
-        }]
+        comments = [
+            {
+                "id": 4,
+                "body": "done\n\n<!-- xmc-telemetry: {corrupted_json} -->",
+            }
+        ]
         res = _parse_telemetry(comments)
         self.assertEqual(len(res), 0)
 
@@ -156,9 +160,7 @@ class TestExtractTelemetry(unittest.TestCase):
     @patch("extract_telemetry._fetch_comments")
     @patch("builtins.open", new_callable=MagicMock)
     @patch("extract_telemetry.json.dump")
-    def test_extract_telemetry_write_file(
-        self, mock_dump, mock_open, mock_fetch
-    ):
+    def test_extract_telemetry_write_file(self, mock_dump, mock_open, mock_fetch):
         """Test extract_telemetry writing results to file when requested."""
         args = MagicMock()
         args.owner = "google"
@@ -166,14 +168,16 @@ class TestExtractTelemetry(unittest.TestCase):
         args.since = None
         args.output = "output.json"
 
-        mock_fetch.return_value = [{
-            "id": 1,
-            "body": (
-                "done\n\n<!-- xmc-telemetry: {\"git_username\": \"chad\","
-                ' "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number":'
-                ' "29", "comment_id": 1234} -->'
-            ),
-        }]
+        mock_fetch.return_value = [
+            {
+                "id": 1,
+                "body": (
+                    'done\n\n<!-- xmc-telemetry: {"git_username": "chad",'
+                    ' "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number":'
+                    ' "29", "comment_id": 1234} -->'
+                ),
+            }
+        ]
 
         res = extract_telemetry(args)
         self.assertEqual(res, "Successfully wrote 1 records to output.json")

@@ -16,7 +16,6 @@
 
 import io
 import json
-import sys
 import unittest
 from unittest.mock import MagicMock, patch
 

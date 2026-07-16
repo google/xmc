@@ -74,16 +74,12 @@ class TestGithubUtils(unittest.TestCase):
         mock_which.return_value = "/usr/bin/gh"
         mock_run.side_effect = subprocess.CalledProcessError(1, "gh")
 
-        mock_env_get.side_effect = (
-            lambda key, default=None: "mock_token"
-            if key == "GITHUB_TOKEN"
-            else default
+        mock_env_get.side_effect = lambda key, default=None: (
+            "mock_token" if key == "GITHUB_TOKEN" else default
         )
 
         mock_response = MagicMock()
-        mock_response.read.return_value = (
-            b'{"id": 5678, "body": "fallback comment"}'
-        )
+        mock_response.read.return_value = b'{"id": 5678, "body": "fallback comment"}'
         mock_urlopen.return_value.__enter__.return_value = mock_response
 
         res = call_github_api("/repos/google/xmc/pulls/comments/5678")
@@ -108,9 +104,7 @@ class TestGithubUtils(unittest.TestCase):
         mock_response.read.return_value = b'{"public_data": true}'
         mock_urlopen.return_value.__enter__.return_value = mock_response
 
-        res = call_github_api(
-            "/repos/google/xmc/pulls/comments/999", method="GET"
-        )
+        res = call_github_api("/repos/google/xmc/pulls/comments/999", method="GET")
         self.assertEqual(res["public_data"], True)
 
         req = mock_urlopen.call_args[0][0]
@@ -151,9 +145,7 @@ class TestGithubUtils(unittest.TestCase):
         mock_urlopen.side_effect = Exception("HTTP 404 Not Found")
 
         with self.assertRaises(GithubAPIError) as ctx:
-            call_github_api(
-                "/repos/google/xmc/pulls/comments/123", method="GET"
-            )
+            call_github_api("/repos/google/xmc/pulls/comments/123", method="GET")
 
         self.assertIn("GitHub API call failed", str(ctx.exception))
         self.assertIn(
@@ -175,22 +167,16 @@ class TestGithubUtils(unittest.TestCase):
             stderr="Error: To authenticate, please run: gh auth login",
         )
 
-        mock_env_get.side_effect = (
-            lambda key, default=None: "bad_token"
-            if key == "GITHUB_TOKEN"
-            else default
+        mock_env_get.side_effect = lambda key, default=None: (
+            "bad_token" if key == "GITHUB_TOKEN" else default
         )
         mock_urlopen.side_effect = Exception("HTTP Error 401: Unauthorized")
 
         with self.assertRaises(GithubAuthError) as ctx:
-            call_github_api(
-                "/repos/google/xmc/pulls/comments/123", method="GET"
-            )
+            call_github_api("/repos/google/xmc/pulls/comments/123", method="GET")
 
         self.assertIn("GitHub authentication failed", str(ctx.exception))
-        self.assertIn(
-            "To authenticate, please run: gh auth login", str(ctx.exception)
-        )
+        self.assertIn("To authenticate, please run: gh auth login", str(ctx.exception))
         self.assertIn(
             "[token_auth] Exception: HTTP Error 401: Unauthorized",
             str(ctx.exception),
@@ -209,22 +195,16 @@ class TestGithubUtils(unittest.TestCase):
             1, ["gh", "api"], stderr="gh: Base URI not found (HTTP 404)"
         )
 
-        mock_env_get.side_effect = (
-            lambda key, default=None: "mock_token"
-            if key == "GITHUB_TOKEN"
-            else default
+        mock_env_get.side_effect = lambda key, default=None: (
+            "mock_token" if key == "GITHUB_TOKEN" else default
         )
         mock_urlopen.side_effect = Exception("HTTP Error 404: Not Found")
 
         with self.assertRaises(GithubAPIError) as ctx:
-            call_github_api(
-                "/repos/google/xmc/pulls/comments/123", method="GET"
-            )
+            call_github_api("/repos/google/xmc/pulls/comments/123", method="GET")
 
         self.assertIn("GitHub API call failed", str(ctx.exception))
-        self.assertIn(
-            "gh: Base URI not found (HTTP 404)", str(ctx.exception)
-        )
+        self.assertIn("gh: Base URI not found (HTTP 404)", str(ctx.exception))
         self.assertIn(
             "[token_auth] Exception: HTTP Error 404: Not Found",
             str(ctx.exception),

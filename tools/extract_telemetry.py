@@ -32,9 +32,7 @@ def _fetch_comments(owner: str, repo: str, since: str = None):
         if since:
             endpoint += f"&since={since}"
         try:
-            batch = call_github_api(
-                endpoint, user_agent="XMC-Telemetry-Extractor"
-            )
+            batch = call_github_api(endpoint, user_agent="XMC-Telemetry-Extractor")
         except Exception as e:
             raise HandledError(
                 f"Failed to fetch repository comments: {str(e)}",
@@ -63,15 +61,17 @@ def _parse_telemetry(comments):
             data = json.loads(match.group(1))
             if not isinstance(data, dict):
                 continue
-            records.append({
-                "date": data.get("date"),
-                "time": data.get("time"),
-                "github_username": data.get("git_username"),
-                "pr_number": data.get("pr_number"),
-                "comment_id": data.get("comment_id"),
-                "skill_name": data.get("skill_name") or "NA",
-                "skill_commit_id": data.get("skill_commit_id") or "NA",
-            })
+            records.append(
+                {
+                    "date": data.get("date"),
+                    "time": data.get("time"),
+                    "github_username": data.get("git_username"),
+                    "pr_number": data.get("pr_number"),
+                    "comment_id": data.get("comment_id"),
+                    "skill_name": data.get("skill_name") or "NA",
+                    "skill_commit_id": data.get("skill_commit_id") or "NA",
+                }
+            )
         except (json.JSONDecodeError, KeyError, AttributeError):
             continue
     return records

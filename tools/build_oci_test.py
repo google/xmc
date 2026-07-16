@@ -15,13 +15,10 @@
 """Unit tests for build_oci tool."""
 
 import json
-import os
 import unittest
 from unittest.mock import MagicMock, mock_open, patch
 
 from build_oci import (
-    EXEC_PERMISSION,
-    FILE_PERMISSION,
     build_oci,
     detect_elf_architecture,
 )
@@ -55,9 +52,7 @@ class TestBuildOci(unittest.TestCase):
         elf_header_amd64[5] = 1  # Little endian
         elf_header_amd64[18] = 62  # EM_X86_64
 
-        mock_builtin_open.return_value.read.return_value = bytes(
-            elf_header_amd64
-        )
+        mock_builtin_open.return_value.read.return_value = bytes(elf_header_amd64)
 
         arch = detect_elf_architecture("/path/to/binary")
         self.assertEqual(arch, "amd64")
@@ -70,9 +65,7 @@ class TestBuildOci(unittest.TestCase):
         elf_header_arm64[5] = 1  # Little endian
         elf_header_arm64[18] = 183  # EM_AARCH64
 
-        mock_builtin_open.return_value.read.return_value = bytes(
-            elf_header_arm64
-        )
+        mock_builtin_open.return_value.read.return_value = bytes(elf_header_arm64)
 
         arch = detect_elf_architecture("/path/to/binary")
         self.assertEqual(arch, "arm64")
@@ -80,9 +73,7 @@ class TestBuildOci(unittest.TestCase):
     @patch("builtins.open", new_callable=mock_open)
     def test_detect_elf_architecture_non_elf(self, mock_builtin_open):
         """Test detect_elf_architecture returns None for non-ELF binary."""
-        mock_builtin_open.return_value.read.return_value = (
-            b"NOT_AN_ELF_FILE_FOR_SURE"
-        )
+        mock_builtin_open.return_value.read.return_value = b"NOT_AN_ELF_FILE_FOR_SURE"
 
         arch = detect_elf_architecture("/path/to/binary")
         self.assertIsNone(arch)
@@ -246,10 +237,8 @@ class TestBuildOci(unittest.TestCase):
         mock_info_ca = MagicMock()
         mock_info_ca.mode = 0
 
-        mock_tar.gettarinfo.side_effect = (
-            lambda name, arcname=None: mock_info_bin
-            if name == "/path/to/binary"
-            else mock_info_ca
+        mock_tar.gettarinfo.side_effect = lambda name, arcname=None: (
+            mock_info_bin if name == "/path/to/binary" else mock_info_ca
         )
 
         args = MagicMock()
@@ -258,7 +247,7 @@ class TestBuildOci(unittest.TestCase):
         args.image_tag = "test-service:latest"
         args.output_tar = "out.tar"
 
-        res = build_oci(args)
+        build_oci(args)
 
         parsed_config = json.loads("".join(written_config))
         self.assertEqual(parsed_config["architecture"], "arm64")
@@ -285,9 +274,7 @@ class TestBuildOci(unittest.TestCase):
             build_oci(args)
 
         self.assertIn("is not a valid Linux ELF file", ctx.exception.message)
-        self.assertIn(
-            "ensure the binary is cross-compiled", ctx.exception.instruction
-        )
+        self.assertIn("ensure the binary is cross-compiled", ctx.exception.instruction)
 
 
 if __name__ == "__main__":

@@ -64,9 +64,7 @@ class TestFetchPRComment(unittest.TestCase):
         }
 
         args = MagicMock()
-        args.comment_url = (
-            "https://github.com/google/xmc/pull/29#discussion_r1234"
-        )
+        args.comment_url = "https://github.com/google/xmc/pull/29#discussion_r1234"
 
         res = fetch_comment(args)
         self.assertEqual(res["comment_id"], 1234)
@@ -90,9 +88,7 @@ class TestFetchPRComment(unittest.TestCase):
         mock_call.side_effect = GithubAuthError("auth failed")
 
         args = MagicMock()
-        args.comment_url = (
-            "https://github.com/google/xmc/pull/29#discussion_r1234"
-        )
+        args.comment_url = "https://github.com/google/xmc/pull/29#discussion_r1234"
 
         with self.assertRaises(HandledError) as ctx:
             fetch_comment(args)
@@ -116,9 +112,7 @@ class TestFetchPRComment(unittest.TestCase):
         mock_call.side_effect = GithubAPIError("api failed")
 
         args = MagicMock()
-        args.comment_url = (
-            "https://github.com/google/xmc/pull/29#discussion_r1234"
-        )
+        args.comment_url = "https://github.com/google/xmc/pull/29#discussion_r1234"
 
         with self.assertRaises(HandledError) as ctx:
             fetch_comment(args)

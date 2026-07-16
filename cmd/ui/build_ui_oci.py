@@ -15,13 +15,11 @@
 """Script for compiling Angular UI application into an OCI container tarball."""
 
 import hashlib
-import json
 import os
 import platform
 import shutil
 import subprocess
 import sys
-import tarfile
 
 
 def get_sha256(filepath: str) -> str:
@@ -46,12 +44,8 @@ def translate_imports(content: str) -> str:
         '"third_party/javascript/angular_components/material"',
         '"@angular/material"',
     )
-    content = content.replace(
-        "'third_party/xmanager_cloud/ui/consts'", "'consts'"
-    )
-    content = content.replace(
-        '"third_party/xmanager_cloud/ui/consts"', '"consts"'
-    )
+    content = content.replace("'third_party/xmanager_cloud/ui/consts'", "'consts'")
+    content = content.replace('"third_party/xmanager_cloud/ui/consts"', '"consts"')
     content = content.replace(
         "'third_party/xmanager_cloud/ui/custom_colors'", "'custom_colors'"
     )
@@ -79,9 +73,7 @@ def copy_flat(src_dir: str, dest_dir: str):
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
 
             if file.endswith((".scss", ".ts", ".html")):
-                with open(
-                    full_path, "r", encoding="utf-8", errors="ignore"
-                ) as f:
+                with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
 
                 translated = translate_imports(content)
@@ -103,9 +95,7 @@ def main():
     ui_src_dir = os.path.join(workspace_dir, "cmd/ui")
 
     temp_build_dir = os.path.join(ui_src_dir, "build_tmp")
-    print(
-        f"Preparing flat physical copy of UI codebase at {temp_build_dir}..."
-    )
+    print(f"Preparing flat physical copy of UI codebase at {temp_build_dir}...")
     copy_flat(ui_src_dir, temp_build_dir)
 
     dockerfile_path = os.path.join(temp_build_dir, "Dockerfile")

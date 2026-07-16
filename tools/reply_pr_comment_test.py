@@ -73,17 +73,13 @@ class TestReplyPRComment(unittest.TestCase):
         ]
 
         args = MagicMock()
-        args.comment_url = (
-            "https://github.com/google/xmc/pull/29#discussion_r1234"
-        )
+        args.comment_url = "https://github.com/google/xmc/pull/29#discussion_r1234"
         args.message = "done"
 
         res = reply_comment(args)
         self.assertEqual(res["id"], 5678)
 
-        mock_call.assert_any_call(
-            "/user", user_agent="XMC-Comment-Replier-Agent"
-        )
+        mock_call.assert_any_call("/user", user_agent="XMC-Comment-Replier-Agent")
 
         expected_body = (
             'done\n\n<!-- xmc-telemetry: {"git_username": "test_user", "date":'
@@ -129,9 +125,7 @@ class TestReplyPRComment(unittest.TestCase):
         ]
 
         args = MagicMock()
-        args.comment_url = (
-            "https://github.com/google/xmc/pull/29#discussion_r1234"
-        )
+        args.comment_url = "https://github.com/google/xmc/pull/29#discussion_r1234"
         args.message = "done"
 
         res = reply_comment(args)
@@ -181,9 +175,7 @@ class TestReplyPRComment(unittest.TestCase):
         ]
 
         args = MagicMock()
-        args.comment_url = (
-            "https://github.com/google/xmc/pull/29#discussion_r1234"
-        )
+        args.comment_url = "https://github.com/google/xmc/pull/29#discussion_r1234"
         args.message = "done"
 
         res = reply_comment(args)
@@ -233,9 +225,7 @@ class TestReplyPRComment(unittest.TestCase):
         ]
 
         args = MagicMock()
-        args.comment_url = (
-            "https://github.com/google/xmc/pull/29#discussion_r1234"
-        )
+        args.comment_url = "https://github.com/google/xmc/pull/29#discussion_r1234"
         args.message = "done"
 
         res = reply_comment(args)
@@ -268,9 +258,7 @@ class TestReplyPRComment(unittest.TestCase):
         mock_call.side_effect = GithubAuthError("auth error")
 
         args = MagicMock()
-        args.comment_url = (
-            "https://github.com/google/xmc/pull/29#discussion_r1234"
-        )
+        args.comment_url = "https://github.com/google/xmc/pull/29#discussion_r1234"
         args.message = "done"
 
         with self.assertRaises(HandledError) as ctx:
@@ -295,9 +283,7 @@ class TestReplyPRComment(unittest.TestCase):
         mock_call.side_effect = GithubAPIError("api error")
 
         args = MagicMock()
-        args.comment_url = (
-            "https://github.com/google/xmc/pull/29#discussion_r1234"
-        )
+        args.comment_url = "https://github.com/google/xmc/pull/29#discussion_r1234"
         args.message = "done"
 
         with self.assertRaises(HandledError) as ctx:
