@@ -25,6 +25,7 @@ import subprocess
 import sys
 import time
 from typing import Any, Optional
+from tool_utils import ensure_venv
 
 # ANSI Color Codes
 RED = "\033[0;31m"
@@ -958,7 +959,7 @@ def step_verify(
   }
   try:
     run_command(
-        ["python3", "./deploy/ctk_v2/verify_xmc.py"],
+        [sys.executable, "./deploy/ctk_v2/verify_xmc.py"],
         env=env_vars,
         log_on_error=False,
     )
@@ -977,6 +978,7 @@ def main(argv: list[str]) -> None:
   Args:
       argv: Command line arguments.
   """
+  ensure_venv()
   args = parse_args(argv)
   config = load_and_validate_config(args.config)
 
