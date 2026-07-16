@@ -19,7 +19,7 @@ This root guidelines document defines high-level universal engineering principle
 ### Core Engineering & Operational Workflows
 - 📘 [Core Engineering Standards](rules/core_engineering.md): SRP, KISS, 20–30 line function limit, linear control flow, default immutability, high-fidelity test doubles, strict coverage, atomic PRs, and contract update rules.
 - 🛠️ [Skills & Automation Guidelines](rules/skills_and_automation.md): Extracting complex logic into testable Python scripts, applying DRY/KISS to skills, preventing context creep, and delegating work to subagents.
-- 🔍 [PR Review & Post-PR Workflow](rules/pr_review_and_github.md): Code review checklist for AI reviews and post-PR creation feedback loop guidelines (~2 min wait for GitHub PR bot, comment fetching, fix proposals).
+- 🐙 [GitHub Workflows & PR Standards](rules/pr_review_and_github.md): Git branch prefixes (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`, `koder/`), Conventional Commit standards, PR title & body formatting rules, prohibition of raw dumps/misplaced comments, AI code review checklists, and post-PR creation workflows.
 
 ### Language-Specific Rules
 - 🐹 [Go (Golang)](rules/languages/golang.md): Idiomatic Go style, clean interfaces, lowercase error wrapping (`%w`), concurrency safety (`context.Context`, mutexes), and table-driven testing.

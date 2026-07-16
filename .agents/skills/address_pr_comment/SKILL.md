@@ -21,6 +21,9 @@ graph TD
     J --> K["Agent reports status & updates PR comment"]
 ```
 
+> [!NOTE]
+> All Git branching, commit messaging, PR field structure, and comment response standards defined in [.agents/rules/pr_review_and_github.md](../../rules/pr_review_and_github.md) apply to this workflow.
+
 ---
 
 ## Guidelines for Using CLI Tools
@@ -138,7 +141,7 @@ bazel build //cmd/xid_service:xid_service
 The agent stages all changes and commits them with a message that includes a description of the changes and the URL of the original comment:
 ```bash
 git add .
-git commit -m "Refactor: address review comment
+git commit -m "<type>(<scope>): address review comment
 
 Comment link: <github_comment_url>"
 ```
