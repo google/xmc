@@ -15,12 +15,17 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const {
+  NUM_REVIEWERS_TO_ASSIGN,
   parseReviewersFromOwners,
   filterEligibleReviewers,
   selectRandomReviewers,
   isPullRequestOpen,
   shouldSkipAssignment
 } = require('./assign-reviewers');
+
+test('NUM_REVIEWERS_TO_ASSIGN constant is set to 1', () => {
+  assert.strictEqual(NUM_REVIEWERS_TO_ASSIGN, 1);
+});
 
 test('parseReviewersFromOwners parses flat text reviewers correctly and strips comments', () => {
   const sampleOwners = `
@@ -58,8 +63,8 @@ test('filterEligibleReviewers excludes the PR author case-insensitively', () => 
 
 test('selectRandomReviewers returns up to count elements and preserves candidate pool elements', () => {
   const candidates = ['alice', 'bob', 'charlie', 'dave', 'eve'];
-  const selected = selectRandomReviewers(candidates, 2);
-  assert.strictEqual(selected.length, 2);
+  const selected = selectRandomReviewers(candidates, NUM_REVIEWERS_TO_ASSIGN);
+  assert.strictEqual(selected.length, 1);
   selected.forEach(reviewer => {
     assert.ok(candidates.includes(reviewer));
   });
