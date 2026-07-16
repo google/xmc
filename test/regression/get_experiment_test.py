@@ -44,7 +44,6 @@ class ExperimentRegressionTest(googletest.TestCase):
     def tearDown(self):
         """Cleans up ExamplesLib connection after test execution."""
         super().tearDown()
-        super().tearDown()
         if self.examples is not None:
             self.examples.close()
 
