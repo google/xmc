@@ -27,6 +27,7 @@ const sorted = [...this.stateCounts()].sort(comparator);
 ## 3. Modern Angular Standards
 - **Built-in Template Control Flow**: Exclusively use modern Angular built-in block control flow (`@if`, `@for`, `@switch`) over legacy structural directives (`*ngIf`, `*ngFor`, `*ngSwitch`).
 - **Modern Signal APIs**: Standardize component inputs, outputs, models, and queries to functional signal primitives (`input()`, `output()`, `model()`, `viewChild()`). Completely eliminate legacy decorators (`@Input`, `@Output`, `@ViewChild`). When capturing queries such as `MatPaginator`, use `viewChild()` and handle assignments inside an explicit `effect()`.
+- **Template Access Encapsulation**: Use the `protected` visibility modifier on class members, methods, and signals accessed exclusively by component HTML templates (e.g. `protected readonly state = signal(...)`), maintaining minimal public component APIs.
 - **Standalone Architecture**: Ensure components, directives, and pipes are standalone (`standalone: true`) by default. Eliminate legacy `@NgModule` declarations to keep dependencies flat and tree-shakable.
 
 ## 4. Component Clean Code & Single Responsibility
@@ -53,5 +54,6 @@ private static readonly STATUS_CHIP_MAP = new Map<WorkUnitState, ChipStyle>([
 ```
 
 ## 6. RxJS & Stream Pipelines
+- **RxJS Interop Signal Conversion (`toSignal`)**: Prefer converting RxJS Observables to Signals using `toSignal()` when consuming asynchronous data streams within Angular components and templates.
 - **Lifecycle Initialization Helpers**: Extract complex multi-pipe observable constructions out of constructors and `ngOnInit` hooks into clear initialization methods (e.g., `initExperimentStream()`, `initUrlsStream()`).
 - Cleanly import RxJS operators directly from `'rxjs'` to optimize tree-shaking and bundle size.

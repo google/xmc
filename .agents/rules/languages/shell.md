@@ -14,5 +14,5 @@ This document defines standards for shell script usage across the codebase.
 #!/usr/bin/env bash
 set -euo pipefail
 ```
-- **Variable Expansion Quoting**: Always double-quote variable expansions (`"$VAR"`) to prevent word splitting, path globbing issues, and shell expansion vulnerabilities.
+- **Variable Expansion Quoting & Braces**: Always double-quote variable expansions and use explicit curly braces (`"${VAR}"`) to prevent word splitting, variable name ambiguity, path globbing issues, and shell expansion vulnerabilities.
 - **Executable File Modes**: Ensure shell scripts have appropriate executable permissions set (`chmod +x`).
