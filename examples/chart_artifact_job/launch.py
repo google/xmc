@@ -35,10 +35,11 @@ def main(argv: Sequence[str]) -> None:
     raise app.UsageError("Too many command-line arguments.")
 
   project_id = os.environ.get("PROJECT_ID")
-  image_path = os.environ.get(
-      "IMAGE_PATH",
-      f"us-docker.pkg.dev/{project_id}/xmc/chart-artifact-job:latest",
-  )
+  image_path = os.environ.get("IMAGE_PATH")
+  if not image_path:
+    if not project_id:
+      raise app.UsageError("PROJECT_ID environment variable must be set when IMAGE_PATH is not specified.")
+    image_path = f"us-docker.pkg.dev/{project_id}/xmc/chart-artifact-job:latest"
   queue_name = os.environ.get("QUEUE_NAME", "cpu-queue")
 
   print(f"Creating validation experiment with a Chart artifact on a WorkUnit using image: {image_path}")
