@@ -27,11 +27,11 @@ import (
 
 func TestListStatement(t *testing.T) {
 	testCases := []struct {
-		name       string
-		params     ListParams
-		tables     []querytools.TableView
-		wantStmt   *spanner.Statement
-		wantErr    bool
+		name     string
+		params   ListParams
+		tables   []querytools.TableView
+		wantStmt *spanner.Statement
+		wantErr  bool
 	}{
 		{
 			name: "no filter",
@@ -319,39 +319,39 @@ func TestApplyPagination(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name               string
-		results            []int
-		pageSize           int32
-		wantResults        []int
-		wantToken          string
+		name        string
+		results     []int
+		pageSize    int32
+		wantResults []int
+		wantToken   string
 	}{
 		{
-			name:               "no truncation",
-			results:            []int{1, 2, 3},
-			pageSize:           5,
-			wantResults:        []int{1, 2, 3},
-			wantToken:          "",
+			name:        "no truncation",
+			results:     []int{1, 2, 3},
+			pageSize:    5,
+			wantResults: []int{1, 2, 3},
+			wantToken:   "",
 		},
 		{
-			name:               "with truncation",
-			results:            []int{1, 2, 3, 4, 5, 6},
-			pageSize:           5,
-			wantResults:        []int{1, 2, 3, 4, 5},
-			wantToken:          "eyJpZCI6NX0",
+			name:        "with truncation",
+			results:     []int{1, 2, 3, 4, 5, 6},
+			pageSize:    5,
+			wantResults: []int{1, 2, 3, 4, 5},
+			wantToken:   "eyJpZCI6NX0",
 		},
 		{
-			name:               "zero page size",
-			results:            []int{1, 2},
-			pageSize:           0,
-			wantResults:        nil,
-			wantToken:          "",
+			name:        "zero page size",
+			results:     []int{1, 2},
+			pageSize:    0,
+			wantResults: nil,
+			wantToken:   "",
 		},
 		{
-			name:               "negative page size",
-			results:            []int{1, 2},
-			pageSize:           -1,
-			wantResults:        nil,
-			wantToken:          "",
+			name:        "negative page size",
+			results:     []int{1, 2},
+			pageSize:    -1,
+			wantResults: nil,
+			wantToken:   "",
 		},
 	}
 
@@ -395,9 +395,9 @@ func TestListParams_DecodePageToken(t *testing.T) {
 			wantAfterCursor: map[string]any{"a": "one", "b": 2.0},
 		},
 		{
-			name:            "invalid base64 token",
-			pageToken:       "invalid/base64",
-			wantErr:         true,
+			name:      "invalid base64 token",
+			pageToken: "invalid/base64",
+			wantErr:   true,
 		},
 	}
 

@@ -288,5 +288,3 @@ func createExperimentStateServerWithMockXid(ctx context.Context, t *testing.T) (
 	taskQueueClient := &tq.FakeClient{}
 	return New(storage, &cfg, createTestAuthorizer(ctx, t), xidClient, taskQueueClient), xidClient
 }
-
-
