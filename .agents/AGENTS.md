@@ -10,7 +10,7 @@ This root guidelines document defines high-level universal engineering principle
 2. **Keep It Simple, Stupid (KISS)**: Enforce linear control flow. Use early return guard clauses at the top of functions and eliminate redundant `else` blocks after returns or exceptions.
 3. **Don't Repeat Yourself (DRY)**: Centralize logic, eliminate duplicate code patterns, and extract shared automation playbooks into reusable Python modules or dedicated rule files.
 4. **Context Preservation & Subagent Delegation**: Prevent main context bloat by modularizing rules into purpose-built files and offloading verbose log analysis, heavy test runs, or exploratory searches to worker subagents.
-5. **Documentation Alignment**: Synchronize design docs, inline comments, schemas, and skills in the same PR whenever system behavior or API contracts change.
+5. **Documentation Alignment**: Synchronize relevant repository markdown files (such as `README.md`, `INSTALL.md`, and component docs), inline comments, schemas, and skills in the same PR whenever system behavior or API contracts change.
 
 ---
 

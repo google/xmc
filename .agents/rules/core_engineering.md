@@ -56,4 +56,4 @@ function processUser(user: User | null) {
 - **Small, Focused PRs**: Keep Pull Requests small, localized, and logically split. Each PR should address a single cohesive task or change step to enable fast, high-quality reviews.
 - **System Contract & API Changes**:
   - **Mandatory User Confirmation**: Seek explicit user confirmation before introducing breaking changes to public APIs, protobuf schemas, CLI flags, or core system contracts.
-  - **Documentation Alignment**: Synchronize design documents, specifications, and inline API references within the exact same pull request whenever system contracts or behaviors change.
+  - **Documentation Alignment**: Synchronize repository markdown documents (including, but not limited to, `README.md`, `INSTALL.md`, and component specs), schemas, and inline API references within the exact same pull request whenever system contracts or behaviors change.
