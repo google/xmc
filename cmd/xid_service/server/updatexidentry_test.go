@@ -114,21 +114,21 @@ func TestUpdateXidEntry_BadPaths(t *testing.T) {
 	}{
 		{
 			name: "invalid_name",
-			req: modifyProto(baseReq, func(r *apipb.UpdateXidEntryRequest) {
+			req: proto.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
 				r.XidEntry.Name = proto.String("xids/invalid")
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "not_found",
-			req: modifyProto(baseReq, func(r *apipb.UpdateXidEntryRequest) {
+			req: proto.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
 				r.XidEntry.Name = proto.String("xids/999999")
 			}),
 			wantErr: status.ErrNotFound,
 		},
 		{
 			name: "immutable_field",
-			req: modifyProto(baseReq, func(r *apipb.UpdateXidEntryRequest) {
+			req: proto.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
 				r.XidEntry.Creator = proto.String("new-creator")
 				r.UpdateMask.Paths = []string{"creator"}
 			}),
@@ -136,7 +136,7 @@ func TestUpdateXidEntry_BadPaths(t *testing.T) {
 		},
 		{
 			name: "no_acls",
-			req: modifyProto(baseReq, func(r *apipb.UpdateXidEntryRequest) {
+			req: proto.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
 				r.XidEntry.Acls = nil
 			}),
 			wantErr: status.ErrInvalidArgument,

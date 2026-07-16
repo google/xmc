@@ -160,28 +160,28 @@ func TestCreateArtifact_BadPaths(t *testing.T) {
 	}{
 		{
 			name: "missing_parent",
-			req: modifyProto(baseReq, func(r *apipb.CreateArtifactRequest) {
+			req: proto.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
 				r.Parent = ""
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent",
-			req: modifyProto(baseReq, func(r *apipb.CreateArtifactRequest) {
+			req: proto.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
 				r.Parent = "invalid-parent"
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "missing_artifact",
-			req: modifyProto(baseReq, func(r *apipb.CreateArtifactRequest) {
+			req: proto.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
 				r.Artifact = nil
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "missing_url",
-			req: modifyProto(baseReq, func(r *apipb.CreateArtifactRequest) {
+			req: proto.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
 				r.Artifact.Url = nil
 			}),
 			wantErr: status.ErrInvalidArgument,

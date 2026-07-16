@@ -114,28 +114,28 @@ func TestCreateXidEntry_BadPaths(t *testing.T) {
 	}{
 		{
 			name: "missing_xid_entry",
-			req: modifyProto(baseReq, func(r *apipb.CreateXidEntryRequest) {
+			req: proto.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
 				r.XidEntry = nil
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "missing_acls",
-			req: modifyProto(baseReq, func(r *apipb.CreateXidEntryRequest) {
+			req: proto.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
 				r.XidEntry.Acls = nil
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "missing_origin",
-			req: modifyProto(baseReq, func(r *apipb.CreateXidEntryRequest) {
+			req: proto.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
 				r.XidEntry.Origin = nil
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent_xid",
-			req: modifyProto(baseReq, func(r *apipb.CreateXidEntryRequest) {
+			req: proto.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
 				r.XidEntry.ParentXid = proto.String("xids/invalid")
 			}),
 			wantErr: status.ErrInvalidArgument,

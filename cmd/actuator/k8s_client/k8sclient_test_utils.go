@@ -18,8 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"golang/protobuf/v2/proto/proto"
-
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/unstructured/unstructured"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
@@ -118,10 +116,4 @@ func createTestJobSet(ctx context.Context, t *testing.T, client *Client, namespa
 	if err != nil {
 		t.Fatalf("Creating jobset failed: %v", err)
 	}
-}
-
-func modifyProto[T proto.Message](m T, f func(T)) T {
-	cloned := proto.Clone(m).(T)
-	f(cloned)
-	return cloned
 }

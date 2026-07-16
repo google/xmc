@@ -243,7 +243,7 @@ func testBuildJobSetName(t *testing.T) {
 
 func TestConstructJobSet(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := modifyProto(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		job := wu.Executable.GetJobset().Jobs[0]
 		job.Spec.Args = map[string]string{"arg1": "val1"}
 		job.Spec.EnvVars = map[string]string{"env1": "val1"}
@@ -503,7 +503,7 @@ func TestConstructJobSet(t *testing.T) {
 
 func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := modifyProto(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		job := wu.Executable.GetJobset().Jobs[0]
 		job.Spec.EnvVars = map[string]string{"env_vars_key": "env_vars_val"}
 		job.Spec.Env = []*esspb.EnvVar{
@@ -670,7 +670,7 @@ func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 
 func TestConstructJobSet_GPU_GKE(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := modifyProto(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		job := wu.Executable.GetJobset().Jobs[0]
 		job.Spec.Resources = &esspb.ResourceSet{
 			Resources: &esspb.ResourceSet_GpuResources{
@@ -902,7 +902,7 @@ func TestConstructJobSet_PodFailurePolicy(t *testing.T) {
 
 func TestConstructJobSet_ActiveDeadlineSeconds(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := modifyProto(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		wu.Executable.GetJobset().Jobs[0].ActiveDeadlineSeconds = 3600
 	})
 
@@ -1533,7 +1533,7 @@ func TestGetPriorityClassName(t *testing.T) {
 
 func TestConstructJobSet_GPU_MultiReplica(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := modifyProto(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		job := wu.Executable.GetJobset().Jobs[0]
 		job.Spec.Resources = &esspb.ResourceSet{
 			Resources: &esspb.ResourceSet_GpuResources{
@@ -1572,7 +1572,7 @@ func TestConstructJobSet_GPU_MultiReplica(t *testing.T) {
 
 func TestConstructJobSet_GPU_DefaultReplica(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := modifyProto(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		wu.Executable.GetJobset().Jobs[0].Spec.Resources = &esspb.ResourceSet{
 			Resources: &esspb.ResourceSet_GpuResources{
 				GpuResources: &esspb.GpuResources{
@@ -1606,7 +1606,7 @@ func TestConstructJobSet_GPU_DefaultReplica(t *testing.T) {
 
 func TestConstructJobSet_TPU_SingleHost(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := modifyProto(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		wu.Executable.GetJobset().Jobs[0].Spec.Resources = &esspb.ResourceSet{
 			Resources: &esspb.ResourceSet_TpuResources{
 				TpuResources: &esspb.TpuResources{
@@ -1659,7 +1659,7 @@ func TestConstructJobSet_TPU_SingleHost(t *testing.T) {
 
 func TestConstructJobSet_TPU_MultiHost(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := modifyProto(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		wu.Executable.GetJobset().Jobs[0].Spec.Resources = &esspb.ResourceSet{
 			Resources: &esspb.ResourceSet_TpuResources{
 				TpuResources: &esspb.TpuResources{
@@ -1706,7 +1706,7 @@ func TestConstructJobSet_TPU_MultiHost(t *testing.T) {
 
 func TestConstructJobSet_TPU_MultiSlice(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := modifyProto(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		job := wu.Executable.GetJobset().Jobs[0]
 		job.Spec.Resources = &esspb.ResourceSet{
 			Resources: &esspb.ResourceSet_TpuResources{
@@ -1819,7 +1819,7 @@ func TestConstructJobSet_WithInitContainers(t *testing.T) {
 
 func TestConstructJobSet_DefaultNetworkMultiJob(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := modifyProto(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		wu.Name = "workUnitMulti"
 		job1 := wu.Executable.GetJobset().Jobs[0]
 		job2 := proto.Clone(job1).(*esspb.KubernetesJob)
@@ -1849,7 +1849,7 @@ func TestConstructJobSet_DefaultNetworkMultiJob(t *testing.T) {
 
 func TestConstructJobSet_SingleJobNoNetwork(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := modifyProto(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		wu.Name = "workUnitSingle"
 	})
 
@@ -1867,7 +1867,7 @@ func TestConstructJobSet_ExplicitNetworkOverride(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	enableDNS := true
 	publishNotReady := false
-	workUnit := modifyProto(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		wu.Name = "workUnitOverride"
 		wu.Executable.GetJobset().Network = &esspb.JobSetExecutable_Network{
 			EnableDnsHostnames:       &enableDNS,
@@ -1897,7 +1897,7 @@ func TestConstructJobSet_ExplicitNetworkOverride(t *testing.T) {
 
 func TestConstructJobSet_MultiReplicaNetwork(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := modifyProto(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		wu.Name = "workUnitMultiReplica"
 		wu.Executable.GetJobset().Jobs[0].Replicas = 2
 	})

@@ -18,8 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"golang/protobuf/v2/proto/proto"
-
 	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
@@ -43,10 +41,4 @@ func createXidServer(ctx context.Context, t *testing.T) *XIDServer {
 	storage, _ := spanner.NewStorage(xidClient)
 	cfg := config.Config{}
 	return NewXIDServer(cfg, createTestAuthorizer(ctx, t), storage)
-}
-
-func modifyProto[T proto.Message](m T, f func(T)) T {
-	cloned := proto.Clone(m).(T)
-	f(cloned)
-	return cloned
 }
