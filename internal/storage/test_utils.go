@@ -43,39 +43,39 @@ type MockStorage struct {
 	UpdateArtifactResp *essmsgpb.Artifact
 	DeleteArtifactErr  error
 
-	FetchExperimentErr                      error
-	Experiment                              *essmsgpb.Experiment
-	FetchExperimentStatusErr                error
-	ExperimentStatus                        *essmsgpb.ExperimentStatus
-	FetchWorkUnitErr                        error
-	WorkUnit                                *essmsgpb.WorkUnit
-	FetchCurrentWorkUnitExecutionErr        error
-	WorkUnitExecution                       *essmsgpb.WorkUnitExecution
-	CreateExperimentErr                     error
-	CreateWorkUnitErr                       error
-	AddWorkUnitOperationErr                 error
-	LROOp                                   *lropb.Operation
-	UpdateWorkUnitExecutionsErr             error
-	RestartWorkUnitExecutionsResp           map[int64]*essmsgpb.WorkUnitExecution
-	RestartWorkUnitExecutionsErr            error
-	ListWorkUnitsResp                       []*essmsgpb.WorkUnit
-	ListWorkUnitsErr                        error
-	UpdateExperimentLaunchStateErr          error
-	ListWorkUnitExecutionsErr               error
-	ListWorkUnitExecutionsResp              []*essmsgpb.WorkUnitExecution
-	ListExperimentsResp                     []*essmsgpb.Experiment
-	NextPageToken                           string
-	ListExperimentsErr                      error
-	UpdateExperimentErr                     error
-	UpdateWorkUnitErr                       error
-	UpdateWorkUnitRespOriginal              *essmsgpb.WorkUnit
-	UpdateWorkUnitRespReturned              *essmsgpb.WorkUnit
-	UpdateWorkUnitOperationErr              error
-	UpdateWorkUnitOperationCalls            int
-	GotOperationUpdate                      *OperationUpdate
+	FetchExperimentErr               error
+	Experiment                       *essmsgpb.Experiment
+	FetchExperimentStatusErr         error
+	ExperimentStatus                 *essmsgpb.ExperimentStatus
+	FetchWorkUnitErr                 error
+	WorkUnit                         *essmsgpb.WorkUnit
+	FetchCurrentWorkUnitExecutionErr error
+	WorkUnitExecution                *essmsgpb.WorkUnitExecution
+	CreateExperimentErr              error
+	CreateWorkUnitErr                error
+	AddWorkUnitOperationErr          error
+	LROOp                            *lropb.Operation
+	UpdateWorkUnitExecutionsErr      error
+	RestartWorkUnitExecutionsResp    map[int64]*essmsgpb.WorkUnitExecution
+	RestartWorkUnitExecutionsErr     error
+	ListWorkUnitsResp                []*essmsgpb.WorkUnit
+	ListWorkUnitsErr                 error
+	UpdateExperimentLaunchStateErr   error
+	ListWorkUnitExecutionsErr        error
+	ListWorkUnitExecutionsResp       []*essmsgpb.WorkUnitExecution
+	ListExperimentsResp              []*essmsgpb.Experiment
+	NextPageToken                    string
+	ListExperimentsErr               error
+	UpdateExperimentErr              error
+	UpdateWorkUnitErr                error
+	UpdateWorkUnitRespOriginal       *essmsgpb.WorkUnit
+	UpdateWorkUnitRespReturned       *essmsgpb.WorkUnit
+	UpdateWorkUnitOperationErr       error
+	UpdateWorkUnitOperationCalls     int
+	GotOperationUpdate               *OperationUpdate
 
-	ListStatusMessagesResp                  []*essmsgpb.StatusMessage
-	ListStatusMessagesErr                   error
+	ListStatusMessagesResp []*essmsgpb.StatusMessage
+	ListStatusMessagesErr  error
 }
 
 // CreateXidEntry mocks XID entry creation.

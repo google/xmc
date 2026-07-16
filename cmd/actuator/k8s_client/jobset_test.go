@@ -180,6 +180,33 @@ var testWorkUnitWithJob = &esspb.WorkUnit{
 	},
 }
 
+var baseCPUWorkUnit = &esspb.WorkUnit{
+	Name: "workUnit1",
+	Executable: &esspb.Executable{
+		Type: &esspb.Executable_Jobset{
+			Jobset: &esspb.JobSetExecutable{
+				Jobs: []*esspb.KubernetesJob{
+					{
+						Name: "job1",
+						Spec: &esspb.ExecutableSpec{
+							Resources: &esspb.ResourceSet{
+								Resources: &esspb.ResourceSet_CpuResources{
+									CpuResources: &esspb.CpuResources{
+										CpuMillicores: 100,
+										MemoryBytes:   1024,
+									},
+								},
+							},
+							DockerImage: "foo/bar",
+						},
+						Replicas: 1,
+					},
+				},
+			},
+		},
+	},
+}
+
 var experimentForOperationTest = &esspb.Experiment{
 	Name:      "experiments/123",
 	Status:    &esspb.ExperimentStatus{},
@@ -216,39 +243,16 @@ func testBuildJobSetName(t *testing.T) {
 
 func TestConstructJobSet(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	retryLimit := int32(1)
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnit1",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name: "job1",
-							Spec: &esspb.ExecutableSpec{
-								Resources: &esspb.ResourceSet{
-									Resources: &esspb.ResourceSet_CpuResources{
-										CpuResources: &esspb.CpuResources{
-											CpuMillicores: 100,
-											MemoryBytes:   1024,
-										},
-									},
-								},
-								DockerImage: "foo/bar",
-								Args:        map[string]string{"arg1": "val1"},
-								EnvVars:     map[string]string{"env1": "val1"},
-								Command:     []string{"bash", "-c", "echo hello"},
-							},
-							Replicas:       2,
-							RetryLimit:     1,
-							Annotations:    map[string]string{"anno1": "val1"},
-							ServiceAccount: "my-service-account",
-						},
-					},
-				},
-			},
-		},
-	}
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		job := wu.Executable.GetJobset().Jobs[0]
+		job.Spec.Args = map[string]string{"arg1": "val1"}
+		job.Spec.EnvVars = map[string]string{"env1": "val1"}
+		job.Spec.Command = []string{"bash", "-c", "echo hello"}
+		job.Replicas = 2
+		job.RetryLimit = 1
+		job.Annotations = map[string]string{"anno1": "val1"}
+		job.ServiceAccount = "my-service-account"
+	})
 	namespace := "test-namespace"
 
 	jobLabels := map[string]string{
@@ -298,7 +302,7 @@ func TestConstructJobSet(t *testing.T) {
 							Annotations: jobAnnotations,
 						},
 						Spec: batchv1.JobSpec{
-							BackoffLimit: &retryLimit,
+							BackoffLimit: proto.Int32(1),
 							PodFailurePolicy: &batchv1.PodFailurePolicy{
 								Rules: []batchv1.PodFailurePolicyRule{
 									{
@@ -499,125 +503,102 @@ func TestConstructJobSet(t *testing.T) {
 
 func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnit1",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name: "job1",
-							Spec: &esspb.ExecutableSpec{
-								Resources: &esspb.ResourceSet{
-									Resources: &esspb.ResourceSet_CpuResources{
-										CpuResources: &esspb.CpuResources{
-											CpuMillicores: 100,
-											MemoryBytes:   1024,
-										},
-									},
-								},
-								DockerImage: "foo/bar",
-								EnvVars:     map[string]string{"env_vars_key": "env_vars_val"},
-								Env: []*esspb.EnvVar{
-									{
-										Name: "literal_env",
-										Source: &esspb.EnvVar_Value{
-											Value: "literal_val",
-										},
-									},
-									// nil entries should be safely ignored.
-									nil,
-									// empty name entries should be ignored.
-									{
-										Name: "",
-										Source: &esspb.EnvVar_Value{
-											Value: "empty_name_val",
-										},
-									},
-									{
-										Name: "field_ref_env",
-										Source: &esspb.EnvVar_ValueFrom{
-											ValueFrom: &esspb.EnvVarSource{
-												Reference: &esspb.EnvVarSource_FieldRef{
-													FieldRef: &esspb.FieldRef{
-														FieldPath:  "status.podIP",
-														ApiVersion: "v1",
-													},
-												},
-											},
-										},
-									},
-									{
-										Name: "nil_value_from_env",
-										Source: &esspb.EnvVar_ValueFrom{
-											ValueFrom: nil,
-										},
-									},
-									{
-										Name: "nil_field_ref_env",
-										Source: &esspb.EnvVar_ValueFrom{
-											ValueFrom: &esspb.EnvVarSource{
-												Reference: nil,
-											},
-										},
-									},
-									{
-										Name: "nil_inner_field_ref_env",
-										Source: &esspb.EnvVar_ValueFrom{
-											ValueFrom: &esspb.EnvVarSource{
-												Reference: &esspb.EnvVarSource_FieldRef{
-													FieldRef: nil,
-												},
-											},
-										},
-									},
-									{
-										Name: "secret_ref_env_opt",
-										Source: &esspb.EnvVar_ValueFrom{
-											ValueFrom: &esspb.EnvVarSource{
-												Reference: &esspb.EnvVarSource_SecretKeyRef{
-													SecretKeyRef: &esspb.SecretKeyRef{
-														Name:     "my-secret",
-														Key:      "my-key",
-														Optional: boolPtr(true),
-													},
-												},
-											},
-										},
-									},
-									{
-										Name: "secret_ref_env_req",
-										Source: &esspb.EnvVar_ValueFrom{
-											ValueFrom: &esspb.EnvVarSource{
-												Reference: &esspb.EnvVarSource_SecretKeyRef{
-													SecretKeyRef: &esspb.SecretKeyRef{
-														Name:     "other-secret",
-														Key:      "other-key",
-														Optional: nil,
-													},
-												},
-											},
-										},
-									},
-									{
-										Name: "nil_inner_secret_key_ref_env",
-										Source: &esspb.EnvVar_ValueFrom{
-											ValueFrom: &esspb.EnvVarSource{
-												Reference: &esspb.EnvVarSource_SecretKeyRef{
-													SecretKeyRef: nil,
-												},
-											},
-										},
-									},
-								},
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		job := wu.Executable.GetJobset().Jobs[0]
+		job.Spec.EnvVars = map[string]string{"env_vars_key": "env_vars_val"}
+		job.Spec.Env = []*esspb.EnvVar{
+			{
+				Name: "literal_env",
+				Source: &esspb.EnvVar_Value{
+					Value: "literal_val",
+				},
+			},
+			// nil entries should be safely ignored.
+			nil,
+			// empty name entries should be ignored.
+			{
+				Name: "",
+				Source: &esspb.EnvVar_Value{
+					Value: "empty_name_val",
+				},
+			},
+			{
+				Name: "field_ref_env",
+				Source: &esspb.EnvVar_ValueFrom{
+					ValueFrom: &esspb.EnvVarSource{
+						Reference: &esspb.EnvVarSource_FieldRef{
+							FieldRef: &esspb.FieldRef{
+								FieldPath:  "status.podIP",
+								ApiVersion: "v1",
 							},
-							Replicas: 1,
 						},
 					},
 				},
 			},
-		},
-	}
+			{
+				Name: "nil_value_from_env",
+				Source: &esspb.EnvVar_ValueFrom{
+					ValueFrom: nil,
+				},
+			},
+			{
+				Name: "nil_field_ref_env",
+				Source: &esspb.EnvVar_ValueFrom{
+					ValueFrom: &esspb.EnvVarSource{
+						Reference: nil,
+					},
+				},
+			},
+			{
+				Name: "nil_inner_field_ref_env",
+				Source: &esspb.EnvVar_ValueFrom{
+					ValueFrom: &esspb.EnvVarSource{
+						Reference: &esspb.EnvVarSource_FieldRef{
+							FieldRef: nil,
+						},
+					},
+				},
+			},
+			{
+				Name: "secret_ref_env_opt",
+				Source: &esspb.EnvVar_ValueFrom{
+					ValueFrom: &esspb.EnvVarSource{
+						Reference: &esspb.EnvVarSource_SecretKeyRef{
+							SecretKeyRef: &esspb.SecretKeyRef{
+								Name:     "my-secret",
+								Key:      "my-key",
+								Optional: boolPtr(true),
+							},
+						},
+					},
+				},
+			},
+			{
+				Name: "secret_ref_env_req",
+				Source: &esspb.EnvVar_ValueFrom{
+					ValueFrom: &esspb.EnvVarSource{
+						Reference: &esspb.EnvVarSource_SecretKeyRef{
+							SecretKeyRef: &esspb.SecretKeyRef{
+								Name:     "other-secret",
+								Key:      "other-key",
+								Optional: nil,
+							},
+						},
+					},
+				},
+			},
+			{
+				Name: "nil_inner_secret_key_ref_env",
+				Source: &esspb.EnvVar_ValueFrom{
+					ValueFrom: &esspb.EnvVarSource{
+						Reference: &esspb.EnvVarSource_SecretKeyRef{
+							SecretKeyRef: nil,
+						},
+					},
+				},
+			},
+		}
+	})
 	namespace := "test-namespace"
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", namespace, testTime, Priorities{})
@@ -689,36 +670,21 @@ func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 
 func TestConstructJobSet_GPU_GKE(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnit1",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name: "job1",
-							Spec: &esspb.ExecutableSpec{
-								Resources: &esspb.ResourceSet{
-									Resources: &esspb.ResourceSet_GpuResources{
-										GpuResources: &esspb.GpuResources{
-											Type:  "T4",
-											Count: 2,
-										},
-									},
-								},
-								DockerImage: "foo/bar",
-								Args:        map[string]string{"arg1": "val1"},
-								EnvVars:     map[string]string{"env1": "val1"},
-							},
-							Replicas:    1,
-							RetryLimit:  1,
-							Annotations: map[string]string{"anno1": "val1"},
-						},
-					},
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		job := wu.Executable.GetJobset().Jobs[0]
+		job.Spec.Resources = &esspb.ResourceSet{
+			Resources: &esspb.ResourceSet_GpuResources{
+				GpuResources: &esspb.GpuResources{
+					Type:  "T4",
+					Count: 2,
 				},
 			},
-		},
-	}
+		}
+		job.Spec.Args = map[string]string{"arg1": "val1"}
+		job.Spec.EnvVars = map[string]string{"env1": "val1"}
+		job.RetryLimit = 1
+		job.Annotations = map[string]string{"anno1": "val1"}
+	})
 	namespace := "test-namespace"
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", namespace, testTime, Priorities{})
@@ -754,32 +720,7 @@ func TestConstructJobSet_GPU_GKE(t *testing.T) {
 
 func TestConstructJobSet_ContainerDefaults(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnit1",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name: "job1",
-							Spec: &esspb.ExecutableSpec{
-								Resources: &esspb.ResourceSet{
-									Resources: &esspb.ResourceSet_CpuResources{
-										CpuResources: &esspb.CpuResources{
-											CpuMillicores: 100,
-											MemoryBytes:   1024,
-										},
-									},
-								},
-								DockerImage: "foo/bar",
-							},
-							Replicas: 1,
-						},
-					},
-				},
-			},
-		},
-	}
+	workUnit := baseCPUWorkUnit
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
 	if err != nil {
@@ -811,32 +752,7 @@ func TestConstructJobSet_ContainerDefaults(t *testing.T) {
 
 func TestConstructJobSet_TTLSecondsAfterFinished(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnit1",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name: "job1",
-							Spec: &esspb.ExecutableSpec{
-								Resources: &esspb.ResourceSet{
-									Resources: &esspb.ResourceSet_CpuResources{
-										CpuResources: &esspb.CpuResources{
-											CpuMillicores: 100,
-											MemoryBytes:   1024,
-										},
-									},
-								},
-								DockerImage: "foo/bar",
-							},
-							Replicas: 1,
-						},
-					},
-				},
-			},
-		},
-	}
+	workUnit := baseCPUWorkUnit
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
 	if err != nil {
@@ -867,32 +783,7 @@ func TestConstructJobSet_TTLSecondsAfterFinished(t *testing.T) {
 
 func TestConstructJobSet_SecurityContext(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnit1",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name: "job1",
-							Spec: &esspb.ExecutableSpec{
-								Resources: &esspb.ResourceSet{
-									Resources: &esspb.ResourceSet_CpuResources{
-										CpuResources: &esspb.CpuResources{
-											CpuMillicores: 100,
-											MemoryBytes:   1024,
-										},
-									},
-								},
-								DockerImage: "foo/bar",
-							},
-							Replicas: 1,
-						},
-					},
-				},
-			},
-		},
-	}
+	workUnit := baseCPUWorkUnit
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
 	if err != nil {
@@ -946,32 +837,7 @@ func TestConstructJobSet_SecurityContext(t *testing.T) {
 
 func TestConstructJobSet_PodFailurePolicy(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnit1",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name: "job1",
-							Spec: &esspb.ExecutableSpec{
-								Resources: &esspb.ResourceSet{
-									Resources: &esspb.ResourceSet_CpuResources{
-										CpuResources: &esspb.CpuResources{
-											CpuMillicores: 100,
-											MemoryBytes:   1024,
-										},
-									},
-								},
-								DockerImage: "foo/bar",
-							},
-							Replicas: 1,
-						},
-					},
-				},
-			},
-		},
-	}
+	workUnit := baseCPUWorkUnit
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
 	if err != nil {
@@ -1036,33 +902,9 @@ func TestConstructJobSet_PodFailurePolicy(t *testing.T) {
 
 func TestConstructJobSet_ActiveDeadlineSeconds(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnit1",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name: "job1",
-							Spec: &esspb.ExecutableSpec{
-								Resources: &esspb.ResourceSet{
-									Resources: &esspb.ResourceSet_CpuResources{
-										CpuResources: &esspb.CpuResources{
-											CpuMillicores: 100,
-											MemoryBytes:   1024,
-										},
-									},
-								},
-								DockerImage: "foo/bar",
-							},
-							Replicas:              1,
-							ActiveDeadlineSeconds: 3600,
-						},
-					},
-				},
-			},
-		},
-	}
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Executable.GetJobset().Jobs[0].ActiveDeadlineSeconds = 3600
+	})
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
 	if err != nil {
@@ -1691,32 +1533,18 @@ func TestGetPriorityClassName(t *testing.T) {
 
 func TestConstructJobSet_GPU_MultiReplica(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnit1",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name: "job1",
-							Spec: &esspb.ExecutableSpec{
-								Resources: &esspb.ResourceSet{
-									Resources: &esspb.ResourceSet_GpuResources{
-										GpuResources: &esspb.GpuResources{
-											Type:  "H100",
-											Count: 8,
-										},
-									},
-								},
-								DockerImage: "foo/bar",
-							},
-							Replicas: 4,
-						},
-					},
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		job := wu.Executable.GetJobset().Jobs[0]
+		job.Spec.Resources = &esspb.ResourceSet{
+			Resources: &esspb.ResourceSet_GpuResources{
+				GpuResources: &esspb.GpuResources{
+					Type:  "H100",
+					Count: 8,
 				},
 			},
-		},
-	}
+		}
+		job.Replicas = 4
+	})
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
 	if err != nil {
@@ -1744,31 +1572,16 @@ func TestConstructJobSet_GPU_MultiReplica(t *testing.T) {
 
 func TestConstructJobSet_GPU_DefaultReplica(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnit1",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name: "job1",
-							Spec: &esspb.ExecutableSpec{
-								Resources: &esspb.ResourceSet{
-									Resources: &esspb.ResourceSet_GpuResources{
-										GpuResources: &esspb.GpuResources{
-											Type:  "T4",
-											Count: 1,
-										},
-									},
-								},
-								DockerImage: "foo/bar",
-							},
-						},
-					},
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Executable.GetJobset().Jobs[0].Spec.Resources = &esspb.ResourceSet{
+			Resources: &esspb.ResourceSet_GpuResources{
+				GpuResources: &esspb.GpuResources{
+					Type:  "T4",
+					Count: 1,
 				},
 			},
-		},
-	}
+		}
+	})
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
 	if err != nil {
@@ -1793,32 +1606,16 @@ func TestConstructJobSet_GPU_DefaultReplica(t *testing.T) {
 
 func TestConstructJobSet_TPU_SingleHost(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnit1",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name: "job1",
-							Spec: &esspb.ExecutableSpec{
-								Resources: &esspb.ResourceSet{
-									Resources: &esspb.ResourceSet_TpuResources{
-										TpuResources: &esspb.TpuResources{
-											Type:     "tpu-v6e-slice",
-											Topology: "2x2",
-										},
-									},
-								},
-								DockerImage: "foo/bar",
-							},
-							Replicas: 1,
-						},
-					},
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Executable.GetJobset().Jobs[0].Spec.Resources = &esspb.ResourceSet{
+			Resources: &esspb.ResourceSet_TpuResources{
+				TpuResources: &esspb.TpuResources{
+					Type:     "tpu-v6e-slice",
+					Topology: "2x2",
 				},
 			},
-		},
-	}
+		}
+	})
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
 	if err != nil {
@@ -1862,32 +1659,16 @@ func TestConstructJobSet_TPU_SingleHost(t *testing.T) {
 
 func TestConstructJobSet_TPU_MultiHost(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnit1",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name: "job1",
-							Spec: &esspb.ExecutableSpec{
-								Resources: &esspb.ResourceSet{
-									Resources: &esspb.ResourceSet_TpuResources{
-										TpuResources: &esspb.TpuResources{
-											Type:     "tpu-v4-podslice",
-											Topology: "2x2x4",
-										},
-									},
-								},
-								DockerImage: "foo/bar",
-							},
-							Replicas: 1,
-						},
-					},
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Executable.GetJobset().Jobs[0].Spec.Resources = &esspb.ResourceSet{
+			Resources: &esspb.ResourceSet_TpuResources{
+				TpuResources: &esspb.TpuResources{
+					Type:     "tpu-v4-podslice",
+					Topology: "2x2x4",
 				},
 			},
-		},
-	}
+		}
+	})
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
 	if err != nil {
@@ -1925,32 +1706,18 @@ func TestConstructJobSet_TPU_MultiHost(t *testing.T) {
 
 func TestConstructJobSet_TPU_MultiSlice(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnit1",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name: "job1",
-							Spec: &esspb.ExecutableSpec{
-								Resources: &esspb.ResourceSet{
-									Resources: &esspb.ResourceSet_TpuResources{
-										TpuResources: &esspb.TpuResources{
-											Type:     "tpu-v4-podslice",
-											Topology: "2x2x4",
-										},
-									},
-								},
-								DockerImage: "foo/bar",
-							},
-							Replicas: 2,
-						},
-					},
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		job := wu.Executable.GetJobset().Jobs[0]
+		job.Spec.Resources = &esspb.ResourceSet{
+			Resources: &esspb.ResourceSet_TpuResources{
+				TpuResources: &esspb.TpuResources{
+					Type:     "tpu-v4-podslice",
+					Topology: "2x2x4",
 				},
 			},
-		},
-	}
+		}
+		job.Replicas = 2
+	})
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
 	if err != nil {
@@ -2050,41 +1817,15 @@ func TestConstructJobSet_WithInitContainers(t *testing.T) {
 	}
 }
 
-func minimalExecutableSpec() *esspb.ExecutableSpec {
-	return &esspb.ExecutableSpec{
-		DockerImage: "foo/bar",
-		Resources: &esspb.ResourceSet{
-			Resources: &esspb.ResourceSet_CpuResources{
-				CpuResources: &esspb.CpuResources{
-					CpuMillicores: 100,
-					MemoryBytes:   1024,
-				},
-			},
-		},
-	}
-}
-
 func TestConstructJobSet_DefaultNetworkMultiJob(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnitMulti",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name: "job1",
-							Spec: minimalExecutableSpec(),
-						},
-						{
-							Name: "job2",
-							Spec: minimalExecutableSpec(),
-						},
-					},
-				},
-			},
-		},
-	}
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Name = "workUnitMulti"
+		job1 := wu.Executable.GetJobset().Jobs[0]
+		job2 := proto.Clone(job1).(*esspb.KubernetesJob)
+		job2.Name = "job2"
+		wu.Executable.GetJobset().Jobs = []*esspb.KubernetesJob{job1, job2}
+	})
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
 	if err != nil {
@@ -2108,22 +1849,9 @@ func TestConstructJobSet_DefaultNetworkMultiJob(t *testing.T) {
 
 func TestConstructJobSet_SingleJobNoNetwork(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnitSingle",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name:     "job1",
-							Replicas: 1,
-							Spec:     minimalExecutableSpec(),
-						},
-					},
-				},
-			},
-		},
-	}
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Name = "workUnitSingle"
+	})
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
 	if err != nil {
@@ -2139,27 +1867,14 @@ func TestConstructJobSet_ExplicitNetworkOverride(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	enableDNS := true
 	publishNotReady := false
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnitOverride",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Network: &esspb.JobSetExecutable_Network{
-						EnableDnsHostnames:       &enableDNS,
-						Subdomain:                "custom-subdomain",
-						PublishNotReadyAddresses: &publishNotReady,
-					},
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name:     "job1",
-							Replicas: 1,
-							Spec:     minimalExecutableSpec(),
-						},
-					},
-				},
-			},
-		},
-	}
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Name = "workUnitOverride"
+		wu.Executable.GetJobset().Network = &esspb.JobSetExecutable_Network{
+			EnableDnsHostnames:       &enableDNS,
+			Subdomain:                "custom-subdomain",
+			PublishNotReadyAddresses: &publishNotReady,
+		}
+	})
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
 	if err != nil {
@@ -2182,22 +1897,10 @@ func TestConstructJobSet_ExplicitNetworkOverride(t *testing.T) {
 
 func TestConstructJobSet_MultiReplicaNetwork(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnitMultiReplica",
-		Executable: &esspb.Executable{
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name:     "job1",
-							Replicas: 2,
-							Spec:     minimalExecutableSpec(),
-						},
-					},
-				},
-			},
-		},
-	}
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Name = "workUnitMultiReplica"
+		wu.Executable.GetJobset().Jobs[0].Replicas = 2
+	})
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
 	if err != nil {
@@ -2266,4 +1969,3 @@ func TestShouldEnableJobSetNetwork_Conditions(t *testing.T) {
 		})
 	}
 }
-
