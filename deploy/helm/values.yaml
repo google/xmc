@@ -38,7 +38,7 @@ essDeployment:
 
 detectInadmissibleWorkUnits: true
 startupPodErrorCheckEnabled: true
-statusMessageHistoryEnabled: false
+statusMessageHistoryEnabled: true
 redisAddr: "YOUR_REDIS_IP:6379"
 redisPassword: "YOUR_REDIS_PASSWORD"
 gcpServiceAccount: "YOUR_GCP_SERVICE_ACCOUNT_EMAIL"
@@ -104,7 +104,7 @@ ui:
   image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/ui-dev:latest"
   apiUrl: "https://YOUR_API_HOSTNAME/v1"
   refreshIntervalMs: "30000"
-  enableStatusMessageHistory: "false"
+  enableStatusMessageHistory: "true"
 
 
 

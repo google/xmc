@@ -50,26 +50,28 @@ func TestLoadConfig(t *testing.T) {
 		{
 			name: "Valid config",
 			inputConfig: Config{
-				ProjectID:            "test-project",
-				SubscriptionID:       "test-subscription",
-				Port:                 "8080",
-				BatchSize:            100,
-				BatchInterval:        5 * time.Second,
-				SpannerDatabaseName:  "projects/xmc-test-project-1/instances/xmc/databases/experiment-db",
-				QuotaProjectID:       "xmc-test-project-1",
-				LogKeyword:           "XMC LOG:",
-				MaxConcurrentUpdates: 10,
+				ProjectID:                   "test-project",
+				SubscriptionID:              "test-subscription",
+				Port:                        "8080",
+				BatchSize:                   100,
+				BatchInterval:               5 * time.Second,
+				SpannerDatabaseName:         "projects/xmc-test-project-1/instances/xmc/databases/experiment-db",
+				QuotaProjectID:              "xmc-test-project-1",
+				LogKeyword:                  "XMC LOG:",
+				MaxConcurrentUpdates:        10,
+				StatusMessageHistoryEnabled: true,
 			},
 			wantConfig: &Config{
-				ProjectID:            "test-project",
-				SubscriptionID:       "test-subscription",
-				Port:                 "8080",
-				BatchSize:            100,
-				BatchInterval:        5 * time.Second,
-				SpannerDatabaseName:  "projects/xmc-test-project-1/instances/xmc/databases/experiment-db",
-				QuotaProjectID:       "xmc-test-project-1",
-				LogKeyword:           "XMC LOG:",
-				MaxConcurrentUpdates: 10,
+				ProjectID:                   "test-project",
+				SubscriptionID:              "test-subscription",
+				Port:                        "8080",
+				BatchSize:                   100,
+				BatchInterval:               5 * time.Second,
+				SpannerDatabaseName:         "projects/xmc-test-project-1/instances/xmc/databases/experiment-db",
+				QuotaProjectID:              "xmc-test-project-1",
+				LogKeyword:                  "XMC LOG:",
+				MaxConcurrentUpdates:        10,
+				StatusMessageHistoryEnabled: true,
 			},
 			expectError: false,
 		},
@@ -184,6 +186,7 @@ func TestLoadConfig(t *testing.T) {
 			quotaProjectID = tc.inputConfig.QuotaProjectID
 			logKeyword = tc.inputConfig.LogKeyword
 			maxConcurrentUpdates = tc.inputConfig.MaxConcurrentUpdates
+			statusMessageHistoryEnabled = tc.inputConfig.StatusMessageHistoryEnabled
 
 			got, err := LoadConfig()
 
