@@ -17,10 +17,10 @@
 import argparse
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import traceback
+from pathlib import Path
 from typing import Optional
 
 
@@ -34,7 +34,10 @@ def _should_bypass_venv() -> bool:
         return True
     file_path_str = str(Path(__file__).resolve())
     cwd_path_str = str(Path.cwd().resolve())
-    if any(token in file_path_str or token in cwd_path_str for token in ("execroot", "bazel-out", "sandbox")):
+    if any(
+        token in file_path_str or token in cwd_path_str
+        for token in ("execroot", "bazel-out", "sandbox")
+    ):
         return True
     return False
 

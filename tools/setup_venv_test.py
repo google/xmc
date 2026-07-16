@@ -16,11 +16,10 @@
 """Unit tests for tools/setup_venv.py."""
 
 import io
-from pathlib import Path
-import sys
 import tempfile
 import unittest
-from unittest.mock import MagicMock, call, patch
+from pathlib import Path
+from unittest.mock import call, patch
 
 import setup_venv
 

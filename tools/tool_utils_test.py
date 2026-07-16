@@ -17,10 +17,10 @@
 import io
 import json
 import os
-from pathlib import Path
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from tool_utils import HandledError, _bootstrap_venv, ensure_venv, run_tool
@@ -50,7 +50,11 @@ class TestToolUtils(unittest.TestCase):
         env = dict(os.environ)
         env.pop("TEST_SRCDIR", None)
         env.pop("BAZEL_TEST", None)
-        with patch.dict(os.environ, env, clear=True), patch("sys.prefix", "/mock/venv"), patch("sys.base_prefix", "/usr"):
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("sys.prefix", "/mock/venv"),
+            patch("sys.base_prefix", "/usr"),
+        ):
             ensure_venv()
         mock_execv.assert_not_called()
 
@@ -65,7 +69,12 @@ class TestToolUtils(unittest.TestCase):
             venv_py = venv_dir / "bin" / "python3"
             venv_py.parent.mkdir(parents=True, exist_ok=True)
             venv_py.touch()
-            with patch.dict(os.environ, env, clear=True), patch("sys.prefix", "/usr"), patch("sys.base_prefix", "/usr"), patch("sys.executable", "/usr/bin/python3"):
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch("sys.prefix", "/usr"),
+                patch("sys.base_prefix", "/usr"),
+                patch("sys.executable", "/usr/bin/python3"),
+            ):
                 ensure_venv(venv_dir)
             mock_execv.assert_called_once_with(str(venv_py), [str(venv_py)] + sys.argv)
 
@@ -83,7 +92,12 @@ class TestToolUtils(unittest.TestCase):
                 venv_py.parent.mkdir(parents=True, exist_ok=True)
                 venv_py.touch()
             mock_bootstrap.side_effect = create_bin
-            with patch.dict(os.environ, env, clear=True), patch("sys.prefix", "/usr"), patch("sys.base_prefix", "/usr"), patch("sys.executable", "/usr/bin/python3"):
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch("sys.prefix", "/usr"),
+                patch("sys.base_prefix", "/usr"),
+                patch("sys.executable", "/usr/bin/python3"),
+            ):
                 ensure_venv(venv_dir)
             mock_bootstrap.assert_called_once_with(venv_dir.resolve())
             mock_execv.assert_called_once_with(str(venv_py), [str(venv_py)] + sys.argv)

@@ -17,12 +17,12 @@
 
 import argparse
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
-from typing import Optional
 import venv
+from pathlib import Path
+from typing import Optional
 
 
 def error_exit(msg: str) -> None:

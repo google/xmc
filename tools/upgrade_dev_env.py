@@ -27,6 +27,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
+
 from tool_utils import ensure_venv
 
 STEPS = ["check", "migrate", "images", "app", "restart", "verify"]
