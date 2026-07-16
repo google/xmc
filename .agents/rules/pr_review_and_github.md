@@ -16,6 +16,9 @@ This document defines standards for AI Pull Request reviews and post-PR creation
 - **Actionable & Constructive Feedback**: Provide concrete code suggestions or diff blocks when highlighting non-compliant code during reviews.
 
 ## 2. Post-PR Creation Workflow for Local Agents
-- **Wait Buffer After PR Creation**: When instructed to create or update a non-draft Pull Request, after creating the PR, wait approximately **2 minutes** to allow GitHub CI status checks and the automated GitHub PR review bot to complete their initial review pass.
+- **Wait Buffer After PR Creation**: When instructed to create or update a non-draft Pull Request, after creating the PR, wait approximately **2 minutes** to allow GitHub CI status checks and automated GitHub PR review passes to complete.
 - **Proactive Comment Fetching**: After the 2-minute wait buffer, proactively fetch all incoming inline review comments, requested changes, and thread feedback using repository tools (e.g., `tools/fetch_pr_comment.py` or GitHub CLI `gh api`).
-- **Address Feedback & Propose Fixes**: Formulate clear fix plans, implement required code modifications, run local test suites to verify resolutions, and propose fix diffs for user confirmation before pushing updates.
+- **Validate Comments & Check Contract Changes**:
+  - Evaluate incoming review comments for technical validity and applicability before proceeding.
+  - If addressing a comment alters a PR contract, public API specification, or product behavior, **alert the user and seek explicit confirmation first** before modifying code.
+- **Addressing PR Comments Workflow**: Follow the detailed comment resolution workflow defined in the [Address PR Comment](../skills/address_pr_comment/SKILL.md) skill (formulating fix plans, running local unit tests, measuring coverage, and proposing fix diffs for user confirmation before pushing).
