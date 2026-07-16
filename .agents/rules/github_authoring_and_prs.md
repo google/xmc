@@ -1,12 +1,8 @@
-# GitHub Workflows & PR Standards
+# GitHub Authoring & PR Creation Standards
 
-This document defines standards for AI agents interacting with GitHub, explicitly categorized by role: **Part I: Agent as Code Author / Contributor** and **Part II: Agent as Code Reviewer / Inspector**.
+This document defines standards for AI agents acting as **Code Authors / Contributors** (writing code, managing branches, generating commits, creating pull requests, and addressing review comments).
 
 ---
-
-# Part I: Agent as Code Author / Contributor
-
-When an AI agent is writing code, managing branches, generating commits, opening pull requests, or resolving PR review feedback:
 
 ## 1. Git Branching & Naming Standards
 - **Branch Naming Schema**: Name branches using lowercase kebab-case in the format `<prefix>/<short-descriptive-name>` (or `<prefix>/<issue-id>-<short-description>`).
@@ -68,26 +64,3 @@ When an AI agent is writing code, managing branches, generating commits, opening
   - If addressing a comment alters a PR contract, public API specification, or product behavior, **alert the user and seek explicit confirmation first** before modifying code.
 - **Addressing PR Comments Workflow**: Follow the detailed comment resolution workflow defined in the [Address PR Comment](../skills/address_pr_comment/SKILL.md) skill (formulating fix plans, running local unit tests, measuring coverage, and proposing fix diffs for user confirmation before pushing).
 - **PR Comment Replies**: Keep GitHub comment thread replies concise, objective, and focused on resolution (e.g. `"code changed"` or summarizing test verification), avoiding noisy or redundant chatter in PR review threads.
-
----
-
-# Part II: Agent as Code Reviewer / Inspector
-
-When an AI agent is inspecting submitted Pull Requests, reviewing diffs, or providing automated feedback:
-
-## 1. Review Scope & Standards Enforcement
-- **Comprehensive Rule Enforcement**: When performing Pull Request (PR) reviews, AI agents must enforce all project codebase guidelines, architectural principles (SRP, DRY, KISS, linear control flow), security policies, and language-specific style guides—not merely verify basic syntax or formatting.
-- **Contract & API Integrity**: Verify that breaking changes to public APIs, protobuf schemas, or system configurations are explicitly documented and confirmed by the author.
-
-## 2. Code Review Checklist
-- **Single Responsibility & Function Limits**: Verify methods adhere to the 20–30 line target limit and focus on a single responsibility.
-- **Linear Control Flow**: Inspect control flow to ensure early guard clauses are used and no redundant `else` blocks follow terminating return or throw statements.
-- **State Immutability**: Ensure array operations construct shallow copies (`[...arr]`, `{ ...obj }`) before mutating, sorting, or filtering signal/observable data.
-- **Dependency Injection & Hermetic Testing**: Confirm production code contains no inline static mock datasets or `if (useMock)` execution flags, verifying mocks are supplied via DI factory providers.
-- **Test Coverage**: Validate that all new features, bug fixes, or code modifications are accompanied by passing unit or integration tests.
-- **Documentation Alignment**: Verify repository markdown docs (including `README.md`, `INSTALL.md`, and component documentation), inline docstrings, and API specifications are updated to reflect any contract adjustments.
-
-## 3. Feedback Quality & Review Presentation
-- **Actionable & Constructive Feedback**: Provide concrete code suggestions or diff blocks when highlighting non-compliant code during reviews.
-- **Objective Rules Alignment**: Base review findings explicitly on defined codebase rules rather than personal stylistic preferences.
-- **Context Awareness**: Respect structured agent execution notes (such as Implementation Plans in PR comments) while focusing code reviews strictly on the correctness, security, and maintainability of the submitted code diff.

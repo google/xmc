@@ -19,7 +19,8 @@ This root guidelines document defines high-level universal engineering principle
 ### Core Engineering & Operational Workflows
 - 📘 [Core Engineering Standards](rules/core_engineering.md): SRP, KISS, 20–30 line function limit, linear control flow, default immutability, high-fidelity test doubles, strict coverage, atomic PRs, and contract update rules.
 - 🛠️ [Skills & Automation Guidelines](rules/skills_and_automation.md): Extracting complex logic into testable Python scripts, applying DRY/KISS to skills, preventing context creep, and delegating work to subagents.
-- 🐙 [GitHub Workflows & PR Standards](rules/pr_review_and_github.md): Git branch prefixes (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`, `koder/`), Conventional Commit standards, PR title & body formatting rules, prohibition of raw dumps/misplaced comments, AI code review checklists, and post-PR creation workflows.
+- 🐙 [GitHub Authoring & PR Creation](rules/github_authoring_and_prs.md): Git branch prefixes (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`, `koder/`), Conventional Commit standards, PR title & body formatting rules, plain-text Buganizer references, forbidden raw log dumps vs. allowed audit artifacts, and comment resolution workflows.
+- 🔍 [Code Review & Inspection Guidelines](rules/pr_review_guidelines.md): AI code review checklists (SRP, KISS, immutability, DI testing, test coverage, doc sync), review standards enforcement, and constructive code diff feedback rules.
 
 ### Language-Specific Rules
 - 🐹 [Go (Golang)](rules/languages/golang.md): Idiomatic Go style, clean interfaces, lowercase error wrapping (`%w`), concurrency safety (`context.Context`, mutexes), and table-driven testing.

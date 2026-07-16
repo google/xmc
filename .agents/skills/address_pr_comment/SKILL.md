@@ -22,7 +22,7 @@ graph TD
 ```
 
 > [!NOTE]
-> All Git branching, commit messaging, PR field structure, and comment response standards defined in [.agents/rules/pr_review_and_github.md](../../rules/pr_review_and_github.md) apply to this workflow.
+> All PR comment review evaluations and code inspection standards defined in [.agents/rules/pr_review_guidelines.md](../../rules/pr_review_guidelines.md) apply to this workflow.
 
 ---
 
