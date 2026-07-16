@@ -30,6 +30,7 @@ except ImportError:
 
 
 class SPAHandlerTest(unittest.TestCase):
+  """Test suite for SPAHandler server requests."""
 
   def setUp(self):
     super().setUp()

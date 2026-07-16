@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Regression tests for get_experiment API."""
+
 import re
 import time
 
@@ -26,16 +28,21 @@ from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
 
 class ExperimentRegressionTest(googletest.TestCase):
+  """Regression test suite for get_experiment API calls."""
+
   examples: examples_lib.ExamplesLib | None = None
   # A large offset added to the latest existing XID to ensure the generated XID
   # does not exist.
   _NONEXISTENT_XID_OFFSET = 100_000
 
   def setUp(self):
+    """Sets up ExamplesLib instance before test execution."""
     super().setUp()
     self.examples = examples_lib.ExamplesLib()
 
   def tearDown(self):
+    """Cleans up ExamplesLib connection after test execution."""
+    super().tearDown()
     super().tearDown()
     if self.examples is not None:
       self.examples.close()

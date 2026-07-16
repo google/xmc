@@ -25,6 +25,7 @@ from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
 
 def _create_kubernetes_job(name: str) -> work_unit_pb2.KubernetesJob:
+  """Creates a KubernetesJob proto with default resource allocations."""
   return work_unit_pb2.KubernetesJob(
       name=name,
       spec=work_unit_pb2.ExecutableSpec(
@@ -48,6 +49,7 @@ def _create_kubernetes_job(name: str) -> work_unit_pb2.KubernetesJob:
 
 
 def get_work_unit() -> work_unit_pb2.WorkUnit:
+  """Constructs a standard WorkUnit proto with client and server jobs."""
   return work_unit_pb2.WorkUnit(
       priority=priority_pb2.Priority.HIGH,
       work_unit_type=work_unit_pb2.WorkUnit.STANDARD,

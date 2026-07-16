@@ -7,6 +7,7 @@ import time
 
 
 def main() -> None:
+  """Runs counter printing loop for specified duration."""
   duration_minutes = float(os.environ.get("DURATION_MINUTES", "2"))
   prefix = os.environ.get("POD_PREFIX", os.environ.get("HOSTNAME", "counter"))
 

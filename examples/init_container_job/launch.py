@@ -28,6 +28,7 @@ from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
 
 def main(argv: Sequence[str]) -> None:
+  """Launches init container validation experiment."""
   if len(argv) > 1:
     raise app.UsageError("Too many command-line arguments.")
 

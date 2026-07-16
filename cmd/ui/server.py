@@ -21,6 +21,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
   """Custom request handler that supports SPA routing fallbacks and config.js."""
 
   def do_GET(self):
+    """Handles GET requests for SPA routing, health checks, and config generation."""
     if self.path == '/healthz':
       self.send_response(200, 'OK')
       self.send_header('Content-type', 'text/plain')
@@ -35,7 +36,10 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
 
       api_url = os.environ.get('XMC_API_URL')
       if not api_url:
-        self.log_message("WARNING: XMC_API_URL environment variable is not set. Defaulting to 'https://api.example.com/v1'")
+        self.log_message(
+            'WARNING: XMC_API_URL environment variable is not set. Defaulting'
+            " to 'https://api.example.com/v1'"
+        )
         api_url = 'https://api.example.com/v1'
 
       refresh_interval_str = os.environ.get('XMC_REFRESH_INTERVAL_MS', '30000')
@@ -44,7 +48,10 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
       except ValueError:
         refresh_interval = 30000
 
-      status_history = os.environ.get('XMC_STATUS_MESSAGE_HISTORY_ENABLED', 'false').lower() == 'true'
+      status_history = (
+          os.environ.get('XMC_STATUS_MESSAGE_HISTORY_ENABLED', 'false').lower()
+          == 'true'
+      )
 
       feature_flags = {
           'statusMessageHistoryEnabled': status_history,

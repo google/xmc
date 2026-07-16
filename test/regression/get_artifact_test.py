@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Regression tests for get_artifact API."""
+
 import datetime
 import re
 import time
@@ -33,13 +35,18 @@ _NONEXISTENT_ARTIFACT_OFFSET = 1021
 
 
 class ArtifactRegressionTest(parameterized.TestCase):
+  """Regression test suite for get_artifact API calls."""
+
   examples: examples_lib.ExamplesLib | None = None
 
   def setUp(self) -> None:
+    """Sets up ExamplesLib instance before test execution."""
     super().setUp()
     self.examples = examples_lib.ExamplesLib()
 
   def tearDown(self) -> None:
+    """Cleans up ExamplesLib connection after test execution."""
+    super().tearDown()
     super().tearDown()
     if self.examples is not None:
       self.examples.close()

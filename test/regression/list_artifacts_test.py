@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Regression tests for list_artifacts API."""
+
 import datetime
 import time
 
@@ -28,13 +30,18 @@ _WORK_UNIT_COUNT = 1
 
 
 class ArtifactRegressionTest(googletest.TestCase):
+  """Regression test suite for list_artifacts API calls."""
+
   examples: examples_lib.ExamplesLib | None = None
 
   def setUp(self):
+    """Sets up ExamplesLib instance before test execution."""
     super().setUp()
     self.examples = examples_lib.ExamplesLib()
 
   def tearDown(self):
+    """Cleans up ExamplesLib connection after test execution."""
+    super().tearDown()
     super().tearDown()
     if self.examples is not None:
       self.examples.close()

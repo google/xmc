@@ -7,6 +7,7 @@ import time
 
 
 def main() -> None:
+  """Executes worker heartbeat loop after checking init marker."""
   pod_name = os.environ.get("HOSTNAME", "unknown-pod")
   prefix = os.environ.get("POD_PREFIX", "primary-worker")
   flag_path = "/dev/disk-scratch/init_ready.flag"

@@ -25,8 +25,12 @@ import grpc
 
 from longrunning import operations_pb2
 
-from xmanager_cloud.experiment_state_server.proto import api_pb2 as experiment_state_service_pb2
-from xmanager_cloud.experiment_state_server.proto import api_pb2_grpc as experiment_state_service_pb2_grpc
+from xmanager_cloud.experiment_state_server.proto import (
+    api_pb2 as experiment_state_service_pb2,
+)
+from xmanager_cloud.experiment_state_server.proto import (
+    api_pb2_grpc as experiment_state_service_pb2_grpc,
+)
 from xmanager_cloud.experiment_state_server.proto import artifact_pb2
 from xmanager_cloud.experiment_state_server.proto import experiment_pb2
 from xmanager_cloud.experiment_state_server.proto import work_unit_pb2

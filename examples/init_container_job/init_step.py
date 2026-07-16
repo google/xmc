@@ -6,6 +6,7 @@ import time
 
 
 def main() -> None:
+  """Executes initialization sequence and writes marker flag."""
   pod_name = os.environ.get("HOSTNAME", "unknown-pod")
   prefix = os.environ.get("POD_PREFIX", "init-setup")
   print(f"[{prefix} | {pod_name}] Starting initialization step...", flush=True)

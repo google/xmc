@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Regression tests for list_work_units API."""
+
 import datetime
 import time
 
@@ -22,13 +24,18 @@ from xmanager_cloud.tests.regression import test_utils
 
 
 class WorkUnitRegressionTest(googletest.TestCase):
+  """Regression test suite for list_work_units API calls."""
+
   examples: examples_lib.ExamplesLib | None = None
 
   def setUp(self):
+    """Sets up ExamplesLib instance before test execution."""
     super().setUp()
     self.examples = examples_lib.ExamplesLib()
 
   def tearDown(self):
+    """Cleans up ExamplesLib connection after test execution."""
+    super().tearDown()
     super().tearDown()
     if self.examples is not None:
       self.examples.close()

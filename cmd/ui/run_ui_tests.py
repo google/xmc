@@ -20,6 +20,7 @@ import sys
 
 
 def main():
+  """Runs Angular UI unit tests in physical directory."""
   # Resolve the real physical directory of this script on the host system
   real_script_path = os.path.realpath(__file__)
   real_ui_dir = os.path.dirname(real_script_path)

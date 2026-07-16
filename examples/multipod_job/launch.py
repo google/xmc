@@ -2,8 +2,10 @@
 """Launch script demonstrating a multi-pod and multi-container (sidecar) XMC WorkUnit.
 
 Runs:
-1. `counter-workers` (2 parallel replicas, each with a primary counter container and a sidecar counter container).
-2. `secondary-counter` (1 replica running a second distinct pod role in the same WorkUnit).
+1. `counter-workers` (2 parallel replicas, each with primary and sidecar
+   containers).
+2. `secondary-counter` (1 replica running a second distinct pod role in the same
+   WorkUnit).
 Leverages the XManager CLI library installed in ./deploy/cli/venv.
 """
 
@@ -22,7 +24,9 @@ from xmanager import xm_cloud
 from xmanager.xm_cloud import snapshot_code
 
 # Skip git push snapshot during local test launch so SSH passphrase is not prompted
-snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
+snapshot_code.push_repo_state = lambda *args, **kwargs: type(
+    "Dummy", (), {"commit_url": None}
+)()
 
 from xmanager_cloud.experiment_state_server.proto import api_pb2 as ess_api_pb2
 from xmanager_cloud.experiment_state_server.proto import priority_pb2
@@ -32,6 +36,7 @@ from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
 
 def main(argv: Sequence[str]) -> None:
+  """Launches multi-pod and sidecar validation experiment."""
   if len(argv) > 1:
     raise app.UsageError("Too many command-line arguments.")
 
@@ -73,7 +78,7 @@ def main(argv: Sequence[str]) -> None:
                     publish_not_ready_addresses=True,
                 ),
                 jobs=[
-                    # Pod Role 1: 2 parallel replicas, each running primary + sidecar container
+                    # Pod Role 1: 2 parallel replicas with primary + sidecar
                     work_unit_pb2.KubernetesJob(
                         name="counter-workers",
                         replicas=2,
