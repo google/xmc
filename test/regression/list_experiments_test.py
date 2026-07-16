@@ -63,9 +63,7 @@ class ExperimentRegressionTest(googletest.TestCase):
             )
 
         self.assertIsNotNone(response, "list_experiments never returned a response.")
-        self.assertLen(
-            response.experiments, 1, "Experiment was not found in list_experiments."
-        )
+        self.assertLen(response.experiments, 1, "Experiment was not found in list_experiments.")
         [experiment] = response.experiments
         expected_experiment = experiment_pb2.Experiment(
             name=experiment_name,

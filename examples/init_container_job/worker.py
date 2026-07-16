@@ -25,8 +25,7 @@ def main() -> None:
         )
     else:
         print(
-            f"[{prefix} | {pod_name}] Note: Marker {flag_path} not found on this"
-            " filesystem.",
+            f"[{prefix} | {pod_name}] Note: Marker {flag_path} not found on this filesystem.",
             flush=True,
         )
 

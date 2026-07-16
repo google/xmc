@@ -19,8 +19,7 @@ dotenv.load_dotenv()
 PROJECT_ID = os.environ.get("PROJECT_ID")
 if not PROJECT_ID:
     raise ValueError(
-        "PROJECT_ID environment variable is not set. Please configure it in your"
-        " .env file."
+        "PROJECT_ID environment variable is not set. Please configure it in your .env file."
     )
 REGISTRY_NAME = "xmc"
 CONTAINER_REGISTRY = f"us-docker.pkg.dev/{PROJECT_ID}/{REGISTRY_NAME}"
@@ -46,9 +45,7 @@ def main(argv: Sequence[str]) -> None:
         executables = experiment.package(
             [
                 xm.container(
-                    image_path=(
-                        f"us-docker.pkg.dev/{PROJECT_ID}/xmc/example-container:latest"
-                    ),
+                    image_path=(f"us-docker.pkg.dev/{PROJECT_ID}/xmc/example-container:latest"),
                     executor_spec=xm_cloud.KubernetesJobExecutorSpec(
                         container_registry=CONTAINER_REGISTRY,
                     ),
@@ -73,9 +70,7 @@ def main(argv: Sequence[str]) -> None:
                     ),
                 ),
                 settings=xm_cloud.WorkUnitSettings(
-                    scheduling_constraints=xm_cloud.SchedulingConstraints(
-                        queue_name="cpu-queue"
-                    ),
+                    scheduling_constraints=xm_cloud.SchedulingConstraints(queue_name="cpu-queue"),
                     tags=["test", "test2"],
                     notes="This is a test note.",
                     urls=[

@@ -33,9 +33,7 @@ class GithubAPIError(Exception):
 
 def parse_comment_url(url: str):
     """Parses GitHub review comment URL into component dictionary."""
-    match_review = re.search(
-        r"github\.com/([^/]+)/([^/]+)/pull/(\d+)#discussion_r(\d+)", url
-    )
+    match_review = re.search(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)#discussion_r(\d+)", url)
     if match_review:
         return {
             "type": "review_comment",
@@ -81,9 +79,7 @@ def call_github_api(
         errors.append(
             (
                 "unauthenticated",
-                ValueError(
-                    "Unauthenticated requests not supported for non-GET methods."
-                ),
+                ValueError("Unauthenticated requests not supported for non-GET methods."),
             )
         )
 
@@ -99,9 +95,7 @@ def _call_api_with_gh(endpoint, method, payload, user_agent):
         cmd += ["--input", "-"]
         input_data = json.dumps(payload)
 
-    res = subprocess.run(
-        cmd, input=input_data, capture_output=True, text=True, check=True
-    )
+    res = subprocess.run(cmd, input=input_data, capture_output=True, text=True, check=True)
     return json.loads(res.stdout)
 
 

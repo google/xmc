@@ -54,9 +54,7 @@ def get_work_unit() -> work_unit_pb2.WorkUnit:
         priority=priority_pb2.Priority.HIGH,
         work_unit_type=work_unit_pb2.WorkUnit.STANDARD,
         executable=work_unit_pb2.Executable(
-            scheduling_constraints=work_unit_pb2.SchedulingConstraints(
-                queue_name="cpu-queue"
-            ),
+            scheduling_constraints=work_unit_pb2.SchedulingConstraints(queue_name="cpu-queue"),
             jobset=work_unit_pb2.JobSetExecutable(
                 jobs=[
                     _create_kubernetes_job(name="client"),
@@ -181,9 +179,7 @@ def create_experiment_with_artifacts(
             url=f"http://example.com/exp/{i}",
             display_name=f"Exp Artifact {i}",
         )
-        result = examples.create_artifact(
-            parent_name=experiment_name, artifact=artifact
-        )
+        result = examples.create_artifact(parent_name=experiment_name, artifact=artifact)
         experiment_artifact_names.append(result.name)
 
     # Create Work Unit-level artifacts
@@ -198,9 +194,7 @@ def create_experiment_with_artifacts(
                 url=f"http://example.com/wu/{wu_id}/art/{i}",
                 display_name=f"WU {wu_id} Artifact {i}",
             )
-            result = examples.create_artifact(
-                parent_name=work_unit_name, artifact=artifact
-            )
+            result = examples.create_artifact(parent_name=work_unit_name, artifact=artifact)
             work_unit_artifact_names.append(result.name)
 
     return (experiment_name, experiment_artifact_names, work_unit_artifact_names)

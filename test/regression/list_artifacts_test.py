@@ -49,9 +49,7 @@ class ArtifactRegressionTest(googletest.TestCase):
         experiment_artifacts_count = _EXPERIMENT_ARTIFACTS_COUNT
         work_unit_artifacts_count = _WORK_UNIT_ARTIFACTS_COUNT
         work_unit_count = _WORK_UNIT_COUNT
-        artifact_count = experiment_artifacts_count + (
-            work_unit_count * work_unit_artifacts_count
-        )
+        artifact_count = experiment_artifacts_count + (work_unit_count * work_unit_artifacts_count)
         experiment_name, _, _ = test_utils.create_experiment_with_artifacts(
             self.examples,
             title="List created artifacts",

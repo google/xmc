@@ -31,8 +31,7 @@ class TestExtractTelemetry(unittest.TestCase):
         res = _fetch_comments("google", "xmc", "2026-06-22T00:00:00Z")
         self.assertEqual(len(res), 1)
         mock_call.assert_called_once_with(
-            "/repos/google/xmc/pulls/comments?per_page=100&page=1"
-            "&since=2026-06-22T00:00:00Z",
+            "/repos/google/xmc/pulls/comments?per_page=100&page=1&since=2026-06-22T00:00:00Z",
             user_agent="XMC-Telemetry-Extractor",
         )
 

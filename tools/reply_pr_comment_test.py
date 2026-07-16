@@ -46,9 +46,7 @@ class TestReplyPRComment(unittest.TestCase):
     @patch("reply_pr_comment.call_github_api")
     @patch("reply_pr_comment.datetime")
     @patch("reply_pr_comment.subprocess.check_output")
-    def test_reply_comment_success(
-        self, mock_git, mock_datetime, mock_call, mock_parse
-    ):
+    def test_reply_comment_success(self, mock_git, mock_datetime, mock_call, mock_parse):
         """Test successful execution of reply_comment with full telemetry."""
         mock_git.return_value = "mock_skill_commit_id"
 
@@ -148,9 +146,7 @@ class TestReplyPRComment(unittest.TestCase):
     @patch("reply_pr_comment.call_github_api")
     @patch("reply_pr_comment.datetime")
     @patch("reply_pr_comment.subprocess.check_output")
-    def test_reply_comment_git_empty_hash(
-        self, mock_git, mock_datetime, mock_call, mock_parse
-    ):
+    def test_reply_comment_git_empty_hash(self, mock_git, mock_datetime, mock_call, mock_parse):
         """Test reply_comment when git log returns empty hash."""
         mock_git.return_value = ""
 
@@ -198,9 +194,7 @@ class TestReplyPRComment(unittest.TestCase):
     @patch("reply_pr_comment.call_github_api")
     @patch("reply_pr_comment.datetime")
     @patch("reply_pr_comment.subprocess.check_output")
-    def test_reply_comment_git_fails(
-        self, mock_git, mock_datetime, mock_call, mock_parse
-    ):
+    def test_reply_comment_git_fails(self, mock_git, mock_datetime, mock_call, mock_parse):
         """Test reply_comment when git command raises exception."""
         mock_git.side_effect = Exception("git failed")
 
@@ -265,9 +259,7 @@ class TestReplyPRComment(unittest.TestCase):
             reply_comment(args)
 
         self.assertIn("auth error", ctx.exception.message)
-        self.assertIn(
-            "Please authenticate using the 'gh' CLI", ctx.exception.instruction
-        )
+        self.assertIn("Please authenticate using the 'gh' CLI", ctx.exception.instruction)
 
     @patch("reply_pr_comment.parse_comment_url")
     @patch("reply_pr_comment.call_github_api")

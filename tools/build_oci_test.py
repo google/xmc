@@ -255,9 +255,7 @@ class TestBuildOci(unittest.TestCase):
     @patch("os.path.exists")
     @patch("os.path.realpath")
     @patch("builtins.open", new_callable=mock_open)
-    def test_build_oci_failure_non_elf(
-        self, mock_builtin_open, mock_realpath, mock_exists
-    ):
+    def test_build_oci_failure_non_elf(self, mock_builtin_open, mock_realpath, mock_exists):
         """Test build_oci failure when binary is not a valid ELF file."""
         mock_exists.return_value = True
         mock_realpath.return_value = "/path/to/binary"

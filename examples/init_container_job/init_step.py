@@ -15,8 +15,7 @@ def main() -> None:
         f.write(f"Initialized by {prefix} on {pod_name}\n")
 
     print(
-        f"[{prefix} | {pod_name}] Successfully created marker {flag_path}."
-        " Init complete!",
+        f"[{prefix} | {pod_name}] Successfully created marker {flag_path}. Init complete!",
         flush=True,
     )
 

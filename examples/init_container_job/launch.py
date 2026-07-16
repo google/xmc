@@ -18,9 +18,7 @@ from xmanager_cloud.experiment_state_server.proto import (
 from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
 # Skip git push snapshot during local test launch
-snapshot_code.push_repo_state = lambda *args, **kwargs: type(
-    "Dummy", (), {"commit_url": None}
-)()
+snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
 
 
 def main(argv: Sequence[str]) -> None:
@@ -54,9 +52,7 @@ def main(argv: Sequence[str]) -> None:
             notes="JobSet demonstrating sequential Init Container execution.",
             tags=["init-container", "validation"],
             executable=work_unit_pb2.Executable(
-                scheduling_constraints=work_unit_pb2.SchedulingConstraints(
-                    queue_name=queue_name
-                ),
+                scheduling_constraints=work_unit_pb2.SchedulingConstraints(queue_name=queue_name),
                 jobset=work_unit_pb2.JobSetExecutable(
                     jobs=[
                         work_unit_pb2.KubernetesJob(

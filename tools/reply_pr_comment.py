@@ -119,9 +119,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Post a reply to a Pull Request review comment thread."
     )
-    parser.add_argument(
-        "comment_url", help="The URL of the GitHub comment to reply to."
-    )
+    parser.add_argument("comment_url", help="The URL of the GitHub comment to reply to.")
     parser.add_argument(
         "message",
         nargs="?",

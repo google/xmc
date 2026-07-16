@@ -103,9 +103,7 @@ class ExperimentRegressionTest(googletest.TestCase):
     def test_get_nonexistent_experiment_raises_error(self):
         """Tests that get experiment raises error for a nonexistent experiment."""
         assert self.examples is not None, "ExamplesLib was not initialized."
-        response = self.examples.list_experiments(
-            page_size=1, page_token="", order_by="xid desc"
-        )
+        response = self.examples.list_experiments(page_size=1, page_token="", order_by="xid desc")
         if len(response.experiments) > 0:
             latest_xid = int(response.experiments[0].name.split("/")[-1])
             nonexistent_xid = latest_xid + self._NONEXISTENT_XID_OFFSET

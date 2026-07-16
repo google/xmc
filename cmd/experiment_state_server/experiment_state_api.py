@@ -82,14 +82,11 @@ def get_current_user_email() -> str:
                     return email
 
         with requests.AuthorizedSession(creds) as authed_session:
-            response = authed_session.get(
-                "https://openidconnect.googleapis.com/v1/userinfo"
-            )
+            response = authed_session.get("https://openidconnect.googleapis.com/v1/userinfo")
 
             if response.status_code != 200:
                 raise RuntimeError(
-                    f"Failed to retrieve userinfo: {response.status_code} "
-                    f"{response.text}"
+                    f"Failed to retrieve userinfo: {response.status_code} {response.text}"
                 )
             userinfo_email = response.json().get("email")
             if userinfo_email:
@@ -129,8 +126,7 @@ def _create_experiment_state_server_stub(
     iap_client_id = os.environ.get("IAP_CLIENT_ID")
     if not iap_client_id:
         print(
-            "IAP_CLIENT_ID not set. It should be the OAuth client ID used by IAP "
-            "for your backend."
+            "IAP_CLIENT_ID not set. It should be the OAuth client ID used by IAP for your backend."
         )
         iap_client_id = input("Enter IAP_CLIENT_ID: ")
     client_sa = os.environ.get("XMC_CLIENT_SA")
@@ -168,9 +164,7 @@ def _create_experiment_state_server_stub(
 
     grpc.channel_ready_future(intercepted_channel).result(_CHANNEL_READY_TIMEOUT_SEC)
     return (
-        experiment_state_service_pb2_grpc.ExperimentStateServiceStub(
-            intercepted_channel
-        ),
+        experiment_state_service_pb2_grpc.ExperimentStateServiceStub(intercepted_channel),
         intercepted_channel,
     )
 
@@ -184,9 +178,7 @@ class ExperimentStateGRpcApi:
     """
 
     def __init__(self):
-        self._stub, self._channel = _create_experiment_state_server_stub(
-            _get_xmanager_endpoint()
-        )
+        self._stub, self._channel = _create_experiment_state_server_stub(_get_xmanager_endpoint())
 
     def create_experiment(
         self, request: experiment_state_service_pb2.CreateExperimentRequest

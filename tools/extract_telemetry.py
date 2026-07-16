@@ -96,17 +96,12 @@ def extract_telemetry(args):
 
 def main():
     """Main entrypoint for extract_telemetry tool."""
-    parser = argparse.ArgumentParser(
-        description="Extract usage telemetry from GitHub PR comments."
-    )
+    parser = argparse.ArgumentParser(description="Extract usage telemetry from GitHub PR comments.")
     parser.add_argument("owner", help="GitHub repository owner (e.g. google).")
     parser.add_argument("repo", help="GitHub repository name (e.g. xmc).")
     parser.add_argument(
         "--since",
-        help=(
-            "Only show telemetry since this date/time (ISO 8601 format:"
-            " YYYY-MM-DDTHH:MM:SSZ)."
-        ),
+        help=("Only show telemetry since this date/time (ISO 8601 format: YYYY-MM-DDTHH:MM:SSZ)."),
     )
     parser.add_argument(
         "-o",

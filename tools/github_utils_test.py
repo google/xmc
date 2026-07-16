@@ -112,9 +112,7 @@ class TestGithubUtils(unittest.TestCase):
 
     @patch("shutil.which")
     @patch("os.environ.get")
-    def test_call_github_api_post_without_auth_raises_auth_error(
-        self, mock_env_get, mock_which
-    ):
+    def test_call_github_api_post_without_auth_raises_auth_error(self, mock_env_get, mock_which):
         """Test POST request without auth raises GithubAuthError."""
         mock_which.return_value = None
         mock_env_get.return_value = None
@@ -148,9 +146,7 @@ class TestGithubUtils(unittest.TestCase):
             call_github_api("/repos/google/xmc/pulls/comments/123", method="GET")
 
         self.assertIn("GitHub API call failed", str(ctx.exception))
-        self.assertIn(
-            "[unauthenticated] Exception: HTTP 404 Not Found", str(ctx.exception)
-        )
+        self.assertIn("[unauthenticated] Exception: HTTP 404 Not Found", str(ctx.exception))
 
     @patch("shutil.which")
     @patch("subprocess.run")

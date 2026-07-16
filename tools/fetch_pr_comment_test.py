@@ -94,9 +94,7 @@ class TestFetchPRComment(unittest.TestCase):
             fetch_comment(args)
 
         self.assertIn("auth failed", ctx.exception.message)
-        self.assertIn(
-            "Please authenticate using the 'gh' CLI", ctx.exception.instruction
-        )
+        self.assertIn("Please authenticate using the 'gh' CLI", ctx.exception.instruction)
 
     @patch("fetch_pr_comment.parse_comment_url")
     @patch("fetch_pr_comment.call_github_api")

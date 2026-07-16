@@ -67,9 +67,7 @@ class ArtifactRegressionTest(parameterized.TestCase):
             testcase_name="work_unit_artifact",
             title="Get work unit artifact",
             work_unit_count=_WORK_UNIT_COUNT,
-            get_artifact_name_fn=(
-                lambda _, work_unit_artifact_names: work_unit_artifact_names[0]
-            ),
+            get_artifact_name_fn=(lambda _, work_unit_artifact_names: work_unit_artifact_names[0]),
             expected_parent_fn=lambda exp_name: f"{exp_name}/workUnits/1",
             expected_data_type=artifact_pb2.Artifact.DataType.URL,
             expected_notes="Work Unit 1 artifact 0",
@@ -104,9 +102,7 @@ class ArtifactRegressionTest(parameterized.TestCase):
             )
         )
 
-        artifact_name = get_artifact_name_fn(
-            experiment_artifact_names, work_unit_artifact_names
-        )
+        artifact_name = get_artifact_name_fn(experiment_artifact_names, work_unit_artifact_names)
 
         # Wait for experiment artifacts to be available in ESS with a timeout.
         timeout = datetime.timedelta(seconds=_TIMEOUT_SECONDS)
@@ -114,8 +110,7 @@ class ArtifactRegressionTest(parameterized.TestCase):
         artifact = None
         retryable_errors = 0
         while (
-            datetime.datetime.now(datetime.timezone.utc) - start_time < timeout
-            and artifact is None
+            datetime.datetime.now(datetime.timezone.utc) - start_time < timeout and artifact is None
         ):
             try:
                 artifact = self.examples.get_artifact(artifact_name)

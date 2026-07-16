@@ -39,9 +39,7 @@ class ExperimentStateApiTest(unittest.TestCase):
         self._mock_stub.CreateWorkUnit.return_value = operations_pb2.Operation()
         self._mock_stub.GetExperiment.return_value = experiment_pb2.Experiment()
         self._mock_stub.GetWorkUnit.return_value = work_unit_pb2.WorkUnit()
-        self._mock_stub.UpdateExperimentLaunchState.return_value = (
-            experiment_pb2.Experiment()
-        )
+        self._mock_stub.UpdateExperimentLaunchState.return_value = experiment_pb2.Experiment()
         self._mock_stub.UpdateExperiment.return_value = experiment_pb2.Experiment()
         self._mock_stub.UpdateWorkUnit.return_value = work_unit_pb2.WorkUnit()
         self._mock_stub.CreateArtifact.return_value = artifact_pb2.Artifact()
@@ -188,23 +186,17 @@ class GetCurrentUserEmailTest(unittest.TestCase):
             mock.patch.object(id_token, "verify_oauth2_token", autospec=True)
         )
         self.mock_authorized_session = self.enterContext(
-            mock.patch(
-                "google.auth.transport.requests.AuthorizedSession", autospec=True
-            )
+            mock.patch("google.auth.transport.requests.AuthorizedSession", autospec=True)
         )
 
     def test_service_account_email(self):
         self.mock_creds.service_account_email = "sa@example.com"
-        self.assertEqual(
-            experiment_state_api.get_current_user_email(), "sa@example.com"
-        )
+        self.assertEqual(experiment_state_api.get_current_user_email(), "sa@example.com")
 
     def test_id_token_email(self):
         self.mock_creds.id_token = "some_token"
         self.mock_verify_oauth2_token.return_value = {"email": "id@example.com"}
-        self.assertEqual(
-            experiment_state_api.get_current_user_email(), "id@example.com"
-        )
+        self.assertEqual(experiment_state_api.get_current_user_email(), "id@example.com")
 
     def test_userinfo_email_after_id_token_value_error(self):
         self.mock_creds.id_token = "some_token"
@@ -215,12 +207,8 @@ class GetCurrentUserEmailTest(unittest.TestCase):
         mock_response.json.return_value = {"email": "userinfo@example.com"}
         mock_session.get.return_value = mock_response
 
-        self.assertEqual(
-            experiment_state_api.get_current_user_email(), "userinfo@example.com"
-        )
-        mock_session.get.assert_called_once_with(
-            "https://openidconnect.googleapis.com/v1/userinfo"
-        )
+        self.assertEqual(experiment_state_api.get_current_user_email(), "userinfo@example.com")
+        mock_session.get.assert_called_once_with("https://openidconnect.googleapis.com/v1/userinfo")
 
     def test_userinfo_email_no_id_token(self):
         mock_session = self.mock_authorized_session.return_value.__enter__.return_value
@@ -229,12 +217,8 @@ class GetCurrentUserEmailTest(unittest.TestCase):
         mock_response.json.return_value = {"email": "userinfo@example.com"}
         mock_session.get.return_value = mock_response
 
-        self.assertEqual(
-            experiment_state_api.get_current_user_email(), "userinfo@example.com"
-        )
-        mock_session.get.assert_called_once_with(
-            "https://openidconnect.googleapis.com/v1/userinfo"
-        )
+        self.assertEqual(experiment_state_api.get_current_user_email(), "userinfo@example.com")
+        mock_session.get.assert_called_once_with("https://openidconnect.googleapis.com/v1/userinfo")
 
     def test_userinfo_not_200(self):
         mock_session = self.mock_authorized_session.return_value.__enter__.return_value

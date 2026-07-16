@@ -142,8 +142,7 @@ def build_oci(args):
         except Exception as e:
             raise HandledError(
                 f"Failed to create layer tarball: {e}",
-                "Check directory write permissions and ensure the binary path is a"
-                " valid file.",
+                "Check directory write permissions and ensure the binary path is a valid file.",
             )
 
         layer_sha = get_sha256(layer_tar_path)
@@ -151,9 +150,7 @@ def build_oci(args):
         config = {
             "config": {
                 "Entrypoint": [f"/app/{binary_name}"],
-                "Env": [
-                    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-                ],
+                "Env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"],
             },
             "created": "1970-01-01T00:00:00Z",
             "architecture": arch,
@@ -168,8 +165,7 @@ def build_oci(args):
         except Exception as e:
             raise HandledError(
                 f"Failed to write config JSON: {e}",
-                "Check disk space and write permissions in the current working"
-                " directory.",
+                "Check disk space and write permissions in the current working directory.",
             )
 
         config_sha = get_sha256(config_json_path)
@@ -191,8 +187,7 @@ def build_oci(args):
         except Exception as e:
             raise HandledError(
                 f"Failed to write manifest JSON: {e}",
-                "Check disk space and write permissions in the current working"
-                " directory.",
+                "Check disk space and write permissions in the current working directory.",
             )
 
         try:
@@ -228,12 +223,8 @@ def main():
         "binary_name",
         help="Name of the binary inside the container (placed under /app/).",
     )
-    parser.add_argument(
-        "image_tag", help="OCI image tag to apply (e.g. 'my-image:latest')."
-    )
-    parser.add_argument(
-        "output_tar", help="Path where the output OCI tarball should be saved."
-    )
+    parser.add_argument("image_tag", help="OCI image tag to apply (e.g. 'my-image:latest').")
+    parser.add_argument("output_tar", help="Path where the output OCI tarball should be saved.")
     run_tool(parser, build_oci)
 
 

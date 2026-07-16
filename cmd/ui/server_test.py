@@ -35,9 +35,7 @@ class SPAHandlerTest(unittest.TestCase):
     def setUp(self):
         super().setUp()
         self.mock_wfile = io.BytesIO()
-        self.mock_request = mock.create_autospec(
-            socket.socket, instance=True, spec_set=True
-        )
+        self.mock_request = mock.create_autospec(socket.socket, instance=True, spec_set=True)
         self.mock_client_address = ("::1", 1234)
         self.mock_server = mock.create_autospec(
             http.server.HTTPServer, instance=True, spec_set=True
@@ -58,15 +56,11 @@ class SPAHandlerTest(unittest.TestCase):
         super().tearDown()
 
     def _get_handler(self, path):
-        handler = server.SPAHandler(
-            self.mock_request, self.mock_client_address, self.mock_server
-        )
+        handler = server.SPAHandler(self.mock_request, self.mock_client_address, self.mock_server)
         handler.path = path
         handler.wfile = self.mock_wfile
         # Mocking base class methods to avoid side effects
-        handler.send_response = mock.create_autospec(
-            handler.send_response, spec_set=True
-        )
+        handler.send_response = mock.create_autospec(handler.send_response, spec_set=True)
         handler.send_header = mock.create_autospec(handler.send_header, spec_set=True)
         handler.end_headers = mock.create_autospec(handler.end_headers, spec_set=True)
         return handler
@@ -141,16 +135,12 @@ class SPAHandlerTest(unittest.TestCase):
             dict(
                 testcase_name="defaults",
                 environ={},
-                expected=(
-                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": false};'
-                ),
+                expected=('window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": false};'),
             ),
             dict(
                 testcase_name="status_message_history_true",
                 environ={"XMC_STATUS_MESSAGE_HISTORY_ENABLED": "true"},
-                expected=(
-                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true};'
-                ),
+                expected=('window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true};'),
             ),
         ]
         for case in cases:
@@ -162,9 +152,7 @@ class SPAHandlerTest(unittest.TestCase):
 
     def test_fallback_to_index(self):
         self.enter_context(
-            mock.patch.object(
-                os.path, "exists", return_value=False, autospec=True, spec_set=True
-            )
+            mock.patch.object(os.path, "exists", return_value=False, autospec=True, spec_set=True)
         )
         self.enter_context(
             mock.patch.object(
@@ -192,9 +180,7 @@ class SPAHandlerTest(unittest.TestCase):
 
     def test_no_fallback_if_exists(self):
         self.enter_context(
-            mock.patch.object(
-                os.path, "exists", return_value=True, autospec=True, spec_set=True
-            )
+            mock.patch.object(os.path, "exists", return_value=True, autospec=True, spec_set=True)
         )
         self.enter_context(
             mock.patch.object(
