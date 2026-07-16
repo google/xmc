@@ -36,8 +36,3 @@ func Modify[T Message](m T, f func(T)) T {
 	f(cloned)
 	return cloned
 }
-
-// ModifyProto is an alias for Modify.
-func ModifyProto[T Message](m T, f func(T)) T {
-	return Modify(m, f)
-}
