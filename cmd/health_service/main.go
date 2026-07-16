@@ -50,8 +50,9 @@ func main() {
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	server := &http.Server{
-		Addr:    addr,
-		Handler: mux,
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 3 * time.Second,
 	}
 
 	go func() {
