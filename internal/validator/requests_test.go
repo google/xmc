@@ -2054,6 +2054,41 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 			},
 			wantErr: nil,
 		},
+		{
+			name: "payload_chart_missing_metrics",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_Chart{
+							Chart: &essmsgpb.ChartArtifact{
+								Title: "Test Chart",
+							},
+						},
+					},
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "valid_request_with_chart_payload",
+			req: &essapipb.CreateArtifactRequest{
+				Parent: "experiments/123",
+				Artifact: &essmsgpb.Artifact{
+					Url: &essmsgpb.Url{Url: "http://example.com"},
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_Chart{
+							Chart: &essmsgpb.ChartArtifact{
+								Title:        "Test Chart",
+								MetricNames: []string{"accuracy"},
+							},
+						},
+					},
+				},
+			},
+			wantErr: nil,
+		},
 	}
 
 	for _, tc := range tests {

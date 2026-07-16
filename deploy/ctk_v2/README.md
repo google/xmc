@@ -74,6 +74,6 @@ To safely tear down all provisioned infrastructure, run:
 Once deployment completes successfully, run the post-deployment verification script:
 
 ```bash
-./deploy/ctk_v2/verify_xmc.sh
+python3 ./deploy/ctk_v2/verify_xmc.py
 ```
 This script checks the status of all pods, services, gateway routing, and certificates in the `xmc` namespace.

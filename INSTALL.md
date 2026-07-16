@@ -290,7 +290,7 @@ Instruct the agent:
 10. **Post-Deployment Verification**:
     The agent runs:
     ```bash
-    ./deploy/ctk_v2/verify_xmc.sh
+    python3 ./deploy/ctk_v2/verify_xmc.py
     ```
     And checks that the gateway status is programmed and GTS certificate is active.
 
@@ -545,7 +545,7 @@ helm upgrade --install xmc ./deploy/helm -n xmc --create-namespace -f my-values.
 Run the verification script from the repository root to verify that all upgraded pods are running, endpoints respond correctly, and Gateway TLS certificates remain healthy:
 
 ```bash
-./deploy/ctk_v2/verify_xmc.sh
+python3 ./deploy/ctk_v2/verify_xmc.py
 ```
 
 ---

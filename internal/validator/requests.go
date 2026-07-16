@@ -450,6 +450,10 @@ func validatePayload(payload *essmsgpb.ArtifactPayload) error {
 		if p.Url.GetUrl() == "" {
 			return fmt.Errorf("artifact.payload.url.url must be set: %w", status.ErrInvalidArgument)
 		}
+	case *essmsgpb.ArtifactPayload_Chart:
+		if len(p.Chart.GetMetricNames()) == 0 {
+			return fmt.Errorf("artifact.payload.chart.metric_names must not be empty: %w", status.ErrInvalidArgument)
+		}
 	}
 	return nil
 }
