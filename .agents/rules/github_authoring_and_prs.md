@@ -20,7 +20,7 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
 - **Conventional Commit Format**: Format commit subject lines using Conventional Commits syntax:
   `<type>(<scope>): <summary>` (e.g., `feat(auth): add OAuth2 token refresh support` or `fix(reconciler): resolve deadlock on pod restart`).
   - Allowed types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`.
-  - Write subject lines in imperative, lowercase mood without trailing periods.
+  - Write subject lines in the imperative mood, using lowercase, and without trailing periods.
 - **Detailed Commit Body**: Provide context in the commit body describing *why* the changes were made, architectural choices, and technical rationale—not merely a list of modified files.
 - **Traceability & References**:
   - When addressing review comments, include the comment link in the commit body: `Comment link: <github_comment_url>`.
@@ -63,4 +63,4 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
   - Evaluate incoming review comments for technical validity and applicability before proceeding.
   - If addressing a comment alters a PR contract, public API specification, or product behavior, **alert the user and seek explicit confirmation first** before modifying code.
 - **Addressing PR Comments Workflow**: Follow the detailed comment resolution workflow defined in the [Address PR Comment](../skills/address_pr_comment/SKILL.md) skill (formulating fix plans, running local unit tests, measuring coverage, and proposing fix diffs for user confirmation before pushing).
-- **PR Comment Replies**: Keep GitHub comment thread replies concise, objective, and focused on resolution (e.g. `"code changed"` or summarizing test verification), avoiding noisy or redundant chatter in PR review threads.
+- **PR Comment Replies**: Keep GitHub comment thread replies concise, objective, and focused on resolution (e.g., `"code changed"` or summarizing test verification), avoiding noisy or redundant chatter in PR review threads.
