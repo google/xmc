@@ -25,119 +25,116 @@ from deploy.ctk_v2 import verify_xmc
 
 
 class VerifyXmcTest(unittest.TestCase):
+    def test_resolve_config_from_env(self):
+        env_dict = {
+            "ENVIRONMENT": "dev",
+            "REGION": "us-central1",
+            "PROJECT_ID": "my-project",
+        }
+        with mock.patch.dict(os.environ, env_dict, clear=True):
+            env, region, proj = verify_xmc._resolve_config()
+            self.assertEqual(env, "dev")
+            self.assertEqual(region, "us-central1")
+            self.assertEqual(proj, "my-project")
 
-  def test_resolve_config_from_env(self):
-    env_dict = {
-        "ENVIRONMENT": "dev",
-        "REGION": "us-central1",
-        "PROJECT_ID": "my-project",
-    }
-    with mock.patch.dict(os.environ, env_dict, clear=True):
-      env, region, proj = verify_xmc._resolve_config()
-      self.assertEqual(env, "dev")
-      self.assertEqual(region, "us-central1")
-      self.assertEqual(proj, "my-project")
-
-  def test_resolve_config_from_yaml(self):
-    yaml_content = """
+    def test_resolve_config_from_yaml(self):
+        yaml_content = """
 vars:
   environment: staging
   region: us-east1
   project_id: yaml-proj-123
 """
-    mock_path = mock.MagicMock(spec=pathlib.Path)
-    mock_path.is_file.return_value = True
-    mock_path.read_text.return_value = yaml_content
+        mock_path = mock.MagicMock(spec=pathlib.Path)
+        mock_path.is_file.return_value = True
+        mock_path.read_text.return_value = yaml_content
 
-    with mock.patch.dict(os.environ, {}, clear=True):
-      env, region, proj = verify_xmc._resolve_config(config_path=mock_path)
-      self.assertEqual(env, "staging")
-      self.assertEqual(region, "us-east1")
-      self.assertEqual(proj, "yaml-proj-123")
+        with mock.patch.dict(os.environ, {}, clear=True):
+            env, region, proj = verify_xmc._resolve_config(config_path=mock_path)
+            self.assertEqual(env, "staging")
+            self.assertEqual(region, "us-east1")
+            self.assertEqual(proj, "yaml-proj-123")
 
-  def test_resolve_config_missing(self):
-    mock_path = mock.MagicMock(spec=pathlib.Path)
-    mock_path.is_file.return_value = False
+    def test_resolve_config_missing(self):
+        mock_path = mock.MagicMock(spec=pathlib.Path)
+        mock_path.is_file.return_value = False
 
-    with mock.patch.dict(os.environ, {}, clear=True):
-      env, region, proj = verify_xmc._resolve_config(config_path=mock_path)
-      self.assertIsNone(env)
-      self.assertIsNone(region)
-      self.assertIsNone(proj)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            env, region, proj = verify_xmc._resolve_config(config_path=mock_path)
+            self.assertIsNone(env)
+            self.assertIsNone(region)
+            self.assertIsNone(proj)
 
-  @mock.patch.object(verify_xmc, "_run_command")
-  def test_check_k8s_resources(self, mock_run):
-    mock_run.return_value = "NAME   READY   STATUS\npod-1   1/1     Running\n"
-    captured = io.StringIO()
-    with mock.patch.object(sys, "stdout", captured):
-      verify_xmc._check_k8s_resources()
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_k8s_resources(self, mock_run):
+        mock_run.return_value = "NAME   READY   STATUS\npod-1   1/1     Running\n"
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            verify_xmc._check_k8s_resources()
 
-    self.assertEqual(mock_run.call_count, 5)
-    output = captured.getvalue()
-    self.assertIn("--- 1. Pod Status ---", output)
-    self.assertIn("--- 5. cert-manager Certificates ---", output)
-    self.assertIn("pod-1   1/1     Running", output)
+        self.assertEqual(mock_run.call_count, 5)
+        output = captured.getvalue()
+        self.assertIn("--- 1. Pod Status ---", output)
+        self.assertIn("--- 5. cert-manager Certificates ---", output)
+        self.assertIn("pod-1   1/1     Running", output)
 
-  @mock.patch.object(verify_xmc, "_run_command")
-  def test_check_connectivity(self, mock_run):
-    def run_cmd_side_effect(cmd):
-      cmd_str = " ".join(cmd)
-      if "gateway" in cmd_str:
-        return "35.240.10.20"
-      if "app=actuator" in cmd_str:
-        return "actuator-pod-abc"
-      return ""
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_connectivity(self, mock_run):
+        def run_cmd_side_effect(cmd):
+            cmd_str = " ".join(cmd)
+            if "gateway" in cmd_str:
+                return "35.240.10.20"
+            if "app=actuator" in cmd_str:
+                return "actuator-pod-abc"
+            return ""
 
-    mock_run.side_effect = run_cmd_side_effect
-    captured = io.StringIO()
-    with mock.patch.object(sys, "stdout", captured):
-      verify_xmc._check_connectivity()
+        mock_run.side_effect = run_cmd_side_effect
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            verify_xmc._check_connectivity()
 
-    output = captured.getvalue()
-    self.assertIn("Gateway IP Address: 35.240.10.20", output)
-    self.assertIn(
-        "Run: kubectl port-forward -n xmc actuator-pod-abc 8080:8080", output
-    )
+        output = captured.getvalue()
+        self.assertIn("Gateway IP Address: 35.240.10.20", output)
+        self.assertIn("Run: kubectl port-forward -n xmc actuator-pod-abc 8080:8080", output)
 
-  def test_check_log_monitor_missing_env(self):
-    captured = io.StringIO()
-    with mock.patch.object(sys, "stdout", captured):
-      verify_xmc._check_log_monitor(None, "us-central1", "proj")
+    def test_check_log_monitor_missing_env(self):
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            verify_xmc._check_log_monitor(None, "us-central1", "proj")
 
-    output = captured.getvalue()
-    self.assertIn("Skipping Log Monitor check", output)
+        output = captured.getvalue()
+        self.assertIn("Skipping Log Monitor check", output)
 
-  @mock.patch.object(verify_xmc, "_run_command")
-  def test_check_log_monitor_ready(self, mock_run):
-    mock_run.return_value = "True\n"
-    captured = io.StringIO()
-    with mock.patch.object(sys, "stdout", captured):
-      verify_xmc._check_log_monitor("dev", "us-central1", "proj")
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_log_monitor_ready(self, mock_run):
+        mock_run.return_value = "True\n"
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            verify_xmc._check_log_monitor("dev", "us-central1", "proj")
 
-    output = captured.getvalue()
-    self.assertIn("Service Status (Ready): True", output)
-    self.assertIn("Log Monitor Cloud Run service is running and Ready.", output)
+        output = captured.getvalue()
+        self.assertIn("Service Status (Ready): True", output)
+        self.assertIn("Log Monitor Cloud Run service is running and Ready.", output)
 
-  @mock.patch.object(verify_xmc, "_run_command")
-  def test_check_log_monitor_not_ready(self, mock_run):
-    mock_run.return_value = "False\n"
-    captured = io.StringIO()
-    with mock.patch.object(sys, "stdout", captured):
-      verify_xmc._check_log_monitor("dev", "us-central1", "proj")
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_log_monitor_not_ready(self, mock_run):
+        mock_run.return_value = "False\n"
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            verify_xmc._check_log_monitor("dev", "us-central1", "proj")
 
-    output = captured.getvalue()
-    self.assertIn("Log Monitor Cloud Run service is NOT Ready.", output)
+        output = captured.getvalue()
+        self.assertIn("Log Monitor Cloud Run service is NOT Ready.", output)
 
-  @mock.patch.object(verify_xmc, "_run_command")
-  def test_check_log_monitor_not_found(self, mock_run):
-    mock_run.return_value = ""
-    captured = io.StringIO()
-    with mock.patch.object(sys, "stdout", captured):
-      verify_xmc._check_log_monitor("dev", "us-central1", "proj")
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_log_monitor_not_found(self, mock_run):
+        mock_run.return_value = ""
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            verify_xmc._check_log_monitor("dev", "us-central1", "proj")
 
-    output = captured.getvalue()
-    self.assertIn("not found or status is unavailable", output)
+        output = captured.getvalue()
+        self.assertIn("not found or status is unavailable", output)
 
 
 if __name__ == "__main__":
-  unittest.main()
+    unittest.main()
