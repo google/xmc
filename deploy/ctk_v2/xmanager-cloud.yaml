@@ -348,6 +348,8 @@ deployment_groups:
         value: $(vars.ui_image)
       - name: health_service_custom_image
         value: $(vars.health_service_image)
+      - name: healthService.gcpServiceAccount
+        value: $(health_service_gcp_sa.service_account_email)
       - name: taskSignatureTtlSeconds
         value: $(vars.task_signature_ttl_seconds)
         type: auto
@@ -403,10 +405,6 @@ deployment_groups:
         reconciler-service-account:
           namespace: $(vars.namespace)
           gcp_service_account_email: $(workload_service_account.service_account_email)
-          tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
-        health-service-account:
-          namespace: $(vars.namespace)
-          gcp_service_account_email: $(health_service_gcp_sa.service_account_email)
           tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
 
   - id: log_monitor

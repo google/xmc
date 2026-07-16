@@ -440,18 +440,18 @@ def step_images(config: Config) -> None:
         "XMC_ACR_TARGET": config.acr_target,
     }
 
-  targets = [
-      ("actuator", "//cmd/actuator:actuator_image_push"),
-      (
-          "experiment_state_server",
-          "//cmd/experiment_state_server:experiment_state_server_image_push",
-      ),
-      ("log_monitor", "//cmd/log_monitor:log_monitor_image_push"),
-      ("reconciler", "//cmd/reconciler:reconciler_image_push"),
-      ("ui", "//cmd/ui:ui_image_push"),
-      ("xid_service", "//cmd/xid_service:xid_service_image_push"),
-      ("health_service", "//cmd/health_service:health_service_image_push"),
-  ]
+    targets = [
+        ("actuator", "//cmd/actuator:actuator_image_push"),
+        (
+            "experiment_state_server",
+            "//cmd/experiment_state_server:experiment_state_server_image_push",
+        ),
+        ("log_monitor", "//cmd/log_monitor:log_monitor_image_push"),
+        ("reconciler", "//cmd/reconciler:reconciler_image_push"),
+        ("ui", "//cmd/ui:ui_image_push"),
+        ("xid_service", "//cmd/xid_service:xid_service_image_push"),
+        ("health_service", "//cmd/health_service:health_service_image_push"),
+    ]
 
     for name, target in targets:
         log_info(f"Pushing {name} image...")

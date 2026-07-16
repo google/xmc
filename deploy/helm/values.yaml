@@ -40,6 +40,9 @@ essDeployment:
 healthServiceDeployment:
   enabled: false
 
+healthService:
+  gcpServiceAccount: ""
+
 detectInadmissibleWorkUnits: true
 startupPodErrorCheckEnabled: true
 statusMessageHistoryEnabled: false
