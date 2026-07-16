@@ -15,7 +15,11 @@
 
 set -e
 
-PROJECT_ID=$(gcloud config get-value project)
+PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+if [ -z "${PROJECT_ID}" ]; then
+  echo "Error: No active gcloud project found. Please set one using 'gcloud config set project <PROJECT_ID>'." >&2
+  exit 1
+fi
 IMAGE_PATH="us-docker.pkg.dev/${PROJECT_ID}/xmc/chart-artifact-job:latest"
 
 echo "Building and pushing image: ${IMAGE_PATH}"

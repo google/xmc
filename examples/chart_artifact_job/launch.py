@@ -135,7 +135,7 @@ def main(argv: Sequence[str]) -> None:
     artifact = artifact_pb2.Artifact(
         tags=["chart-test", "validation"],
         notes="A mock chart artifact for testing the UI",
-        lifecycle_phase=artifact_pb2.Artifact.LifecyclePhase.OUTPUT,
+        lifecycle_phase=artifact_pb2.Artifact.LifecyclePhase.INPUT,
         url=url_pb2.Url(url="http://dummy-url"),
         payload=artifact_pb2.ArtifactPayload(
             chart=chart_payload
