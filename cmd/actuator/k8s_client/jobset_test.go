@@ -750,6 +750,69 @@ func TestConstructJobSet_ContainerDefaults(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_ArgsAndArgsList(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnit1",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name: "job1",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_CpuResources{
+										CpuResources: &esspb.CpuResources{
+											CpuMillicores: 100,
+											MemoryBytes:   1024,
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+								Args: map[string]string{
+									"z_flag": "z_val",
+									"a_flag": "a_val",
+								},
+								ArgsList: []string{
+									"positional_arg",
+									"bare_key=val",
+									"--gnu_flag=val",
+								},
+							},
+							Replicas: 1,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if len(got.Spec.ReplicatedJobs) != 1 {
+		t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
+	}
+	if len(got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers) != 1 {
+		t.Fatalf("Expected 1 container, got %d", len(got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers))
+	}
+	container := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers[0]
+
+	wantArgs := []string{
+		"--a_flag=a_val",
+		"--z_flag=z_val",
+		"positional_arg",
+		"bare_key=val",
+		"--gnu_flag=val",
+	}
+	if diff := cmp.Diff(wantArgs, container.Args); diff != "" {
+		t.Errorf("constructJobSet() container.Args mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestConstructJobSet_TTLSecondsAfterFinished(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := baseCPUWorkUnit
