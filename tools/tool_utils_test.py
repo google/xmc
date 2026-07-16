@@ -88,9 +88,11 @@ class TestToolUtils(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             venv_dir = Path(tmp_dir) / "venv"
             venv_py = venv_dir / "bin" / "python3"
+
             def create_bin(_):
                 venv_py.parent.mkdir(parents=True, exist_ok=True)
                 venv_py.touch()
+
             mock_bootstrap.side_effect = create_bin
             with (
                 patch.dict(os.environ, env, clear=True),

@@ -47,9 +47,12 @@ def ensure_venv(venv_dir: Optional[Path] = None) -> None:
     if _should_bypass_venv():
         return
 
-    resolved_venv = venv_dir or Path(
-        os.environ.get("TOOLS_VENV_DIR", Path(__file__).resolve().parent / "venv")
-    ).resolve()
+    resolved_venv = (
+        venv_dir
+        or Path(
+            os.environ.get("TOOLS_VENV_DIR", Path(__file__).resolve().parent / "venv")
+        ).resolve()
+    )
     venv_python = resolved_venv / "bin" / "python3"
     if not venv_python.exists():
         venv_python = resolved_venv / "bin" / "python"
@@ -77,7 +80,6 @@ def _bootstrap_venv(venv_dir: Path) -> None:
             [sys.executable, str(setup_script), "--venv-dir", str(venv_dir)],
             check=True,
         )
-
 
 
 class HandledError(Exception):

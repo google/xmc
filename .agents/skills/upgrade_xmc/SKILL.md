@@ -60,6 +60,14 @@ If no configuration file is found at the default path:
 
 Use the automated upgrade tool (`python3 ./tools/upgrade_dev_env.py`) to execute the environment upgrade.
 
+> [!IMPORTANT]
+> **Virtual Environment Requirement**: All Python upgrade and verification scripts under `tools/` and `deploy/` require a Python virtual environment created using **Python 3.13.14**. Before running `upgrade_dev_env.py` or `verify_xmc.py`, ensure the virtual environment is initialized and activated:
+> ```bash
+> python3.13 -m venv ./tools/venv
+> source ./tools/venv/bin/activate
+> pip install -r ./tools/requirements.txt
+> ```
+
 ### Step 1: Run Configuration & Authentication Checks
 Validate configuration in YAML, authenticate with Google Cloud and GKE, and verify that the target Kubernetes namespace exists:
 ```bash
@@ -112,7 +120,7 @@ If the upgrade fails at a specific phase, or if you need to rerun a specific par
 
 ## 4. Verification and Validation
 
-Run the verification script from the repository root to verify that all upgraded pods are running and endpoints respond correctly:
+Ensure the virtual environment created with Python 3.13.14 is activated, then run the verification script from the repository root to verify that all upgraded pods are running and endpoints respond correctly:
 
 ```bash
 ENVIRONMENT="${XMANAGER_ENV:-dev}" REGION="${GCP_REGION:-us-central1}" PROJECT_ID="$PROJECT_ID" python3 ./deploy/ctk_v2/verify_xmc.py

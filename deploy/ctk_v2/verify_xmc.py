@@ -225,11 +225,7 @@ def _ensure_venv() -> None:
     if _should_bypass_venv():
         return
     venv_py = (
-        pathlib.Path(__file__).resolve().parent.parent.parent
-        / "tools"
-        / "venv"
-        / "bin"
-        / "python3"
+        pathlib.Path(__file__).resolve().parent.parent.parent / "tools" / "venv" / "bin" / "python3"
     ).resolve()
     if venv_py.is_file() and pathlib.Path(sys.executable).resolve() != venv_py:
         os.execv(str(venv_py), [str(venv_py)] + sys.argv)
