@@ -44,6 +44,9 @@ export function toTypedArtifact(artifact: Artifact): TypedArtifact {
     if ('url' in payload && payload.url) {
       return { type: PayloadType.URL, artifact, payload: payload.url };
     }
+    if ('chart' in payload && payload.chart) {
+      return { type: PayloadType.CHART, artifact, payload: payload.chart };
+    }
   }
   return { type: PayloadType.UNKNOWN, artifact };
 }
@@ -83,6 +86,13 @@ export function getArtifactDisplayProperties(
         icon: typedArtifact.payload.icon || 'link',
         url: typedArtifact.payload.url ?? '',
         displayName: typedArtifact.payload.displayName || typedArtifact.payload.url || '',
+      };
+    case PayloadType.CHART:
+      return {
+        typeName: 'Chart',
+        icon: 'bar_chart',
+        url: '',
+        displayName: typedArtifact.payload.title || 'Dashboard Chart',
       };
     case PayloadType.UNKNOWN:
     default:

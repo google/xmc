@@ -128,16 +128,18 @@ class TestInstallXmanager(unittest.TestCase):
       )
 
   def test_retrieve_protos_local(self) -> None:
-    """Test retrieve_protos with local directory containing experiment and xid."""
+    """Test retrieve_protos with local directory containing experiment, xid, and dashboard."""
     with tempfile.TemporaryDirectory() as tmp_src_str:
       with tempfile.TemporaryDirectory() as tmp_dst_str:
         src = Path(tmp_src_str)
         dst = Path(tmp_dst_str)
         (src / "experiment").mkdir()
         (src / "xid").mkdir()
+        (src / "dashboard").mkdir()
         install_xmanager.retrieve_protos(str(src), dst)
         self.assertTrue((dst / "experiment").is_dir())
         self.assertTrue((dst / "xid").is_dir())
+        self.assertTrue((dst / "dashboard").is_dir())
 
   def test_retrieve_protos_nonexistent_local(self) -> None:
     """Test retrieve_protos with non-existent local directory path."""
@@ -200,6 +202,7 @@ class TestInstallXmanager(unittest.TestCase):
     def mock_retrieve(loc: str, dst: Path) -> None:
       (dst / "xid").mkdir(parents=True, exist_ok=True)
       (dst / "experiment").mkdir(parents=True, exist_ok=True)
+      (dst / "dashboard").mkdir(parents=True, exist_ok=True)
 
     mock_protos.side_effect = mock_retrieve
 

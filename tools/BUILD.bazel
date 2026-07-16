@@ -150,3 +150,19 @@ py_test(
         ":deploy_dev_env_lib",
     ],
 )
+
+py_library(
+    name = "upgrade_dev_env_lib",
+    srcs = ["upgrade_dev_env.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "upgrade_dev_env_test",
+    srcs = ["upgrade_dev_env_test.py"],
+    imports = ["."],
+    deps = [
+        ":upgrade_dev_env_lib",
+    ],
+)

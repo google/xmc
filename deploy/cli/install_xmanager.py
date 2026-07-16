@@ -324,10 +324,11 @@ def retrieve_protos(protos_loc: str, xmc_protos_dir: Path) -> None:
 
   exp_dir = xmc_protos_dir / "experiment"
   xid_dir = xmc_protos_dir / "xid"
-  if not exp_dir.is_dir() or not xid_dir.is_dir():
+  dashboard_dir = xmc_protos_dir / "dashboard"
+  if not exp_dir.is_dir() or not xid_dir.is_dir() or not dashboard_dir.is_dir():
     error_exit(
         "Protos directory structure is missing required directories "
-        "('experiment' or 'xid')."
+        "('experiment', 'xid', or 'dashboard')."
     )
 
 
@@ -390,7 +391,12 @@ def compile_protos(
           xmanager_dir / "xmanager_cloud" / "experiment_state_server" / "proto"
       ).glob("*.proto")
   )
-  proto_files = [str(p) for p in xid_protos + exp_protos]
+  dashboard_protos = list(
+      (
+          xmanager_dir / "xmanager_cloud" / "dashboard_service" / "proto"
+      ).glob("*.proto")
+  )
+  proto_files = [str(p) for p in xid_protos + exp_protos + dashboard_protos]
 
   cmd = [
       str(venv_python),
@@ -416,6 +422,11 @@ def install_xmanager_package(venv_python: Path, xmanager_dir: Path) -> None:
       [str(venv_python), "-m", "pip", "install", str(xmanager_dir)],
       check=True,
   )
+  sys.stdout.write("Upgrading protobuf and grpcio dependencies to fix downgrades...\n")
+  subprocess.run(
+      [str(venv_python), "-m", "pip", "install", "--upgrade", "protobuf", "grpcio", "grpcio-tools"],
+      check=True,
+  )
 
 
 def verify_imports(venv_python: Path) -> None:
@@ -429,6 +440,7 @@ def verify_imports(venv_python: Path) -> None:
       "xmanager_cloud",
       "xmanager_cloud.experiment_state_server.experiment_state_api",
       "xmanager_cloud.experiment_state_server.proto.api_pb2",
+      "xmanager_cloud.dashboard_service.proto.messages_pb2",
   ]
   for mod in modules:
     subprocess.run(
@@ -475,6 +487,9 @@ def main(raw_args: list[str] | None = None) -> None:
     copy_protos_to_service(
         xmc_protos_dir, "experiment", "experiment_state_server", xmanager_dir
     )
+    copy_protos_to_service(
+        xmc_protos_dir, "dashboard", "dashboard_service", xmanager_dir
+    )
 
     sys.stdout.write("Adjusting proto import paths...\n")
     rewrite_proto_imports(
@@ -482,6 +497,9 @@ def main(raw_args: list[str] | None = None) -> None:
     )
     rewrite_proto_imports(
         xmanager_dir / "xmanager_cloud" / "experiment_state_server" / "proto"
+    )
+    rewrite_proto_imports(
+        xmanager_dir / "xmanager_cloud" / "dashboard_service" / "proto"
     )
 
     compile_protos(venv_python, xmanager_dir, googleapis_dir)

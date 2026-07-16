@@ -99,6 +99,14 @@ func TestUpdateXidEntry_BadPaths(t *testing.T) {
 		t.Fatalf("CreateXidEntry() returned an unexpected error: %v", err)
 	}
 
+	baseReq := &apipb.UpdateXidEntryRequest{
+		XidEntry: &msgpb.XidEntry{
+			Name: createdEntry.Name,
+			Acls: &msgpb.XidAcls{},
+		},
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"acls"}},
+	}
+
 	testCases := []struct {
 		name    string
 		req     *apipb.UpdateXidEntryRequest
@@ -106,45 +114,31 @@ func TestUpdateXidEntry_BadPaths(t *testing.T) {
 	}{
 		{
 			name: "invalid_name",
-			req: &apipb.UpdateXidEntryRequest{
-				XidEntry: &msgpb.XidEntry{
-					Name: proto.String("xids/invalid"),
-					Acls: &msgpb.XidAcls{},
-				},
-				UpdateMask: &fmpb.FieldMask{Paths: []string{"acls"}},
-			},
+			req: proto.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
+				r.XidEntry.Name = proto.String("xids/invalid")
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "not_found",
-			req: &apipb.UpdateXidEntryRequest{
-				XidEntry: &msgpb.XidEntry{
-					Name: proto.String("xids/999999"),
-					Acls: &msgpb.XidAcls{},
-				},
-				UpdateMask: &fmpb.FieldMask{Paths: []string{"acls"}},
-			},
+			req: proto.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
+				r.XidEntry.Name = proto.String("xids/999999")
+			}),
 			wantErr: status.ErrNotFound,
 		},
 		{
 			name: "immutable_field",
-			req: &apipb.UpdateXidEntryRequest{
-				XidEntry: &msgpb.XidEntry{
-					Name:    createdEntry.Name,
-					Creator: proto.String("new-creator"),
-				},
-				UpdateMask: &fmpb.FieldMask{Paths: []string{"creator"}},
-			},
+			req: proto.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
+				r.XidEntry.Creator = proto.String("new-creator")
+				r.UpdateMask.Paths = []string{"creator"}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "no_acls",
-			req: &apipb.UpdateXidEntryRequest{
-				XidEntry: &msgpb.XidEntry{
-					Name: createdEntry.Name,
-				},
-				UpdateMask: &fmpb.FieldMask{Paths: []string{"acls"}},
-			},
+			req: proto.Modify(baseReq, func(r *apipb.UpdateXidEntryRequest) {
+				r.XidEntry.Acls = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 	}
