@@ -24,7 +24,7 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
 - **Detailed Commit Body**: Provide context in the commit body describing *why* the changes were made, architectural choices, and technical rationale—not merely a list of modified files.
 - **Traceability & References**:
   - When addressing review comments, include the comment link in the commit body: `Comment link: <github_comment_url>`.
-  - When referencing internal Buganizer bugs, include the bug ID in plain text (e.g., `Fixes bug <bug_id>`, `Closing bug <bug_id>`, or `Bug: <bug_id>`) rather than `b/` links, as `b/` shortlinks are internal and do not render on GitHub.
+  - When referencing bugs, include the bug ID in plain text (e.g., `Fixes bug <bug_id>`, `Closing bug <bug_id>`, or `Bug: <bug_id>`).
 - **Atomic Commits**: Keep commits logical, focused, and self-contained. Each commit must compile and pass relevant local tests.
 
 ## 3. Pull Request Creation & Field Formatting
@@ -51,7 +51,7 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
   - **Commands Executed**: `<bazel test / go test / npm test command>`
   - **Coverage & Test Status**: <Summary of unit/integration test results and pass state.>
 
-  ## Buganizer / Related Issues
+  ## Related Issues / Bugs
   Fixes bug <bug_id> (or N/A)
   ```
 - **PR Granularity & Single Responsibility**: Limit each PR to a single, cohesive change. Avoid bundling unrelated code refactoring, whitespace reformatting, or dependency upgrades inside feature/bugfix PRs.
