@@ -54,6 +54,8 @@ type AuthorizerInterface interface {
 	// IsUserAuthorized checks whether the user has the given role in the ACLs. It returns true if the
 	// user has the given role, and an error if the authorization check fails.
 	IsUserAuthorized(ctx context.Context, user string, acls *xpb.XidAcls, role Role) (bool, error)
+	// IsUserAuthorizedForChart checks if a user is authorized for Row-Level Security (RLS) access on an XidEntry.
+	IsUserAuthorizedForChart(ctx context.Context, user string, acls *xpb.XidAcls) (bool, error)
 }
 
 // cacheEntry stores the result of a membership check and when it expires.
