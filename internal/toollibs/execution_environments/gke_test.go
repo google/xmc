@@ -1462,6 +1462,27 @@ func TestEnsureTpuContainerPorts(t *testing.T) {
 				{ContainerPort: tpuMetricsPort},
 			},
 		},
+		{
+			name: "has_other_port",
+			existing: []corev1.ContainerPort{
+				{ContainerPort: 80},
+			},
+			want: []corev1.ContainerPort{
+				{ContainerPort: 80},
+				{ContainerPort: tpuICIPort},
+				{ContainerPort: tpuMetricsPort},
+			},
+		},
+		{
+			name: "has_metrics_only",
+			existing: []corev1.ContainerPort{
+				{ContainerPort: tpuMetricsPort},
+			},
+			want: []corev1.ContainerPort{
+				{ContainerPort: tpuMetricsPort},
+				{ContainerPort: tpuICIPort},
+			},
+		},
 	}
 
 	for _, tc := range tests {
