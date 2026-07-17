@@ -16,7 +16,6 @@
 
 import os
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -301,7 +300,23 @@ class TestStepSubprocesses(unittest.TestCase):
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_app(self.config)
-        mock_run.assert_called_once_with(
+        self.assertEqual(mock_run.call_count, 2)
+        mock_run.assert_any_call(
+            [
+                "./cluster-toolkit/gcluster",
+                "create",
+                "deploy/ctk_v2/xmanager-cloud.yaml",
+                "-d",
+                "deploy/ctk_v2/xmanager-cloud-deployment.yaml",
+                "-o",
+                "ctk-out",
+                "-l",
+                "WARNING",
+                "-w",
+                "--force",
+            ]
+        )
+        mock_run.assert_any_call(
             [
                 "./cluster-toolkit/gcluster",
                 "--download-dependencies",
@@ -337,113 +352,30 @@ class TestStepSubprocesses(unittest.TestCase):
         )
 
 
-class TestCheckoutStep(unittest.TestCase):
-    """Tests for the git checkout step and re-execution helper."""
+class TestUpdateConfig(unittest.TestCase):
+    """Tests for updating configuration variables in YAML files."""
 
-    def test_strip_git_ref_args(self):
-        args = ["-c", "cfg.yaml", "--git-ref", "v1", "-s", "images"]
-        stripped = upgrade_dev_env.strip_git_ref_args(args)
-        self.assertEqual(stripped, ["-c", "cfg.yaml", "-s", "images"])
+    def test_update_config_image_tag(self):
+        content = """# Some Header
+vars:
+  project_id: "test-proj"
+  image_tag: "latest" # Current image tag
+  environment: "dev"
+"""
+        with tempfile.NamedTemporaryFile("w+", delete=False) as f:
+            f.write(content)
+            f_path = Path(f.name)
 
-        args = ["-c", "cfg.yaml", "-r", "v1", "-s", "images"]
-        stripped = upgrade_dev_env.strip_git_ref_args(args)
-        self.assertEqual(stripped, ["-c", "cfg.yaml", "-s", "images"])
+        try:
+            upgrade_dev_env.update_config_image_tag(f_path, "v1.2.3")
+            updated_content = f_path.read_text(encoding="utf-8")
 
-        args = ["-c", "cfg.yaml", "--tag", "v1", "-s", "images"]
-        stripped = upgrade_dev_env.strip_git_ref_args(args)
-        self.assertEqual(stripped, ["-c", "cfg.yaml", "-s", "images"])
-
-        args = ["-c", "cfg.yaml", "-t", "v1", "-s", "images"]
-        stripped = upgrade_dev_env.strip_git_ref_args(args)
-        self.assertEqual(stripped, ["-c", "cfg.yaml", "-s", "images"])
-
-        args = ["-c", "cfg.yaml", "--branch", "v1", "-s", "images"]
-        stripped = upgrade_dev_env.strip_git_ref_args(args)
-        self.assertEqual(stripped, ["-c", "cfg.yaml", "-s", "images"])
-
-        args = ["-c", "cfg.yaml", "-b", "v1", "-s", "images"]
-        stripped = upgrade_dev_env.strip_git_ref_args(args)
-        self.assertEqual(stripped, ["-c", "cfg.yaml", "-s", "images"])
-
-        # Test with format --flag=value
-        args = ["-c", "cfg.yaml", "--git-ref=v1", "-s", "images"]
-        stripped = upgrade_dev_env.strip_git_ref_args(args)
-        self.assertEqual(stripped, ["-c", "cfg.yaml", "-s", "images"])
-
-    @mock.patch("tools.upgrade_dev_env.run_cmd")
-    @mock.patch("tools.upgrade_dev_env.log_info")
-    def test_step_checkout_no_ref(self, mock_log, mock_run):
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="my-branch\n", stderr=""
-        )
-        upgrade_dev_env.step_checkout(None, [])
-        mock_log.assert_called_once()
-        self.assertIn("No --git-ref specified", mock_log.call_args[0][0])
-
-    @mock.patch("tools.upgrade_dev_env.run_cmd")
-    @mock.patch("tools.upgrade_dev_env.error_exit", side_effect=SystemExit(1))
-    def test_step_checkout_invalid_ref(self, mock_error, mock_run):
-        mock_run.side_effect = subprocess.CalledProcessError(1, "git")
-        with self.assertRaises(SystemExit):
-            upgrade_dev_env.step_checkout("invalid-ref", [])
-        mock_error.assert_called_once_with(
-            "Git reference 'invalid-ref' does not exist locally or on remote origin."
-        )
-
-    @mock.patch("tools.upgrade_dev_env.run_cmd")
-    @mock.patch("tools.upgrade_dev_env.log_success")
-    def test_step_checkout_already_on_commit(self, mock_log_success, mock_run):
-        mock_run.side_effect = [
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="commit-sha\n", stderr=""),
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="commit-sha\n", stderr=""),
-        ]
-        upgrade_dev_env.step_checkout("v1", [])
-        mock_log_success.assert_called_once()
-        self.assertIn("Repository is already checked out", mock_log_success.call_args[0][0])
-
-    @mock.patch("tools.upgrade_dev_env.run_cmd")
-    @mock.patch("tools.upgrade_dev_env.error_exit", side_effect=SystemExit(1))
-    def test_step_checkout_dirty_worktree(self, mock_error, mock_run):
-        mock_run.side_effect = [
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="head-sha\n", stderr=""),
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="target-sha\n", stderr=""),
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="M file.py\n", stderr=""),
-        ]
-        with self.assertRaises(SystemExit):
-            upgrade_dev_env.step_checkout("v1", [])
-        mock_error.assert_called_once()
-        self.assertIn(
-            "Git working directory has uncommitted modifications",
-            mock_error.call_args[0][0],
-        )
-
-    @mock.patch("os.execv")
-    @mock.patch("tools.upgrade_dev_env.run_cmd")
-    @mock.patch("tools.upgrade_dev_env.log_success")
-    @mock.patch("pathlib.Path.is_file")
-    def test_step_checkout_success_reexecute(
-        self, mock_is_file, mock_log_success, mock_run, mock_exec
-    ):
-        mock_run.side_effect = [
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="head-sha\n", stderr=""),
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="target-sha\n", stderr=""),
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
-            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
-        ]
-        mock_is_file.return_value = True
-
-        original_args = ["-c", "cfg.yaml", "--git-ref", "v1", "-s", "images"]
-        upgrade_dev_env.step_checkout("v1", original_args)
-
-        mock_run.assert_any_call(["git", "checkout", "v1"])
-        mock_exec.assert_called_once()
-        self.assertEqual(mock_exec.call_args[0][0], sys.executable)
-        self.assertEqual(mock_exec.call_args[0][1][0], sys.executable)
-        self.assertEqual(mock_exec.call_args[0][1][1], "tools/upgrade_dev_env.py")
-        self.assertEqual(mock_exec.call_args[0][1][2:], ["-c", "cfg.yaml", "-s", "images"])
+            # Check if tag is updated and comments are preserved
+            self.assertIn('image_tag: "v1.2.3" # Current image tag', updated_content)
+            self.assertIn('project_id: "test-proj"', updated_content)
+            self.assertIn('environment: "dev"', updated_content)
+        finally:
+            f_path.unlink()
 
 
 if __name__ == "__main__":

@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 STEPS = ["check", "migrate", "images", "app", "restart", "verify"]
-ALL_STEPS = ["checkout"] + STEPS
+ALL_STEPS = STEPS
 DEFAULT_CONFIG = "deploy/ctk_v2/xmanager-cloud-deployment.yaml"
 
 
@@ -91,7 +91,7 @@ def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
         "--git-ref",
         "-r",
         dest="git_ref",
-        help="Git tag, branch, or commit SHA to check out before upgrading.",
+        help="Git tag, branch, or commit SHA to tag and deploy images with.",
     )
     parser.add_argument(
         "--tag",
@@ -274,117 +274,38 @@ def run_cmd(
     )
 
 
-def strip_git_ref_args(args: list[str]) -> list[str]:
-    """Strips git-ref related arguments from the argument list."""
-    new_args = []
-    skip = False
-    for arg in args:
-        if skip:
-            skip = False
-            continue
-        if arg in ["--git-ref", "-r", "--tag", "-t", "--branch", "-b"]:
-            skip = True
-            continue
-        if arg.startswith(("--git-ref=", "-r=", "--tag=", "-t=", "--branch=", "-b=")):
-            continue
-        new_args.append(arg)
-    return new_args
-
-
-def step_checkout(git_ref: Optional[str], original_args: list[str]) -> None:
-    """Checks out the specified git reference and re-executes the script."""
-    if not git_ref:
-        try:
-            current_ref = run_cmd(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True
-            ).stdout.strip()
-        except Exception:  # pylint: disable=broad-except
-            try:
-                current_ref = run_cmd(
-                    ["git", "rev-parse", "--short", "HEAD"], capture_output=True
-                ).stdout.strip()
-            except Exception:  # pylint: disable=broad-except
-                current_ref = "unknown"
-        log_info(
-            "No --git-ref specified; continuing upgrade with current git working state"
-            f" ({current_ref})."
-        )
+def update_config_image_tag(config_path: Path, tag: str) -> None:
+    """Updates the 'image_tag' variable inside the deployment configuration file."""
+    if not config_path.is_file():
         return
 
-    log_info(f"Verifying git reference '{git_ref}' before starting upgrade...")
-    try:
-        run_cmd(
-            ["git", "rev-parse", "--verify", "--quiet", f"{git_ref}^{{commit}}"],
-            capture_output=True,
-        )
-    except subprocess.CalledProcessError:
-        log_info(f"Git reference '{git_ref}' not found locally. Attempting fetch from origin...")
-        try:
-            run_cmd(["git", "fetch", "origin", git_ref, "--tags"], check=False)
-        except Exception:  # pylint: disable=broad-except
-            pass
+    content = config_path.read_text(encoding="utf-8")
+    new_lines = []
+    updated = False
+    in_vars = False
+    for line in content.splitlines():
+        if line.startswith("vars:"):
+            in_vars = True
+            new_lines.append(line)
+            continue
+        if in_vars and line and not line.startswith(" ") and not line.startswith("\t"):
+            in_vars = False
 
-        try:
-            run_cmd(
-                ["git", "rev-parse", "--verify", "--quiet", f"{git_ref}^{{commit}}"],
-                capture_output=True,
-            )
-        except subprocess.CalledProcessError:
-            error_exit(f"Git reference '{git_ref}' does not exist locally or on remote origin.")
+        if in_vars:
+            match = re.match(r"^(\s*image_tag:\s*)(['\"].*?['\"]|[^#\s]*)(.*)$", line)
+            if match:
+                prefix = match.group(1)
+                comment = match.group(3)
+                new_lines.append(f'{prefix}"{tag}"{comment}')
+                updated = True
+                continue
+        new_lines.append(line)
 
-    current_head = run_cmd(["git", "rev-parse", "HEAD"], capture_output=True).stdout.strip()
-
-    try:
-        target_commit = run_cmd(
-            ["git", "rev-parse", "--verify", f"{git_ref}^{{commit}}"],
-            capture_output=True,
-        )
-    except subprocess.CalledProcessError:
-        try:
-            target_commit = run_cmd(
-                ["git", "rev-parse", "--verify", f"origin/{git_ref}^{{commit}}"],
-                capture_output=True,
-            )
-        except subprocess.CalledProcessError:
-            error_exit(f"Failed to resolve target commit for '{git_ref}'.")
-
-    target_commit_sha = target_commit.stdout.strip()
-
-    if current_head == target_commit_sha:
-        log_success(
-            f"Repository is already checked out at git ref '{git_ref}' ({target_commit_sha})."
-        )
-        return
-
-    status_out = run_cmd(
-        ["git", "status", "--porcelain", "-uno"], capture_output=True
-    ).stdout.strip()
-    if status_out:
-        error_exit(
-            f"Git working directory has uncommitted modifications in tracked files. Please commit,"
-            f" stash, or revert your changes before upgrading to git ref '{git_ref}'."
-        )
-
-    log_info(f"Checking out git ref '{git_ref}' ({target_commit_sha})...")
-    run_cmd(["git", "checkout", git_ref])
-
-    new_args = strip_git_ref_args(original_args)
-    log_success(
-        f"Successfully checked out '{git_ref}'. Re-executing upgrade script from target ref..."
-    )
-
-    if git_ref:
-        os.environ["XMC_UPGRADE_GIT_REF"] = git_ref
-
-    py_script = Path("tools/upgrade_dev_env.py")
-    sh_script = Path("tools/upgrade_dev_env.sh")
-
-    if py_script.is_file():
-        os.execv(sys.executable, [sys.executable, str(py_script)] + new_args)
-    elif sh_script.is_file():
-        os.execv("/bin/bash", ["/bin/bash", str(sh_script)] + new_args)
+    if updated:
+        config_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+        log_info(f"Updated 'image_tag' to '{tag}' in '{config_path}'.")
     else:
-        error_exit("Upgrade script not found in checked out reference.")
+        log_info(f"Warning: 'image_tag' variable not found in 'vars' section of '{config_path}'.")
 
 
 def step_check(config: Config) -> None:
@@ -611,6 +532,24 @@ def step_app(config: Config) -> None:
     """Upgrades XMC Kubernetes workloads via Cluster Toolkit gcluster CLI."""
     log_info("Upgrading XMC Kubernetes application workloads using Cluster Toolkit...")
 
+    # First compile the blueprint to apply any configuration changes (e.g. image_tag)
+    log_info("Compiling XMC blueprint using gcluster to apply configuration...")
+    run_cmd(
+        [
+            "./cluster-toolkit/gcluster",
+            "create",
+            "deploy/ctk_v2/xmanager-cloud.yaml",
+            "-d",
+            config.config_path,
+            "-o",
+            "ctk-out",
+            "-l",
+            "WARNING",
+            "-w",
+            "--force",
+        ]
+    )
+
     ctk_dir = Path(f"ctk-out/{config.deployment_name}")
     if not ctk_dir.is_dir():
         error_exit(
@@ -783,24 +722,15 @@ def main(args_list: Optional[list[str]] = None) -> None:
     args = parse_args(args_list)
 
     git_ref = args.git_ref or args.tag or args.branch
-    original_args = args_list if args_list is not None else sys.argv[1:]
 
-    run_checkout = False
+    config_path = Path(args.config)
     if git_ref:
-        run_checkout = True
-    elif args.only == "checkout":
-        run_checkout = True
-    elif args.start_from == "checkout":
-        run_checkout = True
-    elif not args.only and not args.start_from:
-        run_checkout = True
-
-    if run_checkout:
-        step_checkout(git_ref, original_args)
-        if args.only == "checkout":
-            sys.exit(0)
-        if args.start_from == "checkout":
-            args.start_from = "check"
+        sanitized_ref = re.sub(r"[^a-zA-Z0-9_.-]", "-", git_ref).lstrip(".-")
+        if not sanitized_ref:
+            sanitized_ref = "unknown"
+        update_config_image_tag(config_path, sanitized_ref)
+    else:
+        update_config_image_tag(config_path, "latest")
 
     config = load_config(args.config, run_migrations=args.run_migrations, git_ref=git_ref)
     run_pipeline(args, config, STEPS)
