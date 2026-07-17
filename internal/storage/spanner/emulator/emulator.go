@@ -49,9 +49,9 @@ var (
 
 const (
 	projectID   = "test-project"
-	instanceID  = "test-instance"
+	instanceID  = "test-instance-534276571"
 	projectURI  = "projects/test-project"
-	instanceURI = "projects/test-project/instances/test-instance"
+	instanceURI = "projects/test-project/instances/test-instance-534276571"
 )
 
 func RandomSuffix() string {
