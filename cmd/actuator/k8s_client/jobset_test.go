@@ -2038,13 +2038,13 @@ func TestBuildContainerPorts_ExplicitAndDefault(t *testing.T) {
 	workUnit := createTestWorkUnit("test-namespace")
 
 	workUnit.Executable.GetJobset().Jobs[0].Spec.Ports = []*esspb.ContainerPort{
-		{Name: "http", ContainerPort: 8080, Protocol: "TCP"},
+		{Name: "http", ContainerPort: 8080, Protocol: esspb.ContainerPort_TCP},
 		{Name: "metrics", ContainerPort: 8431},
-		{Name: "dns", ContainerPort: 53, Protocol: "UDP"},
-		{Name: "sctp-port", ContainerPort: 9999, Protocol: "SCTP", HostPort: 9999},
-		{Name: "http-lower", ContainerPort: 8081, Protocol: "tcp"},
-		{Name: "dns-lower", ContainerPort: 54, Protocol: "udp"},
-		{Name: "sctp-lower", ContainerPort: 10000, Protocol: "sctp"},
+		{Name: "dns", ContainerPort: 53, Protocol: esspb.ContainerPort_UDP},
+		{Name: "sctp-port", ContainerPort: 9999, Protocol: esspb.ContainerPort_SCTP, HostPort: 9999},
+		{Name: "http-lower", ContainerPort: 8081, Protocol: esspb.ContainerPort_TCP},
+		{Name: "dns-lower", ContainerPort: 54, Protocol: esspb.ContainerPort_UDP},
+		{Name: "sctp-lower", ContainerPort: 10000, Protocol: esspb.ContainerPort_SCTP},
 	}
 
 	workUnit.Executable.GetJobset().Jobs[0].Sidecars = []*esspb.ExecutableSpec{
@@ -2052,7 +2052,7 @@ func TestBuildContainerPorts_ExplicitAndDefault(t *testing.T) {
 			Name:        "sidecar-1",
 			DockerImage: "sidecar-image:v1",
 			Ports: []*esspb.ContainerPort{
-				{Name: "sidecar-port", ContainerPort: 9090, Protocol: "TCP"},
+				{Name: "sidecar-port", ContainerPort: 9090, Protocol: esspb.ContainerPort_TCP},
 			},
 		},
 	}
@@ -2063,7 +2063,7 @@ func TestBuildContainerPorts_ExplicitAndDefault(t *testing.T) {
 			DockerImage: "init-image:v1",
 			Command:     []string{"/bin/init"},
 			Ports: []*esspb.ContainerPort{
-				{Name: "init-port", ContainerPort: 29001, Protocol: "TCP"},
+				{Name: "init-port", ContainerPort: 29001, Protocol: esspb.ContainerPort_TCP},
 			},
 		},
 	}

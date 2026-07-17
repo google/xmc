@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	batchv1 "golang/k8s_io/api/v/v0_23/batch/v1/v1"
@@ -49,10 +48,6 @@ const (
 	kueueWorkloadAnnotation = "kueue.x-k8s.io/workload"
 	// defaultTTLSeconds is the default time-to-live for JobSet and Jobs after finishing.
 	defaultTTLSeconds = 7 * 24 * 60 * 60 // 7 days
-
-	protocolUDP  = "UDP"
-	protocolSCTP = "SCTP"
-	protocolTCP  = "TCP"
 )
 
 var (
@@ -370,15 +365,15 @@ func buildContainerPorts(spec *esspb.ExecutableSpec) []corev1.ContainerPort {
 	ports := make([]corev1.ContainerPort, 0, len(spec.GetPorts()))
 	for _, p := range spec.GetPorts() {
 		protocol := corev1.ProtocolTCP
-		switch strings.ToUpper(p.GetProtocol()) {
-		case protocolUDP:
+		switch p.GetProtocol() {
+		case esspb.ContainerPort_UDP:
 			protocol = corev1.ProtocolUDP
-		case protocolSCTP:
+		case esspb.ContainerPort_SCTP:
 			protocol = corev1.ProtocolSCTP
-		case protocolTCP, "":
+		case esspb.ContainerPort_TCP, esspb.ContainerPort_PROTOCOL_UNSPECIFIED:
 			protocol = corev1.ProtocolTCP
 		default:
-			protocol = corev1.Protocol(strings.ToUpper(p.GetProtocol()))
+			protocol = corev1.ProtocolTCP
 		}
 		ports = append(ports, corev1.ContainerPort{
 			Name:          p.GetName(),
