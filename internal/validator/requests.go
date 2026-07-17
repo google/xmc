@@ -49,8 +49,8 @@ const (
 var (
 	// jobNameRegex matches valid Kubernetes job names (RFC 1123 DNS Label).
 	jobNameRegex = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
-	// serviceAccountRegex matches valid Kubernetes service account names (RFC 1123 DNS Subdomain).
-	serviceAccountRegex = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
+	// dnsSubdomainRegex matches valid DNS subdomain names (RFC 1123).
+	dnsSubdomainRegex = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
 )
 
 func validateRoles(roles []*xidmessagespb.XidAcls_Role) error {
@@ -348,7 +348,7 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 			if len(sa) > 253 {
 				return fmt.Errorf("work_unit.executable.jobset.jobs.service_account cannot be longer than 253 characters: %w", status.ErrInvalidArgument)
 			}
-			if !serviceAccountRegex.MatchString(sa) {
+			if !dnsSubdomainRegex.MatchString(sa) {
 				return fmt.Errorf("work_unit.executable.jobset.jobs.service_account %q must be a valid DNS subdomain (RFC 1123): %w", sa, status.ErrInvalidArgument)
 			}
 		}
@@ -356,7 +356,7 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 			if len(pcn) > 253 {
 				return fmt.Errorf("work_unit.executable.jobset.jobs.priority_class_name cannot be longer than 253 characters: %w", status.ErrInvalidArgument)
 			}
-			if !serviceAccountRegex.MatchString(pcn) {
+			if !dnsSubdomainRegex.MatchString(pcn) {
 				return fmt.Errorf("work_unit.executable.jobset.jobs.priority_class_name %q must be a valid DNS subdomain (RFC 1123): %w", pcn, status.ErrInvalidArgument)
 			}
 		}
