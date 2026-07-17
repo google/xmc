@@ -91,4 +91,10 @@ const (
 	RedisAbandonedMessageTimeout = 5 * time.Minute
 	// RedisReadBatchSize is the batch size for reading Redis messages.
 	RedisReadBatchSize = 1
+
+	// TPUTopologySelectorKey is the node selector key for GKE TPU topology.
+	TPUTopologySelectorKey = "cloud.google.com/gke-tpu-topology"
+
+	// TPUAcceleratorSelectorKey is the node selector key for GKE TPU accelerator type.
+	TPUAcceleratorSelectorKey = "cloud.google.com/gke-tpu-accelerator"
 )
