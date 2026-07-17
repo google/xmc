@@ -66,14 +66,27 @@ def install_requirements(venv_python: Path, req_path: Path) -> None:
         error_exit(f"Requirements file not found at: {req_path}")
 
     sys.stdout.write("Upgrading pip and installing tooling dependencies...\n")
-    subprocess.run(
-        [str(venv_python), "-m", "pip", "install", "--upgrade", "pip"],
-        check=True,
-    )
-    subprocess.run(
-        [str(venv_python), "-m", "pip", "install", "-r", str(req_path)],
-        check=True,
-    )
+    try:
+        subprocess.run(
+            [str(venv_python), "-m", "pip", "install", "--upgrade", "pip"],
+            check=True,
+        )
+        subprocess.run(
+            [str(venv_python), "-m", "pip", "install", "-r", str(req_path)],
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        sys.stderr.write(
+            "\nError: Dependency installation failed.\n"
+            "If packages are not found in your default index (e.g., corporate staging index),\n"
+            "you can override or append index URLs using environment variables:\n\n"
+            "  PIP_INDEX_URL=https://pypi.org/simple python3 tools/setup_venv.py\n"
+            "  or\n"
+            "  PIP_EXTRA_INDEX_URL=https://pypi.org/simple python3 tools/setup_venv.py\n\n"
+            "Alternatively, ensure your global pip configuration (e.g., ~/.config/pip/pip.conf)\n"
+            "points to a registry containing PyYAML, requests, and python-dotenv.\n"
+        )
+        sys.exit(e.returncode)
 
 
 def main(args_list: Optional[list[str]] = None) -> None:

@@ -118,6 +118,23 @@ class SetupVenvTest(unittest.TestCase):
                 ]
             )
 
+    @patch("subprocess.run")
+    @patch("sys.exit")
+    @patch("sys.stderr", new_callable=io.StringIO)
+    def test_install_requirements_failure(self, mock_stderr, mock_exit, mock_run):
+        import subprocess as sp
+
+        mock_run.side_effect = [None, sp.CalledProcessError(1, "pip")]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            req_file = Path(tmp_dir) / "requirements.txt"
+            req_file.touch()
+            venv_python = Path("/mock/venv/bin/python3")
+
+            setup_venv.install_requirements(venv_python, req_file)
+            mock_exit.assert_called_once_with(1)
+            self.assertIn("Error: Dependency installation failed.", mock_stderr.getvalue())
+            self.assertIn("PIP_INDEX_URL", mock_stderr.getvalue())
+
     @patch("setup_venv.install_requirements")
     @patch("setup_venv.setup_virtualenv")
     @patch("setup_venv.check_prerequisites")
