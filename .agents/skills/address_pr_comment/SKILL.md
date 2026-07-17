@@ -25,12 +25,6 @@ graph TD
 
 ## Guidelines for Using CLI Tools
 
-Before invoking helper tools under `tools/` or `deploy/`, ensure the Python virtual environment is initialized and activated. Virtual environments must be explicitly created using **Python 3.13.14**:
-```bash
-python3.13 -m venv ./tools/venv
-source ./tools/venv/bin/activate
-pip install -r ./tools/requirements.txt
-```
 
 When invoking helper tools under `tools/` (e.g. `fetch_pr_comment.py`, `reply_pr_comment.py`, `build_oci.py`):
 1. **Do not read tool source code**: You should not open or read the Python source code of these tools.
