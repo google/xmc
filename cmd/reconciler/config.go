@@ -70,7 +70,7 @@ func init() {
 	flag.BoolVar(&startupPodErrorCheckEnabled, "startup_pod_error_check_enabled", true, "Whether to enable checking for pod errors during startup.")
 	flag.Float64Var(&kubeAPIQPS, "kube_api_qps", 100, "Maximum QPS to the API server.")
 	flag.IntVar(&kubeAPIBurst, "kube_api_burst", 200, "Maximum burst for throttle.")
-	flag.BoolVar(&statusMessageHistoryEnabled, "status_message_history_enabled", false, "Whether to enable status message history.")
+	flag.BoolVar(&statusMessageHistoryEnabled, "status_message_history_enabled", true, "Whether to enable status message history.")
 }
 
 func Load() Config {

@@ -86,6 +86,9 @@ limitations under the License.
     @case (PayloadType.URL) {
     <ng-container [ngTemplateOutlet]="urlTemplate" [ngTemplateOutletContext]="{ url: art.payload }"></ng-container>
     }
+    @case (PayloadType.CHART) {
+    <ng-container [ngTemplateOutlet]="chartTemplate" [ngTemplateOutletContext]="{ chartArt: art.payload }"></ng-container>
+    }
     }
   </div>
 </ng-template>
@@ -99,19 +102,19 @@ limitations under the License.
       <mat-expansion-panel-header>
         <mat-panel-title>Source Code</mat-panel-title>
       </mat-expansion-panel-header>
-      <ng-container [ngTemplateOutlet]="codeBlockBody"
-        [ngTemplateOutletContext]="{ code: codeSource.codeBlock }"></ng-container>
+      <ng-container [ngTemplateOutlet]="numberedLinesBody"
+        [ngTemplateOutletContext]="{ text: codeSource.codeBlock }"></ng-container>
     </mat-expansion-panel>
     } @else {
-    <ng-container [ngTemplateOutlet]="codeBlockBody"
-      [ngTemplateOutletContext]="{ code: codeSource.codeBlock }"></ng-container>
+    <ng-container [ngTemplateOutlet]="numberedLinesBody"
+      [ngTemplateOutletContext]="{ text: codeSource.codeBlock }"></ng-container>
     }
   </div>
   }
 </ng-template>
 
-<ng-template #codeBlockBody let-code="code">
-  <pre class="payload-detail-code">@for (line of code | split; track $index) {<code>{{ line }}</code>}</pre>
+<ng-template #numberedLinesBody let-text="text">
+  <pre class="payload-detail-code">@for (line of text | split; track $index) {<code>{{ line }}</code>}</pre>
 </ng-template>
 
 <!-- 2. Text Template -->
@@ -150,5 +153,30 @@ limitations under the License.
         {{ url.displayName || url.url }}
       </a>
     </div>
+  </div>
+</ng-template>
+
+<!-- 5. Chart Template -->
+<ng-template #chartTemplate let-chartArt="chartArt">
+  <div class="payload-detail-section">
+    @if (chartArt.metricNames?.length) {
+    <div class="payload-detail-title">Metrics</div>
+    <div class="payload-detail-text">{{ chartArt.metricNames.join(', ') }}</div>
+    }
+    @if (chartArt.chart) {
+    @let chartJson = chartArt.chart | json;
+    @if (chartJson.length > collapseThreshold) {
+    <mat-expansion-panel class="payload-detail-panel">
+      <mat-expansion-panel-header>
+        <mat-panel-title>Chart Data</mat-panel-title>
+      </mat-expansion-panel-header>
+      <ng-container [ngTemplateOutlet]="numberedLinesBody"
+        [ngTemplateOutletContext]="{ text: chartJson }"></ng-container>
+    </mat-expansion-panel>
+    } @else {
+    <ng-container [ngTemplateOutlet]="numberedLinesBody"
+      [ngTemplateOutletContext]="{ text: chartJson }"></ng-container>
+    }
+    }
   </div>
 </ng-template>

@@ -146,6 +146,13 @@ func TestCreateArtifact_BadPaths(t *testing.T) {
 	server, _ := createExperimentStateServer(ctx, t)
 	exp := mustCreateExperiment(ctx, t, server, nil)
 
+	baseReq := &apipb.CreateArtifactRequest{
+		Parent: exp.GetName(),
+		Artifact: &msgpb.Artifact{
+			Url: &msgpb.Url{Url: "http://www.google.com"},
+		},
+	}
+
 	testCases := []struct {
 		name    string
 		req     *apipb.CreateArtifactRequest
@@ -153,36 +160,30 @@ func TestCreateArtifact_BadPaths(t *testing.T) {
 	}{
 		{
 			name: "missing_parent",
-			req: &apipb.CreateArtifactRequest{
-				Artifact: &msgpb.Artifact{
-					Url: &msgpb.Url{Url: "http://www.google.com"},
-				},
-			},
+			req: proto.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
+				r.Parent = ""
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent",
-			req: &apipb.CreateArtifactRequest{
-				Parent: "invalid-parent",
-				Artifact: &msgpb.Artifact{
-					Url: &msgpb.Url{Url: "http://www.google.com"},
-				},
-			},
+			req: proto.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
+				r.Parent = "invalid-parent"
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "missing_artifact",
-			req: &apipb.CreateArtifactRequest{
-				Parent: exp.GetName(),
-			},
+			req: proto.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
+				r.Artifact = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "missing_url",
-			req: &apipb.CreateArtifactRequest{
-				Parent:   exp.GetName(),
-				Artifact: &msgpb.Artifact{},
-			},
+			req: proto.Modify(baseReq, func(r *apipb.CreateArtifactRequest) {
+				r.Artifact.Url = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 	}

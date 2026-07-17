@@ -96,6 +96,17 @@ func TestCreateXidEntry_BadPaths(t *testing.T) {
 	ctx := context.Background()
 	server := createXidServer(ctx, t)
 
+	baseReq := &apipb.CreateXidEntryRequest{
+		XidEntry: &msgpb.XidEntry{
+			Acls: &msgpb.XidAcls{
+				Writers: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "test@example.com"}}},
+			},
+			Origin: &msgpb.OriginatingSystem{
+				Endpoint: proto.String("http://testhost"),
+			},
+		},
+	}
+
 	testCases := []struct {
 		name    string
 		req     *apipb.CreateXidEntryRequest
@@ -103,46 +114,30 @@ func TestCreateXidEntry_BadPaths(t *testing.T) {
 	}{
 		{
 			name: "missing_xid_entry",
-			req: &apipb.CreateXidEntryRequest{
-				XidEntry: nil,
-			},
+			req: proto.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
+				r.XidEntry = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "missing_acls",
-			req: &apipb.CreateXidEntryRequest{
-				XidEntry: &msgpb.XidEntry{
-					Acls: nil,
-					Origin: &msgpb.OriginatingSystem{
-						Endpoint: proto.String("http://testhost"),
-					},
-				},
-			},
+			req: proto.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
+				r.XidEntry.Acls = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "missing_origin",
-			req: &apipb.CreateXidEntryRequest{
-				XidEntry: &msgpb.XidEntry{
-					Acls: &msgpb.XidAcls{
-						Writers: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "test@example.com"}}},
-					},
-					Origin: nil,
-				},
-			},
+			req: proto.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
+				r.XidEntry.Origin = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_parent_xid",
-			req: &apipb.CreateXidEntryRequest{
-				XidEntry: &msgpb.XidEntry{
-					Acls: &msgpb.XidAcls{
-						Writers: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "test@example.com"}}},
-					},
-					Origin:    &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},
-					ParentXid: proto.String("xids/invalid"),
-				},
-			},
+			req: proto.Modify(baseReq, func(r *apipb.CreateXidEntryRequest) {
+				r.XidEntry.ParentXid = proto.String("xids/invalid")
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 	}

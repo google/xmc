@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -302,6 +303,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 	}
 
 	primaryName := jobsetutil.PrimaryContainerName(job)
+	nodeSelector := copyNodeSelector(job.GetNodeSelector())
 
 	return jobsetv1alpha2.ReplicatedJob{
 		Name:      job.GetName(),
@@ -329,11 +331,24 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 						RestartPolicy:      corev1.RestartPolicyNever,
 						SecurityContext:    defaultPodSecurityContext(),
 						Volumes:            defaultVolumes(),
+						NodeSelector:       nodeSelector,
 					},
 				},
 			},
 		},
 	}
+}
+
+// copyNodeSelector creates an immutable copy of the job node selector map.
+func copyNodeSelector(source map[string]string) map[string]string {
+	if len(source) == 0 {
+		return nil
+	}
+	copyMap := make(map[string]string, len(source))
+	for k, v := range source {
+		copyMap[k] = v
+	}
+	return copyMap
 }
 
 func buildInitContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
@@ -360,9 +375,18 @@ func buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
 func buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Container {
 	envVars := generateEnvVarsForSpec(spec)
 	var args []string
-	for k, v := range spec.GetArgs() {
-		args = append(args, fmt.Sprintf("--%s=%s", k, v))
+	specArgs := spec.GetArgs()
+	if len(specArgs) > 0 {
+		keys := make([]string, 0, len(specArgs))
+		for k := range specArgs {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			args = append(args, fmt.Sprintf("--%s=%s", k, specArgs[k]))
+		}
 	}
+	args = append(args, spec.GetArgsList()...)
 	return corev1.Container{
 		Name:                     containerName,
 		Image:                    spec.GetDockerImage(),

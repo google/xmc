@@ -76,5 +76,5 @@ variable "max_concurrent_updates" {
 variable "status_message_history_enabled" {
   type        = bool
   description = "Whether to enable status message history."
-  default     = false
+  default     = true
 }
