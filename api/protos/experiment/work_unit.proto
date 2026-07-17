@@ -199,7 +199,8 @@ message ExecutableSpec {
   // The docker image to use for the executable.
   string docker_image = 2;
   // The arguments to pass to the executable.
-  map<string, string> args = 3;
+  // Deprecated: Use args_list instead, which supports ordered, verbatim, and positional arguments.
+  map<string, string> args = 3 [deprecated = true];
   // The environment variables to set for the executable.
   // Deprecated: Use env instead, which supports structured environment variables.
   map<string, string> env_vars = 4 [deprecated = true];
@@ -210,6 +211,9 @@ message ExecutableSpec {
   // Optional name for the container. If unset, defaults to the job name for the primary container,
   // '<job_name>-sidecar-<index>' for sidecars, or '<job_name>-init-<index>' for init containers.
   string name = 7;
+  // Ordered list of arguments passed verbatim to the container entrypoint/command without automatic flag prefixes.
+  // Can be used for positional arguments, bare key=value pairs (MaxText/Abseil), or GNU --flag=value options.
+  repeated string args_list = 8;
 }
 
 // SchedulingConstraints contains the scheduling constraints for the

@@ -296,6 +296,14 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 												tpuAcceleratorSelectorKey: "tpu-v4-podslice",
 												tpuTopologySelectorKey:    "2x2x4",
 											},
+											Tolerations: []corev1.Toleration{
+												{
+													Key:      "google.com/tpu",
+													Operator: corev1.TolerationOpEqual,
+													Value:    "present",
+													Effect:   corev1.TaintEffectNoSchedule,
+												},
+											},
 										},
 									},
 								},
@@ -389,6 +397,14 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 												tpuAcceleratorSelectorKey: "tpu-v5-lite-podslice",
 												tpuTopologySelectorKey:    "2x4",
 											},
+											Tolerations: []corev1.Toleration{
+												{
+													Key:      "google.com/tpu",
+													Operator: corev1.TolerationOpEqual,
+													Value:    "present",
+													Effect:   corev1.TaintEffectNoSchedule,
+												},
+											},
 										},
 									},
 								},
@@ -479,6 +495,14 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 											NodeSelector: map[string]string{
 												tpuAcceleratorSelectorKey: "tpu-v6e-slice",
 												tpuTopologySelectorKey:    "2x2",
+											},
+											Tolerations: []corev1.Toleration{
+												{
+													Key:      "google.com/tpu",
+													Operator: corev1.TolerationOpEqual,
+													Value:    "present",
+													Effect:   corev1.TaintEffectNoSchedule,
+												},
 											},
 										},
 									},
@@ -775,6 +799,29 @@ func TestTPUNodesPerSlice(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpdateTolerations(t *testing.T) {
+	t.Run("nil podSpec does not panic", func(t *testing.T) {
+		updateTolerations(nil)
+	})
+
+	t.Run("appends TPU toleration", func(t *testing.T) {
+		podSpec := &corev1.PodSpec{}
+		updateTolerations(podSpec)
+
+		want := []corev1.Toleration{
+			{
+				Key:      tpuResourceKey,
+				Operator: corev1.TolerationOpEqual,
+				Value:    tpuTolerationValue,
+				Effect:   corev1.TaintEffectNoSchedule,
+			},
+		}
+		if diff := cmp.Diff(want, podSpec.Tolerations); diff != "" {
+			t.Errorf("updateTolerations() returned unexpected tolerations diff (-want +got):\n%s", diff)
+		}
+	})
 }
 
 func completionModePtr(m batchv1.CompletionMode) *batchv1.CompletionMode {
@@ -1113,4 +1160,3 @@ func TestInjectOnJobSetCreation_NetworkInjectionGPUMultiNode(t *testing.T) {
 		t.Errorf("Expected EnableDNSHostnames to be true, got %v", got.Spec.Network.EnableDNSHostnames)
 	}
 }
-
