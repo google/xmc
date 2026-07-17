@@ -22,6 +22,7 @@ compat_go_library(
         "jobset_queries.go",
         "k8sclient_test_utils.go",
         "namespace.go",
+        "volume.go",
     ],
     importpath = "xmanager_cloud/cmd/actuator/k8s_client",
     visibility = ["//visibility:public"],
