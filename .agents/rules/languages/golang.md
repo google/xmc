@@ -24,3 +24,6 @@ This document defines coding standards and conventions for Go development across
 ## 5. Table-Driven Testing
 - **Table-Driven Tests**: Standardize unit test suites using Go table-driven patterns (`tests := []struct{ name string; ... }{...}`).
 - **Subtest Execution**: Execute subtests using `t.Run(tt.name, func(t *testing.T) { ... })` to ensure clear failure reporting and isolated execution.
+- **Minimize Test Data Duplication**: In table-driven tests (especially when constructing complex request structs or Protobuf messages), do not copy-paste full struct literals across every test case. Define a canonical baseline fixture (such as `baseReq` or `baseWorkUnit`). For Protobuf messages, use `proto.Modify` (from `"golang/protobuf/v2/proto/proto"`) to apply targeted mutations. For standard Go structs, use shallow copies or localized mutation helpers. This keeps test tables readable and explicitly highlights what fields are being tested.
+- **Centralize Common Test Utilities**: Never redefine generic test helpers (such as `modifyProto` or mock builders) locally across multiple test files or packages. Shared test and proto utilities must be centralized in global/shared packages (e.g., `proto.Modify` in `//internal/compat/proto`) so they are accessible globally across the entire repository.
+
