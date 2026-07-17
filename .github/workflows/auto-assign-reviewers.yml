@@ -30,7 +30,7 @@ permissions:
 
 jobs:
   assign-reviewers:
-    name: 'Assign Two Reviewers from OWNERS'
+    name: 'Assign One Reviewer from OWNERS'
     runs-on: 'ubuntu-24.04'
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
     steps:

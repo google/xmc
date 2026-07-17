@@ -72,6 +72,7 @@ compat_go_test(
         "namespace_test.go",
     ],
     embed = [":k8s_client"],
+    shard_count = 10,
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue:task_go_proto",

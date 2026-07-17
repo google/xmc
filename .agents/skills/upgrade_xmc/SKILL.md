@@ -10,12 +10,12 @@ This skill guides the agent through upgrading an existing deployed XManager on C
 ```mermaid
 graph TD
     Start[Start Upgrade] --> CheckEnv["Check configuration YAML"]
-    CheckEnv --> CheckRun["Run ./tools/upgrade_dev_env.sh --only check"]
-    CheckRun --> MigrateCheck["Run ./tools/upgrade_dev_env.sh --only migrate"]
-    MigrateCheck -->|No pending migrations| AutoRun["Run ./tools/upgrade_dev_env.sh --start-from images"]
+    CheckEnv --> CheckRun["Run python3 ./tools/upgrade_dev_env.py --only check"]
+    CheckRun --> MigrateCheck["Run python3 ./tools/upgrade_dev_env.py --only migrate"]
+    MigrateCheck -->|No pending migrations| AutoRun["Run python3 ./tools/upgrade_dev_env.py --start-from images"]
     MigrateCheck -->|"Pending migrations (Exit 10)"| PromptUser["Prompt User to run migrations"]
     PromptUser -->|User declines| Abort["Abort Upgrade"]
-    PromptUser -->|User approves| AutoRunMigrate["Run ./tools/upgrade_dev_env.sh --start-from migrate --run-migrations"]
+    PromptUser -->|User approves| AutoRunMigrate["Run python3 ./tools/upgrade_dev_env.py --start-from migrate --run-migrations"]
     AutoRunMigrate --> Verify["Verification & Validation"]
     AutoRun --> Verify
     Verify -->|All checks pass| L["Report completed upgrade & healthy rollout"]
@@ -56,21 +56,21 @@ If no configuration file is found at the default path:
 
 ---
 
-## 2. Automated Dev Upgrade (`upgrade_dev_env.sh`)
+## 2. Automated Dev Upgrade (`upgrade_dev_env.py`)
 
-Use the automated upgrade tool (`./tools/upgrade_dev_env.sh`) to execute the environment upgrade. If the user specifies a target version, tag, or branch name (e.g., "Upgrade to v1.2.0" or "Upgrade using branch release-1.2"), you MUST pass `--git-ref <tag_or_branch>` (or `--tag <tag>`, `--branch <branch>`) when invoking `./tools/upgrade_dev_env.sh`.
+Use the automated upgrade tool (`python3 ./tools/upgrade_dev_env.py`) to execute the environment upgrade. If the user specifies a target version, tag, or branch name (e.g., "Upgrade to v1.2.0" or "Upgrade using branch release-1.2"), you MUST pass `--git-ref <tag_or_branch>` (or `--tag <tag>`, `--branch <branch>`) when invoking `python3 ./tools/upgrade_dev_env.py`.
 
 ### Step 1: Run Configuration & Authentication Checks
 Validate configuration in YAML, authenticate with Google Cloud and GKE, and verify that the target Kubernetes namespace exists:
 ```bash
-./tools/upgrade_dev_env.sh --only check
+python3 ./tools/upgrade_dev_env.py --only check
 ```
-*(If upgrading to a specific git reference, pass `--git-ref <tag_or_branch>` alongside `--only check` and subsequent commands: `./tools/upgrade_dev_env.sh --git-ref <tag_or_branch> --only check`)*
+*(If upgrading to a specific git reference, pass `--git-ref <tag_or_branch>` alongside `--only check` and subsequent commands: `python3 ./tools/upgrade_dev_env.py --git-ref <tag_or_branch> --only check`)*
 
 ### Step 2: Check for Pending Database Migrations
 Verify if there are any pending Spanner database migrations:
 ```bash
-./tools/upgrade_dev_env.sh --only migrate
+python3 ./tools/upgrade_dev_env.py --only migrate
 ```
 *(Remember to include `--git-ref <tag_or_branch>` if a target version was specified.)*
 
@@ -89,12 +89,12 @@ If no migrations were pending, or if the user approved running migrations:
 *   **Case A: No pending migrations**:
     Run the upgrade starting from the `images` step (skipping migration step):
     ```bash
-    ./tools/upgrade_dev_env.sh --start-from images
+    python3 ./tools/upgrade_dev_env.py --start-from images
     ```
 *   **Case B: User approved migrations**:
     Run the upgrade starting from `migrate` step and authorize migration execution:
     ```bash
-    ./tools/upgrade_dev_env.sh --start-from migrate --run-migrations
+    python3 ./tools/upgrade_dev_env.py --start-from migrate --run-migrations
     ```
 *(Include `--git-ref <tag_or_branch>` if a target version was specified.)*
 
@@ -103,11 +103,11 @@ If the upgrade fails at a specific phase, or if you need to rerun a specific par
 
 *   **Resume from a specific step**: To resume from a failed phase (`check`, `migrate`, `images`, `app`, `restart`, `verify`):
     ```bash
-    ./tools/upgrade_dev_env.sh --start-from <failed_step>
+    python3 ./tools/upgrade_dev_env.py --start-from <failed_step>
     ```
 *   **Execute a single step**: To execute **only** one specific step:
     ```bash
-    ./tools/upgrade_dev_env.sh --only <step>
+    python3 ./tools/upgrade_dev_env.py --only <step>
     ```
     *Valid steps: `check`, `migrate`, `images`, `app`, `restart`, `verify`*
 
@@ -118,7 +118,7 @@ If the upgrade fails at a specific phase, or if you need to rerun a specific par
 Run the verification script from the repository root to verify that all upgraded pods are running and endpoints respond correctly:
 
 ```bash
-ENVIRONMENT="${XMANAGER_ENV:-dev}" REGION="${GCP_REGION:-us-central1}" PROJECT_ID="$PROJECT_ID" ./deploy/ctk_v2/verify_xmc.sh
+ENVIRONMENT="${XMANAGER_ENV:-dev}" REGION="${GCP_REGION:-us-central1}" PROJECT_ID="$PROJECT_ID" python3 ./deploy/ctk_v2/verify_xmc.py
 ```
 
 > [!TIP]

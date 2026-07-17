@@ -67,7 +67,7 @@ Wait until the command completes successfully. If it succeeds, proceed to **Step
 
 ### Step 3: Delete Cloud DNS Records (Mandatory for Automated Setup)
 
-The automated deployment script (`deploy_dev_env.sh`) creates Cloud DNS A records using `gcloud dns` CLI transactions. These are not managed by Terraform. To prevent resource leakage, you must delete them manually after destroying the cluster.
+The automated deployment script (`deploy_dev_env.py`) creates Cloud DNS A records using `gcloud dns` CLI transactions. These are not managed by Terraform. To prevent resource leakage, you must delete them manually after destroying the cluster.
 
 1.  **Identify DNS Configuration**:
     *   Identify the GCP project ID hosting the DNS zone and the Cloud DNS managed zone name.
