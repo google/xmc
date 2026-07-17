@@ -2033,7 +2033,6 @@ func TestShouldEnableJobSetNetwork_Conditions(t *testing.T) {
 	}
 }
 
-
 func TestBuildContainerPorts_ExplicitAndDefault(t *testing.T) {
 	ctx, client, _ := setupTestClient(true, &alwaysPassingPreconditionsValidator{})
 	workUnit := createTestWorkUnit("test-namespace")

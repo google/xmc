@@ -49,6 +49,10 @@ const (
 	kueueWorkloadAnnotation = "kueue.x-k8s.io/workload"
 	// defaultTTLSeconds is the default time-to-live for JobSet and Jobs after finishing.
 	defaultTTLSeconds = 7 * 24 * 60 * 60 // 7 days
+
+	protocolUDP  = "UDP"
+	protocolSCTP = "SCTP"
+	protocolTCP  = "TCP"
 )
 
 var (
@@ -367,11 +371,11 @@ func buildContainerPorts(spec *esspb.ExecutableSpec) []corev1.ContainerPort {
 	for _, p := range spec.GetPorts() {
 		protocol := corev1.ProtocolTCP
 		switch strings.ToUpper(p.GetProtocol()) {
-		case "UDP":
+		case protocolUDP:
 			protocol = corev1.ProtocolUDP
-		case "SCTP":
+		case protocolSCTP:
 			protocol = corev1.ProtocolSCTP
-		case "TCP", "":
+		case protocolTCP, "":
 			protocol = corev1.ProtocolTCP
 		default:
 			protocol = corev1.Protocol(strings.ToUpper(p.GetProtocol()))
