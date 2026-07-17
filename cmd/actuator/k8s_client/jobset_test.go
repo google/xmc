@@ -2223,4 +2223,3 @@ func TestShouldEnableJobSetCoordinator(t *testing.T) {
 		t.Errorf("shouldEnableJobSetCoordinator(valid Coordinator) = false, want true")
 	}
 }
-

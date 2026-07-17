@@ -1915,4 +1915,3 @@ func TestValidateJobSetCoordinator(t *testing.T) {
 		})
 	}
 }
-

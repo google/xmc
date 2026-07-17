@@ -1463,4 +1463,3 @@ func TestInjectOnJobSetCreation_GPUMultiNode_WithCoordinator(t *testing.T) {
 		t.Errorf("Expected Coordinator.PodIndex to be 2, got %d", got.Spec.Coordinator.PodIndex)
 	}
 }
-
