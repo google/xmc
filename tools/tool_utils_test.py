@@ -104,6 +104,29 @@ class TestToolUtils(unittest.TestCase):
             mock_bootstrap.assert_called_once_with(venv_dir.resolve())
             mock_execv.assert_called_once_with(str(venv_py), [str(venv_py)] + sys.argv)
 
+    @patch("tool_utils._should_bypass_venv", return_value=False)
+    @patch("tool_utils._bootstrap_venv", side_effect=RuntimeError("bootstrap failed"))
+    @patch("logging.exception")
+    @patch("os.execv")
+    def test_ensure_venv_bootstrap_fails(
+        self, mock_execv, mock_log_exception, mock_bootstrap, mock_bypass
+    ):
+        env = dict(os.environ)
+        env.pop("TEST_SRCDIR", None)
+        env.pop("BAZEL_TEST", None)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            venv_dir = Path(tmp_dir) / "venv"
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch("sys.prefix", "/usr"),
+                patch("sys.base_prefix", "/usr"),
+                patch("sys.executable", "/usr/bin/python3"),
+            ):
+                ensure_venv(venv_dir)
+            mock_bootstrap.assert_called_once_with(venv_dir.resolve())
+            mock_log_exception.assert_called_once_with("Failed to bootstrap virtual environment")
+            mock_execv.assert_not_called()
+
     @patch("subprocess.run")
     def test_bootstrap_venv_calls_setup_script(self, mock_run):
         with tempfile.TemporaryDirectory() as tmp_dir:

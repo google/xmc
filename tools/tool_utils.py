@@ -16,6 +16,7 @@
 
 import argparse
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -63,6 +64,7 @@ def ensure_venv(venv_dir: Optional[Path] = None) -> None:
         try:
             _bootstrap_venv(resolved_venv)
         except Exception:
+            logging.exception("Failed to bootstrap virtual environment")
             return
         venv_python = resolved_venv / "bin" / "python3"
         if not venv_python.exists():
