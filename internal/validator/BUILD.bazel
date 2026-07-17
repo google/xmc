@@ -20,6 +20,7 @@ go_library(
         "names.go",
         "parameters.go",
         "requests.go",
+        "volumes.go",
     ],
     importpath = "xmanager_cloud/validator/validator",  # keep
     visibility = ["//:__subpackages__"],
@@ -40,6 +41,7 @@ go_test(
         "names_test.go",
         "parameters_test.go",
         "requests_test.go",
+        "volumes_test.go",
     ],
     embed = [":validator"],
     shard_count = 10,
