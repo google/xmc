@@ -19,11 +19,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
+	"strings"
 	"time"
 
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
+	k8slabels "golang/k8s_io/apimachinery/v/v0_23/pkg/labels/labels"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
 	"golang/prometheus/client/prometheus/promauto/promauto"
 	"golang/prometheus/client/prometheus/prometheus"
@@ -338,7 +341,7 @@ func (r *Reconciler) handleStartupPodChecks(ctx context.Context, jobSet *v1alpha
 	// the work unit in STARTING. Bound the extra re-checks with
 	// unschedulablePodsCheckTime so we don't requeue indefinitely; after that we
 	// rely on event-driven reconciles (the warning still clears once pods schedule).
-	warningMsg := checkPodsForUnschedulable(ctx, pods)
+	warningMsg := r.checkPodsForUnschedulable(ctx, pods)
 	result := ctrl.Result{}
 	if warningMsg != "" && age < unschedulablePodsCheckTime {
 		result.RequeueAfter = unschedulablePodsCheckTime - age
@@ -361,21 +364,92 @@ func (r *Reconciler) listJobSetPods(ctx context.Context, jobSet *v1alpha2.JobSet
 // It reads the scheduler's actual condition rather than guessing from elapsed
 // time, so a pod that is merely waiting for a node to be provisioned is not
 // misreported once it schedules.
-func checkPodsForUnschedulable(ctx context.Context, pods []corev1.Pod) string {
-	for _, pod := range pods {
+func (r *Reconciler) checkPodsForUnschedulable(ctx context.Context, pods []corev1.Pod) string {
+	for i := range pods {
+		pod := &pods[i]
 		if pod.Status.Phase != corev1.PodPending {
 			continue
 		}
 		for _, cond := range pod.Status.Conditions {
-			if cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse && cond.Reason == corev1.PodReasonUnschedulable {
-				return fmt.Sprintf(
-					"Work unit may be unschedulable: %s. Check cluster quota and node availability (e.g. kubectl describe pod / clusterqueue).",
-					cond.Message)
+			if !isPodUnschedulableCondition(cond) {
+				continue
 			}
+			if tpuWarning := r.checkTPUTopologyMismatch(ctx, pod, cond.Message); tpuWarning != "" {
+				return tpuWarning
+			}
+			return fmt.Sprintf(
+				"Work unit may be unschedulable: %s. Check cluster quota and node availability (e.g. kubectl describe pod / clusterqueue).",
+				cond.Message)
 		}
 	}
 	logging.Debug(ctx, "No unschedulable pods found")
 	return ""
+}
+
+func isPodUnschedulableCondition(cond corev1.PodCondition) bool {
+	return cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse && cond.Reason == corev1.PodReasonUnschedulable
+}
+
+// checkTPUTopologyMismatch checks if an unschedulable pod is waiting on an unsatisfiable TPU topology selector.
+func (r *Reconciler) checkTPUTopologyMismatch(ctx context.Context, pod *corev1.Pod, condMsg string) string {
+	if pod.Spec.NodeSelector == nil {
+		return ""
+	}
+	reqTopology, hasTopology := pod.Spec.NodeSelector[constants.TPUTopologySelectorKey]
+	if !hasTopology || !isNodeSelectorMismatchMessage(condMsg) {
+		return ""
+	}
+
+	availTopologies, err := r.listAvailableTPUTopologies(ctx)
+	if err != nil {
+		logging.Warn(ctx, "Failed to discover available TPU topologies in cluster", "error", err)
+		return ""
+	}
+	if len(availTopologies) == 0 {
+		return "" // Fall back to generic warning to avoid false positives during autoscaling from zero.
+	}
+
+	for _, avail := range availTopologies {
+		if avail == reqTopology {
+			return "" // Topology exists in cluster; pod is pending for quota or another reason.
+		}
+	}
+
+	reqType := pod.Spec.NodeSelector[constants.TPUAcceleratorSelectorKey]
+	return fmt.Sprintf(
+		"Work unit is unschedulable: requested TPU topology %q (type %q) does not match any node pool's advertised topology in the cluster. Available TPU topologies: %v. Please request a topology supported by the cluster's TPU node pools.",
+		reqTopology, reqType, availTopologies)
+}
+
+func isNodeSelectorMismatchMessage(msg string) bool {
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "node affinity/selector") || strings.Contains(lower, "nodeselector") || strings.Contains(lower, "didn't match")
+}
+
+// listAvailableTPUTopologies returns a sorted list of unique TPU topologies advertised by nodes in the cluster.
+func (r *Reconciler) listAvailableTPUTopologies(ctx context.Context) ([]string, error) {
+	var nodeList corev1.NodeList
+	selector, err := k8slabels.Parse(constants.TPUTopologySelectorKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse TPU topology label selector: %w", err)
+	}
+	if err := r.List(logging.Strip(ctx), &nodeList, client.MatchingLabelsSelector{Selector: selector}); err != nil {
+		return nil, fmt.Errorf("failed to list nodes with TPU topology label: %w", err)
+	}
+
+	topologySet := make(map[string]struct{})
+	for i := range nodeList.Items {
+		if topVal, exists := nodeList.Items[i].Labels[constants.TPUTopologySelectorKey]; exists && topVal != "" {
+			topologySet[topVal] = struct{}{}
+		}
+	}
+
+	topologies := make([]string, 0, len(topologySet))
+	for top := range topologySet {
+		topologies = append(topologies, top)
+	}
+	sort.Strings(topologies)
+	return topologies, nil
 }
 
 func checkPodsForStartupErrors(ctx context.Context, pods []corev1.Pod) string {
