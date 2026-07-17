@@ -793,33 +793,24 @@ func generateVolumesForJob(job *esspb.KubernetesJob) []corev1.Volume {
 
 func buildVolumeFromProto(v *esspb.Volume) corev1.Volume {
 	vol := corev1.Volume{Name: v.GetName()}
-	if pvc := v.GetPersistentVolumeClaim(); pvc != nil {
-		vol.PersistentVolumeClaim = buildPVCVolumeSource(pvc)
+	if v.Source == nil {
 		return vol
 	}
-	if gcs := v.GetGcs(); gcs != nil {
-		vol.CSI = buildGCSVolumeSource(gcs)
-		return vol
-	}
-	if hp := v.GetHostPath(); hp != nil {
-		vol.HostPath = buildHostPathVolumeSource(hp)
-		return vol
-	}
-	if ed := v.GetEmptyDir(); ed != nil {
-		vol.EmptyDir = buildEmptyDirVolumeSource(ed)
-		return vol
-	}
-	if sec := v.GetSecret(); sec != nil {
-		vol.Secret = buildSecretVolumeSource(sec)
-		return vol
-	}
-	if cm := v.GetConfigMap(); cm != nil {
-		vol.ConfigMap = buildConfigMapVolumeSource(cm)
-		return vol
-	}
-	if nfs := v.GetNfs(); nfs != nil {
-		vol.NFS = buildNFSVolumeSource(nfs)
-		return vol
+	switch s := v.Source.(type) {
+	case *esspb.Volume_PersistentVolumeClaim:
+		vol.PersistentVolumeClaim = buildPVCVolumeSource(s.PersistentVolumeClaim)
+	case *esspb.Volume_Gcs:
+		vol.CSI = buildGCSVolumeSource(s.Gcs)
+	case *esspb.Volume_HostPath:
+		vol.HostPath = buildHostPathVolumeSource(s.HostPath)
+	case *esspb.Volume_EmptyDir:
+		vol.EmptyDir = buildEmptyDirVolumeSource(s.EmptyDir)
+	case *esspb.Volume_Secret:
+		vol.Secret = buildSecretVolumeSource(s.Secret)
+	case *esspb.Volume_ConfigMap:
+		vol.ConfigMap = buildConfigMapVolumeSource(s.ConfigMap)
+	case *esspb.Volume_Nfs:
+		vol.NFS = buildNFSVolumeSource(s.Nfs)
 	}
 	return vol
 }
