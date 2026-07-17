@@ -81,18 +81,20 @@ func TestIsUserAuthorizedForChart(t *testing.T) {
 		name           string
 		user           string
 		wantAuthorized bool
+		wantErr        bool
 	}{
-		{"Owner is authorized", "owner@example.com", true},
-		{"Writer is authorized", "writer@example.com", true},
-		{"Reader is authorized", "reader@example.com", true},
-		{"Other is not authorized", "other@example.com", false},
+		{"Owner is authorized", "owner@example.com", true, false},
+		{"Writer is authorized", "writer@example.com", true, false},
+		{"Reader is authorized", "reader@example.com", true, false},
+		{"Other is not authorized", "other@example.com", false, false},
+		{"Invalid email returns error", "invalid-email", false, true},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := a.IsUserAuthorizedForChart(ctx, tc.user, xidAcls)
-			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("IsUserAuthorizedForChart() error = %v, wantErr %v", err, tc.wantErr)
 			}
 			if got != tc.wantAuthorized {
 				t.Errorf("IsUserAuthorizedForChart(%s, xidAcls) = %v; want %v", tc.user, got, tc.wantAuthorized)
