@@ -29,6 +29,16 @@ var (
 	xidMigrationVersion int64
 )
 
+// EssExpectedSchemaVersion returns the expected schema version for ESS.
+func EssExpectedSchemaVersion() int64 {
+	return essMigrationVersion
+}
+
+// XidExpectedSchemaVersion returns the expected schema version for XID.
+func XidExpectedSchemaVersion() int64 {
+	return xidMigrationVersion
+}
+
 // QueryCurrentVersion queries the SchemaMigrations table and returns the current version and dirty status.
 func QueryCurrentVersion(ctx context.Context, sc *spanner.Client) (int64, bool, error) {
 	if sc == nil {
@@ -49,21 +59,11 @@ func QueryCurrentVersion(ctx context.Context, sc *spanner.Client) (int64, bool, 
 		return 0, false, fmt.Errorf("failed to query SchemaMigrations: %w", err)
 	}
 
-	var version int64
-	var dirty bool
+	var version spanner.NullInt64
+	var dirty spanner.NullBool
 	if err := row.Columns(&version, &dirty); err != nil {
 		return 0, false, fmt.Errorf("failed to parse SchemaMigrations columns: %w", err)
 	}
 
-	return version, dirty, nil
-}
-
-// EssExpectedSchemaVersion returns the expected schema version for ESS.
-func EssExpectedSchemaVersion() int64 {
-	return essMigrationVersion
-}
-
-// XidExpectedSchemaVersion returns the expected schema version for XID.
-func XidExpectedSchemaVersion() int64 {
-	return xidMigrationVersion
+	return version.Int64, !dirty.Valid || dirty.Bool, nil
 }
