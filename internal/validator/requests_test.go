@@ -852,6 +852,474 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
+		{
+			name: "valid_node_selector",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Name:        "primary",
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+												CpuMillicores: 1,
+												MemoryBytes:   1,
+											}},
+										},
+									},
+									NodeSelector: map[string]string{
+										"cloud.google.com/gke-nodepool": "cpups",
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "invalid_node_selector_empty_key",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Name:        "primary",
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+												CpuMillicores: 1,
+												MemoryBytes:   1,
+											}},
+										},
+									},
+									NodeSelector: map[string]string{
+										"": "cpups",
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_node_selector_value_too_long",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Name:        "primary",
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+												CpuMillicores: 1,
+												MemoryBytes:   1,
+											}},
+										},
+									},
+									NodeSelector: map[string]string{
+										"cloud.google.com/gke-nodepool": strings.Repeat("a", 64),
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_node_selector_key_too_long",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Name:        "primary",
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+												CpuMillicores: 1,
+												MemoryBytes:   1,
+											}},
+										},
+									},
+									NodeSelector: map[string]string{
+										strings.Repeat("a", 317): "cpups",
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "valid_node_selector_no_slash_uppercase_dots",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Name:        "primary",
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+												CpuMillicores: 1,
+												MemoryBytes:   1,
+											}},
+										},
+									},
+									NodeSelector: map[string]string{
+										"My_Label.1": "Valid-Value_1.0",
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "invalid_node_selector_value_invalid_chars",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Name:        "primary",
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+												CpuMillicores: 1,
+												MemoryBytes:   1,
+											}},
+										},
+									},
+									NodeSelector: map[string]string{
+										"cloud.google.com/gke-nodepool": "invalid@value",
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_node_selector_multiple_slashes",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Name:        "primary",
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+												CpuMillicores: 1,
+												MemoryBytes:   1,
+											}},
+										},
+									},
+									NodeSelector: map[string]string{
+										"a/b/c": "val",
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_node_selector_empty_prefix",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Name:        "primary",
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+												CpuMillicores: 1,
+												MemoryBytes:   1,
+											}},
+										},
+									},
+									NodeSelector: map[string]string{
+										"/name": "val",
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_node_selector_prefix_too_long",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Name:        "primary",
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+												CpuMillicores: 1,
+												MemoryBytes:   1,
+											}},
+										},
+									},
+									NodeSelector: map[string]string{
+										strings.Repeat("a", 254) + "/name": "val",
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_node_selector_invalid_prefix",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Name:        "primary",
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+												CpuMillicores: 1,
+												MemoryBytes:   1,
+											}},
+										},
+									},
+									NodeSelector: map[string]string{
+										"Invalid_Prefix.com/name": "val",
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_node_selector_empty_name",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Name:        "primary",
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+												CpuMillicores: 1,
+												MemoryBytes:   1,
+											}},
+										},
+									},
+									NodeSelector: map[string]string{
+										"cloud.google.com/": "val",
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_node_selector_name_too_long",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Name:        "primary",
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+												CpuMillicores: 1,
+												MemoryBytes:   1,
+											}},
+										},
+									},
+									NodeSelector: map[string]string{
+										"cloud.google.com/" + strings.Repeat("a", 64): "val",
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_node_selector_invalid_name",
+			req: &essapipb.CreateWorkUnitRequest{
+				Parent: "experiments/123",
+				WorkUnit: &essmsgpb.WorkUnit{
+					Executable: &essmsgpb.Executable{
+						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+							QueueName: "queue",
+						},
+						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+							Jobs: []*essmsgpb.KubernetesJob{
+								{
+									Name:     "job1",
+									Replicas: 1,
+									Spec: &essmsgpb.ExecutableSpec{
+										Name:        "primary",
+										DockerImage: "image",
+										Resources: &essmsgpb.ResourceSet{
+											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+												CpuMillicores: 1,
+												MemoryBytes:   1,
+											}},
+										},
+									},
+									NodeSelector: map[string]string{
+										"cloud.google.com/name@invalid": "val",
+									},
+								},
+							},
+						}},
+					},
+					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
 	}
 
 	for _, tc := range tests {

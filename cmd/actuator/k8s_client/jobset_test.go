@@ -501,6 +501,87 @@ func TestConstructJobSet(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_PerJobNodeSelector(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "experiments/1/workUnits/1",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name:     "head",
+							Replicas: 1,
+							Spec: &esspb.ExecutableSpec{
+								DockerImage: "gcr.io/foo/bar:latest",
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_CpuResources{
+										CpuResources: &esspb.CpuResources{
+											CpuMillicores: 2000,
+											MemoryBytes:   8589934592,
+										},
+									},
+								},
+							},
+							NodeSelector: map[string]string{
+								"cloud.google.com/gke-nodepool": "cpups",
+							},
+						},
+						{
+							Name:     "worker",
+							Replicas: 2,
+							Spec: &esspb.ExecutableSpec{
+								DockerImage: "gcr.io/foo/bar:latest",
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_GpuResources{
+										GpuResources: &esspb.GpuResources{
+											Type:  "T4",
+											Count: 1,
+										},
+									},
+								},
+							},
+							NodeSelector: map[string]string{
+								"cloud.google.com/gke-nodepool": "gpu-pool",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	jobSet, err := client.constructJobSet(ctx, workUnit, "experiments/1/workUnits/1/executions/1", "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	replicatedJobs := make(map[string]*jobsetv1alpha2.ReplicatedJob)
+	for i := range jobSet.Spec.ReplicatedJobs {
+		rj := &jobSet.Spec.ReplicatedJobs[i]
+		replicatedJobs[rj.Name] = rj
+	}
+
+	headJob, exists := replicatedJobs["head"]
+	if !exists {
+		t.Fatalf("Expected job 'head' in JobSet")
+	}
+	if headJob.Template.Spec.Template.Spec.NodeSelector["cloud.google.com/gke-nodepool"] != "cpups" {
+		t.Errorf("head PodSpec.NodeSelector['cloud.google.com/gke-nodepool'] = %q, want 'cpups'", headJob.Template.Spec.Template.Spec.NodeSelector["cloud.google.com/gke-nodepool"])
+	}
+
+	workerJob, exists := replicatedJobs["worker"]
+	if !exists {
+		t.Fatalf("Expected job 'worker' in JobSet")
+	}
+	if workerJob.Template.Spec.Template.Spec.NodeSelector["cloud.google.com/gke-nodepool"] != "gpu-pool" {
+		t.Errorf("worker PodSpec.NodeSelector['cloud.google.com/gke-nodepool'] = %q, want 'gpu-pool'", workerJob.Template.Spec.Template.Spec.NodeSelector["cloud.google.com/gke-nodepool"])
+	}
+	if workerJob.Template.Spec.Template.Spec.NodeSelector["cloud.google.com/gke-accelerator"] != "nvidia-tesla-t4" {
+		t.Errorf("worker PodSpec.NodeSelector['cloud.google.com/gke-accelerator'] = %q, want 'nvidia-tesla-t4'", workerJob.Template.Spec.Template.Spec.NodeSelector["cloud.google.com/gke-accelerator"])
+	}
+}
+
 func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {

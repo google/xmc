@@ -303,6 +303,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 	}
 
 	primaryName := jobsetutil.PrimaryContainerName(job)
+	nodeSelector := copyNodeSelector(job.GetNodeSelector())
 
 	return jobsetv1alpha2.ReplicatedJob{
 		Name:      job.GetName(),
@@ -330,11 +331,24 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 						RestartPolicy:      corev1.RestartPolicyNever,
 						SecurityContext:    defaultPodSecurityContext(),
 						Volumes:            defaultVolumes(),
+						NodeSelector:       nodeSelector,
 					},
 				},
 			},
 		},
 	}
+}
+
+// copyNodeSelector creates an immutable copy of the job node selector map.
+func copyNodeSelector(source map[string]string) map[string]string {
+	if len(source) == 0 {
+		return nil
+	}
+	copyMap := make(map[string]string, len(source))
+	for k, v := range source {
+		copyMap[k] = v
+	}
+	return copyMap
 }
 
 func buildInitContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
