@@ -47,6 +47,25 @@ class SetupVenvTest(unittest.TestCase):
             setup_venv.check_prerequisites()
         mock_error_exit.assert_called_once_with("python3 is required but not installed.")
 
+    @patch("shutil.which")
+    @patch("sys.stderr", new_callable=io.StringIO)
+    def test_check_prerequisites_warns_on_old_python(self, mock_stderr, mock_which):
+        mock_which.return_value = "/usr/bin/python3"
+        with patch("sys.version_info", (3, 12, 0)):
+            setup_venv.check_prerequisites()
+        self.assertIn(
+            "Warning: Virtual environments need to be created using Python 3.13.14 or newer.",
+            mock_stderr.getvalue(),
+        )
+
+    @patch("shutil.which")
+    @patch("sys.stderr", new_callable=io.StringIO)
+    def test_check_prerequisites_no_warning_on_newer_python(self, mock_stderr, mock_which):
+        mock_which.return_value = "/usr/bin/python3"
+        with patch("sys.version_info", (3, 13, 15)):
+            setup_venv.check_prerequisites()
+        self.assertEqual(mock_stderr.getvalue(), "")
+
     @patch("venv.create")
     def test_setup_virtualenv_creates_when_missing(self, mock_venv_create):
         with tempfile.TemporaryDirectory() as tmp_dir:

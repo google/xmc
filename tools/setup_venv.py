@@ -13,7 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Bootstrap script for XMC tooling Python virtual environment (requires Python 3.13.14)."""
+"""Bootstrap script for XMC tooling Python virtual environment.
+
+Requires Python 3.13.14 or newer.
+"""
 
 import argparse
 import os
@@ -24,6 +27,9 @@ import venv
 from pathlib import Path
 from typing import Optional
 
+MINIMUM_PYTHON_VERSION = (3, 13, 14)
+MINIMUM_PYTHON_VERSION_STR = ".".join(map(str, MINIMUM_PYTHON_VERSION))
+
 
 def error_exit(msg: str) -> None:
     """Prints an error message to stderr and exits immediately."""
@@ -32,11 +38,14 @@ def error_exit(msg: str) -> None:
 
 
 def check_prerequisites() -> None:
-    """Verifies that python3 executable is available and specifies Python 3.13.14 requirement."""
+    """Verifies python3 availability and minimum version requirement."""
     if not shutil.which("python3"):
         error_exit("python3 is required but not installed.")
-    if sys.version_info[:3] != (3, 13, 14):
-        sys.stderr.write("Warning: Virtual environments need to be created using Python 3.13.14.\n")
+    if sys.version_info[:3] < MINIMUM_PYTHON_VERSION:
+        sys.stderr.write(
+            "Warning: Virtual environments need to be created using Python"
+            f" {MINIMUM_PYTHON_VERSION_STR} or newer.\n"
+        )
 
 
 def setup_virtualenv(venv_dir: Path) -> Path:
@@ -71,7 +80,10 @@ def main(args_list: Optional[list[str]] = None) -> None:
     """Orchestrates virtual environment creation and dependency installation."""
     check_prerequisites()
     parser = argparse.ArgumentParser(
-        description="Setup XMC tooling virtual environment (must be created using Python 3.13.14)."
+        description=(
+            "Setup XMC tooling virtual environment (should be created using"
+            f" Python {MINIMUM_PYTHON_VERSION_STR} or newer)."
+        )
     )
     parser.add_argument(
         "--venv-dir",
