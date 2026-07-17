@@ -54,20 +54,22 @@ func validateVolumeSource(v *essmsgpb.Volume, prefix string) error {
 	if v.GetSource() == nil {
 		return fmt.Errorf("%s must have a source specified: %w", prefix, status.ErrInvalidArgument)
 	}
-	if pvc := v.GetPersistentVolumeClaim(); pvc != nil {
+	switch s := v.Source.(type) {
+	case *essmsgpb.Volume_PersistentVolumeClaim:
+		pvc := s.PersistentVolumeClaim
 		if pvc.GetClaimName() == "" {
 			return fmt.Errorf("%s.persistent_volume_claim.claim_name cannot be empty: %w", prefix, status.ErrInvalidArgument)
 		}
 		return validateDNSLabel(pvc.GetClaimName(), prefix+".persistent_volume_claim.claim_name")
-	}
-	if gcs := v.GetGcs(); gcs != nil {
+	case *essmsgpb.Volume_Gcs:
+		gcs := s.Gcs
 		bucket := strings.TrimPrefix(gcs.GetBucket(), "gs://")
 		if bucket == "" {
 			return fmt.Errorf("%s.gcs.bucket must be a valid GCS bucket name: %w", prefix, status.ErrInvalidArgument)
 		}
 		return nil
-	}
-	if hp := v.GetHostPath(); hp != nil {
+	case *essmsgpb.Volume_HostPath:
+		hp := s.HostPath
 		if hp.GetPath() == "" {
 			return fmt.Errorf("%s.host_path.path cannot be empty: %w", prefix, status.ErrInvalidArgument)
 		}
@@ -75,30 +77,26 @@ func validateVolumeSource(v *essmsgpb.Volume, prefix string) error {
 			return fmt.Errorf("%s.host_path.path %q must be an absolute path: %w", prefix, hp.GetPath(), status.ErrInvalidArgument)
 		}
 		return nil
-	}
-	if ed := v.GetEmptyDir(); ed != nil {
+	case *essmsgpb.Volume_EmptyDir:
+		ed := s.EmptyDir
 		if ed.GetSizeLimitBytes() < 0 {
 			return fmt.Errorf("%s.empty_dir.size_limit_bytes cannot be negative: %w", prefix, status.ErrInvalidArgument)
 		}
 		return nil
-	}
-	return validateRemainingVolumeSources(v, prefix)
-}
-
-func validateRemainingVolumeSources(v *essmsgpb.Volume, prefix string) error {
-	if sec := v.GetSecret(); sec != nil {
+	case *essmsgpb.Volume_Secret:
+		sec := s.Secret
 		if sec.GetSecretName() == "" {
 			return fmt.Errorf("%s.secret.secret_name cannot be empty: %w", prefix, status.ErrInvalidArgument)
 		}
 		return nil
-	}
-	if cm := v.GetConfigMap(); cm != nil {
+	case *essmsgpb.Volume_ConfigMap:
+		cm := s.ConfigMap
 		if cm.GetName() == "" {
 			return fmt.Errorf("%s.config_map.name cannot be empty: %w", prefix, status.ErrInvalidArgument)
 		}
 		return nil
-	}
-	if nfs := v.GetNfs(); nfs != nil {
+	case *essmsgpb.Volume_Nfs:
+		nfs := s.Nfs
 		if nfs.GetServer() == "" {
 			return fmt.Errorf("%s.nfs.server cannot be empty: %w", prefix, status.ErrInvalidArgument)
 		}
@@ -106,8 +104,9 @@ func validateRemainingVolumeSources(v *essmsgpb.Volume, prefix string) error {
 			return fmt.Errorf("%s.nfs.path cannot be empty: %w", prefix, status.ErrInvalidArgument)
 		}
 		return nil
+	default:
+		return fmt.Errorf("%s has unsupported volume source type %T: %w", prefix, s, status.ErrInvalidArgument)
 	}
-	return nil
 }
 
 func validateVolumeMounts(mounts []*essmsgpb.VolumeMount, prefix string, validVolumes map[string]bool) error {

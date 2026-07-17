@@ -96,6 +96,34 @@ func TestValidateJobVolumes(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "empty_secret_name",
+			volumes: []*essmsgpb.Volume{
+				{Name: "secret", Source: &essmsgpb.Volume_Secret{Secret: &essmsgpb.SecretVolumeSource{SecretName: ""}}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty_config_map_name",
+			volumes: []*essmsgpb.Volume{
+				{Name: "cm", Source: &essmsgpb.Volume_ConfigMap{ConfigMap: &essmsgpb.ConfigMapVolumeSource{Name: ""}}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty_nfs_server",
+			volumes: []*essmsgpb.Volume{
+				{Name: "nfs", Source: &essmsgpb.Volume_Nfs{Nfs: &essmsgpb.NfsVolumeSource{Server: "", Path: "/export"}}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty_nfs_path",
+			volumes: []*essmsgpb.Volume{
+				{Name: "nfs", Source: &essmsgpb.Volume_Nfs{Nfs: &essmsgpb.NfsVolumeSource{Server: "nfs.local", Path: ""}}},
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tc := range tests {
