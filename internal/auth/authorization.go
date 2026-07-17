@@ -60,6 +60,11 @@ func (a *Authorizer) IsUserAuthorized(ctx context.Context, user string, acls *xp
 	return false, nil
 }
 
+// IsUserAuthorizedForChart checks if a user is authorized for Row-Level Security (RLS) access on an XidEntry.
+func (a *Authorizer) IsUserAuthorizedForChart(ctx context.Context, user string, acls *xpb.XidAcls) (bool, error) {
+	return a.IsUserAuthorized(ctx, user, acls, Reader)
+}
+
 // isPrincipalInList checks if a user is in a list of authorized principals.
 func (a *Authorizer) isPrincipalInList(ctx context.Context, user, domain string, authorizedUsers []*xpb.XidAcls_Role) bool {
 	for _, authorizedUser := range authorizedUsers {
