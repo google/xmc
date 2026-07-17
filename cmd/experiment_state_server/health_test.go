@@ -21,8 +21,11 @@ import (
 	"strings"
 	"testing"
 
+	database "cloud.google.com/go/spanner/admin/database/apiv1"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	dbadminpb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/storage/spanner/migrations/version"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 )
 
@@ -38,11 +41,58 @@ func (f *fakeTaskQueueClient) PingRedis(ctx context.Context) error {
 	return f.PingErr
 }
 
+func createSchemaMigrationsTable(ctx context.Context, t *testing.T, emu *emulator.Emulator, dbURI string) {
+	t.Helper()
+	dba, err := database.NewDatabaseAdminClient(ctx, emu.ClientOptions()...)
+	if err != nil {
+		t.Fatalf("failed to create db admin client: %v", err)
+	}
+	defer dba.Close()
+
+	op, err := dba.UpdateDatabaseDdl(ctx, &dbadminpb.UpdateDatabaseDdlRequest{
+		Database: dbURI,
+		Statements: []string{
+			`CREATE TABLE SchemaMigrations (
+				Version INT64,
+				Dirty BOOL
+			) PRIMARY KEY ()`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to update ddl: %v", err)
+	}
+	if err := op.Wait(ctx); err != nil {
+		t.Fatalf("failed to wait for ddl update: %v", err)
+	}
+}
+
+func insertMigrationVersion(ctx context.Context, t *testing.T, client *spanner.Client, version int64, dirty bool) {
+	t.Helper()
+	_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		// Clear existing rows first.
+		if err := txn.BufferWrite([]*spanner.Mutation{
+			spanner.Delete("SchemaMigrations", spanner.AllKeys()),
+		}); err != nil {
+			return err
+		}
+		// Insert new row.
+		m := spanner.Insert("SchemaMigrations", []string{"Version", "Dirty"}, []interface{}{version, dirty})
+		return txn.BufferWrite([]*spanner.Mutation{m})
+	})
+	if err != nil {
+		t.Fatalf("failed to insert migration version: %v", err)
+	}
+}
+
 func TestActiveHealthCheck(t *testing.T) {
-	validSpanner := func(t *testing.T) *spanner.Client {
+	setupSpannerWithVersion := func(t *testing.T, versionVal int64, dirty bool) *spanner.Client {
 		t.Helper()
-		sc, _, _ := emulator.SetupWithEmulator(context.Background(), t)
-		return sc
+		ctx := context.Background()
+		_, essClient, emu := emulator.SetupWithEmulator(ctx, t)
+		dbURI := fmt.Sprintf("projects/%s/instances/%s/databases/%s", "test-project", "test-instance", emu.ESSDatabase)
+		createSchemaMigrationsTable(ctx, t, emu, dbURI)
+		insertMigrationVersion(ctx, t, essClient, versionVal, dirty)
+		return essClient
 	}
 
 	tests := []struct {
@@ -53,8 +103,10 @@ func TestActiveHealthCheck(t *testing.T) {
 		wantBody     string
 	}{
 		{
-			name:         "redis_ping_error",
-			setupSpanner: validSpanner,
+			name: "redis_ping_error",
+			setupSpanner: func(t *testing.T) *spanner.Client {
+				return setupSpannerWithVersion(t, version.EssMigrationVersion(), false)
+			},
 			setupTq: func() TaskQueueClient {
 				return &fakeTaskQueueClient{PingErr: fmt.Errorf("fake redis error")}
 			},
@@ -62,8 +114,10 @@ func TestActiveHealthCheck(t *testing.T) {
 			wantBody: "fake redis error",
 		},
 		{
-			name:         "all_valid",
-			setupSpanner: validSpanner,
+			name: "all_valid",
+			setupSpanner: func(t *testing.T) *spanner.Client {
+				return setupSpannerWithVersion(t, version.EssMigrationVersion(), false)
+			},
 			setupTq: func() TaskQueueClient {
 				return &fakeTaskQueueClient{}
 			},
@@ -76,6 +130,43 @@ func TestActiveHealthCheck(t *testing.T) {
 			setupSpanner: func(t *testing.T) *spanner.Client { return nil },
 			wantCode:     http.StatusInternalServerError,
 			wantBody:     "spanner client is nil",
+		},
+		{
+			name: "spanner_version_older",
+			setupSpanner: func(t *testing.T) *spanner.Client {
+				return setupSpannerWithVersion(t, version.EssMigrationVersion()-1, false)
+			},
+			setupTq:  func() TaskQueueClient { return &fakeTaskQueueClient{} },
+			wantCode: http.StatusInternalServerError,
+			wantBody: "is older than expected version",
+		},
+		{
+			name: "spanner_version_dirty",
+			setupSpanner: func(t *testing.T) *spanner.Client {
+				return setupSpannerWithVersion(t, version.EssMigrationVersion(), true)
+			},
+			setupTq:  func() TaskQueueClient { return &fakeTaskQueueClient{} },
+			wantCode: http.StatusInternalServerError,
+			wantBody: "is in a dirty state",
+		},
+		{
+			name: "spanner_table_missing",
+			setupSpanner: func(t *testing.T) *spanner.Client {
+				_, essClient, _ := emulator.SetupWithEmulator(context.Background(), t)
+				return essClient
+			},
+			setupTq:  func() TaskQueueClient { return &fakeTaskQueueClient{} },
+			wantCode: http.StatusInternalServerError,
+			wantBody: "SchemaMigrations",
+		},
+		{
+			name: "spanner_version_newer",
+			setupSpanner: func(t *testing.T) *spanner.Client {
+				return setupSpannerWithVersion(t, version.EssMigrationVersion()+1, false)
+			},
+			setupTq:  func() TaskQueueClient { return &fakeTaskQueueClient{} },
+			wantCode: http.StatusOK,
+			wantBody: "OK",
 		},
 	}
 

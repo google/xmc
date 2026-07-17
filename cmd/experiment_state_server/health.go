@@ -21,6 +21,7 @@ import (
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/go_sync/errgroup/errgroup"
 	commonhealth "xmanager_cloud/common/health"
+	"xmanager_cloud/storage/spanner/migrations/version"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 )
 
@@ -40,7 +41,7 @@ func activeHealthCheck(spClient *spanner.Client, xidClient xidgrpcpb.XidServiceC
 			if spClient == nil {
 				return fmt.Errorf("spanner client is nil")
 			}
-			return commonhealth.CheckSpanner(ctx, spClient)
+			return commonhealth.CheckSpannerWithVersion(ctx, spClient, version.EssMigrationVersion())
 		})
 
 		// 2. XID Service check

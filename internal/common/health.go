@@ -44,6 +44,49 @@ func CheckSpanner(ctx context.Context, sc *spanner.Client) error {
 	return nil
 }
 
+// CheckSpannerWithVersion validates that Spanner is connected, ready, and has the expected schema version.
+func CheckSpannerWithVersion(ctx context.Context, sc *spanner.Client, expectedVersion int64) error {
+	return CheckSchemaMigrationVersion(ctx, sc, expectedVersion)
+}
+
+// CheckSchemaMigrationVersion queries the SchemaMigrations table and checks if the version is at least the expected version and not dirty.
+func CheckSchemaMigrationVersion(ctx context.Context, sc *spanner.Client, expectedVersion int64) error {
+	if sc == nil {
+		return fmt.Errorf("spanner: %w", ErrNilClient)
+	}
+
+	stmt := spanner.Statement{
+		SQL: "SELECT Version, Dirty FROM SchemaMigrations LIMIT 1",
+	}
+	iter := sc.Single().Query(ctx, stmt)
+	defer iter.Stop()
+
+	row, err := iter.Next()
+	if err == iterator.Done {
+		return fmt.Errorf("no migration records found in SchemaMigrations table")
+	}
+	if err != nil {
+		return fmt.Errorf("failed to query SchemaMigrations: %w", err)
+	}
+
+	var version int64
+	var dirty bool
+	if err := row.Columns(&version, &dirty); err != nil {
+		return fmt.Errorf("failed to parse SchemaMigrations columns: %w", err)
+	}
+
+	if dirty {
+		return fmt.Errorf("schema migration is in a dirty state at version %d", version)
+	}
+
+	if version < expectedVersion {
+		return fmt.Errorf("schema version %d is older than expected version %d", version, expectedVersion)
+	}
+
+	logging.Debug(ctx, "Schema migration version check completed successfully (version: %d)", version)
+	return nil
+}
+
 // CheckKubernetes validates that a Kubernetes clientset is connected and ready.
 func CheckKubernetes(clientset kubernetes.Interface) error {
 	if clientset == nil || clientset.Discovery() == nil {

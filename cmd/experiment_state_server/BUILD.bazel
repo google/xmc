@@ -52,6 +52,7 @@ compat_go_library(
         "//internal/logging",
         "//internal/security",
         "//internal/storage/spanner",
+        "//internal/storage/spanner/migrations/version",
         "//internal/task_queue:client",
         "//pkg/auth/oauth2",
         "//pkg/auth/oauth2/mock",
@@ -96,7 +97,9 @@ compat_go_test(
     embed = [":experiment_state_server_lib"],
     deps = [
         "//internal/storage/spanner/emulator",
-        "@org_golang_google_grpc//:go_default_library",
-        "@org_golang_google_grpc//health/grpc_health_v1:go_default_library",
+        "//internal/storage/spanner/migrations/version",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@com_google_cloud_go_spanner//admin/database/apiv1",
+        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
     ],
 )

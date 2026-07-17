@@ -15,6 +15,18 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
+filegroup(
+    name = "ess_migrations",
+    srcs = glob(["ess/*.up.sql"]),
+    visibility = ["//internal/storage/spanner/migrations:__subpackages__"],
+)
+
+filegroup(
+    name = "xid_migrations",
+    srcs = glob(["xid/*.up.sql"]),
+    visibility = ["//internal/storage/spanner/migrations:__subpackages__"],
+)
+
 genrule(
     name = "copy_ess_messages",
     srcs = ["//api/protos/experiment:experiment_messages_descriptor"],
@@ -39,21 +51,10 @@ genrule(
 compat_go_library(
     name = "migrations_lib",
     srcs = ["runner.go"],
-    embedsrcs = [
-        "ess/001_baseline.down.sql",
-        "ess/001_baseline.up.sql",
-        "ess/002_artifactinfo.down.sql",
-        "ess/002_artifactinfo.up.sql",
-        "ess/003_status_messages.down.sql",
-        "ess/003_status_messages.up.sql",
-        "ess/004_artifactpayload.down.sql",
-        "ess/004_artifactpayload.up.sql",
-        "ess/005_urlartifact.down.sql",
-        "ess/005_urlartifact.up.sql",
-        "ess/006_chartartifact.down.sql",
-        "ess/006_chartartifact.up.sql",
-        "xid/001_baseline.down.sql",
-        "xid/001_baseline.up.sql",
+    embedsrcs = glob([
+        "ess/*.sql",
+        "xid/*.sql",
+    ]) + [
         ":ess_messages.pb",
         ":xid_messages.pb",
         ":dashboard_messages.pb",
