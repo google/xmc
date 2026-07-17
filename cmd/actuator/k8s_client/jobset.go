@@ -895,25 +895,26 @@ func buildNFSVolumeSource(nfs *esspb.NfsVolumeSource) *corev1.NFSVolumeSource {
 
 func generateVolumeMountsForSpec(spec *esspb.ExecutableSpec) []corev1.VolumeMount {
 	mounts := defaultVolumeMounts()
-	mountIndex := make(map[string]int, len(mounts))
+	nameIndex := make(map[string]int, len(mounts))
+	pathIndex := make(map[string]int, len(mounts))
 	for i, m := range mounts {
-		mountIndex[m.Name] = i
-		mountIndex[m.MountPath] = i
+		nameIndex[m.Name] = i
+		pathIndex[m.MountPath] = i
 	}
 	for _, vm := range spec.GetVolumeMounts() {
 		m := buildVolumeMountFromProto(vm)
-		if idx, exists := mountIndex[vm.GetName()]; exists {
-			mountIndex[vm.GetMountPath()] = idx
+		if idx, exists := nameIndex[vm.GetName()]; exists {
+			pathIndex[vm.GetMountPath()] = idx
 			mounts[idx] = m
 			continue
 		}
-		if idx, exists := mountIndex[vm.GetMountPath()]; exists {
-			mountIndex[vm.GetName()] = idx
+		if idx, exists := pathIndex[vm.GetMountPath()]; exists {
+			nameIndex[vm.GetName()] = idx
 			mounts[idx] = m
 			continue
 		}
-		mountIndex[vm.GetName()] = len(mounts)
-		mountIndex[vm.GetMountPath()] = len(mounts)
+		nameIndex[vm.GetName()] = len(mounts)
+		pathIndex[vm.GetMountPath()] = len(mounts)
 		mounts = append(mounts, m)
 	}
 	return mounts

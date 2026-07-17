@@ -2121,3 +2121,46 @@ func verifyCustomVolumeMounts(t *testing.T, mounts []corev1.VolumeMount) {
 		t.Errorf("Expected gcs-data mount at /mnt/gcs with SubPath 'sub', got: %+v", mountMap["gcs-data"])
 	}
 }
+
+func TestGenerateVolumeMountsForSpec_Collision(t *testing.T) {
+	// Default mounts are:
+	// 0: {Name: "ram-scratch", MountPath: "/dev/ram-scratch"}
+	// 1: {Name: "disk-scratch", MountPath: "/dev/disk-scratch"}
+	// 2: {Name: "dev-shm-scratch", MountPath: "/dev/shm"}
+
+	// We want to test if a custom mount with Name matching a default MountPath
+	// or MountPath matching a default Name causes collision.
+
+	// Case A: Custom mount Name matches default MountPath.
+	// Custom: Name="/dev/shm", MountPath="/mnt/custom-shm"
+	// If collision occurs, it will overwrite default mount 2 ("dev-shm-scratch").
+	// If no collision, it will append it.
+	specA := &esspb.ExecutableSpec{
+		VolumeMounts: []*esspb.VolumeMount{
+			{Name: "/dev/shm", MountPath: "/mnt/custom-shm"},
+		},
+	}
+
+	mountsA := generateVolumeMountsForSpec(specA)
+	// We expect 4 mounts: 3 defaults + 1 custom.
+	// If collision, we would get 3 mounts (with default 2 overwritten).
+	if len(mountsA) != 4 {
+		t.Errorf("Expected 4 mounts, got %d. Mounts: %+v", len(mountsA), mountsA)
+	}
+
+	// Case B: Custom mount MountPath matches default Name.
+	// Custom: Name="custom-ram", MountPath="ram-scratch"
+	// If collision occurs, it will overwrite default mount 0 ("ram-scratch").
+	// If no collision, it will append it.
+	specB := &esspb.ExecutableSpec{
+		VolumeMounts: []*esspb.VolumeMount{
+			{Name: "custom-ram", MountPath: "ram-scratch"},
+		},
+	}
+
+	mountsB := generateVolumeMountsForSpec(specB)
+	// We expect 4 mounts.
+	if len(mountsB) != 4 {
+		t.Errorf("Expected 4 mounts, got %d. Mounts: %+v", len(mountsB), mountsB)
+	}
+}
