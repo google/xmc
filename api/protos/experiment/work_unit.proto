@@ -155,13 +155,17 @@ message KubernetesJob {
   // Init containers to run before primary and sidecar containers start.
   repeated ExecutableSpec init_containers = 10;
 
+  // Node selector labels to apply to all Pods in this Kubernetes Job.
+  // This allows pinning specific jobs (e.g., head vs worker) to distinct node pools.
+  map<string, string> node_selector = 11;
+
   // Optional Kubernetes Pod PriorityClass name to assign to the pods created
   // by this ReplicatedJob (e.g., "very-high"). If omitted, the cluster default
   // PriorityClass is used.
   // Note: This only affects Pod-level scheduling and preemption (node-level).
   // It does not affect Kueue queueing or admission priority, which is managed
   // separately via Experiment/WorkUnit priorities.
-  string priority_class_name = 11;
+  string priority_class_name = 12;
 }
 
 // Selects a field of the Pod (matches YAML 'fieldRef').
