@@ -14,7 +14,7 @@
 
 const fs = require('fs');
 
-const NUM_REVIEWERS_TO_ASSIGN = 2;
+const NUM_REVIEWERS_TO_ASSIGN = 1;
 
 /**
  * Orchestrator: Coordinates reading the OWNERS file, calling pure parsing/selection functions,

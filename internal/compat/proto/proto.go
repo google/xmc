@@ -29,3 +29,10 @@ func Int64(v int64) *int64                { return &v }
 func Int32(v int32) *int32                { return &v }
 func Bool(v bool) *bool                   { return &v }
 func Float64(v float64) *float64          { return &v }
+
+// Modify clones a proto message, applies a mutation function f, and returns the modified clone.
+func Modify[T Message](m T, f func(T)) T {
+	cloned := proto.Clone(m).(T)
+	f(cloned)
+	return cloned
+}

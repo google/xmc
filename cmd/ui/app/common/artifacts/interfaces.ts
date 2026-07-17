@@ -24,6 +24,7 @@ export enum PayloadType {
   CODE_SOURCE = 'codeSource',
   TEXT = 'text',
   URL = 'url',
+  CHART = 'chart',
   UNKNOWN = 'unknown',
 }
 
@@ -51,6 +52,19 @@ export interface UrlTypedArtifact extends BaseTypedArtifact {
   payload: UrlArtifact;
 }
 
+export interface ChartArtifactPayload {
+  title?: string;
+  metricNames?: string[];
+  chart?: any;
+  status?: 'STATUS_UNSPECIFIED' | 'PROVISIONING' | 'SUCCESS' | 'FAILED';
+  errorMessage?: string;
+}
+
+export interface ChartTypedArtifact extends BaseTypedArtifact {
+  type: PayloadType.CHART;
+  payload: ChartArtifactPayload;
+}
+
 export interface UnknownTypedArtifact extends BaseTypedArtifact {
   type: PayloadType.UNKNOWN;
 }
@@ -60,6 +74,7 @@ export type TypedArtifact =
   | CodeSourceTypedArtifact
   | TextTypedArtifact
   | UrlTypedArtifact
+  | ChartTypedArtifact
   | UnknownTypedArtifact;
 
 /** Represents a collapsible group of artifacts of the same payload type. */

@@ -17,6 +17,7 @@ package validator
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"task/go/status"
@@ -458,6 +459,10 @@ func validatePayload(payload *essmsgpb.ArtifactPayload) error {
 		if p.Url.GetUrl() == "" {
 			return fmt.Errorf("artifact.payload.url.url must be set: %w", status.ErrInvalidArgument)
 		}
+	case *essmsgpb.ArtifactPayload_Chart:
+		if len(p.Chart.GetMetricNames()) == 0 {
+			return fmt.Errorf("artifact.payload.chart.metric_names must not be empty: %w", status.ErrInvalidArgument)
+		}
 	}
 	return nil
 }
@@ -501,8 +506,23 @@ func validateResourceSet(res *essmsgpb.ResourceSet, prefix string) error {
 		if tpu.GetType() == "" {
 			return fmt.Errorf("%s.tpu_resources.type cannot be empty: %w", prefix, status.ErrInvalidArgument)
 		}
-		if tpu.GetTopology() == "" {
-			return fmt.Errorf("%s.tpu_resources.topology cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		if err := validateTPUTopology(tpu.GetTopology(), prefix); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateTPUTopology verifies that a TPU topology string has valid positive integer dimensions.
+func validateTPUTopology(topology string, prefix string) error {
+	if topology == "" {
+		return fmt.Errorf("%s.tpu_resources.topology cannot be empty: %w", prefix, status.ErrInvalidArgument)
+	}
+	dims := strings.Split(topology, "x")
+	for _, dim := range dims {
+		val, err := strconv.Atoi(dim)
+		if err != nil || val <= 0 {
+			return fmt.Errorf("%s.tpu_resources.topology %q is invalid (each dimension must be a positive integer): %w", prefix, topology, status.ErrInvalidArgument)
 		}
 	}
 	return nil
