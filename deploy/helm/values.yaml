@@ -104,7 +104,6 @@ ui:
   image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/ui-dev:latest"
   apiUrl: "https://YOUR_API_HOSTNAME/v1"
   refreshIntervalMs: "30000"
-  enableStatusMessageHistory: "true"
 
 
 

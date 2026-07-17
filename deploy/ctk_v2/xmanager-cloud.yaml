@@ -364,9 +364,6 @@ deployment_groups:
       - name: statusMessageHistoryEnabled
         value: $(vars.status_message_history_enabled)
         type: auto
-      - name: ui.enableStatusMessageHistory
-        value: "$(vars.status_message_history_enabled)"
-        type: string
 
   - id: xmc_sa_annotations
     source: modules/management/kubectl-apply
