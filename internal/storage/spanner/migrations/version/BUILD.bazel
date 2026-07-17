@@ -40,6 +40,10 @@ go_library(
     ],
     importpath = "xmanager_cloud/internal/storage/spanner/migrations/version",
     visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_api//iterator",
+    ],
 )
 
 compat_go_test(

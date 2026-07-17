@@ -105,7 +105,7 @@ func TestActiveHealthCheck(t *testing.T) {
 		{
 			name: "redis_ping_error",
 			setupSpanner: func(t *testing.T) *spanner.Client {
-				return setupSpannerWithVersion(t, version.EssMigrationVersion(), false)
+				return setupSpannerWithVersion(t, version.EssExpectedSchemaVersion(), false)
 			},
 			setupTq: func() TaskQueueClient {
 				return &fakeTaskQueueClient{PingErr: fmt.Errorf("fake redis error")}
@@ -116,7 +116,7 @@ func TestActiveHealthCheck(t *testing.T) {
 		{
 			name: "all_valid",
 			setupSpanner: func(t *testing.T) *spanner.Client {
-				return setupSpannerWithVersion(t, version.EssMigrationVersion(), false)
+				return setupSpannerWithVersion(t, version.EssExpectedSchemaVersion(), false)
 			},
 			setupTq: func() TaskQueueClient {
 				return &fakeTaskQueueClient{}
@@ -134,7 +134,7 @@ func TestActiveHealthCheck(t *testing.T) {
 		{
 			name: "spanner_version_older",
 			setupSpanner: func(t *testing.T) *spanner.Client {
-				return setupSpannerWithVersion(t, version.EssMigrationVersion()-1, false)
+				return setupSpannerWithVersion(t, version.EssExpectedSchemaVersion()-1, false)
 			},
 			setupTq:  func() TaskQueueClient { return &fakeTaskQueueClient{} },
 			wantCode: http.StatusInternalServerError,
@@ -143,7 +143,7 @@ func TestActiveHealthCheck(t *testing.T) {
 		{
 			name: "spanner_version_dirty",
 			setupSpanner: func(t *testing.T) *spanner.Client {
-				return setupSpannerWithVersion(t, version.EssMigrationVersion(), true)
+				return setupSpannerWithVersion(t, version.EssExpectedSchemaVersion(), true)
 			},
 			setupTq:  func() TaskQueueClient { return &fakeTaskQueueClient{} },
 			wantCode: http.StatusInternalServerError,
@@ -162,7 +162,7 @@ func TestActiveHealthCheck(t *testing.T) {
 		{
 			name: "spanner_version_newer",
 			setupSpanner: func(t *testing.T) *spanner.Client {
-				return setupSpannerWithVersion(t, version.EssMigrationVersion()+1, false)
+				return setupSpannerWithVersion(t, version.EssExpectedSchemaVersion()+1, false)
 			},
 			setupTq:  func() TaskQueueClient { return &fakeTaskQueueClient{} },
 			wantCode: http.StatusOK,

@@ -27,6 +27,7 @@ import (
 	"golang/cmp/cmpopts/cmpopts"
 	"golang/google_api/option/option"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/storage/spanner/migrations/version"
 
 	databasepb "spanner/admin/database/v1/spanner_database_admin_go_proto"
 )
@@ -111,6 +112,14 @@ func TestSchemaSynchronization(t *testing.T) {
 			}
 			if dirtyMigrations || dirtyBaseline {
 				t.Errorf("Schema is dirty: migrations=%v, baseline=%v", dirtyMigrations, dirtyBaseline)
+			}
+
+			expectedVersion := version.EssExpectedSchemaVersion()
+			if tc.name == "xid" {
+				expectedVersion = version.XidExpectedSchemaVersion()
+			}
+			if int64(versionMigrations) != expectedVersion {
+				t.Errorf("Actual migration version %d does not match expected version %d", versionMigrations, expectedVersion)
 			}
 
 			// 4. Compare schemas.

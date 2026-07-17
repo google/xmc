@@ -32,6 +32,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//internal/logging",
+        "//internal/storage/spanner/migrations/version",
         "@com_google_cloud_go_spanner//:spanner",
         "@io_k8s_client_go//kubernetes",
         "@org_golang_google_api//iterator",

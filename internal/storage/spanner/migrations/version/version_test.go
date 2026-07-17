@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,13 +17,13 @@ package version
 import "testing"
 
 func TestMigrationVersions(t *testing.T) {
-	essVer := EssMigrationVersion()
-	if essVer < 6 {
-		t.Errorf("EssMigrationVersion() = %d; want >= 6", essVer)
+	essVer := EssExpectedSchemaVersion()
+	if essVer <= 0 {
+		t.Errorf("EssExpectedSchemaVersion() = %d; want > 0", essVer)
 	}
 
-	xidVer := XidMigrationVersion()
-	if xidVer < 1 {
-		t.Errorf("XidMigrationVersion() = %d; want >= 1", xidVer)
+	xidVer := XidExpectedSchemaVersion()
+	if xidVer <= 0 {
+		t.Errorf("XidExpectedSchemaVersion() = %d; want > 0", xidVer)
 	}
 }

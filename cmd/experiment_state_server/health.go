@@ -41,7 +41,7 @@ func activeHealthCheck(spClient *spanner.Client, xidClient xidgrpcpb.XidServiceC
 			if spClient == nil {
 				return fmt.Errorf("spanner client is nil")
 			}
-			return commonhealth.CheckSpannerWithVersion(ctx, spClient, version.EssMigrationVersion())
+			return commonhealth.CheckSpannerWithVersion(ctx, spClient, version.EssExpectedSchemaVersion())
 		})
 
 		// 2. XID Service check

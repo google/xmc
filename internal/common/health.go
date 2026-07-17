@@ -22,6 +22,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
 	"k8s.io/client-go/kubernetes"
+	"xmanager_cloud/internal/storage/spanner/migrations/version"
 	"xmanager_cloud/logging/logging"
 )
 
@@ -54,36 +55,20 @@ func CheckSchemaMigrationVersion(ctx context.Context, sc *spanner.Client, expect
 	if sc == nil {
 		return fmt.Errorf("spanner: %w", ErrNilClient)
 	}
-
-	stmt := spanner.Statement{
-		SQL: "SELECT Version, Dirty FROM SchemaMigrations LIMIT 1",
-	}
-	iter := sc.Single().Query(ctx, stmt)
-	defer iter.Stop()
-
-	row, err := iter.Next()
-	if err == iterator.Done {
-		return fmt.Errorf("no migration records found in SchemaMigrations table")
-	}
+	versionVal, dirty, err := version.QueryCurrentVersion(ctx, sc)
 	if err != nil {
-		return fmt.Errorf("failed to query SchemaMigrations: %w", err)
-	}
-
-	var version int64
-	var dirty bool
-	if err := row.Columns(&version, &dirty); err != nil {
-		return fmt.Errorf("failed to parse SchemaMigrations columns: %w", err)
+		return err
 	}
 
 	if dirty {
-		return fmt.Errorf("schema migration is in a dirty state at version %d", version)
+		return fmt.Errorf("schema migration is in a dirty state at version %d", versionVal)
 	}
 
-	if version < expectedVersion {
-		return fmt.Errorf("schema version %d is older than expected version %d", version, expectedVersion)
+	if versionVal < expectedVersion {
+		return fmt.Errorf("schema version %d is older than expected version %d", versionVal, expectedVersion)
 	}
 
-	logging.Debug(ctx, "Schema migration version check completed successfully (version: %d)", version)
+	logging.Debug(ctx, "Schema migration version check completed successfully (version: %d)", versionVal)
 	return nil
 }
 

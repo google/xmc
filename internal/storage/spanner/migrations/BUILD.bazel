@@ -95,6 +95,7 @@ compat_go_test(
         "//internal/compat/cmpopts",
         "//internal/storage/spanner/emulator",
         "//internal/storage/spanner/migrations/testing",
+        "//internal/storage/spanner/migrations/version",
         "@com_github_golang_migrate_migrate_v4//source/iofs",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_api//option",
