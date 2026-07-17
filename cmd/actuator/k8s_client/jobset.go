@@ -842,14 +842,14 @@ func buildGCSVolumeSource(gcs *esspb.GcsVolumeSource) *corev1.CSIVolumeSource {
 }
 
 func buildHostPathVolumeSource(hp *esspb.HostPathVolumeSource) *corev1.HostPathVolumeSource {
-	var hpType corev1.HostPathType
-	if hp.GetType() != "" {
-		hpType = corev1.HostPathType(hp.GetType())
-	}
-	return &corev1.HostPathVolumeSource{
+	src := &corev1.HostPathVolumeSource{
 		Path: hp.GetPath(),
-		Type: &hpType,
 	}
+	if hp.GetType() != "" {
+		hpType := corev1.HostPathType(hp.GetType())
+		src.Type = &hpType
+	}
+	return src
 }
 
 func buildEmptyDirVolumeSource(ed *esspb.EmptyDirVolumeSource) *corev1.EmptyDirVolumeSource {

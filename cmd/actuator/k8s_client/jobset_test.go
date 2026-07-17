@@ -2056,6 +2056,7 @@ func createWorkUnitWithVolumesAndMounts() *esspb.WorkUnit {
 		{Name: "gcs-data", Source: &esspb.Volume_Gcs{Gcs: &esspb.GcsVolumeSource{Bucket: "gs://my-bucket", ReadOnly: proto.Bool(false), MountOptions: []string{"implicit-dirs"}}}},
 		{Name: "gcs-data-nil", Source: &esspb.Volume_Gcs{Gcs: &esspb.GcsVolumeSource{Bucket: "gs://my-bucket-nil"}}},
 		{Name: "host-data", Source: &esspb.Volume_HostPath{HostPath: &esspb.HostPathVolumeSource{Path: "/tmp/host", Type: "Directory"}}},
+		{Name: "host-data-nil", Source: &esspb.Volume_HostPath{HostPath: &esspb.HostPathVolumeSource{Path: "/tmp/host-nil"}}},
 		{Name: "sec-data-zero", Source: &esspb.Volume_Secret{Secret: &esspb.SecretVolumeSource{SecretName: "my-secret-zero", DefaultMode: proto.Int32(0), Optional: proto.Bool(true)}}},
 		{Name: "sec-data-nil", Source: &esspb.Volume_Secret{Secret: &esspb.SecretVolumeSource{SecretName: "my-secret-nil"}}},
 		{Name: "cm-data-zero", Source: &esspb.Volume_ConfigMap{ConfigMap: &esspb.ConfigMapVolumeSource{Name: "my-cm-zero", DefaultMode: proto.Int32(0), Optional: proto.Bool(false)}}},
@@ -2087,8 +2088,11 @@ func verifyCustomVolumes(t *testing.T, volumes []corev1.Volume) {
 	if csi := volMap["gcs-data-nil"].CSI; csi == nil || csi.Driver != "gcs.csi.storage.gke.io" || csi.VolumeAttributes["bucketName"] != "my-bucket-nil" || csi.ReadOnly != nil {
 		t.Errorf("Expected gcs-data-nil CSI volume with ReadOnly nil, got: %+v", csi)
 	}
-	if hp := volMap["host-data"].HostPath; hp == nil || hp.Path != "/tmp/host" {
-		t.Errorf("Expected host-data HostPath volume, got: %+v", hp)
+	if hp := volMap["host-data"].HostPath; hp == nil || hp.Path != "/tmp/host" || hp.Type == nil || *hp.Type != "Directory" {
+		t.Errorf("Expected host-data HostPath volume with Type 'Directory', got: %+v", hp)
+	}
+	if hp := volMap["host-data-nil"].HostPath; hp == nil || hp.Path != "/tmp/host-nil" || hp.Type != nil {
+		t.Errorf("Expected host-data-nil HostPath volume with Type nil, got: %+v", hp)
 	}
 	if sec := volMap["sec-data-zero"].Secret; sec == nil || sec.SecretName != "my-secret-zero" || sec.DefaultMode == nil || *sec.DefaultMode != 0 || sec.Optional == nil || !*sec.Optional {
 		t.Errorf("Expected sec-data-zero Secret volume with DefaultMode 0 and Optional true, got: %+v", sec)
