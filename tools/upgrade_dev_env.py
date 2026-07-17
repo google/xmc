@@ -195,7 +195,9 @@ def parse_yaml_vars(config_path: Path) -> dict[str, Any]:
     return parse_yaml_vars_line_fallback(content)
 
 
-def load_config(config_file: str, run_migrations: bool = False, git_ref: Optional[str] = None) -> Config:
+def load_config(
+    config_file: str, run_migrations: bool = False, git_ref: Optional[str] = None
+) -> Config:
     """Loads YAML config file and merges with environment variable overrides.
 
     Args:
@@ -349,7 +351,9 @@ def step_checkout(git_ref: Optional[str], original_args: list[str]) -> None:
     target_commit_sha = target_commit.stdout.strip()
 
     if current_head == target_commit_sha:
-        log_success(f"Repository is already checked out at git ref '{git_ref}' ({target_commit_sha}).")
+        log_success(
+            f"Repository is already checked out at git ref '{git_ref}' ({target_commit_sha})."
+        )
         return
 
     status_out = run_cmd(
@@ -588,8 +592,16 @@ def step_images(config: Config) -> None:
     ]
 
     for name, target in targets:
-        log_info(f"Pushing {name} image...")
+        log_info(f"Pushing {name} image (latest)...")
         run_cmd(["bazel", "run", target], env=env)
+        if config.git_ref:
+            sanitized_ref = re.sub(r"[^a-zA-Z0-9_.-]", "-", config.git_ref).lstrip(".-")
+            if not sanitized_ref:
+                sanitized_ref = "unknown"
+            log_info(f"Pushing {name} image ({sanitized_ref})...")
+            git_ref_env = env.copy()
+            git_ref_env["BUILD_TAG"] = sanitized_ref
+            run_cmd(["bazel", "run", target], env=git_ref_env)
 
     ref_str = config.git_ref or "current branch state"
     log_success(f"All 6 XMC service container images compiled and pushed from {ref_str}.")

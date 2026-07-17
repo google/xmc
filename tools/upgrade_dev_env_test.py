@@ -263,6 +263,37 @@ class TestStepSubprocesses(unittest.TestCase):
         upgrade_dev_env.step_images(self.config)
         self.assertEqual(mock_run.call_count, 6)
 
+    @mock.patch("tools.upgrade_dev_env.run_cmd")
+    def test_step_images_with_git_ref(self, mock_run):
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        config_with_ref = upgrade_dev_env.Config(
+            project_id="proj-123",
+            deployment_name="deploy-456",
+            region="us-central1",
+            environment="dev",
+            namespace="xmc",
+            registry="us-docker.pkg.dev/proj-123/xmc",
+            acr_target="us-docker.pkg.dev/proj-123/xmc",
+            gke_cluster="xmc-deploy-456-dev",
+            config_path="deploy/ctk_v2/xmanager-cloud-deployment.yaml",
+            git_ref="feature/tag/v1.0.0",
+        )
+        upgrade_dev_env.step_images(config_with_ref)
+        self.assertEqual(mock_run.call_count, 12)
+
+        # We expect 12 calls: 6 with no BUILD_TAG env (which defaults to latest)
+        # and 6 with BUILD_TAG="feature-tag-v1.0.0"
+        calls = mock_run.call_args_list
+        latest_calls = [c for c in calls if "BUILD_TAG" not in c[1].get("env", {})]
+        ref_calls = [
+            c for c in calls if c[1].get("env", {}).get("BUILD_TAG") == "feature-tag-v1.0.0"
+        ]
+
+        self.assertEqual(len(latest_calls), 6)
+        self.assertEqual(len(ref_calls), 6)
+
     @mock.patch.object(Path, "is_dir", return_value=True)
     @mock.patch("tools.upgrade_dev_env.run_cmd")
     def test_step_app(self, mock_run, _mock_dir):
@@ -383,13 +414,18 @@ class TestCheckoutStep(unittest.TestCase):
         with self.assertRaises(SystemExit):
             upgrade_dev_env.step_checkout("v1", [])
         mock_error.assert_called_once()
-        self.assertIn("Git working directory has uncommitted modifications", mock_error.call_args[0][0])
+        self.assertIn(
+            "Git working directory has uncommitted modifications",
+            mock_error.call_args[0][0],
+        )
 
     @mock.patch("os.execv")
     @mock.patch("tools.upgrade_dev_env.run_cmd")
     @mock.patch("tools.upgrade_dev_env.log_success")
     @mock.patch("pathlib.Path.is_file")
-    def test_step_checkout_success_reexecute(self, mock_is_file, mock_log_success, mock_run, mock_exec):
+    def test_step_checkout_success_reexecute(
+        self, mock_is_file, mock_log_success, mock_run, mock_exec
+    ):
         mock_run.side_effect = [
             subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
             subprocess.CompletedProcess(args=[], returncode=0, stdout="head-sha\n", stderr=""),
@@ -398,10 +434,10 @@ class TestCheckoutStep(unittest.TestCase):
             subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
         ]
         mock_is_file.return_value = True
-        
+
         original_args = ["-c", "cfg.yaml", "--git-ref", "v1", "-s", "images"]
         upgrade_dev_env.step_checkout("v1", original_args)
-        
+
         mock_run.assert_any_call(["git", "checkout", "v1"])
         mock_exec.assert_called_once()
         self.assertEqual(mock_exec.call_args[0][0], sys.executable)
