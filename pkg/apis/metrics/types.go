@@ -18,14 +18,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"regexp"
 
 	pb "xmanager_cloud/api/protos/metrics"
-)
-
-var (
-	// metricNameRegex enforces metric names match ^[a-zA-Z0-9_\.\-\/]{1,255}$
-	metricNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_\.\-\/]{1,255}$`)
 )
 
 // Metric wraps the generated proto Metric to add validation methods.
@@ -38,7 +32,7 @@ func (m *Metric) IsValid() error {
 	if m == nil || m.Metric == nil {
 		return errors.New("metric is nil")
 	}
-	if !metricNameRegex.MatchString(m.MetricName) {
+	if !isValidMetricName(m.MetricName) {
 		return fmt.Errorf("invalid metric name %q: must match regex ^[a-zA-Z0-9_\\.\\-\\/]{1,255}$", m.MetricName)
 	}
 	if math.IsNaN(m.MetricValue) || math.IsInf(m.MetricValue, 0) {
@@ -49,3 +43,21 @@ func (m *Metric) IsValid() error {
 	}
 	return nil
 }
+
+func isValidMetricName(name string) bool {
+	if len(name) < 1 || len(name) > 255 {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if (c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			c == '_' || c == '.' || c == '-' || c == '/' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
