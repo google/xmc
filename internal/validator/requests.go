@@ -17,6 +17,7 @@ package validator
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"task/go/status"
@@ -508,8 +509,23 @@ func validateResourceSet(res *essmsgpb.ResourceSet, prefix string) error {
 		if tpu.GetType() == "" {
 			return fmt.Errorf("%s.tpu_resources.type cannot be empty: %w", prefix, status.ErrInvalidArgument)
 		}
-		if tpu.GetTopology() == "" {
-			return fmt.Errorf("%s.tpu_resources.topology cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		if err := validateTPUTopology(tpu.GetTopology(), prefix); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateTPUTopology verifies that a TPU topology string has valid positive integer dimensions.
+func validateTPUTopology(topology string, prefix string) error {
+	if topology == "" {
+		return fmt.Errorf("%s.tpu_resources.topology cannot be empty: %w", prefix, status.ErrInvalidArgument)
+	}
+	dims := strings.Split(topology, "x")
+	for _, dim := range dims {
+		val, err := strconv.Atoi(dim)
+		if err != nil || val <= 0 {
+			return fmt.Errorf("%s.tpu_resources.topology %q is invalid (each dimension must be a positive integer): %w", prefix, topology, status.ErrInvalidArgument)
 		}
 	}
 	return nil

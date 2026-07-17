@@ -29,14 +29,14 @@ import (
 
 // Config holds the configuration for the XidService server.
 type Config struct {
-	Port                      string
-	SpannerDatabaseName       string
-	QuotaProjectID            string
-	Audience                  string
-	IAPIssuer                 string
-	HTTPAudience              string
-	GRPCAudience              string
-	DisableAuthentication     bool
+	Port                  string
+	SpannerDatabaseName   string
+	QuotaProjectID        string
+	Audience              string
+	IAPIssuer             string
+	HTTPAudience          string
+	GRPCAudience          string
+	DisableAuthentication bool
 }
 
 var cfg Config

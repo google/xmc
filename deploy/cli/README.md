@@ -8,7 +8,7 @@
 
 ## Installation
 
-The script `install_xmanager.sh` automates:
+The script `install_xmanager.py` automates:
 1. Creating a Python virtual environment.
 2. Cloning the official `xmanager` library (`xm-cloud` branch) and `googleapis` repository.
 3. Overwriting outdated gRPC proto definitions inside `xmanager` with the fresh XMC API protos.
@@ -22,7 +22,7 @@ The script `install_xmanager.sh` automates:
 
 If you are running the script from a local clone of the `xmc` repository:
 ```bash
-./install_xmanager.sh
+python3 install_xmanager.py
 ```
 This automatically locates your local `api/protos` definitions and builds them inside `./venv`.
 
@@ -31,7 +31,7 @@ This automatically locates your local `api/protos` definitions and builds them i
 The script accepts several command-line flags to customize the installation:
 
 ```bash
-./install_xmanager.sh [options]
+python3 install_xmanager.py [options]
 
 Options:
   --protos-loc <url_or_path>     Location of XMC protos. Can be a local directory path or a 
@@ -44,7 +44,7 @@ Options:
 
 #### Example: Installing with Remote Protos
 ```bash
-./install_xmanager.sh --venv ./my_env --protos-loc https://github.com/google/xmc/tree/main/api/protos
+python3 install_xmanager.py --venv ./my_env --protos-loc https://github.com/google/xmc/tree/main/api/protos
 ```
 
 ### Activating the Virtual Environment
