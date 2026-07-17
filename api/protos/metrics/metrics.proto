@@ -1,0 +1,32 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package cloud.xmanager.v1;
+
+option go_package = "xmanager_cloud/api/protos/metrics;metrics";
+option java_multiple_files = true;
+
+// Metric represents a single numeric measurement logged in XMC.
+message Metric {
+  string xid = 1;
+  int64 work_unit_id = 2;
+  int64 execution_id = 3;
+  int32 replica_id = 4;
+  string metric_name = 5;
+  double metric_value = 6;
+  int64 step = 7;
+  int64 timestamp = 8; // Timestamp in microseconds
+}
