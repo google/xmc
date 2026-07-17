@@ -32,30 +32,29 @@ import (
 	"syscall"
 	"time"
 
-	"go/google"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/rs/cors"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/cors/cors"
-	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
-	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
-	"golang/google_api/option/option"
-	"golang/grpc/credentials/credentials"
-	"golang/grpc/credentials/insecure/insecure"
-	"golang/grpc/grpc"
-	"golang/grpc/health/health"
-	"golang/grpc/reflection/reflection"
+	"google.golang.org/api/cloudidentity/v1beta1"
+	"google.golang.org/api/option"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/reflection"
 	healthgrpc "grpc_proto/health_go_grpc"
 	healthpb "grpc_proto/health_go_proto"
-	authz "xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	gwpb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_gateway_proto"
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
 	"xmanager_cloud/experiment_state_server/server/server"
-	"xmanager_cloud/logging/logging"
+	authz "xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/security/keyreloader"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
-	"xmanager_cloud/security/keyreloader"
 	ss "xmanager_cloud/storage/spanner/spanner"
 	tq "xmanager_cloud/task_queue/client"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
+	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 //go:embed xmanager_cloud/experiment_state_server/static/*
@@ -72,7 +71,6 @@ func incomingHeaderMatcher(key string) (string, bool) {
 
 // main starts the gRPC server and handles graceful shutdown.
 func main() {
-	google.Init()
 
 	// 1. Load configuration
 	cfg := config.Load()
@@ -137,9 +135,9 @@ func main() {
 
 	var transportCreds credentials.TransportCredentials
 	if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
-		reloader, err := keyreloader.NewKeyPairReloader(cfg.TLSCertFile, cfg.TLSKeyFile)
-		if err != nil {
-			logging.Fatal(ctx, "failed to load initial TLS certs", "error", err)
+		reloader, rErr := keyreloader.NewKeyPairReloader(cfg.TLSCertFile, cfg.TLSKeyFile)
+		if rErr != nil {
+			logging.Fatal(ctx, "failed to load initial TLS certs", "error", rErr)
 		}
 
 		logging.Info(ctx, "Starting gRPC server with Hot-Reload TLS", "cert", cfg.TLSCertFile)
@@ -193,8 +191,8 @@ func main() {
 	logging.Info(ctx, "gRPC server listening", "addr", lis.Addr())
 
 	go func() {
-		if err := s.Serve(lis); err != nil {
-			logging.Fatal(ctx, "failed to serve", "error", err)
+		if sErr := s.Serve(lis); sErr != nil {
+			logging.Fatal(ctx, "failed to serve", "error", sErr)
 		}
 	}()
 

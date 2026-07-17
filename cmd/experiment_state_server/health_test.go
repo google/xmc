@@ -22,8 +22,8 @@ import (
 	"testing"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/internal/storage/spanner/emulator"
+	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 type fakeXidClient struct {

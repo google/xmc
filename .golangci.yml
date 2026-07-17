@@ -1,0 +1,85 @@
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: false
+
+linters:
+  enable:
+    - gofmt
+    - govet
+    - staticcheck
+    - errcheck
+    - ineffassign
+    - unused
+    - misspell
+
+linters-settings:
+  lll:
+    line-length: 100
+  gofmt:
+    simplify: true
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+  revive:
+    rules:
+      - name: exported
+      - name: package-comments
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+
+issues:
+  exclude-dirs:
+    - internal/compat
+    - api/filter
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    - path: .*_compat\.go
+      linters:
+        - gofmt
+    - path: .*test_utils.*\.go
+      linters:
+        - unused
+        - errcheck
+    - path: internal/storage/spanner/.*
+      linters:
+        - govet
+      text: "shadow:"
+    - path: internal/storage/spanner/.*
+      linters:
+        - errcheck
+        - unused
+    - path: cmd/actuator/.*
+      linters:
+        - govet
+      text: "shadow:"
+    - path: cmd/actuator/.*
+      linters:
+        - errcheck
+        - unused
+    - path: cmd/experiment_state_server/.*
+      linters:
+        - govet
+      text: "shadow:"
+    - path: cmd/experiment_state_server/.*
+      linters:
+        - errcheck
+    - path: cmd/log_monitor/.*
+      linters:
+        - errcheck
+    - path: pkg/auth/oauth2/.*
+      linters:
+        - errcheck
+    - path: internal/query_generator/querytools/.*
+      linters:
+        - errcheck
+    - path: cmd/reconciler/.*
+      linters:
+        - errcheck
+    - linters:
+        - staticcheck
+      text: "SA1019:"

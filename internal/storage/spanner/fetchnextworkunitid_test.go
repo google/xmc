@@ -18,7 +18,7 @@ import (
 	"testing"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 )
 
 func TestFetchNextWorkUnitIDTransaction(t *testing.T) {

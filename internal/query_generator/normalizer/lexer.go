@@ -64,7 +64,6 @@ func Tokenize(input string) []Token {
 type lexer struct {
 	input string
 	pos   int
-	width int
 }
 
 var keywords = map[string]bool{

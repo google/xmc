@@ -1,3 +1,5 @@
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
+
 # Copyright 2025 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,9 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-
-go_library(
+compat_go_library(
     name = "client",
     srcs = [
         "client.go",
@@ -25,10 +25,10 @@ go_library(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue:task_go_proto",
-        "//internal/common:interfaces",
-        "//internal/kubernetes/common:constants",
+        "//internal/common/interfaces",
+        "//internal/kubernetes/common/constants",
         "//internal/logging",
-        "//internal/security:securitytest",
+        "//internal/security/securitytest",
         "//internal/task_queue_redis:redisclient",
         "@com_github_google_uuid//:uuid",
         "@com_github_tink_crypto_tink_go_v2//jwt",
@@ -41,15 +41,15 @@ go_library(
     ],
 )
 
-go_test(
+compat_go_test(
     name = "task_queue_test",
     srcs = ["client_test.go"],
     embed = [":task_queue"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue:task_go_proto",
-        "//internal/common:interfaces",
-        "//internal/security:securitytest",
+        "//internal/common/interfaces",
+        "//internal/security/securitytest",
         "@com_github_google_go_cmp//cmp",
         "@com_github_tink_crypto_tink_go_v2//jwt",
         "@org_golang_google_protobuf//encoding/protojson",
@@ -58,7 +58,7 @@ go_test(
     ],
 )
 
-go_library(
+compat_go_library(
     name = "task_queue",
     srcs = [
         "client.go",
@@ -69,10 +69,10 @@ go_library(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue:task_go_proto",
-        "//internal/common:interfaces",
-        "//internal/kubernetes/common:constants",
+        "//internal/common/interfaces",
+        "//internal/kubernetes/common/constants",
         "//internal/logging",
-        "//internal/security:securitytest",
+        "//internal/security/securitytest",
         "//internal/task_queue_redis:redisclient",
         "@com_github_google_uuid//:uuid",
         "@com_github_tink_crypto_tink_go_v2//jwt",

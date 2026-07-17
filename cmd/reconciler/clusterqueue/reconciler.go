@@ -18,17 +18,17 @@ import (
 	"context"
 	"sync"
 
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/controller/controller"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/handler/handler"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/source/source"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 // NameCache holds list of ClusterQueue names.
@@ -106,5 +106,5 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) err
 	if err != nil {
 		return err
 	}
-	return c.Watch(&source.Kind{Type: &v1beta1.ClusterQueue{}}, &handler.EnqueueRequestForObject{}, predicate.ResourceVersionChangedPredicate{})
+	return c.Watch(source.Kind(mgr.GetCache(), &v1beta1.ClusterQueue{}, &handler.TypedEnqueueRequestForObject[*v1beta1.ClusterQueue]{}, &predicate.TypedResourceVersionChangedPredicate[*v1beta1.ClusterQueue]{}))
 }

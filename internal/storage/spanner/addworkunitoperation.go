@@ -24,9 +24,9 @@ import (
 	anypb "protobuf/any_go_proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
-	"xmanager_cloud/validator/validator"
 )
 
 // AddWorkUnitOperation adds an operation to a work unit.
@@ -44,7 +44,7 @@ func (s *Storage) AddWorkUnitOperation(ctx context.Context, xid int64, wid int64
 		}
 
 		operation = &longrunningpb.Operation{
-			Name:     validator.ConstructOperationName(xid, wid, uuid.New()),
+			Name:     validator.ConstructOperationName(xid, wid, uuid.NewString()),
 			Metadata: anyMetadata,
 			Done:     false,
 		}

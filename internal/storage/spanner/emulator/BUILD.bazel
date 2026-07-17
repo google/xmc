@@ -1,3 +1,5 @@
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
+
 # Copyright 2025 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,8 +13,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 genrule(
     name = "copy_ess_schema",
@@ -42,7 +42,7 @@ genrule(
     cmd = "cp $< $@",
 )
 
-go_library(
+compat_go_library(
     name = "emulator",
     srcs = ["emulator.go"],
     embedsrcs = [
@@ -66,7 +66,7 @@ go_library(
     ],
 )
 
-go_test(
+compat_go_test(
     name = "emulator_test",
     srcs = ["emulator_test.go"],
     embed = [":emulator"],

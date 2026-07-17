@@ -19,12 +19,12 @@ import (
 	"net/url"
 	"time"
 
-	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fmpb "protobuf/field_mask_go_proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/kubernetes/common/jobsetutil"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/kubernetes/common/jobsetutil"
+	"xmanager_cloud/internal/logging"
 	storagepkg "xmanager_cloud/storage/storage"
 
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"

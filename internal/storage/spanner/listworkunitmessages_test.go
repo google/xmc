@@ -22,7 +22,7 @@ import (
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/storage/storage"
 
 	fieldmaskpb "protobuf/field_mask_go_proto"

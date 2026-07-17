@@ -25,10 +25,10 @@ import (
 	rpcstatuspb "rpc/status_go_proto"
 	statusutils "task/go/status"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/storage/storage"
 	ee "xmanager_cloud/toollibs/execution_environments/executionenvironments"
-	"xmanager_cloud/validator/validator"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -174,7 +174,7 @@ func newExperimentStatus(name string) *msgpb.ExperimentStatus {
 	return &msgpb.ExperimentStatus{
 		ActiveState:      msgpb.ExperimentStatus_ACTIVE,
 		LaunchState:      msgpb.ExperimentStatus_LAUNCHING,
-		LaunchId:         uuid.New(),
+		LaunchId:         uuid.NewString(),
 		ChildStateCounts: []*msgpb.ExperimentStatus_StateCount{},
 		StructuredStatusMessage: &msgpb.StructuredMessage{
 			Source:         msgpb.StructuredMessage_XMANAGER_CLIENT,

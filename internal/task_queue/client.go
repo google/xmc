@@ -20,7 +20,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,10 +29,10 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	"xmanager_cloud/common/interfaces"
-	"xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/task_queue_redis/redisclient"
+	"xmanager_cloud/internal/common/interfaces"
+	"xmanager_cloud/internal/kubernetes/common/constants"
+	"xmanager_cloud/internal/logging"
+	redisclient "xmanager_cloud/internal/task_queue_redis"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -46,8 +45,6 @@ const (
 	// DefaultSignatureTTLSeconds is the default signature TTL in seconds.
 	DefaultSignatureTTLSeconds = 3600
 )
-
-var osHostname = os.Hostname
 
 type Client struct {
 	invokerSA        string

@@ -24,12 +24,12 @@ import (
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
-	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/validator/validator"
 )
 
 func TestListArtifacts_HappyPath(t *testing.T) {

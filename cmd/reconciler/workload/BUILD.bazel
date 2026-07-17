@@ -61,7 +61,7 @@ compat_go_test(
         "//internal/compat/cmp",
         "//internal/compat/field_mask",
         "//internal/compat/protocmp",
-        "//internal/kubernetes/common:constants",
+        "//internal/kubernetes/common/constants",
         "//internal/storage",
         "@com_github_prometheus_client_golang//prometheus/testutil",
         "@io_k8s_api//core/v1:core",

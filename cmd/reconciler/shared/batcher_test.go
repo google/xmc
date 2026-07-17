@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"golang/cmp/cmp"
 	"golang/cmp/cmpopts/cmpopts"
-	"golang/prometheus/client/prometheus/prometheus"
-	"golang/prometheus/client/prometheus/testutil/testutil"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	metricspb "prometheus_model/metrics_go_proto"
 	"task/go/status"

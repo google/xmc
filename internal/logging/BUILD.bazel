@@ -21,14 +21,13 @@ go_library(
         "operation.go",
         "resources.go",
     ],
-    importpath = "xmanager_cloud/logging/logging",  # keep
+    importpath = "xmanager_cloud/internal/logging",
     visibility = ["//visibility:public"],
     deps = [
-        # keep
         "//internal/compat/log",
-        "//internal/kubernetes/common:constants",
         "//internal/compat/metadata",
         "//internal/compat/uuid",
+        "//internal/kubernetes/common/constants",
         "//internal/validator",
     ],
 )
@@ -44,6 +43,6 @@ go_test(
     deps = [
         "//internal/compat/cmp",
         "//internal/compat/metadata",
-        "//internal/kubernetes/common:constants",
+        "//internal/kubernetes/common/constants",
     ],
 )

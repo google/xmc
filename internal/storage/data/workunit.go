@@ -20,7 +20,7 @@ import (
 	fieldmaskpb "protobuf/field_mask_go_proto"
 	"task/go/status"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 )
 
 // MergeWorkUnits merges an updated WorkUnit proto message into a current WorkUnit proto

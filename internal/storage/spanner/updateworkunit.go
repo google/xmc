@@ -24,11 +24,11 @@ import (
 	"golang/protobuf/v2/proto/proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/validator/validator"
 )
 
 // UpdateWorkUnit updates a work unit with the given update mask. It returns both the original and

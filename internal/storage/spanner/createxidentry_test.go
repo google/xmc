@@ -18,7 +18,7 @@ import (
 	"testing"
 
 	"golang/protobuf/v2/proto/proto"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 

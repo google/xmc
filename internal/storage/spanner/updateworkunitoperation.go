@@ -23,11 +23,11 @@ import (
 	"golang/protobuf/v2/encoding/prototext/prototext"
 	"golang/protobuf/v2/proto/proto"
 	longrunningpb "longrunning/operations_go_proto"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/validator/validator"
 )
 
 // UpdateWorkUnitOperation updates the status of an operation. It returns the updated operation, or

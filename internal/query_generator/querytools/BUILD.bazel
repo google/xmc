@@ -1,0 +1,41 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "querytools",
+    srcs = [
+        "query_generator.go",
+        "query_generator_test_tables.go",
+        "unnest.go",
+    ],
+    importpath = "xmanager_cloud/internal/query_generator/querytools",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//api/filter:filter_expression_go_proto",
+        "//api/filter/go/filtervisitor",
+        "//internal/compat/log",
+        "//internal/compat/proto",
+        "//internal/compat/safesql",
+        "//internal/compat/spanner",
+        "//internal/compat/status",
+        "//internal/query_generator/equalityvisitor",
+        "//internal/query_generator/filter",
+    ],
+)
+
+go_test(
+    name = "querytools_test",
+    srcs = ["query_generator_test.go"],
+    embed = [":querytools"],
+    deps = [
+        "//api/filter:filter_expression_go_proto",
+        "//api/filter/go/filter",
+        "//api/filter/go/filtervisitor",
+        "//internal/compat/cmp",
+        "//internal/compat/cmpopts",
+        "//internal/compat/protocmp",
+        "//internal/compat/safesql",
+        "//internal/compat/spanner",
+        "//internal/compat/status",
+        "//internal/query_generator/predicate",
+    ],
+)

@@ -1,0 +1,25 @@
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
+
+compat_go_library(
+    name = "jobsetutil",
+    srcs = ["jobsetutil.go"],
+    importpath = "xmanager_cloud/internal/kubernetes/common/jobsetutil",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_sigs_jobset//api/jobset/v1alpha2",
+    ],
+)
+
+compat_go_test(
+    name = "jobsetutil_test",
+    srcs = ["jobsetutil_test.go"],
+    embed = [":jobsetutil"],
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//internal/compat/cmp",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_sigs_jobset//api/jobset/v1alpha2",
+    ],
+)

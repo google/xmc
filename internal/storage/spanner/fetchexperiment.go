@@ -20,10 +20,10 @@ import (
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/experimentschema"
-	"xmanager_cloud/validator/validator"
 )
 
 // FetchExperiment retrieves a single Experiment from storage by its unique numerical ID.

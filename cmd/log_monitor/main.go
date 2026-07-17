@@ -24,13 +24,11 @@ import (
 	"sync"
 	"syscall"
 
-	"go/google"
-	"golang/cloud_google_com/go/pubsub/v/v1/pubsub"
-	"xmanager_cloud/logging/logging"
+	"cloud.google.com/go/pubsub"
+	"xmanager_cloud/internal/logging"
 )
 
 func main() {
-	google.Init()
 
 	cfg, err := LoadConfig()
 	if err != nil {

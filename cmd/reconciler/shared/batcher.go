@@ -21,13 +21,13 @@ import (
 	"sync"
 	"time"
 
-	"golang/prometheus/client/prometheus/promauto/promauto"
-	"golang/prometheus/client/prometheus/prometheus"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/validator"
 	storagepkg "xmanager_cloud/storage/storage"
-	"xmanager_cloud/validator/validator"
 )
 
 // UpdateSource indicates the origin of a WorkUnitExecutionUpdate.

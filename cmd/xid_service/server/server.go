@@ -17,7 +17,7 @@
 package server
 
 import (
-	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/xid_service/config"
 )

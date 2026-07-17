@@ -22,24 +22,24 @@ import (
 	"regexp"
 	"time"
 
-	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
-	"golang/prometheus/client/prometheus/promauto/promauto"
-	"golang/prometheus/client/prometheus/prometheus"
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/controller/controller"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/event/event"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/handler/handler"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/source/source"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/kubernetes/common/labels"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
-	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/validator/validator"
 
 	fmpb "protobuf/field_mask_go_proto"
 	timestamppb "protobuf/timestamp_go_proto"
@@ -100,29 +100,25 @@ func parseXMCLabelsFromPodSet(ctx context.Context, workload *v1beta1.Workload) (
 	return labels.ParseXMCLabels(workload.Spec.PodSets[0].Template.Labels)
 }
 
-func workloadPredicate(ctx context.Context) predicate.Predicate {
-	return predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool {
-			ctx := logging.Strip(ctx)
-			if e.Object == nil {
-				logging.Error(ctx, "CreateEvent object is nil")
-				return false
-			}
-			workload, ok := e.Object.(*v1beta1.Workload)
-			if !ok {
-				logging.Error(ctx, "Predicate received unexpected object type in CreateEvent", "type", fmt.Sprintf("%T", e.Object))
+func workloadPredicate(ctx context.Context) predicate.TypedPredicate[*v1beta1.Workload] {
+	return predicate.TypedFuncs[*v1beta1.Workload]{
+		CreateFunc: func(e event.TypedCreateEvent[*v1beta1.Workload]) bool {
+			strippedCtx := logging.Strip(ctx)
+			workload := e.Object
+			if workload == nil {
+				logging.Error(strippedCtx, "CreateEvent object is nil")
 				return false
 			}
 
-			return hasValidXMCLabels(ctx, workload)
+			return hasValidXMCLabels(strippedCtx, workload)
 		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
+		DeleteFunc: func(e event.TypedDeleteEvent[*v1beta1.Workload]) bool {
 			return false
 		},
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldWorkload, okOld := e.ObjectOld.(*v1beta1.Workload)
-			newWorkload, okNew := e.ObjectNew.(*v1beta1.Workload)
-			if !okOld || !okNew {
+		UpdateFunc: func(e event.TypedUpdateEvent[*v1beta1.Workload]) bool {
+			oldWorkload := e.ObjectOld
+			newWorkload := e.ObjectNew
+			if oldWorkload == nil || newWorkload == nil {
 				return false
 			}
 
@@ -137,14 +133,14 @@ func workloadPredicate(ctx context.Context) predicate.Predicate {
 				return false
 			}
 
-			ctx := logging.Strip(ctx)
-			if !hasValidXMCLabels(ctx, oldWorkload) || !hasValidXMCLabels(ctx, newWorkload) {
+			strippedCtx := logging.Strip(ctx)
+			if !hasValidXMCLabels(strippedCtx, oldWorkload) || !hasValidXMCLabels(strippedCtx, newWorkload) {
 				return false
 			}
 
 			return true
 		},
-		GenericFunc: func(e event.GenericEvent) bool {
+		GenericFunc: func(e event.TypedGenericEvent[*v1beta1.Workload]) bool {
 			return false
 		},
 	}
@@ -268,7 +264,7 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) err
 	if err != nil {
 		return err
 	}
-	return c.Watch(&source.Kind{Type: &v1beta1.Workload{}}, &handler.EnqueueRequestForObject{}, workloadPredicate(ctx))
+	return c.Watch(source.Kind(mgr.GetCache(), &v1beta1.Workload{}, &handler.TypedEnqueueRequestForObject[*v1beta1.Workload]{}, workloadPredicate(ctx)))
 }
 
 func areWorkloadStatusEqual(old, new *v1beta1.Workload) bool {

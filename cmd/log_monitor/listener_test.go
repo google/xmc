@@ -18,11 +18,11 @@ import (
 	"testing"
 	"time"
 
-	"golang/cloud_google_com/go/pubsub/v/v1/pstest/pstest"
-	"golang/cloud_google_com/go/pubsub/v/v1/pubsub"
-	"golang/google_api/option/option"
-	"golang/grpc/credentials/insecure/insecure"
-	"golang/grpc/grpc"
+	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/pubsub/pstest"
+	"google.golang.org/api/option"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"xmanager_cloud/storage/storage"
 )
 

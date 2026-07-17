@@ -17,13 +17,13 @@ package server
 import (
 	"context"
 
-	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/storage/storage"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
+	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 // Server implements the generated pb.ExperimentStateServiceServer interface.

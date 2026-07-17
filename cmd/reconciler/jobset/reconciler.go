@@ -41,11 +41,11 @@ import (
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/source/source"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/kubernetes/common/constants"
+	constants "xmanager_cloud/internal/kubernetes/common/constants"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/kubernetes/common/labels"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/validator/validator"
 )
 
 var (
@@ -99,31 +99,26 @@ func hasValidXMCLabels(ctx context.Context, jobSet *v1alpha2.JobSet) bool {
 	return true
 }
 
-func jobSetPredicate(ctx context.Context) predicate.Predicate {
-	return predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool {
-			ctx := logging.Strip(ctx)
-
-			jobSet, ok := e.Object.(*v1alpha2.JobSet)
-			if !ok {
-				logging.Error(ctx, "Predicate received unexpected object type in CreateEvent", "type", fmt.Sprintf("%T", e.Object))
-				return true
+func jobSetPredicate(ctx context.Context) predicate.TypedPredicate[*v1alpha2.JobSet] {
+	return predicate.TypedFuncs[*v1alpha2.JobSet]{
+		CreateFunc: func(e event.TypedCreateEvent[*v1alpha2.JobSet]) bool {
+			strippedCtx := logging.Strip(ctx)
+			jobSet := e.Object
+			if jobSet == nil {
+				return false
 			}
-			return hasValidXMCLabels(ctx, jobSet)
+			return hasValidXMCLabels(strippedCtx, jobSet)
 		},
 
-		DeleteFunc: func(e event.DeleteEvent) bool {
+		DeleteFunc: func(e event.TypedDeleteEvent[*v1alpha2.JobSet]) bool {
 			return false
 		},
 
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldJobSet, ok := e.ObjectOld.(*v1alpha2.JobSet)
-			if !ok {
-				return true
-			}
-			newJobSet, ok := e.ObjectNew.(*v1alpha2.JobSet)
-			if !ok {
-				return true
+		UpdateFunc: func(e event.TypedUpdateEvent[*v1alpha2.JobSet]) bool {
+			oldJobSet := e.ObjectOld
+			newJobSet := e.ObjectNew
+			if oldJobSet == nil || newJobSet == nil {
+				return false
 			}
 
 			if oldJobSet.GetResourceVersion() == newJobSet.GetResourceVersion() {
@@ -144,23 +139,18 @@ func jobSetPredicate(ctx context.Context) predicate.Predicate {
 				return false
 			}
 
-			ctx := logging.Strip(ctx)
-			newManaged := hasValidXMCLabels(ctx, newJobSet)
-			oldManaged := hasValidXMCLabels(ctx, oldJobSet)
+			strippedCtx := logging.Strip(ctx)
+			newManaged := hasValidXMCLabels(strippedCtx, newJobSet)
+			oldManaged := hasValidXMCLabels(strippedCtx, oldJobSet)
 
-			// Both must be managed to trigger on updates (unless it's a creation/deletion which is handled elsewhere).
-			// If it wasn't managed before, we don't want to trigger on status updates.
-			// If it's not managed now, we don't care.
 			if !newManaged || !oldManaged {
 				return false
 			}
 
-			// Trigger on the start of deletion.
 			if oldJobSet.GetDeletionTimestamp() == nil && newJobSet.GetDeletionTimestamp() != nil {
 				return true
 			}
 
-			// If already deleting, do not trigger on subsequent updates.
 			if newJobSet.GetDeletionTimestamp() != nil {
 				return false
 			}
@@ -168,16 +158,13 @@ func jobSetPredicate(ctx context.Context) predicate.Predicate {
 			return true
 		},
 
-		GenericFunc: func(e event.GenericEvent) bool {
-			ctx := logging.Strip(ctx)
-
-			// Reconcile existing resources on controller startup.
-			jobSet, ok := e.Object.(*v1alpha2.JobSet)
-			if !ok {
-				logging.Error(ctx, "Predicate received unexpected object type in GenericEvent", "type", fmt.Sprintf("%T", e.Object))
-				return true
+		GenericFunc: func(e event.TypedGenericEvent[*v1alpha2.JobSet]) bool {
+			strippedCtx := logging.Strip(ctx)
+			jobSet := e.Object
+			if jobSet == nil {
+				return false
 			}
-			return hasValidXMCLabels(ctx, jobSet)
+			return hasValidXMCLabels(strippedCtx, jobSet)
 		},
 	}
 }
@@ -480,7 +467,7 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) err
 		return fmt.Errorf("failed to create controller: %w", err)
 	}
 
-	err = c.Watch(&source.Kind{Type: &v1alpha2.JobSet{}}, &handler.EnqueueRequestForObject{}, jobSetPredicate(ctx))
+	err = c.Watch(source.Kind(mgr.GetCache(), &v1alpha2.JobSet{}, &handler.TypedEnqueueRequestForObject[*v1alpha2.JobSet]{}, jobSetPredicate(ctx)))
 	if err != nil {
 		return fmt.Errorf("failed to watch JobSet: %w", err)
 	}

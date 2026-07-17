@@ -21,7 +21,7 @@ import (
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"task/go/status"
-	"xmanager_cloud/query_generator/querytools"
+	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/storage/spanner/schema/artifactschema"
 	"xmanager_cloud/storage/spanner/schema/experimentschema"
 	"xmanager_cloud/storage/spanner/schema/statusmessageschema"

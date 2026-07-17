@@ -19,21 +19,21 @@ import (
 	"fmt"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/k8s_io/client_go/v/v0_23/dynamic/dynamic"
-	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
-	"golang/k8s_io/client_go/v/v0_23/rest/rest"
-	runtimeclient "golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	longrunningpb "longrunning/operations_go_proto"
 	anypb "protobuf/any_go_proto"
 	fmpb "protobuf/field_mask_go_proto"
 	spb "rpc/status_go_proto"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"task/go/status"
+	preconditionsvalidator "xmanager_cloud/cmd/actuator/k8s_client/preconditions_validator"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/kubernetes/actuator/k8s_client/preconditions_validator/preconditionsvalidator"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/storage/storage"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
-	"xmanager_cloud/validator/validator"
 )
 
 // ActuatorRuntimeConfig holds runtime configuration for Actuator.

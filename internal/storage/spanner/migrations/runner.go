@@ -25,15 +25,14 @@ import (
 	"strconv"
 	"strings"
 
-	"go/flag"
-	"go/google"
-	"go/log"
-	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
+	"cloud.google.com/go/spanner/admin/database/apiv1"
+	"flag"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/source"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/github_com/golang_migrate/migrate/v/v4/migrate"
-	"golang/github_com/golang_migrate/migrate/v/v4/source/iofs/iofs"
-	"golang/github_com/golang_migrate/migrate/v/v4/source/source"
-	"golang/google_api/option/option"
+	"google.golang.org/api/option"
+	"log"
 	"xmanager_cloud/storage/spanner/migrations/commands/commands"
 	"xmanager_cloud/storage/spanner/migrations/driver/spannerdriver"
 )
@@ -99,10 +98,8 @@ func parseConfig() *config {
 	flag.StringVar(&cfg.migrationsDir, "migrations_dir", "", "Name of the migrations subdirectory (e.g., 'ess' or 'xid')")
 	flag.StringVar(&cfg.command, "command", "", fmt.Sprintf("Command to run: %s, %s, %s, %s, %s", upCmd, downCmd, forceCmd, versionCmd, initCmd))
 	flag.Parse()
-	google.Init()
-
 	if err := parseArg(cfg, flag.Args()); err != nil {
-		log.Exit(err)
+		log.Fatal(err)
 	}
 
 	cfg.migrationsDir = strings.ToLower(cfg.migrationsDir)
@@ -114,7 +111,7 @@ func parseConfig() *config {
 func main() {
 	cfg := parseConfig()
 	if err := run(cfg); err != nil {
-		log.Exitf("migration failed: %v", err)
+		log.Fatalf("migration failed: %v", err)
 	}
 }
 
@@ -215,15 +212,15 @@ func newRunner(ctx context.Context, cfg *config, opts ...option.ClientOption) (*
 func (r *runner) close() {
 	err, dbErr := r.migrator.Close()
 	if err != nil {
-		log.Errorf("Failed to close source driver: %v", err)
+		log.Printf("Failed to close source driver: %v", err)
 	}
 	if dbErr != nil {
-		log.Errorf("Failed to close database driver: %v", dbErr)
+		log.Printf("Failed to close database driver: %v", dbErr)
 	}
 }
 
 func (r *runner) execCommand(ctx context.Context, cmd string, arg *int) error {
-	log.InfoContextf(ctx, "Executing command: %q", cmd)
+	log.Printf("Executing command: %q", cmd)
 	switch cmd {
 	case upCmd:
 		return commands.Up(ctx, r.migrator, r.dataClient, arg)

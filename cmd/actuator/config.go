@@ -19,10 +19,10 @@ import (
 	"strconv"
 	"time"
 
-	"go/flag"
-	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
-	"xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/logging/logging"
+	"flag"
+	k8sclient "xmanager_cloud/cmd/actuator/k8s_client"
+	"xmanager_cloud/internal/kubernetes/common/constants"
+	"xmanager_cloud/internal/logging"
 )
 
 // RedisConfig holds the configuration for the Redis queue.

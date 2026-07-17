@@ -18,12 +18,12 @@ import (
 	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/grpc/grpc"
-	"golang/grpc/health/health"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
 	healthgrpc "grpc_proto/health_go_grpc"
 	healthpb "grpc_proto/health_go_proto"
-	commonhealth "xmanager_cloud/common/health"
-	"xmanager_cloud/logging/logging"
+	xmchealth "xmanager_cloud/internal/common/health"
+	"xmanager_cloud/internal/logging"
 )
 
 const (
@@ -71,5 +71,5 @@ func checkSpanner(ctx context.Context, sc *spanner.Client) error {
 	ctx, cancel := context.WithTimeout(ctx, spannerTimeout)
 	defer cancel()
 
-	return commonhealth.CheckSpanner(ctx, sc)
+	return xmchealth.CheckSpanner(ctx, sc)
 }

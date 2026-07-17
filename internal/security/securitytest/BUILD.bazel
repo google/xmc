@@ -1,0 +1,13 @@
+load("//:compat.bzl", "compat_go_library")
+
+compat_go_library(
+    name = "securitytest",
+    srcs = ["test_utils.go"],
+    importpath = "xmanager_cloud/internal/security/securitytest",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/compat/insecuresecretdataaccess",
+        "//internal/compat/jwtkeyconverter",
+        "@com_github_tink_crypto_tink_go_v2//jwt",
+    ],
+)

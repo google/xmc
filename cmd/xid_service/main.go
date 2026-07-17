@@ -23,26 +23,24 @@ import (
 	"syscall"
 	"time"
 
-	"go/google"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
-	"golang/google_api/option/option"
-	"golang/grpc/credentials/insecure/insecure"
-	"golang/grpc/grpc"
-	"golang/grpc/reflection/reflection"
-	authz "xmanager_cloud/auth/auth"
-	"xmanager_cloud/logging/logging"
+	"google.golang.org/api/cloudidentity/v1beta1"
+	"google.golang.org/api/option"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/reflection"
+	authz "xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/logging"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/xid_service/config"
 	"xmanager_cloud/xid_service/server/server"
 
 	ss "xmanager_cloud/storage/spanner/spanner"
 
-	spb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
+	spb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 func main() {
-	google.Init()
 
 	// 1. Load configuration
 	cfg := config.Load()

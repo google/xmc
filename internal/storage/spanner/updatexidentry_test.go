@@ -21,9 +21,9 @@ import (
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/internal/storage/spanner/emulator"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/validator/validator"
 
 	"golang/protobuf/v2/proto/proto"
 	fmpb "protobuf/field_mask_go_proto"

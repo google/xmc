@@ -1,0 +1,13 @@
+load("//:compat.bzl", "compat_go_library")
+
+compat_go_library(
+    name = "statusmessageschema",
+    srcs = ["statusmessageschema.go"],
+    importpath = "xmanager_cloud/internal/storage/spanner/schema/statusmessageschema",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//api/filter/go/filtervisitor",
+        "//internal/compat/safesql",
+        "//internal/query_generator/querytools",
+    ],
+)

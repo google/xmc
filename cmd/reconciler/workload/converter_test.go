@@ -20,14 +20,14 @@ import (
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 
-	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
-	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/fake/fake"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	fmpb "protobuf/field_mask_go_proto"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/kubernetes/common/constants"
+	"xmanager_cloud/internal/kubernetes/common/constants"
 	storagepkg "xmanager_cloud/storage/storage"
 )
 

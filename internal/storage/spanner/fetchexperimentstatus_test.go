@@ -21,8 +21,8 @@ import (
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/storage/spanner/emulator"
+	"xmanager_cloud/internal/validator"
 )
 
 func TestFetchExperimentStatus(t *testing.T) {

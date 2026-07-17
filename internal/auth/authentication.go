@@ -22,7 +22,7 @@ import (
 	"golang/grpc/metadata/metadata"
 	"google.golang.org/api/idtoken"
 	"task/go/status"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
 

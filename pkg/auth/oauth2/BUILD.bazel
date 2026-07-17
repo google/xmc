@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# gazelle:map_kind go_library go_library @io_bazel_rules_go//go:def.bzl
+# gazelle:map_kind go_test go_test @io_bazel_rules_go//go:def.bzl
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(

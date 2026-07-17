@@ -1,3 +1,5 @@
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
+
 # Copyright 2025 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,16 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-
-go_library(
+compat_go_library(
     name = "validator",
     srcs = [
         "names.go",
         "parameters.go",
         "requests.go",
     ],
-    importpath = "xmanager_cloud/validator/validator",  # keep
+    importpath = "xmanager_cloud/internal/validator",
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:api_go_proto",
@@ -30,11 +30,11 @@ go_library(
         "//api/protos/xid:messages_go_proto",
         "//internal/compat/log",
         "//internal/compat/status",
-        "//internal/kubernetes/common:jobsetutil",
+        "//internal/kubernetes/common/jobsetutil",
     ],
 )
 
-go_test(
+compat_go_test(
     name = "validator_test",
     srcs = [
         "names_test.go",
@@ -51,7 +51,6 @@ go_test(
         "//internal/compat/proto",
         "//internal/compat/status",
         "@com_github_google_go_cmp//cmp",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/fieldmaskpb",
         "@org_golang_google_protobuf//types/known/timestamppb",

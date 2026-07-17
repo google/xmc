@@ -26,9 +26,9 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"xmanager_cloud/common/interfaces"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/security/securitytest"
+	"xmanager_cloud/internal/common/interfaces"
+	"xmanager_cloud/internal/security/securitytest"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 )
 

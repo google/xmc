@@ -20,10 +20,10 @@ import (
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	lropb "longrunning/operations_go_proto"
 	"task/go/status"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/operationschema"
-	"xmanager_cloud/validator/validator"
 )
 
 // FetchWorkUnitOperation retrieves an operation by its unique ID.

@@ -26,12 +26,12 @@ import (
 	"googlesql/safesql/go/safesql"
 	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/xidschema"
 	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 

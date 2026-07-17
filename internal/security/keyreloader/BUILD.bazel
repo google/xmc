@@ -1,0 +1,25 @@
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
+
+compat_go_library(
+    name = "keyreloader",
+    srcs = ["key_reloader.go"],
+    importpath = "xmanager_cloud/internal/security/keyreloader",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/compat/insecuresecretdataaccess",
+        "//internal/compat/jwtkeyconverter",
+        "//internal/logging",
+        "@com_github_tink_crypto_tink_go_v2//jwt",
+    ],
+)
+
+compat_go_test(
+    name = "keyreloader_test",
+    srcs = ["key_reloader_test.go"],
+    embed = [":keyreloader"],
+    deps = [
+        "//internal/compat/insecuresecretdataaccess",
+        "//internal/compat/jwtkeyconverter",
+        "@com_github_tink_crypto_tink_go_v2//jwt",
+    ],
+)

@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("//:compat.bzl", "compat_go_library")
+
+compat_go_library(
+    name = "validator_lib",
+    srcs = ["validator.go"],
+    importpath = "xmanager_cloud/internal/task_queue_redis/validator",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//internal/task_queue_redis:redisclient",
+        "@com_github_redis_go_redis_v9//:go-redis",
+    ],
+)
+
+go_binary(
+    name = "validator",
+    embed = [":validator_lib"],
+    visibility = ["//:__subpackages__"],
+)

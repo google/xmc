@@ -22,11 +22,11 @@ import (
 	"strings"
 	"testing"
 
-	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
+	"cloud.google.com/go/spanner/admin/database/apiv1"
 	"golang/cmp/cmp"
 	"golang/cmp/cmpopts/cmpopts"
-	"golang/google_api/option/option"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"google.golang.org/api/option"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 
 	databasepb "spanner/admin/database/v1/spanner_database_admin_go_proto"
 )

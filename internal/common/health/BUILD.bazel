@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "health",
+    srcs = ["health.go"],
+    importpath = "xmanager_cloud/internal/common/health",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/compat/spanner",
+        "//internal/logging",
+        "@io_k8s_client_go//kubernetes",
+        "@org_golang_google_api//iterator",
+    ],
+)
+
+go_test(
+    name = "health_test",
+    srcs = ["health_test.go"],
+    embed = [":health"],
+    deps = [
+        "//internal/storage/spanner/emulator",
+        "@io_k8s_apimachinery//pkg/version",
+        "@io_k8s_client_go//discovery",
+        "@io_k8s_client_go//kubernetes",
+    ],
+)

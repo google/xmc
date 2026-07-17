@@ -13,34 +13,10 @@
 # limitations under the License.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("//:compat.bzl", "compat_go_library")
 load("//:oci.bzl", "oci_image_for_service")
 
 package(default_visibility = ["//visibility:private"])
-
-# The workunittaskhandler logic library
-compat_go_library(
-    name = "workunittaskhandler",
-    srcs = ["workunit_task_handler.go"],
-    importpath = "xmanager_cloud/cmd/actuator/workunittaskhandler",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//api/protos/task_queue:task_go_proto",
-        "//cmd/actuator/k8s_client",
-        "//internal/common:interfaces",
-        "//internal/compat/uuid",
-        "//internal/logging",
-        "//internal/task_queue_redis:redisclient",
-        "@com_github_prometheus_client_golang//prometheus:go_default_library",
-        "@com_github_prometheus_client_golang//prometheus/promauto:go_default_library",
-        "@com_github_tink_crypto_tink_go_v2//jwt:go_default_library",
-        "@io_k8s_apimachinery//pkg/api/errors",
-        "@org_golang_google_api//idtoken",
-        "@org_golang_google_protobuf//encoding/protojson:go_default_library",
-        "@org_golang_x_text//cases:go_default_library",
-        "@org_golang_x_text//language:go_default_library",
-    ],
-)
 
 # The primary actuator program server library
 compat_go_library(
@@ -51,14 +27,14 @@ compat_go_library(
     ],
     importpath = "xmanager_cloud/cmd/actuator/main",
     deps = [
-        ":workunittaskhandler",
         "//cmd/actuator/k8s_client",
-        "//internal/common:health",
+        "//cmd/actuator/workunittaskhandler",
+        "//internal/common/health",
         "//internal/compat/google",
         "//internal/compat/spanner",
-        "//internal/kubernetes/common:constants",
+        "//internal/kubernetes/common/constants",
         "//internal/logging",
-        "//internal/security",
+        "//internal/security/keyreloader",
         "//internal/storage",
         "//internal/storage/spanner",
         "//internal/task_queue_redis:redisclient",
@@ -81,25 +57,4 @@ go_binary(
 oci_image_for_service(
     name = "actuator_image",
     binary = ":actuator",
-)
-
-# The handler test suite
-compat_go_test(
-    name = "workunittaskhandler_test",
-    srcs = ["workunit_task_handler_test.go"],
-    embed = [":workunittaskhandler"],
-    deps = [
-        "//cmd/actuator/k8s_client/preconditions_validator",
-        "//internal/security:securitytest",
-        "@com_github_prometheus_client_golang//prometheus/testutil:go_default_library",
-        "@com_github_tink_crypto_tink_go_v2//jwt:go_default_library",
-        "@io_k8s_apimachinery//pkg/api/errors",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
-        "@io_k8s_apimachinery//pkg/runtime",
-        "@io_k8s_apimachinery//pkg/runtime/schema",
-        "@io_k8s_apimachinery//pkg/util/validation/field",
-        "@io_k8s_client_go//dynamic/fake",
-        "@io_k8s_client_go//kubernetes/fake",
-        "@org_golang_google_api//idtoken",
-    ],
 )

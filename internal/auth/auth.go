@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"google.golang.org/api/cloudidentity/v1beta1"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )

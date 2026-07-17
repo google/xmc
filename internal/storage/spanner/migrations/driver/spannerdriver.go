@@ -21,11 +21,11 @@ import (
 	"io"
 	"strings"
 
+	"cloud.google.com/go/spanner/admin/database/apiv1"
+	migratedb "github.com/golang-migrate/migrate/v4/database"
+	migratespanner "github.com/golang-migrate/migrate/v4/database/spanner"
 	"go/log"
-	"golang/cloud_google_com/go/spanner/v/v1/admin/database/apiv1/database"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	migratedb "golang/github_com/golang_migrate/migrate/v/v4/database/database"
-	migratespanner "golang/github_com/golang_migrate/migrate/v/v4/database/spanner/spanner"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
 
 	adminpb "spanner/admin/database/v1/spanner_database_admin_go_proto"

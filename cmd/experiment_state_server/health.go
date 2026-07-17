@@ -18,10 +18,10 @@ import (
 	"fmt"
 	"net/http"
 
+	"golang.org/x/sync/errgroup"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/go_sync/errgroup/errgroup"
-	commonhealth "xmanager_cloud/common/health"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
+	xmchealth "xmanager_cloud/internal/common/health"
+	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 // TaskQueueClient is an interface for the task queue client.
@@ -40,7 +40,7 @@ func activeHealthCheck(spClient *spanner.Client, xidClient xidgrpcpb.XidServiceC
 			if spClient == nil {
 				return fmt.Errorf("spanner client is nil")
 			}
-			return commonhealth.CheckSpanner(ctx, spClient)
+			return xmchealth.CheckSpanner(ctx, spClient)
 		})
 
 		// 2. XID Service check

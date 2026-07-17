@@ -21,29 +21,27 @@ import (
 	"net/http"
 	"os"
 
-	"go/google"
-	"golang/cloud_google_com/go/compute/metadata/v/v0/metadata"
+	"cloud.google.com/go/compute/metadata"
+	"golang.org/x/sync/errgroup"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/go_sync/errgroup/errgroup"
-	"golang/google_api/option/option"
-	"xmanager_cloud/common/health"
-	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
-	"xmanager_cloud/kubernetes/actuator/workunittaskhandler"
-	constants "xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/security/keyreloader"
+	"google.golang.org/api/option"
+	k8sclient "xmanager_cloud/cmd/actuator/k8s_client"
+	"xmanager_cloud/cmd/actuator/workunittaskhandler"
+	"xmanager_cloud/internal/common/health"
+	constants "xmanager_cloud/internal/kubernetes/common/constants"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/security/keyreloader"
+	redisclient "xmanager_cloud/internal/task_queue_redis"
 	ss "xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/task_queue_redis/redisclient"
 
-	"golang/prometheus/client/prometheus/promhttp/promhttp"
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 var osHostname = os.Hostname
 
 func main() {
-	google.Init()
 	ctx := ctrl.SetupSignalHandler()
 
 	cfg := Load()

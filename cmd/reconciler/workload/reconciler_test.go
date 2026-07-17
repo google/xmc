@@ -20,20 +20,20 @@ import (
 	"testing"
 	"time"
 
-	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
-	k8serrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/types/types"
-	clientgoscheme "golang/k8s_io/client_go/v/v0_23/kubernetes/scheme/scheme"
-	"golang/prometheus/client/prometheus/testutil/testutil"
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/fake/fake"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/event/event"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/kubernetes/common/constants"
+	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 	storagepkg "xmanager_cloud/storage/storage"
 )
@@ -428,7 +428,11 @@ func TestWorkloadPredicate_Create(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			evt := event.CreateEvent{Object: tc.obj}
+			var w *v1beta1.Workload
+			if tc.obj != nil {
+				w, _ = tc.obj.(*v1beta1.Workload)
+			}
+			evt := event.TypedCreateEvent[*v1beta1.Workload]{Object: w}
 			if got := p.Create(evt); got != tc.want {
 				t.Errorf("Predicate CreateFunc() = %v, want %v", got, tc.want)
 			}
@@ -526,7 +530,7 @@ func TestWorkloadPredicate_Update(t *testing.T) {
 
 	for _, tc := range updateCases {
 		t.Run(tc.name, func(t *testing.T) {
-			evt := event.UpdateEvent{
+			evt := event.TypedUpdateEvent[*v1beta1.Workload]{
 				ObjectOld: tc.old,
 				ObjectNew: tc.new,
 			}

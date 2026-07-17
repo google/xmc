@@ -24,30 +24,30 @@ import (
 	"go/log"
 	googlespanner "golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/cmp/cmp"
-	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
-	"golang/grpc/credentials/insecure/insecure"
-	"golang/grpc/grpc"
-	"golang/grpc/health/health"
 	"golang/grpc/metadata/metadata"
-	"golang/grpc/reflection/reflection"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"golang/uuid/uuid"
+	"google.golang.org/api/cloudidentity/v1beta1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/reflection"
 	healthgrpc "grpc_proto/health_go_grpc"
 	healthpb "grpc_proto/health_go_proto"
 	lropb "longrunning/operations_go_proto"
 	fmpb "protobuf/field_mask_go_proto"
 	"task/go/status"
-	authz "xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	authz "xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
 	xidconfig "xmanager_cloud/xid_service/config"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
+	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 	xidserver "xmanager_cloud/xid_service/server/server"
 )
@@ -305,7 +305,7 @@ func TestStopOperationOnError(t *testing.T) {
 	ctx := context.Background()
 	cfg := &config.Config{}
 	authorizer := createTestAuthorizer(ctx, t)
-	opName := fmt.Sprintf("experiments/%d/workUnits/%d/operations/%s", 123, 1, uuid.New())
+	opName := fmt.Sprintf("experiments/%d/workUnits/%d/operations/%s", 123, 1, uuid.NewString())
 
 	testCases := []struct {
 		name                        string

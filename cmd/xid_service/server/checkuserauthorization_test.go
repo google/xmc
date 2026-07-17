@@ -20,7 +20,7 @@ import (
 
 	"golang/protobuf/v2/proto/proto"
 	"task/go/status"
-	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/xid_service/config"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"

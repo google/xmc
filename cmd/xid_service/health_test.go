@@ -17,9 +17,9 @@ import (
 	"context"
 	"testing"
 
-	"golang/grpc/grpc"
+	"google.golang.org/grpc"
 	healthpb "grpc_proto/health_go_proto"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 )
 
 func TestUpdateHealthStatus(t *testing.T) {

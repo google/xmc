@@ -21,12 +21,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database"
+	"github.com/golang-migrate/migrate/v4/database/stub"
+	"github.com/golang-migrate/migrate/v4/source"
+	stubs "github.com/golang-migrate/migrate/v4/source/stub"
 	"golang/cmp/cmp"
-	"golang/github_com/golang_migrate/migrate/v/v4/database/database"
-	"golang/github_com/golang_migrate/migrate/v/v4/database/stub/stub"
-	"golang/github_com/golang_migrate/migrate/v/v4/migrate"
-	"golang/github_com/golang_migrate/migrate/v/v4/source/source"
-	stubs "golang/github_com/golang_migrate/migrate/v/v4/source/stub/stub"
 )
 
 // customSourceStub is only used in TestReadMigrationPreviews to verify that

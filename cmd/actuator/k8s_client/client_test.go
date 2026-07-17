@@ -21,19 +21,19 @@ import (
 	"time"
 
 	"golang/cmp/cmp"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
-	clientgotesting "golang/k8s_io/client_go/v/v0_23/testing/testing"
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgotesting "k8s.io/client-go/testing"
 	timestamppb "protobuf/timestamp_go_proto"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 
 	// TODO - (internal issue): Consider using a mock instead of the emulator.
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/internal/storage/spanner/emulator"
+	"xmanager_cloud/internal/validator"
 	spanner_lib "xmanager_cloud/storage/spanner/spanner"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
-	"xmanager_cloud/validator/validator"
 )
 
 const (

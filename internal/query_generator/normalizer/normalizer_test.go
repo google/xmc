@@ -17,7 +17,7 @@ import (
 	"testing"
 
 	"api/filter/go/filtervisitor"
-	"xmanager_cloud/query_generator/querytools"
+	"xmanager_cloud/internal/query_generator/querytools"
 )
 
 var experimentsTableView = querytools.TableView{

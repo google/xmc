@@ -20,10 +20,10 @@ import (
 	"math"
 
 	"task/go/status"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/task_queue/client"
-	"xmanager_cloud/validator/validator"
 
 	lropb "longrunning/operations_go_proto"
 	fmpb "protobuf/field_mask_go_proto"

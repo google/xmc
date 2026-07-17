@@ -20,8 +20,8 @@ import (
 
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/storage/spanner/emulator"
+	"xmanager_cloud/internal/validator"
 )
 
 func TestDeleteArtifact(t *testing.T) {

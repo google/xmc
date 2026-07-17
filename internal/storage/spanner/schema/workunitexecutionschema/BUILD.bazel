@@ -1,0 +1,8 @@
+load("//:compat.bzl", "compat_go_library")
+
+compat_go_library(
+    name = "workunitexecutionschema",
+    srcs = ["workunitexecutionschema.go"],
+    importpath = "xmanager_cloud/internal/storage/spanner/schema/workunitexecutionschema",
+    visibility = ["//:__subpackages__"],
+)

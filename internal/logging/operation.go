@@ -42,7 +42,7 @@ func InjectOperation(ctx context.Context, id string) context.Context {
 		}
 	}
 	if id == "" {
-		id = uuid.New()
+		id = uuid.NewString()
 	}
 
 	ctx = context.WithValue(ctx, traceIDKey, id)

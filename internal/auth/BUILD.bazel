@@ -1,3 +1,5 @@
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
+
 # Copyright 2025 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,10 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# gazelle:ignore
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-
-go_library(
+compat_go_library(
     name = "auth",
     srcs = [
         "auth.go",
@@ -37,7 +36,7 @@ go_library(
     ],
 )
 
-go_test(
+compat_go_test(
     name = "auth_test",
     srcs = [
         "auth_test.go",
@@ -48,6 +47,7 @@ go_test(
     deps = [
         "//api/protos/xid:messages_go_proto",
         "//internal/compat/metadata",
+        "//pkg/auth/oauth2",
         "@org_golang_google_api//idtoken",
     ],
 )

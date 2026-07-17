@@ -24,9 +24,9 @@ import (
 	fmpb "protobuf/field_mask_go_proto"
 	statuspb "rpc/status_go_proto"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/internal/storage/spanner/emulator"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/validator/validator"
 )
 
 func TestUpdateWorkUnitOperation(t *testing.T) {

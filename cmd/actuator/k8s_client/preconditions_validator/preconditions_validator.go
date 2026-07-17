@@ -21,10 +21,10 @@ import (
 	"strconv"
 	"time"
 
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/unstructured/unstructured"
-	"xmanager_cloud/kubernetes/common/constants"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/validator/validator"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"xmanager_cloud/internal/kubernetes/common/constants"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/validator"
 )
 
 // Validator validates preconditions for actuation requests.

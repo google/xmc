@@ -23,9 +23,9 @@ import (
 	anypb "protobuf/any_go_proto"
 	statuspb "rpc/status_go_proto"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/schema/operationschema"
-	"xmanager_cloud/validator/validator"
 )
 
 // OperationRowToProto converts a Spanner Row containing Operations table data into an Operation proto message.

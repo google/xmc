@@ -19,9 +19,9 @@ import (
 	"time"
 
 	"task/go/status"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/logging"
 
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
@@ -51,9 +51,9 @@ func (s *XIDServer) listXidEntriesWithStaleness(ctx context.Context, in *apipb.L
 	}
 
 	// 2. Validate the request payload.
-	if err := validator.ValidateAIPCompliantListWithMaxPageSize(in.GetPageSize(), in.GetFilter(), in.GetOrderBy(), in.GetPageToken(), maxPageSize); err != nil {
-		logging.Warn(ctx, "Invalid ListXidEntriesRequest", "error", err)
-		return nil, fmt.Errorf("invalid ListXidEntriesRequest %v: %w", err, status.ErrInvalidArgument)
+	if vErr := validator.ValidateAIPCompliantListWithMaxPageSize(in.GetPageSize(), in.GetFilter(), in.GetOrderBy(), in.GetPageToken(), maxPageSize); vErr != nil {
+		logging.Warn(ctx, "Invalid ListXidEntriesRequest", "error", vErr)
+		return nil, fmt.Errorf("invalid ListXidEntriesRequest %v: %w", vErr, status.ErrInvalidArgument)
 	}
 
 	// 3. Get the list of XidEntries from the storage layer.

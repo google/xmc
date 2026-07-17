@@ -19,7 +19,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 )
 
 func TestActiveHealthCheck(t *testing.T) {

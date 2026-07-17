@@ -23,14 +23,12 @@ import (
 	"task/go/status"
 	essapipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/kubernetes/common/jobsetutil"
+	"xmanager_cloud/internal/kubernetes/common/jobsetutil"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmessagespb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 const (
-	// defaultPageSize is the default page size for list requests.
-	defaultPageSize = 10
 	// maxQueueNameLen is the maximum allowed length of a queue name.
 	maxQueueNameLen = 253
 	// These are just some arbitrary limits for sanity. We don't expect users to hit these limits,

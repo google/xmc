@@ -1,0 +1,12 @@
+load("//:compat.bzl", "compat_go_library")
+
+compat_go_library(
+    name = "predicate",
+    srcs = ["predicate.go"],
+    importpath = "xmanager_cloud/internal/query_generator/predicate",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//api/filter:filter_expression_go_proto",
+        "//internal/compat/proto",
+    ],
+)

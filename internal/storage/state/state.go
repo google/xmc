@@ -22,8 +22,8 @@ import (
 	"golang/protobuf/v2/proto/proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/validator"
 )
 
 var (

@@ -19,10 +19,10 @@ import (
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	timestamppb "protobuf/timestamp_go_proto"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/schema/workunitexecutionschema"
 	"xmanager_cloud/storage/spanner/schema/workunitschema"
-	"xmanager_cloud/validator/validator"
 )
 
 // WorkUnitExecutionRowToProto converts a Spanner Row containing WorkUnitExecutions table data into

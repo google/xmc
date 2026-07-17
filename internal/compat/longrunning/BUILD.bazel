@@ -1,3 +1,5 @@
+load("//:compat.bzl", "compat_go_library")
+
 # Copyright 2025 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,11 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
-
 package(default_visibility = ["//visibility:public"])
 
-go_library(
+compat_go_library(
     name = "longrunning",
     srcs = ["longrunning.go"],
     importpath = "longrunning/operations_go_proto",  # keep

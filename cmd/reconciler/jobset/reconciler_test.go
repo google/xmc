@@ -20,24 +20,24 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"golang/cmp/cmp"
-	batchv1 "golang/k8s_io/api/v/v0_23/batch/v1/v1"
-	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
-	k8serrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/types/types"
-	clientgoscheme "golang/k8s_io/client_go/v/v0_23/kubernetes/scheme/scheme"
-	"golang/prometheus/client/prometheus/testutil/testutil"
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/fake/fake"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/event/event"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 
-	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/kubernetes/common/constants"
+	"xmanager_cloud/internal/kubernetes/common/constants"
 	storagepkg "xmanager_cloud/storage/storage"
 )
 
@@ -298,20 +298,20 @@ func TestJobSetPredicate_Create(t *testing.T) {
 			},
 		},
 	}
-	if !p.Create(event.CreateEvent{Object: jobSetWithLabels}) {
+	if !p.Create(event.TypedCreateEvent[*v1alpha2.JobSet]{Object: jobSetWithLabels}) {
 		t.Errorf("Predicate CreateFunc with labels failed: expected true, got false")
 	}
-	if p.Create(event.CreateEvent{Object: jobSetWithoutLabels}) {
+	if p.Create(event.TypedCreateEvent[*v1alpha2.JobSet]{Object: jobSetWithoutLabels}) {
 		t.Errorf("Predicate CreateFunc without labels failed: expected false, got true")
 	}
-	if p.Create(event.CreateEvent{Object: jobSetWithInvalidLabels}) {
+	if p.Create(event.TypedCreateEvent[*v1alpha2.JobSet]{Object: jobSetWithInvalidLabels}) {
 		t.Errorf("Predicate CreateFunc with invalid labels failed: expected false, got true")
 	}
 }
 
 func TestJobSetPredicate_Delete(t *testing.T) {
 	p := jobSetPredicate(context.Background())
-	if p.Delete(event.DeleteEvent{}) {
+	if p.Delete(event.TypedDeleteEvent[*v1alpha2.JobSet]{}) {
 		t.Errorf("Predicate DeleteFunc failed: expected false, got true")
 	}
 }
@@ -335,39 +335,11 @@ func TestJobSetPredicate_Generic(t *testing.T) {
 			Namespace: "default",
 		},
 	}
-	if !p.Generic(event.GenericEvent{Object: jobSetWithLabels}) {
+	if !p.Generic(event.TypedGenericEvent[*v1alpha2.JobSet]{Object: jobSetWithLabels}) {
 		t.Errorf("Predicate GenericFunc with labels failed: expected true, got false")
 	}
-	if p.Generic(event.GenericEvent{Object: jobSetWithoutLabels}) {
+	if p.Generic(event.TypedGenericEvent[*v1alpha2.JobSet]{Object: jobSetWithoutLabels}) {
 		t.Errorf("Predicate GenericFunc without labels failed: expected false, got true")
-	}
-}
-
-func TestJobSetPredicate_WrongObjectType(t *testing.T) {
-	p := jobSetPredicate(context.Background())
-	jobSetWithLabels := &v1alpha2.JobSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "jobset-with-labels",
-			Namespace: "default",
-			Labels: map[string]string{
-				constants.ExperimentIDLabel: "123",
-				constants.WorkUnitIDLabel:   "1",
-				constants.ExecutionIDLabel:  "1",
-			},
-		},
-	}
-	wrongObjectType := &metav1.PartialObjectMetadata{}
-	if !p.Create(event.CreateEvent{Object: wrongObjectType}) {
-		t.Errorf("Predicate CreateFunc with wrong object type failed: expected true, got false")
-	}
-	if !p.Generic(event.GenericEvent{Object: wrongObjectType}) {
-		t.Errorf("Predicate GenericFunc with wrong object type failed: expected true, got false")
-	}
-	if !p.Update(event.UpdateEvent{ObjectOld: wrongObjectType, ObjectNew: jobSetWithLabels}) {
-		t.Errorf("Predicate UpdateFunc with wrong old object type failed: expected true, got false")
-	}
-	if !p.Update(event.UpdateEvent{ObjectOld: jobSetWithLabels, ObjectNew: wrongObjectType}) {
-		t.Errorf("Predicate UpdateFunc with wrong new object type failed: expected true, got false")
 	}
 }
 
@@ -566,7 +538,7 @@ func TestJobSetPredicate_Update(t *testing.T) {
 
 	for _, tc := range updateCases {
 		t.Run(tc.name, func(t *testing.T) {
-			evt := event.UpdateEvent{
+			evt := event.TypedUpdateEvent[*v1alpha2.JobSet]{
 				ObjectOld: tc.oldObj,
 				ObjectNew: tc.newObj,
 			}

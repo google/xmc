@@ -24,17 +24,17 @@ import (
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
-	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
+	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
-	"xmanager_cloud/validator/validator"
 
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
+	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 

@@ -18,9 +18,9 @@ import (
 	"testing"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/security/securitytest"
+	"xmanager_cloud/internal/security/securitytest"
+	redisclient "xmanager_cloud/internal/task_queue_redis"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
-	"xmanager_cloud/task_queue_redis/redisclient"
 )
 
 // mockAndConfigureRedisClient configures a fake Redis client for the Task Queue client.

@@ -1,0 +1,14 @@
+load("//:compat.bzl", "compat_go_library")
+# gazelle:ignore
+
+compat_go_library(
+    name = "config",
+    srcs = ["config.go"],
+    importpath = "xmanager_cloud/cmd/xid_service/config",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//internal/auth",
+        "//internal/compat/log",
+        "//internal/logging",
+    ],
+)

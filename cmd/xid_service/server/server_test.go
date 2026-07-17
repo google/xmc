@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
-	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"google.golang.org/api/cloudidentity/v1beta1"
+	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/xid_service/config"
 )

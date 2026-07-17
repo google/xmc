@@ -24,14 +24,14 @@ import (
 	fieldmaskpb "protobuf/field_mask_go_proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
-	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/validator/validator"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
+	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 

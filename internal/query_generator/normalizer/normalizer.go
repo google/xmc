@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	"api/filter/go/filtervisitor"
-	"xmanager_cloud/query_generator/querytools"
+	"xmanager_cloud/internal/query_generator/querytools"
 )
 
 // Normalize takes a semi-compliant AIP-160 string and enforces quoting rules

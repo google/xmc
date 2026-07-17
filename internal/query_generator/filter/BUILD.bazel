@@ -19,9 +19,8 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "filter",
     srcs = ["queryfilter.go"],
-    importpath = "xmanager_cloud/query_generator/filter/queryfilter",  # keep
+    importpath = "xmanager_cloud/internal/query_generator/filter",
     deps = [
-        # keep
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filtervisitor",
         "//api/filter/go/queryfilterbase",
@@ -35,7 +34,6 @@ go_test(
     srcs = ["queryfilter_test.go"],
     embed = [":filter"],
     deps = [
-        # keep
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filter",
         "//api/filter/go/filtervisitor",

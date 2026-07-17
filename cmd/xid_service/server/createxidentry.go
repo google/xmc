@@ -18,8 +18,8 @@ import (
 	"fmt"
 
 	"task/go/status"
-	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/validator"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -35,9 +35,9 @@ func (s *XIDServer) CreateXidEntry(ctx context.Context, in *apipb.CreateXidEntry
 	}
 
 	// 2. Validate the request payload.
-	if err := validator.ValidateCreateXidRequest(in); err != nil {
-		logging.Warn(ctx, "Invalid CreateXidEntry request", "error", err)
-		return nil, fmt.Errorf("invalid CreateXid request: %w", err)
+	if vErr := validator.ValidateCreateXidRequest(in); vErr != nil {
+		logging.Warn(ctx, "Invalid CreateXidEntry request", "error", vErr)
+		return nil, fmt.Errorf("invalid CreateXid request: %w", vErr)
 	}
 
 	// 2.1. Set the creator field in the request payload to the authenticated user.

@@ -1,0 +1,30 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "liststatement",
+    srcs = ["liststatement.go"],
+    importpath = "xmanager_cloud/internal/query_generator/liststatement",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//api/filter:filter_expression_go_proto",
+        "//api/filter/go/filter",
+        "//internal/compat/safesql",
+        "//internal/compat/spanner",
+        "//internal/compat/status",
+        "//internal/logging",
+        "//internal/query_generator/querytools",
+    ],
+)
+
+go_test(
+    name = "liststatement_test",
+    srcs = ["liststatement_test.go"],
+    embed = [":liststatement"],
+    deps = [
+        "//internal/compat/cmp",
+        "//internal/compat/cmpopts",
+        "//internal/compat/safesql",
+        "//internal/compat/spanner",
+        "//internal/query_generator/querytools",
+    ],
+)

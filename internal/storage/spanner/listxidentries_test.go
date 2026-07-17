@@ -24,8 +24,8 @@ import (
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	timestamppb "protobuf/timestamp_go_proto"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/storage/spanner/emulator"
+	"xmanager_cloud/internal/validator"
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 

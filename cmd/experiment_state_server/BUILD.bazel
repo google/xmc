@@ -12,22 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_test")
 load("//:compat.bzl", "compat_go_library", "compat_go_test")
 load("//:oci.bzl", "oci_image_for_service")
-
-compat_go_library(
-    name = "config",
-    srcs = ["config.go"],
-    importpath = "xmanager_cloud/cmd/experiment_state_server",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//internal/auth",
-        "//internal/compat/log",
-        "//internal/logging",
-        "//internal/task_queue:client",
-    ],
-)
 
 compat_go_library(
     name = "experiment_state_server_lib",
@@ -41,16 +28,16 @@ compat_go_library(
     importpath = "xmanager_cloud/cmd/experiment_state_server/main",
     visibility = ["//visibility:private"],
     deps = [
-        ":config",
         "//api/protos/experiment:api_go_proto",
         "//api/protos/xid:api_go_proto",
+        "//cmd/experiment_state_server/config",
         "//cmd/experiment_state_server/server",
         "//internal/auth",
-        "//internal/common:health",
+        "//internal/common/health",
         "//internal/compat/google",
         "//internal/compat/spanner",
         "//internal/logging",
-        "//internal/security",
+        "//internal/security/keyreloader",
         "//internal/storage/spanner",
         "//internal/task_queue:client",
         "//pkg/auth/oauth2",
@@ -98,5 +85,16 @@ compat_go_test(
         "//internal/storage/spanner/emulator",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//health/grpc_health_v1:go_default_library",
+    ],
+)
+
+go_test(
+    name = "experiment_state_server_test",
+    srcs = ["health_test.go"],
+    embed = [":experiment_state_server_lib"],
+    deps = [
+        "//api/protos/xid:api_go_proto",
+        "//internal/compat/spanner",
+        "//internal/storage/spanner/emulator",
     ],
 )

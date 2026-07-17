@@ -18,11 +18,11 @@ import (
 	"errors"
 	"fmt"
 
-	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/logging"
 
 	"task/go/status"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/validator"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )

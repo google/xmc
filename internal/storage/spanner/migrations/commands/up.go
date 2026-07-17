@@ -18,9 +18,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/golang-migrate/migrate/v4"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/github_com/golang_migrate/migrate/v/v4/migrate"
-	"golang/google_api/iterator/iterator"
+	"google.golang.org/api/iterator"
 )
 
 // Up handles the migration up command.

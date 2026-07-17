@@ -51,7 +51,7 @@ compat_go_test(
         "//internal/compat/cmpopts",
         "//internal/compat/field_mask",
         "//internal/compat/protocmp",
-        "//internal/kubernetes/common:constants",
+        "//internal/kubernetes/common/constants",
         "//internal/storage",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/runtime",
