@@ -66,14 +66,6 @@ Before running any compilation or deployment steps, verify that all necessary CL
 Use the automated script to execute the deployment end-to-end. The script handles registry credentials config (`gcloud auth configure-docker`), code compilation, GKE setup, and app deployment.
 
 > [!IMPORTANT]
-> **Virtual Environment Requirement**: All Python automation and verification scripts under `tools/` and `deploy/` require a Python virtual environment created using **Python 3.13.14**. Before running `deploy_dev_env.py` or `verify_xmc.py`, ensure the virtual environment is initialized and activated:
-> ```bash
-> python3.13 -m venv ./tools/venv
-> source ./tools/venv/bin/activate
-> pip install -r ./tools/requirements.txt
-> ```
-
-> [!IMPORTANT]
 > **Enforced DNS Parameters Check**:
 > If the user chose Option 1:
 > 1. **Check context/history**: Check if the user has already provided the GCP project ID hosting the DNS zone and the Cloud DNS Managed Zone name.
@@ -225,7 +217,7 @@ bazel run //cmd/xid_service:xid_service_image_push
 Verify the health, certificate readiness, and routing of the environment:
 
 ### Step 1: Run Verification Script
-Ensure the virtual environment created with Python 3.13.14 is activated, then run:
+Ensure the Python virtual environment is activated, then run:
 ```bash
 python3 ./deploy/ctk_v2/verify_xmc.py
 ```
