@@ -50,7 +50,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
                 refresh_interval = 30000
 
             status_history = (
-                os.environ.get("XMC_STATUS_MESSAGE_HISTORY_ENABLED", "false").lower() == "true"
+                os.environ.get("XMC_STATUS_MESSAGE_HISTORY_ENABLED", "true").lower() == "true"
             )
 
             feature_flags = {

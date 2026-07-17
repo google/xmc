@@ -59,5 +59,5 @@ variable "refresh_interval_ms" {
 variable "enable_status_message_history" {
   description = "If true, the UI will display status message history tab."
   type        = bool
-  default     = false
+  default     = true
 }

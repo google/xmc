@@ -67,6 +67,42 @@ func TestIsAuthorized_RoleHierarchy(t *testing.T) {
 	}
 }
 
+func TestIsUserAuthorizedForChart(t *testing.T) {
+	a := &Authorizer{}
+	ctx := context.Background()
+
+	xidAcls := &xpb.XidAcls{
+		Owners:  []*xpb.XidAcls_Role{{Principal: &xpb.XidAcls_Role_User{User: "owner@example.com"}}},
+		Writers: []*xpb.XidAcls_Role{{Principal: &xpb.XidAcls_Role_User{User: "writer@example.com"}}},
+		Readers: []*xpb.XidAcls_Role{{Principal: &xpb.XidAcls_Role_User{User: "reader@example.com"}}},
+	}
+
+	testCases := []struct {
+		name           string
+		user           string
+		wantAuthorized bool
+		wantErr        bool
+	}{
+		{"Owner is authorized", "owner@example.com", true, false},
+		{"Writer is authorized", "writer@example.com", true, false},
+		{"Reader is authorized", "reader@example.com", true, false},
+		{"Other is not authorized", "other@example.com", false, false},
+		{"Invalid email returns error", "invalid-email", false, true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := a.IsUserAuthorizedForChart(ctx, tc.user, xidAcls)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("IsUserAuthorizedForChart() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if got != tc.wantAuthorized {
+				t.Errorf("IsUserAuthorizedForChart(%s, xidAcls) = %v; want %v", tc.user, got, tc.wantAuthorized)
+			}
+		})
+	}
+}
+
 func TestIsAuthorized_PrincipalTypes(t *testing.T) {
 	a := &Authorizer{}
 	ctx := context.Background()

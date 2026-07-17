@@ -154,8 +154,12 @@ message KubernetesJob {
   repeated ExecutableSpec sidecars = 9;
   // Init containers to run before primary and sidecar containers start.
   repeated ExecutableSpec init_containers = 10;
+  // Node selector labels to apply to all Pods in this Kubernetes Job.
+  // This allows pinning specific jobs (e.g., head vs worker) to distinct node pools.
+  map<string, string> node_selector = 11;
+
   // Custom volumes available to containers in the pod.
-  repeated Volume volumes = 11;
+  repeated Volume volumes = 12;
 }
 
 // Represents a volume that can be mounted by containers in a KubernetesJob.
