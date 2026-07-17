@@ -61,7 +61,7 @@ func init() {
 	flag.StringVar(&quotaProjectID, "quota_project_id", "", "The ID of the quota project to use.")
 	flag.StringVar(&logKeyword, "log_keyword", "XMC LOG:", "The keyword that is used in logging sink to filter logs.")
 	flag.IntVar(&maxConcurrentUpdates, "max_concurrent_updates", 10, "The maximum number of concurrent updates to Spanner.")
-	flag.BoolVar(&statusMessageHistoryEnabled, "status_message_history_enabled", false, "Whether to enable status message history.")
+	flag.BoolVar(&statusMessageHistoryEnabled, "status_message_history_enabled", true, "Whether to enable status message history.")
 }
 
 // LoadConfig validates and returns the configuration loaded from flags and environment variables.
