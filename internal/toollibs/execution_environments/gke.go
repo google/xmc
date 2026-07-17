@@ -359,29 +359,22 @@ func (g *GKE) InjectOnWorkUnitCreation(ctx context.Context, essServer spb.Experi
 	return workUnit, nil
 }
 
-func ensureTpuContainerPorts(existing []corev1.ContainerPort) []corev1.ContainerPort {
-	hasICI := false
-	hasMetrics := false
+func ensurePortExists(existing []corev1.ContainerPort, port int32) []corev1.ContainerPort {
 	for _, p := range existing {
-		if p.ContainerPort == tpuICIPort {
-			hasICI = true
-		}
-		if p.ContainerPort == tpuMetricsPort {
-			hasMetrics = true
+		if p.ContainerPort == port {
+			return existing
 		}
 	}
-	if hasICI && hasMetrics {
-		return existing
-	}
-	result := make([]corev1.ContainerPort, len(existing), len(existing)+2)
+	result := make([]corev1.ContainerPort, len(existing)+1)
 	copy(result, existing)
-	if !hasICI {
-		result = append(result, corev1.ContainerPort{ContainerPort: tpuICIPort})
-	}
-	if !hasMetrics {
-		result = append(result, corev1.ContainerPort{ContainerPort: tpuMetricsPort})
-	}
+	result[len(existing)] = corev1.ContainerPort{ContainerPort: port}
 	return result
+}
+
+func ensureTpuContainerPorts(existing []corev1.ContainerPort) []corev1.ContainerPort {
+	existing = ensurePortExists(existing, tpuICIPort)
+	existing = ensurePortExists(existing, tpuMetricsPort)
+	return existing
 }
 
 func annotateContainerList(containers []corev1.Container, specs []*epb.ExecutableSpec) ([]corev1.Container, error) {
