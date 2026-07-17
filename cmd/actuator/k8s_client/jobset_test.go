@@ -2163,4 +2163,60 @@ func TestGenerateVolumeMountsForSpec_Collision(t *testing.T) {
 	if len(mountsB) != 4 {
 		t.Errorf("Expected 4 mounts, got %d. Mounts: %+v", len(mountsB), mountsB)
 	}
+
+	// Case C: Overwrite by Name, then use old Path.
+	// Custom 1: Name="ram-scratch", MountPath="/my-custom-ram" (Overrides default 0)
+	// Custom 2: Name="new-mount", MountPath="/dev/ram-scratch" (Should NOT override default 0/Custom 1)
+	specC := &esspb.ExecutableSpec{
+		VolumeMounts: []*esspb.VolumeMount{
+			{Name: "ram-scratch", MountPath: "/my-custom-ram"},
+			{Name: "new-mount", MountPath: "/dev/ram-scratch"},
+		},
+	}
+	mountsC := generateVolumeMountsForSpec(specC)
+	// We expect 4 mounts (3 defaults, where 1st is modified, plus 1 new).
+	if len(mountsC) != 4 {
+		t.Errorf("Expected 4 mounts, got %d. Mounts: %+v", len(mountsC), mountsC)
+	}
+	// Verify mountsC contains both.
+	hasCustom1 := false
+	hasCustom2 := false
+	for _, m := range mountsC {
+		if m.Name == "ram-scratch" && m.MountPath == "/my-custom-ram" {
+			hasCustom1 = true
+		}
+		if m.Name == "new-mount" && m.MountPath == "/dev/ram-scratch" {
+			hasCustom2 = true
+		}
+	}
+	if !hasCustom1 || !hasCustom2 {
+		t.Errorf("Expected both custom mounts to be present. Custom1: %t, Custom2: %t. Mounts: %+v", hasCustom1, hasCustom2, mountsC)
+	}
+
+	// Case D: Overwrite by Path, then use old Name.
+	// Custom 1: Name="new-name", MountPath="/dev/ram-scratch" (Overrides default 0)
+	// Custom 2: Name="ram-scratch", MountPath="/new-path" (Should NOT override default 0/Custom 1)
+	specD := &esspb.ExecutableSpec{
+		VolumeMounts: []*esspb.VolumeMount{
+			{Name: "new-name", MountPath: "/dev/ram-scratch"},
+			{Name: "ram-scratch", MountPath: "/new-path"},
+		},
+	}
+	mountsD := generateVolumeMountsForSpec(specD)
+	if len(mountsD) != 4 {
+		t.Errorf("Expected 4 mounts, got %d. Mounts: %+v", len(mountsD), mountsD)
+	}
+	hasCustomD1 := false
+	hasCustomD2 := false
+	for _, m := range mountsD {
+		if m.Name == "new-name" && m.MountPath == "/dev/ram-scratch" {
+			hasCustomD1 = true
+		}
+		if m.Name == "ram-scratch" && m.MountPath == "/new-path" {
+			hasCustomD2 = true
+		}
+	}
+	if !hasCustomD1 || !hasCustomD2 {
+		t.Errorf("Expected both custom mounts to be present (Case D). Custom1: %t, Custom2: %t. Mounts: %+v", hasCustomD1, hasCustomD2, mountsD)
+	}
 }

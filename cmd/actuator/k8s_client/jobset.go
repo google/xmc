@@ -904,11 +904,13 @@ func generateVolumeMountsForSpec(spec *esspb.ExecutableSpec) []corev1.VolumeMoun
 	for _, vm := range spec.GetVolumeMounts() {
 		m := buildVolumeMountFromProto(vm)
 		if idx, exists := nameIndex[vm.GetName()]; exists {
+			delete(pathIndex, mounts[idx].MountPath)
 			pathIndex[vm.GetMountPath()] = idx
 			mounts[idx] = m
 			continue
 		}
 		if idx, exists := pathIndex[vm.GetMountPath()]; exists {
+			delete(nameIndex, mounts[idx].Name)
 			nameIndex[vm.GetName()] = idx
 			mounts[idx] = m
 			continue
