@@ -290,7 +290,7 @@ Instruct the agent:
 10. **Post-Deployment Verification**:
     The agent runs:
     ```bash
-    ./deploy/ctk_v2/verify_xmc.sh
+    python3 ./deploy/ctk_v2/verify_xmc.py
     ```
     And checks that the gateway status is programmed and GTS certificate is active.
 
@@ -328,7 +328,7 @@ When updating an existing XMC installation to a newer version or release branch,
 
 You can perform the upgrade either using the automated script (recommended for development environments) or manually step-by-step.
 
-### Option A: Automated Upgrade (upgrade_dev_env.sh)
+### Option A: Automated Upgrade (upgrade_dev_env.py)
 
 > [!WARNING]
 > The automated upgrade script is designed **only for development and testing environments**. It builds and pushes images directly from your local workspace and triggers rolling restarts which are not suitable for production deployments. For production environments, follow the manual upgrade steps (Option B) to ensure proper release management.
@@ -348,10 +348,10 @@ By default, the script uses the deployment configuration file at `deploy/ctk_v2/
 Run the upgrade script:
 ```bash
 # Run pre-flight verification checks
-./tools/upgrade_dev_env.sh --only check
+python3 ./tools/upgrade_dev_env.py --only check
 
 # Upgrade environment end-to-end (checks migrations, rebuilds/pushes images, deploys app workloads, and restarts services)
-./tools/upgrade_dev_env.sh
+python3 ./tools/upgrade_dev_env.py
 ```
 
 #### Automated Agent Upgrade (`upgrade_xmc` skill)
@@ -545,7 +545,7 @@ helm upgrade --install xmc ./deploy/helm -n xmc --create-namespace -f my-values.
 Run the verification script from the repository root to verify that all upgraded pods are running, endpoints respond correctly, and Gateway TLS certificates remain healthy:
 
 ```bash
-./deploy/ctk_v2/verify_xmc.sh
+python3 ./deploy/ctk_v2/verify_xmc.py
 ```
 
 ---

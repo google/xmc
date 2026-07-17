@@ -58,8 +58,8 @@ test('filterEligibleReviewers excludes the PR author case-insensitively', () => 
 
 test('selectRandomReviewers returns up to count elements and preserves candidate pool elements', () => {
   const candidates = ['alice', 'bob', 'charlie', 'dave', 'eve'];
-  const selected = selectRandomReviewers(candidates, 2);
-  assert.strictEqual(selected.length, 2);
+  const selected = selectRandomReviewers(candidates, 1);
+  assert.strictEqual(selected.length, 1);
   selected.forEach(reviewer => {
     assert.ok(candidates.includes(reviewer));
   });

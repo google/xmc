@@ -33,9 +33,9 @@ import (
 
 // ListParams contains the parameters for a list query.
 type ListParams struct {
-	PageSize   int32
-	Filter     string
-	OrderBy    string
+	PageSize int32
+	Filter   string
+	OrderBy  string
 
 	// Query generator to use for generating the query.
 	QueryGen querytools.QueryGenerator

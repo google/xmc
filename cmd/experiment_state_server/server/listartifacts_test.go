@@ -223,5 +223,3 @@ func TestListArtifacts_DependencyFailures(t *testing.T) {
 		})
 	}
 }
-
-
