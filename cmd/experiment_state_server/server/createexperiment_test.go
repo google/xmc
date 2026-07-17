@@ -142,6 +142,15 @@ func TestCreateExperiment_BadPaths(t *testing.T) {
 	ctx := context.Background()
 	server, _ := createExperimentStateServer(ctx, t)
 
+	baseReq := &apipb.CreateExperimentRequest{
+		Experiment: &msgpb.Experiment{
+			Title: "test experiment",
+			Acls: &xidmsgpb.XidAcls{
+				Owners: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
+			},
+		},
+	}
+
 	testCases := []struct {
 		name    string
 		req     *apipb.CreateExperimentRequest
@@ -149,29 +158,24 @@ func TestCreateExperiment_BadPaths(t *testing.T) {
 	}{
 		{
 			name:    "missing_experiment",
-			req:     &apipb.CreateExperimentRequest{Experiment: nil},
+			req:     proto.Modify(baseReq, func(r *apipb.CreateExperimentRequest) { r.Experiment = nil }),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "missing_acls",
-			req: &apipb.CreateExperimentRequest{
-				Experiment: &msgpb.Experiment{
-					Title: "test experiment",
-				},
-			},
+			req: proto.Modify(baseReq, func(r *apipb.CreateExperimentRequest) {
+				r.Experiment.Acls = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "creator_not_in_writers",
-			req: &apipb.CreateExperimentRequest{
-				Experiment: &msgpb.Experiment{
-					Title: "test experiment",
-					Acls: &xidmsgpb.XidAcls{
-						Owners:  []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "not-me@example.com"}}},
-						Readers: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
-					},
-				},
-			},
+			req: proto.Modify(baseReq, func(r *apipb.CreateExperimentRequest) {
+				r.Experiment.Acls = &xidmsgpb.XidAcls{
+					Owners:  []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "not-me@example.com"}}},
+					Readers: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
+				}
+			}),
 			wantErr: status.ErrPermissionDenied,
 		},
 	}

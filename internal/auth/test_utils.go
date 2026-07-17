@@ -136,3 +136,8 @@ func (m *MockAuth) AuthenticateUserFromContext(ctx context.Context) (string, str
 func (m *MockAuth) IsUserAuthorized(ctx context.Context, user string, acls *xpb.XidAcls, role Role) (bool, error) {
 	return m.IsAuthed, m.AuthzErr
 }
+
+// IsUserAuthorizedForChart mocks user authorization for RLS.
+func (m *MockAuth) IsUserAuthorizedForChart(ctx context.Context, user string, acls *xpb.XidAcls) (bool, error) {
+	return m.IsAuthed, m.AuthzErr
+}

@@ -266,5 +266,3 @@ func TestSearchXidEntries_AuthFailure(t *testing.T) {
 		t.Errorf("SearchXidEntries() returned error %v, want %v", err, status.ErrPermissionDenied)
 	}
 }
-
-

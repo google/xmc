@@ -23,7 +23,7 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/google/go-cmp/cmp"
-	"google.golang.org/protobuf/proto"
+	"golang/protobuf/v2/proto/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	"task/go/status"
 	essapipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
@@ -33,6 +33,17 @@ import (
 )
 
 func TestValidateCreateXidRequest(t *testing.T) {
+	validReq := &xidapipb.CreateXidEntryRequest{
+		XidEntry: &xidmessagespb.XidEntry{
+			Acls: &xidmessagespb.XidAcls{
+				Owners: []*xidmessagespb.XidAcls_Role{
+					{Principal: &xidmessagespb.XidAcls_Role_Group{Group: "group"}},
+				},
+			},
+			Origin: &xidmessagespb.OriginatingSystem{},
+		},
+	}
+
 	tests := []struct {
 		name    string
 		req     *xidapipb.CreateXidEntryRequest
@@ -50,136 +61,78 @@ func TestValidateCreateXidRequest(t *testing.T) {
 		},
 		{
 			name: "xid_entry_name_not_empty",
-			req: &xidapipb.CreateXidEntryRequest{
-				XidEntry: &xidmessagespb.XidEntry{
-					Name: proto.String("xids/123"),
-				},
-			},
+			req: proto.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+				r.XidEntry.Name = proto.String("xids/123")
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "nil_acls",
-			req: &xidapipb.CreateXidEntryRequest{
-				XidEntry: &xidmessagespb.XidEntry{},
-			},
+			req: proto.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+				r.XidEntry.Acls = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "empty_acls",
-			req: &xidapipb.CreateXidEntryRequest{
-				XidEntry: &xidmessagespb.XidEntry{
-					Acls: &xidmessagespb.XidAcls{},
-				},
-			},
+			req: proto.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+				r.XidEntry.Acls = &xidmessagespb.XidAcls{}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "nil_origin",
-			req: &xidapipb.CreateXidEntryRequest{
-				XidEntry: &xidmessagespb.XidEntry{
-					Acls: &xidmessagespb.XidAcls{
-						Owners: []*xidmessagespb.XidAcls_Role{
-							{Principal: &xidmessagespb.XidAcls_Role_Group{Group: "group"}},
-						},
-					},
-				},
-			},
+			req: proto.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+				r.XidEntry.Origin = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_owner_role",
-			req: &xidapipb.CreateXidEntryRequest{
-				XidEntry: &xidmessagespb.XidEntry{
-					Acls: &xidmessagespb.XidAcls{
-						Owners: []*xidmessagespb.XidAcls_Role{
-							{},
-						},
-					},
-					Origin: &xidmessagespb.OriginatingSystem{},
-				},
-			},
+			req: proto.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+				r.XidEntry.Acls.Owners = []*xidmessagespb.XidAcls_Role{{}}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_writer_role",
-			req: &xidapipb.CreateXidEntryRequest{
-				XidEntry: &xidmessagespb.XidEntry{
-					Acls: &xidmessagespb.XidAcls{
-						Writers: []*xidmessagespb.XidAcls_Role{
-							{},
-						},
-					},
-					Origin: &xidmessagespb.OriginatingSystem{},
-				},
-			},
+			req: proto.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+				r.XidEntry.Acls.Writers = []*xidmessagespb.XidAcls_Role{{}}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "invalid_reader_role",
-			req: &xidapipb.CreateXidEntryRequest{
-				XidEntry: &xidmessagespb.XidEntry{
-					Acls: &xidmessagespb.XidAcls{
-						Readers: []*xidmessagespb.XidAcls_Role{
-							{},
-						},
-					},
-					Origin: &xidmessagespb.OriginatingSystem{},
-				},
-			},
+			req: proto.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+				r.XidEntry.Acls.Readers = []*xidmessagespb.XidAcls_Role{{}}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
-			name: "valid_request",
-			req: &xidapipb.CreateXidEntryRequest{
-				XidEntry: &xidmessagespb.XidEntry{
-					Acls: &xidmessagespb.XidAcls{
-						Owners: []*xidmessagespb.XidAcls_Role{
-							{Principal: &xidmessagespb.XidAcls_Role_Group{Group: "group"}},
-						},
-					},
-					Origin: &xidmessagespb.OriginatingSystem{},
-				},
-			},
+			name:    "valid_request",
+			req:     validReq,
 			wantErr: nil,
 		},
 		{
 			name: "valid_parent_xid",
-			req: &xidapipb.CreateXidEntryRequest{
-				XidEntry: &xidmessagespb.XidEntry{
-					Acls: &xidmessagespb.XidAcls{
-						Owners: []*xidmessagespb.XidAcls_Role{
-							{Principal: &xidmessagespb.XidAcls_Role_Group{Group: "group"}},
-						},
-					},
-					Origin:    &xidmessagespb.OriginatingSystem{},
-					ParentXid: proto.String("xids/123"),
-				},
-			},
+			req: proto.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+				r.XidEntry.ParentXid = proto.String("xids/123")
+			}),
 			wantErr: nil,
 		},
 		{
 			name: "valid_parent_xid_nil_acls",
-			req: &xidapipb.CreateXidEntryRequest{
-				XidEntry: &xidmessagespb.XidEntry{
-					Origin:    &xidmessagespb.OriginatingSystem{},
-					ParentXid: proto.String("xids/123"),
-				},
-			},
+			req: proto.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+				r.XidEntry.ParentXid = proto.String("xids/123")
+				r.XidEntry.Acls = nil
+			}),
 			wantErr: nil,
 		},
 		{
 			name: "invalid_parent_xid",
-			req: &xidapipb.CreateXidEntryRequest{
-				XidEntry: &xidmessagespb.XidEntry{
-					Acls: &xidmessagespb.XidAcls{
-						Owners: []*xidmessagespb.XidAcls_Role{
-							{Principal: &xidmessagespb.XidAcls_Role_Group{Group: "group"}},
-						},
-					},
-					Origin:    &xidmessagespb.OriginatingSystem{},
-					ParentXid: proto.String("invalid/123"),
-				},
-			},
+			req: proto.Modify(validReq, func(r *xidapipb.CreateXidEntryRequest) {
+				r.XidEntry.ParentXid = proto.String("invalid/123")
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 	}
@@ -195,6 +148,13 @@ func TestValidateCreateXidRequest(t *testing.T) {
 }
 
 func TestValidateCreateExperimentRequest(t *testing.T) {
+	validReq := &essapipb.CreateExperimentRequest{
+		Experiment: &essmsgpb.Experiment{
+			Title: "title",
+			Acls:  &xidmessagespb.XidAcls{},
+		},
+	}
+
 	tests := []struct {
 		name    string
 		req     *essapipb.CreateExperimentRequest
@@ -212,139 +172,102 @@ func TestValidateCreateExperimentRequest(t *testing.T) {
 		},
 		{
 			name: "name_not_empty",
-			req: &essapipb.CreateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Name: "experiments/123",
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
+				r.Experiment.Name = "experiments/123"
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "creator_not_empty",
-			req: &essapipb.CreateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Creator: "user",
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
+				r.Experiment.Creator = "user"
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "title_empty",
-			req: &essapipb.CreateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
+				r.Experiment.Title = ""
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "title_whitespace",
-			req: &essapipb.CreateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Title: " ",
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
+				r.Experiment.Title = " "
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "create_time_not_empty",
-			req: &essapipb.CreateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Title:      "title",
-					CreateTime: timestamppb.New(time.Now()),
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
+				r.Experiment.CreateTime = timestamppb.New(time.Now())
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "update_time_not_empty",
-			req: &essapipb.CreateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Title:      "title",
-					UpdateTime: timestamppb.New(time.Now()),
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
+				r.Experiment.UpdateTime = timestamppb.New(time.Now())
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "status_not_empty",
-			req: &essapipb.CreateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Title:  "title",
-					Status: &essmsgpb.ExperimentStatus{},
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
+				r.Experiment.Status = &essmsgpb.ExperimentStatus{}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "too_many_tags",
-			req: &essapipb.CreateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Title: "title",
-					Tags:  make([]string, maxTags+1),
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
+				r.Experiment.Tags = make([]string, maxTags+1)
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "tag_too_long",
-			req: &essapipb.CreateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Title: "title",
-					Tags:  []string{strings.Repeat("a", maxTagLen+1)},
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
+				r.Experiment.Tags = []string{strings.Repeat("a", maxTagLen+1)}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "notes_too_long",
-			req: &essapipb.CreateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Title: "title",
-					Notes: strings.Repeat("a", maxNotesLen+1),
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
+				r.Experiment.Notes = strings.Repeat("a", maxNotesLen+1)
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "too_many_urls",
-			req: &essapipb.CreateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Title: "title",
-					Urls:  make([]*essmsgpb.Url, maxURLs+1),
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
+				r.Experiment.Urls = make([]*essmsgpb.Url, maxURLs+1)
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "url_too_long",
-			req: &essapipb.CreateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Title: "title",
-					Urls: []*essmsgpb.Url{
-						{
-							Url: strings.Repeat("a", maxURLLen+1),
-						},
+			req: proto.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
+				r.Experiment.Urls = []*essmsgpb.Url{
+					{
+						Url: strings.Repeat("a", maxURLLen+1),
 					},
-				},
-			},
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "nil_acls",
-			req: &essapipb.CreateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Title: "title",
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateExperimentRequest) {
+				r.Experiment.Acls = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
-			name: "valid_request",
-			req: &essapipb.CreateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Title: "title",
-					Acls:  &xidmessagespb.XidAcls{},
-				},
-			},
+			name:    "valid_request",
+			req:     validReq,
 			wantErr: nil,
 		},
 	}
@@ -360,6 +283,13 @@ func TestValidateCreateExperimentRequest(t *testing.T) {
 }
 
 func TestValidateUpdateExperimentRequest(t *testing.T) {
+	validReq := &essapipb.UpdateExperimentRequest{
+		Experiment: &essmsgpb.Experiment{
+			Title: "title",
+		},
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"title"}},
+	}
+
 	tests := []struct {
 		name    string
 		req     *essapipb.UpdateExperimentRequest
@@ -367,42 +297,29 @@ func TestValidateUpdateExperimentRequest(t *testing.T) {
 	}{
 		{
 			name: "title_empty",
-			req: &essapipb.UpdateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Title: "",
-				},
-				UpdateMask: &fmpb.FieldMask{Paths: []string{"title"}},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.UpdateExperimentRequest) {
+				r.Experiment.Title = ""
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "title_whitespace",
-			req: &essapipb.UpdateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Title: " ",
-				},
-				UpdateMask: &fmpb.FieldMask{Paths: []string{"title"}},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.UpdateExperimentRequest) {
+				r.Experiment.Title = " "
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
-			name: "valid_request",
-			req: &essapipb.UpdateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Title: "title",
-				},
-				UpdateMask: &fmpb.FieldMask{Paths: []string{"title"}},
-			},
+			name:    "valid_request",
+			req:     validReq,
 			wantErr: nil,
 		},
 		{
 			name: "title_empty_no_mask",
-			req: &essapipb.UpdateExperimentRequest{
-				Experiment: &essmsgpb.Experiment{
-					Title: "",
-				},
-				UpdateMask: &fmpb.FieldMask{Paths: []string{}},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.UpdateExperimentRequest) {
+				r.Experiment.Title = ""
+				r.UpdateMask = &fmpb.FieldMask{Paths: []string{}}
+			}),
 			wantErr: nil,
 		},
 	}
@@ -466,6 +383,35 @@ func TestFillXidEntryNullValues(t *testing.T) {
 }
 
 func TestValidateCreateWorkUnitRequest(t *testing.T) {
+	validReq := &essapipb.CreateWorkUnitRequest{
+		Parent: "experiments/123",
+		WorkUnit: &essmsgpb.WorkUnit{
+			Executable: &essmsgpb.Executable{
+				SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+					QueueName: "queue",
+				},
+				Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+					Jobs: []*essmsgpb.KubernetesJob{
+						{
+							Name:     "job1",
+							Replicas: 1,
+							Spec: &essmsgpb.ExecutableSpec{
+								DockerImage: "image",
+								Resources: &essmsgpb.ResourceSet{
+									Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+										CpuMillicores: 1,
+										MemoryBytes:   1,
+									}},
+								},
+							},
+						},
+					},
+				}},
+			},
+			WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+		},
+	}
+
 	tests := []struct {
 		name    string
 		req     *essapipb.CreateWorkUnitRequest
@@ -478,1180 +424,432 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 		},
 		{
 			name: "invalid_parent",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "invalid/123",
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.Parent = "invalid/123"
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "nil_work_unit",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "name_not_empty",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Name: "experiments/123/workUnits/1",
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Name = "experiments/123/workUnits/1"
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "create_time_not_empty",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					CreateTime: timestamppb.New(time.Now()),
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.CreateTime = timestamppb.New(time.Now())
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "update_time_not_empty",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					UpdateTime: timestamppb.New(time.Now()),
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.UpdateTime = timestamppb.New(time.Now())
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "current_work_unit_execution_not_empty",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{},
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.CurrentWorkUnitExecution = &essmsgpb.WorkUnitExecution{}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "too_many_tags",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Tags: make([]string, maxTags+1),
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Tags = make([]string, maxTags+1)
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "tag_too_long",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Tags: []string{strings.Repeat("a", maxTagLen+1)},
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Tags = []string{strings.Repeat("a", maxTagLen+1)}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "notes_too_long",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Notes: strings.Repeat("a", maxNotesLen+1),
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Notes = strings.Repeat("a", maxNotesLen+1)
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "too_many_urls",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Urls: make([]*essmsgpb.Url, maxURLs+1),
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Urls = make([]*essmsgpb.Url, maxURLs+1)
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "url_too_long",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Urls: []*essmsgpb.Url{
-						{
-							Url: strings.Repeat("a", maxURLLen+1),
-						},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Urls = []*essmsgpb.Url{
+					{
+						Url: strings.Repeat("a", maxURLLen+1),
 					},
-				},
-			},
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "nil_executable",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent:   "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "work_unit_type_unspecified",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{},
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.WorkUnitType = essmsgpb.WorkUnit_WORK_UNIT_TYPE_UNSPECIFIED
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "nil_scheduling_constraints",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable:   &essmsgpb.Executable{},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.SchedulingConstraints = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "empty_queue_name",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.SchedulingConstraints.QueueName = ""
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "queue_name_too_long",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: strings.Repeat("a", maxQueueNameLen+1),
-						},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.SchedulingConstraints.QueueName = strings.Repeat("a", maxQueueNameLen+1)
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "nil_jobset",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.Type = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "no_jobs",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs = []*essmsgpb.KubernetesJob{}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "too_many_jobs",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: make([]*essmsgpb.KubernetesJob, 9),
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs = make([]*essmsgpb.KubernetesJob, 9)
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "jobset_no_jobs",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs = []*essmsgpb.KubernetesJob{}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "job_replicas_too_low",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 0,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Replicas = 0
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "job_spec_nil",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec:     nil,
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "job_name_empty",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Name = ""
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "job_spec_docker_image_empty",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.DockerImage = ""
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "job_spec_resources_nil",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources:   nil,
-									},
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.Resources = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "job_spec_resources_resources_nil",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources:   &essmsgpb.ResourceSet{},
-									},
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.Resources.Resources = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "cpu_millicores_too_low",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 0,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-								},
-							},
-						}},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.Resources.Resources = &essmsgpb.ResourceSet_CpuResources{
+					CpuResources: &essmsgpb.CpuResources{
+						CpuMillicores: 0,
+						MemoryBytes:   1,
 					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "memory_bytes_too_low",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   0,
-											}},
-										},
-									},
-								},
-							},
-						}},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.Resources.Resources = &essmsgpb.ResourceSet_CpuResources{
+					CpuResources: &essmsgpb.CpuResources{
+						CpuMillicores: 1,
+						MemoryBytes:   0,
 					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "gpu_type_empty",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_GpuResources{GpuResources: &essmsgpb.GpuResources{
-												Type:  "",
-												Count: 1,
-											}},
-										},
-									},
-								},
-							},
-						}},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.Resources.Resources = &essmsgpb.ResourceSet_GpuResources{
+					GpuResources: &essmsgpb.GpuResources{
+						Type:  "",
+						Count: 1,
 					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "gpu_count_too_low",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_GpuResources{GpuResources: &essmsgpb.GpuResources{
-												Type:  "gpu",
-												Count: 0,
-											}},
-										},
-									},
-								},
-							},
-						}},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.Resources.Resources = &essmsgpb.ResourceSet_GpuResources{
+					GpuResources: &essmsgpb.GpuResources{
+						Type:  "gpu",
+						Count: 0,
 					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "tpu_type_empty",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_TpuResources{TpuResources: &essmsgpb.TpuResources{
-												Type:     "",
-												Topology: "1x1",
-											}},
-										},
-									},
-								},
-							},
-						}},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.Resources.Resources = &essmsgpb.ResourceSet_TpuResources{
+					TpuResources: &essmsgpb.TpuResources{
+						Type:     "",
+						Topology: "1x1",
 					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "tpu_topology_empty",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_TpuResources{TpuResources: &essmsgpb.TpuResources{
-												Type:     "tpu",
-												Topology: "",
-											}},
-										},
-									},
-								},
-							},
-						}},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.Resources.Resources = &essmsgpb.ResourceSet_TpuResources{
+					TpuResources: &essmsgpb.TpuResources{
+						Type:     "tpu",
+						Topology: "",
 					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
-			name: "valid_request",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-								},
-							},
-						}},
+			name: "tpu_topology_invalid",
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.Resources.Resources = &essmsgpb.ResourceSet_TpuResources{
+					TpuResources: &essmsgpb.TpuResources{
+						Type:     "tpu",
+						Topology: "invalid-topology",
 					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+				}
+			}),
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name:    "valid_request",
+			req:     validReq,
 			wantErr: nil,
 		},
 		{
 			name: "job_name_too_long",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     strings.Repeat("a", 64),
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Name = strings.Repeat("a", 64)
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "job_name_invalid_format",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "-job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Name = "-job1"
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "job_name_duplicate",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-								},
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				jobs := r.WorkUnit.Executable.GetJobset().Jobs
+				r.WorkUnit.Executable.GetJobset().Jobs = append(jobs, proto.Clone(jobs[0]).(*essmsgpb.KubernetesJob))
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "job_dependency_name_empty",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-									DependencyOrder: &essmsgpb.KubernetesJob_DependencyOrder{
-										JobName: "",
-									},
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].DependencyOrder = &essmsgpb.KubernetesJob_DependencyOrder{
+					JobName: "",
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "job_dependency_self",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-									DependencyOrder: &essmsgpb.KubernetesJob_DependencyOrder{
-										JobName: "job1",
-									},
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].DependencyOrder = &essmsgpb.KubernetesJob_DependencyOrder{
+					JobName: "job1",
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "job_dependency_not_found",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-									DependencyOrder: &essmsgpb.KubernetesJob_DependencyOrder{
-										JobName: "job2",
-									},
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].DependencyOrder = &essmsgpb.KubernetesJob_DependencyOrder{
+					JobName: "job2",
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "job_dependency_state_unspecified",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-								},
-								{
-									Name:     "job2",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-									DependencyOrder: &essmsgpb.KubernetesJob_DependencyOrder{
-										JobName:            "job1",
-										JobDependencyState: essmsgpb.KubernetesJob_DependencyOrder_JOB_DEPENDENCY_STATE_UNSPECIFIED,
-									},
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				jobs := r.WorkUnit.Executable.GetJobset().Jobs
+				job2 := proto.Clone(jobs[0]).(*essmsgpb.KubernetesJob)
+				job2.Name = "job2"
+				job2.DependencyOrder = &essmsgpb.KubernetesJob_DependencyOrder{
+					JobName:            "job1",
+					JobDependencyState: essmsgpb.KubernetesJob_DependencyOrder_JOB_DEPENDENCY_STATE_UNSPECIFIED,
+				}
+				r.WorkUnit.Executable.GetJobset().Jobs = append(jobs, job2)
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "valid_request_with_dependency",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-								},
-								{
-									Name:     "job2",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-									DependencyOrder: &essmsgpb.KubernetesJob_DependencyOrder{
-										JobName:            "job1",
-										JobDependencyState: essmsgpb.KubernetesJob_DependencyOrder_READY,
-									},
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				jobs := r.WorkUnit.Executable.GetJobset().Jobs
+				job2 := proto.Clone(jobs[0]).(*essmsgpb.KubernetesJob)
+				job2.Name = "job2"
+				job2.DependencyOrder = &essmsgpb.KubernetesJob_DependencyOrder{
+					JobName:            "job1",
+					JobDependencyState: essmsgpb.KubernetesJob_DependencyOrder_READY,
+				}
+				r.WorkUnit.Executable.GetJobset().Jobs = append(jobs, job2)
+			}),
 			wantErr: nil,
 		},
 		{
 			name: "valid_service_account",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-									ServiceAccount: "my-service-account",
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].ServiceAccount = "my-service-account"
+			}),
 			wantErr: nil,
 		},
 		{
 			name: "invalid_service_account_format",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-									ServiceAccount: "invalid_name",
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].ServiceAccount = "invalid_name"
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "service_account_too_long",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
-						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-									ServiceAccount: strings.Repeat("a", 254),
-								},
-							},
-						}},
-					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].ServiceAccount = strings.Repeat("a", 254)
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "valid_job_with_sidecars",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.Name = "main-container"
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Sidecars = []*essmsgpb.ExecutableSpec{
+					{
+						Name:        "sidecar-container",
+						DockerImage: "sidecar-image",
+						Resources: &essmsgpb.ResourceSet{
+							Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+								CpuMillicores: 1,
+								MemoryBytes:   1,
+							}},
 						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										Name:        "main-container",
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-									Sidecars: []*essmsgpb.ExecutableSpec{
-										{
-											Name:        "sidecar-container",
-											DockerImage: "sidecar-image",
-											Resources: &essmsgpb.ResourceSet{
-												Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-													CpuMillicores: 1,
-													MemoryBytes:   1,
-												}},
-											},
-										},
-									},
-								},
-							},
-						}},
 					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+				}
+			}),
 			wantErr: nil,
 		},
 		{
 			name: "valid_with_init_containers",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.Name = "main-container"
+				r.WorkUnit.Executable.GetJobset().Jobs[0].InitContainers = []*essmsgpb.ExecutableSpec{
+					{
+						Name:        "init-container",
+						DockerImage: "init-image",
+						Resources: &essmsgpb.ResourceSet{
+							Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+								CpuMillicores: 1,
+								MemoryBytes:   1,
+							}},
 						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										Name:        "main-container",
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-									InitContainers: []*essmsgpb.ExecutableSpec{
-										{
-											Name:        "init-container",
-											DockerImage: "init-image",
-											Resources: &essmsgpb.ResourceSet{
-												Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-													CpuMillicores: 1,
-													MemoryBytes:   1,
-												}},
-											},
-										},
-									},
-								},
-							},
-						}},
 					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+				}
+			}),
 			wantErr: nil,
 		},
 		{
 			name: "invalid_sidecar_duplicate_container_name",
-			req: &essapipb.CreateWorkUnitRequest{
-				Parent: "experiments/123",
-				WorkUnit: &essmsgpb.WorkUnit{
-					Executable: &essmsgpb.Executable{
-						SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-							QueueName: "queue",
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.Name = "same-name"
+				r.WorkUnit.Executable.GetJobset().Jobs[0].Sidecars = []*essmsgpb.ExecutableSpec{
+					{
+						Name:        "same-name",
+						DockerImage: "sidecar-image",
+						Resources: &essmsgpb.ResourceSet{
+							Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
+								CpuMillicores: 1,
+								MemoryBytes:   1,
+							}},
 						},
-						Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Name:     "job1",
-									Replicas: 1,
-									Spec: &essmsgpb.ExecutableSpec{
-										Name:        "same-name",
-										DockerImage: "image",
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-												CpuMillicores: 1,
-												MemoryBytes:   1,
-											}},
-										},
-									},
-									Sidecars: []*essmsgpb.ExecutableSpec{
-										{
-											Name:        "same-name",
-											DockerImage: "sidecar-image",
-											Resources: &essmsgpb.ResourceSet{
-												Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
-													CpuMillicores: 1,
-													MemoryBytes:   1,
-												}},
-											},
-										},
-									},
-								},
-							},
-						}},
 					},
-					WorkUnitType: essmsgpb.WorkUnit_STANDARD,
-				},
-			},
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 	}
@@ -1667,6 +865,23 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 }
 
 func TestValidateCreateArtifactRequest(t *testing.T) {
+	validReq := &essapipb.CreateArtifactRequest{
+		Parent: "experiments/123",
+		Artifact: &essmsgpb.Artifact{
+			Url: &essmsgpb.Url{
+				Url: "http://example.com",
+			},
+			Payload: &essmsgpb.ArtifactPayload{
+				Type: &essmsgpb.ArtifactPayload_Text{
+					Text: &essmsgpb.TextArtifact{
+						Title: "title",
+						Text:  "text",
+					},
+				},
+			},
+		},
+	}
+
 	tests := []struct {
 		name    string
 		req     *essapipb.CreateArtifactRequest
@@ -1679,379 +894,262 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 		},
 		{
 			name: "invalid_parent",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "invalid/123",
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Parent = "invalid/123"
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "nil_artifact",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "name_not_empty",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Name: "artifacts/1",
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Name = "artifacts/1"
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "parent_not_empty",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Parent: "experiments/123",
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Parent = "experiments/123"
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "create_time_not_empty",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					CreateTime: timestamppb.New(time.Now()),
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.CreateTime = timestamppb.New(time.Now())
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "update_time_not_empty",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					UpdateTime: timestamppb.New(time.Now()),
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.UpdateTime = timestamppb.New(time.Now())
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "nil_url",
-			req: &essapipb.CreateArtifactRequest{
-				Parent:   "experiments/123",
-				Artifact: &essmsgpb.Artifact{},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Url = nil
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "empty_url_url",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{},
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Url = &essmsgpb.Url{}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "url_url_too_long",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{
-						Url: strings.Repeat("a", maxURLLen+1),
-					},
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Url = &essmsgpb.Url{
+					Url: strings.Repeat("a", maxURLLen+1),
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "too_many_tags",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{
-						Url: "http://example.com",
-					},
-					Tags: make([]string, maxTags+1),
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Tags = make([]string, maxTags+1)
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "tag_too_long",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{
-						Url: "http://example.com",
-					},
-					Tags: []string{strings.Repeat("a", maxTagLen+1)},
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Tags = []string{strings.Repeat("a", maxTagLen+1)}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "notes_too_long",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{
-						Url: "http://example.com",
-					},
-					Notes: strings.Repeat("a", maxNotesLen+1),
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Notes = strings.Repeat("a", maxNotesLen+1)
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "payload_missing",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{
-						Url: "http://example.com",
-					},
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Payload = nil
+			}),
 			wantErr: nil,
 		},
 		{
-			name: "valid_request_exp_parent",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{
-						Url: "http://example.com",
-					},
-					Payload: &essmsgpb.ArtifactPayload{
-						Type: &essmsgpb.ArtifactPayload_Text{
-							Text: &essmsgpb.TextArtifact{
-								Title: "title",
-								Text:  "text",
-							},
-						},
-					},
-				},
-			},
+			name:    "valid_request_exp_parent",
+			req:     validReq,
 			wantErr: nil,
 		},
 		{
 			name: "valid_request_wu_parent",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123/workUnits/1",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{
-						Url: "http://example.com",
-					},
-					Payload: &essmsgpb.ArtifactPayload{
-						Type: &essmsgpb.ArtifactPayload_Text{
-							Text: &essmsgpb.TextArtifact{
-								Title: "title",
-								Text:  "text",
-							},
-						},
-					},
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Parent = "experiments/123/workUnits/1"
+			}),
 			wantErr: nil,
 		},
 		{
 			name: "payload_type_nil",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url:     &essmsgpb.Url{Url: "http://example.com"},
-					Payload: &essmsgpb.ArtifactPayload{},
-				},
-			},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Payload = &essmsgpb.ArtifactPayload{}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "payload_managed_xprof_missing_display_name",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{Url: "http://example.com"},
-					Payload: &essmsgpb.ArtifactPayload{
-						Type: &essmsgpb.ArtifactPayload_ManagedXprof{
-							ManagedXprof: &essmsgpb.ManagedXprofArtifact{
-								RunGroup: "run_group",
-							},
-						},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Payload.Type = &essmsgpb.ArtifactPayload_ManagedXprof{
+					ManagedXprof: &essmsgpb.ManagedXprofArtifact{
+						RunGroup: "run_group",
 					},
-				},
-			},
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "payload_managed_xprof_missing_run_group",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{Url: "http://example.com"},
-					Payload: &essmsgpb.ArtifactPayload{
-						Type: &essmsgpb.ArtifactPayload_ManagedXprof{
-							ManagedXprof: &essmsgpb.ManagedXprofArtifact{
-								DisplayName: "display_name",
-							},
-						},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Payload.Type = &essmsgpb.ArtifactPayload_ManagedXprof{
+					ManagedXprof: &essmsgpb.ManagedXprofArtifact{
+						DisplayName: "display_name",
 					},
-				},
-			},
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "payload_code_source_missing_title",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{Url: "http://example.com"},
-					Payload: &essmsgpb.ArtifactPayload{
-						Type: &essmsgpb.ArtifactPayload_CodeSource{
-							CodeSource: &essmsgpb.CodeSourceArtifact{
-								CodeBlock: "code_block",
-							},
-						},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Payload.Type = &essmsgpb.ArtifactPayload_CodeSource{
+					CodeSource: &essmsgpb.CodeSourceArtifact{
+						CodeBlock: "code_block",
 					},
-				},
-			},
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "payload_code_source_missing_code_block",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{Url: "http://example.com"},
-					Payload: &essmsgpb.ArtifactPayload{
-						Type: &essmsgpb.ArtifactPayload_CodeSource{
-							CodeSource: &essmsgpb.CodeSourceArtifact{
-								Title: "title",
-							},
-						},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Payload.Type = &essmsgpb.ArtifactPayload_CodeSource{
+					CodeSource: &essmsgpb.CodeSourceArtifact{
+						Title: "title",
 					},
-				},
-			},
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "payload_text_missing_title",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{Url: "http://example.com"},
-					Payload: &essmsgpb.ArtifactPayload{
-						Type: &essmsgpb.ArtifactPayload_Text{
-							Text: &essmsgpb.TextArtifact{
-								Text: "text",
-							},
-						},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Payload.Type = &essmsgpb.ArtifactPayload_Text{
+					Text: &essmsgpb.TextArtifact{
+						Text: "text",
 					},
-				},
-			},
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "payload_text_missing_text",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{Url: "http://example.com"},
-					Payload: &essmsgpb.ArtifactPayload{
-						Type: &essmsgpb.ArtifactPayload_Text{
-							Text: &essmsgpb.TextArtifact{
-								Title: "title",
-							},
-						},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Payload.Type = &essmsgpb.ArtifactPayload_Text{
+					Text: &essmsgpb.TextArtifact{
+						Title: "title",
 					},
-				},
-			},
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "valid_request_with_managed_xprof_payload",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{Url: "http://example.com"},
-					Payload: &essmsgpb.ArtifactPayload{
-						Type: &essmsgpb.ArtifactPayload_ManagedXprof{
-							ManagedXprof: &essmsgpb.ManagedXprofArtifact{
-								DisplayName: "display_name",
-								RunGroup:    "run_group",
-							},
-						},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Payload.Type = &essmsgpb.ArtifactPayload_ManagedXprof{
+					ManagedXprof: &essmsgpb.ManagedXprofArtifact{
+						DisplayName: "display_name",
+						RunGroup:    "run_group",
 					},
-				},
-			},
+				}
+			}),
 			wantErr: nil,
 		},
 		{
 			name: "valid_request_with_code_source_payload",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{Url: "http://example.com"},
-					Payload: &essmsgpb.ArtifactPayload{
-						Type: &essmsgpb.ArtifactPayload_CodeSource{
-							CodeSource: &essmsgpb.CodeSourceArtifact{
-								Title:     "title",
-								CodeBlock: "code_block",
-							},
-						},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Payload.Type = &essmsgpb.ArtifactPayload_CodeSource{
+					CodeSource: &essmsgpb.CodeSourceArtifact{
+						Title:     "title",
+						CodeBlock: "code_block",
 					},
-				},
-			},
+				}
+			}),
 			wantErr: nil,
 		},
 		{
 			name: "valid_request_with_text_payload",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{Url: "http://example.com"},
-					Payload: &essmsgpb.ArtifactPayload{
-						Type: &essmsgpb.ArtifactPayload_Text{
-							Text: &essmsgpb.TextArtifact{
-								Title: "title",
-								Text:  "text",
-							},
-						},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Payload.Type = &essmsgpb.ArtifactPayload_Text{
+					Text: &essmsgpb.TextArtifact{
+						Title: "title",
+						Text:  "text",
 					},
-				},
-			},
+				}
+			}),
 			wantErr: nil,
 		},
 		{
 			name: "payload_url_missing_url",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{Url: "http://example.com"},
-					Payload: &essmsgpb.ArtifactPayload{
-						Type: &essmsgpb.ArtifactPayload_Url{
-							Url: &essmsgpb.UrlArtifact{
-								DisplayName: "Example Link",
-							},
-						},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Payload.Type = &essmsgpb.ArtifactPayload_Url{
+					Url: &essmsgpb.UrlArtifact{
+						DisplayName: "Example Link",
 					},
-				},
-			},
+				}
+			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
 			name: "valid_request_with_url_payload",
-			req: &essapipb.CreateArtifactRequest{
-				Parent: "experiments/123",
-				Artifact: &essmsgpb.Artifact{
-					Url: &essmsgpb.Url{Url: "http://example.com"},
-					Payload: &essmsgpb.ArtifactPayload{
-						Type: &essmsgpb.ArtifactPayload_Url{
-							Url: &essmsgpb.UrlArtifact{
-								Url:         "http://example.com",
-								DisplayName: "Example Link",
-							},
-						},
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Payload.Type = &essmsgpb.ArtifactPayload_Url{
+					Url: &essmsgpb.UrlArtifact{
+						Url:         "http://example.com",
+						DisplayName: "Example Link",
 					},
-				},
-			},
+				}
+			}),
+			wantErr: nil,
+		},
+		{
+			name: "payload_chart_missing_metrics",
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Payload.Type = &essmsgpb.ArtifactPayload_Chart{
+					Chart: &essmsgpb.ChartArtifact{
+						Title: "Test Chart",
+					},
+				}
+			}),
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "valid_request_with_chart_payload",
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Payload.Type = &essmsgpb.ArtifactPayload_Chart{
+					Chart: &essmsgpb.ChartArtifact{
+						Title:       "Test Chart",
+						MetricNames: []string{"accuracy"},
+					},
+				}
+			}),
 			wantErr: nil,
 		},
 	}
@@ -2238,4 +1336,30 @@ func TestValidateJobSetNetwork(t *testing.T) {
 		})
 	}
 }
+func TestValidateTPUTopology(t *testing.T) {
+	tests := []struct {
+		name     string
+		topology string
+		wantErr  bool
+	}{
+		{name: "valid 2x2", topology: "2x2", wantErr: false},
+		{name: "valid 2x2x4", topology: "2x2x4", wantErr: false},
+		{name: "valid 8x8", topology: "8x8", wantErr: false},
+		{name: "valid single dimension", topology: "4", wantErr: false},
+		{name: "empty topology", topology: "", wantErr: true},
+		{name: "invalid characters", topology: "abc", wantErr: true},
+		{name: "negative dimension", topology: "-2x2", wantErr: true},
+		{name: "zero dimension", topology: "0x4", wantErr: true},
+		{name: "trailing x", topology: "2x", wantErr: true},
+		{name: "leading x", topology: "x2", wantErr: true},
+	}
 
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateTPUTopology(tc.topology, "prefix")
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateTPUTopology(%q) error = %v, wantErr %v", tc.topology, err, tc.wantErr)
+			}
+		})
+	}
+}

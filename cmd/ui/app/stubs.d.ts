@@ -100,6 +100,9 @@ declare module 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_dec
   export interface Artifact {
     [key: string]: any;
   }
+  export interface ChartArtifact {
+    [key: string]: any;
+  }
   export interface CodeSourceArtifact {
     [key: string]: any;
   }

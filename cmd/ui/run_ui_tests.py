@@ -20,35 +20,36 @@ import sys
 
 
 def main():
-  # Resolve the real physical directory of this script on the host system
-  real_script_path = os.path.realpath(__file__)
-  real_ui_dir = os.path.dirname(real_script_path)
+    """Runs Angular UI unit tests in physical directory."""
+    # Resolve the real physical directory of this script on the host system
+    real_script_path = os.path.realpath(__file__)
+    real_ui_dir = os.path.dirname(real_script_path)
 
-  # Query passwd database for the actual host user's home directory
-  try:
-    user_home = pwd.getpwuid(os.getuid()).pw_dir
-  except Exception:
-    user_home = os.path.expanduser('~')
+    # Query passwd database for the actual host user's home directory
+    try:
+        user_home = pwd.getpwuid(os.getuid()).pw_dir
+    except Exception:
+        user_home = os.path.expanduser("~")
 
-  # Check if NVM exists in the user's real home and source it
-  nvm_sh = os.path.join(user_home, '.nvm', 'nvm.sh')
-  if os.path.exists(nvm_sh):
-    cmd = f'source {nvm_sh} && npx ng test --watch=false'
-  else:
-    cmd = 'npx ng test --watch=false'
+    # Check if NVM exists in the user's real home and source it
+    nvm_sh = os.path.join(user_home, ".nvm", "nvm.sh")
+    if os.path.exists(nvm_sh):
+        cmd = f"source {nvm_sh} && npx ng test --watch=false"
+    else:
+        cmd = "npx ng test --watch=false"
 
-  print(f'Executing Angular tests in physical workspace: {real_ui_dir}')
+    print(f"Executing Angular tests in physical workspace: {real_ui_dir}")
 
-  # Run the command with bash so we can source nvm
-  res = subprocess.run(
-      cmd,
-      shell=True,
-      executable='/bin/bash',
-      cwd=real_ui_dir,
-      check=False,
-  )
-  sys.exit(res.returncode)
+    # Run the command with bash so we can source nvm
+    res = subprocess.run(
+        cmd,
+        shell=True,
+        executable="/bin/bash",
+        cwd=real_ui_dir,
+        check=False,
+    )
+    sys.exit(res.returncode)
 
 
-if __name__ == '__main__':
-  main()
+if __name__ == "__main__":
+    main()
