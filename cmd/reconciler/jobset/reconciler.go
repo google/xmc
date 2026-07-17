@@ -26,6 +26,7 @@ import (
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
+	k8slabels "golang/k8s_io/apimachinery/v/v0_23/pkg/labels/labels"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
 	"golang/prometheus/client/prometheus/promauto/promauto"
 	"golang/prometheus/client/prometheus/prometheus"
@@ -428,7 +429,11 @@ func isNodeSelectorMismatchMessage(msg string) bool {
 // listAvailableTPUTopologies returns a sorted list of unique TPU topologies advertised by nodes in the cluster.
 func (r *Reconciler) listAvailableTPUTopologies(ctx context.Context) ([]string, error) {
 	var nodeList corev1.NodeList
-	if err := r.List(logging.Strip(ctx), &nodeList, client.HasLabels{constants.TPUTopologySelectorKey}); err != nil {
+	selector, err := k8slabels.Parse(constants.TPUTopologySelectorKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse TPU topology label selector: %w", err)
+	}
+	if err := r.List(logging.Strip(ctx), &nodeList, client.MatchingLabelsSelector{Selector: selector}); err != nil {
 		return nil, fmt.Errorf("failed to list nodes with TPU topology label: %w", err)
 	}
 
