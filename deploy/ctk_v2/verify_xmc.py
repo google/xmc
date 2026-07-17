@@ -21,6 +21,13 @@ import re
 import subprocess
 import sys
 
+# Ensure repo root is in sys.path to allow importing tools
+_repo_root = pathlib.Path(__file__).resolve().parent.parent.parent
+if str(_repo_root) not in sys.path:
+    sys.path.append(str(_repo_root))
+
+from tools.tool_utils import ensure_venv  # noqa: E402
+
 
 def _extract_yaml_val(content: str, key: str) -> str | None:
     """Extracts scalar string value for key from YAML content using regex.
@@ -202,42 +209,13 @@ def _check_log_monitor(
     print("✅ Log Monitor Cloud Run service is running and Ready.")
 
 
-def _should_bypass_venv() -> bool:
-    """Checks if virtual environment activation should be skipped."""
-    if "TEST_SRCDIR" in os.environ or "BAZEL_TEST" in os.environ:
-        return True
-    if sys.prefix != sys.base_prefix or os.environ.get("XMC_BYPASS_VENV") == "1":
-        return True
-    if "unittest" in sys.modules or "pytest" in sys.modules:
-        return True
-    file_path_str = str(pathlib.Path(__file__).resolve())
-    cwd_path_str = str(pathlib.Path.cwd().resolve())
-    if any(
-        token in file_path_str or token in cwd_path_str
-        for token in ("execroot", "bazel-out", "sandbox")
-    ):
-        return True
-    return False
-
-
-def _ensure_venv() -> None:
-    """Ensures verify_xmc runs inside the tooling virtual environment if available."""
-    if _should_bypass_venv():
-        return
-    venv_py = (
-        pathlib.Path(__file__).resolve().parent.parent.parent / "tools" / "venv" / "bin" / "python3"
-    ).resolve()
-    if venv_py.is_file() and pathlib.Path(sys.executable).resolve() != venv_py:
-        os.execv(str(venv_py), [str(venv_py)] + sys.argv)
-
-
 def main() -> int:
     """Executes full diagnostic verification suite against target XMC environment.
 
     Returns:
         Exit code 0 on success, 1 on any check warning/failure.
     """
-    _ensure_venv()
+    ensure_venv()
     print("=========================================")
     print("XManager on Cloud (XMC) v2 Verification")
     print("=========================================")

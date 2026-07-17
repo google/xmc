@@ -22,6 +22,9 @@ py_library(
     srcs = ["verify_xmc.py"],
     imports = ["."],
     visibility = ["//visibility:public"],
+    deps = [
+        "//tools:tool_utils",
+    ],
 )
 
 py_test(
