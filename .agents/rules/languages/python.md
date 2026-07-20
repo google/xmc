@@ -5,6 +5,7 @@ This document outlines coding standards, style guidelines, and best practices fo
 ---
 
 ## 1. Style & Conventions
+- **Python 3.14+ Version Enforcement**: Target Python 3.14+ for all Python scripts, CLI tools, operational hooks, and inline rule command snippets. Leverage modern Python 3.14+ features (including full syntax support in f-strings `f"{c['id']}"`, enhanced typing, and `pathlib` APIs).
 - **PEP 8 Style Guide**: Strictly follow standard Python style guidelines (PEP 8) and standard library best practices.
 - **Standard Library Preference**: Prefer built-in Python standard library modules (`pathlib`, `argparse`, `dataclasses`, `enum`, `subprocess`, `typing`) over third-party dependencies or custom utility wrappers.
 - **Prefer Python over Shell**: Write Python scripts instead of complex Shell scripts for automation, operational hooks, and CLI tools whenever procedural logic, JSON/YAML parsing, or conditional execution is required.
