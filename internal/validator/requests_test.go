@@ -1332,29 +1332,32 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 	}
 }
 
-func createValidReqWithSuccessPolicy(policy *essmsgpb.JobSetExecutable_SuccessPolicy) *essapipb.CreateWorkUnitRequest {
-	return &essapipb.CreateWorkUnitRequest{
-		Parent: "experiments/123",
-		WorkUnit: &essmsgpb.WorkUnit{
-			Executable: &essmsgpb.Executable{
-				SchedulingConstraints: &essmsgpb.SchedulingConstraints{QueueName: "queue"},
-				Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
-					SuccessPolicy: policy,
-					Jobs: []*essmsgpb.KubernetesJob{{
-						Name:     "pathways-head",
-						Replicas: 1,
-						Spec: &essmsgpb.ExecutableSpec{
-							DockerImage: "image",
-							Resources: &essmsgpb.ResourceSet{
-								Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{CpuMillicores: 1, MemoryBytes: 1}},
-							},
+var baseWorkUnitReqWithSuccessPolicy = &essapipb.CreateWorkUnitRequest{
+	Parent: "experiments/123",
+	WorkUnit: &essmsgpb.WorkUnit{
+		Executable: &essmsgpb.Executable{
+			SchedulingConstraints: &essmsgpb.SchedulingConstraints{QueueName: "queue"},
+			Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+				Jobs: []*essmsgpb.KubernetesJob{{
+					Name:     "pathways-head",
+					Replicas: 1,
+					Spec: &essmsgpb.ExecutableSpec{
+						DockerImage: "image",
+						Resources: &essmsgpb.ResourceSet{
+							Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{CpuMillicores: 1, MemoryBytes: 1}},
 						},
-					}},
+					},
 				}},
-			},
-			WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+			}},
 		},
-	}
+		WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+	},
+}
+
+func createValidReqWithSuccessPolicy(policy *essmsgpb.JobSetExecutable_SuccessPolicy) *essapipb.CreateWorkUnitRequest {
+	return proto.Modify(baseWorkUnitReqWithSuccessPolicy, func(req *essapipb.CreateWorkUnitRequest) {
+		req.GetWorkUnit().GetExecutable().GetJobset().SuccessPolicy = policy
+	})
 }
 
 func TestValidateCreateWorkUnitRequest_SuccessPolicy(t *testing.T) {
