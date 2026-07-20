@@ -60,4 +60,3 @@ func isValidMetricName(name string) bool {
 	}
 	return true
 }
-

@@ -31,6 +31,13 @@ def main():
     except Exception:
         user_home = os.path.expanduser("~")
 
+    # Ensure ~/.local/bin is in PATH if npx/npm/node are installed there
+    env = dict(os.environ)
+    local_bin = os.path.join(user_home, ".local", "bin")
+    current_path = env.get("PATH", "")
+    if local_bin not in current_path.split(os.pathsep):
+        env["PATH"] = f"{local_bin}{os.pathsep}{current_path}" if current_path else local_bin
+
     # Check if NVM exists in the user's real home and source it
     nvm_sh = os.path.join(user_home, ".nvm", "nvm.sh")
     if os.path.exists(nvm_sh):
@@ -46,6 +53,7 @@ def main():
         shell=True,
         executable="/bin/bash",
         cwd=real_ui_dir,
+        env=env,
         check=False,
     )
     sys.exit(res.returncode)
