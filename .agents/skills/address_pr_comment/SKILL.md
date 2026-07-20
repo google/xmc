@@ -22,8 +22,8 @@ graph TD
     K --> L["Report Status & Complete Task"]
 ```
 
-> [!NOTE]
-> All PR comment review evaluations and code inspection standards defined in [.agents/rules/pr_review_guidelines.md](../../rules/pr_review_guidelines.md) apply to this workflow.
+> [!IMPORTANT]
+> All execution steps in this skill MUST strictly adhere to the mandatory [PR Review & Inspection Guidelines](../../rules/pr_review_guidelines.md) (enforcing mandatory programmatic comment enumeration, pre-edit consolidated review checklist artifacts, and 1-to-1 thread resolution verification).
 
 ---
 
@@ -36,11 +36,6 @@ When invoking helper tools under `tools/` (e.g. `fetch_pr_comment.py`, `reply_pr
    - **Exit code 0 (Success)**: The requested data is in the `"result"` field of the stdout JSON.
    - **Exit code 1 (Handled Error)**: Read `"message"` and `"instruction"` from the JSON output. Follow the `"instruction"` step-by-step to fix the input, credentials, or environment.
    - **Exit code 2 (Unhandled Error)**: The tool encountered an unexpected bug. Inspect the `"message"` and `"traceback"` fields to analyze the cause.
-
----
-
-> [!IMPORTANT]
-> All execution steps in this skill MUST strictly adhere to the mandatory [PR Review Comment Workflow Guidelines](../../rules/pr_review_guidelines.md) (enforcing mandatory programmatic comment enumeration, pre-edit consolidated review checklist artifacts, and 1-to-1 thread resolution verification).
 
 ---
 
