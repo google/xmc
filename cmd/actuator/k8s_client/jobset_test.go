@@ -2186,24 +2186,10 @@ func TestBuildJobSetSuccessPolicy(t *testing.T) {
 
 func TestConstructJobSet_SuccessPolicy(t *testing.T) {
 	ctx, client, _ := setupTestClient(true, &alwaysPassingPreconditionsValidator{})
-	wu := &esspb.WorkUnit{
-		Executable: &esspb.Executable{
-			SchedulingConstraints: &esspb.SchedulingConstraints{QueueName: "test-queue"},
-			Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{
-				Jobs: []*esspb.KubernetesJob{{
-					Name:     constants.PathwaysHeadJobName,
-					Replicas: 1,
-					Spec: &esspb.ExecutableSpec{
-						DockerImage: "img",
-						Resources: &esspb.ResourceSet{
-							Resources: &esspb.ResourceSet_CpuResources{CpuResources: &esspb.CpuResources{CpuMillicores: 100, MemoryBytes: 1024}},
-						},
-					},
-				}},
-			}},
-		},
-	}
-	jobSet, err := client.constructJobSet(ctx, wu, "experiments/1/workUnits/1/executions/1", "user", "test-queue", time.Now(), Priorities{})
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Executable.GetJobset().Jobs[0].Name = constants.PathwaysHeadJobName
+	})
+	jobSet, err := client.constructJobSet(ctx, workUnit, "experiments/1/workUnits/1/executions/1", "user", "test-queue", time.Now(), Priorities{})
 	if err != nil {
 		t.Fatalf("constructJobSet() unexpected error: %v", err)
 	}
