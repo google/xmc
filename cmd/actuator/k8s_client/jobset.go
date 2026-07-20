@@ -303,6 +303,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 	}
 
 	primaryName := jobsetutil.PrimaryContainerName(job)
+	nodeSelector := copyNodeSelector(job.GetNodeSelector())
 
 	return jobsetv1alpha2.ReplicatedJob{
 		Name:      job.GetName(),
@@ -330,11 +331,24 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 						RestartPolicy:      corev1.RestartPolicyNever,
 						SecurityContext:    defaultPodSecurityContext(),
 						Volumes:            defaultVolumes(),
+						NodeSelector:       nodeSelector,
 					},
 				},
 			},
 		},
 	}
+}
+
+// copyNodeSelector creates an immutable copy of the job node selector map.
+func copyNodeSelector(source map[string]string) map[string]string {
+	if len(source) == 0 {
+		return nil
+	}
+	copyMap := make(map[string]string, len(source))
+	for k, v := range source {
+		copyMap[k] = v
+	}
+	return copyMap
 }
 
 func buildInitContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
@@ -358,8 +372,36 @@ func buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
 	return containers
 }
 
+func buildContainerPorts(spec *esspb.ExecutableSpec) []corev1.ContainerPort {
+	if len(spec.GetPorts()) == 0 {
+		return nil
+	}
+	ports := make([]corev1.ContainerPort, 0, len(spec.GetPorts()))
+	for _, p := range spec.GetPorts() {
+		protocol := corev1.ProtocolTCP
+		switch p.GetProtocol() {
+		case esspb.ContainerPort_UDP:
+			protocol = corev1.ProtocolUDP
+		case esspb.ContainerPort_SCTP:
+			protocol = corev1.ProtocolSCTP
+		case esspb.ContainerPort_TCP, esspb.ContainerPort_PROTOCOL_UNSPECIFIED:
+			protocol = corev1.ProtocolTCP
+		default:
+			protocol = corev1.ProtocolTCP
+		}
+		ports = append(ports, corev1.ContainerPort{
+			Name:          p.GetName(),
+			ContainerPort: p.GetContainerPort(),
+			Protocol:      protocol,
+			HostPort:      p.GetHostPort(),
+		})
+	}
+	return ports
+}
+
 func buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Container {
 	envVars := generateEnvVarsForSpec(spec)
+	ports := buildContainerPorts(spec)
 	var args []string
 	specArgs := spec.GetArgs()
 	if len(specArgs) > 0 {
@@ -382,6 +424,7 @@ func buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Con
 		Command:                  spec.GetCommand(),
 		Args:                     args,
 		Env:                      envVars,
+		Ports:                    ports,
 		SecurityContext:          defaultSecurityContext(),
 		VolumeMounts:             defaultVolumeMounts(),
 	}
@@ -444,6 +487,7 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		Spec: jobsetv1alpha2.JobSetSpec{
 			ReplicatedJobs: replicatedJobs,
 			Network:        buildJobSetNetwork(workUnit, jobSetName),
+			Coordinator:    buildJobSetCoordinator(workUnit),
 			Suspend:        boolPtr(false),
 			SuccessPolicy: &jobsetv1alpha2.SuccessPolicy{
 				Operator: jobsetv1alpha2.OperatorAll,
@@ -463,7 +507,27 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		logging.Error(ctx, "Failed to get execution environment", "execution_environment", c.RuntimeConfig.DefaultExecutionEnvironment)
 		return nil, fmt.Errorf("failed to get execution environment: %q", c.RuntimeConfig.DefaultExecutionEnvironment)
 	}
-	return executionEnv.InjectOnJobSetCreation(ctx, workUnit, jobSet)
+	jobSet, err = executionEnv.InjectOnJobSetCreation(ctx, workUnit, jobSet)
+	if err != nil {
+		return nil, err
+	}
+	ensureCoordinatorIndicesValid(jobSet)
+	return jobSet, nil
+}
+
+// ensureCoordinatorIndicesValid adjusts Coordinator indices if the execution environment collapsed a multi-replica job to a multi-pod job.
+func ensureCoordinatorIndicesValid(jobSet *jobsetv1alpha2.JobSet) {
+	if jobSet == nil || jobSet.Spec.Coordinator == nil {
+		return
+	}
+	coord := jobSet.Spec.Coordinator
+	for _, rj := range jobSet.Spec.ReplicatedJobs {
+		if rj.Name == coord.ReplicatedJob && rj.Replicas == 1 && coord.JobIndex > 0 {
+			coord.PodIndex = coord.JobIndex + coord.PodIndex
+			coord.JobIndex = 0
+			return
+		}
+	}
 }
 
 func ensureQueueName(workUnit *esspb.WorkUnit, namespace string) {
@@ -565,6 +629,29 @@ func buildJobSetNetwork(workUnit *esspb.WorkUnit, jobSetName string) *jobsetv1al
 		Subdomain:                subdomain,
 		PublishNotReadyAddresses: boolPtr(publishNotReady),
 	}
+}
+
+// buildJobSetCoordinator builds the JobSet Coordinator specification or returns nil.
+func buildJobSetCoordinator(workUnit *esspb.WorkUnit) *jobsetv1alpha2.Coordinator {
+	if !shouldEnableJobSetCoordinator(workUnit) {
+		return nil
+	}
+
+	coord := workUnit.GetExecutable().GetJobset().GetCoordinator()
+	return &jobsetv1alpha2.Coordinator{
+		ReplicatedJob: coord.GetReplicatedJob(),
+		JobIndex:      int(coord.GetJobIndex()),
+		PodIndex:      int(coord.GetPodIndex()),
+	}
+}
+
+// shouldEnableJobSetCoordinator returns true if the WorkUnit specifies a valid coordinator.
+func shouldEnableJobSetCoordinator(workUnit *esspb.WorkUnit) bool {
+	if workUnit == nil || workUnit.GetExecutable() == nil || workUnit.GetExecutable().GetJobset() == nil {
+		return false
+	}
+	coord := workUnit.GetExecutable().GetJobset().GetCoordinator()
+	return coord != nil && coord.GetReplicatedJob() != ""
 }
 
 func boolPtr(b bool) *bool {

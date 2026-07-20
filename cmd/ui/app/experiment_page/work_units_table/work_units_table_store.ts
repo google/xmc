@@ -16,9 +16,7 @@ import { ComponentStore } from '@ngrx/component-store';
 import { EMPTY } from 'rxjs';
 import { catchError, switchMap, tap } from 'rxjs/operators';
 
-import {
-  ListWorkUnitsRequest,
-} from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
+import { ListWorkUnitsRequest } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
 import {
   getInitialPaginationState,
@@ -157,15 +155,17 @@ export class WorkUnitsTableStore extends ComponentStore<WorkUnitsTableState> {
           pageToken: pagination.currentPageToken,
         };
         return this.workUnitsService.searchWorkUnits(request).pipe(
-          tap((response) => this.patchState({
-            pagination: {
-              ...pagination,
-              nextPageToken: response.nextPageToken ?? undefined,
-            },
-            isLoading: false,
-            workUnits: response.workUnits ?? [],
-            error: null,
-          })),
+          tap((response) =>
+            this.patchState({
+              pagination: {
+                ...pagination,
+                nextPageToken: response.nextPageToken ?? undefined,
+              },
+              isLoading: false,
+              workUnits: response.workUnits ?? [],
+              error: null,
+            }),
+          ),
           catchError((err) => {
             const msg = err instanceof Error ? err.message : String(err);
             this.patchState({

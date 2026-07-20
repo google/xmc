@@ -34,11 +34,7 @@ describe('WorkUnitsService', () => {
   describe('with real data', () => {
     const state = cleanState(() => {
       setupModule({
-        providers: [
-          provideHttpClient(),
-          provideHttpClientTesting(),
-          WorkUnitsService,
-        ],
+        providers: [provideHttpClient(), provideHttpClientTesting(), WorkUnitsService],
       });
 
       return {
@@ -60,7 +56,9 @@ describe('WorkUnitsService', () => {
         workUnits: WORK_UNIT_LIST,
       };
 
-      const responsePromise = firstValueFrom(state.service.searchWorkUnits({ parent: 'experiments/1' }));
+      const responsePromise = firstValueFrom(
+        state.service.searchWorkUnits({ parent: 'experiments/1' }),
+      );
 
       const req = state.httpMock.expectOne(
         `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/workUnits`,
@@ -73,12 +71,13 @@ describe('WorkUnitsService', () => {
     });
 
     it('should include filters and pagination in query params', async () => {
-      const responsePromise = firstValueFrom(state.service
-        .searchWorkUnits({
+      const responsePromise = firstValueFrom(
+        state.service.searchWorkUnits({
           parent: 'experiments/1',
           pageSize: 10,
           pageToken: 'prev_token',
-        }));
+        }),
+      );
 
       const req = state.httpMock.expectOne((req) => req.url.includes('/experiments/1/workUnits'));
       expect(req.request.params.get('pageSize')).toBe('10');
@@ -89,7 +88,9 @@ describe('WorkUnitsService', () => {
     });
 
     it('should fetch a single work unit', async () => {
-      const responsePromise = firstValueFrom(state.service.getWorkUnit({ name: 'experiments/1/workUnits/1' }));
+      const responsePromise = firstValueFrom(
+        state.service.getWorkUnit({ name: 'experiments/1/workUnits/1' }),
+      );
 
       const req = state.httpMock.expectOne(
         `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/workUnits/1`,
