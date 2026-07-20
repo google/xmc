@@ -306,6 +306,25 @@ message VolumeMount {
   string sub_path = 4;
 }
 
+// Represents a network port exposed by a container in a Pod.
+// Maps cleanly to Kubernetes corev1.ContainerPort.
+message ContainerPort {
+  enum Protocol {
+    PROTOCOL_UNSPECIFIED = 0;
+    TCP = 1;
+    UDP = 2;
+    SCTP = 3;
+  }
+  // Optional name for the port. Must be 1-15 characters, alphanumeric/hyphens.
+  string name = 1;
+  // Number of port to expose on the pod's IP address (1-65535).
+  int32 container_port = 2 [(google.api.field_behavior) = REQUIRED];
+  // Protocol for port. Must be UDP, TCP, or SCTP. Defaults to TCP if unspecified.
+  Protocol protocol = 3;
+  // Number of port to expose on the host (if host port forwarding is required).
+  int32 host_port = 4;
+}
+
 message ExecutableSpec {
   // The resources required to run the executable.
   ResourceSet resources = 1;
@@ -329,6 +348,8 @@ message ExecutableSpec {
   repeated string args_list = 8;
   // Volume mounts to mount volumes into this container.
   repeated VolumeMount volume_mounts = 9;
+  // List of ports exposed from the container.
+  repeated ContainerPort ports = 10;
 }
 
 // SchedulingConstraints contains the scheduling constraints for the

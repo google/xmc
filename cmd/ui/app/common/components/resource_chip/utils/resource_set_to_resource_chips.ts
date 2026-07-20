@@ -53,7 +53,7 @@ export function resourceSetsToResourceChipsData(resources: ResourceSet[]): Resou
         {
           resourceType: ResourceType.MEMORY,
           text: numBytesToString(Number(res.cpuResources.memoryBytes), 2),
-        }
+        },
       );
     }
     if (res.gpuResources) {

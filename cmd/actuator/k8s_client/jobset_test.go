@@ -2164,6 +2164,80 @@ func TestShouldEnableJobSetNetwork_Conditions(t *testing.T) {
 	}
 }
 
+func TestBuildContainerPorts_ExplicitAndDefault(t *testing.T) {
+	ctx, client, _ := setupTestClient(true, &alwaysPassingPreconditionsValidator{})
+	workUnit := createTestWorkUnit("test-namespace")
+
+	workUnit.Executable.GetJobset().Jobs[0].Spec.Ports = []*esspb.ContainerPort{
+		{Name: "http", ContainerPort: 8080, Protocol: esspb.ContainerPort_TCP},
+		{Name: "metrics", ContainerPort: 8431},
+		{Name: "dns", ContainerPort: 53, Protocol: esspb.ContainerPort_UDP},
+		{Name: "sctp-port", ContainerPort: 9999, Protocol: esspb.ContainerPort_SCTP, HostPort: 9999},
+		{Name: "http-lower", ContainerPort: 8081, Protocol: esspb.ContainerPort_TCP},
+		{Name: "dns-lower", ContainerPort: 54, Protocol: esspb.ContainerPort_UDP},
+		{Name: "sctp-lower", ContainerPort: 10000, Protocol: esspb.ContainerPort_SCTP},
+	}
+
+	workUnit.Executable.GetJobset().Jobs[0].Sidecars = []*esspb.ExecutableSpec{
+		{
+			Name:        "sidecar-1",
+			DockerImage: "sidecar-image:v1",
+			Ports: []*esspb.ContainerPort{
+				{Name: "sidecar-port", ContainerPort: 9090, Protocol: esspb.ContainerPort_TCP},
+			},
+		},
+	}
+
+	workUnit.Executable.GetJobset().Jobs[0].InitContainers = []*esspb.ExecutableSpec{
+		{
+			Name:        "init-1",
+			DockerImage: "init-image:v1",
+			Command:     []string{"/bin/init"},
+			Ports: []*esspb.ContainerPort{
+				{Name: "init-port", ContainerPort: 29001, Protocol: esspb.ContainerPort_TCP},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	podSpec := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
+	if len(podSpec.InitContainers) != 1 {
+		t.Fatalf("Expected 1 init container, got %d", len(podSpec.InitContainers))
+	}
+	if len(podSpec.InitContainers[0].Ports) != 1 || podSpec.InitContainers[0].Ports[0].ContainerPort != 29001 {
+		t.Errorf("Init container port mismatch: got %+v", podSpec.InitContainers[0].Ports)
+	}
+
+	if len(podSpec.Containers) != 2 {
+		t.Fatalf("Expected 2 containers, got %d", len(podSpec.Containers))
+	}
+	primaryPorts := podSpec.Containers[0].Ports
+	if len(primaryPorts) != 7 {
+		t.Fatalf("Expected 7 ports on primary container, got %d", len(primaryPorts))
+	}
+	wantPorts := []corev1.ContainerPort{
+		{Name: "http", ContainerPort: 8080, Protocol: corev1.ProtocolTCP},
+		{Name: "metrics", ContainerPort: 8431, Protocol: corev1.ProtocolTCP},
+		{Name: "dns", ContainerPort: 53, Protocol: corev1.ProtocolUDP},
+		{Name: "sctp-port", ContainerPort: 9999, Protocol: corev1.ProtocolSCTP, HostPort: 9999},
+		{Name: "http-lower", ContainerPort: 8081, Protocol: corev1.ProtocolTCP},
+		{Name: "dns-lower", ContainerPort: 54, Protocol: corev1.ProtocolUDP},
+		{Name: "sctp-lower", ContainerPort: 10000, Protocol: corev1.ProtocolSCTP},
+	}
+	if diff := cmp.Diff(wantPorts, primaryPorts); diff != "" {
+		t.Errorf("Primary container ports mismatch (-want +got):\n%s", diff)
+	}
+
+	sidecarPorts := podSpec.Containers[1].Ports
+	if len(sidecarPorts) != 1 || sidecarPorts[0].ContainerPort != 9090 {
+		t.Errorf("Sidecar ports mismatch: got %+v", sidecarPorts)
+	}
+}
+
 func TestConstructJobSet_WithCoordinator(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {

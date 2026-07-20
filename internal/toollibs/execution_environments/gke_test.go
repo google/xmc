@@ -586,6 +586,200 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 			},
 		},
 		{
+			name: "tpu_resources_with_custom_ports_dedup",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{
+						Jobset: &epb.JobSetExecutable{
+							Jobs: []*epb.KubernetesJob{
+								{
+									Name: "test-job",
+									Spec: &epb.ExecutableSpec{
+										Resources: &epb.ResourceSet{
+											Resources: &epb.ResourceSet_TpuResources{
+												TpuResources: &epb.TpuResources{
+													Type:     "tpu-v6e-slice",
+													Topology: "2x2",
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "test-job",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Ports: []corev1.ContainerPort{
+														{Name: "worker", ContainerPort: 29005},
+														{Name: "data", ContainerPort: 29006},
+														{Name: "ici", ContainerPort: tpuICIPort},
+														{Name: "metrics", ContainerPort: 8080},
+													},
+												},
+											},
+											NodeSelector: map[string]string{},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantJobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "test-job",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Parallelism:    proto.Int32(1),
+									Completions:    proto.Int32(1),
+									CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Ports: []corev1.ContainerPort{
+														{Name: "worker", ContainerPort: 29005},
+														{Name: "data", ContainerPort: 29006},
+														{Name: "ici", ContainerPort: tpuICIPort},
+														{Name: "metrics", ContainerPort: 8080},
+														{ContainerPort: tpuMetricsPort},
+													},
+													Resources: corev1.ResourceRequirements{
+														Limits: corev1.ResourceList{
+															tpuResourceKey: resource.MustParse("4"),
+														},
+														Requests: corev1.ResourceList{
+															tpuResourceKey: resource.MustParse("4"),
+														},
+													},
+												},
+											},
+											NodeSelector: map[string]string{
+												tpuAcceleratorSelectorKey: "tpu-v6e-slice",
+												tpuTopologySelectorKey:    "2x2",
+											},
+											Tolerations: []corev1.Toleration{
+												{
+													Key:      tpuResourceKey,
+													Operator: corev1.TolerationOpEqual,
+													Value:    tpuTolerationValue,
+													Effect:   corev1.TaintEffectNoSchedule,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "cpu_resources_with_custom_ports",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{
+						Jobset: &epb.JobSetExecutable{
+							Jobs: []*epb.KubernetesJob{
+								{
+									Name: "pathways-head",
+									Spec: &epb.ExecutableSpec{
+										Resources: &epb.ResourceSet{
+											Resources: &epb.ResourceSet_CpuResources{
+												CpuResources: &epb.CpuResources{
+													CpuMillicores: 2000,
+													MemoryBytes:   4096,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "pathways-head",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Ports: []corev1.ContainerPort{
+														{Name: "proxy", ContainerPort: 29000},
+														{Name: "rm-1", ContainerPort: 29001},
+														{Name: "rm-2", ContainerPort: 29002},
+													},
+												},
+											},
+											NodeSelector: map[string]string{},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantJobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "pathways-head",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Ports: []corev1.ContainerPort{
+														{Name: "proxy", ContainerPort: 29000},
+														{Name: "rm-1", ContainerPort: 29001},
+														{Name: "rm-2", ContainerPort: 29002},
+													},
+													Resources: corev1.ResourceRequirements{
+														Limits: corev1.ResourceList{
+															corev1.ResourceMemory: resource.MustParse("4096"),
+														},
+														Requests: corev1.ResourceList{
+															corev1.ResourceCPU:    resource.MustParse("2000m"),
+															corev1.ResourceMemory: resource.MustParse("4096"),
+														},
+													},
+												},
+											},
+											NodeSelector: map[string]string{},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "multiple_replicated_jobs",
 			workUnit: &epb.WorkUnit{
 				Executable: &epb.Executable{
@@ -1463,6 +1657,82 @@ func TestInjectOnJobSetCreation_GCSFuseAnnotation(t *testing.T) {
 	annotations := got.Spec.ReplicatedJobs[0].Template.Spec.Template.ObjectMeta.Annotations
 	if annotations["gke-gcsfuse/volumes"] != "true" {
 		t.Errorf("Expected annotation 'gke-gcsfuse/volumes: true', got %v", annotations)
+	}
+}
+
+func TestEnsureTpuContainerPorts(t *testing.T) {
+	tests := []struct {
+		name     string
+		existing []corev1.ContainerPort
+		want     []corev1.ContainerPort
+	}{
+		{
+			name:     "empty_existing",
+			existing: nil,
+			want: []corev1.ContainerPort{
+				{ContainerPort: tpuICIPort},
+				{ContainerPort: tpuMetricsPort},
+			},
+		},
+		{
+			name: "has_ici_only",
+			existing: []corev1.ContainerPort{
+				{ContainerPort: tpuICIPort},
+			},
+			want: []corev1.ContainerPort{
+				{ContainerPort: tpuICIPort},
+				{ContainerPort: tpuMetricsPort},
+			},
+		},
+		{
+			name: "has_both_already",
+			existing: []corev1.ContainerPort{
+				{ContainerPort: tpuICIPort},
+				{ContainerPort: tpuMetricsPort},
+			},
+			want: []corev1.ContainerPort{
+				{ContainerPort: tpuICIPort},
+				{ContainerPort: tpuMetricsPort},
+			},
+		},
+		{
+			name: "has_other_port",
+			existing: []corev1.ContainerPort{
+				{ContainerPort: 80},
+			},
+			want: []corev1.ContainerPort{
+				{ContainerPort: 80},
+				{ContainerPort: tpuICIPort},
+				{ContainerPort: tpuMetricsPort},
+			},
+		},
+		{
+			name: "has_metrics_only",
+			existing: []corev1.ContainerPort{
+				{ContainerPort: tpuMetricsPort},
+			},
+			want: []corev1.ContainerPort{
+				{ContainerPort: tpuMetricsPort},
+				{ContainerPort: tpuICIPort},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ensureTpuContainerPorts(tc.existing)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("ensureTpuContainerPorts() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+
+	existingArr := make([]corev1.ContainerPort, 1, 5)
+	existingArr[0] = corev1.ContainerPort{Name: "http", ContainerPort: 80}
+	_ = ensureTpuContainerPorts(existingArr)
+	fullArr := existingArr[:cap(existingArr)]
+	if len(existingArr) != 1 || existingArr[0].ContainerPort != 80 || (cap(existingArr) > 1 && fullArr[1].ContainerPort != 0) {
+		t.Errorf("ensureTpuContainerPorts mutated existing slice underlying array: %+v", fullArr)
 	}
 }
 

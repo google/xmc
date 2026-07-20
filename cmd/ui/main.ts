@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import './app/stubs.d.ts';
-import {bootstrapApplication} from '@angular/platform-browser';
 
-import {App} from './app/app';
-import {appConfig} from './app/app_config';
+import { bootstrapApplication } from '@angular/platform-browser';
 
-bootstrapApplication(App, appConfig)
-  .catch((err) => {
-    console.error(err);
-  });
+import { App } from './app/app';
+import { appConfig } from './app/app_config';
 
+bootstrapApplication(App, appConfig).catch((err) => {
+  console.error(err);
+});
