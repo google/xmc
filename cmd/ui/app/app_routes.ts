@@ -18,6 +18,7 @@ import { ExperimentPage } from './experiment_page/experiment_page';
 import { ExperimentsListPage } from './experiments_list_page/experiments_list_page';
 import { guestGuard } from './guest.guard';
 import { HomePage } from './homepage/home_page';
+import { ResourceDashboard } from './resource_dashboard/resource_dashboard';
 import { WorkUnitPage } from './work_unit_page/work_unit_page';
 
 /**
@@ -28,6 +29,16 @@ export const routes: Routes = [
     path: '',
     component: HomePage,
     canActivate: [guestGuard],
+    pathMatch: 'full',
+  },
+  {
+    path: 'resources',
+    component: ResourceDashboard,
+    canActivate: [authGuard],
+  },
+  {
+    path: 'queues',
+    redirectTo: 'resources',
     pathMatch: 'full',
   },
   {

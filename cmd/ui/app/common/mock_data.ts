@@ -88,3 +88,29 @@ export const WORK_UNIT_LIST: any[] = [WORK_UNIT_1, WORK_UNIT_2, WORK_UNIT_3, WOR
 
 export const ARTIFACT_LIST: any[] = [];
 export const WORK_UNIT_1_ARTIFACT_LIST: any[] = [];
+
+export const MOCK_CLUSTER_QUEUE_1: any = {
+  name: 'cpu-cluster-queue',
+  strategy: 'BestEffortFIFO',
+  cohort: 'None',
+  status: 'Active',
+  statusMessage: 'Can admit new workloads',
+  lastTransitionTime: '2026-06-18T10:49:48Z',
+  admittedWorkloads: 0,
+  reservingWorkloads: 0,
+  pendingWorkloads: 0,
+  localQueues: [{ name: 'cpu-queue', namespace: 'cpu-queue' }],
+  flavors: [
+    {
+      name: 'cpu-flavor',
+      resourceName: 'cpu',
+      nominalQuota: '100M',
+      inUse: '0',
+      reserved: '0',
+      freeCapacity: '100M',
+      largestSlot: '100M -> 100M',
+    },
+  ],
+};
+
+export const MOCK_CLUSTER_QUEUES: any[] = [MOCK_CLUSTER_QUEUE_1];

@@ -1,0 +1,55 @@
+:host {
+  display: block;
+  padding: 24px 32px;
+  background-color: #f8f9fa;
+  min-height: 100vh;
+  box-sizing: border-box;
+  font-family: Roboto, 'Helvetica Neue', sans-serif;
+}
+
+/* Top Sub-Tabs Navigation */
+.rod-subnav-tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid #dadce0;
+  margin-bottom: 24px;
+}
+
+.rod-tab-btn {
+  background: none;
+  border: none;
+  font-size: 15px;
+  font-weight: 500;
+  color: #5f6368;
+  padding: 12px 4px;
+  cursor: pointer;
+  position: relative;
+  transition: color 0.15s ease-in-out;
+
+  &:hover {
+    color: #202124;
+  }
+
+  &.active-tab {
+    color: #1a73e8;
+    font-weight: 600;
+
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background-color: #1a73e8;
+      border-radius: 3px 3px 0 0;
+    }
+  }
+}
+
+.dashboard-title {
+  font-size: 24px;
+  font-weight: 500;
+  color: #202124;
+  margin: 0;
+}

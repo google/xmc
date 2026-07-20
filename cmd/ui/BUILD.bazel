@@ -17,9 +17,8 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 # Standalone BUILD.bazel file for XMC UI
 package(default_visibility = ["//visibility:public"])
 
-# 1. Build the OCI image tarball using the custom python builder
-genrule(
-    name = "ui_image_tarball",
+filegroup(
+    name = "ui_srcs",
     srcs = glob([
         "app/**/*",
         "static/**/*",
@@ -30,7 +29,17 @@ genrule(
         "*.svg",
         "nginx.conf",
         "generate_config.sh",
-    ]) + [":build_ui_oci.py"],
+    ]),
+    visibility = ["//visibility:public"],
+)
+
+# 1. Build the OCI image tarball using the custom python builder
+genrule(
+    name = "ui_image_tarball",
+    srcs = [
+        ":ui_srcs",
+        ":build_ui_oci.py",
+    ],
     outs = ["ui_image_tarball.tar"],
     cmd = "python3 $(location :build_ui_oci.py) $@",
     tools = [":build_ui_oci.py"],

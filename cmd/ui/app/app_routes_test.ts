@@ -20,12 +20,13 @@ import { ExperimentPage } from './experiment_page/experiment_page';
 import { ExperimentsListPage } from './experiments_list_page/experiments_list_page';
 import { guestGuard } from './guest.guard';
 import { HomePage } from './homepage/home_page';
+import { ResourceDashboard } from './resource_dashboard/resource_dashboard';
 import { WorkUnitPage } from './work_unit_page/work_unit_page';
 
 describe('App Routes', () => {
   it('should define route configuration', () => {
     expect(routes).toBeDefined();
-    expect(routes.length).toBe(2);
+    expect(routes.length).toBe(4);
   });
 
   it('should route "" to HomePage with guestGuard', () => {
@@ -33,6 +34,20 @@ describe('App Routes', () => {
     expect(route).toBeDefined();
     expect(route?.component).toBe(HomePage);
     expect(route?.canActivate).toContain(guestGuard);
+    expect(route?.pathMatch).toBe('full');
+  });
+
+  it('should route "resources" to ResourceDashboard with authGuard', () => {
+    const route = routes.find((r) => r.path === 'resources');
+    expect(route).toBeDefined();
+    expect(route?.component).toBe(ResourceDashboard);
+    expect(route?.canActivate).toContain(authGuard);
+  });
+
+  it('should redirect "queues" to "resources"', () => {
+    const route = routes.find((r) => r.path === 'queues');
+    expect(route).toBeDefined();
+    expect(route?.redirectTo).toBe('resources');
     expect(route?.pathMatch).toBe('full');
   });
 
