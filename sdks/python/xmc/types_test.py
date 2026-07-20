@@ -30,9 +30,9 @@ class TestMetricValidation(unittest.TestCase):
         # proto 3 syntax but usually snake_case in python)
         metric = Metric(
             xid="xid-100",
-            work_unit_id=1,
-            execution_id=2,
-            replica_id=0,
+            work_unit_id="1",
+            execution_id="2",
+            replica_id="0",
             metric_name="eval/accuracy",
             metric_value=0.95,
             step=50,

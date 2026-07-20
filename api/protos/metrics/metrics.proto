@@ -22,9 +22,9 @@ option java_multiple_files = true;
 // Metric represents a single numeric measurement logged in XMC.
 message Metric {
   string xid = 1;
-  int64 work_unit_id = 2;
-  int64 execution_id = 3;
-  int32 replica_id = 4;
+  string work_unit_id = 2;
+  string execution_id = 3;
+  string replica_id = 4;
   string metric_name = 5;
   double metric_value = 6;
   int64 step = 7;

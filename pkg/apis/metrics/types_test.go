@@ -26,9 +26,9 @@ func TestMetric_IsValid(t *testing.T) {
 	validMetric := Metric{
 		Metric: &pb.Metric{
 			Xid:         "xid-12345",
-			WorkUnitId:  101,
-			ExecutionId: 202,
-			ReplicaId:   1,
+			WorkUnitId:  "101",
+			ExecutionId: "202",
+			ReplicaId:   "1",
 			MetricName:  "accuracy/epoch_1",
 			MetricValue: 0.985,
 			Step:        100,
