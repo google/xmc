@@ -125,9 +125,20 @@ func (g *GKE) Description() string {
 }
 
 // IsCompatibleWithWorkUnit returns whether the execution environment is compatible with the given work unit.
-// It returns a reason if the environment is not compatible.
+// While GKE supports CPU, GPU, and TPU compute resources, this verifies that any requested TPU topology is structurally valid.
 func (g *GKE) IsCompatibleWithWorkUnit(workUnit *epb.WorkUnit) (bool, string) {
-	// Since this is GKE, we should support everything at this point.
+	if workUnit == nil || workUnit.GetExecutable().GetJobset() == nil {
+		return true, ""
+	}
+	for _, job := range workUnit.GetExecutable().GetJobset().GetJobs() {
+		tpuRes := job.GetSpec().GetResources().GetTpuResources()
+		if tpuRes == nil {
+			continue
+		}
+		if _, err := tpuNodesPerSlice(tpuRes.GetTopology()); err != nil {
+			return false, fmt.Sprintf("invalid TPU topology %q in job %q: %v", tpuRes.GetTopology(), job.GetName(), err)
+		}
+	}
 	return true, ""
 }
 
@@ -287,11 +298,20 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 				ensureJobSetNetworkConfigured(jobSet)
 			}
 			// For indexed completion, Replicas must be 1.
-			replicatedJob.Replicas = 1
+			collapseReplicasToPods(jobSet, replicatedJob)
 		}
 	}
 
 	return jobSet, nil
+}
+
+// collapseReplicasToPods sets ReplicatedJob.Replicas to 1 and adjusts Coordinator indices if targeted.
+func collapseReplicasToPods(jobSet *jobsetv1alpha2.JobSet, replicatedJob *jobsetv1alpha2.ReplicatedJob) {
+	if replicatedJob.Replicas > 1 && jobSet.Spec.Coordinator != nil && jobSet.Spec.Coordinator.ReplicatedJob == replicatedJob.Name {
+		jobSet.Spec.Coordinator.PodIndex = jobSet.Spec.Coordinator.JobIndex + jobSet.Spec.Coordinator.PodIndex
+		jobSet.Spec.Coordinator.JobIndex = 0
+	}
+	replicatedJob.Replicas = 1
 }
 
 func parseTotalChips(topology string) (int, error) {
