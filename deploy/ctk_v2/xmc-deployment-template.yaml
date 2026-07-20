@@ -85,3 +85,4 @@ vars:
   ui_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/ui:latest"
   reconciler_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/reconciler:latest"
   log_monitor_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/log_monitor:latest"
+  health_service_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/health-service:latest"
