@@ -1394,6 +1394,7 @@ func TestInjectOnJobSetCreation_NetworkInjectionGPUMultiNode(t *testing.T) {
 		t.Errorf("Expected EnableDNSHostnames to be true, got %v", got.Spec.Network.EnableDNSHostnames)
 	}
 }
+
 func TestInjectOnJobSetCreation_GCSFuseAnnotation(t *testing.T) {
 	g := &GKE{}
 	workUnit := &epb.WorkUnit{
@@ -1462,5 +1463,75 @@ func TestInjectOnJobSetCreation_GCSFuseAnnotation(t *testing.T) {
 	annotations := got.Spec.ReplicatedJobs[0].Template.Spec.Template.ObjectMeta.Annotations
 	if annotations["gke-gcsfuse/volumes"] != "true" {
 		t.Errorf("Expected annotation 'gke-gcsfuse/volumes: true', got %v", annotations)
+	}
+}
+
+func TestInjectOnJobSetCreation_GPUMultiNode_WithCoordinator(t *testing.T) {
+	g := &GKE{}
+	workUnit := &epb.WorkUnit{
+		Executable: &epb.Executable{
+			Type: &epb.Executable_Jobset{
+				Jobset: &epb.JobSetExecutable{
+					Jobs: []*epb.KubernetesJob{
+						{
+							Name: "gpu-job",
+							Spec: &epb.ExecutableSpec{
+								Resources: &epb.ResourceSet{
+									Resources: &epb.ResourceSet_GpuResources{
+										GpuResources: &epb.GpuResources{
+											Type:  "H100",
+											Count: 8,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	jobSet := &jobsetv1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-jobset"},
+		Spec: jobsetv1alpha2.JobSetSpec{
+			Coordinator: &jobsetv1alpha2.Coordinator{
+				ReplicatedJob: "gpu-job",
+				JobIndex:      2,
+				PodIndex:      0,
+			},
+			ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+				{
+					Name:     "gpu-job",
+					Replicas: 4,
+					Template: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers: []corev1.Container{
+										{Name: "main", Image: "test-image"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := g.InjectOnJobSetCreation(context.Background(), workUnit, jobSet)
+	if err != nil {
+		t.Fatalf("InjectOnJobSetCreation() returned error: %v", err)
+	}
+
+	if got.Spec.Coordinator == nil {
+		t.Fatalf("Expected Coordinator to be preserved, got nil")
+	}
+	if got.Spec.Coordinator.JobIndex != 0 {
+		t.Errorf("Expected Coordinator.JobIndex to be 0, got %d", got.Spec.Coordinator.JobIndex)
+	}
+	if got.Spec.Coordinator.PodIndex != 2 {
+		t.Errorf("Expected Coordinator.PodIndex to be 2, got %d", got.Spec.Coordinator.PodIndex)
 	}
 }

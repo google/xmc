@@ -299,11 +299,20 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 				ensureJobSetNetworkConfigured(jobSet)
 			}
 			// For indexed completion, Replicas must be 1.
-			replicatedJob.Replicas = 1
+			collapseReplicasToPods(jobSet, replicatedJob)
 		}
 	}
 
 	return jobSet, nil
+}
+
+// collapseReplicasToPods sets ReplicatedJob.Replicas to 1 and adjusts Coordinator indices if targeted.
+func collapseReplicasToPods(jobSet *jobsetv1alpha2.JobSet, replicatedJob *jobsetv1alpha2.ReplicatedJob) {
+	if replicatedJob.Replicas > 1 && jobSet.Spec.Coordinator != nil && jobSet.Spec.Coordinator.ReplicatedJob == replicatedJob.Name {
+		jobSet.Spec.Coordinator.PodIndex = jobSet.Spec.Coordinator.JobIndex + jobSet.Spec.Coordinator.PodIndex
+		jobSet.Spec.Coordinator.JobIndex = 0
+	}
+	replicatedJob.Replicas = 1
 }
 
 func parseTotalChips(topology string) (int, error) {
