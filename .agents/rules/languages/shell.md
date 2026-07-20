@@ -16,3 +16,9 @@ set -euo pipefail
 ```
 - **Variable Expansion Quoting & Braces**: Always double-quote variable expansions and use explicit curly braces (`"${VAR}"`) to prevent word splitting, variable name ambiguity, path globbing issues, and shell expansion vulnerabilities.
 - **Executable File Modes**: Ensure shell scripts have appropriate executable permissions set (`chmod +x`).
+
+## 3. Command Substitution & Payload Truncation Safety
+- **Avoid Inline Scripts and Double-Quoted Payload Strings**: Never pass Python code strings (`python3 -c "..."`), API body payloads, or strings containing Markdown/code formatting inside double quotes (`"..."`) in shell commands.
+- **Backtick Command Substitution Risk**: Bash treats backticks (`` `...` ``) inside double-quoted strings as command substitution expressions. When text containing Markdown inline code (e.g., `` `request()` ``) is evaluated inside double quotes, Bash attempts to execute the backticks as shell commands, fails, and replaces the expression with empty output—silently truncating and corrupting the payload.
+- **Use Standalone Script Files or Safe Channels**: Always write multi-line logic, Python code, or comment payloads containing code/markdown to a dedicated `.py` file using `write_to_file` and execute the script directly (e.g. `python3 script.py`), or pass content safely via stdin or environment variables.
+
