@@ -78,6 +78,10 @@ check_ui() {
     else
       $prettier_bin --config cmd/ui/.prettierrc --write $ui_files
     fi
+  else
+    echo "❌ ERROR: Local Prettier not found at $prettier_bin."
+    echo "   Please install dependencies: cd cmd/ui && npm install"
+    if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
 
   if [ -f "$eslint_bin" ]; then
@@ -90,6 +94,10 @@ check_ui() {
     else
       $eslint_bin --config cmd/ui/eslint.config.js --fix $ui_files
     fi
+  else
+    echo "❌ ERROR: Local ESLint not found at $eslint_bin."
+    echo "   Please install dependencies: cd cmd/ui && npm install"
+    if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
 }
 
