@@ -1,5 +1,11 @@
 # XManager on Cloud (XMC)
 
+> [!CAUTION]
+> THIS BRANCH IS FOR GITHUB INTEGRATION TESTING ONLY.
+> DO NOT MAKE ANY CHANGES HERE
+> DO NOT MERGE
+
+
 XManager on Cloud (XMC) is a high-performance backend application that exposes gRPC and HTTP APIs to orchestrate cloud-native resource scheduling, job reconciliation, and workloads. It leverages Google Cloud Platform services (such as Cloud Spanner, Memorystore Redis, and Pub/Sub) alongside Kubernetes (GKE Gateway API, JobSets, Workloads) to deliver a unified computing interface.
 
 ---
