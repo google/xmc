@@ -38,7 +38,9 @@ describe('WorkUnitHeader Component', () => {
       'stopWorkUnit',
       'restartWorkUnit',
     ]);
-    experimentServiceSpy = jasmine.createSpyObj<ExperimentService>('experimentService', ['getExperiment']);
+    experimentServiceSpy = jasmine.createSpyObj<ExperimentService>('experimentService', [
+      'getExperiment',
+    ]);
     snackbarServiceSpy = jasmine.createSpyObj<SnackbarService>('snackbarService', ['open']);
     confirmDialogServiceSpy = jasmine.createSpyObj<ConfirmDialogService>('confirmDialogService', {
       open: of(true),

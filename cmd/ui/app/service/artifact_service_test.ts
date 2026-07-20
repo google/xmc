@@ -32,11 +32,7 @@ describe('ArtifactService Service', () => {
 
   const state = cleanState(() => {
     setupModule({
-      providers: [
-        provideHttpClient(),
-        provideHttpClientTesting(),
-        ArtifactService,
-      ],
+      providers: [provideHttpClient(), provideHttpClientTesting(), ArtifactService],
     });
 
     return {

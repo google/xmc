@@ -32,11 +32,7 @@ describe('ExperimentService Service', () => {
 
   const state = cleanState(() => {
     setupModule({
-      providers: [
-        provideHttpClient(),
-        provideHttpClientTesting(),
-        ExperimentService,
-      ],
+      providers: [provideHttpClient(), provideHttpClientTesting(), ExperimentService],
     });
 
     return {

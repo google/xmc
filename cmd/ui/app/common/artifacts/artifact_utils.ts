@@ -11,13 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import {
-  Artifact,
-  CodeSourceArtifact,
-  ManagedXprofArtifact,
-  TextArtifact,
-  UrlArtifact,
-} from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
+import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 
 import { ArtifactListItem, PayloadType, TypedArtifact } from './interfaces';
 
@@ -111,9 +105,7 @@ export function hasPayloadContent(typedArtifact: TypedArtifact): boolean {
 }
 
 /** Sorts artifacts by priority, then creation time. */
-function sortArtifactsByPriority(
-  typedArtifacts: TypedArtifact[],
-): TypedArtifact[] {
+function sortArtifactsByPriority(typedArtifacts: TypedArtifact[]): TypedArtifact[] {
   return [...typedArtifacts].sort((a, b) => {
     const priorityA = a.artifact.priority ?? Number.MAX_SAFE_INTEGER;
     const priorityB = b.artifact.priority ?? Number.MAX_SAFE_INTEGER;

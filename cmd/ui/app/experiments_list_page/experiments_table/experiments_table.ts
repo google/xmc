@@ -195,4 +195,3 @@ function toTableRow(experiment: Experiment, filterService: StatusMessageFilterSe
 function parseDate(dateStr: string | undefined): Date | undefined {
   return dateStr ? new Date(dateStr) : undefined;
 }
-

@@ -34,9 +34,7 @@ describe('MockStatusMessageService', () => {
 
   it('should return mock status messages', async () => {
     const service = state.service as MockStatusMessageService;
-    const response = await firstValueFrom(
-      service.listStatusMessages({ parent: 'experiments/1' }),
-    );
+    const response = await firstValueFrom(service.listStatusMessages({ parent: 'experiments/1' }));
     expect(response.statusMessages).toEqual(MOCK_HISTORICAL_STATUS_MESSAGES);
     expect(response.nextPageToken).toBe('page_token');
   });
