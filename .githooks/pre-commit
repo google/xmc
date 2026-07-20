@@ -147,6 +147,9 @@ if [ -n "$PY_FILES" ]; then
       docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest check --fix $PY_FILES
       docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest format $PY_FILES
     fi
+  else
+    echo "--> WARNING: ruff or docker not found. Python linting skipped."
+    if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
 fi
 
