@@ -19,10 +19,12 @@ import re
 import threading
 
 # Import the generated proto. The path depends on the bazel package structure.
-from api.protos.metrics import metrics_pb2
-
-# Re-export the Metric class so it is available at xmc.types.Metric
-Metric = metrics_pb2.Metric
+try:
+    from api.protos.metrics import metrics_pb2
+    Metric = metrics_pb2.Metric
+except ImportError:
+    metrics_pb2 = None
+    Metric = None
 
 _MAX_CACHED_METRIC_NAMES: int = 10000
 _METRIC_NAME_REGEX: re.Pattern[str] = re.compile(r"^[a-zA-Z0-9_\.\-\/]{1,255}$")
@@ -30,7 +32,7 @@ _validated_metric_names: set[str] = set()
 _lock = threading.Lock()
 
 
-def validate_metric(metric: metrics_pb2.Metric) -> None:
+def validate_metric(metric) -> None:
     """Validates metric fields according to XMC metrics rules.
 
     Args:
@@ -39,6 +41,9 @@ def validate_metric(metric: metrics_pb2.Metric) -> None:
     Raises:
         ValueError: If metric_name, metric_value, or step is invalid.
     """
+    if metric is None or metrics_pb2 is None:
+        raise ValueError("Metric proto is not initialized")
+
     metric_name = metric.metric_name
     if metric_name not in _validated_metric_names:
         if not _METRIC_NAME_REGEX.match(metric_name):
@@ -59,6 +64,5 @@ def validate_metric(metric: metrics_pb2.Metric) -> None:
         raise ValueError(f"Invalid step {metric.step!r}: must be >= 0")
 
 
-# Add a validation method to the generated proto class dynamically for convenience,
-# matching the previous SDK contract.
-metrics_pb2.Metric.validate = validate_metric
+if metrics_pb2 is not None:
+    metrics_pb2.Metric.validate = validate_metric

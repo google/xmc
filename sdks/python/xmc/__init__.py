@@ -12,8 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""XMC Python SDK package."""
+"""XMC Metrics Python SDK."""
 
+from xmc.client import Client, XMCAPIError, XMCError, XMCNetworkError
 from xmc.types import Metric, validate_metric
 
-__all__ = ["Metric", "validate_metric"]
+__version__ = "0.1.0"
+__all__ = [
+    "Client",
+    "Metric",
+    "XMCError",
+    "XMCNetworkError",
+    "XMCAPIError",
+    "validate_metric",
+    "__version__",
+]
