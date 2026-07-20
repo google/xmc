@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { ClusterQueue } from '../service/resource_types';
+
 export const TOTAL_STATUS_MESSAGES: any[] = [];
 export const MOCK_HISTORICAL_STATUS_MESSAGES: any[] = [
   {
@@ -89,7 +91,7 @@ export const WORK_UNIT_LIST: any[] = [WORK_UNIT_1, WORK_UNIT_2, WORK_UNIT_3, WOR
 export const ARTIFACT_LIST: any[] = [];
 export const WORK_UNIT_1_ARTIFACT_LIST: any[] = [];
 
-export const MOCK_CLUSTER_QUEUE_1: any = {
+export const MOCK_CLUSTER_QUEUE_1: ClusterQueue = {
   name: 'cpu-cluster-queue',
   strategy: 'BestEffortFIFO',
   cohort: 'None',
@@ -113,4 +115,4 @@ export const MOCK_CLUSTER_QUEUE_1: any = {
   ],
 };
 
-export const MOCK_CLUSTER_QUEUES: any[] = [MOCK_CLUSTER_QUEUE_1];
+export const MOCK_CLUSTER_QUEUES: ClusterQueue[] = [MOCK_CLUSTER_QUEUE_1];
