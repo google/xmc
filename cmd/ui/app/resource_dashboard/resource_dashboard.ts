@@ -28,13 +28,7 @@ import { RouterModule } from '@angular/router';
   templateUrl: './resource_dashboard.ng.html',
   styleUrl: './resource_dashboard.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    CommonModule,
-    RouterModule,
-    MatCardModule,
-    MatIconModule,
-    MatButtonModule,
-  ],
+  imports: [CommonModule, RouterModule, MatCardModule, MatIconModule, MatButtonModule],
 })
 export class ResourceDashboard {
   protected readonly activeTab = signal<'queues' | 'predictability'>('queues');

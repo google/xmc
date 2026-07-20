@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Launch script demonstrating a multi-component Pathways JobSet with ContainerPort mappings.
 
 Runs:
