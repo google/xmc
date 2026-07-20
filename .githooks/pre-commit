@@ -39,17 +39,22 @@ check_bazel() {
 }
 
 check_go() {
-  echo "--> Running Go Formatter (gofmt)..."
-  local unformatted_go
-  unformatted_go=$(gofmt -s -l . 2>/dev/null | grep -v 'vendor/' || true)
-  if [ -n "$unformatted_go" ]; then
-    echo "❌ Unformatted Go files found:"
-    echo "$unformatted_go"
-    FAILED=1
-  fi
+  if command -v gofmt >/dev/null 2>&1; then
+    echo "--> Running Go Formatter (gofmt)..."
+    local unformatted_go
+    unformatted_go=$(gofmt -s -l . 2>/dev/null | grep -v 'vendor/' || true)
+    if [ -n "$unformatted_go" ]; then
+      echo "❌ Unformatted Go files found:"
+      echo "$unformatted_go"
+      FAILED=1
+    fi
 
-  if [ "$MODE" = "fix" ]; then
-    find . -type f -name "*.go" -not -path "*/vendor/*" -exec gofmt -s -w {} +
+    if [ "$MODE" = "fix" ]; then
+      find . -type f -name "*.go" -not -path "*/vendor/*" -exec gofmt -s -w {} +
+    fi
+  else
+    echo "--> WARNING: gofmt not found. Go formatting checks skipped."
+    if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
 }
 
