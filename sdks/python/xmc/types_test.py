@@ -29,9 +29,9 @@ class TestMetricValidation(unittest.TestCase):
         # work_unit_id in proto becomes work_unit_id (or workUnitId depending on
         # proto 3 syntax but usually snake_case in python)
         metric = Metric(
-            xid="xid-100",
-            work_unit_id="1",
-            execution_id="2",
+            xid=100,
+            work_unit_id=1,
+            execution_id=2,
             replica_id="0",
             metric_name="eval/accuracy",
             metric_value=0.95,
