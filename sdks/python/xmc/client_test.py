@@ -129,6 +129,30 @@ class TestClient(unittest.TestCase):
 
         self.assertIn("Failed to parse API JSON response", str(ctx.exception))
 
+    @patch("urllib.request.urlopen")
+    def test_get_request_sequence_params(self, mock_urlopen: MagicMock) -> None:
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps([{"id": 1}, {"id": 2}]).encode("utf-8")
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        client = Client(base_url="https://xmc.googleapis.com")
+        res = client.get("v1/metrics", params={"tag": ["a", "b"]})
+
+        self.assertEqual(res, [{"id": 1}, {"id": 2}])
+        req = mock_urlopen.call_args[0][0]
+        self.assertEqual(req.get_full_url(), "https://xmc.googleapis.com/v1/metrics?tag=a&tag=b")
+
+    @patch("urllib.request.urlopen")
+    def test_timeout_error_direct(self, mock_urlopen: MagicMock) -> None:
+        mock_urlopen.side_effect = TimeoutError("request timeout")
+
+        client = Client(base_url="https://xmc.googleapis.com")
+        with self.assertRaises(XMCNetworkError) as ctx:
+            client.get("v1/metrics")
+
+        self.assertIn("Request timed out", str(ctx.exception))
+
     def test_context_manager(self) -> None:
         with Client(base_url="https://xmc.googleapis.com") as client:
             self.assertEqual(client.base_url, "https://xmc.googleapis.com")

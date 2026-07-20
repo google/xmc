@@ -46,6 +46,12 @@ class XMCAPIError(XMCError):
 class Client:
     """Base HTTP client for interacting with XMC Metrics APIs.
 
+    Note:
+        Uses urllib.request.urlopen for zero external runtime dependencies.
+        TODO: Higher-level SDK producers should implement request
+        batching and connection reuse to avoid per-request TLS overhead in
+        high-frequency logging loops.
+
     Attributes:
         base_url: Endpoint base URL (e.g. 'https://xmc.googleapis.com').
         api_key: Optional API key or bearer token.
@@ -82,7 +88,7 @@ class Client:
         params: Optional[Dict[str, Any]] = None,
         data: Optional[Union[Dict[str, Any], list]] = None,
         headers: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+    ) -> Union[Dict[str, Any], list]:
         """Executes an HTTP request using urllib.request.
 
         Args:
@@ -93,7 +99,7 @@ class Client:
             headers: Additional request headers.
 
         Returns:
-            Parsed JSON payload as a dictionary/list, or empty dictionary for 204.
+            Parsed JSON payload as a dictionary or list, or empty dictionary for 204.
 
         Raises:
             XMCAPIError: If remote server returns an HTTP error status.
@@ -102,7 +108,7 @@ class Client:
         """
         url = f"{self.base_url}/{path.lstrip('/')}"
         if params:
-            query_string = urllib.parse.urlencode(params)
+            query_string = urllib.parse.urlencode(params, doseq=True)
             url = f"{url}?{query_string}"
 
         req_headers = dict(self._headers)
@@ -134,10 +140,10 @@ class Client:
                 response_body=err_body,
             ) from err
         except urllib.error.URLError as err:
-            if isinstance(err.reason, socket.timeout):
+            if isinstance(err.reason, (socket.timeout, TimeoutError)):
                 raise XMCNetworkError("Request timed out", original_error=err) from err
             raise XMCNetworkError(f"Network error: {err.reason}", original_error=err) from err
-        except socket.timeout as err:
+        except (socket.timeout, TimeoutError) as err:
             raise XMCNetworkError("Request timed out", original_error=err) from err
         except json.JSONDecodeError as err:
             raise XMCError(f"Failed to parse API JSON response: {err}") from err
@@ -147,7 +153,7 @@ class Client:
         path: str,
         params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+    ) -> Union[Dict[str, Any], list]:
         """Convenience method for HTTP GET requests."""
         return self.request("GET", path, params=params, headers=headers)
 
@@ -156,7 +162,7 @@ class Client:
         path: str,
         data: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+    ) -> Union[Dict[str, Any], list]:
         """Convenience method for HTTP POST requests."""
         return self.request("POST", path, data=data, headers=headers)
 
