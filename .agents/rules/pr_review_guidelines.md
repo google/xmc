@@ -29,7 +29,11 @@ This document defines mandatory engineering standards for performing AI Pull Req
   comments = json.load(sys.stdin)
   print(f"Total Threads Parsed: {len(comments)}")
   for c in comments:
-      print(f"ID: {c[\"id\"]}, Path: {c.get(\"path\")}, Line: {c.get(\"line\") or c.get(\"original_line\")}, Body: {c[\"body\"][:80]}...")
+      cid = c.get("id")
+      path = c.get("path")
+      line = c.get("line") or c.get("original_line")
+      body = c.get("body", "")[:80]
+      print(f"ID: {cid}, Path: {path}, Line: {line}, Body: {body}...")
   '
   ```
 
@@ -53,9 +57,21 @@ This document defines mandatory engineering standards for performing AI Pull Req
 - **Required Verification Check**:
   ```bash
   gh api "repos/{owner}/{repo}/pulls/{number}/comments" | python3 -c '
-  import json, sys
+  import json, sys, re
   comments = json.load(sys.stdin)
-  # Verify each target comment ID from checklist has an inline reply or resolved status
+  replied_to = {c.get("in_reply_to_id") for c in comments if c.get("in_reply_to_id")}
+  try:
+      with open("pr_review_checklist.md", "r") as f:
+          content = f.read()
+      checklist_ids = [int(x) for x in re.findall(r"Comment ID .(\d+).", content)]
+  except Exception as e:
+      print(f"Error reading checklist: {e}")
+      sys.exit(1)
+  unresolved = [cid for cid in checklist_ids if cid not in replied_to]
+  if unresolved:
+      print(f"Unresolved comment IDs: {unresolved}")
+      sys.exit(1)
+  print("All checklist comments have been resolved/replied to!")
   '
   ```
 - **Completion Guardrail**: Never mark a PR review comment task as complete until 100% of comment IDs from the checklist are confirmed to have received a dedicated inline response or resolution.
