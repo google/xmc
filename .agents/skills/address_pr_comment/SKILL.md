@@ -37,6 +37,10 @@ When invoking helper tools under `tools/` (e.g. `fetch_pr_comment.py`, `reply_pr
    - **Exit code 1 (Handled Error)**: Read `"message"` and `"instruction"` from the JSON output. Follow the `"instruction"` step-by-step to fix the input, credentials, or environment.
    - **Exit code 2 (Unhandled Error)**: The tool encountered an unexpected bug. Inspect the `"message"` and `"traceback"` fields to analyze the cause.
 
+4. **Shell & Payload Safety**: When running helper scripts or handling payloads containing Markdown/code formatting, execute standalone `.py` script files or pass arguments via script parameters. Avoid double-quoted inline commands (`python3 -c "..."`).
+
+
+
 ---
 
 ## 1. Input & Comment Details Fetching

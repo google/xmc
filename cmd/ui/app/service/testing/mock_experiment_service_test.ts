@@ -34,9 +34,7 @@ describe('MockExperimentService', () => {
 
   it('should return mock search experiments', async () => {
     const service = mockState.service as MockExperimentService;
-    const response = await firstValueFrom(
-      service.searchExperiments({ filter: 'me' }),
-    );
+    const response = await firstValueFrom(service.searchExperiments({ filter: 'me' }));
     expect(response.experiments).toEqual(EXPERIMENT_LIST.slice(0, 4));
     expect(response.nextPageToken).toBe('page_2');
   });

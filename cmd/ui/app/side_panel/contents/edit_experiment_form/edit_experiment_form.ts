@@ -144,7 +144,10 @@ export class EditExperimentForm implements BaseSidePanelContent<EditExperimentFo
 
 function createEditExperimentForm(experiment: Experiment | null | undefined): FormGroup {
   return new FormGroup({
-    name: new FormControl<string>(experiment?.title ?? '', [Validators.required, notWhitespaceOnly]),
+    name: new FormControl<string>(experiment?.title ?? '', [
+      Validators.required,
+      notWhitespaceOnly,
+    ]),
     notes: new FormControl<string>(experiment?.notes ?? ''),
     tags: new FormControl<string>(experiment?.tags?.join(',') ?? ''),
     priority: new FormControl<Priority>(experiment?.priority ?? ('NORMAL' as Priority)),

@@ -25,7 +25,6 @@ import {
   setPageSize,
 } from 'xmanager_cloud/ui/app/common/pagination/pagination';
 import { ExperimentService } from 'xmanager_cloud/ui/app/service/experiment_service';
-
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 
 /** State for the experiments list page. */
@@ -59,7 +58,6 @@ export const INITIAL_STATE: ExperimentsListPageState = {
 export class ExperimentsListPageStore extends ComponentStore<ExperimentsListPageState> {
   private readonly service = inject(ExperimentService);
   private readonly snackbarService = inject(SnackbarService);
-
 
   constructor() {
     super(INITIAL_STATE);
@@ -119,14 +117,16 @@ export class ExperimentsListPageStore extends ComponentStore<ExperimentsListPage
           orderBy,
         };
         return this.service.searchExperiments(request).pipe(
-          tap((response) => this.patchState({
-            isLoading: false,
-            pageResult: response,
-            pagination: {
-              ...pagination,
-              nextPageToken: response.nextPageToken,
-            },
-          })),
+          tap((response) =>
+            this.patchState({
+              isLoading: false,
+              pageResult: response,
+              pagination: {
+                ...pagination,
+                nextPageToken: response.nextPageToken,
+              },
+            }),
+          ),
           catchError((err) => {
             const msg = err instanceof Error ? err.message : String(err);
             this.patchState({ isLoading: false });

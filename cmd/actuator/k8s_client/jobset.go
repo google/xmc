@@ -372,8 +372,36 @@ func buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
 	return containers
 }
 
+func buildContainerPorts(spec *esspb.ExecutableSpec) []corev1.ContainerPort {
+	if len(spec.GetPorts()) == 0 {
+		return nil
+	}
+	ports := make([]corev1.ContainerPort, 0, len(spec.GetPorts()))
+	for _, p := range spec.GetPorts() {
+		protocol := corev1.ProtocolTCP
+		switch p.GetProtocol() {
+		case esspb.ContainerPort_UDP:
+			protocol = corev1.ProtocolUDP
+		case esspb.ContainerPort_SCTP:
+			protocol = corev1.ProtocolSCTP
+		case esspb.ContainerPort_TCP, esspb.ContainerPort_PROTOCOL_UNSPECIFIED:
+			protocol = corev1.ProtocolTCP
+		default:
+			protocol = corev1.ProtocolTCP
+		}
+		ports = append(ports, corev1.ContainerPort{
+			Name:          p.GetName(),
+			ContainerPort: p.GetContainerPort(),
+			Protocol:      protocol,
+			HostPort:      p.GetHostPort(),
+		})
+	}
+	return ports
+}
+
 func buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Container {
 	envVars := generateEnvVarsForSpec(spec)
+	ports := buildContainerPorts(spec)
 	var args []string
 	specArgs := spec.GetArgs()
 	if len(specArgs) > 0 {
@@ -396,6 +424,7 @@ func buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Con
 		Command:                  spec.GetCommand(),
 		Args:                     args,
 		Env:                      envVars,
+		Ports:                    ports,
 		SecurityContext:          defaultSecurityContext(),
 		VolumeMounts:             defaultVolumeMounts(),
 	}
