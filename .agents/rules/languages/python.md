@@ -16,3 +16,7 @@ This document outlines coding standards, style guidelines, and best practices fo
 ## 3. Unit Testing & Hermetic Mocks
 - **Standard `unittest` Framework**: Standardize test suites using the Python standard library `unittest` module (with tests named via `_test.py` suffix alongside target source files).
 - **Hermetic Testing**: Isolate tests from external environment side-effects (file system mutations, process invocations, network RPCs) using `unittest.mock.patch` to keep unit test suites fast, deterministic, and self-contained.
+
+## 4. Execution & Shell Safety
+- **Standalone Script Files Over `python3 -c`**: Always write Python code to dedicated `.py` files on disk using `write_to_file` rather than invoking inline commands via `python3 -c "..."` to prevent shell expansion and backtick command substitution errors.
+
