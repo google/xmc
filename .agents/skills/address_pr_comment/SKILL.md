@@ -230,7 +230,7 @@ kubectl rollout status deployment/xid-service-deployment -n xmc
 ## 8. 1-to-1 Thread Resolution Verification
 
 Before marking the PR review task as complete:
-1. Programmatically fetch the PR's review comments and threads via `gh api` or `python3`.
+1. Run `./tools/verify_pr_comment_resolution.py <owner> <repo> <pull_number> <path_to_checklist_file>` to programmatically verify that 100% of comment IDs from the checklist have received dedicated inline replies.
 2. Confirm that every single comment ID from the consolidated checklist artifact has received a dedicated inline response or resolution.
 3. Update the checklist artifact status for each item to `[x] Resolved`.
 

@@ -55,24 +55,8 @@ This document defines standards for AI agents acting as **Code Reviewers / Inspe
 
 ### C. 1-to-1 Thread Resolution Verification
 - **Resolution Verification Requirement**: Before marking a PR review task as complete or concluding the workflow, programmatically query the PR's review comments/threads to confirm that every single comment ID from the checklist has received a dedicated inline response or resolution.
-- **Required Verification Check**:
+- **Required Verification Tool**: Run the dedicated unit-tested resolution verification script in `tools/`:
   ```bash
-  gh api "repos/{owner}/{repo}/pulls/{number}/comments" | python3 -c '
-  import json, sys, re
-  comments = json.load(sys.stdin)
-  replied_to = {c.get("in_reply_to_id") for c in comments if c.get("in_reply_to_id")}
-  try:
-      with open("pr_review_checklist.md", "r") as f:
-          content = f.read()
-      checklist_ids = [int(x) for x in re.findall(r"Comment ID .(\d+).", content)]
-  except Exception as e:
-      print(f"Error reading checklist: {e}")
-      sys.exit(1)
-  unresolved = [cid for cid in checklist_ids if cid not in replied_to]
-  if unresolved:
-      print(f"Unresolved comment IDs: {unresolved}")
-      sys.exit(1)
-  print("All checklist comments have been resolved/replied to!")
-  '
+  ./tools/verify_pr_comment_resolution.py <owner> <repo> <pull_number> <path_to_checklist_file>
   ```
 - **Completion Guardrail**: Never mark a PR review comment task as complete until 100% of comment IDs from the checklist are confirmed to have received a dedicated inline response or resolution.
