@@ -66,8 +66,7 @@ export class SidePanel implements OnInit, OnDestroy {
         if (!componentType) {
           return;
         }
-        const componentRef =
-          this.sidePanelContentsContainerRef().createComponent(componentType);
+        const componentRef = this.sidePanelContentsContainerRef().createComponent(componentType);
         componentRef.setInput('data', request);
       }),
     );

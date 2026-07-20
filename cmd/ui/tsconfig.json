@@ -14,10 +14,7 @@
     "experimentalDecorators": true,
     "moduleResolution": "bundler",
     "module": "ES2022",
-    "lib": [
-      "ES2022",
-      "dom"
-    ],
+    "lib": ["ES2022", "dom"],
     "paths": {
       "xmanager_cloud/ui/app/*": ["./app/*"],
       "jasmine": ["./app/stubs/jasmine.ts"],
@@ -27,20 +24,12 @@
       "javascript/closure/i18n/numberformat": ["./app/stubs/numberformat.ts"]
     }
   },
-  "include": [
-    "**/*.ts",
-    "**/*.d.ts"
-  ],
+  "include": ["**/*.ts", "**/*.d.ts"],
   "angularCompilerOptions": {
     "enableI18nLegacyMessageIdFormat": false,
     "strictInjectionParameters": true,
     "strictInputAccessModifiers": true,
     "strictTemplates": false
   },
-  "exclude": [
-    "**/*_test.ts",
-    "app/testing",
-    "node_modules.bak",
-    "node_modules.bak/**"
-  ]
+  "exclude": ["**/*_test.ts", "app/testing", "node_modules.bak", "node_modules.bak/**"]
 }

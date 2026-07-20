@@ -23,28 +23,25 @@ module.exports = function (config) {
       require('karma-chrome-launcher'),
       require('karma-jasmine-html-reporter'),
       require('karma-coverage'),
-      require('@angular-devkit/build-angular/plugins/karma')
+      require('@angular-devkit/build-angular/plugins/karma'),
     ],
     client: {
       jasmine: {},
       clearContext: false,
-      captureConsole: true
+      captureConsole: true,
     },
     browserConsoleLogOptions: {
       level: 'log',
       format: '%b %T: %m',
-      terminal: true
+      terminal: true,
     },
     jasmineHtmlReporter: {
-      suppressAll: true
+      suppressAll: true,
     },
     coverageReporter: {
       dir: require('path').join(__dirname, './coverage/xmc-ui'),
       subdir: '.',
-      reporters: [
-        { type: 'html' },
-        { type: 'text-summary' }
-      ]
+      reporters: [{ type: 'html' }, { type: 'text-summary' }],
     },
     reporters: ['progress', 'kjhtml'],
     port: 9876,
@@ -54,11 +51,11 @@ module.exports = function (config) {
     customLaunchers: {
       ChromeHeadlessNoSandbox: {
         base: 'ChromeHeadless',
-        flags: ['--no-sandbox', '--disable-gpu']
-      }
+        flags: ['--no-sandbox', '--disable-gpu'],
+      },
     },
     browsers: ['ChromeHeadlessNoSandbox'],
     singleRun: true,
-    restartOnFileChange: false
+    restartOnFileChange: false,
   });
 };

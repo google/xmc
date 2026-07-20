@@ -23,9 +23,7 @@ import eslintConfigPrettier from 'eslint-config-prettier';
 export default tseslint.config(
   {
     files: ['**/*.ts'],
-    extends: [
-      ...tseslint.configs.recommended,
-    ],
+    extends: [...tseslint.configs.recommended],
     languageOptions: {
       parser: tseslint.parser,
     },
@@ -55,9 +53,9 @@ export default tseslint.config(
             // Other absolute imports (e.g. stubs or un-grouped libraries).
             ['^'],
             // Relative imports (starts with a dot).
-            ['^\\.']
-          ]
-        }
+            ['^\\.'],
+          ],
+        },
       ],
       'simple-import-sort/exports': 'error',
       'no-restricted-imports': [
@@ -66,13 +64,14 @@ export default tseslint.config(
           patterns: [
             {
               group: ['**/../../**'],
-              message: 'Relative imports must not go up more than one level. Use absolute paths (xmanager_cloud/...) instead.',
+              message:
+                'Relative imports must not go up more than one level. Use absolute paths (xmanager_cloud/...) instead.',
             },
           ],
         },
       ],
       'max-lines-per-function': ['warn', { max: 35, skipComments: true }],
-      'complexity': ['warn', { max: 10, variant: 'modified' }],
+      complexity: ['warn', { max: 10, variant: 'modified' }],
       'max-depth': ['error', 3],
 
       '@angular-eslint/directive-selector': 'off',
@@ -86,19 +85,13 @@ export default tseslint.config(
     },
   },
   {
-    files: [
-      '**/*_test.ts',
-      '**/*.d.ts',
-      '**/testing/**',
-      '**/stubs/**',
-      '**/mock_*.ts',
-    ],
+    files: ['**/*_test.ts', '**/*.d.ts', '**/testing/**', '**/stubs/**', '**/mock_*.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
       '@angular-eslint/prefer-standalone': 'off',
       'max-lines-per-function': 'off',
-      'complexity': 'off',
+      complexity: 'off',
     },
   },
   {
@@ -115,11 +108,13 @@ export default tseslint.config(
       'no-restricted-syntax': [
         'error',
         {
-          selector: 'Identifier[name=/^(Mock[A-Z]|mock[A-Z]|mock$)/]:not(MemberExpression > .property):not(ObjectExpression > Property > .key):not(MethodDefinition > .key):not(PropertyDefinition > .key):not(TSPropertySignature > .key):not(TSMethodSignature > .key)',
-          message: 'Identifiers starting with "Mock" or "mock" are not allowed in production files. Move mock classes and data to dedicated testing/mock files, and only reference them in app_config.ts for DI provisioning.',
+          selector:
+            'Identifier[name=/^(Mock[A-Z]|mock[A-Z]|mock$)/]:not(MemberExpression > .property):not(ObjectExpression > Property > .key):not(MethodDefinition > .key):not(PropertyDefinition > .key):not(TSPropertySignature > .key):not(TSMethodSignature > .key)',
+          message:
+            'Identifiers starting with "Mock" or "mock" are not allowed in production files. Move mock classes and data to dedicated testing/mock files, and only reference them in app_config.ts for DI provisioning.',
         },
       ],
     },
   },
-  eslintConfigPrettier
+  eslintConfigPrettier,
 );
