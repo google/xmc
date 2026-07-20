@@ -175,7 +175,9 @@ export class StatusMessagesList {
       this.buildFilterClause('severity', severity, ALL_SEVERITIES.length),
       this.buildFilterClause('source', source, ALL_SOURCES.length),
       this.buildTimeFilterClause(),
-    ].filter((p): p is string => !!p).join(' AND ');
+    ]
+      .filter((p): p is string => !!p)
+      .join(' AND ');
   }
 
   private handleFetchSuccess(response: ListStatusMessagesResponse) {

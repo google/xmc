@@ -40,7 +40,7 @@ export function processUrls(urls: Url[], data: Experiment | WorkUnit): Processed
 
 function fillPlaceholders(urlString: string, data: Experiment | WorkUnit): string | undefined {
   const wu = data.name ? parseWorkUnitName(data.name) : null;
-  const xid = wu ? wu.xid : (data.name ? parseExperimentName(data.name) : null);
+  const xid = wu ? wu.xid : data.name ? parseExperimentName(data.name) : null;
   const wid = wu ? wu.wid : undefined;
 
   const replacements: Record<string, string | null | undefined> = {
@@ -49,9 +49,10 @@ function fillPlaceholders(urlString: string, data: Experiment | WorkUnit): strin
     CREATED: data.createTime,
   };
 
-  const metadata = ('currentWorkUnitExecution' in data)
-    ? (data as WorkUnit).currentWorkUnitExecution?.metadata
-    : undefined;
+  const metadata =
+    'currentWorkUnitExecution' in data
+      ? (data as WorkUnit).currentWorkUnitExecution?.metadata
+      : undefined;
   if (metadata) {
     replacements['RESOURCE_NAME'] = metadata.resourceName;
     replacements['NAMESPACE'] = metadata.namespace;

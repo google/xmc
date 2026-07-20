@@ -368,6 +368,24 @@ func (g *GKE) InjectOnWorkUnitCreation(ctx context.Context, essServer spb.Experi
 	return workUnit, nil
 }
 
+func ensurePortExists(existing []corev1.ContainerPort, port int32) []corev1.ContainerPort {
+	for _, p := range existing {
+		if p.ContainerPort == port {
+			return existing
+		}
+	}
+	result := make([]corev1.ContainerPort, len(existing)+1)
+	copy(result, existing)
+	result[len(existing)] = corev1.ContainerPort{ContainerPort: port}
+	return result
+}
+
+func ensureTpuContainerPorts(existing []corev1.ContainerPort) []corev1.ContainerPort {
+	existing = ensurePortExists(existing, tpuICIPort)
+	existing = ensurePortExists(existing, tpuMetricsPort)
+	return existing
+}
+
 func annotateContainerList(containers []corev1.Container, specs []*epb.ExecutableSpec) ([]corev1.Container, error) {
 	if len(containers) != len(specs) {
 		return nil, fmt.Errorf("number of containers in replicated job (%d) does not match number of specs (%d)", len(containers), len(specs))
@@ -387,10 +405,7 @@ func annotateContainerList(containers []corev1.Container, specs []*epb.Executabl
 		}
 		result[idx].Resources = reqs
 		if specs[idx].GetResources().GetTpuResources() != nil {
-			result[idx].Ports = append(result[idx].Ports,
-				corev1.ContainerPort{ContainerPort: tpuICIPort},
-				corev1.ContainerPort{ContainerPort: tpuMetricsPort},
-			)
+			result[idx].Ports = ensureTpuContainerPorts(result[idx].Ports)
 		}
 	}
 	return result, nil
