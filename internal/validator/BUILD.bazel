@@ -51,7 +51,6 @@ go_test(
         "//internal/compat/proto",
         "//internal/compat/status",
         "@com_github_google_go_cmp//cmp",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/fieldmaskpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
