@@ -16,42 +16,54 @@ limitations under the License.
 <mat-card class="artifact-card">
   <ng-container [ngTemplateOutlet]="cardMainContent"></ng-container>
   @if (isNoteLong() || tags().length || hasPayloadContent()) {
-  <ng-container [ngTemplateOutlet]="cardAdditionalContent"></ng-container>
+    <ng-container [ngTemplateOutlet]="cardAdditionalContent"></ng-container>
   }
 </mat-card>
 
 <ng-template #cardMainContent>
   <div class="card-main-content">
     @if (displayProperties().url) {
-    <a [href]="displayProperties().url | safeUrl" target="_blank" style="text-decoration: none; color: inherit">
+      <a
+        [href]="displayProperties().url | safeUrl"
+        target="_blank"
+        style="text-decoration: none; color: inherit"
+      >
         <mat-icon>{{ displayProperties().icon }}</mat-icon>
       </a>
-      } @else {
+    } @else {
       <mat-icon>{{ displayProperties().icon }}</mat-icon>
-      }
+    }
     <div class="name-type-section">
       <div class="artifact-title">
-      @if (displayProperties().url) {
-      <a [href]="displayProperties().url | safeUrl" target="_blank" style="text-decoration: none; color: inherit">
-        {{ displayProperties().displayName }}
-      </a>
-      } @else {
-      {{ displayProperties().displayName }}
-      }
+        @if (displayProperties().url) {
+          <a
+            [href]="displayProperties().url | safeUrl"
+            target="_blank"
+            style="text-decoration: none; color: inherit"
+          >
+            {{ displayProperties().displayName }}
+          </a>
+        } @else {
+          {{ displayProperties().displayName }}
+        }
       </div>
       <div class="artifact-subtitle">
         <span>{{ displayProperties().typeName }}</span>
         @let wuInfo = workUnitInfo();
         @if (wuInfo) {
-        <a mat-stroked-button class="work-unit-badge" [routerLink]="wuInfo.routerLink"
-          (click)="$event.stopPropagation()">
-          {{ wuInfo.badgeText }}
-        </a>
+          <a
+            mat-stroked-button
+            class="work-unit-badge"
+            [routerLink]="wuInfo.routerLink"
+            (click)="$event.stopPropagation()"
+          >
+            {{ wuInfo.badgeText }}
+          </a>
         }
       </div>
     </div>
     @if (!isNoteLong() && notes()) {
-    <div class="notes-section">{{ notes() }}</div>
+      <div class="notes-section">{{ notes() }}</div>
     }
   </div>
 </ng-template>
@@ -60,35 +72,48 @@ limitations under the License.
   <mat-divider></mat-divider>
   <div class="card-lower-content">
     @if (isNoteLong()) {
-    <div class="long-notes-section">{{ notes() }}</div>
+      <div class="long-notes-section">{{ notes() }}</div>
     }
     @if (tags().length) {
-    <div class="tags-section">
-      @for (tag of tags(); track tag) {
-      <xmc-tag [text]="tag"></xmc-tag>
-      }
-    </div>
+      <div class="tags-section">
+        @for (tag of tags(); track tag) {
+          <xmc-tag [text]="tag"></xmc-tag>
+        }
+      </div>
     }
 
     @let art = artifact();
     @switch (art.type) {
-    @case (PayloadType.CODE_SOURCE) {
-    <ng-container [ngTemplateOutlet]="codeSourceTemplate"
-      [ngTemplateOutletContext]="{ codeSource: art.payload }"></ng-container>
-    }
-    @case (PayloadType.TEXT) {
-    <ng-container [ngTemplateOutlet]="textTemplate" [ngTemplateOutletContext]="{ text: art.payload }"></ng-container>
-    }
-    @case (PayloadType.MANAGED_XPROF) {
-    <ng-container [ngTemplateOutlet]="managedXprofTemplate"
-      [ngTemplateOutletContext]="{ managedXprof: art.payload }"></ng-container>
-    }
-    @case (PayloadType.URL) {
-    <ng-container [ngTemplateOutlet]="urlTemplate" [ngTemplateOutletContext]="{ url: art.payload }"></ng-container>
-    }
-    @case (PayloadType.CHART) {
-    <ng-container [ngTemplateOutlet]="chartTemplate" [ngTemplateOutletContext]="{ chartArt: art.payload }"></ng-container>
-    }
+      @case (PayloadType.CODE_SOURCE) {
+        <ng-container
+          [ngTemplateOutlet]="codeSourceTemplate"
+          [ngTemplateOutletContext]="{ codeSource: art.payload }"
+        ></ng-container>
+      }
+      @case (PayloadType.TEXT) {
+        <ng-container
+          [ngTemplateOutlet]="textTemplate"
+          [ngTemplateOutletContext]="{ text: art.payload }"
+        ></ng-container>
+      }
+      @case (PayloadType.MANAGED_XPROF) {
+        <ng-container
+          [ngTemplateOutlet]="managedXprofTemplate"
+          [ngTemplateOutletContext]="{ managedXprof: art.payload }"
+        ></ng-container>
+      }
+      @case (PayloadType.URL) {
+        <ng-container
+          [ngTemplateOutlet]="urlTemplate"
+          [ngTemplateOutletContext]="{ url: art.payload }"
+        ></ng-container>
+      }
+      @case (PayloadType.CHART) {
+        <ng-container
+          [ngTemplateOutlet]="chartTemplate"
+          [ngTemplateOutletContext]="{ chartArt: art.payload }"
+        ></ng-container>
+      }
     }
   </div>
 </ng-template>
@@ -96,52 +121,58 @@ limitations under the License.
 <!-- 1. Code Source Template -->
 <ng-template #codeSourceTemplate let-codeSource="codeSource">
   @if (codeSource.codeBlock) {
-  <div class="payload-detail-section">
-    @if (codeSource.codeBlock.length > collapseThreshold) {
-    <mat-expansion-panel class="payload-detail-panel">
-      <mat-expansion-panel-header>
-        <mat-panel-title>Source Code</mat-panel-title>
-      </mat-expansion-panel-header>
-      <ng-container [ngTemplateOutlet]="numberedLinesBody"
-        [ngTemplateOutletContext]="{ text: codeSource.codeBlock }"></ng-container>
-    </mat-expansion-panel>
-    } @else {
-    <ng-container [ngTemplateOutlet]="numberedLinesBody"
-      [ngTemplateOutletContext]="{ text: codeSource.codeBlock }"></ng-container>
-    }
-  </div>
+    <div class="payload-detail-section">
+      @if (codeSource.codeBlock.length > collapseThreshold) {
+        <mat-expansion-panel class="payload-detail-panel">
+          <mat-expansion-panel-header>
+            <mat-panel-title>Source Code</mat-panel-title>
+          </mat-expansion-panel-header>
+          <ng-container
+            [ngTemplateOutlet]="numberedLinesBody"
+            [ngTemplateOutletContext]="{ text: codeSource.codeBlock }"
+          ></ng-container>
+        </mat-expansion-panel>
+      } @else {
+        <ng-container
+          [ngTemplateOutlet]="numberedLinesBody"
+          [ngTemplateOutletContext]="{ text: codeSource.codeBlock }"
+        ></ng-container>
+      }
+    </div>
   }
 </ng-template>
 
 <ng-template #numberedLinesBody let-text="text">
-  <pre class="payload-detail-code">@for (line of text | split; track $index) {<code>{{ line }}</code>}</pre>
+  <pre
+    class="payload-detail-code"
+  >@for (line of text | split; track $index) {<code>{{ line }}</code>}</pre>
 </ng-template>
 
 <!-- 2. Text Template -->
 <ng-template #textTemplate let-text="text">
   @if (text.text) {
-  <div class="payload-detail-section">
-    @if (text.text.length > collapseThreshold) {
-    <mat-expansion-panel class="payload-detail-panel">
-      <mat-expansion-panel-header>
-        <mat-panel-title>Details</mat-panel-title>
-      </mat-expansion-panel-header>
-      <div class="payload-detail-text">{{ text.text }}</div>
-    </mat-expansion-panel>
-    } @else {
-    <div class="payload-detail-text">{{ text.text }}</div>
-    }
-  </div>
+    <div class="payload-detail-section">
+      @if (text.text.length > collapseThreshold) {
+        <mat-expansion-panel class="payload-detail-panel">
+          <mat-expansion-panel-header>
+            <mat-panel-title>Details</mat-panel-title>
+          </mat-expansion-panel-header>
+          <div class="payload-detail-text">{{ text.text }}</div>
+        </mat-expansion-panel>
+      } @else {
+        <div class="payload-detail-text">{{ text.text }}</div>
+      }
+    </div>
   }
 </ng-template>
 
 <!-- 3. Managed Xprof Template -->
 <ng-template #managedXprofTemplate let-managedXprof="managedXprof">
   @if (managedXprof.runGroup) {
-  <div class="payload-detail-section">
-    <div class="payload-detail-title">Profiling Run Group</div>
-    <div class="payload-detail-text">{{ managedXprof.runGroup }}</div>
-  </div>
+    <div class="payload-detail-section">
+      <div class="payload-detail-title">Profiling Run Group</div>
+      <div class="payload-detail-text">{{ managedXprof.runGroup }}</div>
+    </div>
   }
 </ng-template>
 
@@ -160,23 +191,27 @@ limitations under the License.
 <ng-template #chartTemplate let-chartArt="chartArt">
   <div class="payload-detail-section">
     @if (chartArt.metricNames?.length) {
-    <div class="payload-detail-title">Metrics</div>
-    <div class="payload-detail-text">{{ chartArt.metricNames.join(', ') }}</div>
+      <div class="payload-detail-title">Metrics</div>
+      <div class="payload-detail-text">{{ chartArt.metricNames.join(', ') }}</div>
     }
     @if (chartArt.chart) {
-    @let chartJson = chartArt.chart | json;
-    @if (chartJson.length > collapseThreshold) {
-    <mat-expansion-panel class="payload-detail-panel">
-      <mat-expansion-panel-header>
-        <mat-panel-title>Chart Data</mat-panel-title>
-      </mat-expansion-panel-header>
-      <ng-container [ngTemplateOutlet]="numberedLinesBody"
-        [ngTemplateOutletContext]="{ text: chartJson }"></ng-container>
-    </mat-expansion-panel>
-    } @else {
-    <ng-container [ngTemplateOutlet]="numberedLinesBody"
-      [ngTemplateOutletContext]="{ text: chartJson }"></ng-container>
-    }
+      @let chartJson = chartArt.chart | json;
+      @if (chartJson.length > collapseThreshold) {
+        <mat-expansion-panel class="payload-detail-panel">
+          <mat-expansion-panel-header>
+            <mat-panel-title>Chart Data</mat-panel-title>
+          </mat-expansion-panel-header>
+          <ng-container
+            [ngTemplateOutlet]="numberedLinesBody"
+            [ngTemplateOutletContext]="{ text: chartJson }"
+          ></ng-container>
+        </mat-expansion-panel>
+      } @else {
+        <ng-container
+          [ngTemplateOutlet]="numberedLinesBody"
+          [ngTemplateOutletContext]="{ text: chartJson }"
+        ></ng-container>
+      }
     }
   </div>
 </ng-template>

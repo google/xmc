@@ -21,21 +21,12 @@
             "outputPath": "dist",
             "index": "index.html",
             "browser": "main.ts",
-            "polyfills": [
-              "zone.js"
-            ],
+            "polyfills": ["zone.js"],
             "tsConfig": "tsconfig.json",
-            "assets": [
-              "logo.svg",
-              "static"
-            ],
-            "styles": [
-              "styles.scss"
-            ],
+            "assets": ["logo.svg", "static"],
+            "styles": ["styles.scss"],
             "stylePreprocessorOptions": {
-              "includePaths": [
-                "."
-              ]
+              "includePaths": ["."]
             },
             "scripts": [],
             "externalDependencies": []
@@ -65,20 +56,11 @@
             "karmaConfig": "karma.conf.js",
             "main": "app/testing/test.ts",
             "tsConfig": "tsconfig.spec.json",
-            "include": [
-              "app/**/*_test.ts"
-            ],
-            "polyfills": [
-              "zone.js",
-              "zone.js/testing"
-            ],
-            "styles": [
-              "styles.scss"
-            ],
+            "include": ["app/**/*_test.ts"],
+            "polyfills": ["zone.js", "zone.js/testing"],
+            "styles": ["styles.scss"],
             "stylePreprocessorOptions": {
-              "includePaths": [
-                "."
-              ]
+              "includePaths": ["."]
             }
           }
         }

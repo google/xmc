@@ -55,7 +55,7 @@ export interface UrlTypedArtifact extends BaseTypedArtifact {
 export interface ChartArtifactPayload {
   title?: string;
   metricNames?: string[];
-  chart?: any;
+  chart?: Record<string, unknown>;
   status?: 'STATUS_UNSPECIFIED' | 'PROVISIONING' | 'SUCCESS' | 'FAILED';
   errorMessage?: string;
 }
