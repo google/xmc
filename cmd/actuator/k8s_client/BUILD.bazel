@@ -72,6 +72,7 @@ compat_go_test(
         "jobset_queries_test.go",
         "jobset_test.go",
         "namespace_test.go",
+        "volume_test.go",
     ],
     embed = [":k8s_client"],
     shard_count = 10,
