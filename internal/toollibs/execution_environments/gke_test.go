@@ -44,8 +44,80 @@ func TestGKEDescription(t *testing.T) {
 
 func TestGKEIsCompatibleWithWorkUnit(t *testing.T) {
 	gke := &GKE{}
-	if ok, reason := gke.IsCompatibleWithWorkUnit(nil); !ok {
-		t.Errorf("IsCompatibleWithWorkUnit(nil) = false (reason: %s), want true", reason)
+	tests := []struct {
+		name       string
+		workUnit   *epb.WorkUnit
+		wantOK     bool
+		wantReason string
+	}{
+		{
+			name:     "nil work unit",
+			workUnit: nil,
+			wantOK:   true,
+		},
+		{
+			name:     "work unit without jobset",
+			workUnit: &epb.WorkUnit{},
+			wantOK:   true,
+		},
+		{
+			name: "work unit with valid TPU topology",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{Jobset: &epb.JobSetExecutable{
+						Jobs: []*epb.KubernetesJob{
+							{
+								Name: "job1",
+								Spec: &epb.ExecutableSpec{
+									Resources: &epb.ResourceSet{
+										Resources: &epb.ResourceSet_TpuResources{TpuResources: &epb.TpuResources{
+											Type:     "tpu-v6e-slice",
+											Topology: "2x2",
+										}},
+									},
+								},
+							},
+						},
+					}},
+				},
+			},
+			wantOK: true,
+		},
+		{
+			name: "work unit with invalid TPU topology",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{Jobset: &epb.JobSetExecutable{
+						Jobs: []*epb.KubernetesJob{
+							{
+								Name: "job1",
+								Spec: &epb.ExecutableSpec{
+									Resources: &epb.ResourceSet{
+										Resources: &epb.ResourceSet_TpuResources{TpuResources: &epb.TpuResources{
+											Type:     "tpu-v6e-slice",
+											Topology: "invalid",
+										}},
+									},
+								},
+							},
+						},
+					}},
+				},
+			},
+			wantOK: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, reason := gke.IsCompatibleWithWorkUnit(tc.workUnit)
+			if ok != tc.wantOK {
+				t.Errorf("IsCompatibleWithWorkUnit() ok = %v (reason: %s), want %v", ok, reason, tc.wantOK)
+			}
+			if !tc.wantOK && tc.wantReason != "" && reason != tc.wantReason {
+				t.Errorf("IsCompatibleWithWorkUnit() reason = %q, want %q", reason, tc.wantReason)
+			}
+		})
 	}
 }
 
@@ -296,6 +368,14 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 												tpuAcceleratorSelectorKey: "tpu-v4-podslice",
 												tpuTopologySelectorKey:    "2x2x4",
 											},
+											Tolerations: []corev1.Toleration{
+												{
+													Key:      "google.com/tpu",
+													Operator: corev1.TolerationOpEqual,
+													Value:    "present",
+													Effect:   corev1.TaintEffectNoSchedule,
+												},
+											},
 										},
 									},
 								},
@@ -389,6 +469,14 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 												tpuAcceleratorSelectorKey: "tpu-v5-lite-podslice",
 												tpuTopologySelectorKey:    "2x4",
 											},
+											Tolerations: []corev1.Toleration{
+												{
+													Key:      "google.com/tpu",
+													Operator: corev1.TolerationOpEqual,
+													Value:    "present",
+													Effect:   corev1.TaintEffectNoSchedule,
+												},
+											},
 										},
 									},
 								},
@@ -479,6 +567,14 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 											NodeSelector: map[string]string{
 												tpuAcceleratorSelectorKey: "tpu-v6e-slice",
 												tpuTopologySelectorKey:    "2x2",
+											},
+											Tolerations: []corev1.Toleration{
+												{
+													Key:      "google.com/tpu",
+													Operator: corev1.TolerationOpEqual,
+													Value:    "present",
+													Effect:   corev1.TaintEffectNoSchedule,
+												},
 											},
 										},
 									},
@@ -698,6 +794,168 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "per_job_node_selector_cpu_only",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{
+						Jobset: &epb.JobSetExecutable{
+							Jobs: []*epb.KubernetesJob{
+								{
+									Name: "head",
+									Spec: &epb.ExecutableSpec{
+										Resources: &epb.ResourceSet{
+											Resources: &epb.ResourceSet_CpuResources{
+												CpuResources: &epb.CpuResources{
+													CpuMillicores: 1000,
+													MemoryBytes:   2048,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "head",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{{}},
+											NodeSelector: map[string]string{
+												"cloud.google.com/gke-nodepool": "cpups",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantJobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "head",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Resources: corev1.ResourceRequirements{
+														Limits: corev1.ResourceList{
+															corev1.ResourceMemory: resource.MustParse("2048"),
+														},
+														Requests: corev1.ResourceList{
+															corev1.ResourceCPU:    resource.MustParse("1000m"),
+															corev1.ResourceMemory: resource.MustParse("2048"),
+														},
+													},
+												},
+											},
+											NodeSelector: map[string]string{
+												"cloud.google.com/gke-nodepool": "cpups",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "per_job_node_selector_gpu_merge",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{
+						Jobset: &epb.JobSetExecutable{
+							Jobs: []*epb.KubernetesJob{
+								{
+									Name: "worker",
+									Spec: &epb.ExecutableSpec{
+										Resources: &epb.ResourceSet{
+											Resources: &epb.ResourceSet_GpuResources{
+												GpuResources: &epb.GpuResources{
+													Type:  "T4",
+													Count: 1,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "worker",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{{}},
+											NodeSelector: map[string]string{
+												"cloud.google.com/gke-nodepool": "gpu-pool",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantJobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name:     "worker",
+							Replicas: 1,
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Parallelism:    proto.Int32(1),
+									Completions:    proto.Int32(1),
+									CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Resources: corev1.ResourceRequirements{
+														Limits: corev1.ResourceList{
+															nvidiaGPUKey: resource.MustParse("1"),
+														},
+														Requests: corev1.ResourceList{},
+													},
+												},
+											},
+											NodeSelector: map[string]string{
+												"cloud.google.com/gke-nodepool": "gpu-pool",
+												nvidiaNodeSelectorKey:           "nvidia-tesla-t4",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -775,6 +1033,29 @@ func TestTPUNodesPerSlice(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpdateTolerations(t *testing.T) {
+	t.Run("nil podSpec does not panic", func(t *testing.T) {
+		updateTolerations(nil)
+	})
+
+	t.Run("appends TPU toleration", func(t *testing.T) {
+		podSpec := &corev1.PodSpec{}
+		updateTolerations(podSpec)
+
+		want := []corev1.Toleration{
+			{
+				Key:      tpuResourceKey,
+				Operator: corev1.TolerationOpEqual,
+				Value:    tpuTolerationValue,
+				Effect:   corev1.TaintEffectNoSchedule,
+			},
+		}
+		if diff := cmp.Diff(want, podSpec.Tolerations); diff != "" {
+			t.Errorf("updateTolerations() returned unexpected tolerations diff (-want +got):\n%s", diff)
+		}
+	})
 }
 
 func completionModePtr(m batchv1.CompletionMode) *batchv1.CompletionMode {
@@ -1114,3 +1395,71 @@ func TestInjectOnJobSetCreation_NetworkInjectionGPUMultiNode(t *testing.T) {
 	}
 }
 
+func TestInjectOnJobSetCreation_GPUMultiNode_WithCoordinator(t *testing.T) {
+	g := &GKE{}
+	workUnit := &epb.WorkUnit{
+		Executable: &epb.Executable{
+			Type: &epb.Executable_Jobset{
+				Jobset: &epb.JobSetExecutable{
+					Jobs: []*epb.KubernetesJob{
+						{
+							Name: "gpu-job",
+							Spec: &epb.ExecutableSpec{
+								Resources: &epb.ResourceSet{
+									Resources: &epb.ResourceSet_GpuResources{
+										GpuResources: &epb.GpuResources{
+											Type:  "H100",
+											Count: 8,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	jobSet := &jobsetv1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-jobset"},
+		Spec: jobsetv1alpha2.JobSetSpec{
+			Coordinator: &jobsetv1alpha2.Coordinator{
+				ReplicatedJob: "gpu-job",
+				JobIndex:      2,
+				PodIndex:      0,
+			},
+			ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+				{
+					Name:     "gpu-job",
+					Replicas: 4,
+					Template: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers: []corev1.Container{
+										{Name: "main", Image: "test-image"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := g.InjectOnJobSetCreation(context.Background(), workUnit, jobSet)
+	if err != nil {
+		t.Fatalf("InjectOnJobSetCreation() returned error: %v", err)
+	}
+	if got.Spec.Coordinator == nil {
+		t.Fatalf("Expected Coordinator to be preserved, got nil")
+	}
+	if got.Spec.Coordinator.JobIndex != 0 {
+		t.Errorf("Expected Coordinator.JobIndex to be 0, got %d", got.Spec.Coordinator.JobIndex)
+	}
+	if got.Spec.Coordinator.PodIndex != 2 {
+		t.Errorf("Expected Coordinator.PodIndex to be 2, got %d", got.Spec.Coordinator.PodIndex)
+	}
+}

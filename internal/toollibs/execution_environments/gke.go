@@ -52,6 +52,7 @@ const (
 	nvidiaNodeSelectorKey = "cloud.google.com/gke-accelerator"
 
 	tpuResourceKey            = "google.com/tpu"
+	tpuTolerationValue        = "present"
 	tpuAcceleratorSelectorKey = "cloud.google.com/gke-tpu-accelerator"
 	tpuTopologySelectorKey    = "cloud.google.com/gke-tpu-topology"
 
@@ -124,9 +125,20 @@ func (g *GKE) Description() string {
 }
 
 // IsCompatibleWithWorkUnit returns whether the execution environment is compatible with the given work unit.
-// It returns a reason if the environment is not compatible.
+// While GKE supports CPU, GPU, and TPU compute resources, this verifies that any requested TPU topology is structurally valid.
 func (g *GKE) IsCompatibleWithWorkUnit(workUnit *epb.WorkUnit) (bool, string) {
-	// Since this is GKE, we should support everything at this point.
+	if workUnit == nil || workUnit.GetExecutable().GetJobset() == nil {
+		return true, ""
+	}
+	for _, job := range workUnit.GetExecutable().GetJobset().GetJobs() {
+		tpuRes := job.GetSpec().GetResources().GetTpuResources()
+		if tpuRes == nil {
+			continue
+		}
+		if _, err := tpuNodesPerSlice(tpuRes.GetTopology()); err != nil {
+			return false, fmt.Sprintf("invalid TPU topology %q in job %q: %v", tpuRes.GetTopology(), job.GetName(), err)
+		}
+	}
 	return true, ""
 }
 
@@ -193,6 +205,20 @@ func updateNodeSelector(resourceSet *epb.ResourceSet, podSpec *corev1.PodSpec) e
 	return nil
 }
 
+// updateTolerations adds necessary TPU tolerations to the pod spec.
+func updateTolerations(podSpec *corev1.PodSpec) {
+	if podSpec == nil {
+		return
+	}
+	toleration := corev1.Toleration{
+		Key:      tpuResourceKey,
+		Operator: corev1.TolerationOpEqual,
+		Value:    tpuTolerationValue,
+		Effect:   corev1.TaintEffectNoSchedule,
+	}
+	podSpec.Tolerations = append(podSpec.Tolerations, toleration)
+}
+
 // ensureJobSetNetworkConfigured guarantees stable DNS resolution for multi-node workloads.
 func ensureJobSetNetworkConfigured(jobSet *jobsetv1alpha2.JobSet) {
 	if jobSet.Spec.Network != nil {
@@ -240,6 +266,7 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 		}
 
 		if tpuRes := job.Spec.Resources.GetTpuResources(); tpuRes != nil {
+			updateTolerations(&replicatedJob.Template.Spec.Template.Spec)
 			nodesPerSlice, err := tpuNodesPerSlice(tpuRes.GetTopology())
 			if err != nil {
 				return nil, err
@@ -271,11 +298,20 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 				ensureJobSetNetworkConfigured(jobSet)
 			}
 			// For indexed completion, Replicas must be 1.
-			replicatedJob.Replicas = 1
+			collapseReplicasToPods(jobSet, replicatedJob)
 		}
 	}
 
 	return jobSet, nil
+}
+
+// collapseReplicasToPods sets ReplicatedJob.Replicas to 1 and adjusts Coordinator indices if targeted.
+func collapseReplicasToPods(jobSet *jobsetv1alpha2.JobSet, replicatedJob *jobsetv1alpha2.ReplicatedJob) {
+	if replicatedJob.Replicas > 1 && jobSet.Spec.Coordinator != nil && jobSet.Spec.Coordinator.ReplicatedJob == replicatedJob.Name {
+		jobSet.Spec.Coordinator.PodIndex = jobSet.Spec.Coordinator.JobIndex + jobSet.Spec.Coordinator.PodIndex
+		jobSet.Spec.Coordinator.JobIndex = 0
+	}
+	replicatedJob.Replicas = 1
 }
 
 func parseTotalChips(topology string) (int, error) {

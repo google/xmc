@@ -120,15 +120,37 @@ message JobSetExecutable {
     repeated string target_replicated_jobs = 2;
   }
 
+  // Coordinator configuration for the JobSet (`coordinator`).
+  // Defines which pod can be marked as the coordinator for the JobSet workload,
+  // prompting the JobSet controller to inject stable endpoint annotations (`jobset.sigs.k8s.io/coordinator`).
+  message Coordinator {
+    // Name of the ReplicatedJob which contains the coordinator pod.
+    string replicated_job = 1;
+
+    // Index of the Job which contains the coordinator pod (i.e., for a ReplicatedJob
+    // with N replicas, there are Job indexes 0 to N-1). Defaults to 0 if unset.
+    // Note: For GPU and TPU workloads, multi-replica jobs (Replicas: N) are typically converted
+    // by the execution environment into single-replica multi-pod jobs (Replicas: 1, Parallelism: N).
+    // When this conversion occurs, the actuator automatically maps `job_index` to `0` and
+    // `pod_index` to the original `job_index` (plus any specified `pod_index`).
+    optional int32 job_index = 2;
+
+    // Job completion index of the coordinator pod. Defaults to 0 if unset.
+    optional int32 pod_index = 3;
+  }
+
   // The Jobs that make up the JobSet.
   repeated KubernetesJob jobs = 1;
 
   // Network configuration for the JobSet (DNS hostnames, unready address publishing).
   Network network = 2;
 
+  // Coordinator configuration for the JobSet.
+  Coordinator coordinator = 3;
+
   // Success policy for the JobSet. If not specified, defaults to requiring all jobs to succeed,
   // unless a known leader role like "pathways-head" is detected in jobs.
-  optional SuccessPolicy success_policy = 3;
+  optional SuccessPolicy success_policy = 4;
 }
 
 // A KubernetesJob is a single Kubernetes Job that is run as part of a
@@ -179,6 +201,10 @@ message KubernetesJob {
   repeated ExecutableSpec sidecars = 9;
   // Init containers to run before primary and sidecar containers start.
   repeated ExecutableSpec init_containers = 10;
+
+  // Node selector labels to apply to all Pods in this Kubernetes Job.
+  // This allows pinning specific jobs (e.g., head vs worker) to distinct node pools.
+  map<string, string> node_selector = 11;
 }
 
 // Selects a field of the Pod (matches YAML 'fieldRef').
@@ -224,7 +250,8 @@ message ExecutableSpec {
   // The docker image to use for the executable.
   string docker_image = 2;
   // The arguments to pass to the executable.
-  map<string, string> args = 3;
+  // Deprecated: Use args_list instead, which supports ordered, verbatim, and positional arguments.
+  map<string, string> args = 3 [deprecated = true];
   // The environment variables to set for the executable.
   // Deprecated: Use env instead, which supports structured environment variables.
   map<string, string> env_vars = 4 [deprecated = true];
@@ -235,6 +262,9 @@ message ExecutableSpec {
   // Optional name for the container. If unset, defaults to the job name for the primary container,
   // '<job_name>-sidecar-<index>' for sidecars, or '<job_name>-init-<index>' for init containers.
   string name = 7;
+  // Ordered list of arguments passed verbatim to the container entrypoint/command without automatic flag prefixes.
+  // Can be used for positional arguments, bare key=value pairs (MaxText/Abseil), or GNU --flag=value options.
+  repeated string args_list = 8;
 }
 
 // SchedulingConstraints contains the scheduling constraints for the

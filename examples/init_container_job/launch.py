@@ -1,126 +1,117 @@
 #!/usr/bin/env python3
 """Launch script demonstrating an XMC WorkUnit with an Init Container."""
 
-from collections.abc import Sequence
 import logging
 import os
+from collections.abc import Sequence
 
 import dotenv
-
-logging.getLogger("dotenv.main").setLevel(logging.ERROR)
-dotenv.load_dotenv()
-
 from absl import app
-from xmanager import xm
 from xmanager import xm_cloud
 from xmanager.xm_cloud import snapshot_code
+from xmanager_cloud.experiment_state_server.proto import (
+    api_pb2 as ess_api_pb2,
+    priority_pb2,
+    resources_pb2,
+    work_unit_pb2,
+)
+from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
 # Skip git push snapshot during local test launch
-snapshot_code.push_repo_state = lambda *args, **kwargs: type(
-    "Dummy", (), {"commit_url": None}
-)()
-
-from xmanager_cloud.experiment_state_server.proto import api_pb2 as ess_api_pb2
-from xmanager_cloud.experiment_state_server.proto import priority_pb2
-from xmanager_cloud.experiment_state_server.proto import resources_pb2
-from xmanager_cloud.experiment_state_server.proto import work_unit_pb2
-from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
+snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
 
 
 def main(argv: Sequence[str]) -> None:
-  if len(argv) > 1:
-    raise app.UsageError("Too many command-line arguments.")
+    """Launches init container validation experiment."""
+    logging.getLogger("dotenv.main").setLevel(logging.ERROR)
+    dotenv.load_dotenv()
 
-  project_id = os.environ.get("PROJECT_ID")
-  image_path = os.environ.get(
-      "IMAGE_PATH",
-      f"us-docker.pkg.dev/{project_id}/xmc/init-container-job:latest",
-  )
-  queue_name = os.environ.get("QUEUE_NAME", "cpu-queue")
+    if len(argv) > 1:
+        raise app.UsageError("Too many command-line arguments.")
 
-  print(
-      f"Creating init container validation experiment using image: {image_path}"
-  )
+    project_id = os.environ.get("PROJECT_ID")
+    image_path = os.environ.get(
+        "IMAGE_PATH",
+        f"us-docker.pkg.dev/{project_id}/xmc/init-container-job:latest",
+    )
+    queue_name = os.environ.get("QUEUE_NAME", "cpu-queue")
 
-  with xm_cloud.create_experiment(
-      experiment_title="Init Container Validation Experiment",
-      acls=xid_messages_pb2.XidAcls(
-          owners=[xid_messages_pb2.XidAcls.Role(all_authenticated_users=True)]
-      ),
-  ) as experiment:
-    stub = experiment._experiment_state_stub  # pylint: disable=protected-access
+    print(f"Creating init container validation experiment using image: {image_path}")
 
-    work_unit = work_unit_pb2.WorkUnit(
-        work_unit_type=work_unit_pb2.WorkUnit.WorkUnitType.STANDARD,
-        priority=priority_pb2.Priority.NORMAL,
-        notes="JobSet demonstrating sequential Init Container execution.",
-        tags=["init-container", "validation"],
-        executable=work_unit_pb2.Executable(
-            scheduling_constraints=work_unit_pb2.SchedulingConstraints(
-                queue_name=queue_name
-            ),
-            jobset=work_unit_pb2.JobSetExecutable(
-                jobs=[
-                    work_unit_pb2.KubernetesJob(
-                        name="init-worker",
-                        replicas=1,
-                        init_containers=[
-                            work_unit_pb2.ExecutableSpec(
-                                name="init-setup",
+    with xm_cloud.create_experiment(
+        experiment_title="Init Container Validation Experiment",
+        acls=xid_messages_pb2.XidAcls(
+            owners=[xid_messages_pb2.XidAcls.Role(all_authenticated_users=True)]
+        ),
+    ) as experiment:
+        stub = experiment._experiment_state_stub  # pylint: disable=protected-access
+
+        work_unit = work_unit_pb2.WorkUnit(
+            work_unit_type=work_unit_pb2.WorkUnit.WorkUnitType.STANDARD,
+            priority=priority_pb2.Priority.NORMAL,
+            notes="JobSet demonstrating sequential Init Container execution.",
+            tags=["init-container", "validation"],
+            executable=work_unit_pb2.Executable(
+                scheduling_constraints=work_unit_pb2.SchedulingConstraints(queue_name=queue_name),
+                jobset=work_unit_pb2.JobSetExecutable(
+                    jobs=[
+                        work_unit_pb2.KubernetesJob(
+                            name="init-worker",
+                            replicas=1,
+                            init_containers=[
+                                work_unit_pb2.ExecutableSpec(
+                                    name="init-setup",
+                                    docker_image=image_path,
+                                    command=["python3", "/app/init_step.py"],
+                                    resources=resources_pb2.ResourceSet(
+                                        cpu_resources=resources_pb2.CpuResources(
+                                            cpu_millicores=50,
+                                            memory_bytes=50 * 1024 * 1024,
+                                        ),
+                                    ),
+                                    env=[
+                                        work_unit_pb2.EnvVar(
+                                            name="POD_PREFIX",
+                                            value="init-setup",
+                                        ),
+                                    ],
+                                )
+                            ],
+                            spec=work_unit_pb2.ExecutableSpec(
+                                name="primary-worker",
                                 docker_image=image_path,
-                                command=["python3", "/app/init_step.py"],
+                                command=["python3", "/app/worker.py"],
                                 resources=resources_pb2.ResourceSet(
                                     cpu_resources=resources_pb2.CpuResources(
-                                        cpu_millicores=50,
-                                        memory_bytes=50 * 1024 * 1024,
+                                        cpu_millicores=100,
+                                        memory_bytes=100 * 1024 * 1024,
                                     ),
                                 ),
                                 env=[
                                     work_unit_pb2.EnvVar(
                                         name="POD_PREFIX",
-                                        value="init-setup",
+                                        value="primary-worker",
+                                    ),
+                                    work_unit_pb2.EnvVar(
+                                        name="DURATION_MINUTES",
+                                        value="1",
                                     ),
                                 ],
-                            )
-                        ],
-                        spec=work_unit_pb2.ExecutableSpec(
-                            name="primary-worker",
-                            docker_image=image_path,
-                            command=["python3", "/app/worker.py"],
-                            resources=resources_pb2.ResourceSet(
-                                cpu_resources=resources_pb2.CpuResources(
-                                    cpu_millicores=100,
-                                    memory_bytes=100 * 1024 * 1024,
-                                ),
                             ),
-                            env=[
-                                work_unit_pb2.EnvVar(
-                                    name="POD_PREFIX",
-                                    value="primary-worker",
-                                ),
-                                work_unit_pb2.EnvVar(
-                                    name="DURATION_MINUTES",
-                                    value="1",
-                                ),
-                            ],
                         ),
-                    ),
-                ]
+                    ]
+                ),
             ),
-        ),
-    )
+        )
 
-    create_req = ess_api_pb2.CreateWorkUnitRequest(
-        parent=experiment.resource_name,
-        work_unit=work_unit,
-    )
-    created_wu = stub.create_work_unit(create_req)
-    print(f"Created Work Unit successfully: {created_wu.name}")
-    print(
-        "Experiment Dashboard URL:"
-        f" https://{os.environ.get('XMC_DOMAIN')}"
-    )
+        create_req = ess_api_pb2.CreateWorkUnitRequest(
+            parent=experiment.resource_name,
+            work_unit=work_unit,
+        )
+        created_wu = stub.create_work_unit(create_req)
+        print(f"Created Work Unit successfully: {created_wu.name}")
+        print(f"Experiment Dashboard URL: https://{os.environ.get('XMC_DOMAIN')}")
 
 
 if __name__ == "__main__":
-  app.run(main)
+    app.run(main)

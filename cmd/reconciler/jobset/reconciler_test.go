@@ -1187,3 +1187,117 @@ func TestReconcileUnschedulablePods(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckPodsForUnschedulableTPUTopologyMismatch(t *testing.T) {
+	scheme, err := newScheme()
+	if err != nil {
+		t.Fatalf("Failed to create scheme: %v", err)
+	}
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "tpu-node-1",
+			Labels: map[string]string{
+				constants.TPUTopologySelectorKey: "8x8",
+			},
+		},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(node).Build()
+	r := &Reconciler{
+		Client: fakeClient,
+	}
+
+	ctx := context.Background()
+
+	t.Run("topology mismatch surfaces detailed warning", func(t *testing.T) {
+		pods := []corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "pod-tpu-pending", Namespace: "default"},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{
+						{
+							Type:    corev1.PodScheduled,
+							Status:  corev1.ConditionFalse,
+							Reason:  corev1.PodReasonUnschedulable,
+							Message: "0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector.",
+						},
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeSelector: map[string]string{
+						constants.TPUTopologySelectorKey:    "2x2",
+						constants.TPUAcceleratorSelectorKey: "tpu-v6e-slice",
+					},
+				},
+			},
+		}
+		got := r.checkPodsForUnschedulable(ctx, pods)
+		want := `Work unit is unschedulable: requested TPU topology "2x2" (type "tpu-v6e-slice") does not match any node pool's advertised topology in the cluster. Available TPU topologies: [8x8]. Please request a topology supported by the cluster's TPU node pools.`
+		if got != want {
+			t.Errorf("checkPodsForUnschedulable() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("topology match falls back to generic warning", func(t *testing.T) {
+		pods := []corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "pod-tpu-pending-quota", Namespace: "default"},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{
+						{
+							Type:    corev1.PodScheduled,
+							Status:  corev1.ConditionFalse,
+							Reason:  corev1.PodReasonUnschedulable,
+							Message: "0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector.",
+						},
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeSelector: map[string]string{
+						constants.TPUTopologySelectorKey:    "8x8",
+						constants.TPUAcceleratorSelectorKey: "tpu-v6e-slice",
+					},
+				},
+			},
+		}
+		got := r.checkPodsForUnschedulable(ctx, pods)
+		if strings.Contains(got, "does not match any node pool's advertised topology") {
+			t.Errorf("Expected generic unschedulable warning when topology matches, got %q", got)
+		}
+	})
+
+	t.Run("empty topologies falls back to generic warning", func(t *testing.T) {
+		emptyClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		rEmpty := &Reconciler{Client: emptyClient}
+		pods := []corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "pod-tpu-pending-autoscale", Namespace: "default"},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodPending,
+					Conditions: []corev1.PodCondition{
+						{
+							Type:    corev1.PodScheduled,
+							Status:  corev1.ConditionFalse,
+							Reason:  corev1.PodReasonUnschedulable,
+							Message: "0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector.",
+						},
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeSelector: map[string]string{
+						constants.TPUTopologySelectorKey:    "2x2",
+						constants.TPUAcceleratorSelectorKey: "tpu-v6e-slice",
+					},
+				},
+			},
+		}
+		got := rEmpty.checkPodsForUnschedulable(ctx, pods)
+		if strings.Contains(got, "does not match any node pool's advertised topology") {
+			t.Errorf("Expected generic unschedulable warning when no TPU nodes are present, got %q", got)
+		}
+		if !strings.Contains(got, "Work unit may be unschedulable") {
+			t.Errorf("Expected generic 'Work unit may be unschedulable' warning, got %q", got)
+		}
+	})
+}

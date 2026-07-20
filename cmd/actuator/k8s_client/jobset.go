@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -302,6 +303,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 	}
 
 	primaryName := jobsetutil.PrimaryContainerName(job)
+	nodeSelector := copyNodeSelector(job.GetNodeSelector())
 
 	return jobsetv1alpha2.ReplicatedJob{
 		Name:      job.GetName(),
@@ -329,11 +331,24 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 						RestartPolicy:      corev1.RestartPolicyNever,
 						SecurityContext:    defaultPodSecurityContext(),
 						Volumes:            defaultVolumes(),
+						NodeSelector:       nodeSelector,
 					},
 				},
 			},
 		},
 	}
+}
+
+// copyNodeSelector creates an immutable copy of the job node selector map.
+func copyNodeSelector(source map[string]string) map[string]string {
+	if len(source) == 0 {
+		return nil
+	}
+	copyMap := make(map[string]string, len(source))
+	for k, v := range source {
+		copyMap[k] = v
+	}
+	return copyMap
 }
 
 func buildInitContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
@@ -360,9 +375,18 @@ func buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
 func buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Container {
 	envVars := generateEnvVarsForSpec(spec)
 	var args []string
-	for k, v := range spec.GetArgs() {
-		args = append(args, fmt.Sprintf("--%s=%s", k, v))
+	specArgs := spec.GetArgs()
+	if len(specArgs) > 0 {
+		keys := make([]string, 0, len(specArgs))
+		for k := range specArgs {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			args = append(args, fmt.Sprintf("--%s=%s", k, specArgs[k]))
+		}
 	}
+	args = append(args, spec.GetArgsList()...)
 	return corev1.Container{
 		Name:                     containerName,
 		Image:                    spec.GetDockerImage(),
@@ -434,6 +458,7 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		Spec: jobsetv1alpha2.JobSetSpec{
 			ReplicatedJobs: replicatedJobs,
 			Network:        buildJobSetNetwork(workUnit, jobSetName),
+			Coordinator:    buildJobSetCoordinator(workUnit),
 			Suspend:        boolPtr(false),
 			SuccessPolicy: buildJobSetSuccessPolicy(workUnit),
 			FailurePolicy: &jobsetv1alpha2.FailurePolicy{
@@ -451,7 +476,27 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		logging.Error(ctx, "Failed to get execution environment", "execution_environment", c.RuntimeConfig.DefaultExecutionEnvironment)
 		return nil, fmt.Errorf("failed to get execution environment: %q", c.RuntimeConfig.DefaultExecutionEnvironment)
 	}
-	return executionEnv.InjectOnJobSetCreation(ctx, workUnit, jobSet)
+	jobSet, err = executionEnv.InjectOnJobSetCreation(ctx, workUnit, jobSet)
+	if err != nil {
+		return nil, err
+	}
+	ensureCoordinatorIndicesValid(jobSet)
+	return jobSet, nil
+}
+
+// ensureCoordinatorIndicesValid adjusts Coordinator indices if the execution environment collapsed a multi-replica job to a multi-pod job.
+func ensureCoordinatorIndicesValid(jobSet *jobsetv1alpha2.JobSet) {
+	if jobSet == nil || jobSet.Spec.Coordinator == nil {
+		return
+	}
+	coord := jobSet.Spec.Coordinator
+	for _, rj := range jobSet.Spec.ReplicatedJobs {
+		if rj.Name == coord.ReplicatedJob && rj.Replicas == 1 && coord.JobIndex > 0 {
+			coord.PodIndex = coord.JobIndex + coord.PodIndex
+			coord.JobIndex = 0
+			return
+		}
+	}
 }
 
 func ensureQueueName(workUnit *esspb.WorkUnit, namespace string) {
@@ -591,6 +636,29 @@ func hasJobNamed(jobs []*esspb.KubernetesJob, name string) bool {
 		}
 	}
 	return false
+}
+
+// buildJobSetCoordinator builds the JobSet Coordinator specification or returns nil.
+func buildJobSetCoordinator(workUnit *esspb.WorkUnit) *jobsetv1alpha2.Coordinator {
+	if !shouldEnableJobSetCoordinator(workUnit) {
+		return nil
+	}
+
+	coord := workUnit.GetExecutable().GetJobset().GetCoordinator()
+	return &jobsetv1alpha2.Coordinator{
+		ReplicatedJob: coord.GetReplicatedJob(),
+		JobIndex:      int(coord.GetJobIndex()),
+		PodIndex:      int(coord.GetPodIndex()),
+	}
+}
+
+// shouldEnableJobSetCoordinator returns true if the WorkUnit specifies a valid coordinator.
+func shouldEnableJobSetCoordinator(workUnit *esspb.WorkUnit) bool {
+	if workUnit == nil || workUnit.GetExecutable() == nil || workUnit.GetExecutable().GetJobset() == nil {
+		return false
+	}
+	coord := workUnit.GetExecutable().GetJobset().GetCoordinator()
+	return coord != nil && coord.GetReplicatedJob() != ""
 }
 
 func boolPtr(b bool) *bool {
