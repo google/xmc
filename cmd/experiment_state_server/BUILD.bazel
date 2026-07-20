@@ -95,11 +95,4 @@ compat_go_test(
     name = "health_test",
     srcs = ["health_test.go"],
     embed = [":experiment_state_server_lib"],
-    deps = [
-        "//internal/storage/spanner/emulator",
-        "//internal/storage/spanner/migrations/version",
-        "@com_google_cloud_go_spanner//:spanner",
-        "@com_google_cloud_go_spanner//admin/database/apiv1",
-        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
-    ],
 )

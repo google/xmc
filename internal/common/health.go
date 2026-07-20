@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 // Package health contains shared health check functions used by other services in the xmanager_cloud project.
 package health
 
@@ -19,11 +20,11 @@ import (
 	"errors"
 	"fmt"
 
+	"xmanager_cloud/logging/logging"
+
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
 	"k8s.io/client-go/kubernetes"
-	"xmanager_cloud/internal/storage/spanner/migrations/version"
-	"xmanager_cloud/logging/logging"
 )
 
 // ErrNilClient is returned when a client is nil.
@@ -45,20 +46,15 @@ func CheckSpanner(ctx context.Context, sc *spanner.Client) error {
 	return nil
 }
 
-// CheckSpannerWithVersion validates that Spanner is connected, ready, and has the expected schema version.
-func CheckSpannerWithVersion(ctx context.Context, sc *spanner.Client, expectedVersion int64) error {
-	return CheckSchemaMigrationVersion(ctx, sc, expectedVersion)
-}
-
-// CheckSchemaMigrationVersion queries the SchemaMigrations table and checks if the version is at least the expected version and not dirty.
-func CheckSchemaMigrationVersion(ctx context.Context, sc *spanner.Client, expectedVersion int64) error {
+// CheckSpannerWithVersion validates that Spanner is connected, ready, and has the expected schema version by querying the SchemaMigrations table.
+func CheckSpannerWithVersion(ctx context.Context, sc SpannerHealthClient, expectedVersion int64) error {
 	if sc == nil {
 		return fmt.Errorf("spanner: %w", ErrNilClient)
 	}
 	if expectedVersion <= 0 {
 		return fmt.Errorf("invalid expected schema version: %d", expectedVersion)
 	}
-	versionVal, dirty, err := version.QueryCurrentVersion(ctx, sc)
+	versionVal, dirty, err := sc.QuerySchemaVersion(ctx)
 	if err != nil {
 		return err
 	}
@@ -67,11 +63,11 @@ func CheckSchemaMigrationVersion(ctx context.Context, sc *spanner.Client, expect
 		return fmt.Errorf("schema migration is in a dirty state at version %d", versionVal)
 	}
 
-	if versionVal < expectedVersion {
-		return fmt.Errorf("schema version %d is older than expected version %d", versionVal, expectedVersion)
+	if versionVal != expectedVersion {
+		return fmt.Errorf("schema version %d does not match expected version %d", versionVal, expectedVersion)
 	}
 
-	logging.Debug(ctx, "Schema migration version check completed successfully (version: %d)", versionVal)
+	logging.Debug(ctx, "Schema migration version check completed successfully", "version", versionVal)
 	return nil
 }
 

@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/go_sync/errgroup/errgroup"
 	commonhealth "xmanager_cloud/common/health"
 	"xmanager_cloud/storage/spanner/migrations/version"
@@ -31,16 +30,13 @@ type TaskQueueClient interface {
 }
 
 // activeHealthCheck performs active checks against Spanner, XID Service, and Redis.
-func activeHealthCheck(spClient *spanner.Client, xidClient xidgrpcpb.XidServiceClient, tqClient TaskQueueClient) http.HandlerFunc {
+func activeHealthCheck(spClient commonhealth.SpannerHealthClient, xidClient xidgrpcpb.XidServiceClient, tqClient TaskQueueClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		eg, ctx := errgroup.WithContext(ctx)
 
 		// 1. Spanner check
 		eg.Go(func() error {
-			if spClient == nil {
-				return fmt.Errorf("spanner client is nil")
-			}
 			return commonhealth.CheckSpannerWithVersion(ctx, spClient, version.EssExpectedSchemaVersion())
 		})
 

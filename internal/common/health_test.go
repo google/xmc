@@ -109,31 +109,31 @@ func setupTestTable(ctx context.Context, t *testing.T, version int64, dirty bool
 	return client
 }
 
-func TestCheckSchemaMigrationVersion(t *testing.T) {
+func TestCheckSpannerWithVersion(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("nil client returns ErrNilClient", func(t *testing.T) {
-		if err := CheckSchemaMigrationVersion(ctx, nil, 1); !errors.Is(err, ErrNilClient) {
-			t.Errorf("CheckSchemaMigrationVersion(ctx, nil, 1) = %v, want %v", err, ErrNilClient)
+		if err := CheckSpannerWithVersion(ctx, nil, 1); !errors.Is(err, ErrNilClient) {
+			t.Errorf("CheckSpannerWithVersion(ctx, nil, 1) = %v, want %v", err, ErrNilClient)
 		}
 	})
 
 	t.Run("invalid expectedVersion <= 0 returns error", func(t *testing.T) {
 		_, essClient, _ := emulator.SetupEmpty(ctx, t)
-		if err := CheckSchemaMigrationVersion(ctx, essClient, 0); err == nil {
-			t.Error("CheckSchemaMigrationVersion(ctx, client, 0) succeeded, want error")
+		if err := CheckSpannerWithVersion(ctx, NewSpannerHealthClient(essClient), 0); err == nil {
+			t.Error("CheckSpannerWithVersion(ctx, client, 0) succeeded, want error")
 		}
-		if err := CheckSchemaMigrationVersion(ctx, essClient, -1); err == nil {
-			t.Error("CheckSchemaMigrationVersion(ctx, client, -1) succeeded, want error")
+		if err := CheckSpannerWithVersion(ctx, NewSpannerHealthClient(essClient), -1); err == nil {
+			t.Error("CheckSpannerWithVersion(ctx, client, -1) succeeded, want error")
 		}
 	})
 
 	t.Run("table does not exist returns error", func(t *testing.T) {
 		_, essClient, _ := emulator.SetupEmpty(ctx, t)
 		// Table SchemaMigrations is not created.
-		err := CheckSchemaMigrationVersion(ctx, essClient, 1)
+		err := CheckSpannerWithVersion(ctx, NewSpannerHealthClient(essClient), 1)
 		if err == nil {
-			t.Error("CheckSchemaMigrationVersion succeeded but table does not exist, want error")
+			t.Error("CheckSpannerWithVersion succeeded but table does not exist, want error")
 		}
 	})
 
@@ -142,55 +142,43 @@ func TestCheckSchemaMigrationVersion(t *testing.T) {
 		dbURI := fmt.Sprintf("projects/%s/instances/%s/databases/%s", "test-project", "test-instance", emu.ESSDatabase)
 		createSchemaMigrationsTable(ctx, t, emu, dbURI)
 
-		err := CheckSchemaMigrationVersion(ctx, essClient, 1)
+		err := CheckSpannerWithVersion(ctx, NewSpannerHealthClient(essClient), 1)
 		if err == nil {
-			t.Error("CheckSchemaMigrationVersion succeeded on empty table, want error")
+			t.Error("CheckSpannerWithVersion succeeded on empty table, want error")
 		}
 	})
 
 	t.Run("version matches expected returns no error", func(t *testing.T) {
 		essClient := setupTestTable(ctx, t, 5, false)
 
-		if err := CheckSchemaMigrationVersion(ctx, essClient, 5); err != nil {
-			t.Errorf("CheckSchemaMigrationVersion(ctx, client, 5) = %v, want nil", err)
+		if err := CheckSpannerWithVersion(ctx, NewSpannerHealthClient(essClient), 5); err != nil {
+			t.Errorf("CheckSpannerWithVersion(ctx, client, 5) = %v, want nil", err)
 		}
 	})
 
-	t.Run("version higher than expected returns no error", func(t *testing.T) {
+	t.Run("version higher than expected returns error", func(t *testing.T) {
 		essClient := setupTestTable(ctx, t, 10, false)
 
-		if err := CheckSchemaMigrationVersion(ctx, essClient, 5); err != nil {
-			t.Errorf("CheckSchemaMigrationVersion(ctx, client, 5) = %v, want nil", err)
+		if err := CheckSpannerWithVersion(ctx, NewSpannerHealthClient(essClient), 5); err == nil {
+			t.Error("CheckSpannerWithVersion succeeded but version is higher, want error")
 		}
 	})
 
 	t.Run("version lower than expected returns error", func(t *testing.T) {
 		essClient := setupTestTable(ctx, t, 3, false)
 
-		err := CheckSchemaMigrationVersion(ctx, essClient, 5)
+		err := CheckSpannerWithVersion(ctx, NewSpannerHealthClient(essClient), 5)
 		if err == nil {
-			t.Error("CheckSchemaMigrationVersion succeeded but version is lower, want error")
+			t.Error("CheckSpannerWithVersion succeeded but version is lower, want error")
 		}
 	})
 
 	t.Run("dirty migration returns error", func(t *testing.T) {
 		essClient := setupTestTable(ctx, t, 5, true)
 
-		err := CheckSchemaMigrationVersion(ctx, essClient, 5)
+		err := CheckSpannerWithVersion(ctx, NewSpannerHealthClient(essClient), 5)
 		if err == nil {
-			t.Error("CheckSchemaMigrationVersion succeeded on dirty migration, want error")
-		}
-	})
-}
-
-func TestCheckSpannerWithVersion(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("healthy with correct version returns no error", func(t *testing.T) {
-		essClient := setupTestTable(ctx, t, 5, false)
-
-		if err := CheckSpannerWithVersion(ctx, essClient, 5); err != nil {
-			t.Errorf("CheckSpannerWithVersion(ctx, client, 5) = %v, want nil", err)
+			t.Error("CheckSpannerWithVersion succeeded on dirty migration, want error")
 		}
 	})
 
@@ -198,7 +186,7 @@ func TestCheckSpannerWithVersion(t *testing.T) {
 		essClient := setupTestTable(ctx, t, 5, false)
 		essClient.Close()
 
-		if err := CheckSpannerWithVersion(ctx, essClient, 5); err == nil {
+		if err := CheckSpannerWithVersion(ctx, NewSpannerHealthClient(essClient), 5); err == nil {
 			t.Error("CheckSpannerWithVersion succeeded on closed client, want error")
 		}
 	})

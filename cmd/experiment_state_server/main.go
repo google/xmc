@@ -46,6 +46,7 @@ import (
 	healthgrpc "grpc_proto/health_go_grpc"
 	healthpb "grpc_proto/health_go_proto"
 	authz "xmanager_cloud/auth/auth"
+	commonhealth "xmanager_cloud/common/health"
 	"xmanager_cloud/experiment_state_server/config"
 	gwpb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_gateway_proto"
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
@@ -263,7 +264,7 @@ func main() {
 		http.StripPrefix("/v1/static/", staticServer).ServeHTTP(w, r)
 	})
 
-	httpMux.HandleFunc("/readyz", activeHealthCheck(spannerClient, xidClient, taskQueueClient))
+	httpMux.HandleFunc("/readyz", activeHealthCheck(commonhealth.NewSpannerHealthClient(spannerClient), xidClient, taskQueueClient))
 	httpMux.HandleFunc("/healthz", livenessCheck())
 
 	// Secure the private gRPC-Gateway endpoints with the Authenticate middleware.

@@ -114,9 +114,14 @@ func TestSchemaSynchronization(t *testing.T) {
 				t.Errorf("Schema is dirty: migrations=%v, baseline=%v", dirtyMigrations, dirtyBaseline)
 			}
 
-			expectedVersion := version.EssExpectedSchemaVersion()
-			if tc.name == "xid" {
+			var expectedVersion int64
+			switch tc.name {
+			case "ess":
+				expectedVersion = version.EssExpectedSchemaVersion()
+			case "xid":
 				expectedVersion = version.XidExpectedSchemaVersion()
+			default:
+				t.Fatalf("Unknown test case name: %s", tc.name)
 			}
 			if int64(versionMigrations) != expectedVersion {
 				t.Errorf("Actual migration version %d does not match expected version %d", versionMigrations, expectedVersion)
