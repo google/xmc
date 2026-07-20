@@ -7,14 +7,17 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
 ## 1. Git Branching & Naming Standards
 - **Branch Naming Schema**: Name branches using lowercase kebab-case in the format `<prefix>/<short-descriptive-name>` (or `<prefix>/<issue-id>-<short-description>`).
 - **Standard Branch Prefixes**:
-  - `feat/`: New feature implementation or structural additions.
-  - `fix/`: Bug fixes and defect resolutions.
-  - `refactor/`: Code restructure or cleanups without behavior or public API changes.
-  - `docs/`: Documentation updates (e.g. README, API specs, inline docstrings).
+  - `feat/`: New feature implementation or structural additions (e.g., `feat/enforce-pr-comment-integrity`).
+  - `fix/`: Bug fixes and defect resolutions (e.g., `fix/gke-rollout-timeout`).
+  - `refactor/`: Code restructure or cleanups without behavior or public API changes (e.g., `refactor/pep8-compliance`).
+  - `docs/`: Documentation updates (e.g., `docs/ctk-installation-guide`).
   - `test/`: Adding or refactoring unit, integration, or E2E tests.
-  - `chore/`: Maintenance, build script edits, Bazel updates, or dependency bumps.
+  - `chore/`: Maintenance, build script edits, Bazel updates, or dependency bumps (e.g., `chore/bump-kueue-version`).
   - `koder/`: Automated pull requests and branches produced by the autocoder agent (koder).
-- **Branch Cleanliness**: Keep branch names short, precise, and lowercase with hyphen separators (e.g., `feat/oauth2-token-refresh`, `fix/gke-rollout-timeout`, `koder/upgrade-deps`).
+- **Forbidden Branch Naming Anti-Patterns**:
+  - NEVER use un-prefixed branch names (e.g., `enforce_pr_comment_integrity`).
+  - NEVER rely on raw worktree directory names or task IDs without verifying `<prefix>/<kebab-case-description>` format.
+  - NEVER use underscores (`_`) in branch names; always use hyphens (`-`) for word separators.
 
 ## 2. Git Commits & Conventional Commit Messages
 - **Conventional Commit Format**: Format commit subject lines using Conventional Commits syntax:
@@ -25,9 +28,15 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
 - **Traceability & References**:
   - When addressing review comments, include the comment link in the commit body: `Comment link: <github_comment_url>`.
   - When referencing bugs, include the bug ID in plain text (e.g., `Fixes bug <bug_id>`, `Closing bug <bug_id>`, or `Bug: <bug_id>`).
+- **Mandatory Description Tags**: All CL/PR descriptions MUST end with mandatory system tags placed at the very bottom after all human-readable text:
+  ```markdown
+  TAG=agy
+  CONV=<conversation_id>
+  ```
 - **Atomic Commits**: Keep commits logical, focused, and self-contained. Each commit must compile and pass relevant local tests.
 
 ## 3. Pull Request Creation & Field Formatting
+- **Pre-Commit Verification**: Before committing or opening a PR, ensure all repository linter hooks pass (Bazel buildifier, Go formatter, addlicense, Ruff Python linter) and unit tests pass cleanly.
 - **Conventional PR Titles**: Match the PR title to Conventional Commits syntax (`<type>(<scope>): <summary>`).
 - **PR Description Field (PR Body) vs. PR Comments**:
   - **Mandatory PR Body Population**: ALWAYS populate the official PR Body/Description field upon creation with full context, summary, architectural intent, test verification results, and issue references.
@@ -48,11 +57,14 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
   - <Targeted package, binary, or deployment modifications>
 
   ## Verification & Testing
-  - **Commands Executed**: `<bazel test / go test / npm test command>`
+  - **Commands Executed**: `<bazel test / go test / python3 -m unittest command>`
   - **Coverage & Test Status**: <Summary of unit/integration test results and pass state.>
 
   ## Related Issues / Bugs
   Fixes bug <bug_id> (or N/A)
+
+  TAG=agy
+  CONV=<conversation_id>
   ```
 - **PR Granularity & Single Responsibility**: Limit each PR to a single, cohesive change. Avoid bundling unrelated code refactoring, whitespace reformatting, or dependency upgrades inside feature/bugfix PRs.
 
@@ -62,5 +74,5 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
 - **Validate Comments & Check Contract Changes**:
   - Evaluate incoming review comments for technical validity and applicability before proceeding.
   - If addressing a comment alters a PR contract, public API specification, or product behavior, **alert the user and seek explicit confirmation first** before modifying code.
-- **Addressing PR Comments Workflow**: Follow the detailed comment resolution workflow defined in the [Address PR Comment](../skills/address_pr_comment/SKILL.md) skill (formulating fix plans, running local unit tests, measuring coverage, and proposing fix diffs for user confirmation before pushing).
+- **Addressing PR Comments Workflow**: Follow the mandatory rules defined in [PR Review Guidelines](pr_review_guidelines.md) (programmatic comment enumeration, consolidated review checklist artifact, and 1-to-1 thread resolution verification) and the detailed comment resolution workflow in the [Address PR Comment](../skills/address_pr_comment/SKILL.md) skill.
 - **PR Comment Replies**: Keep GitHub comment thread replies concise, objective, and focused on resolution (e.g., `"code changed"` or summarizing test verification), avoiding noisy or redundant chatter in PR review threads.
