@@ -501,6 +501,87 @@ func TestConstructJobSet(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_PerJobNodeSelector(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "experiments/1/workUnits/1",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name:     "head",
+							Replicas: 1,
+							Spec: &esspb.ExecutableSpec{
+								DockerImage: "gcr.io/foo/bar:latest",
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_CpuResources{
+										CpuResources: &esspb.CpuResources{
+											CpuMillicores: 2000,
+											MemoryBytes:   8589934592,
+										},
+									},
+								},
+							},
+							NodeSelector: map[string]string{
+								"cloud.google.com/gke-nodepool": "cpups",
+							},
+						},
+						{
+							Name:     "worker",
+							Replicas: 2,
+							Spec: &esspb.ExecutableSpec{
+								DockerImage: "gcr.io/foo/bar:latest",
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_GpuResources{
+										GpuResources: &esspb.GpuResources{
+											Type:  "T4",
+											Count: 1,
+										},
+									},
+								},
+							},
+							NodeSelector: map[string]string{
+								"cloud.google.com/gke-nodepool": "gpu-pool",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	jobSet, err := client.constructJobSet(ctx, workUnit, "experiments/1/workUnits/1/executions/1", "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	replicatedJobs := make(map[string]*jobsetv1alpha2.ReplicatedJob)
+	for i := range jobSet.Spec.ReplicatedJobs {
+		rj := &jobSet.Spec.ReplicatedJobs[i]
+		replicatedJobs[rj.Name] = rj
+	}
+
+	headJob, exists := replicatedJobs["head"]
+	if !exists {
+		t.Fatalf("Expected job 'head' in JobSet")
+	}
+	if headJob.Template.Spec.Template.Spec.NodeSelector["cloud.google.com/gke-nodepool"] != "cpups" {
+		t.Errorf("head PodSpec.NodeSelector['cloud.google.com/gke-nodepool'] = %q, want 'cpups'", headJob.Template.Spec.Template.Spec.NodeSelector["cloud.google.com/gke-nodepool"])
+	}
+
+	workerJob, exists := replicatedJobs["worker"]
+	if !exists {
+		t.Fatalf("Expected job 'worker' in JobSet")
+	}
+	if workerJob.Template.Spec.Template.Spec.NodeSelector["cloud.google.com/gke-nodepool"] != "gpu-pool" {
+		t.Errorf("worker PodSpec.NodeSelector['cloud.google.com/gke-nodepool'] = %q, want 'gpu-pool'", workerJob.Template.Spec.Template.Spec.NodeSelector["cloud.google.com/gke-nodepool"])
+	}
+	if workerJob.Template.Spec.Template.Spec.NodeSelector["cloud.google.com/gke-accelerator"] != "nvidia-tesla-t4" {
+		t.Errorf("worker PodSpec.NodeSelector['cloud.google.com/gke-accelerator'] = %q, want 'nvidia-tesla-t4'", workerJob.Template.Spec.Template.Spec.NodeSelector["cloud.google.com/gke-accelerator"])
+	}
+}
+
 func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
@@ -1633,6 +1714,56 @@ func TestConstructJobSet_GPU_MultiReplica(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_GPU_MultiReplica_WithCoordinator(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnit1",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Coordinator: &esspb.JobSetExecutable_Coordinator{
+						ReplicatedJob: "job1",
+						JobIndex:      proto.Int32(2),
+						PodIndex:      proto.Int32(0),
+					},
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name: "job1",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_GpuResources{
+										GpuResources: &esspb.GpuResources{
+											Type:  "H100",
+											Count: 8,
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+							},
+							Replicas: 4,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if got.Spec.Coordinator == nil {
+		t.Fatalf("Expected Coordinator to be set, got nil")
+	}
+	if got.Spec.Coordinator.JobIndex != 0 {
+		t.Errorf("Expected Coordinator.JobIndex to be mapped to 0, got %d", got.Spec.Coordinator.JobIndex)
+	}
+	if got.Spec.Coordinator.PodIndex != 2 {
+		t.Errorf("Expected Coordinator.PodIndex to be mapped to 2, got %d", got.Spec.Coordinator.PodIndex)
+	}
+}
+
 func TestConstructJobSet_GPU_DefaultReplica(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
@@ -2104,5 +2235,65 @@ func TestBuildContainerPorts_ExplicitAndDefault(t *testing.T) {
 	sidecarPorts := podSpec.Containers[1].Ports
 	if len(sidecarPorts) != 1 || sidecarPorts[0].ContainerPort != 9090 {
 		t.Errorf("Sidecar ports mismatch: got %+v", sidecarPorts)
+	}
+}
+
+func TestConstructJobSet_WithCoordinator(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Name = "workUnitWithCoordinator"
+		wu.Executable.GetJobset().Coordinator = &esspb.JobSetExecutable_Coordinator{
+			ReplicatedJob: "head",
+			JobIndex:      proto.Int32(0),
+			PodIndex:      proto.Int32(0),
+		}
+		headJob := wu.Executable.GetJobset().Jobs[0]
+		headJob.Name = "head"
+		headJob.Replicas = 1
+
+		workerJob := proto.Clone(headJob).(*esspb.KubernetesJob)
+		workerJob.Name = "worker"
+		workerJob.Replicas = 4
+
+		wu.Executable.GetJobset().Jobs = []*esspb.KubernetesJob{headJob, workerJob}
+	})
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if got.Spec.Coordinator == nil {
+		t.Fatalf("Expected Spec.Coordinator to be populated, got nil")
+	}
+	if got.Spec.Coordinator.ReplicatedJob != "head" {
+		t.Errorf("ReplicatedJob mismatch: got %q, want %q", got.Spec.Coordinator.ReplicatedJob, "head")
+	}
+	if got.Spec.Coordinator.JobIndex != 0 {
+		t.Errorf("JobIndex mismatch: got %d, want %d", got.Spec.Coordinator.JobIndex, 0)
+	}
+	if got.Spec.Coordinator.PodIndex != 0 {
+		t.Errorf("PodIndex mismatch: got %d, want %d", got.Spec.Coordinator.PodIndex, 0)
+	}
+}
+
+func TestShouldEnableJobSetCoordinator(t *testing.T) {
+	if got := shouldEnableJobSetCoordinator(nil); got {
+		t.Errorf("shouldEnableJobSetCoordinator(nil) = true, want false")
+	}
+	if got := shouldEnableJobSetCoordinator(&esspb.WorkUnit{Executable: nil}); got {
+		t.Errorf("shouldEnableJobSetCoordinator(nil Executable) = true, want false")
+	}
+	if got := shouldEnableJobSetCoordinator(&esspb.WorkUnit{Executable: &esspb.Executable{}}); got {
+		t.Errorf("shouldEnableJobSetCoordinator(nil Jobset) = true, want false")
+	}
+	if got := shouldEnableJobSetCoordinator(&esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{Coordinator: nil}}}}); got {
+		t.Errorf("shouldEnableJobSetCoordinator(nil Coordinator) = true, want false")
+	}
+	if got := shouldEnableJobSetCoordinator(&esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{Coordinator: &esspb.JobSetExecutable_Coordinator{ReplicatedJob: ""}}}}}); got {
+		t.Errorf("shouldEnableJobSetCoordinator(empty ReplicatedJob) = true, want false")
+	}
+	if got := shouldEnableJobSetCoordinator(&esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{Coordinator: &esspb.JobSetExecutable_Coordinator{ReplicatedJob: "worker"}}}}}); !got {
+		t.Errorf("shouldEnableJobSetCoordinator(valid Coordinator) = false, want true")
 	}
 }

@@ -42,6 +42,7 @@ vars:
   ui_image:           # Required. Container image for UI
   reconciler_image:   # Required. Container image for reconciler
   log_monitor_image:  # Required. Container image for log monitor
+  health_service_image: # Required. Container image for health service
   
   task_signature_ttl_seconds: 86400
   use_redis_queue: true
@@ -117,6 +118,17 @@ deployment_groups:
       - serviceusage.serviceUsageConsumer
       - monitoring.metricWriter
 
+  - id: health_service_gcp_sa
+    source: modules/project/service-account
+    settings:
+      name: xmc-hs-sa
+      project_roles:
+      - logging.logWriter
+      - monitoring.metricWriter
+      - run.viewer
+      - iam.securityReviewer
+      - serviceusage.serviceUsageConsumer
+
   - id: db_spanner
     source: modules/database/spanner
     settings:
@@ -131,12 +143,16 @@ deployment_groups:
             member: "serviceAccount:$(workload_service_account.service_account_email)"
           - role: roles/spanner.databaseUser
             member: $(log_monitor_service_account.service_account_iam_email)
+          - role: roles/spanner.databaseUser
+            member: "serviceAccount:$(health_service_gcp_sa.service_account_email)"
         xid:
           name: xids-db-$(vars.environment)
           deletion_protection: $(vars.deletion_protection)
           iam_members:
           - role: roles/spanner.databaseUser
             member: "serviceAccount:$(workload_service_account.service_account_email)"
+          - role: roles/spanner.databaseUser
+            member: "serviceAccount:$(health_service_gcp_sa.service_account_email)"
 
   - id: apply_ess_schema
     source: ./deploy/ctk_v2/modules/spanner-schema-applier
@@ -214,6 +230,12 @@ deployment_groups:
     settings:
       service_account_email: $(workload_service_account.service_account_email)
       k8s_service_account_name: reconciler-service-account
+
+  - id: xmc_wi_binding_health_service
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(health_service_gcp_sa.service_account_email)
+      k8s_service_account_name: health-service-account
 
   - id: compute_cluster
     source: modules/scheduler/gke-cluster
@@ -325,6 +347,10 @@ deployment_groups:
         value: $(vars.reconciler_image)
       - name: ui.image
         value: $(vars.ui_image)
+      - name: health_service_custom_image
+        value: $(vars.health_service_image)
+      - name: healthService.gcpServiceAccount
+        value: $(health_service_gcp_sa.service_account_email)
       - name: taskSignatureTtlSeconds
         value: $(vars.task_signature_ttl_seconds)
         type: auto

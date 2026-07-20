@@ -29,12 +29,19 @@ xid_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/xid-service-dev:lat
 actuator_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/actuator-dev:latest"
 reconciler_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/reconciler-dev:latest"
 ess_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/experiment-state-server-dev:latest"
+health_service_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/health-service-dev:latest"
 
 essDeployment:
   enabled: true
   hpa:
     minReplicas: 3
     maxReplicas: 10
+
+healthServiceDeployment:
+  enabled: false
+
+healthService:
+  gcpServiceAccount: ""
 
 detectInadmissibleWorkUnits: true
 startupPodErrorCheckEnabled: true

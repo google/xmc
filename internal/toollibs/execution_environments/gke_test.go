@@ -988,6 +988,168 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "per_job_node_selector_cpu_only",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{
+						Jobset: &epb.JobSetExecutable{
+							Jobs: []*epb.KubernetesJob{
+								{
+									Name: "head",
+									Spec: &epb.ExecutableSpec{
+										Resources: &epb.ResourceSet{
+											Resources: &epb.ResourceSet_CpuResources{
+												CpuResources: &epb.CpuResources{
+													CpuMillicores: 1000,
+													MemoryBytes:   2048,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "head",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{{}},
+											NodeSelector: map[string]string{
+												"cloud.google.com/gke-nodepool": "cpups",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantJobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "head",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Resources: corev1.ResourceRequirements{
+														Limits: corev1.ResourceList{
+															corev1.ResourceMemory: resource.MustParse("2048"),
+														},
+														Requests: corev1.ResourceList{
+															corev1.ResourceCPU:    resource.MustParse("1000m"),
+															corev1.ResourceMemory: resource.MustParse("2048"),
+														},
+													},
+												},
+											},
+											NodeSelector: map[string]string{
+												"cloud.google.com/gke-nodepool": "cpups",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "per_job_node_selector_gpu_merge",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{
+						Jobset: &epb.JobSetExecutable{
+							Jobs: []*epb.KubernetesJob{
+								{
+									Name: "worker",
+									Spec: &epb.ExecutableSpec{
+										Resources: &epb.ResourceSet{
+											Resources: &epb.ResourceSet_GpuResources{
+												GpuResources: &epb.GpuResources{
+													Type:  "T4",
+													Count: 1,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "worker",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{{}},
+											NodeSelector: map[string]string{
+												"cloud.google.com/gke-nodepool": "gpu-pool",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantJobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name:     "worker",
+							Replicas: 1,
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Parallelism:    proto.Int32(1),
+									Completions:    proto.Int32(1),
+									CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Resources: corev1.ResourceRequirements{
+														Limits: corev1.ResourceList{
+															nvidiaGPUKey: resource.MustParse("1"),
+														},
+														Requests: corev1.ResourceList{},
+													},
+												},
+											},
+											NodeSelector: map[string]string{
+												"cloud.google.com/gke-nodepool": "gpu-pool",
+												nvidiaNodeSelectorKey:           "nvidia-tesla-t4",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -1500,5 +1662,74 @@ func TestEnsureTpuContainerPorts(t *testing.T) {
 	fullArr := existingArr[:cap(existingArr)]
 	if len(existingArr) != 1 || existingArr[0].ContainerPort != 80 || (cap(existingArr) > 1 && fullArr[1].ContainerPort != 0) {
 		t.Errorf("ensureTpuContainerPorts mutated existing slice underlying array: %+v", fullArr)
+	}
+}
+
+func TestInjectOnJobSetCreation_GPUMultiNode_WithCoordinator(t *testing.T) {
+	g := &GKE{}
+	workUnit := &epb.WorkUnit{
+		Executable: &epb.Executable{
+			Type: &epb.Executable_Jobset{
+				Jobset: &epb.JobSetExecutable{
+					Jobs: []*epb.KubernetesJob{
+						{
+							Name: "gpu-job",
+							Spec: &epb.ExecutableSpec{
+								Resources: &epb.ResourceSet{
+									Resources: &epb.ResourceSet_GpuResources{
+										GpuResources: &epb.GpuResources{
+											Type:  "H100",
+											Count: 8,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	jobSet := &jobsetv1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-jobset"},
+		Spec: jobsetv1alpha2.JobSetSpec{
+			Coordinator: &jobsetv1alpha2.Coordinator{
+				ReplicatedJob: "gpu-job",
+				JobIndex:      2,
+				PodIndex:      0,
+			},
+			ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+				{
+					Name:     "gpu-job",
+					Replicas: 4,
+					Template: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers: []corev1.Container{
+										{Name: "main", Image: "test-image"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := g.InjectOnJobSetCreation(context.Background(), workUnit, jobSet)
+	if err != nil {
+		t.Fatalf("InjectOnJobSetCreation() returned error: %v", err)
+	}
+	if got.Spec.Coordinator == nil {
+		t.Fatalf("Expected Coordinator to be preserved, got nil")
+	}
+	if got.Spec.Coordinator.JobIndex != 0 {
+		t.Errorf("Expected Coordinator.JobIndex to be 0, got %d", got.Spec.Coordinator.JobIndex)
+	}
+	if got.Spec.Coordinator.PodIndex != 2 {
+		t.Errorf("Expected Coordinator.PodIndex to be 2, got %d", got.Spec.Coordinator.PodIndex)
 	}
 }
