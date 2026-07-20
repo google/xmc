@@ -127,4 +127,15 @@ jobs:
 
       - name: 'Check License Headers'
         run: |
-          $(go env GOPATH)/bin/addlicense -check -c "Google LLC" -l apache -ignore "third_party/**" -ignore "**/third_party/**" -ignore "**/node_modules/**" -ignore "**/.angular/**" -ignore "**.json" .
+          $(go env GOPATH)/bin/addlicense -check -c "Google LLC" -l apache \
+            -ignore "third_party/**" \
+            -ignore "**/third_party/**" \
+            -ignore "**/node_modules/**" \
+            -ignore "**/.angular/**" \
+            -ignore "**.json" \
+            -ignore "**.lock" \
+            -ignore "pyproject.toml" \
+            -ignore "package.json" \
+            -ignore "go.mod" \
+            -ignore "go.sum" \
+            .

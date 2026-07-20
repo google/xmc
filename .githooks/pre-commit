@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Mode: --check (only verify, exit non-zero on error) vs --fix (auto-fix formatting)
 MODE="fix"
 if [ "${1:-}" = "--check" ]; then
   MODE="check"
@@ -10,161 +9,203 @@ fi
 echo "=== Running XMC Pre-Commit Linter Hooks (Mode: ${MODE}) ==="
 FAILED=0
 
-# 1. Bazel Lint & Format via buildifier
-BUILDIFIER_BIN=""
-if command -v buildifier >/dev/null 2>&1; then
-  BUILDIFIER_BIN="buildifier"
-elif [ -f "$HOME/go/bin/buildifier" ]; then
-  BUILDIFIER_BIN="$HOME/go/bin/buildifier"
-fi
+check_bazel() {
+  local buildifier_bin=""
+  if command -v buildifier >/dev/null 2>&1; then
+    buildifier_bin="buildifier"
+  elif [ -f "$HOME/go/bin/buildifier" ]; then
+    buildifier_bin="$HOME/go/bin/buildifier"
+  fi
 
-if [ -n "$BUILDIFIER_BIN" ]; then
-  echo "--> Running buildifier (Bazel)..."
-  BAZEL_FILES=$(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \) -not -path "*/node_modules/*")
-  if [ -n "$BAZEL_FILES" ]; then
+  if [ -z "$buildifier_bin" ]; then
+    echo "--> WARNING: buildifier not found. To install: go install github.com/bazelbuild/buildtools/buildifier@latest"
+    if [ "$MODE" = "check" ]; then FAILED=1; fi
+    return
+  fi
+
+  echo "--> Running Bazel Formatter & Linter (Buildifier)..."
+  local bazel_files
+  bazel_files=$(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \) -not -path "*/node_modules/*")
+  if [ -n "$bazel_files" ]; then
     if [ "$MODE" = "check" ]; then
-      if ! $BUILDIFIER_BIN -mode=check $BAZEL_FILES; then
+      if ! $buildifier_bin -mode=check $bazel_files; then
         echo "❌ Bazel buildifier check failed."
         FAILED=1
       fi
     else
-      $BUILDIFIER_BIN -lint=fix -mode=fix $BAZEL_FILES
+      $buildifier_bin -lint=fix -mode=fix $bazel_files
     fi
   fi
-else
-  echo "--> WARNING: buildifier not found. To install: go install github.com/bazelbuild/buildtools/buildifier@latest"
-  if [ "$MODE" = "check" ]; then FAILED=1; fi
-fi
+}
 
-# 2. Go Code Formatting & Linting
-echo "--> Running Go code linters..."
-UNFORMATTED_GO=$(gofmt -s -l . 2>/dev/null | grep -v 'vendor/' || true)
-if [ -n "$UNFORMATTED_GO" ]; then
-  echo "❌ Unformatted Go files found:"
-  echo "$UNFORMATTED_GO"
-  FAILED=1
-fi
+check_go() {
+  echo "--> Running Go Formatter (gofmt)..."
+  local unformatted_go
+  unformatted_go=$(gofmt -s -l . 2>/dev/null | grep -v 'vendor/' || true)
+  if [ -n "$unformatted_go" ]; then
+    echo "❌ Unformatted Go files found:"
+    echo "$unformatted_go"
+    FAILED=1
+  fi
 
-if [ "$MODE" = "fix" ]; then
-  find . -type f -name "*.go" -not -path "*/vendor/*" -exec gofmt -s -w {} +
-fi
+  if [ "$MODE" = "fix" ]; then
+    find . -type f -name "*.go" -not -path "*/vendor/*" -exec gofmt -s -w {} +
+  fi
+}
 
-# 3. UI Code Formatting & Linting
-if [ "$MODE" = "check" ]; then
-  UI_FILES=$(find cmd/ui -type f \( -name "*.ts" -o -name "*.html" -o -name "*.scss" \) -not -path "*/node_modules/*" -not -path "*/.angular/*" || true)
-else
-  UI_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^cmd/ui/.*\.(ts|html|scss)$' || true)
-fi
+check_ui() {
+  local ui_files
+  if [ "$MODE" = "check" ]; then
+    ui_files=$(find cmd/ui -type f \( -name "*.ts" -o -name "*.html" -o -name "*.scss" \) -not -path "*/node_modules/*" -not -path "*/.angular/*" || true)
+  else
+    ui_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^cmd/ui/.*\.(ts|html|scss)$' || true)
+  fi
 
-if [ -n "$UI_FILES" ]; then
-  PRETTIER_BIN="cmd/ui/node_modules/.bin/prettier"
-  ESLINT_BIN="cmd/ui/node_modules/.bin/eslint"
+  if [ -z "$ui_files" ]; then
+    return
+  fi
 
-  if [ -f "$PRETTIER_BIN" ]; then
+  local prettier_bin="cmd/ui/node_modules/.bin/prettier"
+  local eslint_bin="cmd/ui/node_modules/.bin/eslint"
+
+  if [ -f "$prettier_bin" ]; then
     echo "--> Running UI Formatter (Prettier)..."
     if [ "$MODE" = "check" ]; then
-      if ! $PRETTIER_BIN --config cmd/ui/.prettierrc --check $UI_FILES; then
+      if ! $prettier_bin --config cmd/ui/.prettierrc --check $ui_files; then
         echo "❌ Prettier check failed."
         FAILED=1
       fi
     else
-      $PRETTIER_BIN --config cmd/ui/.prettierrc --write $UI_FILES
+      $prettier_bin --config cmd/ui/.prettierrc --write $ui_files
     fi
   fi
 
-  if [ -f "$ESLINT_BIN" ]; then
+  if [ -f "$eslint_bin" ]; then
     echo "--> Running UI Linter (ESLint)..."
     if [ "$MODE" = "check" ]; then
-      if ! $ESLINT_BIN --config cmd/ui/eslint.config.js $UI_FILES; then
+      if ! $eslint_bin --config cmd/ui/eslint.config.js $ui_files; then
         echo "❌ ESLint check failed."
         FAILED=1
       fi
     else
-      $ESLINT_BIN --config cmd/ui/eslint.config.js --fix $UI_FILES
+      $eslint_bin --config cmd/ui/eslint.config.js --fix $ui_files
     fi
   fi
-fi
+}
 
-# 4. License Check via addlicense
-ADDLICENSE_BIN=""
-if command -v addlicense >/dev/null 2>&1; then
-  ADDLICENSE_BIN="addlicense"
-elif [ -f "$HOME/go/bin/addlicense" ]; then
-  ADDLICENSE_BIN="$HOME/go/bin/addlicense"
-fi
+check_license() {
+  local addlicense_bin=""
+  if command -v addlicense >/dev/null 2>&1; then
+    addlicense_bin="addlicense"
+  elif [ -f "$HOME/go/bin/addlicense" ]; then
+    addlicense_bin="$HOME/go/bin/addlicense"
+  fi
 
-if [ -n "$ADDLICENSE_BIN" ]; then
-  echo "--> Running addlicense..."
+  if [ -z "$addlicense_bin" ]; then
+    echo "--> WARNING: addlicense not found. License check skipped."
+    if [ "$MODE" = "check" ]; then FAILED=1; fi
+    return
+  fi
+
+  echo "--> Running License Header Check (addlicense)..."
+  local ignores=(
+    -ignore "third_party/**"
+    -ignore "**/third_party/**"
+    -ignore "**/node_modules/**"
+    -ignore "**/.angular/**"
+    -ignore "**.json"
+    -ignore "**.lock"
+    -ignore "pyproject.toml"
+    -ignore "package.json"
+    -ignore "go.mod"
+    -ignore "go.sum"
+  )
+
   if [ "$MODE" = "check" ]; then
-    if ! $ADDLICENSE_BIN -check -c "Google LLC" -l apache -ignore "third_party/**" -ignore "**/third_party/**" .; then
+    if ! $addlicense_bin -check -c "Google LLC" -l apache "${ignores[@]}" .; then
       echo "❌ License header check failed."
       FAILED=1
     fi
   else
-    STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR || true)
-    if [ -n "$STAGED_FILES" ]; then
-      $ADDLICENSE_BIN -c "Google LLC" -l apache -ignore "third_party/**" -ignore "**/third_party/**" $STAGED_FILES
+    local staged_files
+    staged_files=$(git diff --cached --name-only --diff-filter=ACMR || true)
+    if [ -n "$staged_files" ]; then
+      $addlicense_bin -c "Google LLC" -l apache "${ignores[@]}" $staged_files
     fi
   fi
-fi
+}
 
-# 5. Python Code Formatting & Linting (PEP 8)
-if [ "$MODE" = "check" ]; then
-  PY_FILES=$(find . -type f -name "*.py" -not -path "*/node_modules/*" -not -path "*/.git/*" || true)
-else
-  PY_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.py$' || true)
-fi
-
-if [ -n "$PY_FILES" ]; then
-  RUFF_BIN=""
-  if command -v ruff >/dev/null 2>&1; then
-    RUFF_BIN="ruff"
-  elif [ -f "$HOME/.local/bin/ruff" ]; then
-    RUFF_BIN="$HOME/.local/bin/ruff"
+check_python() {
+  local py_files
+  if [ "$MODE" = "check" ]; then
+    py_files=$(find . -type f -name "*.py" -not -path "*/node_modules/*" -not -path "*/.git/*" || true)
+  else
+    py_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.py$' || true)
   fi
 
-  if [ -n "$RUFF_BIN" ]; then
+  if [ -z "$py_files" ]; then
+    return
+  fi
+
+  local ruff_bin=""
+  if command -v ruff >/dev/null 2>&1; then
+    ruff_bin="ruff"
+  elif [ -f "$HOME/.local/bin/ruff" ]; then
+    ruff_bin="$HOME/.local/bin/ruff"
+  fi
+
+  if [ -n "$ruff_bin" ]; then
     echo "--> Running Python Linter & Formatter (Ruff)..."
     if [ "$MODE" = "check" ]; then
-      if ! $RUFF_BIN check $PY_FILES; then
+      if ! $ruff_bin check $py_files; then
         echo "❌ Ruff lint check failed."
         FAILED=1
       fi
-      if ! $RUFF_BIN format --check $PY_FILES; then
+      if ! $ruff_bin format --check $py_files; then
         echo "❌ Ruff format check failed."
         FAILED=1
       fi
     else
-      $RUFF_BIN check --fix $PY_FILES
-      $RUFF_BIN format $PY_FILES
+      $ruff_bin check --fix $py_files
+      $ruff_bin format $py_files
     fi
   elif command -v docker >/dev/null 2>&1; then
     echo "--> Running Ruff via Docker container..."
     if [ "$MODE" = "check" ]; then
-      if ! docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest check $PY_FILES; then FAILED=1; fi
-      if ! docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest format --check $PY_FILES; then FAILED=1; fi
+      if ! docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest check $py_files; then FAILED=1; fi
+      if ! docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest format --check $py_files; then FAILED=1; fi
     else
-      docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest check --fix $PY_FILES
-      docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest format $PY_FILES
+      docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest check --fix $py_files
+      docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest format $py_files
     fi
   else
     echo "--> WARNING: ruff or docker not found. Python linting skipped."
     if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
-fi
+}
 
-if [ "$MODE" = "fix" ]; then
-  if ! git diff --quiet; then
-    echo ""
-    echo "❌ PRE-COMMIT HOOK FAILED: Linters automatically fixed formatting issues in your code!"
-    echo "   Please review the modified files (git diff), stage them (git add -u), and re-run git commit."
+main() {
+  check_bazel
+  check_go
+  check_ui
+  check_license
+  check_python
+
+  if [ "$MODE" = "fix" ]; then
+    if ! git diff --quiet; then
+      echo ""
+      echo "❌ PRE-COMMIT HOOK FAILED: Linters automatically fixed formatting issues in your code!"
+      echo "   Please review the modified files (git diff), stage them (git add -u), and re-run git commit."
+      exit 1
+    fi
+  fi
+
+  if [ "$FAILED" -ne 0 ]; then
+    echo "=== ❌ Linter checks failed! ==="
     exit 1
   fi
-fi
 
-if [ "$FAILED" -ne 0 ]; then
-  echo "=== ❌ Linter checks failed! ==="
-  exit 1
-fi
+  echo "=== ✅ All pre-commit checks passed! ==="
+}
 
-echo "=== ✅ All pre-commit checks passed! ==="
+main
