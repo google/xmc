@@ -34,9 +34,7 @@ describe('MockArtifactService', () => {
 
   it('should return mock artifacts', async () => {
     const service = mockState.service as MockArtifactService;
-    const response = await firstValueFrom(
-      service.listArtifacts({ parent: 'experiments/1' }),
-    );
+    const response = await firstValueFrom(service.listArtifacts({ parent: 'experiments/1' }));
     expect(response.artifacts).toEqual(ARTIFACT_LIST);
     expect(response.nextPageToken).toBe('page_token');
   });

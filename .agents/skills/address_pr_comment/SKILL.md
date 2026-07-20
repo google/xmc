@@ -21,6 +21,9 @@ graph TD
     J --> K["Agent reports status & updates PR comment"]
 ```
 
+> [!NOTE]
+> All PR comment review evaluations and code inspection standards defined in [.agents/rules/pr_review_guidelines.md](../../rules/pr_review_guidelines.md) apply to this workflow.
+
 ---
 
 ## Guidelines for Using CLI Tools
@@ -32,6 +35,10 @@ When invoking helper tools under `tools/` (e.g. `fetch_pr_comment.py`, `reply_pr
    - **Exit code 0 (Success)**: The requested data is in the `"result"` field of the stdout JSON.
    - **Exit code 1 (Handled Error)**: Read `"message"` and `"instruction"` from the JSON output. Follow the `"instruction"` step-by-step to fix the input, credentials, or environment.
    - **Exit code 2 (Unhandled Error)**: The tool encountered an unexpected bug. Inspect the `"message"` and `"traceback"` fields to analyze the cause.
+
+4. **Shell & Payload Safety**: When running helper scripts or handling payloads containing Markdown/code formatting, execute standalone `.py` script files or pass arguments via script parameters. Avoid double-quoted inline commands (`python3 -c "..."`).
+
+
 
 ---
 
@@ -138,7 +145,7 @@ bazel build //cmd/xid_service:xid_service
 The agent stages all changes and commits them with a message that includes a description of the changes and the URL of the original comment:
 ```bash
 git add .
-git commit -m "Refactor: address review comment
+git commit -m "<type>(<scope>): address review comment
 
 Comment link: <github_comment_url>"
 ```

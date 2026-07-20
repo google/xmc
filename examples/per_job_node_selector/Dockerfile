@@ -12,32 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: 'Python PEP 8 Lint'
+FROM python:3.11-slim
 
-on:
-  pull_request:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+WORKDIR /app
 
-permissions:
-  contents: read
+COPY coordinator.py /app/coordinator.py
+COPY worker.py /app/worker.py
 
-jobs:
-  ruff-lint:
-    name: 'PEP 8 Lint (Ruff)'
-    runs-on: 'ubuntu-24.04'
-    steps:
-      - name: 'Checkout code'
-        uses: 'actions/checkout@v4'
+RUN chmod +x /app/coordinator.py /app/worker.py
 
-      - name: 'Run Ruff Linter & Formatter Check'
-        uses: 'astral-sh/ruff-action@v3'
-        with:
-          args: 'check .'
-
-      - name: 'Verify Code Formatting'
-        uses: 'astral-sh/ruff-action@v3'
-        with:
-          args: 'format --check .'
+ENTRYPOINT ["python3"]

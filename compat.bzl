@@ -53,6 +53,7 @@ content = content.replace("golang/github_com/golang_migrate/migrate/v/v4/databas
 content = content.replace("golang/github_com/golang_migrate/migrate/v/v4/database/stub/stub", "github.com/golang-migrate/migrate/v4/database/stub")
 content = content.replace("golang/github_com/golang_migrate/migrate/v/v4/source/stub/stub", "github.com/golang-migrate/migrate/v4/source/stub")
 content = content.replace("xmanager_cloud/storage/spanner/emulator/emulator", "xmanager_cloud/internal/storage/spanner/emulator")
+content = content.replace("xmanager_cloud/storage/spanner/migrations/version", "xmanager_cloud/internal/storage/spanner/migrations/version")
 content = content.replace("golang/github_com/golang_migrate/migrate/v/v4/database/spanner/spanner", "github.com/golang-migrate/migrate/v4/database/spanner")
 content = content.replace("spanner/admin/database/v1/spanner_database_admin_go_proto", "google.golang.org/genproto/googleapis/spanner/admin/database/v1")
 content = content.replace("spanner/admin/instance/v1/spanner_instance_admin_go_proto", "google.golang.org/genproto/googleapis/spanner/admin/instance/v1")

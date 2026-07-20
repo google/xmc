@@ -205,47 +205,52 @@ Automated unit test suites and code quality checks are executed on:
 
 ## Linting & Code Quality Rules
 
-To maintain pristine architecture, canonical styling, and avoid common defects across the monorepo, code quality rules are enforced locally via a pre-commit hook (`.githooks/pre-commit`).
+To maintain pristine architecture, canonical styling, and avoid common defects across the monorepo, code quality rules are enforced both locally via a pre-commit hook (`.githooks/pre-commit`) and in CI via GitHub Actions ([`.github/workflows/lint.yml`](../.github/workflows/lint.yml)).
 
-The following specific linting rules and static analysis toolchains are implemented across our supported languages:
+The following linting rules and static analysis toolchains are implemented:
 
-### 1. Go Code (`golangci-lint`)
-Go source files (`.go`) are analyzed using the **`golangci-lint`** orchestrator. The following core rules and static analysis checks are enforced:
-* **`gofmt` / `goimports`**: Enforces canonical whitespace, indentation, and canonical alphabetical ordering of standard and third-party import statements.
-* **`govet`**: Inspects code for suspicious constructs, shadowed variables, un-keyed composite literals, and printf-style argument format mismatches.
-* **`staticcheck`**: Applies static analysis to detect unused constants/variables, out-of-bounds slice access, unclosed HTTP response bodies, dead code paths, and deprecated API calls.
-* **`errcheck` / `gosimple`**: Ensures all returned error values are explicitly checked and simplifies redundant boolean, channel, or loop constructs.
+### 1. Python Code (`ruff`)
+Python source files (`.py`) are formatted and linted according to PEP 8 using **`ruff`**:
+* **`ruff check`**: Enforces PEP 8 rules, Pyflakes errors, and import sorting (`isort`).
+* **`ruff format`**: Standardizes Python code layout and formatting across the project.
 
-### 2. Bazel Build Files (`buildifier`)
-Bazel build graphs (`BUILD`, `BUILD.bazel`, `WORKSPACE`, `MODULE.bazel`, and `.bzl` files) are formatted and analyzed using the official Bazel **`buildifier`** toolchain. Enforced rules include:
-* **Canonical Formatting**: Standardizes indentation (4 spaces for rule declarations), canonical keyword ordering, and proper multi-line list formatting.
-* **Target Sorting**: Automatically sorts `srcs`, `deps`, and `data` attribute lists alphabetically to prevent merge conflicts.
-* **Lint Warnings (`-lint=warn`)**: Flags deprecated Bazel syntax (such as legacy `load()` statements), un-pinned external dependencies, unused variable declarations inside `.bzl` macros, and non-canonical label references.
+### 2. Go Code (`gofmt`)
+Go source files (`.go`) are formatted using standard **`gofmt`**:
+* Enforces canonical whitespace, indentation, and standard Go code formatting (`gofmt -s`).
 
-### 3. License Headers (`addlicense`)
-Source files are checked for proper Apache 2.0 license headers using the **`addlicense`** tool.
-* Enforces copyright headers on all managed source files (Go, Python, YAML, CSS, etc.).
-* Automatically ignores `third_party` directories.
+### 3. UI Code (`prettier` & `eslint`)
+Angular and TypeScript frontend code under `cmd/ui` is formatted and linted using **Prettier** and **ESLint**:
+* **`prettier`**: Enforces consistent styling on `.ts`, `.html`, and `.scss` files (`npm run format:check`).
+* **`eslint`**: Enforces Angular best practices, import sorting, and TypeScript strictness (`npm run lint`).
 
-### Development Prerequisites
+### 4. Bazel Build Files (`buildifier`)
+Bazel build graphs (`BUILD`, `BUILD.bazel`, `WORKSPACE`, `MODULE.bazel`, and `.bzl` files) are formatted and analyzed using **`buildifier`**:
+* Enforces canonical indentation, keyword ordering, and label formatting (`buildifier -mode=check`).
 
-To ensure all local pre-commit checks run, install the required toolchains:
+### 5. License Headers (`addlicense`)
+Source files are checked for Google LLC Apache 2.0 license headers using **`addlicense`**:
+* Enforces copyright headers on all managed source code files (`.go`, `.py`, `.ts`, `.html`, `.css`, `.proto`, `.tf`, `.sh`, Bazel files).
+* Ignores data/schema files (`.json`), lockfiles (`go.mod`, `go.sum`, `*.lock`, `package.json`, `pyproject.toml`), and `third_party/` directories.
 
-* **`buildifier`** (Bazel formatter):
+---
+
+### Local Pre-Commit Hook Usage
+
+Developers can run the pre-commit hook locally in two modes:
+
+* **Auto-fix mode (default for git commits)**:
   ```bash
-  go install github.com/bazelbuild/buildtools/buildifier@latest
+  ./.githooks/pre-commit
   ```
-* **`addlicense`** (License header tool):
+  Automatically formats files and adds missing headers.
+
+* **Check-only mode (mirrors CI validation)**:
   ```bash
-  go install github.com/google/addlicense@latest
+  ./.githooks/pre-commit --check
   ```
-* **`golangci-lint`** (Go linter):
-  Follow the official [installation guide](https://golangci-lint.run/welcome/#install) to install it on your system.
-  *(Note: if `golangci-lint` is missing, the hook will fallback to standard `gofmt`)*
+  Verifies all code formatting without altering files, returning non-zero if violations exist.
 
-### Auto-Fixing Code Locally
-
-Developers can automatically format their code and fix lint violations locally before pushing by enabling the repository pre-commit hook:
+To enable the hook automatically for every `git commit`:
 ```bash
 git config core.hooksPath .githooks
 ```

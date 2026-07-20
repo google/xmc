@@ -17,10 +17,12 @@ This document outlines coding standards, style guidelines, and best practices fo
 - **Standard `unittest` Framework**: Standardize test suites using the Python standard library `unittest` module (with tests named via `_test.py` suffix alongside target source files).
 - **Hermetic Testing**: Isolate tests from external environment side-effects (file system mutations, process invocations, network RPCs) using `unittest.mock.patch` to keep unit test suites fast, deterministic, and self-contained.
 
-## 4. Virtual Environments & Tool Execution
+## 4. Virtual Environments & Execution Safety
 - **Python Virtual Environment**: Before executing or developing CLI tools under `tools/` or `deploy/`, ensure the local Python virtual environment is initialized and activated. Virtual environments must be explicitly created using **Python 3.13.14**:
   ```bash
   python3.13 -m venv ./tools/venv
   source ./tools/venv/bin/activate
   pip install -r ./tools/requirements.txt
   ```
+- **Standalone Script Files Over `python3 -c`**: Always write Python code to dedicated `.py` files on disk using `write_to_file` rather than invoking inline commands via `python3 -c "..."` to prevent shell expansion and backtick command substitution errors.
+

@@ -50,6 +50,9 @@ function processUser(user: User | null) {
 - **Parametric Order Matching**: For HTTP or service query mocks (e.g., `HttpParams` or query parameter verification), ensure parameter maps serialize and compare in the exact order expected by matching criteria.
 - **No Hallucinated Identifiers**: Use valid, consistent mock identifiers in unit test suites (matching base fixture schemas such as `experiments/1` rather than arbitrary unlinked IDs like `123`).
 - **Eradicate Production Mock Branches**: Never embed static mock datasets or conditional mock execution branches (`if (useMock)`) inside production application code or service layers. Decouple mocks using Dependency Injection (DI) factory providers.
+- **Centralize Shared Utilities & Helpers**: Never copy-paste or redefine identical helper functions, mock mutators, or test utilities locally across multiple packages. Centralize reusable utilities in global/shared packages (e.g., `internal/compat/*` or shared test libraries) to maintain DRY across the repository.
+- **Baseline Test Fixtures & Targeted Mutations**: In unit tests with repetitive data payloads, avoid copy-pasting monolithic structures. Define a canonical baseline fixture and use mutation helpers (such as `proto.Modify` for Protobuf messages or shallow copies/local helpers for standard structs) to express each test case as a concise delta from the base.
+
 
 ## 5. Strict Testing Coverage & PR Granularity
 - **Strict Coverage Requirements**: All feature additions, bug fixes, and code modifications must include comprehensive unit and integration test coverage. Never reduce assertions or mask test failures.

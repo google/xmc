@@ -788,6 +788,7 @@ def step_images(config: dict[str, Any], dns_project: str, dns_zone: str) -> None
         "//cmd/reconciler:reconciler_image_push",
         "//cmd/ui:ui_image_push",
         "//cmd/xid_service:xid_service_image_push",
+        "//cmd/health_service:health_service_image_push",
     ]
 
     for target in bazel_targets:
