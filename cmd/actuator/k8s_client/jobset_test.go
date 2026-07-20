@@ -2172,7 +2172,7 @@ func TestBuildJobSetSuccessPolicy(t *testing.T) {
 	}{
 		{"nil_exec", &esspb.WorkUnit{}, &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAll}},
 		{"explicit_any", &esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{SuccessPolicy: &esspb.JobSetExecutable_SuccessPolicy{Operator: esspb.JobSetExecutable_SuccessPolicy_ANY, TargetReplicatedJobs: []string{"w"}}}}}}, &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAny, TargetReplicatedJobs: []string{"w"}}},
-		{"default_pathways", &esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{Jobs: []*esspb.KubernetesJob{{Name: "pathways-head"}, {Name: "workers"}}}}}}, &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAll, TargetReplicatedJobs: []string{"pathways-head"}}},
+		{"default_pathways", &esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{Jobs: []*esspb.KubernetesJob{{Name: constants.PathwaysHeadJobName}, {Name: "workers"}}}}}}, &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAll, TargetReplicatedJobs: []string{constants.PathwaysHeadJobName}}},
 		{"fallback_all", &esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{Jobs: []*esspb.KubernetesJob{{Name: "job1"}}}}}}, &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAll}},
 	}
 	for _, tc := range tests {
@@ -2191,7 +2191,7 @@ func TestConstructJobSet_SuccessPolicy(t *testing.T) {
 			SchedulingConstraints: &esspb.SchedulingConstraints{QueueName: "test-queue"},
 			Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{
 				Jobs: []*esspb.KubernetesJob{{
-					Name:     "pathways-head",
+					Name:     constants.PathwaysHeadJobName,
 					Replicas: 1,
 					Spec: &esspb.ExecutableSpec{
 						DockerImage: "img",
@@ -2209,7 +2209,7 @@ func TestConstructJobSet_SuccessPolicy(t *testing.T) {
 	}
 	want := &jobsetv1alpha2.SuccessPolicy{
 		Operator:             jobsetv1alpha2.OperatorAll,
-		TargetReplicatedJobs: []string{"pathways-head"},
+		TargetReplicatedJobs: []string{constants.PathwaysHeadJobName},
 	}
 	if diff := cmp.Diff(want, jobSet.Spec.SuccessPolicy); diff != "" {
 		t.Errorf("SuccessPolicy mismatch (-want +got):\n%s", diff)

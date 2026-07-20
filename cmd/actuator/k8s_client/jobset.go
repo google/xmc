@@ -460,7 +460,7 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 			Network:        buildJobSetNetwork(workUnit, jobSetName),
 			Coordinator:    buildJobSetCoordinator(workUnit),
 			Suspend:        boolPtr(false),
-			SuccessPolicy: buildJobSetSuccessPolicy(workUnit),
+			SuccessPolicy:  buildJobSetSuccessPolicy(workUnit),
 			FailurePolicy: &jobsetv1alpha2.FailurePolicy{
 				// JobSet-level restarts are disabled (MaxRestarts: 0) to comply with the XMC
 				// contract, which expects a work unit to execute at most once.
@@ -609,10 +609,10 @@ func buildJobSetSuccessPolicy(workUnit *esspb.WorkUnit) *jobsetv1alpha2.SuccessP
 	if policy != nil {
 		return translateSuccessPolicy(policy)
 	}
-	if hasJobNamed(exec.GetJobset().GetJobs(), "pathways-head") {
+	if hasJobNamed(exec.GetJobset().GetJobs(), constants.PathwaysHeadJobName) {
 		return &jobsetv1alpha2.SuccessPolicy{
 			Operator:             jobsetv1alpha2.OperatorAll,
-			TargetReplicatedJobs: []string{"pathways-head"},
+			TargetReplicatedJobs: []string{constants.PathwaysHeadJobName},
 		}
 	}
 	return &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAll}
