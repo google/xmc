@@ -36,7 +36,7 @@ def main():
     local_bin = os.path.join(user_home, ".local", "bin")
     current_path = env.get("PATH", "")
     if local_bin not in current_path.split(os.pathsep):
-        env["PATH"] = f"{local_bin}{os.pathsep}{current_path}"
+        env["PATH"] = f"{local_bin}{os.pathsep}{current_path}" if current_path else local_bin
 
     # Check if NVM exists in the user's real home and source it
     nvm_sh = os.path.join(user_home, ".nvm", "nvm.sh")
