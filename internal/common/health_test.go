@@ -118,6 +118,16 @@ func TestCheckSchemaMigrationVersion(t *testing.T) {
 		}
 	})
 
+	t.Run("invalid expectedVersion <= 0 returns error", func(t *testing.T) {
+		_, essClient, _ := emulator.SetupEmpty(ctx, t)
+		if err := CheckSchemaMigrationVersion(ctx, essClient, 0); err == nil {
+			t.Error("CheckSchemaMigrationVersion(ctx, client, 0) succeeded, want error")
+		}
+		if err := CheckSchemaMigrationVersion(ctx, essClient, -1); err == nil {
+			t.Error("CheckSchemaMigrationVersion(ctx, client, -1) succeeded, want error")
+		}
+	})
+
 	t.Run("table does not exist returns error", func(t *testing.T) {
 		_, essClient, _ := emulator.SetupEmpty(ctx, t)
 		// Table SchemaMigrations is not created.

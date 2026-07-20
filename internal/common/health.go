@@ -55,6 +55,9 @@ func CheckSchemaMigrationVersion(ctx context.Context, sc *spanner.Client, expect
 	if sc == nil {
 		return fmt.Errorf("spanner: %w", ErrNilClient)
 	}
+	if expectedVersion <= 0 {
+		return fmt.Errorf("invalid expected schema version: %d", expectedVersion)
+	}
 	versionVal, dirty, err := version.QueryCurrentVersion(ctx, sc)
 	if err != nil {
 		return err
