@@ -1831,3 +1831,87 @@ func TestValidateTPUTopology(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateJobSetCoordinator(t *testing.T) {
+	jobs := map[string]*essmsgpb.KubernetesJob{
+		"worker": {
+			Name:     "worker",
+			Replicas: 2,
+		},
+	}
+
+	tests := []struct {
+		name        string
+		coordinator *essmsgpb.JobSetExecutable_Coordinator
+		wantErr     bool
+	}{
+		{
+			name:        "nil coordinator",
+			coordinator: nil,
+			wantErr:     false,
+		},
+		{
+			name: "valid coordinator (default indexes)",
+			coordinator: &essmsgpb.JobSetExecutable_Coordinator{
+				ReplicatedJob: "worker",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid coordinator (explicit indexes)",
+			coordinator: &essmsgpb.JobSetExecutable_Coordinator{
+				ReplicatedJob: "worker",
+				JobIndex:      proto.Int32(1),
+				PodIndex:      proto.Int32(0),
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty replicated_job",
+			coordinator: &essmsgpb.JobSetExecutable_Coordinator{
+				ReplicatedJob: "",
+			},
+			wantErr: true,
+		},
+		{
+			name: "unknown replicated_job",
+			coordinator: &essmsgpb.JobSetExecutable_Coordinator{
+				ReplicatedJob: "non-existent-job",
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative job_index",
+			coordinator: &essmsgpb.JobSetExecutable_Coordinator{
+				ReplicatedJob: "worker",
+				JobIndex:      proto.Int32(-1),
+			},
+			wantErr: true,
+		},
+		{
+			name: "out-of-bounds job_index",
+			coordinator: &essmsgpb.JobSetExecutable_Coordinator{
+				ReplicatedJob: "worker",
+				JobIndex:      proto.Int32(2),
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative pod_index",
+			coordinator: &essmsgpb.JobSetExecutable_Coordinator{
+				ReplicatedJob: "worker",
+				PodIndex:      proto.Int32(-1),
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateJobSetCoordinator(tc.coordinator, jobs)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateJobSetCoordinator() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
