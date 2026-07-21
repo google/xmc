@@ -55,6 +55,19 @@ jobs:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
 
+      - name: 'Conditional Disk Space Cleanup'
+        run: |
+          AVAILABLE_GB=$(df / --output=avail | tail -n 1 | awk '{print int($1/1024/1024)}')
+          echo "=== Available Disk Space: ${AVAILABLE_GB} GB ==="
+          if [ "$AVAILABLE_GB" -lt 10 ]; then
+            echo "Disk space is low (< 10 GB). Running targeted cleanup..."
+            sudo rm -rf /usr/local/lib/android /usr/share/dotnet || true
+            echo "=== Disk Space After Cleanup ==="
+            df -h /
+          else
+            echo "Sufficient disk space (${AVAILABLE_GB} GB >= 10 GB). Skipping cleanup."
+          fi
+
       - name: 'Set up Go'
         uses: 'actions/setup-go@v5'
         with:
