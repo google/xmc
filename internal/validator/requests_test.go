@@ -796,6 +796,41 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
+			name: "valid_priority_class_name",
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].PriorityClassName = "very-high"
+			}),
+			wantErr: nil,
+		},
+		{
+			name: "valid_priority_class_name_system_cluster_critical",
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].PriorityClassName = "system-cluster-critical"
+			}),
+			wantErr: nil,
+		},
+		{
+			name: "invalid_priority_class_name_format",
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].PriorityClassName = "INVALID_UPPERCASE"
+			}),
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_priority_class_name_prefix",
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].PriorityClassName = "-invalid-prefix"
+			}),
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "priority_class_name_too_long",
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].PriorityClassName = strings.Repeat("a", 254)
+			}),
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
 			name: "valid_job_with_sidecars",
 			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.Name = "main-container"

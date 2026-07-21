@@ -205,8 +205,16 @@ message KubernetesJob {
   // This allows pinning specific jobs (e.g., head vs worker) to distinct node pools.
   map<string, string> node_selector = 11;
 
+  // Optional Kubernetes Pod PriorityClass name to assign to the pods created
+  // by this ReplicatedJob (e.g., "very-high"). If omitted, the cluster default
+  // PriorityClass is used.
+  // Note: This only affects Pod-level scheduling and preemption (node-level).
+  // It does not affect Kueue queueing or admission priority, which is managed
+  // separately via Experiment/WorkUnit priorities.
+  string priority_class_name = 12;
+
   // Custom volumes available to containers in the pod.
-  repeated Volume volumes = 12;
+  repeated Volume volumes = 13;
 }
 
 // Represents a volume that can be mounted by containers in a KubernetesJob.

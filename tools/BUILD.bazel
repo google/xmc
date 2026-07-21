@@ -199,3 +199,24 @@ py_test(
         ":setup_venv_lib",
     ],
 )
+
+py_library(
+    name = "update_pr_description_lib",
+    srcs = ["update_pr_description.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+)
+
+py_library(
+    name = "run_affected_tests_lib",
+    srcs = ["run_affected_tests.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tool_utils",
+    ],
+)
