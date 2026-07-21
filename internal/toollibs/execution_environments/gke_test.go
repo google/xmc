@@ -1589,6 +1589,77 @@ func TestInjectOnJobSetCreation_NetworkInjectionGPUMultiNode(t *testing.T) {
 	}
 }
 
+func TestInjectOnJobSetCreation_GCSFuseAnnotation(t *testing.T) {
+	g := &GKE{}
+	workUnit := &epb.WorkUnit{
+		Executable: &epb.Executable{
+			Type: &epb.Executable_Jobset{
+				Jobset: &epb.JobSetExecutable{
+					Jobs: []*epb.KubernetesJob{
+						{
+							Name: "job1",
+							Spec: &epb.ExecutableSpec{
+								Resources: &epb.ResourceSet{
+									Resources: &epb.ResourceSet_CpuResources{
+										CpuResources: &epb.CpuResources{
+											CpuMillicores: 1000,
+											MemoryBytes:   1024 * 1024 * 1024,
+										},
+									},
+								},
+								DockerImage: "gcr.io/test/image",
+							},
+							Volumes: []*epb.Volume{
+								{
+									Name: "gcs-bucket",
+									Source: &epb.Volume_Gcs{
+										Gcs: &epb.GcsVolumeSource{
+											Bucket: "my-gcs-bucket",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	jobSet := &jobsetv1alpha2.JobSet{
+		Spec: jobsetv1alpha2.JobSetSpec{
+			ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+				{
+					Name: "job1",
+					Template: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers: []corev1.Container{
+										{
+											Name:  "container1",
+											Image: "gcr.io/test/image",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := g.InjectOnJobSetCreation(context.Background(), workUnit, jobSet)
+	if err != nil {
+		t.Fatalf("InjectOnJobSetCreation() returned error: %v", err)
+	}
+
+	annotations := got.Spec.ReplicatedJobs[0].Template.Spec.Template.ObjectMeta.Annotations
+	if annotations["gke-gcsfuse/volumes"] != "true" {
+		t.Errorf("Expected annotation 'gke-gcsfuse/volumes: true', got %v", annotations)
+	}
+}
+
 func TestEnsureTpuContainerPorts(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1723,6 +1794,7 @@ func TestInjectOnJobSetCreation_GPUMultiNode_WithCoordinator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InjectOnJobSetCreation() returned error: %v", err)
 	}
+
 	if got.Spec.Coordinator == nil {
 		t.Fatalf("Expected Coordinator to be preserved, got nil")
 	}

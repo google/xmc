@@ -332,18 +332,22 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 		jobNames[job.Name] = true
 		jobMap[job.Name] = job
 
-		if err := validateExecutableSpec(job.Spec, "work_unit.executable.jobset.jobs.spec"); err != nil {
+		validVols, err := validateJobVolumes(job.GetVolumes(), "work_unit.executable.jobset.jobs.volumes")
+		if err != nil {
+			return err
+		}
+		if err := validateExecutableSpec(job.Spec, "work_unit.executable.jobset.jobs.spec", validVols); err != nil {
 			return err
 		}
 		for i, sidecar := range job.GetSidecars() {
 			prefix := fmt.Sprintf("work_unit.executable.jobset.jobs.sidecars[%d]", i)
-			if err := validateExecutableSpec(sidecar, prefix); err != nil {
+			if err := validateExecutableSpec(sidecar, prefix, validVols); err != nil {
 				return err
 			}
 		}
 		for i, initContainer := range job.GetInitContainers() {
 			prefix := fmt.Sprintf("work_unit.executable.jobset.jobs.init_containers[%d]", i)
-			if err := validateExecutableSpec(initContainer, prefix); err != nil {
+			if err := validateExecutableSpec(initContainer, prefix, validVols); err != nil {
 				return err
 			}
 		}
@@ -471,7 +475,7 @@ func validatePayload(payload *essmsgpb.ArtifactPayload) error {
 	return nil
 }
 
-func validateExecutableSpec(spec *essmsgpb.ExecutableSpec, prefix string) error {
+func validateExecutableSpec(spec *essmsgpb.ExecutableSpec, prefix string, validVolumes ...map[string]bool) error {
 	if spec == nil {
 		return fmt.Errorf("%s cannot be nil: %w", prefix, status.ErrInvalidArgument)
 	}
@@ -485,6 +489,13 @@ func validateExecutableSpec(spec *essmsgpb.ExecutableSpec, prefix string) error 
 	}
 	if spec.GetResources() == nil || spec.GetResources().GetResources() == nil {
 		return fmt.Errorf("%s.resources.resources cannot be nil: %w", prefix, status.ErrInvalidArgument)
+	}
+	var volMap map[string]bool
+	if len(validVolumes) > 0 {
+		volMap = validVolumes[0]
+	}
+	if err := validateVolumeMounts(spec.GetVolumeMounts(), prefix, volMap); err != nil {
+		return err
 	}
 	return validateResourceSet(spec.GetResources(), prefix+".resources")
 }

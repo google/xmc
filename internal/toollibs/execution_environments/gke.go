@@ -260,6 +260,7 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 		if err := annotateContainers(replicatedJob, job); err != nil {
 			return nil, err
 		}
+		annotateGCSVolumes(replicatedJob, job)
 
 		if err := updateNodeSelector(job.Spec.Resources, &replicatedJob.Template.Spec.Template.Spec); err != nil {
 			return nil, err
@@ -425,6 +426,36 @@ func annotateContainers(replicatedJob *jobsetv1alpha2.ReplicatedJob, job *epb.Ku
 	replicatedJob.Template.Spec.Template.Spec.Containers = containers
 	replicatedJob.Template.Spec.Template.Spec.InitContainers = initContainers
 	return nil
+}
+
+const (
+	gcsFuseAnnotationKey = "gke-gcsfuse/volumes"
+	gcsFuseAnnotationVal = "true"
+)
+
+func annotateGCSVolumes(replicatedJob *jobsetv1alpha2.ReplicatedJob, job *epb.KubernetesJob) {
+	hasGCS := false
+	for _, v := range job.GetVolumes() {
+		if v.GetGcs() != nil {
+			hasGCS = true
+			break
+		}
+	}
+	if !hasGCS {
+		for _, vol := range replicatedJob.Template.Spec.Template.Spec.Volumes {
+			if vol.CSI != nil && vol.CSI.Driver == "gcs.csi.storage.gke.io" {
+				hasGCS = true
+				break
+			}
+		}
+	}
+	if !hasGCS {
+		return
+	}
+	if replicatedJob.Template.Spec.Template.ObjectMeta.Annotations == nil {
+		replicatedJob.Template.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+	}
+	replicatedJob.Template.Spec.Template.ObjectMeta.Annotations[gcsFuseAnnotationKey] = gcsFuseAnnotationVal
 }
 
 func init() {
