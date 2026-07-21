@@ -35,8 +35,6 @@ jobs:
   run-backend-tests:
     name: 'Run Go & Backend Unit Tests'
     runs-on: 'ubuntu-24.04'
-    container:
-      image: golang:1.26-bookworm
     timeout-minutes: 30
 
     # Use a service container for the Spanner Emulator
@@ -51,11 +49,17 @@ jobs:
       # We're overriding the test timeout to catch failures with Spanner faster
       TEST_TIMEOUT_SECONDS: 60
       SPANNER_CHECK_TIMEOUT: 15
-      SPANNER_EMULATOR_HOST: spanner-emulator:9010
+      SPANNER_EMULATOR_HOST: 127.0.0.1:9010
 
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
+
+      - name: 'Start Async Disk Space Cleanup'
+        run: |
+          echo "=== Starting background cleanup of Android SDK & .NET ==="
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet &
+          echo "CLEANUP_PID=$!" >> $GITHUB_ENV
 
       - name: 'Set up Go'
         uses: 'actions/setup-go@v5'
@@ -95,9 +99,13 @@ jobs:
           echo "CRITICAL: Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }} did not start within ${{ env.SPANNER_CHECK_TIMEOUT }} seconds."
           exit 1
 
-      - name: 'Check Available Disk Space'
+      - name: 'Wait for Disk Space Cleanup'
         run: |
-          echo "=== Available Disk Space Inside Job Container ==="
+          if [ -n "${CLEANUP_PID:-}" ]; then
+            echo "Waiting for background cleanup (PID ${CLEANUP_PID}) to complete..."
+            wait "${CLEANUP_PID}" || true
+          fi
+          echo "=== Available Disk Space Before Bazel Build ==="
           df -h /
 
       - name: 'Run Backend Unit Tests'
