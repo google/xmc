@@ -9,6 +9,26 @@ fi
 echo "=== Running XMC Pre-Commit Linter Hooks (Mode: ${MODE}) ==="
 FAILED=0
 
+check_branch_name() {
+  local branch_name
+  branch_name=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+
+  if [ -z "$branch_name" ] || [ "$branch_name" = "HEAD" ]; then
+    return 0
+  fi
+
+  echo "--> Running Branch Naming Validation..."
+  local pattern="^(feat|fix|refactor|docs|test|chore|koder)/[a-z0-9-]+$"
+  if [[ ! "$branch_name" =~ $pattern ]]; then
+    echo "❌ Invalid git branch name: '$branch_name'"
+    echo "   Branch names must follow schema: <prefix>/<kebab-case> (regex: ^(feat|fix|refactor|docs|test|chore|koder)/[a-z0-9-]+$)"
+    echo "   Allowed prefixes: feat, fix, refactor, docs, test, chore, koder"
+    echo "   Examples of valid branch names: feat/my-feature, fix/bug-fix, chore/update-deps"
+    echo "   Note: Use hyphens (-) instead of underscores (_) or camelCase."
+    FAILED=1
+  fi
+}
+
 check_bazel() {
   local buildifier_bin=""
   if command -v buildifier >/dev/null 2>&1; then
@@ -198,6 +218,7 @@ check_python() {
 }
 
 main() {
+  check_branch_name
   check_bazel
   check_go
   check_ui
