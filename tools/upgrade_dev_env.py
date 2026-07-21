@@ -451,13 +451,14 @@ def step_images(config: Config) -> None:
         ("ui", "//cmd/ui:ui_image_push"),
         ("xid_service", "//cmd/xid_service:xid_service_image_push"),
         ("health_service", "//cmd/health_service:health_service_image_push"),
+        ("rod_ui", "//cmd/rod_ui:rod_ui_image_push"),
     ]
 
     for name, target in targets:
         log_info(f"Pushing {name} image...")
         run_cmd(["bazel", "run", target], env=env)
 
-    log_success("All 7 XMC service container images compiled and pushed from current branch state.")
+    log_success("All XMC service container images compiled and pushed from current branch state.")
 
 
 def step_app(config: Config) -> None:
@@ -470,6 +471,17 @@ def step_app(config: Config) -> None:
             f"Deployment directory '{ctk_dir}' not found. Ensure the environment"
             " has been deployed first."
         )
+
+    # Sync latest deploy/helm templates into staged deployment directories
+    staged_roots = [
+        Path(f"ctk-out/{config.deployment_name}/.ghpc/staged"),
+        Path(f"{config.deployment_name}/.ghpc/staged"),
+    ]
+    for staged_root in staged_roots:
+        if staged_root.exists() and staged_root.is_dir():
+            for p in staged_root.glob("helm_*"):
+                if p.is_dir():
+                    shutil.copytree("deploy/helm", p, dirs_exist_ok=True)
 
     log_info("Running gcluster deploy for group 'xmc_app'...")
     run_cmd(
@@ -521,6 +533,8 @@ def step_restart(config: Config) -> None:
         "reconciler",
         "ui",
         "xid-service",
+        "health-service",
+        "rod-ui",
     ]
 
     for service in services:

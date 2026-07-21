@@ -83,10 +83,11 @@ def copy_flat(src_dir: str, dest_dir: str):
 def main():
     """Main entrypoint for building UI container image."""
     if len(sys.argv) < 2:
-        print("Usage: build_ui_oci.py <output_tar>")
+        print("Usage: build_ui_oci.py <output_tar> [image_tag]")
         sys.exit(1)
 
     output_tar = sys.argv[1]
+    tag = sys.argv[2] if len(sys.argv) > 2 else "ui-image:latest"
     workspace_dir = os.getcwd()
     ui_src_dir = os.path.join(workspace_dir, "cmd/ui")
 
@@ -111,8 +112,7 @@ EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]
 """)
 
-    tag = "ui-image:latest"
-    print("Building Docker OCI frontend image...")
+    print(f"Building Docker OCI frontend image {tag}...")
     build_cmd = ["docker", "build", "--no-cache"]
     target_platform = os.environ.get("XMC_UI_PLATFORM")
     if not target_platform and platform.machine().lower() in (

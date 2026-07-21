@@ -12,28 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-def oci_image_for_service(name, binary):
-    # Split binary name
-    binary_name = binary.split(":")[-1]
-    tarball_target = name + "_tarball"
-    tarball_file = name + "_tarball.tar"
-
-    service_name = name
-    if service_name.endswith("_image"):
-        service_name = service_name[:-6]
-    service_name = service_name.replace("_", "-")
-
-    # 1. Build the loadable OCI tarball!
-    native.genrule(
-        name = tarball_target,
-        srcs = [binary],
-        outs = [tarball_file],
-        cmd = "python3 $(location //tools:build_oci.py) $< " + binary_name + " " + name + ":latest $@",
-        tools = ["//tools:build_oci.py"],
-        visibility = ["//visibility:public"],
-    )
-
-    # 2. Build the push script genrule target directly!
+def _oci_push_script(name, service_name, tarball_target, tarball_file):
     native.genrule(
         name = name + "_push",
         srcs = [":" + tarball_target],
@@ -62,16 +41,24 @@ else
 fi
 
 # Find the runfile path of the tarball
-# We look in the runfiles directory of the script
 RUNFILES_DIR="$${{BASH_SOURCE[0]}}.runfiles"
 if [[ ! -d "$$RUNFILES_DIR" ]]; then
-  # Fallback if runfiles is not at BASH_SOURCE path
   RUNFILES_DIR="$$(dirname "$${{BASH_SOURCE[0]}}")/../.."
 fi
 
 TARBALL_PATH=$$(find "$$RUNFILES_DIR" -name "{tarball_file}" -print -quit)
 if [[ -z "$$TARBALL_PATH" || ! -f "$$TARBALL_PATH" ]]; then
-  echo "ERROR: Could not find tarball {tarball_file} in runfiles." >&2
+  # Fallback to local directory
+  DIR="$$(dirname "$${{BASH_SOURCE[0]}}")"
+  TARBALL_PATH="$$DIR/{tarball_file}"
+fi
+
+if [[ ! -f "$$TARBALL_PATH" ]]; then
+  TARBALL_PATH="$$(find . -name '{tarball_file}' -print -quit)"
+fi
+
+if [[ -z "$$TARBALL_PATH" || ! -f "$$TARBALL_PATH" ]]; then
+  echo "ERROR: Could not find tarball {tarball_file}." >&2
   exit 1
 fi
 
@@ -99,3 +86,47 @@ chmod +x $@
         executable = True,
         visibility = ["//visibility:public"],
     )
+
+def oci_image_for_service(name, binary):
+    # Split binary name
+    binary_name = binary.split(":")[-1]
+    tarball_target = name + "_tarball"
+    tarball_file = name + "_tarball.tar"
+
+    service_name = name
+    if service_name.endswith("_image"):
+        service_name = service_name[:-6]
+    service_name = service_name.replace("_", "-")
+
+    # 1. Build the loadable OCI tarball!
+    native.genrule(
+        name = tarball_target,
+        srcs = [binary],
+        outs = [tarball_file],
+        cmd = "python3 $(location //tools:build_oci.py) $< " + binary_name + " " + name + ":latest $@",
+        tools = ["//tools:build_oci.py"],
+        visibility = ["//visibility:public"],
+    )
+
+    # 2. Build the push script genrule target directly!
+    _oci_push_script(name, service_name, tarball_target, tarball_file)
+
+def oci_image_for_ui(name, srcs = ["//cmd/ui:ui_srcs"], builder = "//cmd/ui:build_ui_oci.py"):
+    tarball_target = name + "_tarball"
+    tarball_file = name + "_tarball.tar"
+
+    service_name = name
+    if service_name.endswith("_image"):
+        service_name = service_name[:-6]
+    service_name = service_name.replace("_", "-")
+
+    native.genrule(
+        name = tarball_target,
+        srcs = srcs + [builder],
+        outs = [tarball_file],
+        cmd = "python3 $(location " + builder + ") $@ " + service_name + "-image:latest",
+        tools = [builder],
+        visibility = ["//visibility:public"],
+    )
+
+    _oci_push_script(name, service_name, tarball_target, tarball_file)
