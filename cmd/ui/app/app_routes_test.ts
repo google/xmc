@@ -26,7 +26,7 @@ import { WorkUnitPage } from './work_unit_page/work_unit_page';
 describe('App Routes', () => {
   it('should define route configuration', () => {
     expect(routes).toBeDefined();
-    expect(routes.length).toBe(4);
+    expect(routes.length).toBe(3);
   });
 
   it('should route "" to HomePage with guestGuard', () => {
@@ -42,13 +42,6 @@ describe('App Routes', () => {
     expect(route).toBeDefined();
     expect(route?.component).toBe(ResourceDashboard);
     expect(route?.canActivate).toContain(authGuard);
-  });
-
-  it('should redirect "queues" to "resources"', () => {
-    const route = routes.find((r) => r.path === 'queues');
-    expect(route).toBeDefined();
-    expect(route?.redirectTo).toBe('resources');
-    expect(route?.pathMatch).toBe('full');
   });
 
   it('should route "experiments" with authGuard and children', () => {

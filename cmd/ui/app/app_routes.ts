@@ -38,11 +38,6 @@ export const routes: Routes = [
     canActivate: [authGuard],
   },
   {
-    path: 'queues',
-    redirectTo: 'resources',
-    pathMatch: 'full',
-  },
-  {
     path: 'experiments',
     canActivate: [authGuard],
     children: [
