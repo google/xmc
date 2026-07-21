@@ -44,7 +44,8 @@ Evaluate session logs (`transcript.jsonl`) across four key dimensions:
 
 ### Pillar 1: Tooling & Automation Gaps (Helper Scripts)
 - **Signal**: Did the agent write complex shell logic, custom python one-liners, or manual regex filtering directly inside commands or chat responses?
-- **Action**: Identify opportunities to extract procedural logic into testable Python scripts in `tools/` (per [.agents/rules/skills_and_automation.md](file://.agents/rules/skills_and_automation.md#1-extracting-complex-logic-to-executable-python-scripts)).
+- **Action**: Identify opportunities to extract procedural logic into testable Python scripts in `tools/` (per [skills_and_automation.md](../../rules/skills_and_automation.md#1-extracting-complex-logic-to-executable-python-scripts)).
+
 
 ### Pillar 2: Rule & Guideline Gaps (`.agents/rules/`)
 - **Signal**: Did review comments or agent trajectory show wrong assumptions, path wandering, or style guideline violations?
