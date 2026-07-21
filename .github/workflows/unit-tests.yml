@@ -100,7 +100,7 @@ jobs:
             --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},300,300,300 \
             -- \
             //... \
-            -//cmd/ui:ui_unit_tests
+            -//cmd/ui/...
 
       - name: 'Prune Bazel Cache & Build Tree'
         if: always()
