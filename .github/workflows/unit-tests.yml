@@ -51,14 +51,6 @@ jobs:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
 
-      - name: 'Fast Disk Space Cleanup'
-        run: |
-          echo "=== Disk space before cleanup ==="
-          df -h
-          sudo rm -rf /usr/local/lib/android
-          echo "=== Disk space after cleanup ==="
-          df -h
-
       - name: 'Set up Go'
         uses: 'actions/setup-go@v5'
         with:
@@ -67,15 +59,16 @@ jobs:
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@v3'
 
-      - name: 'Restore Bazel Repository Cache'
+      - name: 'Restore Bazel Cache'
         id: 'cache-bazel-restore'
         uses: 'actions/cache/restore@v4'
         with:
           path: |
             ~/.cache/bazel-repo
-          key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+            ~/.cache/bazel-disk
+          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
           restore-keys: |
-            bazel-repo-${{ runner.os }}-
+            bazel-${{ runner.os }}-
 
       - name: 'Verify Spanner Emulator Endpoint'
         run: |
@@ -100,6 +93,7 @@ jobs:
         run: |
           bazel test \
             --repository_cache=~/.cache/bazel-repo \
+            --disk_cache=~/.cache/bazel-disk \
             --experimental_repository_cache_hardlinks \
             --test_output=errors \
             --build_tests_only \
@@ -108,13 +102,25 @@ jobs:
             //... \
             -//cmd/ui:ui_unit_tests
 
-      - name: 'Save Bazel Repository Cache'
+      - name: 'Prune Bazel Cache & Build Tree'
+        if: always()
+        run: |
+          echo "=== Pruning Bazel cache and build tree ==="
+          if [ -d ~/.cache/bazel-disk ]; then
+            find ~/.cache/bazel-disk -type f -atime +3 -delete || true
+            find ~/.cache/bazel-disk -type d -empty -delete || true
+          fi
+          bazel clean || true
+          df -h
+
+      - name: 'Save Bazel Cache'
         uses: 'actions/cache/save@v4'
         if: always()
         with:
           path: |
             ~/.cache/bazel-repo
-          key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+            ~/.cache/bazel-disk
+          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
 
   run-ui-tests:
     name: 'Run Angular UI Unit Tests'
