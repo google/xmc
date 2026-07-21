@@ -4,8 +4,9 @@ This document outlines foundational architectural, structural, and clean code gu
 
 ---
 
-## 1. Single Responsibility Principle (SRP) & Focused Functions
+## 1. Single Responsibility Principle (SRP), YAGNI & Focused Functions
 - **Single Responsibility**: Every module, class, and function must have one, and only one, clear reason to change.
+- **YAGNI & No Unused Parameters**: Adhere strictly to YAGNI (*You Aren't Gonna Need It*). Do NOT accept unused parameters, dead fields, or speculative arguments in function signatures or class constructors. Only declare parameters that are actively read, validated, or processed within the function body (excluding mandatory protocol/runtime interface overrides such as context manager `__exit__`).
 - **Function Limit Target**: Aim to keep functions and methods within a highly readable **20–30 line target cap**. Decompose monolithic methods into localized, pure helper functions.
 - **Decompose Complex Logic**: Separate business logic, state mutation, and structural data transformations from framework hooks, lifecycle orchestrations, or shell command invocations.
 
