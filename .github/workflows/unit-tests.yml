@@ -60,8 +60,12 @@ jobs:
           AVAILABLE_GB=$(df / --output=avail | tail -n 1 | awk '{print int($1/1024/1024)}')
           echo "=== Available Disk Space: ${AVAILABLE_GB} GB ==="
           if [ "$AVAILABLE_GB" -lt 10 ]; then
-            echo "Disk space is low (< 10 GB). Running targeted cleanup..."
+            echo "Disk space is low (< 10 GB). Running full targeted cleanup..."
             sudo rm -rf /usr/local/lib/android /usr/share/dotnet || true
+            sudo swapoff -a || true
+            sudo rm -f /mnt/swapfile /swapfile || true
+            docker image prune -a -f || true
+            docker builder prune -f || true
             echo "=== Disk Space After Cleanup ==="
             df -h /
           else
