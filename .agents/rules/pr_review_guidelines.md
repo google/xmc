@@ -39,18 +39,11 @@ This document defines standards for AI agents acting as **Code Reviewers / Inspe
   ```
 
 ### B. Consolidated Review Checklist Artifact
-- **Pre-edit Checklist Artifact**: Before modifying any codebase files, create a complete Markdown checklist artifact containing every detected comment ID, target file path, line range, and requested change.
-- **Count Verification**: Explicitly verify the total count of review threads against the parsed JSON array length (`len(comments)`).
-- **Required Checklist Structure**:
-  ```markdown
-  # PR Review Comment Checklist
-  - **PR Number**: #{number}
-  - **Total Open Threads**: {parsed_array_length}
-
-  ## Review Items
-  - [ ] **Comment ID `{id}`** | `{file_path}:{line}`
-    - **Requested Change**: {body}
-    - **Status**: Pending
+- **Pre-edit Checklist Artifact**: When addressing PR review feedback, before modifying any codebase files to implement requested fixes, run `tools/generate_review_checklist.py <owner> <repo> <pr_number>` to automatically query unresolved review comments from GitHub API and generate the Markdown checklist artifact (`pr_review_checklist.md`).
+- **Count Verification**: Explicitly verify the total count of review threads against the output of `generate_review_checklist.py`.
+- **Required Checklist Generation Command**:
+  ```bash
+  ./tools/generate_review_checklist.py <owner> <repo> <pull_number> [-o pr_review_checklist.md]
   ```
 
 ### C. 1-to-1 Thread Resolution Verification

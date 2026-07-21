@@ -220,3 +220,25 @@ py_library(
         ":tool_utils",
     ],
 )
+
+py_library(
+    name = "generate_review_checklist_lib",
+    srcs = ["generate_review_checklist.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+)
+
+py_test(
+    name = "generate_review_checklist_test",
+    srcs = ["generate_review_checklist_test.py"],
+    imports = ["."],
+    deps = [
+        ":generate_review_checklist_lib",
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+)
