@@ -331,7 +331,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 						Containers:         buildContainersForJob(job),
 						RestartPolicy:      corev1.RestartPolicyNever,
 						SecurityContext:    defaultPodSecurityContext(),
-						Volumes:            defaultVolumes(),
+						Volumes:            generateVolumesForJob(job),
 						NodeSelector:       nodeSelector,
 					},
 				},
@@ -373,8 +373,36 @@ func buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
 	return containers
 }
 
+func buildContainerPorts(spec *esspb.ExecutableSpec) []corev1.ContainerPort {
+	if len(spec.GetPorts()) == 0 {
+		return nil
+	}
+	ports := make([]corev1.ContainerPort, 0, len(spec.GetPorts()))
+	for _, p := range spec.GetPorts() {
+		protocol := corev1.ProtocolTCP
+		switch p.GetProtocol() {
+		case esspb.ContainerPort_UDP:
+			protocol = corev1.ProtocolUDP
+		case esspb.ContainerPort_SCTP:
+			protocol = corev1.ProtocolSCTP
+		case esspb.ContainerPort_TCP, esspb.ContainerPort_PROTOCOL_UNSPECIFIED:
+			protocol = corev1.ProtocolTCP
+		default:
+			protocol = corev1.ProtocolTCP
+		}
+		ports = append(ports, corev1.ContainerPort{
+			Name:          p.GetName(),
+			ContainerPort: p.GetContainerPort(),
+			Protocol:      protocol,
+			HostPort:      p.GetHostPort(),
+		})
+	}
+	return ports
+}
+
 func buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Container {
 	envVars := generateEnvVarsForSpec(spec)
+	ports := buildContainerPorts(spec)
 	var args []string
 	specArgs := spec.GetArgs()
 	if len(specArgs) > 0 {
@@ -397,8 +425,9 @@ func buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Con
 		Command:                  spec.GetCommand(),
 		Args:                     args,
 		Env:                      envVars,
+		Ports:                    ports,
 		SecurityContext:          defaultSecurityContext(),
-		VolumeMounts:             defaultVolumeMounts(),
+		VolumeMounts:             generateVolumeMountsForSpec(spec),
 	}
 }
 
@@ -459,10 +488,9 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		Spec: jobsetv1alpha2.JobSetSpec{
 			ReplicatedJobs: replicatedJobs,
 			Network:        buildJobSetNetwork(workUnit, jobSetName),
+			Coordinator:    buildJobSetCoordinator(workUnit),
 			Suspend:        boolPtr(false),
-			SuccessPolicy: &jobsetv1alpha2.SuccessPolicy{
-				Operator: jobsetv1alpha2.OperatorAll,
-			},
+			SuccessPolicy:  buildJobSetSuccessPolicy(workUnit),
 			FailurePolicy: &jobsetv1alpha2.FailurePolicy{
 				// JobSet-level restarts are disabled (MaxRestarts: 0) to comply with the XMC
 				// contract, which expects a work unit to execute at most once.
@@ -478,7 +506,27 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		logging.Error(ctx, "Failed to get execution environment", "execution_environment", c.RuntimeConfig.DefaultExecutionEnvironment)
 		return nil, fmt.Errorf("failed to get execution environment: %q", c.RuntimeConfig.DefaultExecutionEnvironment)
 	}
-	return executionEnv.InjectOnJobSetCreation(ctx, workUnit, jobSet)
+	jobSet, err = executionEnv.InjectOnJobSetCreation(ctx, workUnit, jobSet)
+	if err != nil {
+		return nil, err
+	}
+	ensureCoordinatorIndicesValid(jobSet)
+	return jobSet, nil
+}
+
+// ensureCoordinatorIndicesValid adjusts Coordinator indices if the execution environment collapsed a multi-replica job to a multi-pod job.
+func ensureCoordinatorIndicesValid(jobSet *jobsetv1alpha2.JobSet) {
+	if jobSet == nil || jobSet.Spec.Coordinator == nil {
+		return
+	}
+	coord := jobSet.Spec.Coordinator
+	for _, rj := range jobSet.Spec.ReplicatedJobs {
+		if rj.Name == coord.ReplicatedJob && rj.Replicas == 1 && coord.JobIndex > 0 {
+			coord.PodIndex = coord.JobIndex + coord.PodIndex
+			coord.JobIndex = 0
+			return
+		}
+	}
 }
 
 func ensureQueueName(workUnit *esspb.WorkUnit, namespace string) {
@@ -580,6 +628,67 @@ func buildJobSetNetwork(workUnit *esspb.WorkUnit, jobSetName string) *jobsetv1al
 		Subdomain:                subdomain,
 		PublishNotReadyAddresses: boolPtr(publishNotReady),
 	}
+}
+
+func buildJobSetSuccessPolicy(workUnit *esspb.WorkUnit) *jobsetv1alpha2.SuccessPolicy {
+	exec := workUnit.GetExecutable()
+	if exec == nil || exec.GetJobset() == nil {
+		return &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAll}
+	}
+	policy := exec.GetJobset().GetSuccessPolicy()
+	if policy != nil {
+		return translateSuccessPolicy(policy)
+	}
+	if hasJobNamed(exec.GetJobset().GetJobs(), constants.PathwaysHeadJobName) {
+		return &jobsetv1alpha2.SuccessPolicy{
+			Operator:             jobsetv1alpha2.OperatorAll,
+			TargetReplicatedJobs: []string{constants.PathwaysHeadJobName},
+		}
+	}
+	return &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAll}
+}
+
+func translateSuccessPolicy(policy *esspb.JobSetExecutable_SuccessPolicy) *jobsetv1alpha2.SuccessPolicy {
+	operator := jobsetv1alpha2.OperatorAll
+	if policy.GetOperator() == esspb.JobSetExecutable_SuccessPolicy_ANY {
+		operator = jobsetv1alpha2.OperatorAny
+	}
+	return &jobsetv1alpha2.SuccessPolicy{
+		Operator:             operator,
+		TargetReplicatedJobs: policy.GetTargetReplicatedJobs(),
+	}
+}
+
+func hasJobNamed(jobs []*esspb.KubernetesJob, name string) bool {
+	for _, job := range jobs {
+		if job.GetName() == name {
+			return true
+		}
+	}
+	return false
+}
+
+// buildJobSetCoordinator builds the JobSet Coordinator specification or returns nil.
+func buildJobSetCoordinator(workUnit *esspb.WorkUnit) *jobsetv1alpha2.Coordinator {
+	if !shouldEnableJobSetCoordinator(workUnit) {
+		return nil
+	}
+
+	coord := workUnit.GetExecutable().GetJobset().GetCoordinator()
+	return &jobsetv1alpha2.Coordinator{
+		ReplicatedJob: coord.GetReplicatedJob(),
+		JobIndex:      int(coord.GetJobIndex()),
+		PodIndex:      int(coord.GetPodIndex()),
+	}
+}
+
+// shouldEnableJobSetCoordinator returns true if the WorkUnit specifies a valid coordinator.
+func shouldEnableJobSetCoordinator(workUnit *esspb.WorkUnit) bool {
+	if workUnit == nil || workUnit.GetExecutable() == nil || workUnit.GetExecutable().GetJobset() == nil {
+		return false
+	}
+	coord := workUnit.GetExecutable().GetJobset().GetCoordinator()
+	return coord != nil && coord.GetReplicatedJob() != ""
 }
 
 func boolPtr(b bool) *bool {
@@ -736,52 +845,6 @@ func podFailurePolicy(containerName string) *batchv1.PodFailurePolicy {
 					Values:        []int32{42},
 				},
 			},
-		},
-	}
-}
-
-func defaultVolumes() []corev1.Volume {
-	return []corev1.Volume{
-		{
-			Name: "ram-scratch",
-			VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{
-					Medium: corev1.StorageMediumMemory,
-				},
-			},
-		},
-		{
-			Name: "disk-scratch",
-			VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{
-					Medium: corev1.StorageMediumDefault,
-				},
-			},
-		},
-		{
-			Name: "dev-shm-scratch",
-			VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{
-					Medium: corev1.StorageMediumMemory,
-				},
-			},
-		},
-	}
-}
-
-func defaultVolumeMounts() []corev1.VolumeMount {
-	return []corev1.VolumeMount{
-		{
-			Name:      "ram-scratch",
-			MountPath: "/dev/ram-scratch",
-		},
-		{
-			Name:      "disk-scratch",
-			MountPath: "/dev/disk-scratch",
-		},
-		{
-			Name:      "dev-shm-scratch",
-			MountPath: "/dev/shm",
 		},
 	}
 }

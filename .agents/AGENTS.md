@@ -19,12 +19,14 @@ This root guidelines document defines high-level universal engineering principle
 ### Core Engineering & Operational Workflows
 - 📘 [Core Engineering Standards](rules/core_engineering.md): SRP, KISS, 20–30 line function limit, linear control flow, default immutability, centralized shared helpers, baseline test fixtures, high-fidelity test doubles, strict coverage, atomic PRs, and contract update rules.
 - 🛠️ [Skills & Automation Guidelines](rules/skills_and_automation.md): Extracting complex logic into testable Python scripts, applying DRY/KISS to skills, preventing context creep, and delegating work to subagents.
-- 🐙 [GitHub Authoring & PR Creation](rules/github_authoring_and_prs.md): Git branch prefixes (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`, `koder/`), Conventional Commit standards, PR title & body formatting rules, plain-text bug references, forbidden raw log dumps vs. allowed audit artifacts, and comment resolution workflows.
-- 🔍 [Code Review & Inspection Guidelines](rules/pr_review_guidelines.md): AI code review checklists (SRP, KISS, immutability, DI testing, test coverage, doc sync), review standards enforcement, and constructive code diff feedback rules.
+
+### GitHub & PR Workflows
+- 🚀 [GitHub Authoring & PR Creation](rules/github_authoring_and_prs.md): Git branch prefixes (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`, `koder/`), Conventional Commit standards, PR title & body formatting rules, mandatory tags (`TAG=agy`), pre-commit linter checks, forbidden raw log dumps, and CI wait buffer rules.
+- 📋 [Code Review & Comment Guidelines](rules/pr_review_guidelines.md): AI code review checklists (SRP, KISS, immutability, DI testing, test coverage, doc sync), review feedback standards, and mandatory PR comment resolution rules (programmatic enumeration, review checklist artifact, 1-to-1 thread resolution verification).
 
 ### Language-Specific Rules
 - 🐹 [Go (Golang)](rules/languages/golang.md): Idiomatic Go style, clean interfaces, lowercase error wrapping (`%w`), concurrency safety (`context.Context`, mutexes), table-driven testing with baseline fixtures (`proto.Modify`), and centralized test utilities.
 - 🟦 [TypeScript & Modern Angular](rules/languages/typescript_javascript.md): Prefer TypeScript over JavaScript, TypeScript strictness, modern Angular signals and control flow (`@if`, `@for`, `@switch`), state immutability, declarative styling maps, and DI polymorphism.
-- 🐍 [Python](rules/languages/python.md): PEP 8 Python style guide, standard library preference, explicit public API type hints, docstrings, `unittest` framework, and Python tooling over shell scripts.
+- 🐍 [Python](rules/languages/python.md): PEP 8 Python style guide, Python 3.14+ version enforcement, standard library preference, explicit public API type hints, docstrings, `unittest` framework, Python tooling over shell scripts, and local virtual environment requirements.
 - 🐚 [Shell Scripting](rules/languages/shell.md): Minimal shell script scope (`set -euo pipefail`), double-quoting variables with braces (`"${VAR}"`), restricting Shell to thin entrypoints while deferring logic to Python.
 - 📝 [Markdown Documentation](rules/languages/markdown.md): GFM formatting, heading hierarchy, clickable relative links, accurate contract representation, and synchronized documentation updates.

@@ -260,6 +260,7 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 		if err := annotateContainers(replicatedJob, job); err != nil {
 			return nil, err
 		}
+		annotateGCSVolumes(replicatedJob, job)
 
 		if err := updateNodeSelector(job.Spec.Resources, &replicatedJob.Template.Spec.Template.Spec); err != nil {
 			return nil, err
@@ -298,11 +299,20 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 				ensureJobSetNetworkConfigured(jobSet)
 			}
 			// For indexed completion, Replicas must be 1.
-			replicatedJob.Replicas = 1
+			collapseReplicasToPods(jobSet, replicatedJob)
 		}
 	}
 
 	return jobSet, nil
+}
+
+// collapseReplicasToPods sets ReplicatedJob.Replicas to 1 and adjusts Coordinator indices if targeted.
+func collapseReplicasToPods(jobSet *jobsetv1alpha2.JobSet, replicatedJob *jobsetv1alpha2.ReplicatedJob) {
+	if replicatedJob.Replicas > 1 && jobSet.Spec.Coordinator != nil && jobSet.Spec.Coordinator.ReplicatedJob == replicatedJob.Name {
+		jobSet.Spec.Coordinator.PodIndex = jobSet.Spec.Coordinator.JobIndex + jobSet.Spec.Coordinator.PodIndex
+		jobSet.Spec.Coordinator.JobIndex = 0
+	}
+	replicatedJob.Replicas = 1
 }
 
 func parseTotalChips(topology string) (int, error) {
@@ -359,6 +369,24 @@ func (g *GKE) InjectOnWorkUnitCreation(ctx context.Context, essServer spb.Experi
 	return workUnit, nil
 }
 
+func ensurePortExists(existing []corev1.ContainerPort, port int32) []corev1.ContainerPort {
+	for _, p := range existing {
+		if p.ContainerPort == port {
+			return existing
+		}
+	}
+	result := make([]corev1.ContainerPort, len(existing)+1)
+	copy(result, existing)
+	result[len(existing)] = corev1.ContainerPort{ContainerPort: port}
+	return result
+}
+
+func ensureTpuContainerPorts(existing []corev1.ContainerPort) []corev1.ContainerPort {
+	existing = ensurePortExists(existing, tpuICIPort)
+	existing = ensurePortExists(existing, tpuMetricsPort)
+	return existing
+}
+
 func annotateContainerList(containers []corev1.Container, specs []*epb.ExecutableSpec) ([]corev1.Container, error) {
 	if len(containers) != len(specs) {
 		return nil, fmt.Errorf("number of containers in replicated job (%d) does not match number of specs (%d)", len(containers), len(specs))
@@ -378,10 +406,7 @@ func annotateContainerList(containers []corev1.Container, specs []*epb.Executabl
 		}
 		result[idx].Resources = reqs
 		if specs[idx].GetResources().GetTpuResources() != nil {
-			result[idx].Ports = append(result[idx].Ports,
-				corev1.ContainerPort{ContainerPort: tpuICIPort},
-				corev1.ContainerPort{ContainerPort: tpuMetricsPort},
-			)
+			result[idx].Ports = ensureTpuContainerPorts(result[idx].Ports)
 		}
 	}
 	return result, nil
@@ -401,6 +426,36 @@ func annotateContainers(replicatedJob *jobsetv1alpha2.ReplicatedJob, job *epb.Ku
 	replicatedJob.Template.Spec.Template.Spec.Containers = containers
 	replicatedJob.Template.Spec.Template.Spec.InitContainers = initContainers
 	return nil
+}
+
+const (
+	gcsFuseAnnotationKey = "gke-gcsfuse/volumes"
+	gcsFuseAnnotationVal = "true"
+)
+
+func annotateGCSVolumes(replicatedJob *jobsetv1alpha2.ReplicatedJob, job *epb.KubernetesJob) {
+	hasGCS := false
+	for _, v := range job.GetVolumes() {
+		if v.GetGcs() != nil {
+			hasGCS = true
+			break
+		}
+	}
+	if !hasGCS {
+		for _, vol := range replicatedJob.Template.Spec.Template.Spec.Volumes {
+			if vol.CSI != nil && vol.CSI.Driver == "gcs.csi.storage.gke.io" {
+				hasGCS = true
+				break
+			}
+		}
+	}
+	if !hasGCS {
+		return
+	}
+	if replicatedJob.Template.Spec.Template.ObjectMeta.Annotations == nil {
+		replicatedJob.Template.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+	}
+	replicatedJob.Template.Spec.Template.ObjectMeta.Annotations[gcsFuseAnnotationKey] = gcsFuseAnnotationVal
 }
 
 func init() {

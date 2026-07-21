@@ -27,7 +27,10 @@ go_library(
 
 go_library(
     name = "health",
-    srcs = ["health.go"],
+    srcs = [
+        "health.go",
+        "spanner_health.go",
+    ],
     importpath = "xmanager_cloud/common/health",
     visibility = ["//visibility:public"],
     deps = [
@@ -44,8 +47,11 @@ go_test(
     embed = [":health"],
     deps = [
         "//internal/storage/spanner/emulator",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@com_google_cloud_go_spanner//admin/database/apiv1",
         "@io_k8s_apimachinery//pkg/version",
         "@io_k8s_client_go//discovery",
         "@io_k8s_client_go//kubernetes",
+        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
     ],
 )

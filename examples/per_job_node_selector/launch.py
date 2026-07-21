@@ -1,11 +1,26 @@
 #!/usr/bin/env python3
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Launch script demonstrating per-job node_selector in an XMC WorkUnit.
 
 Runs a multi-job distributed training simulation:
-1. `head` (1 replica): Pinned via `node_selector` to `cloud.google.com/gke-nodepool: cpups`.
-2. `worker` (2 replicas): Pinned via `node_selector` to `cloud.google.com/gke-nodepool: gpu-pool`,
-   with GKE execution environment automatically injecting
-   `cloud.google.com/gke-accelerator: nvidia-tesla-t4`.
+1. `head` (1 replica): Pinned via `node_selector` to
+   `cloud.google.com/gke-nodepool: cpups`.
+2. `worker` (2 replicas): Pinned via `node_selector` to
+   `cloud.google.com/gke-nodepool: gpu-pool`, with GKE execution environment
+   automatically injecting `cloud.google.com/gke-accelerator: nvidia-tesla-t4`.
 """
 
 import logging

@@ -34,9 +34,7 @@ describe('MockWorkUnitsService', () => {
 
   it('should return mock work units', async () => {
     const service = state.service as MockWorkUnitsService;
-    const response = await firstValueFrom(
-      service.searchWorkUnits({ parent: 'experiments/1' }),
-    );
+    const response = await firstValueFrom(service.searchWorkUnits({ parent: 'experiments/1' }));
     expect(response.workUnits).toEqual(WORK_UNIT_LIST);
     expect(response.nextPageToken).toBe('page_token');
   });

@@ -102,6 +102,7 @@ load("@bazel_gazelle//:def.bzl", "gazelle")
 # gazelle:resolve go xmanager_cloud/storage/spanner/emulator/emulator //internal/storage/spanner/emulator:emulator
 # gazelle:resolve go xmanager_cloud/storage/spanner/migrations/testing/migrationtest //internal/storage/spanner/migrations/testing/migrationtest:migrationtest
 # gazelle:resolve go xmanager_cloud/kubernetes/common/constants //internal/kubernetes/common:constants
+# gazelle:resolve go xmanager_cloud/kubernetes/common/jobsetutil //internal/kubernetes/common:jobsetutil
 # gazelle:resolve go xmanager_cloud/security/securitytest //internal/security:securitytest
 # gazelle:resolve go xmanager_cloud/query_generator/liststatement //internal/query_generator:liststatement
 # gazelle:resolve go xmanager_cloud/query_generator/normalizer/normalizer //internal/query_generator/normalizer:normalizer
