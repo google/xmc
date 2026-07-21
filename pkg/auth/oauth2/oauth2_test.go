@@ -1099,7 +1099,7 @@ func newTestAuthenticator(cfg *Config) *Authenticator {
 				Bindings: []*iampb.Binding{
 					{
 						Role:    a.Config.TargetIAMRole,
-						Members: []string{"user:mock-user@mycompany.com", "user:mock-admin@mycompany.com", "user:mock-sa-user@mycompany.com", "serviceaccount:service-account@mycompany.com"},
+						Members: []string{"user:mock-admin@mycompany.com", "user:mock-sa-user@mycompany.com", "serviceaccount:service-account@mycompany.com"},
 					},
 				},
 			}, nil

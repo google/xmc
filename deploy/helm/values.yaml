@@ -113,6 +113,10 @@ ui:
   apiUrl: "https://YOUR_API_HOSTNAME/v1"
   refreshIntervalMs: "30000"
 
+rodUi:
+  enabled: true
+  image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/rod-ui-dev:latest"
+
 
 
 # Pass configuration to Kueue sub-chart
