@@ -4,6 +4,24 @@ This document describes how to build, test, and lint the codebase, configure con
 
 ---
 
+## Tools & Scripts Virtual Environment
+
+All automation tools, deployment scripts (`deploy_dev_env.py`, `upgrade_dev_env.py`), and verification scripts (`deploy/ctk_v2/verify_xmc.py`) require a Python virtual environment. Virtual environments must be explicitly created using **Python 3.13.14**:
+
+```bash
+python3.13 -m venv ./tools/venv
+source ./tools/venv/bin/activate
+pip install --upgrade pip
+pip install -r ./tools/requirements.txt
+```
+
+Or run the automated bootstrap script using Python 3.13.14:
+```bash
+python3 ./tools/setup_venv.py --venv-dir ./tools/venv --requirements ./tools/requirements.txt
+```
+
+---
+
 ## Protocol Buffers & gRPC Stubs
 
 All proto files are located inside the [api/protos](../api/protos) directory. They share the `cloud.xmanager.v1` package name and are built with modern **Bazel** rules, translating internal-style import paths (e.g. `third_party/xmanager_cloud/...`) automatically.
