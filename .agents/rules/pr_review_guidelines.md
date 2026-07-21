@@ -39,7 +39,7 @@ This document defines standards for AI agents acting as **Code Reviewers / Inspe
   ```
 
 ### B. Consolidated Review Checklist Artifact
-- **Pre-edit Checklist Artifact**: Before modifying any codebase files, run `tools/generate_review_checklist.py <owner> <repo> <pr_number>` to automatically query unresolved review comments from GitHub API and generate the Markdown checklist artifact (`pr_review_checklist.md`).
+- **Pre-edit Checklist Artifact**: When addressing PR review feedback, before modifying any codebase files to implement requested fixes, run `tools/generate_review_checklist.py <owner> <repo> <pr_number>` to automatically query unresolved review comments from GitHub API and generate the Markdown checklist artifact (`pr_review_checklist.md`).
 - **Count Verification**: Explicitly verify the total count of review threads against the output of `generate_review_checklist.py`.
 - **Required Checklist Generation Command**:
   ```bash
