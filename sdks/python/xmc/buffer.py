@@ -53,7 +53,6 @@ class BoundedMetricsBuffer:
             raise ValueError(f"Capacity must be positive, got {capacity}")
         self._capacity = capacity
         self._lock = threading.Lock()
-        self._cond = threading.Condition(self._lock)
         self._buffer: deque[MetricTuple] = deque(maxlen=capacity)
 
     @property
@@ -98,7 +97,6 @@ class BoundedMetricsBuffer:
 
         with self._lock:
             self._buffer.append(item)
-            self._cond.notify()
 
     def put_many(
         self,
@@ -133,7 +131,6 @@ class BoundedMetricsBuffer:
 
         with self._lock:
             self._buffer.extend(coerced_items)
-            self._cond.notify_all()
 
     def get_all(self) -> List[MetricTuple]:
         """Returns a snapshot list of all metrics currently in the buffer without removing them."""
