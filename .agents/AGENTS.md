@@ -11,14 +11,15 @@ This root guidelines document defines high-level universal engineering principle
 3. **Don't Repeat Yourself (DRY)**: Centralize logic, eliminate duplicate code patterns, and extract shared automation playbooks into reusable Python modules or dedicated rule files.
 4. **Context Preservation & Subagent Delegation**: Prevent main context bloat by modularizing rules into purpose-built files and offloading verbose log analysis, heavy test runs, or exploratory searches to worker subagents.
 5. **Documentation Alignment**: Synchronize relevant repository markdown files (such as `README.md`, `INSTALL.md`, and component docs), inline comments, schemas, and skills in the same PR whenever system behavior or API contracts change.
+6. **Iterative Reflection & Meta-Learning**: After major task implementations or when requested by the user, audit session trajectory and thought history using the `iterative_reflection` skill ([SKILL.md](file://.agents/skills/iterative_reflection/SKILL.md)) to identify friction points, rule gaps, missing helper scripts, and token inefficiencies.
 
 ---
 
 ## Modular Rules Index
 
 ### Core Engineering & Operational Workflows
-- 📘 [Core Engineering Standards](rules/core_engineering.md): SRP, KISS, 20–30 line function limit, linear control flow, default immutability, high-fidelity test doubles, strict coverage, atomic PRs, and contract update rules.
-- 🛠️ [Skills & Automation Guidelines](rules/skills_and_automation.md): Extracting complex logic into testable Python scripts, applying DRY/KISS to skills, preventing context creep, and delegating work to subagents.
+- 📘 [Core Engineering Standards](rules/core_engineering.md): SRP, KISS, 20–30 line function limit, linear control flow, default immutability, high-fidelity test doubles, strict coverage, atomic PRs, and post-implementation reflection rules.
+- 🛠️ [Skills & Automation Guidelines](rules/skills_and_automation.md): Extracting complex logic into testable Python scripts, iterative reflection workflow, preventing context creep, and delegating work to subagents.
 - 🔍 [PR Review & Post-PR Workflow](rules/pr_review_and_github.md): Code review checklist for AI reviews and post-PR creation feedback loop guidelines (~2 min wait for GitHub PR bot, comment fetching, fix proposals).
 
 ### Language-Specific Rules
