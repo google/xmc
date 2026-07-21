@@ -451,7 +451,6 @@ def step_images(config: Config) -> None:
         ("ui", "//cmd/ui:ui_image_push"),
         ("xid_service", "//cmd/xid_service:xid_service_image_push"),
         ("health_service", "//cmd/health_service:health_service_image_push"),
-        ("rod_ui", "//cmd/rod_ui:rod_ui_image_push"),
     ]
 
     for name, target in targets:
@@ -538,7 +537,6 @@ def step_restart(config: Config) -> None:
         "ui",
         "xid-service",
         "health-service",
-        "rod-ui",
     ]
 
     for service in services:

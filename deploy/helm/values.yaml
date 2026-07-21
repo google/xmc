@@ -30,7 +30,6 @@ actuator_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/actuator-dev:l
 reconciler_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/reconciler-dev:latest"
 ess_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/experiment-state-server-dev:latest"
 health_service_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/health-service-dev:latest"
-rod_ui_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/rod-ui-dev:latest"
 
 essDeployment:
   enabled: true
@@ -112,10 +111,6 @@ ui:
   image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/ui-dev:latest"
   apiUrl: "https://YOUR_API_HOSTNAME/v1"
   refreshIntervalMs: "30000"
-
-rodUi:
-  enabled: true
-  image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/rod-ui-dev:latest"
 
 
 

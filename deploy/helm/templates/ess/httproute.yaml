@@ -42,16 +42,6 @@ spec:
     - matches:
         - path:
             type: PathPrefix
-            value: /resources
-        - path:
-            type: PathPrefix
-            value: /queues
-      backendRefs:
-        - name: rod-ui-service
-          port: 80
-    - matches:
-        - path:
-            type: PathPrefix
             value: /
       backendRefs:
         - name: ui-service
