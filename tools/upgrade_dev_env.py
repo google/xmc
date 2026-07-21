@@ -472,7 +472,11 @@ def step_app(config: Config) -> None:
             " has been deployed first."
         )
 
-    # Sync latest deploy/helm templates into staged deployment directories
+    # Cluster Toolkit (gcluster) snapshots Helm charts into internal .ghpc/staged/helm_*
+    # directories during blueprint staging. Subsequent `gcluster deploy` runs apply manifests
+    # from these staged directories rather than reading `deploy/helm` live. We sync the latest
+    # `deploy/helm` templates into all staged folders so that any modified or new Kubernetes
+    # manifests (e.g. HTTPRoutes, new service deployments) are properly applied during upgrade.
     staged_roots = [
         Path(f"ctk-out/{config.deployment_name}/.ghpc/staged"),
         Path(f"{config.deployment_name}/.ghpc/staged"),
