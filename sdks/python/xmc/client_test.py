@@ -16,6 +16,7 @@
 
 import io
 import json
+import os
 import socket
 import unittest
 import urllib.error
@@ -162,7 +163,8 @@ class TestClientShortCircuit(unittest.TestCase):
     """Unit tests for Client short-circuit / disabling feature."""
 
     def test_default_disabled_is_false(self) -> None:
-        with patch.dict("os.environ", {}, clear=True):
+        with patch.dict("os.environ"):
+            os.environ.pop("XMC_METRICS_DISABLED", None)
             client = Client(base_url="https://xmc.googleapis.com")
             self.assertFalse(client.disabled)
 
