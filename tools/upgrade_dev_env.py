@@ -457,7 +457,7 @@ def step_images(config: Config) -> None:
         log_info(f"Pushing {name} image...")
         run_cmd(["bazel", "run", target], env=env)
 
-    log_success("All XMC service container images compiled and pushed from current branch state.")
+    log_success("All 7 XMC service container images compiled and pushed from current branch state.")
 
 
 def step_app(config: Config) -> None:
@@ -470,21 +470,6 @@ def step_app(config: Config) -> None:
             f"Deployment directory '{ctk_dir}' not found. Ensure the environment"
             " has been deployed first."
         )
-
-    # Cluster Toolkit (gcluster) snapshots Helm charts into internal .ghpc/staged/helm_*
-    # directories during blueprint staging. Subsequent `gcluster deploy` runs apply manifests
-    # from these staged directories rather than reading `deploy/helm` live. We sync the latest
-    # `deploy/helm` templates into all staged folders so that any modified or new Kubernetes
-    # manifests (e.g. HTTPRoutes, new service deployments) are properly applied during upgrade.
-    staged_roots = [
-        Path(f"ctk-out/{config.deployment_name}/.ghpc/staged"),
-        Path(f"{config.deployment_name}/.ghpc/staged"),
-    ]
-    for staged_root in staged_roots:
-        if staged_root.exists() and staged_root.is_dir():
-            for p in staged_root.glob("helm_*"):
-                if p.is_dir():
-                    shutil.copytree("deploy/helm", p, dirs_exist_ok=True)
 
     log_info("Running gcluster deploy for group 'xmc_app'...")
     run_cmd(
@@ -536,7 +521,6 @@ def step_restart(config: Config) -> None:
         "reconciler",
         "ui",
         "xid-service",
-        "health-service",
     ]
 
     for service in services:
