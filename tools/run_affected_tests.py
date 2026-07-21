@@ -35,12 +35,16 @@ def get_modified_files(provided_files=None):
             if line:
                 parts = line.split(maxsplit=1)
                 if len(parts) == 2:
-                    files.append(parts[1])
+                    path = parts[1]
+                    if " -> " in path:
+                        path = path.split(" -> ", 1)[1]
+                    path = path.strip('"')
+                    files.append(path)
         return files
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
         raise HandledError(
             f"Failed to get git status: {e}",
-            "Ensure you are running inside a git repository.",
+            "Ensure git is installed and you are running inside a git repository.",
         )
 
 
@@ -87,6 +91,11 @@ def run_affected_tests(args):
         except subprocess.CalledProcessError:
             # Fall back to testing all targets in package
             targets_to_test.append(f"{pkg}:all")
+        except FileNotFoundError:
+            raise HandledError(
+                "Bazel executable not found in PATH.",
+                "Ensure Bazel is installed and available in environment PATH.",
+            )
 
     if not targets_to_test:
         return {

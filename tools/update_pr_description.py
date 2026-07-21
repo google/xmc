@@ -56,10 +56,10 @@ def update_pr_description(args):
 
     body_content = ""
     if args.body_file:
-        if not os.path.exists(args.body_file):
+        if not os.path.isfile(args.body_file):
             raise HandledError(
-                f"Body file not found: '{args.body_file}'",
-                "Ensure the specified body markdown file exists.",
+                f"Body file not found or is not a regular file: '{args.body_file}'",
+                "Ensure the specified body markdown file exists and is a regular file.",
             )
         with open(args.body_file, "r", encoding="utf-8") as f:
             body_content = f.read()
