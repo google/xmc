@@ -15,11 +15,20 @@
 """Base HTTP client for XMC Metrics API using Python standard library."""
 
 import json
+import os
 import socket
 import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, Optional, Union
+
+_TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "t", "y"})
+
+
+def _is_metrics_disabled_env() -> bool:
+    """Checks whether XMC_METRICS_DISABLED env var is set to a truthy value."""
+    val = os.getenv("XMC_METRICS_DISABLED", "").strip().lower()
+    return val in _TRUTHY_ENV_VALUES
 
 
 class XMCError(Exception):
@@ -56,6 +65,7 @@ class Client:
         base_url: Endpoint base URL (e.g. 'https://xmc.googleapis.com').
         api_key: Optional API key or bearer token.
         timeout: Default request timeout in seconds.
+        disabled: Whether metrics operations are disabled/short-circuited.
     """
 
     def __init__(
@@ -64,6 +74,7 @@ class Client:
         api_key: Optional[str] = None,
         timeout: float = 30.0,
         default_headers: Optional[Dict[str, str]] = None,
+        disabled: Optional[bool] = None,
     ) -> None:
         if not base_url:
             raise ValueError("base_url must be specified and non-empty.")
@@ -71,6 +82,11 @@ class Client:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
+        if disabled is not None:
+            self._disabled = bool(disabled)
+        else:
+            self._disabled = _is_metrics_disabled_env()
+
         self._headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
@@ -80,6 +96,11 @@ class Client:
             self._headers.update(default_headers)
         if api_key:
             self._headers["Authorization"] = f"Bearer {api_key}"
+
+    @property
+    def disabled(self) -> bool:
+        """Returns whether metrics operations are short-circuited/disabled."""
+        return self._disabled
 
     def request(
         self,
@@ -106,6 +127,9 @@ class Client:
             XMCNetworkError: If a connection error or timeout occurs.
             XMCError: If response body cannot be parsed as valid JSON.
         """
+        if self.disabled:
+            return {}
+
         url = f"{self.base_url}/{path.lstrip('/')}"
         if params:
             query_string = urllib.parse.urlencode(params, doseq=True)
