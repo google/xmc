@@ -90,3 +90,19 @@ Structure findings into a clean report:
 | **Rule** | `.agents/rules/...` | Reviewer caught missing style | Add rule to `.agents/rules/...` | Prevents PR feedback |
 
 End by presenting the report in markdown with clickable file links and awaiting user feedback before taking any action.
+
+---
+
+## 5. Draft PR Creation & Workspace Safety
+
+If the user requests creating a separate Draft PR for approved rule or skill enhancements:
+
+1. **Isolated Subagent Workspace (Preferred)**:
+   - If subagent execution with workspace isolation is supported (`Workspace: "branch"` or `"share"`), launch a worker subagent to handle PR creation.
+   - The subagent operates in a separate directory, creates a dedicated branch (e.g. `docs/rules-update-...`), commits `.agents/` enhancements, pushes to remote, and opens a Draft PR (`gh pr create --draft`).
+   - The primary agent's active worktree remains 100% untouched and safe from branch switching conflicts.
+
+2. **Single-Workspace Fallback (Safeguard)**:
+   - If subagent workspace isolation is unavailable in the execution environment, **do NOT perform local Git branch manipulations, stashing, or multi-PR switches** in the active worktree.
+   - Present the proposed changes directly in the chat or artifact summary for user review to prevent workspace corruption.
+
