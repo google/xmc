@@ -53,9 +53,9 @@ function processUser(user: User | null) {
 - **Centralize Shared Utilities & Helpers**: Never copy-paste or redefine identical helper functions, mock mutators, or test utilities locally across multiple packages. Centralize reusable utilities in global/shared packages (e.g., `internal/compat/*` or shared test libraries) to maintain DRY across the repository.
 - **Baseline Test Fixtures & Targeted Mutations**: In unit tests with repetitive data payloads, avoid copy-pasting monolithic structures. Define a canonical baseline fixture and use mutation helpers (such as `proto.Modify` for Protobuf messages or shallow copies/local helpers for standard structs) to express each test case as a concise delta from the base.
 
-
 ## 5. Strict Testing Coverage & PR Granularity
 - **Strict Coverage Requirements**: All feature additions, bug fixes, and code modifications must include comprehensive unit and integration test coverage. Never reduce assertions or mask test failures.
+- **Open-Source Code TODO Standard**: Inline code `TODO` comments in public/OSS source files (under `sdks/` or open packages) MUST NOT include internal Buganizer IDs (e.g. `TODO(b/12345)`). Use generic `TODO:` tags or public GitHub issue numbers (`TODO(#123)`).
 - **Small, Focused PRs**: Keep Pull Requests small, localized, and logically split. Each PR should address a single cohesive task or change step to enable fast, high-quality reviews.
 - **System Contract & API Changes**:
   - **Mandatory User Confirmation**: Seek explicit user confirmation before introducing breaking changes to public APIs, protobuf schemas, CLI flags, or core system contracts.

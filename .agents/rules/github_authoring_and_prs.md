@@ -19,15 +19,21 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
   - NEVER rely on raw worktree directory names or task IDs without verifying `<prefix>/<kebab-case-description>` format.
   - NEVER use underscores (`_`) in branch names; always use hyphens (`-`) for word separators.
 
-## 2. Git Commits & Conventional Commit Messages
+## 2. Git Commits & Mandatory Pre-Commit Formatting Protocol
 - **Conventional Commit Format**: Format commit subject lines using Conventional Commits syntax:
   `<type>(<scope>): <summary>` (e.g., `feat(auth): add OAuth2 token refresh support` or `fix(reconciler): resolve deadlock on pod restart`).
   - Allowed types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`.
   - Write subject lines in the imperative mood, using lowercase, and without trailing periods.
+- **Mandatory Pre-Commit Formatting Protocol**: Before running `git commit`, ALWAYS execute:
+  ```bash
+  ./.githooks/pre-commit && git add -u
+  ```
+  This leverages the repository's single source of truth (`.githooks/pre-commit`) to format modified files on disk and stage fixes, guaranteeing `git commit` passes on the first attempt without pre-commit hook aborts.
 - **Detailed Commit Body**: Provide context in the commit body describing *why* the changes were made, architectural choices, and technical rationale—not merely a list of modified files.
-- **Traceability & References**:
+- **Traceability & Open-Source TODO Standards**:
   - When addressing review comments, include the comment link in the commit body: `Comment link: <github_comment_url>`.
   - When referencing bugs, include the bug ID in plain text (e.g., `Fixes bug <bug_id>`, `Closing bug <bug_id>`, or `Bug: <bug_id>`).
+  - **Open-Source TODO Standard**: Follow the [Open-Source TODO Standard](core_engineering.md#5-strict-testing-coverage--pr-granularity) (prohibiting internal Buganizer IDs in public code `TODO`s).
 - **Mandatory Description Tags**: All CL/PR descriptions MUST end with mandatory system tags placed at the very bottom after all human-readable text:
   ```markdown
   TAG=agy
@@ -38,9 +44,12 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
 ## 3. Pull Request Creation & Field Formatting
 - **Pre-Commit Verification**: Before committing or opening a PR, ensure all repository linter hooks pass (Bazel buildifier, Go formatter, addlicense, Ruff Python linter) and unit tests pass cleanly.
 - **Conventional PR Titles**: Match the PR title to Conventional Commits syntax (`<type>(<scope>): <summary>`).
-- **PR Description Field (PR Body) vs. PR Comments**:
-  - **Mandatory PR Body Population**: ALWAYS populate the official PR Body/Description field upon creation with full context, summary, architectural intent, test verification results, and issue references.
-  - **Reserved Purpose of PR Body vs. Comments**: The PR body holds the primary executive summary and structural contract. PR comments are reserved for discussion, review thread resolutions, and automated agent execution context.
+- **Mandatory PR Body Population**: ALWAYS populate the official PR Body/Description field upon creation with full context, summary, architectural intent, test verification results, and issue references.
+- **Mandatory PR Description Update Tool**: When updating an existing PR description, ALWAYS use `tools/update_pr_description.py`:
+  ```bash
+  ./tools/update_pr_description.py <pr_number> --body-file <path_to_markdown_file>
+  ```
+  Do NOT use `gh pr edit` or raw inline shell commands, as GraphQL classic projects deprecation breaks `gh pr edit`.
 - **Prohibition of Raw Log Dumps vs. Allowed Agent Artifacts**:
   - **Forbidden Raw Noise**: NEVER copy-paste un-formatted `git log` output, raw commit history, or indiscriminate wall-of-text commit listings into the PR description or PR comments.
   - **Allowed Implementation Plans & Audit Artifacts**: Posting structured **Implementation Plans**, original prompt metadata, or review iteration discussions in PR comments (or collapsible `<details>` blocks) is explicitly allowed for autocoder (`koder`) tasks to enable post-mortem debugging and prompt evaluation.
@@ -57,7 +66,7 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
   - <Targeted package, binary, or deployment modifications>
 
   ## Verification & Testing
-  - **Commands Executed**: `<bazel test / go test / python3 -m unittest command>`
+  - **Commands Executed**: `<bazel test / go test / ./tools/run_affected_tests.py>`
   - **Coverage & Test Status**: <Summary of unit/integration test results and pass state.>
 
   ## Related Issues / Bugs
@@ -70,10 +79,12 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
 
 ## 4. Post-PR Creation Workflow & Addressing Review Feedback
 - **Wait Buffer After PR Creation**: When instructed to create or update a non-draft Pull Request, after creating the PR, wait approximately **2 minutes** to allow GitHub CI status checks and automated GitHub PR review passes to complete.
-- **Proactive Comment Fetching**: After the 2-minute wait buffer, proactively fetch all incoming inline review comments, requested changes, and thread feedback using repository tools (e.g., `tools/fetch_pr_comment.py` or GitHub CLI `gh api`).
+- **Mandatory PR Comment Fetching & Replying Tools**:
+  - To fetch incoming inline review comments, ALWAYS execute `./tools/fetch_pr_comment.py "<comment_url>"`.
+  - To post replies to review comments, ALWAYS execute `./tools/reply_pr_comment.py "<comment_url>" "<reply_message>"`.
+  - Do NOT construct raw `gh api` inline shell commands for comment threads.
 - **Validate Comments & Check Contract Changes**:
   - Evaluate incoming review comments for technical validity and applicability before proceeding.
   - If addressing a comment alters a PR contract, public API specification, or product behavior, **alert the user and seek explicit confirmation first** before modifying code.
-- **Addressing PR Comments Workflow**: Follow the mandatory rules defined in [PR Review Guidelines](pr_review_guidelines.md) (programmatic comment enumeration, consolidated review checklist artifact, and 1-to-1 thread resolution verification) and the detailed comment resolution workflow in the [XMC Address PR Comment](../skills/address_pr_comment/SKILL.md) skill.
-
+- **Addressing PR Comments Workflow**: Follow the mandatory rules defined in [PR Review Guidelines](pr_review_guidelines.md) (programmatic comment enumeration, consolidated review checklist artifact, and 1-to-1 thread resolution verification) and the detailed comment resolution workflow in the [Address PR Comment](../skills/address_pr_comment/SKILL.md) skill (formulating fix plans, running local unit tests via `./tools/run_affected_tests.py`, measuring coverage, and proposing fix diffs for user confirmation before pushing).
 - **PR Comment Replies**: Keep GitHub comment thread replies concise, objective, and focused on resolution (e.g., `"code changed"` or summarizing test verification), avoiding noisy or redundant chatter in PR review threads.
