@@ -23,3 +23,4 @@ This document provides standards for skill architecture, workflow automation, an
 - **Preventing Main Context Exhaustion**: Delegate context-heavy tasks—such as deep codebase exploration, parsing large test logs, multi-file searches, or running extensive build iterations—to worker subagents.
 - **Tightly Scoped Subagent Prompts**: Provide worker subagents with specific file scopes, clear execution bounds, and explicit expected output requirements.
 - **Structured Synthesis Reporting**: Subagents must analyze intermediate outputs and communicate clean, structured summaries and actionable conclusions back to the parent agent via structured messaging.
+

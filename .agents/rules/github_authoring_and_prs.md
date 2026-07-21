@@ -74,5 +74,6 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
 - **Validate Comments & Check Contract Changes**:
   - Evaluate incoming review comments for technical validity and applicability before proceeding.
   - If addressing a comment alters a PR contract, public API specification, or product behavior, **alert the user and seek explicit confirmation first** before modifying code.
-- **Addressing PR Comments Workflow**: Follow the mandatory rules defined in [PR Review Guidelines](pr_review_guidelines.md) (programmatic comment enumeration, consolidated review checklist artifact, and 1-to-1 thread resolution verification) and the detailed comment resolution workflow in the [Address PR Comment](../skills/address_pr_comment/SKILL.md) skill.
+- **Addressing PR Comments Workflow**: Follow the mandatory rules defined in [PR Review Guidelines](pr_review_guidelines.md) (programmatic comment enumeration, consolidated review checklist artifact, and 1-to-1 thread resolution verification) and the detailed comment resolution workflow in the [XMC Address PR Comment](../skills/address_pr_comment/SKILL.md) skill.
+
 - **PR Comment Replies**: Keep GitHub comment thread replies concise, objective, and focused on resolution (e.g., `"code changed"` or summarizing test verification), avoiding noisy or redundant chatter in PR review threads.
