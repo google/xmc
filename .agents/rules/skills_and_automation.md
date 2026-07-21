@@ -9,7 +9,8 @@ This document provides standards for skill architecture, workflow automation, an
 - **Predictable & Testable Execution**: Extract complex logic into dedicated Python scripts located in `tools/` or skill-specific script directories.
 - **Automated Verification**: Accompany every extracted script with unit tests (e.g., `tool_name_test.py` utilizing `unittest`) to verify correctness, parameter validation, and exception handling without relying on manual trial-and-error.
 
-## 2. DRY & KISS in Skill Design
+## 2. DRY & KISS in Skill & Rule Design
+- **Single Source of Truth for Rules & Skills (No Duplication)**: Every engineering policy, coding standard, tool requirement, or workflow rule MUST exist in exactly ONE canonical document under `.agents/rules/` or `.agents/skills/`. NEVER duplicate identical text, bullet points, or guidelines across multiple rule files or skills. When referencing an existing rule, link to the canonical document instead of copy-pasting text.
 - **Shared Utilities**: When multiple skills or automation playbooks share common setup, verification, or deployment steps, extract the common execution into shared Python modules or reusable scripts.
 - **Focused Skill Scope**: Each skill must fulfill a single clear capability. Avoid building monolithic, overly broad "everything-in-one" skill markdown definitions.
 - **Modular Decomposition**: Decompose expansive operational playbooks into discrete sub-skills or composable scripts.
