@@ -71,46 +71,43 @@ export class ArtifactsList implements OnInit {
     this.initializeArtifactStreams();
   }
 
+  private createPhaseStream(
+    filtered$: Observable<readonly Artifact[]>,
+    phase: 'INPUT' | 'EXECUTION' | 'OUTPUT',
+  ): Observable<readonly ArtifactListItem[]> {
+    return filtered$.pipe(
+      map((artifacts) => {
+        const typed = artifacts
+          .filter((a) =>
+            phase === 'OUTPUT'
+              ? a.lifecyclePhase === 'OUTPUT' || !a.lifecyclePhase
+              : a.lifecyclePhase === phase,
+          )
+          .map(toTypedArtifact);
+        return groupAndSortArtifacts(typed, phase, this.groupingThreshold());
+      }),
+    );
+  }
+
   private initializeArtifactStreams() {
     this.artifactsResponse$ = this.artifactService
-      .listArtifacts({
-        parent: this.parentName(),
-      })
+      .listArtifacts({ parent: this.parentName() })
       .pipe(shareReplay({ bufferSize: 1, refCount: true }));
     this.artifacts$ = this.artifactsResponse$.pipe(map((response) => response.artifacts ?? []));
     this.nextPageToken$ = this.artifactsResponse$.pipe(map((response) => response.nextPageToken));
 
-    const filteredArtifacts$: Observable<readonly Artifact[]> = combineLatest([
+    const filtered$: Observable<readonly Artifact[]> = combineLatest([
       this.artifacts$,
       this.artifactFilter,
     ]).pipe(map(([artifacts, filter]) => this.filterArtifacts(artifacts, filter)));
 
-    this.showTruncationMessage$ = combineLatest([this.nextPageToken$, filteredArtifacts$]).pipe(
+    this.showTruncationMessage$ = combineLatest([this.nextPageToken$, filtered$]).pipe(
       map(([token, artifacts]) => !!token && artifacts.length > 0),
     );
 
-    this.inputArtifacts$ = filteredArtifacts$.pipe(
-      map((artifacts) => {
-        const typed = artifacts.filter((a) => a.lifecyclePhase === 'INPUT').map(toTypedArtifact);
-        return groupAndSortArtifacts(typed, 'INPUT', this.groupingThreshold());
-      }),
-    );
-    this.executionArtifacts$ = filteredArtifacts$.pipe(
-      map((artifacts) => {
-        const typed = artifacts
-          .filter((a) => a.lifecyclePhase === 'EXECUTION')
-          .map(toTypedArtifact);
-        return groupAndSortArtifacts(typed, 'EXECUTION', this.groupingThreshold());
-      }),
-    );
-    this.outputArtifacts$ = filteredArtifacts$.pipe(
-      map((artifacts) => {
-        const typed = artifacts
-          .filter((a) => a.lifecyclePhase === 'OUTPUT' || !a.lifecyclePhase)
-          .map(toTypedArtifact);
-        return groupAndSortArtifacts(typed, 'OUTPUT', this.groupingThreshold());
-      }),
-    );
+    this.inputArtifacts$ = this.createPhaseStream(filtered$, 'INPUT');
+    this.executionArtifacts$ = this.createPhaseStream(filtered$, 'EXECUTION');
+    this.outputArtifacts$ = this.createPhaseStream(filtered$, 'OUTPUT');
   }
 
   private filterArtifacts(

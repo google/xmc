@@ -13,7 +13,15 @@
 // limitations under the License.
 import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 
-import { ArtifactListItem, PayloadType, TypedArtifact } from './interfaces';
+import {
+  ArtifactListItem,
+  CodeSourceTypedArtifact,
+  ManagedXprofTypedArtifact,
+  PayloadType,
+  TextTypedArtifact,
+  TypedArtifact,
+  UrlTypedArtifact,
+} from './interfaces';
 
 export interface ArtifactDisplayProperties {
   typeName: string;
@@ -22,27 +30,66 @@ export interface ArtifactDisplayProperties {
   displayName: string;
 }
 
+function resolveTypedArtifact(artifact: Artifact): TypedArtifact | null {
+  const p = artifact.payload;
+  if (!p) return null;
+  if (p.managedXprof) {
+    return { type: PayloadType.MANAGED_XPROF, artifact, payload: p.managedXprof };
+  }
+  if (p.codeSource) {
+    return { type: PayloadType.CODE_SOURCE, artifact, payload: p.codeSource };
+  }
+  if (p.text) {
+    return { type: PayloadType.TEXT, artifact, payload: p.text };
+  }
+  if (p.url) {
+    return { type: PayloadType.URL, artifact, payload: p.url };
+  }
+  if (p.chart) {
+    return { type: PayloadType.CHART, artifact, payload: p.chart };
+  }
+  return null;
+}
+
 /** Converts a raw Artifact to a TypedArtifact directly */
 export function toTypedArtifact(artifact: Artifact): TypedArtifact {
-  const payload = artifact.payload;
-  if (payload) {
-    if ('managedXprof' in payload && payload.managedXprof) {
-      return { type: PayloadType.MANAGED_XPROF, artifact, payload: payload.managedXprof };
-    }
-    if ('codeSource' in payload && payload.codeSource) {
-      return { type: PayloadType.CODE_SOURCE, artifact, payload: payload.codeSource };
-    }
-    if ('text' in payload && payload.text) {
-      return { type: PayloadType.TEXT, artifact, payload: payload.text };
-    }
-    if ('url' in payload && payload.url) {
-      return { type: PayloadType.URL, artifact, payload: payload.url };
-    }
-    if ('chart' in payload && payload.chart) {
-      return { type: PayloadType.CHART, artifact, payload: payload.chart };
-    }
-  }
-  return { type: PayloadType.UNKNOWN, artifact };
+  return resolveTypedArtifact(artifact) ?? { type: PayloadType.UNKNOWN, artifact };
+}
+
+function getManagedXprofProps(typedArtifact: ManagedXprofTypedArtifact): ArtifactDisplayProperties {
+  return {
+    typeName: 'Managed Xprof',
+    icon: 'query_stats',
+    url: typedArtifact.payload.xprof?.xprofUrl ?? '',
+    displayName: typedArtifact.payload.displayName || '',
+  };
+}
+
+function getCodeSourceProps(typedArtifact: CodeSourceTypedArtifact): ArtifactDisplayProperties {
+  return {
+    typeName: 'Code Source',
+    icon: 'code',
+    url: typedArtifact.payload.codeUrl ?? '',
+    displayName: typedArtifact.payload.title || '',
+  };
+}
+
+function getTextProps(typedArtifact: TextTypedArtifact): ArtifactDisplayProperties {
+  return {
+    typeName: 'Text',
+    icon: 'description',
+    url: '',
+    displayName: typedArtifact.payload.title || '',
+  };
+}
+
+function getUrlProps(typedArtifact: UrlTypedArtifact): ArtifactDisplayProperties {
+  return {
+    typeName: 'URL',
+    icon: typedArtifact.payload.icon || 'link',
+    url: typedArtifact.payload.url ?? '',
+    displayName: typedArtifact.payload.displayName || typedArtifact.payload.url || '',
+  };
 }
 
 /**
@@ -54,33 +101,13 @@ export function getArtifactDisplayProperties(
 ): ArtifactDisplayProperties {
   switch (typedArtifact.type) {
     case PayloadType.MANAGED_XPROF:
-      return {
-        typeName: 'Managed Xprof',
-        icon: 'query_stats',
-        url: typedArtifact.payload.xprof?.xprofUrl ?? '',
-        displayName: typedArtifact.payload.displayName || '',
-      };
+      return getManagedXprofProps(typedArtifact);
     case PayloadType.CODE_SOURCE:
-      return {
-        typeName: 'Code Source',
-        icon: 'code',
-        url: typedArtifact.payload.codeUrl ?? '',
-        displayName: typedArtifact.payload.title || '',
-      };
+      return getCodeSourceProps(typedArtifact);
     case PayloadType.TEXT:
-      return {
-        typeName: 'Text',
-        icon: 'description',
-        url: '',
-        displayName: typedArtifact.payload.title || '',
-      };
+      return getTextProps(typedArtifact);
     case PayloadType.URL:
-      return {
-        typeName: 'URL',
-        icon: typedArtifact.payload.icon || 'link',
-        url: typedArtifact.payload.url ?? '',
-        displayName: typedArtifact.payload.displayName || typedArtifact.payload.url || '',
-      };
+      return getUrlProps(typedArtifact);
     case PayloadType.CHART:
       return {
         typeName: 'Chart',
@@ -149,7 +176,7 @@ function buildArtifactListItems(
           type: 'group',
           payloadType: type,
           artifacts: group,
-          groupId: `${phase}-${type}`,
+          groupId: phase + '-' + type,
           icon: getArtifactDisplayProperties(group[0]).icon,
         });
         groupedTypesProcessed.add(type);
