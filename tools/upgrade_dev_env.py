@@ -28,8 +28,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from tool_utils import ensure_venv
-
 STEPS = ["check", "migrate", "images", "app", "restart", "verify"]
 DEFAULT_CONFIG = "deploy/ctk_v2/xmanager-cloud-deployment.yaml"
 
@@ -452,14 +450,13 @@ def step_images(config: Config) -> None:
         ("reconciler", "//cmd/reconciler:reconciler_image_push"),
         ("ui", "//cmd/ui:ui_image_push"),
         ("xid_service", "//cmd/xid_service:xid_service_image_push"),
-        ("health_service", "//cmd/health_service:health_service_image_push"),
     ]
 
     for name, target in targets:
         log_info(f"Pushing {name} image...")
         run_cmd(["bazel", "run", target], env=env)
 
-    log_success("All 7 XMC service container images compiled and pushed from current branch state.")
+    log_success("All 6 XMC service container images compiled and pushed from current branch state.")
 
 
 def step_app(config: Config) -> None:
@@ -563,7 +560,7 @@ def step_verify(config: Config) -> None:
 
     py_script = Path("./deploy/ctk_v2/verify_xmc.py")
     if py_script.is_file():
-        cmd = [sys.executable, str(py_script)]
+        cmd = ["python3", str(py_script)]
     else:
         cmd = ["bash", "./deploy/ctk_v2/verify_xmc.sh"]
 
@@ -633,7 +630,6 @@ def run_pipeline(args: argparse.Namespace, config: Config, steps: list[str]) -> 
 
 def main(args_list: Optional[list[str]] = None) -> None:
     """Main entrypoint for the upgrade script."""
-    ensure_venv()
     os.chdir(Path(__file__).resolve().parent.parent)
     args = parse_args(args_list)
     config = load_config(args.config, run_migrations=args.run_migrations)
