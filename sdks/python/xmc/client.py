@@ -15,6 +15,7 @@
 """Base HTTP client for XMC Metrics API using Python standard library."""
 
 import json
+import logging
 import os
 import socket
 import urllib.error
@@ -23,6 +24,8 @@ import urllib.request
 from typing import Any, Dict, Mapping, Optional, Union
 
 from xmc.dist_harvest import get_replica_id_and_silence_status
+
+logger = logging.getLogger(__name__)
 
 _TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "t", "y"})
 
@@ -205,6 +208,7 @@ class Client:
     ) -> Union[Dict[str, Any], list]:
         """Convenience method for HTTP POST requests."""
         if self.is_silenced:
+            logger.debug("POST request to %s silenced for replica %s", path, self.replica_id)
             return {}
         return self.request("POST", path, data=data, headers=headers)
 

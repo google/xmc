@@ -74,6 +74,14 @@ def _check_stage3_orchestrator_index(env: Mapping[str, str]) -> Optional[str]:
     return None
 
 
+def _is_rank_zero(rank: str) -> bool:
+    """Returns True if rank represents rank zero (e.g. '0', '00')."""
+    try:
+        return int(rank) == 0
+    except ValueError:
+        return rank == "0"
+
+
 def get_replica_id_and_silence_status(
     env: Optional[Mapping[str, str]] = None,
     log_all_replicas: bool = False,
@@ -101,7 +109,7 @@ def get_replica_id_and_silence_status(
     # Stage 1: Strict Framework Ranks
     rank = _check_stage1_strict_rank(env)
     if rank is not None:
-        should_silence = False if log_all_replicas else (rank != "0")
+        should_silence = False if log_all_replicas else not _is_rank_zero(rank)
         return rank, should_silence
 
     # Stage 2: Generic Distributed Indicators (Fail-Closed Safety Net)
@@ -116,7 +124,7 @@ def get_replica_id_and_silence_status(
     # Stage 3: Single-Node / Orchestrator Fallback
     orch_index = _check_stage3_orchestrator_index(env)
     if orch_index is not None:
-        should_silence = False if log_all_replicas else (orch_index != "0")
+        should_silence = False if log_all_replicas else not _is_rank_zero(orch_index)
         return orch_index, should_silence
 
     return "0", False

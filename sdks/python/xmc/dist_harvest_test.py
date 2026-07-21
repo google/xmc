@@ -38,6 +38,12 @@ class TestDistHarvest(unittest.TestCase):
         self.assertEqual(replica_id, "0")
         self.assertFalse(should_silence)
 
+    def test_stage1_pytorch_rank_zero_leading_zeros(self) -> None:
+        env = {"RANK": "00", "WORLD_SIZE": "4"}
+        replica_id, should_silence = get_replica_id_and_silence_status(env)
+        self.assertEqual(replica_id, "00")
+        self.assertFalse(should_silence)
+
     def test_stage1_pytorch_rank_nonzero(self) -> None:
         env = {"RANK": "1", "WORLD_SIZE": "4"}
         replica_id, should_silence = get_replica_id_and_silence_status(env)
