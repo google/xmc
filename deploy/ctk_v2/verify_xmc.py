@@ -21,6 +21,13 @@ import re
 import subprocess
 import sys
 
+# Ensure repo root is in sys.path to allow importing tools
+_repo_root = pathlib.Path(__file__).resolve().parent.parent.parent
+if str(_repo_root) not in sys.path:
+    sys.path.append(str(_repo_root))
+
+from tools.tool_utils import ensure_venv  # noqa: E402
+
 
 def _extract_yaml_val(content: str, key: str) -> str | None:
     """Extracts scalar string value for key from YAML content using regex.
@@ -203,7 +210,12 @@ def _check_log_monitor(
 
 
 def main() -> int:
-    """Main entry point for XMC v2 verification script."""
+    """Executes full diagnostic verification suite against target XMC environment.
+
+    Returns:
+        Exit code 0 on success, 1 on any check warning/failure.
+    """
+    ensure_venv()
     print("=========================================")
     print("XManager on Cloud (XMC) v2 Verification")
     print("=========================================")

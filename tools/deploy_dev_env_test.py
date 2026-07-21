@@ -859,11 +859,11 @@ key5: "value5" # trailing comment with quotes
         auth_res = MagicMock()
         bazel_res = MagicMock()
 
-        mock_run.side_effect = [auth_res] + [bazel_res] * 6
+        mock_run.side_effect = [auth_res] + [bazel_res] * 7
 
         deploy_dev_env.step_images(self.valid_config_dict, self.dns_project, self.dns_zone)
 
-        self.assertEqual(mock_run.call_count, 7)
+        self.assertEqual(mock_run.call_count, 8)
         mock_run.assert_any_call(
             [
                 "gcloud",
@@ -904,7 +904,7 @@ key5: "value5" # trailing comment with quotes
             ]
         )
         mock_run.assert_any_call(
-            ["python3", "./deploy/ctk_v2/verify_xmc.py"], env=ANY, log_on_error=False
+            [sys.executable, "./deploy/ctk_v2/verify_xmc.py"], env=ANY, log_on_error=False
         )
         mock_run.assert_any_call(
             [

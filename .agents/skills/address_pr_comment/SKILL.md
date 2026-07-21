@@ -5,21 +5,25 @@ description: Automates addressing PR comments (fetching context, running tests, 
 
 # PR Comment-Driven Development Workflow
 
-This document proposes a structured agent workflow that automates the process of addressing GitHub Pull Request comments. 
+This document defines a structured agent workflow that automates the process of addressing GitHub Pull Request comments while enforcing comment integrity, programmatic enumeration, and 1-to-1 thread resolution verification.
 
 ```mermaid
 graph TD
-    A["User provides PR comment link"] --> B["Agent runs fetch_pr_comment.py"]
-    B --> C["Agent extracts: body, file path, line"]
-    C --> D["Agent performs Bazel Query to find affected binaries"]
-    D --> E["Agent prepares Implementation Plan"]
-    E --> F["Agent runs Unit Tests & Coverage"]
-    F --> G["Agent builds affected targets locally"]
-    G --> H["Agent commits changes & replies 'code changed'"]
-    H --> I["Agent builds & pushes OCI Images"]
-    I --> J["Agent performs Kubectl Rollout Restart"]
-    J --> K["Agent reports status & updates PR comment"]
+    A["User provides PR comment link or PR number"] --> B["Programmatic Comment Enumeration (gh api + Python/jq)"]
+    B --> C["Extract 100% of threads: IDs, paths, lines"]
+    C --> D["Create Consolidated Review Checklist Artifact"]
+    D --> E["Dependency Mapping (Bazel Query)"]
+    E --> F["Prepare Implementation Plan & Diff"]
+    F --> G["Run Unit Tests & Coverage"]
+    G --> H["Build Binaries & Commit Changes"]
+    H --> I["Build & Push OCI Images"]
+    I --> J["Kubectl Rollout Restart"]
+    J --> K["1-to-1 Thread Resolution Verification"]
+    K --> L["Report Status & Complete Task"]
 ```
+
+> [!IMPORTANT]
+> All execution steps in this skill MUST strictly adhere to the mandatory [PR Review & Inspection Guidelines](../../rules/pr_review_guidelines.md) (enforcing mandatory programmatic comment enumeration, pre-edit consolidated review checklist artifacts, and 1-to-1 thread resolution verification).
 
 ---
 
@@ -33,11 +37,15 @@ When invoking helper tools under `tools/` (e.g. `fetch_pr_comment.py`, `reply_pr
    - **Exit code 1 (Handled Error)**: Read `"message"` and `"instruction"` from the JSON output. Follow the `"instruction"` step-by-step to fix the input, credentials, or environment.
    - **Exit code 2 (Unhandled Error)**: The tool encountered an unexpected bug. Inspect the `"message"` and `"traceback"` fields to analyze the cause.
 
+4. **Shell & Payload Safety**: When running helper scripts or handling payloads containing Markdown/code formatting, execute standalone `.py` script files or pass arguments via script parameters. Avoid double-quoted inline commands (`python3 -c "..."`).
+
+
+
 ---
 
 ## 1. Input & Comment Details Fetching
 
-The agent accepts a comment link. The helper script `tools/fetch_pr_comment.py` makes a call to the GitHub API (using the `GITHUB_TOKEN` environment variable if repository access requires authentication) to retrieve the raw comment context.
+The agent accepts a comment link or PR number. The helper script `tools/fetch_pr_comment.py` or GitHub API queries retrieve the raw comment context.
 
 ### Execution Command
 ```bash
@@ -60,7 +68,27 @@ The agent accepts a comment link. The helper script `tools/fetch_pr_comment.py` 
 
 ---
 
-## 2. Dependency Mapping & Impact Analysis
+## 2. Consolidated Review Checklist Preparation
+
+Before making any code modifications, create a Markdown checklist artifact in the brain directory containing every comment thread identified during enumeration.
+
+### Checklist Schema
+```markdown
+# PR Review Comment Checklist
+- **PR Number**: #{number}
+- **Total Open Threads**: {parsed_array_length}
+
+## Review Items
+- [ ] **Comment ID `{id}`** | `{file_path}:{line}`
+  - **Requested Change**: {body}
+  - **Status**: Pending
+```
+
+Explicitly verify that the number of checklist items equals the total parsed JSON array length.
+
+---
+
+## 3. Dependency Mapping & Impact Analysis
 
 To make the workflow precise, the agent must figure out which Bazel binaries and Kubernetes deployments are impacted by the changed file.
 
@@ -93,9 +121,9 @@ Each `go_binary` mapped above is associated with an OCI image builder and GKE de
 
 ---
 
-## 3. Implementation Plan Preparation
+## 4. Implementation Plan Preparation
 
-Based on the parsed review comment and impacted targets, the agent creates a draft implementation plan for your review. It will format the plan as a Markdown artifact in the brain folder:
+Based on the parsed review comments and impacted targets, the agent creates a draft implementation plan for user review. It will format the plan as a Markdown artifact in the brain folder:
 
 - **Analysis**: Visual code excerpt and summary of the reviewer's concern.
 - **Proposed Code Changes**: Target file path, exact lines to modify, and a git diff style code snippet.
@@ -104,7 +132,7 @@ Based on the parsed review comment and impacted targets, the agent creates a dra
 
 ---
 
-## 4. Test Verification & Code Coverage Check
+## 5. Test Verification & Code Coverage Check
 
 To verify code correctness, the agent runs all relevant unit tests and measures code coverage.
 
@@ -124,7 +152,7 @@ The agent will parse this file (or generate a summary) to report the package tes
 
 ---
 
-## 5. Local Commit & GitHub Notification (On Success)
+## 6. Local Commit & GitHub Notification (On Success)
 
 Once local unit tests pass and building the affected binary targets succeeds, the agent commits the code to the current branch and replies to the reviewer's comment on GitHub.
 
@@ -138,7 +166,7 @@ bazel build //cmd/xid_service:xid_service
 The agent stages all changes and commits them with a message that includes a description of the changes and the URL of the original comment:
 ```bash
 git add .
-git commit -m "Refactor: address review comment
+git commit -m "<type>(<scope>): address review comment
 
 Comment link: <github_comment_url>"
 ```
@@ -163,7 +191,7 @@ To extract this telemetry and output it as a raw JSON dataset, run:
 
 ---
 
-## 6. Build, Push, and GKE Redeployment
+## 7. Build, Push, and GKE Redeployment
 
 Using the `.env` configuration file, the agent updates the deployment environment.
 
@@ -203,26 +231,37 @@ kubectl rollout status deployment/xid-service-deployment -n xmc
 
 ---
 
-## 7. Workflow Example
+## 8. 1-to-1 Thread Resolution Verification
+
+Before marking the PR review task as complete:
+1. Run `./tools/verify_pr_comment_resolution.py <owner> <repo> <pull_number> <path_to_checklist_file>` to programmatically verify that 100% of comment IDs from the checklist have received dedicated inline replies.
+2. Confirm that every single comment ID from the consolidated checklist artifact has received a dedicated inline response or resolution.
+3. Update the checklist artifact status for each item to `[x] Resolved`.
+
+---
+
+## 9. Workflow Example
 
 Here is a step-by-step example of how you can invoke this agent:
 
 1. **You ask**:
-   > Fix PR comment: `https://github.com/google/xmc/pull/15#discussion_r124892`
+   > Fix PR comments for: `https://github.com/google/xmc/pull/15`
 
 2. **The agent executes**:
-   - Downloads comment content: `"Move localhost IP checks to a shared helper"`
-   - Identifies code location: `pkg/auth/oauth2/handlers.go:120`
-   - Runs `bazel query` and maps changes to `//cmd/xid_service` and `//cmd/experiment_state_server`.
-   - Proposes refactored code.
+   - Runs programmatic enumeration via `gh api repos/google/xmc/pulls/15/comments` + Python parsing.
+   - Extracts 100% of open threads (e.g., 3 comments total).
+   - Creates Consolidated Review Checklist Artifact and verifies item count (3 threads).
+   - Identifies code locations and runs `bazel query` to map changes to `//cmd/xid_service` and `//cmd/experiment_state_server`.
+   - Proposes refactored code plan.
 
 3. **You approve the plan**.
 4. **The agent executes**:
    - Edits the files.
    - Runs unit tests and coverage calculations.
    - Builds the affected targets locally.
-   - Commits changes to the branch with the comment URL.
-   - Posts a reply comment "code changed" to the GitHub PR comment.
+   - Commits changes to the branch.
+   - Posts reply comments for each comment ID on GitHub.
    - Pushes updated OCI containers via `bazel run //cmd/xid_service:xid_service_image_push`.
    - Restarts GKE pods: `kubectl rollout restart deployment/xid-service-deployment -n xmc`.
-   - Replies to the conversation thread with the test outputs and confirmation of successful rollout.
+   - Programmatically verifies 1-to-1 thread resolution for all comment IDs against the checklist.
+   - Updates checklist artifact and replies with test outputs and rollout status confirmation.

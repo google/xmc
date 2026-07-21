@@ -35,11 +35,7 @@ describe('StatusMessageService', () => {
   describe('with real data', () => {
     const state = cleanState(() => {
       setupModule({
-        providers: [
-          provideHttpClient(),
-          provideHttpClientTesting(),
-          StatusMessageService,
-        ],
+        providers: [provideHttpClient(), provideHttpClientTesting(), StatusMessageService],
       });
 
       return {
@@ -58,7 +54,9 @@ describe('StatusMessageService', () => {
         nextPageToken: 'token',
       };
 
-      const responsePromise = firstValueFrom(state.service.listStatusMessages({ parent: 'experiments/1' }));
+      const responsePromise = firstValueFrom(
+        state.service.listStatusMessages({ parent: 'experiments/1' }),
+      );
 
       const req = state.httpMock.expectOne(
         `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/statusMessages`,
@@ -71,13 +69,14 @@ describe('StatusMessageService', () => {
     });
 
     it('should include filters and pagination in query params', async () => {
-      const responsePromise = firstValueFrom(state.service
-        .listStatusMessages({
+      const responsePromise = firstValueFrom(
+        state.service.listStatusMessages({
           parent: 'experiments/1',
           pageSize: 10,
           pageToken: 'prev_token',
           filter: 'severity=ERROR',
-        }));
+        }),
+      );
 
       const req = state.httpMock.expectOne((req) =>
         req.url.includes('/experiments/1/statusMessages'),

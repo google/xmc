@@ -215,6 +215,19 @@
   },
   "selectedYankedVersions": {},
   "moduleExtensions": {
+    "//:import.bzl%repo_import": {
+      "general": {
+        "bzlTransitiveDigest": "g9gJACaE246lzlieYHGiNRJxdvGs2RFTlOqviBztkw8=",
+        "usagesDigest": "kDlR5ZWx4ycbeEcOmldVRQoSLzORk8CsesseAYBptZ8=",
+        "recordedInputs": [],
+        "generatedRepoSpecs": {
+          "com_github_grpc_ecosystem_grpc_gateway_v2_custom": {
+            "repoRuleId": "@@//:import.bzl%_custom_grpc_gateway",
+            "attributes": {}
+          }
+        }
+      }
+    },
     "@@rules_kotlin+//src/main/starlark/core/repositories:bzlmod_setup.bzl%rules_kotlin_extensions": {
       "general": {
         "bzlTransitiveDigest": "+Kp6j204mBZ3mxlIDDR0gBoP45BZ4jYRhRAcB8sU0qc=",

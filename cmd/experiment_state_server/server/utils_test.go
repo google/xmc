@@ -282,6 +282,10 @@ func (m *mockAuthenticator) IsUserAuthorized(ctx context.Context, user string, a
 	return true, nil
 }
 
+func (m *mockAuthenticator) IsUserAuthorizedForChart(ctx context.Context, user string, acls *xidmsgpb.XidAcls) (bool, error) {
+	return true, nil
+}
+
 func TestNewWorkUnitExecution(t *testing.T) {
 	xid := int64(123)
 	wid := int64(456)

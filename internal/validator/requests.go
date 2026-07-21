@@ -17,6 +17,7 @@ package validator
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"task/go/status"
@@ -51,6 +52,10 @@ var (
 	jobNameRegex = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 	// serviceAccountRegex matches valid Kubernetes service account names (RFC 1123 DNS Subdomain).
 	serviceAccountRegex = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
+	// labelNameRegex matches valid Kubernetes label values and label name segments.
+	labelNameRegex = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-_.]*[a-zA-Z0-9])?$`)
+	// dnsSubdomainRegex matches valid DNS subdomains for Kubernetes label prefixes.
+	dnsSubdomainRegex = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
 )
 
 func validateRoles(roles []*xidmessagespb.XidAcls_Role) error {
@@ -284,6 +289,9 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 	if err := validateJobSetNetwork(wu.GetExecutable().GetJobset().GetNetwork()); err != nil {
 		return err
 	}
+	if err := validateJobSetSuccessPolicy(wu.GetExecutable().GetJobset().GetSuccessPolicy(), wu.GetExecutable().GetJobset().GetJobs()); err != nil {
+		return err
+	}
 	// This is a limitation of Kueue; see
 	// https://github.com/kubernetes-sigs/kueue/blob/bacde9cdbc87bef550bb559c5b81c8c7d001c58a/apis/kueue/v1beta1/workload_types.go#L42
 	if len(wu.GetExecutable().GetJobset().Jobs) < 1 {
@@ -293,6 +301,7 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 		return fmt.Errorf("work_unit.executable.jobset.jobs cannot contain more than 8 jobs: %w", status.ErrInvalidArgument)
 	}
 	jobNames := make(map[string]bool)
+	jobMap := make(map[string]*essmsgpb.KubernetesJob)
 	for _, job := range wu.GetExecutable().GetJobset().Jobs {
 		if job.GetReplicas() < 1 {
 			return fmt.Errorf("work_unit.executable.jobset.jobs.replicas must be greater than 0: %w", status.ErrInvalidArgument)
@@ -324,23 +333,31 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 			}
 		}
 		jobNames[job.Name] = true
+		jobMap[job.Name] = job
 
-		if err := validateExecutableSpec(job.Spec, "work_unit.executable.jobset.jobs.spec"); err != nil {
+		validVols, err := validateJobVolumes(job.GetVolumes(), "work_unit.executable.jobset.jobs.volumes")
+		if err != nil {
+			return err
+		}
+		if err := validateExecutableSpec(job.Spec, "work_unit.executable.jobset.jobs.spec", validVols); err != nil {
 			return err
 		}
 		for i, sidecar := range job.GetSidecars() {
 			prefix := fmt.Sprintf("work_unit.executable.jobset.jobs.sidecars[%d]", i)
-			if err := validateExecutableSpec(sidecar, prefix); err != nil {
+			if err := validateExecutableSpec(sidecar, prefix, validVols); err != nil {
 				return err
 			}
 		}
 		for i, initContainer := range job.GetInitContainers() {
 			prefix := fmt.Sprintf("work_unit.executable.jobset.jobs.init_containers[%d]", i)
-			if err := validateExecutableSpec(initContainer, prefix); err != nil {
+			if err := validateExecutableSpec(initContainer, prefix, validVols); err != nil {
 				return err
 			}
 		}
 		if err := validateContainerNamesUnique(job); err != nil {
+			return err
+		}
+		if err := validateNodeSelector(job); err != nil {
 			return err
 		}
 
@@ -352,6 +369,9 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 				return fmt.Errorf("work_unit.executable.jobset.jobs.service_account %q must be a valid DNS subdomain (RFC 1123): %w", sa, status.ErrInvalidArgument)
 			}
 		}
+	}
+	if err := validateJobSetCoordinator(wu.GetExecutable().GetJobset().GetCoordinator(), jobMap); err != nil {
+		return err
 	}
 	if queueName := wu.GetExecutable().GetSchedulingConstraints().GetQueueName(); queueName == "" {
 		return fmt.Errorf("work_unit.executable.scheduling_constraints.queue_name cannot be empty: %w", status.ErrInvalidArgument)
@@ -458,7 +478,7 @@ func validatePayload(payload *essmsgpb.ArtifactPayload) error {
 	return nil
 }
 
-func validateExecutableSpec(spec *essmsgpb.ExecutableSpec, prefix string) error {
+func validateExecutableSpec(spec *essmsgpb.ExecutableSpec, prefix string, validVolumes ...map[string]bool) error {
 	if spec == nil {
 		return fmt.Errorf("%s cannot be nil: %w", prefix, status.ErrInvalidArgument)
 	}
@@ -472,6 +492,13 @@ func validateExecutableSpec(spec *essmsgpb.ExecutableSpec, prefix string) error 
 	}
 	if spec.GetResources() == nil || spec.GetResources().GetResources() == nil {
 		return fmt.Errorf("%s.resources.resources cannot be nil: %w", prefix, status.ErrInvalidArgument)
+	}
+	var volMap map[string]bool
+	if len(validVolumes) > 0 {
+		volMap = validVolumes[0]
+	}
+	if err := validateVolumeMounts(spec.GetVolumeMounts(), prefix, volMap); err != nil {
+		return err
 	}
 	return validateResourceSet(spec.GetResources(), prefix+".resources")
 }
@@ -497,9 +524,80 @@ func validateResourceSet(res *essmsgpb.ResourceSet, prefix string) error {
 		if tpu.GetType() == "" {
 			return fmt.Errorf("%s.tpu_resources.type cannot be empty: %w", prefix, status.ErrInvalidArgument)
 		}
-		if tpu.GetTopology() == "" {
-			return fmt.Errorf("%s.tpu_resources.topology cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		if err := validateTPUTopology(tpu.GetTopology(), prefix); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// validateTPUTopology verifies that a TPU topology string has valid positive integer dimensions.
+func validateTPUTopology(topology string, prefix string) error {
+	if topology == "" {
+		return fmt.Errorf("%s.tpu_resources.topology cannot be empty: %w", prefix, status.ErrInvalidArgument)
+	}
+	dims := strings.Split(topology, "x")
+	for _, dim := range dims {
+		val, err := strconv.Atoi(dim)
+		if err != nil || val <= 0 {
+			return fmt.Errorf("%s.tpu_resources.topology %q is invalid (each dimension must be a positive integer): %w", prefix, topology, status.ErrInvalidArgument)
+		}
+	}
+	return nil
+}
+
+// validateNodeSelector validates all key-value pairs in a Kubernetes job's node_selector map.
+func validateNodeSelector(job *essmsgpb.KubernetesJob) error {
+	for key, val := range job.GetNodeSelector() {
+		if err := validateNodeSelectorLabel(key, val); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateNodeSelectorLabel(key, val string) error {
+	if key == "" {
+		return fmt.Errorf("work_unit.executable.jobset.jobs.node_selector key cannot be empty: %w", status.ErrInvalidArgument)
+	}
+	if len(key) > 316 {
+		return fmt.Errorf("work_unit.executable.jobset.jobs.node_selector key %q exceeds maximum 316 characters: %w", key, status.ErrInvalidArgument)
+	}
+	if len(val) > 63 {
+		return fmt.Errorf("work_unit.executable.jobset.jobs.node_selector value %q for key %q exceeds 63 characters: %w", val, key, status.ErrInvalidArgument)
+	}
+	if val != "" && !labelNameRegex.MatchString(val) {
+		return fmt.Errorf("work_unit.executable.jobset.jobs.node_selector value %q for key %q must be a valid Kubernetes label value: %w", val, key, status.ErrInvalidArgument)
+	}
+
+	parts := strings.Split(key, "/")
+	if len(parts) > 2 {
+		return fmt.Errorf("work_unit.executable.jobset.jobs.node_selector key %q cannot contain more than one slash: %w", key, status.ErrInvalidArgument)
+	}
+
+	name := key
+	if len(parts) == 2 {
+		prefix := parts[0]
+		name = parts[1]
+		if prefix == "" {
+			return fmt.Errorf("work_unit.executable.jobset.jobs.node_selector key %q prefix cannot be empty: %w", key, status.ErrInvalidArgument)
+		}
+		if len(prefix) > 253 {
+			return fmt.Errorf("work_unit.executable.jobset.jobs.node_selector key %q prefix exceeds 253 characters: %w", key, status.ErrInvalidArgument)
+		}
+		if !dnsSubdomainRegex.MatchString(prefix) {
+			return fmt.Errorf("work_unit.executable.jobset.jobs.node_selector key %q prefix must be a valid DNS subdomain: %w", key, status.ErrInvalidArgument)
+		}
+	}
+
+	if name == "" {
+		return fmt.Errorf("work_unit.executable.jobset.jobs.node_selector key %q name segment cannot be empty: %w", key, status.ErrInvalidArgument)
+	}
+	if len(name) > 63 {
+		return fmt.Errorf("work_unit.executable.jobset.jobs.node_selector key %q name segment %q exceeds 63 characters: %w", key, name, status.ErrInvalidArgument)
+	}
+	if !labelNameRegex.MatchString(name) {
+		return fmt.Errorf("work_unit.executable.jobset.jobs.node_selector key %q name segment %q must be a valid Kubernetes label name: %w", key, name, status.ErrInvalidArgument)
 	}
 	return nil
 }
@@ -522,6 +620,48 @@ func validateJobSetNetwork(net *essmsgpb.JobSetExecutable_Network) error {
 		if err := validateDNSLabel(sub, "work_unit.executable.jobset.network.subdomain"); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func validateJobSetSuccessPolicy(policy *essmsgpb.JobSetExecutable_SuccessPolicy, jobs []*essmsgpb.KubernetesJob) error {
+	if policy == nil {
+		return nil
+	}
+	jobNames := make(map[string]bool, len(jobs))
+	for _, j := range jobs {
+		jobNames[j.GetName()] = true
+	}
+	for i, target := range policy.GetTargetReplicatedJobs() {
+		if target == "" {
+			return fmt.Errorf("work_unit.executable.jobset.success_policy.target_replicated_jobs[%d] cannot be empty: %w", i, status.ErrInvalidArgument)
+		}
+		if !jobNames[target] {
+			return fmt.Errorf("work_unit.executable.jobset.success_policy.target_replicated_jobs[%d] %q does not match any job in work_unit.executable.jobset.jobs: %w", i, target, status.ErrInvalidArgument)
+		}
+	}
+	return nil
+}
+
+func validateJobSetCoordinator(coord *essmsgpb.JobSetExecutable_Coordinator, jobs map[string]*essmsgpb.KubernetesJob) error {
+	if coord == nil {
+		return nil
+	}
+	if coord.GetReplicatedJob() == "" {
+		return fmt.Errorf("work_unit.executable.jobset.coordinator.replicated_job cannot be empty: %w", status.ErrInvalidArgument)
+	}
+	job, ok := jobs[coord.GetReplicatedJob()]
+	if !ok {
+		return fmt.Errorf("work_unit.executable.jobset.coordinator.replicated_job %q must match a valid job name in the JobSet: %w", coord.GetReplicatedJob(), status.ErrInvalidArgument)
+	}
+	if coord.GetJobIndex() < 0 {
+		return fmt.Errorf("work_unit.executable.jobset.coordinator.job_index cannot be negative: %w", status.ErrInvalidArgument)
+	}
+	if coord.GetJobIndex() >= job.GetReplicas() {
+		return fmt.Errorf("work_unit.executable.jobset.coordinator.job_index %d must be less than replicas (%d) for job %q: %w", coord.GetJobIndex(), job.GetReplicas(), job.GetName(), status.ErrInvalidArgument)
+	}
+	if coord.GetPodIndex() < 0 {
+		return fmt.Errorf("work_unit.executable.jobset.coordinator.pod_index cannot be negative: %w", status.ErrInvalidArgument)
 	}
 	return nil
 }

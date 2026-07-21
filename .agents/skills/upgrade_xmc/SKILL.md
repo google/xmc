@@ -112,7 +112,7 @@ If the upgrade fails at a specific phase, or if you need to rerun a specific par
 
 ## 4. Verification and Validation
 
-Run the verification script from the repository root to verify that all upgraded pods are running and endpoints respond correctly:
+Ensure the Python virtual environment is activated, then run the verification script from the repository root to verify that all upgraded pods are running and endpoints respond correctly:
 
 ```bash
 ENVIRONMENT="${XMANAGER_ENV:-dev}" REGION="${GCP_REGION:-us-central1}" PROJECT_ID="$PROJECT_ID" python3 ./deploy/ctk_v2/verify_xmc.py

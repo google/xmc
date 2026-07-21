@@ -5,7 +5,7 @@ This document provides standards for skill architecture, workflow automation, an
 ---
 
 ## 1. Extracting Complex Logic to Executable Python Scripts
-- **Executable Scripts over Inline Commands**: Never embed multi-step parsing logic, complex conditional sequences, string manipulation, or procedural shell scripts directly inside Markdown skill definitions or YAML workflow configs.
+- **Executable Scripts over Inline Commands**: Never embed multi-step parsing logic, string manipulation, or inline shell code (e.g., `python3 -c "..."`) inside Markdown skill definitions or shell invocations. Always write Python code to standalone `.py` script files via `write_to_file` or rely on pre-written tools in `tools/`.
 - **Predictable & Testable Execution**: Extract complex logic into dedicated Python scripts located in `tools/` or skill-specific script directories.
 - **Automated Verification**: Accompany every extracted script with unit tests (e.g., `tool_name_test.py` utilizing `unittest`) to verify correctness, parameter validation, and exception handling without relying on manual trial-and-error.
 

@@ -99,11 +99,58 @@ message JobSetExecutable {
     optional bool publish_not_ready_addresses = 3;
   }
 
+  // Policy for determining when the JobSet has succeeded (`success_policy`).
+  message SuccessPolicy {
+    enum Operator {
+      OPERATOR_UNSPECIFIED = 0;
+      // All target replicated jobs must succeed for the JobSet to succeed.
+      ALL = 1;
+      // Any single target replicated job succeeding marks the JobSet as successful.
+      ANY = 2;
+    }
+    // Determines whether ALL or ANY of the target replicated jobs must succeed.
+    // Defaults to ALL when target_replicated_jobs is specified or when unspecified.
+    Operator operator = 1;
+
+    // Names of the KubernetesJobs (replicated jobs) that this policy applies to.
+    // If not set, applies to all jobs in the JobSet unless automatic defaulting triggers.
+    // For example, setting target_replicated_jobs to ["pathways-head"] with Operator ALL
+    // ensures the JobSet succeeds as soon as "pathways-head" succeeds, which signals the
+    // JobSet controller to clean up and terminate any background worker servers.
+    repeated string target_replicated_jobs = 2;
+  }
+
+  // Coordinator configuration for the JobSet (`coordinator`).
+  // Defines which pod can be marked as the coordinator for the JobSet workload,
+  // prompting the JobSet controller to inject stable endpoint annotations (`jobset.sigs.k8s.io/coordinator`).
+  message Coordinator {
+    // Name of the ReplicatedJob which contains the coordinator pod.
+    string replicated_job = 1;
+
+    // Index of the Job which contains the coordinator pod (i.e., for a ReplicatedJob
+    // with N replicas, there are Job indexes 0 to N-1). Defaults to 0 if unset.
+    // Note: For GPU and TPU workloads, multi-replica jobs (Replicas: N) are typically converted
+    // by the execution environment into single-replica multi-pod jobs (Replicas: 1, Parallelism: N).
+    // When this conversion occurs, the actuator automatically maps `job_index` to `0` and
+    // `pod_index` to the original `job_index` (plus any specified `pod_index`).
+    optional int32 job_index = 2;
+
+    // Job completion index of the coordinator pod. Defaults to 0 if unset.
+    optional int32 pod_index = 3;
+  }
+
   // The Jobs that make up the JobSet.
   repeated KubernetesJob jobs = 1;
 
   // Network configuration for the JobSet (DNS hostnames, unready address publishing).
   Network network = 2;
+
+  // Coordinator configuration for the JobSet.
+  Coordinator coordinator = 3;
+
+  // Success policy for the JobSet. If not specified, defaults to requiring all jobs to succeed,
+  // unless a known leader role like "pathways-head" is detected in jobs.
+  optional SuccessPolicy success_policy = 4;
 }
 
 // A KubernetesJob is a single Kubernetes Job that is run as part of a
@@ -154,6 +201,84 @@ message KubernetesJob {
   repeated ExecutableSpec sidecars = 9;
   // Init containers to run before primary and sidecar containers start.
   repeated ExecutableSpec init_containers = 10;
+  // Node selector labels to apply to all Pods in this Kubernetes Job.
+  // This allows pinning specific jobs (e.g., head vs worker) to distinct node pools.
+  map<string, string> node_selector = 11;
+
+  // Custom volumes available to containers in the pod.
+  repeated Volume volumes = 12;
+}
+
+// Represents a volume that can be mounted by containers in a KubernetesJob.
+message Volume {
+  // Volume name used for referencing in volume mounts.
+  string name = 1;
+
+  // The source of the volume.
+  oneof source {
+    PersistentVolumeClaimVolumeSource persistent_volume_claim = 2;
+    GcsVolumeSource gcs = 3;
+    HostPathVolumeSource host_path = 4;
+    EmptyDirVolumeSource empty_dir = 5;
+    SecretVolumeSource secret = 6;
+    ConfigMapVolumeSource config_map = 7;
+    NfsVolumeSource nfs = 8;
+  }
+}
+
+// PersistentVolumeClaim volume source.
+message PersistentVolumeClaimVolumeSource {
+  // Name of the PersistentVolumeClaim in the same namespace as the pod.
+  string claim_name = 1;
+  // If true, the volume will be mounted as read-only.
+  optional bool read_only = 2;
+}
+
+// GCS volume source backed by GKE GCS FUSE CSI driver (gcs.csi.storage.gke.io).
+message GcsVolumeSource {
+  // The GCS bucket name (e.g., "my-bucket" or "gs://my-bucket").
+  string bucket = 1;
+  // Optional mount options passed to the GCS FUSE CSI driver (e.g., "implicit-dirs", "only-dir=subpath").
+  repeated string mount_options = 2;
+  // If true, the bucket is mounted read-only.
+  optional bool read_only = 3;
+}
+
+// HostPath volume source.
+message HostPathVolumeSource {
+  // Path of the directory or file on the host node.
+  string path = 1;
+  // Type for HostPath (e.g., "DirectoryOrCreate", "Directory", "File").
+  string type = 2;
+}
+
+// EmptyDir volume source.
+message EmptyDirVolumeSource {
+  // Storage medium backing this directory ("" for disk, "Memory" for ram/tmpfs).
+  string medium = 1;
+  // Total size limit required for this EmptyDir volume in bytes.
+  int64 size_limit_bytes = 2;
+}
+
+// Secret volume source.
+message SecretVolumeSource {
+  string secret_name = 1;
+  optional int32 default_mode = 2; // Octal file permission mode (e.g., 0400 = 256)
+  optional bool optional = 3;
+}
+
+// ConfigMap volume source.
+message ConfigMapVolumeSource {
+  string name = 1;
+  optional int32 default_mode = 2;
+  optional bool optional = 3;
+}
+
+// NFS volume source.
+message NfsVolumeSource {
+  string server = 1;
+  string path = 2;
+  optional bool read_only = 3;
 }
 
 // Selects a field of the Pod (matches YAML 'fieldRef').
@@ -193,6 +318,38 @@ message EnvVar {
   }
 }
 
+// Represents a volume mount inside a container.
+message VolumeMount {
+  // This must match the name of a Volume in the KubernetesJob, or one of the default
+  // scratch volumes ("ram-scratch", "disk-scratch", "dev-shm-scratch").
+  string name = 1;
+  // Path inside the container where the volume should be mounted. Must be absolute and not contain ':'.
+  string mount_path = 2;
+  // Mounted read-only if true, read-write otherwise.
+  optional bool read_only = 3;
+  // Sub-path inside the volume from which the container's volume should be mounted. Defaults to "" (root).
+  string sub_path = 4;
+}
+
+// Represents a network port exposed by a container in a Pod.
+// Maps cleanly to Kubernetes corev1.ContainerPort.
+message ContainerPort {
+  enum Protocol {
+    PROTOCOL_UNSPECIFIED = 0;
+    TCP = 1;
+    UDP = 2;
+    SCTP = 3;
+  }
+  // Optional name for the port. Must be 1-15 characters, alphanumeric/hyphens.
+  string name = 1;
+  // Number of port to expose on the pod's IP address (1-65535).
+  int32 container_port = 2 [(google.api.field_behavior) = REQUIRED];
+  // Protocol for port. Must be UDP, TCP, or SCTP. Defaults to TCP if unspecified.
+  Protocol protocol = 3;
+  // Number of port to expose on the host (if host port forwarding is required).
+  int32 host_port = 4;
+}
+
 message ExecutableSpec {
   // The resources required to run the executable.
   ResourceSet resources = 1;
@@ -214,6 +371,10 @@ message ExecutableSpec {
   // Ordered list of arguments passed verbatim to the container entrypoint/command without automatic flag prefixes.
   // Can be used for positional arguments, bare key=value pairs (MaxText/Abseil), or GNU --flag=value options.
   repeated string args_list = 8;
+  // Volume mounts to mount volumes into this container.
+  repeated VolumeMount volume_mounts = 9;
+  // List of ports exposed from the container.
+  repeated ContainerPort ports = 10;
 }
 
 // SchedulingConstraints contains the scheduling constraints for the

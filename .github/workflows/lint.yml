@@ -1,0 +1,142 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'Code Quality & Linting'
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-lint:
+    name: 'PEP 8 Lint (Ruff)'
+    runs-on: 'ubuntu-24.04'
+    steps:
+      - name: 'Checkout code'
+        uses: 'actions/checkout@v4'
+
+      - name: 'Install Ruff'
+        run: pip install --no-cache-dir ruff
+
+      - name: 'Run Ruff Lint Check'
+        run: ruff check .
+
+      - name: 'Verify Code Formatting'
+        run: ruff format --check .
+
+  go-lint:
+    name: 'Go Formatting (gofmt)'
+    runs-on: 'ubuntu-24.04'
+    steps:
+      - name: 'Checkout code'
+        uses: 'actions/checkout@v4'
+
+      - name: 'Set up Go'
+        uses: 'actions/setup-go@v5'
+        with:
+          go-version: '1.26.0'
+
+      - name: 'Verify Go Formatting (gofmt)'
+        run: |
+          UNFORMATTED=$(gofmt -s -l . 2>/dev/null | grep -v 'vendor/' || true)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "The following Go files are not formatted properly:"
+            echo "$UNFORMATTED"
+            exit 1
+          fi
+
+  bazel-lint:
+    name: 'Bazel Linting (Buildifier)'
+    runs-on: 'ubuntu-24.04'
+    steps:
+      - name: 'Checkout code'
+        uses: 'actions/checkout@v4'
+
+      - name: 'Set up Go'
+        uses: 'actions/setup-go@v5'
+        with:
+          go-version: '1.26.0'
+
+      - name: 'Install buildifier'
+        run: go install github.com/bazelbuild/buildtools/buildifier@latest
+
+      - name: 'Run Buildifier Check'
+        run: |
+          BAZEL_FILES=$(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \) -not -path "*/node_modules/*")
+          if [ -n "$BAZEL_FILES" ]; then
+            $(go env GOPATH)/bin/buildifier -mode=check $BAZEL_FILES
+          fi
+
+  ui-lint:
+    name: 'UI Lint & Format (Prettier & ESLint)'
+    runs-on: 'ubuntu-24.04'
+    steps:
+      - name: 'Checkout code'
+        uses: 'actions/checkout@v4'
+
+      - name: 'Set up Node.js'
+        uses: 'actions/setup-node@v4'
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'cmd/ui/package-lock.json'
+
+      - name: 'Install UI Dependencies'
+        run: npm ci --legacy-peer-deps
+        working-directory: 'cmd/ui'
+
+      - name: 'Run Prettier Check'
+        run: npm run format:check
+        working-directory: 'cmd/ui'
+
+      - name: 'Run ESLint'
+        run: npm run lint
+        working-directory: 'cmd/ui'
+
+  license-check:
+    name: 'License Headers (addlicense)'
+    runs-on: 'ubuntu-24.04'
+    steps:
+      - name: 'Checkout code'
+        uses: 'actions/checkout@v4'
+
+      - name: 'Set up Go'
+        uses: 'actions/setup-go@v5'
+        with:
+          go-version: '1.26.0'
+
+      - name: 'Install addlicense'
+        run: go install github.com/google/addlicense@latest
+
+      - name: 'Check License Headers'
+        run: |
+          $(go env GOPATH)/bin/addlicense -check -c "Google LLC" -l apache \
+            -ignore "third_party/**" \
+            -ignore "**/third_party/**" \
+            -ignore "**/node_modules/**" \
+            -ignore "**/.angular/**" \
+            -ignore "**.json" \
+            -ignore "**.lock" \
+            -ignore "pyproject.toml" \
+            -ignore "package.json" \
+            -ignore "go.mod" \
+            -ignore "go.sum" \
+            .

@@ -21,3 +21,6 @@ cmd/ui/build_tmp/
 
 # Compiled Cluster Toolkit deployments
 /ctk-out/
+
+# Python virtual environments
+venv/

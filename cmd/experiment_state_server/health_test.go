@@ -21,8 +21,8 @@ import (
 	"strings"
 	"testing"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	commonhealth "xmanager_cloud/common/health"
+	"xmanager_cloud/storage/spanner/migrations/version"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 )
 
@@ -38,23 +38,32 @@ func (f *fakeTaskQueueClient) PingRedis(ctx context.Context) error {
 	return f.PingErr
 }
 
-func TestActiveHealthCheck(t *testing.T) {
-	validSpanner := func(t *testing.T) *spanner.Client {
-		t.Helper()
-		sc, _, _ := emulator.SetupWithEmulator(context.Background(), t)
-		return sc
-	}
+type mockSpannerClient struct {
+	pingErr    error
+	versionVal int64
+	dirty      bool
+	versionErr error
+}
 
+func (m mockSpannerClient) Ping(ctx context.Context) error {
+	return m.pingErr
+}
+
+func (m mockSpannerClient) QuerySchemaVersion(ctx context.Context) (int64, bool, error) {
+	return m.versionVal, m.dirty, m.versionErr
+}
+
+func TestActiveHealthCheck(t *testing.T) {
 	tests := []struct {
-		name         string
-		setupSpanner func(t *testing.T) *spanner.Client
-		setupTq      func() TaskQueueClient
-		wantCode     int
-		wantBody     string
+		name        string
+		mockSpanner commonhealth.SpannerHealthClient
+		setupTq     func() TaskQueueClient
+		wantCode    int
+		wantBody    string
 	}{
 		{
-			name:         "redis_ping_error",
-			setupSpanner: validSpanner,
+			name:        "redis_ping_error",
+			mockSpanner: mockSpannerClient{versionVal: version.EssExpectedSchemaVersion()},
 			setupTq: func() TaskQueueClient {
 				return &fakeTaskQueueClient{PingErr: fmt.Errorf("fake redis error")}
 			},
@@ -62,8 +71,8 @@ func TestActiveHealthCheck(t *testing.T) {
 			wantBody: "fake redis error",
 		},
 		{
-			name:         "all_valid",
-			setupSpanner: validSpanner,
+			name:        "all_valid",
+			mockSpanner: mockSpannerClient{versionVal: version.EssExpectedSchemaVersion()},
 			setupTq: func() TaskQueueClient {
 				return &fakeTaskQueueClient{}
 			},
@@ -71,28 +80,60 @@ func TestActiveHealthCheck(t *testing.T) {
 			wantBody: "OK",
 		},
 		{
-			name:         "nil_spanner",
-			setupTq:      func() TaskQueueClient { return &fakeTaskQueueClient{} },
-			setupSpanner: func(t *testing.T) *spanner.Client { return nil },
-			wantCode:     http.StatusInternalServerError,
-			wantBody:     "spanner client is nil",
+			name:        "nil_spanner",
+			mockSpanner: nil,
+			setupTq:     func() TaskQueueClient { return &fakeTaskQueueClient{} },
+			wantCode:    http.StatusInternalServerError,
+			wantBody:    "spanner: client is nil",
+		},
+		{
+			name: "spanner_version_older",
+			mockSpanner: mockSpannerClient{
+				versionVal: version.EssExpectedSchemaVersion() - 1,
+			},
+			setupTq:  func() TaskQueueClient { return &fakeTaskQueueClient{} },
+			wantCode: http.StatusInternalServerError,
+			wantBody: "does not match expected version",
+		},
+		{
+			name: "spanner_version_dirty",
+			mockSpanner: mockSpannerClient{
+				versionVal: version.EssExpectedSchemaVersion(),
+				dirty:      true,
+			},
+			setupTq:  func() TaskQueueClient { return &fakeTaskQueueClient{} },
+			wantCode: http.StatusInternalServerError,
+			wantBody: "is in a dirty state",
+		},
+		{
+			name: "spanner_query_error",
+			mockSpanner: mockSpannerClient{
+				versionErr: fmt.Errorf("failed to query SchemaMigrations: table not found"),
+			},
+			setupTq:  func() TaskQueueClient { return &fakeTaskQueueClient{} },
+			wantCode: http.StatusInternalServerError,
+			wantBody: "SchemaMigrations",
+		},
+		{
+			name: "spanner_version_newer",
+			mockSpanner: mockSpannerClient{
+				versionVal: version.EssExpectedSchemaVersion() + 1,
+			},
+			setupTq:  func() TaskQueueClient { return &fakeTaskQueueClient{} },
+			wantCode: http.StatusInternalServerError,
+			wantBody: "does not match expected version",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			var spClient *spanner.Client
-			if tc.setupSpanner != nil {
-				spClient = tc.setupSpanner(t)
-			}
-
 			var tqClient TaskQueueClient
 			if tc.setupTq != nil {
 				tqClient = tc.setupTq()
 			}
 
 			var xidClient xidgrpcpb.XidServiceClient = &fakeXidClient{}
-			handler := activeHealthCheck(spClient, xidClient, tqClient)
+			handler := activeHealthCheck(tc.mockSpanner, xidClient, tqClient)
 
 			req := httptest.NewRequest("GET", "/readyz", nil)
 			rr := httptest.NewRecorder()
