@@ -30,15 +30,19 @@ def _parse_graphql_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Extracts unresolved comment items from GraphQL thread nodes."""
     items = []
     for thread in nodes:
-        if thread.get("isResolved"):
+        if not thread or thread.get("isResolved"):
             continue
         path = thread.get("path") or "Unknown"
         line = thread.get("line")
-        comments_data = thread.get("comments", {}).get("nodes", [])
+        comments_dict = thread.get("comments")
+        comments_data = comments_dict.get("nodes", []) if comments_dict else []
         if not comments_data:
             continue
         first_comment = comments_data[0]
-        author = first_comment.get("author", {}).get("login") or "unknown"
+        if not first_comment:
+            continue
+        author_dict = first_comment.get("author")
+        author = author_dict.get("login") if author_dict else "unknown"
         items.append(
             {
                 "comment_id": first_comment.get("databaseId") or first_comment.get("id"),
@@ -97,13 +101,17 @@ def _fetch_graphql_unresolved_comments(
         }
         payload = {"query": query, "variables": variables}
         res = call_github_api("/graphql", method="POST", payload=payload)
-        data = res.get("data", {}).get("repository", {}).get("pullRequest")
-        if not data:
+        if not isinstance(res, dict):
             return None
-        threads_info = data.get("reviewThreads", {})
-        nodes = threads_info.get("nodes", [])
+        data = res.get("data")
+        repository = data.get("repository") if data else None
+        pull_request = repository.get("pullRequest") if repository else None
+        if not pull_request:
+            return None
+        threads_info = pull_request.get("reviewThreads") or {}
+        nodes = threads_info.get("nodes") or []
         all_items.extend(_parse_graphql_nodes(nodes))
-        page_info = threads_info.get("pageInfo", {})
+        page_info = threads_info.get("pageInfo") or {}
         if not page_info.get("hasNextPage"):
             break
         cursor = page_info.get("endCursor")
@@ -112,7 +120,8 @@ def _fetch_graphql_unresolved_comments(
 
 def _parse_rest_comment(comment: Dict[str, Any]) -> Dict[str, Any]:
     """Converts a REST API comment object to a standardized dictionary."""
-    author = comment.get("user", {}).get("login") or "unknown"
+    user = comment.get("user")
+    author = user.get("login") if user else "unknown"
     line = comment.get("line") or comment.get("original_line")
     return {
         "comment_id": comment.get("id"),
@@ -148,7 +157,7 @@ def fetch_unresolved_comments(owner: str, repo: str, pr_number: int) -> List[Dic
         items = _fetch_graphql_unresolved_comments(owner, repo, pr_number)
         if items is not None:
             return items
-    except (GithubAPIError, GithubAuthError, KeyError, TypeError):
+    except Exception:
         pass
 
     try:

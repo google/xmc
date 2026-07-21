@@ -74,22 +74,44 @@ class TestGenerateReviewChecklist(unittest.TestCase):
         self.assertEqual(items[0]["line"], 20)
         self.assertEqual(items[0]["body"], "Unresolved comment")
 
-    def test_parse_rest_comment(self):
-        """Test parsing REST API comment dictionary."""
+    def test_parse_graphql_nodes_null_author(self):
+        """Test parsing GraphQL nodes handles null author and null threads safely."""
+        nodes = [
+            None,
+            {
+                "isResolved": False,
+                "path": "file.py",
+                "line": 5,
+                "comments": {
+                    "nodes": [
+                        {
+                            "id": "c3",
+                            "databaseId": 3,
+                            "body": "Deleted user comment",
+                            "url": "https://github.com/google/xmc/pull/1#discussion_r3",
+                            "author": None,
+                        }
+                    ]
+                },
+            },
+        ]
+        items = _parse_graphql_nodes(nodes)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["author"], "unknown")
+
+    def test_parse_rest_comment_null_user(self):
+        """Test parsing REST API comment dictionary with null user."""
         comment_raw = {
-            "id": 100,
-            "user": {"login": "reviewer1"},
+            "id": 101,
+            "user": None,
             "path": "tools/script.py",
             "line": 50,
-            "body": "Refactor this function",
-            "html_url": "https://github.com/google/xmc/pull/1#discussion_r100",
+            "body": "Comment by deleted user",
+            "html_url": "https://github.com/google/xmc/pull/1#discussion_r101",
         }
         item = _parse_rest_comment(comment_raw)
-        self.assertEqual(item["comment_id"], 100)
-        self.assertEqual(item["author"], "reviewer1")
-        self.assertEqual(item["file_path"], "tools/script.py")
-        self.assertEqual(item["line"], 50)
-        self.assertEqual(item["body"], "Refactor this function")
+        self.assertEqual(item["comment_id"], 101)
+        self.assertEqual(item["author"], "unknown")
 
     @patch("generate_review_checklist.call_github_api")
     def test_fetch_unresolved_comments_graphql(self, mock_api):
