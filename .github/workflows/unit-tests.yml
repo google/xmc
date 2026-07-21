@@ -28,8 +28,8 @@ permissions:
   id-token: write
 
 jobs:
-  run-tests:
-    name: 'Run Unit Tests'
+  run-backend-tests:
+    name: 'Run Go & Backend Unit Tests'
     runs-on: 'ubuntu-24.04'
     timeout-minutes: 30
 
@@ -51,18 +51,11 @@ jobs:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
 
-      - name: 'Free Runner Disk Space'
+      - name: 'Fast Disk Space Cleanup'
         run: |
           echo "=== Disk space before cleanup ==="
           df -h
-          sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo swapoff -a || true
-          sudo rm -f /mnt/swapfile /swapfile || true
-          docker image prune -a -f || true
-          docker builder prune -f || true
           echo "=== Disk space after cleanup ==="
           df -h
 
@@ -74,27 +67,15 @@ jobs:
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@v3'
 
-      - name: 'Set up Node.js'
-        uses: 'actions/setup-node@v4'
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: 'cmd/ui/package-lock.json'
-
-      - name: 'Install Node.js dependencies'
-        run: npm ci --legacy-peer-deps
-        working-directory: cmd/ui
-
-      - name: 'Restore Bazel Cache'
+      - name: 'Restore Bazel Repository Cache'
         id: 'cache-bazel-restore'
         uses: 'actions/cache/restore@v4'
         with:
           path: |
             ~/.cache/bazel-repo
-            ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
           restore-keys: |
-            bazel-${{ runner.os }}-
+            bazel-repo-${{ runner.os }}-
 
       - name: 'Verify Spanner Emulator Endpoint'
         run: |
@@ -115,34 +96,46 @@ jobs:
           echo "CRITICAL: Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }} did not start within ${{ env.SPANNER_CHECK_TIMEOUT }} seconds."
           exit 1
 
-      - name: 'Run Unit Tests'
+      - name: 'Run Backend Unit Tests'
         run: |
           bazel test \
             --repository_cache=~/.cache/bazel-repo \
-            --disk_cache=~/.cache/bazel-disk \
             --experimental_repository_cache_hardlinks \
             --test_output=errors \
             --build_tests_only \
             --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},300,300,300 \
             -- \
-            //...
+            //... \
+            -//cmd/ui:ui_unit_tests
 
-      - name: 'Prune Bazel Cache & Build Tree'
-        if: always()
-        run: |
-          echo "=== Pruning Bazel cache and build tree ==="
-          if [ -d ~/.cache/bazel-disk ]; then
-            find ~/.cache/bazel-disk -type f -atime +3 -delete || true
-            find ~/.cache/bazel-disk -type d -empty -delete || true
-          fi
-          bazel clean || true
-          df -h
-
-      - name: 'Save Bazel Cache'
+      - name: 'Save Bazel Repository Cache'
         uses: 'actions/cache/save@v4'
         if: always()
         with:
           path: |
             ~/.cache/bazel-repo
-            ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+
+  run-ui-tests:
+    name: 'Run Angular UI Unit Tests'
+    runs-on: 'ubuntu-24.04'
+    timeout-minutes: 15
+
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@v4'
+
+      - name: 'Set up Node.js'
+        uses: 'actions/setup-node@v4'
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'cmd/ui/package-lock.json'
+
+      - name: 'Install Node.js dependencies'
+        run: npm ci --legacy-peer-deps
+        working-directory: cmd/ui
+
+      - name: 'Run Angular UI Unit Tests'
+        run: npm test -- --watch=false --browsers=ChromeHeadlessNoSandbox
+        working-directory: cmd/ui
