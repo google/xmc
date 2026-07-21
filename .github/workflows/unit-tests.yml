@@ -51,7 +51,7 @@ jobs:
       # We're overriding the test timeout to catch failures with Spanner faster
       TEST_TIMEOUT_SECONDS: 60
       SPANNER_CHECK_TIMEOUT: 15
-      SPANNER_EMULATOR_HOST: 127.0.0.1:9010
+      SPANNER_EMULATOR_HOST: spanner-emulator:9010
 
     steps:
       - name: 'Checkout'
@@ -83,12 +83,12 @@ jobs:
           PORT=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f2)
           
           # Try connecting to the port
-          for i in {1..${{ env.SPANNER_CHECK_TIMEOUT }}}; do
+          for i in $(seq 1 ${{ env.SPANNER_CHECK_TIMEOUT }}); do
             if nc -z "$HOST" "$PORT" >/dev/null 2>&1 || timeout 1s bash -c "cat < /dev/null > /dev/tcp/$HOST/$PORT" 2>/dev/null; then
               echo "Successfully connected to Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}."
               exit 0
             fi
-            echo "Waiting for Spanner Emulator to start (attempt $i/15)..."
+            echo "Waiting for Spanner Emulator to start (attempt $i/${{ env.SPANNER_CHECK_TIMEOUT }})..."
             sleep 1
           done
           
