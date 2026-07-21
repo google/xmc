@@ -27,6 +27,12 @@ filegroup(
     visibility = ["//internal/storage/spanner/migrations:__subpackages__"],
 )
 
+filegroup(
+    name = "dashboard_migrations",
+    srcs = glob(["dashboard/*.up.sql"]),
+    visibility = ["//internal/storage/spanner/migrations:__subpackages__"],
+)
+
 genrule(
     name = "copy_ess_messages",
     srcs = ["//api/protos/experiment:experiment_messages_descriptor"],
@@ -54,6 +60,7 @@ compat_go_library(
     embedsrcs = glob([
         "ess/*.sql",
         "xid/*.sql",
+        "dashboard/*.sql",
     ]) + [
         ":ess_messages.pb",
         ":xid_messages.pb",

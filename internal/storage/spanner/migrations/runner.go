@@ -44,7 +44,10 @@ var essMessagesDescriptor []byte
 //go:embed xmanager_cloud/xid_service/proto/xid_messages.pb
 var xidMessagesDescriptor []byte
 
-//go:embed ess/*.sql xid/*.sql
+//go:embed dashboard_messages.pb
+var dashboardMessagesDescriptor []byte
+
+//go:embed ess/*.sql xid/*.sql dashboard/*.sql
 var migrationsFS embed.FS
 
 // Commands supported by the runner.
@@ -261,6 +264,8 @@ func selectDescriptor(migrationsDir string) ([]byte, error) {
 		return essMessagesDescriptor, nil
 	case "xid":
 		return xidMessagesDescriptor, nil
+	case "dashboard":
+		return dashboardMessagesDescriptor, nil
 	default:
 		return nil, fmt.Errorf("unknown migrationsDir %q, no embedded descriptors found", migrationsDir)
 	}

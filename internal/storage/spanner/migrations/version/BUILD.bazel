@@ -31,10 +31,19 @@ genrule(
     tools = [":generate_version.py"],
 )
 
+genrule(
+    name = "dashboard_version_gen",
+    srcs = ["//internal/storage/spanner/migrations:dashboard_migrations"],
+    outs = ["dashboard_version_gen.go"],
+    cmd = "python3 $(location :generate_version.py) dashboardMigrationVersion $@ $(SRCS)",
+    tools = [":generate_version.py"],
+)
+
 go_library(
     name = "version",
     srcs = [
         "version.go",
+        ":dashboard_version_gen",
         ":ess_version_gen",
         ":xid_version_gen",
     ],

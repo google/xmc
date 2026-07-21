@@ -1,0 +1,198 @@
+syntax = "proto3";
+
+package cloud.xmanager.v1;
+
+option go_package = "xmanager_cloud/dashboard_service/proto/service_go_proto";
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "third_party/xmanager_cloud/dashboard_service/proto/messages.proto";
+
+service DashboardService {
+  option (google.api.default_host) = "cloud.xmanager.googleapis.com";
+
+  rpc CreateDashboard(CreateDashboardRequest) returns (Dashboard) {
+    option (google.api.http) = {
+      post: "/v1/dashboards"
+      body: "dashboard"
+    };
+    option (google.api.method_signature) = "dashboard,dashboard_id";
+  }
+
+  rpc GetDashboard(GetDashboardRequest) returns (Dashboard) {
+    option (google.api.http) = {
+      get: "/v1/{name=dashboards/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  rpc ListDashboards(ListDashboardsRequest) returns (ListDashboardsResponse) {
+    option (google.api.http) = {
+      get: "/v1/dashboards"
+    };
+  }
+
+  rpc UpdateDashboard(UpdateDashboardRequest) returns (Dashboard) {
+    option (google.api.http) = {
+      patch: "/v1/{dashboard.name=dashboards/*}"
+      body: "dashboard"
+    };
+    option (google.api.method_signature) = "dashboard,update_mask";
+  }
+
+  rpc DeleteDashboard(DeleteDashboardRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v1/{name=dashboards/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  rpc CreateChart(CreateChartRequest) returns (Chart) {
+    option (google.api.http) = {
+      post: "/v1/{parent=dashboards/*}/charts"
+      body: "chart"
+    };
+    option (google.api.method_signature) = "parent,chart,chart_id";
+  }
+
+  rpc GetChart(GetChartRequest) returns (Chart) {
+    option (google.api.http) = {
+      get: "/v1/{name=dashboards/*/charts/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  rpc GetChartData(GetChartDataRequest) returns (ChartData) {
+    option (google.api.http) = {
+      get: "/v1/{name=dashboards/*/charts/*}:getData"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  rpc ListCharts(ListChartsRequest) returns (ListChartsResponse) {
+    option (google.api.http) = {
+      get: "/v1/{parent=dashboards/*}/charts"
+    };
+    option (google.api.method_signature) = "parent";
+  }
+
+  rpc UpdateChart(UpdateChartRequest) returns (Chart) {
+    option (google.api.http) = {
+      patch: "/v1/{chart.name=dashboards/*/charts/*}"
+      body: "chart"
+    };
+    option (google.api.method_signature) = "chart,update_mask";
+  }
+
+  rpc DeleteChart(DeleteChartRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v1/{name=dashboards/*/charts/*}"
+    };
+    option (google.api.method_signature) = "name";
+  }
+}
+
+message CreateDashboardRequest {
+  Dashboard dashboard = 1 [(google.api.field_behavior) = REQUIRED];
+  string dashboard_id = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message GetDashboardRequest {
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloud.xmanager.googleapis.com/Dashboard"
+    }
+  ];
+}
+
+message ListDashboardsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+  string filter = 3;
+}
+
+message ListDashboardsResponse {
+  repeated Dashboard dashboards = 1;
+  string next_page_token = 2;
+}
+
+message UpdateDashboardRequest {
+  Dashboard dashboard = 1 [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.FieldMask update_mask = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message DeleteDashboardRequest {
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloud.xmanager.googleapis.com/Dashboard"
+    }
+  ];
+}
+
+message CreateChartRequest {
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloud.xmanager.googleapis.com/Dashboard"
+    }
+  ];
+  Chart chart = 2 [(google.api.field_behavior) = REQUIRED];
+  string chart_id = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message GetChartRequest {
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloud.xmanager.googleapis.com/Chart"
+    }
+  ];
+}
+
+message GetChartDataRequest {
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloud.xmanager.googleapis.com/Chart"
+    }
+  ];
+  string parent_experiment = 2 [(google.api.field_behavior) = OPTIONAL];
+  string parent_workunit = 3 [(google.api.field_behavior) = OPTIONAL];
+  int32 chart_width_pixels = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message ListChartsRequest {
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloud.xmanager.googleapis.com/Dashboard"
+    }
+  ];
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListChartsResponse {
+  repeated Chart charts = 1;
+  string next_page_token = 2;
+}
+
+message UpdateChartRequest {
+  Chart chart = 1 [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.FieldMask update_mask = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message DeleteChartRequest {
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloud.xmanager.googleapis.com/Chart"
+    }
+  ];
+}

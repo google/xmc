@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "dashboard",
+    srcs = ["repository.go"],
+    importpath = "xmanager_cloud/internal/storage/spanner/dashboard",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/protos/dashboard:messages_go_proto",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_api//iterator",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

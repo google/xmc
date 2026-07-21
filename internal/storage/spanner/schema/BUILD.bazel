@@ -17,10 +17,23 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 exports_files(
     [
+        "dashboard-schema.sql",
         "ess-schema.sql",
         "xid-schema.sql",
     ],
     visibility = ["//visibility:public"],
+)
+
+go_library(
+    name = "dashboardschema",
+    srcs = ["dashboardschema.go"],
+    importpath = "xmanager_cloud/storage/spanner/schema/dashboardschema",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/filter/go/filtervisitor",
+        "//internal/compat/safesql",
+        "//internal/query_generator:querytools",
+    ],
 )
 
 go_library(
