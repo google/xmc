@@ -1,224 +1,119 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -e
 
-MODE="fix"
-if [ "${1:-}" = "--check" ]; then
-  MODE="check"
+echo "=== Running XMC Pre-Commit Linter Hooks ==="
+
+# 1. Bazel Lint & Auto-Fix via buildifier
+if which buildifier >/dev/null 2>&1 || [ -f "$HOME/go/bin/buildifier" ]; then
+  echo "--> Running buildifier (Bazel formatter)..."
+  BUILDIFIER_BIN="buildifier"
+  [ -f "$HOME/go/bin/buildifier" ] && BUILDIFIER_BIN="$HOME/go/bin/buildifier"
+
+  BAZEL_FILES=$(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \))
+  if [ -n "$BAZEL_FILES" ]; then
+    $BUILDIFIER_BIN -lint=fix -mode=fix $BAZEL_FILES
+  fi
+else
+  echo "--> WARNING: buildifier not found. To install: go install github.com/bazelbuild/buildtools/buildifier@latest"
 fi
 
-echo "=== Running XMC Pre-Commit Linter Hooks (Mode: ${MODE}) ==="
-FAILED=0
+# 2. Go Code Formatting
+echo "--> Running Go code formatter..."
+if which golangci-lint >/dev/null 2>&1; then
+  golangci-lint run --fix || true
+elif [ -f "$HOME/go/bin/golangci-lint" ]; then
+  "$HOME/go/bin/golangci-lint" run --fix || true
+else
+  find . -type f -name "*.go" -exec gofmt -s -w {} +
+fi
 
-check_bazel() {
-  local buildifier_bin=""
-  if command -v buildifier >/dev/null 2>&1; then
-    buildifier_bin="buildifier"
-  elif [ -f "$HOME/go/bin/buildifier" ]; then
-    buildifier_bin="$HOME/go/bin/buildifier"
-  fi
+# 3. UI Code Formatting & Linting
+STAGED_UI_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|html|scss)$' || true)
 
-  if [ -z "$buildifier_bin" ]; then
-    echo "--> WARNING: buildifier not found. To install: go install github.com/bazelbuild/buildtools/buildifier@latest"
-    if [ "$MODE" = "check" ]; then FAILED=1; fi
-    return
-  fi
-
-  echo "--> Running Bazel Formatter & Linter (Buildifier)..."
-  local bazel_files
-  bazel_files=$(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \) -not -path "*/node_modules/*")
-  if [ -n "$bazel_files" ]; then
-    if [ "$MODE" = "check" ]; then
-      if ! $buildifier_bin -mode=check $bazel_files; then
-        echo "❌ Bazel buildifier check failed."
-        FAILED=1
-      fi
-    else
-      $buildifier_bin -lint=fix -mode=fix $bazel_files
-    fi
-  fi
-}
-
-check_go() {
-  if command -v gofmt >/dev/null 2>&1; then
-    echo "--> Running Go Formatter (gofmt)..."
-    local unformatted_go
-    unformatted_go=$(gofmt -s -l . 2>/dev/null | grep -v 'vendor/' || true)
-    if [ -n "$unformatted_go" ]; then
-      echo "❌ Unformatted Go files found:"
-      echo "$unformatted_go"
-      FAILED=1
-    fi
-
-    if [ "$MODE" = "fix" ]; then
-      find . -type f -name "*.go" -not -path "*/vendor/*" -exec gofmt -s -w {} +
-    fi
+if [ -n "$STAGED_UI_FILES" ]; then
+  # Run Prettier
+  echo "--> Running UI Formatter (Prettier)..."
+  PRETTIER_BIN="cmd/ui/node_modules/.bin/prettier"
+  if [ -f "$PRETTIER_BIN" ]; then
+    $PRETTIER_BIN --config cmd/ui/.prettierrc --write $STAGED_UI_FILES
   else
-    echo "--> WARNING: gofmt not found. Go formatting checks skipped."
-    if [ "$MODE" = "check" ]; then FAILED=1; fi
-  fi
-}
-
-check_ui() {
-  local ui_files
-  if [ "$MODE" = "check" ]; then
-    ui_files=$(find cmd/ui -type f \( -name "*.ts" -o -name "*.html" -o -name "*.scss" \) -not -path "*/node_modules/*" -not -path "*/.angular/*" || true)
-  else
-    ui_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^cmd/ui/.*\.(ts|html|scss)$' || true)
-  fi
-
-  if [ -z "$ui_files" ]; then
-    return
-  fi
-
-  local prettier_bin="cmd/ui/node_modules/.bin/prettier"
-  local eslint_bin="cmd/ui/node_modules/.bin/eslint"
-
-  if [ -f "$prettier_bin" ]; then
-    echo "--> Running UI Formatter (Prettier)..."
-    if [ "$MODE" = "check" ]; then
-      if ! $prettier_bin --config cmd/ui/.prettierrc --check $ui_files; then
-        echo "❌ Prettier check failed."
-        FAILED=1
-      fi
-    else
-      $prettier_bin --config cmd/ui/.prettierrc --write $ui_files
-    fi
-  else
-    echo "❌ ERROR: Local Prettier not found at $prettier_bin."
-    echo "   Please install dependencies: cd cmd/ui && npm install"
-    if [ "$MODE" = "check" ]; then FAILED=1; fi
-  fi
-
-  if [ -f "$eslint_bin" ]; then
-    echo "--> Running UI Linter (ESLint)..."
-    if [ "$MODE" = "check" ]; then
-      if ! $eslint_bin --config cmd/ui/eslint.config.js $ui_files; then
-        echo "❌ ESLint check failed."
-        FAILED=1
-      fi
-    else
-      $eslint_bin --config cmd/ui/eslint.config.js --fix $ui_files
-    fi
-  else
-    echo "❌ ERROR: Local ESLint not found at $eslint_bin."
-    echo "   Please install dependencies: cd cmd/ui && npm install"
-    if [ "$MODE" = "check" ]; then FAILED=1; fi
-  fi
-}
-
-check_license() {
-  local addlicense_bin=""
-  if command -v addlicense >/dev/null 2>&1; then
-    addlicense_bin="addlicense"
-  elif [ -f "$HOME/go/bin/addlicense" ]; then
-    addlicense_bin="$HOME/go/bin/addlicense"
-  fi
-
-  if [ -z "$addlicense_bin" ]; then
-    echo "--> WARNING: addlicense not found. License check skipped."
-    if [ "$MODE" = "check" ]; then FAILED=1; fi
-    return
-  fi
-
-  echo "--> Running License Header Check (addlicense)..."
-  local ignores=(
-    -ignore "third_party/**"
-    -ignore "**/third_party/**"
-    -ignore "**/node_modules/**"
-    -ignore "**/.angular/**"
-    -ignore "**.json"
-    -ignore "**.lock"
-    -ignore "pyproject.toml"
-    -ignore "package.json"
-    -ignore "go.mod"
-    -ignore "go.sum"
-  )
-
-  if [ "$MODE" = "check" ]; then
-    if ! $addlicense_bin -check -c "Google LLC" -l apache "${ignores[@]}" .; then
-      echo "❌ License header check failed."
-      FAILED=1
-    fi
-  else
-    local staged_files
-    staged_files=$(git diff --cached --name-only --diff-filter=ACMR || true)
-    if [ -n "$staged_files" ]; then
-      $addlicense_bin -c "Google LLC" -l apache "${ignores[@]}" $staged_files
-    fi
-  fi
-}
-
-check_python() {
-  local py_files
-  if [ "$MODE" = "check" ]; then
-    py_files=$(find . -type f -name "*.py" -not -path "*/node_modules/*" -not -path "*/.git/*" || true)
-  else
-    py_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.py$' || true)
-  fi
-
-  if [ -z "$py_files" ]; then
-    return
-  fi
-
-  local ruff_bin=""
-  if command -v ruff >/dev/null 2>&1; then
-    ruff_bin="ruff"
-  elif [ -f "$HOME/.local/bin/ruff" ]; then
-    ruff_bin="$HOME/.local/bin/ruff"
-  fi
-
-  if [ -n "$ruff_bin" ]; then
-    echo "--> Running Python Linter & Formatter (Ruff)..."
-    if [ "$MODE" = "check" ]; then
-      if ! $ruff_bin check $py_files; then
-        echo "❌ Ruff lint check failed."
-        FAILED=1
-      fi
-      if ! $ruff_bin format --check $py_files; then
-        echo "❌ Ruff format check failed."
-        FAILED=1
-      fi
-    else
-      $ruff_bin check --fix $py_files
-      $ruff_bin format $py_files
-    fi
-  elif command -v docker >/dev/null 2>&1; then
-    echo "--> Running Ruff via Docker container..."
-    if [ "$MODE" = "check" ]; then
-      if ! docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest check $py_files; then FAILED=1; fi
-      if ! docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest format --check $py_files; then FAILED=1; fi
-    else
-      docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest check --fix $py_files
-      docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest format $py_files
-    fi
-  else
-    echo "--> WARNING: ruff or docker not found. Python linting skipped."
-    if [ "$MODE" = "check" ]; then FAILED=1; fi
-  fi
-}
-
-main() {
-  check_bazel
-  check_go
-  check_ui
-  check_license
-  check_python
-
-  if [ "$MODE" = "fix" ]; then
-    if ! git diff --quiet; then
-      echo ""
-      echo "❌ PRE-COMMIT HOOK FAILED: Linters automatically fixed formatting issues in your code!"
-      echo "   Please review the modified files (git diff), stage them (git add -u), and re-run git commit."
-      exit 1
-    fi
-  fi
-
-  if [ "$FAILED" -ne 0 ]; then
-    echo "=== ❌ Linter checks failed! ==="
+    echo "❌ ERROR: Local Prettier not found at $PRETTIER_BIN."
+    echo "   To commit TS/HTML files, you must install dependencies: cd cmd/ui && npm install"
     exit 1
   fi
 
-  echo "=== ✅ All pre-commit checks passed! ==="
-}
+  # Run ESLint
+  echo "--> Running UI Linter (ESLint)..."
+  ESLINT_BIN="cmd/ui/node_modules/.bin/eslint"
+  if [ -f "$ESLINT_BIN" ]; then
+    $ESLINT_BIN --config cmd/ui/eslint.config.js --fix --no-warn-ignored $STAGED_UI_FILES
+  else
+    echo "❌ ERROR: Local ESLint not found at $ESLINT_BIN."
+    echo "   To commit TS/HTML files, you must install dependencies: cd cmd/ui && npm install"
+    exit 1
+  fi
 
-main
+  # Run UI Type Checker (TypeScript)
+  echo "--> Running UI Type Checker (tsc)..."
+  TSC_BIN="cmd/ui/node_modules/.bin/tsc"
+  if [ -f "$TSC_BIN" ]; then
+    (cd cmd/ui && ./node_modules/.bin/tsc --noEmit)
+  else
+    echo "❌ ERROR: Local TypeScript compiler not found at $TSC_BIN."
+    echo "   To commit TS/HTML files, you must install dependencies: cd cmd/ui && npm install"
+    exit 1
+  fi
+else
+  echo "    No staged UI files to format or lint."
+fi
+
+# 4. License Check via addlicense
+ADDLICENSE_BIN=""
+if which addlicense >/dev/null 2>&1; then
+  ADDLICENSE_BIN="addlicense"
+elif [ -f "$HOME/go/bin/addlicense" ]; then
+  ADDLICENSE_BIN="$HOME/go/bin/addlicense"
+else
+  echo "--> WARNING: addlicense not found. License check skipped."
+  echo "    To install: go install github.com/google/addlicense@latest"
+fi
+
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR)
+if [ -n "$ADDLICENSE_BIN" ] && [ -n "$STAGED_FILES" ]; then
+  echo "--> Running addlicense to auto-add missing headers..."
+  $ADDLICENSE_BIN -c "Google LLC" -l apache \
+      -ignore "third_party/**" \
+      -ignore "**/third_party/**" \
+      $STAGED_FILES
+fi
+
+# 5. Python Code Formatting & Linting (PEP 8)
+STAGED_PYTHON_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.py$' || true)
+if [ -n "$STAGED_PYTHON_FILES" ]; then
+  echo "--> Running Python Linter & Formatter (Ruff)..."
+  if which ruff >/dev/null 2>&1; then
+    ruff check --fix $STAGED_PYTHON_FILES
+    ruff format $STAGED_PYTHON_FILES
+  elif which docker >/dev/null 2>&1; then
+    echo "--> Running Ruff via Docker container..."
+    docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest check --fix $STAGED_PYTHON_FILES
+    docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest format $STAGED_PYTHON_FILES
+  elif which flake8 >/dev/null 2>&1; then
+    flake8 $STAGED_PYTHON_FILES
+  else
+    echo "--> WARNING: ruff/flake8/docker not found. Python linting skipped locally."
+    echo "    To install: pip install ruff"
+  fi
+else
+  echo "    No staged Python files to format or lint."
+fi
+
+# Check if the linters modified any un-staged files
+if ! git diff --quiet; then
+  echo ""
+  echo "❌ PRE-COMMIT HOOK FAILED: Linters automatically fixed formatting issues in your code!"
+  echo "   Please review the modified files (git diff), stage them (git add -u), and re-run git commit."
+  exit 1
+fi
+
+echo "=== ✅ All pre-commit checks passed! ==="
