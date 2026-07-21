@@ -134,7 +134,7 @@ func TestConfigValidate(t *testing.T) {
 				TopicName:       "xmc-metrics",
 				MinPartitions:   128,
 				MinReplicas:     3,
-				SASEnabled:      true,
+				SASLEnabled:     true,
 				SASLUser:        "",
 				SASLPassword:    "secret",
 			},
@@ -148,7 +148,7 @@ func TestConfigValidate(t *testing.T) {
 				TopicName:       "xmc-metrics",
 				MinPartitions:   128,
 				MinReplicas:     3,
-				SASEnabled:      true,
+				SASLEnabled:     true,
 				SASLMechanism:   "SCRAM-SHA-256",
 				SASLUser:        "user",
 				SASLPassword:    "secret",
@@ -163,7 +163,7 @@ func TestConfigValidate(t *testing.T) {
 				TopicName:       "xmc-metrics",
 				MinPartitions:   128,
 				MinReplicas:     3,
-				SASEnabled:      true,
+				SASLEnabled:     true,
 				SASLMechanism:   "GSSAPI",
 				SASLUser:        "user",
 				SASLPassword:    "secret",
@@ -195,7 +195,7 @@ func TestLoadSASLCredentialsFromFile(t *testing.T) {
 	}
 
 	cfg := &Config{
-		SASEnabled:         true,
+		SASLEnabled:        true,
 		SASLCredentialsDir: tempDir,
 	}
 

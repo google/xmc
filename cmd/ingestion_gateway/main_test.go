@@ -189,14 +189,14 @@ func TestBuildKgoOptions(t *testing.T) {
 			name: "Default config without SASL",
 			cfg: Config{
 				RedpandaBrokers: []string{"localhost:9092"},
-				SASEnabled:      false,
+				SASLEnabled:     false,
 			},
 		},
 		{
 			name: "SASL enabled SCRAM-SHA-256",
 			cfg: Config{
 				RedpandaBrokers: []string{"localhost:9092"},
-				SASEnabled:      true,
+				SASLEnabled:     true,
 				SASLMechanism:   "SCRAM-SHA-256",
 				SASLUser:        "user",
 				SASLPassword:    "pass",
@@ -206,7 +206,7 @@ func TestBuildKgoOptions(t *testing.T) {
 			name: "SASL enabled PLAIN",
 			cfg: Config{
 				RedpandaBrokers: []string{"localhost:9092"},
-				SASEnabled:      true,
+				SASLEnabled:     true,
 				SASLMechanism:   "PLAIN",
 				SASLUser:        "user",
 				SASLPassword:    "pass",

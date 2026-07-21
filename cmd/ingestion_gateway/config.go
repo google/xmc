@@ -30,7 +30,7 @@ type Config struct {
 	TopicName          string
 	MinPartitions      int
 	MinReplicas        int
-	SASEnabled         bool
+	SASLEnabled        bool
 	SASLMechanism      string
 	SASLUser           string
 	SASLPassword       string
@@ -63,7 +63,7 @@ func init() {
 	flag.StringVar(&saslUser, "sasl_user", "", "SASL username (if omitted, loaded from sasl_credentials_dir/username).")
 	flag.StringVar(&saslPassword, "sasl_password", "", "SASL password (if omitted, loaded from sasl_credentials_dir/password).")
 	flag.StringVar(&saslCredentialsDir, "sasl_credentials_dir", "/etc/kafka/credentials", "Directory containing mounted SASL secret files.")
-	flag.StringVar(&projectID, "project_id", "xmc-dev", "GCP project ID for logging.")
+	flag.StringVar(&projectID, "project_id", "", "GCP project ID for logging.")
 }
 
 // LoadConfig creates and validates a Config struct from flags and mounted secrets.
@@ -76,7 +76,7 @@ func LoadConfig() (*Config, error) {
 		TopicName:          strings.TrimSpace(topicName),
 		MinPartitions:      minPartitions,
 		MinReplicas:        minReplicas,
-		SASEnabled:         saslEnabled,
+		SASLEnabled:        saslEnabled,
 		SASLMechanism:      strings.ToUpper(strings.TrimSpace(saslMechanism)),
 		SASLUser:           strings.TrimSpace(saslUser),
 		SASLPassword:       strings.TrimSpace(saslPassword),
@@ -84,7 +84,7 @@ func LoadConfig() (*Config, error) {
 		ProjectID:          strings.TrimSpace(projectID),
 	}
 
-	if cfg.SASEnabled {
+	if cfg.SASLEnabled {
 		if err := loadSASLCredentials(cfg); err != nil {
 			return nil, fmt.Errorf("failed to load SASL credentials: %w", err)
 		}
@@ -157,7 +157,7 @@ func (c *Config) Validate() error {
 	if c.MinReplicas <= 0 {
 		return fmt.Errorf("min_replicas must be > 0")
 	}
-	if c.SASEnabled {
+	if c.SASLEnabled {
 		mech := strings.ToUpper(strings.TrimSpace(c.SASLMechanism))
 		switch mech {
 		case "SCRAM-SHA-256", "SCRAM-SHA-512", "PLAIN":

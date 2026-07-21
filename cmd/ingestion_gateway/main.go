@@ -79,7 +79,7 @@ func buildKgoOptions(cfg *Config) []kgo.Opt {
 		kgo.RecordPartitioner(kgo.StickyKeyPartitioner(nil)),
 	}
 
-	if cfg.SASEnabled {
+	if cfg.SASLEnabled {
 		switch strings.ToUpper(cfg.SASLMechanism) {
 		case "SCRAM-SHA-256":
 			opts = append(opts, kgo.SASL(scram.Auth{User: cfg.SASLUser, Pass: cfg.SASLPassword}.AsSha256Mechanism()))
