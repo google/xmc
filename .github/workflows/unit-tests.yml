@@ -55,22 +55,11 @@ jobs:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
 
-      - name: 'Conditional Disk Space Cleanup'
+      - name: 'Start Async Disk Space Cleanup'
         run: |
-          AVAILABLE_GB=$(df / --output=avail | tail -n 1 | awk '{print int($1/1024/1024)}')
-          echo "=== Available Disk Space: ${AVAILABLE_GB} GB ==="
-          if [ "$AVAILABLE_GB" -lt 10 ]; then
-            echo "Disk space is low (< 10 GB). Running full targeted cleanup..."
-            sudo rm -rf /usr/local/lib/android /usr/share/dotnet || true
-            sudo swapoff -a || true
-            sudo rm -f /mnt/swapfile /swapfile || true
-            docker image prune -a -f || true
-            docker builder prune -f || true
-            echo "=== Disk Space After Cleanup ==="
-            df -h /
-          else
-            echo "Sufficient disk space (${AVAILABLE_GB} GB >= 10 GB). Skipping cleanup."
-          fi
+          echo "=== Starting background cleanup of Android SDK & .NET ==="
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet &
+          echo "CLEANUP_PID=$!" >> $GITHUB_ENV
 
       - name: 'Set up Go'
         uses: 'actions/setup-go@v5'
@@ -109,6 +98,15 @@ jobs:
           
           echo "CRITICAL: Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }} did not start within ${{ env.SPANNER_CHECK_TIMEOUT }} seconds."
           exit 1
+
+      - name: 'Wait for Disk Space Cleanup'
+        run: |
+          if [ -n "${CLEANUP_PID:-}" ]; then
+            echo "Waiting for background cleanup (PID ${CLEANUP_PID}) to complete..."
+            wait "${CLEANUP_PID}" || true
+          fi
+          echo "=== Available Disk Space Before Bazel Build ==="
+          df -h /
 
       - name: 'Run Backend Unit Tests'
         run: |
