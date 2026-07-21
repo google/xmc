@@ -111,8 +111,14 @@ class BoundedMetricsBuffer:
         coerced_items = []
         now = time.time()
         for metric in metrics:
-            name, value, step = metric[0], metric[1], metric[2]
-            ts = metric[3] if len(metric) > 3 and metric[3] is not None else now
+            try:
+                name, value, step = metric[0], metric[1], metric[2]
+                ts = metric[3] if len(metric) > 3 and metric[3] is not None else now
+            except (IndexError, TypeError) as e:
+                raise ValueError(
+                    "Each metric must be a sequence of at least 3 elements "
+                    f"(name, value, step[, timestamp]). Got: {metric}"
+                ) from e
             coerced_items.append(
                 (
                     str(name),

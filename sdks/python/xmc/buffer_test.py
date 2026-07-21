@@ -84,6 +84,13 @@ class TestBoundedMetricsBuffer(unittest.TestCase):
         self.assertEqual(items[0], ("m1", 1.0, 1, 100.0))
         self.assertEqual(items[2], ("m3", 3.0, 3, 102.0))
 
+    def test_put_many_invalid_metric(self) -> None:
+        buf = BoundedMetricsBuffer(capacity=10)
+        invalid_metrics = [("m1", 1.0)]  # Only 2 elements
+        with self.assertRaises(ValueError) as ctx:
+            buf.put_many(invalid_metrics)  # type: ignore
+        self.assertIn("at least 3 elements", str(ctx.exception))
+
     def test_pop_batch(self) -> None:
         buf = BoundedMetricsBuffer(capacity=10)
         for i in range(5):
