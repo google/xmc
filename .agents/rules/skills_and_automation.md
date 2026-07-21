@@ -24,8 +24,3 @@ This document provides standards for skill architecture, workflow automation, an
 - **Tightly Scoped Subagent Prompts**: Provide worker subagents with specific file scopes, clear execution bounds, and explicit expected output requirements.
 - **Structured Synthesis Reporting**: Subagents must analyze intermediate outputs and communicate clean, structured summaries and actionable conclusions back to the parent agent via structured messaging.
 
-## 5. Iterative Reflection & Meta-Learning
-- **Post-Task Retrospectives**: When requested by the user (or after completing major implementations), follow the workflow defined in the `iterative_reflection` skill ([SKILL.md](file://.agents/skills/iterative_reflection/SKILL.md)).
-- **4-Pillar Trajectory Audit**: Evaluate session logs for (1) Helper script needs, (2) Rule gaps, (3) Skill gaps, and (4) Context/Subagent efficiency.
-- **Proposals Before Edits**: Always present structured improvement proposals to the user before modifying codebase rules, skills, or scripts.
-

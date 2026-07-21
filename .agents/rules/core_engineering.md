@@ -58,8 +58,8 @@ function processUser(user: User | null) {
   - **Mandatory User Confirmation**: Seek explicit user confirmation before introducing breaking changes to public APIs, protobuf schemas, CLI flags, or core system contracts.
   - **Documentation Alignment**: Synchronize repository markdown documents (including, but not limited to, `README.md`, `INSTALL.md`, and component specs), schemas, and inline API references within the exact same pull request whenever system contracts or behaviors change.
 
-## 6. Iterative Reflection & Meta-Learning
-- **Post-Implementation Reflection**: After completing major feature implementations, bug fixes, or workflow refactoring—or when explicitly prompted by the user—run a retrospective using the `iterative_reflection` skill ([SKILL.md](file://.agents/skills/iterative_reflection/SKILL.md)).
-- **Audit Trajectory for Improvements**: Audit session history across (1) Helper script opportunities in `tools/`, (2) Rule gaps in `.agents/rules/`, (3) Workflow/skill gaps in `.agents/skills/`, and (4) Context window/subagent delegation efficiency.
-- **Propose Before Applying**: Always present proposed enhancements to the user for explicit confirmation before implementing any file, rule, or script modifications.
+## 6. Post-Implementation Reflection & Meta-Learning
+- **Post-Task Retrospective**: After completing major implementations, bug fixes, or refactoring—or when requested by the user—audit session trajectory and thought history using the `iterative_reflection` skill ([SKILL.md](file://.agents/skills/iterative_reflection/SKILL.md)).
+- **Proposals Before Edits**: Always present structured recommendations (script needs, rule gaps, skill gaps, token efficiency) for user review before making file modifications.
+
 
