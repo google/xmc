@@ -356,3 +356,24 @@ CREATE TABLE StatusMessages (
   INTERLEAVE IN PARENT Experiments
   ON DELETE CASCADE,
   ROW DELETION POLICY (OLDER_THAN(ExpirationTime, INTERVAL 0 DAY));
+
+-- Table that holds the status transition history for work units to track queue velocity.
+CREATE TABLE WorkUnitStatusHistory (
+  Xid INT64 NOT NULL,
+  BitReversedXid INT64 NOT NULL AS (BIT_REVERSE(Xid, FALSE)) STORED,
+  WorkUnitId INT64 NOT NULL,
+  HistoryId INT64 NOT NULL,
+  ExecutionId INT64,
+  QueueName STRING(MAX),
+  PreviousState cloud.xmanager.v1.WorkUnitStatus.WorkUnitState,
+  NewState cloud.xmanager.v1.WorkUnitStatus.WorkUnitState NOT NULL,
+  DominantResource STRING(MAX),
+  DominantResourceUnits INT64,
+  TransitionTime TIMESTAMP NOT NULL,
+  ExpirationTime TIMESTAMP AS (TIMESTAMP_ADD(TransitionTime, INTERVAL 30 DAY)) STORED,
+) PRIMARY KEY (BitReversedXid, WorkUnitId, HistoryId),
+  INTERLEAVE IN PARENT WorkUnits
+  ON DELETE CASCADE,
+  ROW DELETION POLICY (OLDER_THAN(ExpirationTime, INTERVAL 0 DAY));
+
+CREATE INDEX WorkUnitStatusHistoryByQueueAndTransitionTime ON WorkUnitStatusHistory (QueueName, TransitionTime DESC, NewState, PreviousState);
