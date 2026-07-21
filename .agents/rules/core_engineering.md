@@ -60,7 +60,3 @@ function processUser(user: User | null) {
 
 ## 6. Post-Implementation Reflection & Meta-Learning
 - **Selective Triggers**: Trigger the `iterative_reflection` skill ([SKILL.md](file://.agents/skills/iterative_reflection/SKILL.md)) only after major implementations, PRs with high comment volume (>3-5 comments), or explicit user request. Do NOT trigger for routine minor edits.
-- **Pragmatic Proposals**: Accept "No Action Needed" as a valid outcome when friction was a one-off case. Propose permanent rules/tools only for systemic, recurring patterns.
-
-
-

@@ -66,8 +66,7 @@ Before adding any item to the proposed enhancements list, pass it through these 
 
 1. **Recurrence Check**: Is this friction likely to happen again in future tasks, or was it a unique, one-off edge case? (If one-off, omit it).
 2. **ROI Check**: Will the proposed rule/tool save more agent turns and token overhead than the cost of maintaining it? (If low ROI, omit it).
-3. **Zero-Friction Result**: If no systemic improvements are identified, state clearly:
-   > *"Trajectory was optimal. No permanent rule or tool modifications recommended for this task."*
+3. **Zero-Friction Result**: If trajectory was smooth or friction was a one-off case, allow a pragmatic "No Action Needed" outcome.
 
 ---
 
@@ -79,7 +78,8 @@ Structure findings into a clean report:
 - **Primary Task**: Short summary of what was implemented or reviewed.
 - **Trigger Reason**: Major Implementation / High PR Comment Volume / User Request.
 - **Trajectory Health**: Smooth / Minor Friction / Significant Friction.
-- **Optimization Recommendation**: Actionable Enhancements Proposed OR No Action Needed (One-Off / Optimal).
+- **Outcome**: Actionable Enhancements Proposed OR No Action Needed (Trajectory Optimal / One-off).
+
 
 ### 💡 Proposed Enhancements (If Applicable)
 
