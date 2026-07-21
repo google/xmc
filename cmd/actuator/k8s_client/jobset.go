@@ -330,7 +330,7 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 						Containers:         buildContainersForJob(job),
 						RestartPolicy:      corev1.RestartPolicyNever,
 						SecurityContext:    defaultPodSecurityContext(),
-						Volumes:            defaultVolumes(),
+						Volumes:            generateVolumesForJob(job),
 						NodeSelector:       nodeSelector,
 					},
 				},
@@ -426,7 +426,7 @@ func buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Con
 		Env:                      envVars,
 		Ports:                    ports,
 		SecurityContext:          defaultSecurityContext(),
-		VolumeMounts:             defaultVolumeMounts(),
+		VolumeMounts:             generateVolumeMountsForSpec(spec),
 	}
 }
 
@@ -808,52 +808,6 @@ func podFailurePolicy(containerName string) *batchv1.PodFailurePolicy {
 					Values:        []int32{42},
 				},
 			},
-		},
-	}
-}
-
-func defaultVolumes() []corev1.Volume {
-	return []corev1.Volume{
-		{
-			Name: "ram-scratch",
-			VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{
-					Medium: corev1.StorageMediumMemory,
-				},
-			},
-		},
-		{
-			Name: "disk-scratch",
-			VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{
-					Medium: corev1.StorageMediumDefault,
-				},
-			},
-		},
-		{
-			Name: "dev-shm-scratch",
-			VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{
-					Medium: corev1.StorageMediumMemory,
-				},
-			},
-		},
-	}
-}
-
-func defaultVolumeMounts() []corev1.VolumeMount {
-	return []corev1.VolumeMount{
-		{
-			Name:      "ram-scratch",
-			MountPath: "/dev/ram-scratch",
-		},
-		{
-			Name:      "disk-scratch",
-			MountPath: "/dev/disk-scratch",
-		},
-		{
-			Name:      "dev-shm-scratch",
-			MountPath: "/dev/shm",
 		},
 	}
 }
