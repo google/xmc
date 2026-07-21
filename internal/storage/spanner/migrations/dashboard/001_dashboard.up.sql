@@ -22,16 +22,6 @@ CREATE TABLE Dashboards (
   UpdatedAt TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
 ) PRIMARY KEY (DashboardId);
 
-CREATE TABLE DashboardCharts (
-  DashboardId STRING(MAX) NOT NULL,
-  DashboardChartId STRING(MAX) NOT NULL,
-  ChartId STRING(MAX) NOT NULL,
-  GridPosition BYTES(MAX),
-  CreatedAt TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
-  CONSTRAINT FK_DashboardChart_ChartId FOREIGN KEY (ChartId) REFERENCES Charts(ChartId)
-) PRIMARY KEY (DashboardId, DashboardChartId),
-  INTERLEAVE IN PARENT Dashboards ON DELETE CASCADE;
-
 CREATE TABLE Charts (
   ChartId STRING(MAX) NOT NULL,
   Title STRING(MAX) NOT NULL,
@@ -41,6 +31,16 @@ CREATE TABLE Charts (
   CreatedAt TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
   UpdatedAt TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
 ) PRIMARY KEY (ChartId);
+
+CREATE TABLE DashboardCharts (
+  DashboardId STRING(MAX) NOT NULL,
+  DashboardChartId STRING(MAX) NOT NULL,
+  ChartId STRING(MAX) NOT NULL,
+  GridPosition BYTES(MAX),
+  CreatedAt TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+  CONSTRAINT FK_DashboardChart_ChartId FOREIGN KEY (ChartId) REFERENCES Charts(ChartId)
+) PRIMARY KEY (DashboardId, DashboardChartId),
+  INTERLEAVE IN PARENT Dashboards ON DELETE CASCADE;
 
 CREATE TABLE ChartPlots (
   ChartId STRING(MAX) NOT NULL,
@@ -60,5 +60,4 @@ CREATE TABLE ArtifactCharts (
   ChartId STRING(MAX) NOT NULL,
   CreatedAt TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
   CONSTRAINT FK_ArtifactChart_ChartId FOREIGN KEY (ChartId) REFERENCES Charts(ChartId)
-) PRIMARY KEY (BitReversedXid, WorkUnitId, ArtifactId, ArtifactChartId),
-  INTERLEAVE IN PARENT Artifacts ON DELETE CASCADE;
+) PRIMARY KEY (BitReversedXid, WorkUnitId, ArtifactId, ArtifactChartId);

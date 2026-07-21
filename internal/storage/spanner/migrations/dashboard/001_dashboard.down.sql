@@ -14,6 +14,6 @@
 
 DROP TABLE ArtifactCharts;
 DROP TABLE ChartPlots;
-DROP TABLE Charts;
 DROP TABLE DashboardCharts;
+DROP TABLE Charts;
 DROP TABLE Dashboards;

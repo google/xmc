@@ -20,7 +20,7 @@ const (
 	DashboardChartsTableName = "DashboardCharts"
 	ChartsTableName          = "Charts"
 	ChartPlotsTableName      = "ChartPlots"
-	ArtifactChartsTableName = "ArtifactCharts"
+	ArtifactChartsTableName  = "ArtifactCharts"
 )
 
 var FetchedDashboardColumns = []string{

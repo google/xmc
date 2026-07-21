@@ -37,10 +37,10 @@ import (
 func TestSchemaSynchronization(t *testing.T) {
 	ctx := t.Context()
 
-	// SetupWithEmulator creates the ESS and XID databases using their respective schemas.
-	_, _, emu := emulator.SetupWithEmulator(ctx, t)
-	// SetupEmpty creates an empty database.
-	_, _, emptyDBEmu := emulator.SetupEmpty(ctx, t)
+	// SetupWithDashboard creates the ESS, XID, and Dashboard databases using their respective schemas.
+	_, _, emu := emulator.SetupWithDashboard(ctx, t)
+	// SetupEmptyWithDashboard creates empty databases.
+	_, _, emptyDBEmu := emulator.SetupEmptyWithDashboard(ctx, t)
 
 	tests := []testRunCase{
 		{
@@ -64,7 +64,7 @@ func TestSchemaSynchronization(t *testing.T) {
 			migrationsDir: "dashboard",
 			databaseID:    "test-dashboard-db-" + emulator.RandomSuffix(),
 			getDB: func(emu *emulator.Emulator) string {
-				return "test-dashboard-db"
+				return emu.DashboardDatabase
 			},
 		},
 	}
@@ -150,7 +150,7 @@ func TestSchemaSynchronization(t *testing.T) {
 func TestMigrationUpDownConsistency(t *testing.T) {
 	ctx := t.Context()
 
-	_, _, emu := emulator.SetupEmpty(ctx, t)
+	_, _, emu := emulator.SetupEmptyWithDashboard(ctx, t)
 
 	tests := []testRunCase{
 		{
@@ -174,7 +174,7 @@ func TestMigrationUpDownConsistency(t *testing.T) {
 			migrationsDir: "dashboard",
 			databaseID:    "test-dashboard-db-" + emulator.RandomSuffix(),
 			getDB: func(emu *emulator.Emulator) string {
-				return "test-dashboard-db"
+				return emu.DashboardDatabase
 			},
 		},
 	}

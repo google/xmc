@@ -45,6 +45,10 @@ var (
 	essSchema string
 	//go:embed ess_messages.pb
 	essDescriptors []byte
+	//go:embed dashboard-schema.sql
+	dashboardSchema string
+	//go:embed dashboard_messages.pb
+	dashboardDescriptors []byte
 )
 
 const (
@@ -74,9 +78,10 @@ func Start(ctx context.Context, opts Options) (*Emulator, error) {
 }
 
 type Emulator struct {
-	addr        string
-	XIDDatabase string
-	ESSDatabase string
+	addr              string
+	XIDDatabase       string
+	ESSDatabase       string
+	DashboardDatabase string
 }
 
 func (e *Emulator) ClientOptions() []option.ClientOption {
@@ -94,14 +99,22 @@ func Setup(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client)
 }
 
 func SetupWithEmulator(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client, *Emulator) {
-	return setup(ctx, t, true)
+	return setup(ctx, t, true, false)
 }
 
 func SetupEmpty(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client, *Emulator) {
-	return setup(ctx, t, false)
+	return setup(ctx, t, false, false)
 }
 
-func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client, *spanner.Client, *Emulator) {
+func SetupWithDashboard(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client, *Emulator) {
+	return setup(ctx, t, true, true)
+}
+
+func SetupEmptyWithDashboard(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client, *Emulator) {
+	return setup(ctx, t, false, true)
+}
+
+func setup(ctx context.Context, t *testing.T, applySchema, includeDashboard bool) (*spanner.Client, *spanner.Client, *Emulator) {
 	t.Helper()
 
 	addr := os.Getenv("SPANNER_EMULATOR_HOST")
@@ -133,6 +146,17 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 		t.Fatalf("failed to create ESS database: %v", err)
 	}
 
+	var dashboardDBURI string
+	if includeDashboard {
+		dashboardDatabase := fmt.Sprintf("test-dashboard-db-%s", suffix)
+		emu.DashboardDatabase = dashboardDatabase
+		dashboardDBURI = fmt.Sprintf("projects/%s/instances/%s/databases/%s", projectID, instanceID, dashboardDatabase)
+
+		if err := createDatabase(ctx, emu, dashboardDatabase, dashboardDBURI, dashboardSchema, dashboardDescriptors, applySchema); err != nil {
+			t.Fatalf("failed to create Dashboard database: %v", err)
+		}
+	}
+
 	xidClient, err := spanner.NewClient(ctx, xidDBURI, emu.ClientOptions()...)
 	if err != nil {
 		t.Fatalf("failed to create spanner client: %v", err)
@@ -154,6 +178,9 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 		defer dba.Close()
 		_ = dba.DropDatabase(cleanupCtx, &dbadminpb.DropDatabaseRequest{Database: xidDBURI})
 		_ = dba.DropDatabase(cleanupCtx, &dbadminpb.DropDatabaseRequest{Database: essDBURI})
+		if dashboardDBURI != "" {
+			_ = dba.DropDatabase(cleanupCtx, &dbadminpb.DropDatabaseRequest{Database: dashboardDBURI})
+		}
 	})
 
 	return xidClient, essClient, emu
