@@ -15,6 +15,7 @@
 """Unit tests for XMC zero-dependency HTTP client and connection recycling."""
 
 import socket
+import threading
 import unittest
 from unittest import mock
 
@@ -148,8 +149,8 @@ class TestHTTPClient(unittest.TestCase):
         mock_conn2.getresponse.return_value = mock_resp
         mock_http_conn_cls.side_effect = [mock_conn1, mock_conn2]
 
-        # Time sequence: t0 (creation), t1 (< TTL), t2 (>= TTL)
-        mock_monotonic.side_effect = [100.0, 200.0, 800.0]
+        # Time sequence: t0 (creation), t1 (< TTL), t2 (>= TTL), t3 (re-creation)
+        mock_monotonic.side_effect = [100.0, 200.0, 800.0, 800.0]
 
         client = HTTPClient("http://localhost:8080", base_ttl=600.0, jitter=0.0)
 
@@ -165,6 +166,49 @@ class TestHTTPClient(unittest.TestCase):
         client.send("/path", "body3")
         self.assertEqual(mock_http_conn_cls.call_count, 2)
         mock_conn1.close.assert_called_once()
+
+    @mock.patch("http.client.HTTPConnection")
+    def test_stale_connection_retry_success(self, mock_http_conn_cls: mock.MagicMock) -> None:
+        mock_conn1 = mock.MagicMock()
+        mock_conn2 = mock.MagicMock()
+        mock_resp = mock.MagicMock()
+        mock_resp.status = 200
+
+        # Connection 1 fails on request due to stale socket error
+        mock_conn1.request.side_effect = socket.error("Connection reset by peer")
+        mock_conn2.getresponse.return_value = mock_resp
+        mock_http_conn_cls.side_effect = [mock_conn1, mock_conn2]
+
+        client = HTTPClient("http://localhost:8080")
+        result = client.send("/path", "body")
+
+        self.assertEqual(result, SendResult.SUCCESS)
+        self.assertEqual(mock_http_conn_cls.call_count, 2)
+        mock_conn1.close.assert_called_once()
+
+    @mock.patch("http.client.HTTPConnection")
+    def test_thread_safe_concurrent_sends(self, mock_http_conn_cls: mock.MagicMock) -> None:
+        mock_conn = mock.MagicMock()
+        mock_resp = mock.MagicMock()
+        mock_resp.status = 200
+        mock_conn.getresponse.return_value = mock_resp
+        mock_http_conn_cls.return_value = mock_conn
+
+        client = HTTPClient("http://localhost:8080")
+        results = []
+
+        def worker() -> None:
+            res = client.send("/path", "body")
+            results.append(res)
+
+        threads = [threading.Thread(target=worker) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(len(results), 10)
+        self.assertTrue(all(r == SendResult.SUCCESS for r in results))
 
     @mock.patch("http.client.HTTPConnection")
     def test_socket_timeout_recycles_connection(self, mock_http_conn_cls: mock.MagicMock) -> None:

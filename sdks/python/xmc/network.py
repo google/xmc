@@ -18,6 +18,7 @@ import enum
 import http.client
 import random
 import socket
+import threading
 import time
 import urllib.parse
 from typing import Any, Dict, Optional, Union
@@ -89,6 +90,7 @@ class HTTPClient:
         self._request_count: int = 0
         self._created_at: float = 0.0
         self._current_ttl: float = 0.0
+        self._lock = threading.Lock()
 
     def _calculate_ttl(self) -> float:
         """Calculates connection TTL with random jitter (base_ttl ± jitter)."""
@@ -155,25 +157,33 @@ class HTTPClient:
 
         encoded_body = body.encode("utf-8") if isinstance(body, str) else body
 
-        try:
-            conn = self._ensure_connection()
-            conn.request(method.upper(), full_path, body=encoded_body, headers=req_headers)
-            response = conn.getresponse()
-            response.read()
-            self._request_count += 1
-            return self._status_to_send_result(response.status)
+        with self._lock:
+            try:
+                conn = self._ensure_connection()
+                try:
+                    conn.request(method.upper(), full_path, body=encoded_body, headers=req_headers)
+                    response = conn.getresponse()
+                except (socket.timeout, TimeoutError):
+                    raise
+                except (http.client.HTTPException, socket.error, OSError):
+                    # Connection error (e.g. stale keep-alive connection closed by server).
+                    # Close stale connection and retry once.
+                    self._close_conn()
+                    conn = self._ensure_connection()
+                    conn.request(method.upper(), full_path, body=encoded_body, headers=req_headers)
+                    response = conn.getresponse()
 
-        except (socket.timeout, TimeoutError):
-            self._close_conn()
-            return SendResult.TRANSIENT_FAILURE
+                response.read()
+                self._request_count += 1
+                return self._status_to_send_result(response.status)
 
-        except (http.client.HTTPException, socket.error, OSError):
-            self._close_conn()
-            return SendResult.TRANSIENT_FAILURE
+            except (socket.timeout, TimeoutError):
+                self._close_conn()
+                return SendResult.TRANSIENT_FAILURE
 
-        except Exception:
-            self._close_conn()
-            return SendResult.TRANSIENT_FAILURE
+            except Exception:
+                self._close_conn()
+                return SendResult.TRANSIENT_FAILURE
 
     def _status_to_send_result(self, status: int) -> SendResult:
         """Maps HTTP status code to SendResult enum."""
@@ -185,7 +195,8 @@ class HTTPClient:
 
     def close(self) -> None:
         """Closes the underlying network connection."""
-        self._close_conn()
+        with self._lock:
+            self._close_conn()
 
     def _close_conn(self) -> None:
         if self._conn is not None:
