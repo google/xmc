@@ -62,5 +62,6 @@ This document defines standards for AI agents acting as **Code Reviewers / Inspe
 - **Completion Guardrail**: Never mark a PR review comment task as complete until 100% of comment IDs from the checklist are confirmed to have received a dedicated inline response or resolution.
 
 ### D. Post-PR Reflection Trigger
-- **High PR Comment Volume Trigger**: If resolving PR comments involved a high volume of review feedback (>3-5 comments or multiple review iterations), trigger the [Iterative Reflection](../skills/iterative_reflection/SKILL.md) skill to identify missing project rules or guidelines that led to the review feedback.
+- **High PR Comment Volume Trigger**: If resolving PR comments involved a high volume of review feedback (>3-5 comments or multiple review iterations), trigger the [XMC Iterative Reflection](../skills/iterative_reflection/SKILL.md) skill to identify missing project rules or guidelines that led to the review feedback.
+
 

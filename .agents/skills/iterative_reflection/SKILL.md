@@ -1,5 +1,5 @@
 ---
-name: Iterative Reflection
+name: XMC Iterative Reflection
 description: Audits active session trajectory and thought history to identify friction points, rule gaps, missing helper tools, and token inefficiencies. Use when requested by the user, after major implementations, or when addressing PRs with high comment volume.
 ---
 
