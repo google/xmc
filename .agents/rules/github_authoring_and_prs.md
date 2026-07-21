@@ -79,10 +79,14 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
 
 ## 4. Post-PR Creation Workflow & Addressing Review Feedback
 - **Wait Buffer After PR Creation**: When instructed to create or update a non-draft Pull Request, after creating the PR, wait approximately **2 minutes** to allow GitHub CI status checks and automated GitHub PR review passes to complete.
+- **Automated Review Checklist Generation**: Before processing individual comments, execute `tools/generate_review_checklist.py <owner> <repo> <pr_number>` to fetch all unresolved review comments from GitHub API and automatically populate `pr_review_checklist.md`.
+  - **When to Call**: When starting PR comment resolution, during post-PR creation review checks, or whenever an updated checklist of unresolved PR comments is required.
+  - **How to Call**: Run `./tools/generate_review_checklist.py <owner> <repo> <pr_number> [-o pr_review_checklist.md]`.
 - **Mandatory PR Comment Fetching & Replying Tools**:
   - To fetch incoming inline review comments, ALWAYS execute `./tools/fetch_pr_comment.py "<comment_url>"`.
   - To post replies to review comments, ALWAYS execute `./tools/reply_pr_comment.py "<comment_url>" "<reply_message>"`.
   - Do NOT construct raw `gh api` inline shell commands for comment threads.
+- **Proactive Comment Fetching**: After generating `pr_review_checklist.md`, fetch specific comment context using `tools/fetch_pr_comment.py` or inspect the unresolved comments listed in `pr_review_checklist.md`.
 - **Validate Comments & Check Contract Changes**:
   - Evaluate incoming review comments for technical validity and applicability before proceeding.
   - If addressing a comment alters a PR contract, public API specification, or product behavior, **alert the user and seek explicit confirmation first** before modifying code.
