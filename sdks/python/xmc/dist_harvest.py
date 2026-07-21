@@ -42,24 +42,28 @@ def _check_stage1_strict_rank(env: Mapping[str, str]) -> Optional[str]:
     """Stage 1: Checks strict process-level framework rank variables."""
     for key in _STRICT_RANK_ENV_VARS:
         val = env.get(key)
-        if val is not None and val != "":
-            return val.strip()
+        if val is not None:
+            stripped = val.strip()
+            if stripped:
+                return stripped
     return None
 
 
 def _check_stage2_generic_indicators(env: Mapping[str, str]) -> bool:
     """Stage 2: Checks generic distributed ML environment indicators."""
     world_size_str = env.get("WORLD_SIZE")
-    if world_size_str is not None and world_size_str != "":
-        try:
-            if int(world_size_str) > 1:
-                return True
-        except ValueError:
-            pass
+    if world_size_str is not None:
+        stripped_world_size = world_size_str.strip()
+        if stripped_world_size:
+            try:
+                if int(stripped_world_size) > 1:
+                    return True
+            except ValueError:
+                pass
 
     for key in _GENERIC_DIST_ENV_VARS:
         val = env.get(key)
-        if val is not None and val != "":
+        if val is not None and val.strip():
             return True
 
     return False
@@ -69,8 +73,10 @@ def _check_stage3_orchestrator_index(env: Mapping[str, str]) -> Optional[str]:
     """Stage 3: Checks orchestrator pod-level job completion index variables."""
     for key in _ORCHESTRATOR_INDEX_ENV_VARS:
         val = env.get(key)
-        if val is not None and val != "":
-            return val.strip()
+        if val is not None:
+            stripped = val.strip()
+            if stripped:
+                return stripped
     return None
 
 

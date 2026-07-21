@@ -69,6 +69,13 @@ class TestDistHarvest(unittest.TestCase):
         self.assertEqual(replica_id, "0")
         self.assertFalse(should_silence)
 
+    def test_whitespace_env_vars_ignored(self) -> None:
+        # Whitespace values in env vars should be ignored and fall through to default
+        env = {"RANK": "   ", "WORLD_SIZE": "   ", "JOB_COMPLETION_INDEX": "   "}
+        replica_id, should_silence = get_replica_id_and_silence_status(env)
+        self.assertEqual(replica_id, "0")
+        self.assertFalse(should_silence)
+
     # --- Stage 2: Fail-Closed Safety Net ---
 
     @patch("xmc.dist_harvest.logger.warning")
