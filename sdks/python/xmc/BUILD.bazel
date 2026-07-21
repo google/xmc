@@ -19,6 +19,7 @@ py_library(
     srcs = [
         "__init__.py",
         "client.py",
+        "dist_harvest.py",
         "network.py",
         "types.py",
     ],
@@ -42,6 +43,12 @@ py_test(
 py_test(
     name = "client_test",
     srcs = ["client_test.py"],
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "dist_harvest_test",
+    srcs = ["dist_harvest_test.py"],
     deps = [":xmc"],
 )
 

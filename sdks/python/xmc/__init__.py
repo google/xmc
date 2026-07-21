@@ -15,6 +15,10 @@
 """XMC Python SDK package."""
 
 from xmc.client import Client, XMCAPIError, XMCError, XMCNetworkError
+from xmc.dist_harvest import (
+    GetReplicaIDAndSilenceStatus,
+    get_replica_id_and_silence_status,
+)
 from xmc.network import HTTPClient, SendResult
 from xmc.types import Metric, validate_metric
 
@@ -29,5 +33,7 @@ __all__ = [
     "XMCNetworkError",
     "XMCAPIError",
     "validate_metric",
+    "get_replica_id_and_silence_status",
+    "GetReplicaIDAndSilenceStatus",
     "__version__",
 ]
