@@ -59,7 +59,8 @@ function processUser(user: User | null) {
   - **Documentation Alignment**: Synchronize repository markdown documents (including, but not limited to, `README.md`, `INSTALL.md`, and component specs), schemas, and inline API references within the exact same pull request whenever system contracts or behaviors change.
 
 ## 6. Post-Implementation Reflection & Meta-Learning
-- **Post-Task Retrospective**: After completing major implementations, bug fixes, or refactoring—or when requested by the user—audit session trajectory and thought history using the `iterative_reflection` skill ([SKILL.md](file://.agents/skills/iterative_reflection/SKILL.md)).
-- **Proposals Before Edits**: Always present structured recommendations (script needs, rule gaps, skill gaps, token efficiency) for user review before making file modifications.
+- **Selective Triggers**: Trigger the `iterative_reflection` skill ([SKILL.md](file://.agents/skills/iterative_reflection/SKILL.md)) only after major implementations, PRs with high comment volume (>3-5 comments), or explicit user request. Do NOT trigger for routine minor edits.
+- **Pragmatic Proposals**: Accept "No Action Needed" as a valid outcome when friction was a one-off case. Propose permanent rules/tools only for systemic, recurring patterns.
+
 
 

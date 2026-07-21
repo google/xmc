@@ -22,3 +22,5 @@ This document defines standards for AI Pull Request reviews and post-PR creation
   - Evaluate incoming review comments for technical validity and applicability before proceeding.
   - If addressing a comment alters a PR contract, public API specification, or product behavior, **alert the user and seek explicit confirmation first** before modifying code.
 - **Addressing PR Comments Workflow**: Follow the detailed comment resolution workflow defined in the [Address PR Comment](../skills/address_pr_comment/SKILL.md) skill (formulating fix plans, running local unit tests, measuring coverage, and proposing fix diffs for user confirmation before pushing).
+- **Post-PR Reflection Trigger**: If resolving PR comments involved a high volume of review feedback (>3-5 comments or multiple review iterations), trigger the [Iterative Reflection](../skills/iterative_reflection/SKILL.md) skill to identify missing project rules or guidelines that led to the review feedback.
+

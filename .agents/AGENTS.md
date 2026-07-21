@@ -11,7 +11,8 @@ This root guidelines document defines high-level universal engineering principle
 3. **Don't Repeat Yourself (DRY)**: Centralize logic, eliminate duplicate code patterns, and extract shared automation playbooks into reusable Python modules or dedicated rule files.
 4. **Context Preservation & Subagent Delegation**: Prevent main context bloat by modularizing rules into purpose-built files and offloading verbose log analysis, heavy test runs, or exploratory searches to worker subagents.
 5. **Documentation Alignment**: Synchronize relevant repository markdown files (such as `README.md`, `INSTALL.md`, and component docs), inline comments, schemas, and skills in the same PR whenever system behavior or API contracts change.
-6. **Iterative Reflection & Meta-Learning**: After major task implementations or when requested by the user, audit session trajectory and thought history using the `iterative_reflection` skill ([SKILL.md](file://.agents/skills/iterative_reflection/SKILL.md)) to identify friction points, rule gaps, missing helper scripts, and token inefficiencies.
+6. **Iterative Reflection & Meta-Learning**: After major implementations, PRs with high review comment volume (>3-5 comments), or user request, audit session trajectory using the `iterative_reflection` skill ([SKILL.md](file://.agents/skills/iterative_reflection/SKILL.md)). Allow a pragmatic "No Action Needed" outcome when trajectory was smooth or friction was a one-off case.
+
 
 ---
 
