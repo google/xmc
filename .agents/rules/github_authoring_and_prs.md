@@ -14,6 +14,7 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
   - `test/`: Adding or refactoring unit, integration, or E2E tests.
   - `chore/`: Maintenance, build script edits, Bazel updates, or dependency bumps (e.g., `chore/bump-kueue-version`).
   - `koder/`: Automated pull requests and branches produced by the autocoder agent (koder).
+- **Session Initialization Branch Check**: Immediately upon starting a task, run `git branch --show-current`. If the current branch does not strictly conform to `<prefix>/<kebab-case-description>` format (e.g., if it uses raw worktree directory names or underscores), rename it immediately using `git branch -m <prefix>/<kebab-case-description>` before making any code changes or rebasing. If in a detached HEAD state (where `git branch --show-current` is empty), create and switch to a new branch using `git checkout -b <prefix>/<kebab-case-description>`.
 - **Forbidden Branch Naming Anti-Patterns**:
   - NEVER use un-prefixed branch names (e.g., `enforce_pr_comment_integrity`).
   - NEVER rely on raw worktree directory names or task IDs without verifying `<prefix>/<kebab-case-description>` format.
@@ -92,3 +93,4 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
   - If addressing a comment alters a PR contract, public API specification, or product behavior, **alert the user and seek explicit confirmation first** before modifying code.
 - **Addressing PR Comments Workflow**: Follow the mandatory rules defined in [PR Review Guidelines](pr_review_guidelines.md) (programmatic comment enumeration, consolidated review checklist artifact, and 1-to-1 thread resolution verification) and the detailed comment resolution workflow in the [Address PR Comment](../skills/address_pr_comment/SKILL.md) skill (formulating fix plans, running local unit tests via `./tools/run_affected_tests.py`, measuring coverage, and proposing fix diffs for user confirmation before pushing).
 - **PR Comment Replies**: Keep GitHub comment thread replies concise, objective, and focused on resolution (e.g., `"code changed"` or summarizing test verification), avoiding noisy or redundant chatter in PR review threads.
+- **Prohibition of Force-Pushing on PR Branches**: NEVER use force-push (`git push --force` or `git push --force-with-lease`) when pushing fix commits or addressing review comments on an active Pull Request branch. Always append incremental commits to the branch so reviewers can easily inspect diffs before and after changes between review passes.
