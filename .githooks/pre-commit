@@ -251,12 +251,12 @@ check_terraform() {
 
   echo "--> Running Terraform Security Scanner (Trivy)..."
   if command -v trivy >/dev/null 2>&1; then
-    if ! trivy config --skip-policy-update --misconfig-scanners terraform --severity HIGH,CRITICAL deploy/; then
+    if ! trivy config --skip-check-update --misconfig-scanners terraform --severity HIGH,CRITICAL deploy/; then
       echo "❌ Trivy security check failed."
       FAILED=1
     fi
   elif command -v docker >/dev/null 2>&1; then
-    if ! docker run --rm -v "$(pwd):/src" aquasec/trivy:latest config --skip-policy-update --misconfig-scanners terraform --severity HIGH,CRITICAL /src/deploy; then
+    if ! docker run --rm -v "$(pwd):/src" aquasec/trivy:latest config --skip-check-update --misconfig-scanners terraform --severity HIGH,CRITICAL /src/deploy; then
       echo "❌ Trivy security check failed."
       FAILED=1
     fi

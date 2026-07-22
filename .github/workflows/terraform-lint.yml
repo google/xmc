@@ -69,16 +69,19 @@ jobs:
   trivy-iac:
     name: 'IaC Security Scan (Trivy)'
     runs-on: 'ubuntu-24.04'
+    strategy:
+      matrix:
+        target: ['deploy/terraform', 'deploy/ctk_v2/modules']
     steps:
       - name: 'Checkout code'
         uses: 'actions/checkout@v4'
 
       - name: 'Run Trivy IaC Scanner'
-        uses: 'aquasecurity/trivy-action@master'
+        uses: 'aquasecurity/trivy-action@0.36.0'
         with:
           scan-type: 'config'
           hide-progress: true
           format: 'table'
           exit-code: '1'
           severity: 'HIGH,CRITICAL'
-          scan-ref: 'deploy/'
+          scan-ref: '${{ matrix.target }}'
