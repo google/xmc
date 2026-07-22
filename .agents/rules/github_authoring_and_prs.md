@@ -14,6 +14,7 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
   - `test/`: Adding or refactoring unit, integration, or E2E tests.
   - `chore/`: Maintenance, build script edits, Bazel updates, or dependency bumps (e.g., `chore/bump-kueue-version`).
   - `koder/`: Automated pull requests and branches produced by the autocoder agent (koder).
+- **Session Initialization Branch Check**: Immediately upon starting a task, run `git branch --show-current`. If the current branch does not strictly conform to `<prefix>/<kebab-case-description>` format (e.g., if it uses raw worktree directory names or underscores), rename it immediately using `git branch -m <prefix>/<kebab-case-description>` before making any code changes or rebasing.
 - **Forbidden Branch Naming Anti-Patterns**:
   - NEVER use un-prefixed branch names (e.g., `enforce_pr_comment_integrity`).
   - NEVER rely on raw worktree directory names or task IDs without verifying `<prefix>/<kebab-case-description>` format.
