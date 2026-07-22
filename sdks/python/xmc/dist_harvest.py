@@ -16,7 +16,7 @@
 
 import logging
 import os
-from typing import Mapping, Optional, Tuple
+from collections.abc import Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ _ORCHESTRATOR_INDEX_ENV_VARS = (
 )
 
 
-def _check_stage1_strict_rank(env: Mapping[str, str]) -> Optional[str]:
+def _check_stage1_strict_rank(env: Mapping[str, str]) -> str | None:
     """Stage 1: Checks strict process-level framework rank variables."""
     for key in _STRICT_RANK_ENV_VARS:
         val = env.get(key)
@@ -69,7 +69,7 @@ def _check_stage2_generic_indicators(env: Mapping[str, str]) -> bool:
     return False
 
 
-def _check_stage3_orchestrator_index(env: Mapping[str, str]) -> Optional[str]:
+def _check_stage3_orchestrator_index(env: Mapping[str, str]) -> str | None:
     """Stage 3: Checks orchestrator pod-level job completion index variables."""
     for key in _ORCHESTRATOR_INDEX_ENV_VARS:
         val = env.get(key)
@@ -89,9 +89,9 @@ def _is_rank_zero(rank: str) -> bool:
 
 
 def get_replica_id_and_silence_status(
-    env: Optional[Mapping[str, str]] = None,
+    env: Mapping[str, str] | None = None,
     log_all_replicas: bool = False,
-) -> Tuple[str, bool]:
+) -> tuple[str, bool]:
     """Harvests distributed ML rank/replica ID and calculates silencing status.
 
     Evaluates environment in 3 stages:
@@ -124,7 +124,7 @@ def get_replica_id_and_silence_status(
             "Generic distributed ML indicators detected without strict rank. "
             "Silencing metrics logging (fail-closed)."
         )
-        should_silence = False if log_all_replicas else True
+        should_silence = not log_all_replicas
         return "-1", should_silence
 
     # Stage 3: Single-Node / Orchestrator Fallback

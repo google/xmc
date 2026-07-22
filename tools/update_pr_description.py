@@ -61,7 +61,7 @@ def update_pr_description(args):
                 f"Body file not found or is not a regular file: '{args.body_file}'",
                 "Ensure the specified body markdown file exists and is a regular file.",
             )
-        with open(args.body_file, "r", encoding="utf-8") as f:
+        with open(args.body_file, encoding="utf-8") as f:
             body_content = f.read()
     elif args.body:
         body_content = args.body

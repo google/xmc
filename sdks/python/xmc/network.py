@@ -17,11 +17,10 @@
 import enum
 import http.client
 import random
-import socket
 import threading
 import time
 import urllib.parse
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 
 class SendResult(enum.Enum):
@@ -58,7 +57,7 @@ class HTTPClient:
         max_requests: int = _MAX_REQUESTS_PER_CONNECTION,
         base_ttl: float = _BASE_TTL_SECONDS,
         jitter: float = _JITTER_RANGE_SECONDS,
-        default_headers: Optional[Dict[str, str]] = None,
+        default_headers: dict[str, str] | None = None,
     ) -> None:
         if not endpoint:
             raise ValueError("endpoint must be non-empty.")
@@ -78,7 +77,7 @@ class HTTPClient:
         self.base_ttl = base_ttl
         self.jitter = jitter
 
-        self._headers: Dict[str, str] = {
+        self._headers: dict[str, str] = {
             "Connection": "keep-alive",
             "Content-Type": "application/json",
             "User-Agent": "xmc-python-network/0.1.0",
@@ -86,7 +85,7 @@ class HTTPClient:
         if default_headers:
             self._headers.update(default_headers)
 
-        self._conn: Optional[Union[http.client.HTTPConnection, http.client.HTTPSConnection]] = None
+        self._conn: http.client.HTTPConnection | http.client.HTTPSConnection | None = None
         self._request_count: int = 0
         self._created_at: float = 0.0
         self._current_ttl: float = 0.0
@@ -119,13 +118,11 @@ class HTTPClient:
         if self._request_count >= self.max_requests:
             return True
         age = time.monotonic() - self._created_at
-        if age >= self._current_ttl:
-            return True
-        return False
+        return age >= self._current_ttl
 
     def _ensure_connection(
         self,
-    ) -> Union[http.client.HTTPConnection, http.client.HTTPSConnection]:
+    ) -> http.client.HTTPConnection | http.client.HTTPSConnection:
         """Ensures an active, non-expired connection is ready."""
         if self._should_recycle():
             self._connect()
@@ -135,8 +132,8 @@ class HTTPClient:
     def send(
         self,
         path: str,
-        body: Union[str, bytes],
-        headers: Optional[Dict[str, str]] = None,
+        body: str | bytes,
+        headers: dict[str, str] | None = None,
         method: str = "POST",
     ) -> SendResult:
         """Sends a payload to the given API path.
@@ -163,9 +160,9 @@ class HTTPClient:
                 try:
                     conn.request(method.upper(), full_path, body=encoded_body, headers=req_headers)
                     response = conn.getresponse()
-                except (socket.timeout, TimeoutError):
+                except TimeoutError:
                     raise
-                except (http.client.HTTPException, socket.error, OSError):
+                except (http.client.HTTPException, OSError):
                     # Connection error (e.g. stale keep-alive connection closed by server).
                     # Close stale connection and retry once.
                     self._close_conn()
@@ -177,7 +174,7 @@ class HTTPClient:
                 self._request_count += 1
                 return self._status_to_send_result(response.status)
 
-            except (socket.timeout, TimeoutError):
+            except TimeoutError:
                 self._close_conn()
                 return SendResult.TRANSIENT_FAILURE
 

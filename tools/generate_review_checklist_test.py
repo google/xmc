@@ -197,7 +197,7 @@ class TestGenerateReviewChecklist(unittest.TestCase):
         self.assertIn("Total Unresolved Comments: 1", md)
         expected_item = (
             "- [ ] **[cmd/main.go:42](https://github.com/google/xmc/pull/145#discussion_r1)**"
-            " (@reviewer1)"
+            " (@reviewer1) (Comment ID 1)"
         )
         self.assertIn(expected_item, md)
         self.assertIn("  > Fix this line", md)

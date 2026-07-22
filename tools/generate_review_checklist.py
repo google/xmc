@@ -16,7 +16,7 @@
 """Tool to generate a PR review checklist markdown file from unresolved comments."""
 
 import argparse
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from github_utils import (
     GithubAPIError,
@@ -26,7 +26,7 @@ from github_utils import (
 from tool_utils import HandledError, run_tool
 
 
-def _parse_graphql_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _parse_graphql_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Extracts unresolved comment items from GraphQL thread nodes."""
     items = []
     for thread in nodes:
@@ -58,7 +58,7 @@ def _parse_graphql_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def _fetch_graphql_unresolved_comments(
     owner: str, repo: str, pr_number: int
-) -> Optional[List[Dict[str, Any]]]:
+) -> list[dict[str, Any]] | None:
     """Fetches unresolved comments using GitHub GraphQL API."""
     query = """
     query($owner: String!, $repo: String!, $pr_number: Int!, $cursor: String) {
@@ -118,7 +118,7 @@ def _fetch_graphql_unresolved_comments(
     return all_items
 
 
-def _parse_rest_comment(comment: Dict[str, Any]) -> Dict[str, Any]:
+def _parse_rest_comment(comment: dict[str, Any]) -> dict[str, Any]:
     """Converts a REST API comment object to a standardized dictionary."""
     user = comment.get("user")
     author = user.get("login") if user else "unknown"
@@ -133,7 +133,7 @@ def _parse_rest_comment(comment: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _fetch_rest_comments(owner: str, repo: str, pr_number: int) -> List[Dict[str, Any]]:
+def _fetch_rest_comments(owner: str, repo: str, pr_number: int) -> list[dict[str, Any]]:
     """Fetches review comments using GitHub REST API."""
     comments = []
     page = 1
@@ -151,7 +151,7 @@ def _fetch_rest_comments(owner: str, repo: str, pr_number: int) -> List[Dict[str
     return comments
 
 
-def fetch_unresolved_comments(owner: str, repo: str, pr_number: int) -> List[Dict[str, Any]]:
+def fetch_unresolved_comments(owner: str, repo: str, pr_number: int) -> list[dict[str, Any]]:
     """Fetches unresolved PR review comments via GraphQL API with REST fallback."""
     try:
         items = _fetch_graphql_unresolved_comments(owner, repo, pr_number)
@@ -177,7 +177,7 @@ def fetch_unresolved_comments(owner: str, repo: str, pr_number: int) -> List[Dic
 
 
 def format_checklist_markdown(
-    owner: str, repo: str, pr_number: int, comments: List[Dict[str, Any]]
+    owner: str, repo: str, pr_number: int, comments: list[dict[str, Any]]
 ) -> str:
     """Formats unresolved review comments into a markdown checklist string."""
     lines = [
@@ -202,7 +202,9 @@ def format_checklist_markdown(
         body = comment.get("body") or ""
 
         location = f"{path}:{line}" if line is not None else path
-        lines.append(f"- [ ] **[{location}]({url})** (@{author})")
+        comment_id = comment.get("comment_id")
+        comment_id_str = f" (Comment ID {comment_id})" if comment_id is not None else ""
+        lines.append(f"- [ ] **[{location}]({url})** (@{author}){comment_id_str}")
         for body_line in body.strip().splitlines():
             lines.append(f"  > {body_line}")
         lines.append("")
@@ -210,7 +212,7 @@ def format_checklist_markdown(
     return "\n".join(lines)
 
 
-def generate_review_checklist(args: argparse.Namespace) -> Dict[str, Any]:
+def generate_review_checklist(args: argparse.Namespace) -> dict[str, Any]:
     """Orchestrates checklist generation from GitHub API and writes to file."""
     try:
         pr_num = int(args.pr_number)
