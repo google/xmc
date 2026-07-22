@@ -17,6 +17,7 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -106,6 +107,14 @@ func TestKeyPairReloader(t *testing.T) {
 		t.Fatal("reloader.Certificate() returned nil certificate")
 	}
 
+	cert1Alias, err := reloader.GetCertificate(nil)
+	if err != nil {
+		t.Fatalf("reloader.GetCertificate() failed: %v", err)
+	}
+	if cert1Alias != cert1 {
+		t.Errorf("GetCertificate() returned different certificate than Certificate()")
+	}
+
 	// Wait a bit to ensure file mod time is different
 	time.Sleep(10 * time.Millisecond)
 
@@ -124,6 +133,58 @@ func TestKeyPairReloader(t *testing.T) {
 
 	if cert1 == cert2 {
 		t.Errorf("Certificate was not reloaded after file update")
+	}
+}
+
+func TestKeyPairReloader_ClientCertificate(t *testing.T) {
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "cert.pem")
+	keyPath := filepath.Join(dir, "key.pem")
+
+	if err := generateCertAndKey(certPath, keyPath); err != nil {
+		t.Fatalf("Failed to generate cert and key: %v", err)
+	}
+
+	reloader, err := NewKeyPairReloader(certPath, keyPath)
+	if err != nil {
+		t.Fatalf("NewKeyPairReloader() failed: %v", err)
+	}
+
+	cri := &tls.CertificateRequestInfo{}
+	cert1, err := reloader.GetClientCertificate(cri)
+	if err != nil {
+		t.Fatalf("reloader.GetClientCertificate() failed: %v", err)
+	}
+	if cert1 == nil {
+		t.Fatal("reloader.GetClientCertificate() returned nil certificate")
+	}
+
+	cert1Alias, err := reloader.ClientCertificate(cri)
+	if err != nil {
+		t.Fatalf("reloader.ClientCertificate() failed: %v", err)
+	}
+	if cert1Alias != cert1 {
+		t.Errorf("ClientCertificate() returned different certificate than GetClientCertificate()")
+	}
+
+	// Wait a bit to ensure file mod time is different
+	time.Sleep(10 * time.Millisecond)
+
+	// Overwrite certificate with new one
+	if err := generateCertAndKey(certPath, keyPath); err != nil {
+		t.Fatalf("Failed to generate new cert and key: %v", err)
+	}
+
+	cert2, err := reloader.GetClientCertificate(cri)
+	if err != nil {
+		t.Fatalf("reloader.GetClientCertificate() failed after file update: %v", err)
+	}
+	if cert2 == nil {
+		t.Fatal("reloader.GetClientCertificate() returned nil certificate after file update")
+	}
+
+	if cert1 == cert2 {
+		t.Errorf("Client certificate was not reloaded after file update")
 	}
 }
 
