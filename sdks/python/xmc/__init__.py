@@ -15,13 +15,16 @@
 """XMC Python SDK package."""
 
 from xmc.client import Client, XMCAPIError, XMCError, XMCNetworkError
+from xmc.network import HTTPClient, SendResult
 from xmc.types import Metric, validate_metric
 
 __version__ = "0.1.0"
 
 __all__ = [
     "Client",
+    "HTTPClient",
     "Metric",
+    "SendResult",
     "XMCError",
     "XMCNetworkError",
     "XMCAPIError",
