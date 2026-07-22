@@ -100,40 +100,36 @@ func (k *KeyPairReloader) reload() error {
 	return nil
 }
 
+func (k *KeyPairReloader) getCertificate() (*tls.Certificate, error) {
+	err := k.reload()
+	if err != nil {
+		ctx := context.Background()
+		logging.Warn(ctx, "Failed to reload keypair", "error", err)
+	}
+
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	return k.cachedCert, nil
+}
+
 // Certificate is the callback passed to tls.Config.GetCertificate for server-side TLS.
 func (k *KeyPairReloader) Certificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	return k.GetCertificate(hello)
+	return k.getCertificate()
 }
 
 // GetCertificate is the callback passed to tls.Config.GetCertificate for server-side TLS.
 func (k *KeyPairReloader) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	err := k.reload()
-	if err != nil {
-		ctx := context.Background()
-		logging.Warn(ctx, "Failed to reload keypair", "error", err)
-	}
-
-	k.mu.RLock()
-	defer k.mu.RUnlock()
-	return k.cachedCert, nil
+	return k.getCertificate()
 }
 
 // GetClientCertificate is the callback passed to tls.Config.GetClientCertificate for client-side mTLS.
 func (k *KeyPairReloader) GetClientCertificate(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
-	err := k.reload()
-	if err != nil {
-		ctx := context.Background()
-		logging.Warn(ctx, "Failed to reload keypair", "error", err)
-	}
-
-	k.mu.RLock()
-	defer k.mu.RUnlock()
-	return k.cachedCert, nil
+	return k.getCertificate()
 }
 
 // ClientCertificate is the callback passed to tls.Config.GetClientCertificate for client-side mTLS.
 func (k *KeyPairReloader) ClientCertificate(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
-	return k.GetClientCertificate(cri)
+	return k.getCertificate()
 }
 
 // KeyReloader manages a cached key and reloads it when the file changes.
