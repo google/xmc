@@ -13,14 +13,33 @@
 // limitations under the License.
 
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCardModule } from '@angular/material/card';
-import { MatIconModule } from '@angular/material/icon';
-import { RouterModule } from '@angular/router';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  OnDestroy,
+  OnInit,
+  signal,
+} from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute } from '@angular/router';
+import { Subscription } from 'rxjs';
+
+import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
+
+import {
+  AutoReloadService,
+  ReloaderControl,
+} from '../common/components/autoreloader/autoreloader_service';
+
+export type DashboardTab = 'smart_resource_finder' | 'resource_availability';
+export const TAB_SMART_FINDER: DashboardTab = 'smart_resource_finder';
+export const TAB_RESOURCE_AVAILABILITY: DashboardTab = 'resource_availability';
 
 /**
- * Resource Observability Dashboard (ROD) scaffolding shell component.
+ * Resource Observability Dashboard (ROD) primary layout container component.
+ * Thin container orchestrating tab selection and cluster queue state.
  */
 @Component({
   selector: 'xmc-resource-dashboard',
@@ -28,8 +47,53 @@ import { RouterModule } from '@angular/router';
   templateUrl: './resource_dashboard.ng.html',
   styleUrl: './resource_dashboard.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, RouterModule, MatCardModule, MatIconModule, MatButtonModule],
+  imports: [CommonModule],
 })
-export class ResourceDashboard {
-  protected readonly activeTab = signal<'queues' | 'predictability'>('queues');
+export class ResourceDashboard implements OnInit, OnDestroy {
+  private readonly autoReloadService = inject(AutoReloadService);
+  private readonly route = inject(ActivatedRoute);
+
+  private readonly resolvedData = toSignal(this.route.data);
+  protected readonly clusterQueues = computed<ClusterQueue[]>(
+    () => this.resolvedData()?.['clusterQueues'] ?? [],
+  );
+  protected readonly isLoading = signal<boolean>(false);
+  protected readonly selectedQueue = signal<string>('gpu-cluster-queue');
+  protected readonly activeTab = signal<DashboardTab>(TAB_SMART_FINDER);
+
+  private readonly reloader: ReloaderControl = this.autoReloadService.createReloader({
+    emitOnStart: false,
+  });
+  private readonly subscriptions = new Subscription();
+
+  ngOnInit() {
+    this.subscriptions.add(
+      this.route.queryParams.subscribe((params) => {
+        const queue = params['queue'];
+        if (queue) {
+          this.selectedQueue.set(queue);
+        }
+      }),
+    );
+
+    this.subscriptions.add(
+      this.reloader.reloader$.subscribe(() => {
+        // Auto-reload hook for periodic refresh
+      }),
+    );
+    this.reloader.start();
+  }
+
+  ngOnDestroy() {
+    this.subscriptions.unsubscribe();
+    this.reloader.stop();
+  }
+
+  protected onQueueSelect(queueName: string) {
+    this.selectedQueue.set(queueName);
+  }
+
+  protected onTabChange(tab: DashboardTab) {
+    this.activeTab.set(tab);
+  }
 }
