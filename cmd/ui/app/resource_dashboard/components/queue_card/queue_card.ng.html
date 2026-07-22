@@ -1,0 +1,73 @@
+<!--
+ Copyright 2026 Google LLC
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+@let badgeInfo = queue() | queueStatusBadge;
+@let predInfo = queue() | predictabilityMessage;
+
+<div
+  class="queue-card"
+  [class.selected]="isSelected()"
+  (click)="onCardClick()"
+  (keydown.enter)="onCardClick()"
+  (keydown.space)="$event.preventDefault(); onCardClick()"
+  tabindex="0"
+  role="button"
+>
+  <div class="card-header">
+    <div class="title-group">
+      <h3 class="queue-name">{{ queue().name }}</h3>
+      <span class="queue-cohort">Cohort: {{ queue().cohort || 'None' }}</span>
+    </div>
+    @if (badgeInfo) {
+      <div
+        class="status-badge"
+        [class.healthy]="badgeInfo.isHealthy"
+        [class.warning]="!badgeInfo.isHealthy"
+      >
+        <span class="status-dot"></span>
+        {{ badgeInfo.label }}
+      </div>
+    }
+  </div>
+
+  <div class="capacity-section">
+    <h4 class="section-title">Capacity & Predictability</h4>
+    <div class="capacity-table">
+      <div class="table-header">
+        <span class="col-resource">Resource</span>
+        <span class="col-max">Max workload size</span>
+        <span class="col-free">Free / total capacity</span>
+      </div>
+      @for (flavor of getFilteredFlavors(queue()); track flavor.name) {
+        <div class="table-row">
+          <span class="col-resource font-medium">{{ flavor.resourceName || flavor.name }}</span>
+          <span class="col-max">{{ flavor | maxWorkloadDisplay }}</span>
+          <span class="col-free">{{ flavor | freeTotalDisplay }}</span>
+        </div>
+      }
+    </div>
+  </div>
+
+  @if (predInfo) {
+    <div
+      class="predictability-banner"
+      [class.healthy-banner]="predInfo.isHealthy"
+      [class.warning-banner]="!predInfo.isHealthy"
+    >
+      <mat-icon class="banner-icon">{{ predInfo.isHealthy ? 'check_circle' : 'warning' }}</mat-icon>
+      <span class="banner-text">{{ predInfo.text }}</span>
+    </div>
+  }
+</div>
