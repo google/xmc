@@ -25,3 +25,5 @@ This document provides standards for skill architecture, workflow automation, an
 - **Tightly Scoped Subagent Prompts**: Provide worker subagents with specific file scopes, clear execution bounds, and explicit expected output requirements.
 - **Structured Synthesis Reporting**: Subagents must analyze intermediate outputs and communicate clean, structured summaries and actionable conclusions back to the parent agent via structured messaging.
 
+## 5. Shell Payload & Backtick Safety
+- **Escape Backticks in CLI Strings**: Warn agents to single-quote message string arguments or escape backticks (`\`...\``) when calling CLI tools with markdown text containing backticks to prevent Bash command substitution payload corruption.

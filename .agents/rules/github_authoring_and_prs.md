@@ -19,6 +19,14 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
   - NEVER rely on raw worktree directory names or task IDs without verifying `<prefix>/<kebab-case-description>` format.
   - NEVER use underscores (`_`) in branch names; always use hyphens (`-`) for word separators.
 
+## 1.1 Git Worktree & Branch Management for Subagents
+- **Remain on Assigned Worktree Branch**: Subagents operating in isolated git worktrees MUST remain on their assigned worktree branch and avoid `git checkout -B <branch>` for branches active in other worktrees.
+- **Pushing Worktree Commits**: Push commits from isolated worktree HEAD to target feature branches on remote origin using explicit refspec:
+  ```bash
+  git push --force-with-lease origin HEAD:<target-feature-branch>
+  ```
+- **Pre-Commit Auto-Formatting Stage Loop**: When `./.githooks/pre-commit` auto-formats files on disk during execution, ALWAYS stage modified files (`git add -u`) and re-run `./.githooks/pre-commit` until clean before committing.
+
 ## 2. Git Commits & Mandatory Pre-Commit Formatting Protocol
 - **Conventional Commit Format**: Format commit subject lines using Conventional Commits syntax:
   `<type>(<scope>): <summary>` (e.g., `feat(auth): add OAuth2 token refresh support` or `fix(reconciler): resolve deadlock on pod restart`).
