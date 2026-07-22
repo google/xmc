@@ -17,6 +17,7 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -98,12 +99,12 @@ func TestKeyPairReloader(t *testing.T) {
 		t.Fatalf("NewKeyPairReloader() failed: %v", err)
 	}
 
-	cert1, err := reloader.Certificate(nil)
+	cert1, err := reloader.GetCertificate(nil)
 	if err != nil {
-		t.Fatalf("reloader.Certificate() failed: %v", err)
+		t.Fatalf("reloader.GetCertificate() failed: %v", err)
 	}
 	if cert1 == nil {
-		t.Fatal("reloader.Certificate() returned nil certificate")
+		t.Fatal("reloader.GetCertificate() returned nil certificate")
 	}
 
 	// Wait a bit to ensure file mod time is different
@@ -114,16 +115,60 @@ func TestKeyPairReloader(t *testing.T) {
 		t.Fatalf("Failed to generate new cert and key: %v", err)
 	}
 
-	cert2, err := reloader.Certificate(nil)
+	cert2, err := reloader.GetCertificate(nil)
 	if err != nil {
-		t.Fatalf("reloader.Certificate() failed after file update: %v", err)
+		t.Fatalf("reloader.GetCertificate() failed after file update: %v", err)
 	}
 	if cert2 == nil {
-		t.Fatal("reloader.Certificate() returned nil certificate after file update")
+		t.Fatal("reloader.GetCertificate() returned nil certificate after file update")
 	}
 
 	if cert1 == cert2 {
 		t.Errorf("Certificate was not reloaded after file update")
+	}
+}
+
+func TestKeyPairReloader_ClientCertificate(t *testing.T) {
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "cert.pem")
+	keyPath := filepath.Join(dir, "key.pem")
+
+	if err := generateCertAndKey(certPath, keyPath); err != nil {
+		t.Fatalf("Failed to generate cert and key: %v", err)
+	}
+
+	reloader, err := NewKeyPairReloader(certPath, keyPath)
+	if err != nil {
+		t.Fatalf("NewKeyPairReloader() failed: %v", err)
+	}
+
+	cri := &tls.CertificateRequestInfo{}
+	cert1, err := reloader.GetClientCertificate(cri)
+	if err != nil {
+		t.Fatalf("reloader.GetClientCertificate() failed: %v", err)
+	}
+	if cert1 == nil {
+		t.Fatal("reloader.GetClientCertificate() returned nil certificate")
+	}
+
+	// Wait a bit to ensure file mod time is different
+	time.Sleep(10 * time.Millisecond)
+
+	// Overwrite certificate with new one
+	if err := generateCertAndKey(certPath, keyPath); err != nil {
+		t.Fatalf("Failed to generate new cert and key: %v", err)
+	}
+
+	cert2, err := reloader.GetClientCertificate(cri)
+	if err != nil {
+		t.Fatalf("reloader.GetClientCertificate() failed after file update: %v", err)
+	}
+	if cert2 == nil {
+		t.Fatal("reloader.GetClientCertificate() returned nil certificate after file update")
+	}
+
+	if cert1 == cert2 {
+		t.Errorf("Client certificate was not reloaded after file update")
 	}
 }
 

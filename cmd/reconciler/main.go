@@ -112,10 +112,10 @@ func main() {
 
 	logging.Debug(ctx, "Actuator Reconciler initialization complete, starting manager...")
 
-	if err := mgr.AddHealthzCheck("healthz", activeHealthChecker(k8sClient, spannerClient)); err != nil {
+	if err := mgr.AddHealthzCheck("healthz", func(req *http.Request) error { return nil }); err != nil {
 		logging.Fatal(ctx, "unable to set up health check", "error", err)
 	}
-	if err := mgr.AddReadyzCheck("readyz", activeHealthChecker(k8sClient, spannerClient)); err != nil {
+	if err := mgr.AddReadyzCheck("readyz", activeHealthChecker(k8sClient, health.NewSpannerHealthClient(spannerClient))); err != nil {
 		logging.Fatal(ctx, "unable to set up ready check", "error", err)
 	}
 
@@ -148,7 +148,7 @@ func getGceMetadata(ctx context.Context) (projectID, location, clusterName strin
 	return projectID, location, clusterName, nil
 }
 
-func activeHealthChecker(k8s *k8sclient.Client, spClient *spanner.Client) func(req *http.Request) error {
+func activeHealthChecker(k8s *k8sclient.Client, spClient health.SpannerHealthClient) func(req *http.Request) error {
 	return func(req *http.Request) error {
 		ctx := req.Context()
 		eg, ctx := errgroup.WithContext(ctx)
@@ -160,7 +160,7 @@ func activeHealthChecker(k8s *k8sclient.Client, spClient *spanner.Client) func(r
 
 		// 2. Spanner check
 		eg.Go(func() error {
-			return health.CheckSpanner(ctx, spClient)
+			return health.CheckSpannerESS(ctx, spClient)
 		})
 
 		return eg.Wait()
