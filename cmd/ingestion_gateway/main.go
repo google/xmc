@@ -20,7 +20,6 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -128,21 +127,8 @@ func ValidateTopicTopology(ctx context.Context, querier TopologyQuerier, topicNa
 }
 
 func startHTTPServer(ctx context.Context, port string) *http.Server {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-
-	server := &http.Server{
-		Addr:              net.JoinHostPort("", port),
-		Handler:           mux,
-		ReadHeaderTimeout: 3 * time.Second,
-	}
+	cfg := DefaultServerConfig(port)
+	server := NewHTTPServer(cfg)
 
 	go func() {
 		logging.Info(ctx, "Ingestion Gateway server listening", "port", port)
