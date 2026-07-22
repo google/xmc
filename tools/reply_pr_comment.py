@@ -93,13 +93,12 @@ def reply_comment(args):
     payload = {"body": full_message, "in_reply_to": parsed["comment_id"]}
 
     try:
-        response = call_github_api(
+        return call_github_api(
             endpoint,
             method="POST",
             payload=payload,
             user_agent="XMC-Comment-Replier-Agent",
         )
-        return response
     except GithubAuthError as e:
         raise HandledError(
             str(e),

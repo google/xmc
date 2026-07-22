@@ -17,13 +17,14 @@
 import threading
 import time
 from collections import deque
-from typing import Any, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
+from typing import Any
 
 # Default buffer capacity: 500,000 metrics (~85MB RAM)
 DEFAULT_CAPACITY: int = 500_000
 
 # Metric tuple type alias: (name, value, step, timestamp)
-MetricTuple = Tuple[str, float, int, float]
+MetricTuple = tuple[str, float, int, float]
 
 
 def _coerce_float(val: Any) -> float:
@@ -75,7 +76,7 @@ class BoundedMetricsBuffer:
         name: str,
         value: Any,
         step: Any,
-        timestamp: Optional[Any] = None,
+        timestamp: Any | None = None,
     ) -> None:
         """Appends a single metric to the buffer with immediate type coercion.
 
@@ -88,10 +89,7 @@ class BoundedMetricsBuffer:
         c_name = str(name)
         c_value = _coerce_float(value)
         c_step = _coerce_int(step)
-        if timestamp is None:
-            c_timestamp = time.time()
-        else:
-            c_timestamp = _coerce_float(timestamp)
+        c_timestamp = time.time() if timestamp is None else _coerce_float(timestamp)
 
         item: MetricTuple = (c_name, c_value, c_step, c_timestamp)
 
@@ -100,7 +98,7 @@ class BoundedMetricsBuffer:
 
     def put_many(
         self,
-        metrics: Iterable[Tuple[Any, ...]],
+        metrics: Iterable[tuple[Any, ...]],
     ) -> None:
         """Appends multiple metrics to the buffer with immediate type coercion.
 
@@ -132,26 +130,25 @@ class BoundedMetricsBuffer:
         with self._lock:
             self._buffer.extend(coerced_items)
 
-    def get_all(self) -> List[MetricTuple]:
+    def get_all(self) -> list[MetricTuple]:
         """Returns a snapshot list of all metrics currently in the buffer without removing them."""
         with self._lock:
             return list(self._buffer)
 
-    def pop_all(self) -> List[MetricTuple]:
+    def pop_all(self) -> list[MetricTuple]:
         """Removes and returns all metrics currently in the buffer."""
         with self._lock:
             items = list(self._buffer)
             self._buffer.clear()
             return items
 
-    def pop_batch(self, max_count: int) -> List[MetricTuple]:
+    def pop_batch(self, max_count: int) -> list[MetricTuple]:
         """Removes and returns up to max_count metrics from the head of the buffer."""
         if max_count <= 0:
             return []
         with self._lock:
             count = min(max_count, len(self._buffer))
-            batch = [self._buffer.popleft() for _ in range(count)]
-            return batch
+            return [self._buffer.popleft() for _ in range(count)]
 
     def clear(self) -> None:
         """Clears all elements from the buffer."""

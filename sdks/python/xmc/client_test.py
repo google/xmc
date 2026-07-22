@@ -17,7 +17,6 @@
 import io
 import json
 import os
-import socket
 import unittest
 import urllib.error
 from unittest.mock import MagicMock, patch
@@ -108,7 +107,7 @@ class TestClient(unittest.TestCase):
 
     @patch("urllib.request.urlopen")
     def test_url_error_timeout(self, mock_urlopen: MagicMock) -> None:
-        url_err = urllib.error.URLError(reason=socket.timeout("connection timed out"))
+        url_err = urllib.error.URLError(reason=TimeoutError("connection timed out"))
         mock_urlopen.side_effect = url_err
 
         client = Client(base_url="https://xmc.googleapis.com")

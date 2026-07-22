@@ -14,7 +14,6 @@
 
 """Unit tests for XMC zero-dependency HTTP client and connection recycling."""
 
-import socket
 import threading
 import unittest
 from unittest import mock
@@ -175,7 +174,7 @@ class TestHTTPClient(unittest.TestCase):
         mock_resp.status = 200
 
         # Connection 1 fails on request due to stale socket error
-        mock_conn1.request.side_effect = socket.error("Connection reset by peer")
+        mock_conn1.request.side_effect = OSError("Connection reset by peer")
         mock_conn2.getresponse.return_value = mock_resp
         mock_http_conn_cls.side_effect = [mock_conn1, mock_conn2]
 
@@ -213,7 +212,7 @@ class TestHTTPClient(unittest.TestCase):
     @mock.patch("http.client.HTTPConnection")
     def test_socket_timeout_recycles_connection(self, mock_http_conn_cls: mock.MagicMock) -> None:
         mock_conn = mock.MagicMock()
-        mock_conn.request.side_effect = socket.timeout("timed out")
+        mock_conn.request.side_effect = TimeoutError("timed out")
         mock_http_conn_cls.return_value = mock_conn
 
         client = HTTPClient("http://localhost:8080")

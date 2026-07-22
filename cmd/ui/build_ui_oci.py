@@ -14,6 +14,7 @@
 
 """Script for compiling Angular UI application into an OCI container tarball."""
 
+import contextlib
 import hashlib
 import os
 import platform
@@ -49,8 +50,7 @@ def translate_imports(content: str) -> str:
     content = content.replace("'third_party/xmanager_cloud/ui/custom_colors'", "'custom_colors'")
     content = content.replace('"third_party/xmanager_cloud/ui/custom_colors"', '"custom_colors"')
     content = content.replace(".css'", ".scss'")
-    content = content.replace('.css"', '.scss"')
-    return content
+    return content.replace('.css"', '.scss"')
 
 
 def copy_flat(src_dir: str, dest_dir: str):
@@ -69,7 +69,7 @@ def copy_flat(src_dir: str, dest_dir: str):
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
 
             if file.endswith((".scss", ".ts", ".html")):
-                with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+                with open(full_path, encoding="utf-8", errors="ignore") as f:
                     content = f.read()
 
                 translated = translate_imports(content)
@@ -136,10 +136,8 @@ CMD ["nginx", "-g", "daemon off;"]
         subprocess.run(build_cmd, check=True)
     except subprocess.CalledProcessError as e:
         print(f"ERROR: Docker build failed: {e}")
-        try:
+        with contextlib.suppress(Exception):
             shutil.rmtree(temp_build_dir)
-        except Exception:
-            pass
         sys.exit(1)
 
     print(f"Saving Docker image to {output_tar}...")
