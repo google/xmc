@@ -76,7 +76,7 @@ compat_go_test(
         "//internal/compat/protocmp",
         "//internal/compat/status",
         "//internal/storage",
-        "//internal/storage/spanner/emulator",
+        "//internal/storage/spanner/migrations/version",
         "@com_google_cloud_go_pubsub//:pubsub",
         "@com_google_cloud_go_pubsub//pstest",
         "@org_golang_google_api//option",

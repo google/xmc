@@ -15,21 +15,35 @@ package main
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"golang/grpc/grpc"
 	healthpb "grpc_proto/health_go_proto"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/storage/spanner/migrations/version"
 )
+
+type mockSpannerHealthClient struct {
+	version int64
+	dirty   bool
+	err     error
+}
+
+func (m *mockSpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64, bool, error) {
+	return m.version, m.dirty, m.err
+}
 
 func TestUpdateHealthStatus(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("SERVING when spanner ok", func(t *testing.T) {
-		xidClient, _, _ := emulator.SetupWithEmulator(ctx, t)
+		mockClient := &mockSpannerHealthClient{
+			version: version.XidExpectedSchemaVersion(),
+			dirty:   false,
+		}
 		healthServer := RegisterHealthServer(grpc.NewServer())
 
-		updateHealthStatus(ctx, xidClient, healthServer)
+		updateHealthStatus(ctx, mockClient, healthServer)
 
 		resp, err := healthServer.Check(ctx, &healthpb.HealthCheckRequest{Service: xidServiceHealthCheckName})
 		if err != nil {
@@ -50,11 +64,12 @@ func TestUpdateHealthStatus(t *testing.T) {
 	})
 
 	t.Run("NOT_SERVING when spanner down", func(t *testing.T) {
-		xidClient, _, _ := emulator.SetupWithEmulator(ctx, t)
-		xidClient.Close()
+		mockClient := &mockSpannerHealthClient{
+			err: errors.New("spanner down"),
+		}
 		healthServer := RegisterHealthServer(grpc.NewServer())
 
-		updateHealthStatus(ctx, xidClient, healthServer)
+		updateHealthStatus(ctx, mockClient, healthServer)
 
 		resp, err := healthServer.Check(ctx, &healthpb.HealthCheckRequest{Service: xidServiceHealthCheckName})
 		if err != nil {

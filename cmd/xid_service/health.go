@@ -17,7 +17,6 @@ import (
 	"context"
 	"time"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/grpc/grpc"
 	"golang/grpc/health/health"
 	healthgrpc "grpc_proto/health_go_grpc"
@@ -41,7 +40,7 @@ func RegisterHealthServer(s *grpc.Server) *health.Server {
 }
 
 // StartHealthMonitor periodically checks dependencies and updates the gRPC health server.
-func StartHealthMonitor(ctx context.Context, sc *spanner.Client, healthServer *health.Server) {
+func StartHealthMonitor(ctx context.Context, sc commonhealth.SpannerHealthClient, healthServer *health.Server) {
 	ticker := time.NewTicker(healthCheckInterval)
 	defer ticker.Stop()
 
@@ -58,7 +57,7 @@ func StartHealthMonitor(ctx context.Context, sc *spanner.Client, healthServer *h
 	}
 }
 
-func updateHealthStatus(ctx context.Context, sc *spanner.Client, healthServer *health.Server) {
+func updateHealthStatus(ctx context.Context, sc commonhealth.SpannerHealthClient, healthServer *health.Server) {
 	if err := checkSpanner(ctx, sc); err != nil {
 		logging.Error(ctx, "Active health check failed", "error", err)
 		healthServer.SetServingStatus(xidServiceHealthCheckName, healthpb.HealthCheckResponse_NOT_SERVING)
@@ -67,9 +66,9 @@ func updateHealthStatus(ctx context.Context, sc *spanner.Client, healthServer *h
 	}
 }
 
-func checkSpanner(ctx context.Context, sc *spanner.Client) error {
+func checkSpanner(ctx context.Context, sc commonhealth.SpannerHealthClient) error {
 	ctx, cancel := context.WithTimeout(ctx, spannerTimeout)
 	defer cancel()
 
-	return commonhealth.CheckSpanner(ctx, sc)
+	return commonhealth.CheckSpannerXID(ctx, sc)
 }

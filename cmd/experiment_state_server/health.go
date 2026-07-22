@@ -20,7 +20,6 @@ import (
 
 	"golang/go_sync/errgroup/errgroup"
 	commonhealth "xmanager_cloud/common/health"
-	"xmanager_cloud/storage/spanner/migrations/version"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 )
 
@@ -37,7 +36,7 @@ func activeHealthCheck(spClient commonhealth.SpannerHealthClient, xidClient xidg
 
 		// 1. Spanner check
 		eg.Go(func() error {
-			return commonhealth.CheckSpannerWithVersion(ctx, spClient, version.EssExpectedSchemaVersion())
+			return commonhealth.CheckSpannerESS(ctx, spClient)
 		})
 
 		// 2. XID Service check
