@@ -87,16 +87,16 @@ class SPAHandlerTest(unittest.TestCase):
 
     def test_config_js_api_url(self):
         cases = [
-            dict(
-                testcase_name="defaults",
-                environ={},
-                expected='window.XMC_API_URL="https://api.example.com/v1";',
-            ),
-            dict(
-                testcase_name="custom_env",
-                environ={"XMC_API_URL": "https://custom.api/v1"},
-                expected='window.XMC_API_URL="https://custom.api/v1";',
-            ),
+            {
+                "testcase_name": "defaults",
+                "environ": {},
+                "expected": 'window.XMC_API_URL="https://api.example.com/v1";',
+            },
+            {
+                "testcase_name": "custom_env",
+                "environ": {"XMC_API_URL": "https://custom.api/v1"},
+                "expected": 'window.XMC_API_URL="https://custom.api/v1";',
+            },
         ]
         for case in cases:
             with self.subTest(case["testcase_name"]):
@@ -107,21 +107,21 @@ class SPAHandlerTest(unittest.TestCase):
 
     def test_config_js_refresh_interval(self):
         cases = [
-            dict(
-                testcase_name="defaults",
-                environ={},
-                expected="window.XMC_REFRESH_INTERVAL_MS=30000;",
-            ),
-            dict(
-                testcase_name="custom_env",
-                environ={"XMC_REFRESH_INTERVAL_MS": "60000"},
-                expected="window.XMC_REFRESH_INTERVAL_MS=60000;",
-            ),
-            dict(
-                testcase_name="invalid_interval",
-                environ={"XMC_REFRESH_INTERVAL_MS": "invalid"},
-                expected="window.XMC_REFRESH_INTERVAL_MS=30000;",
-            ),
+            {
+                "testcase_name": "defaults",
+                "environ": {},
+                "expected": "window.XMC_REFRESH_INTERVAL_MS=30000;",
+            },
+            {
+                "testcase_name": "custom_env",
+                "environ": {"XMC_REFRESH_INTERVAL_MS": "60000"},
+                "expected": "window.XMC_REFRESH_INTERVAL_MS=60000;",
+            },
+            {
+                "testcase_name": "invalid_interval",
+                "environ": {"XMC_REFRESH_INTERVAL_MS": "invalid"},
+                "expected": "window.XMC_REFRESH_INTERVAL_MS=30000;",
+            },
         ]
         for case in cases:
             with self.subTest(case["testcase_name"]):
@@ -132,16 +132,16 @@ class SPAHandlerTest(unittest.TestCase):
 
     def test_config_js_feature_flags(self):
         cases = [
-            dict(
-                testcase_name="defaults",
-                environ={},
-                expected=('window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": false};'),
-            ),
-            dict(
-                testcase_name="status_message_history_true",
-                environ={"XMC_STATUS_MESSAGE_HISTORY_ENABLED": "true"},
-                expected=('window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true};'),
-            ),
+            {
+                "testcase_name": "defaults",
+                "environ": {},
+                "expected": ('window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": false};'),
+            },
+            {
+                "testcase_name": "status_message_history_true",
+                "environ": {"XMC_STATUS_MESSAGE_HISTORY_ENABLED": "true"},
+                "expected": ('window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true};'),
+            },
         ]
         for case in cases:
             with self.subTest(case["testcase_name"]):

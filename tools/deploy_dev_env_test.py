@@ -103,9 +103,8 @@ domain_name: example.com
 xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
 """
         mo = mock_open(read_data=invalid_yaml)
-        with patch("builtins.open", mo):
-            with self.assertRaises(SystemExit):
-                deploy_dev_env.load_and_validate_config("dummy.yaml")
+        with patch("builtins.open", mo), self.assertRaises(SystemExit):
+            deploy_dev_env.load_and_validate_config("dummy.yaml")
 
     @patch("pathlib.Path.exists", return_value=True)
     def test_load_and_validate_config_invalid_value(self, mock_exists):
@@ -118,9 +117,8 @@ domain_name: example.com
 xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
 """
         mo = mock_open(read_data=invalid_yaml)
-        with patch("builtins.open", mo):
-            with self.assertRaises(SystemExit):
-                deploy_dev_env.load_and_validate_config("dummy.yaml")
+        with patch("builtins.open", mo), self.assertRaises(SystemExit):
+            deploy_dev_env.load_and_validate_config("dummy.yaml")
 
     @patch("pathlib.Path.exists", return_value=True)
     def test_load_config_success(self, mock_exists):

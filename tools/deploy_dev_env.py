@@ -24,7 +24,7 @@ import shutil
 import subprocess
 import sys
 import time
-from typing import Any, Optional
+from typing import Any
 
 # ANSI Color Codes
 RED = "\033[0;31m"
@@ -153,7 +153,7 @@ def _load_config(config_path: str) -> dict[str, str]:
 
     config = {}
     try:
-        with open(config_path, "r") as f:
+        with open(config_path) as f:
             for line in f:
                 line_stripped = line.strip()
                 if not line_stripped or line_stripped.startswith("#"):
@@ -229,7 +229,7 @@ def load_and_validate_config(config_path: str) -> dict[str, str]:
 
 def run_command(
     cmd: list[str],
-    env: Optional[dict[str, str]] = None,
+    env: dict[str, str] | None = None,
     capture_output: bool = False,
     log_on_error: bool = True,
 ) -> subprocess.CompletedProcess:
@@ -254,14 +254,13 @@ def run_command(
         if env:
             run_env.update(env)
 
-        result = subprocess.run(
+        return subprocess.run(
             cmd,
             env=run_env,
             check=True,
             text=True,
             capture_output=capture_output,
         )
-        return result
     except subprocess.CalledProcessError as e:
         if log_on_error:
             log_error(f"Command failed: {' '.join(cmd)}")
@@ -459,7 +458,7 @@ def _dns_get_existing_ip(subdomain: str, dns_project: str, dns_zone: str) -> str
     Returns:
         The existing IP address as a string, or empty string if not found.
     """
-    out = run_command(
+    return run_command(
         [
             "gcloud",
             "dns",
@@ -473,7 +472,6 @@ def _dns_get_existing_ip(subdomain: str, dns_project: str, dns_zone: str) -> str
         ],
         capture_output=True,
     ).stdout.strip()
-    return out
 
 
 def _dns_add_record(subdomain: str, ip: str, dns_project: str, dns_zone: str) -> None:
