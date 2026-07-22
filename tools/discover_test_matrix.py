@@ -18,6 +18,7 @@ import fnmatch
 import json
 import os
 import subprocess
+import sys
 from typing import Dict, List, Optional, Set
 
 # Global change patterns trigger full test suite runs because infrastructure, build rules,
@@ -44,25 +45,33 @@ def is_global_change(changed_files: List[str]) -> bool:
     return False
 
 
-def get_changed_files(base_ref: str = "origin/main") -> List[str]:
-    """Retrieves modified file paths relative to base_ref to scope test execution."""
+def get_changed_files(base_ref: str = "origin/main") -> Optional[List[str]]:
+    """Retrieves modified file paths relative to base_ref.
+
+    Returns None if git diff fails or cannot be determined (forcing a full test run).
+    """
     try:
         out = subprocess.check_output(["git", "diff", "--name-only", f"{base_ref}...HEAD"]).decode(
             "utf-8"
         )
         files = [line.strip() for line in out.strip().split("\n") if line.strip()]
-        if files:
-            return files
-    except Exception:
-        pass
+        return files
+    except Exception as e:
+        print(f"Warning: Failed to execute 'git diff {base_ref}...HEAD': {e}")
 
     try:
         out = subprocess.check_output(["git", "diff", "--name-only", "HEAD~1", "HEAD"]).decode(
             "utf-8"
         )
-        return [line.strip() for line in out.strip().split("\n") if line.strip()]
-    except Exception:
-        return []
+        files = [line.strip() for line in out.strip().split("\n") if line.strip()]
+        return files
+    except Exception as e:
+        print(f"Warning: Failed to execute 'git diff HEAD~1 HEAD': {e}")
+
+    print(
+        "Warning: Could not determine changed files via git diff. Falling back to full test matrix."
+    )
+    return None
 
 
 def extract_root_folders(test_targets: List[str]) -> Set[str]:
@@ -164,17 +173,24 @@ def query_bazel_test_targets() -> List[str]:
     """Queries Bazel for all test targets in the workspace."""
     try:
         out = subprocess.check_output(["bazel", "query", 'kind(".*_test", //...)']).decode("utf-8")
-        return [line.strip() for line in out.strip().split("\n") if line.strip()]
-    except subprocess.CalledProcessError as e:
-        print(f"Error querying Bazel test targets: {e}")
-        return []
+        targets = [line.strip() for line in out.strip().split("\n") if line.strip()]
+        if not targets:
+            print("ERROR: Bazel query returned zero test targets.", file=sys.stderr)
+            sys.exit(1)
+        return targets
+    except Exception as e:
+        print(f"ERROR: Bazel query failed: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def main() -> None:
     """Main entry point for discovering test matrix."""
     targets = query_bazel_test_targets()
     changed_files = get_changed_files()
-    print(f"Changed files count: {len(changed_files)}")
+    if changed_files is None:
+        print("Changed files: Undetermined (Git diff unavailable -> Running full test matrix)")
+    else:
+        print(f"Changed files count: {len(changed_files)}")
 
     matrix = build_test_matrix(targets, changed_files=changed_files)
     matrix_json = json.dumps(matrix)

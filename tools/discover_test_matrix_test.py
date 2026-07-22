@@ -15,11 +15,14 @@
 """Unit tests for discover_test_matrix module."""
 
 import unittest
+from unittest.mock import patch
 
 from tools.discover_test_matrix import (
     build_test_matrix,
     extract_root_folders,
+    get_changed_files,
     is_global_change,
+    query_bazel_test_targets,
 )
 
 
@@ -85,6 +88,18 @@ class DiscoverTestMatrixTest(unittest.TestCase):
     def test_build_test_matrix_docs_only_returns_empty(self) -> None:
         matrix = build_test_matrix(self.sample_targets, changed_files=["docs/README.md"])
         self.assertEqual(matrix, [])
+
+    @patch("subprocess.check_output")
+    def test_get_changed_files_fallback_to_none_on_git_error(self, mock_subprocess) -> None:
+        mock_subprocess.side_effect = Exception("Git diff error")
+        result = get_changed_files()
+        self.assertIsNone(result)
+
+    @patch("subprocess.check_output")
+    def test_query_bazel_test_targets_exits_on_error(self, mock_subprocess) -> None:
+        mock_subprocess.side_effect = Exception("Bazel query error")
+        with self.assertRaises(SystemExit):
+            query_bazel_test_targets()
 
 
 if __name__ == "__main__":
