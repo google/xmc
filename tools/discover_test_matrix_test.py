@@ -16,23 +16,16 @@
 
 import unittest
 
-from tools.discover_test_matrix import build_test_matrix, extract_root_folders
+from tools.discover_test_matrix import (
+    build_test_matrix,
+    extract_root_folders,
+    is_global_change,
+)
 
 
 class DiscoverTestMatrixTest(unittest.TestCase):
-    def test_extract_root_folders(self) -> None:
-        targets = [
-            "//:root_test",
-            "//cmd/actuator:workunittaskhandler_test",
-            "//internal/auth:auth_test",
-            "//pkg/auth/oauth2:oauth2_test",
-            "//tools:build_oci_test",
-        ]
-        roots = extract_root_folders(targets)
-        self.assertEqual(roots, {"root", "cmd", "internal", "pkg", "tools"})
-
-    def test_build_test_matrix_splits_cmd_and_internal(self) -> None:
-        targets = [
+    def setUp(self) -> None:
+        self.sample_targets = [
             "//:root_test",
             "//cmd/actuator:workunittaskhandler_test",
             "//cmd/ui:server_test",
@@ -42,7 +35,20 @@ class DiscoverTestMatrixTest(unittest.TestCase):
             "//pkg/auth/oauth2:oauth2_test",
             "//tools:build_oci_test",
         ]
-        matrix = build_test_matrix(targets)
+
+    def test_extract_root_folders(self) -> None:
+        roots = extract_root_folders(self.sample_targets)
+        self.assertEqual(roots, {"root", "cmd", "internal", "deploy", "pkg", "tools"})
+
+    def test_is_global_change(self) -> None:
+        self.assertTrue(is_global_change([".github/workflows/unit-tests.yml"]))
+        self.assertTrue(is_global_change(["MODULE.bazel"]))
+        self.assertTrue(is_global_change(["tools/discover_test_matrix.py"]))
+        self.assertFalse(is_global_change(["pkg/auth/oauth2.go"]))
+        self.assertFalse(is_global_change(["docs/README.md"]))
+
+    def test_build_test_matrix_unfiltered(self) -> None:
+        matrix = build_test_matrix(self.sample_targets, changed_files=None)
         expected = [
             {"target": "root", "bazel_args": "//:all"},
             {"target": "cmd/ui", "bazel_args": "//cmd/ui/..."},
@@ -57,6 +63,28 @@ class DiscoverTestMatrixTest(unittest.TestCase):
             {"target": "tools", "bazel_args": "//tools/..."},
         ]
         self.assertEqual(matrix, expected)
+
+    def test_build_test_matrix_pkg_only(self) -> None:
+        matrix = build_test_matrix(self.sample_targets, changed_files=["pkg/auth/oauth2.go"])
+        expected = [{"target": "pkg", "bazel_args": "//pkg/..."}]
+        self.assertEqual(matrix, expected)
+
+    def test_build_test_matrix_cmd_ui_only(self) -> None:
+        matrix = build_test_matrix(self.sample_targets, changed_files=["cmd/ui/app/main.ts"])
+        expected = [{"target": "cmd/ui", "bazel_args": "//cmd/ui/..."}]
+        self.assertEqual(matrix, expected)
+
+    def test_build_test_matrix_internal_storage_only(self) -> None:
+        matrix = build_test_matrix(
+            self.sample_targets,
+            changed_files=["internal/storage/spanner/schema.go"],
+        )
+        expected = [{"target": "internal/storage", "bazel_args": "//internal/storage/..."}]
+        self.assertEqual(matrix, expected)
+
+    def test_build_test_matrix_docs_only_returns_empty(self) -> None:
+        matrix = build_test_matrix(self.sample_targets, changed_files=["docs/README.md"])
+        self.assertEqual(matrix, [])
 
 
 if __name__ == "__main__":

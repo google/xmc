@@ -191,10 +191,10 @@ jobs:
     steps:
       - name: 'Verify All Unit Tests Passed'
         run: |
-          if [ "${{ needs.run-tests.result }}" != "success" ]; then
+          if [ "${{ needs.run-tests.result }}" == "failure" ] || [ "${{ needs.run-tests.result }}" == "cancelled" ]; then
             echo "ERROR: One or more unit test matrix jobs failed."
             echo "Matrix result: ${{ needs.run-tests.result }}"
             exit 1
           fi
-          echo "All unit test matrix jobs passed successfully."
+          echo "All unit test matrix jobs passed or were skipped due to no affected changes."
 
