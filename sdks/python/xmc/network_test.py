@@ -235,6 +235,26 @@ class TestHTTPClient(unittest.TestCase):
 
         mock_conn.close.assert_called_once()
 
+    @mock.patch("http.client.HTTPConnection")
+    def test_custom_default_headers(self, mock_http_conn_cls: mock.MagicMock) -> None:
+        mock_conn = mock.MagicMock()
+        mock_resp = mock.MagicMock()
+        mock_resp.status = 200
+        mock_conn.getresponse.return_value = mock_resp
+        mock_http_conn_cls.return_value = mock_conn
+
+        client = HTTPClient(
+            "http://localhost:8080",
+            default_headers={"X-Custom-Header": "custom_val"},
+        )
+        result = client.send("/path", "body")
+
+        self.assertEqual(result, SendResult.SUCCESS)
+        _, kwargs = mock_conn.request.call_args
+        headers = kwargs.get("headers", {})
+        self.assertEqual(headers.get("X-Custom-Header"), "custom_val")
+        self.assertEqual(headers.get("Connection"), "keep-alive")
+
 
 if __name__ == "__main__":
     unittest.main()
