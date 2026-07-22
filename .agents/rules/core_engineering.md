@@ -66,7 +66,6 @@ function processUser(user: User | null) {
 - **Selective Triggers**: Trigger the `iterative_reflection` skill ([SKILL.md](../skills/iterative_reflection/SKILL.md)) only after major implementations, PRs with high comment volume (>3-5 comments), or explicit user request. Do NOT trigger for routine minor edits.
 
 ## 7. Subagent Inspection & Workspace File Guidelines
-- **Code Comparison Across Files and Workspaces**: `diff` and `git diff` are pre-approved in the workspace permission allowlist (`command(diff)` and `command(git diff)`) and are the preferred tools for comparing concise, accurate line-by-line code deltas across files, branches, and workspaces.
-- **File Context Inspection**: Use `view_file` for inspecting full file content context when reading specific line ranges or reviewing structural file layout.
+- **Prefer `diff` / `git diff` for Code Comparison**: `diff` and `git diff` are pre-approved in the workspace permission allowlist (`command(diff)` and `command(git diff)`) and are the preferred tools for comparing concise, accurate line-by-line code deltas across files, branches, and workspaces.
+- **Use `view_file` for Full File Content Context**: Use `view_file` for inspecting full file content context when reading specific line ranges or reviewing structural file layout.
 - **Creating Non-Artifact Workspace Documentation**: Use `write_to_file` (omitting `ArtifactMetadata`) when creating non-artifact workspace documentation files (e.g. `_worker_notes/PLAN.md`, `_worker_notes/README.md`) instead of shell redirects (`cat > file`).
-
