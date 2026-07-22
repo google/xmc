@@ -47,6 +47,7 @@ This document defines standards for AI agents acting as **Code Reviewers / Inspe
   ```
 
 ### C. 1-to-1 Thread Resolution Verification
+- **Mandatory PR Comment Reply Execution**: `./tools/reply_pr_comment.py` MUST be called for 100% of comment thread URLs returned by `generate_review_checklist.py`.
 - **Resolution Verification Requirement**: Before marking a PR review task as complete or concluding the workflow, programmatically query the PR's review comments/threads to confirm that every single comment ID from the checklist has received a dedicated inline response or resolution.
 - **Required Verification Tool**: Run the dedicated unit-tested resolution verification script in `tools/`:
   ```bash
