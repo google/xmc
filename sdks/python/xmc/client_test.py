@@ -16,6 +16,7 @@
 
 import io
 import json
+import os
 import socket
 import unittest
 import urllib.error
@@ -156,6 +157,60 @@ class TestClient(unittest.TestCase):
     def test_context_manager(self) -> None:
         with Client(base_url="https://xmc.googleapis.com") as client:
             self.assertEqual(client.base_url, "https://xmc.googleapis.com")
+
+
+class TestClientShortCircuit(unittest.TestCase):
+    """Unit tests for Client short-circuit / disabling feature."""
+
+    def test_default_disabled_is_false(self) -> None:
+        with patch.dict("os.environ"):
+            os.environ.pop("XMC_METRICS_DISABLED", None)
+            client = Client(base_url="https://xmc.googleapis.com")
+            self.assertFalse(client.disabled)
+
+    def test_env_var_enabled_truthy_values(self) -> None:
+        truthy_values = ["1", "true", "TRUE", "yes", "YES", "t", "T", "y", "Y", "  true  "]
+        for val in truthy_values:
+            with patch.dict("os.environ", {"XMC_METRICS_DISABLED": val}):
+                client = Client(base_url="https://xmc.googleapis.com")
+                self.assertTrue(client.disabled, f"Failed for env val: {val!r}")
+
+    def test_env_var_falsy_values(self) -> None:
+        falsy_values = ["0", "false", "no", "n", "random", ""]
+        for val in falsy_values:
+            with patch.dict("os.environ", {"XMC_METRICS_DISABLED": val}):
+                client = Client(base_url="https://xmc.googleapis.com")
+                self.assertFalse(client.disabled, f"Failed for env val: {val!r}")
+
+    def test_explicit_disabled_true_overrides_env(self) -> None:
+        with patch.dict("os.environ", {"XMC_METRICS_DISABLED": "0"}):
+            client = Client(base_url="https://xmc.googleapis.com", disabled=True)
+            self.assertTrue(client.disabled)
+
+    def test_explicit_disabled_false_overrides_env(self) -> None:
+        with patch.dict("os.environ", {"XMC_METRICS_DISABLED": "1"}):
+            client = Client(base_url="https://xmc.googleapis.com", disabled=False)
+            self.assertFalse(client.disabled)
+
+    @patch("urllib.request.urlopen")
+    def test_short_circuit_returns_empty_dict_no_urlopen(self, mock_urlopen: MagicMock) -> None:
+        client = Client(base_url="https://xmc.googleapis.com", disabled=True)
+
+        res_get = client.get("v1/metrics", params={"step": 1})
+        self.assertEqual(res_get, {})
+
+        res_post = client.post("v1/metrics", data={"metric_name": "loss", "metric_value": 0.5})
+        self.assertEqual(res_post, {})
+
+        res_req = client.request("DELETE", "v1/metrics/123")
+        self.assertEqual(res_req, {})
+
+        mock_urlopen.assert_not_called()
+
+    def test_disabled_property_read_only(self) -> None:
+        client = Client(base_url="https://xmc.googleapis.com", disabled=True)
+        with self.assertRaises(AttributeError):
+            client.disabled = False
 
 
 if __name__ == "__main__":
