@@ -37,10 +37,10 @@ import (
 func TestSchemaSynchronization(t *testing.T) {
 	ctx := t.Context()
 
-	// SetupWithDashboard creates the ESS, XID, and Dashboard databases using their respective schemas.
-	_, _, emu := emulator.SetupWithDashboard(ctx, t)
-	// SetupEmptyWithDashboard creates empty databases.
-	_, _, emptyDBEmu := emulator.SetupEmptyWithDashboard(ctx, t)
+	// SetupWithEmulator creates the ESS, XID, and Dashboard databases using their respective schemas.
+	_, _, emu := emulator.SetupWithEmulator(ctx, t)
+	// SetupEmpty creates empty databases.
+	_, _, emptyDBEmu := emulator.SetupEmpty(ctx, t)
 
 	tests := []testRunCase{
 		{
@@ -150,7 +150,7 @@ func TestSchemaSynchronization(t *testing.T) {
 func TestMigrationUpDownConsistency(t *testing.T) {
 	ctx := t.Context()
 
-	_, _, emu := emulator.SetupEmptyWithDashboard(ctx, t)
+	_, _, emu := emulator.SetupEmpty(ctx, t)
 
 	tests := []testRunCase{
 		{

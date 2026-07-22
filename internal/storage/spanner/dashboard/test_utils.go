@@ -27,7 +27,7 @@ import (
 
 func setupDashboardRepository(ctx context.Context, t *testing.T) *Repository {
 	t.Helper()
-	_, _, emu := emulator.SetupWithDashboard(ctx, t)
+	_, _, emu := emulator.SetupWithEmulator(ctx, t)
 	dbURI := fmt.Sprintf("projects/test-project/instances/test-instance/databases/%s", emu.DashboardDatabase)
 	client, err := spanner.NewClient(ctx, dbURI, emu.ClientOptions()...)
 	if err != nil {

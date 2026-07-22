@@ -99,18 +99,10 @@ func Setup(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client)
 }
 
 func SetupWithEmulator(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client, *Emulator) {
-	return setup(ctx, t, true, false)
-}
-
-func SetupEmpty(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client, *Emulator) {
-	return setup(ctx, t, false, false)
-}
-
-func SetupWithDashboard(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client, *Emulator) {
 	return setup(ctx, t, true, true)
 }
 
-func SetupEmptyWithDashboard(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client, *Emulator) {
+func SetupEmpty(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client, *Emulator) {
 	return setup(ctx, t, false, true)
 }
 
