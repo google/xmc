@@ -15,12 +15,17 @@
 """Base HTTP client for XMC Metrics API using Python standard library."""
 
 import json
+import logging
 import os
 import socket
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Mapping, Optional, Union
+
+from xmc.dist_harvest import get_replica_id_and_silence_status
+
+logger = logging.getLogger(__name__)
 
 _TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "t", "y"})
 
@@ -66,6 +71,10 @@ class Client:
         api_key: Optional API key or bearer token.
         timeout: Default request timeout in seconds.
         disabled: Whether metrics operations are disabled/short-circuited.
+        log_all_replicas: Opt-in to bypass rank-zero silencer.
+        replica_id: Auto-detected replica/rank ID.
+        is_silenced: Whether metric logging is silenced for this replica.
+        should_silence: Alias for is_silenced.
     """
 
     def __init__(
@@ -75,6 +84,8 @@ class Client:
         timeout: float = 30.0,
         default_headers: Optional[Dict[str, str]] = None,
         disabled: Optional[bool] = None,
+        log_all_replicas: bool = False,
+        env: Optional[Mapping[str, str]] = None,
     ) -> None:
         if not base_url:
             raise ValueError("base_url must be specified and non-empty.")
@@ -87,11 +98,19 @@ class Client:
         else:
             self._disabled = _is_metrics_disabled_env()
 
+        self.log_all_replicas = log_all_replicas
+        self.replica_id, self.is_silenced = get_replica_id_and_silence_status(
+            env=env, log_all_replicas=log_all_replicas
+        )
+        self.should_silence = self.is_silenced
+
         self._headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
             "User-Agent": "xmc-python-sdk/0.1.0",
         }
+        if self.replica_id:
+            self._headers["X-Replica-ID"] = self.replica_id
         if default_headers:
             self._headers.update(default_headers)
         if api_key:
@@ -188,6 +207,9 @@ class Client:
         headers: Optional[Dict[str, str]] = None,
     ) -> Union[Dict[str, Any], list]:
         """Convenience method for HTTP POST requests."""
+        if self.is_silenced:
+            logger.debug("POST request to %s silenced for replica %s", path, self.replica_id)
+            return {}
         return self.request("POST", path, data=data, headers=headers)
 
     def close(self) -> None:
