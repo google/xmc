@@ -13,11 +13,14 @@
 // limitations under the License.
 
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterModule } from '@angular/router';
+
+import { QueueJobsSidePanelData } from '../side_panel/contents/queue_jobs_side_panel/queue_jobs_side_panel';
+import { SidePanelService } from '../side_panel/side_panel_service';
 
 /**
  * Resource Observability Dashboard (ROD) scaffolding shell component.
@@ -30,6 +33,12 @@ import { RouterModule } from '@angular/router';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule, RouterModule, MatCardModule, MatIconModule, MatButtonModule],
 })
-export class ResourceDashboard {
+export class ResourceDashboard implements OnInit {
+  private readonly sidePanelService = inject(SidePanelService);
   protected readonly activeTab = signal<'queues' | 'predictability'>('queues');
+
+  ngOnInit() {
+    // TODO(#186): Auto-open side panel for PR 3 UI verification screenshot.
+    this.sidePanelService.openSidePanel(new QueueJobsSidePanelData('cpu-cluster-queue'));
+  }
 }
