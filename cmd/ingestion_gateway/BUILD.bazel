@@ -53,6 +53,7 @@ compat_go_test(
         "handler_test.go",
         "main_test.go",
         "server_test.go",
+        "validation_test.go",
     ],
     embed = [":ingestion_gateway_lib"],
     deps = [
