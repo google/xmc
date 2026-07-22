@@ -12,17 +12,44 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
-go_library(
+compat_go_library(
     name = "dashboard",
-    srcs = ["repository.go"],
+    srcs = [
+        "createchart.go",
+        "createdashboard.go",
+        "getchart.go",
+        "getdashboard.go",
+        "repository.go",
+    ],
     importpath = "xmanager_cloud/internal/storage/spanner/dashboard",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/dashboard:messages_go_proto",
+        "//internal/logging",
+        "//internal/query_generator:querytools",
+        "//internal/storage/spanner/dashboard/data",
+        "//internal/storage/spanner/schema:dashboardschema",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_api//iterator",
         "@org_golang_google_protobuf//proto",
+    ],
+)
+
+compat_go_test(
+    name = "dashboard_test",
+    srcs = [
+        "createchart_test.go",
+        "createdashboard_test.go",
+        "getchart_test.go",
+        "getdashboard_test.go",
+        "test_utils.go",
+    ],
+    embed = [":dashboard"],
+    deps = [
+        "//api/protos/dashboard:messages_go_proto",
+        "//internal/storage/spanner/emulator",
+        "@com_google_cloud_go_spanner//:spanner",
     ],
 )

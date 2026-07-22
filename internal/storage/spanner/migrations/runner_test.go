@@ -43,10 +43,18 @@ func TestRun(t *testing.T) {
 				return emu.XIDDatabase
 			},
 		},
+		{
+			name:          "dashboard",
+			migrationsDir: "dashboard",
+			databaseID:    "test-dashboard-db-" + emulator.RandomSuffix(),
+			getDB: func(emu *emulator.Emulator) string {
+				return emu.DashboardDatabase
+			},
+		},
 	}
 
 	t.Run("Unsupported", func(t *testing.T) {
-		_, _, emu := emulator.SetupWithEmulator(ctx, t)
+		_, _, emu := emulator.SetupWithDashboard(ctx, t)
 		unsupportedCmds := []string{"unknown"}
 		for _, cmd := range unsupportedCmds {
 			t.Run(cmd, func(t *testing.T) {
@@ -67,7 +75,7 @@ func TestRun(t *testing.T) {
 	t.Run("Version", func(t *testing.T) {
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
-				_, _, emu := emulator.SetupWithEmulator(ctx, t)
+				_, _, emu := emulator.SetupWithDashboard(ctx, t)
 				tc = withEmuDB(tc, emu)
 				cfg := mustCreateConfig(t, tc, "version", nil)
 
@@ -106,7 +114,7 @@ func TestRun(t *testing.T) {
 					},
 				}
 
-				_, _, emu := emulator.SetupWithEmulator(ctx, t)
+				_, _, emu := emulator.SetupWithDashboard(ctx, t)
 				for _, ft := range forceTests {
 					t.Run(ft.name, func(t *testing.T) {
 						tc = withEmuDB(tc, emu)
@@ -156,7 +164,7 @@ func TestRun(t *testing.T) {
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				// SetupWithEmulator applies the schema but does not initialize the migration table.
-				_, _, emu := emulator.SetupWithEmulator(ctx, t)
+				_, _, emu := emulator.SetupWithDashboard(ctx, t)
 				tc = withEmuDB(tc, emu)
 				cfg := mustCreateConfig(t, tc, "up", nil)
 
@@ -190,7 +198,7 @@ func TestRun(t *testing.T) {
 	})
 	t.Run("Up", func(t *testing.T) {
 		for _, tc := range tests {
-			_, _, emu := emulator.SetupEmpty(ctx, t)
+			_, _, emu := emulator.SetupEmptyWithDashboard(ctx, t)
 			t.Run(tc.name, func(t *testing.T) {
 				tc = withEmuDB(tc, emu)
 				cfg := mustCreateConfig(t, tc, "up", nil)
@@ -209,7 +217,7 @@ func TestRun(t *testing.T) {
 	t.Run("Down", func(t *testing.T) {
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
-				_, _, emu := emulator.SetupEmpty(ctx, t)
+				_, _, emu := emulator.SetupEmptyWithDashboard(ctx, t)
 				tc = withEmuDB(tc, emu)
 				cfg := mustCreateConfig(t, tc, "up", nil)
 
@@ -253,7 +261,7 @@ func TestRun(t *testing.T) {
 	})
 	t.Run("Init", func(t *testing.T) {
 		for _, tc := range tests {
-			_, _, emu := emulator.SetupEmpty(ctx, t)
+			_, _, emu := emulator.SetupEmptyWithDashboard(ctx, t)
 			t.Run(tc.name, func(t *testing.T) {
 				tc = withEmuDB(tc, emu)
 				cfg := mustCreateConfig(t, tc, "init", nil)
