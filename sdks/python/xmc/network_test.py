@@ -250,6 +250,7 @@ class TestHTTPClient(unittest.TestCase):
         result = client.send("/path", "body")
 
         self.assertEqual(result, SendResult.SUCCESS)
+        mock_conn.request.assert_called_once()
         _, kwargs = mock_conn.request.call_args
         headers = kwargs.get("headers", {})
         self.assertEqual(headers.get("X-Custom-Header"), "custom_val")
