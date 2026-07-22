@@ -43,6 +43,7 @@ vars:
   reconciler_image:   # Required. Container image for reconciler
   log_monitor_image:  # Required. Container image for log monitor
   health_service_image: # Required. Container image for health service
+  rod_image:          # Container image for ROD service
   
   task_signature_ttl_seconds: 86400
   use_redis_queue: true
@@ -351,6 +352,8 @@ deployment_groups:
         value: $(vars.health_service_image)
       - name: healthService.gcpServiceAccount
         value: $(health_service_gcp_sa.service_account_email)
+      - name: rod_custom_image
+        value: $(vars.rod_image)
       - name: taskSignatureTtlSeconds
         value: $(vars.task_signature_ttl_seconds)
         type: auto
