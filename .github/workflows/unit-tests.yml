@@ -40,6 +40,9 @@ jobs:
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
+        with:
+          # Fetch full history so discover_test_matrix.py can run git diff origin/main...HEAD
+          fetch-depth: 0
 
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@v3'
