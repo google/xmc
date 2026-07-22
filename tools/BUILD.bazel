@@ -199,3 +199,46 @@ py_test(
         ":setup_venv_lib",
     ],
 )
+
+py_library(
+    name = "update_pr_description_lib",
+    srcs = ["update_pr_description.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+)
+
+py_library(
+    name = "run_affected_tests_lib",
+    srcs = ["run_affected_tests.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tool_utils",
+    ],
+)
+
+py_library(
+    name = "generate_review_checklist_lib",
+    srcs = ["generate_review_checklist.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+)
+
+py_test(
+    name = "generate_review_checklist_test",
+    srcs = ["generate_review_checklist_test.py"],
+    imports = ["."],
+    deps = [
+        ":generate_review_checklist_lib",
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+)

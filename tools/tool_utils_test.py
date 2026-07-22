@@ -135,6 +135,19 @@ class TestToolUtils(unittest.TestCase):
                 _bootstrap_venv(venv_dir)
             mock_run.assert_called_once()
 
+    @patch("subprocess.run")
+    def test_bootstrap_venv_pip_index_url_fallback(self, mock_run):
+        env = dict(os.environ)
+        env.pop("PIP_INDEX_URL", None)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            venv_dir = Path(tmp_dir) / "venv"
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch("pathlib.Path.is_file", return_value=True),
+            ):
+                _bootstrap_venv(venv_dir)
+                self.assertEqual(os.environ.get("PIP_INDEX_URL"), "https://pypi.org/simple")
+
     def test_run_tool_success(self):
         """Test successful execution of tool runner."""
         parser = MagicMock()

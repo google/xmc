@@ -1,5 +1,5 @@
 ---
-name: Upgrade XMC Environment
+name: XMC Upgrade Environment
 description: Upgrades an existing XManager on Cloud (XMC) environment on GKE to the latest current branch state using the deployment configuration YAML.
 ---
 

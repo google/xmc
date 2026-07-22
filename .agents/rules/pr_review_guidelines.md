@@ -39,24 +39,23 @@ This document defines standards for AI agents acting as **Code Reviewers / Inspe
   ```
 
 ### B. Consolidated Review Checklist Artifact
-- **Pre-edit Checklist Artifact**: Before modifying any codebase files, create a complete Markdown checklist artifact containing every detected comment ID, target file path, line range, and requested change.
-- **Count Verification**: Explicitly verify the total count of review threads against the parsed JSON array length (`len(comments)`).
-- **Required Checklist Structure**:
-  ```markdown
-  # PR Review Comment Checklist
-  - **PR Number**: #{number}
-  - **Total Open Threads**: {parsed_array_length}
-
-  ## Review Items
-  - [ ] **Comment ID `{id}`** | `{file_path}:{line}`
-    - **Requested Change**: {body}
-    - **Status**: Pending
+- **Pre-edit Checklist Artifact**: When addressing PR review feedback, before modifying any codebase files to implement requested fixes, run `tools/generate_review_checklist.py <owner> <repo> <pr_number>` to automatically query unresolved review comments from GitHub API and generate the Markdown checklist artifact (`pr_review_checklist.md`).
+- **Count Verification**: Explicitly verify the total count of review threads against the output of `generate_review_checklist.py`.
+- **Required Checklist Generation Command**:
+  ```bash
+  ./tools/generate_review_checklist.py <owner> <repo> <pull_number> [-o pr_review_checklist.md]
   ```
 
 ### C. 1-to-1 Thread Resolution Verification
+- **Mandatory PR Comment Reply Execution**: `./tools/reply_pr_comment.py` MUST be called for 100% of comment thread URLs returned by `generate_review_checklist.py`.
 - **Resolution Verification Requirement**: Before marking a PR review task as complete or concluding the workflow, programmatically query the PR's review comments/threads to confirm that every single comment ID from the checklist has received a dedicated inline response or resolution.
 - **Required Verification Tool**: Run the dedicated unit-tested resolution verification script in `tools/`:
   ```bash
   ./tools/verify_pr_comment_resolution.py <owner> <repo> <pull_number> <path_to_checklist_file>
   ```
 - **Completion Guardrail**: Never mark a PR review comment task as complete until 100% of comment IDs from the checklist are confirmed to have received a dedicated inline response or resolution.
+
+### D. Post-PR Reflection Trigger
+- **High PR Comment Volume Trigger**: If resolving PR comments involved a high volume of review feedback (>3-5 comments or multiple review iterations), trigger the [XMC Iterative Reflection](../skills/iterative_reflection/SKILL.md) skill to identify missing project rules or guidelines that led to the review feedback.
+
+

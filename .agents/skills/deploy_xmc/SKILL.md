@@ -1,5 +1,5 @@
 ---
-name: Deploy XMC
+name: XMC Deploy Environment
 description: Automates compiling and step-by-step deployment of the XMC v2 Cluster Toolkit blueprint. Supports both automated developer setups and manual step-by-step deployments.
 ---
 

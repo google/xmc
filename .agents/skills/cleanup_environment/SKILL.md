@@ -1,5 +1,5 @@
 ---
-name: Cleanup XMC Environment
+name: XMC Cleanup Environment
 description: Guides the agent through tearing down an XMC environment deployed via Cluster Toolkit (gcluster) safely.
 ---
 

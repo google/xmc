@@ -1,5 +1,5 @@
 ---
-name: Address PR Comment
+name: XMC Address PR Comment
 description: Automates addressing PR comments (fetching context, running tests, measuring coverage, and GKE redeployment).
 ---
 
@@ -9,17 +9,19 @@ This document defines a structured agent workflow that automates the process of 
 
 ```mermaid
 graph TD
-    A["User provides PR comment link or PR number"] --> B["Programmatic Comment Enumeration (gh api + Python/jq)"]
-    B --> C["Extract 100% of threads: IDs, paths, lines"]
-    C --> D["Create Consolidated Review Checklist Artifact"]
-    D --> E["Dependency Mapping (Bazel Query)"]
-    E --> F["Prepare Implementation Plan & Diff"]
-    F --> G["Run Unit Tests & Coverage"]
-    G --> H["Build Binaries & Commit Changes"]
-    H --> I["Build & Push OCI Images"]
-    I --> J["Kubectl Rollout Restart"]
-    J --> K["1-to-1 Thread Resolution Verification"]
-    K --> L["Report Status & Complete Task"]
+    A["User provides PR / comment link"] --> B["Agent runs generate_review_checklist.py"]
+    B --> C["Agent populates pr_review_checklist.md"]
+    C --> D["Agent runs fetch_pr_comment.py for comment context"]
+    D --> E["Agent extracts: body, file path, line"]
+    E --> F["Agent performs Bazel Query to find affected binaries"]
+    F --> G["Agent prepares Implementation Plan"]
+    G --> H["Agent runs Unit Tests & Coverage"]
+    H --> I["Agent builds affected targets locally"]
+    I --> J["Agent commits changes & replies 'code changed'"]
+    J --> K["Agent builds & pushes OCI Images"]
+    K --> L["Agent performs Kubectl Rollout Restart"]
+    L --> M["1-to-1 Thread Resolution Verification (verify_pr_comment_resolution.py)"]
+    M --> N["Agent reports status & completes task"]
 ```
 
 > [!IMPORTANT]
@@ -29,7 +31,7 @@ graph TD
 
 ## Guidelines for Using CLI Tools
 
-When invoking helper tools under `tools/` (e.g. `fetch_pr_comment.py`, `reply_pr_comment.py`, `build_oci.py`):
+When invoking helper tools under `tools/` (e.g. `generate_review_checklist.py`, `fetch_pr_comment.py`, `reply_pr_comment.py`, `build_oci.py`):
 1. **Do not read tool source code**: You should not open or read the Python source code of these tools.
 2. **Use `--help`**: To learn about the tool's usage, options, and parameters, run it with the `--help` flag (e.g. `./tools/fetch_pr_comment.py --help`).
 3. **Parse Structured Output & Handle Errors**: All tools output structured JSON. Check the process exit code:
@@ -43,7 +45,37 @@ When invoking helper tools under `tools/` (e.g. `fetch_pr_comment.py`, `reply_pr
 
 ---
 
-## 1. Input & Comment Details Fetching
+## 1. Automated Review Checklist Generation
+
+When addressing PR review feedback or starting a review pass on a Pull Request, the agent first generates a checklist of all unresolved comments directly from the GitHub API.
+
+### When to Call
+- **PR Review Start**: Call immediately when beginning to process review comments on a PR.
+- **Review Pass Check**: Call during post-PR creation checks or whenever an updated checklist of unresolved comments is needed.
+
+### Execution Command
+```bash
+./tools/generate_review_checklist.py <owner> <repo> <pr_number> [-o pr_review_checklist.md]
+```
+
+### Result Output Schema
+```json
+{
+  "status": "success",
+  "result": {
+    "owner": "google",
+    "repo": "xmc",
+    "pr_number": 145,
+    "output_file": "pr_review_checklist.md",
+    "unresolved_comment_count": 3
+  }
+}
+```
+This generates `pr_review_checklist.md` in the workspace populated with interactive `- [ ]` checkboxes for each unresolved comment.
+
+---
+
+## 2. Input & Comment Details Fetching
 
 The agent accepts a comment link or PR number. The helper script `tools/fetch_pr_comment.py` or GitHub API queries retrieve the raw comment context.
 
@@ -65,26 +97,6 @@ The agent accepts a comment link or PR number. The helper script `tools/fetch_pr
   "commit_id": "a1b2c3d4e5f6..."
 }
 ```
-
----
-
-## 2. Consolidated Review Checklist Preparation
-
-Before making any code modifications, create a Markdown checklist artifact in the brain directory containing every comment thread identified during enumeration.
-
-### Checklist Schema
-```markdown
-# PR Review Comment Checklist
-- **PR Number**: #{number}
-- **Total Open Threads**: {parsed_array_length}
-
-## Review Items
-- [ ] **Comment ID `{id}`** | `{file_path}:{line}`
-  - **Requested Change**: {body}
-  - **Status**: Pending
-```
-
-Explicitly verify that the number of checklist items equals the total parsed JSON array length.
 
 ---
 
