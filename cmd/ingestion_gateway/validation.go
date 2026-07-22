@@ -44,15 +44,18 @@ type BadRequestErrorPayload struct {
 	Message string `json:"message"`
 }
 
+// MetricConsumer is a callback function invoked for each valid metric processed during streaming.
+type MetricConsumer func(*metrics.Metric) error
+
 // StreamDecodeResult contains the outcome of stream decoding and validation.
 type StreamDecodeResult struct {
-	ValidMetrics []*metrics.Metric
-	Validation   *ValidationErrorPayload
-	Err          error
+	ValidCount int
+	Validation *ValidationErrorPayload
+	Err        error
 }
 
-// DecodeAndValidateMetrics reads and parses a JSON metrics payload using O(1) streaming.
-func DecodeAndValidateMetrics(r io.Reader) StreamDecodeResult {
+// DecodeAndValidateMetrics reads and parses a JSON metrics payload using O(1) memory streaming.
+func DecodeAndValidateMetrics(r io.Reader, consumer MetricConsumer) StreamDecodeResult {
 	bufReader := bufio.NewReader(r)
 	if err := skipWhitespace(bufReader); err != nil {
 		return StreamDecodeResult{Err: fmt.Errorf("bad request: %w", err)}
@@ -65,9 +68,9 @@ func DecodeAndValidateMetrics(r io.Reader) StreamDecodeResult {
 
 	dec := json.NewDecoder(bufReader)
 	if firstByte[0] == '[' {
-		return decodeJSONArray(dec)
+		return decodeJSONArray(dec, consumer)
 	}
-	return decodeJSONSequence(dec)
+	return decodeJSONSequence(dec, consumer)
 }
 
 func skipWhitespace(r *bufio.Reader) error {
@@ -87,13 +90,13 @@ func skipWhitespace(r *bufio.Reader) error {
 	}
 }
 
-func decodeJSONArray(dec *json.Decoder) StreamDecodeResult {
+func decodeJSONArray(dec *json.Decoder, consumer MetricConsumer) StreamDecodeResult {
 	t, err := dec.Token()
 	if err != nil || t != json.Delim('[') {
 		return StreamDecodeResult{Err: fmt.Errorf("malformed JSON: expected array opening '['")}
 	}
 
-	var valid []*metrics.Metric
+	validCount := 0
 	var failed []FailedRecord
 	idx := 0
 
@@ -111,7 +114,12 @@ func decodeJSONArray(dec *json.Decoder) StreamDecodeResult {
 				Reason:     valErr.Error(),
 			})
 		} else {
-			valid = append(valid, m)
+			if consumer != nil {
+				if err := consumer(m); err != nil {
+					return StreamDecodeResult{Err: fmt.Errorf("failed to process metric at index %d: %w", idx, err)}
+				}
+			}
+			validCount++
 		}
 		idx++
 	}
@@ -123,7 +131,7 @@ func decodeJSONArray(dec *json.Decoder) StreamDecodeResult {
 
 	if len(failed) > 0 {
 		return StreamDecodeResult{
-			ValidMetrics: valid,
+			ValidCount: validCount,
 			Validation: &ValidationErrorPayload{
 				Error:         "unprocessable_entity",
 				FailedRecords: failed,
@@ -131,17 +139,20 @@ func decodeJSONArray(dec *json.Decoder) StreamDecodeResult {
 		}
 	}
 
-	return StreamDecodeResult{ValidMetrics: valid}
+	return StreamDecodeResult{ValidCount: validCount}
 }
 
-func decodeJSONSequence(dec *json.Decoder) StreamDecodeResult {
-	var valid []*metrics.Metric
+func decodeJSONSequence(dec *json.Decoder, consumer MetricConsumer) StreamDecodeResult {
+	validCount := 0
 	var failed []FailedRecord
 	idx := 0
 
-	for dec.More() {
+	for {
 		var pbMetric pb.Metric
 		if err := dec.Decode(&pbMetric); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			return StreamDecodeResult{Err: fmt.Errorf("malformed JSON at record index %d: %w", idx, err)}
 		}
 
@@ -153,14 +164,19 @@ func decodeJSONSequence(dec *json.Decoder) StreamDecodeResult {
 				Reason:     valErr.Error(),
 			})
 		} else {
-			valid = append(valid, m)
+			if consumer != nil {
+				if err := consumer(m); err != nil {
+					return StreamDecodeResult{Err: fmt.Errorf("failed to process metric at index %d: %w", idx, err)}
+				}
+			}
+			validCount++
 		}
 		idx++
 	}
 
 	if len(failed) > 0 {
 		return StreamDecodeResult{
-			ValidMetrics: valid,
+			ValidCount: validCount,
 			Validation: &ValidationErrorPayload{
 				Error:         "unprocessable_entity",
 				FailedRecords: failed,
@@ -168,5 +184,5 @@ func decodeJSONSequence(dec *json.Decoder) StreamDecodeResult {
 		}
 	}
 
-	return StreamDecodeResult{ValidMetrics: valid}
+	return StreamDecodeResult{ValidCount: validCount}
 }

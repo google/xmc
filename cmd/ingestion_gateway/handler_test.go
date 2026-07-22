@@ -65,6 +65,32 @@ func TestMetricsIngestionHandler_ValidArray(t *testing.T) {
 	}
 }
 
+func TestMetricsIngestionHandler_JSONSequence(t *testing.T) {
+	payload := `{"xid": 101, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "train_loss", "metric_value": 0.42, "step": 100, "timestamp": 1700000000}
+{"xid": 101, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "accuracy", "metric_value": 0.95, "step": 101, "timestamp": 1700000001}`
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
+	w := httptest.NewRecorder()
+
+	MetricsIngestionHandler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected status 202 Accepted, got %d", resp.StatusCode)
+	}
+
+	var respBody map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&respBody); err != nil {
+		t.Fatalf("failed to decode response JSON: %v", err)
+	}
+	if respBody["status"] != "accepted" {
+		t.Errorf("expected status 'accepted', got %v", respBody["status"])
+	}
+	if respBody["count"] != float64(2) {
+		t.Errorf("expected count 2, got %v", respBody["count"])
+	}
+}
+
 func TestMetricsIngestionHandler_ValidationFailure_HTTP422(t *testing.T) {
 	payload := `[
 		{"xid": 101, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "valid_metric", "metric_value": 1.0, "step": 0, "timestamp": 1700000000},
@@ -129,7 +155,6 @@ func TestMetricsIngestionHandler_MalformedJSON_HTTP400(t *testing.T) {
 }
 
 func TestMetricsIngestionHandler_BodyDrainageOnFailure(t *testing.T) {
-	// Create invalid metric JSON payload followed by extra unread bytes
 	basePayload := `[{"xid": 1, "metric_name": "invalid name!!", "metric_value": 1.0}]`
 	extraBytes := strings.Repeat("x", 10000)
 	fullPayload := basePayload + extraBytes
@@ -145,7 +170,6 @@ func TestMetricsIngestionHandler_BodyDrainageOnFailure(t *testing.T) {
 		t.Fatalf("expected status 422, got %d", resp.StatusCode)
 	}
 
-	// Verify reader was drained beyond initial JSON payload length
 	if tr.bytesRead < int64(len(basePayload)) {
 		t.Errorf("expected body to be drained beyond %d bytes, got %d bytes read", len(basePayload), tr.bytesRead)
 	}
@@ -168,7 +192,6 @@ func TestMetricsIngestionHandler_ConstantMemoryStreaming(t *testing.T) {
 	var mBefore runtime.MemStats
 	runtime.ReadMemStats(&mBefore)
 
-	// Build 10,000 metric items stream
 	var buf bytes.Buffer
 	buf.WriteString("[")
 	for i := 0; i < 10000; i++ {
@@ -193,6 +216,5 @@ func TestMetricsIngestionHandler_ConstantMemoryStreaming(t *testing.T) {
 	var mAfter runtime.MemStats
 	runtime.ReadMemStats(&mAfter)
 
-	// Confirm heap allocation remained bounded during streaming parse
 	t.Logf("HeapAlloc before: %d, after: %d", mBefore.HeapAlloc, mAfter.HeapAlloc)
 }
