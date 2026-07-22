@@ -14,9 +14,8 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, of } from 'rxjs';
 
-import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
 import { ClusterQueueListResponse, QueueJobListResponse } from './resource_types';
 
 /**
@@ -31,26 +30,58 @@ export class ResourceService {
   /**
    * Fetches the list of ClusterQueues with primary data metrics.
    */
-  getClusterQueues(period?: string): Observable<ClusterQueueListResponse> {
-    const params = period ? `?period=${encodeURIComponent(period)}` : '';
-    return this.http.get<ClusterQueueListResponse>(
-      `${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues${params}`,
-      {
-        withCredentials: true,
-      },
-    );
+  getClusterQueues(_period?: string): Observable<ClusterQueueListResponse> {
+    // TODO(#186): Switch to real backend endpoint when rod-data-provider is deployed.
+    return of({
+      clusterQueues: [
+        {
+          name: 'cpu-cluster-queue',
+          strategy: 'BestEffortFIFO',
+          cohort: 'None',
+          status: 'Active',
+          statusMessage: 'Can admit new workloads',
+          lastTransitionTime: '2026-06-18T10:49:48Z',
+          admittedWorkloads: 1,
+          reservingWorkloads: 0,
+          pendingWorkloads: 0,
+          localQueues: [{ name: 'cpu-queue', namespace: 'cpu-queue' }],
+          flavors: [
+            {
+              name: 'default-flavor',
+              resourceName: 'cpu',
+              nominalQuota: '10',
+              inUse: '2',
+              reserved: '2',
+              freeCapacity: '8',
+              largestSlot: '8',
+            },
+          ],
+        },
+      ],
+    });
   }
 
   /**
    * Fetches the list of pending and running jobs for a given queue.
    */
   getQueueJobs(queueName?: string): Observable<QueueJobListResponse> {
-    const params = queueName ? `?queue=${encodeURIComponent(queueName)}` : '';
-    return this.http.get<QueueJobListResponse>(
-      `${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues/jobs${params}`,
-      {
-        withCredentials: true,
-      },
-    );
+    // TODO(#186): Switch to real backend endpoint when rod-data-provider is deployed.
+    return of({
+      queueName: queueName || 'cpu-cluster-queue',
+      jobs: [
+        {
+          position: '#1 (Running)',
+          xid: '46648',
+          workUnitId: '1',
+          jobName: 'xmc-operation-46648-1',
+          user: 'janzak@google.com',
+          resources: 'CPU: 500m',
+          priority: 'High',
+          status: 'RUNNING',
+          timeInQueue: '5m ago',
+          queueName: queueName || 'cpu-cluster-queue',
+        },
+      ],
+    });
   }
 }

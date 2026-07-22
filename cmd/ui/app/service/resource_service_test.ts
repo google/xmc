@@ -14,48 +14,12 @@
 import 'jasmine';
 
 import { provideHttpClient } from '@angular/common/http';
-import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
-import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
 import { ResourceService } from './resource_service';
-
-const TEST_CLUSTER_QUEUES_RESP = {
-  clusterQueues: [
-    {
-      name: 'cpu-cluster-queue',
-      strategy: 'BestEffortFIFO',
-      cohort: 'None',
-      status: 'Active',
-      statusMessage: 'Can admit new workloads',
-      lastTransitionTime: '2026-06-18T10:49:48Z',
-      admittedWorkloads: 0,
-      reservingWorkloads: 0,
-      pendingWorkloads: 0,
-      localQueues: [{ name: 'cpu-queue', namespace: 'cpu-queue' }],
-      flavors: [],
-    },
-  ],
-};
-
-const TEST_QUEUE_JOBS_RESP = {
-  queueName: 'cpu-queue',
-  jobs: [
-    {
-      position: '#1 (Running)',
-      xid: '46648',
-      workUnitId: '1',
-      jobName: 'xmc-operation-46648-1',
-      user: 'janzak@google.com',
-      resources: 'CPU: 500m',
-      priority: 'High',
-      status: 'RUNNING',
-      timeInQueue: '5m ago',
-      queueName: 'cpu-queue',
-    },
-  ],
-};
+import { ClusterQueueListResponse, QueueJobListResponse } from './resource_types';
 
 describe('ResourceService', () => {
   beforeAll(setupObservableMatchers);
@@ -67,55 +31,26 @@ describe('ResourceService', () => {
 
     return {
       service: get(ResourceService),
-      httpMock: get(HttpTestingController),
     };
   }, beforeEach);
 
-  afterEach(() => {
-    state.httpMock.verify();
-  });
-
   describe('getClusterQueues', () => {
-    it('should make api call correctly and return response', async () => {
-      const responsePromise = firstValueFrom(state.service.getClusterQueues());
-
-      const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues`);
-      expect(req.request.method).toBe('GET');
-
-      req.flush(TEST_CLUSTER_QUEUES_RESP);
-
-      const response = await responsePromise;
-      expect(response).toEqual(TEST_CLUSTER_QUEUES_RESP);
-    });
-
-    it('should propagate http error on network failure', async () => {
-      const responsePromise = firstValueFrom(state.service.getClusterQueues());
-
-      const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues`);
-      req.error(new ProgressEvent('Network error'));
-
-      try {
-        await responsePromise;
-        fail('should have thrown error');
-      } catch (err) {
-        expect(err).toBeTruthy();
-      }
+    it('should return cluster queues dummy data', async () => {
+      const response: ClusterQueueListResponse = await firstValueFrom(
+        state.service.getClusterQueues(),
+      );
+      expect(response.clusterQueues.length).toBe(1);
+      expect(response.clusterQueues[0].name).toBe('cpu-cluster-queue');
     });
   });
 
   describe('getQueueJobs', () => {
-    it('should make api call correctly and return response', async () => {
-      const responsePromise = firstValueFrom(state.service.getQueueJobs('cpu-queue'));
-
-      const req = state.httpMock.expectOne(
-        `${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues/jobs?queue=cpu-queue`,
+    it('should return queue jobs dummy data', async () => {
+      const response: QueueJobListResponse = await firstValueFrom(
+        state.service.getQueueJobs('cpu-queue'),
       );
-      expect(req.request.method).toBe('GET');
-
-      req.flush(TEST_QUEUE_JOBS_RESP);
-
-      const response = await responsePromise;
-      expect(response).toEqual(TEST_QUEUE_JOBS_RESP);
+      expect(response.jobs.length).toBe(1);
+      expect(response.jobs[0].jobName).toBe('xmc-operation-46648-1');
     });
   });
 });
