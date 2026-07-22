@@ -99,20 +99,12 @@ func TestKeyPairReloader(t *testing.T) {
 		t.Fatalf("NewKeyPairReloader() failed: %v", err)
 	}
 
-	cert1, err := reloader.Certificate(nil)
-	if err != nil {
-		t.Fatalf("reloader.Certificate() failed: %v", err)
-	}
-	if cert1 == nil {
-		t.Fatal("reloader.Certificate() returned nil certificate")
-	}
-
-	cert1Alias, err := reloader.GetCertificate(nil)
+	cert1, err := reloader.GetCertificate(nil)
 	if err != nil {
 		t.Fatalf("reloader.GetCertificate() failed: %v", err)
 	}
-	if cert1Alias != cert1 {
-		t.Errorf("GetCertificate() returned different certificate than Certificate()")
+	if cert1 == nil {
+		t.Fatal("reloader.GetCertificate() returned nil certificate")
 	}
 
 	// Wait a bit to ensure file mod time is different
@@ -123,12 +115,12 @@ func TestKeyPairReloader(t *testing.T) {
 		t.Fatalf("Failed to generate new cert and key: %v", err)
 	}
 
-	cert2, err := reloader.Certificate(nil)
+	cert2, err := reloader.GetCertificate(nil)
 	if err != nil {
-		t.Fatalf("reloader.Certificate() failed after file update: %v", err)
+		t.Fatalf("reloader.GetCertificate() failed after file update: %v", err)
 	}
 	if cert2 == nil {
-		t.Fatal("reloader.Certificate() returned nil certificate after file update")
+		t.Fatal("reloader.GetCertificate() returned nil certificate after file update")
 	}
 
 	if cert1 == cert2 {
@@ -157,14 +149,6 @@ func TestKeyPairReloader_ClientCertificate(t *testing.T) {
 	}
 	if cert1 == nil {
 		t.Fatal("reloader.GetClientCertificate() returned nil certificate")
-	}
-
-	cert1Alias, err := reloader.ClientCertificate(cri)
-	if err != nil {
-		t.Fatalf("reloader.ClientCertificate() failed: %v", err)
-	}
-	if cert1Alias != cert1 {
-		t.Errorf("ClientCertificate() returned different certificate than GetClientCertificate()")
 	}
 
 	// Wait a bit to ensure file mod time is different

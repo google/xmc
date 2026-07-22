@@ -112,11 +112,6 @@ func (k *KeyPairReloader) getCertificate() (*tls.Certificate, error) {
 	return k.cachedCert, nil
 }
 
-// Certificate is the callback passed to tls.Config.GetCertificate for server-side TLS.
-func (k *KeyPairReloader) Certificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	return k.getCertificate()
-}
-
 // GetCertificate is the callback passed to tls.Config.GetCertificate for server-side TLS.
 func (k *KeyPairReloader) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	return k.getCertificate()
@@ -124,11 +119,6 @@ func (k *KeyPairReloader) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certi
 
 // GetClientCertificate is the callback passed to tls.Config.GetClientCertificate for client-side mTLS.
 func (k *KeyPairReloader) GetClientCertificate(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
-	return k.getCertificate()
-}
-
-// ClientCertificate is the callback passed to tls.Config.GetClientCertificate for client-side mTLS.
-func (k *KeyPairReloader) ClientCertificate(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
 	return k.getCertificate()
 }
 
