@@ -44,7 +44,8 @@ type BadRequestErrorPayload struct {
 	Message string `json:"message"`
 }
 
-// MetricConsumer is a callback function invoked for each valid metric processed during streaming.
+// MetricConsumer processes each valid metric inline during streaming to avoid accumulating
+// metric slices and preserve an O(1) memory footprint.
 type MetricConsumer func(*metrics.Metric) error
 
 // StreamDecodeResult contains the outcome of stream decoding and validation.
@@ -61,6 +62,8 @@ func DecodeAndValidateMetrics(r io.Reader, consumer MetricConsumer) StreamDecode
 		return StreamDecodeResult{Err: fmt.Errorf("bad request: %w", err)}
 	}
 
+	// Peek the first non-whitespace byte to distinguish JSON arrays ([...])
+	// from NDJSON object sequences without consuming tokenizer state.
 	firstByte, err := bufReader.Peek(1)
 	if err != nil {
 		return StreamDecodeResult{Err: fmt.Errorf("bad request: %w", err)}
@@ -142,6 +145,8 @@ func decodeJSONArray(dec *json.Decoder, consumer MetricConsumer) StreamDecodeRes
 	return StreamDecodeResult{ValidCount: validCount}
 }
 
+// decodeJSONSequence loops dec.Decode() until io.EOF because dec.More() only checks
+// array/object element boundaries, not top-level NDJSON stream boundaries.
 func decodeJSONSequence(dec *json.Decoder, consumer MetricConsumer) StreamDecodeResult {
 	validCount := 0
 	var failed []FailedRecord
