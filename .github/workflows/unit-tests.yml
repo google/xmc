@@ -106,6 +106,11 @@ jobs:
         run: npm ci --legacy-peer-deps
         working-directory: cmd/ui
 
+      - name: 'Run Angular UI Unit Tests (NPM)'
+        if: matrix.target == 'cmd/ui'
+        run: npm test -- --watch=false --browsers=ChromeHeadlessNoSandbox
+        working-directory: cmd/ui
+
       - name: 'Restore Bazel Cache'
         id: 'cache-bazel-restore'
         uses: 'actions/cache/restore@v4'
@@ -177,3 +182,19 @@ jobs:
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
           key: bazel-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+
+  all-tests-passed:
+    name: 'Run Unit Tests'
+    needs: run-tests
+    runs-on: 'ubuntu-24.04'
+    if: always()
+    steps:
+      - name: 'Verify All Unit Tests Passed'
+        run: |
+          if [ "${{ needs.run-tests.result }}" != "success" ]; then
+            echo "ERROR: One or more unit test matrix jobs failed."
+            echo "Matrix result: ${{ needs.run-tests.result }}"
+            exit 1
+          fi
+          echo "All unit test matrix jobs passed successfully."
+

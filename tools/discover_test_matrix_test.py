@@ -22,16 +22,18 @@ from tools.discover_test_matrix import build_test_matrix, extract_root_folders
 class DiscoverTestMatrixTest(unittest.TestCase):
     def test_extract_root_folders(self) -> None:
         targets = [
+            "//:root_test",
             "//cmd/actuator:workunittaskhandler_test",
             "//internal/auth:auth_test",
             "//pkg/auth/oauth2:oauth2_test",
             "//tools:build_oci_test",
         ]
         roots = extract_root_folders(targets)
-        self.assertEqual(roots, {"cmd", "internal", "pkg", "tools"})
+        self.assertEqual(roots, {"root", "cmd", "internal", "pkg", "tools"})
 
     def test_build_test_matrix_splits_cmd_and_internal(self) -> None:
         targets = [
+            "//:root_test",
             "//cmd/actuator:workunittaskhandler_test",
             "//cmd/ui:server_test",
             "//deploy/cli:install_xmanager_test",
@@ -42,7 +44,8 @@ class DiscoverTestMatrixTest(unittest.TestCase):
         ]
         matrix = build_test_matrix(targets)
         expected = [
-            {"target": "cmd/ui", "bazel_args": "//cmd/ui/..."},
+            {"target": "root", "bazel_args": "//:all"},
+            {"target": "cmd/ui", "bazel_args": "//cmd/ui:server_test"},
             {"target": "cmd/rest", "bazel_args": "//cmd/... -//cmd/ui/..."},
             {"target": "deploy", "bazel_args": "//deploy/..."},
             {"target": "internal/storage", "bazel_args": "//internal/storage/..."},
