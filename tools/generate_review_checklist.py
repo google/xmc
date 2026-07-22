@@ -202,7 +202,9 @@ def format_checklist_markdown(
         body = comment.get("body") or ""
 
         location = f"{path}:{line}" if line is not None else path
-        lines.append(f"- [ ] **[{location}]({url})** (@{author})")
+        comment_id = comment.get("comment_id")
+        comment_id_str = f" (Comment ID {comment_id})" if comment_id is not None else ""
+        lines.append(f"- [ ] **[{location}]({url})** (@{author}){comment_id_str}")
         for body_line in body.strip().splitlines():
             lines.append(f"  > {body_line}")
         lines.append("")
