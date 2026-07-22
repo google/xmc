@@ -21,6 +21,7 @@ py_library(
         "buffer.py",
         "client.py",
         "dist_harvest.py",
+        "flusher.py",
         "network.py",
         "types.py",
     ],
@@ -38,6 +39,12 @@ py_library(
 py_test(
     name = "buffer_test",
     srcs = ["buffer_test.py"],
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "flusher_test",
+    srcs = ["flusher_test.py"],
     deps = [":xmc"],
 )
 

@@ -55,8 +55,8 @@ class TestHTTPClient(unittest.TestCase):
 
         client = HTTPClient("http://example.com:8080")
         result = client.send(
-            path="/v1/metrics",
             body='{"metric_name": "loss", "metric_value": 0.5}',
+            path="/v1/metrics",
         )
 
         self.assertEqual(result, SendResult.SUCCESS)
@@ -76,7 +76,7 @@ class TestHTTPClient(unittest.TestCase):
         mock_https_conn_cls.return_value = mock_conn
 
         client = HTTPClient("https://metrics.xmc.dev")
-        result = client.send(path="/v1/log", body="test")
+        result = client.send("test", path="/v1/log")
 
         self.assertEqual(result, SendResult.SUCCESS)
         mock_https_conn_cls.assert_called_once_with("metrics.xmc.dev", port=None, timeout=12.0)
@@ -92,21 +92,21 @@ class TestHTTPClient(unittest.TestCase):
 
         # 2xx -> SUCCESS
         mock_response.status = 204
-        self.assertEqual(client.send("/test", "data"), SendResult.SUCCESS)
+        self.assertEqual(client.send("data"), SendResult.SUCCESS)
 
         # 4xx -> INVALID_PAYLOAD
         mock_response.status = 400
-        self.assertEqual(client.send("/test", "data"), SendResult.INVALID_PAYLOAD)
+        self.assertEqual(client.send("data"), SendResult.INVALID_PAYLOAD)
 
         mock_response.status = 422
-        self.assertEqual(client.send("/test", "data"), SendResult.INVALID_PAYLOAD)
+        self.assertEqual(client.send("data"), SendResult.INVALID_PAYLOAD)
 
         # 5xx -> TRANSIENT_FAILURE
         mock_response.status = 500
-        self.assertEqual(client.send("/test", "data"), SendResult.TRANSIENT_FAILURE)
+        self.assertEqual(client.send("data"), SendResult.TRANSIENT_FAILURE)
 
         mock_response.status = 503
-        self.assertEqual(client.send("/test", "data"), SendResult.TRANSIENT_FAILURE)
+        self.assertEqual(client.send("data"), SendResult.TRANSIENT_FAILURE)
 
     @mock.patch("http.client.HTTPConnection")
     def test_connection_recycling_by_max_requests(self, mock_http_conn_cls: mock.MagicMock) -> None:
@@ -121,15 +121,15 @@ class TestHTTPClient(unittest.TestCase):
         client = HTTPClient("http://localhost:8080", max_requests=2)
 
         # First request -> connection 1
-        res1 = client.send("/path", "body1")
+        res1 = client.send("body1")
         self.assertEqual(res1, SendResult.SUCCESS)
 
         # Second request -> connection 1 reused
-        res2 = client.send("/path", "body2")
+        res2 = client.send("body2")
         self.assertEqual(res2, SendResult.SUCCESS)
 
         # Third request -> max_requests exceeded, recycled -> connection 2 created
-        res3 = client.send("/path", "body3")
+        res3 = client.send("body3")
         self.assertEqual(res3, SendResult.SUCCESS)
 
         self.assertEqual(mock_http_conn_cls.call_count, 2)
@@ -154,15 +154,15 @@ class TestHTTPClient(unittest.TestCase):
         client = HTTPClient("http://localhost:8080", base_ttl=600.0, jitter=0.0)
 
         # Request 1 at t=100s
-        client.send("/path", "body1")
+        client.send("body1")
         self.assertEqual(mock_http_conn_cls.call_count, 1)
 
         # Request 2 at t=200s (age = 100s < 600s TTL) -> reused
-        client.send("/path", "body2")
+        client.send("body2")
         self.assertEqual(mock_http_conn_cls.call_count, 1)
 
         # Request 3 at t=800s (age = 700s >= 600s TTL) -> recycled
-        client.send("/path", "body3")
+        client.send("body3")
         self.assertEqual(mock_http_conn_cls.call_count, 2)
         mock_conn1.close.assert_called_once()
 
@@ -179,7 +179,7 @@ class TestHTTPClient(unittest.TestCase):
         mock_http_conn_cls.side_effect = [mock_conn1, mock_conn2]
 
         client = HTTPClient("http://localhost:8080")
-        result = client.send("/path", "body")
+        result = client.send("body")
 
         self.assertEqual(result, SendResult.SUCCESS)
         self.assertEqual(mock_http_conn_cls.call_count, 2)
@@ -197,7 +197,7 @@ class TestHTTPClient(unittest.TestCase):
         results = []
 
         def worker() -> None:
-            res = client.send("/path", "body")
+            res = client.send("body")
             results.append(res)
 
         threads = [threading.Thread(target=worker) for _ in range(10)]
@@ -216,7 +216,7 @@ class TestHTTPClient(unittest.TestCase):
         mock_http_conn_cls.return_value = mock_conn
 
         client = HTTPClient("http://localhost:8080")
-        result = client.send("/path", "body")
+        result = client.send("body")
 
         self.assertEqual(result, SendResult.TRANSIENT_FAILURE)
         mock_conn.close.assert_called_once()
@@ -230,7 +230,7 @@ class TestHTTPClient(unittest.TestCase):
         mock_http_conn_cls.return_value = mock_conn
 
         with HTTPClient("http://localhost:8080") as client:
-            client.send("/path", "body")
+            client.send("body")
 
         mock_conn.close.assert_called_once()
 
