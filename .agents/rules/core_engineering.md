@@ -56,7 +56,7 @@ function processUser(user: User | null) {
 
 ## 5. Strict Testing Coverage & PR Granularity
 - **Strict Coverage Requirements**: All feature additions, bug fixes, and code modifications must include comprehensive unit and integration test coverage. Never reduce assertions or mask test failures.
-- **1-to-1 File Test Cohesion**: Every source file containing business, parsing, or data transformation logic (e.g. `validation.go`) MUST have a corresponding dedicated unit test file (e.g. `validation_test.go`) testing its exported and internal functions directly in unit isolation. Relying solely on higher-level integration or HTTP handler tests (`handler_test.go`) to transitively cover helper logic is not permitted.
+- **1-to-1 File Test Cohesion**: Every source file containing business, parsing, or data transformation logic (e.g. `validation.go`) MUST have a corresponding dedicated unit test file (e.g. `validation_test.go`) testing its exported functions directly in unit isolation. Relying solely on higher-level integration or HTTP handler tests (`handler_test.go`) to transitively cover helper logic is not permitted.
 - **Open-Source Code TODO Standard**: Inline code `TODO` comments in public/OSS source files (under `sdks/` or open packages) MUST NOT include internal Buganizer IDs (e.g. `TODO(b/12345)`). Use generic `TODO:` tags or public GitHub issue numbers (`TODO(#123)`).
 - **Small, Focused PRs**: Keep Pull Requests small, localized, and logically split. Each PR should address a single cohesive task or change step to enable fast, high-quality reviews.
 - **System Contract & API Changes**:
