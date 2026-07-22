@@ -20,7 +20,8 @@ import os
 import subprocess
 from typing import Dict, List, Optional, Set
 
-# Files or directory patterns that trigger full test suite execution across all modules
+# Global change patterns trigger full test suite runs because infrastructure, build rules,
+# or shared tool changes can impact any module across the codebase.
 GLOBAL_CHANGE_PATTERNS = [
     ".github/*",
     ".github/workflows/*",
@@ -35,7 +36,7 @@ GLOBAL_CHANGE_PATTERNS = [
 
 
 def is_global_change(changed_files: List[str]) -> bool:
-    """Checks if any changed file requires running the full test suite."""
+    """Returns True if modified files include global CI or build system configurations."""
     for filepath in changed_files:
         for pattern in GLOBAL_CHANGE_PATTERNS:
             if fnmatch.fnmatch(filepath, pattern) or filepath.startswith("tools/"):
@@ -44,7 +45,7 @@ def is_global_change(changed_files: List[str]) -> bool:
 
 
 def get_changed_files(base_ref: str = "origin/main") -> List[str]:
-    """Gets list of changed file paths in current git diff relative to base_ref."""
+    """Retrieves modified file paths relative to base_ref to scope test execution."""
     try:
         out = subprocess.check_output(["git", "diff", "--name-only", f"{base_ref}...HEAD"]).decode(
             "utf-8"
@@ -76,25 +77,67 @@ def extract_root_folders(test_targets: List[str]) -> Set[str]:
     return top_level
 
 
+def _build_cmd_matrix_entries(
+    folder_files: Optional[List[str]],
+) -> List[Dict[str, str]]:
+    """Splits cmd into UI and backend runners to skip Node.js setup for backend Go binaries."""
+    ui_affected = folder_files is None or any(f.startswith("cmd/ui/") for f in folder_files)
+    rest_affected = folder_files is None or any(not f.startswith("cmd/ui/") for f in folder_files)
+
+    entries: List[Dict[str, str]] = []
+    if ui_affected:
+        entries.append({"target": "cmd/ui", "bazel_args": "//cmd/ui/..."})
+    if rest_affected:
+        entries.append({"target": "cmd/rest", "bazel_args": "//cmd/... -//cmd/ui/..."})
+    return entries
+
+
+def _build_internal_matrix_entries(
+    folder_files: Optional[List[str]],
+) -> List[Dict[str, str]]:
+    """Splits internal into storage and rest to isolate Spanner emulator checks to DB tests."""
+    storage_affected = folder_files is None or any(
+        f.startswith("internal/storage/") for f in folder_files
+    )
+    rest_affected = folder_files is None or any(
+        not f.startswith("internal/storage/") for f in folder_files
+    )
+
+    entries: List[Dict[str, str]] = []
+    if storage_affected:
+        entries.append({"target": "internal/storage", "bazel_args": "//internal/storage/..."})
+    if rest_affected:
+        entries.append(
+            {
+                "target": "internal/rest",
+                "bazel_args": "//internal/... -//internal/storage/...",
+            }
+        )
+    return entries
+
+
+def _filter_affected_files(
+    changed_files: Optional[List[str]],
+) -> Optional[Set[str]]:
+    """Determines affected files set; returns None if a full test run is required."""
+    if changed_files is not None and not is_global_change(changed_files):
+        return set(changed_files)
+    return None
+
+
 def build_test_matrix(
     test_targets: List[str], changed_files: Optional[List[str]] = None
 ) -> List[Dict[str, str]]:
-    """Builds matrix entries from Bazel test targets, filtering by changed files if provided."""
+    """Builds matrix entries for Bazel test targets, filtering out unaffected modules."""
     top_level_folders = extract_root_folders(test_targets)
-
-    # Check if we should filter by affected changes
-    if changed_files is not None and not is_global_change(changed_files):
-        affected_files_set: Optional[Set[str]] = set(changed_files)
-    else:
-        affected_files_set = None
-
+    affected_files_set = _filter_affected_files(changed_files)
     matrix: List[Dict[str, str]] = []
 
-    if "root" in top_level_folders:
-        if affected_files_set is None or any(
-            f.count("/") == 0 or f.startswith(".") for f in affected_files_set
-        ):
-            matrix.append({"target": "root", "bazel_args": "//:all"})
+    if "root" in top_level_folders and (
+        affected_files_set is None
+        or any(f.count("/") == 0 or f.startswith(".") for f in affected_files_set)
+    ):
+        matrix.append({"target": "root", "bazel_args": "//:all"})
 
     for folder in sorted(top_level_folders):
         if folder == "root":
@@ -108,38 +151,9 @@ def build_test_matrix(
             folder_files = None
 
         if folder == "cmd":
-            ui_affected = folder_files is None or any(f.startswith("cmd/ui/") for f in folder_files)
-            rest_affected = folder_files is None or any(
-                not f.startswith("cmd/ui/") for f in folder_files
-            )
-
-            if ui_affected:
-                matrix.append({"target": "cmd/ui", "bazel_args": "//cmd/ui/..."})
-            if rest_affected:
-                matrix.append({"target": "cmd/rest", "bazel_args": "//cmd/... -//cmd/ui/..."})
-
+            matrix.extend(_build_cmd_matrix_entries(folder_files))
         elif folder == "internal":
-            storage_affected = folder_files is None or any(
-                f.startswith("internal/storage/") for f in folder_files
-            )
-            rest_affected = folder_files is None or any(
-                not f.startswith("internal/storage/") for f in folder_files
-            )
-
-            if storage_affected:
-                matrix.append(
-                    {
-                        "target": "internal/storage",
-                        "bazel_args": "//internal/storage/...",
-                    }
-                )
-            if rest_affected:
-                matrix.append(
-                    {
-                        "target": "internal/rest",
-                        "bazel_args": "//internal/... -//internal/storage/...",
-                    }
-                )
+            matrix.extend(_build_internal_matrix_entries(folder_files))
         else:
             matrix.append({"target": folder, "bazel_args": f"//{folder}/..."})
 
