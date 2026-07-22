@@ -35,6 +35,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//internal/logging",
+        "//internal/storage/spanner/migrations/version",
         "@com_google_cloud_go_spanner//:spanner",
         "@io_k8s_client_go//kubernetes",
         "@org_golang_google_api//iterator",
@@ -47,11 +48,9 @@ go_test(
     embed = [":health"],
     deps = [
         "//internal/storage/spanner/emulator",
-        "@com_google_cloud_go_spanner//:spanner",
-        "@com_google_cloud_go_spanner//admin/database/apiv1",
+        "//internal/storage/spanner/migrations/version",
         "@io_k8s_apimachinery//pkg/version",
         "@io_k8s_client_go//discovery",
         "@io_k8s_client_go//kubernetes",
-        "@org_golang_google_genproto//googleapis/spanner/admin/database/v1:database",
     ],
 )

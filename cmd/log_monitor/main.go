@@ -26,6 +26,7 @@ import (
 
 	"go/google"
 	"golang/cloud_google_com/go/pubsub/v/v1/pubsub"
+	"xmanager_cloud/common/health"
 	"xmanager_cloud/logging/logging"
 )
 
@@ -71,7 +72,7 @@ func main() {
 
 	// HTTP server for health checks
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", activeHealthCheck(sc, listener))
+	mux.HandleFunc("/healthz", activeHealthCheck(health.NewSpannerHealthClient(sc), listener))
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	server := &http.Server{Addr: addr, Handler: mux}

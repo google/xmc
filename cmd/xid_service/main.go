@@ -31,6 +31,7 @@ import (
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
 	authz "xmanager_cloud/auth/auth"
+	commonhealth "xmanager_cloud/common/health"
 	"xmanager_cloud/logging/logging"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/xid_service/config"
@@ -106,7 +107,7 @@ func main() {
 
 	// Start active monitoring of dependencies
 	healthServer := RegisterHealthServer(s)
-	go StartHealthMonitor(ctx, sc, healthServer)
+	go StartHealthMonitor(ctx, commonhealth.NewSpannerHealthClient(sc), healthServer)
 
 	logging.Info(ctx, "gRPC server listening", "addr", lis.Addr())
 

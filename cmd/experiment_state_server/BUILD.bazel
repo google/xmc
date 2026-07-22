@@ -52,7 +52,6 @@ compat_go_library(
         "//internal/logging",
         "//internal/security",
         "//internal/storage/spanner",
-        "//internal/storage/spanner/migrations/version",
         "//internal/task_queue:client",
         "//pkg/auth/oauth2",
         "//pkg/auth/oauth2/mock",
@@ -95,4 +94,7 @@ compat_go_test(
     name = "health_test",
     srcs = ["health_test.go"],
     embed = [":experiment_state_server_lib"],
+    deps = [
+        "//internal/storage/spanner/migrations/version",
+    ],
 )
