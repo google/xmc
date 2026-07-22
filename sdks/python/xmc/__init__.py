@@ -14,6 +14,7 @@
 
 """XMC Python SDK package."""
 
+from xmc.buffer import DEFAULT_CAPACITY, BoundedMetricsBuffer, MetricTuple
 from xmc.client import Client, XMCAPIError, XMCError, XMCNetworkError
 from xmc.dist_harvest import (
     GetReplicaIDAndSilenceStatus,
@@ -25,6 +26,9 @@ from xmc.types import Metric, validate_metric
 __version__ = "0.1.0"
 
 __all__ = [
+    "BoundedMetricsBuffer",
+    "DEFAULT_CAPACITY",
+    "MetricTuple",
     "Client",
     "HTTPClient",
     "Metric",

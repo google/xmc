@@ -18,6 +18,7 @@ py_library(
     name = "xmc",
     srcs = [
         "__init__.py",
+        "buffer.py",
         "client.py",
         "dist_harvest.py",
         "network.py",
@@ -32,6 +33,12 @@ py_library(
     deps = [
         "//api/protos/metrics:metrics_py_proto",
     ],
+)
+
+py_test(
+    name = "buffer_test",
+    srcs = ["buffer_test.py"],
+    deps = [":xmc"],
 )
 
 py_test(
