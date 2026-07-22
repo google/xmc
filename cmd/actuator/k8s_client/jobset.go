@@ -317,6 +317,7 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 			Spec: batchv1.JobSpec{
 				BackoffLimit:            &retryLimit,
 				CompletionMode:          completionModePtr(batchv1.IndexedCompletion),
+				Completions:             proto.Int32(1),
 				PodFailurePolicy:        podFailurePolicy(primaryName),
 				TTLSecondsAfterFinished: proto.Int32(defaultTTLSeconds),
 				ActiveDeadlineSeconds:   activeDeadlineSeconds,

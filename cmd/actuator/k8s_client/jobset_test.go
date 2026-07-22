@@ -304,6 +304,7 @@ func TestConstructJobSet(t *testing.T) {
 						Spec: batchv1.JobSpec{
 							BackoffLimit:   proto.Int32(1),
 							CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+							Completions:    proto.Int32(1),
 							PodFailurePolicy: &batchv1.PodFailurePolicy{
 								Rules: []batchv1.PodFailurePolicyRule{
 									{
