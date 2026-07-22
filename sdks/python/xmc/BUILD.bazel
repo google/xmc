@@ -19,6 +19,7 @@ py_library(
     srcs = [
         "__init__.py",
         "client.py",
+        "network.py",
         "types.py",
     ],
     data = [
@@ -41,6 +42,12 @@ py_test(
 py_test(
     name = "client_test",
     srcs = ["client_test.py"],
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "network_test",
+    srcs = ["network_test.py"],
     deps = [":xmc"],
 )
 

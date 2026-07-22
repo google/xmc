@@ -76,6 +76,7 @@ def ensure_venv(venv_dir: Optional[Path] = None) -> None:
 
 def _bootstrap_venv(venv_dir: Path) -> None:
     """Bootstraps the virtual environment if it does not yet exist."""
+    os.environ.setdefault("PIP_INDEX_URL", "https://pypi.org/simple")
     setup_script = Path(__file__).resolve().parent / "setup_venv.py"
     if setup_script.is_file():
         subprocess.run(
