@@ -48,7 +48,7 @@ def build_test_matrix(test_targets: List[str]) -> List[Dict[str, str]]:
             # cmd/rest contains pure Go binaries that skip Node.js installation.
             matrix.extend(
                 [
-                    {"target": "cmd/ui", "bazel_args": "//cmd/ui:server_test"},
+                    {"target": "cmd/ui", "bazel_args": "//cmd/ui/..."},
                     {"target": "cmd/rest", "bazel_args": "//cmd/... -//cmd/ui/..."},
                 ]
             )

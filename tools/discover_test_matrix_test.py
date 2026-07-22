@@ -45,7 +45,7 @@ class DiscoverTestMatrixTest(unittest.TestCase):
         matrix = build_test_matrix(targets)
         expected = [
             {"target": "root", "bazel_args": "//:all"},
-            {"target": "cmd/ui", "bazel_args": "//cmd/ui:server_test"},
+            {"target": "cmd/ui", "bazel_args": "//cmd/ui/..."},
             {"target": "cmd/rest", "bazel_args": "//cmd/... -//cmd/ui/..."},
             {"target": "deploy", "bazel_args": "//deploy/..."},
             {"target": "internal/storage", "bazel_args": "//internal/storage/..."},
