@@ -21,7 +21,10 @@ import { map, shareReplay } from 'rxjs/operators';
 
 import { ListArtifactsResponse } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
-import { groupAndSortArtifacts, toTypedArtifact } from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
+import {
+  groupAndSortArtifacts,
+  toTypedArtifact,
+} from 'xmanager_cloud/ui/app/common/artifacts/artifact_utils';
 import { ArtifactListItem } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
 import { parseWorkUnitName } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
 import { ArtifactService } from 'xmanager_cloud/ui/app/service/artifact_service';
@@ -80,9 +83,7 @@ export class ArtifactsList implements OnInit {
     const filteredArtifacts$: Observable<readonly Artifact[]> = combineLatest([
       this.artifacts$,
       this.artifactFilter,
-    ]).pipe(
-      map(([artifacts, filter]) => this.filterArtifacts(artifacts, filter)),
-    );
+    ]).pipe(map(([artifacts, filter]) => this.filterArtifacts(artifacts, filter)));
 
     this.showTruncationMessage$ = combineLatest([this.nextPageToken$, filteredArtifacts$]).pipe(
       map(([token, artifacts]) => !!token && artifacts.length > 0),
@@ -96,7 +97,9 @@ export class ArtifactsList implements OnInit {
     );
     this.executionArtifacts$ = filteredArtifacts$.pipe(
       map((artifacts) => {
-        const typed = artifacts.filter((a) => a.lifecyclePhase === 'EXECUTION').map(toTypedArtifact);
+        const typed = artifacts
+          .filter((a) => a.lifecyclePhase === 'EXECUTION')
+          .map(toTypedArtifact);
         return groupAndSortArtifacts(typed, 'EXECUTION', this.groupingThreshold());
       }),
     );
@@ -110,7 +113,10 @@ export class ArtifactsList implements OnInit {
     );
   }
 
-  private filterArtifacts(artifacts: readonly Artifact[], filter: ArtifactFilter[]): readonly Artifact[] {
+  private filterArtifacts(
+    artifacts: readonly Artifact[],
+    filter: ArtifactFilter[],
+  ): readonly Artifact[] {
     if (
       !this.showFilterToggle ||
       (filter.includes(ArtifactFilter.EXPERIMENT) && filter.includes(ArtifactFilter.WORK_UNIT))
@@ -121,10 +127,8 @@ export class ArtifactsList implements OnInit {
       return [];
     }
     return artifacts.filter((artifact) => {
-      const isWorkUnitArtifact =
-        !!artifact.parent && parseWorkUnitName(artifact.parent) !== null;
-      const matchesExperiment =
-        filter.includes(ArtifactFilter.EXPERIMENT) && !isWorkUnitArtifact;
+      const isWorkUnitArtifact = !!artifact.parent && parseWorkUnitName(artifact.parent) !== null;
+      const matchesExperiment = filter.includes(ArtifactFilter.EXPERIMENT) && !isWorkUnitArtifact;
       const matchesWorkUnit = filter.includes(ArtifactFilter.WORK_UNIT) && isWorkUnitArtifact;
       return matchesExperiment || matchesWorkUnit;
     });

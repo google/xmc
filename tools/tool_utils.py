@@ -16,8 +16,72 @@
 
 import argparse
 import json
+import logging
+import os
+import subprocess
 import sys
 import traceback
+from pathlib import Path
+
+
+def _should_bypass_venv() -> bool:
+    """Checks if virtual environment activation should be skipped."""
+    if "TEST_SRCDIR" in os.environ or "BAZEL_TEST" in os.environ:
+        return True
+    if sys.prefix != sys.base_prefix or os.environ.get("XMC_BYPASS_VENV") == "1":
+        return True
+    if "unittest" in sys.modules or "pytest" in sys.modules:
+        return True
+    file_path_str = str(Path(__file__).resolve())
+    cwd_path_str = str(Path.cwd().resolve())
+    return bool(
+        any(
+            token in file_path_str or token in cwd_path_str
+            for token in ("execroot", "bazel-out", "sandbox")
+        )
+    )
+
+
+def ensure_venv(venv_dir: Path | None = None) -> None:
+    """Ensures the current process runs inside the tooling virtual environment."""
+    if _should_bypass_venv():
+        return
+
+    resolved_venv = (
+        venv_dir
+        or Path(
+            os.environ.get("TOOLS_VENV_DIR", Path(__file__).resolve().parent / "venv")
+        ).resolve()
+    )
+    venv_python = resolved_venv / "bin" / "python3"
+    if not venv_python.exists():
+        venv_python = resolved_venv / "bin" / "python"
+
+    if not venv_python.exists():
+        if not os.access(resolved_venv.parent, os.W_OK):
+            return
+        try:
+            _bootstrap_venv(resolved_venv)
+        except Exception:
+            logging.exception("Failed to bootstrap virtual environment")
+            return
+        venv_python = resolved_venv / "bin" / "python3"
+        if not venv_python.exists():
+            venv_python = resolved_venv / "bin" / "python"
+
+    if venv_python.exists() and Path(sys.executable).resolve() != venv_python.resolve():
+        os.execv(str(venv_python), [str(venv_python)] + sys.argv)
+
+
+def _bootstrap_venv(venv_dir: Path) -> None:
+    """Bootstraps the virtual environment if it does not yet exist."""
+    os.environ.setdefault("PIP_INDEX_URL", "https://pypi.org/simple")
+    setup_script = Path(__file__).resolve().parent / "setup_venv.py"
+    if setup_script.is_file():
+        subprocess.run(
+            [sys.executable, str(setup_script), "--venv-dir", str(venv_dir)],
+            check=True,
+        )
 
 
 class HandledError(Exception):
@@ -39,6 +103,7 @@ def run_tool(parser: argparse.ArgumentParser, main_fn):
       1: Handled error
       2: Unhandled error
     """
+    ensure_venv()
     try:
         args = parser.parse_args()
         result = main_fn(args)

@@ -26,6 +26,8 @@ import sys
 import time
 from typing import Any
 
+from tool_utils import ensure_venv
+
 # ANSI Color Codes
 RED = "\033[0;31m"
 GREEN = "\033[0;32m"
@@ -784,6 +786,7 @@ def step_images(config: dict[str, Any], dns_project: str, dns_zone: str) -> None
         "//cmd/reconciler:reconciler_image_push",
         "//cmd/ui:ui_image_push",
         "//cmd/xid_service:xid_service_image_push",
+        "//cmd/health_service:health_service_image_push",
     ]
 
     for target in bazel_targets:
@@ -913,7 +916,7 @@ def step_verify(config: dict[str, Any], dns_project: str, dns_zone: str) -> None
     }
     try:
         run_command(
-            ["python3", "./deploy/ctk_v2/verify_xmc.py"],
+            [sys.executable, "./deploy/ctk_v2/verify_xmc.py"],
             env=env_vars,
             log_on_error=False,
         )
@@ -932,6 +935,7 @@ def main(argv: list[str]) -> None:
     Args:
         argv: Command line arguments.
     """
+    ensure_venv()
     args = parse_args(argv)
     config = load_and_validate_config(args.config)
 

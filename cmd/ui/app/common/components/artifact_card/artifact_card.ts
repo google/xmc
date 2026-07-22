@@ -20,7 +20,6 @@ import { MatExpansionModule } from '@angular/material/expansion';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 
-import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 import {
   getArtifactDisplayProperties,
   hasPayloadContent,
@@ -28,7 +27,6 @@ import {
 import { PayloadType, TypedArtifact } from 'xmanager_cloud/ui/app/common/artifacts/interfaces';
 import { SafeUrlPipe, SplitPipe } from 'xmanager_cloud/ui/app/common/pipes/pipes';
 import { parseWorkUnitName } from 'xmanager_cloud/ui/app/common/resource_name_extractor';
-import { trySanitizeUrl, windowOpen } from 'xmanager_cloud/ui/app/safevalues_helper';
 
 import { Tag } from '../tag/tag';
 
@@ -69,7 +67,7 @@ export class ArtifactCard {
   protected readonly PayloadType = PayloadType;
 
   protected readonly displayProperties = computed(() =>
-    getArtifactDisplayProperties(this.artifact())
+    getArtifactDisplayProperties(this.artifact()),
   );
 
   protected readonly tags = computed(() => this.artifact().artifact.tags ?? []);
@@ -96,9 +94,5 @@ export class ArtifactCard {
     return !!notes && notes.length > SHORT_NOTE_MAX_LENGTH;
   });
 
-  protected readonly hasPayloadContent = computed(() =>
-    hasPayloadContent(this.artifact())
-  );
-
-
+  protected readonly hasPayloadContent = computed(() => hasPayloadContent(this.artifact()));
 }

@@ -4,8 +4,9 @@ This document outlines foundational architectural, structural, and clean code gu
 
 ---
 
-## 1. Single Responsibility Principle (SRP) & Focused Functions
+## 1. Single Responsibility Principle (SRP), YAGNI & Focused Functions
 - **Single Responsibility**: Every module, class, and function must have one, and only one, clear reason to change.
+- **YAGNI & No Unused Parameters**: Adhere strictly to YAGNI (*You Aren't Gonna Need It*). Do NOT accept unused parameters, dead fields, or speculative arguments in function signatures or class constructors. Only declare parameters that are actively read, validated, or processed within the function body (excluding mandatory protocol/runtime interface overrides such as context manager `__exit__`).
 - **Function Limit Target**: Aim to keep functions and methods within a highly readable **20–30 line target cap**. Decompose monolithic methods into localized, pure helper functions.
 - **Decompose Complex Logic**: Separate business logic, state mutation, and structural data transformations from framework hooks, lifecycle orchestrations, or shell command invocations.
 
@@ -50,10 +51,17 @@ function processUser(user: User | null) {
 - **Parametric Order Matching**: For HTTP or service query mocks (e.g., `HttpParams` or query parameter verification), ensure parameter maps serialize and compare in the exact order expected by matching criteria.
 - **No Hallucinated Identifiers**: Use valid, consistent mock identifiers in unit test suites (matching base fixture schemas such as `experiments/1` rather than arbitrary unlinked IDs like `123`).
 - **Eradicate Production Mock Branches**: Never embed static mock datasets or conditional mock execution branches (`if (useMock)`) inside production application code or service layers. Decouple mocks using Dependency Injection (DI) factory providers.
+- **Centralize Shared Utilities & Helpers**: Never copy-paste or redefine identical helper functions, mock mutators, or test utilities locally across multiple packages. Centralize reusable utilities in global/shared packages (e.g., `internal/compat/*` or shared test libraries) to maintain DRY across the repository.
+- **Baseline Test Fixtures & Targeted Mutations**: In unit tests with repetitive data payloads, avoid copy-pasting monolithic structures. Define a canonical baseline fixture and use mutation helpers (such as `proto.Modify` for Protobuf messages or shallow copies/local helpers for standard structs) to express each test case as a concise delta from the base.
 
 ## 5. Strict Testing Coverage & PR Granularity
 - **Strict Coverage Requirements**: All feature additions, bug fixes, and code modifications must include comprehensive unit and integration test coverage. Never reduce assertions or mask test failures.
+- **Open-Source Code TODO Standard**: Inline code `TODO` comments in public/OSS source files (under `sdks/` or open packages) MUST NOT include internal Buganizer IDs (e.g. `TODO(b/12345)`). Use generic `TODO:` tags or public GitHub issue numbers (`TODO(#123)`).
 - **Small, Focused PRs**: Keep Pull Requests small, localized, and logically split. Each PR should address a single cohesive task or change step to enable fast, high-quality reviews.
 - **System Contract & API Changes**:
   - **Mandatory User Confirmation**: Seek explicit user confirmation before introducing breaking changes to public APIs, protobuf schemas, CLI flags, or core system contracts.
   - **Documentation Alignment**: Synchronize repository markdown documents (including, but not limited to, `README.md`, `INSTALL.md`, and component specs), schemas, and inline API references within the exact same pull request whenever system contracts or behaviors change.
+
+## 6. Post-Implementation Reflection & Meta-Learning
+- **Selective Triggers**: Trigger the `iterative_reflection` skill ([SKILL.md](../skills/iterative_reflection/SKILL.md)) only after major implementations, PRs with high comment volume (>3-5 comments), or explicit user request. Do NOT trigger for routine minor edits.
+

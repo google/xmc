@@ -1,5 +1,5 @@
 ---
-name: Deploy XMC
+name: XMC Deploy Environment
 description: Automates compiling and step-by-step deployment of the XMC v2 Cluster Toolkit blueprint. Supports both automated developer setups and manual step-by-step deployments.
 ---
 
@@ -217,6 +217,7 @@ bazel run //cmd/xid_service:xid_service_image_push
 Verify the health, certificate readiness, and routing of the environment:
 
 ### Step 1: Run Verification Script
+Ensure the Python virtual environment is activated, then run:
 ```bash
 python3 ./deploy/ctk_v2/verify_xmc.py
 ```

@@ -22,6 +22,7 @@ import (
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	"xmanager_cloud/internal/storage/spanner/emulator"
+	migversion "xmanager_cloud/internal/storage/spanner/migrations/version"
 )
 
 func TestCheckSpanner(t *testing.T) {
@@ -51,6 +52,16 @@ func TestCheckSpanner(t *testing.T) {
 			t.Error("CheckSpanner(ctx, closedClient) succeeded, want error")
 		}
 	})
+}
+
+type mockSpannerHealthClient struct {
+	version int64
+	dirty   bool
+	err     error
+}
+
+func (m mockSpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64, bool, error) {
+	return m.version, m.dirty, m.err
 }
 
 type mockDiscovery struct {
@@ -125,4 +136,85 @@ func TestCheckKubernetes(t *testing.T) {
 			t.Errorf("CheckKubernetes(healthy) = %v, want nil", err)
 		}
 	})
+}
+
+func TestCheckSpannerServices(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct {
+		name       string
+		versionOff int64
+		dirty      bool
+		dbErr      error
+		isNil      bool
+		wantErr    bool
+	}{
+		{
+			name:    "success when version matches",
+			wantErr: false,
+		},
+		{
+			name:       "fails when version mismatch (higher)",
+			versionOff: 1,
+			wantErr:    true,
+		},
+		{
+			name:       "fails when version mismatch (lower)",
+			versionOff: -1,
+			wantErr:    true,
+		},
+		{
+			name:    "fails when dirty",
+			dirty:   true,
+			wantErr: true,
+		},
+		{
+			name:    "fails on spanner error",
+			dbErr:   errors.New("spanner error"),
+			wantErr: true,
+		},
+		{
+			name:    "fails when client is nil",
+			isNil:   true,
+			wantErr: true,
+		},
+	}
+
+	services := []struct {
+		name            string
+		checkFn         func(context.Context, SpannerHealthClient) error
+		expectedVersion int64
+	}{
+		{
+			name:            "ESS",
+			checkFn:         CheckSpannerESS,
+			expectedVersion: migversion.EssExpectedSchemaVersion(),
+		},
+		{
+			name:            "XID",
+			checkFn:         CheckSpannerXID,
+			expectedVersion: migversion.XidExpectedSchemaVersion(),
+		},
+	}
+
+	for _, svc := range services {
+		t.Run(svc.name, func(t *testing.T) {
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					var client SpannerHealthClient
+					if !tc.isNil {
+						client = mockSpannerHealthClient{
+							version: svc.expectedVersion + tc.versionOff,
+							dirty:   tc.dirty,
+							err:     tc.dbErr,
+						}
+					}
+					err := svc.checkFn(ctx, client)
+					if (err != nil) != tc.wantErr {
+						t.Errorf("checkFn() error = %v, wantErr %v", err, tc.wantErr)
+					}
+				})
+			}
+		})
+	}
 }

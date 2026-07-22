@@ -23,13 +23,17 @@ on:
   merge_group:
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   id-token: write
 
 jobs:
-  run-tests:
-    name: 'Run Unit Tests'
+  run-backend-tests:
+    name: 'Run Go & Backend Unit Tests'
     runs-on: 'ubuntu-24.04'
     timeout-minutes: 30
 
@@ -51,6 +55,12 @@ jobs:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
 
+      - name: 'Start Async Disk Space Cleanup'
+        run: |
+          echo "=== Starting background cleanup of Android SDK & .NET ==="
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet &
+          echo "CLEANUP_PID=$!" >> $GITHUB_ENV
+
       - name: 'Set up Go'
         uses: 'actions/setup-go@v5'
         with:
@@ -58,17 +68,6 @@ jobs:
 
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@v3'
-
-      - name: 'Set up Node.js'
-        uses: 'actions/setup-node@v4'
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: 'cmd/ui/package-lock.json'
-
-      - name: 'Install Node.js dependencies'
-        run: npm ci --legacy-peer-deps
-        working-directory: cmd/ui
 
       - name: 'Restore Bazel Cache'
         id: 'cache-bazel-restore'
@@ -88,28 +87,50 @@ jobs:
           PORT=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f2)
           
           # Try connecting to the port
-          for i in {1..${{ env.SPANNER_CHECK_TIMEOUT }}}; do
+          for i in $(seq 1 ${{ env.SPANNER_CHECK_TIMEOUT }}); do
             if nc -z "$HOST" "$PORT" >/dev/null 2>&1 || timeout 1s bash -c "cat < /dev/null > /dev/tcp/$HOST/$PORT" 2>/dev/null; then
               echo "Successfully connected to Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}."
               exit 0
             fi
-            echo "Waiting for Spanner Emulator to start (attempt $i/15)..."
+            echo "Waiting for Spanner Emulator to start (attempt $i/${{ env.SPANNER_CHECK_TIMEOUT }})..."
             sleep 1
           done
           
           echo "CRITICAL: Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }} did not start within ${{ env.SPANNER_CHECK_TIMEOUT }} seconds."
           exit 1
 
-      - name: 'Run Unit Tests'
+      - name: 'Wait for Disk Space Cleanup'
+        run: |
+          if [ -n "${CLEANUP_PID:-}" ]; then
+            echo "Waiting for background cleanup (PID ${CLEANUP_PID}) to complete..."
+            wait "${CLEANUP_PID}" || true
+          fi
+          echo "=== Available Disk Space Before Bazel Build ==="
+          df -h /
+
+      - name: 'Run Backend Unit Tests'
         run: |
           bazel test \
             --repository_cache=~/.cache/bazel-repo \
             --disk_cache=~/.cache/bazel-disk \
+            --experimental_repository_cache_hardlinks \
             --test_output=errors \
             --build_tests_only \
             --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},300,300,300 \
             -- \
-            //...
+            //... \
+            -//cmd/ui/...
+
+      - name: 'Prune Bazel Cache & Build Tree'
+        if: always()
+        run: |
+          echo "=== Pruning Bazel cache and build tree ==="
+          if [ -d ~/.cache/bazel-disk ]; then
+            find ~/.cache/bazel-disk -type f -atime +3 -delete || true
+            find ~/.cache/bazel-disk -type d -empty -delete || true
+          fi
+          bazel clean || true
+          df -h
 
       - name: 'Save Bazel Cache'
         uses: 'actions/cache/save@v4'
@@ -119,3 +140,43 @@ jobs:
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
           key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+
+  run-ui-tests:
+    name: 'Run Angular UI Unit Tests'
+    runs-on: 'ubuntu-24.04'
+    timeout-minutes: 15
+
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@v4'
+
+      - name: 'Set up Node.js'
+        uses: 'actions/setup-node@v4'
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'cmd/ui/package-lock.json'
+
+      - name: 'Install Node.js dependencies'
+        run: npm ci --legacy-peer-deps
+        working-directory: cmd/ui
+
+      - name: 'Run Angular UI Unit Tests'
+        run: npm test -- --watch=false --browsers=ChromeHeadlessNoSandbox
+        working-directory: cmd/ui
+
+  run-tests:
+    name: 'Run Unit Tests'
+    needs: [run-backend-tests, run-ui-tests]
+    runs-on: 'ubuntu-24.04'
+    if: always()
+    steps:
+      - name: 'Verify All Unit Tests Passed'
+        run: |
+          if [ "${{ needs.run-backend-tests.result }}" != "success" ] || [ "${{ needs.run-ui-tests.result }}" != "success" ]; then
+            echo "ERROR: One or more unit test jobs failed."
+            echo "Backend tests result: ${{ needs.run-backend-tests.result }}"
+            echo "UI tests result: ${{ needs.run-ui-tests.result }}"
+            exit 1
+          fi
+          echo "All unit test suites passed successfully."

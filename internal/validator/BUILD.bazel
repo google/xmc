@@ -20,6 +20,7 @@ go_library(
         "names.go",
         "parameters.go",
         "requests.go",
+        "volumes.go",
     ],
     importpath = "xmanager_cloud/validator/validator",  # keep
     visibility = ["//:__subpackages__"],
@@ -40,6 +41,7 @@ go_test(
         "names_test.go",
         "parameters_test.go",
         "requests_test.go",
+        "volumes_test.go",
     ],
     embed = [":validator"],
     shard_count = 10,
@@ -51,7 +53,6 @@ go_test(
         "//internal/compat/proto",
         "//internal/compat/status",
         "@com_github_google_go_cmp//cmp",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/fieldmaskpb",
         "@org_golang_google_protobuf//types/known/timestamppb",

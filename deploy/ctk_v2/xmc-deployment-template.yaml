@@ -75,6 +75,9 @@ vars:
   # Validity duration of task signature tokens
   task_signature_ttl_seconds: 86400
 
+  # Enable status message history database persistence
+  status_message_history_enabled: true
+
   # Image Overrides (Replace with your own Google Artifact Registry / private paths)
   xid_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/xid-service:latest"
   actuator_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/actuator:latest"
@@ -82,3 +85,5 @@ vars:
   ui_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/ui:latest"
   reconciler_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/reconciler:latest"
   log_monitor_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/log_monitor:latest"
+  health_service_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/health-service:latest"
+  rod_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/rod:latest"

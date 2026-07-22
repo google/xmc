@@ -15,11 +15,19 @@
 load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_python//python:py_test.bzl", "py_test")
 
-exports_files(["build_oci.py"])
+exports_files([
+    "build_oci.py",
+    "requirements.txt",
+    "setup_venv.py",
+])
 
 py_library(
     name = "tool_utils",
     srcs = ["tool_utils.py"],
+    data = [
+        "requirements.txt",
+        "setup_venv.py",
+    ],
     imports = ["."],
     visibility = ["//visibility:public"],
 )
@@ -140,6 +148,9 @@ py_library(
     srcs = ["deploy_dev_env.py"],
     imports = ["."],
     visibility = ["//visibility:public"],
+    deps = [
+        ":tool_utils",
+    ],
 )
 
 py_test(
@@ -148,6 +159,7 @@ py_test(
     imports = ["."],
     deps = [
         ":deploy_dev_env_lib",
+        ":tool_utils",
     ],
 )
 
@@ -156,6 +168,9 @@ py_library(
     srcs = ["upgrade_dev_env.py"],
     imports = ["."],
     visibility = ["//visibility:public"],
+    deps = [
+        ":tool_utils",
+    ],
 )
 
 py_test(
@@ -163,6 +178,67 @@ py_test(
     srcs = ["upgrade_dev_env_test.py"],
     imports = ["."],
     deps = [
+        ":tool_utils",
         ":upgrade_dev_env_lib",
+    ],
+)
+
+py_library(
+    name = "setup_venv_lib",
+    srcs = ["setup_venv.py"],
+    data = ["requirements.txt"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "setup_venv_test",
+    srcs = ["setup_venv_test.py"],
+    imports = ["."],
+    deps = [
+        ":setup_venv_lib",
+    ],
+)
+
+py_library(
+    name = "update_pr_description_lib",
+    srcs = ["update_pr_description.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+)
+
+py_library(
+    name = "run_affected_tests_lib",
+    srcs = ["run_affected_tests.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tool_utils",
+    ],
+)
+
+py_library(
+    name = "generate_review_checklist_lib",
+    srcs = ["generate_review_checklist.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+)
+
+py_test(
+    name = "generate_review_checklist_test",
+    srcs = ["generate_review_checklist_test.py"],
+    imports = ["."],
+    deps = [
+        ":generate_review_checklist_lib",
+        ":github_utils_lib",
+        ":tool_utils",
     ],
 )

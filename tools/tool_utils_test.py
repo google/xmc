@@ -16,14 +16,137 @@
 
 import io
 import json
+import os
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from tool_utils import HandledError, run_tool
+from tool_utils import HandledError, _bootstrap_venv, ensure_venv, run_tool
 
 
 class TestToolUtils(unittest.TestCase):
     """Test suite for tool_utils helper functions."""
+
+    @patch.dict(os.environ, {"TEST_SRCDIR": "/mock/srcdir"}, clear=False)
+    @patch("os.execv")
+    def test_ensure_venv_in_bazel(self, mock_execv):
+        ensure_venv()
+        mock_execv.assert_not_called()
+
+    @patch.dict(os.environ, {"XMC_BYPASS_VENV": "1"}, clear=False)
+    @patch("os.execv")
+    def test_ensure_venv_bypass(self, mock_execv):
+        env = dict(os.environ)
+        env.pop("TEST_SRCDIR", None)
+        env.pop("BAZEL_TEST", None)
+        with patch.dict(os.environ, env, clear=True):
+            ensure_venv()
+        mock_execv.assert_not_called()
+
+    @patch("os.execv")
+    def test_ensure_venv_already_active(self, mock_execv):
+        env = dict(os.environ)
+        env.pop("TEST_SRCDIR", None)
+        env.pop("BAZEL_TEST", None)
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("sys.prefix", "/mock/venv"),
+            patch("sys.base_prefix", "/usr"),
+        ):
+            ensure_venv()
+        mock_execv.assert_not_called()
+
+    @patch("tool_utils._should_bypass_venv", return_value=False)
+    @patch("os.execv")
+    def test_ensure_venv_reexec(self, mock_execv, mock_bypass):
+        env = dict(os.environ)
+        env.pop("TEST_SRCDIR", None)
+        env.pop("BAZEL_TEST", None)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            venv_dir = Path(tmp_dir) / "venv"
+            venv_py = venv_dir / "bin" / "python3"
+            venv_py.parent.mkdir(parents=True, exist_ok=True)
+            venv_py.touch()
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch("sys.prefix", "/usr"),
+                patch("sys.base_prefix", "/usr"),
+                patch("sys.executable", "/usr/bin/python3"),
+            ):
+                ensure_venv(venv_dir)
+            mock_execv.assert_called_once_with(str(venv_py), [str(venv_py)] + sys.argv)
+
+    @patch("tool_utils._should_bypass_venv", return_value=False)
+    @patch("tool_utils._bootstrap_venv")
+    @patch("os.execv")
+    def test_ensure_venv_bootstrap_and_reexec(self, mock_execv, mock_bootstrap, mock_bypass):
+        env = dict(os.environ)
+        env.pop("TEST_SRCDIR", None)
+        env.pop("BAZEL_TEST", None)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            venv_dir = Path(tmp_dir) / "venv"
+            venv_py = venv_dir / "bin" / "python3"
+
+            def create_bin(_):
+                venv_py.parent.mkdir(parents=True, exist_ok=True)
+                venv_py.touch()
+
+            mock_bootstrap.side_effect = create_bin
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch("sys.prefix", "/usr"),
+                patch("sys.base_prefix", "/usr"),
+                patch("sys.executable", "/usr/bin/python3"),
+            ):
+                ensure_venv(venv_dir)
+            mock_bootstrap.assert_called_once_with(venv_dir.resolve())
+            mock_execv.assert_called_once_with(str(venv_py), [str(venv_py)] + sys.argv)
+
+    @patch("tool_utils._should_bypass_venv", return_value=False)
+    @patch("tool_utils._bootstrap_venv", side_effect=RuntimeError("bootstrap failed"))
+    @patch("logging.exception")
+    @patch("os.execv")
+    def test_ensure_venv_bootstrap_fails(
+        self, mock_execv, mock_log_exception, mock_bootstrap, mock_bypass
+    ):
+        env = dict(os.environ)
+        env.pop("TEST_SRCDIR", None)
+        env.pop("BAZEL_TEST", None)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            venv_dir = Path(tmp_dir) / "venv"
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch("sys.prefix", "/usr"),
+                patch("sys.base_prefix", "/usr"),
+                patch("sys.executable", "/usr/bin/python3"),
+            ):
+                ensure_venv(venv_dir)
+            mock_bootstrap.assert_called_once_with(venv_dir.resolve())
+            mock_log_exception.assert_called_once_with("Failed to bootstrap virtual environment")
+            mock_execv.assert_not_called()
+
+    @patch("subprocess.run")
+    def test_bootstrap_venv_calls_setup_script(self, mock_run):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            venv_dir = Path(tmp_dir) / "venv"
+            with patch("pathlib.Path.is_file", return_value=True):
+                _bootstrap_venv(venv_dir)
+            mock_run.assert_called_once()
+
+    @patch("subprocess.run")
+    def test_bootstrap_venv_pip_index_url_fallback(self, mock_run):
+        env = dict(os.environ)
+        env.pop("PIP_INDEX_URL", None)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            venv_dir = Path(tmp_dir) / "venv"
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch("pathlib.Path.is_file", return_value=True),
+            ):
+                _bootstrap_venv(venv_dir)
+                self.assertEqual(os.environ.get("PIP_INDEX_URL"), "https://pypi.org/simple")
 
     def test_run_tool_success(self):
         """Test successful execution of tool runner."""
