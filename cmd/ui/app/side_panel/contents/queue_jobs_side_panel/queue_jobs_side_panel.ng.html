@@ -1,184 +1,187 @@
 <!--
-Copyright 2026 Google LLC
+ Copyright 2026 Google LLC
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
 
      http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
 -->
-<div class="side-panel-container">
-  <div class="panel-header">
-    <div class="header-title-group">
-      <h3 class="panel-title">Pending and Running Jobs</h3>
-      <span class="queue-badge">{{ data().queueName }}</span>
+<div class="jobs-in-queue-card">
+  <div class="jobs-card-header">
+    <div class="title-row">
+      <h3 class="jobs-card-title">Jobs in the queue ({{ totalCount() }})</h3>
     </div>
-    <button mat-icon-button (click)="close()" class="close-button" aria-label="Close side panel">
-      <mat-icon>close</mat-icon>
-    </button>
+    <div class="target-queue-name">{{ activeQueueName() }}</div>
+    <p class="jobs-card-subtitle">
+      There are {{ totalCount() }} massive jobs ahead of you blocking physical resources. Your job
+      will wait until the jobs release contiguous hardware limits.
+    </p>
   </div>
 
-  <div class="summary-bar">
-    <div class="summary-item">
-      <span class="summary-label">Total Jobs:</span>
-      <span class="summary-value">{{ totalCount() }}</span>
-    </div>
-    <div class="summary-item running">
-      <span class="summary-label">Running:</span>
-      <span class="summary-value">{{ runningCount() }}</span>
-    </div>
-    <div class="summary-item pending">
-      <span class="summary-label">Pending:</span>
-      <span class="summary-value">{{ pendingCount() }}</span>
-    </div>
-    <button mat-icon-button (click)="loadJobs()" class="refresh-button" aria-label="Refresh jobs">
-      <mat-icon>refresh</mat-icon>
-    </button>
-  </div>
-
-  <div class="controls-row">
-    <mat-form-field appearance="outline" class="search-field" subscriptSizing="dynamic">
-      <mat-icon matPrefix class="search-icon">search</mat-icon>
-      <input
-        matInput
-        [ngModel]="searchQuery()"
-        (ngModelChange)="searchQuery.set($event)"
-        placeholder="Filter by XID, user, status, resources..."
-      />
-    </mat-form-field>
-
-    <mat-button-toggle-group
-      [ngModel]="statusFilter()"
-      (ngModelChange)="statusFilter.set($event)"
-      class="filter-toggle"
-    >
-      <mat-button-toggle value="ALL">All</mat-button-toggle>
-      <mat-button-toggle value="RUNNING">Running</mat-button-toggle>
-      <mat-button-toggle value="PENDING">Pending</mat-button-toggle>
-    </mat-button-toggle-group>
+  <div class="jobs-filter-bar">
+    <mat-icon class="filter-menu-icon">filter_list</mat-icon>
+    <input
+      type="text"
+      class="jobs-search-input"
+      placeholder="Filter by resource, priority or importance"
+      [ngModel]="filterQuery()"
+      (ngModelChange)="onFilterQueryChange($event)"
+    />
+    <mat-icon class="filter-action-icon" matTooltip="Help">help_outline</mat-icon>
+    <mat-icon class="filter-action-icon" matTooltip="Columns">view_column</mat-icon>
   </div>
 
   @if (isLoading()) {
     <div class="loading-container">
-      <mat-progress-spinner mode="indeterminate" diameter="36"></mat-progress-spinner>
-      <span class="loading-text">Loading jobs for {{ data().queueName }}...</span>
+      <span>Loading jobs...</span>
+    </div>
+  } @else if (filteredJobs().length === 0) {
+    <div class="jobs-empty-state">
+      <div class="empty-star-illustration">
+        <svg
+          width="120"
+          height="120"
+          viewBox="0 0 140 140"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M70 20L84.42 49.23L116.63 53.91L93.31 76.64L98.81 108.73L70 93.58L41.19 108.73L46.69 76.64L23.37 53.91L55.58 49.23L70 20Z"
+            stroke="#202124"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            fill="#ffffff"
+          />
+          <path d="M40 75L12 98" stroke="#4285F4" stroke-width="2.5" stroke-linecap="round" />
+          <path d="M55 92L28 115" stroke="#4285F4" stroke-width="2.5" stroke-linecap="round" />
+          <path d="M26 58L8 72" stroke="#4285F4" stroke-width="2.5" stroke-linecap="round" />
+        </svg>
+      </div>
+      <div class="empty-caption">No job ahead of you!</div>
     </div>
   } @else {
-    @if (filteredJobs().length === 0) {
-      <div class="empty-state">
-        <mat-icon class="empty-icon">inbox</mat-icon>
-        <div class="empty-title">No jobs found</div>
-        <div class="empty-subtitle">
-          There are no matching pending or running jobs in this queue.
+    <div class="jobs-table-container">
+      <table mat-table [dataSource]="pagedJobs()" class="jobs-mat-table">
+        <!-- Position Column -->
+        <ng-container matColumnDef="position">
+          <th mat-header-cell *matHeaderCellDef>Position</th>
+          <td mat-cell *matCellDef="let job" class="position-cell">{{ job.position }}</td>
+        </ng-container>
+
+        <!-- Experiment Name Column -->
+        <ng-container matColumnDef="jobName">
+          <th mat-header-cell *matHeaderCellDef>Experiment name</th>
+          <td mat-cell *matCellDef="let job" class="name-cell">
+            <a [routerLink]="['/experiments', job.xid || job.jobName]" class="job-link">{{
+              job.jobName
+            }}</a>
+          </td>
+        </ng-container>
+
+        <!-- Status Column -->
+        <ng-container matColumnDef="status">
+          <th mat-header-cell *matHeaderCellDef>Status</th>
+          <td mat-cell *matCellDef="let job" class="status-cell">
+            @if (
+              job.status?.toUpperCase() === 'RUNNING' || job.status?.toUpperCase() === 'ACTIVE'
+            ) {
+              <span class="status-indicator running-indicator">
+                <mat-icon class="status-dot-icon running-dot">sync</mat-icon> Running
+              </span>
+            } @else {
+              <span class="status-indicator pending-indicator">
+                <mat-icon class="status-dot-icon pending-dot">more_horiz</mat-icon> Pending
+              </span>
+            }
+          </td>
+        </ng-container>
+
+        <!-- Priority Column -->
+        <ng-container matColumnDef="priority">
+          <th mat-header-cell *matHeaderCellDef>Priority</th>
+          <td mat-cell *matCellDef="let job" class="priority-cell">
+            <span class="priority-badge" [class]="getPriorityBadgeClass(job.priority)">
+              {{ getPriorityDisplay(job.priority) }}
+            </span>
+          </td>
+        </ng-container>
+
+        <!-- Work / Aux Unit Column -->
+        <ng-container matColumnDef="workUnitId">
+          <th mat-header-cell *matHeaderCellDef>Work / Aux Unit</th>
+          <td mat-cell *matCellDef="let job" class="workunit-cell">
+            @if (job.workUnitId) {
+              <a
+                [routerLink]="['/experiments', job.xid || job.jobName, 'workUnits', job.workUnitId]"
+                class="workunit-link"
+              >
+                <span class="unit-badge">{{ job.workUnitId }}</span>
+              </a>
+            } @else {
+              <span class="unit-badge">-</span>
+            }
+          </td>
+        </ng-container>
+
+        <!-- Author Column -->
+        <ng-container matColumnDef="user">
+          <th mat-header-cell *matHeaderCellDef>Author</th>
+          <td mat-cell *matCellDef="let job" class="author-cell">
+            <div class="author-avatar-chip">
+              <mat-icon class="avatar-icon">account_circle</mat-icon>
+              <span class="author-name">{{ job.user }}</span>
+            </div>
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+        <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+      </table>
+
+      <!-- Table Footer Pagination -->
+      <div class="jobs-table-footer">
+        <div class="rows-per-page">
+          <span>Rows per page</span>
+          <select
+            class="rows-select"
+            [ngModel]="pageSize()"
+            (ngModelChange)="onPageSizeChange($event)"
+          >
+            <option *ngFor="let opt of pageSizeOptions" [value]="opt">{{ opt }}</option>
+          </select>
+        </div>
+        <div class="pagination-info">{{ getPaginationRangeDisplay() }}</div>
+        <div class="pagination-nav">
+          <button mat-icon-button [disabled]="pageIndex() === 0" (click)="goToFirstPage()">
+            <mat-icon>first_page</mat-icon>
+          </button>
+          <button mat-icon-button [disabled]="pageIndex() === 0" (click)="goToPreviousPage()">
+            <mat-icon>chevron_left</mat-icon>
+          </button>
+          <button
+            mat-icon-button
+            [disabled]="pageIndex() >= getMaxPageIndex()"
+            (click)="goToNextPage()"
+          >
+            <mat-icon>chevron_right</mat-icon>
+          </button>
+          <button
+            mat-icon-button
+            [disabled]="pageIndex() >= getMaxPageIndex()"
+            (click)="goToLastPage()"
+          >
+            <mat-icon>last_page</mat-icon>
+          </button>
         </div>
       </div>
-    } @else {
-      <div class="table-container">
-        <table mat-table [dataSource]="filteredJobs()" class="jobs-table">
-          <!-- Position Column -->
-          <ng-container matColumnDef="position">
-            <th mat-header-cell *matHeaderCellDef>Position</th>
-            <td mat-cell *matCellDef="let job">
-              <span class="position-badge" [class.running-pos]="job.status === 'RUNNING'">
-                {{ job.position }}
-              </span>
-            </td>
-          </ng-container>
-
-          <!-- XID Column -->
-          <ng-container matColumnDef="xid">
-            <th mat-header-cell *matHeaderCellDef>XID</th>
-            <td mat-cell *matCellDef="let job">
-              @if (isNumericXid(job.xid)) {
-                <a [routerLink]="['/experiments', job.xid]" (click)="close()" class="xid-link">
-                  <xmc-xid-badge [xid]="job.xid"></xmc-xid-badge>
-                </a>
-              } @else {
-                <span class="generic-xid">{{ job.xid }}</span>
-              }
-            </td>
-          </ng-container>
-
-          <!-- Job / Work Unit Column -->
-          <ng-container matColumnDef="jobName">
-            <th mat-header-cell *matHeaderCellDef>Job / Work Unit</th>
-            <td mat-cell *matCellDef="let job">
-              <div class="job-id-cell">
-                @if (job.workUnitId) {
-                  <a
-                    [routerLink]="[
-                      '/experiments',
-                      job.xid || job.jobName,
-                      'workUnits',
-                      job.workUnitId,
-                    ]"
-                    (click)="close()"
-                    class="wu-link"
-                  >
-                    <span class="wu-badge">WU #{{ job.workUnitId }}</span>
-                  </a>
-                } @else {
-                  <span class="wu-badge">WU #{{ job.workUnitId }}</span>
-                }
-                @if (job.jobName && job.jobName !== job.workUnitId) {
-                  <small class="job-subname">({{ job.jobName }})</small>
-                }
-              </div>
-            </td>
-          </ng-container>
-
-          <!-- User Column -->
-          <ng-container matColumnDef="user">
-            <th mat-header-cell *matHeaderCellDef>User</th>
-            <td mat-cell *matCellDef="let job">
-              <span class="user-text" title="{{ job.user }}">{{ job.user }}</span>
-            </td>
-          </ng-container>
-
-          <!-- Resources Column -->
-          <ng-container matColumnDef="resources">
-            <th mat-header-cell *matHeaderCellDef>Resources</th>
-            <td mat-cell *matCellDef="let job">
-              <span class="resources-text">{{ job.resources }}</span>
-            </td>
-          </ng-container>
-
-          <!-- Priority Column -->
-          <ng-container matColumnDef="priority">
-            <th mat-header-cell *matHeaderCellDef>Priority</th>
-            <td mat-cell *matCellDef="let job">
-              <span class="priority-badge">{{ job.priority }}</span>
-            </td>
-          </ng-container>
-
-          <!-- Status Column -->
-          <ng-container matColumnDef="status">
-            <th mat-header-cell *matHeaderCellDef>Status</th>
-            <td mat-cell *matCellDef="let job">
-              <span class="status-badge" [ngClass]="job.status.toLowerCase()">
-                {{ job.status }}
-              </span>
-            </td>
-          </ng-container>
-
-          <!-- Time in Queue Column -->
-          <ng-container matColumnDef="timeInQueue">
-            <th mat-header-cell *matHeaderCellDef>Time in Queue</th>
-            <td mat-cell *matCellDef="let job">
-              <span class="time-text">{{ job.timeInQueue }}</span>
-            </td>
-          </ng-container>
-
-          <tr mat-header-row *matHeaderRowDef="displayedColumns; sticky: true"></tr>
-          <tr mat-row *matRowDef="let row; columns: displayedColumns" class="job-row"></tr>
-        </table>
-      </div>
-    }
+    </div>
   }
 </div>

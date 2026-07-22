@@ -13,14 +13,13 @@
 // limitations under the License.
 
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterModule } from '@angular/router';
 
-import { QueueJobsSidePanelData } from '../side_panel/contents/queue_jobs_side_panel/queue_jobs_side_panel';
-import { SidePanelService } from '../side_panel/side_panel_service';
+import { QueueJobsSidePanel } from 'xmanager_cloud/ui/app/side_panel/contents/queue_jobs_side_panel/queue_jobs_side_panel';
 
 /**
  * Resource Observability Dashboard (ROD) scaffolding shell component.
@@ -31,14 +30,16 @@ import { SidePanelService } from '../side_panel/side_panel_service';
   templateUrl: './resource_dashboard.ng.html',
   styleUrl: './resource_dashboard.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, RouterModule, MatCardModule, MatIconModule, MatButtonModule],
+  imports: [
+    CommonModule,
+    RouterModule,
+    MatCardModule,
+    MatIconModule,
+    MatButtonModule,
+    QueueJobsSidePanel,
+  ],
 })
-export class ResourceDashboard implements OnInit {
-  private readonly sidePanelService = inject(SidePanelService);
+export class ResourceDashboard {
   protected readonly activeTab = signal<'queues' | 'predictability'>('queues');
-
-  ngOnInit() {
-    // TODO(#186): Auto-open side panel for PR 3 UI verification screenshot.
-    this.sidePanelService.openSidePanel(new QueueJobsSidePanelData('cpu-cluster-queue'));
-  }
+  protected readonly selectedQueueName = signal<string>('gpu-cluster-queue');
 }

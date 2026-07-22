@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 import { CommonModule } from '@angular/common';
 import {
   ChangeDetectionStrategy,
@@ -18,152 +19,180 @@ import {
   computed,
   inject,
   input,
+  OnChanges,
   OnInit,
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
-import { MatButtonToggleModule } from '@angular/material/button-toggle';
-import { MatChipsModule } from '@angular/material/chips';
-import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
-import { MatInputModule } from '@angular/material/input';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTableModule } from '@angular/material/table';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterModule } from '@angular/router';
 
-import { XidBadge } from 'xmanager_cloud/ui/app/common/components/xid_badge/xid_badge';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import { QueueJobInfo } from 'xmanager_cloud/ui/app/service/resource_types';
 import {
   BaseSidePanelContent,
   BaseSidePanelData,
 } from 'xmanager_cloud/ui/app/side_panel/base_side_panel';
-import { SidePanelService } from 'xmanager_cloud/ui/app/side_panel/side_panel_service';
 
-/** Data for opening the Queue Jobs side panel. */
+/** Payload data required to open the queue jobs inspection panel. */
 export class QueueJobsSidePanelData implements BaseSidePanelData {
-  constructor(
-    public queueName: string,
-    public displayName?: string,
-  ) {}
+  constructor(readonly queueName: string) {}
 }
 
-/** Side panel component to display pending and running jobs in a queue. */
+/**
+ * Modern Angular standalone component displaying pending and running jobs for a selected queue.
+ */
 @Component({
   selector: 'xmc-queue-jobs-side-panel',
   standalone: true,
   templateUrl: './queue_jobs_side_panel.ng.html',
-  styleUrl: './queue_jobs_side_panel.css',
+  styleUrl: './queue_jobs_side_panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
     FormsModule,
     RouterModule,
-    MatButtonModule,
-    MatButtonToggleModule,
-    MatChipsModule,
-    MatFormFieldModule,
-    MatIconModule,
-    MatInputModule,
-    MatProgressSpinnerModule,
     MatTableModule,
-    XidBadge,
+    MatIconModule,
+    MatButtonModule,
+    MatTooltipModule,
   ],
 })
-export class QueueJobsSidePanel implements BaseSidePanelContent<QueueJobsSidePanelData>, OnInit {
-  readonly data = input.required<QueueJobsSidePanelData>();
-
+export class QueueJobsSidePanel
+  implements OnInit, OnChanges, BaseSidePanelContent<QueueJobsSidePanelData>
+{
   private readonly resourceService = inject(ResourceService);
-  private readonly sidePanelService = inject(SidePanelService);
 
-  readonly isLoading = signal(true);
-  readonly jobs = signal<QueueJobInfo[]>([]);
-  readonly searchQuery = signal('');
-  readonly statusFilter = signal('ALL');
+  readonly data = input<QueueJobsSidePanelData>();
+  readonly queueName = input<string>('gpu-cluster-queue');
 
-  readonly filteredJobs = computed(() => {
-    const query = this.searchQuery().toLowerCase().trim();
-    const filter = this.statusFilter();
+  readonly activeQueueName = computed(
+    () => this.data()?.queueName || this.queueName() || 'gpu-cluster-queue',
+  );
 
-    return this.jobs().filter(
-      (job) => matchesStatusFilter(job.status, filter) && matchesSearchQuery(job, query),
-    );
+  protected readonly jobs = signal<QueueJobInfo[]>([]);
+  protected readonly isLoading = signal<boolean>(false);
+  protected readonly filterQuery = signal<string>('');
+  protected readonly pageIndex = signal<number>(0);
+  protected readonly pageSize = signal<number>(10);
+  protected readonly pageSizeOptions = [5, 10, 25];
+
+  protected readonly filteredJobs = computed(() => {
+    const query = this.filterQuery().trim().toLowerCase();
+    const all = this.jobs();
+    if (!query) return all;
+    return all.filter((job) => matchesSearchQuery(job, query));
   });
 
-  readonly totalCount = computed(() => this.jobs().length);
-  readonly runningCount = computed(
-    () => this.jobs().filter((j) => matchesStatusFilter(j.status, 'RUNNING')).length,
-  );
-  readonly pendingCount = computed(
-    () => this.jobs().filter((j) => matchesStatusFilter(j.status, 'PENDING')).length,
-  );
+  protected readonly pagedJobs = computed(() => {
+    const start = this.pageIndex() * this.pageSize();
+    return this.filteredJobs().slice(start, start + this.pageSize());
+  });
+
+  protected readonly totalCount = computed(() => this.filteredJobs().length);
 
   protected displayedColumns: string[] = [
     'position',
-    'xid',
     'jobName',
-    'user',
-    'resources',
-    'priority',
     'status',
-    'timeInQueue',
+    'priority',
+    'workUnitId',
+    'user',
   ];
 
   ngOnInit() {
     this.loadJobs();
   }
 
+  ngOnChanges() {
+    this.loadJobs();
+  }
+
   loadJobs() {
+    const qName = this.activeQueueName();
+    if (!qName) return;
     this.isLoading.set(true);
-    const qName = this.data().queueName;
     this.resourceService.getQueueJobs(qName).subscribe({
       next: (resp) => {
-        this.jobs.set(resp?.jobs || []);
+        this.jobs.set(resp?.jobs ?? []);
         this.isLoading.set(false);
       },
       error: () => {
+        this.jobs.set([]);
         this.isLoading.set(false);
       },
     });
   }
 
-  close() {
-    this.sidePanelService.closeSidePanel();
+  onFilterQueryChange(query: string) {
+    this.filterQuery.set(query);
+    this.pageIndex.set(0);
   }
 
-  protected isNumericXid(xid: string): boolean {
-    return /^\d+$/.test(xid);
+  onPageSizeChange(newSize: string | number) {
+    const size = typeof newSize === 'string' ? parseInt(newSize, 10) : newSize;
+    if (!isNaN(size) && size > 0) {
+      this.pageSize.set(size);
+      this.pageIndex.set(0);
+    }
   }
-}
 
-function matchesStatusFilter(status: string | undefined, filter: string): boolean {
-  if (filter === 'ALL') {
-    return true;
+  getMaxPageIndex(): number {
+    const total = this.filteredJobs().length;
+    return Math.max(0, Math.ceil(total / this.pageSize()) - 1);
   }
-  const statusUpper = (status || '').toUpperCase();
-  if (filter === 'RUNNING') {
-    return statusUpper === 'RUNNING' || statusUpper === 'ADMITTED';
+
+  goToFirstPage() {
+    this.pageIndex.set(0);
   }
-  if (filter === 'PENDING') {
-    return statusUpper === 'PENDING' || statusUpper === 'RESERVING';
+
+  goToPreviousPage() {
+    this.pageIndex.update((idx) => Math.max(0, idx - 1));
   }
-  return false;
+
+  goToNextPage() {
+    this.pageIndex.update((idx) => Math.min(this.getMaxPageIndex(), idx + 1));
+  }
+
+  goToLastPage() {
+    this.pageIndex.set(this.getMaxPageIndex());
+  }
+
+  getPaginationRangeDisplay(): string {
+    const total = this.filteredJobs().length;
+    if (total === 0) return '0-0 of 0';
+    const start = this.pageIndex() * this.pageSize() + 1;
+    const end = Math.min(total, (this.pageIndex() + 1) * this.pageSize());
+    return `${start}-${end} of ${total}`;
+  }
+
+  getPriorityDisplay(priority?: string): string {
+    if (!priority) return 'Normal';
+    const p = priority.toLowerCase();
+    if (p.startsWith('high')) return 'High';
+    if (p.startsWith('low')) return 'Low';
+    return priority.charAt(0).toUpperCase() + priority.slice(1);
+  }
+
+  getPriorityBadgeClass(priority?: string): string {
+    const formatted = this.getPriorityDisplay(priority).toLowerCase();
+    return `priority-${formatted}`;
+  }
 }
 
 function matchesSearchQuery(job: QueueJobInfo, query: string): boolean {
-  if (!query) {
-    return true;
-  }
   const fields = [
-    job.xid,
-    job.workUnitId,
     job.jobName,
     job.user,
-    job.priority,
     job.status,
+    job.priority,
+    job.xid,
+    job.workUnitId,
     job.resources,
     job.position,
   ];
-  return fields.some((field) => field?.toLowerCase().includes(query));
+  return fields.some((field) => field?.toLowerCase()?.includes(query) ?? false);
 }

@@ -40,17 +40,17 @@ describe('ResourceService', () => {
         state.service.getClusterQueues(),
       );
       expect(response.clusterQueues.length).toBe(1);
-      expect(response.clusterQueues[0].name).toBe('cpu-cluster-queue');
+      expect(response.clusterQueues[0].name).toBe('gpu-cluster-queue');
     });
   });
 
   describe('getQueueJobs', () => {
     it('should return queue jobs dummy data', async () => {
       const response: QueueJobListResponse = await firstValueFrom(
-        state.service.getQueueJobs('cpu-queue'),
+        state.service.getQueueJobs('gpu-cluster-queue'),
       );
-      expect(response.jobs.length).toBe(1);
-      expect(response.jobs[0].jobName).toBe('xmc-operation-46648-1');
+      expect(response.jobs.length).toBe(2);
+      expect(response.jobs[0].jobName).toBe('xmc-operation-53296-1');
     });
   });
 });

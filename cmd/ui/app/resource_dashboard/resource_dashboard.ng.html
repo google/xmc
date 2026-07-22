@@ -31,13 +31,23 @@
       [class.active-tab]="activeTab() === 'predictability'"
       (click)="activeTab.set('predictability')"
     >
-      Predictability
+      Resource availability
     </button>
   </div>
 
   <div class="dashboard-shell-content">
-    <div class="dashboard-header-row">
-      <h1 class="dashboard-title">Resource Observability Dashboard</h1>
+    <div class="rod-split-container">
+      <!-- Left Column Placeholder (Queues matching requirements) -->
+      <div class="queues-side-pane">
+        <div class="queues-section-header">
+          <h2 class="section-heading">Queues matching requirements</h2>
+        </div>
+      </div>
+
+      <!-- Right Column: Jobs in the Queue Card Component -->
+      <div class="jobs-side-pane">
+        <xmc-queue-jobs-side-panel [queueName]="selectedQueueName()"></xmc-queue-jobs-side-panel>
+      </div>
     </div>
   </div>
 </div>
