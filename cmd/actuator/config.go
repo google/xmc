@@ -57,6 +57,7 @@ var (
 	verifyingKeyFile            string
 	maxRecentKeys               int
 	statusMessageHistoryEnabled bool
+	metricsEnabled              bool
 )
 
 // Redis flags.
@@ -79,6 +80,7 @@ func init() {
 	flag.StringVar(&verifyingKeyFile, "verifying_key_file", "/etc/verification-key/tls.crt", "Path to the key for verifying message signatures.")
 	flag.IntVar(&maxRecentKeys, "max_recent_keys", 2, "The maximum number of recent keys to keep for key rotation.")
 	flag.BoolVar(&statusMessageHistoryEnabled, "status_message_history_enabled", true, "Whether to enable status message history.")
+	flag.BoolVar(&metricsEnabled, "metrics_enabled", false, "Whether to enable XMC metrics in jobs.")
 	initRedisFlags()
 }
 
@@ -122,6 +124,7 @@ func Load() Config {
 			SpannerDatabaseName:         spannerDatabaseName,
 			QuotaProjectID:              quotaProjectID,
 			DefaultExecutionEnvironment: defaultExecutionEnvironment,
+			MetricsEnabled:              metricsEnabled,
 		},
 		Audience:                    aud,
 		XManagerServiceAccount:      xmanagerServiceAccount,

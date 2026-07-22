@@ -45,6 +45,9 @@ type ActuatorRuntimeConfig struct {
 	DefaultExecutionEnvironment string
 	SpannerDatabaseName         string
 	QuotaProjectID              string
+
+	// Decides whether XMC metrics are enabled.
+	MetricsEnabled bool
 }
 
 // Priorities holds experiment and work unit priorities.

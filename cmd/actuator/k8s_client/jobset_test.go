@@ -302,7 +302,8 @@ func TestConstructJobSet(t *testing.T) {
 							Annotations: jobAnnotations,
 						},
 						Spec: batchv1.JobSpec{
-							BackoffLimit: proto.Int32(1),
+							BackoffLimit:   proto.Int32(1),
+							CompletionMode: completionModePtr(batchv1.IndexedCompletion),
 							PodFailurePolicy: &batchv1.PodFailurePolicy{
 								Rules: []batchv1.PodFailurePolicyRule{
 									{
@@ -351,6 +352,7 @@ func TestConstructJobSet(t *testing.T) {
 											Env: []corev1.EnvVar{
 												{Name: "env1", Value: "val1"},
 												{Name: constants.XmcEnvVarManagedBy, Value: "true"},
+												{Name: constants.XmcEnvVarMetricsEnabled, Value: "false"},
 												{
 													Name: constants.XmcEnvVarNamespace,
 													ValueFrom: &corev1.EnvVarSource{
@@ -396,6 +398,14 @@ func TestConstructJobSet(t *testing.T) {
 													ValueFrom: &corev1.EnvVarSource{
 														FieldRef: &corev1.ObjectFieldSelector{
 															FieldPath: fmt.Sprintf("metadata.annotations['%s']", constants.AuthorAnnotation),
+														},
+													},
+												},
+												{
+													Name: constants.XmcEnvVarJobIndex,
+													ValueFrom: &corev1.EnvVarSource{
+														FieldRef: &corev1.ObjectFieldSelector{
+															FieldPath: fmt.Sprintf("metadata.labels['%s']", constants.JobSetJobIndexLabel),
 														},
 													},
 												},
@@ -498,6 +508,30 @@ func TestConstructJobSet(t *testing.T) {
 
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("constructJobSet() returned diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestConstructJobSet_MetricsEnabled(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	client.RuntimeConfig.MetricsEnabled = true
+
+	got, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	container := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers[0]
+	found := false
+	for _, env := range container.Env {
+		if env.Name == constants.XmcEnvVarMetricsEnabled {
+			found = true
+			if env.Value != "true" {
+				t.Errorf("XMC_METRICS_ENABLED env var = %q, want %q", env.Value, "true")
+			}
+		}
+	}
+	if !found {
+		t.Errorf("XMC_METRICS_ENABLED env var not found in container spec")
 	}
 }
 
@@ -733,12 +767,14 @@ func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 	var gotEnv []corev1.EnvVar
 	for _, env := range container.Env {
 		if env.Name == constants.XmcEnvVarManagedBy ||
+			env.Name == constants.XmcEnvVarMetricsEnabled ||
 			env.Name == constants.XmcEnvVarNamespace ||
 			env.Name == constants.XmcEnvVarQueueName ||
 			env.Name == constants.XmcEnvVarExperimentID ||
 			env.Name == constants.XmcEnvVarWorkUnitID ||
 			env.Name == constants.XmcEnvVarExecutionID ||
-			env.Name == constants.XmcEnvVarAuthor {
+			env.Name == constants.XmcEnvVarAuthor ||
+			env.Name == constants.XmcEnvVarJobIndex {
 			continue
 		}
 		gotEnv = append(gotEnv, env)
