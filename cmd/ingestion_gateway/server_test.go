@@ -63,11 +63,36 @@ func TestHealthAndReadinessEndpoints(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("Disallow non-GET/HEAD methods on health check", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/healthz", nil)
+		w := httptest.NewRecorder()
+
+		server.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusMethodNotAllowed {
+			t.Errorf("POST /healthz status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+		}
+	})
 }
 
 func TestPayloadSizeLimitRejection(t *testing.T) {
-	cfg := DefaultServerConfig("0")
-	server := NewHTTPServer(cfg)
+	testHandler := MaxBytesMiddleware(10*1024*1024, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			buf := make([]byte, 4096)
+			for {
+				_, err := r.Body.Read(buf)
+				if err != nil {
+					if err.Error() == "http: request body too large" {
+						http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+						return
+					}
+					break
+				}
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
 
 	tests := []struct {
 		name        string
@@ -94,10 +119,10 @@ func TestPayloadSizeLimitRejection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			body := bytes.NewBuffer(make([]byte, tt.payloadSize))
-			req := httptest.NewRequest(http.MethodPost, "/healthz", body)
+			req := httptest.NewRequest(http.MethodPost, "/", body)
 			w := httptest.NewRecorder()
 
-			server.Handler.ServeHTTP(w, req)
+			testHandler.ServeHTTP(w, req)
 
 			if w.Code != tt.wantStatus {
 				t.Errorf("ServeHTTP() status = %d, want %d", w.Code, tt.wantStatus)
@@ -121,8 +146,27 @@ func TestHTTPServerLiveSocket(t *testing.T) {
 		t.Errorf("GET /healthz status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
+	testHandler := MaxBytesMiddleware(10*1024*1024, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			buf := make([]byte, 4096)
+			for {
+				_, err := r.Body.Read(buf)
+				if err != nil {
+					if err.Error() == "http: request body too large" {
+						http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+						return
+					}
+					break
+				}
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	tsLimit := httptest.NewServer(testHandler)
+	defer tsLimit.Close()
+
 	smallBody := bytes.NewBuffer(make([]byte, 1*1024*1024))
-	respSmall, err := http.Post(ts.URL+"/healthz", "application/octet-stream", smallBody)
+	respSmall, err := http.Post(tsLimit.URL, "application/octet-stream", smallBody)
 	if err != nil {
 		t.Fatalf("http.Post small body error: %v", err)
 	}
@@ -132,7 +176,7 @@ func TestHTTPServerLiveSocket(t *testing.T) {
 	}
 
 	largeBody := bytes.NewBuffer(make([]byte, 10*1024*1024+1024))
-	respLarge, err := http.Post(ts.URL+"/healthz", "application/octet-stream", largeBody)
+	respLarge, err := http.Post(tsLimit.URL, "application/octet-stream", largeBody)
 	if err != nil {
 		t.Fatalf("http.Post large body error: %v", err)
 	}

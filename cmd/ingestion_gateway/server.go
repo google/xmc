@@ -15,8 +15,6 @@
 package main
 
 import (
-	"errors"
-	"io"
 	"net"
 	"net/http"
 	"time"
@@ -66,19 +64,11 @@ func MaxBytesMiddleware(maxBytes int64, next http.Handler) http.Handler {
 	})
 }
 
-// healthzHandler handles health check endpoints, reading request bodies with max byte validation.
+// healthzHandler handles health check endpoints, accepting GET and HEAD requests.
 func healthzHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Body != nil {
-		_, err := io.ReadAll(r.Body)
-		if err != nil {
-			var maxBytesErr *http.MaxBytesError
-			if errors.As(err, &maxBytesErr) {
-				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
-				return
-			}
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
 	}
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
