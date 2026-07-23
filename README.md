@@ -21,7 +21,7 @@ Explore the folders and guides below to set up, build, or deploy XMC:
   Detailed system design for GKE Gateway API path-based HTTP routing, GRPC traffic routing rules, Workload Identity mappings, and GCP IAM integrations.
 
 * ### [Agent Workflows](docs/agent_workflows.md)
-  Overview of pre-configured agent-assisted skills (`xmc_deploy` and `pr_comment_workflow`) for automated cloud deployment and PR feedback resolution.
+  Overview of pre-configured agent-assisted skills (`xmc_deploy` and `xmc_address_pr_comment`) for automated cloud deployment and PR feedback resolution.
 
 * ### [Contributing Guide](CONTRIBUTING.md)
   Guidelines on submitting patches, reporting issues, and repository branching policies.

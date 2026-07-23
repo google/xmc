@@ -17,13 +17,13 @@ The `xmc_deploy` skill compiles and deploys Cluster Toolkit v2 blueprints. It va
 
 ---
 
-## 2. PR Comment-Driven Development (`pr_comment_workflow`)
+## 2. PR Comment-Driven Development (`xmc_address_pr_comment`)
 
-The `pr_comment_workflow` skill automates resolving review comments on Pull Requests. The agent fetches comment context, determines affected packages and GKE deployments, runs unit tests and coverage checks, commits code, replies to the comment, pushes container images, and restarts GKE deployments.
+The `xmc_address_pr_comment` skill automates resolving review comments on Pull Requests. The agent fetches comment context, determines affected packages and GKE deployments, runs unit tests and coverage checks, commits code, replies to the comment, pushes container images, and restarts GKE deployments.
 
 * **How to trigger**: Ask the agent to resolve a specific GitHub discussion/review link, for example:
   > Address the PR review comment: `https://github.com/google/xmc/pull/15#discussion_r124892`
-* **Workflow Details**: See [address_pr_comment/SKILL.md](../.agents/skills/address_pr_comment/SKILL.md).
+* **Workflow Details**: See [xmc_address_pr_comment/SKILL.md](../.agents/skills/xmc_address_pr_comment/SKILL.md).
 
 ---
 
