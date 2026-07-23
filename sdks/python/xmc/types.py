@@ -39,6 +39,7 @@ def validate_metric(metric: metrics_pb2.Metric) -> None:
     Raises:
         ValueError: If metric_name, metric_value, or step is invalid.
     """
+    global _validated_metric_names
     metric_name = metric.metric_name
     if metric_name not in _validated_metric_names:
         if not _METRIC_NAME_REGEX.match(metric_name):
@@ -49,8 +50,9 @@ def validate_metric(metric: metrics_pb2.Metric) -> None:
         with _lock:
             if metric_name not in _validated_metric_names:
                 if len(_validated_metric_names) >= _MAX_CACHED_METRIC_NAMES:
-                    _validated_metric_names.clear()
-                _validated_metric_names.add(metric_name)
+                    _validated_metric_names = {metric_name}
+                else:
+                    _validated_metric_names.add(metric_name)
 
     if not math.isfinite(metric.metric_value):
         raise ValueError(f"Invalid metric_value {metric.metric_value!r}: must be a finite number")

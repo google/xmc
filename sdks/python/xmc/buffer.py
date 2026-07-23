@@ -29,6 +29,8 @@ MetricTuple = tuple[str, float, int, float]
 
 def _coerce_float(val: Any) -> float:
     """Coerces input value to primitive float, detaching computation graphs."""
+    if type(val) is float:
+        return val
     if hasattr(val, "item"):
         val = val.item()
     return float(val)
@@ -36,6 +38,8 @@ def _coerce_float(val: Any) -> float:
 
 def _coerce_int(val: Any) -> int:
     """Coerces input value to primitive int, detaching computation graphs."""
+    if type(val) is int:
+        return val
     if hasattr(val, "item"):
         val = val.item()
     return int(val)
@@ -55,11 +59,18 @@ class BoundedMetricsBuffer:
         self._capacity = capacity
         self._lock = threading.Lock()
         self._buffer: deque[MetricTuple] = deque(maxlen=capacity)
+        self._dropped_metrics: int = 0
 
     @property
     def capacity(self) -> int:
         """Returns the maximum capacity of the buffer."""
         return self._capacity
+
+    @property
+    def dropped_count(self) -> int:
+        """Returns total number of metrics dropped due to buffer overflow."""
+        with self._lock:
+            return self._dropped_metrics
 
     def __len__(self) -> int:
         """Returns the current number of metrics in the buffer."""
@@ -94,6 +105,8 @@ class BoundedMetricsBuffer:
         item: MetricTuple = (c_name, c_value, c_step, c_timestamp)
 
         with self._lock:
+            if len(self._buffer) == self._capacity:
+                self._dropped_metrics += 1
             self._buffer.append(item)
 
     def put_many(
@@ -128,6 +141,9 @@ class BoundedMetricsBuffer:
             return
 
         with self._lock:
+            overflow = (len(self._buffer) + len(coerced_items)) - self._capacity
+            if overflow > 0:
+                self._dropped_metrics += overflow
             self._buffer.extend(coerced_items)
 
     def get_all(self) -> list[MetricTuple]:
@@ -148,6 +164,10 @@ class BoundedMetricsBuffer:
             return []
         with self._lock:
             count = min(max_count, len(self._buffer))
+            if count >= len(self._buffer):
+                items = list(self._buffer)
+                self._buffer.clear()
+                return items
             return [self._buffer.popleft() for _ in range(count)]
 
     def clear(self) -> None:

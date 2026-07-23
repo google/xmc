@@ -106,6 +106,23 @@ class TestBoundedMetricsBuffer(unittest.TestCase):
         self.assertEqual(len(remaining), 2)
         self.assertTrue(buf.is_empty())
 
+    def test_dropped_count(self) -> None:
+        buf = BoundedMetricsBuffer(capacity=5)
+        self.assertEqual(buf.dropped_count, 0)
+
+        # Fill buffer
+        for i in range(5):
+            buf.put(f"m_{i}", float(i), i)
+        self.assertEqual(buf.dropped_count, 0)
+
+        # Put 1 item beyond capacity
+        buf.put("m_overflow", 1.0, 5)
+        self.assertEqual(buf.dropped_count, 1)
+
+        # Put many (3 items) beyond capacity (buffer currently has 5 items)
+        buf.put_many([("m_a", 1.0, 6), ("m_b", 2.0, 7), ("m_c", 3.0, 8)])
+        self.assertEqual(buf.dropped_count, 4)
+
     def test_fifo_eviction(self) -> None:
         """Verifies strict FIFO eviction policy when capacity is exceeded."""
         capacity = 5

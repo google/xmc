@@ -156,32 +156,41 @@ class HTTPClient:
         encoded_body = body.encode("utf-8") if isinstance(body, str) else body
 
         with self._lock:
+            conn = self._ensure_connection()
+
+        try:
             try:
-                conn = self._ensure_connection()
-                try:
-                    conn.request(method.upper(), full_path, body=encoded_body, headers=req_headers)
-                    response = conn.getresponse()
-                except TimeoutError:
-                    raise
-                except (http.client.HTTPException, OSError):
-                    # Connection error (e.g. stale keep-alive connection closed by server).
-                    # Close stale connection and retry once.
-                    self._close_conn()
-                    conn = self._ensure_connection()
-                    conn.request(method.upper(), full_path, body=encoded_body, headers=req_headers)
-                    response = conn.getresponse()
-
-                response.read()
-                self._request_count += 1
-                return self._status_to_send_result(response.status)
-
+                conn.request(method.upper(), full_path, body=encoded_body, headers=req_headers)
+                response = conn.getresponse()
             except TimeoutError:
-                self._close_conn()
-                return SendResult.TRANSIENT_FAILURE
+                raise
+            except (http.client.HTTPException, OSError):
+                # Connection error (e.g. stale keep-alive connection closed by server).
+                # Close stale connection under lock and retry once.
+                with self._lock:
+                    if self._conn is conn:
+                        self._close_conn()
+                    conn = self._ensure_connection()
 
-            except Exception:
-                self._close_conn()
-                return SendResult.TRANSIENT_FAILURE
+                conn.request(method.upper(), full_path, body=encoded_body, headers=req_headers)
+                response = conn.getresponse()
+
+            response.read()
+            with self._lock:
+                self._request_count += 1
+            return self._status_to_send_result(response.status)
+
+        except TimeoutError:
+            with self._lock:
+                if self._conn is conn:
+                    self._close_conn()
+            return SendResult.TRANSIENT_FAILURE
+
+        except Exception:
+            with self._lock:
+                if self._conn is conn:
+                    self._close_conn()
+            return SendResult.TRANSIENT_FAILURE
 
     def _status_to_send_result(self, status: int) -> SendResult:
         """Maps HTTP status code to SendResult enum."""
