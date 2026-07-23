@@ -61,142 +61,147 @@ describe('SmartResourceFinderComponent', () => {
     return {};
   }, beforeEach);
 
-  it('should initialize with default amount and single empty resource type filter', async () => {
-    const host = bootstrap(TestHostComponent);
-    await flush();
+  describe('findMatchingQueues Output Signal Emission', () => {
+    it('should emit findMatchingQueues output event with default values when find button is clicked', async () => {
+      const host = bootstrap(TestHostComponent);
+      await flush();
 
-    const amountInput = document.querySelector(AMOUNT_INPUT_SELECTOR) as HTMLInputElement;
-    expect(amountInput.value).toBe('64');
+      expect(host.lastQuery()).toBeNull();
 
-    const selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
-    expect(selectElements.length).toBe(1);
+      const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
+      button.click();
+      await flush();
 
-    const removeButtons = document.querySelectorAll(REMOVE_RESOURCE_BTN_SELECTOR);
-    expect(removeButtons.length).toBe(0);
+      expect(host.lastQuery()).toEqual({ amount: 64, resourceTypes: [] });
+    });
+
+    it('should emit findMatchingQueues output event with selected resource types and custom amount', async () => {
+      const host = bootstrap(TestHostComponent);
+      await flush();
+
+      const amountInput = document.querySelector(AMOUNT_INPUT_SELECTOR) as HTMLInputElement;
+      amountInput.value = '128';
+      amountInput.dispatchEvent(new Event('input'));
+      amountInput.dispatchEvent(new Event('change'));
+      await flush();
+
+      const addButton = document.querySelector(ADD_RESOURCE_BTN_SELECTOR) as HTMLButtonElement;
+      addButton.click();
+      await flush();
+
+      const selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
+      (selectElements[0] as HTMLSelectElement).value = 'nvidia.com/gpu';
+      selectElements[0].dispatchEvent(new Event('change'));
+
+      (selectElements[1] as HTMLSelectElement).value = 'cpu';
+      selectElements[1].dispatchEvent(new Event('change'));
+      await flush();
+
+      const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
+      button.click();
+      await flush();
+
+      expect(host.lastQuery()).toEqual({
+        amount: 128,
+        resourceTypes: ['nvidia.com/gpu', 'cpu'],
+      });
+    });
+
+    it('should suppress findMatchingQueues emission when amount is zero or negative', async () => {
+      const host = bootstrap(TestHostComponent);
+      await flush();
+
+      const amountInput = document.querySelector(AMOUNT_INPUT_SELECTOR) as HTMLInputElement;
+      amountInput.value = '0';
+      amountInput.dispatchEvent(new Event('input'));
+      amountInput.dispatchEvent(new Event('change'));
+      await flush();
+
+      const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
+      button.click();
+      await flush();
+
+      expect(host.lastQuery()).toBeNull();
+    });
   });
 
-  it('should emit search query with default values when find button is clicked', async () => {
-    const host = bootstrap(TestHostComponent);
-    await flush();
+  describe('DOM Template interactions', () => {
+    it('should initialize with default amount and single empty resource type filter', async () => {
+      const host = bootstrap(TestHostComponent);
+      await flush();
 
-    const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
-    button.click();
-    await flush();
+      const amountInput = document.querySelector(AMOUNT_INPUT_SELECTOR) as HTMLInputElement;
+      expect(amountInput.value).toBe('64');
 
-    expect(host.lastQuery()).toEqual({ amount: 64, resourceTypes: [] });
-  });
+      const selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
+      expect(selectElements.length).toBe(1);
 
-  it('should add a new resource type dropdown when + Add resource type is clicked', async () => {
-    const host = bootstrap(TestHostComponent);
-    await flush();
+      const removeButtons = document.querySelectorAll(REMOVE_RESOURCE_BTN_SELECTOR);
+      expect(removeButtons.length).toBe(0);
+    });
 
-    const addButton = document.querySelector(ADD_RESOURCE_BTN_SELECTOR) as HTMLButtonElement;
-    addButton.click();
-    await flush();
+    it('should add a new resource type dropdown when + Add resource type is clicked', async () => {
+      const host = bootstrap(TestHostComponent);
+      await flush();
 
-    let selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
-    expect(selectElements.length).toBe(2);
+      const addButton = document.querySelector(ADD_RESOURCE_BTN_SELECTOR) as HTMLButtonElement;
+      addButton.click();
+      await flush();
 
-    const removeButtons = document.querySelectorAll(REMOVE_RESOURCE_BTN_SELECTOR);
-    expect(removeButtons.length).toBe(2);
+      let selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
+      expect(selectElements.length).toBe(2);
 
-    addButton.click();
-    await flush();
+      const removeButtons = document.querySelectorAll(REMOVE_RESOURCE_BTN_SELECTOR);
+      expect(removeButtons.length).toBe(2);
 
-    selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
-    expect(selectElements.length).toBe(3);
-  });
+      addButton.click();
+      await flush();
 
-  it('should remove a resource type dropdown when remove button is clicked', async () => {
-    const host = bootstrap(TestHostComponent);
-    await flush();
+      selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
+      expect(selectElements.length).toBe(3);
+    });
 
-    const addButton = document.querySelector(ADD_RESOURCE_BTN_SELECTOR) as HTMLButtonElement;
-    addButton.click();
-    await flush();
+    it('should remove a resource type dropdown when remove button is clicked', async () => {
+      const host = bootstrap(TestHostComponent);
+      await flush();
 
-    let selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
-    expect(selectElements.length).toBe(2);
+      const addButton = document.querySelector(ADD_RESOURCE_BTN_SELECTOR) as HTMLButtonElement;
+      addButton.click();
+      await flush();
 
-    const removeButtons = document.querySelectorAll(REMOVE_RESOURCE_BTN_SELECTOR);
-    (removeButtons[0] as HTMLButtonElement).click();
-    await flush();
+      let selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
+      expect(selectElements.length).toBe(2);
 
-    selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
-    expect(selectElements.length).toBe(1);
-    expect(document.querySelectorAll(REMOVE_RESOURCE_BTN_SELECTOR).length).toBe(0);
-  });
+      const removeButtons = document.querySelectorAll(REMOVE_RESOURCE_BTN_SELECTOR);
+      (removeButtons[0] as HTMLButtonElement).click();
+      await flush();
 
-  it('should update resource type filter selection and emit in query', async () => {
-    const host = bootstrap(TestHostComponent);
-    await flush();
+      selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
+      expect(selectElements.length).toBe(1);
+      expect(document.querySelectorAll(REMOVE_RESOURCE_BTN_SELECTOR).length).toBe(0);
+    });
 
-    const selectElement = document.querySelector(SELECT_BOX_SELECTOR) as HTMLSelectElement;
-    selectElement.value = 'nvidia.com/gpu';
-    selectElement.dispatchEvent(new Event('change'));
-    await flush();
+    it('should deduplicate resource types when multiple dropdowns select the same type', async () => {
+      const host = bootstrap(TestHostComponent);
+      await flush();
 
-    const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
-    button.click();
-    await flush();
+      const addButton = document.querySelector(ADD_RESOURCE_BTN_SELECTOR) as HTMLButtonElement;
+      addButton.click();
+      await flush();
 
-    expect(host.lastQuery()).toEqual({ amount: 64, resourceTypes: ['nvidia.com/gpu'] });
-  });
+      const selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
+      (selectElements[0] as HTMLSelectElement).value = 'nvidia.com/gpu';
+      selectElements[0].dispatchEvent(new Event('change'));
 
-  it('should update amount input and handle input changes', async () => {
-    const host = bootstrap(TestHostComponent);
-    await flush();
+      (selectElements[1] as HTMLSelectElement).value = 'nvidia.com/gpu';
+      selectElements[1].dispatchEvent(new Event('change'));
+      await flush();
 
-    const amountInput = document.querySelector(AMOUNT_INPUT_SELECTOR) as HTMLInputElement;
-    amountInput.value = '128';
-    amountInput.dispatchEvent(new Event('input'));
-    amountInput.dispatchEvent(new Event('change'));
-    await flush();
+      const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
+      button.click();
+      await flush();
 
-    const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
-    button.click();
-    await flush();
-
-    expect(host.lastQuery()).toEqual({ amount: 128, resourceTypes: [] });
-  });
-
-  it('should not emit query when amount is zero or negative', async () => {
-    const host = bootstrap(TestHostComponent);
-    await flush();
-
-    const amountInput = document.querySelector(AMOUNT_INPUT_SELECTOR) as HTMLInputElement;
-    amountInput.value = '0';
-    amountInput.dispatchEvent(new Event('input'));
-    amountInput.dispatchEvent(new Event('change'));
-    await flush();
-
-    const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
-    button.click();
-    await flush();
-
-    expect(host.lastQuery()).toBeNull();
-  });
-
-  it('should deduplicate resource types when multiple dropdowns select the same type', async () => {
-    const host = bootstrap(TestHostComponent);
-    await flush();
-
-    const addButton = document.querySelector(ADD_RESOURCE_BTN_SELECTOR) as HTMLButtonElement;
-    addButton.click();
-    await flush();
-
-    const selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
-    (selectElements[0] as HTMLSelectElement).value = 'nvidia.com/gpu';
-    selectElements[0].dispatchEvent(new Event('change'));
-
-    (selectElements[1] as HTMLSelectElement).value = 'nvidia.com/gpu';
-    selectElements[1].dispatchEvent(new Event('change'));
-    await flush();
-
-    const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
-    button.click();
-    await flush();
-
-    expect(host.lastQuery()).toEqual({ amount: 64, resourceTypes: ['nvidia.com/gpu'] });
+      expect(host.lastQuery()).toEqual({ amount: 64, resourceTypes: ['nvidia.com/gpu'] });
+    });
   });
 });
