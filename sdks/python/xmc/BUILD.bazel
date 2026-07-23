@@ -49,6 +49,12 @@ py_test(
 )
 
 py_test(
+    name = "resilience_test",
+    srcs = ["resilience_test.py"],
+    deps = [":xmc"],
+)
+
+py_test(
     name = "types_test",
     srcs = ["types_test.py"],
     deps = [":xmc"],
