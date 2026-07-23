@@ -25,7 +25,7 @@ check_bazel() {
 
   echo "--> Running Bazel Formatter & Linter (Buildifier)..."
   local bazel_files=()
-  while IFS= read -r -d '' file; do
+  while IFS= read -r -d "" file; do
     bazel_files+=("$file")
   done < <(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \) -not -path "*/node_modules/*" -print0 2>/dev/null)
 
@@ -45,7 +45,7 @@ check_go() {
   if command -v gofmt >/dev/null 2>&1; then
     echo "--> Running Go Formatter (gofmt)..."
     local unformatted_go
-    unformatted_go=$(gofmt -s -l . 2>/dev/null | grep -v 'vendor/' || true)
+    unformatted_go=$(gofmt -s -l . 2>/dev/null | grep -v "vendor/" || true)
     if [ -n "$unformatted_go" ]; then
       echo "❌ Unformatted Go files found:"
       echo "$unformatted_go"
@@ -64,13 +64,13 @@ check_go() {
 check_ui() {
   local ui_files=()
   if [ "$MODE" = "check" ]; then
-    while IFS= read -r -d '' file; do
+    while IFS= read -r -d "" file; do
       ui_files+=("$file")
     done < <(find cmd/ui -type f \( -name "*.ts" -o -name "*.html" -o -name "*.scss" \) -not -path "*/node_modules/*" -not -path "*/.angular/*" -print0 2>/dev/null)
   else
     while IFS= read -r file; do
       ui_files+=("$file")
-    done < <(git diff --cached --name-only --diff-filter=ACM | grep -E '^cmd/ui/.*\.(ts|html|scss)$' || true)
+    done < <(git diff --cached --name-only --diff-filter=ACM | grep -E "^cmd/ui/.*\.(ts|html|scss)$" || true)
   fi
 
   if [ ${#ui_files[@]} -eq 0 ]; then
@@ -161,13 +161,13 @@ check_license() {
 check_python() {
   local py_files=()
   if [ "$MODE" = "check" ]; then
-    while IFS= read -r -d '' file; do
+    while IFS= read -r -d "" file; do
       py_files+=("$file")
     done < <(find . -type f -name "*.py" -not -path "*/node_modules/*" -not -path "*/.git/*" -print0 2>/dev/null)
   else
     while IFS= read -r file; do
       py_files+=("$file")
-    done < <(git diff --cached --name-only --diff-filter=ACM | grep -E '\.py$' || true)
+    done < <(git diff --cached --name-only --diff-filter=ACM | grep -E "\.py$" || true)
   fi
 
   if [ ${#py_files[@]} -eq 0 ]; then
@@ -214,7 +214,7 @@ check_python() {
 check_terraform() {
   local tf_files=()
   if [ "$MODE" = "check" ]; then
-    while IFS= read -r -d '' file; do
+    while IFS= read -r -d "" file; do
       tf_files+=("$file")
     done < <(find deploy -type f -name "*.tf" -print0 2>/dev/null)
   else
@@ -285,7 +285,6 @@ check_terraform() {
   fi
 }
 
-
 check_shell() {
   local shellcheck_bin=""
   if command -v shellcheck >/dev/null 2>&1; then
@@ -302,13 +301,13 @@ check_shell() {
 
   local shell_files=()
   if [ "$MODE" = "check" ]; then
-    while IFS= read -r -d '' file; do
+    while IFS= read -r -d "" file; do
       shell_files+=("$file")
     done < <(find . -type f \( -name "*.sh" -o -path "./.githooks/*" \) -not -path "*/node_modules/*" -not -path "*/.git/*" -print0 2>/dev/null)
   else
     while IFS= read -r file; do
       shell_files+=("$file")
-    done < <(git diff --cached --name-only --diff-filter=ACM | grep -E '(\.sh$|^\.githooks/)' || true)
+    done < <(git diff --cached --name-only --diff-filter=ACM | grep -E "(\.sh$|^\.githooks/)" || true)
   fi
 
   if [ ${#shell_files[@]} -eq 0 ]; then
@@ -322,6 +321,47 @@ check_shell() {
   fi
 }
 
+check_gitleaks() {
+  local gitleaks_bin=""
+  if command -v gitleaks >/dev/null 2>&1; then
+    gitleaks_bin="gitleaks"
+  elif [ -f "$HOME/go/bin/gitleaks" ]; then
+    gitleaks_bin="$HOME/go/bin/gitleaks"
+  elif [ -f "$HOME/.local/bin/gitleaks" ]; then
+    gitleaks_bin="$HOME/.local/bin/gitleaks"
+  fi
+
+  if [ -n "$gitleaks_bin" ]; then
+    echo "--> Running Secret Scanner (Gitleaks)..."
+    if [ "$MODE" = "check" ]; then
+      if ! $gitleaks_bin detect --source=. --no-git; then
+        echo "❌ Gitleaks secret scan failed."
+        FAILED=1
+      fi
+    else
+      if ! $gitleaks_bin protect --staged; then
+        echo "❌ Gitleaks secret scan failed."
+        FAILED=1
+      fi
+    fi
+  elif command -v docker >/dev/null 2>&1; then
+    echo "--> Running Gitleaks via Docker container..."
+    if [ "$MODE" = "check" ]; then
+      if ! docker run --rm -v "$(pwd):/path" -w /path zricethezav/gitleaks:latest detect --source="/path" --no-git; then
+        echo "❌ Gitleaks secret scan failed."
+        FAILED=1
+      fi
+    else
+      if ! docker run --rm -v "$(pwd):/path" -w /path zricethezav/gitleaks:latest protect --staged; then
+        echo "❌ Gitleaks secret scan failed."
+        FAILED=1
+      fi
+    fi
+  else
+    echo "--> WARNING: gitleaks or docker not found. Gitleaks check skipped."
+    if [ "$MODE" = "check" ]; then FAILED=1; fi
+  fi
+}
 
 check_semgrep() {
   local semgrep_bin=""
@@ -359,6 +399,7 @@ main() {
   check_python
   check_terraform
   check_shell
+  check_gitleaks
   check_semgrep
 
   if [ "$MODE" = "fix" ]; then

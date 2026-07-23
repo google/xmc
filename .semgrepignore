@@ -23,6 +23,8 @@ dist/
 **/dist/**
 vendor/
 **/vendor/**
+tools/venv/
+**/venv/**
 _worker_notes/
 
 # Test files (mock connections, test cookies, test JWTs)
