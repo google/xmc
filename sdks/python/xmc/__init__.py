@@ -22,6 +22,7 @@ from xmc.dist_harvest import (
 )
 from xmc.flusher import MetricsFlusher
 from xmc.network import HTTPClient, SendResult
+from xmc.resilience import ResilienceState, ResilienceStateMachine
 from xmc.types import Metric, validate_metric
 
 __version__ = "0.1.0"
@@ -34,6 +35,8 @@ __all__ = [
     "HTTPClient",
     "MetricsFlusher",
     "Metric",
+    "ResilienceState",
+    "ResilienceStateMachine",
     "SendResult",
     "XMCError",
     "XMCNetworkError",

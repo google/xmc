@@ -79,6 +79,7 @@ func NewHTTPServer(cfg ServerConfig) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthzHandler)
 	mux.HandleFunc("/readyz", healthzHandler)
+	mux.HandleFunc("/api/v1/metrics", MetricsIngestionHandler)
 
 	handler := MaxBytesMiddleware(cfg.MaxBodyBytes, mux)
 
