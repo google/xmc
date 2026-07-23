@@ -406,9 +406,9 @@ func TestCORSMiddleware(t *testing.T) {
 		wantOrigin string
 	}{
 		{
-			name:       "Empty origin defaults to FrontendURL",
+			name:       "Empty origin returns no CORS headers",
 			origin:     "",
-			wantOrigin: "http://frontend.com",
+			wantOrigin: "",
 		},
 		{
 			name:       "FrontendURL matches",
@@ -426,9 +426,9 @@ func TestCORSMiddleware(t *testing.T) {
 			wantOrigin: "http://allowed2.com",
 		},
 		{
-			name:       "Disallowed origin defaults to FrontendURL",
+			name:       "Disallowed origin returns no CORS headers",
 			origin:     "http://disallowed.com",
-			wantOrigin: "http://frontend.com",
+			wantOrigin: "",
 		},
 	}
 
@@ -452,8 +452,12 @@ func TestCORSMiddleware(t *testing.T) {
 			}
 
 			gotCreds := w.Header().Get("Access-Control-Allow-Credentials")
-			if gotCreds != "true" {
-				t.Errorf("Access-Control-Allow-Credentials = %q, want 'true'", gotCreds)
+			wantCreds := ""
+			if tt.wantOrigin != "" {
+				wantCreds = "true"
+			}
+			if gotCreds != wantCreds {
+				t.Errorf("Access-Control-Allow-Credentials = %q, want %q", gotCreds, wantCreds)
 			}
 		})
 	}

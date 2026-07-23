@@ -16,12 +16,15 @@ package oauth2
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/rs/cors"
 )
 
 type contextKey string
@@ -178,28 +181,23 @@ func (a *Authenticator) authenticateOIDC(w http.ResponseWriter, r *http.Request,
 	return true
 }
 
-// CORSMiddleware configures cross-origin access.
+// CORSMiddleware configures cross-origin access using rs/cors package.
 func (a *Authenticator) CORSMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		allowedOrigin := a.Config.FrontendURL
-		if origin != "" {
-			if origin == a.Config.FrontendURL || slices.Contains(a.Config.AllowedOrigins, origin) {
-				allowedOrigin = origin
-			}
-		}
-		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	origins := make([]string, len(a.Config.AllowedOrigins))
+	copy(origins, a.Config.AllowedOrigins)
+	if a.Config.FrontendURL != "" && !slices.Contains(origins, a.Config.FrontendURL) {
+		origins = append(origins, a.Config.FrontendURL)
+	}
 
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		next.ServeHTTP(w, r)
+	c := cors.New(cors.Options{
+		AllowedOrigins:   origins,
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"*"},
+		ExposedHeaders:   []string{"grpc-metadata-content-type", "grpc-status", "grpc-message"},
+		AllowCredentials: true,
+		MaxAge:           300,
 	})
+	return c.Handler(next)
 }
 
 // SecurityHeadersMiddleware applies secure response headers.
@@ -217,4 +215,26 @@ func (a *Authenticator) SecurityHeadersMiddleware(next http.Handler) http.Handle
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// CrossOriginProtection sets up the standard CrossOriginProtection filter.
+func (a *Authenticator) CrossOriginProtection(next http.Handler) http.Handler {
+	cop := http.NewCrossOriginProtection()
+	for _, origin := range a.Config.AllowedOrigins {
+		if err := cop.AddTrustedOrigin(origin); err != nil {
+			log.Printf("[Middleware COP] Failed to add allowed origin %q: %v", origin, err)
+		}
+	}
+	if a.Config.FrontendURL != "" {
+		u, err := url.Parse(a.Config.FrontendURL)
+		if err == nil {
+			frontendOrigin := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
+			if err := cop.AddTrustedOrigin(frontendOrigin); err != nil {
+				log.Printf("[Middleware COP] Failed to add frontend origin %q: %v", frontendOrigin, err)
+			}
+		} else {
+			log.Printf("[Middleware COP] Failed to parse frontend URL %q: %v", a.Config.FrontendURL, err)
+		}
+	}
+	return cop.Handler(next)
 }

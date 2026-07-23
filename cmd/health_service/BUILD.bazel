@@ -27,6 +27,7 @@ compat_go_library(
     deps = [
         "//internal/compat/google",
         "//internal/logging",
+        "//pkg/auth/oauth2",
     ],
 )
 
