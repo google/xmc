@@ -106,7 +106,10 @@ def _log_failed_record(status_code: int, error_type: str, record: Any) -> bool:
     return True
 
 
-def _log_failed_records_diagnostic(status_code: int, response_body: str | None) -> bool:
+def _log_failed_records_diagnostic(
+    status_code: int,
+    response_body: str | dict[str, Any] | None,
+) -> bool:
     """Parses response body and logs failed records if present. Returns True if logged."""
     if not response_body:
         return False
@@ -132,7 +135,7 @@ def _log_failed_records_diagnostic(status_code: int, response_body: str | None) 
 
 def parse_and_log_terminal_diagnostic(
     status_code: int,
-    response_body: str | None,
+    response_body: str | dict[str, Any] | None,
     exc: Exception | None = None,
 ) -> None:
     """Parses gateway's structured JSON diagnostic body and logs CRITICAL error details."""
@@ -182,6 +185,9 @@ def classify_outcome(
         return "transient", None, None
 
     exc = result_or_exc
+    if isinstance(exc, (TypeError, KeyError, AttributeError, ValueError)):
+        return "terminal", None, str(exc)
+
     status_code = getattr(
         exc,
         "status_code",
@@ -189,12 +195,11 @@ def classify_outcome(
     )
     response_body = _extract_response_body(exc)
 
-    if status_code in (400, 422):
-        return "terminal", status_code, response_body
-    if status_code is not None and (status_code == 429 or 500 <= status_code <= 599):
-        return "transient", status_code, response_body
-    if status_code is not None and 400 <= status_code < 500:
-        return "terminal", status_code, response_body
+    if status_code is not None:
+        if status_code == 429 or 500 <= status_code <= 599:
+            return "transient", status_code, response_body
+        if 400 <= status_code < 500:
+            return "terminal", status_code, response_body
 
     if isinstance(
         exc,

@@ -103,6 +103,13 @@ class TestResilienceStateMachine(unittest.TestCase):
         self.assertEqual(code, 400)
         self.assertIsInstance(body, str)
 
+    def test_programming_error_classification(self) -> None:
+        err = TypeError("unsupported operand type")
+        cls, code, body = classify_outcome(err)
+        self.assertEqual(cls, "terminal")
+        self.assertIsNone(code)
+        self.assertEqual(body, "unsupported operand type")
+
 
 class TestMetricsFlusherResilience(unittest.TestCase):
     """Tests flusher integration with resilience state machine, backoff, interruptible sleep, and 400/422 parsing."""
