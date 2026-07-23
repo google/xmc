@@ -86,17 +86,46 @@ describe('SmartResourceFinderComponent', () => {
     expect(await harness.getResourceTypeSelectCount()).toBe(3);
   });
 
-  it('should remove a resource type dropdown when remove button is clicked', async () => {
-    await harness.clickAddButton();
+  it('should remove a specific resource type dropdown by index', async () => {
+    await harness.clickAddButton(); // index 1
+    await harness.clickAddButton(); // index 2
+    fixture.detectChanges();
+
+    await harness.selectResourceType(0, 'nvidia.com/gpu');
+    await harness.selectResourceType(1, 'cpu');
+    await harness.selectResourceType(2, 'tpu');
+    fixture.detectChanges();
+
+    // Remove middle filter ('cpu' at index 1)
+    await harness.clickRemoveButton(1);
     fixture.detectChanges();
 
     expect(await harness.getResourceTypeSelectCount()).toBe(2);
 
-    await harness.clickRemoveButton(0);
+    await harness.clickFindButton();
     fixture.detectChanges();
 
-    expect(await harness.getResourceTypeSelectCount()).toBe(1);
-    expect(await harness.getRemoveButtonCount()).toBe(0);
+    expect(hostInstance.lastQuery()).toEqual({
+      amount: 64,
+      resourceTypes: ['nvidia.com/gpu', 'tpu'],
+    });
+  });
+
+  it('should filter out empty unselected dropdowns when emitting query', async () => {
+    await harness.clickAddButton(); // index 1
+    fixture.detectChanges();
+
+    // Leave index 0 empty (''), select 'cpu' for index 1
+    await harness.selectResourceType(1, 'cpu');
+    fixture.detectChanges();
+
+    await harness.clickFindButton();
+    fixture.detectChanges();
+
+    expect(hostInstance.lastQuery()).toEqual({
+      amount: 64,
+      resourceTypes: ['cpu'],
+    });
   });
 
   it('should update resource type filter selection and emit in query output', async () => {
