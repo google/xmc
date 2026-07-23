@@ -14,23 +14,13 @@
 
 import 'jasmine';
 
+import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { Component, signal } from '@angular/core';
-
-import {
-  bootstrap,
-  cleanState,
-  flush,
-  setupModule,
-  setupObservableMatchers,
-} from 'xmanager_cloud/ui/app/testing/test';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
 import { ResourceRequirementQuery, SmartResourceFinderComponent } from './smart_resource_finder';
-
-const AMOUNT_INPUT_SELECTOR = '#amount-input';
-const SELECT_BOX_SELECTOR = '.query-select-box';
-const REMOVE_RESOURCE_BTN_SELECTOR = '.remove-resource-btn';
-const ADD_RESOURCE_BTN_SELECTOR = '.add-resource-btn';
-const FIND_QUEUES_ACTION_SELECTOR = '.find-queues-action';
+import { SmartResourceFinderHarness } from './smart_resource_finder_harness';
 
 @Component({
   standalone: true,
@@ -52,156 +42,104 @@ class TestHostComponent {
 }
 
 describe('SmartResourceFinderComponent', () => {
-  beforeAll(setupObservableMatchers);
+  let fixture: ComponentFixture<TestHostComponent>;
+  let hostInstance: TestHostComponent;
+  let harness: SmartResourceFinderHarness;
 
-  cleanState(() => {
-    setupModule({
-      imports: [TestHostComponent],
-    });
-    return {};
-  }, beforeEach);
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [TestHostComponent, NoopAnimationsModule],
+    }).compileComponents();
 
-  describe('findMatchingQueues Output Signal Emission', () => {
-    it('should emit findMatchingQueues output event with default values when find button is clicked', async () => {
-      const host = bootstrap(TestHostComponent);
-      await flush();
-
-      expect(host.lastQuery()).toBeNull();
-
-      const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
-      button.click();
-      await flush();
-
-      expect(host.lastQuery()).toEqual({ amount: 64, resourceTypes: [] });
-    });
-
-    it('should emit findMatchingQueues output event with selected resource types and custom amount', async () => {
-      const host = bootstrap(TestHostComponent);
-      await flush();
-
-      const amountInput = document.querySelector(AMOUNT_INPUT_SELECTOR) as HTMLInputElement;
-      amountInput.value = '128';
-      amountInput.dispatchEvent(new Event('input'));
-      amountInput.dispatchEvent(new Event('change'));
-      await flush();
-
-      const addButton = document.querySelector(ADD_RESOURCE_BTN_SELECTOR) as HTMLButtonElement;
-      addButton.click();
-      await flush();
-
-      const selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
-      (selectElements[0] as HTMLSelectElement).value = 'nvidia.com/gpu';
-      selectElements[0].dispatchEvent(new Event('change'));
-
-      (selectElements[1] as HTMLSelectElement).value = 'cpu';
-      selectElements[1].dispatchEvent(new Event('change'));
-      await flush();
-
-      const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
-      button.click();
-      await flush();
-
-      expect(host.lastQuery()).toEqual({
-        amount: 128,
-        resourceTypes: ['nvidia.com/gpu', 'cpu'],
-      });
-    });
-
-    it('should suppress findMatchingQueues emission when amount is zero or negative', async () => {
-      const host = bootstrap(TestHostComponent);
-      await flush();
-
-      const amountInput = document.querySelector(AMOUNT_INPUT_SELECTOR) as HTMLInputElement;
-      amountInput.value = '0';
-      amountInput.dispatchEvent(new Event('input'));
-      amountInput.dispatchEvent(new Event('change'));
-      await flush();
-
-      const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
-      button.click();
-      await flush();
-
-      expect(host.lastQuery()).toBeNull();
-    });
+    fixture = TestBed.createComponent(TestHostComponent);
+    fixture.detectChanges();
+    hostInstance = fixture.componentInstance;
+    const loader = TestbedHarnessEnvironment.loader(fixture);
+    harness = await loader.getHarness(SmartResourceFinderHarness);
   });
 
-  describe('DOM Template interactions', () => {
-    it('should initialize with default amount and single empty resource type filter', async () => {
-      const host = bootstrap(TestHostComponent);
-      await flush();
+  it('should initialize with default amount and single empty resource type filter', async () => {
+    expect(await harness.getAmountValue()).toBe('64');
+    expect(await harness.getResourceTypeSelectCount()).toBe(1);
+    expect(await harness.getRemoveButtonCount()).toBe(0);
+  });
 
-      const amountInput = document.querySelector(AMOUNT_INPUT_SELECTOR) as HTMLInputElement;
-      expect(amountInput.value).toBe('64');
+  it('should emit search query with default values when find button is clicked', async () => {
+    expect(hostInstance.lastQuery()).toBeNull();
 
-      const selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
-      expect(selectElements.length).toBe(1);
+    await harness.clickFindButton();
+    fixture.detectChanges();
 
-      const removeButtons = document.querySelectorAll(REMOVE_RESOURCE_BTN_SELECTOR);
-      expect(removeButtons.length).toBe(0);
-    });
+    expect(hostInstance.lastQuery()).toEqual({ amount: 64, resourceTypes: [] });
+  });
 
-    it('should add a new resource type dropdown when + Add resource type is clicked', async () => {
-      const host = bootstrap(TestHostComponent);
-      await flush();
+  it('should add a new resource type dropdown when + Add resource type is clicked', async () => {
+    await harness.clickAddButton();
+    fixture.detectChanges();
 
-      const addButton = document.querySelector(ADD_RESOURCE_BTN_SELECTOR) as HTMLButtonElement;
-      addButton.click();
-      await flush();
+    expect(await harness.getResourceTypeSelectCount()).toBe(2);
+    expect(await harness.getRemoveButtonCount()).toBe(2);
 
-      let selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
-      expect(selectElements.length).toBe(2);
+    await harness.clickAddButton();
+    fixture.detectChanges();
 
-      const removeButtons = document.querySelectorAll(REMOVE_RESOURCE_BTN_SELECTOR);
-      expect(removeButtons.length).toBe(2);
+    expect(await harness.getResourceTypeSelectCount()).toBe(3);
+  });
 
-      addButton.click();
-      await flush();
+  it('should remove a resource type dropdown when remove button is clicked', async () => {
+    await harness.clickAddButton();
+    fixture.detectChanges();
 
-      selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
-      expect(selectElements.length).toBe(3);
-    });
+    expect(await harness.getResourceTypeSelectCount()).toBe(2);
 
-    it('should remove a resource type dropdown when remove button is clicked', async () => {
-      const host = bootstrap(TestHostComponent);
-      await flush();
+    await harness.clickRemoveButton(0);
+    fixture.detectChanges();
 
-      const addButton = document.querySelector(ADD_RESOURCE_BTN_SELECTOR) as HTMLButtonElement;
-      addButton.click();
-      await flush();
+    expect(await harness.getResourceTypeSelectCount()).toBe(1);
+    expect(await harness.getRemoveButtonCount()).toBe(0);
+  });
 
-      let selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
-      expect(selectElements.length).toBe(2);
+  it('should update resource type filter selection and emit in query output', async () => {
+    await harness.selectResourceType(0, 'nvidia.com/gpu');
+    fixture.detectChanges();
 
-      const removeButtons = document.querySelectorAll(REMOVE_RESOURCE_BTN_SELECTOR);
-      (removeButtons[0] as HTMLButtonElement).click();
-      await flush();
+    await harness.clickFindButton();
+    fixture.detectChanges();
 
-      selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
-      expect(selectElements.length).toBe(1);
-      expect(document.querySelectorAll(REMOVE_RESOURCE_BTN_SELECTOR).length).toBe(0);
-    });
+    expect(hostInstance.lastQuery()).toEqual({ amount: 64, resourceTypes: ['nvidia.com/gpu'] });
+  });
 
-    it('should deduplicate resource types when multiple dropdowns select the same type', async () => {
-      const host = bootstrap(TestHostComponent);
-      await flush();
+  it('should update amount input and handle input changes', async () => {
+    await harness.setAmountValue('128');
+    fixture.detectChanges();
 
-      const addButton = document.querySelector(ADD_RESOURCE_BTN_SELECTOR) as HTMLButtonElement;
-      addButton.click();
-      await flush();
+    await harness.clickFindButton();
+    fixture.detectChanges();
 
-      const selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
-      (selectElements[0] as HTMLSelectElement).value = 'nvidia.com/gpu';
-      selectElements[0].dispatchEvent(new Event('change'));
+    expect(hostInstance.lastQuery()).toEqual({ amount: 128, resourceTypes: [] });
+  });
 
-      (selectElements[1] as HTMLSelectElement).value = 'nvidia.com/gpu';
-      selectElements[1].dispatchEvent(new Event('change'));
-      await flush();
+  it('should not emit query output when amount is zero or negative', async () => {
+    await harness.setAmountValue('0');
+    fixture.detectChanges();
 
-      const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
-      button.click();
-      await flush();
+    await harness.clickFindButton();
+    fixture.detectChanges();
 
-      expect(host.lastQuery()).toEqual({ amount: 64, resourceTypes: ['nvidia.com/gpu'] });
-    });
+    expect(hostInstance.lastQuery()).toBeNull();
+  });
+
+  it('should deduplicate resource types when multiple dropdowns select the same type', async () => {
+    await harness.clickAddButton();
+    fixture.detectChanges();
+
+    await harness.selectResourceType(0, 'nvidia.com/gpu');
+    await harness.selectResourceType(1, 'nvidia.com/gpu');
+    fixture.detectChanges();
+
+    await harness.clickFindButton();
+    fixture.detectChanges();
+
+    expect(hostInstance.lastQuery()).toEqual({ amount: 64, resourceTypes: ['nvidia.com/gpu'] });
   });
 });
