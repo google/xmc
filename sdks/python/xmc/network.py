@@ -131,22 +131,23 @@ class HTTPClient:
 
     def send(
         self,
-        path: str,
         body: str | bytes,
+        path: str = "",
         headers: dict[str, str] | None = None,
         method: str = "POST",
     ) -> SendResult:
         """Sends a payload to the given API path.
 
         Args:
-            path: Target endpoint subpath.
             body: Request body (bytes or str).
+            path: Optional target endpoint subpath.
             headers: Additional per-request headers.
             method: HTTP method (defaults to POST).
 
         Returns:
             SendResult enum indicating outcome (SUCCESS, INVALID_PAYLOAD, TRANSIENT_FAILURE).
         """
+        # Preserve endpoint path (e.g. /v1/metrics) so send() requires no hardcoded subpaths.
         full_path = f"{self._base_path}/{path.lstrip('/')}" if path else self._base_path or "/"
         req_headers = dict(self._headers)
         if headers:

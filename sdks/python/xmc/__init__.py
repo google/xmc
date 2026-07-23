@@ -20,6 +20,7 @@ from xmc.dist_harvest import (
     GetReplicaIDAndSilenceStatus,
     get_replica_id_and_silence_status,
 )
+from xmc.flusher import MetricsFlusher
 from xmc.network import HTTPClient, SendResult
 from xmc.types import Metric, validate_metric
 
@@ -31,6 +32,7 @@ __all__ = [
     "MetricTuple",
     "Client",
     "HTTPClient",
+    "MetricsFlusher",
     "Metric",
     "SendResult",
     "XMCError",
