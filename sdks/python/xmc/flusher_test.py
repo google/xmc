@@ -219,13 +219,15 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
             flush_fn=failing_flush_fn,
             flush_interval=60.0,
             batch_size=1,
+            initial_backoff=0.001,
+            max_retries=2,
         )
 
         for i in range(10):
             flusher.buffer.put(f"m_{i}", float(i), i)
 
         flushed_count = flusher.flush_all()
-        # Should abort after 3 consecutive failures
+        # Should abort batch after max retries (3 attempts total)
         self.assertEqual(flushed_count, 0)
         self.assertEqual(fail_count, 3)
 
