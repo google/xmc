@@ -115,6 +115,21 @@ jobs:
         run: npm test -- --watch=false --browsers=ChromeHeadlessNoSandbox
         working-directory: cmd/ui
 
+      - name: 'Install Playwright Chromium'
+        if: matrix.target == 'cmd/ui'
+        run: npx playwright install chromium
+        working-directory: cmd/ui
+
+      - name: 'Build Angular UI App'
+        if: matrix.target == 'cmd/ui'
+        run: npm run build
+        working-directory: cmd/ui
+
+      - name: 'Run Angular UI Screenshot Tests'
+        if: matrix.target == 'cmd/ui'
+        run: npm run test:screenshot
+        working-directory: cmd/ui
+
       - name: 'Restore Bazel Cache'
         id: 'cache-bazel-restore'
         uses: 'actions/cache/restore@v4'
