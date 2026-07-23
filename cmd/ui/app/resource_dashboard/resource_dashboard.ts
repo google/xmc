@@ -33,10 +33,6 @@ import {
   ReloaderControl,
 } from '../common/components/autoreloader/autoreloader_service';
 
-export type DashboardTab = 'smart_resource_finder' | 'resource_availability';
-export const TAB_SMART_FINDER: DashboardTab = 'smart_resource_finder';
-export const TAB_RESOURCE_AVAILABILITY: DashboardTab = 'resource_availability';
-
 /**
  * Resource Observability Dashboard (ROD) primary layout container component.
  * Thin container orchestrating tab selection and cluster queue state.
@@ -57,9 +53,7 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   protected readonly clusterQueues = computed<ClusterQueue[]>(
     () => this.resolvedData()?.['clusterQueues'] ?? [],
   );
-  protected readonly isLoading = signal<boolean>(false);
   protected readonly selectedQueue = signal<string>('gpu-cluster-queue');
-  protected readonly activeTab = signal<DashboardTab>(TAB_SMART_FINDER);
 
   private readonly reloader: ReloaderControl = this.autoReloadService.createReloader({
     emitOnStart: false,
@@ -91,9 +85,5 @@ export class ResourceDashboard implements OnInit, OnDestroy {
 
   protected onQueueSelect(queueName: string) {
     this.selectedQueue.set(queueName);
-  }
-
-  protected onTabChange(tab: DashboardTab) {
-    this.activeTab.set(tab);
   }
 }
