@@ -90,42 +90,80 @@ class ResilienceStateMachine:
         self.reset()
 
 
+def _log_failed_record(status_code: int, error_type: str, record: Any) -> bool:
+    """Logs details for a single failed record if valid dictionary."""
+    if not isinstance(record, dict):
+        return False
+    idx = record.get("index", "unknown")
+    reason = record.get("reason", "unspecified reason")
+    logger.critical(
+        "Terminal payload error (HTTP %d, error=%s): record at index %s failed due to: %s",
+        status_code,
+        error_type,
+        idx,
+        reason,
+    )
+    return True
+
+
+def _log_failed_records_diagnostic(status_code: int, response_body: str | None) -> bool:
+    """Parses response body and logs failed records if present. Returns True if logged."""
+    if not response_body:
+        return False
+    try:
+        data = json.loads(response_body) if isinstance(response_body, str) else response_body
+    except Exception:
+        return False
+
+    if not isinstance(data, dict):
+        return False
+
+    failed_records = data.get("failed_records")
+    if not isinstance(failed_records, list) or not failed_records:
+        return False
+
+    error_type = data.get("error", "terminal_error")
+    logged_any = False
+    for record in failed_records:
+        if _log_failed_record(status_code, error_type, record):
+            logged_any = True
+    return logged_any
+
+
 def parse_and_log_terminal_diagnostic(
     status_code: int,
     response_body: str | None,
     exc: Exception | None = None,
 ) -> None:
     """Parses gateway's structured JSON diagnostic body and logs CRITICAL error details."""
-    failed_records_logged = False
-    if response_body:
-        try:
-            data = json.loads(response_body) if isinstance(response_body, str) else response_body
-            if isinstance(data, dict):
-                error_type = data.get("error", "terminal_error")
-                failed_records = data.get("failed_records")
-                if isinstance(failed_records, list) and failed_records:
-                    for record in failed_records:
-                        if isinstance(record, dict):
-                            idx = record.get("index", "unknown")
-                            reason = record.get("reason", "unspecified reason")
-                            logger.critical(
-                                "Terminal payload error (HTTP %d, error=%s): record at index %s failed due to: %s",
-                                status_code,
-                                error_type,
-                                idx,
-                                reason,
-                            )
-                    failed_records_logged = True
-        except Exception:
-            pass
+    if _log_failed_records_diagnostic(status_code, response_body):
+        return
 
-    if not failed_records_logged:
-        logger.critical(
-            "Terminal payload error (HTTP %d): %s. Diagnostic body: %s",
-            status_code,
-            exc or "Batch discarded",
-            response_body,
-        )
+    logger.critical(
+        "Terminal payload error (HTTP %d): %s. Diagnostic body: %s",
+        status_code,
+        exc or "Batch discarded",
+        response_body,
+    )
+
+
+def _extract_response_body(exc: Exception) -> str | None:
+    """Extracts and normalizes response body string from an exception."""
+    body = getattr(
+        exc,
+        "response_body",
+        getattr(exc, "body", getattr(exc, "content", None)),
+    )
+    if body is None:
+        return None
+    if not isinstance(body, (str, bytes)):
+        try:
+            body = json.dumps(body)
+        except Exception:
+            body = str(body)
+    if isinstance(body, bytes):
+        return body.decode("utf-8", errors="replace")
+    return body
 
 
 def classify_outcome(
@@ -140,45 +178,35 @@ def classify_outcome(
         return "terminal", 400, None
     if result_or_exc == SendResult.TRANSIENT_FAILURE:
         return "transient", 500, None
+    if not isinstance(result_or_exc, Exception):
+        return "transient", None, None
 
-    if isinstance(result_or_exc, Exception):
-        exc = result_or_exc
-        status_code = getattr(
-            exc,
-            "status_code",
-            getattr(exc, "code", getattr(exc, "status", None)),
-        )
-        response_body = getattr(
-            exc,
-            "response_body",
-            getattr(exc, "body", getattr(exc, "content", None)),
-        )
-        if response_body is not None and not isinstance(response_body, (str, bytes)):
-            try:
-                response_body = json.dumps(response_body)
-            except Exception:
-                response_body = str(response_body)
-        if isinstance(response_body, bytes):
-            response_body = response_body.decode("utf-8", errors="replace")
+    exc = result_or_exc
+    status_code = getattr(
+        exc,
+        "status_code",
+        getattr(exc, "code", getattr(exc, "status", None)),
+    )
+    response_body = _extract_response_body(exc)
 
-        if status_code in (400, 422):
-            return "terminal", status_code, response_body
-        if status_code is not None and (status_code == 429 or 500 <= status_code <= 599):
-            return "transient", status_code, response_body
-        if status_code is not None and 400 <= status_code < 500:
-            return "terminal", status_code, response_body
+    if status_code in (400, 422):
+        return "terminal", status_code, response_body
+    if status_code is not None and (status_code == 429 or 500 <= status_code <= 599):
+        return "transient", status_code, response_body
+    if status_code is not None and 400 <= status_code < 500:
+        return "terminal", status_code, response_body
 
-        if isinstance(
-            exc,
-            (
-                XMCNetworkError,
-                TimeoutError,
-                socket.timeout,
-                urllib.error.URLError,
-                ConnectionError,
-                OSError,
-            ),
-        ):
-            return "transient", status_code, response_body
+    if isinstance(
+        exc,
+        (
+            XMCNetworkError,
+            TimeoutError,
+            socket.timeout,
+            urllib.error.URLError,
+            ConnectionError,
+            OSError,
+        ),
+    ):
+        return "transient", status_code, response_body
 
     return "transient", None, None
