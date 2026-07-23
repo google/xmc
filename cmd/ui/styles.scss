@@ -49,3 +49,15 @@ body {
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
   animation: shimmer-loading 1.2s infinite linear;
 }
+
+.rod-term-tooltip {
+  white-space: pre-line !important;
+  max-width: 380px !important;
+  font-size: 12.5px !important;
+  line-height: 1.5 !important;
+  padding: 12px 14px !important;
+  background-color: #202124 !important;
+  color: #ffffff !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
+}
