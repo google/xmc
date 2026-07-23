@@ -18,6 +18,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+
+	"xmanager_cloud/logging/logging"
 )
 
 const (
@@ -27,13 +29,16 @@ const (
 
 // MetricsIngestionHandler processes incoming streaming JSON metrics payloads.
 func MetricsIngestionHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	if r.Method != http.MethodPost {
+		logging.Warn(ctx, "Method not allowed for metrics ingestion", "method", r.Method)
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	res := DecodeAndValidateMetrics(r.Body, nil)
 	if res.Err != nil {
+		logging.Warn(ctx, "Metrics ingestion request failed with decoding error", "error", res.Err.Error())
 		drainRequestBody(r.Body, MaxDrainBytes)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -45,6 +50,10 @@ func MetricsIngestionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if res.Validation != nil {
+		logging.Warn(ctx, "Metrics ingestion request contained record validation errors",
+			"failed_count", len(res.Validation.FailedRecords),
+			"valid_count", res.ValidCount,
+		)
 		drainRequestBody(r.Body, MaxDrainBytes)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnprocessableEntity)
@@ -52,6 +61,7 @@ func MetricsIngestionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	logging.Info(ctx, "Metrics batch successfully accepted", "valid_count", res.ValidCount)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]any{

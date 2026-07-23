@@ -217,4 +217,10 @@ func TestMetricsIngestionHandler_ConstantMemoryStreaming(t *testing.T) {
 	runtime.ReadMemStats(&mAfter)
 
 	t.Logf("HeapAlloc before: %d, after: %d", mBefore.HeapAlloc, mAfter.HeapAlloc)
+
+	const maxAllowedHeapDelta = 5 * 1024 * 1024 // 5MB limit
+	heapDelta := int64(mAfter.HeapAlloc) - int64(mBefore.HeapAlloc)
+	if heapDelta > maxAllowedHeapDelta {
+		t.Errorf("heap memory allocation increased by %d bytes, exceeding maximum allowed threshold of %d bytes", heapDelta, maxAllowedHeapDelta)
+	}
 }

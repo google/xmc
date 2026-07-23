@@ -55,7 +55,8 @@ type StreamDecodeResult struct {
 	Err        error
 }
 
-// DecodeAndValidateMetrics reads and parses a JSON metrics payload using O(1) memory streaming.
+// DecodeAndValidateMetrics performs pure, side-effect-free streaming token decoding and metric field validation.
+// Operational logging for metrics ingestion lifecycle events is handled at the HTTP entrypoint in handler.go.
 func DecodeAndValidateMetrics(r io.Reader, consumer MetricConsumer) StreamDecodeResult {
 	bufReader := bufio.NewReader(r)
 	if err := skipWhitespace(bufReader); err != nil {
