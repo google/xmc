@@ -89,7 +89,7 @@ describe('QueueCardComponent', () => {
   it('should render queue name, cohort, and status badge', async () => {
     expect(await harness.getQueueName()).toBe('gpu-cluster-queue');
     expect(await harness.getCohort()).toBe('Cohort: gpu-cohort');
-    expect(await harness.getStatusBadgeText()).toContain('Active');
+    expect(await harness.getStatusBadgeText()).toContain('Resources available');
     expect(await harness.isStatusBadgeHealthy()).toBeTrue();
   });
 
