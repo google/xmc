@@ -14,30 +14,25 @@
  limitations under the License.
 -->
 <div class="rod-container">
-  <div class="rod-subnav-tabs" role="tablist" aria-label="Resource Dashboard Tabs">
-    <button
-      class="rod-tab-btn"
-      role="tab"
-      [attr.aria-selected]="activeTab() === 'queues'"
-      [class.active-tab]="activeTab() === 'queues'"
-      (click)="activeTab.set('queues')"
-    >
-      Smart resource finder
-    </button>
-    <button
-      class="rod-tab-btn"
-      role="tab"
-      [attr.aria-selected]="activeTab() === 'predictability'"
-      [class.active-tab]="activeTab() === 'predictability'"
-      (click)="activeTab.set('predictability')"
-    >
-      Predictability
-    </button>
-  </div>
-
-  <div class="dashboard-shell-content">
-    <div class="dashboard-header-row">
-      <h1 class="dashboard-title">Resource Observability Dashboard</h1>
+  <div class="rod-subnav-placeholder"></div>
+  <div class="rod-split-container">
+    <div class="rod-queue-list-placeholder">
+      <h3>Resolved Cluster Queues</h3>
+      @if (clusterQueues().length === 0) {
+        <p class="empty-queues-msg">No cluster queues resolved.</p>
+      } @else {
+        <ul class="scaffolding-queue-list">
+          @for (queue of clusterQueues(); track queue.name) {
+            <li
+              class="scaffolding-queue-item"
+              [class.selected]="selectedQueue() === queue.name"
+              (click)="onQueueSelect(queue.name)"
+            >
+              <span class="queue-name">{{ queue.name }}</span>
+            </li>
+          }
+        </ul>
+      }
     </div>
   </div>
 </div>

@@ -59,7 +59,7 @@ def reply_comment(args):
                 "-1",
                 "--format=%H",
                 "--",
-                ":/.agents/skills/address_pr_comment/SKILL.md",
+                ":/.agents/skills/xmc_address_pr_comment/SKILL.md",
             ],
             text=True,
             stderr=subprocess.DEVNULL,
@@ -77,7 +77,7 @@ def reply_comment(args):
         "time": now.strftime("%H:%M:%S UTC"),
         "pr_number": parsed["pull_number"],
         "comment_id": parsed["comment_id"],
-        "skill_name": "address_pr_comment",
+        "skill_name": "xmc_address_pr_comment",
         "skill_commit_id": skill_commit_id,
     }
 

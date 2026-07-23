@@ -52,7 +52,7 @@ If no configuration file is found at the default path:
 1. **Search for alternatives**: Check if there are any other `*-deployment.yaml` files in `deploy/ctk_v2/`.
 2. **Handle missing config**:
    - If other configuration files are found, ask the user which one they want to use and run the script with `--config <path>`.
-   - If no configuration files are found, **stop execution** and instruct the user to create a deployment configuration (referring to `INSTALL.md` or the `deploy_xmc` skill) before upgrading.
+   - If no configuration files are found, **stop execution** and instruct the user to create a deployment configuration (referring to `INSTALL.md` or the `xmc_deploy` skill) before upgrading.
 
 ---
 
