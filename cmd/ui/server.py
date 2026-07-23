@@ -53,8 +53,13 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
                 os.environ.get("XMC_STATUS_MESSAGE_HISTORY_ENABLED", "true").lower() == "true"
             )
 
+            admin_panel_enabled = (
+                os.environ.get("XMC_ADMIN_PANEL_ENABLED", "false").lower() == "true"
+            )
+
             feature_flags = {
                 "statusMessageHistoryEnabled": status_history,
+                "adminPanelEnabled": admin_panel_enabled,
             }
 
             config_content = (

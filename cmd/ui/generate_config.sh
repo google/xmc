@@ -23,12 +23,14 @@ echo "Generating runtime config.js at ${CONFIG_FILE}..."
 API_URL="${XMC_API_URL:-https://api.example.com/v1}"
 REFRESH_MS="${XMC_REFRESH_INTERVAL_MS:-30000}"
 STATUS_HISTORY="${XMC_STATUS_MESSAGE_HISTORY_ENABLED:-true}"
+ADMIN_PANEL="${XMC_ADMIN_PANEL_ENABLED:-false}"
 
 cat <<EOF > "${CONFIG_FILE}"
 window.XMC_API_URL = "${API_URL}";
 window.XMC_REFRESH_INTERVAL_MS = ${REFRESH_MS};
 window.XMC_FEATURE_FLAGS = {
-  "statusMessageHistoryEnabled": ${STATUS_HISTORY}
+  "statusMessageHistoryEnabled": ${STATUS_HISTORY},
+  "adminPanelEnabled": ${ADMIN_PANEL}
 };
 EOF
 
