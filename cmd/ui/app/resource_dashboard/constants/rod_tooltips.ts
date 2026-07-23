@@ -14,26 +14,25 @@
 
 /**
  * Static tooltips dictionary for Resource Observability Dashboard (ROD) term explanations.
- * Term names and referenced dashboard metrics are formatted consistently using Title Case.
  */
 export const ROD_TERM_TOOLTIPS = {
   maxWorkloadSize:
-    'Max Workload Size: Guaranteed → Opportunistic Capacity\n\nGuaranteed Capacity: The guaranteed capacity that is consumable by job(s).\n\nOpportunistic Capacity: The potential maximum workload including borrowable resources.',
+    'Max Workload Size Guaranteed→Opportunistic Capacity\n\nGuaranteed Capacity: The guaranteed capacity that is consumable by job(s).\n\nOpportunistic Capacity: The potential maximum workload including the borrowable resources.',
 
   freeTotalCapacity:
     'Free / Total Capacity\n\nFree Capacity: The sum of all guaranteed and opportunistic resources. It can be scattered across clusters, not necessarily consumable by one job.\n\nTotal Capacity: The maximum amount of a hardware resource currently managed by this queue.',
 
   resourceVelocity:
-    'Resource Velocity: The rate at which hardware resources (e.g., GPUs) are being assigned to new workloads.\n\nIt represents the volume of hardware turning over to serve new requests over the selected timeframe (1h / 24h / 7d). High Resource Velocity means large blocks of hardware are freeing up, which is useful for gauging if there is room for large-scale multi-node jobs.',
+    'The rate at which hardware resources (e.g., GPUs) are being assigned to new workloads.\n\nIt represents the volume of hardware turning over to serve new requests over the selected timeframe (1h / 24h / 7d). A high Resource Velocity means large blocks of hardware are freeing up, which is useful for gauging if there is room for large-scale multi-node jobs.',
 
   jobVelocity:
-    'Job Velocity: The rate at which individual workloads are successfully leaving the queue and starting to run.\n\nIt represents the actual throughput of tasks clearing the line over the selected timeframe (1h / 24h / 7d). If Job Velocity is high but Resource Velocity is low, it indicates the queue is quickly processing many small, single-node jobs rather than a few massive ones.',
+    'The rate at which individual workloads are successfully leaving the queue and starting to run.\n\nIt represents the actual throughput of tasks clearing the line over the selected timeframe (1h / 24h / 7d). If Job Velocity is high but Resource Velocity is low, it indicates the queue is quickly processing many small, single-node jobs rather than a few massive ones.',
 
   pendingJobs:
-    'Pending Jobs: The total number of workloads currently waiting for resources in this queue.\n\nIt includes all jobs that have been submitted but are not yet running. Use this alongside Job Velocity and Resource Velocity to gauge your relative position and potential wait time. If Job Velocity is 0, it may indicate that the queue is stuck or capacity is fully saturated by long-running jobs.',
+    'The total number of workloads currently waiting for resources in this queue.\n\nIt includes all jobs that have been submitted but are not yet running. Use this alongside Resource Velocity and Job Velocity to gauge your relative position and potential wait time. If the velocity is 0, it may indicate that the queue is stuck or capacity is fully saturated by long-running jobs.',
 
   pendingResourceRequests:
-    'Pending Resource Requests: The cumulative amount of hardware resources (e.g., GPUs) requested by all currently pending workloads.\n\nIt represents the total backlog demand waiting to be admitted to the queue. Comparing this number to your Total Capacity and Resource Velocity helps you estimate how many full cycles of the hardware pool are required to clear the current backlog.',
+    'The cumulative amount of hardware resources (e.g., GPUs) requested by all currently pending workloads.\n\nIt represents the total backlog demand waiting to be admitted to the queue. Comparing this number to your Total Capacity and Resource Velocity helps you estimate how many full cycles of the hardware pool are required to clear the current backlog.',
 } as const;
 
 export type RodTooltipKey = keyof typeof ROD_TERM_TOOLTIPS;
