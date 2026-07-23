@@ -18,6 +18,14 @@ import json
 import os
 
 
+def get_bool_env(name: str, default: bool = False) -> bool:
+    """Reads a boolean environment variable, returning default if unset."""
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    return val.lower() == "true"
+
+
 class SPAHandler(http.server.SimpleHTTPRequestHandler):
     """Custom request handler that supports SPA routing fallbacks and config.js."""
 
@@ -49,13 +57,8 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             except ValueError:
                 refresh_interval = 30000
 
-            status_history = (
-                os.environ.get("XMC_STATUS_MESSAGE_HISTORY_ENABLED", "true").lower() == "true"
-            )
-
-            admin_panel_enabled = (
-                os.environ.get("XMC_ADMIN_PANEL_ENABLED", "false").lower() == "true"
-            )
+            status_history = get_bool_env("XMC_STATUS_MESSAGE_HISTORY_ENABLED", True)
+            admin_panel_enabled = get_bool_env("XMC_ADMIN_PANEL_ENABLED", False)
 
             feature_flags = {
                 "statusMessageHistoryEnabled": status_history,
