@@ -24,16 +24,19 @@ check_bazel() {
   fi
 
   echo "--> Running Bazel Formatter & Linter (Buildifier)..."
-  local bazel_files
-  bazel_files=$(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \) -not -path "*/node_modules/*")
-  if [ -n "$bazel_files" ]; then
+  local bazel_files=()
+  while IFS= read -r -d '' file; do
+    bazel_files+=("$file")
+  done < <(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \) -not -path "*/node_modules/*" -print0 2>/dev/null)
+
+  if [ ${#bazel_files[@]} -gt 0 ]; then
     if [ "$MODE" = "check" ]; then
-      if ! $buildifier_bin -mode=check $bazel_files; then
+      if ! $buildifier_bin -mode=check "${bazel_files[@]}"; then
         echo "❌ Bazel buildifier check failed."
         FAILED=1
       fi
     else
-      $buildifier_bin -lint=fix -mode=fix $bazel_files
+      $buildifier_bin -lint=fix -mode=fix "${bazel_files[@]}"
     fi
   fi
 }
@@ -59,14 +62,18 @@ check_go() {
 }
 
 check_ui() {
-  local ui_files
+  local ui_files=()
   if [ "$MODE" = "check" ]; then
-    ui_files=$(find cmd/ui -type f \( -name "*.ts" -o -name "*.html" -o -name "*.scss" \) -not -path "*/node_modules/*" -not -path "*/.angular/*" || true)
+    while IFS= read -r -d '' file; do
+      ui_files+=("$file")
+    done < <(find cmd/ui -type f \( -name "*.ts" -o -name "*.html" -o -name "*.scss" \) -not -path "*/node_modules/*" -not -path "*/.angular/*" -print0 2>/dev/null)
   else
-    ui_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^cmd/ui/.*\.(ts|html|scss)$' || true)
+    while IFS= read -r file; do
+      ui_files+=("$file")
+    done < <(git diff --cached --name-only --diff-filter=ACM | grep -E '^cmd/ui/.*\.(ts|html|scss)$' || true)
   fi
 
-  if [ -z "$ui_files" ]; then
+  if [ ${#ui_files[@]} -eq 0 ]; then
     return
   fi
 
@@ -76,12 +83,12 @@ check_ui() {
   if [ -f "$prettier_bin" ]; then
     echo "--> Running UI Formatter (Prettier)..."
     if [ "$MODE" = "check" ]; then
-      if ! $prettier_bin --config cmd/ui/.prettierrc --check $ui_files; then
+      if ! $prettier_bin --config cmd/ui/.prettierrc --check "${ui_files[@]}"; then
         echo "❌ Prettier check failed."
         FAILED=1
       fi
     else
-      $prettier_bin --config cmd/ui/.prettierrc --write $ui_files
+      $prettier_bin --config cmd/ui/.prettierrc --write "${ui_files[@]}"
     fi
   else
     echo "❌ ERROR: Local Prettier not found at $prettier_bin."
@@ -92,12 +99,12 @@ check_ui() {
   if [ -f "$eslint_bin" ]; then
     echo "--> Running UI Linter (ESLint)..."
     if [ "$MODE" = "check" ]; then
-      if ! $eslint_bin --config cmd/ui/eslint.config.js $ui_files; then
+      if ! $eslint_bin --config cmd/ui/eslint.config.js "${ui_files[@]}"; then
         echo "❌ ESLint check failed."
         FAILED=1
       fi
     else
-      $eslint_bin --config cmd/ui/eslint.config.js --fix $ui_files
+      $eslint_bin --config cmd/ui/eslint.config.js --fix "${ui_files[@]}"
     fi
   else
     echo "❌ ERROR: Local ESLint not found at $eslint_bin."
@@ -128,7 +135,7 @@ check_license() {
     -ignore "**/.angular/**"
     -ignore "**.json"
     -ignore "**.lock"
-    -ignore "pyproject.toml"
+    -ignore "**.toml"
     -ignore "package.json"
     -ignore "go.mod"
     -ignore "go.sum"
@@ -140,23 +147,30 @@ check_license() {
       FAILED=1
     fi
   else
-    local staged_files
-    staged_files=$(git diff --cached --name-only --diff-filter=ACMR || true)
-    if [ -n "$staged_files" ]; then
-      $addlicense_bin -c "Google LLC" -l apache "${ignores[@]}" $staged_files
+    local staged_files=()
+    while IFS= read -r file; do
+      staged_files+=("$file")
+    done < <(git diff --cached --name-only --diff-filter=ACMR || true)
+
+    if [ ${#staged_files[@]} -gt 0 ]; then
+      $addlicense_bin -c "Google LLC" -l apache "${ignores[@]}" "${staged_files[@]}"
     fi
   fi
 }
 
 check_python() {
-  local py_files
+  local py_files=()
   if [ "$MODE" = "check" ]; then
-    py_files=$(find . -type f -name "*.py" -not -path "*/node_modules/*" -not -path "*/.git/*" || true)
+    while IFS= read -r -d '' file; do
+      py_files+=("$file")
+    done < <(find . -type f -name "*.py" -not -path "*/node_modules/*" -not -path "*/.git/*" -print0 2>/dev/null)
   else
-    py_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.py$' || true)
+    while IFS= read -r file; do
+      py_files+=("$file")
+    done < <(git diff --cached --name-only --diff-filter=ACM | grep -E '\.py$' || true)
   fi
 
-  if [ -z "$py_files" ]; then
+  if [ ${#py_files[@]} -eq 0 ]; then
     return
   fi
 
@@ -170,26 +184,26 @@ check_python() {
   if [ -n "$ruff_bin" ]; then
     echo "--> Running Python Linter & Formatter (Ruff)..."
     if [ "$MODE" = "check" ]; then
-      if ! $ruff_bin check $py_files; then
+      if ! $ruff_bin check "${py_files[@]}"; then
         echo "❌ Ruff lint check failed."
         FAILED=1
       fi
-      if ! $ruff_bin format --check $py_files; then
+      if ! $ruff_bin format --check "${py_files[@]}"; then
         echo "❌ Ruff format check failed."
         FAILED=1
       fi
     else
-      $ruff_bin check --fix $py_files
-      $ruff_bin format $py_files
+      $ruff_bin check --fix "${py_files[@]}"
+      $ruff_bin format "${py_files[@]}"
     fi
   elif command -v docker >/dev/null 2>&1; then
     echo "--> Running Ruff via Docker container..."
     if [ "$MODE" = "check" ]; then
-      if ! docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest check $py_files; then FAILED=1; fi
-      if ! docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest format --check $py_files; then FAILED=1; fi
+      if ! docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest check "${py_files[@]}"; then FAILED=1; fi
+      if ! docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest format --check "${py_files[@]}"; then FAILED=1; fi
     else
-      docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest check --fix $py_files
-      docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest format $py_files
+      docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest check --fix "${py_files[@]}"
+      docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest format "${py_files[@]}"
     fi
   else
     echo "--> WARNING: ruff or docker not found. Python linting skipped."
@@ -198,35 +212,39 @@ check_python() {
 }
 
 check_terraform() {
-  local tf_files
+  local tf_files=()
   if [ "$MODE" = "check" ]; then
-    tf_files=$(find deploy -type f -name "*.tf" || true)
+    while IFS= read -r -d '' file; do
+      tf_files+=("$file")
+    done < <(find deploy -type f -name "*.tf" -print0 2>/dev/null)
   else
-    tf_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.tf$' || true)
+    while IFS= read -r file; do
+      tf_files+=("$file")
+    done < <(git diff --cached --name-only --diff-filter=ACM | grep -E "\.tf$" || true)
   fi
 
-  if [ -z "$tf_files" ]; then
+  if [ ${#tf_files[@]} -eq 0 ]; then
     return
   fi
 
   echo "--> Running Terraform Formatter (terraform fmt)..."
   if command -v terraform >/dev/null 2>&1; then
     if [ "$MODE" = "check" ]; then
-      if ! terraform fmt -check $tf_files; then
+      if ! terraform fmt -check "${tf_files[@]}"; then
         echo "❌ Terraform formatting check failed."
         FAILED=1
       fi
     else
-      terraform fmt $tf_files || true
+      terraform fmt "${tf_files[@]}" || true
     fi
   elif command -v docker >/dev/null 2>&1; then
     if [ "$MODE" = "check" ]; then
-      if ! docker run --rm -v "$(pwd):/workspace" -w /workspace hashicorp/terraform:latest fmt -check $tf_files; then
+      if ! docker run --rm -v "$(pwd):/workspace" -w /workspace hashicorp/terraform:latest fmt -check "${tf_files[@]}"; then
         echo "❌ Terraform formatting check failed."
         FAILED=1
       fi
     else
-      docker run --rm -v "$(pwd):/workspace" -w /workspace hashicorp/terraform:latest fmt $tf_files || true
+      docker run --rm -v "$(pwd):/workspace" -w /workspace hashicorp/terraform:latest fmt "${tf_files[@]}" || true
     fi
   else
     echo "--> WARNING: terraform or docker not found. Terraform formatting check skipped."
@@ -267,6 +285,72 @@ check_terraform() {
   fi
 }
 
+
+check_shell() {
+  local shellcheck_bin=""
+  if command -v shellcheck >/dev/null 2>&1; then
+    shellcheck_bin="shellcheck"
+  elif [ -f "$HOME/.local/bin/shellcheck" ]; then
+    shellcheck_bin="$HOME/.local/bin/shellcheck"
+  fi
+
+  if [ -z "$shellcheck_bin" ]; then
+    echo "--> WARNING: shellcheck not found. To install: apt-get install shellcheck or brew install shellcheck"
+    if [ "$MODE" = "check" ]; then FAILED=1; fi
+    return
+  fi
+
+  local shell_files=()
+  if [ "$MODE" = "check" ]; then
+    while IFS= read -r -d '' file; do
+      shell_files+=("$file")
+    done < <(find . -type f \( -name "*.sh" -o -path "./.githooks/*" \) -not -path "*/node_modules/*" -not -path "*/.git/*" -print0 2>/dev/null)
+  else
+    while IFS= read -r file; do
+      shell_files+=("$file")
+    done < <(git diff --cached --name-only --diff-filter=ACM | grep -E '(\.sh$|^\.githooks/)' || true)
+  fi
+
+  if [ ${#shell_files[@]} -eq 0 ]; then
+    return
+  fi
+
+  echo "--> Running Shell Script Linter (ShellCheck)..."
+  if ! $shellcheck_bin "${shell_files[@]}"; then
+    echo "❌ ShellCheck lint check failed."
+    FAILED=1
+  fi
+}
+
+
+check_semgrep() {
+  local semgrep_bin=""
+  if command -v semgrep >/dev/null 2>&1; then
+    semgrep_bin="semgrep"
+  elif [ -f "$HOME/.local/bin/semgrep" ]; then
+    semgrep_bin="$HOME/.local/bin/semgrep"
+  elif [ -f "$HOME/go/bin/semgrep" ]; then
+    semgrep_bin="$HOME/go/bin/semgrep"
+  fi
+
+  if [ -n "$semgrep_bin" ]; then
+    echo "--> Running Static Security Analysis (Semgrep)..."
+    if ! $semgrep_bin scan --config auto; then
+      echo "❌ Semgrep scan failed."
+      FAILED=1
+    fi
+  elif command -v docker >/dev/null 2>&1; then
+    echo "--> Running Semgrep via Docker container..."
+    if ! docker run --rm -v "$(pwd):/src" semgrep/semgrep:latest semgrep scan --config auto; then
+      echo "❌ Semgrep scan failed."
+      FAILED=1
+    fi
+  else
+    echo "--> WARNING: semgrep or docker not found. Semgrep check skipped."
+    if [ "$MODE" = "check" ]; then FAILED=1; fi
+  fi
+}
+
 main() {
   check_bazel
   check_go
@@ -274,6 +358,8 @@ main() {
   check_license
   check_python
   check_terraform
+  check_shell
+  check_semgrep
 
   if [ "$MODE" = "fix" ]; then
     if ! git diff --quiet; then

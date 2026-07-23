@@ -19,10 +19,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
 if [ -f "../../.env" ]; then
+  # shellcheck disable=SC1091
   source "../../.env"
 fi
 
-PROJECT_ID="${PROJECT_ID}"
+if [ -z "${PROJECT_ID:-}" ]; then
+  echo "Error: PROJECT_ID environment variable must be set." >&2
+  exit 1
+fi
 REGISTRY="${XMC_ACR_TARGET:-us-docker.pkg.dev/${PROJECT_ID}/xmc}"
 IMAGE_TAG="${REGISTRY}/init-container-job:latest"
 

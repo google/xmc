@@ -42,6 +42,28 @@ jobs:
       - name: 'Verify Code Formatting'
         run: ruff format --check .
 
+  shell-lint:
+    name: 'Shell Script Linting (ShellCheck)'
+    runs-on: 'ubuntu-24.04'
+    steps:
+      - name: 'Checkout code'
+        uses: 'actions/checkout@v4'
+
+      - name: 'Install ShellCheck'
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y shellcheck
+          fi
+
+      - name: 'Run ShellCheck'
+        run: |
+          SHELL_FILES=$(find . -type f \( -name "*.sh" -o -path "./.githooks/*" \) -not -path "*/node_modules/*" -not -path "*/.git/*")
+          if [ -n "$SHELL_FILES" ]; then
+            # Disable SC2086: Unquoted expansion is required to pass space-separated file lists as separate positional arguments.
+            # shellcheck disable=SC2086
+            shellcheck $SHELL_FILES
+          fi
+
   go-lint:
     name: 'Go Formatting (gofmt)'
     runs-on: 'ubuntu-24.04'
@@ -139,8 +161,31 @@ jobs:
             -ignore "**/.angular/**" \
             -ignore "**.json" \
             -ignore "**.lock" \
-            -ignore "pyproject.toml" \
+            -ignore "**.toml" \
             -ignore "package.json" \
             -ignore "go.mod" \
             -ignore "go.sum" \
             .
+
+  gitleaks-scan:
+    name: 'Secret Scanning (Gitleaks)'
+    runs-on: 'ubuntu-24.04'
+    steps:
+      - name: 'Checkout code'
+        uses: 'actions/checkout@v4'
+        with:
+          fetch-depth: 0
+
+      - name: 'Run Gitleaks'
+        uses: 'gitleaks/gitleaks-action@v2'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  semgrep-scan:
+    name: 'Security Analysis (Semgrep)'
+    runs-on: 'ubuntu-24.04'
+    steps:
+      - name: 'Checkout code'
+        uses: 'actions/checkout@v4'
+      - name: 'Run Semgrep'
+        run: docker run --rm -v "${{ github.workspace }}:/src" semgrep/semgrep:latest semgrep scan --config auto
