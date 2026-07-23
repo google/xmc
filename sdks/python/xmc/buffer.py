@@ -163,12 +163,11 @@ class BoundedMetricsBuffer:
         if max_count <= 0:
             return []
         with self._lock:
-            count = min(max_count, len(self._buffer))
-            if count >= len(self._buffer):
+            if max_count >= len(self._buffer):
                 items = list(self._buffer)
                 self._buffer.clear()
                 return items
-            return [self._buffer.popleft() for _ in range(count)]
+            return [self._buffer.popleft() for _ in range(max_count)]
 
     def clear(self) -> None:
         """Clears all elements from the buffer."""
