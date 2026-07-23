@@ -14,8 +14,6 @@
 
 import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
 
-export const DEFAULT_UNITS_PER_PENDING_JOB = 8;
-
 /**
  * Velocity period options for queue resource calculations.
  */
@@ -94,12 +92,5 @@ export function calculatePendingRequestsDisplay(queue: Partial<ClusterQueue>): s
   if (queue.requestedResources && queue.requestedResources !== '0') {
     return queue.requestedResources;
   }
-  const pending = getPendingJobsCount(queue);
-  if (pending === 0) return '0';
-
-  const firstFlavor = queue.flavors?.[0];
-  const rName = firstFlavor?.resourceName || firstFlavor?.name || 'CPU';
-  const isGpu = rName.toLowerCase().includes('gpu');
-  const unit = isGpu ? 'GPUs' : 'CPUs';
-  return `${pending * DEFAULT_UNITS_PER_PENDING_JOB} ${unit}`;
+  return '0';
 }

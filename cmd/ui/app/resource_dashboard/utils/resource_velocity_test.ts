@@ -14,8 +14,6 @@
 
 import 'jasmine';
 
-import { ResourceFlavorMetric } from 'xmanager_cloud/ui/app/service/resource_types';
-
 import {
   calculateJobVelocity,
   calculatePendingRequestsDisplay,
@@ -93,21 +91,14 @@ describe('Resource Velocity Utilities', () => {
   });
 
   describe('calculatePendingRequestsDisplay', () => {
-    it('should return custom requested resources if present', () => {
+    it('should return requested resources if present', () => {
       expect(calculatePendingRequestsDisplay({ requestedResources: '16 GPUs' })).toBe('16 GPUs');
     });
 
-    it('should calculate pending resource request units', () => {
-      const flavor: Partial<ResourceFlavorMetric> = {
-        name: 'gpu',
-        resourceName: 'nvidia.com/gpu',
-      };
-      expect(
-        calculatePendingRequestsDisplay({
-          pendingJobsCount: 2,
-          flavors: [flavor as ResourceFlavorMetric],
-        }),
-      ).toBe('16 GPUs');
+    it('should return 0 when requested resources is not present or 0', () => {
+      expect(calculatePendingRequestsDisplay({})).toBe('0');
+      expect(calculatePendingRequestsDisplay({ requestedResources: '0' })).toBe('0');
+      expect(calculatePendingRequestsDisplay({ pendingJobsCount: 2 })).toBe('0');
     });
   });
 });
