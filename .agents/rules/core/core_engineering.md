@@ -50,7 +50,7 @@ function processUser(user: User | null) {
 - **Eradicate Production Mock Branches**: Never embed static mock datasets or conditional mock branches (`if (useMock)`) inside production code. Decouple mocks using Dependency Injection (DI) factory providers.
 - **Accurate Structural Models**: Ensure all mock execution models match full structural requirements of production infrastructure.
 - **Baseline Test Fixtures & Targeted Mutations**: Define canonical baseline fixtures for repetitive data payloads. Use mutation helpers (such as `proto.Modify` for Protobuf messages or shallow copies for standard structs) to express test cases as concise deltas.
-- **Centralize Shared Utilities**: Never copy-paste helper functions or mock builders across packages. Centralize shared utilities in global packages.
+- **Centralize Shared Utilities**: Never copy-paste helper functions or mock builders across packages. Centralize shared utilities in global packages (e.g. `proto.Modify`), eliminating duplicate code and test fixtures across unit test suites.
 
 ## 5. Strict Coverage & System Contract Alignment
 - **Strict Coverage Requirements**: All feature additions and bug fixes must include unit/integration test coverage. Never reduce assertions or mask failures.

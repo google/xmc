@@ -24,7 +24,7 @@ triggers:
       - "pr_review_checklist.md"
     rules:
       - ".agents/rules/workflows/pr_review_address.md"
-    skill: ".agents/skills/pr_workflow/address_pr_comment/SKILL.md"
+    skill: ".agents/skills/pr_workflow/xmc_address_pr_comment/SKILL.md"
 
   - id: local_test_coverage
     intent_keywords:
@@ -38,7 +38,7 @@ triggers:
       - "*.spec.ts"
     rules:
       - ".agents/rules/workflows/feature_dev.md"
-    skill: ".agents/skills/feature_dev/local_test_coverage/SKILL.md"
+    skill: ".agents/skills/feature_dev/xmc_local_test_coverage/SKILL.md"
 
   - id: deploy_xmc
     intent_keywords:
@@ -50,7 +50,7 @@ triggers:
       - "tools/deploy_dev_env.py"
     rules:
       - ".agents/rules/workflows/infra_management.md"
-    skill: ".agents/skills/infra_management/deploy_xmc/SKILL.md"
+    skill: ".agents/skills/infra_management/xmc_deploy/SKILL.md"
 
   - id: upgrade_xmc
     intent_keywords:
@@ -61,7 +61,7 @@ triggers:
       - "tools/upgrade_dev_env.py"
     rules:
       - ".agents/rules/workflows/infra_management.md"
-    skill: ".agents/skills/infra_management/upgrade_xmc/SKILL.md"
+    skill: ".agents/skills/infra_management/xmc_upgrade/SKILL.md"
 
   - id: cleanup_environment
     intent_keywords:
@@ -73,7 +73,7 @@ triggers:
       - "ctk-out/*"
     rules:
       - ".agents/rules/workflows/infra_management.md"
-    skill: ".agents/skills/infra_management/cleanup_environment/SKILL.md"
+    skill: ".agents/skills/infra_management/xmc_cleanup_environment/SKILL.md"
 
   - id: root_cause_analysis
     intent_keywords:
@@ -85,7 +85,7 @@ triggers:
       - "bazel-testlogs/*"
     rules:
       - ".agents/rules/workflows/bug_fixing_debugging.md"
-    skill: ".agents/skills/debugging/root_cause_analysis/SKILL.md"
+    skill: ".agents/skills/debugging/xmc_root_cause_analysis/SKILL.md"
 
   - id: iterative_reflection
     intent_keywords:
@@ -95,7 +95,7 @@ triggers:
     file_patterns: []
     rules:
       - ".agents/rules/core/skills_and_automation.md"
-    skill: ".agents/skills/pr_workflow/iterative_reflection/SKILL.md"
+    skill: ".agents/skills/pr_workflow/xmc_iterative_reflection/SKILL.md"
 
 language_matchers:
   - extensions: [.go]
