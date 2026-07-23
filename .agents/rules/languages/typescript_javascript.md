@@ -57,3 +57,14 @@ private static readonly STATUS_CHIP_MAP = new Map<WorkUnitState, ChipStyle>([
 - **RxJS Interop Signal Conversion (`toSignal`)**: Prefer converting RxJS Observables to Signals using `toSignal()` when consuming asynchronous data streams within Angular components and templates.
 - **Lifecycle Initialization Helpers**: Extract complex multi-pipe observable constructions out of constructors and `ngOnInit` hooks into clear initialization methods (e.g., `initExperimentStream()`, `initUrlsStream()`).
 - Cleanly import RxJS operators directly from `'rxjs'` to optimize tree-shaking and bundle size.
+
+## 7. Angular Component Testing & DOM Interaction Standards
+- **Mandatory DOM Interaction Coverage**: Every Angular component test suite MUST test all interactive template workflows:
+  - Dynamic list additions/deletions (e.g. clicking add/remove buttons and asserting resulting DOM element counts).
+  - Form control value updates (`input`, `change` events) and boundary validation (invalid/negative inputs).
+  - Output signal emissions following user click actions.
+- **Top-Level DOM Selector Constants**: Never repeat raw CSS query strings (`.my-btn`, `#my-input`) inside test bodies. Extract all DOM selectors to named constants at the top of the test file:
+  ```typescript
+  const AMOUNT_INPUT_SELECTOR = '#amount-input';
+  const ADD_BTN_SELECTOR = '.add-resource-btn';
+  ```
