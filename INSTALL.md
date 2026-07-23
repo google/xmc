@@ -2,7 +2,7 @@
 
 This guide details how to install a fresh deployment of XManager on Cloud (XMC) as well as how to upgrade existing installations to newer versions:
 
-1. **Automated Agent Deployment**: Using the pre-configured [deploy_xmc skill](.agents/skills/deploy_xmc/SKILL.md) for fresh installations.
+1. **Automated Agent Deployment**: Using the pre-configured [xmc_deploy skill](.agents/skills/xmc_deploy/SKILL.md) for fresh installations.
 2. **Cluster Toolkit Blueprint v2**: The recommended manual pathway for fresh installations using automated orchestration blueprints.
 3. **Terraform and Helm**: The direct, hands-on infrastructure deployment pathway.
 4. **Upgrading an Existing Installation**: Step-by-step instructions for upgrading existing deployments, running incremental Cloud Spanner schema migrations, building updated container images, and rolling out application upgrades.
@@ -233,14 +233,14 @@ gts_hmac_key: "your-gts-hmac-key"
 
 ---
 
-## Approach 1: Automated Agent Deployment (deploy_xmc)
+## Approach 1: Automated Agent Deployment (xmc_deploy)
 
 If you are running an AI-assisted agent session, the agent can automate the entire deployment of the Cluster Toolkit v2 blueprint. 
 
 ### Skill Integration and Agent Setup
 
 Agent skill for deploying XMC is defined within the workspace:
-- **Location**: The deployment skill is located in the [deploy_xmc skill](.agents/skills/deploy_xmc/SKILL.md) directory.
+- **Location**: The deployment skill is located in the [xmc_deploy skill](.agents/skills/xmc_deploy/SKILL.md) directory.
 - **Integration**: To equip your agent session with this skill, ensure the `.agents/` directory is present in the root of the workspace. The agent automatically scans this folder upon startup and registers the workflows. No manual import should be needed.
 
 ### How to Trigger
@@ -356,7 +356,7 @@ python3 ./tools/upgrade_dev_env.py --only check
 python3 ./tools/upgrade_dev_env.py
 ```
 
-#### Automated Agent Upgrade (`upgrade_xmc` skill)
+#### Automated Agent Upgrade (`xmc_upgrade` skill)
 
 If you are running an agent session, the agent will automatically use the upgrade script. Ask the agent:
 > Upgrade my XMC environment

@@ -7,31 +7,31 @@ This repository includes pre-configured **Agent Skills** located under the [.age
 
 ---
 
-## 1. Automated Blueprint Deployment (`deploy_xmc`)
+## 1. Automated Blueprint Deployment (`xmc_deploy`)
 
-The `deploy_xmc` skill compiles and deploys Cluster Toolkit v2 blueprints. It validates system dependencies, deploys GCP resource groups sequentially, pauses to prompt for manual DNS/OAuth registrations, and runs verification checks.
+The `xmc_deploy` skill compiles and deploys Cluster Toolkit v2 blueprints. It validates system dependencies, deploys GCP resource groups sequentially, pauses to prompt for manual DNS/OAuth registrations, and runs verification checks.
 
 * **How to trigger**: Ask the agent to deploy the environment using the config overrides path, for example:
   > Deploy XMC using the blueprint configuration at `deploy/ctk_v2/xmanager-cloud-deployment.yaml`
-* **Workflow Details**: See [deploy_xmc/SKILL.md](../.agents/skills/deploy_xmc/SKILL.md).
+* **Workflow Details**: See [xmc_deploy/SKILL.md](../.agents/skills/xmc_deploy/SKILL.md).
 
 ---
 
-## 2. PR Comment-Driven Development (`pr_comment_workflow`)
+## 2. PR Comment-Driven Development (`xmc_address_pr_comment`)
 
-The `pr_comment_workflow` skill automates resolving review comments on Pull Requests. The agent fetches comment context, determines affected packages and GKE deployments, runs unit tests and coverage checks, commits code, replies to the comment, pushes container images, and restarts GKE deployments.
+The `xmc_address_pr_comment` skill automates resolving review comments on Pull Requests. The agent fetches comment context, determines affected packages and GKE deployments, runs unit tests and coverage checks, commits code, replies to the comment, pushes container images, and restarts GKE deployments.
 
 * **How to trigger**: Ask the agent to resolve a specific GitHub discussion/review link, for example:
   > Address the PR review comment: `https://github.com/google/xmc/pull/15#discussion_r124892`
-* **Workflow Details**: See [address_pr_comment/SKILL.md](../.agents/skills/address_pr_comment/SKILL.md).
+* **Workflow Details**: See [xmc_address_pr_comment/SKILL.md](../.agents/skills/xmc_address_pr_comment/SKILL.md).
 
 ---
 
-## 3. Automated Environment Upgrade (`upgrade_xmc`)
+## 3. Automated Environment Upgrade (`xmc_upgrade`)
 
-The `upgrade_xmc` skill automates upgrading an existing XMC environment on GKE to run the latest code from the current branch (`HEAD`), leveraging the deployment configuration YAML file (default: `deploy/ctk_v2/xmanager-cloud-deployment.yaml`). It validates system dependencies, checks and runs pending database migrations, builds and pushes updated OCI container images using Bazel, upgrades the application workloads using Cluster Toolkit (`gcluster`), triggers a rolling restart of all GKE workloads, and runs verification checks.
+The `xmc_upgrade` skill automates upgrading an existing XMC environment on GKE to run the latest code from the current branch (`HEAD`), leveraging the deployment configuration YAML file (default: `deploy/ctk_v2/xmanager-cloud-deployment.yaml`). It validates system dependencies, checks and runs pending database migrations, builds and pushes updated OCI container images using Bazel, upgrades the application workloads using Cluster Toolkit (`gcluster`), triggers a rolling restart of all GKE workloads, and runs verification checks.
 
 * **How to trigger**: Ask the agent to upgrade the environment, for example:
   > Upgrade my XMC environment
-* **Workflow Details**: See [upgrade_xmc/SKILL.md](../.agents/skills/upgrade_xmc/SKILL.md).
+* **Workflow Details**: See [xmc_upgrade/SKILL.md](../.agents/skills/xmc_upgrade/SKILL.md).
 
