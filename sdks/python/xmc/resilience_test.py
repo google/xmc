@@ -22,8 +22,9 @@ from unittest.mock import MagicMock
 
 from xmc.buffer import MetricTuple
 from xmc.client import XMCAPIError, XMCNetworkError
-from xmc.flusher import MetricsFlusher, ResilienceState, ResilienceStateMachine
+from xmc.flusher import MetricsFlusher
 from xmc.network import SendResult
+from xmc.resilience import ResilienceState, ResilienceStateMachine, classify_outcome
 
 
 class TestResilienceStateMachine(unittest.TestCase):
@@ -77,6 +78,12 @@ class TestResilienceStateMachine(unittest.TestCase):
             delay = sm.compute_backoff_delay()
             self.assertGreaterEqual(delay, 0.0)
             self.assertLessEqual(delay, 4.0)
+
+    def test_classify_outcome(self) -> None:
+        err = XMCAPIError(status_code=422, message="Unprocessable", response_body="{}")
+        cls, code, body = classify_outcome(err)
+        self.assertEqual(cls, "terminal")
+        self.assertEqual(code, 422)
 
 
 class TestMetricsFlusherResilience(unittest.TestCase):
@@ -162,10 +169,11 @@ class TestMetricsFlusherResilience(unittest.TestCase):
             initial_backoff=0.01,
         )
 
-        with self.assertLogs("xmc.flusher", level="CRITICAL") as cm:
-            flusher.log_metric("m1", 1.0, 1)
-            time.sleep(0.1)
-            flusher.shutdown()
+        flusher.buffer.put("m1", 1.0, 1)
+        with self.assertLogs("xmc.resilience", level="CRITICAL") as cm:
+            flushed_count = flusher.flush()
+
+        self.assertEqual(flushed_count, 0)
 
         # Batch should be discarded immediately on 422 without retries
         self.assertEqual(calls, 1)
@@ -187,10 +195,11 @@ class TestMetricsFlusherResilience(unittest.TestCase):
             initial_backoff=0.01,
         )
 
-        with self.assertLogs("xmc.flusher", level="CRITICAL") as cm:
-            flusher.log_metric("m1", 1.0, 1)
-            time.sleep(0.1)
-            flusher.shutdown()
+        flusher.buffer.put("m1", 1.0, 1)
+        with self.assertLogs("xmc.resilience", level="CRITICAL") as cm:
+            flushed_count = flusher.flush()
+
+        self.assertEqual(flushed_count, 0)
 
         self.assertEqual(mock_client.send.call_count, 1)
         self.assertEqual(flusher.state, ResilienceState.HEALTHY)

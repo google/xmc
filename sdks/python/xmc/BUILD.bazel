@@ -23,6 +23,7 @@ py_library(
         "dist_harvest.py",
         "flusher.py",
         "network.py",
+        "resilience.py",
         "types.py",
     ],
     data = [
