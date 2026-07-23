@@ -79,11 +79,29 @@ class TestResilienceStateMachine(unittest.TestCase):
             self.assertGreaterEqual(delay, 0.0)
             self.assertLessEqual(delay, 4.0)
 
+    def test_overflow_error_handling(self) -> None:
+        sm = ResilienceStateMachine(initial_backoff=1.0, max_backoff=32.0, backoff_factor=2.0)
+        sm.attempt = 1000
+        delay = sm.compute_backoff_delay()
+        self.assertGreaterEqual(delay, 0.0)
+        self.assertLessEqual(delay, 32.0)
+
     def test_classify_outcome(self) -> None:
         err = XMCAPIError(status_code=422, message="Unprocessable", response_body="{}")
         cls, code, body = classify_outcome(err)
         self.assertEqual(cls, "terminal")
         self.assertEqual(code, 422)
+
+    def test_dict_response_body_classification(self) -> None:
+        err = XMCAPIError(
+            status_code=400,
+            message="Bad Request",
+            response_body={"error": "bad_request"},
+        )
+        cls, code, body = classify_outcome(err)
+        self.assertEqual(cls, "terminal")
+        self.assertEqual(code, 400)
+        self.assertIsInstance(body, str)
 
 
 class TestMetricsFlusherResilience(unittest.TestCase):

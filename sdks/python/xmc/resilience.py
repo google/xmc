@@ -65,10 +65,13 @@ class ResilienceStateMachine:
 
     def compute_backoff_delay(self) -> float:
         """Computes exponential backoff delay with full jitter."""
-        max_delay = min(
-            self.max_backoff,
-            self.initial_backoff * (self.backoff_factor**self.attempt),
-        )
+        try:
+            max_delay = min(
+                self.max_backoff,
+                self.initial_backoff * (self.backoff_factor**self.attempt),
+            )
+        except OverflowError:
+            max_delay = self.max_backoff
         return random.uniform(0, max_delay)
 
     def record_transient_failure(self) -> float:
@@ -150,6 +153,11 @@ def classify_outcome(
             "response_body",
             getattr(exc, "body", getattr(exc, "content", None)),
         )
+        if response_body is not None and not isinstance(response_body, (str, bytes)):
+            try:
+                response_body = json.dumps(response_body)
+            except Exception:
+                response_body = str(response_body)
         if isinstance(response_body, bytes):
             response_body = response_body.decode("utf-8", errors="replace")
 

@@ -310,7 +310,9 @@ class MetricsFlusher:
             outcome_res: Any = None
             try:
                 outcome_res = self._dispatch_send(items)
-                if outcome_res in (None, SendResult.SUCCESS):
+                if outcome_res in (None, SendResult.SUCCESS) or isinstance(
+                    outcome_res, (dict, list)
+                ):
                     self._state_machine.record_success()
                     self._consecutive_failures = 0
                     return True
@@ -339,10 +341,11 @@ class MetricsFlusher:
 
             delay = self._state_machine.record_transient_failure()
             logger.warning(
-                "Transient error sending metrics batch (attempt %d/%d, state=%s). Backing off for %.2fs",
+                "Transient error sending metrics batch (attempt %d/%d, state=%s): %s. Backing off for %.2fs",
                 self._state_machine.attempt,
                 self._state_machine.max_retries,
                 self._state_machine.state.value,
+                outcome_res,
                 delay,
             )
 
