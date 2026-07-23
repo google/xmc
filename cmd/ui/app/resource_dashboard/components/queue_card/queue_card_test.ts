@@ -14,18 +14,15 @@
 
 import 'jasmine';
 
+import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { Component, signal } from '@angular/core';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
 import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
-import {
-  bootstrap,
-  cleanState,
-  flush,
-  setupModule,
-  setupObservableMatchers,
-} from 'xmanager_cloud/ui/app/testing/test';
 
 import { QueueCardComponent } from './queue_card';
+import { QueueCardHarness } from './queue_card_harness';
 
 @Component({
   standalone: true,
@@ -73,26 +70,46 @@ class TestHostComponent {
 }
 
 describe('QueueCardComponent', () => {
-  beforeAll(setupObservableMatchers);
+  let fixture: ComponentFixture<TestHostComponent>;
+  let hostInstance: TestHostComponent;
+  let harness: QueueCardHarness;
 
-  cleanState(() => {
-    setupModule({
-      imports: [TestHostComponent],
-    });
-    return {};
-  }, beforeEach);
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [TestHostComponent, NoopAnimationsModule],
+    }).compileComponents();
 
-  it('should render queue name and emit selection on click', async () => {
-    const host = bootstrap(TestHostComponent);
-    await flush();
+    fixture = TestBed.createComponent(TestHostComponent);
+    fixture.detectChanges();
+    hostInstance = fixture.componentInstance;
+    const loader = TestbedHarnessEnvironment.loader(fixture);
+    harness = await loader.getHarness(QueueCardHarness);
+  });
 
-    host.isSelected.set(true);
-    await flush();
+  it('should render queue name, cohort, and status badge', async () => {
+    expect(await harness.getQueueName()).toBe('gpu-cluster-queue');
+    expect(await harness.getCohort()).toBe('Cohort: gpu-cohort');
+    expect(await harness.getStatusBadgeText()).toContain('Active');
+    expect(await harness.isStatusBadgeHealthy()).toBeTrue();
+  });
 
-    const card = document.querySelector('.queue-card') as HTMLElement;
-    card.click();
-    await flush();
+  it('should render flavor capacity rows', async () => {
+    expect(await harness.getFlavorRowCount()).toBe(1);
+    const rowText = await harness.getFlavorRowText(0);
+    expect(rowText).toContain('nvidia.com/gpu');
+    expect(rowText).toContain('56 / 64');
+  });
 
-    expect(host.selectedQueueName()).toBe('gpu-cluster-queue');
+  it('should update selected state and emit queue selection output on click', async () => {
+    expect(await harness.isSelected()).toBeFalse();
+
+    hostInstance.isSelected.set(true);
+    fixture.detectChanges();
+    expect(await harness.isSelected()).toBeTrue();
+
+    await harness.click();
+    fixture.detectChanges();
+
+    expect(hostInstance.selectedQueueName()).toBe('gpu-cluster-queue');
   });
 });
