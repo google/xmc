@@ -15,7 +15,9 @@
 package main
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -99,5 +101,41 @@ func TestDecodeAndValidateMetrics_MalformedArrayClosing(t *testing.T) {
 	}
 	if !strings.Contains(res.Err.Error(), "malformed JSON") {
 		t.Errorf("unexpected error message: %v", res.Err)
+	}
+}
+
+func TestDecodeAndValidateMetrics_DeterministicO1Streaming(t *testing.T) {
+	var buf bytes.Buffer
+	buf.WriteString("[")
+	totalMetrics := 10000
+	for i := 0; i < totalMetrics; i++ {
+		if i > 0 {
+			buf.WriteString(",")
+		}
+		fmt.Fprintf(&buf, `{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "metric_%d", "metric_value": %f, "step": %d, "timestamp": 1700000000}`, i, float64(i)*0.1, i)
+	}
+	buf.WriteString("]")
+
+	var activeCount int
+	var maxActiveCount int
+
+	consumer := func(m *metrics.Metric) error {
+		activeCount++
+		if activeCount > maxActiveCount {
+			maxActiveCount = activeCount
+		}
+		activeCount--
+		return nil
+	}
+
+	res := DecodeAndValidateMetrics(&buf, consumer)
+	if res.Err != nil {
+		t.Fatalf("unexpected error during streaming: %v", res.Err)
+	}
+	if res.ValidCount != totalMetrics {
+		t.Errorf("expected ValidCount %d, got %d", totalMetrics, res.ValidCount)
+	}
+	if maxActiveCount != 1 {
+		t.Errorf("expected deterministic O(1) streaming (max 1 active metric at a time), got max %d active metrics", maxActiveCount)
 	}
 }

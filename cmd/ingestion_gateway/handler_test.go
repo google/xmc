@@ -15,7 +15,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -187,22 +186,61 @@ func TestMetricsIngestionHandler_MethodNotAllowed(t *testing.T) {
 	}
 }
 
+type metricStreamReader struct {
+	totalMetrics  int
+	currentIndex  int
+	currentBuffer []byte
+	bufferOffset  int
+	closed        bool
+}
+
+func newMetricStreamReader(count int) *metricStreamReader {
+	return &metricStreamReader{
+		totalMetrics:  count,
+		currentBuffer: []byte("["),
+	}
+}
+
+func (r *metricStreamReader) Read(p []byte) (int, error) {
+	if r.bufferOffset < len(r.currentBuffer) {
+		n := copy(p, r.currentBuffer[r.bufferOffset:])
+		r.bufferOffset += n
+		return n, nil
+	}
+
+	if r.currentIndex >= r.totalMetrics {
+		if !r.closed {
+			r.currentBuffer = []byte("]")
+			r.bufferOffset = 0
+			r.closed = true
+			n := copy(p, r.currentBuffer)
+			r.bufferOffset += n
+			return n, nil
+		}
+		return 0, io.EOF
+	}
+
+	prefix := ""
+	if r.currentIndex > 0 {
+		prefix = ","
+	}
+	r.currentBuffer = []byte(fmt.Sprintf(`%s{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "metric_%d", "metric_value": %f, "step": %d, "timestamp": 1700000000}`, prefix, r.currentIndex, float64(r.currentIndex)*0.1, r.currentIndex))
+	r.bufferOffset = 0
+	r.currentIndex++
+
+	n := copy(p, r.currentBuffer)
+	r.bufferOffset += n
+	return n, nil
+}
+
 func TestMetricsIngestionHandler_ConstantMemoryStreaming(t *testing.T) {
 	runtime.GC()
 	var mBefore runtime.MemStats
 	runtime.ReadMemStats(&mBefore)
 
-	var buf bytes.Buffer
-	buf.WriteString("[")
-	for i := 0; i < 10000; i++ {
-		if i > 0 {
-			buf.WriteString(",")
-		}
-		fmt.Fprintf(&buf, `{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "metric_%d", "metric_value": %f, "step": %d, "timestamp": 1700000000}`, i, float64(i)*0.1, i)
-	}
-	buf.WriteString("]")
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", &buf)
+	// Stream 50,000 metrics on demand via io.Reader (~7.6MB raw JSON) without pre-allocating buffers in RAM.
+	stream := newMetricStreamReader(50000)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", stream)
 	w := httptest.NewRecorder()
 
 	MetricsIngestionHandler(w, req)
@@ -218,6 +256,8 @@ func TestMetricsIngestionHandler_ConstantMemoryStreaming(t *testing.T) {
 
 	t.Logf("HeapAlloc before: %d, after: %d", mBefore.HeapAlloc, mAfter.HeapAlloc)
 
+	// In O(1) streaming, net heap allocation delta remains near zero (<1MB).
+	// In O(N) slice accumulation, 50,000 retained metrics would consume ~14MB.
 	const maxAllowedHeapDelta = 5 * 1024 * 1024 // 5MB limit
 	heapDelta := int64(mAfter.HeapAlloc) - int64(mBefore.HeapAlloc)
 	if heapDelta > maxAllowedHeapDelta {
