@@ -63,7 +63,7 @@ private static readonly STATUS_CHIP_MAP = new Map<WorkUnitState, ChipStyle>([
   - Dynamic list additions/deletions (e.g. clicking add/remove buttons and asserting resulting DOM element counts).
   - Form control value updates (`input`, `change` events) and boundary validation (invalid/negative inputs).
   - Output signal emissions following user click actions.
-- **Top-Level DOM Selector Constants**: Never repeat raw CSS query strings (`.my-btn`, `#my-input`) inside test bodies. Extract all DOM selectors to named constants at the top of the test file:
+- **Prefer Component Harnesses & Top-Level DOM Selector Constants**: Prioritize using Angular CDK `ComponentHarness` classes for DOM interactions and assertions to insulate tests from template changes. When harnesses are not available or practical, never repeat raw CSS query strings (`.my-btn`, `#my-input`) inside test bodies; extract all DOM selectors to named constants at the top of the test file:
   ```typescript
   const AMOUNT_INPUT_SELECTOR = '#amount-input';
   const ADD_BTN_SELECTOR = '.add-resource-btn';
