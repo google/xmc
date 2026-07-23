@@ -26,6 +26,12 @@ import {
 
 import { ResourceRequirementQuery, SmartResourceFinderComponent } from './smart_resource_finder';
 
+const AMOUNT_INPUT_SELECTOR = '#amount-input';
+const SELECT_BOX_SELECTOR = '.query-select-box';
+const REMOVE_RESOURCE_BTN_SELECTOR = '.remove-resource-btn';
+const ADD_RESOURCE_BTN_SELECTOR = '.add-resource-btn';
+const FIND_QUEUES_ACTION_SELECTOR = '.find-queues-action';
+
 @Component({
   standalone: true,
   imports: [SmartResourceFinderComponent],
@@ -59,13 +65,13 @@ describe('SmartResourceFinderComponent', () => {
     const host = bootstrap(TestHostComponent);
     await flush();
 
-    const amountInput = document.querySelector('#amount-input') as HTMLInputElement;
+    const amountInput = document.querySelector(AMOUNT_INPUT_SELECTOR) as HTMLInputElement;
     expect(amountInput.value).toBe('64');
 
-    const selectElements = document.querySelectorAll('.query-select-box');
+    const selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
     expect(selectElements.length).toBe(1);
 
-    const removeButtons = document.querySelectorAll('.remove-resource-btn');
+    const removeButtons = document.querySelectorAll(REMOVE_RESOURCE_BTN_SELECTOR);
     expect(removeButtons.length).toBe(0);
   });
 
@@ -73,7 +79,7 @@ describe('SmartResourceFinderComponent', () => {
     const host = bootstrap(TestHostComponent);
     await flush();
 
-    const button = document.querySelector('.find-queues-action') as HTMLButtonElement;
+    const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
     button.click();
     await flush();
 
@@ -84,20 +90,20 @@ describe('SmartResourceFinderComponent', () => {
     const host = bootstrap(TestHostComponent);
     await flush();
 
-    const addButton = document.querySelector('.add-resource-btn') as HTMLButtonElement;
+    const addButton = document.querySelector(ADD_RESOURCE_BTN_SELECTOR) as HTMLButtonElement;
     addButton.click();
     await flush();
 
-    let selectElements = document.querySelectorAll('.query-select-box');
+    let selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
     expect(selectElements.length).toBe(2);
 
-    const removeButtons = document.querySelectorAll('.remove-resource-btn');
+    const removeButtons = document.querySelectorAll(REMOVE_RESOURCE_BTN_SELECTOR);
     expect(removeButtons.length).toBe(2);
 
     addButton.click();
     await flush();
 
-    selectElements = document.querySelectorAll('.query-select-box');
+    selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
     expect(selectElements.length).toBe(3);
   });
 
@@ -105,32 +111,32 @@ describe('SmartResourceFinderComponent', () => {
     const host = bootstrap(TestHostComponent);
     await flush();
 
-    const addButton = document.querySelector('.add-resource-btn') as HTMLButtonElement;
+    const addButton = document.querySelector(ADD_RESOURCE_BTN_SELECTOR) as HTMLButtonElement;
     addButton.click();
     await flush();
 
-    let selectElements = document.querySelectorAll('.query-select-box');
+    let selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
     expect(selectElements.length).toBe(2);
 
-    const removeButtons = document.querySelectorAll('.remove-resource-btn');
+    const removeButtons = document.querySelectorAll(REMOVE_RESOURCE_BTN_SELECTOR);
     (removeButtons[0] as HTMLButtonElement).click();
     await flush();
 
-    selectElements = document.querySelectorAll('.query-select-box');
+    selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
     expect(selectElements.length).toBe(1);
-    expect(document.querySelectorAll('.remove-resource-btn').length).toBe(0);
+    expect(document.querySelectorAll(REMOVE_RESOURCE_BTN_SELECTOR).length).toBe(0);
   });
 
   it('should update resource type filter selection and emit in query', async () => {
     const host = bootstrap(TestHostComponent);
     await flush();
 
-    const selectElement = document.querySelector('.query-select-box') as HTMLSelectElement;
+    const selectElement = document.querySelector(SELECT_BOX_SELECTOR) as HTMLSelectElement;
     selectElement.value = 'nvidia.com/gpu';
     selectElement.dispatchEvent(new Event('change'));
     await flush();
 
-    const button = document.querySelector('.find-queues-action') as HTMLButtonElement;
+    const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
     button.click();
     await flush();
 
@@ -141,13 +147,13 @@ describe('SmartResourceFinderComponent', () => {
     const host = bootstrap(TestHostComponent);
     await flush();
 
-    const amountInput = document.querySelector('#amount-input') as HTMLInputElement;
+    const amountInput = document.querySelector(AMOUNT_INPUT_SELECTOR) as HTMLInputElement;
     amountInput.value = '128';
     amountInput.dispatchEvent(new Event('input'));
     amountInput.dispatchEvent(new Event('change'));
     await flush();
 
-    const button = document.querySelector('.find-queues-action') as HTMLButtonElement;
+    const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
     button.click();
     await flush();
 
@@ -158,13 +164,13 @@ describe('SmartResourceFinderComponent', () => {
     const host = bootstrap(TestHostComponent);
     await flush();
 
-    const amountInput = document.querySelector('#amount-input') as HTMLInputElement;
+    const amountInput = document.querySelector(AMOUNT_INPUT_SELECTOR) as HTMLInputElement;
     amountInput.value = '0';
     amountInput.dispatchEvent(new Event('input'));
     amountInput.dispatchEvent(new Event('change'));
     await flush();
 
-    const button = document.querySelector('.find-queues-action') as HTMLButtonElement;
+    const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
     button.click();
     await flush();
 
@@ -175,11 +181,11 @@ describe('SmartResourceFinderComponent', () => {
     const host = bootstrap(TestHostComponent);
     await flush();
 
-    const addButton = document.querySelector('.add-resource-btn') as HTMLButtonElement;
+    const addButton = document.querySelector(ADD_RESOURCE_BTN_SELECTOR) as HTMLButtonElement;
     addButton.click();
     await flush();
 
-    const selectElements = document.querySelectorAll('.query-select-box');
+    const selectElements = document.querySelectorAll(SELECT_BOX_SELECTOR);
     (selectElements[0] as HTMLSelectElement).value = 'nvidia.com/gpu';
     selectElements[0].dispatchEvent(new Event('change'));
 
@@ -187,7 +193,7 @@ describe('SmartResourceFinderComponent', () => {
     selectElements[1].dispatchEvent(new Event('change'));
     await flush();
 
-    const button = document.querySelector('.find-queues-action') as HTMLButtonElement;
+    const button = document.querySelector(FIND_QUEUES_ACTION_SELECTOR) as HTMLButtonElement;
     button.click();
     await flush();
 
