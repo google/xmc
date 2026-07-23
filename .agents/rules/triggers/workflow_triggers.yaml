@@ -1,0 +1,110 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+version: "1.0"
+triggers:
+  - id: address_pr_comment
+    intent_keywords:
+      - "address pr comment"
+      - "pr comment"
+      - "review comment"
+      - "address review"
+    file_patterns:
+      - "pr_review_checklist.md"
+    rules:
+      - ".agents/rules/workflows/pr_review_address.md"
+    skill: ".agents/skills/pr_workflow/address_pr_comment/SKILL.md"
+
+  - id: local_test_coverage
+    intent_keywords:
+      - "test coverage"
+      - "measure coverage"
+      - "unit tests"
+      - "run tests"
+    file_patterns:
+      - "*_test.go"
+      - "*_test.py"
+      - "*.spec.ts"
+    rules:
+      - ".agents/rules/workflows/feature_dev.md"
+    skill: ".agents/skills/feature_dev/local_test_coverage/SKILL.md"
+
+  - id: deploy_xmc
+    intent_keywords:
+      - "deploy xmc"
+      - "deploy environment"
+      - "gcluster deploy"
+    file_patterns:
+      - "deploy/ctk_v2/*"
+      - "tools/deploy_dev_env.py"
+    rules:
+      - ".agents/rules/workflows/infra_management.md"
+    skill: ".agents/skills/infra_management/deploy_xmc/SKILL.md"
+
+  - id: upgrade_xmc
+    intent_keywords:
+      - "upgrade xmc"
+      - "upgrade environment"
+      - "upgrade_dev_env"
+    file_patterns:
+      - "tools/upgrade_dev_env.py"
+    rules:
+      - ".agents/rules/workflows/infra_management.md"
+    skill: ".agents/skills/infra_management/upgrade_xmc/SKILL.md"
+
+  - id: cleanup_environment
+    intent_keywords:
+      - "cleanup environment"
+      - "teardown xmc"
+      - "destroy cluster"
+    file_patterns:
+      - "tools/cleanup_env.py"
+      - "ctk-out/*"
+    rules:
+      - ".agents/rules/workflows/infra_management.md"
+    skill: ".agents/skills/infra_management/cleanup_environment/SKILL.md"
+
+  - id: root_cause_analysis
+    intent_keywords:
+      - "rca"
+      - "root cause analysis"
+      - "debug failure"
+      - "analyze test logs"
+    file_patterns:
+      - "bazel-testlogs/*"
+    rules:
+      - ".agents/rules/workflows/bug_fixing_debugging.md"
+    skill: ".agents/skills/debugging/root_cause_analysis/SKILL.md"
+
+  - id: iterative_reflection
+    intent_keywords:
+      - "iterative reflection"
+      - "session retrospective"
+      - "audit trajectory"
+    file_patterns: []
+    rules:
+      - ".agents/rules/core/skills_and_automation.md"
+    skill: ".agents/skills/pr_workflow/iterative_reflection/SKILL.md"
+
+language_matchers:
+  - extensions: [.go]
+    rule: .agents/rules/languages/golang.md
+  - extensions: [.py]
+    rule: .agents/rules/languages/python.md
+  - extensions: [.ts, .js, .html]
+    rule: .agents/rules/languages/typescript.md
+  - extensions: [.sh, .bash]
+    rule: .agents/rules/languages/shell.md
+  - extensions: [.md]
+    rule: .agents/rules/languages/markdown.md

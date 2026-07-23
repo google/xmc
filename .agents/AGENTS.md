@@ -1,33 +1,26 @@
-# Core Engineering & Multi-Agent Coordination Guidelines
+# Agent Router Index
 
-This root guidelines document defines high-level universal engineering principles across the codebase and provides an organized index to all modular rule specifications located under `.agents/rules/`.
+Lightweight routing index for AI agent sessions. Universal standards are anchored in the core engineering Single Source of Truth (SSOT).
 
----
+## Core Engineering Principles (SSOT)
+All engineering operations, code generation, and reviews MUST strictly follow `.agents/rules/core/core_engineering.md`.
+High-risk actions require the mandatory gatekeeper protocol in `.agents/rules/core/anti_yolo_policy.md`.
 
-## Universal Architectural Principles
+## Universal Skill Trigger Matrix
+Match task intent or modified file paths to load specialized workflows dynamically. Use string paths (never clickable links):
 
-1. **Single Responsibility Principle (SRP)**: Keep all modules, classes, functions, and skills focused on a single responsibility. Decompose complex logic into small pure helpers (aim for a 20–30 line target limit).
-2. **Keep It Simple, Stupid (KISS)**: Enforce linear control flow. Use early return guard clauses at the top of functions and eliminate redundant `else` blocks after returns or exceptions.
-3. **Don't Repeat Yourself (DRY)**: Centralize shared helpers in global packages (e.g., `proto.Modify`), eliminate duplicate code and test fixtures, and extract shared automation playbooks into reusable Python modules or dedicated rule files.
-4. **Context Preservation & Subagent Delegation**: Prevent main context bloat by modularizing rules into purpose-built files and offloading verbose log analysis, heavy test runs, or exploratory searches to worker subagents.
-5. **Documentation Alignment**: Synchronize relevant repository markdown files (such as `README.md`, `INSTALL.md`, and component docs), inline comments, schemas, and skills in the same PR whenever system behavior or API contracts change.
-6. **Iterative Reflection & Meta-Learning**: After major implementations, PRs with high review comment volume (>3-5 comments), or user request, audit session trajectory using the `xmc_iterative_reflection` skill ([SKILL.md](skills/xmc_iterative_reflection/SKILL.md)).
+| Category | Intent / Prompt Keywords | File Scope Trigger | Skill Path |
+| :--- | :--- | :--- | :--- |
+| **PR Workflow** | Address PR comment, PR review feedback | PR comments, PR diffs | `.agents/skills/pr_workflow/xmc_address_pr_comment/SKILL.md` |
+| **PR Workflow** | Retrospective, audit trajectory, reflection | Post-PR / Session audit | `.agents/skills/pr_workflow/xmc_iterative_reflection/SKILL.md` |
+| **Feature Dev** | Local test coverage, measure package coverage | `*_test.go`, `*_test.py`, `*.spec.ts` | `.agents/skills/feature_dev/xmc_local_test_coverage/SKILL.md` |
+| **Infra Mgmt** | Deploy XMC, initial cluster setup | `deploy/ctk_v2/*`, `gcluster` | `.agents/skills/infra_management/xmc_deploy/SKILL.md` |
+| **Infra Mgmt** | Upgrade XMC, redeploy latest branch | `deploy/ctk_v2/*`, `upgrade_dev_env.py` | `.agents/skills/infra_management/xmc_upgrade/SKILL.md` |
+| **Infra Mgmt** | Clean up environment, teardown cluster | `ctk-out/*`, `cleanup_env.py` | `.agents/skills/infra_management/xmc_cleanup_environment/SKILL.md` |
+| **Debugging** | RCA, analyze test failures, root cause | `blaze-testlogs/*`, bug reports | `.agents/skills/debugging/xmc_root_cause_analysis/SKILL.md` |
 
----
-
-## Modular Rules Index
-
-### Core Engineering & Operational Workflows
-- 📘 [Core Engineering Standards](rules/core_engineering.md): SRP, KISS, 20–30 line function limit, linear control flow, default immutability, centralized shared helpers, baseline test fixtures, high-fidelity test doubles, strict coverage, atomic PRs, and post-implementation reflection rules.
-- 🛠️ [Skills & Automation Guidelines](rules/skills_and_automation.md): Extracting complex logic into testable Python scripts, applying DRY/KISS to skills, preventing context creep, and delegating work to subagents.
-
-### GitHub & PR Workflows
-- 🚀 [GitHub Authoring & PR Creation](rules/github_authoring_and_prs.md): Git branch prefixes (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`, `koder/`), mandatory session initialization branch check, Conventional Commit standards, PR title & body formatting rules, mandatory tags (`TAG=agy`), pre-commit linter checks, forbidden raw log dumps, and CI wait buffer rules.
-- 📋 [Code Review & Comment Guidelines](rules/pr_review_guidelines.md): AI code review checklists (SRP, KISS, immutability, DI testing, test coverage, doc sync), review feedback standards, mandatory PR comment resolution rules, and post-PR reflection triggers.
-
-### Language-Specific Rules
-- 🐹 [Go (Golang)](rules/languages/golang.md): Idiomatic Go style, clean interfaces, lowercase error wrapping (`%w`), concurrency safety (`context.Context`, mutexes), table-driven testing with baseline fixtures (`proto.Modify`), and centralized test utilities.
-- 🟦 [TypeScript & Modern Angular](rules/languages/typescript_javascript.md): Prefer TypeScript over JavaScript, TypeScript strictness, modern Angular signals and control flow (`@if`, `@for`, `@switch`), state immutability, declarative styling maps, and DI polymorphism.
-- 🐍 [Python](rules/languages/python.md): PEP 8 Python style guide, Python 3.14+ version enforcement, standard library preference, explicit public API type hints, docstrings, `unittest` framework, Python tooling over shell scripts, and local virtual environment requirements.
-- 🐚 [Shell Scripting](rules/languages/shell.md): Minimal shell script scope (`set -euo pipefail`), double-quoting variables with braces (`"${VAR}"`), restricting Shell to thin entrypoints while deferring logic to Python.
-- 📝 [Markdown Documentation](rules/languages/markdown.md): GFM formatting, heading hierarchy, clickable relative links, accurate contract representation, and synchronized documentation updates.
+## Rule Architecture Index
+- Core Rules: `.agents/rules/core/core_engineering.md`, `.agents/rules/core/anti_yolo_policy.md`, `.agents/rules/core/meta_authoring_rules.md`, `.agents/rules/core/skills_and_automation.md`
+- Workflows: `.agents/rules/workflows/feature_dev.md`, `.agents/rules/workflows/pr_review_address.md`, `.agents/rules/workflows/infra_management.md`, `.agents/rules/workflows/bug_fixing_debugging.md`
+- Languages: `.agents/rules/languages/golang.md`, `.agents/rules/languages/python.md`, `.agents/rules/languages/typescript.md`, `.agents/rules/languages/shell.md`, `.agents/rules/languages/markdown.md`
+- Declarative Triggers: `.agents/rules/triggers/workflow_triggers.yaml`
