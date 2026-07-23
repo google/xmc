@@ -100,6 +100,21 @@ describe('QueueCardComponent', () => {
     expect(rowText).toContain('56 / 64');
   });
 
+  it('should render predictability warning banner when pending workloads exist', async () => {
+    expect(await harness.getPredictabilityBannerText()).toBeNull();
+
+    hostInstance.queue.update((q) => ({
+      ...q,
+      pendingWorkloads: 5,
+      pendingJobsCount: 5,
+    }));
+    fixture.detectChanges();
+
+    const bannerText = await harness.getPredictabilityBannerText();
+    expect(bannerText).not.toBeNull();
+    expect(bannerText).toContain('5 workloads pending');
+  });
+
   it('should update selected state and emit queue selection output on click', async () => {
     expect(await harness.isSelected()).toBeFalse();
 
