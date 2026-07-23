@@ -31,7 +31,7 @@ def main() -> None:
     )
 
     if os.path.exists(flag_path):
-        with open(flag_path, "r", encoding="utf-8") as f:
+        with open(flag_path, encoding="utf-8") as f:
             content = f.read().strip()
         print(
             f"[{prefix} | {pod_name}] Verified init marker: '{content}'",

@@ -21,7 +21,9 @@ py_library(
         "buffer.py",
         "client.py",
         "dist_harvest.py",
+        "flusher.py",
         "network.py",
+        "resilience.py",
         "types.py",
     ],
     data = [
@@ -38,6 +40,18 @@ py_library(
 py_test(
     name = "buffer_test",
     srcs = ["buffer_test.py"],
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "flusher_test",
+    srcs = ["flusher_test.py"],
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "resilience_test",
+    srcs = ["resilience_test.py"],
     deps = [":xmc"],
 )
 
