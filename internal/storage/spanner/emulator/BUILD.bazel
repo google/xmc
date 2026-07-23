@@ -29,13 +29,6 @@ genrule(
 )
 
 genrule(
-    name = "copy_dashboard_schema",
-    srcs = ["//internal/storage/spanner/schema:dashboard-schema.sql"],
-    outs = ["dashboard-schema.sql"],
-    cmd = "cp $< $@",
-)
-
-genrule(
     name = "copy_ess_messages",
     srcs = ["//api/protos/experiment:experiment_messages_descriptor"],
     outs = ["ess_messages.pb"],
@@ -49,19 +42,10 @@ genrule(
     cmd = "cp $< $@",
 )
 
-genrule(
-    name = "copy_dashboard_messages",
-    srcs = ["//api/protos/dashboard:dashboard_messages_descriptor"],
-    outs = ["dashboard_messages.pb"],
-    cmd = "cp $< $@",
-)
-
 go_library(
     name = "emulator",
     srcs = ["emulator.go"],
     embedsrcs = [
-        "dashboard-schema.sql",
-        "dashboard_messages.pb",
         "ess-schema.sql",
         "ess_messages.pb",
         "xid-schema.sql",

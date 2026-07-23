@@ -16,10 +16,7 @@ package dashboard
 
 import (
 	"context"
-	"fmt"
 	"testing"
-
-	"cloud.google.com/go/spanner"
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
@@ -27,15 +24,8 @@ import (
 
 func setupDashboardRepository(ctx context.Context, t *testing.T) *Repository {
 	t.Helper()
-	_, _, emu := emulator.SetupWithEmulator(ctx, t)
-	dbURI := fmt.Sprintf("projects/test-project/instances/test-instance/databases/%s", emu.DashboardDatabase)
-	client, err := spanner.NewClient(ctx, dbURI, emu.ClientOptions()...)
-	if err != nil {
-		t.Fatalf("failed to create dashboard spanner client: %v", err)
-	}
-	t.Cleanup(func() { client.Close() })
-
-	repo, err := NewRepository(client)
+	_, essClient, _ := emulator.SetupWithEmulator(ctx, t)
+	repo, err := NewRepository(essClient)
 	if err != nil {
 		t.Fatalf("NewRepository failed: %v", err)
 	}

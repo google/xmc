@@ -43,14 +43,6 @@ func TestRun(t *testing.T) {
 				return emu.XIDDatabase
 			},
 		},
-		{
-			name:          "dashboard",
-			migrationsDir: "dashboard",
-			databaseID:    "test-dashboard-db-" + emulator.RandomSuffix(),
-			getDB: func(emu *emulator.Emulator) string {
-				return emu.DashboardDatabase
-			},
-		},
 	}
 
 	t.Run("Unsupported", func(t *testing.T) {

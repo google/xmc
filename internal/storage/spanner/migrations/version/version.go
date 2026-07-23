@@ -16,15 +16,9 @@ package version
 
 // Those values are set dynamically during BAZEL build.
 var (
-	dashboardMigrationVersion int64
-	essMigrationVersion       int64
-	xidMigrationVersion       int64
+	essMigrationVersion int64
+	xidMigrationVersion int64
 )
-
-// DashboardExpectedSchemaVersion returns the expected schema version for Dashboard.
-func DashboardExpectedSchemaVersion() int64 {
-	return dashboardMigrationVersion
-}
 
 // EssExpectedSchemaVersion returns the expected schema version for ESS.
 func EssExpectedSchemaVersion() int64 {

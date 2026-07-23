@@ -59,14 +59,6 @@ func TestSchemaSynchronization(t *testing.T) {
 				return emu.XIDDatabase
 			},
 		},
-		{
-			name:          "dashboard",
-			migrationsDir: "dashboard",
-			databaseID:    "test-dashboard-db-" + emulator.RandomSuffix(),
-			getDB: func(emu *emulator.Emulator) string {
-				return emu.DashboardDatabase
-			},
-		},
 	}
 
 	for _, tc := range tests {
@@ -128,8 +120,6 @@ func TestSchemaSynchronization(t *testing.T) {
 				expectedVersion = version.EssExpectedSchemaVersion()
 			case "xid":
 				expectedVersion = version.XidExpectedSchemaVersion()
-			case "dashboard":
-				expectedVersion = version.DashboardExpectedSchemaVersion()
 			default:
 				t.Fatalf("Unknown test case name: %s", tc.name)
 			}
@@ -167,14 +157,6 @@ func TestMigrationUpDownConsistency(t *testing.T) {
 			databaseID:    "test-xid-db-" + emulator.RandomSuffix(),
 			getDB: func(emu *emulator.Emulator) string {
 				return emu.XIDDatabase
-			},
-		},
-		{
-			name:          "dashboard",
-			migrationsDir: "dashboard",
-			databaseID:    "test-dashboard-db-" + emulator.RandomSuffix(),
-			getDB: func(emu *emulator.Emulator) string {
-				return emu.DashboardDatabase
 			},
 		},
 	}
