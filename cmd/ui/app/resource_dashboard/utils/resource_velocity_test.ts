@@ -60,30 +60,17 @@ describe('Resource Velocity Utilities', () => {
       );
     });
 
-    it('should calculate rate for GPU dominant resource when no pending jobs', () => {
+    it('should calculate rate for GPU dominant resource regardless of pending jobs', () => {
       expect(
         calculateResourceVelocity(
           {
             dominantResource: 'nvidia.com/gpu',
             dominantResourceUnits: 8,
-            pendingWorkloads: 0,
+            pendingWorkloads: 5,
           },
           '1h',
         ),
       ).toBe('~8 GPUs/hr');
-    });
-
-    it('should return ~0 when pending jobs exist', () => {
-      expect(
-        calculateResourceVelocity(
-          {
-            dominantResource: 'nvidia.com/gpu',
-            dominantResourceUnits: 8,
-            pendingWorkloads: 2,
-          },
-          '1h',
-        ),
-      ).toBe('~0 GPUs/hr');
     });
   });
 
@@ -92,12 +79,12 @@ describe('Resource Velocity Utilities', () => {
       expect(calculateJobVelocity({ jobVelocity: '4 jobs/hr' }, '1h')).toBe('4 jobs/hr');
     });
 
-    it('should calculate job rate when no pending jobs', () => {
+    it('should calculate job rate regardless of pending jobs', () => {
       expect(
         calculateJobVelocity(
           {
             admittedJobsCount: 24,
-            pendingWorkloads: 0,
+            pendingWorkloads: 3,
           },
           '24h',
         ),

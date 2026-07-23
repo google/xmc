@@ -57,6 +57,7 @@ export function getPendingJobsCount(queue: Partial<ClusterQueue>): number {
 
 /**
  * Calculate resource velocity string for a cluster queue over a timeframe.
+ * Calculated purely based on past admitted resource throughput over the selected timeframe.
  */
 export function calculateResourceVelocity(queue: Partial<ClusterQueue>, period: string): string {
   if (queue.resourceVelocity) {
@@ -66,11 +67,6 @@ export function calculateResourceVelocity(queue: Partial<ClusterQueue>, period: 
   const isGpu = dom.toLowerCase().includes('gpu') || dom.toLowerCase().includes('nvidia');
   const unitName = isGpu ? 'GPUs' : 'CPUs';
 
-  const pending = getPendingJobsCount(queue);
-  if (pending > 0) {
-    return `~0 ${unitName}/hr`;
-  }
-
   const hours = getVelocityHours(period);
   const totalUnits = queue.dominantResourceUnits ?? queue.admittedWorkloads ?? 0;
   const rate = totalUnits / hours;
@@ -79,16 +75,12 @@ export function calculateResourceVelocity(queue: Partial<ClusterQueue>, period: 
 
 /**
  * Calculate job velocity string for a cluster queue over a timeframe.
+ * Calculated purely based on past admitted job throughput over the selected timeframe.
  */
 export function calculateJobVelocity(queue: Partial<ClusterQueue>, period: string): string {
   if (queue.jobVelocity) {
     return queue.jobVelocity;
   }
-  const pending = getPendingJobsCount(queue);
-  if (pending > 0) {
-    return '0 jobs/hr';
-  }
-
   const hours = getVelocityHours(period);
   const totalJobs = queue.admittedJobsCount ?? queue.admittedWorkloads ?? 0;
   const rate = totalJobs / hours;
