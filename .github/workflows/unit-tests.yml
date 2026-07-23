@@ -135,7 +135,7 @@ jobs:
             bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-
 
       - name: 'Verify Spanner Emulator Endpoint'
-        if: matrix.target == 'internal/storage'
+        if: matrix.target == 'internal/storage' || matrix.target == 'cmd/rest'
         run: |
           echo "Verifying Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}..."
           HOST=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f1)
