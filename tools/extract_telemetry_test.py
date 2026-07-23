@@ -90,7 +90,7 @@ class TestExtractTelemetry(unittest.TestCase):
                 "body": (
                     'done\n\n<!-- xmc-telemetry: {"git_username": "chad",'
                     ' "date": "2026-06-22", "time": "12:00:00 UTC", "pr_number":'
-                    ' "29", "comment_id": 1234, "skill_name": "address_pr_comment",'
+                    ' "29", "comment_id": 1234, "skill_name": "xmc_address_pr_comment",'
                     ' "skill_commit_id": "mock_hash"} -->'
                 ),
             }
@@ -100,7 +100,7 @@ class TestExtractTelemetry(unittest.TestCase):
         self.assertEqual(res[0]["github_username"], "chad")
         self.assertEqual(res[0]["pr_number"], "29")
         self.assertEqual(res[0]["comment_id"], 1234)
-        self.assertEqual(res[0]["skill_name"], "address_pr_comment")
+        self.assertEqual(res[0]["skill_name"], "xmc_address_pr_comment")
         self.assertEqual(res[0]["skill_commit_id"], "mock_hash")
 
     def test_parse_telemetry_no_block(self):
