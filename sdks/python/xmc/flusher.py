@@ -129,10 +129,10 @@ class MetricsFlusher:
         )
 
         if isinstance(client, (Client, HTTPClient)) and type(client).__module__ != "unittest.mock":
-            self._xid = client._xid
-            self._work_unit_id = client._work_unit_id
-            self._execution_id = client._execution_id
-            self._replica_id = client._replica_id
+            self._xid = client.xid
+            self._work_unit_id = client.work_unit_id
+            self._execution_id = client.execution_id
+            self._replica_id = client.replica_id
             self._is_silenced = client.is_silenced
         else:
             (

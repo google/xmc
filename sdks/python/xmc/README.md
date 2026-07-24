@@ -99,10 +99,10 @@ In distributed training (`WORLD_SIZE > 1`), logging from every process can satur
 ### 1. Basic Single-Process Logging
 
 ```python
-from xmc import MetricsFlusher
+from xmc import Client, MetricsFlusher
 
 # Auto-starts background flusher daemon thread
-with MetricsFlusher(base_url="https://xmc-gateway.internal.net") as flusher:
+with MetricsFlusher(client=Client(base_url="https://xmc-gateway.internal.net")) as flusher:
     for step in range(1000):
         loss = train_step()
         flusher.log_metric("train/loss", loss, step=step)
