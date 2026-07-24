@@ -277,7 +277,7 @@ func jobSetToUnstructured(jobSet *jobsetv1alpha2.JobSet) (*unstructured.Unstruct
 	return jobSetUnstructured, nil
 }
 
-func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLabels map[string]string, jobAnnotations map[string]string) jobsetv1alpha2.ReplicatedJob {
+func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLabels map[string]string, jobAnnotations map[string]string) jobsetv1alpha2.ReplicatedJob {
 	retryLimit := job.GetRetryLimit()
 
 	// Merge job annotations with default annotations.
@@ -316,6 +316,8 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 			},
 			Spec: batchv1.JobSpec{
 				BackoffLimit:            &retryLimit,
+				CompletionMode:          completionModePtr(batchv1.IndexedCompletion),
+				Completions:             proto.Int32(1),
 				PodFailurePolicy:        podFailurePolicy(primaryName),
 				TTLSecondsAfterFinished: proto.Int32(defaultTTLSeconds),
 				ActiveDeadlineSeconds:   activeDeadlineSeconds,
@@ -327,8 +329,8 @@ func k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLab
 					Spec: corev1.PodSpec{
 						ServiceAccountName: job.GetServiceAccount(),
 						PriorityClassName:  job.GetPriorityClassName(),
-						InitContainers:     buildInitContainersForJob(job),
-						Containers:         buildContainersForJob(job),
+						InitContainers:     c.buildInitContainersForJob(job),
+						Containers:         c.buildContainersForJob(job),
 						RestartPolicy:      corev1.RestartPolicyNever,
 						SecurityContext:    defaultPodSecurityContext(),
 						Volumes:            generateVolumesForJob(job),
@@ -352,23 +354,23 @@ func copyNodeSelector(source map[string]string) map[string]string {
 	return copyMap
 }
 
-func buildInitContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
+func (c *Client) buildInitContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
 	var initContainers []corev1.Container
 	for i, initContainer := range job.GetInitContainers() {
 		name := jobsetutil.InitContainerName(job, initContainer, i)
-		initContainers = append(initContainers, buildContainer(name, initContainer))
+		initContainers = append(initContainers, c.buildContainer(name, initContainer))
 	}
 	return initContainers
 }
 
-func buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
+func (c *Client) buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
 	primaryName := jobsetutil.PrimaryContainerName(job)
 	containers := []corev1.Container{
-		buildContainer(primaryName, job.GetSpec()),
+		c.buildContainer(primaryName, job.GetSpec()),
 	}
 	for i, sidecar := range job.GetSidecars() {
 		sidecarName := jobsetutil.SidecarContainerName(job, sidecar, i)
-		containers = append(containers, buildContainer(sidecarName, sidecar))
+		containers = append(containers, c.buildContainer(sidecarName, sidecar))
 	}
 	return containers
 }
@@ -400,8 +402,8 @@ func buildContainerPorts(spec *esspb.ExecutableSpec) []corev1.ContainerPort {
 	return ports
 }
 
-func buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Container {
-	envVars := generateEnvVarsForSpec(spec)
+func (c *Client) buildContainer(containerName string, spec *esspb.ExecutableSpec) corev1.Container {
+	envVars := c.generateEnvVarsForSpec(spec)
 	ports := buildContainerPorts(spec)
 	var args []string
 	specArgs := spec.GetArgs()
@@ -468,7 +470,7 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 	var replicatedJobs []jobsetv1alpha2.ReplicatedJob
 	if workUnit.GetExecutable().GetJobset() != nil {
 		for _, job := range workUnit.GetExecutable().GetJobset().GetJobs() {
-			replicatedJobs = append(replicatedJobs, k8sJobToReplicatedJob(ctx, job, jobLabels, jobSetAnnotations))
+			replicatedJobs = append(replicatedJobs, c.k8sJobToReplicatedJob(ctx, job, jobLabels, jobSetAnnotations))
 		}
 	}
 
@@ -695,6 +697,10 @@ func boolPtr(b bool) *bool {
 	return &b
 }
 
+func completionModePtr(cm batchv1.CompletionMode) *batchv1.CompletionMode {
+	return &cm
+}
+
 func parseEnvVarSource(src *esspb.EnvVarSource) *corev1.EnvVarSource {
 	if src == nil {
 		return nil
@@ -728,11 +734,11 @@ func parseEnvVarSource(src *esspb.EnvVarSource) *corev1.EnvVarSource {
 	}
 }
 
-func generateEnvVars(job *esspb.KubernetesJob) []corev1.EnvVar {
-	return generateEnvVarsForSpec(job.GetSpec())
+func (c *Client) generateEnvVars(job *esspb.KubernetesJob) []corev1.EnvVar {
+	return c.generateEnvVarsForSpec(job.GetSpec())
 }
 
-func generateEnvVarsForSpec(spec *esspb.ExecutableSpec) []corev1.EnvVar {
+func (c *Client) generateEnvVarsForSpec(spec *esspb.ExecutableSpec) []corev1.EnvVar {
 	var envVars []corev1.EnvVar
 	for k, v := range spec.GetEnvVars() {
 		envVars = append(envVars, corev1.EnvVar{Name: k, Value: v})
@@ -753,7 +759,12 @@ func generateEnvVarsForSpec(spec *esspb.ExecutableSpec) []corev1.EnvVar {
 			}
 		}
 	}
+	metricsEnabled := false
+	if c != nil {
+		metricsEnabled = c.RuntimeConfig.MetricsEnabled
+	}
 	envVars = append(envVars, corev1.EnvVar{Name: constants.XmcEnvVarManagedBy, Value: "true"})
+	envVars = append(envVars, corev1.EnvVar{Name: constants.XmcEnvVarMetricsEnabled, Value: strconv.FormatBool(metricsEnabled)})
 
 	envVarFieldRefs := []struct {
 		name      string
@@ -765,6 +776,7 @@ func generateEnvVarsForSpec(spec *esspb.ExecutableSpec) []corev1.EnvVar {
 		{constants.XmcEnvVarWorkUnitID, fmt.Sprintf("metadata.labels['%s']", constants.WorkUnitIDLabel)},
 		{constants.XmcEnvVarExecutionID, fmt.Sprintf("metadata.labels['%s']", constants.ExecutionIDLabel)},
 		{constants.XmcEnvVarAuthor, fmt.Sprintf("metadata.annotations['%s']", constants.AuthorAnnotation)},
+		{constants.XmcEnvVarJobIndex, fmt.Sprintf("metadata.labels['%s']", constants.JobSetJobIndexLabel)},
 	}
 
 	for _, ev := range envVarFieldRefs {

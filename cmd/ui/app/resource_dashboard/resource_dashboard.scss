@@ -18,51 +18,48 @@
   background-color: #f8f9fa;
   min-height: 100vh;
   box-sizing: border-box;
+  font-family: Roboto, 'Helvetica Neue', sans-serif;
 }
 
-/* Top Sub-Tabs Navigation */
-.rod-subnav-tabs {
-  display: flex;
-  gap: 24px;
-  border-bottom: 1px solid #dadce0;
+.rod-subnav-placeholder {
   margin-bottom: 24px;
 }
 
-.rod-tab-btn {
-  background: none;
-  border: none;
-  font-size: 15px;
-  font-weight: 500;
-  color: #5f6368;
-  padding: 12px 4px;
-  cursor: pointer;
-  position: relative;
-  transition: color 0.15s ease-in-out;
-
-  &:hover {
-    color: #202124;
-  }
-
-  &.active-tab {
-    color: #1a73e8;
-    font-weight: 600;
-
-    &::after {
-      content: '';
-      position: absolute;
-      bottom: -1px;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background-color: #1a73e8;
-      border-radius: 3px 3px 0 0;
-    }
-  }
+.rod-split-container {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
 }
 
-.dashboard-title {
-  font-size: 24px;
-  font-weight: 500;
-  color: #202124;
-  margin: 0;
+.rod-queue-list-placeholder {
+  flex: 1;
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.scaffolding-queue-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0 0;
+}
+
+.scaffolding-queue-item {
+  padding: 10px 14px;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background-color: #f1f3f4;
+  }
+
+  &.selected {
+    border-color: #1a73e8;
+    background-color: #e8f0fe;
+    font-weight: 500;
+  }
 }

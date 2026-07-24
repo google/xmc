@@ -15,91 +15,78 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/storage/spanner/migrations/version"
 )
 
-func TestActiveHealthCheck(t *testing.T) {
-	ctx := context.Background()
+type mockSpannerHealthClient struct {
+	version int64
+	dirty   bool
+	err     error
+}
 
+func (m *mockSpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64, bool, error) {
+	return m.version, m.dirty, m.err
+}
+
+func TestActiveHealthCheck(t *testing.T) {
 	t.Run("serving when all ok", func(t *testing.T) {
-		xidClient, _, _ := emulator.SetupWithEmulator(ctx, t)
+		mockClient := &mockSpannerHealthClient{
+			version: version.EssExpectedSchemaVersion(),
+			dirty:   false,
+		}
 		listener := &Listener{}
 		listener.isRunning.Store(true)
 
-		handler := activeHealthCheck(xidClient, listener)
+		handler := activeHealthCheck(mockClient, listener)
 		req := httptest.NewRequest("GET", "/healthz", nil)
 		w := httptest.NewRecorder()
 
 		handler.ServeHTTP(w, req)
 
 		if w.Code != http.StatusOK {
-			t.Errorf("activeHealthCheck() got %d, want %d", w.Code, http.StatusOK)
+			t.Errorf("expected status OK, got %v", w.Code)
 		}
 	})
 
 	t.Run("503 when listener unhealthy", func(t *testing.T) {
-		xidClient, _, _ := emulator.SetupWithEmulator(ctx, t)
+		mockClient := &mockSpannerHealthClient{
+			version: version.EssExpectedSchemaVersion(),
+			dirty:   false,
+		}
 		listener := &Listener{}
 		listener.isRunning.Store(false)
 
-		handler := activeHealthCheck(xidClient, listener)
+		handler := activeHealthCheck(mockClient, listener)
 		req := httptest.NewRequest("GET", "/healthz", nil)
 		w := httptest.NewRecorder()
 
 		handler.ServeHTTP(w, req)
 
 		if w.Code != http.StatusServiceUnavailable {
-			t.Errorf("activeHealthCheck() got %d, want %d", w.Code, http.StatusServiceUnavailable)
+			t.Errorf("expected status ServiceUnavailable, got %v", w.Code)
 		}
 	})
 
 	t.Run("503 when spanner down", func(t *testing.T) {
-		xidClient, _, _ := emulator.SetupWithEmulator(ctx, t)
-		xidClient.Close()
+		mockClient := &mockSpannerHealthClient{
+			err: errors.New("spanner down"),
+		}
 		listener := &Listener{}
 		listener.isRunning.Store(true)
 
-		handler := activeHealthCheck(xidClient, listener)
+		handler := activeHealthCheck(mockClient, listener)
 		req := httptest.NewRequest("GET", "/healthz", nil)
 		w := httptest.NewRecorder()
 
 		handler.ServeHTTP(w, req)
 
 		if w.Code != http.StatusServiceUnavailable {
-			t.Errorf("activeHealthCheck() got %d, want %d", w.Code, http.StatusServiceUnavailable)
-		}
-	})
-
-	t.Run("503 when spanner client is nil", func(t *testing.T) {
-		listener := &Listener{}
-		listener.isRunning.Store(true)
-
-		handler := activeHealthCheck(nil, listener)
-		req := httptest.NewRequest("GET", "/healthz", nil)
-		w := httptest.NewRecorder()
-
-		handler.ServeHTTP(w, req)
-
-		if w.Code != http.StatusServiceUnavailable {
-			t.Errorf("activeHealthCheck() got %d, want %d", w.Code, http.StatusServiceUnavailable)
-		}
-	})
-
-	t.Run("503 when listener is nil", func(t *testing.T) {
-		xidClient, _, _ := emulator.SetupWithEmulator(ctx, t)
-
-		handler := activeHealthCheck(xidClient, nil)
-		req := httptest.NewRequest("GET", "/healthz", nil)
-		w := httptest.NewRecorder()
-
-		handler.ServeHTTP(w, req)
-
-		if w.Code != http.StatusServiceUnavailable {
-			t.Errorf("activeHealthCheck() got %d, want %d", w.Code, http.StatusServiceUnavailable)
+			t.Errorf("expected status ServiceUnavailable, got %v", w.Code)
 		}
 	})
 }

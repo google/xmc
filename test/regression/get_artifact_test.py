@@ -16,7 +16,7 @@
 import datetime
 import re
 import time
-from typing import Callable
+from collections.abc import Callable
 
 import grpc
 from absl.testing import absltest as googletest, parameterized
@@ -49,32 +49,34 @@ class ArtifactRegressionTest(parameterized.TestCase):
             self.examples.close()
 
     @parameterized.named_parameters(
-        dict(
-            testcase_name="experiment_artifact",
-            title="Get experiment artifact",
-            work_unit_count=_WORK_UNIT_COUNT,
-            get_artifact_name_fn=(
+        {
+            "testcase_name": "experiment_artifact",
+            "title": "Get experiment artifact",
+            "work_unit_count": _WORK_UNIT_COUNT,
+            "get_artifact_name_fn": (
                 lambda experiment_artifact_names, _: experiment_artifact_names[0]
             ),
-            expected_parent_fn=lambda exp_name: exp_name,
-            expected_data_type=artifact_pb2.Artifact.DataType.TEXT,
-            expected_notes="Experiment artifact 0",
-            expected_lifecycle_phase=artifact_pb2.Artifact.LifecyclePhase.EXECUTION,
-            expected_url="http://example.com/exp/0",
-            expected_display_name="Exp Artifact 0",
-        ),
-        dict(
-            testcase_name="work_unit_artifact",
-            title="Get work unit artifact",
-            work_unit_count=_WORK_UNIT_COUNT,
-            get_artifact_name_fn=(lambda _, work_unit_artifact_names: work_unit_artifact_names[0]),
-            expected_parent_fn=lambda exp_name: f"{exp_name}/workUnits/1",
-            expected_data_type=artifact_pb2.Artifact.DataType.URL,
-            expected_notes="Work Unit 1 artifact 0",
-            expected_lifecycle_phase=artifact_pb2.Artifact.LifecyclePhase.OUTPUT,
-            expected_url="http://example.com/wu/1/art/0",
-            expected_display_name="WU 1 Artifact 0",
-        ),
+            "expected_parent_fn": lambda exp_name: exp_name,
+            "expected_data_type": artifact_pb2.Artifact.DataType.TEXT,
+            "expected_notes": "Experiment artifact 0",
+            "expected_lifecycle_phase": artifact_pb2.Artifact.LifecyclePhase.EXECUTION,
+            "expected_url": "http://example.com/exp/0",
+            "expected_display_name": "Exp Artifact 0",
+        },
+        {
+            "testcase_name": "work_unit_artifact",
+            "title": "Get work unit artifact",
+            "work_unit_count": _WORK_UNIT_COUNT,
+            "get_artifact_name_fn": (
+                lambda _, work_unit_artifact_names: work_unit_artifact_names[0]
+            ),
+            "expected_parent_fn": lambda exp_name: f"{exp_name}/workUnits/1",
+            "expected_data_type": artifact_pb2.Artifact.DataType.URL,
+            "expected_notes": "Work Unit 1 artifact 0",
+            "expected_lifecycle_phase": artifact_pb2.Artifact.LifecyclePhase.OUTPUT,
+            "expected_url": "http://example.com/wu/1/art/0",
+            "expected_display_name": "WU 1 Artifact 0",
+        },
     )
     def test_get_artifact(
         self,

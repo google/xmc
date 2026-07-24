@@ -62,7 +62,7 @@ def resolve_bazel_packages(files):
                 packages.add(f"//{dirname}")
                 break
             dirname = os.path.dirname(dirname)
-    return sorted(list(packages))
+    return sorted(packages)
 
 
 def run_affected_tests(args):

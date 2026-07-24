@@ -56,6 +56,7 @@ function processUser(user: User | null) {
 
 ## 5. Strict Testing Coverage & PR Granularity
 - **Strict Coverage Requirements**: All feature additions, bug fixes, and code modifications must include comprehensive unit and integration test coverage. Never reduce assertions or mask test failures.
+- **1-to-1 File Test Cohesion**: Every source file containing business, parsing, or data transformation logic (e.g. `validation.go`) MUST have a corresponding dedicated unit test file (e.g. `validation_test.go`) testing its exported functions directly in unit isolation. Relying solely on higher-level integration or HTTP handler tests (`handler_test.go`) to transitively cover helper logic is not permitted.
 - **Open-Source Code TODO Standard**: Inline code `TODO` comments in public/OSS source files (under `sdks/` or open packages) MUST NOT include internal Buganizer IDs (e.g. `TODO(b/12345)`). Use generic `TODO:` tags or public GitHub issue numbers (`TODO(#123)`).
 - **Small, Focused PRs**: Keep Pull Requests small, localized, and logically split. Each PR should address a single cohesive task or change step to enable fast, high-quality reviews.
 - **System Contract & API Changes**:
@@ -63,5 +64,4 @@ function processUser(user: User | null) {
   - **Documentation Alignment**: Synchronize repository markdown documents (including, but not limited to, `README.md`, `INSTALL.md`, and component specs), schemas, and inline API references within the exact same pull request whenever system contracts or behaviors change.
 
 ## 6. Post-Implementation Reflection & Meta-Learning
-- **Selective Triggers**: Trigger the `iterative_reflection` skill ([SKILL.md](../skills/iterative_reflection/SKILL.md)) only after major implementations, PRs with high comment volume (>3-5 comments), or explicit user request. Do NOT trigger for routine minor edits.
-
+- **Selective Triggers**: Trigger the [Iterative Reflection Skill](../skills/xmc_iterative_reflection/SKILL.md) only after major implementations, PRs with high comment volume (>3-5 comments), or explicit user request. Do NOT trigger for routine minor edits.

@@ -23,15 +23,47 @@ on:
   merge_group:
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   id-token: write
 
 jobs:
+  discover-matrix:
+    name: 'Discover Test Matrix'
+    runs-on: 'ubuntu-24.04'
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@v4'
+        with:
+          # Fetch full history so discover_test_matrix.py can run git diff origin/main...HEAD
+          fetch-depth: 0
+
+      - name: 'Set up Bazel'
+        uses: 'bazelbuild/setup-bazelisk@v3'
+
+      - name: 'Discover Test Modules'
+        id: 'set-matrix'
+        run: python3 tools/discover_test_matrix.py
+
   run-tests:
-    name: 'Run Unit Tests'
+    name: 'Run Unit Tests (${{ matrix.target }})'
+    needs: discover-matrix
+    if: needs.discover-matrix.outputs.matrix != '[]' && needs.discover-matrix.outputs.matrix != ''
     runs-on: 'ubuntu-24.04'
     timeout-minutes: 30
+
+    strategy:
+      # Keep fail-fast disabled so developers receive a comprehensive test report
+      # across all modules in a single CI run, rather than canceling on first failure.
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.discover-matrix.outputs.matrix) }}
 
     # Use a service container for the Spanner Emulator
     services:
@@ -51,30 +83,24 @@ jobs:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
 
-      - name: 'Free Runner Disk Space'
+      - name: 'Start Async Disk Space Cleanup'
         run: |
-          echo "=== Disk space before cleanup ==="
-          df -h
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo swapoff -a || true
-          sudo rm -f /mnt/swapfile /swapfile || true
-          docker image prune -a -f || true
-          docker builder prune -f || true
-          echo "=== Disk space after cleanup ==="
-          df -h
+          echo "=== Starting background cleanup of Android SDK & .NET ==="
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet &
+          echo "CLEANUP_PID=$!" >> $GITHUB_ENV
 
       - name: 'Set up Go'
         uses: 'actions/setup-go@v5'
         with:
           go-version: '1.26.0'
+          cache: true
+          cache-dependency-path: 'go.sum'
 
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@v3'
 
       - name: 'Set up Node.js'
+        if: matrix.target == 'cmd/ui'
         uses: 'actions/setup-node@v4'
         with:
           node-version: '22'
@@ -82,8 +108,35 @@ jobs:
           cache-dependency-path: 'cmd/ui/package-lock.json'
 
       - name: 'Install Node.js dependencies'
+        if: matrix.target == 'cmd/ui'
         run: npm ci --legacy-peer-deps
         working-directory: cmd/ui
+
+      - name: 'Run Angular UI Unit Tests (NPM)'
+        if: matrix.target == 'cmd/ui'
+        run: npm test -- --watch=false --browsers=ChromeHeadlessNoSandbox
+        working-directory: cmd/ui
+
+      - name: 'Install Playwright Chromium'
+        if: matrix.target == 'cmd/ui'
+        run: npx playwright install chromium
+        working-directory: cmd/ui
+
+      - name: 'Build Angular UI App'
+        if: matrix.target == 'cmd/ui'
+        run: npm run build
+        working-directory: cmd/ui
+
+      - name: 'Run Angular UI Screenshot Tests'
+        if: matrix.target == 'cmd/ui'
+        run: npm run test:screenshot
+        working-directory: cmd/ui
+
+      - name: 'Sanitize Target Key for Cache'
+        id: 'cache-key'
+        run: |
+          SAFE_TARGET=$(echo "${{ matrix.target }}" | tr '/' '-')
+          echo "target_key=${SAFE_TARGET}" >> "$GITHUB_OUTPUT"
 
       - name: 'Restore Bazel Cache'
         id: 'cache-bazel-restore'
@@ -92,28 +145,40 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          key: bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'go.sum', '**/BUILD.bazel', '**/*.bzl') }}
           restore-keys: |
-            bazel-${{ runner.os }}-
+            bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-
 
       - name: 'Verify Spanner Emulator Endpoint'
+        if: matrix.target == 'internal/storage' || matrix.target == 'cmd/rest'
         run: |
           echo "Verifying Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}..."
           HOST=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f1)
           PORT=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f2)
           
           # Try connecting to the port
-          for i in {1..${{ env.SPANNER_CHECK_TIMEOUT }}}; do
+          for i in $(seq 1 ${{ env.SPANNER_CHECK_TIMEOUT }}); do
             if nc -z "$HOST" "$PORT" >/dev/null 2>&1 || timeout 1s bash -c "cat < /dev/null > /dev/tcp/$HOST/$PORT" 2>/dev/null; then
               echo "Successfully connected to Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}."
               exit 0
             fi
-            echo "Waiting for Spanner Emulator to start (attempt $i/15)..."
+            echo "Waiting for Spanner Emulator to start (attempt $i/${{ env.SPANNER_CHECK_TIMEOUT }})..."
             sleep 1
           done
           
           echo "CRITICAL: Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }} did not start within ${{ env.SPANNER_CHECK_TIMEOUT }} seconds."
           exit 1
+
+      - name: 'Wait for Disk Space Cleanup'
+        run: |
+          if [ -n "${CLEANUP_PID:-}" ]; then
+            echo "Checking background cleanup (PID ${CLEANUP_PID})..."
+            while kill -0 "${CLEANUP_PID}" 2>/dev/null; do
+              sleep 1
+            done
+          fi
+          echo "=== Available Disk Space Before Bazel Build ==="
+          df -h /
 
       - name: 'Run Unit Tests'
         run: |
@@ -125,14 +190,14 @@ jobs:
             --build_tests_only \
             --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},300,300,300 \
             -- \
-            //...
+            ${{ matrix.bazel_args }}
 
       - name: 'Prune Bazel Cache & Build Tree'
         if: always()
         run: |
           echo "=== Pruning Bazel cache and build tree ==="
           if [ -d ~/.cache/bazel-disk ]; then
-            find ~/.cache/bazel-disk -type f -atime +3 -delete || true
+            find ~/.cache/bazel-disk -type f -mtime +7 -delete || true
             find ~/.cache/bazel-disk -type d -empty -delete || true
           fi
           bazel clean || true
@@ -140,9 +205,26 @@ jobs:
 
       - name: 'Save Bazel Cache'
         uses: 'actions/cache/save@v4'
-        if: always()
+        if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'
         with:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          key: bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'go.sum', '**/BUILD.bazel', '**/*.bzl') }}
+
+  all-tests-passed:
+    name: 'Run Unit Tests'
+    needs: [discover-matrix, run-tests]
+    runs-on: 'ubuntu-24.04'
+    if: always()
+    steps:
+      - name: 'Verify All Unit Tests Passed'
+        run: |
+          if [ "${{ needs.discover-matrix.result }}" != "success" ] || [ "${{ needs.run-tests.result }}" == "failure" ] || [ "${{ needs.run-tests.result }}" == "cancelled" ]; then
+            echo "ERROR: Test matrix discovery or execution failed."
+            echo "Discover matrix result: ${{ needs.discover-matrix.result }}"
+            echo "Matrix result: ${{ needs.run-tests.result }}"
+            exit 1
+          fi
+          echo "All unit test matrix jobs passed or were skipped due to no affected changes."
+

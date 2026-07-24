@@ -16,7 +16,8 @@
 import functools
 import logging
 import os
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import google.auth
 import grpc
@@ -92,8 +93,7 @@ def get_current_user_email() -> str:
             if userinfo_email:
                 logging.info("Using userinfo endpoint email.")
                 return userinfo_email
-            else:
-                raise RuntimeError("Email not found in userinfo response.")
+            raise RuntimeError("Email not found in userinfo response.")
     except Exception as e:
         raise RuntimeError("Failed to get current user email") from e
 

@@ -99,7 +99,8 @@ If the user requests creating a separate Draft PR for approved rule or skill enh
 
 1. **Isolated Subagent Workspace (Preferred)**:
    - If subagent execution with workspace isolation is supported (`Workspace: "branch"` or `"share"`), launch a worker subagent to handle PR creation.
-   - The subagent operates in a separate directory, creates a dedicated branch (e.g. `docs/rules-update-...`), commits `.agents/` enhancements, pushes to remote, and opens a Draft PR (`gh pr create --draft`).
+   - **Clean Head Checkout**: The subagent MUST start by fetching and creating its dedicated branch directly from clean `origin/main` (e.g., `git fetch origin && git checkout -b docs/rules-update-... origin/main`). This ensures the reflection PR contains strictly rule/tooling enhancements and never mixes scope with the parent agent's active feature branch.
+   - The subagent commits `.agents/` or `tools/` enhancements, pushes to remote, and opens a Draft PR (`gh pr create --draft`).
    - The primary agent's active worktree remains 100% untouched and safe from branch switching conflicts.
 
 2. **Single-Workspace Fallback (Safeguard)**:

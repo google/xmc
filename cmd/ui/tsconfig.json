@@ -31,5 +31,13 @@
     "strictInputAccessModifiers": true,
     "strictTemplates": false
   },
-  "exclude": ["**/*_test.ts", "app/testing", "node_modules.bak", "node_modules.bak/**"]
+  "exclude": [
+    "**/*_test.ts",
+    "**/*.spec.ts",
+    "e2e",
+    "playwright.config.ts",
+    "app/testing",
+    "node_modules.bak",
+    "node_modules.bak/**"
+  ]
 }

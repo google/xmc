@@ -242,3 +242,19 @@ py_test(
         ":tool_utils",
     ],
 )
+
+py_library(
+    name = "discover_test_matrix_lib",
+    srcs = ["discover_test_matrix.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "discover_test_matrix_test",
+    srcs = ["discover_test_matrix_test.py"],
+    imports = ["."],
+    deps = [
+        ":discover_test_matrix_lib",
+    ],
+)
