@@ -146,13 +146,15 @@ def main():
         description="Post a reply to a Pull Request review comment thread."
     )
     parser.add_argument("comment_url", help="The URL of the GitHub comment to reply to.")
-    parser.add_argument(
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
         "message",
         nargs="?",
         default=None,
         help="The message to post as a reply. Defaults to 'code changed'.",
     )
-    parser.add_argument(
+    group.add_argument(
         "-f",
         "--message-file",
         dest="message_file",
