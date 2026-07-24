@@ -195,7 +195,6 @@ deployment_groups:
     settings:
       project_id: $(vars.project_id)
       environment: $(vars.environment)
-      domain_name: $(vars.domain_name)
       domains:
       - "$(vars.environment).$(vars.domain_name)"
       - "api.$(vars.environment).$(vars.domain_name)"
