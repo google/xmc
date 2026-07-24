@@ -42,14 +42,6 @@ test.describe('SubnavTabsComponent - Screenshot Tests', () => {
   test('should match baseline screenshot for subnav tabs layout', async ({ page }) => {
     const subnavTabs = page.locator('xmc-rod-subnav-tabs, .rod-subnav-placeholder');
     await expect(subnavTabs.first()).toBeAttached();
-
-    const box = await subnavTabs.first().boundingBox();
-    if (box && box.height > 0) {
-      await expect(subnavTabs.first()).toHaveScreenshot('subnav-tabs-component.png');
-    } else {
-      await expect(page.locator('xmc-resource-dashboard')).toHaveScreenshot(
-        'subnav-tabs-component.png',
-      );
-    }
+    await expect(subnavTabs.first()).toHaveScreenshot('subnav-tabs-component.png');
   });
 });
