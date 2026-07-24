@@ -7,6 +7,9 @@ description: Upgrades an existing XManager on Cloud (XMC) environment on GKE to 
 
 This skill guides the agent through upgrading an existing deployed XManager on Cloud (XMC) environment on Google Kubernetes Engine (GKE) so that it runs the latest code from the current local repository branch (`HEAD`), leveraging the deployment configuration YAML file.
 
+> [!IMPORTANT]
+> All execution steps in this skill MUST strictly adhere to the policy rules defined in [Skills & Automation Guidelines](../../rules/skills_and_automation.md) and [Core Engineering Standards](../../rules/core_engineering.md).
+
 ```mermaid
 graph TD
     Start[Start Upgrade] --> CheckEnv["Check configuration YAML"]

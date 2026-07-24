@@ -7,6 +7,9 @@ description: Guides the agent through tearing down an XMC environment deployed v
 
 This skill guides you through destroying an XManager on Cloud (XMC) environment that was deployed using the Cluster Toolkit v2, verifying that all cloud resources are cleaned up to avoid leakages/costs.
 
+> [!IMPORTANT]
+> All execution steps in this skill MUST strictly adhere to the policy rules defined in [Skills & Automation Guidelines](../../rules/skills_and_automation.md) and [Core Engineering Standards](../../rules/core_engineering.md).
+
 > [!WARNING]
 > **DESTRUCTIVE WORKFLOW**: This cleanup workflow is intended for developer environments. It will **permanently delete** all deployed cloud resources, including GKE clusters, VPC networks, and **all Cloud Spanner databases and backups**. Data recovery is not possible.
 
@@ -19,7 +22,7 @@ Before starting the teardown, verify you are operating on the correct environmen
 2.  **Formulate & Present a Cleanup Plan**:
     *   Check for the deployment directory in the current working directory under `./ctk-out/` (e.g., `./ctk-out/my-dev`).
         > [!IMPORTANT]
-        > **Strict Path Lock**: You must **only** look for the `ctk-out/` folder in the immediate directory you are operating in. Do **not** perform a global search (e.g., using `find_by_name` across the entire home directory) to locate `ctk-out/` folders in other project directories or worktrees.
+        > **Strict Path Lock Policy**: You must **only** look for the `ctk-out/` folder in the immediate working directory. Refer to [Skills & Automation Guidelines](../../rules/skills_and_automation.md#5-helper-tool-execution-policy--safety-constraints) for directory scope restrictions.
     *   If no `./ctk-out/` directory exists in your immediate directory, note that no active cloud environment was deployed from this folder and stop execution.
     *   Present a clear plan to the user listing exactly what will be deleted:
         *   **Cloud Spanner**: The instance `xmc-<environment>`, all databases, and **all active backups** (backups must be deleted first to allow instance teardown).
