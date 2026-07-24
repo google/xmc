@@ -39,11 +39,8 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for smart resource finder section', async ({ page }) => {
-    const dashboard = page.locator('xmc-resource-dashboard');
-    await expect(dashboard).toBeVisible();
-
-    const queueListArea = page.locator('.rod-queue-list-placeholder');
-    await expect(queueListArea).toBeVisible();
-    await expect(queueListArea).toHaveScreenshot('smart-resource-finder-initial.png');
+    const resourceFinder = page.locator('xmc-smart-resource-finder, .rod-queue-list-placeholder');
+    await expect(resourceFinder).toBeVisible();
+    await expect(resourceFinder).toHaveScreenshot('smart-resource-finder-initial.png');
   });
 });

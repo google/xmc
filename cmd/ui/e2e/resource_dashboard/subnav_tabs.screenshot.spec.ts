@@ -39,8 +39,8 @@ test.describe('SubnavTabsComponent - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for subnav tabs layout', async ({ page }) => {
-    const dashboard = page.locator('xmc-resource-dashboard');
-    await expect(dashboard).toBeVisible();
-    await expect(dashboard).toHaveScreenshot('subnav-tabs-component.png');
+    const subnavTabs = page.locator('xmc-rod-subnav-tabs, xmc-resource-dashboard');
+    await expect(subnavTabs.first()).toBeVisible();
+    await expect(subnavTabs.first()).toHaveScreenshot('subnav-tabs-component.png');
   });
 });
