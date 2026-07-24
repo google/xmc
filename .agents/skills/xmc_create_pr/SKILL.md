@@ -51,7 +51,7 @@ Before creating any commit:
 
 1. **Run Pre-Commit Formatting Protocol**:
    ```bash
-   ./.githooks/pre-commit && git add -u
+   ./.githooks/pre-commit && git add .
    ```
 2. **Format Conventional Commit Message**:
    Format the commit message header using `<type>(<scope>): <summary>` (e.g., `feat(auth): add OAuth2 token refresh support`).
@@ -61,14 +61,18 @@ Before creating any commit:
    TAG=agy
    CONV=<conversation_id>
    ```
-4. **Execute Git Commit**:
+4. **Execute Git Commit via Message File**:
+   To avoid shell double-quoting syntax errors when dealing with multiline commit bodies, write the commit message to a temporary file and commit using `-F`:
    ```bash
-   git commit -m "<type>(<scope>): <summary>
+   cat << 'EOF' > commit_msg.txt
+   <type>(<scope>): <summary>
 
    <Detailed commit body>
 
    TAG=agy
-   CONV=<conversation_id>"
+   CONV=<conversation_id>
+   EOF
+   git commit -F commit_msg.txt && rm commit_msg.txt
    ```
 
 ---

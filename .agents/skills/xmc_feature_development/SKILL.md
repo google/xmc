@@ -86,7 +86,7 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
 1. **Run Pre-Commit Hooks**:
    Before committing code changes, run the repository pre-commit script to format files and stage clean edits:
    ```bash
-   ./.githooks/pre-commit && git add -u
+   ./.githooks/pre-commit && git add .
    ```
 2. **Verify Linter Status**:
    Ensure all linters pass without errors or warnings.
