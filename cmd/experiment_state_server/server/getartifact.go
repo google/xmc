@@ -74,10 +74,60 @@ func (s *Server) GetArtifact(ctx context.Context, req *apipb.GetArtifactRequest)
 	}
 	ctx = logging.WithArtifactParent(ctx, artifact.GetParent())
 
+	s.enrichArtifactOutputFields(ctx, artifact)
+
 	// 4.1. Attach the ACLs from the XID entry to the artifact.
 	artifact.Acls = xidEntry.GetAcls()
 
 	// 5. Return the successful response.
 	logging.Info(ctx, "Successfully fetched artifact", "artifact", artifact)
 	return artifact, nil
+}
+
+// enrichArtifactOutputFields enriches output fields of an artifact if it is in the EXECUTION or OUTPUT phase.
+func (s *Server) enrichArtifactOutputFields(ctx context.Context, artifact *msgpb.Artifact) {
+	if artifact == nil {
+		return
+	}
+	if phase := artifact.GetLifecyclePhase(); phase != msgpb.Artifact_EXECUTION && phase != msgpb.Artifact_OUTPUT {
+		return
+	}
+	s.enrichManagedXprof(ctx, artifact)
+}
+
+// enrichManagedXprof enriches the artifact with MLRun URL if it is a ManagedXprof payload.
+func (s *Server) enrichManagedXprof(ctx context.Context, artifact *msgpb.Artifact) {
+	xprof := artifact.GetPayload().GetManagedXprof()
+	if xprof == nil || xprof.GetXprof().GetXprofUrl() != "" {
+		return
+	}
+
+	xid, wid, err := validator.ValidateWorkUnitName(artifact.GetParent())
+	if err != nil {
+		logging.Error(ctx, "Failed to validate work unit name for xprof artifact", "error", err)
+		return
+	}
+
+	execution, err := s.storage.FetchCurrentWorkUnitExecution(ctx, xid, wid)
+	if err != nil {
+		logging.Error(ctx, "Failed to fetch current WorkUnitExecution for xprof artifact", "error", err)
+		return
+	}
+
+	if execution == nil {
+		return
+	}
+
+	updateXprofURL(xprof, execution.GetMetadata().GetMlrunUrl())
+}
+
+// updateXprofURL applies the MLRun URL to the ManagedXProf artifact payload if it is not empty.
+func updateXprofURL(xprof *msgpb.ManagedXprofArtifact, mlrunURL string) {
+	if xprof == nil || mlrunURL == "" {
+		return
+	}
+	if xprof.Xprof == nil {
+		xprof.Xprof = &msgpb.XProfUIInstance{}
+	}
+	xprof.Xprof.XprofUrl = mlrunURL
 }
