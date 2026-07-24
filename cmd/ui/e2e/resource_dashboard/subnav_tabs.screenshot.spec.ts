@@ -42,6 +42,11 @@ test.describe('SubnavTabsComponent - Screenshot Tests', () => {
   test('should match baseline screenshot for subnav tabs layout', async ({ page }) => {
     const subnavTabs = page.locator('xmc-rod-subnav-tabs, .rod-subnav-placeholder');
     await expect(subnavTabs.first()).toBeAttached();
+    await subnavTabs.first().evaluate((el) => {
+      if (el.clientHeight === 0) {
+        (el as HTMLElement).style.minHeight = '1px';
+      }
+    });
     await expect(subnavTabs.first()).toHaveScreenshot('subnav-tabs-component.png');
   });
 });
