@@ -14,7 +14,8 @@
  */
 
 /* Global layout and container locks for deterministic E2E screenshot tests */
-html, body {
+html,
+body {
   width: 1280px !important;
   margin: 0 !important;
   padding: 0 !important;
@@ -27,41 +28,50 @@ html, body {
   margin: 0 auto !important;
 }
 
-/* SubnavTabsComponent screenshot bounds */
+/* Shared display and box model for all screenshot component targets */
 xmc-rod-subnav-tabs,
-.rod-subnav-placeholder {
+.rod-subnav-placeholder,
+xmc-rod-queue-card,
+.scaffolding-queue-item,
+xmc-smart-resource-finder,
+.rod-queue-list-placeholder {
   display: block !important;
-  width: 1216px !important;
-  min-width: 1216px !important;
-  max-width: 1216px !important;
-  height: 48px !important;
-  min-height: 48px !important;
-  max-height: 48px !important;
   box-sizing: border-box !important;
 }
 
-/* QueueCardComponent screenshot bounds */
+/* Shared width constraints for full-width dashboard components */
+xmc-rod-subnav-tabs,
+.rod-subnav-placeholder,
+xmc-smart-resource-finder,
+.rod-queue-list-placeholder {
+  width: 1216px !important;
+  min-width: 1216px !important;
+  max-width: 1216px !important;
+}
+
+/* SubnavTabsComponent height bounds */
+xmc-rod-subnav-tabs,
+.rod-subnav-placeholder {
+  height: 48px !important;
+  min-height: 48px !important;
+  max-height: 48px !important;
+}
+
+/* QueueCardComponent bounds */
 xmc-rod-queue-card,
 .scaffolding-queue-item {
-  display: block !important;
   width: 360px !important;
   min-width: 360px !important;
   max-width: 360px !important;
   height: 120px !important;
   min-height: 120px !important;
   max-height: 120px !important;
-  box-sizing: border-box !important;
 }
 
-/* SmartResourceFinderComponent screenshot bounds */
+/* SmartResourceFinderComponent height bounds */
 xmc-smart-resource-finder,
 .rod-queue-list-placeholder {
-  display: block !important;
-  width: 1216px !important;
-  min-width: 1216px !important;
-  max-width: 1216px !important;
   height: 200px !important;
   min-height: 200px !important;
   max-height: 200px !important;
-  box-sizing: border-box !important;
 }
