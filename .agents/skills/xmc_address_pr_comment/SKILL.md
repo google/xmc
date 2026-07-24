@@ -184,17 +184,10 @@ Comment link: <github_comment_url>"
 ```
 
 ### Post GitHub Comment Notification
-The agent runs the helper script `tools/reply_pr_comment.py` to notify the reviewer that the changes have been made.
-
-> [!CAUTION]
-> **Shell Backtick Safety**: NEVER pass double-quoted (`"..."`) shell string arguments containing backticks (`` `code` ``) directly in `run_command`. Bash interprets backticks inside double quotes as subshell command execution, stripping out the code identifiers and corrupting the comment text. Always use `--message-file <file>` or single quotes (`'...'`) when sending messages with backticks.
-
+The agent runs the helper script `tools/reply_pr_comment.py` to notify the reviewer that the changes have been made:
 ```bash
-# Option A: Simple default reply
+export GITHUB_TOKEN="your_github_token"
 ./tools/reply_pr_comment.py "<github_comment_url>" "code changed"
-
-# Option B: Payload-safe message via file (Recommended for code snippets and backticks)
-./tools/reply_pr_comment.py "<github_comment_url>" --message-file /path/to/reply_message.md
 ```
 
 ### Usage Telemetry Tracking
