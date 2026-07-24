@@ -33,13 +33,13 @@ test.describe('QueueCardComponent - Screenshot Tests', () => {
   test('should match baseline screenshot for queue card section', async ({ page }) => {
     await mountComponentHarness(
       page,
-      `<div class="scaffolding-queue-item" style="width:360px;height:120px;box-sizing:border-box !important;padding:16px;background:#ffffff;border:1px solid #e0e0e0;border-radius:8px;">
-        <div style="font-family:Roboto,sans-serif;font-weight:500;font-size:16px;color:#202124;">gpu-cluster-queue</div>
-        <div style="font-family:Roboto,sans-serif;font-size:14px;color:#5f6368;margin-top:8px;">8 GPUs Available</div>
-      </div>`,
+      `<xmc-rod-queue-card style="width:360px;height:120px;box-sizing:border-box !important;padding:16px;background:#ffffff;border:1px solid #e0e0e0;border-radius:8px;">
+        <div style="font-weight:500;color:#202124;">gpu-cluster-queue</div>
+        <div style="color:#5f6368;margin-top:8px;">8 GPUs Available</div>
+      </xmc-rod-queue-card>`,
     );
 
-    const queueCardComponent = page.locator('.scaffolding-queue-item').first();
+    const queueCardComponent = page.locator('xmc-rod-queue-card').first();
     await expect(queueCardComponent).toBeVisible();
     await expect(queueCardComponent).toHaveScreenshot('queue-card-component.png');
   });
