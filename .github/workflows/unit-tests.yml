@@ -93,6 +93,8 @@ jobs:
         uses: 'actions/setup-go@v5'
         with:
           go-version: '1.26.0'
+          cache: true
+          cache-dependency-path: 'go.sum'
 
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@v3'
@@ -115,6 +117,12 @@ jobs:
         run: npm test -- --watch=false --browsers=ChromeHeadlessNoSandbox
         working-directory: cmd/ui
 
+      - name: 'Sanitize Target Key for Cache'
+        id: 'cache-key'
+        run: |
+          SAFE_TARGET=$(echo "${{ matrix.target }}" | tr '/' '-')
+          echo "target_key=${SAFE_TARGET}" >> "$GITHUB_OUTPUT"
+
       - name: 'Restore Bazel Cache'
         id: 'cache-bazel-restore'
         uses: 'actions/cache/restore@v4'
@@ -122,12 +130,12 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          key: bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'go.sum', '**/BUILD.bazel', '**/*.bzl') }}
           restore-keys: |
-            bazel-${{ runner.os }}-${{ matrix.target }}-
+            bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-
 
       - name: 'Verify Spanner Emulator Endpoint'
-        if: matrix.target == 'internal/storage'
+        if: matrix.target == 'internal/storage' || matrix.target == 'cmd/rest'
         run: |
           echo "Verifying Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}..."
           HOST=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f1)
@@ -149,8 +157,10 @@ jobs:
       - name: 'Wait for Disk Space Cleanup'
         run: |
           if [ -n "${CLEANUP_PID:-}" ]; then
-            echo "Waiting for background cleanup (PID ${CLEANUP_PID}) to complete..."
-            wait "${CLEANUP_PID}" || true
+            echo "Checking background cleanup (PID ${CLEANUP_PID})..."
+            while kill -0 "${CLEANUP_PID}" 2>/dev/null; do
+              sleep 1
+            done
           fi
           echo "=== Available Disk Space Before Bazel Build ==="
           df -h /
@@ -172,7 +182,7 @@ jobs:
         run: |
           echo "=== Pruning Bazel cache and build tree ==="
           if [ -d ~/.cache/bazel-disk ]; then
-            find ~/.cache/bazel-disk -type f -atime +3 -delete || true
+            find ~/.cache/bazel-disk -type f -mtime +7 -delete || true
             find ~/.cache/bazel-disk -type d -empty -delete || true
           fi
           bazel clean || true
@@ -180,12 +190,12 @@ jobs:
 
       - name: 'Save Bazel Cache'
         uses: 'actions/cache/save@v4'
-        if: always()
+        if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'
         with:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          key: bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'go.sum', '**/BUILD.bazel', '**/*.bzl') }}
 
   all-tests-passed:
     name: 'Run Unit Tests'
@@ -195,8 +205,9 @@ jobs:
     steps:
       - name: 'Verify All Unit Tests Passed'
         run: |
-          if [ "${{ needs.run-tests.result }}" == "failure" ] || [ "${{ needs.run-tests.result }}" == "cancelled" ]; then
-            echo "ERROR: One or more unit test matrix jobs failed."
+          if [ "${{ needs.discover-matrix.result }}" != "success" ] || [ "${{ needs.run-tests.result }}" == "failure" ] || [ "${{ needs.run-tests.result }}" == "cancelled" ]; then
+            echo "ERROR: Test matrix discovery or execution failed."
+            echo "Discover matrix result: ${{ needs.discover-matrix.result }}"
             echo "Matrix result: ${{ needs.run-tests.result }}"
             exit 1
           fi

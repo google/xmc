@@ -23,7 +23,17 @@ from typing import Any
 
 from xmc.buffer import BoundedMetricsBuffer, MetricTuple
 from xmc.client import Client
-from xmc.network import HTTPClient
+from xmc.network import HTTPClient, SendResult
+from xmc.resilience import (
+    DEFAULT_BACKOFF_FACTOR,
+    DEFAULT_INITIAL_BACKOFF,
+    DEFAULT_MAX_BACKOFF,
+    DEFAULT_MAX_RETRIES,
+    ResilienceState,
+    ResilienceStateMachine,
+    classify_outcome,
+    parse_and_log_terminal_diagnostic,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +65,10 @@ class MetricsFlusher:
         flush_fn: Callable[[list[MetricTuple]], None] | None = None,
         flush_interval: float = DEFAULT_FLUSH_INTERVAL,
         batch_size: int = DEFAULT_BATCH_SIZE,
+        initial_backoff: float = DEFAULT_INITIAL_BACKOFF,
+        max_backoff: float = DEFAULT_MAX_BACKOFF,
+        backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
+        max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
         """Initializes MetricsFlusher.
 
@@ -64,6 +78,10 @@ class MetricsFlusher:
             flush_fn: Optional custom callback function accepting a list of MetricTuples.
             flush_interval: Periodic flush interval in seconds (default 5.0).
             batch_size: Metric count threshold triggering early wakeup (default 1000).
+            initial_backoff: Initial backoff delay in seconds (default 1.0).
+            max_backoff: Maximum backoff delay cap in seconds (default 32.0).
+            backoff_factor: Multiplicative factor for exponential backoff (default 2.0).
+            max_retries: Maximum consecutive retry attempts per batch (default 5).
 
         Raises:
             ValueError: If parameters are invalid or client and flush_fn are both specified/omitted.
@@ -85,6 +103,12 @@ class MetricsFlusher:
         self._flush_interval = flush_interval
         self._batch_size = batch_size
         self._consecutive_failures = 0
+        self._state_machine = ResilienceStateMachine(
+            initial_backoff=initial_backoff,
+            max_backoff=max_backoff,
+            backoff_factor=backoff_factor,
+            max_retries=max_retries,
+        )
 
         self._init_lock = threading.Lock()
         self._condition = threading.Condition()
@@ -92,6 +116,16 @@ class MetricsFlusher:
         self._started = False
         self._thread: threading.Thread | None = None
         self._atexit_handler: Callable[[], None] | None = None
+
+    @property
+    def state(self) -> ResilienceState:
+        """Returns the current resilience state machine state."""
+        return self._state_machine.state
+
+    @property
+    def state_machine(self) -> ResilienceStateMachine:
+        """Returns the underlying ResilienceStateMachine instance."""
+        return self._state_machine
 
     @property
     def buffer(self) -> BoundedMetricsBuffer:
@@ -241,27 +275,14 @@ class MetricsFlusher:
             )
         return False
 
-    def _send_batch(self, items: list[MetricTuple]) -> bool:
-        """Sends metric items via custom flush callback or configured HTTP client.
-
-        Args:
-            items: List of MetricTuple elements to send.
-
-        Returns:
-            True if batch was successfully sent, False otherwise.
-        """
+    def _dispatch_send(self, items: list[MetricTuple]) -> Any:
+        """Dispatches batch to custom flush callback or HTTP client."""
         if self._flush_fn is not None:
-            try:
-                self._flush_fn(items)
-                self._consecutive_failures = 0
-                return True
-            except Exception as e:
-                return self._handle_send_failure(e)
+            return self._flush_fn(items)
 
         if self._client is None:
-            return False
+            raise ValueError("No client or flush_fn configured.")
 
-        # Perform JSON serialization and network POST outside of any lock to prevent thread stalls.
         payload = {
             "metrics": [
                 {
@@ -274,16 +295,64 @@ class MetricsFlusher:
             ]
         }
 
-        try:
-            if hasattr(self._client, "send"):
-                body = json.dumps(payload)
-                self._client.send(body)
-            elif hasattr(self._client, "post"):
-                self._client.post("", payload)
-            self._consecutive_failures = 0
-            return True
-        except Exception as e:
-            return self._handle_send_failure(e)
+        if hasattr(self._client, "send"):
+            body = json.dumps(payload)
+            return self._client.send(body)
+
+        if hasattr(self._client, "post"):
+            return self._client.post("", payload)
+
+        return None
+
+    def _send_batch(self, items: list[MetricTuple]) -> bool:
+        """Sends metric items via custom flush callback or client with resilience retries."""
+        while True:
+            outcome_res: Any = None
+            try:
+                outcome_res = self._dispatch_send(items)
+                if outcome_res in (None, SendResult.SUCCESS) or isinstance(
+                    outcome_res, (dict, list)
+                ):
+                    self._state_machine.record_success()
+                    self._consecutive_failures = 0
+                    return True
+                classification, status_code, body = classify_outcome(outcome_res)
+            except Exception as exc:
+                outcome_res = exc
+                classification, status_code, body = classify_outcome(exc)
+
+            if classification == "terminal":
+                parse_and_log_terminal_diagnostic(
+                    status_code or 400,
+                    body,
+                    outcome_res if isinstance(outcome_res, Exception) else None,
+                )
+                self._state_machine.record_terminal_failure()
+                return False
+
+            self._consecutive_failures += 1
+            if self._state_machine.attempt >= self._state_machine.max_retries:
+                logger.warning(
+                    "Max retries (%d) reached for metric batch. Discarding batch.",
+                    self._state_machine.max_retries,
+                )
+                self._state_machine.reset()
+                return False
+
+            delay = self._state_machine.record_transient_failure()
+            logger.warning(
+                "Transient error sending metrics batch (attempt %d/%d, state=%s): %s. Backing off for %.2fs",
+                self._state_machine.attempt,
+                self._state_machine.max_retries,
+                self._state_machine.state.value,
+                outcome_res,
+                delay,
+            )
+
+            interrupted = self._shutdown_event.wait(timeout=delay)
+            if interrupted:
+                logger.info("Backoff sleep interrupted by shutdown signal.")
+                return False
 
     def shutdown(self, timeout: float = DEFAULT_SHUTDOWN_TIMEOUT) -> None:
         """Shuts down flusher thread, joining with timeout and flushing remaining metrics.
