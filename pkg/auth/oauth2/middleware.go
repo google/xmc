@@ -54,6 +54,7 @@ func (a *Authenticator) Authenticate(next http.Handler) http.Handler {
 // SecurityMiddlewares wraps the handler with all standard security middlewares
 // SecurityHeaders -> CrossOriginProtection -> CORS.
 func (a *Authenticator) SecurityMiddlewares(next http.Handler) http.Handler {
+	log.Printf("[Middleware Auth] Building security middleware chain (Security Headers -> CSRF -> CORS)")
 	handler := next
 	handler = a.corsMiddleware(handler)
 	handler = a.crossOriginProtection(handler)
@@ -193,6 +194,7 @@ func (a *Authenticator) authenticateOIDC(w http.ResponseWriter, r *http.Request,
 
 // corsMiddleware configures cross-origin access using rs/cors package.
 func (a *Authenticator) corsMiddleware(next http.Handler) http.Handler {
+	log.Printf("[Middleware CORS] Building CORS middleware")
 	origins := make([]string, len(a.Config.AllowedOrigins))
 	copy(origins, a.Config.AllowedOrigins)
 	if a.Config.FrontendURL != "" {
@@ -205,6 +207,7 @@ func (a *Authenticator) corsMiddleware(next http.Handler) http.Handler {
 		}
 	}
 
+	log.Printf("[Middleware CORS] configuring CORS middleware with allowed origins: %v", origins)
 	c := cors.New(cors.Options{
 		AllowedOrigins:   origins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -218,6 +221,7 @@ func (a *Authenticator) corsMiddleware(next http.Handler) http.Handler {
 
 // securityHeadersMiddleware applies secure response headers.
 func (a *Authenticator) securityHeadersMiddleware(next http.Handler) http.Handler {
+	log.Printf("[Middleware Headers] Building Security Headers middleware")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -235,6 +239,7 @@ func (a *Authenticator) securityHeadersMiddleware(next http.Handler) http.Handle
 
 // crossOriginProtection sets up the standard CrossOriginProtection filter.
 func (a *Authenticator) crossOriginProtection(next http.Handler) http.Handler {
+	log.Printf("[Middleware COP] Building Cross-Origin Protection (CSRF) middleware")
 	cop := http.NewCrossOriginProtection()
 	for _, origin := range a.Config.AllowedOrigins {
 		if err := cop.AddTrustedOrigin(origin); err != nil {
