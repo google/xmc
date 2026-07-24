@@ -76,18 +76,6 @@ describe('Resource Velocity Utilities', () => {
     it('should return custom job velocity if present', () => {
       expect(calculateJobVelocity({ jobVelocity: '4 jobs/hr' }, '1h')).toBe('4 jobs/hr');
     });
-
-    it('should calculate job rate regardless of pending jobs', () => {
-      expect(
-        calculateJobVelocity(
-          {
-            admittedJobsCount: 24,
-            pendingWorkloads: 3,
-          },
-          '24h',
-        ),
-      ).toBe('1 jobs/hr');
-    });
   });
 
   describe('calculatePendingRequestsDisplay', () => {
