@@ -57,11 +57,12 @@ jobs:
 
       - name: 'Run ShellCheck'
         run: |
-          SHELL_FILES=$(find . -type f \( -name "*.sh" -o -path "./.githooks/*" \) -not -path "*/node_modules/*" -not -path "*/.git/*")
-          if [ -n "$SHELL_FILES" ]; then
-            # Disable SC2086: Unquoted expansion is required to pass space-separated file lists as separate positional arguments.
-            # shellcheck disable=SC2086
-            shellcheck $SHELL_FILES
+          SHELL_FILES=()
+          while IFS= read -r -d '' file; do
+            SHELL_FILES+=("$file")
+          done < <(find . -type f \( -name "*.sh" -o -path "./.githooks/*" \) -not -path "*/node_modules/*" -not -path "*/.git/*" -print0 2>/dev/null)
+          if [ ${#SHELL_FILES[@]} -gt 0 ]; then
+            shellcheck "${SHELL_FILES[@]}"
           fi
 
   go-lint:
@@ -106,9 +107,12 @@ jobs:
 
       - name: 'Run Buildifier Check'
         run: |
-          BAZEL_FILES=$(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \) -not -path "*/node_modules/*")
-          if [ -n "$BAZEL_FILES" ]; then
-            $(go env GOPATH)/bin/buildifier -mode=check $BAZEL_FILES
+          BAZEL_FILES=()
+          while IFS= read -r -d '' file; do
+            BAZEL_FILES+=("$file")
+          done < <(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \) -not -path "*/node_modules/*" -print0 2>/dev/null)
+          if [ ${#BAZEL_FILES[@]} -gt 0 ]; then
+            $(go env GOPATH)/bin/buildifier -mode=check "${BAZEL_FILES[@]}"
           fi
 
   ui-lint:
