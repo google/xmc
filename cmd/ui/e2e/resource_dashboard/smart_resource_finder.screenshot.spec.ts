@@ -33,6 +33,8 @@ async function handleUserAuthRoute(route: Route) {
 
 test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
+    // Set wider viewport so query card controls fit inline without collapsing
+    await page.setViewportSize({ width: 1600, height: 900 });
     await page.route('/api/user', handleUserAuthRoute);
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
