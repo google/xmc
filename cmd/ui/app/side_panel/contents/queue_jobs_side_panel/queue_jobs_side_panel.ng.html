@@ -1,0 +1,189 @@
+<!--
+ Copyright 2026 Google LLC
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+<div class="jobs-in-queue-card">
+  <div class="jobs-card-header">
+    <div class="title-row">
+      <h3 class="jobs-card-title">Jobs in the queue ({{ totalCount() }})</h3>
+    </div>
+    <div class="target-queue-name">{{ activeQueueName() }}</div>
+    <p class="jobs-card-subtitle">
+      There are {{ totalCount() }} massive jobs ahead of you blocking physical resources. Your job
+      will wait until the jobs release contiguous hardware limits.
+    </p>
+  </div>
+
+  <div class="jobs-filter-bar">
+    <mat-icon class="filter-menu-icon">filter_list</mat-icon>
+    <input
+      type="text"
+      class="jobs-search-input"
+      placeholder="Filter by resource, priority or importance"
+      [ngModel]="filterQuery()"
+      (ngModelChange)="onFilterQueryChange($event)"
+    />
+    <mat-icon class="filter-action-icon" matTooltip="Help">help_outline</mat-icon>
+    <mat-icon class="filter-action-icon" matTooltip="Columns">view_column</mat-icon>
+  </div>
+
+  @if (isLoading()) {
+    <div class="loading-container">
+      <span>Loading jobs...</span>
+    </div>
+  } @else if (filteredJobs().length === 0) {
+    <div class="jobs-empty-state">
+      <div class="empty-star-illustration">
+        <svg
+          width="120"
+          height="120"
+          viewBox="0 0 140 140"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M70 20L84.42 49.23L116.63 53.91L93.31 76.64L98.81 108.73L70 93.58L41.19 108.73L46.69 76.64L23.37 53.91L55.58 49.23L70 20Z"
+            stroke="#202124"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            fill="#ffffff"
+          />
+          <path d="M40 75L12 98" stroke="#4285F4" stroke-width="2.5" stroke-linecap="round" />
+          <path d="M55 92L28 115" stroke="#4285F4" stroke-width="2.5" stroke-linecap="round" />
+          <path d="M26 58L8 72" stroke="#4285F4" stroke-width="2.5" stroke-linecap="round" />
+        </svg>
+      </div>
+      <div class="empty-caption">No job ahead of you!</div>
+    </div>
+  } @else {
+    <div class="jobs-table-container">
+      <table mat-table [dataSource]="pagedJobs()" class="jobs-mat-table">
+        <!-- Position Column -->
+        <ng-container matColumnDef="position">
+          <th mat-header-cell *matHeaderCellDef>Position</th>
+          <td mat-cell *matCellDef="let job" class="position-cell">{{ job.position }}</td>
+        </ng-container>
+
+        <!-- Experiment Name Column -->
+        <ng-container matColumnDef="jobName">
+          <th mat-header-cell *matHeaderCellDef>Experiment name</th>
+          <td mat-cell *matCellDef="let job" class="name-cell">
+            <a [routerLink]="['/experiments', job.xid || job.jobName]" class="job-link">{{
+              job.jobName
+            }}</a>
+          </td>
+        </ng-container>
+
+        <!-- Status Column -->
+        <ng-container matColumnDef="status">
+          <th mat-header-cell *matHeaderCellDef>Status</th>
+          <td mat-cell *matCellDef="let job" class="status-cell">
+            @if (
+              job.status?.toUpperCase() === 'RUNNING' || job.status?.toUpperCase() === 'ACTIVE'
+            ) {
+              <span class="status-indicator running-indicator">
+                <mat-icon class="status-dot-icon running-dot">sync</mat-icon> Running
+              </span>
+            } @else {
+              <span class="status-indicator pending-indicator">
+                <mat-icon class="status-dot-icon pending-dot">more_horiz</mat-icon> Pending
+              </span>
+            }
+          </td>
+        </ng-container>
+
+        <!-- Priority Column -->
+        <ng-container matColumnDef="priority">
+          <th mat-header-cell *matHeaderCellDef>Priority</th>
+          <td mat-cell *matCellDef="let job" class="priority-cell">
+            <span class="priority-badge" [class]="getPriorityBadgeClass(job.priority)">
+              {{ getPriorityDisplay(job.priority) }}
+            </span>
+          </td>
+        </ng-container>
+
+        <!-- Work / Aux Unit Column -->
+        <ng-container matColumnDef="workUnitId">
+          <th mat-header-cell *matHeaderCellDef>Work / Aux Unit</th>
+          <td mat-cell *matCellDef="let job" class="workunit-cell">
+            @if (job.workUnitId) {
+              <a
+                [routerLink]="['/experiments', job.xid || job.jobName, 'workUnits', job.workUnitId]"
+                class="workunit-link"
+              >
+                <span class="unit-badge">{{ job.workUnitId }}</span>
+              </a>
+            } @else {
+              <span class="unit-badge">-</span>
+            }
+          </td>
+        </ng-container>
+
+        <!-- Author Column -->
+        <ng-container matColumnDef="user">
+          <th mat-header-cell *matHeaderCellDef>Author</th>
+          <td mat-cell *matCellDef="let job" class="author-cell">
+            <div class="author-avatar-chip">
+              <mat-icon class="avatar-icon">account_circle</mat-icon>
+              <span class="author-name">{{ job.user }}</span>
+            </div>
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+        <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+      </table>
+
+      <!-- Table Footer Pagination -->
+      <div class="jobs-table-footer">
+        <div class="rows-per-page">
+          <span>Rows per page</span>
+          <select
+            class="rows-select"
+            [ngModel]="pageSize()"
+            (ngModelChange)="onPageSizeChange($event)"
+          >
+            @for (opt of pageSizeOptions; track opt) {
+              <option [value]="opt">{{ opt }}</option>
+            }
+          </select>
+        </div>
+        <div class="pagination-info">{{ getPaginationRangeDisplay() }}</div>
+        <div class="pagination-nav">
+          <button mat-icon-button [disabled]="pageIndex() === 0" (click)="goToFirstPage()">
+            <mat-icon>first_page</mat-icon>
+          </button>
+          <button mat-icon-button [disabled]="pageIndex() === 0" (click)="goToPreviousPage()">
+            <mat-icon>chevron_left</mat-icon>
+          </button>
+          <button
+            mat-icon-button
+            [disabled]="pageIndex() >= getMaxPageIndex()"
+            (click)="goToNextPage()"
+          >
+            <mat-icon>chevron_right</mat-icon>
+          </button>
+          <button
+            mat-icon-button
+            [disabled]="pageIndex() >= getMaxPageIndex()"
+            (click)="goToLastPage()"
+          >
+            <mat-icon>last_page</mat-icon>
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</div>
