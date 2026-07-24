@@ -13,9 +13,6 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 -->
-@let badgeInfo = queue() | queueStatusBadge;
-@let predInfo = queue() | predictabilityMessage;
-
 <div
   class="queue-card"
   [class.selected]="isSelected()"
@@ -30,6 +27,7 @@
       <h3 class="queue-name">{{ queue().name }}</h3>
       <span class="queue-cohort">Cohort: {{ queue().cohort || 'None' }}</span>
     </div>
+    @let badgeInfo = queue() | queueStatusBadge;
     @if (badgeInfo) {
       <div
         class="status-badge"
@@ -60,6 +58,7 @@
     </div>
   </div>
 
+  @let predInfo = queue() | predictabilityMessage;
   @if (predInfo) {
     <div
       class="predictability-banner"

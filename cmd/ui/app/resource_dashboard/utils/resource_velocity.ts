@@ -41,9 +41,16 @@ export function formatRate(val: number): string {
  * Convert velocity period string to numeric hours.
  */
 export function getVelocityHours(period: string): number {
-  if (period === '1h' || period === '1 hour') return 1;
-  if (period === '24h' || period === '1 day') return 24;
-  return 168;
+  switch (period) {
+    case '1h':
+    case '1 hour':
+      return 1;
+    case '24h':
+    case '1 day':
+      return 24;
+    default:
+      return 168;
+  }
 }
 
 /**
