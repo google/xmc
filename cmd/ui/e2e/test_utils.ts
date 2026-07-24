@@ -22,6 +22,15 @@ export const MOCK_USER = {
   allowedDomains: ['google.com'],
 };
 
+export interface ScreenshotOptions {
+  /** Target element selector (e.g. 'xmc-new-component') */
+  selector?: string;
+  /** Explicit width in pixels or CSS units (e.g. 1216 or '100%') */
+  width?: number | string;
+  /** Explicit height in pixels or CSS units (e.g. 200 or '200px') */
+  height?: number | string;
+}
+
 export async function handleUserAuthRoute(route: Route) {
   await route.fulfill({
     status: 200,
@@ -30,8 +39,31 @@ export async function handleUserAuthRoute(route: Route) {
   });
 }
 
-export async function setupScreenshotEnvironment(page: Page) {
+/**
+ * Prepares the Playwright page runtime for deterministic component screenshot assertions.
+ * Automatically injects centralized E2E screenshot styles and allows future components
+ * to dynamically pass custom bounding dimensions without modifying CSS files.
+ */
+export async function setupScreenshotEnvironment(page: Page, options?: ScreenshotOptions) {
   await page.addStyleTag({
     path: 'e2e/e2e_screenshot_styles.css',
   });
+
+  if (options?.selector && (options.width != null || options.height != null)) {
+    const formatValue = (val: number | string) => (typeof val === 'number' ? `${val}px` : val);
+
+    const widthStyle =
+      options.width != null
+        ? `width: ${formatValue(options.width)} !important; min-width: ${formatValue(options.width)} !important; max-width: ${formatValue(options.width)} !important;`
+        : '';
+
+    const heightStyle =
+      options.height != null
+        ? `height: ${formatValue(options.height)} !important; min-height: ${formatValue(options.height)} !important; max-height: ${formatValue(options.height)} !important;`
+        : '';
+
+    await page.addStyleTag({
+      content: `${options.selector} { ${widthStyle} ${heightStyle} }`,
+    });
+  }
 }
