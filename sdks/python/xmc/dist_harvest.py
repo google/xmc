@@ -163,9 +163,9 @@ def harvest_client_metadata(
         if val is not None and not isinstance(val, (dict, list)):
             return str(val)
         if fallback_client is not None:
-            fb = getattr(fallback_client, f"_{attr_name}", None)
+            fb = getattr(fallback_client, attr_name, None)
             if fb is None:
-                fb = getattr(fallback_client, attr_name, None)
+                fb = getattr(fallback_client, f"_{attr_name}", None)
             if fb is not None and isinstance(fb, (int, str)):
                 return str(fb)
         env_val = env.get(env_key)
@@ -181,9 +181,9 @@ def harvest_client_metadata(
     if replica_id is not None:
         str_repid = str(replica_id)
     elif fallback_client is not None:
-        fb = getattr(fallback_client, "_replica_id", None)
+        fb = getattr(fallback_client, "replica_id", None)
         if fb is None:
-            fb = getattr(fallback_client, "replica_id", None)
+            fb = getattr(fallback_client, "_replica_id", None)
         if fb is not None and isinstance(fb, str):
             str_repid = fb
     if str_repid is None:

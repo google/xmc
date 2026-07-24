@@ -114,6 +114,27 @@ class TestBoundedMetricsBuffer(unittest.TestCase):
         self.assertEqual(step, 100)
         self.assertEqual(ts, 1700000000.5)
 
+    def test_pop_dropped_count(self) -> None:
+        """Verifies cumulative dropped metric counter tracking and reset behavior."""
+        buf = BoundedMetricsBuffer(capacity=5)
+        self.assertEqual(buf.pop_dropped_count(), 0)
+
+        # Fill buffer to capacity
+        for i in range(5):
+            buf.put(f"m_{i}", float(i), i)
+        self.assertEqual(buf.pop_dropped_count(), 0)
+
+        # Overflow by 1 item
+        buf.put("m_overflow", 1.0, 5)
+        self.assertEqual(buf.pop_dropped_count(), 1)
+        # Counter resets after pop
+        self.assertEqual(buf.pop_dropped_count(), 0)
+
+        # Overflow by 3 items via put_many
+        buf.put_many([("m_a", 1.0, 6), ("m_b", 2.0, 7), ("m_c", 3.0, 8)])
+        self.assertEqual(buf.pop_dropped_count(), 3)
+        self.assertEqual(buf.pop_dropped_count(), 0)
+
     def test_thread_safety(self) -> None:
         """Verifies thread safety with concurrent producers and consumers."""
         buf = BoundedMetricsBuffer(capacity=10_000)
