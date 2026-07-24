@@ -85,11 +85,14 @@ resource "google_project_iam_member" "gke_nodes_gcs_writer" {
 # -----------------------------------------------------------------------------
 # GKE Cluster
 # -----------------------------------------------------------------------------
+# Master authorized networks (AVD-GCP-0061 / GCP-0061) are omitted here because CIDR ranges are
+# configured per environment during deployment/Cluster Toolkit blueprint setup.
+#trivy:ignore:AVD-GCP-0061 #trivy:ignore:GCP-0061
 resource "google_container_cluster" "main_cluster" {
   project             = google_project_service.container_api.project
   name                = "${var.cluster_name}-${var.environment}"
   location            = var.region
-  deletion_protection = ! var.is_dev_environment
+  deletion_protection = !var.is_dev_environment
 
   # We can't create a cluster with no node pool defined, but we want to only use
   # separately managed node pools. So we create the smallest possible default
@@ -115,6 +118,9 @@ resource "google_container_cluster" "main_cluster" {
       enable_secure_boot          = true
       enable_integrity_monitoring = true
     }
+    metadata = {
+      disable-legacy-endpoints = "true"
+    }
   }
 }
 
@@ -138,6 +144,10 @@ resource "google_container_node_pool" "main_pool" {
     shielded_instance_config {
       enable_secure_boot          = true
       enable_integrity_monitoring = true
+    }
+
+    metadata = {
+      disable-legacy-endpoints = "true"
     }
 
     # Enable Workload Identity on nodes
@@ -176,6 +186,9 @@ resource "google_container_node_pool" "t4_pool" {
     shielded_instance_config {
       enable_secure_boot          = true
       enable_integrity_monitoring = true
+    }
+    metadata = {
+      disable-legacy-endpoints = "true"
     }
     labels = {
       "accelerator" = "nvidia-tesla-t4"

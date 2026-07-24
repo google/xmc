@@ -24,11 +24,13 @@ from typing import Any
 DEFAULT_CAPACITY: int = 500_000
 
 # Metric tuple type alias: (name, value, step, timestamp)
-MetricTuple = tuple[str, float, int, float]
+MetricTuple = tuple[str, float, int, int]
 
 
 def _coerce_float(val: Any) -> float:
     """Coerces input value to primitive float, detaching computation graphs."""
+    if type(val) is float:
+        return val
     if hasattr(val, "item"):
         val = val.item()
     return float(val)
@@ -36,6 +38,8 @@ def _coerce_float(val: Any) -> float:
 
 def _coerce_int(val: Any) -> int:
     """Coerces input value to primitive int, detaching computation graphs."""
+    if type(val) is int:
+        return val
     if hasattr(val, "item"):
         val = val.item()
     return int(val)
@@ -44,8 +48,13 @@ def _coerce_int(val: Any) -> int:
 class BoundedMetricsBuffer:
     """Thread-safe, bounded memory buffer for metric data.
 
-    Stores metrics as flat Python tuples (name, value, step, timestamp) to minimize
-    memory overhead and detach values from PyTorch/JAX computation graphs.
+    Note:
+        Stores metrics as primitive tuples (name, value, step, timestamp) rather
+        than xmc.types.Metric proto instances to minimize memory overhead (~80B vs
+        ~400B per item) and eliminate Proto/regex validation latency on caller
+        training hot paths. Proto and payload construction is deferred to the
+        background flusher thread.
+
     Uses strict FIFO eviction when full.
     """
 
@@ -55,11 +64,18 @@ class BoundedMetricsBuffer:
         self._capacity = capacity
         self._lock = threading.Lock()
         self._buffer: deque[MetricTuple] = deque(maxlen=capacity)
+        self._dropped_metrics: int = 0
 
     @property
     def capacity(self) -> int:
         """Returns the maximum capacity of the buffer."""
         return self._capacity
+
+    @property
+    def dropped_count(self) -> int:
+        """Returns total number of metrics dropped due to buffer overflow."""
+        with self._lock:
+            return self._dropped_metrics
 
     def __len__(self) -> int:
         """Returns the current number of metrics in the buffer."""
@@ -89,11 +105,13 @@ class BoundedMetricsBuffer:
         c_name = str(name)
         c_value = _coerce_float(value)
         c_step = _coerce_int(step)
-        c_timestamp = time.time() if timestamp is None else _coerce_float(timestamp)
+        c_timestamp = _coerce_int(time.time() if timestamp is None else timestamp)
 
         item: MetricTuple = (c_name, c_value, c_step, c_timestamp)
 
         with self._lock:
+            if len(self._buffer) == self._capacity:
+                self._dropped_metrics += 1
             self._buffer.append(item)
 
     def put_many(
@@ -120,7 +138,7 @@ class BoundedMetricsBuffer:
                     str(name),
                     _coerce_float(value),
                     _coerce_int(step),
-                    _coerce_float(ts),
+                    _coerce_int(ts),
                 )
             )
 
@@ -128,6 +146,9 @@ class BoundedMetricsBuffer:
             return
 
         with self._lock:
+            overflow = (len(self._buffer) + len(coerced_items)) - self._capacity
+            if overflow > 0:
+                self._dropped_metrics += overflow
             self._buffer.extend(coerced_items)
 
     def get_all(self) -> list[MetricTuple]:
@@ -147,8 +168,11 @@ class BoundedMetricsBuffer:
         if max_count <= 0:
             return []
         with self._lock:
-            count = min(max_count, len(self._buffer))
-            return [self._buffer.popleft() for _ in range(count)]
+            if max_count >= len(self._buffer):
+                items = list(self._buffer)
+                self._buffer.clear()
+                return items
+            return [self._buffer.popleft() for _ in range(max_count)]
 
     def clear(self) -> None:
         """Clears all elements from the buffer."""

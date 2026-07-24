@@ -40,6 +40,7 @@ When invoking helper tools under `tools/` (e.g. `generate_review_checklist.py`, 
    - **Exit code 2 (Unhandled Error)**: The tool encountered an unexpected bug. Inspect the `"message"` and `"traceback"` fields to analyze the cause.
 
 4. **Shell & Payload Safety**: When running helper scripts or handling payloads containing Markdown/code formatting, execute standalone `.py` script files or pass arguments via script parameters. Avoid double-quoted inline commands (`python3 -c "..."`).
+   - **Backtick & Subshell Evaluation Safety**: When passing reply messages containing backticks (e.g., markdown inline code spans like `` `function_name()` ``), avoid double-quoted string arguments in bash (e.g. `./tools/reply_pr_comment.py "<url>" "Fixed `func()`"`). Bash evaluates backticks in double-quoted strings as subshell commands. Use `--message-file` (or `-f`) to safely read the reply message from a file instead.
 
 
 
@@ -189,6 +190,17 @@ The agent runs the helper script `tools/reply_pr_comment.py` to notify the revie
 export GITHUB_TOKEN="your_github_token"
 ./tools/reply_pr_comment.py "<github_comment_url>" "code changed"
 ```
+
+Or pass a file containing the message via `--message-file` (or `-f`):
+```bash
+cat << 'EOF' > reply_message.txt
+Addressed review comment for `handlers.go`.
+EOF
+./tools/reply_pr_comment.py "<github_comment_url>" --message-file reply_message.txt
+```
+
+> [!WARNING]
+> **Backtick Subshell Command Safety**: Avoid passing double-quoted strings containing backticks (`` ` ``) directly on the command line (e.g. `./tools/reply_pr_comment.py "<url>" "Fixed `func_name()`"`). Bash evaluates backticks in double-quoted strings as subshell commands prior to executing python, causing unwanted command execution or syntax errors. Always use `--message-file` (or `-f`) when the reply message contains backticks or markdown code formatting.
 
 ### Usage Telemetry Tracking
 When `tools/reply_pr_comment.py` successfully posts a reply, it appends a hidden HTML comment block containing public usage metadata (authenticated GitHub user, comment ID, PR number, and UTC timestamp) to the comment body:

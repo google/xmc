@@ -80,17 +80,5 @@ This document defines standards for AI agents acting as **Code Authors / Contrib
 
 ## 4. Post-PR Creation Workflow & Addressing Review Feedback
 - **Wait Buffer After PR Creation**: When instructed to create or update a non-draft Pull Request, after creating the PR, wait approximately **2 minutes** to allow GitHub CI status checks and automated GitHub PR review passes to complete.
-- **Automated Review Checklist Generation**: Before processing individual comments, execute `tools/generate_review_checklist.py <owner> <repo> <pr_number>` to fetch all unresolved review comments from GitHub API and automatically populate `pr_review_checklist.md`.
-  - **When to Call**: When starting PR comment resolution, during post-PR creation review checks, or whenever an updated checklist of unresolved PR comments is required.
-  - **How to Call**: Run `./tools/generate_review_checklist.py <owner> <repo> <pr_number> [-o pr_review_checklist.md]`.
-- **Mandatory PR Comment Fetching & Replying Tools**:
-  - To fetch incoming inline review comments, ALWAYS execute `./tools/fetch_pr_comment.py "<comment_url>"`.
-  - To post replies to review comments, ALWAYS execute `./tools/reply_pr_comment.py "<comment_url>" "<reply_message>"`.
-  - Do NOT construct raw `gh api` inline shell commands for comment threads.
-- **Proactive Comment Fetching**: After generating `pr_review_checklist.md`, fetch specific comment context using `tools/fetch_pr_comment.py` or inspect the unresolved comments listed in `pr_review_checklist.md`.
-- **Validate Comments & Check Contract Changes**:
-  - Evaluate incoming review comments for technical validity and applicability before proceeding.
-  - If addressing a comment alters a PR contract, public API specification, or product behavior, **alert the user and seek explicit confirmation first** before modifying code.
-- **Addressing PR Comments Workflow**: Follow the mandatory rules defined in [PR Review Guidelines](pr_review_guidelines.md) (programmatic comment enumeration, consolidated review checklist artifact, and 1-to-1 thread resolution verification) and the detailed comment resolution workflow in the [Address PR Comment](../skills/xmc_address_pr_comment/SKILL.md) skill (formulating fix plans, running local unit tests via `./tools/run_affected_tests.py`, measuring coverage, and proposing fix diffs for user confirmation before pushing).
-- **PR Comment Replies**: Keep GitHub comment thread replies concise, objective, and focused on resolution (e.g., `"code changed"` or summarizing test verification), avoiding noisy or redundant chatter in PR review threads.
+- **Addressing Review Comments**: When review feedback is received, execute the detailed comment resolution workflow defined in the [Address PR Comment Skill](../skills/xmc_address_pr_comment/SKILL.md) (fetching comment context, generating checklist artifacts, running local tests, confirming contract changes with the user, posting inline thread replies, and verifying 1-to-1 resolution).
 - **Prohibition of Force-Pushing on PR Branches**: NEVER use force-push (`git push --force` or `git push --force-with-lease`) when pushing fix commits or addressing review comments on an active Pull Request branch. Always append incremental commits to the branch so reviewers can easily inspect diffs before and after changes between review passes.
