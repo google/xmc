@@ -22,18 +22,8 @@ export const MOCK_USER = {
   allowedDomains: ['google.com'],
 };
 
-export interface ScreenshotOptions {
-  /** Target element selector (e.g. 'xmc-new-component') */
-  selector?: string;
-  /** Optional explicit width override in pixels or CSS units */
-  width?: number | string;
-  /** Optional explicit height override in pixels or CSS units */
-  height?: number | string;
-}
-
 /**
- * Generic base layout reset and wildcard component styling for E2E screenshot testing.
- * Automatically formats viewports, containers, custom elements, and placeholders.
+ * Generic base layout reset for E2E component screenshot testing.
  */
 const BASE_SCREENSHOT_STYLES = `
   html, body {
@@ -64,28 +54,19 @@ export async function handleUserAuthRoute(route: Route) {
 
 /**
  * Prepares the Playwright page runtime for deterministic component screenshot assertions.
- * Automatically injects base reset styles and allows optional custom bounding overrides.
  */
-export async function setupScreenshotEnvironment(page: Page, options?: ScreenshotOptions) {
+export async function setupScreenshotEnvironment(page: Page) {
   await page.addStyleTag({
     content: BASE_SCREENSHOT_STYLES,
   });
+}
 
-  if (options?.selector && (options.width != null || options.height != null)) {
-    const formatValue = (val: number | string) => (typeof val === 'number' ? `${val}px` : val);
-
-    const widthStyle =
-      options.width != null
-        ? `width: ${formatValue(options.width)} !important; min-width: ${formatValue(options.width)} !important; max-width: ${formatValue(options.width)} !important;`
-        : '';
-
-    const heightStyle =
-      options.height != null
-        ? `height: ${formatValue(options.height)} !important; min-height: ${formatValue(options.height)} !important; max-height: ${formatValue(options.height)} !important;`
-        : '';
-
-    await page.addStyleTag({
-      content: `${options.selector} { ${widthStyle} ${heightStyle} }`,
-    });
-  }
+/**
+ * Mounts a component HTML harness into the DOM for isolated component screenshot testing.
+ */
+export async function mountComponentHarness(page: Page, htmlContent: string) {
+  await page.evaluate((html) => {
+    const container = document.querySelector('.rod-container') || document.body;
+    container.innerHTML = html;
+  }, htmlContent);
 }

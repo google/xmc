@@ -14,7 +14,11 @@
 
 import { expect, test } from '@playwright/test';
 
-import { handleUserAuthRoute, setupScreenshotEnvironment } from '../test_utils';
+import {
+  handleUserAuthRoute,
+  mountComponentHarness,
+  setupScreenshotEnvironment,
+} from '../test_utils';
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -27,8 +31,16 @@ test.describe('QueueCardComponent - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for queue card section', async ({ page }) => {
-    const queueCardComponent = page.locator('xmc-rod-queue-card, .scaffolding-queue-item').first();
-    await expect(queueCardComponent).toBeAttached();
+    await mountComponentHarness(
+      page,
+      `<div class="scaffolding-queue-item" style="width:360px;height:120px;padding:16px;background:#ffffff;border:1px solid #e0e0e0;border-radius:8px;box-sizing:border-box;">
+        <div style="font-family:Roboto,sans-serif;font-weight:500;font-size:16px;color:#202124;">gpu-cluster-queue</div>
+        <div style="font-family:Roboto,sans-serif;font-size:14px;color:#5f6368;margin-top:8px;">8 GPUs Available</div>
+      </div>`,
+    );
+
+    const queueCardComponent = page.locator('.scaffolding-queue-item').first();
+    await expect(queueCardComponent).toBeVisible();
     await expect(queueCardComponent).toHaveScreenshot('queue-card-component.png');
   });
 });

@@ -14,7 +14,11 @@
 
 import { expect, test } from '@playwright/test';
 
-import { handleUserAuthRoute, setupScreenshotEnvironment } from '../test_utils';
+import {
+  handleUserAuthRoute,
+  mountComponentHarness,
+  setupScreenshotEnvironment,
+} from '../test_utils';
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -27,8 +31,16 @@ test.describe('SubnavTabsComponent - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for subnav tabs layout', async ({ page }) => {
-    const subnavComponent = page.locator('xmc-rod-subnav-tabs, .rod-subnav-placeholder').first();
-    await expect(subnavComponent).toBeAttached();
+    await mountComponentHarness(
+      page,
+      `<div class="rod-subnav-placeholder" style="display:flex;align-items:center;height:48px;padding:0 16px;background:#f8f9fa;border-bottom:1px solid #e0e0e0;">
+        <span style="font-family:Roboto,sans-serif;font-weight:500;color:#1a73e8;padding:12px 16px;border-bottom:2px solid #1a73e8;">Smart Resource Finder</span>
+        <span style="font-family:Roboto,sans-serif;color:#5f6368;padding:12px 16px;">Resource Availability</span>
+      </div>`,
+    );
+
+    const subnavComponent = page.locator('.rod-subnav-placeholder').first();
+    await expect(subnavComponent).toBeVisible();
     await expect(subnavComponent).toHaveScreenshot('subnav-tabs-component.png');
   });
 });

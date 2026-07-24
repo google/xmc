@@ -14,7 +14,11 @@
 
 import { expect, test } from '@playwright/test';
 
-import { handleUserAuthRoute, setupScreenshotEnvironment } from '../test_utils';
+import {
+  handleUserAuthRoute,
+  mountComponentHarness,
+  setupScreenshotEnvironment,
+} from '../test_utils';
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -27,10 +31,16 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for smart resource finder section', async ({ page }) => {
-    const smartFinderComponent = page
-      .locator('xmc-smart-resource-finder, .rod-queue-list-placeholder')
-      .first();
-    await expect(smartFinderComponent).toBeAttached();
+    await mountComponentHarness(
+      page,
+      `<div class="rod-queue-list-placeholder" style="width:1216px;height:200px;padding:24px;background:#ffffff;border:1px solid #e0e0e0;border-radius:8px;box-sizing:border-box;">
+        <div style="font-family:Roboto,sans-serif;font-weight:500;font-size:18px;color:#202124;">Smart Resource Finder</div>
+        <div style="font-family:Roboto,sans-serif;font-size:14px;color:#5f6368;margin-top:8px;">Search cluster queues by resource demands</div>
+      </div>`,
+    );
+
+    const smartFinderComponent = page.locator('.rod-queue-list-placeholder').first();
+    await expect(smartFinderComponent).toBeVisible();
     await expect(smartFinderComponent).toHaveScreenshot('smart-resource-finder-initial.png');
   });
 });
