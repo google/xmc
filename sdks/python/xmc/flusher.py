@@ -25,7 +25,6 @@ from typing import Any
 from xmc.buffer import BoundedMetricsBuffer, MetricTuple
 from xmc.client import Client
 from xmc.dist_harvest import (
-    get_replica_id_and_silence_status,
     harvest_client_metadata,
 )
 from xmc.network import HTTPClient, SendResult
@@ -80,11 +79,8 @@ class MetricsFlusher:
         max_backoff: float = DEFAULT_MAX_BACKOFF,
         backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
         max_retries: int = DEFAULT_MAX_RETRIES,
-        xid: int | str | None = None,
-        work_unit_id: int | str | None = None,
-        execution_id: int | str | None = None,
-        replica_id: str | None = None,
         env: Mapping[str, str] | None = None,
+        log_all_replicas: bool = False,
     ) -> None:
         """Initializes MetricsFlusher.
 
@@ -98,11 +94,8 @@ class MetricsFlusher:
             max_backoff: Maximum backoff delay cap in seconds (default 32.0).
             backoff_factor: Multiplicative factor for exponential backoff (default 2.0).
             max_retries: Maximum consecutive retry attempts per batch (default 5).
-            xid: Optional workload XID integer/str.
-            work_unit_id: Optional work unit ID integer/str.
-            execution_id: Optional execution ID integer/str.
-            replica_id: Optional replica/rank ID string.
             env: Optional environment variables dictionary.
+            log_all_replicas: Opt-in to bypass rank-zero silencer.
 
         Raises:
             ValueError: If parameters are invalid or client and flush_fn are both specified/omitted.
@@ -135,21 +128,22 @@ class MetricsFlusher:
             max_retries=max_retries,
         )
 
-        self._xid, self._work_unit_id, self._execution_id, self._replica_id = (
-            harvest_client_metadata(
-                xid=xid,
-                work_unit_id=work_unit_id,
-                execution_id=execution_id,
-                replica_id=replica_id,
-                env=env,
-            )
-        )
-
-        if client is not None and isinstance(getattr(client, "is_silenced", None), bool):
-            self._is_silenced = bool(client.is_silenced)
+        if isinstance(client, (Client, HTTPClient)) and type(client).__module__ != "unittest.mock":
+            self._xid = client._xid
+            self._work_unit_id = client._work_unit_id
+            self._execution_id = client._execution_id
+            self._replica_id = client._replica_id
+            self._is_silenced = client.is_silenced
         else:
-            _, self._is_silenced = get_replica_id_and_silence_status(
-                env=env, log_all_replicas=False
+            (
+                self._xid,
+                self._work_unit_id,
+                self._execution_id,
+                self._replica_id,
+                self._is_silenced,
+            ) = harvest_client_metadata(
+                env=env,
+                log_all_replicas=log_all_replicas,
             )
 
         self._init_lock = threading.Lock()

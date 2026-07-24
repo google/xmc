@@ -15,6 +15,7 @@
 """Unit tests for background flusher thread (sdks/python/xmc/flusher.py)."""
 
 import json
+import os
 import threading
 import time
 import unittest
@@ -27,6 +28,16 @@ from xmc.network import HTTPClient
 
 class TestMetricsFlusherInitialization(unittest.TestCase):
     """Tests constructor, validation, lazy startup, and thread state."""
+
+    def setUp(self) -> None:
+        self._orig_env = os.environ.copy()
+        os.environ["XMC_XID"] = "1001"
+        os.environ["XMC_WORK_UNIT_ID"] = "2002"
+        os.environ["XMC_EXECUTION_ID"] = "3003"
+
+    def tearDown(self) -> None:
+        os.environ.clear()
+        os.environ.update(self._orig_env)
 
     def test_invalid_parameters(self) -> None:
         mock_fn = MagicMock()
@@ -89,6 +100,16 @@ class TestMetricsFlusherInitialization(unittest.TestCase):
 
 class TestMetricsFlusherFlushing(unittest.TestCase):
     """Tests early wakeup, non-blocking execution, and graceful shutdown flushing."""
+
+    def setUp(self) -> None:
+        self._orig_env = os.environ.copy()
+        os.environ["XMC_XID"] = "1001"
+        os.environ["XMC_WORK_UNIT_ID"] = "2002"
+        os.environ["XMC_EXECUTION_ID"] = "3003"
+
+    def tearDown(self) -> None:
+        os.environ.clear()
+        os.environ.update(self._orig_env)
 
     def test_early_wakeup_on_batch_size(self) -> None:
         flushed_batches: list[list[MetricTuple]] = []
@@ -274,14 +295,17 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
 
     def test_buffer_lightweight_tuples(self) -> None:
         mock_client = MagicMock()
+        env = {
+            "XMC_XID": "123",
+            "XMC_WORK_UNIT_ID": "456",
+            "XMC_EXECUTION_ID": "789",
+            "XMC_REPLICA_ID": "rep-0",
+        }
         flusher = MetricsFlusher(
             client=mock_client,
             flush_interval=60.0,
             batch_size=10,
-            xid=123,
-            work_unit_id=456,
-            execution_id=789,
-            replica_id="rep-0",
+            env=env,
         )
 
         flusher.log_metric("train_loss", 0.42, 1, timestamp=500.0)

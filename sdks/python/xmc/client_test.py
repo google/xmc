@@ -27,6 +27,16 @@ from xmc.client import Client, XMCAPIError, XMCError, XMCNetworkError
 class TestClient(unittest.TestCase):
     """Unit tests for Client class and exceptions."""
 
+    def setUp(self) -> None:
+        self._orig_env = os.environ.copy()
+        os.environ["XMC_XID"] = "1001"
+        os.environ["XMC_WORK_UNIT_ID"] = "2002"
+        os.environ["XMC_EXECUTION_ID"] = "3003"
+
+    def tearDown(self) -> None:
+        os.environ.clear()
+        os.environ.update(self._orig_env)
+
     def test_init_invalid_base_url(self) -> None:
         with self.assertRaises(ValueError):
             Client(base_url="")
@@ -223,18 +233,14 @@ class TestClientShortCircuit(unittest.TestCase):
         self.assertEqual(client_env.work_unit_id, "222")
         self.assertEqual(client_env.execution_id, "333")
         self.assertEqual(client_env.replica_id, "rep-4")
+        self.assertFalse(client_env.is_silenced)
 
-        client_args = Client(
-            base_url="https://xmc.googleapis.com",
-            xid=555,
-            work_unit_id=666,
-            execution_id=777,
-            replica_id="rep-custom",
-        )
-        self.assertEqual(client_args.xid, "555")
-        self.assertEqual(client_args.work_unit_id, "666")
-        self.assertEqual(client_args.execution_id, "777")
-        self.assertEqual(client_args.replica_id, "rep-custom")
+    def test_client_fail_closed_missing_env(self) -> None:
+        client_missing = Client(base_url="https://xmc.googleapis.com", env={})
+        self.assertTrue(client_missing.is_silenced)
+        # Suppressed post return
+        res = client_missing.post("v1/metrics", data={"val": 1.0})
+        self.assertEqual(res, {})
 
 
 if __name__ == "__main__":

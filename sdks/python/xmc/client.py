@@ -26,7 +26,6 @@ from typing import Any
 
 from xmc.buffer import MetricTuple
 from xmc.dist_harvest import (
-    get_replica_id_and_silence_status,
     harvest_client_metadata,
 )
 from xmc.types import format_metric_batch_payload
@@ -95,10 +94,6 @@ class Client:
         disabled: bool | None = None,
         log_all_replicas: bool = False,
         env: Mapping[str, str] | None = None,
-        xid: int | str | None = None,
-        work_unit_id: int | str | None = None,
-        execution_id: int | str | None = None,
-        replica_id: str | None = None,
     ) -> None:
         if not base_url:
             raise ValueError("base_url must be specified and non-empty.")
@@ -112,20 +107,18 @@ class Client:
             self._disabled = _is_metrics_disabled_env()
 
         self.log_all_replicas = log_all_replicas
-        self._xid, self._work_unit_id, self._execution_id, self._replica_id = (
-            harvest_client_metadata(
-                xid=xid,
-                work_unit_id=work_unit_id,
-                execution_id=execution_id,
-                replica_id=replica_id,
-                env=env,
-                log_all_replicas=log_all_replicas,
-            )
+        (
+            self._xid,
+            self._work_unit_id,
+            self._execution_id,
+            self._replica_id,
+            harvest_silenced,
+        ) = harvest_client_metadata(
+            env=env,
+            log_all_replicas=log_all_replicas,
         )
         self.replica_id = self._replica_id
-        _, self.is_silenced = get_replica_id_and_silence_status(
-            env=env, log_all_replicas=log_all_replicas
-        )
+        self.is_silenced = harvest_silenced or self._disabled
         self.should_silence = self.is_silenced
 
         self._headers = {

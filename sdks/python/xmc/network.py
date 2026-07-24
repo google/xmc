@@ -68,11 +68,8 @@ class HTTPClient:
         base_ttl: float = _BASE_TTL_SECONDS,
         jitter: float = _JITTER_RANGE_SECONDS,
         default_headers: dict[str, str] | None = None,
-        xid: int | str | None = None,
-        work_unit_id: int | str | None = None,
-        execution_id: int | str | None = None,
-        replica_id: str | None = None,
         env: Mapping[str, str] | None = None,
+        log_all_replicas: bool = False,
     ) -> None:
         if not endpoint:
             raise ValueError("endpoint must be non-empty.")
@@ -92,14 +89,15 @@ class HTTPClient:
         self.base_ttl = base_ttl
         self.jitter = jitter
 
-        self._xid, self._work_unit_id, self._execution_id, self._replica_id = (
-            harvest_client_metadata(
-                xid=xid,
-                work_unit_id=work_unit_id,
-                execution_id=execution_id,
-                replica_id=replica_id,
-                env=env,
-            )
+        (
+            self._xid,
+            self._work_unit_id,
+            self._execution_id,
+            self._replica_id,
+            self.is_silenced,
+        ) = harvest_client_metadata(
+            env=env,
+            log_all_replicas=log_all_replicas,
         )
 
         self._headers: dict[str, str] = {

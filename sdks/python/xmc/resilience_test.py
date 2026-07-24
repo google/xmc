@@ -15,6 +15,7 @@
 """Unit tests for resilience state machine, backoff, and terminal diagnostic parsing."""
 
 import json
+import os
 import threading
 import time
 import unittest
@@ -113,6 +114,16 @@ class TestResilienceStateMachine(unittest.TestCase):
 
 class TestMetricsFlusherResilience(unittest.TestCase):
     """Tests flusher integration with resilience state machine, backoff, interruptible sleep, and 400/422 parsing."""
+
+    def setUp(self) -> None:
+        self._orig_env = os.environ.copy()
+        os.environ["XMC_XID"] = "1001"
+        os.environ["XMC_WORK_UNIT_ID"] = "2002"
+        os.environ["XMC_EXECUTION_ID"] = "3003"
+
+    def tearDown(self) -> None:
+        os.environ.clear()
+        os.environ.update(self._orig_env)
 
     def test_transient_error_backoff_and_retry_recovery(self) -> None:
         calls = 0
