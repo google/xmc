@@ -148,7 +148,6 @@ jobs:
           key: bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'go.sum', '**/BUILD.bazel', '**/*.bzl') }}
           restore-keys: |
             bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-
-            bazel-${{ runner.os }}-
 
       - name: 'Verify Spanner Emulator Endpoint'
         if: matrix.target == 'internal/storage' || matrix.target == 'cmd/rest'
