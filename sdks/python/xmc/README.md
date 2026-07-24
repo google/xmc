@@ -60,21 +60,19 @@ sequenceDiagram
 
 ---
 
-## 🌐 4-Tier Metadata Harvesting Hierarchy
+## 🌐 Metadata Harvesting Hierarchy
 
-`harvest_client_metadata()` automatically extracts cluster context for zero-boilerplate logging across orchestrated environments:
+`harvest_client_metadata()` automatically extracts cluster context for zero-boilerplate logging across orchestrated environments (GKE, Vertex AI, Slurm):
 
 ```mermaid
 flowchart LR
-    Tier1["1. Explicit Args<br/>(xid, work_unit_id, ...)"] --> Tier2["2. Client Attributes<br/>(client.xid, client._xid, ...)"]
-    Tier2 --> Tier3["3. Environment Vars<br/>(XMC_XID, XMC_WORK_UNIT_ID, ...)"]
-    Tier3 --> Tier4["4. Default Fallback<br/>('0')"]
+    Tier1["1. Explicit Args<br/>(xid, work_unit_id, ...)"] --> Tier2["2. Environment Vars<br/>(XMC_XID, XMC_WORK_UNIT_ID, ...)"]
+    Tier2 --> Tier3["3. Default Fallback<br/>('0')"]
 ```
 
-1. **Explicit Constructor Parameters**: Highest precedence (`xid=...`, `work_unit_id=...`).
-2. **Fallback Client Properties**: Public properties (`client.xid`), then private attributes (`client._xid`).
-3. **Environment Variables**: `XMC_XID`, `XMC_WORK_UNIT_ID`, `XMC_EXECUTION_ID`, `XMC_REPLICA_ID`.
-4. **Default Un-orchestrated String**: Fallback string `"0"`.
+1. **Explicit Override Parameters**: Optional overrides (`xid=...`, `work_unit_id=...`).
+2. **Environment Variables**: Primary source injected by XMC cluster infrastructure (`XMC_XID`, `XMC_WORK_UNIT_ID`, `XMC_EXECUTION_ID`, `XMC_REPLICA_ID`).
+3. **Default Fallback String**: Fallback string `"0"` for un-orchestrated local development.
 
 > [!NOTE]
 > Per **Google AIP-127**, all 64-bit metadata IDs (`xid`, `work_unit_id`, `execution_id`, `replica_id`) are serialized as stringified integers (e.g. `"xid": "482019"`) in the JSON payload to prevent IEEE 754 float precision loss in web UIs.

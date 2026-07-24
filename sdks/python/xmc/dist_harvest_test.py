@@ -26,7 +26,7 @@ from xmc.dist_harvest import (
 
 
 class TestHarvestClientMetadata(unittest.TestCase):
-    """Test suite for harvest_client_metadata function and fallback hierarchy."""
+    """Test suite for harvest_client_metadata function."""
 
     def test_explicit_parameters(self) -> None:
         xid, wu_id, exec_id, rep_id = harvest_client_metadata(
@@ -39,37 +39,6 @@ class TestHarvestClientMetadata(unittest.TestCase):
         self.assertEqual(wu_id, "2002")
         self.assertEqual(exec_id, "3003")
         self.assertEqual(rep_id, "replica-1")
-
-    def test_fallback_client_public_attributes(self) -> None:
-        mock_client = MagicMock()
-        mock_client.xid = 5005
-        mock_client.work_unit_id = 6006
-        mock_client.execution_id = 7007
-        mock_client.replica_id = "pub-replica"
-
-        xid, wu_id, exec_id, rep_id = harvest_client_metadata(fallback_client=mock_client)
-        self.assertEqual(xid, "5005")
-        self.assertEqual(wu_id, "6006")
-        self.assertEqual(exec_id, "7007")
-        self.assertEqual(rep_id, "pub-replica")
-
-    def test_fallback_client_private_attributes_fallback(self) -> None:
-        class PrivateOnlyClient:
-            _xid = 8008
-            _work_unit_id = 9009
-            _execution_id = 1010
-            _replica_id = "priv-replica"
-            xid = None
-            work_unit_id = None
-            execution_id = None
-            replica_id = None
-
-        client = PrivateOnlyClient()
-        xid, wu_id, exec_id, rep_id = harvest_client_metadata(fallback_client=client)
-        self.assertEqual(xid, "8008")
-        self.assertEqual(wu_id, "9009")
-        self.assertEqual(exec_id, "1010")
-        self.assertEqual(rep_id, "priv-replica")
 
     def test_environment_variables(self) -> None:
         env = {

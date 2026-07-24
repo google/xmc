@@ -142,7 +142,6 @@ class MetricsFlusher:
                 execution_id=execution_id,
                 replica_id=replica_id,
                 env=env,
-                fallback_client=client,
             )
         )
 

@@ -17,7 +17,6 @@
 import logging
 import os
 from collections.abc import Mapping
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -144,53 +143,32 @@ def harvest_client_metadata(
     replica_id: str | None = None,
     env: Mapping[str, str] | None = None,
     log_all_replicas: bool = False,
-    fallback_client: Any | None = None,
 ) -> tuple[str, str, str, str]:
-    """Harvests client-level metadata constants (xid, work_unit_id, execution_id, replica_id).
+    """Harvests client-level metadata (xid, work_unit_id, execution_id, replica_id).
 
-    Checks in order: constructor parameter -> fallback_client attribute -> env variable -> default ("0").
+    In XMC, metadata IDs are injected by cluster infrastructure as environment variables:
+    - XMC_XID
+    - XMC_WORK_UNIT_ID
+    - XMC_EXECUTION_ID
+    - XMC_REPLICA_ID
 
-    WHY string return types & "0" defaults: Though xid, work_unit_id, and execution_id are
-    64-bit integers in Spanner/ClickHouse, transmitting 64-bit numbers as raw JSON integers
-    causes precision truncation in JavaScript IEEE 754 dashboards (capped at 2^53 - 1).
-    Stringifying integer IDs preserves precision per Google AIP-127 and XMCMetricsBatch schema.
-    Returning "0" string defaults ensures schema-compliant payloads in un-orchestrated setups.
+    Precedence: Explicit override arg -> Environment variable -> Default ("0").
     """
     if env is None:
         env = os.environ
 
-    def _get_str(val: Any, attr_name: str, env_key: str) -> str:
-        if val is not None and not isinstance(val, (dict, list)):
-            return str(val)
-        if fallback_client is not None:
-            fb = getattr(fallback_client, attr_name, None)
-            if fb is None:
-                fb = getattr(fallback_client, f"_{attr_name}", None)
-            if fb is not None and isinstance(fb, (int, str)):
-                return str(fb)
-        env_val = env.get(env_key)
-        if env_val is not None:
-            return str(env_val)
-        return "0"
+    res_xid = str(xid) if xid is not None else env.get("XMC_XID", "0")
+    res_work_unit_id = (
+        str(work_unit_id) if work_unit_id is not None else env.get("XMC_WORK_UNIT_ID", "0")
+    )
+    res_execution_id = (
+        str(execution_id) if execution_id is not None else env.get("XMC_EXECUTION_ID", "0")
+    )
 
-    res_xid = _get_str(xid, "xid", "XMC_XID")
-    res_work_unit_id = _get_str(work_unit_id, "work_unit_id", "XMC_WORK_UNIT_ID")
-    res_execution_id = _get_str(execution_id, "execution_id", "XMC_EXECUTION_ID")
-
-    str_repid: str | None = None
     if replica_id is not None:
-        str_repid = str(replica_id)
-    elif fallback_client is not None:
-        fb = getattr(fallback_client, "replica_id", None)
-        if fb is None:
-            fb = getattr(fallback_client, "_replica_id", None)
-        if fb is not None and isinstance(fb, str):
-            str_repid = fb
-    if str_repid is None:
-        str_repid = env.get("XMC_REPLICA_ID") or None
-
-    if str_repid is not None:
-        res_replica_id = str_repid
+        res_replica_id = str(replica_id)
+    elif env.get("XMC_REPLICA_ID"):
+        res_replica_id = env["XMC_REPLICA_ID"]
     else:
         res_replica_id, _ = get_replica_id_and_silence_status(
             env=env, log_all_replicas=log_all_replicas
