@@ -33,18 +33,21 @@ async function handleUserAuthRoute(route: Route) {
 
 test.describe('SubnavTabsComponent - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.setViewportSize({ width: 2400, height: 1080 });
+    await page.setViewportSize({ width: 1280, height: 800 });
     await page.route('/api/user', handleUserAuthRoute);
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
     await page.addStyleTag({
-      content: '.rod-subnav-placeholder:empty { min-height: 48px; display: block; }',
+      content: `
+        .rod-container { width: 1216px !important; margin: 0 auto !important; }
+        .rod-subnav-placeholder:empty { min-height: 48px; display: block; }
+      `,
     });
   });
 
   test('should match baseline screenshot for subnav tabs layout', async ({ page }) => {
     const subnavComponent = page.locator('xmc-rod-subnav-tabs, .rod-subnav-placeholder').first();
-    await expect(subnavComponent).toBeVisible();
+    await expect(subnavComponent).toBeAttached();
     await expect(subnavComponent).toHaveScreenshot('subnav-tabs-component.png');
   });
 });

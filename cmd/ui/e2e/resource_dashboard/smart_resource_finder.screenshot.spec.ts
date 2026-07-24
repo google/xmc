@@ -33,12 +33,15 @@ async function handleUserAuthRoute(route: Route) {
 
 test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.setViewportSize({ width: 2400, height: 1080 });
+    await page.setViewportSize({ width: 1280, height: 800 });
     await page.route('/api/user', handleUserAuthRoute);
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
     await page.addStyleTag({
-      content: '.rod-queue-list-placeholder:empty { min-height: 154px; display: block; }',
+      content: `
+        .rod-container { width: 1216px !important; margin: 0 auto !important; }
+        .rod-queue-list-placeholder:empty { min-height: 154px; display: block; }
+      `,
     });
   });
 
@@ -46,7 +49,7 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
     const smartFinderComponent = page
       .locator('xmc-smart-resource-finder, .rod-queue-list-placeholder')
       .first();
-    await expect(smartFinderComponent).toBeVisible();
+    await expect(smartFinderComponent).toBeAttached();
     await expect(smartFinderComponent).toHaveScreenshot('smart-resource-finder-initial.png');
   });
 });

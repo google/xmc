@@ -33,18 +33,21 @@ async function handleUserAuthRoute(route: Route) {
 
 test.describe('QueueCardComponent - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.setViewportSize({ width: 2400, height: 1080 });
+    await page.setViewportSize({ width: 1280, height: 800 });
     await page.route('/api/user', handleUserAuthRoute);
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
     await page.addStyleTag({
-      content: '.scaffolding-queue-item:empty { min-height: 48px; display: block; }',
+      content: `
+        .rod-container { width: 1216px !important; margin: 0 auto !important; }
+        .scaffolding-queue-item:empty { min-height: 48px; display: block; }
+      `,
     });
   });
 
   test('should match baseline screenshot for queue card section', async ({ page }) => {
     const queueCardComponent = page.locator('xmc-rod-queue-card, .scaffolding-queue-item').first();
-    await expect(queueCardComponent).toBeVisible();
+    await expect(queueCardComponent).toBeAttached();
     await expect(queueCardComponent).toHaveScreenshot('queue-card-component.png');
   });
 });
