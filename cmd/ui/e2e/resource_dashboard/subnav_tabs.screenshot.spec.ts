@@ -33,9 +33,9 @@ test.describe('SubnavTabsComponent - Screenshot Tests', () => {
   test('should match baseline screenshot for subnav tabs layout', async ({ page }) => {
     await mountComponentHarness(
       page,
-      `<xmc-rod-subnav-tabs style="display:flex;align-items:center;height:48px;box-sizing:border-box;padding:0 16px;background:#f8f9fa;border-bottom:1px solid #e0e0e0;">
-        <span style="font-weight:500;color:#1a73e8;padding:8px 16px;border-bottom:2px solid #1a73e8;">Smart Resource Finder</span>
-        <span style="color:#5f6368;padding:8px 16px;">Resource Availability</span>
+      `<xmc-rod-subnav-tabs>
+        <span>Smart Resource Finder</span>
+        <span>Resource Availability</span>
       </xmc-rod-subnav-tabs>`,
     );
 

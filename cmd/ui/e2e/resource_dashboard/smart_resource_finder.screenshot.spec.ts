@@ -33,9 +33,9 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
   test('should match baseline screenshot for smart resource finder section', async ({ page }) => {
     await mountComponentHarness(
       page,
-      `<xmc-smart-resource-finder style="width:1216px;height:200px;box-sizing:border-box;padding:24px;background:#ffffff;border:1px solid #e0e0e0;border-radius:8px;">
-        <div style="font-weight:500;color:#202124;">Smart Resource Finder</div>
-        <div style="color:#5f6368;margin-top:8px;">Search cluster queues by resource demands</div>
+      `<xmc-smart-resource-finder>
+        <div>Smart Resource Finder</div>
+        <div>Search cluster queues by resource demands</div>
       </xmc-smart-resource-finder>`,
     );
 
