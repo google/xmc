@@ -76,6 +76,10 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string) http.
 		)
 
 		consumer := func(m *metrics.Metric) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+
 			// Early-abort optimization: stop decoding if a previous async write failed.
 			if errPtr := publishErr.Load(); errPtr != nil {
 				return *errPtr
@@ -91,9 +95,7 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string) http.
 
 			valBytes, err := proto.Marshal(m.Metric)
 			if err != nil {
-				errCopy := fmt.Errorf("failed to marshal metric proto: %w", err)
-				publishErr.CompareAndSwap(nil, &errCopy)
-				return errCopy
+				return fmt.Errorf("failed to marshal metric proto: %w", err)
 			}
 
 			record := &kgo.Record{

@@ -16,7 +16,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,7 +33,11 @@ type MetricProducer interface {
 
 // FormatCompositeKey formats the composite partitioning key (xid, work_unit_id).
 func FormatCompositeKey(xid, workUnitID int64) []byte {
-	return []byte(fmt.Sprintf("%d:%d", xid, workUnitID))
+	buf := make([]byte, 0, 32)
+	buf = strconv.AppendInt(buf, xid, 10)
+	buf = append(buf, ':')
+	buf = strconv.AppendInt(buf, workUnitID, 10)
+	return buf
 }
 
 // BuildProducerOptions returns the kgo options required for metrics ingestion:
