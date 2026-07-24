@@ -68,3 +68,7 @@ private static readonly STATUS_CHIP_MAP = new Map<WorkUnitState, ChipStyle>([
   const AMOUNT_INPUT_SELECTOR = '#amount-input';
   const ADD_BTN_SELECTOR = '.add-resource-btn';
   ```
+
+## 8. Playwright Visual Screenshot Testing
+- **Mandatory Screenshot Tests for Angular Components**: Whenever adding or modifying Angular components in `cmd/ui/app/resource_dashboard/` (or UI components across `cmd/ui/app/`), every Angular component MUST have a corresponding Playwright visual screenshot test spec located under `cmd/ui/e2e/` (e.g. `cmd/ui/e2e/resource_dashboard/<component_name>.screenshot.spec.ts`).
+- **Isolated Test-Level API Mocking**: Perform all network route mocking strictly within Playwright spec files (`await page.route(...)`) while navigating to production routes (`/resources`). Never add temporary test harness routes or mock data in production routing (`app_routes.ts`) or production source files.
