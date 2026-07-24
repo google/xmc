@@ -146,7 +146,7 @@ func main() {
 		logging.Info(ctx, "Starting gRPC server with Hot-Reload TLS", "cert", cfg.TLSCertFile)
 
 		tlsConfig := &tls.Config{
-			GetCertificate: reloader.Certificate,
+			GetCertificate: reloader.GetCertificate,
 		}
 
 		transportCreds = credentials.NewTLS(tlsConfig)

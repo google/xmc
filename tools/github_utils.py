@@ -85,6 +85,7 @@ def call_github_api(
 
     # 4. Handle Failure
     _raise_detailed_error(errors)
+    return None
 
 
 def _call_api_with_gh(endpoint, method, payload, user_agent):
@@ -165,5 +166,4 @@ def _raise_detailed_error(errors):
 
     if is_auth_failure:
         raise GithubAuthError(f"GitHub authentication failed: {error_summary}")
-    else:
-        raise GithubAPIError(f"GitHub API call failed: {error_summary}")
+    raise GithubAPIError(f"GitHub API call failed: {error_summary}")

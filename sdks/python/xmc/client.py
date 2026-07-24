@@ -15,11 +15,26 @@
 """Base HTTP client for XMC Metrics API using Python standard library."""
 
 import json
+import logging
+import os
 import socket
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Dict, Optional, Union
+from collections.abc import Mapping
+from typing import Any
+
+from xmc.dist_harvest import get_replica_id_and_silence_status
+
+logger = logging.getLogger(__name__)
+
+_TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "t", "y"})
+
+
+def _is_metrics_disabled_env() -> bool:
+    """Checks whether XMC_METRICS_DISABLED env var is set to a truthy value."""
+    val = os.getenv("XMC_METRICS_DISABLED", "").strip().lower()
+    return val in _TRUTHY_ENV_VALUES
 
 
 class XMCError(Exception):
@@ -29,7 +44,7 @@ class XMCError(Exception):
 class XMCNetworkError(XMCError):
     """Raised when a network failure or timeout occurs during API calls."""
 
-    def __init__(self, message: str, original_error: Optional[Exception] = None) -> None:
+    def __init__(self, message: str, original_error: Exception | None = None) -> None:
         super().__init__(message)
         self.original_error = original_error
 
@@ -37,7 +52,7 @@ class XMCNetworkError(XMCError):
 class XMCAPIError(XMCError):
     """Raised when the XMC API returns an HTTP 4xx/5xx status code."""
 
-    def __init__(self, status_code: int, message: str, response_body: Optional[str] = None) -> None:
+    def __init__(self, status_code: int, message: str, response_body: str | None = None) -> None:
         super().__init__(f"HTTP {status_code}: {message}")
         self.status_code = status_code
         self.response_body = response_body
@@ -56,14 +71,22 @@ class Client:
         base_url: Endpoint base URL (e.g. 'https://xmc.googleapis.com').
         api_key: Optional API key or bearer token.
         timeout: Default request timeout in seconds.
+        disabled: Whether metrics operations are disabled/short-circuited.
+        log_all_replicas: Opt-in to bypass rank-zero silencer.
+        replica_id: Auto-detected replica/rank ID.
+        is_silenced: Whether metric logging is silenced for this replica.
+        should_silence: Alias for is_silenced.
     """
 
     def __init__(
         self,
         base_url: str,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         timeout: float = 30.0,
-        default_headers: Optional[Dict[str, str]] = None,
+        default_headers: dict[str, str] | None = None,
+        disabled: bool | None = None,
+        log_all_replicas: bool = False,
+        env: Mapping[str, str] | None = None,
     ) -> None:
         if not base_url:
             raise ValueError("base_url must be specified and non-empty.")
@@ -71,24 +94,42 @@ class Client:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
+        if disabled is not None:
+            self._disabled = bool(disabled)
+        else:
+            self._disabled = _is_metrics_disabled_env()
+
+        self.log_all_replicas = log_all_replicas
+        self.replica_id, self.is_silenced = get_replica_id_and_silence_status(
+            env=env, log_all_replicas=log_all_replicas
+        )
+        self.should_silence = self.is_silenced
+
         self._headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
             "User-Agent": "xmc-python-sdk/0.1.0",
         }
+        if self.replica_id:
+            self._headers["X-Replica-ID"] = self.replica_id
         if default_headers:
             self._headers.update(default_headers)
         if api_key:
             self._headers["Authorization"] = f"Bearer {api_key}"
 
+    @property
+    def disabled(self) -> bool:
+        """Returns whether metrics operations are short-circuited/disabled."""
+        return self._disabled
+
     def request(
         self,
         method: str,
         path: str,
-        params: Optional[Dict[str, Any]] = None,
-        data: Optional[Union[Dict[str, Any], list]] = None,
-        headers: Optional[Dict[str, str]] = None,
-    ) -> Union[Dict[str, Any], list]:
+        params: dict[str, Any] | None = None,
+        data: dict[str, Any] | list | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any] | list:
         """Executes an HTTP request using urllib.request.
 
         Args:
@@ -106,6 +147,9 @@ class Client:
             XMCNetworkError: If a connection error or timeout occurs.
             XMCError: If response body cannot be parsed as valid JSON.
         """
+        if self.disabled:
+            return {}
+
         url = f"{self.base_url}/{path.lstrip('/')}"
         if params:
             query_string = urllib.parse.urlencode(params, doseq=True)
@@ -143,7 +187,7 @@ class Client:
             if isinstance(err.reason, (socket.timeout, TimeoutError)):
                 raise XMCNetworkError("Request timed out", original_error=err) from err
             raise XMCNetworkError(f"Network error: {err.reason}", original_error=err) from err
-        except (socket.timeout, TimeoutError) as err:
+        except TimeoutError as err:
             raise XMCNetworkError("Request timed out", original_error=err) from err
         except json.JSONDecodeError as err:
             raise XMCError(f"Failed to parse API JSON response: {err}") from err
@@ -151,19 +195,22 @@ class Client:
     def get(
         self,
         path: str,
-        params: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-    ) -> Union[Dict[str, Any], list]:
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any] | list:
         """Convenience method for HTTP GET requests."""
         return self.request("GET", path, params=params, headers=headers)
 
     def post(
         self,
         path: str,
-        data: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-    ) -> Union[Dict[str, Any], list]:
+        data: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any] | list:
         """Convenience method for HTTP POST requests."""
+        if self.is_silenced:
+            logger.debug("POST request to %s silenced for replica %s", path, self.replica_id)
+            return {}
         return self.request("POST", path, data=data, headers=headers)
 
     def close(self) -> None:

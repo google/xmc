@@ -109,7 +109,11 @@ func main() {
 	go redisClient.StartWorker(ctx, workerID)
 	logging.Info(ctx, "Started Redis task queue worker", "worker_id", workerID)
 
-	mux.HandleFunc("/healthz", activeHealthCheck(k8sClient, spannerClient, redisClient))
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/readyz", activeHealthCheck(k8sClient, health.NewSpannerHealthClient(spannerClient), redisClient))
 	mux.Handle("/metrics", promhttp.Handler())
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
@@ -155,7 +159,7 @@ func getGceMetadata(ctx context.Context) (projectID, location, clusterName strin
 	return projectID, location, clusterName, nil
 }
 
-func activeHealthCheck(k8s *k8sclient.Client, spClient *spanner.Client, redis redisclient.Consumer) http.HandlerFunc {
+func activeHealthCheck(k8s *k8sclient.Client, spClient health.SpannerHealthClient, redis redisclient.Consumer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		eg, ctx := errgroup.WithContext(ctx)
@@ -171,7 +175,7 @@ func activeHealthCheck(k8s *k8sclient.Client, spClient *spanner.Client, redis re
 
 		// 2. Spanner check
 		eg.Go(func() error {
-			err := health.CheckSpanner(ctx, spClient)
+			err := health.CheckSpannerESS(ctx, spClient)
 			if err != nil {
 				slog.Error("Spanner healthcheck failed", "error", err)
 			}

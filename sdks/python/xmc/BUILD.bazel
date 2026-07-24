@@ -18,7 +18,12 @@ py_library(
     name = "xmc",
     srcs = [
         "__init__.py",
+        "buffer.py",
         "client.py",
+        "dist_harvest.py",
+        "flusher.py",
+        "network.py",
+        "resilience.py",
         "types.py",
     ],
     data = [
@@ -33,6 +38,24 @@ py_library(
 )
 
 py_test(
+    name = "buffer_test",
+    srcs = ["buffer_test.py"],
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "flusher_test",
+    srcs = ["flusher_test.py"],
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "resilience_test",
+    srcs = ["resilience_test.py"],
+    deps = [":xmc"],
+)
+
+py_test(
     name = "types_test",
     srcs = ["types_test.py"],
     deps = [":xmc"],
@@ -41,6 +64,18 @@ py_test(
 py_test(
     name = "client_test",
     srcs = ["client_test.py"],
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "dist_harvest_test",
+    srcs = ["dist_harvest_test.py"],
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "network_test",
+    srcs = ["network_test.py"],
     deps = [":xmc"],
 )
 

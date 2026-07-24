@@ -72,6 +72,17 @@ const (
 	// execution ID of the job.
 	XmcEnvVarExecutionID = "XMC_EXECUTION_ID"
 
+	// JobSetJobIndexLabel is the label set by JobSet for the job index.
+	JobSetJobIndexLabel = "jobset.sigs.k8s.io/job-index"
+
+	// XmcEnvVarJobIndex is an environment variable set for all XManager Cloud jobs. It is set to the
+	// job index.
+	XmcEnvVarJobIndex = "XMC_JOB_INDEX"
+
+	// XmcEnvVarMetricsEnabled is an environment variable set for all XManager Cloud jobs. It is set to
+	// true if metrics collection is enabled.
+	XmcEnvVarMetricsEnabled = "XMC_METRICS_ENABLED"
+
 	// RedisStream is the name of the Redis stream used for task queueing.
 	RedisStream = "xmc-tasks-stream"
 	// RedisGroup is the name of the Redis consumer group.

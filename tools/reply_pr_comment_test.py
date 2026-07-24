@@ -82,7 +82,7 @@ class TestReplyPRComment(unittest.TestCase):
         expected_body = (
             'done\n\n<!-- xmc-telemetry: {"git_username": "test_user", "date":'
             ' "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29",'
-            ' "comment_id": 1234, "skill_name": "address_pr_comment",'
+            ' "comment_id": 1234, "skill_name": "xmc_address_pr_comment",'
             ' "skill_commit_id": "mock_skill_commit_id"} -->'
         )
         mock_call.assert_any_call(
@@ -132,7 +132,7 @@ class TestReplyPRComment(unittest.TestCase):
         expected_body = (
             'done\n\n<!-- xmc-telemetry: {"git_username": "unknown", "date":'
             ' "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29",'
-            ' "comment_id": 1234, "skill_name": "address_pr_comment",'
+            ' "comment_id": 1234, "skill_name": "xmc_address_pr_comment",'
             ' "skill_commit_id": "mock_skill_commit_id"} -->'
         )
         mock_call.assert_any_call(
@@ -180,7 +180,7 @@ class TestReplyPRComment(unittest.TestCase):
         expected_body = (
             'done\n\n<!-- xmc-telemetry: {"git_username": "test_user", "date":'
             ' "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29",'
-            ' "comment_id": 1234, "skill_name": "address_pr_comment",'
+            ' "comment_id": 1234, "skill_name": "xmc_address_pr_comment",'
             ' "skill_commit_id": "unknown"} -->'
         )
         mock_call.assert_any_call(
@@ -228,7 +228,7 @@ class TestReplyPRComment(unittest.TestCase):
         expected_body = (
             'done\n\n<!-- xmc-telemetry: {"git_username": "test_user", "date":'
             ' "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29",'
-            ' "comment_id": 1234, "skill_name": "address_pr_comment",'
+            ' "comment_id": 1234, "skill_name": "xmc_address_pr_comment",'
             ' "skill_commit_id": "unknown"} -->'
         )
         mock_call.assert_any_call(

@@ -43,12 +43,14 @@ vars:
   reconciler_image:   # Required. Container image for reconciler
   log_monitor_image:  # Required. Container image for log monitor
   health_service_image: # Required. Container image for health service
+  rod_image:          # Container image for ROD service
   
   task_signature_ttl_seconds: 86400
   use_redis_queue: true
   deploy_redis: true
   redis_region:
   status_message_history_enabled: true
+  health_service_deployment_enabled: false
 
 deployment_groups:
 - group: apis
@@ -351,6 +353,8 @@ deployment_groups:
         value: $(vars.health_service_image)
       - name: healthService.gcpServiceAccount
         value: $(health_service_gcp_sa.service_account_email)
+      - name: rod_custom_image
+        value: $(vars.rod_image)
       - name: taskSignatureTtlSeconds
         value: $(vars.task_signature_ttl_seconds)
         type: auto
@@ -389,6 +393,9 @@ deployment_groups:
         value: $(vars.authorized_iam_role)
       - name: statusMessageHistoryEnabled
         value: $(vars.status_message_history_enabled)
+        type: auto
+      - name: healthServiceDeployment.enabled
+        value: $(vars.health_service_deployment_enabled)
         type: auto
 
   - id: xmc_sa_annotations

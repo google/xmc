@@ -1,0 +1,76 @@
+<!--
+ Copyright 2026 Google LLC
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+<div class="finder-query-card">
+  <span class="query-prefix">I need</span>
+
+  <div class="query-input-group">
+    <label class="query-label" for="amount-input">Amount *</label>
+    <input
+      id="amount-input"
+      type="number"
+      min="1"
+      class="query-input-box"
+      [ngModel]="amount()"
+      (ngModelChange)="amount.set($event)"
+      placeholder="e.g. 64"
+    />
+  </div>
+
+  @for (typeVal of selectedResourceTypes(); track $index) {
+    <div class="query-input-group">
+      <label class="query-label" [for]="'resource-type-select-' + $index">Resource type *</label>
+      <div class="select-with-remove-box">
+        <select
+          [id]="'resource-type-select-' + $index"
+          class="query-select-box"
+          [ngModel]="typeVal"
+          (ngModelChange)="updateResourceType($index, $event)"
+        >
+          <option value="">All resource types (Default - empty)</option>
+          @for (resType of availableResourceTypes(); track resType) {
+            <option [value]="resType">{{ resType }}</option>
+          }
+        </select>
+        @if (selectedResourceTypes().length > 1) {
+          <button
+            type="button"
+            mat-icon-button
+            class="remove-resource-btn"
+            (click)="removeResourceTypeFilter($index)"
+            aria-label="Remove resource filter"
+          >
+            <mat-icon class="remove-icon">close</mat-icon>
+          </button>
+        }
+      </div>
+    </div>
+  }
+
+  <button type="button" mat-button class="add-resource-btn" (click)="addResourceTypeFilter()">
+    + Add resource type
+  </button>
+
+  <button
+    type="button"
+    mat-flat-button
+    color="primary"
+    class="find-queues-action"
+    (click)="onFindMatchingQueues()"
+  >
+    <mat-icon>search</mat-icon>
+    Find matching queues
+  </button>
+</div>
