@@ -37,7 +37,7 @@ import (
 func TestSchemaSynchronization(t *testing.T) {
 	ctx := t.Context()
 
-	// SetupWithEmulator creates the ESS, XID, and Dashboard databases using their respective schemas.
+	// SetupWithEmulator creates the ESS and XID databases using their respective schemas.
 	_, _, emu := emulator.SetupWithEmulator(ctx, t)
 	// SetupEmpty creates empty databases.
 	_, _, emptyDBEmu := emulator.SetupEmpty(ctx, t)
