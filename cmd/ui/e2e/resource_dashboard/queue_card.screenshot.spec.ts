@@ -43,8 +43,10 @@ test.describe('QueueCardComponent - Screenshot Tests', () => {
     const queueCardComponent = page.locator('xmc-rod-queue-card, .scaffolding-queue-item').first();
     await expect(queueCardComponent).toBeAttached();
     await queueCardComponent.evaluate((el) => {
-      (el as HTMLElement).style.minHeight = '48px';
+      (el as HTMLElement).style.width = '1976px';
+      (el as HTMLElement).style.height = '48px';
       (el as HTMLElement).style.display = 'block';
+      (el as HTMLElement).style.boxSizing = 'border-box';
     });
     await expect(queueCardComponent).toHaveScreenshot('queue-card-component.png');
   });
