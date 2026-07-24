@@ -41,16 +41,16 @@ resource "google_spanner_instance" "main_instance" {
 # Spanner Database & Schema
 # -----------------------------------------------------------------------------
 resource "google_spanner_database" "experiment_database" {
-  project  = google_project_service.spanner_api.project
-  instance = google_spanner_instance.main_instance.name
-  name     = "${var.spanner_experiment_database_name}-${var.environment}"
+  project             = google_project_service.spanner_api.project
+  instance            = google_spanner_instance.main_instance.name
+  name                = "${var.spanner_experiment_database_name}-${var.environment}"
   deletion_protection = !var.is_dev_environment
 }
 
 resource "google_spanner_database" "xid_database" {
-  project  = google_project_service.spanner_api.project
-  instance = google_spanner_instance.main_instance.name
-  name     = "${var.spanner_xid_database_name}-${var.environment}"
+  project             = google_project_service.spanner_api.project
+  instance            = google_spanner_instance.main_instance.name
+  name                = "${var.spanner_xid_database_name}-${var.environment}"
   deletion_protection = !var.is_dev_environment
 }
 
@@ -64,7 +64,7 @@ resource "google_spanner_database_iam_member" "actuator_database_users" {
   instance = google_spanner_instance.main_instance.name
   database = google_spanner_database.experiment_database.name
   role     = "roles/spanner.databaseUser"
-  member   = "${var.actuator_principal}"
+  member   = var.actuator_principal
 }
 
 resource "google_spanner_database_iam_member" "reconciler_database_users" {
@@ -72,7 +72,7 @@ resource "google_spanner_database_iam_member" "reconciler_database_users" {
   instance = google_spanner_instance.main_instance.name
   database = google_spanner_database.experiment_database.name
   role     = "roles/spanner.databaseUser"
-  member   = "${var.reconciler_principal}"
+  member   = var.reconciler_principal
 }
 
 resource "google_spanner_database_iam_member" "experiment_database_users" {
@@ -80,7 +80,7 @@ resource "google_spanner_database_iam_member" "experiment_database_users" {
   instance = google_spanner_instance.main_instance.name
   database = google_spanner_database.experiment_database.name
   role     = "roles/spanner.databaseUser"
-  member   = "${var.ess_principal}"
+  member   = var.ess_principal
 }
 
 resource "google_spanner_database_iam_member" "log_monitor_database_users" {
@@ -96,6 +96,6 @@ resource "google_spanner_database_iam_member" "xid_database_users" {
   instance = google_spanner_instance.main_instance.name
   database = google_spanner_database.xid_database.name
   role     = "roles/spanner.databaseUser"
-  member   = "${var.xid_principal}"
+  member   = var.xid_principal
 
 }
