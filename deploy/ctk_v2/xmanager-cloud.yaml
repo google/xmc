@@ -50,6 +50,7 @@ vars:
   deploy_redis: true
   redis_region:
   status_message_history_enabled: true
+  health_service_deployment_enabled: false
 
 deployment_groups:
 - group: apis
@@ -392,6 +393,9 @@ deployment_groups:
         value: $(vars.authorized_iam_role)
       - name: statusMessageHistoryEnabled
         value: $(vars.status_message_history_enabled)
+        type: auto
+      - name: healthServiceDeployment.enabled
+        value: $(vars.health_service_deployment_enabled)
         type: auto
 
   - id: xmc_sa_annotations

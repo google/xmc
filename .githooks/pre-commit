@@ -197,12 +197,83 @@ check_python() {
   fi
 }
 
+check_terraform() {
+  local tf_files
+  if [ "$MODE" = "check" ]; then
+    tf_files=$(find deploy -type f -name "*.tf" || true)
+  else
+    tf_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.tf$' || true)
+  fi
+
+  if [ -z "$tf_files" ]; then
+    return
+  fi
+
+  echo "--> Running Terraform Formatter (terraform fmt)..."
+  if command -v terraform >/dev/null 2>&1; then
+    if [ "$MODE" = "check" ]; then
+      if ! terraform fmt -check $tf_files; then
+        echo "❌ Terraform formatting check failed."
+        FAILED=1
+      fi
+    else
+      terraform fmt $tf_files || true
+    fi
+  elif command -v docker >/dev/null 2>&1; then
+    if [ "$MODE" = "check" ]; then
+      if ! docker run --rm -v "$(pwd):/workspace" -w /workspace hashicorp/terraform:latest fmt -check $tf_files; then
+        echo "❌ Terraform formatting check failed."
+        FAILED=1
+      fi
+    else
+      docker run --rm -v "$(pwd):/workspace" -w /workspace hashicorp/terraform:latest fmt $tf_files || true
+    fi
+  else
+    echo "--> WARNING: terraform or docker not found. Terraform formatting check skipped."
+    if [ "$MODE" = "check" ]; then FAILED=1; fi
+  fi
+
+  echo "--> Running Terraform Linter (TFLint)..."
+  if command -v tflint >/dev/null 2>&1; then
+    tflint --init >/dev/null 2>&1 || true
+    if ! tflint --recursive; then
+      echo "❌ TFLint check failed."
+      FAILED=1
+    fi
+  elif command -v docker >/dev/null 2>&1; then
+    if ! docker run --rm -v "$(pwd):/data" -w /data --entrypoint sh ghcr.io/terraform-linters/tflint:latest -c "tflint --init >/dev/null 2>&1 && tflint --recursive"; then
+      echo "❌ TFLint check failed."
+      FAILED=1
+    fi
+  else
+    echo "--> WARNING: tflint or docker not found. TFLint check skipped."
+    if [ "$MODE" = "check" ]; then FAILED=1; fi
+  fi
+
+  echo "--> Running Terraform Security Scanner (Trivy)..."
+  if command -v trivy >/dev/null 2>&1; then
+    if ! trivy config --skip-check-update --misconfig-scanners terraform --severity HIGH,CRITICAL deploy/; then
+      echo "❌ Trivy security check failed."
+      FAILED=1
+    fi
+  elif command -v docker >/dev/null 2>&1; then
+    if ! docker run --rm -v "$(pwd):/src" aquasec/trivy:latest config --skip-check-update --misconfig-scanners terraform --severity HIGH,CRITICAL /src/deploy; then
+      echo "❌ Trivy security check failed."
+      FAILED=1
+    fi
+  else
+    echo "--> WARNING: trivy or docker not found. Terraform security check skipped."
+    if [ "$MODE" = "check" ]; then FAILED=1; fi
+  fi
+}
+
 main() {
   check_bazel
   check_go
   check_ui
   check_license
   check_python
+  check_terraform
 
   if [ "$MODE" = "fix" ]; then
     if ! git diff --quiet; then
@@ -221,4 +292,4 @@ main() {
   echo "=== ✅ All pre-commit checks passed! ==="
 }
 
-main
+main "$@"

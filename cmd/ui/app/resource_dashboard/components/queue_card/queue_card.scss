@@ -1,0 +1,166 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+.queue-card {
+  background-color: #ffffff;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  padding: 16px 20px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  outline: none;
+
+  &:hover {
+    border-color: #bdc1c6;
+    box-shadow: 0 1px 3px rgba(60, 64, 67, 0.1);
+  }
+
+  &.selected {
+    border-color: #1a73e8;
+    box-shadow: 0 0 0 1px #1a73e8;
+  }
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.queue-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+  color: #202124;
+}
+
+.queue-cohort {
+  font-size: 12px;
+  color: #5f6368;
+}
+
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 12px;
+
+  &.healthy {
+    background-color: #e6f4ea;
+    color: #137333;
+
+    .status-dot {
+      background-color: #137333;
+    }
+  }
+
+  &.warning {
+    background-color: #fef7e0;
+    color: #b06000;
+
+    .status-dot {
+      background-color: #b06000;
+    }
+  }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+}
+
+.capacity-section {
+  margin-bottom: 12px;
+}
+
+.section-title {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: #5f6368;
+  text-transform: uppercase;
+}
+
+.capacity-table {
+  width: 100%;
+}
+
+.table-header {
+  display: flex;
+  font-size: 11px;
+  color: #70757a;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #f1f3f4;
+}
+
+.table-row {
+  display: flex;
+  font-size: 13px;
+  color: #202124;
+  padding: 6px 0;
+}
+
+.col-resource {
+  flex: 2;
+}
+
+.col-max {
+  flex: 2;
+}
+
+.col-free {
+  flex: 2;
+}
+
+.font-medium {
+  font-weight: 500;
+}
+
+.predictability-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+
+  &.healthy-banner {
+    background-color: #e6f4ea;
+    color: #137333;
+
+    .banner-icon {
+      color: #137333;
+    }
+  }
+
+  &.warning-banner {
+    background-color: #fef7e0;
+    color: #b06000;
+
+    .banner-icon {
+      color: #b06000;
+    }
+  }
+
+  .banner-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+  }
+}
