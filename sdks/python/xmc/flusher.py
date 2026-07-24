@@ -23,7 +23,10 @@ from typing import Any
 
 from xmc.buffer import BoundedMetricsBuffer, MetricTuple
 from xmc.client import Client
-from xmc.dist_harvest import harvest_client_metadata
+from xmc.dist_harvest import (
+    get_replica_id_and_silence_status,
+    harvest_client_metadata,
+)
 from xmc.network import HTTPClient, SendResult
 from xmc.resilience import (
     DEFAULT_BACKOFF_FACTOR,
@@ -57,6 +60,7 @@ class MetricsFlusher:
         batch_size: Batch size threshold to trigger an early flusher wakeup.
         is_started: Returns True if the flusher background thread has started.
         is_shutdown: Returns True if the flusher has been shut down.
+        is_silenced: Returns True if telemetry logging is silenced on non-zero rank replicas.
         xid: Workload XID metadata integer.
         work_unit_id: Work unit ID metadata integer.
         execution_id: Execution ID metadata integer.
@@ -136,6 +140,13 @@ class MetricsFlusher:
             )
         )
 
+        if client is not None and isinstance(getattr(client, "is_silenced", None), bool):
+            self._is_silenced = bool(client.is_silenced)
+        else:
+            _, self._is_silenced = get_replica_id_and_silence_status(
+                env=env, log_all_replicas=False
+            )
+
         self._init_lock = threading.Lock()
         self._condition = threading.Condition()
         self._shutdown_event = threading.Event()
@@ -144,6 +155,7 @@ class MetricsFlusher:
         self._atexit_handler: Callable[[], None] | None = None
         self._accumulated_drops: int = 0
         self._last_drop_log_time: float = 0.0
+        self._drop_log_lock = threading.Lock()
 
     @property
     def xid(self) -> str:
@@ -205,9 +217,14 @@ class MetricsFlusher:
         """Returns True if the flusher has been shut down."""
         return self._shutdown_event.is_set()
 
+    @property
+    def is_silenced(self) -> bool:
+        """Returns True if telemetry logging is silenced on non-zero rank replicas."""
+        return self._is_silenced
+
     def start(self) -> None:
         """Lazily starts the background flusher daemon thread using double-checked locking."""
-        if self._started or self._shutdown_event.is_set():
+        if self._started or self._shutdown_event.is_set() or self._is_silenced:
             return
 
         # Avoid spawning daemon threads if metric logging is never invoked while ensuring
@@ -244,7 +261,7 @@ class MetricsFlusher:
             step: Step index (coerced to int).
             timestamp: Optional epoch timestamp (coerced to int per metrics.proto int64).
         """
-        if self._shutdown_event.is_set():
+        if self._shutdown_event.is_set() or self._is_silenced:
             return
 
         self._buffer.put(name, value, step, timestamp)
@@ -260,7 +277,7 @@ class MetricsFlusher:
         Args:
             metrics: Iterable of metric tuples (name, value, step[, timestamp]).
         """
-        if self._shutdown_event.is_set():
+        if self._shutdown_event.is_set() or self._is_silenced:
             return
 
         self._buffer.put_many(metrics)
@@ -280,16 +297,17 @@ class MetricsFlusher:
         """
         import time
 
-        dropped = self._buffer.pop_dropped_count()
-        if dropped > 0:
-            self._accumulated_drops += dropped
-        now = time.monotonic()
-        if self._accumulated_drops > 0 and (
-            now - self._last_drop_log_time >= 10.0 or self._shutdown_event.is_set()
-        ):
-            logger.warning("Dropped %d metrics due to buffer overflow", self._accumulated_drops)
-            self._accumulated_drops = 0
-            self._last_drop_log_time = now
+        with self._drop_log_lock:
+            dropped = self._buffer.pop_dropped_count()
+            if dropped > 0:
+                self._accumulated_drops += dropped
+            now = time.monotonic()
+            if self._accumulated_drops > 0 and (
+                now - self._last_drop_log_time >= 10.0 or self._shutdown_event.is_set()
+            ):
+                logger.warning("Dropped %d metrics due to buffer overflow", self._accumulated_drops)
+                self._accumulated_drops = 0
+                self._last_drop_log_time = now
 
     def _flusher_loop(self) -> None:
         """Background loop blocking on condition variable until timeout or notification."""
@@ -304,7 +322,6 @@ class MetricsFlusher:
             if self._shutdown_event.is_set():
                 break
 
-            self._check_and_log_dropped_metrics()
             self.flush()
 
     def flush(self, max_count: int | None = None) -> int:

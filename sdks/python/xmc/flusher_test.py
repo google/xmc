@@ -293,6 +293,21 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
 
         flusher.shutdown()
 
+    def test_silencing_support(self) -> None:
+        env_silenced = {"RANK": "3", "XMC_LOG_ALL_REPLICAS": "0"}
+        mock_client = MagicMock()
+        flusher = MetricsFlusher(
+            client=mock_client,
+            flush_interval=60.0,
+            batch_size=1,
+            env=env_silenced,
+        )
+        self.assertTrue(flusher.is_silenced)
+
+        flusher.log_metric("silenced_metric", 1.0, 1)
+        self.assertEqual(len(flusher.buffer), 0)
+        self.assertFalse(mock_client.send.called)
+
 
 if __name__ == "__main__":
     unittest.main()

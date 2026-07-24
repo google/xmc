@@ -186,8 +186,8 @@ def harvest_client_metadata(
             fb = getattr(fallback_client, "replica_id", None)
         if fb is not None and isinstance(fb, str):
             str_repid = fb
-    if str_repid is None and env.get("XMC_REPLICA_ID"):
-        str_repid = env["XMC_REPLICA_ID"]
+    if str_repid is None:
+        str_repid = env.get("XMC_REPLICA_ID") or None
 
     if str_repid is not None:
         res_replica_id = str_repid

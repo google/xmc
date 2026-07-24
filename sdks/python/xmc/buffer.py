@@ -14,6 +14,7 @@
 
 """Thread-safe, memory-bounded buffer for XMC metrics."""
 
+import functools
 import math
 import re
 import threading
@@ -33,9 +34,17 @@ DEFAULT_CAPACITY: int = 500_000
 MetricTuple = tuple[str, float, int, float]
 
 _METRIC_NAME_REGEX: re.Pattern[str] = re.compile(r"^[a-zA-Z0-9_\.\-\/]{1,255}$")
-_MAX_CACHED_METRIC_NAMES: int = 10000
-_validated_metric_names: set[str] = set()
-_validation_lock = threading.Lock()
+
+
+@functools.lru_cache(maxsize=10000)
+def _is_valid_metric_name(name: str) -> bool:
+    """Fast-path LRU-cached regex check for metric name validity.
+
+    WHY functools.lru_cache: Training scripts repeatedly log the same metric names across
+    millions of steps. Using a thread-safe C-optimized LRU cache avoids CPU-intensive
+    regex evaluation on the hot path while preventing thrashing under high name cardinality.
+    """
+    return bool(_METRIC_NAME_REGEX.match(name))
 
 
 def _coerce_float(val: Any) -> float:
@@ -66,30 +75,16 @@ def _coerce_int(val: Any) -> int:
 
 
 def _validate_and_coerce_inputs(name: Any, value: Any, step: Any) -> tuple[str, float, int]:
-    """Pre-validates metric_name, value, and step with set-cached fast path.
-
-    WHY set-cached fast path: Training scripts repeatedly log the same metric names
-    across millions of steps. Re-running regex validation on every step adds CPU
-    latency to the caller thread. Set-caching limits regex matching to the first
-    encounter per metric name (capped at 10k entries to bound cache memory).
-    """
-    global _validated_metric_names
+    """Pre-validates metric_name, value, and step with LRU-cached fast path."""
     if not isinstance(name, str) or not name or len(name) > 255:
         raise ValueError(
             f"Invalid metric_name {name!r}: must be non-empty string <= 255 characters."
         )
 
-    if name not in _validated_metric_names:
-        if not _METRIC_NAME_REGEX.match(name):
-            raise ValueError(
-                f"Invalid metric_name {name!r}: must match regex ^[a-zA-Z0-9_\\.\\-\\/]{{1,255}}$"
-            )
-        with _validation_lock:
-            if name not in _validated_metric_names:
-                if len(_validated_metric_names) >= _MAX_CACHED_METRIC_NAMES:
-                    _validated_metric_names = {name}
-                else:
-                    _validated_metric_names = _validated_metric_names | {name}
+    if not _is_valid_metric_name(name):
+        raise ValueError(
+            f"Invalid metric_name {name!r}: must match regex ^[a-zA-Z0-9_\\.\\-\\/]{{1,255}}$"
+        )
 
     c_val = _coerce_float(value)
     if not math.isfinite(c_val):
