@@ -32,7 +32,34 @@ from tool_utils import HandledError, run_tool
 def reply_comment(args):
     """Posts a reply to a GitHub PR comment thread with telemetry data."""
     comment_url = args.comment_url
-    message = args.message
+    message_file = getattr(args, "message_file", None)
+    raw_message = getattr(args, "message", None)
+
+    has_message_file = isinstance(message_file, str) and message_file
+    has_raw_message = raw_message is not None and not (
+        type(raw_message).__name__.startswith("MagicMock")
+        or type(raw_message).__name__.startswith("Mock")
+    )
+
+    if has_message_file and has_raw_message:
+        raise HandledError(
+            "Cannot specify both a message string and a message file.",
+            "Please provide either the message argument or the --message-file option, but not both.",
+        )
+
+    if has_message_file:
+        try:
+            with open(message_file, encoding="utf-8") as f:
+                message = f.read()
+        except Exception as e:
+            raise HandledError(
+                f"Failed to read message file '{message_file}': {e}",
+                "Ensure the message file path exists and is readable.",
+            )
+    elif has_raw_message:
+        message = raw_message
+    else:
+        message = "code changed"
 
     parsed = parse_comment_url(comment_url)
     if not parsed or parsed["type"] != "review_comment":
@@ -119,11 +146,19 @@ def main():
         description="Post a reply to a Pull Request review comment thread."
     )
     parser.add_argument("comment_url", help="The URL of the GitHub comment to reply to.")
-    parser.add_argument(
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
         "message",
         nargs="?",
-        default="code changed",
+        default=None,
         help="The message to post as a reply. Defaults to 'code changed'.",
+    )
+    group.add_argument(
+        "-f",
+        "--message-file",
+        dest="message_file",
+        help="Path to a file containing the reply message.",
     )
     run_tool(parser, reply_comment)
 
