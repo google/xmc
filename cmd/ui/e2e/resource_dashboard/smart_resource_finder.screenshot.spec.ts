@@ -33,7 +33,7 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
   test('should match baseline screenshot for smart resource finder section', async ({ page }) => {
     await mountComponentHarness(
       page,
-      `<xmc-smart-resource-finder style="display: flex; align-items: center; gap: 16px; width: 960px; box-sizing: border-box; padding: 16px 24px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; font-family: Roboto, sans-serif;">
+      `<xmc-smart-resource-finder style="display: flex; align-items: center; gap: 16px; width: 960px; height: 88px; box-sizing: border-box; padding: 16px 24px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; font-family: Roboto, sans-serif;">
         <span style="font-weight: 500; color: #202124; font-size: 14px;">I need</span>
         <div style="display: flex; flex-direction: column; gap: 4px;">
           <label style="font-size: 12px; color: #5f6368; font-weight: 500;">Amount *</label>
