@@ -197,7 +197,7 @@ class TestDistHarvest(unittest.TestCase):
 
     def test_client_integration_silenced(self) -> None:
         env = {"RANK": "2"}
-        client = Client(base_url="https://xmc.example.com", env=env)
+        client = Client(env=env)
         self.assertEqual(client.replica_id, "2")
         self.assertTrue(client.is_silenced)
 
@@ -213,7 +213,7 @@ class TestDistHarvest(unittest.TestCase):
         mock_urlopen.return_value = mock_response
 
         env = {"RANK": "2"}
-        client = Client(base_url="https://xmc.example.com", env=env, log_all_replicas=True)
+        client = Client(env=env, log_all_replicas=True)
         self.assertEqual(client.replica_id, "2")
         self.assertFalse(client.is_silenced)
 

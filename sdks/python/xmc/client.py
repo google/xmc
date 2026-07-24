@@ -35,9 +35,10 @@ logger = logging.getLogger(__name__)
 _TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "t", "y"})
 
 
-def _is_metrics_disabled_env() -> bool:
+def _is_metrics_disabled_env(env: Mapping[str, str] | None = None) -> bool:
     """Checks whether XMC_METRICS_DISABLED env var is set to a truthy value."""
-    val = os.getenv("XMC_METRICS_DISABLED", "").strip().lower()
+    env_source = env if env is not None else os.environ
+    val = env_source.get("XMC_METRICS_DISABLED", "").strip().lower()
     return val in _TRUTHY_ENV_VALUES
 
 
@@ -87,31 +88,24 @@ class Client:
 
     def __init__(
         self,
-        base_url: str | None = None,
-        api_key: str | None = None,
-        timeout: float = 30.0,
-        default_headers: dict[str, str] | None = None,
-        disabled: bool | None = None,
         log_all_replicas: bool = False,
         env: Mapping[str, str] | None = None,
     ) -> None:
-        if base_url is None:
-            base_url = (env if env is not None else os.environ).get("XMC_GATEWAY_URL")
+        self.log_all_replicas = log_all_replicas
 
+        env_dict = env if env is not None else os.environ
+
+        base_url = env_dict.get("XMC_GATEWAY_URL")
         if not base_url:
-            base_url = "http://localhost"
-            if disabled is None:
-                disabled = True
+            base_url = "http://localhost:disabled"
+            self._disabled = True
+        else:
+            self._disabled = _is_metrics_disabled_env(env=env_dict)
 
         self.base_url = str(base_url).rstrip("/")
-        self.api_key = api_key
-        self.timeout = timeout
-        if disabled is not None:
-            self._disabled = bool(disabled)
-        else:
-            self._disabled = _is_metrics_disabled_env()
+        self.api_key = env_dict.get("XMC_API_KEY")
+        self.timeout = 30.0
 
-        self.log_all_replicas = log_all_replicas
         (
             self._xid,
             self._work_unit_id,
@@ -133,10 +127,8 @@ class Client:
         }
         if self.replica_id:
             self._headers["X-Replica-ID"] = self.replica_id
-        if default_headers:
-            self._headers.update(default_headers)
-        if api_key:
-            self._headers["Authorization"] = f"Bearer {api_key}"
+        if self.api_key:
+            self._headers["Authorization"] = f"Bearer {self.api_key}"
 
     @property
     def xid(self) -> str:

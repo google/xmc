@@ -32,25 +32,23 @@ class TestClient(unittest.TestCase):
         os.environ["XMC_XID"] = "1001"
         os.environ["XMC_WORK_UNIT_ID"] = "2002"
         os.environ["XMC_EXECUTION_ID"] = "3003"
+        os.environ["XMC_GATEWAY_URL"] = "https://xmc.googleapis.com"
 
     def tearDown(self) -> None:
         os.environ.clear()
         os.environ.update(self._orig_env)
 
     def test_init_invalid_base_url_disables_client(self) -> None:
-        client = Client(base_url="")
+        client = Client(env={})
         self.assertTrue(client.disabled)
         self.assertTrue(client.should_silence)
 
     def test_init_headers(self) -> None:
-        client = Client(
-            base_url="https://xmc.googleapis.com",
-            api_key="test-token",
-            default_headers={"X-Custom": "val"},
-        )
+        os.environ["XMC_GATEWAY_URL"] = "https://xmc.googleapis.com"
+        os.environ["XMC_API_KEY"] = "test-token"
+        client = Client()
         self.assertEqual(client.base_url, "https://xmc.googleapis.com")
         self.assertEqual(client._headers["Authorization"], "Bearer test-token")
-        self.assertEqual(client._headers["X-Custom"], "val")
         self.assertEqual(client._headers["Content-Type"], "application/json")
 
     @patch("urllib.request.urlopen")
@@ -60,7 +58,7 @@ class TestClient(unittest.TestCase):
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
 
-        client = Client(base_url="https://xmc.googleapis.com")
+        client = Client()
         res = client.get("v1/metrics", params={"step": 1})
 
         self.assertEqual(res, {"status": "ok"})
@@ -76,7 +74,7 @@ class TestClient(unittest.TestCase):
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
 
-        client = Client(base_url="https://xmc.googleapis.com")
+        client = Client()
         res = client.post("v1/metrics", data={"metric_name": "loss", "metric_value": 0.5})
 
         self.assertEqual(res, {"id": "123"})
@@ -92,7 +90,7 @@ class TestClient(unittest.TestCase):
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
 
-        client = Client(base_url="https://xmc.googleapis.com")
+        client = Client()
         res = client.get("v1/empty")
         self.assertEqual(res, {})
 
@@ -108,7 +106,7 @@ class TestClient(unittest.TestCase):
         )
         mock_urlopen.side_effect = http_err
 
-        client = Client(base_url="https://xmc.googleapis.com")
+        client = Client()
         with self.assertRaises(XMCAPIError) as ctx:
             client.get("v1/missing")
 
@@ -121,7 +119,7 @@ class TestClient(unittest.TestCase):
         url_err = urllib.error.URLError(reason=TimeoutError("connection timed out"))
         mock_urlopen.side_effect = url_err
 
-        client = Client(base_url="https://xmc.googleapis.com")
+        client = Client()
         with self.assertRaises(XMCNetworkError) as ctx:
             client.get("v1/metrics")
 
@@ -134,7 +132,7 @@ class TestClient(unittest.TestCase):
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
 
-        client = Client(base_url="https://xmc.googleapis.com")
+        client = Client()
         with self.assertRaises(XMCError) as ctx:
             client.get("v1/metrics")
 
@@ -147,7 +145,7 @@ class TestClient(unittest.TestCase):
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
 
-        client = Client(base_url="https://xmc.googleapis.com")
+        client = Client()
         res = client.get("v1/metrics", params={"tag": ["a", "b"]})
 
         self.assertEqual(res, [{"id": 1}, {"id": 2}])
@@ -158,53 +156,53 @@ class TestClient(unittest.TestCase):
     def test_timeout_error_direct(self, mock_urlopen: MagicMock) -> None:
         mock_urlopen.side_effect = TimeoutError("request timeout")
 
-        client = Client(base_url="https://xmc.googleapis.com")
+        client = Client()
         with self.assertRaises(XMCNetworkError) as ctx:
             client.get("v1/metrics")
 
         self.assertIn("Request timed out", str(ctx.exception))
 
     def test_context_manager(self) -> None:
-        with Client(base_url="https://xmc.googleapis.com") as client:
+        with Client() as client:
             self.assertEqual(client.base_url, "https://xmc.googleapis.com")
 
 
 class TestClientShortCircuit(unittest.TestCase):
     """Unit tests for Client short-circuit / disabling feature."""
 
+    def setUp(self) -> None:
+        self._orig_env = os.environ.copy()
+        os.environ["XMC_GATEWAY_URL"] = "https://xmc.googleapis.com"
+
+    def tearDown(self) -> None:
+        os.environ.clear()
+        os.environ.update(self._orig_env)
+
     def test_default_disabled_is_false(self) -> None:
         with patch.dict("os.environ"):
             os.environ.pop("XMC_METRICS_DISABLED", None)
-            client = Client(base_url="https://xmc.googleapis.com")
+            client = Client()
             self.assertFalse(client.disabled)
 
     def test_env_var_enabled_truthy_values(self) -> None:
         truthy_values = ["1", "true", "TRUE", "yes", "YES", "t", "T", "y", "Y", "  true  "]
         for val in truthy_values:
             with patch.dict("os.environ", {"XMC_METRICS_DISABLED": val}):
-                client = Client(base_url="https://xmc.googleapis.com")
+                client = Client()
                 self.assertTrue(client.disabled, f"Failed for env val: {val!r}")
 
     def test_env_var_falsy_values(self) -> None:
         falsy_values = ["0", "false", "no", "n", "random", ""]
         for val in falsy_values:
             with patch.dict("os.environ", {"XMC_METRICS_DISABLED": val}):
-                client = Client(base_url="https://xmc.googleapis.com")
+                client = Client()
                 self.assertFalse(client.disabled, f"Failed for env val: {val!r}")
-
-    def test_explicit_disabled_true_overrides_env(self) -> None:
-        with patch.dict("os.environ", {"XMC_METRICS_DISABLED": "0"}):
-            client = Client(base_url="https://xmc.googleapis.com", disabled=True)
-            self.assertTrue(client.disabled)
-
-    def test_explicit_disabled_false_overrides_env(self) -> None:
-        with patch.dict("os.environ", {"XMC_METRICS_DISABLED": "1"}):
-            client = Client(base_url="https://xmc.googleapis.com", disabled=False)
-            self.assertFalse(client.disabled)
 
     @patch("urllib.request.urlopen")
     def test_short_circuit_returns_empty_dict_no_urlopen(self, mock_urlopen: MagicMock) -> None:
-        client = Client(base_url="https://xmc.googleapis.com", disabled=True)
+        client = Client(
+            env={"XMC_METRICS_DISABLED": "1", "XMC_GATEWAY_URL": "https://xmc.googleapis.com"}
+        )
 
         res_get = client.get("v1/metrics", params={"step": 1})
         self.assertEqual(res_get, {})
@@ -218,7 +216,9 @@ class TestClientShortCircuit(unittest.TestCase):
         mock_urlopen.assert_not_called()
 
     def test_disabled_property_read_only(self) -> None:
-        client = Client(base_url="https://xmc.googleapis.com", disabled=True)
+        client = Client(
+            env={"XMC_METRICS_DISABLED": "1", "XMC_GATEWAY_URL": "https://xmc.googleapis.com"}
+        )
         with self.assertRaises(AttributeError):
             client.disabled = False
 
@@ -228,8 +228,9 @@ class TestClientShortCircuit(unittest.TestCase):
             "XMC_WORK_UNIT_ID": "222",
             "XMC_EXECUTION_ID": "333",
             "XMC_REPLICA_ID": "rep-4",
+            "XMC_GATEWAY_URL": "https://xmc.googleapis.com",
         }
-        client_env = Client(base_url="https://xmc.googleapis.com", env=env)
+        client_env = Client(env=env)
         self.assertEqual(client_env.xid, "111")
         self.assertEqual(client_env.work_unit_id, "222")
         self.assertEqual(client_env.execution_id, "333")
@@ -237,7 +238,7 @@ class TestClientShortCircuit(unittest.TestCase):
         self.assertFalse(client_env.is_silenced)
 
     def test_client_fail_closed_missing_env(self) -> None:
-        client_missing = Client(base_url="https://xmc.googleapis.com", env={})
+        client_missing = Client(env={})
         self.assertTrue(client_missing.is_silenced)
         # Suppressed post return
         res = client_missing.post("v1/metrics", data={"val": 1.0})
