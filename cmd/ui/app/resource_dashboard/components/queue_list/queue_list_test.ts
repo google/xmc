@@ -21,11 +21,13 @@ import {
   bootstrap,
   cleanState,
   flush,
+  getHarness,
   setupModule,
   setupObservableMatchers,
 } from 'xmanager_cloud/ui/app/testing/test';
 
 import { QueueListComponent } from './queue_list';
+import { QueueListHarness } from './queue_list_harness';
 
 @Component({
   standalone: true,
@@ -97,33 +99,36 @@ describe('QueueListComponent', () => {
   it('should render queue list and respond to velocity timeframe toggle clicks', async () => {
     const host = bootstrap(TestHostComponent);
     await flush();
+    const harness = (await getHarness(QueueListHarness)) as QueueListHarness;
 
-    const buttons = document.querySelectorAll('.toggle-pill');
-    expect(buttons.length).toBe(3);
-    expect(buttons[0].classList.contains('active-toggle')).toBeTrue();
+    const labels = await harness.getVelocityToggleLabels();
+    expect(labels).toEqual(['1h', '24h', '7d']);
+    expect(await harness.getActiveVelocityToggleLabel()).toBe('1h');
 
-    (buttons[1] as HTMLElement).click();
+    await harness.selectVelocityPeriod('24h');
     await flush();
 
     expect(host.velocityPeriod()).toBe('24h');
-    expect(buttons[0].classList.contains('active-toggle')).toBeFalse();
-    expect(buttons[1].classList.contains('active-toggle')).toBeTrue();
+    expect(await harness.getActiveVelocityToggleLabel()).toBe('24h');
   });
 
   it('should select queue when a queue card is clicked', async () => {
     const host = bootstrap(TestHostComponent);
     await flush();
+    const harness = (await getHarness(QueueListHarness)) as QueueListHarness;
 
-    const cards = document.querySelectorAll('.queue-card');
-    expect(cards.length).toBe(2);
-    expect(cards[0].classList.contains('selected')).toBeTrue();
-    expect(cards[1].classList.contains('selected')).toBeFalse();
+    expect(await harness.getQueueCardCount()).toBe(2);
+    const card0 = await harness.getQueueCard(0);
+    const card1 = await harness.getQueueCard(1);
 
-    (cards[1] as HTMLElement).click();
+    expect(await card0.isSelected()).toBeTrue();
+    expect(await card1.isSelected()).toBeFalse();
+
+    await card1.click();
     await flush();
 
     expect(host.selectedQueue()).toBe('cpu-cluster-queue');
-    expect(cards[0].classList.contains('selected')).toBeFalse();
-    expect(cards[1].classList.contains('selected')).toBeTrue();
+    expect(await card0.isSelected()).toBeFalse();
+    expect(await card1.isSelected()).toBeTrue();
   });
 });
