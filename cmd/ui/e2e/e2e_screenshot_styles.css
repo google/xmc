@@ -13,6 +13,34 @@
  * limitations under the License.
  */
 
+/**
+ * ============================================================================
+ * E2E COMPONENT SCREENSHOT TEST STYLES & ARCHITECTURAL RATIONALE
+ * ============================================================================
+ *
+ * WHY THIS FILE EXISTS:
+ * 1. Isolated Component Screenshot Testing:
+ *    Playwright screenshot specs target specific Angular components rather than
+ *    the entire dashboard container (`xmc-resource-dashboard`).
+ *
+ * 2. Unmerged Feature Placeholders & Playwright Visibility:
+ *    Before component feature PRs merge into main, components exist as empty DOM
+ *    placeholders (`.rod-subnav-placeholder`, `.scaffolding-queue-item`, etc.).
+ *    In Playwright, an element with 0px height is treated as hidden (`toBeVisible() = false`).
+ *
+ * 3. Cross-Environment CI/CD Determinism:
+ *    Headless Chromium in GitHub Actions CI/CD vs local dev workstations can produce
+ *    subtle flexbox layout reflow variations (e.g. 43px vs 48px height, container width scaling).
+ *    To prevent visual diff flakes without touching production SCSS (`resource_dashboard.scss`),
+ *    this file enforces rigid, unyielding CSS bounding rect constraints during test execution.
+ *
+ * DESIGN PATTERN:
+ * - Shared display, box-sizing, and container width locks are grouped into common rules.
+ * - Injected at test runtime via `setupScreenshotEnvironment(page)` in `e2e/test_utils.ts`.
+ * - Production application code remains 100% clean and unpolluted.
+ * ============================================================================
+ */
+
 /* Global layout and container locks for deterministic E2E screenshot tests */
 html,
 body {
