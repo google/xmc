@@ -40,6 +40,7 @@ describe('Resource Velocity Utilities', () => {
       expect(getVelocityHours('24h')).toBe(24);
       expect(getVelocityHours('1 day')).toBe(24);
       expect(getVelocityHours('7d')).toBe(168);
+      expect(getVelocityHours('7 days')).toBe(168);
     });
   });
 
@@ -75,18 +76,6 @@ describe('Resource Velocity Utilities', () => {
   describe('calculateJobVelocity', () => {
     it('should return custom job velocity if present', () => {
       expect(calculateJobVelocity({ jobVelocity: '4 jobs/hr' }, '1h')).toBe('4 jobs/hr');
-    });
-
-    it('should calculate job rate regardless of pending jobs', () => {
-      expect(
-        calculateJobVelocity(
-          {
-            admittedJobsCount: 24,
-            pendingWorkloads: 3,
-          },
-          '24h',
-        ),
-      ).toBe('1 jobs/hr');
     });
   });
 

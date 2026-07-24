@@ -11,6 +11,7 @@ cmd/ui/.angular/
 cmd/ui/dist/
 cmd/ui/build_tmp/
 cmd/ui/test-results/
+cmd/ui/playwright-report/
 
 **__pycache__**
 # proto binaries

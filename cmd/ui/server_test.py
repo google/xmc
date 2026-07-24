@@ -135,17 +135,27 @@ class SPAHandlerTest(unittest.TestCase):
             {
                 "testcase_name": "defaults",
                 "environ": {},
-                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true};',
+                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true, "adminPanelEnabled": false};',
             },
             {
                 "testcase_name": "status_message_history_true",
                 "environ": {"XMC_STATUS_MESSAGE_HISTORY_ENABLED": "true"},
-                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true};',
+                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true, "adminPanelEnabled": false};',
             },
             {
                 "testcase_name": "status_message_history_false",
                 "environ": {"XMC_STATUS_MESSAGE_HISTORY_ENABLED": "false"},
-                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": false};',
+                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": false, "adminPanelEnabled": false};',
+            },
+            {
+                "testcase_name": "admin_panel_true",
+                "environ": {"XMC_ADMIN_PANEL_ENABLED": "true"},
+                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true, "adminPanelEnabled": true};',
+            },
+            {
+                "testcase_name": "admin_panel_false",
+                "environ": {"XMC_ADMIN_PANEL_ENABLED": "false"},
+                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true, "adminPanelEnabled": false};',
             },
         ]
         for case in cases:

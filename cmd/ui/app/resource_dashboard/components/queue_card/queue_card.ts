@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 
 import {
@@ -22,7 +22,7 @@ import {
   PredictabilityMessagePipe,
   QueueStatusBadgePipe,
 } from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
-import { ClusterQueue, ResourceFlavorMetric } from 'xmanager_cloud/ui/app/service/resource_types';
+import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
 
 @Component({
   selector: 'xmc-rod-queue-card',
@@ -44,9 +44,7 @@ export class QueueCardComponent {
   readonly isSelected = input<boolean>(false);
   readonly selectQueue = output<string>();
 
-  protected getFilteredFlavors(queue?: ClusterQueue): ResourceFlavorMetric[] {
-    return queue?.flavors ?? [];
-  }
+  protected readonly flavors = computed(() => this.queue()?.flavors ?? []);
 
   protected onCardClick() {
     this.selectQueue.emit(this.queue().name);
