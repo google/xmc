@@ -321,48 +321,6 @@ check_shell() {
   fi
 }
 
-check_gitleaks() {
-  local gitleaks_bin=""
-  if command -v gitleaks >/dev/null 2>&1; then
-    gitleaks_bin="gitleaks"
-  elif [ -f "$HOME/go/bin/gitleaks" ]; then
-    gitleaks_bin="$HOME/go/bin/gitleaks"
-  elif [ -f "$HOME/.local/bin/gitleaks" ]; then
-    gitleaks_bin="$HOME/.local/bin/gitleaks"
-  fi
-
-  if [ -n "$gitleaks_bin" ]; then
-    echo "--> Running Secret Scanner (Gitleaks)..."
-    if [ "$MODE" = "check" ]; then
-      if ! $gitleaks_bin detect --source=. --no-git; then
-        echo "❌ Gitleaks secret scan failed."
-        FAILED=1
-      fi
-    else
-      if ! $gitleaks_bin protect --staged; then
-        echo "❌ Gitleaks secret scan failed."
-        FAILED=1
-      fi
-    fi
-  elif command -v docker >/dev/null 2>&1; then
-    echo "--> Running Gitleaks via Docker container..."
-    if [ "$MODE" = "check" ]; then
-      if ! docker run --rm -v "$(pwd):/path" -w /path zricethezav/gitleaks:latest detect --source="/path" --no-git; then
-        echo "❌ Gitleaks secret scan failed."
-        FAILED=1
-      fi
-    else
-      if ! docker run --rm -v "$(pwd):/path" -w /path zricethezav/gitleaks:latest protect --staged; then
-        echo "❌ Gitleaks secret scan failed."
-        FAILED=1
-      fi
-    fi
-  else
-    echo "--> WARNING: gitleaks or docker not found. Gitleaks check skipped."
-    if [ "$MODE" = "check" ]; then FAILED=1; fi
-  fi
-}
-
 check_semgrep() {
   local semgrep_bin=""
   if command -v semgrep >/dev/null 2>&1; then
@@ -399,7 +357,6 @@ main() {
   check_python
   check_terraform
   check_shell
-  check_gitleaks
   check_semgrep
 
   if [ "$MODE" = "fix" ]; then

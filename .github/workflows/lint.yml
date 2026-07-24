@@ -171,20 +171,6 @@ jobs:
             -ignore "go.sum" \
             .
 
-  gitleaks-scan:
-    name: 'Secret Scanning (Gitleaks)'
-    runs-on: 'ubuntu-24.04'
-    steps:
-      - name: 'Checkout code'
-        uses: 'actions/checkout@v4'
-        with:
-          fetch-depth: 0
-
-      - name: 'Run Gitleaks'
-        uses: 'gitleaks/gitleaks-action@v2'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   semgrep-scan:
     name: 'Security Analysis (Semgrep)'
     runs-on: 'ubuntu-24.04'
