@@ -22,6 +22,7 @@ from unittest.mock import MagicMock
 
 from xmc.buffer import MetricTuple
 from xmc.flusher import MetricsFlusher
+from xmc.network import HTTPClient
 
 
 class TestMetricsFlusherInitialization(unittest.TestCase):
@@ -174,7 +175,7 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
         self.assertTrue(flusher.is_shutdown)
 
     def test_client_integration_send_payload(self) -> None:
-        mock_client = MagicMock()
+        mock_client = MagicMock(spec=HTTPClient)
         flusher = MetricsFlusher(
             client=mock_client,
             flush_interval=60.0,
@@ -232,7 +233,7 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
         self.assertEqual(fail_count, 3)
 
     def test_client_metadata_harvesting_and_payload_fields(self) -> None:
-        mock_client = MagicMock()
+        mock_client = MagicMock(spec=HTTPClient)
         env = {
             "XMC_XID": "1001",
             "XMC_WORK_UNIT_ID": "2002",

@@ -23,7 +23,7 @@ from unittest.mock import MagicMock
 from xmc.buffer import MetricTuple
 from xmc.client import XMCAPIError, XMCNetworkError
 from xmc.flusher import MetricsFlusher
-from xmc.network import SendResult
+from xmc.network import HTTPClient, SendResult
 from xmc.resilience import ResilienceState, ResilienceStateMachine, classify_outcome
 
 
@@ -210,7 +210,7 @@ class TestMetricsFlusherResilience(unittest.TestCase):
         self.assertIn("index 2 failed due to: value out of range", log_output)
 
     def test_terminal_400_send_result_discard(self) -> None:
-        mock_client = MagicMock()
+        mock_client = MagicMock(spec=HTTPClient)
         mock_client.send.side_effect = lambda body: SendResult.INVALID_PAYLOAD
 
         flusher = MetricsFlusher(

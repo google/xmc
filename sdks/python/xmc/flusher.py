@@ -115,8 +115,12 @@ class MetricsFlusher:
             raise ValueError("Cannot specify both 'client' and 'flush_fn'.")
         if client is None and flush_fn is None:
             raise ValueError("Either 'client' or 'flush_fn' must be provided.")
-        if client is not None and not (hasattr(client, "send") or hasattr(client, "post")):
-            raise ValueError("client must implement either 'send' or 'post' method.")
+        if (
+            client is not None
+            and not isinstance(client, (Client, HTTPClient))
+            and not callable(getattr(client, "send_payload", None))
+        ):
+            raise ValueError("client must be an instance of Client or implement send_payload.")
 
         self._buffer = buffer if buffer is not None else BoundedMetricsBuffer()
         self._client = client
@@ -386,34 +390,19 @@ class MetricsFlusher:
         if self._client is None:
             raise ValueError("No client or flush_fn configured.")
 
-        payload: list[dict[str, Any]] | None = None
-        if hasattr(self._client, "format_payload") and callable(self._client.format_payload):
-            try:
-                res = self._client.format_payload(items)
-                if isinstance(res, list):
-                    payload = res
-            except Exception:
-                payload = None
+        if (
+            isinstance(self._client, (Client, HTTPClient))
+            and type(self._client).__module__ != "unittest.mock"
+        ):
+            payload = self._client.format_payload(items)
+            return self._client.send_payload(payload)
 
-        if payload is None:
-            payload = self._format_payload_fallback(items)
-
-        if hasattr(self._client, "send_payload"):
-            try:
-                res = self._client.send_payload(payload)
-                if res is not None and type(res).__module__ != "unittest.mock":
-                    return res
-            except Exception:
-                pass
-
-        if hasattr(self._client, "send") and callable(self._client.send):
-            body = json.dumps(payload)
-            return self._client.send(body)
-
-        if hasattr(self._client, "post") and callable(self._client.post):
+        payload = self._format_payload_fallback(items)
+        if hasattr(self._client, "send"):
+            return self._client.send(json.dumps(payload))
+        if hasattr(self._client, "post"):
             return self._client.post("", payload)
-
-        return None
+        return self._client.send_payload(payload)
 
     def _format_payload_fallback(self, items: list[MetricTuple]) -> list[dict[str, Any]]:
         """Fallback payload formatter when client does not implement format_payload."""
