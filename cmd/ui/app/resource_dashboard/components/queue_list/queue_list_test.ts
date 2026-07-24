@@ -60,6 +60,24 @@ class TestHostComponent {
       localQueues: [{ name: 'gpu-queue', namespace: 'default' }],
       flavors: [],
     },
+    {
+      name: 'cpu-cluster-queue',
+      strategy: 'BestEffortFIFO',
+      cohort: 'cpu-cohort',
+      status: 'Active',
+      statusMessage: 'Can admit new workloads',
+      lastTransitionTime: '2026-07-22T10:00:00Z',
+      admittedWorkloads: 2,
+      reservingWorkloads: 0,
+      pendingWorkloads: 0,
+      pendingJobsCount: 0,
+      admittedJobsCount: 2,
+      dominantResource: 'CPU',
+      dominantResourceUnits: 32,
+      requestedResources: '0',
+      localQueues: [{ name: 'cpu-queue', namespace: 'default' }],
+      flavors: [],
+    },
   ]);
   readonly selectedQueue = signal<string>('gpu-cluster-queue');
   readonly isLoading = signal<boolean>(false);
@@ -90,5 +108,22 @@ describe('QueueListComponent', () => {
     expect(host.velocityPeriod()).toBe('24h');
     expect(buttons[0].classList.contains('active-toggle')).toBeFalse();
     expect(buttons[1].classList.contains('active-toggle')).toBeTrue();
+  });
+
+  it('should select queue when a queue card is clicked', async () => {
+    const host = bootstrap(TestHostComponent);
+    await flush();
+
+    const cards = document.querySelectorAll('.queue-card');
+    expect(cards.length).toBe(2);
+    expect(cards[0].classList.contains('selected')).toBeTrue();
+    expect(cards[1].classList.contains('selected')).toBeFalse();
+
+    (cards[1] as HTMLElement).click();
+    await flush();
+
+    expect(host.selectedQueue()).toBe('cpu-cluster-queue');
+    expect(cards[0].classList.contains('selected')).toBeFalse();
+    expect(cards[1].classList.contains('selected')).toBeTrue();
   });
 });
