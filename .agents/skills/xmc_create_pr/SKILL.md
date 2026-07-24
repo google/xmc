@@ -130,3 +130,32 @@ When updating an existing Pull Request description:
 
 1. After creating or updating a non-draft Pull Request, pause execution for approximately **2 minutes** (120 seconds).
 2. Allow GitHub CI status checks and automated PR review passes to run and produce initial status checks before proceeding to subsequent workflow steps.
+
+---
+
+## 6. Standard 5-Step End-to-End PR Lifecycle
+
+When creating and publishing Pull Requests, follow this mandatory 5-step lifecycle:
+
+1. **Create Draft PR**:
+   Create the pull request as a draft:
+   ```bash
+   gh pr create --draft --title "<type>(<scope>): <summary>" --body-file pr_body.md
+   ```
+2. **Wait for Automated Review Bot**:
+   Pause for 2–3 minutes to allow GitHub CI status checks and the automated Gemini review bot to inspect code diffs and post review comments.
+3. **Pull Review Comments**:
+   Fetch unresolved review comments and generate the review checklist artifact:
+   ```bash
+   ./tools/generate_review_checklist.py <owner> <repo> <pr_number> -o pr_review_checklist.md
+   ```
+4. **Address Review Comments**:
+   Implement requested code fixes, commit and push updates, post inline thread replies (`./tools/reply_pr_comment.py`), and verify 1-to-1 resolution (`./tools/verify_pr_comment_resolution.py`).
+5. **Verify CI Checks & Publish**:
+   Check CI status using `gh pr checks <pr_number>`:
+   - **If CI checks fail**: Inspect failures, implement fixes, push commits, and re-run checks.
+   - **If CI checks succeed**: Mark the PR as ready for review:
+     ```bash
+     gh pr ready <pr_number>
+     ```
+
