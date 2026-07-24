@@ -23,14 +23,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kadm"
-	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/sasl/plain"
-	"github.com/twmb/franz-go/pkg/sasl/scram"
 	"go/google"
 	"xmanager_cloud/logging/logging"
 )
@@ -55,8 +51,7 @@ func main() {
 
 	logging.Info(ctx, "Initializing Ingestion Gateway service", "brokers", cfg.RedpandaBrokers, "topic", cfg.TopicName)
 
-	opts := buildKgoOptions(cfg)
-	kClient, err := kgo.NewClient(opts...)
+	kClient, err := NewKafkaProducer(cfg)
 	if err != nil {
 		logging.Fatal(ctx, "failed to create franz-go client", "error", err)
 	}
@@ -68,28 +63,8 @@ func main() {
 	}
 	logging.Info(ctx, "Topic topology validation passed", "topic", cfg.TopicName, "min_partitions", cfg.MinPartitions, "min_replicas", cfg.MinReplicas)
 
-	server := startHTTPServer(ctx, cfg.Port)
+	server := startHTTPServer(ctx, cfg.Port, kClient)
 	awaitShutdown(ctx, server)
-}
-
-func buildKgoOptions(cfg *Config) []kgo.Opt {
-	opts := []kgo.Opt{
-		kgo.SeedBrokers(cfg.RedpandaBrokers...),
-		kgo.RecordPartitioner(kgo.StickyKeyPartitioner(nil)),
-	}
-
-	if cfg.SASLEnabled {
-		switch strings.ToUpper(cfg.SASLMechanism) {
-		case "SCRAM-SHA-256":
-			opts = append(opts, kgo.SASL(scram.Auth{User: cfg.SASLUser, Pass: cfg.SASLPassword}.AsSha256Mechanism()))
-		case "SCRAM-SHA-512":
-			opts = append(opts, kgo.SASL(scram.Auth{User: cfg.SASLUser, Pass: cfg.SASLPassword}.AsSha512Mechanism()))
-		case "PLAIN":
-			opts = append(opts, kgo.SASL(plain.Auth{User: cfg.SASLUser, Pass: cfg.SASLPassword}.AsMechanism()))
-		}
-	}
-
-	return opts
 }
 
 // ValidateTopicTopology asserts topic existence, partition count >= minPartitions, and replication factor >= minReplicas.
@@ -126,9 +101,12 @@ func ValidateTopicTopology(ctx context.Context, querier TopologyQuerier, topicNa
 	return nil
 }
 
-func startHTTPServer(ctx context.Context, port string) *http.Server {
-	cfg := DefaultServerConfig(port)
-	server := NewHTTPServer(cfg)
+func startHTTPServer(ctx context.Context, port string, optionalProducer ...MetricProducer) *http.Server {
+	srvCfg := DefaultServerConfig(port)
+	if len(optionalProducer) > 0 {
+		srvCfg.Producer = optionalProducer[0]
+	}
+	server := NewHTTPServer(srvCfg)
 
 	go func() {
 		logging.Info(ctx, "Ingestion Gateway server listening", "port", port)

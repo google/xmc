@@ -39,6 +39,8 @@ type ServerConfig struct {
 	ReadHeaderTimeout time.Duration
 	MaxHeaderBytes    int
 	MaxBodyBytes      int64
+	Producer          MetricProducer
+	TopicName         string
 }
 
 // DefaultServerConfig creates baseline server settings for a given port.
@@ -75,11 +77,25 @@ func healthzHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // NewHTTPServer constructs an http.Server with tuned timeouts and body limits.
-func NewHTTPServer(cfg ServerConfig) *http.Server {
+func NewHTTPServer(cfg ServerConfig, args ...any) *http.Server {
+	var producer MetricProducer = cfg.Producer
+	var topicName string = cfg.TopicName
+
+	if len(args) > 0 && args[0] != nil {
+		if p, ok := args[0].(MetricProducer); ok {
+			producer = p
+		}
+	}
+	if len(args) > 1 {
+		if t, ok := args[1].(string); ok && t != "" {
+			topicName = t
+		}
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthzHandler)
 	mux.HandleFunc("/readyz", healthzHandler)
-	mux.HandleFunc("/api/v1/metrics", MetricsIngestionHandler)
+	mux.HandleFunc("/api/v1/metrics", NewMetricsIngestionHandler(producer, topicName))
 
 	handler := MaxBytesMiddleware(cfg.MaxBodyBytes, mux)
 
