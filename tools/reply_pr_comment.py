@@ -32,7 +32,11 @@ from tool_utils import HandledError, run_tool
 def reply_comment(args):
     """Posts a reply to a GitHub PR comment thread with telemetry data."""
     comment_url = args.comment_url
-    message = args.message
+    if args.message_file:
+        with open(args.message_file, encoding="utf-8") as f:
+            message = f.read().strip()
+    else:
+        message = args.message
 
     parsed = parse_comment_url(comment_url)
     if not parsed or parsed["type"] != "review_comment":
@@ -124,6 +128,12 @@ def main():
         nargs="?",
         default="code changed",
         help="The message to post as a reply. Defaults to 'code changed'.",
+    )
+    parser.add_argument(
+        "--message-file",
+        "-f",
+        dest="message_file",
+        help="Path to a text file containing the reply message.",
     )
     run_tool(parser, reply_comment)
 
