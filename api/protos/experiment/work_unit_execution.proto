@@ -107,4 +107,7 @@ message WorkUnitExecutionMetadata {
   // The name of the MultiKueueCluster used.
   string multi_kueue_cluster_name = 9
       [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The URL of the MLRun associated with this execution.
+  string mlrun_url = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
