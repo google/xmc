@@ -164,7 +164,7 @@ def harvest_client_metadata(
             raw_wu,
             raw_exec,
         )
-        return "0", "0", "0", "0", True
+        return "", "", "", "0", True
 
     raw_replica = env.get("XMC_REPLICA_ID", "").strip()
     if raw_replica:

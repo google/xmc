@@ -67,12 +67,12 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     Tier1["1. Explicit Args<br/>(xid, work_unit_id, ...)"] --> Tier2["2. Environment Vars<br/>(XMC_XID, XMC_WORK_UNIT_ID, ...)"]
-    Tier2 --> Tier3["3. Default Fallback<br/>('0')"]
+    Tier2 --> Tier3["3. Fail-Closed Early Exit<br/>(Silences telemetry)"]
 ```
 
 1. **Explicit Override Parameters**: Optional overrides (`xid=...`, `work_unit_id=...`).
 2. **Environment Variables**: Primary source injected by XMC cluster infrastructure (`XMC_XID`, `XMC_WORK_UNIT_ID`, `XMC_EXECUTION_ID`, `XMC_REPLICA_ID`).
-3. **Default Fallback String**: Fallback string `"0"` for un-orchestrated local development.
+3. **Fail-Closed Missing Configs**: If `XMC_XID`, `XMC_WORK_UNIT_ID`, or `XMC_EXECUTION_ID` are missing, the SDK logs an error and exits the metric flow early (silences ingestion) instead of reverting to arbitrary fallback values. (`XMC_REPLICA_ID` naturally defaults to `"0"` for undiscovered ranks).
 
 > [!NOTE]
 > Per **Google AIP-127**, all 64-bit metadata IDs (`xid`, `work_unit_id`, `execution_id`, `replica_id`) are serialized as stringified integers (e.g. `"xid": "482019"`) in the JSON payload to prevent IEEE 754 float precision loss in web UIs.
