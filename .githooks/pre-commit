@@ -241,8 +241,7 @@ check_terraform() {
       FAILED=1
     fi
   elif command -v docker >/dev/null 2>&1; then
-    docker run --rm -v "$(pwd):/data" -w /data ghcr.io/terraform-linters/tflint:latest --init >/dev/null 2>&1 || true
-    if ! docker run --rm -v "$(pwd):/data" -w /data ghcr.io/terraform-linters/tflint:latest --recursive; then
+    if ! docker run --rm -v "$(pwd):/data" -w /data --entrypoint sh ghcr.io/terraform-linters/tflint:latest -c "tflint --init >/dev/null 2>&1 && tflint --recursive"; then
       echo "❌ TFLint check failed."
       FAILED=1
     fi
