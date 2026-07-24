@@ -41,17 +41,15 @@ def main():
     # Check if NVM exists in the user's real home and source it
     nvm_sh = os.path.join(user_home, ".nvm", "nvm.sh")
     if os.path.exists(nvm_sh):
-        cmd = f"source {nvm_sh} && npx ng test --watch=false"
+        cmd = ["/bin/bash", "-c", f"source {nvm_sh} && npx ng test --watch=false"]
     else:
-        cmd = "npx ng test --watch=false"
+        cmd = ["npx", "ng", "test", "--watch=false"]
 
     print(f"Executing Angular tests in physical workspace: {real_ui_dir}")
 
-    # Run the command with bash so we can source nvm
     res = subprocess.run(
         cmd,
-        shell=True,
-        executable="/bin/bash",
+        shell=False,
         cwd=real_ui_dir,
         env=env,
         check=False,

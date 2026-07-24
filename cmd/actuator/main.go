@@ -118,7 +118,7 @@ func main() {
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	logging.Info(ctx, "Actuator server listening on", "addr", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, mux); err != nil { // nosemgrep: go.lang.security.audit.net.use-tls.use-tls
 		logging.Fatal(ctx, "Server failed to start", "error", err)
 	}
 }

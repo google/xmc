@@ -120,6 +120,7 @@ func (r *Reconciler) updateWorkUnitNotesAboutPosition(ctx context.Context) {
 	defer logging.Info(ctx, "Updated Kueue WorkUnit position in queue sync.")
 
 	cqNames := r.CQCache.Names()
+	// nosemgrep: trailofbits.go.waitgroup-add-called-inside-goroutine.waitgroup-add-called-inside-goroutine
 	var workloadWaitGroup sync.WaitGroup
 	var queueWaitGroup sync.WaitGroup
 
@@ -155,8 +156,9 @@ func (r *Reconciler) updateWorkUnitNotesAboutPosition(ctx context.Context) {
 					Namespace:             pw.Metadata.Namespace,
 				}
 
-				workloadWaitGroup.Add(1)
 				workloadSem <- struct{}{}
+				// nosemgrep: trailofbits.go.waitgroup-add-called-inside-goroutine.waitgroup-add-called-inside-goroutine
+				workloadWaitGroup.Add(1)
 				go func(info WorkloadPositionInfo) {
 					defer workloadWaitGroup.Done()
 					defer func() { <-workloadSem }()

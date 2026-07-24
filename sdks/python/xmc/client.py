@@ -171,6 +171,7 @@ class Client:
         )
 
         try:
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             with urllib.request.urlopen(req, timeout=self.timeout) as response:
                 raw_bytes = response.read()
                 if not raw_bytes:

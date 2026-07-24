@@ -147,6 +147,7 @@ func main() {
 
 		tlsConfig := &tls.Config{
 			GetCertificate: reloader.GetCertificate,
+			MinVersion:     tls.VersionTLS12,
 		}
 
 		transportCreds = credentials.NewTLS(tlsConfig)
@@ -205,8 +206,10 @@ func main() {
 		httpTransportCreds = credentials.NewTLS(
 			// a TLS connection between localhost and localhost. I'm unsure when MitM attacks would be
 			// possible.
+			// nosemgrep: problem-based-packs.insecure-transport.go-stdlib.bypass-tls-verification.bypass-tls-verification, go.lang.security.audit.crypto.missing-ssl-minversion.missing-ssl-minversion
 			&tls.Config{
 				InsecureSkipVerify: true, // NOLINT
+				MinVersion:         tls.VersionTLS12,
 			},
 		)
 	} else {

@@ -101,7 +101,7 @@ func (s *Server) CreateWorkUnit(ctx context.Context, req *apipb.CreateWorkUnitRe
 		// so an AlreadyExists error means the client sent a duplicate ID.
 		if status.ExtractCanonicalCode(err) == status.AlreadyExists {
 			// If the storage layer returns AlreadyExists, newWorkUnit contains the conflicting work unit.
-			return nil, fmt.Errorf("work unit %s already exists: %w", newWorkUnit.GetName(), status.ErrAlreadyExists)
+			return nil, fmt.Errorf("work unit %s already exists: %w", wu.GetName(), status.ErrAlreadyExists)
 		}
 		return nil, fmt.Errorf("failed to save work unit: %v: %w", err, status.ErrInternal)
 	}

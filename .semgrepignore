@@ -17,37 +17,18 @@
 # Dependency and build output directories
 node_modules/
 **/node_modules/**
-.angular/
-**/.angular/**
-dist/
-**/dist/**
 vendor/
 **/vendor/**
-tools/venv/
-**/venv/**
+dist/
+**/dist/**
+.angular/
+**/.angular/**
 _worker_notes/
+**/_worker_notes/**
 
-# Test files (mock connections, test cookies, test JWTs)
+# Test files
 *_test.go
 *_test.py
 
-# GitHub Actions mutable tag checks
+# GitHub Actions workflow tag checks
 .github/workflows/
-
-# Examples and test containers
-examples/
-
-# UI test runner helper script & nginx dev proxy
-cmd/ui/run_ui_tests.py
-cmd/ui/nginx.conf
-
-# SDK and tools urllib/http audit findings
-sdks/python/xmc/client.py
-sdks/python/xmc/network.py
-tools/github_utils.py
-
-# Go existing components false positives / audit findings
-cmd/actuator/main.go
-cmd/experiment_state_server/
-cmd/reconciler/kueue_sync/
-pkg/auth/oauth2/handlers.go

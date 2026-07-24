@@ -112,6 +112,7 @@ def _call_api_with_token(endpoint, method, payload, token, user_agent):
     if body:
         req.add_header("Content-Type", "application/json")
 
+    # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
     with urllib.request.urlopen(req, data=body) as response:
         return json.loads(response.read().decode("utf-8"))
 
@@ -122,6 +123,7 @@ def _call_api_unauthenticated(endpoint, user_agent):
     req = urllib.request.Request(url, method="GET")
     req.add_header("Accept", "application/vnd.github.v3+json")
     req.add_header("User-Agent", user_agent)
+    # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
     with urllib.request.urlopen(req) as response:
         return json.loads(response.read().decode("utf-8"))
 
