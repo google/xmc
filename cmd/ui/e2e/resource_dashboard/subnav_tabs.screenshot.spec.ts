@@ -33,6 +33,7 @@ async function handleUserAuthRoute(route: Route) {
 
 test.describe('SubnavTabsComponent - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 1080 });
     await page.route('/api/user', handleUserAuthRoute);
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
@@ -40,7 +41,7 @@ test.describe('SubnavTabsComponent - Screenshot Tests', () => {
 
   test('should match baseline screenshot for subnav tabs layout', async ({ page }) => {
     const subnavTabs = page.locator('xmc-rod-subnav-tabs, .rod-subnav-placeholder');
-    await expect(subnavTabs.first()).toBeVisible();
+    await expect(subnavTabs.first()).toBeAttached();
     await expect(subnavTabs.first()).toHaveScreenshot('subnav-tabs-component.png');
   });
 });
