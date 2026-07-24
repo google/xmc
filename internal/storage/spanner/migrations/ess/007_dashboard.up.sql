@@ -60,5 +60,4 @@ CREATE TABLE ArtifactCharts (
   ChartId STRING(MAX) NOT NULL,
   CreatedAt TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
   CONSTRAINT FK_ArtifactChart_ChartId FOREIGN KEY (ChartId) REFERENCES Charts(ChartId)
-) PRIMARY KEY (BitReversedXid, WorkUnitId, ArtifactId, ArtifactChartId),
-  INTERLEAVE IN PARENT Artifacts ON DELETE CASCADE;
+) PRIMARY KEY (BitReversedXid, WorkUnitId, ArtifactId, ArtifactChartId);
