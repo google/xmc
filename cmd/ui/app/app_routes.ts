@@ -14,6 +14,8 @@
 
 import { Routes } from '@angular/router';
 
+import { adminPanelGuard } from './admin_panel.guard';
+import { AdminPanelPage } from './admin_panel/admin_panel';
 import { authGuard } from './auth.guard';
 import { ExperimentPage } from './experiment_page/experiment_page';
 import { ExperimentsListPage } from './experiments_list_page/experiments_list_page';
@@ -32,6 +34,11 @@ export const routes: Routes = [
     component: HomePage,
     canActivate: [guestGuard],
     pathMatch: 'full',
+  },
+  {
+    path: 'admin',
+    component: AdminPanelPage,
+    canActivate: [authGuard, adminPanelGuard],
   },
   {
     path: 'resources',

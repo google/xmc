@@ -16,6 +16,7 @@
  */
 export interface FeatureFlags {
   statusMessageHistoryEnabled?: boolean;
+  adminPanelEnabled?: boolean;
 }
 
 declare global {

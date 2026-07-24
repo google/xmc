@@ -40,6 +40,10 @@ describe('FeatureFlagService', () => {
     it('isStatusMessageHistoryEnabled should be false', () => {
       expect(state.service.isStatusMessageHistoryEnabled).toBeFalse();
     });
+
+    it('isAdminPanelEnabled should be false', () => {
+      expect(state.service.isAdminPanelEnabled).toBeFalse();
+    });
   });
 
   describe('when XMC_FEATURE_FLAGS is defined', () => {
@@ -58,6 +62,24 @@ describe('FeatureFlagService', () => {
       it('isStatusMessageHistoryEnabled should be false if statusMessageHistoryEnabled is false', () => {
         expect(state.service.isStatusMessageHistoryEnabled).toBeFalse();
         expect(state.service.isFeatureEnabled('statusMessageHistoryEnabled')).toBeFalse();
+      });
+    });
+
+    describe('when adminPanelEnabled is true', () => {
+      const state = setup({ adminPanelEnabled: true });
+
+      it('isAdminPanelEnabled should be true if adminPanelEnabled is true', () => {
+        expect(state.service.isAdminPanelEnabled).toBeTrue();
+        expect(state.service.isFeatureEnabled('adminPanelEnabled')).toBeTrue();
+      });
+    });
+
+    describe('when adminPanelEnabled is false', () => {
+      const state = setup({ adminPanelEnabled: false });
+
+      it('isAdminPanelEnabled should be false if adminPanelEnabled is false', () => {
+        expect(state.service.isAdminPanelEnabled).toBeFalse();
+        expect(state.service.isFeatureEnabled('adminPanelEnabled')).toBeFalse();
       });
     });
   });
