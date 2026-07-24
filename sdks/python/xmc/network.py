@@ -16,6 +16,7 @@
 
 import enum
 import http.client
+import json
 import random
 import threading
 import time
@@ -198,6 +199,11 @@ class HTTPClient:
                 }
             )
         return payload
+
+    def send_payload(self, payload: list[dict[str, Any]]) -> SendResult:
+        """Serializes and sends JSON payload list over persistent HTTP connection."""
+        body = json.dumps(payload)
+        return self.send(body)
 
     def _calculate_ttl(self) -> float:
         """Calculates connection TTL with random jitter (base_ttl ± jitter)."""

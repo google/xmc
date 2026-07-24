@@ -24,10 +24,12 @@ import urllib.request
 from collections.abc import Mapping
 from typing import Any
 
+from xmc.buffer import MetricTuple
 from xmc.dist_harvest import (
     get_replica_id_and_silence_status,
     harvest_client_metadata,
 )
+from xmc.types import Metric
 
 logger = logging.getLogger(__name__)
 
@@ -248,6 +250,57 @@ class Client:
             logger.debug("POST request to %s silenced for replica %s", path, self.replica_id)
             return {}
         return self.request("POST", path, data=data, headers=headers)
+
+    def format_payload(self, items: list[MetricTuple]) -> list[dict[str, Any]]:
+        """Formats metric tuples into JSON payload list matching XMCMetricsBatch schema.
+
+        Instantiates Metric proto objects per item to validate schema compliance
+        and converts float epoch timestamp to microsecond int64.
+        """
+
+        def _to_microsecond_ts(ts: float | int) -> int:
+            val = float(ts)
+            if val > 1e11:
+                return int(val)
+            return int(round(val * 1_000_000))
+
+        def _to_int_id(val: str | int | None) -> int:
+            if not val:
+                return 0
+            try:
+                return int(val)
+            except ValueError:
+                return 0
+
+        payload = []
+        for name, val, step, ts in items:
+            m = Metric(
+                xid=_to_int_id(self._xid),
+                work_unit_id=_to_int_id(self._work_unit_id),
+                execution_id=_to_int_id(self._execution_id),
+                replica_id=self._replica_id,
+                metric_name=name,
+                metric_value=float(val),
+                step=int(step),
+                timestamp=_to_microsecond_ts(ts),
+            )
+            payload.append(
+                {
+                    "xid": self._xid,
+                    "work_unit_id": self._work_unit_id,
+                    "execution_id": self._execution_id,
+                    "replica_id": m.replica_id,
+                    "metric_name": m.metric_name,
+                    "metric_value": m.metric_value,
+                    "step": m.step,
+                    "timestamp": m.timestamp,
+                }
+            )
+        return payload
+
+    def send_payload(self, payload: list[dict[str, Any]]) -> Any:
+        """Sends serialized batch payload list over the transport layer."""
+        return self.post("", payload)
 
     def close(self) -> None:
         """Closes any underlying network resources."""
