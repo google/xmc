@@ -14,11 +14,8 @@
  limitations under the License.
 -->
 <div class="rod-container">
-  <xmc-rod-subnav-tabs [activeTab]="activeTab()" (activeTabChange)="activeTab.set($event)" />
+  <div class="rod-subnav-placeholder"></div>
   <div class="rod-split-container">
-    @if (activeTab() === 'smart_resource_finder') {
-      <xmc-smart-resource-finder />
-    }
     <div class="rod-queue-list-placeholder">
       <h3>Resolved Cluster Queues</h3>
       @if (clusterQueues().length === 0) {
