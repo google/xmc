@@ -216,9 +216,9 @@ func TestBuildKgoOptions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := buildKgoOptions(&tt.cfg)
+			opts := BuildProducerOptions(&tt.cfg)
 			if len(opts) == 0 {
-				t.Errorf("buildKgoOptions() returned empty options slice")
+				t.Errorf("BuildProducerOptions() returned empty options slice")
 			}
 		})
 	}

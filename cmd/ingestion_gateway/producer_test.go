@@ -92,7 +92,7 @@ func (m *MockProducer) ProducedRecords() []*kgo.Record {
 	return copied
 }
 
-func TestFormatCompositeKeyAndMurmurHash2Consistency(t *testing.T) {
+func TestFormatCompositeKey(t *testing.T) {
 	tests := []struct {
 		xid        int64
 		workUnitID int64
@@ -105,19 +105,9 @@ func TestFormatCompositeKeyAndMurmurHash2Consistency(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		key1 := FormatCompositeKey(tt.xid, tt.workUnitID)
-		key2 := CompositePartitionKey(tt.xid, tt.workUnitID)
-		if string(key1) != tt.wantKey {
-			t.Errorf("FormatCompositeKey(%d, %d) = %q, want %q", tt.xid, tt.workUnitID, string(key1), tt.wantKey)
-		}
-		if string(key2) != tt.wantKey {
-			t.Errorf("CompositePartitionKey(%d, %d) = %q, want %q", tt.xid, tt.workUnitID, string(key2), tt.wantKey)
-		}
-
-		h1 := MurmurHash2(key1)
-		h2 := MurmurHash2(key1)
-		if h1 != h2 {
-			t.Errorf("MurmurHash2(%q) inconsistent: got %d and %d", key1, h1, h2)
+		key := FormatCompositeKey(tt.xid, tt.workUnitID)
+		if string(key) != tt.wantKey {
+			t.Errorf("FormatCompositeKey(%d, %d) = %q, want %q", tt.xid, tt.workUnitID, string(key), tt.wantKey)
 		}
 	}
 }

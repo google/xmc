@@ -81,6 +81,10 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string) http.
 				return *errPtr
 			}
 
+			if m == nil || m.Metric == nil {
+				return fmt.Errorf("received nil metric record")
+			}
+
 			if producer == nil {
 				return nil
 			}
