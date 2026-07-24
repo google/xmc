@@ -100,17 +100,13 @@ export async function handleUserAuthRoute(route: Route) {
  * Prepares the Playwright page runtime for deterministic component screenshot assertions.
  * Automatically injects base reset styles and allows optional custom bounding overrides.
  */
-export async function setupScreenshotEnvironment(
-  page: Page,
-  options?: ScreenshotOptions,
-) {
+export async function setupScreenshotEnvironment(page: Page, options?: ScreenshotOptions) {
   await page.addStyleTag({
     content: BASE_SCREENSHOT_STYLES,
   });
 
   if (options?.selector && (options.width != null || options.height != null)) {
-    const formatValue = (val: number | string) =>
-      typeof val === 'number' ? `${val}px` : val;
+    const formatValue = (val: number | string) => (typeof val === 'number' ? `${val}px` : val);
 
     const widthStyle =
       options.width != null
