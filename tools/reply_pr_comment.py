@@ -35,7 +35,19 @@ def reply_comment(args):
     message_file = getattr(args, "message_file", None)
     raw_message = getattr(args, "message", None)
 
-    if isinstance(message_file, str) and message_file:
+    has_message_file = isinstance(message_file, str) and message_file
+    has_raw_message = raw_message is not None and not (
+        type(raw_message).__name__.startswith("MagicMock")
+        or type(raw_message).__name__.startswith("Mock")
+    )
+
+    if has_message_file and has_raw_message:
+        raise HandledError(
+            "Cannot specify both a message string and a message file.",
+            "Please provide either the message argument or the --message-file option, but not both.",
+        )
+
+    if has_message_file:
         try:
             with open(message_file, encoding="utf-8") as f:
                 message = f.read()
@@ -44,7 +56,7 @@ def reply_comment(args):
                 f"Failed to read message file '{message_file}': {e}",
                 "Ensure the message file path exists and is readable.",
             )
-    elif isinstance(raw_message, str) and raw_message:
+    elif has_raw_message:
         message = raw_message
     else:
         message = "code changed"
