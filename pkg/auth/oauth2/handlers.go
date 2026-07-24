@@ -47,7 +47,7 @@ func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{ // nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
+	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
 		Value:    state,
 		Path:     "/",
@@ -59,7 +59,7 @@ func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 
 	authURL := a.OAuthProvider.AuthCodeURL(state, r)
-	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect) // nosemgrep: go.lang.security.injection.open-redirect.open-redirect
+	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
 }
 
 // HandleCallback processes the authentication callback.
@@ -70,7 +70,7 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{ // nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
+	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
 		Value:    "",
 		Path:     "/",
@@ -100,14 +100,14 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("[Callback Auth] Authorization pipeline check failed: %v", err)
 		permissionErrorURL := fmt.Sprintf("%s/?error=permission_error", dynamicFrontendURL)
-		http.Redirect(w, r, permissionErrorURL, http.StatusTemporaryRedirect) // nosemgrep: go.lang.security.injection.open-redirect.open-redirect
+		http.Redirect(w, r, permissionErrorURL, http.StatusTemporaryRedirect)
 		return
 	}
 
 	if !authorized {
 		log.Printf("[Callback Auth] Access forbidden: user %q is not authorized", userInfo.Email)
 		forbiddenURL := fmt.Sprintf("%s/?error=forbidden&email=%s", dynamicFrontendURL, url.QueryEscape(userInfo.Email))
-		http.Redirect(w, r, forbiddenURL, http.StatusTemporaryRedirect) // nosemgrep: go.lang.security.injection.open-redirect.open-redirect
+		http.Redirect(w, r, forbiddenURL, http.StatusTemporaryRedirect)
 		return
 	}
 
@@ -117,7 +117,7 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dashboardURL := fmt.Sprintf("%s/experiments", dynamicFrontendURL)
-	http.Redirect(w, r, dashboardURL, http.StatusTemporaryRedirect) // nosemgrep: go.lang.security.injection.open-redirect.open-redirect
+	http.Redirect(w, r, dashboardURL, http.StatusTemporaryRedirect)
 }
 
 func (a *Authenticator) validateState(r *http.Request) (string, error) {
@@ -141,7 +141,7 @@ func (a *Authenticator) createSession(w http.ResponseWriter, r *http.Request, em
 		return fmt.Errorf("Failed to generate session token: %w", err)
 	}
 
-	http.SetCookie(w, &http.Cookie{ // nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
+	http.SetCookie(w, &http.Cookie{
 		Name:     "session_token",
 		Value:    sessionToken,
 		Path:     "/",
@@ -156,7 +156,7 @@ func (a *Authenticator) createSession(w http.ResponseWriter, r *http.Request, em
 
 // HandleLogout logs out the user.
 func (a *Authenticator) HandleLogout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{ // nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
+	http.SetCookie(w, &http.Cookie{
 		Name:     "session_token",
 		Value:    "",
 		Path:     "/",
@@ -168,7 +168,7 @@ func (a *Authenticator) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		SameSite: a.getSameSiteMode(r),
 	})
 
-	http.Redirect(w, r, a.getDynamicFrontendURL(r), http.StatusTemporaryRedirect) // nosemgrep: go.lang.security.injection.open-redirect.open-redirect
+	http.Redirect(w, r, a.getDynamicFrontendURL(r), http.StatusTemporaryRedirect)
 }
 
 // UserResponse defines the JSON model returned by HandleUser.

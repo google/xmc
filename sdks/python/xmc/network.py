@@ -100,7 +100,7 @@ class HTTPClient:
         """Establishes a new HTTP/HTTPS connection."""
         self._close_conn()
         if self._scheme == "https":
-            self._conn = http.client.HTTPSConnection(  # nosemgrep: python.lang.security.audit.httpsconnection-detected.httpsconnection-detected
+            self._conn = http.client.HTTPSConnection(
                 self._host, port=self._port, timeout=self.timeout
             )
         else:

@@ -21,5 +21,4 @@ COPY worker.py /app/worker.py
 
 RUN chmod +x /app/coordinator.py /app/worker.py
 
-USER 65532:65532
 ENTRYPOINT ["python3"]

@@ -17,5 +17,4 @@ WORKDIR /app
 COPY init_step.py /app/init_step.py
 COPY worker.py /app/worker.py
 RUN chmod +x /app/init_step.py /app/worker.py
-USER 65532:65532
 ENTRYPOINT ["python3", "-u", "/app/worker.py"]
