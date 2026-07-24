@@ -263,3 +263,16 @@ message ChartData {
   int64 wid = 3;
   repeated PlotData plots_data = 4;
 }
+
+message GetChartDataRequest {
+  int64 xid = 1 [(google.api.field_behavior) = OPTIONAL];
+  int64 wid = 2 [(google.api.field_behavior) = OPTIONAL];
+  int64 start_iteration = 3 [(google.api.field_behavior) = OPTIONAL];
+  int64 end_iteration = 4 [(google.api.field_behavior) = OPTIONAL];
+  google.protobuf.Timestamp start_time = 5 [(google.api.field_behavior) = OPTIONAL];
+  google.protobuf.Timestamp end_time = 6 [(google.api.field_behavior) = OPTIONAL];
+  int32 downsample_points = 7 [(google.api.field_behavior) = OPTIONAL];
+  int32 interval_seconds = 8 [(google.api.field_behavior) = OPTIONAL];
+  int32 num_bins = 9 [(google.api.field_behavior) = OPTIONAL];
+}
+
