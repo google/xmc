@@ -40,6 +40,7 @@ describe('Resource Velocity Utilities', () => {
       expect(getVelocityHours('24h')).toBe(24);
       expect(getVelocityHours('1 day')).toBe(24);
       expect(getVelocityHours('7d')).toBe(168);
+      expect(getVelocityHours('7 days')).toBe(168);
     });
   });
 

@@ -48,6 +48,9 @@ export function getVelocityHours(period: string): number {
     case '24h':
     case '1 day':
       return 24;
+    case '7d':
+    case '7 days':
+      return 168;
     default:
       return 168;
   }
