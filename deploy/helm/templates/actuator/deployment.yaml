@@ -53,6 +53,10 @@ spec:
             secretKeyRef:
               name: redis-secret
               key: redis-password
+        - name: XMC_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         args:
         - "-port=8080"
         - "-spanner_database_name={{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) }}"

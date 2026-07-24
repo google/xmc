@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	batchv1 "golang/k8s_io/api/v/v0_23/batch/v1/v1"
@@ -342,6 +343,25 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 	}
 }
 
+// injectManagedXprofGCSEnvVars appends the managed-xprof GCS destination env vars to
+// the primary container of the replicated job so the workload knows where to write
+// xprof output. No-op when no bucket was resolved.
+func injectManagedXprofGCSEnvVars(rj *jobsetv1alpha2.ReplicatedJob, xprofBucketURL, xprofObjectPath string) {
+	if xprofBucketURL == "" && xprofObjectPath == "" {
+		return
+	}
+	containers := rj.Template.Spec.Template.Spec.Containers
+	if len(containers) == 0 {
+		return
+	}
+	if xprofBucketURL != "" {
+		containers[0].Env = append(containers[0].Env, corev1.EnvVar{Name: constants.XmcEnvVarManagedXprofGCSBucket, Value: xprofBucketURL})
+	}
+	if xprofObjectPath != "" {
+		containers[0].Env = append(containers[0].Env, corev1.EnvVar{Name: constants.XmcEnvVarManagedXprofGCSObjectFolder, Value: xprofObjectPath})
+	}
+}
+
 // copyNodeSelector creates an immutable copy of the job node selector map.
 func copyNodeSelector(source map[string]string) map[string]string {
 	if len(source) == 0 {
@@ -467,10 +487,25 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		constants.AutoscalerSafeToEvictAnnotation: "false",
 	}
 
+	// Inject the managed-xprof GCS destination whenever the cluster provides a
+	// bucket ConfigMap. This is intentionally decoupled from the ManagedXprof
+	// artifact: the workload only needs to know where to write xprof output,
+	// regardless of whether or when the artifact is attached.
+	var xprofBucketURL string
+	var xprofObjectPath string
+	if bucket, bucketErr := c.ManagedXProfGCSBucket(ctx); bucketErr != nil {
+		logging.Warn(ctx, "Failed to resolve managed-xprof GCS path via Actuator", "error", bucketErr)
+	} else if bucket != "" {
+		xprofBucketURL = bucket
+		xprofObjectPath = fmt.Sprintf("%s/xmc-%s-%s-%s", strings.TrimSuffix(bucket, "/"), xid, wid, strconv.FormatInt(operationTime.Unix(), 10))
+	}
+
 	var replicatedJobs []jobsetv1alpha2.ReplicatedJob
 	if workUnit.GetExecutable().GetJobset() != nil {
 		for _, job := range workUnit.GetExecutable().GetJobset().GetJobs() {
-			replicatedJobs = append(replicatedJobs, c.k8sJobToReplicatedJob(ctx, job, jobLabels, jobSetAnnotations))
+			rj := c.k8sJobToReplicatedJob(ctx, job, jobLabels, jobSetAnnotations)
+			injectManagedXprofGCSEnvVars(&rj, xprofBucketURL, xprofObjectPath)
+			replicatedJobs = append(replicatedJobs, rj)
 		}
 	}
 

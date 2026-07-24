@@ -58,6 +58,7 @@ type k8sClient interface {
 	DeleteWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error
 	RestartWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error
 	UpdateWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error
+	ManagedXProfGCSBucket(ctx context.Context) (string, error)
 }
 
 // Handler processes incoming actuation requests.

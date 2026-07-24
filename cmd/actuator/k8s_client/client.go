@@ -17,8 +17,10 @@ package k8sclient
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"golang/k8s_io/client_go/v/v0_23/dynamic/dynamic"
 	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
 	"golang/k8s_io/client_go/v/v0_23/rest/rest"
@@ -286,4 +288,21 @@ func createFailedOperationUpdate(xid int64, wid int64, oid string, jobSetErr err
 			Paths: []string{"done", "error"},
 		},
 	}
+}
+
+// ManagedXProfGCSBucket retrieves the GCS bucket path from the managed-xprof-gcs-config ConfigMap.
+func (c *Client) ManagedXProfGCSBucket(ctx context.Context) (string, error) {
+	namespace := os.Getenv("XMC_NAMESPACE")
+	if namespace == "" {
+		return "", fmt.Errorf("XMC_NAMESPACE environment variable is not set")
+	}
+	cm, err := c.clientset.CoreV1().ConfigMaps(namespace).Get(ctx, "managed-xprof-gcs-config", metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get ConfigMap managed-xprof-gcs-config in namespace %s: %w", namespace, err)
+	}
+	managedXProfGCSBucket := cm.Data["gcs_path"]
+	if managedXProfGCSBucket == "" {
+		return "", fmt.Errorf("gcs_path not found in ConfigMap managed-xprof-gcs-config in namespace %s", namespace)
+	}
+	return managedXProfGCSBucket, nil
 }

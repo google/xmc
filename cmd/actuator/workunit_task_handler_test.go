@@ -119,6 +119,9 @@ func (m *mockK8sClient) RestartWorkUnit(ctx context.Context, payload *actuatorta
 func (m *mockK8sClient) UpdateWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
 	return m.err
 }
+func (m *mockK8sClient) ManagedXProfGCSBucket(ctx context.Context) (string, error) {
+	return "", m.err
+}
 
 func mockidTokenValidator(t *testing.T, wantErr bool) {
 	t.Helper()

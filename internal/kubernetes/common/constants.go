@@ -72,6 +72,21 @@ const (
 	// execution ID of the job.
 	XmcEnvVarExecutionID = "XMC_EXECUTION_ID"
 
+	// XmcEnvVarManagedXprofGCSBucket is the environment variable containing the GCS bucket for managed profiling, which is shared by the whole cluster.
+	XmcEnvVarManagedXprofGCSBucket = "XMC_MANAGED_XPROF_GCS_BUCKET"
+
+	// XmcEnvVarManagedXprofGCSObjectFolder is the environment variable containing the GCS object folder for managed profiling, which is per workunit.
+	XmcEnvVarManagedXprofGCSObjectFolder = "XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER"
+
+	// XmcEnvVarManagedXprofDisplayName is the environment variable containing the display name for managed profiling's machine learning run.
+	XmcEnvVarManagedXprofDisplayName = "XMC_MANAGED_XPROF_DISPLAY_NAME"
+
+	// XmcEnvVarManagedXprofRunGroup is the environment variable containing the run group for managed profiling's machine learning run.
+	XmcEnvVarManagedXprofRunGroup = "XMC_MANAGED_XPROF_RUN_GROUP"
+
+	// XmcEnvVarManagedXProfRequested is the environment variable set to "true" if managed profiling is requested.
+	XmcEnvVarManagedXProfRequested = "XMC_MANAGED_XPROF_REQUESTED"
+
 	// JobSetJobIndexLabel is the label set by JobSet for the job index.
 	JobSetJobIndexLabel = "jobset.sigs.k8s.io/job-index"
 
