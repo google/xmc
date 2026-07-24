@@ -1,0 +1,49 @@
+<!--
+ Copyright 2026 Google LLC
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+<div class="queue-list-container">
+  <div class="list-header">
+    <h2 class="list-title">Cluster Queues</h2>
+    <div class="velocity-toggle-group">
+      <span class="toggle-label">Velocity timeframe:</span>
+      @for (period of velocityPeriods; track period) {
+        <button
+          type="button"
+          class="toggle-pill"
+          [class.active-toggle]="velocityPeriod() === period"
+          (click)="setVelocityPeriod(period)"
+        >
+          {{ period }}
+        </button>
+      }
+    </div>
+  </div>
+
+  @if (isLoading()) {
+    <div class="loading-state">Loading cluster queues...</div>
+  } @else if (queues().length === 0) {
+    <div class="empty-state">No matching cluster queues found.</div>
+  } @else {
+    <div class="queue-cards-stack">
+      @for (q of queues(); track q.name) {
+        <xmc-rod-queue-card
+          [queue]="q"
+          [isSelected]="selectedQueue() === q.name"
+          (selectQueue)="onQueueSelect($event)"
+        />
+      }
+    </div>
+  }
+</div>

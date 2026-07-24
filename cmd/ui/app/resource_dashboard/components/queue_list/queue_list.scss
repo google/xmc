@@ -1,0 +1,79 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+.queue-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.list-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  color: #202124;
+}
+
+.velocity-toggle-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggle-label {
+  font-size: 12px;
+  color: #5f6368;
+}
+
+.toggle-pill {
+  background-color: #f1f3f4;
+  border: none;
+  border-radius: 12px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #5f6368;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+
+  &:hover {
+    background-color: #e8eaed;
+    color: #202124;
+  }
+
+  &.active-toggle {
+    background-color: #e8f0fe;
+    color: #1a73e8;
+    font-weight: 500;
+  }
+}
+
+.queue-cards-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.loading-state,
+.empty-state {
+  padding: 32px;
+  text-align: center;
+  color: #5f6368;
+  font-size: 14px;
+}
