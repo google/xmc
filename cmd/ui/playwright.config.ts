@@ -31,14 +31,14 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:4200',
     trace: 'on-first-retry',
-    viewport: { width: 2400, height: 1080 },
+    viewport: { width: 1280, height: 720 },
   },
   projects: [
     {
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        viewport: { width: 2400, height: 1080 },
+        viewport: { width: 1280, height: 720 },
       },
     },
   ],
