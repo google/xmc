@@ -36,8 +36,8 @@ func (np *noopProducer) Produce(ctx context.Context, rec *kgo.Record, promise fu
 
 func (np *noopProducer) Close() {}
 
-func init() {
-	SetDefaultProducer(NewMockProducer(), "xmc-metrics")
+func defaultTestHandler() http.HandlerFunc {
+	return NewMetricsIngestionHandler(NewMockProducer(), "xmc-metrics")
 }
 
 type trackableReader struct {
@@ -60,7 +60,7 @@ func TestMetricsIngestionHandler_ValidArray(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
 	w := httptest.NewRecorder()
 
-	MetricsIngestionHandler(w, req)
+	defaultTestHandler()(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusAccepted {
@@ -86,7 +86,7 @@ func TestMetricsIngestionHandler_JSONSequence(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
 	w := httptest.NewRecorder()
 
-	MetricsIngestionHandler(w, req)
+	defaultTestHandler()(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusAccepted {
@@ -115,7 +115,7 @@ func TestMetricsIngestionHandler_ValidationFailure_HTTP422(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
 	w := httptest.NewRecorder()
 
-	MetricsIngestionHandler(w, req)
+	defaultTestHandler()(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
@@ -151,7 +151,7 @@ func TestMetricsIngestionHandler_MalformedJSON_HTTP400(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
 	w := httptest.NewRecorder()
 
-	MetricsIngestionHandler(w, req)
+	defaultTestHandler()(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusBadRequest {
@@ -177,7 +177,7 @@ func TestMetricsIngestionHandler_BodyDrainageOnFailure(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", tr)
 	w := httptest.NewRecorder()
 
-	MetricsIngestionHandler(w, req)
+	defaultTestHandler()(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
@@ -193,7 +193,7 @@ func TestMetricsIngestionHandler_MethodNotAllowed(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil)
 	w := httptest.NewRecorder()
 
-	MetricsIngestionHandler(w, req)
+	defaultTestHandler()(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusMethodNotAllowed {
@@ -249,8 +249,7 @@ func (r *metricStreamReader) Read(p []byte) (int, error) {
 }
 
 func TestMetricsIngestionHandler_ConstantMemoryStreaming(t *testing.T) {
-	SetDefaultProducer(&noopProducer{}, "xmc-metrics")
-	defer SetDefaultProducer(NewMockProducer(), "xmc-metrics")
+	handler := NewMetricsIngestionHandler(&noopProducer{}, "xmc-metrics")
 	runtime.GC()
 	var mBefore runtime.MemStats
 	runtime.ReadMemStats(&mBefore)
@@ -260,7 +259,7 @@ func TestMetricsIngestionHandler_ConstantMemoryStreaming(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", stream)
 	w := httptest.NewRecorder()
 
-	MetricsIngestionHandler(w, req)
+	handler(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusAccepted {
@@ -340,7 +339,7 @@ func TestMetricsIngestionHandler_NilAndWhitespaceBody(t *testing.T) {
 	t.Run("nil body", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", nil)
 		w := httptest.NewRecorder()
-		MetricsIngestionHandler(w, req)
+		defaultTestHandler()(w, req)
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("expected 400 Bad Request for nil body, got %d", w.Code)
 		}
@@ -350,22 +349,9 @@ func TestMetricsIngestionHandler_NilAndWhitespaceBody(t *testing.T) {
 		payload := "   	  "
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
 		w := httptest.NewRecorder()
-		MetricsIngestionHandler(w, req)
+		defaultTestHandler()(w, req)
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("expected 400 Bad Request for whitespace body, got %d", w.Code)
 		}
 	})
-}
-
-func TestSetDefaultProducer(t *testing.T) {
-	mp := NewMockProducer()
-	SetDefaultProducer(mp, "custom-topic")
-	if defaultProducer != mp {
-		t.Errorf("expected defaultProducer to be mp")
-	}
-	if defaultTopicName != "custom-topic" {
-		t.Errorf("expected defaultTopicName 'custom-topic', got %q", defaultTopicName)
-	}
-	// Reset defaults after test
-	SetDefaultProducer(NewMockProducer(), "xmc-metrics")
 }

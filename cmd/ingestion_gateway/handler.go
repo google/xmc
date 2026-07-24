@@ -31,11 +31,8 @@ import (
 const (
 	// MaxDrainBytes is the maximum amount of remaining request body to drain on error.
 	MaxDrainBytes = 5 * 1024 * 1024 // 5MB
-)
-
-var (
-	defaultProducer  MetricProducer
-	defaultTopicName = "xmc-metrics"
+	// DefaultTopicName is the fallback Kafka topic for metrics ingestion.
+	DefaultTopicName = "xmc-metrics"
 )
 
 // ServiceUnavailableErrorPayload represents the HTTP 503 JSON error response.
@@ -44,23 +41,10 @@ type ServiceUnavailableErrorPayload struct {
 	Message string `json:"message"`
 }
 
-// SetDefaultProducer overrides package default producer for MetricsIngestionHandler.
-func SetDefaultProducer(p MetricProducer, topic string) {
-	defaultProducer = p
-	if topic != "" {
-		defaultTopicName = topic
-	}
-}
-
-// MetricsIngestionHandler processes incoming streaming JSON metrics payloads using the default producer.
-func MetricsIngestionHandler(w http.ResponseWriter, r *http.Request) {
-	NewMetricsIngestionHandler(defaultProducer, defaultTopicName)(w, r)
-}
-
 // NewMetricsIngestionHandler constructs an http.HandlerFunc that produces metrics asynchronously to Kafka/Redpanda.
 func NewMetricsIngestionHandler(producer MetricProducer, topicName string) http.HandlerFunc {
 	if topicName == "" {
-		topicName = defaultTopicName
+		topicName = DefaultTopicName
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
