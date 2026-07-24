@@ -21,7 +21,7 @@ import (
 
 func TestGetChart_Success(t *testing.T) {
 	ctx := context.Background()
-	repo := setupDashboardRepository(ctx, t)
+	repo := setupDashboardRepositoryWithParent(ctx, t, 200, 2)
 
 	chart := blankChartProto("charts/test-get-chart-1", 200, 2)
 	if err := repo.CreateChart(ctx, chart); err != nil {

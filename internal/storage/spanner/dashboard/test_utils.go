@@ -18,18 +18,44 @@ import (
 	"context"
 	"testing"
 
+	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 )
 
 func setupDashboardRepository(ctx context.Context, t *testing.T) *Repository {
 	t.Helper()
+	return setupDashboardRepositoryWithParent(ctx, t, 100, 1)
+}
+
+func setupDashboardRepositoryWithParent(ctx context.Context, t *testing.T, xid, wid int64) *Repository {
+	t.Helper()
 	_, essClient, _ := emulator.SetupWithEmulator(ctx, t)
+
+	seedParent(ctx, t, essClient, xid, wid)
+
 	repo, err := NewRepository(essClient)
 	if err != nil {
 		t.Fatalf("NewRepository failed: %v", err)
 	}
 	return repo
+}
+
+func seedParent(ctx context.Context, t *testing.T, client *spanner.Client, xid, wid int64) {
+	t.Helper()
+	mExp := spanner.InsertOrUpdate("Experiments", []string{
+		"Xid", "Title", "Creator", "Priority", "Urls", "Tags", "Notes", "Resources", "Status", "CreateTime", "UpdateTime",
+	}, []interface{}{
+		xid, "Test", "test-user", int64(1), []string{}, []string{}, "Notes", [][]byte{}, []byte{}, spanner.CommitTimestamp, spanner.CommitTimestamp,
+	})
+	mArt := spanner.InsertOrUpdate("Artifacts", []string{
+		"Xid", "WorkUnitId", "ArtifactId", "Url", "Icon", "DisplayName", "Priority", "Tags", "Notes", "LifecyclePhase", "DataType", "MimeType", "CreateTime", "UpdateTime",
+	}, []interface{}{
+		xid, wid, int64(0), "http://test", "icon", "Test Artifact", int64(1), []string{}, "Notes", int64(0), int64(0), "text/plain", spanner.CommitTimestamp, spanner.CommitTimestamp,
+	})
+	if _, err := client.Apply(ctx, []*spanner.Mutation{mExp, mArt}); err != nil {
+		t.Fatalf("failed to seed parent test data for xid %d: %v", xid, err)
+	}
 }
 
 func blankDashboardProto(name string) *dpb.Dashboard {
