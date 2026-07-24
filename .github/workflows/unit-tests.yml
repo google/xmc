@@ -145,9 +145,11 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'go.sum', '**/BUILD.bazel', '**/*.bzl') }}
+          key: bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'go.sum', '**/BUILD.bazel', '**/*.bzl') }}-${{ github.sha }}
           restore-keys: |
+            bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'go.sum', '**/BUILD.bazel', '**/*.bzl') }}-
             bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-
+            bazel-${{ runner.os }}-
 
       - name: 'Verify Spanner Emulator Endpoint'
         if: matrix.target == 'internal/storage' || matrix.target == 'cmd/rest'
@@ -192,15 +194,14 @@ jobs:
             -- \
             ${{ matrix.bazel_args }}
 
-      - name: 'Prune Bazel Cache & Build Tree'
+      - name: 'Prune Stale Bazel Disk Cache'
         if: always()
         run: |
-          echo "=== Pruning Bazel cache and build tree ==="
+          echo "=== Pruning stale Bazel disk cache entries ==="
           if [ -d ~/.cache/bazel-disk ]; then
             find ~/.cache/bazel-disk -type f -mtime +7 -delete || true
             find ~/.cache/bazel-disk -type d -empty -delete || true
           fi
-          bazel clean || true
           df -h
 
       - name: 'Save Bazel Cache'
@@ -210,7 +211,7 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'go.sum', '**/BUILD.bazel', '**/*.bzl') }}
+          key: bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'go.sum', '**/BUILD.bazel', '**/*.bzl') }}-${{ github.sha }}
 
   all-tests-passed:
     name: 'Run Unit Tests'
