@@ -222,7 +222,12 @@ class TestMetricsFlusherResilience(unittest.TestCase):
 
     def test_terminal_400_send_result_discard(self) -> None:
         mock_client = MagicMock(spec=HTTPClient)
-        mock_client.send.side_effect = lambda body: SendResult.INVALID_PAYLOAD
+        mock_client.xid = "1"
+        mock_client.work_unit_id = "1"
+        mock_client.execution_id = "1"
+        mock_client.replica_id = "0"
+        mock_client.is_silenced = False
+        mock_client.send_payload.return_value = SendResult.INVALID_PAYLOAD
 
         flusher = MetricsFlusher(
             client=mock_client,
@@ -237,7 +242,7 @@ class TestMetricsFlusherResilience(unittest.TestCase):
 
         self.assertEqual(flushed_count, 0)
 
-        self.assertEqual(mock_client.send.call_count, 1)
+        self.assertEqual(mock_client.send_payload.call_count, 1)
         self.assertEqual(flusher.state, ResilienceState.HEALTHY)
         log_output = "\n".join(cm.output)
         self.assertIn("Terminal payload error (HTTP 400)", log_output)

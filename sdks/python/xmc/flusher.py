@@ -15,7 +15,6 @@
 """Background flusher thread for XMC metrics collection."""
 
 import atexit
-import json
 import logging
 import threading
 import time
@@ -38,7 +37,6 @@ from xmc.resilience import (
     classify_outcome,
     parse_and_log_terminal_diagnostic,
 )
-from xmc.types import format_metric_batch_payload
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +126,7 @@ class MetricsFlusher:
             max_retries=max_retries,
         )
 
-        if isinstance(client, (Client, HTTPClient)) and type(client).__module__ != "unittest.mock":
+        if isinstance(client, (Client, HTTPClient)):
             self._xid = client.xid
             self._work_unit_id = client.work_unit_id
             self._execution_id = client.execution_id
@@ -383,29 +381,9 @@ class MetricsFlusher:
         if self._client is None:
             raise ValueError("No client or flush_fn configured.")
 
-        if (
-            isinstance(self._client, (Client, HTTPClient))
-            and type(self._client).__module__ != "unittest.mock"
-        ):
-            payload = self._client.format_payload(items)
-            return self._client.send_payload(payload)
-
-        payload = self._format_payload_fallback(items)
-        if hasattr(self._client, "send"):
-            return self._client.send(json.dumps(payload))
-        if hasattr(self._client, "post"):
-            return self._client.post("", payload)
+        # Client is guaranteed to implement format_payload and send_payload
+        payload = self._client.format_payload(items)
         return self._client.send_payload(payload)
-
-    def _format_payload_fallback(self, items: list[MetricTuple]) -> list[dict[str, Any]]:
-        """Fallback payload formatter when client does not implement format_payload."""
-        return format_metric_batch_payload(
-            items,
-            xid=self._xid,
-            work_unit_id=self._work_unit_id,
-            execution_id=self._execution_id,
-            replica_id=self._replica_id,
-        )
 
     def _send_batch(self, items: list[MetricTuple]) -> bool:
         """Sends metric items via custom flush callback or client with resilience retries."""

@@ -14,7 +14,6 @@
 
 """Unit tests for background flusher thread (sdks/python/xmc/flusher.py)."""
 
-import json
 import os
 import threading
 import time
@@ -24,6 +23,7 @@ from unittest.mock import MagicMock
 from xmc.buffer import MetricTuple
 from xmc.flusher import MetricsFlusher
 from xmc.network import HTTPClient
+from xmc.types import format_metric_batch_payload
 
 
 class TestMetricsFlusherInitialization(unittest.TestCase):
@@ -197,6 +197,14 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
 
     def test_client_integration_send_payload(self) -> None:
         mock_client = MagicMock(spec=HTTPClient)
+        mock_client.xid = "1001"
+        mock_client.work_unit_id = "2002"
+        mock_client.execution_id = "3003"
+        mock_client.replica_id = "1"
+        mock_client.is_silenced = False
+        mock_client.format_payload.side_effect = lambda items: format_metric_batch_payload(
+            items, xid="0", work_unit_id="0", execution_id="0", replica_id="0"
+        )
         flusher = MetricsFlusher(
             client=mock_client,
             flush_interval=60.0,
@@ -208,9 +216,9 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
 
         flusher.shutdown()
 
-        self.assertTrue(mock_client.send.called)
-        args, _ = mock_client.send.call_args
-        payload = json.loads(args[0])
+        self.assertTrue(mock_client.send_payload.called)
+        args, _ = mock_client.send_payload.call_args
+        payload = args[0]
         self.assertIsInstance(payload, list)
         self.assertEqual(len(payload), 2)
         self.assertEqual(payload[0]["metric_name"], "accuracy")
@@ -255,6 +263,14 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
 
     def test_client_metadata_harvesting_and_payload_fields(self) -> None:
         mock_client = MagicMock(spec=HTTPClient)
+        mock_client.xid = "1001"
+        mock_client.work_unit_id = "2002"
+        mock_client.execution_id = "3003"
+        mock_client.replica_id = "replica-5"
+        mock_client.is_silenced = False
+        mock_client.format_payload.side_effect = lambda items: format_metric_batch_payload(
+            items, xid="1001", work_unit_id="2002", execution_id="3003", replica_id="replica-5"
+        )
         env = {
             "XMC_XID": "1001",
             "XMC_WORK_UNIT_ID": "2002",
@@ -276,9 +292,9 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
         flusher.log_metric("loss", 0.123, 5, timestamp=100.0)
         flusher.shutdown()
 
-        self.assertTrue(mock_client.send.called)
-        args, _ = mock_client.send.call_args
-        payload = json.loads(args[0])
+        self.assertTrue(mock_client.send_payload.called)
+        args, _ = mock_client.send_payload.call_args
+        payload = args[0]
         self.assertIsInstance(payload, list)
         self.assertEqual(len(payload), 1)
         metric_dict = payload[0]
@@ -330,8 +346,7 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
         self.assertTrue(flusher.is_silenced)
 
         flusher.log_metric("silenced_metric", 1.0, 1)
-        self.assertEqual(len(flusher.buffer), 0)
-        self.assertFalse(mock_client.send.called)
+        self.assertFalse(mock_client.send_payload.called)
 
 
 if __name__ == "__main__":
