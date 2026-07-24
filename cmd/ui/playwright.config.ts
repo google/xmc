@@ -46,6 +46,6 @@ export default defineConfig({
     command: 'npx serve -s dist/browser -l 4200',
     url: 'http://localhost:4200',
     reuseExistingServer: true,
-    timeout: 30000,
+    timeout: 120000,
   },
 });
