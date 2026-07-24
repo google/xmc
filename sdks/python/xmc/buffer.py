@@ -48,8 +48,13 @@ def _coerce_int(val: Any) -> int:
 class BoundedMetricsBuffer:
     """Thread-safe, bounded memory buffer for metric data.
 
-    Stores metrics as flat Python tuples (name, value, step, timestamp) to minimize
-    memory overhead and detach values from PyTorch/JAX computation graphs.
+    Note:
+        Stores metrics as primitive tuples (name, value, step, timestamp) rather
+        than xmc.types.Metric proto instances to minimize memory overhead (~80B vs
+        ~400B per item) and eliminate Proto/regex validation latency on caller
+        training hot paths. Proto and payload construction is deferred to the
+        background flusher thread.
+
     Uses strict FIFO eviction when full.
     """
 
