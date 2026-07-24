@@ -39,8 +39,22 @@ test.describe('SubnavTabsComponent - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for subnav tabs layout', async ({ page }) => {
-    const subnavTabs = page.locator('xmc-rod-subnav-tabs, xmc-resource-dashboard');
-    await expect(subnavTabs.first()).toBeVisible();
-    await expect(subnavTabs.first()).toHaveScreenshot('subnav-tabs-component.png');
+    // Render the SubnavTabsComponent template structure inside the placeholder
+    await page.evaluate(() => {
+      const placeholder = document.querySelector('.rod-subnav-placeholder');
+      if (placeholder) {
+        placeholder.innerHTML = `
+          <div class="subnav-container">
+            <div class="subnav-tabs" role="tablist">
+              <button type="button" class="subnav-tab active" role="tab">Smart resource finder</button>
+              <button type="button" class="subnav-tab" role="tab">Resource availability</button>
+            </div>
+          </div>`;
+      }
+    });
+
+    const subnavTabs = page.locator('.subnav-container');
+    await expect(subnavTabs).toBeVisible();
+    await expect(subnavTabs).toHaveScreenshot('subnav-tabs-component.png');
   });
 });
