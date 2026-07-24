@@ -14,6 +14,8 @@
 
 """Thread-safe, memory-bounded buffer for XMC metrics."""
 
+import math
+import re
 import threading
 import time
 from collections import deque
@@ -23,12 +25,26 @@ from typing import Any
 # Default buffer capacity: 500,000 metrics (~85MB RAM)
 DEFAULT_CAPACITY: int = 500_000
 
-# Metric tuple type alias: (name, value, step, timestamp)
-MetricTuple = tuple[str, float, int, int]
+# Metric tuple type alias: (name, value, step, timestamp_epoch)
+# WHY float timestamp: CPython time.time() returns a raw float epoch timestamp.
+# Storing floats directly in the buffer avoids CPU-intensive microsecond math
+# and string formatting on the training hot path. Conversion to int64 microseconds
+# is deferred to the background flusher thread during serialization.
+MetricTuple = tuple[str, float, int, float]
+
+_METRIC_NAME_REGEX: re.Pattern[str] = re.compile(r"^[a-zA-Z0-9_\.\-\/]{1,255}$")
+_MAX_CACHED_METRIC_NAMES: int = 10000
+_validated_metric_names: set[str] = set()
+_validation_lock = threading.Lock()
 
 
 def _coerce_float(val: Any) -> float:
-    """Coerces input value to primitive float, detaching computation graphs."""
+    """Coerces input value to primitive float, detaching computation graphs.
+
+    WHY: ML framework tensor objects (PyTorch, JAX, TensorFlow) retain references
+    to stateful C++ computation graphs. Calling .item() immediately extracts raw
+    scalars and detaches them from the graph, preventing host OOM memory leaks.
+    """
     if type(val) is float:
         return val
     if hasattr(val, "item"):
@@ -37,12 +53,53 @@ def _coerce_float(val: Any) -> float:
 
 
 def _coerce_int(val: Any) -> int:
-    """Coerces input value to primitive int, detaching computation graphs."""
+    """Coerces input value to primitive int, detaching computation graphs.
+
+    WHY: Tensor step values retain computation graph nodes in framework training loops.
+    Extracting scalar integers via .item() guarantees clean graph detachment.
+    """
     if type(val) is int:
         return val
     if hasattr(val, "item"):
         val = val.item()
     return int(val)
+
+
+def _validate_and_coerce_inputs(name: Any, value: Any, step: Any) -> tuple[str, float, int]:
+    """Pre-validates metric_name, value, and step with set-cached fast path.
+
+    WHY set-cached fast path: Training scripts repeatedly log the same metric names
+    across millions of steps. Re-running regex validation on every step adds CPU
+    latency to the caller thread. Set-caching limits regex matching to the first
+    encounter per metric name (capped at 10k entries to bound cache memory).
+    """
+    global _validated_metric_names
+    if not isinstance(name, str) or not name or len(name) > 255:
+        raise ValueError(
+            f"Invalid metric_name {name!r}: must be non-empty string <= 255 characters."
+        )
+
+    if name not in _validated_metric_names:
+        if not _METRIC_NAME_REGEX.match(name):
+            raise ValueError(
+                f"Invalid metric_name {name!r}: must match regex ^[a-zA-Z0-9_\\.\\-\\/]{{1,255}}$"
+            )
+        with _validation_lock:
+            if name not in _validated_metric_names:
+                if len(_validated_metric_names) >= _MAX_CACHED_METRIC_NAMES:
+                    _validated_metric_names = {name}
+                else:
+                    _validated_metric_names = _validated_metric_names | {name}
+
+    c_val = _coerce_float(value)
+    if not math.isfinite(c_val):
+        raise ValueError(f"Metric value for '{name}' must be finite (got {c_val}).")
+
+    c_step = _coerce_int(step)
+    if c_step < 0:
+        raise ValueError(f"Step for '{name}' must be a non-negative integer (got {c_step}).")
+
+    return name, c_val, c_step
 
 
 class BoundedMetricsBuffer:
@@ -77,6 +134,13 @@ class BoundedMetricsBuffer:
         with self._lock:
             return self._dropped_metrics
 
+    def pop_dropped_count(self) -> int:
+        """Returns total number of metrics dropped since last call and resets counter to 0."""
+        with self._lock:
+            dropped = self._dropped_metrics
+            self._dropped_metrics = 0
+            return dropped
+
     def __len__(self) -> int:
         """Returns the current number of metrics in the buffer."""
         with self._lock:
@@ -100,12 +164,10 @@ class BoundedMetricsBuffer:
             name: Metric name.
             value: Metric value (coerced to float).
             step: Step number (coerced to int).
-            timestamp: Timestamp in seconds (coerced to float). Defaults to current time.
+            timestamp: Timestamp in seconds (coerced to float/int). Defaults to current time.
         """
-        c_name = str(name)
-        c_value = _coerce_float(value)
-        c_step = _coerce_int(step)
-        c_timestamp = _coerce_int(time.time() if timestamp is None else timestamp)
+        c_name, c_value, c_step = _validate_and_coerce_inputs(name, value, step)
+        c_timestamp = time.time() if timestamp is None else _coerce_float(timestamp)
 
         item: MetricTuple = (c_name, c_value, c_step, c_timestamp)
 
@@ -133,14 +195,8 @@ class BoundedMetricsBuffer:
                     "Each metric must be a sequence of at least 3 elements "
                     f"(name, value, step[, timestamp]). Got: {metric}"
                 ) from e
-            coerced_items.append(
-                (
-                    str(name),
-                    _coerce_float(value),
-                    _coerce_int(step),
-                    _coerce_int(ts),
-                )
-            )
+            c_name, c_val, c_step = _validate_and_coerce_inputs(name, value, step)
+            coerced_items.append((c_name, c_val, c_step, _coerce_float(ts)))
 
         if not coerced_items:
             return

@@ -18,11 +18,12 @@ import atexit
 import json
 import logging
 import threading
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from xmc.buffer import BoundedMetricsBuffer, MetricTuple
 from xmc.client import Client
+from xmc.dist_harvest import harvest_client_metadata
 from xmc.network import HTTPClient, SendResult
 from xmc.resilience import (
     DEFAULT_BACKOFF_FACTOR,
@@ -56,6 +57,10 @@ class MetricsFlusher:
         batch_size: Batch size threshold to trigger an early flusher wakeup.
         is_started: Returns True if the flusher background thread has started.
         is_shutdown: Returns True if the flusher has been shut down.
+        xid: Workload XID metadata integer.
+        work_unit_id: Work unit ID metadata integer.
+        execution_id: Execution ID metadata integer.
+        replica_id: Replica/rank ID metadata string.
     """
 
     def __init__(
@@ -69,6 +74,11 @@ class MetricsFlusher:
         max_backoff: float = DEFAULT_MAX_BACKOFF,
         backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
         max_retries: int = DEFAULT_MAX_RETRIES,
+        xid: int | str | None = None,
+        work_unit_id: int | str | None = None,
+        execution_id: int | str | None = None,
+        replica_id: str | None = None,
+        env: Mapping[str, str] | None = None,
     ) -> None:
         """Initializes MetricsFlusher.
 
@@ -82,6 +92,11 @@ class MetricsFlusher:
             max_backoff: Maximum backoff delay cap in seconds (default 32.0).
             backoff_factor: Multiplicative factor for exponential backoff (default 2.0).
             max_retries: Maximum consecutive retry attempts per batch (default 5).
+            xid: Optional workload XID integer/str.
+            work_unit_id: Optional work unit ID integer/str.
+            execution_id: Optional execution ID integer/str.
+            replica_id: Optional replica/rank ID string.
+            env: Optional environment variables dictionary.
 
         Raises:
             ValueError: If parameters are invalid or client and flush_fn are both specified/omitted.
@@ -110,12 +125,60 @@ class MetricsFlusher:
             max_retries=max_retries,
         )
 
+        self._xid, self._work_unit_id, self._execution_id, self._replica_id = (
+            harvest_client_metadata(
+                xid=xid,
+                work_unit_id=work_unit_id,
+                execution_id=execution_id,
+                replica_id=replica_id,
+                env=env,
+                fallback_client=client,
+            )
+        )
+
         self._init_lock = threading.Lock()
         self._condition = threading.Condition()
         self._shutdown_event = threading.Event()
         self._started = False
         self._thread: threading.Thread | None = None
         self._atexit_handler: Callable[[], None] | None = None
+        self._accumulated_drops: int = 0
+        self._last_drop_log_time: float = 0.0
+
+    @property
+    def xid(self) -> str:
+        """Returns the workload XID metadata string.
+
+        WHY str return type: Though xid is a 64-bit integer in Spanner/ClickHouse,
+        transmitting 64-bit integers as raw JSON numbers causes precision truncation in
+        JavaScript IEEE 754 web dashboards (capped at 2^53 - 1). Stringifying integer
+        IDs preserves 64-bit precision per Google AIP-127 and XMCMetricsBatch schema.
+        """
+        return self._xid
+
+    @property
+    def work_unit_id(self) -> str:
+        """Returns the work unit ID metadata string.
+
+        WHY str return type: Stringified 64-bit integer prevents JavaScript precision loss.
+        """
+        return self._work_unit_id
+
+    @property
+    def execution_id(self) -> str:
+        """Returns the execution ID metadata string.
+
+        WHY str return type: Stringified 64-bit integer prevents JavaScript precision loss.
+        """
+        return self._execution_id
+
+    @property
+    def replica_id(self) -> str:
+        """Returns the replica/rank ID metadata string.
+
+        WHY str: Identifier for parallel worker rank (e.g., "0", "3"). Defaults to "0".
+        """
+        return self._replica_id
 
     @property
     def state(self) -> ResilienceState:
@@ -207,6 +270,27 @@ class MetricsFlusher:
             with self._condition:
                 self._condition.notify()
 
+    def _check_and_log_dropped_metrics(self) -> None:
+        """Periodically reports cumulative dropped metrics at most once every 10 seconds.
+
+        WHY rate-limited (10s): During network partitions or high gateway backpressure,
+        the buffer overflows and evicts metrics. Logging on every dropped metric would
+        flood stdout/stderr logs and stall the host process. Rate-limiting drop warnings
+        to once every 10 seconds preserves host throughput while keeping overflow visible.
+        """
+        import time
+
+        dropped = self._buffer.pop_dropped_count()
+        if dropped > 0:
+            self._accumulated_drops += dropped
+        now = time.monotonic()
+        if self._accumulated_drops > 0 and (
+            now - self._last_drop_log_time >= 10.0 or self._shutdown_event.is_set()
+        ):
+            logger.warning("Dropped %d metrics due to buffer overflow", self._accumulated_drops)
+            self._accumulated_drops = 0
+            self._last_drop_log_time = now
+
     def _flusher_loop(self) -> None:
         """Background loop blocking on condition variable until timeout or notification."""
         while not self._shutdown_event.is_set():
@@ -220,6 +304,7 @@ class MetricsFlusher:
             if self._shutdown_event.is_set():
                 break
 
+            self._check_and_log_dropped_metrics()
             self.flush()
 
     def flush(self, max_count: int | None = None) -> int:
@@ -231,6 +316,7 @@ class MetricsFlusher:
         Returns:
             Number of metrics successfully flushed in this batch.
         """
+        self._check_and_log_dropped_metrics()
         count = max_count if max_count is not None else self._batch_size
         items = self._buffer.pop_batch(count)
         if not items:
@@ -283,17 +369,29 @@ class MetricsFlusher:
         if self._client is None:
             raise ValueError("No client or flush_fn configured.")
 
-        payload = {
-            "metrics": [
-                {
-                    "metric_name": name,
-                    "metric_value": val,
-                    "step": step,
-                    "timestamp": ts,
-                }
-                for name, val, step, ts in items
-            ]
-        }
+        # WHY microsecond conversion here: The training thread records raw float epoch seconds
+        # into the buffer tuple to minimize hot-path latency. Converting to microsecond int64
+        # (int(round(val * 1_000_000))) is deferred to this background thread to match ClickHouse
+        # DateTime64(6, 'UTC') precision without slowing down the ML training loop.
+        def _to_microsecond_ts(ts: float | int) -> int:
+            val = float(ts)
+            if val > 1e11:
+                return int(val)
+            return int(round(val * 1_000_000))
+
+        payload = [
+            {
+                "xid": self._xid,
+                "work_unit_id": self._work_unit_id,
+                "execution_id": self._execution_id,
+                "replica_id": self._replica_id,
+                "metric_name": name,
+                "metric_value": val,
+                "step": step,
+                "timestamp": _to_microsecond_ts(ts),
+            }
+            for name, val, step, ts in items
+        ]
 
         if hasattr(self._client, "send"):
             body = json.dumps(payload)

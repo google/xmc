@@ -24,7 +24,10 @@ import urllib.request
 from collections.abc import Mapping
 from typing import Any
 
-from xmc.dist_harvest import get_replica_id_and_silence_status
+from xmc.dist_harvest import (
+    get_replica_id_and_silence_status,
+    harvest_client_metadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +79,9 @@ class Client:
         replica_id: Auto-detected replica/rank ID.
         is_silenced: Whether metric logging is silenced for this replica.
         should_silence: Alias for is_silenced.
+        xid: Workload XID.
+        work_unit_id: Work unit ID.
+        execution_id: Execution ID.
     """
 
     def __init__(
@@ -87,6 +93,10 @@ class Client:
         disabled: bool | None = None,
         log_all_replicas: bool = False,
         env: Mapping[str, str] | None = None,
+        xid: int | str | None = None,
+        work_unit_id: int | str | None = None,
+        execution_id: int | str | None = None,
+        replica_id: str | None = None,
     ) -> None:
         if not base_url:
             raise ValueError("base_url must be specified and non-empty.")
@@ -100,7 +110,18 @@ class Client:
             self._disabled = _is_metrics_disabled_env()
 
         self.log_all_replicas = log_all_replicas
-        self.replica_id, self.is_silenced = get_replica_id_and_silence_status(
+        self._xid, self._work_unit_id, self._execution_id, self._replica_id = (
+            harvest_client_metadata(
+                xid=xid,
+                work_unit_id=work_unit_id,
+                execution_id=execution_id,
+                replica_id=replica_id,
+                env=env,
+                log_all_replicas=log_all_replicas,
+            )
+        )
+        self.replica_id = self._replica_id
+        _, self.is_silenced = get_replica_id_and_silence_status(
             env=env, log_all_replicas=log_all_replicas
         )
         self.should_silence = self.is_silenced
@@ -116,6 +137,21 @@ class Client:
             self._headers.update(default_headers)
         if api_key:
             self._headers["Authorization"] = f"Bearer {api_key}"
+
+    @property
+    def xid(self) -> str:
+        """Returns the workload XID metadata string."""
+        return self._xid
+
+    @property
+    def work_unit_id(self) -> str:
+        """Returns the work unit ID metadata string."""
+        return self._work_unit_id
+
+    @property
+    def execution_id(self) -> str:
+        """Returns the execution ID metadata string."""
+        return self._execution_id
 
     @property
     def disabled(self) -> bool:

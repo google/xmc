@@ -20,7 +20,11 @@ import random
 import threading
 import time
 import urllib.parse
+from collections.abc import Mapping
 from typing import Any
+
+from xmc.buffer import MetricTuple
+from xmc.dist_harvest import harvest_client_metadata
 
 
 class SendResult(enum.Enum):
@@ -48,6 +52,10 @@ class HTTPClient:
         max_requests: Maximum requests per persistent connection before recycling.
         base_ttl: Base TTL in seconds for connection lifetime before recycling.
         jitter: Jitter range in seconds applied to connection TTL.
+        xid: Workload XID metadata integer.
+        work_unit_id: Work unit ID metadata integer.
+        execution_id: Execution ID metadata integer.
+        replica_id: Replica/rank ID metadata string.
     """
 
     def __init__(
@@ -58,6 +66,11 @@ class HTTPClient:
         base_ttl: float = _BASE_TTL_SECONDS,
         jitter: float = _JITTER_RANGE_SECONDS,
         default_headers: dict[str, str] | None = None,
+        xid: int | str | None = None,
+        work_unit_id: int | str | None = None,
+        execution_id: int | str | None = None,
+        replica_id: str | None = None,
+        env: Mapping[str, str] | None = None,
     ) -> None:
         if not endpoint:
             raise ValueError("endpoint must be non-empty.")
@@ -77,11 +90,23 @@ class HTTPClient:
         self.base_ttl = base_ttl
         self.jitter = jitter
 
+        self._xid, self._work_unit_id, self._execution_id, self._replica_id = (
+            harvest_client_metadata(
+                xid=xid,
+                work_unit_id=work_unit_id,
+                execution_id=execution_id,
+                replica_id=replica_id,
+                env=env,
+            )
+        )
+
         self._headers: dict[str, str] = {
             "Connection": "keep-alive",
             "Content-Type": "application/json",
             "User-Agent": "xmc-python-network/0.1.0",
         }
+        if self._replica_id:
+            self._headers["X-Replica-ID"] = self._replica_id
         if default_headers:
             self._headers.update(default_headers)
 
@@ -90,6 +115,68 @@ class HTTPClient:
         self._created_at: float = 0.0
         self._current_ttl: float = 0.0
         self._lock = threading.Lock()
+
+    @property
+    def xid(self) -> str:
+        """Returns the workload XID metadata string.
+
+        WHY str: 64-bit integer IDs are stringified in JSON payloads to prevent precision loss
+        in JavaScript IEEE 754 web dashboards (capped at 2^53 - 1) per Google AIP-127.
+        """
+        return self._xid
+
+    @property
+    def work_unit_id(self) -> str:
+        """Returns the work unit ID metadata string.
+
+        WHY str: Stringified 64-bit integer prevents JavaScript precision loss.
+        """
+        return self._work_unit_id
+
+    @property
+    def execution_id(self) -> str:
+        """Returns the execution ID metadata string.
+
+        WHY str: Stringified 64-bit integer prevents JavaScript precision loss.
+        """
+        return self._execution_id
+
+    @property
+    def replica_id(self) -> str:
+        """Returns the replica/rank ID metadata string.
+
+        WHY str: Identifier for parallel worker rank (e.g., "0", "3"). Defaults to "0".
+        """
+        return self._replica_id
+
+    def format_payload(self, items: list[MetricTuple]) -> list[dict[str, Any]]:
+        """Formats metric tuples into JSON payload list matching XMCMetricsBatch schema.
+
+        WHY top-level list & microsecond conversion: Transmitting a flat JSON array maximizes
+        ingestion gateway throughput. The float epoch timestamp recorded on the training hot
+        path is converted to microsecond int64 here (int(round(val * 1_000_000))) to fit
+        ClickHouse DateTime64(6, 'UTC') schema without slowing down the caller loop.
+        """
+
+        def _to_microsecond_ts(ts: float | int) -> int:
+            val = float(ts)
+            if val > 1e11:
+                return int(val)
+            return int(round(val * 1_000_000))
+
+        return [
+            {
+                "xid": self._xid,
+                "work_unit_id": self._work_unit_id,
+                "execution_id": self._execution_id,
+                "replica_id": self._replica_id,
+                "metric_name": name,
+                "metric_value": val,
+                "step": step,
+                "timestamp": _to_microsecond_ts(ts),
+            }
+            for name, val, step, ts in items
+        ]
 
     def _calculate_ttl(self) -> float:
         """Calculates connection TTL with random jitter (base_ttl ± jitter)."""

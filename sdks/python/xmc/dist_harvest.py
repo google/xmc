@@ -17,6 +17,7 @@
 import logging
 import os
 from collections.abc import Mapping
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,68 @@ def get_replica_id_and_silence_status(
         return orch_index, should_silence
 
     return "0", False
+
+
+def harvest_client_metadata(
+    xid: int | str | None = None,
+    work_unit_id: int | str | None = None,
+    execution_id: int | str | None = None,
+    replica_id: str | None = None,
+    env: Mapping[str, str] | None = None,
+    log_all_replicas: bool = False,
+    fallback_client: Any | None = None,
+) -> tuple[str, str, str, str]:
+    """Harvests client-level metadata constants (xid, work_unit_id, execution_id, replica_id).
+
+    Checks in order: constructor parameter -> fallback_client attribute -> env variable -> default ("0").
+
+    WHY string return types & "0" defaults: Though xid, work_unit_id, and execution_id are
+    64-bit integers in Spanner/ClickHouse, transmitting 64-bit numbers as raw JSON integers
+    causes precision truncation in JavaScript IEEE 754 dashboards (capped at 2^53 - 1).
+    Stringifying integer IDs preserves precision per Google AIP-127 and XMCMetricsBatch schema.
+    Returning "0" string defaults ensures schema-compliant payloads in un-orchestrated setups.
+    """
+    if env is None:
+        env = os.environ
+
+    def _get_str(val: Any, attr_name: str, env_key: str) -> str:
+        if val is not None and not isinstance(val, (dict, list)):
+            return str(val)
+        if fallback_client is not None:
+            fb = getattr(fallback_client, f"_{attr_name}", None)
+            if fb is None:
+                fb = getattr(fallback_client, attr_name, None)
+            if fb is not None and isinstance(fb, (int, str)):
+                return str(fb)
+        env_val = env.get(env_key)
+        if env_val is not None:
+            return str(env_val)
+        return "0"
+
+    res_xid = _get_str(xid, "xid", "XMC_XID")
+    res_work_unit_id = _get_str(work_unit_id, "work_unit_id", "XMC_WORK_UNIT_ID")
+    res_execution_id = _get_str(execution_id, "execution_id", "XMC_EXECUTION_ID")
+
+    str_repid: str | None = None
+    if replica_id is not None:
+        str_repid = str(replica_id)
+    elif fallback_client is not None:
+        fb = getattr(fallback_client, "_replica_id", None)
+        if fb is None:
+            fb = getattr(fallback_client, "replica_id", None)
+        if fb is not None and isinstance(fb, str):
+            str_repid = fb
+    if str_repid is None and env.get("XMC_REPLICA_ID"):
+        str_repid = env["XMC_REPLICA_ID"]
+
+    if str_repid is not None:
+        res_replica_id = str_repid
+    else:
+        res_replica_id, _ = get_replica_id_and_silence_status(
+            env=env, log_all_replicas=log_all_replicas
+        )
+
+    return res_xid, res_work_unit_id, res_execution_id, res_replica_id
 
 
 # Alias matching CamelCase specification if referenced.

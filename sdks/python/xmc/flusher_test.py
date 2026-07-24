@@ -189,10 +189,10 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
         self.assertTrue(mock_client.send.called)
         args, _ = mock_client.send.call_args
         payload = json.loads(args[0])
-        self.assertIn("metrics", payload)
-        self.assertEqual(len(payload["metrics"]), 2)
-        self.assertEqual(payload["metrics"][0]["metric_name"], "accuracy")
-        self.assertEqual(payload["metrics"][0]["metric_value"], 0.95)
+        self.assertIsInstance(payload, list)
+        self.assertEqual(len(payload), 2)
+        self.assertEqual(payload[0]["metric_name"], "accuracy")
+        self.assertEqual(payload[0]["metric_value"], 0.95)
 
     def test_context_manager_support(self) -> None:
         flushed_metrics: list[MetricTuple] = []
@@ -230,6 +230,68 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
         # Should abort batch after max retries (3 attempts total)
         self.assertEqual(flushed_count, 0)
         self.assertEqual(fail_count, 3)
+
+    def test_client_metadata_harvesting_and_payload_fields(self) -> None:
+        mock_client = MagicMock()
+        env = {
+            "XMC_XID": "1001",
+            "XMC_WORK_UNIT_ID": "2002",
+            "XMC_EXECUTION_ID": "3003",
+            "XMC_REPLICA_ID": "replica-5",
+        }
+        flusher = MetricsFlusher(
+            client=mock_client,
+            flush_interval=60.0,
+            batch_size=1,
+            env=env,
+        )
+
+        self.assertEqual(flusher.xid, "1001")
+        self.assertEqual(flusher.work_unit_id, "2002")
+        self.assertEqual(flusher.execution_id, "3003")
+        self.assertEqual(flusher.replica_id, "replica-5")
+
+        flusher.log_metric("loss", 0.123, 5, timestamp=100.0)
+        flusher.shutdown()
+
+        self.assertTrue(mock_client.send.called)
+        args, _ = mock_client.send.call_args
+        payload = json.loads(args[0])
+        self.assertIsInstance(payload, list)
+        self.assertEqual(len(payload), 1)
+        metric_dict = payload[0]
+
+        # Verify all 8 required fields DoD per XMCMetricsBatch schema
+        self.assertEqual(metric_dict["xid"], "1001")
+        self.assertEqual(metric_dict["work_unit_id"], "2002")
+        self.assertEqual(metric_dict["execution_id"], "3003")
+        self.assertEqual(metric_dict["replica_id"], "replica-5")
+        self.assertEqual(metric_dict["metric_name"], "loss")
+        self.assertEqual(metric_dict["metric_value"], 0.123)
+        self.assertEqual(metric_dict["step"], 5)
+        self.assertEqual(metric_dict["timestamp"], 100000000)  # 100.0 * 1_000_000
+
+    def test_buffer_lightweight_tuples(self) -> None:
+        mock_client = MagicMock()
+        flusher = MetricsFlusher(
+            client=mock_client,
+            flush_interval=60.0,
+            batch_size=10,
+            xid=123,
+            work_unit_id=456,
+            execution_id=789,
+            replica_id="rep-0",
+        )
+
+        flusher.log_metric("train_loss", 0.42, 1, timestamp=500.0)
+
+        # Buffer must store only 4-element tuples (name, val, step, ts_epoch)
+        raw_items = flusher.buffer.get_all()
+        self.assertEqual(len(raw_items), 1)
+        self.assertEqual(len(raw_items[0]), 4)
+        self.assertEqual(raw_items[0], ("train_loss", 0.42, 1, 500))
+
+        flusher.shutdown()
 
 
 if __name__ == "__main__":

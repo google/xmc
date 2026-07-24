@@ -211,6 +211,31 @@ class TestClientShortCircuit(unittest.TestCase):
         with self.assertRaises(AttributeError):
             client.disabled = False
 
+    def test_client_metadata_harvesting(self) -> None:
+        env = {
+            "XMC_XID": "111",
+            "XMC_WORK_UNIT_ID": "222",
+            "XMC_EXECUTION_ID": "333",
+            "XMC_REPLICA_ID": "rep-4",
+        }
+        client_env = Client(base_url="https://xmc.googleapis.com", env=env)
+        self.assertEqual(client_env.xid, "111")
+        self.assertEqual(client_env.work_unit_id, "222")
+        self.assertEqual(client_env.execution_id, "333")
+        self.assertEqual(client_env.replica_id, "rep-4")
+
+        client_args = Client(
+            base_url="https://xmc.googleapis.com",
+            xid=555,
+            work_unit_id=666,
+            execution_id=777,
+            replica_id="rep-custom",
+        )
+        self.assertEqual(client_args.xid, "555")
+        self.assertEqual(client_args.work_unit_id, "666")
+        self.assertEqual(client_args.execution_id, "777")
+        self.assertEqual(client_args.replica_id, "rep-custom")
+
 
 if __name__ == "__main__":
     unittest.main()
