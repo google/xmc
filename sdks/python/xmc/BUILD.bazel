@@ -23,6 +23,7 @@ py_library(
         "dist_harvest.py",
         "flusher.py",
         "network.py",
+        "resilience.py",
         "types.py",
     ],
     data = [
@@ -45,6 +46,12 @@ py_test(
 py_test(
     name = "flusher_test",
     srcs = ["flusher_test.py"],
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "resilience_test",
+    srcs = ["resilience_test.py"],
     deps = [":xmc"],
 )
 

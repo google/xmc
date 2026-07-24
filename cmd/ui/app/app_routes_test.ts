@@ -14,6 +14,8 @@
 
 import 'jasmine';
 
+import { adminPanelGuard } from './admin_panel.guard';
+import { AdminPanelPage } from './admin_panel/admin_panel';
 import { routes } from './app_routes';
 import { authGuard } from './auth.guard';
 import { ExperimentPage } from './experiment_page/experiment_page';
@@ -26,7 +28,7 @@ import { WorkUnitPage } from './work_unit_page/work_unit_page';
 describe('App Routes', () => {
   it('should define route configuration', () => {
     expect(routes).toBeDefined();
-    expect(routes.length).toBe(3);
+    expect(routes.length).toBe(4);
   });
 
   it('should route "" to HomePage with guestGuard', () => {
@@ -35,6 +37,13 @@ describe('App Routes', () => {
     expect(route?.component).toBe(HomePage);
     expect(route?.canActivate).toContain(guestGuard);
     expect(route?.pathMatch).toBe('full');
+  });
+
+  it('should route "admin" to AdminPanelPage with authGuard and adminPanelGuard', () => {
+    const route = routes.find((r) => r.path === 'admin');
+    expect(route).toBeDefined();
+    expect(route?.component).toBe(AdminPanelPage);
+    expect(route?.canActivate).toEqual([authGuard, adminPanelGuard]);
   });
 
   it('should route "resources" to ResourceDashboard with authGuard', () => {
