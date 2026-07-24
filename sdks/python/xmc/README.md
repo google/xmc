@@ -100,7 +100,7 @@ In distributed training (`WORLD_SIZE > 1`), logging from every process can satur
 from xmc import Client, MetricsFlusher
 
 # Auto-starts background flusher daemon thread
-with MetricsFlusher(client=Client(base_url="https://xmc-gateway.internal.net")) as flusher:
+with MetricsFlusher(client=Client(base_url="http://localhost:8080")) as flusher:
     for step in range(1000):
         loss = train_step()
         flusher.log_metric("train/loss", loss, step=step)
@@ -113,7 +113,7 @@ import os
 from xmc import Client, MetricsFlusher
 
 # Client auto-detects process rank and silences worker processes
-client = Client(base_url="https://xmc-gateway.internal.net")
+client = Client(base_url="http://localhost:8080")
 flusher = MetricsFlusher(client=client)
 
 for step in range(1000):
@@ -128,7 +128,7 @@ flusher.shutdown()
 
 ```python
 # Pass log_all_replicas=True to capture metrics from every GPU rank
-client = Client(base_url="https://xmc-gateway.internal.net", log_all_replicas=True)
+client = Client(base_url="http://localhost:8080", log_all_replicas=True)
 flusher = MetricsFlusher(client=client)
 ```
 
