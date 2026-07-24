@@ -26,7 +26,7 @@ from typing import Any
 
 from xmc.buffer import MetricTuple
 from xmc.dist_harvest import harvest_client_metadata
-from xmc.types import Metric
+from xmc.types import format_metric_batch_payload
 
 
 class SendResult(enum.Enum):
@@ -152,53 +152,14 @@ class HTTPClient:
         return self._replica_id
 
     def format_payload(self, items: list[MetricTuple]) -> list[dict[str, Any]]:
-        """Formats metric tuples into JSON payload list matching XMCMetricsBatch schema.
-
-        WHY top-level list & microsecond conversion: Transmitting a flat JSON array maximizes
-        ingestion gateway throughput. The float epoch timestamp recorded on the training hot
-        path is converted to microsecond int64 here (int(round(val * 1_000_000))) to fit
-        ClickHouse DateTime64(6, 'UTC') schema without slowing down the caller loop.
-        """
-
-        def _to_microsecond_ts(ts: float | int) -> int:
-            val = float(ts)
-            if val > 1e11:
-                return int(val)
-            return int(round(val * 1_000_000))
-
-        def _to_int_id(val: str | int | None) -> int:
-            if not val:
-                return 0
-            try:
-                return int(val)
-            except ValueError:
-                return 0
-
-        payload = []
-        for name, val, step, ts in items:
-            m = Metric(
-                xid=_to_int_id(self._xid),
-                work_unit_id=_to_int_id(self._work_unit_id),
-                execution_id=_to_int_id(self._execution_id),
-                replica_id=self._replica_id,
-                metric_name=name,
-                metric_value=float(val),
-                step=int(step),
-                timestamp=_to_microsecond_ts(ts),
-            )
-            payload.append(
-                {
-                    "xid": self._xid,
-                    "work_unit_id": self._work_unit_id,
-                    "execution_id": self._execution_id,
-                    "replica_id": m.replica_id,
-                    "metric_name": m.metric_name,
-                    "metric_value": m.metric_value,
-                    "step": m.step,
-                    "timestamp": m.timestamp,
-                }
-            )
-        return payload
+        """Formats metric tuples into JSON payload list matching XMCMetricsBatch schema."""
+        return format_metric_batch_payload(
+            items,
+            xid=self._xid,
+            work_unit_id=self._work_unit_id,
+            execution_id=self._execution_id,
+            replica_id=self._replica_id,
+        )
 
     def send_payload(self, payload: list[dict[str, Any]]) -> SendResult:
         """Serializes and sends JSON payload list over persistent HTTP connection."""

@@ -18,6 +18,7 @@ import atexit
 import json
 import logging
 import threading
+import time
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
@@ -38,7 +39,7 @@ from xmc.resilience import (
     classify_outcome,
     parse_and_log_terminal_diagnostic,
 )
-from xmc.types import Metric
+from xmc.types import format_metric_batch_payload
 
 logger = logging.getLogger(__name__)
 
@@ -296,8 +297,6 @@ class MetricsFlusher:
         flood stdout/stderr logs and stall the host process. Rate-limiting drop warnings
         to once every 10 seconds preserves host throughput while keeping overflow visible.
         """
-        import time
-
         with self._drop_log_lock:
             dropped = self._buffer.pop_dropped_count()
             if dropped > 0:
@@ -418,46 +417,13 @@ class MetricsFlusher:
 
     def _format_payload_fallback(self, items: list[MetricTuple]) -> list[dict[str, Any]]:
         """Fallback payload formatter when client does not implement format_payload."""
-
-        def _to_microsecond_ts(ts: float | int) -> int:
-            val = float(ts)
-            if val > 1e11:
-                return int(val)
-            return int(round(val * 1_000_000))
-
-        def _to_int_id(val: str | int | None) -> int:
-            if not val:
-                return 0
-            try:
-                return int(val)
-            except ValueError:
-                return 0
-
-        payload = []
-        for name, val, step, ts in items:
-            m = Metric(
-                xid=_to_int_id(self._xid),
-                work_unit_id=_to_int_id(self._work_unit_id),
-                execution_id=_to_int_id(self._execution_id),
-                replica_id=self._replica_id,
-                metric_name=name,
-                metric_value=float(val),
-                step=int(step),
-                timestamp=_to_microsecond_ts(ts),
-            )
-            payload.append(
-                {
-                    "xid": self._xid,
-                    "work_unit_id": self._work_unit_id,
-                    "execution_id": self._execution_id,
-                    "replica_id": m.replica_id,
-                    "metric_name": m.metric_name,
-                    "metric_value": m.metric_value,
-                    "step": m.step,
-                    "timestamp": m.timestamp,
-                }
-            )
-        return payload
+        return format_metric_batch_payload(
+            items,
+            xid=self._xid,
+            work_unit_id=self._work_unit_id,
+            execution_id=self._execution_id,
+            replica_id=self._replica_id,
+        )
 
     def _send_batch(self, items: list[MetricTuple]) -> bool:
         """Sends metric items via custom flush callback or client with resilience retries."""

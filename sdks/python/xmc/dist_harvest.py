@@ -199,5 +199,5 @@ def harvest_client_metadata(
     return res_xid, res_work_unit_id, res_execution_id, res_replica_id
 
 
-# Alias matching CamelCase specification if referenced.
+# Alias matching CamelCase specification for backward compatibility.
 GetReplicaIDAndSilenceStatus = get_replica_id_and_silence_status

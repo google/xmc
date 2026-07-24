@@ -14,14 +14,14 @@
 
 """Thread-safe, memory-bounded buffer for XMC metrics."""
 
-import functools
 import math
-import re
 import threading
 import time
 from collections import deque
 from collections.abc import Iterable
 from typing import Any
+
+from xmc.types import is_valid_metric_name
 
 # Default buffer capacity: 500,000 metrics (~85MB RAM)
 DEFAULT_CAPACITY: int = 500_000
@@ -32,19 +32,6 @@ DEFAULT_CAPACITY: int = 500_000
 # and string formatting on the training hot path. Conversion to int64 microseconds
 # is deferred to the background flusher thread during serialization.
 MetricTuple = tuple[str, float, int, float]
-
-_METRIC_NAME_REGEX: re.Pattern[str] = re.compile(r"^[a-zA-Z0-9_\.\-\/]{1,255}$")
-
-
-@functools.lru_cache(maxsize=10000)
-def _is_valid_metric_name(name: str) -> bool:
-    """Fast-path LRU-cached regex check for metric name validity.
-
-    WHY functools.lru_cache: Training scripts repeatedly log the same metric names across
-    millions of steps. Using a thread-safe C-optimized LRU cache avoids CPU-intensive
-    regex evaluation on the hot path while preventing thrashing under high name cardinality.
-    """
-    return bool(_METRIC_NAME_REGEX.match(name))
 
 
 def _coerce_float(val: Any) -> float:
@@ -81,7 +68,7 @@ def _validate_and_coerce_inputs(name: Any, value: Any, step: Any) -> tuple[str, 
             f"Invalid metric_name {name!r}: must be non-empty string <= 255 characters."
         )
 
-    if not _is_valid_metric_name(name):
+    if not is_valid_metric_name(name):
         raise ValueError(
             f"Invalid metric_name {name!r}: must match regex ^[a-zA-Z0-9_\\.\\-\\/]{{1,255}}$"
         )
