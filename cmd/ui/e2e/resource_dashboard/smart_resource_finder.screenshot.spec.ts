@@ -40,7 +40,12 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
     await page.addStyleTag({
       content: `
         .rod-container { width: 1216px !important; margin: 0 auto !important; }
-        .rod-queue-list-placeholder:empty { min-height: 154px; display: block; }
+        xmc-smart-resource-finder, .rod-queue-list-placeholder {
+          display: block !important;
+          width: 1216px !important;
+          height: 200px !important;
+          box-sizing: border-box !important;
+        }
       `,
     });
   });

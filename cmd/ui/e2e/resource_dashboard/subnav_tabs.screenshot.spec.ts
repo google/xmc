@@ -40,7 +40,12 @@ test.describe('SubnavTabsComponent - Screenshot Tests', () => {
     await page.addStyleTag({
       content: `
         .rod-container { width: 1216px !important; margin: 0 auto !important; }
-        .rod-subnav-placeholder:empty { min-height: 48px; display: block; }
+        xmc-rod-subnav-tabs, .rod-subnav-placeholder {
+          display: block !important;
+          width: 1216px !important;
+          height: 48px !important;
+          box-sizing: border-box !important;
+        }
       `,
     });
   });

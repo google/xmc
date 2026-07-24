@@ -40,7 +40,12 @@ test.describe('QueueCardComponent - Screenshot Tests', () => {
     await page.addStyleTag({
       content: `
         .rod-container { width: 1216px !important; margin: 0 auto !important; }
-        .scaffolding-queue-item:empty { min-height: 48px; display: block; }
+        xmc-rod-queue-card, .scaffolding-queue-item {
+          display: block !important;
+          width: 360px !important;
+          height: 120px !important;
+          box-sizing: border-box !important;
+        }
       `,
     });
   });
