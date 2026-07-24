@@ -217,7 +217,7 @@ check_terraform() {
         FAILED=1
       fi
     else
-      terraform fmt -check $tf_files || true
+      terraform fmt $tf_files || true
     fi
   elif command -v docker >/dev/null 2>&1; then
     if [ "$MODE" = "check" ]; then
@@ -226,7 +226,7 @@ check_terraform() {
         FAILED=1
       fi
     else
-      docker run --rm -v "$(pwd):/workspace" -w /workspace hashicorp/terraform:latest fmt -check $tf_files || true
+      docker run --rm -v "$(pwd):/workspace" -w /workspace hashicorp/terraform:latest fmt $tf_files || true
     fi
   else
     echo "--> WARNING: terraform or docker not found. Terraform formatting check skipped."
@@ -235,11 +235,13 @@ check_terraform() {
 
   echo "--> Running Terraform Linter (TFLint)..."
   if command -v tflint >/dev/null 2>&1; then
+    tflint --init >/dev/null 2>&1 || true
     if ! tflint --recursive; then
       echo "❌ TFLint check failed."
       FAILED=1
     fi
   elif command -v docker >/dev/null 2>&1; then
+    docker run --rm -v "$(pwd):/data" -w /data ghcr.io/terraform-linters/tflint:latest --init >/dev/null 2>&1 || true
     if ! docker run --rm -v "$(pwd):/data" -w /data ghcr.io/terraform-linters/tflint:latest --recursive; then
       echo "❌ TFLint check failed."
       FAILED=1
