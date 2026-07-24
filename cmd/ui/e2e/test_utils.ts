@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import type { Page, Route } from '@playwright/test';
-import * as path from 'node:path';
 
 export const MOCK_USER = {
   email: 'test@google.com',
@@ -33,6 +32,6 @@ export async function handleUserAuthRoute(route: Route) {
 
 export async function setupScreenshotEnvironment(page: Page) {
   await page.addStyleTag({
-    path: path.join(__dirname, 'e2e_screenshot_styles.css'),
+    path: 'e2e/e2e_screenshot_styles.css',
   });
 }

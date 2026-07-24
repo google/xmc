@@ -14,5 +14,5 @@
     }
   },
   "include": ["**/*.spec.ts", "**/*.d.ts", "app/**/*_test.ts", "app/testing/test.ts"],
-  "exclude": []
+  "exclude": ["e2e/**/*"]
 }
