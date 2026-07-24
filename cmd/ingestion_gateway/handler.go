@@ -70,6 +70,18 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string) http.
 			return
 		}
 
+		if producer == nil {
+			logging.Error(ctx, "Metrics ingestion request failed due to missing producer")
+			drainRequestBody(r.Body, MaxDrainBytes)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(ServiceUnavailableErrorPayload{
+				Error:   "service_unavailable",
+				Message: "producer is not initialized",
+			})
+			return
+		}
+
 		var (
 			wg         sync.WaitGroup
 			publishErr atomic.Pointer[error]
@@ -87,10 +99,6 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string) http.
 
 			if m == nil || m.Metric == nil {
 				return fmt.Errorf("received nil metric record")
-			}
-
-			if producer == nil {
-				return nil
 			}
 
 			valBytes, err := proto.Marshal(m.Metric)

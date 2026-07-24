@@ -142,6 +142,26 @@ func TestValidateTopicTopology(t *testing.T) {
 			minReplicas:   3,
 			wantErr:       true,
 		},
+		{
+			name: "Partition detail error fails topology validation",
+			querier: &mockTopologyQuerier{
+				details: kadm.TopicDetails{
+					"xmc-metrics": kadm.TopicDetail{
+						Topic: "xmc-metrics",
+						Partitions: kadm.PartitionDetails{
+							0: kadm.PartitionDetail{
+								Partition: 0,
+								Err:       errors.New("partition broker offline"),
+							},
+						},
+					},
+				},
+			},
+			topicName:     "xmc-metrics",
+			minPartitions: 1,
+			minReplicas:   1,
+			wantErr:       true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -221,5 +241,15 @@ func TestBuildKgoOptions(t *testing.T) {
 				t.Errorf("BuildProducerOptions() returned empty options slice")
 			}
 		})
+	}
+}
+
+func TestStartHTTPServerWithProducer(t *testing.T) {
+	mp := NewMockProducer()
+	srv := startHTTPServer(context.Background(), "0", mp)
+	defer srv.Close()
+
+	if srv == nil {
+		t.Fatalf("expected non-nil server from startHTTPServer")
 	}
 }

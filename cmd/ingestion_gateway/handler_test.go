@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,7 +24,21 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/twmb/franz-go/pkg/kgo"
 )
+
+type noopProducer struct{}
+
+func (np *noopProducer) Produce(ctx context.Context, rec *kgo.Record, promise func(*kgo.Record, error)) {
+	promise(rec, nil)
+}
+
+func (np *noopProducer) Close() {}
+
+func init() {
+	SetDefaultProducer(NewMockProducer(), "xmc-metrics")
+}
 
 type trackableReader struct {
 	io.Reader
@@ -234,6 +249,8 @@ func (r *metricStreamReader) Read(p []byte) (int, error) {
 }
 
 func TestMetricsIngestionHandler_ConstantMemoryStreaming(t *testing.T) {
+	SetDefaultProducer(&noopProducer{}, "xmc-metrics")
+	defer SetDefaultProducer(NewMockProducer(), "xmc-metrics")
 	runtime.GC()
 	var mBefore runtime.MemStats
 	runtime.ReadMemStats(&mBefore)
@@ -263,4 +280,92 @@ func TestMetricsIngestionHandler_ConstantMemoryStreaming(t *testing.T) {
 	if heapDelta > maxAllowedHeapDelta {
 		t.Errorf("heap memory allocation increased by %d bytes, exceeding maximum allowed threshold of %d bytes", heapDelta, maxAllowedHeapDelta)
 	}
+}
+
+func TestNewMetricsIngestionHandler_NilProducer(t *testing.T) {
+	handler := NewMetricsIngestionHandler(nil, "test-topic")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(`[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`))
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected status 503 Service Unavailable when producer is nil, got %d", resp.StatusCode)
+	}
+
+	var errPayload ServiceUnavailableErrorPayload
+	if err := json.NewDecoder(resp.Body).Decode(&errPayload); err != nil {
+		t.Fatalf("failed to decode 503 response JSON: %v", err)
+	}
+	if errPayload.Error != "service_unavailable" {
+		t.Errorf("expected error service_unavailable, got %q", errPayload.Error)
+	}
+}
+
+func TestMetricsIngestionHandler_ContextCancelled(t *testing.T) {
+	mp := NewMockProducer()
+	handler := NewMetricsIngestionHandler(mp, "test-topic")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(`[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`)).WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status 400 Bad Request on cancelled context, got %d", resp.StatusCode)
+	}
+}
+
+func TestDrainRequestBody(t *testing.T) {
+	t.Run("nil reader does not panic", func(t *testing.T) {
+		drainRequestBody(nil, MaxDrainBytes)
+	})
+
+	t.Run("drains up to maxBytes", func(t *testing.T) {
+		largePayload := strings.Repeat("a", 10*1024*1024)
+		tr := &trackableReader{Reader: strings.NewReader(largePayload)}
+		drainRequestBody(tr, MaxDrainBytes)
+		if tr.bytesRead != MaxDrainBytes {
+			t.Errorf("expected %d bytes drained, got %d bytes read", MaxDrainBytes, tr.bytesRead)
+		}
+	})
+}
+
+func TestMetricsIngestionHandler_NilAndWhitespaceBody(t *testing.T) {
+	t.Run("nil body", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", nil)
+		w := httptest.NewRecorder()
+		MetricsIngestionHandler(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 Bad Request for nil body, got %d", w.Code)
+		}
+	})
+
+	t.Run("whitespace body", func(t *testing.T) {
+		payload := "   	  "
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
+		w := httptest.NewRecorder()
+		MetricsIngestionHandler(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 Bad Request for whitespace body, got %d", w.Code)
+		}
+	})
+}
+
+func TestSetDefaultProducer(t *testing.T) {
+	mp := NewMockProducer()
+	SetDefaultProducer(mp, "custom-topic")
+	if defaultProducer != mp {
+		t.Errorf("expected defaultProducer to be mp")
+	}
+	if defaultTopicName != "custom-topic" {
+		t.Errorf("expected defaultTopicName 'custom-topic', got %q", defaultTopicName)
+	}
+	// Reset defaults after test
+	SetDefaultProducer(NewMockProducer(), "xmc-metrics")
 }

@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -102,6 +103,9 @@ func TestFormatCompositeKey(t *testing.T) {
 		{xid: 101, workUnitID: 2, wantKey: "101:2"},
 		{xid: 202, workUnitID: 1, wantKey: "202:1"},
 		{xid: 0, workUnitID: 0, wantKey: "0:0"},
+		{xid: math.MaxInt64, workUnitID: math.MaxInt64, wantKey: "9223372036854775807:9223372036854775807"},
+		{xid: math.MinInt64, workUnitID: math.MinInt64, wantKey: "-9223372036854775808:-9223372036854775808"},
+		{xid: -100, workUnitID: -50, wantKey: "-100:-50"},
 	}
 
 	for _, tt := range tests {
@@ -233,22 +237,50 @@ func TestNewKafkaProducer(t *testing.T) {
 	client.Close()
 }
 
-func TestBuildProducerOptions_SASLVariants(t *testing.T) {
-	mechanisms := []string{"SCRAM-SHA-512", "PLAIN"}
-	for _, mech := range mechanisms {
-		t.Run(mech, func(t *testing.T) {
+func TestBuildProducerOptions_AllSASLMechanisms(t *testing.T) {
+	tests := []struct {
+		name        string
+		saslEnabled bool
+		mechanism   string
+	}{
+		{name: "Disabled SASL", saslEnabled: false, mechanism: ""},
+		{name: "SCRAM-SHA-256", saslEnabled: true, mechanism: "SCRAM-SHA-256"},
+		{name: "SCRAM-SHA-512", saslEnabled: true, mechanism: "SCRAM-SHA-512"},
+		{name: "PLAIN", saslEnabled: true, mechanism: "PLAIN"},
+		{name: "Unknown Mechanism", saslEnabled: true, mechanism: "UNSUPPORTED"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
 				RedpandaBrokers: []string{"localhost:9092"},
-				SASLEnabled:     true,
-				SASLMechanism:   mech,
+				SASLEnabled:     tt.saslEnabled,
+				SASLMechanism:   tt.mechanism,
 				SASLUser:        "testuser",
 				SASLPassword:    "testpass",
 			}
 			opts := BuildProducerOptions(cfg)
 			if len(opts) == 0 {
-				t.Fatalf("expected options for mechanism %s", mech)
+				t.Fatalf("expected options for %s", tt.name)
 			}
+			client, err := kgo.NewClient(opts...)
+			if err != nil {
+				t.Fatalf("failed to construct kgo.Client for %s: %v", tt.name, err)
+			}
+			client.Close()
 		})
+	}
+}
+
+func TestNewKafkaProducer_EmptyBrokers(t *testing.T) {
+	cfg := &Config{
+		RedpandaBrokers: nil,
+	}
+	client, err := NewKafkaProducer(cfg)
+	if err != nil {
+		t.Logf("NewKafkaProducer returned error for empty brokers as expected: %v", err)
+	} else if client != nil {
+		client.Close()
 	}
 }
 
