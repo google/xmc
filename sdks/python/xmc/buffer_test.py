@@ -69,6 +69,66 @@ class TestBoundedMetricsBuffer(unittest.TestCase):
         self.assertEqual(items[1], ("accuracy", 0.95, 2, now + 1.0))
         self.assertTrue(buf.is_empty())
 
+    def test_put_many(self) -> None:
+        buf = BoundedMetricsBuffer(capacity=10)
+        metrics = [
+            ("m1", 1.0, 1, 100.0),
+            ("m2", 2.0, 2, 101.0),
+            ("m3", 3.0, 3, 102.0),
+        ]
+        buf.put_many(metrics)
+        self.assertEqual(len(buf), 3)
+
+        items = buf.get_all()
+        self.assertEqual(len(items), 3)
+        self.assertEqual(items[0], ("m1", 1.0, 1, 100.0))
+        self.assertEqual(items[2], ("m3", 3.0, 3, 102.0))
+
+    def test_put_many_invalid_metric(self) -> None:
+        buf = BoundedMetricsBuffer(capacity=10)
+        invalid_metrics = [("m1", 1.0)]  # Only 2 elements
+        with self.assertRaises(ValueError) as ctx:
+            buf.put_many(invalid_metrics)  # type: ignore
+        self.assertIn("at least 3 elements", str(ctx.exception))
+
+    def test_pop_batch(self) -> None:
+        buf = BoundedMetricsBuffer(capacity=10)
+        for i in range(5):
+            buf.put(f"metric_{i}", float(i), i, float(100 + i))
+
+        batch = buf.pop_batch(3)
+        self.assertEqual(len(batch), 3)
+        self.assertEqual(batch[0][0], "metric_0")
+        self.assertEqual(batch[2][0], "metric_2")
+        self.assertEqual(len(buf), 2)
+
+        remaining = buf.pop_batch(10)
+        self.assertEqual(len(remaining), 2)
+        self.assertTrue(buf.is_empty())
+
+    def test_fifo_eviction(self) -> None:
+        """Verifies strict FIFO eviction policy when capacity is exceeded."""
+        capacity = 5
+        buf = BoundedMetricsBuffer(capacity=capacity)
+
+        # Fill to capacity
+        for i in range(5):
+            buf.put(f"metric_{i}", float(i), i, float(i))
+        self.assertEqual(len(buf), 5)
+
+        # Append beyond capacity
+        for i in range(5, 8):
+            buf.put(f"metric_{i}", float(i), i, float(i))
+
+        # Size should still be capacity
+        self.assertEqual(len(buf), capacity)
+
+        # Oldest elements (metric_0, metric_1, metric_2) should have been evicted
+        items = buf.pop_all()
+        expected_names = [f"metric_{i}" for i in range(3, 8)]
+        actual_names = [item[0] for item in items]
+        self.assertEqual(actual_names, expected_names)
+
     def test_put_validation(self) -> None:
         buf = BoundedMetricsBuffer(capacity=10)
         # Invalid metric_name regex/length
