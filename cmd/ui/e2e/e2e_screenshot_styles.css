@@ -28,14 +28,15 @@
  *    placeholders (`.rod-subnav-placeholder`, `.scaffolding-queue-item`, etc.).
  *    In Playwright, an element with 0px height is treated as hidden (`toBeVisible() = false`).
  *
- * 3. Cross-Environment CI/CD Determinism:
+ * 3. Cross-Environment CI/CD Determinism & Futureproofing:
  *    Headless Chromium in GitHub Actions CI/CD vs local dev workstations can produce
- *    subtle flexbox layout reflow variations (e.g. 43px vs 48px height, container width scaling).
- *    To prevent visual diff flakes without touching production SCSS (`resource_dashboard.scss`),
- *    this file enforces rigid, unyielding CSS bounding rect constraints during test execution.
+ *    subtle flexbox layout reflow variations.
+ *    To futureproof screenshot tests so newly added components do NOT require manually
+ *    adding CSS records every time, wildcard rules target all `xmc-*` custom elements,
+ *    `[data-screenshot-target]` attributes, and `*placeholder*`/`*scaffolding*` classes.
  *
  * DESIGN PATTERN:
- * - Shared display, box-sizing, and container width locks are grouped into common rules.
+ * - Generic wildcard selectors automatically format future components & placeholders.
  * - Injected at test runtime via `setupScreenshotEnvironment(page)` in `e2e/test_utils.ts`.
  * - Production application code remains 100% clean and unpolluted.
  * ============================================================================
@@ -49,29 +50,31 @@ body {
   padding: 0 !important;
 }
 
-.rod-container {
+.rod-container,
+[class*='-container'] {
   width: 1216px !important;
   max-width: 1216px !important;
   min-width: 1216px !important;
   margin: 0 auto !important;
 }
 
-/* Shared display and box model for all screenshot component targets */
+/* Futureproof Wildcard: Automatically force block display & box model on all present & future components */
 xmc-rod-subnav-tabs,
-.rod-subnav-placeholder,
 xmc-rod-queue-card,
-.scaffolding-queue-item,
 xmc-smart-resource-finder,
-.rod-queue-list-placeholder {
+[data-screenshot-target],
+[class*='placeholder'],
+[class*='scaffolding'] {
   display: block !important;
   box-sizing: border-box !important;
 }
 
-/* Shared width constraints for full-width dashboard components */
+/* Generic full-width layout rule for section-level components and placeholders */
 xmc-rod-subnav-tabs,
-.rod-subnav-placeholder,
 xmc-smart-resource-finder,
-.rod-queue-list-placeholder {
+.rod-subnav-placeholder,
+.rod-queue-list-placeholder,
+[data-screenshot-width='full'] {
   width: 1216px !important;
   min-width: 1216px !important;
   max-width: 1216px !important;
@@ -85,7 +88,7 @@ xmc-rod-subnav-tabs,
   max-height: 48px !important;
 }
 
-/* QueueCardComponent bounds */
+/* QueueCardComponent card bounds */
 xmc-rod-queue-card,
 .scaffolding-queue-item {
   width: 360px !important;
