@@ -147,6 +147,16 @@ class SPAHandlerTest(unittest.TestCase):
                 "environ": {"XMC_STATUS_MESSAGE_HISTORY_ENABLED": "false"},
                 "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": false, "adminPanelEnabled": false};',
             },
+            {
+                "testcase_name": "admin_panel_true",
+                "environ": {"XMC_ADMIN_PANEL_ENABLED": "true"},
+                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true, "adminPanelEnabled": true};',
+            },
+            {
+                "testcase_name": "admin_panel_false",
+                "environ": {"XMC_ADMIN_PANEL_ENABLED": "false"},
+                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true, "adminPanelEnabled": false};',
+            },
         ]
         for case in cases:
             with self.subTest(case["testcase_name"]):
