@@ -25,3 +25,11 @@ This document provides standards for skill architecture, workflow automation, an
 - **Tightly Scoped Subagent Prompts**: Provide worker subagents with specific file scopes, clear execution bounds, and explicit expected output requirements.
 - **Structured Synthesis Reporting**: Subagents must analyze intermediate outputs and communicate clean, structured summaries and actionable conclusions back to the parent agent via structured messaging.
 
+## 5. Helper Tool Execution Policy & Safety Constraints
+- **Tool Source Code Isolation Policy**: Agents MUST NOT open, view, or read the Python source code of helper tools in `tools/` or skill script directories. Use `--help` to inspect tool parameters, inputs, and usage flags.
+- **Structured Output & Error Code Parsing**: All helper tools output structured JSON data. Agents MUST check exit codes:
+  - **Exit Code 0**: Success. Read `"result"` payload from stdout JSON.
+  - **Exit Code 1**: Handled Error. Parse `"message"` and `"instruction"` fields to remediate inputs.
+  - **Exit Code 2**: Unhandled Error. Inspect `"message"` and `"traceback"` fields to determine root cause.
+- **Shell Command & Inline Code Execution Safety**: Avoid double-quoted inline shell code invocations (`python3 -c "..."`) when passing Markdown, JSON, or multiline parameters. Execute standalone `.py` script files or pass explicit CLI flags.
+- **Localized Directory Scope (Strict Path Lock Policy)**: When executing operations or inspecting workspace state (e.g. `./ctk-out/`), agents MUST restrict searches strictly to the immediate working directory. Global recursive searches across parent directories, home folders, or system root (`find_by_name` across `~` or `/`) are strictly prohibited.

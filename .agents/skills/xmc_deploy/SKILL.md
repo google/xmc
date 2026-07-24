@@ -8,6 +8,9 @@ description: Automates compiling and step-by-step deployment of the XMC v2 Clust
 This skill guides the agent through deploying the XManager on Cloud (XMC) infrastructure using the Cluster Toolkit v2 blueprint.
 
 > [!IMPORTANT]
+> All execution steps in this skill MUST strictly adhere to the policy rules defined in [Skills & Automation Guidelines](../../rules/skills_and_automation.md) and [Core Engineering Standards](../../rules/core_engineering.md).
+
+> [!IMPORTANT]
 > **Enforced Choice Prompt**:
 > Before executing any checks, compilation, or deployment commands, you **MUST ask the user** to choose their preferred deployment method:
 > *   **Option 1: Automated Dev Setup**: Uses the `python3 ./tools/deploy_dev_env.py` script to automate all steps.
