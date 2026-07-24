@@ -23,27 +23,6 @@ const MOCK_USER = {
   allowedDomains: ['google.com'],
 };
 
-const FINDER_QUERY_CARD_HTML = `
-  <div class="finder-query-card">
-    <span class="query-prefix">I need</span>
-    <div class="query-input-group">
-      <label class="query-label" for="amount-input">Amount *</label>
-      <input id="amount-input" type="number" class="query-input-box" value="64" />
-    </div>
-    <div class="query-input-group">
-      <label class="query-label" for="resource-type-select-0">Resource type *</label>
-      <div class="select-with-remove-box">
-        <select id="resource-type-select-0" class="query-select-box">
-          <option value="">All resource types (Default - empty)</option>
-          <option value="nvidia.com/gpu">nvidia.com/gpu</option>
-          <option value="google.com/tpu">google.com/tpu</option>
-        </select>
-      </div>
-    </div>
-    <button type="button" class="add-resource-btn">+ Add resource type</button>
-    <button type="button" class="find-queues-action">Find matching queues</button>
-  </div>`;
-
 async function handleUserAuthRoute(route: Route) {
   await route.fulfill({
     status: 200,
@@ -59,16 +38,8 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
     await page.waitForSelector('xmc-resource-dashboard');
   });
 
-  test('should match baseline screenshot for smart resource finder section', async ({ page }) => {
-    // Render the SmartResourceFinderComponent template structure inside the container
-    await page.evaluate((html) => {
-      const container = document.querySelector('.rod-split-container');
-      if (container) {
-        container.innerHTML = html;
-      }
-    }, FINDER_QUERY_CARD_HTML);
-
-    const resourceFinder = page.locator('.finder-query-card');
+  test('should match baseline screenshot for smart resource finder component', async ({ page }) => {
+    const resourceFinder = page.locator('xmc-smart-resource-finder');
     await expect(resourceFinder).toBeVisible();
     await expect(resourceFinder).toHaveScreenshot('smart-resource-finder-initial.png');
   });

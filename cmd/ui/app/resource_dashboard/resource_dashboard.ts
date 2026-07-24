@@ -32,6 +32,12 @@ import {
   AutoReloadService,
   ReloaderControl,
 } from '../common/components/autoreloader/autoreloader_service';
+import { SmartResourceFinderComponent } from './components/smart_resource_finder/smart_resource_finder';
+import {
+  DashboardTab,
+  SubnavTabsComponent,
+  TAB_SMART_FINDER,
+} from './components/subnav_tabs/subnav_tabs';
 
 /**
  * Resource Observability Dashboard (ROD) primary layout container component.
@@ -43,11 +49,13 @@ import {
   templateUrl: './resource_dashboard.ng.html',
   styleUrl: './resource_dashboard.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule],
+  imports: [CommonModule, SubnavTabsComponent, SmartResourceFinderComponent],
 })
 export class ResourceDashboard implements OnInit, OnDestroy {
   private readonly autoReloadService = inject(AutoReloadService);
   private readonly route = inject(ActivatedRoute);
+
+  protected readonly activeTab = signal<DashboardTab>(TAB_SMART_FINDER);
 
   private readonly resolvedData = toSignal(this.route.data);
   protected readonly clusterQueues = computed<ClusterQueue[]>(
