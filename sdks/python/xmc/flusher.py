@@ -179,7 +179,7 @@ class MetricsFlusher:
             name: Metric name string.
             value: Metric value (coerced to float).
             step: Step index (coerced to int).
-            timestamp: Optional epoch timestamp in seconds (coerced to float).
+            timestamp: Optional epoch timestamp (coerced to int per metrics.proto int64).
         """
         if self._shutdown_event.is_set():
             return
