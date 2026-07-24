@@ -21,7 +21,10 @@
   font-family: Roboto, 'Helvetica Neue', sans-serif;
 }
 
-.rod-subnav-placeholder {
+.rod-subnav-placeholder,
+xmc-rod-subnav-tabs {
+  display: block;
+  min-height: 48px;
   margin-bottom: 24px;
 }
 
@@ -31,12 +34,16 @@
   align-items: flex-start;
 }
 
-.rod-queue-list-placeholder {
+.rod-queue-list-placeholder,
+xmc-smart-resource-finder {
+  display: block;
   flex: 1;
+  min-height: 154px;
   background: #ffffff;
   border: 1px solid #e0e0e0;
   border-radius: 8px;
   padding: 16px 20px;
+  box-sizing: border-box;
 }
 
 .scaffolding-queue-list {
@@ -45,13 +52,17 @@
   margin: 12px 0 0 0;
 }
 
-.scaffolding-queue-item {
+.scaffolding-queue-item,
+xmc-rod-queue-card {
+  display: block;
+  min-height: 48px;
   padding: 10px 14px;
   border: 1px solid #dadce0;
   border-radius: 6px;
   margin-bottom: 8px;
   cursor: pointer;
   transition: background-color 0.15s ease;
+  box-sizing: border-box;
 
   &:hover {
     background-color: #f1f3f4;

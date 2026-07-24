@@ -41,16 +41,7 @@ test.describe('QueueCardComponent - Screenshot Tests', () => {
 
   test('should match baseline screenshot for queue card section', async ({ page }) => {
     const queueCardComponent = page.locator('xmc-rod-queue-card, .scaffolding-queue-item').first();
-    await expect(queueCardComponent).toBeAttached();
-    await queueCardComponent.evaluate((el) => {
-      const element = el as HTMLElement;
-      element.style.display = 'block';
-      element.style.width = '1976px';
-      element.style.minWidth = '1976px';
-      element.style.maxWidth = '1976px';
-      element.style.height = '48px';
-      element.style.boxSizing = 'border-box';
-    });
+    await expect(queueCardComponent).toBeVisible();
     await expect(queueCardComponent).toHaveScreenshot('queue-card-component.png');
   });
 });

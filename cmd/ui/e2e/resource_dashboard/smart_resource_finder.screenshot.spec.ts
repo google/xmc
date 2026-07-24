@@ -43,16 +43,7 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
     const smartFinderComponent = page
       .locator('xmc-smart-resource-finder, .rod-queue-list-placeholder')
       .first();
-    await expect(smartFinderComponent).toBeAttached();
-    await smartFinderComponent.evaluate((el) => {
-      const element = el as HTMLElement;
-      element.style.display = 'block';
-      element.style.width = '1976px';
-      element.style.minWidth = '1976px';
-      element.style.maxWidth = '1976px';
-      element.style.height = '154px';
-      element.style.boxSizing = 'border-box';
-    });
+    await expect(smartFinderComponent).toBeVisible();
     await expect(smartFinderComponent).toHaveScreenshot('smart-resource-finder-initial.png');
   });
 });
