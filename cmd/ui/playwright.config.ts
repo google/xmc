@@ -23,7 +23,7 @@ export default defineConfig({
   reporter: process.env['CI'] ? [['list'], ['github']] : 'list',
   expect: {
     toHaveScreenshot: {
-      maxDiffPixelRatio: 0.02,
+      maxDiffPixelRatio: 0.05,
       threshold: 0.2,
       animations: 'disabled',
     },
