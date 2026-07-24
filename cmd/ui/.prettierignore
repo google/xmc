@@ -1,5 +1,0 @@
-# Ignore generated test output and build directories from Prettier linting
-test-results/
-dist/
-.angular/
-node_modules/

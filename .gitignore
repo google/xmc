@@ -10,7 +10,6 @@ cmd/ui/node_modules/
 cmd/ui/.angular/
 cmd/ui/dist/
 cmd/ui/build_tmp/
-cmd/ui/test-results/
 
 **__pycache__**
 # proto binaries
