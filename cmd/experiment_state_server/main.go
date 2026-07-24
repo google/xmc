@@ -283,11 +283,8 @@ func main() {
 		authenticatedGwmux.ServeHTTP(w, r)
 	})
 
-	// 10. Apply security middlewares (CORS -> CSRF -> Security Headers -> Mux)
-	var handler http.Handler = httpMux
-	handler = oauthAuth.CORSMiddleware(handler)
-	handler = oauthAuth.CrossOriginProtection(handler)
-	handler = oauthAuth.SecurityHeadersMiddleware(handler)
+	// 10. Apply security middlewares
+	handler := oauthAuth.SecurityMiddlewares(httpMux)
 
 	// 11. Start the HTTP server.
 	gwServer := &http.Server{

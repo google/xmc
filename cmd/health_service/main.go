@@ -41,6 +41,9 @@ func main() {
 	if err != nil {
 		logging.Fatal(ctx, "Failed to load OAuth config", "error", err)
 	}
+	if oauthCfg.GCPProjectID == "" {
+		oauthCfg.GCPProjectID = cfg.ProjectID
+	}
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
 
 	mux := http.NewServeMux()
@@ -76,11 +79,8 @@ func main() {
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 
-	// Apply other middlewares to the entire mux (consistent with ESS)
-	var handler http.Handler = mux
-	handler = authenticator.SecurityHeadersMiddleware(handler)
-	handler = authenticator.CrossOriginProtection(handler)
-	handler = authenticator.CORSMiddleware(handler)
+	// Apply security middlewares to the mux
+	handler := authenticator.SecurityMiddlewares(mux)
 
 	server := &http.Server{
 		Addr:              addr,

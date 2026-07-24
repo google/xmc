@@ -51,6 +51,16 @@ func (a *Authenticator) Authenticate(next http.Handler) http.Handler {
 	})
 }
 
+// SecurityMiddlewares wraps the handler with all standard security middlewares
+// SecurityHeaders -> CrossOriginProtection -> CORS.
+func (a *Authenticator) SecurityMiddlewares(next http.Handler) http.Handler {
+	handler := next
+	handler = a.corsMiddleware(handler)
+	handler = a.crossOriginProtection(handler)
+	handler = a.securityHeadersMiddleware(handler)
+	return handler
+}
+
 // authenticateCookie checks for and validates the session_token cookie.
 // It returns true if it handled the request (authenticated the request, or written an error status).
 // It returns false if no cookie was found or if cookie verification failed (falling back to bearer tokens).
@@ -181,12 +191,18 @@ func (a *Authenticator) authenticateOIDC(w http.ResponseWriter, r *http.Request,
 	return true
 }
 
-// CORSMiddleware configures cross-origin access using rs/cors package.
-func (a *Authenticator) CORSMiddleware(next http.Handler) http.Handler {
+// corsMiddleware configures cross-origin access using rs/cors package.
+func (a *Authenticator) corsMiddleware(next http.Handler) http.Handler {
 	origins := make([]string, len(a.Config.AllowedOrigins))
 	copy(origins, a.Config.AllowedOrigins)
-	if a.Config.FrontendURL != "" && !slices.Contains(origins, a.Config.FrontendURL) {
-		origins = append(origins, a.Config.FrontendURL)
+	if a.Config.FrontendURL != "" {
+		frontendOrigin := a.Config.FrontendURL
+		if u, err := url.Parse(a.Config.FrontendURL); err == nil && u.Scheme != "" && u.Host != "" {
+			frontendOrigin = fmt.Sprintf("%s://%s", u.Scheme, u.Host)
+		}
+		if !slices.Contains(origins, frontendOrigin) {
+			origins = append(origins, frontendOrigin)
+		}
 	}
 
 	c := cors.New(cors.Options{
@@ -200,8 +216,8 @@ func (a *Authenticator) CORSMiddleware(next http.Handler) http.Handler {
 	return c.Handler(next)
 }
 
-// SecurityHeadersMiddleware applies secure response headers.
-func (a *Authenticator) SecurityHeadersMiddleware(next http.Handler) http.Handler {
+// securityHeadersMiddleware applies secure response headers.
+func (a *Authenticator) securityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -217,8 +233,8 @@ func (a *Authenticator) SecurityHeadersMiddleware(next http.Handler) http.Handle
 	})
 }
 
-// CrossOriginProtection sets up the standard CrossOriginProtection filter.
-func (a *Authenticator) CrossOriginProtection(next http.Handler) http.Handler {
+// crossOriginProtection sets up the standard CrossOriginProtection filter.
+func (a *Authenticator) crossOriginProtection(next http.Handler) http.Handler {
 	cop := http.NewCrossOriginProtection()
 	for _, origin := range a.Config.AllowedOrigins {
 		if err := cop.AddTrustedOrigin(origin); err != nil {
@@ -227,13 +243,15 @@ func (a *Authenticator) CrossOriginProtection(next http.Handler) http.Handler {
 	}
 	if a.Config.FrontendURL != "" {
 		u, err := url.Parse(a.Config.FrontendURL)
-		if err == nil {
+		if err == nil && u.Scheme != "" && u.Host != "" {
 			frontendOrigin := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
 			if err := cop.AddTrustedOrigin(frontendOrigin); err != nil {
 				log.Printf("[Middleware COP] Failed to add frontend origin %q: %v", frontendOrigin, err)
 			}
-		} else {
+		} else if err != nil {
 			log.Printf("[Middleware COP] Failed to parse frontend URL %q: %v", a.Config.FrontendURL, err)
+		} else {
+			log.Printf("[Middleware COP] Frontend URL %q is missing scheme or host", a.Config.FrontendURL)
 		}
 	}
 	return cop.Handler(next)
