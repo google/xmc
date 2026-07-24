@@ -33,7 +33,6 @@ async function handleUserAuthRoute(route: Route) {
 
 test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
-    // Set extra wide viewport so query card controls fit inline without collapsing
     await page.setViewportSize({ width: 2400, height: 1080 });
     await page.route('/api/user', handleUserAuthRoute);
     await page.goto('/resources');
@@ -41,8 +40,8 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for smart resource finder section', async ({ page }) => {
-    const resourceFinder = page.locator('xmc-smart-resource-finder, .rod-queue-list-placeholder');
-    await expect(resourceFinder.first()).toBeVisible();
-    await expect(resourceFinder.first()).toHaveScreenshot('smart-resource-finder-initial.png');
+    const dashboard = page.locator('xmc-resource-dashboard');
+    await expect(dashboard).toBeVisible();
+    await expect(dashboard).toHaveScreenshot('smart-resource-finder-initial.png');
   });
 });
