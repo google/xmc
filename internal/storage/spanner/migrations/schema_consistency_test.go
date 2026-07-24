@@ -39,7 +39,7 @@ func TestSchemaSynchronization(t *testing.T) {
 
 	// SetupWithEmulator creates the ESS and XID databases using their respective schemas.
 	_, _, emu := emulator.SetupWithEmulator(ctx, t)
-	// SetupEmpty creates an empty database.
+	// SetupEmpty creates empty databases.
 	_, _, emptyDBEmu := emulator.SetupEmpty(ctx, t)
 
 	tests := []testRunCase{

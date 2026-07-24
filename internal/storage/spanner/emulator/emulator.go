@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	_ "embed"
 
@@ -181,22 +180,7 @@ func createInstance(ctx context.Context, emu *Emulator) error {
 	})
 	if err != nil {
 		if status.Code(err) == codes.AlreadyExists {
-			// Ensure instance finishes provisioning before returning
-			for {
-				inst, getErr := i.GetInstance(ctx, &instancepb.GetInstanceRequest{Name: instanceURI})
-				if getErr != nil {
-					return getErr
-				}
-				if inst.State == instancepb.Instance_READY {
-					return nil
-				}
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				default:
-					time.Sleep(50 * time.Millisecond)
-				}
-			}
+			return nil
 		}
 		return fmt.Errorf("CreateInstance failed: %w", err)
 	}
