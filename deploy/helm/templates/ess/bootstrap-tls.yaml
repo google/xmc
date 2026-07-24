@@ -16,7 +16,7 @@
 {{- if not (lookup "v1" "Secret" .Release.Namespace "xmc-bootstrap-tls") }}
 {{- $commonName := .Values.xmcUrl -}}
 {{- $altNames := list (printf "api.%s" .Values.xmcUrl) (printf "grpc.%s" .Values.xmcUrl) -}}
-{{- $cert := genSelfSignedCert $commonName nil $altNames 365 -}}
+{{- $cert := genSelfSignedCert $commonName nil $altNames 365 }}
 apiVersion: v1
 kind: Secret
 metadata:
