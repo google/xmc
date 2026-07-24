@@ -31,6 +31,60 @@ export interface ScreenshotOptions {
   height?: number | string;
 }
 
+/** Base layout reset and wildcard component CSS rules for E2E screenshot testing */
+const BASE_SCREENSHOT_STYLES = `
+  html, body {
+    width: 1280px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .rod-container, [class*="-container"] {
+    width: 1216px !important;
+    max-width: 1216px !important;
+    min-width: 1216px !important;
+    margin: 0 auto !important;
+  }
+  xmc-rod-subnav-tabs,
+  xmc-rod-queue-card,
+  xmc-smart-resource-finder,
+  [data-screenshot-target],
+  [class*="placeholder"],
+  [class*="scaffolding"] {
+    display: block !important;
+    box-sizing: border-box !important;
+  }
+  xmc-rod-subnav-tabs,
+  xmc-smart-resource-finder,
+  .rod-subnav-placeholder,
+  .rod-queue-list-placeholder,
+  [data-screenshot-width="full"] {
+    width: 1216px !important;
+    min-width: 1216px !important;
+    max-width: 1216px !important;
+  }
+  xmc-rod-subnav-tabs,
+  .rod-subnav-placeholder {
+    height: 48px !important;
+    min-height: 48px !important;
+    max-height: 48px !important;
+  }
+  xmc-rod-queue-card,
+  .scaffolding-queue-item {
+    width: 360px !important;
+    min-width: 360px !important;
+    max-width: 360px !important;
+    height: 120px !important;
+    min-height: 120px !important;
+    max-height: 120px !important;
+  }
+  xmc-smart-resource-finder,
+  .rod-queue-list-placeholder {
+    height: 200px !important;
+    min-height: 200px !important;
+    max-height: 200px !important;
+  }
+`;
+
 export async function handleUserAuthRoute(route: Route) {
   await route.fulfill({
     status: 200,
@@ -41,12 +95,12 @@ export async function handleUserAuthRoute(route: Route) {
 
 /**
  * Prepares the Playwright page runtime for deterministic component screenshot assertions.
- * Automatically injects centralized E2E screenshot styles and allows future components
- * to dynamically pass custom bounding dimensions without modifying CSS files.
+ * Automatically injects centralized base reset styles and allows future components
+ * to dynamically pass custom bounding dimensions programmatically without CSS files.
  */
 export async function setupScreenshotEnvironment(page: Page, options?: ScreenshotOptions) {
   await page.addStyleTag({
-    path: 'e2e/e2e_screenshot_styles.css',
+    content: BASE_SCREENSHOT_STYLES,
   });
 
   if (options?.selector && (options.width != null || options.height != null)) {
