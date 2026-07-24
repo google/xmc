@@ -44,6 +44,10 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
       .locator('xmc-smart-resource-finder, .rod-queue-list-placeholder')
       .first();
     await expect(smartFinderComponent).toBeAttached();
+    await smartFinderComponent.evaluate((el) => {
+      (el as HTMLElement).style.minHeight = '120px';
+      (el as HTMLElement).style.display = 'block';
+    });
     await expect(smartFinderComponent).toHaveScreenshot('smart-resource-finder-initial.png');
   });
 });

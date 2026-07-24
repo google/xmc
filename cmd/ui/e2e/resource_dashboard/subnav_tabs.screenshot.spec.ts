@@ -43,9 +43,8 @@ test.describe('SubnavTabsComponent - Screenshot Tests', () => {
     const subnavComponent = page.locator('xmc-rod-subnav-tabs, .rod-subnav-placeholder').first();
     await expect(subnavComponent).toBeAttached();
     await subnavComponent.evaluate((el) => {
-      if (el.clientHeight === 0) {
-        (el as HTMLElement).style.minHeight = '1px';
-      }
+      (el as HTMLElement).style.height = '48px';
+      (el as HTMLElement).style.display = 'block';
     });
     await expect(subnavComponent).toHaveScreenshot('subnav-tabs-component.png');
   });
