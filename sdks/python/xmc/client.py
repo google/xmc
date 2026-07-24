@@ -87,7 +87,7 @@ class Client:
 
     def __init__(
         self,
-        base_url: str,
+        base_url: str | None = None,
         api_key: str | None = None,
         timeout: float = 30.0,
         default_headers: dict[str, str] | None = None,
@@ -95,10 +95,15 @@ class Client:
         log_all_replicas: bool = False,
         env: Mapping[str, str] | None = None,
     ) -> None:
-        if not base_url:
-            raise ValueError("base_url must be specified and non-empty.")
+        if base_url is None:
+            base_url = (env if env is not None else os.environ).get("XMC_GATEWAY_URL")
 
-        self.base_url = base_url.rstrip("/")
+        if not base_url:
+            base_url = "http://localhost"
+            if disabled is None:
+                disabled = True
+
+        self.base_url = str(base_url).rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
         if disabled is not None:

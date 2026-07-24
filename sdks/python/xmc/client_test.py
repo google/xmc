@@ -37,9 +37,10 @@ class TestClient(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self._orig_env)
 
-    def test_init_invalid_base_url(self) -> None:
-        with self.assertRaises(ValueError):
-            Client(base_url="")
+    def test_init_invalid_base_url_disables_client(self) -> None:
+        client = Client(base_url="")
+        self.assertTrue(client.disabled)
+        self.assertTrue(client.should_silence)
 
     def test_init_headers(self) -> None:
         client = Client(

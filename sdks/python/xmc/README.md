@@ -97,39 +97,39 @@ In distributed training (`WORLD_SIZE > 1`), logging from every process can satur
 ### 1. Basic Single-Process Logging
 
 ```python
-from xmc import Client, MetricsFlusher
+import xmc
 
-# Auto-starts background flusher daemon thread
-with MetricsFlusher(client=Client(base_url="http://localhost:8080")) as flusher:
-    for step in range(1000):
-        loss = train_step()
-        flusher.log_metric("train/loss", loss, step=step)
+for step in range(1000):
+    loss = train_step()
+    xmc.log_metric("train/loss", loss, step=step)
+
+# Optional: Ensure buffer is flushed before script exit
+xmc.shutdown()
 ```
 
 ### 2. Distributed Training Setup (PyTorch / JAX)
 
 ```python
-import os
-from xmc import Client, MetricsFlusher
-
-# Client auto-detects process rank and silences worker processes
-client = Client(base_url="http://localhost:8080")
-flusher = MetricsFlusher(client=client)
+import xmc
 
 for step in range(1000):
     loss = distributed_train_step()
-    # Rank 0 logs to buffer; non-zero ranks drop locally without lock contention
-    flusher.log_metric("train/loss", loss, step=step)
+    # Auto-detects process rank. Rank 0 logs to buffer; non-zero ranks drop locally.
+    xmc.log_metric("train/loss", loss, step=step)
 
-flusher.shutdown()
+xmc.shutdown()
 ```
 
 ### 3. Opting Into All-Replica Logging
 
 ```python
-# Pass log_all_replicas=True to capture metrics from every GPU rank
-client = Client(base_url="http://localhost:8080", log_all_replicas=True)
-flusher = MetricsFlusher(client=client)
+import xmc
+
+# Initialize the global flusher with log_all_replicas=True to capture metrics from every GPU rank
+xmc.init(log_all_replicas=True)
+
+xmc.log_metric("train/loss", loss, step=step)
+xmc.shutdown()
 ```
 
 ---
