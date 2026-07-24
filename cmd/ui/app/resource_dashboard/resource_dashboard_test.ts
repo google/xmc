@@ -14,11 +14,15 @@
 
 import 'jasmine';
 
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { Component } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
 import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
+import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
 import {
   bootstrap,
@@ -41,19 +45,28 @@ describe('ResourceDashboard Container', () => {
   beforeAll(setupObservableMatchers);
 
   const mockQueue = {
-    name: 'test-queue',
+    name: 'gpu-cluster-queue',
     flavors: [],
   } as ClusterQueue;
 
   cleanState(() => {
+    const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
+      'getQueueJobs',
+    ]);
+    resourceService.getQueueJobs.and.returnValue(of({ queueName: 'gpu-cluster-queue', jobs: [] }));
+
     setupModule({
-      imports: [TestHostComponent],
+      imports: [TestHostComponent, NoopAnimationsModule],
       providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: ResourceService, useValue: resourceService },
         { provide: AUTO_REFRESH_INTERVAL_MS, useValue: 30000 },
         {
           provide: ActivatedRoute,
           useValue: {
-            queryParams: of({ queue: 'test-queue' }),
+            queryParams: of({ queue: 'gpu-cluster-queue' }),
             data: of({ clusterQueues: [mockQueue] }),
           },
         },
@@ -62,14 +75,13 @@ describe('ResourceDashboard Container', () => {
     return {};
   }, beforeEach);
 
-  it('should render resolved cluster queues', async () => {
+  it('should render split container with queue jobs side panel', async () => {
     const host = bootstrap(TestHostComponent);
     await flush();
 
     expect(host).toBeTruthy();
 
-    const queueItems = document.querySelectorAll('.scaffolding-queue-item');
-    expect(queueItems.length).toBe(1);
-    expect(queueItems[0].textContent).toContain('test-queue');
+    const jobsPanel = document.querySelector('xmc-queue-jobs-side-panel');
+    expect(jobsPanel).toBeTruthy();
   });
 });

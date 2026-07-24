@@ -14,25 +14,40 @@
  limitations under the License.
 -->
 <div class="rod-container">
-  <div class="rod-subnav-placeholder"></div>
-  <div class="rod-split-container">
-    <div class="rod-queue-list-placeholder">
-      <h3>Resolved Cluster Queues</h3>
-      @if (clusterQueues().length === 0) {
-        <p class="empty-queues-msg">No cluster queues resolved.</p>
-      } @else {
-        <ul class="scaffolding-queue-list">
-          @for (queue of clusterQueues(); track queue.name) {
-            <li
-              class="scaffolding-queue-item"
-              [class.selected]="selectedQueue() === queue.name"
-              (click)="onQueueSelect(queue.name)"
-            >
-              <span class="queue-name">{{ queue.name }}</span>
-            </li>
-          }
-        </ul>
-      }
+  <div class="rod-subnav-tabs" role="tablist" aria-label="Resource Dashboard Tabs">
+    <button
+      class="rod-tab-btn"
+      role="tab"
+      [attr.aria-selected]="activeTab() === 'queues'"
+      [class.active-tab]="activeTab() === 'queues'"
+      (click)="activeTab.set('queues')"
+    >
+      Smart resource finder
+    </button>
+    <button
+      class="rod-tab-btn"
+      role="tab"
+      [attr.aria-selected]="activeTab() === 'predictability'"
+      [class.active-tab]="activeTab() === 'predictability'"
+      (click)="activeTab.set('predictability')"
+    >
+      Resource availability
+    </button>
+  </div>
+
+  <div class="dashboard-shell-content">
+    <div class="rod-split-container">
+      <!-- Left Column Placeholder (Queues matching requirements) -->
+      <div class="queues-side-pane">
+        <div class="queues-section-header">
+          <h2 class="section-heading">Queues matching requirements</h2>
+        </div>
+      </div>
+
+      <!-- Right Column: Jobs in the Queue Card Component -->
+      <div class="jobs-side-pane">
+        <xmc-queue-jobs-side-panel [queueName]="selectedQueueName()"></xmc-queue-jobs-side-panel>
+      </div>
     </div>
   </div>
 </div>
