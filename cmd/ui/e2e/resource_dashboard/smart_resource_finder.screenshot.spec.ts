@@ -45,10 +45,13 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
       .first();
     await expect(smartFinderComponent).toBeAttached();
     await smartFinderComponent.evaluate((el) => {
-      (el as HTMLElement).style.width = '1976px';
-      (el as HTMLElement).style.height = '154px';
-      (el as HTMLElement).style.display = 'block';
-      (el as HTMLElement).style.boxSizing = 'border-box';
+      const element = el as HTMLElement;
+      element.style.display = 'block';
+      element.style.width = '1976px';
+      element.style.minWidth = '1976px';
+      element.style.maxWidth = '1976px';
+      element.style.height = '154px';
+      element.style.boxSizing = 'border-box';
     });
     await expect(smartFinderComponent).toHaveScreenshot('smart-resource-finder-initial.png');
   });
