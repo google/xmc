@@ -82,6 +82,12 @@ type Reconciler struct {
 	MaxConcurrentReconciles     int
 	StartupPodErrorCheckTime    time.Duration
 	StartupPodErrorCheckEnabled bool
+	Storage                     WorkUnitExecutionReader
+}
+
+// WorkUnitExecutionReader is an interface for reading WorkUnitExecutions from ESS.
+type WorkUnitExecutionReader interface {
+	FetchCurrentWorkUnitExecution(ctx context.Context, xid int64, wid int64) (*spb.WorkUnitExecution, error)
 }
 
 func hasValidXMCLabels(ctx context.Context, jobSet *v1alpha2.JobSet) bool {
@@ -293,6 +299,23 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 
 	if state == spb.WorkUnitStatus_STARTING && r.StartupPodErrorCheckEnabled {
 		result, podErrorMsg, startupWarningMsg = r.handleStartupPodChecks(ctx, jobSet)
+	}
+
+	displayName, runGroup, gcsPath := getManagedXprofEnvs(jobSet)
+	if gcsPath == "" {
+		logging.Warn(ctx, "No GCS path found for Managed Xprof, skipping MLRun URL creation.", "namespace", jobSet.Namespace, "xid", xid, "wid", wid)
+	}
+	if displayName == "" {
+		logging.Warn(ctx, "No display name found for Managed Xprof, skipping MLRun URL creation.", "namespace", jobSet.Namespace, "xid", xid, "wid", wid)
+	}
+	if runGroup == "" {
+		logging.Warn(ctx, "No run group found for Managed Xprof, skipping MLRun URL creation.", "namespace", jobSet.Namespace, "xid", xid, "wid", wid)
+	}
+	if gcsPath != "" && displayName != "" && runGroup != "" {
+		mlRunURL, skip := r.checkWorkUnitStatusAndMLRun(ctx, xid, wid)
+		if !skip && mlRunURL == "" {
+			logging.Info(ctx, "Begin to create MLRun URL.")
+		}
 	}
 
 	update, err := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg, startupWarningMsg)
@@ -535,4 +558,69 @@ func calculateJobsetStartAge(jobSet *v1alpha2.JobSet) time.Duration {
 	}
 	// if LastTransitionTime is not found, we fall back to the creation time
 	return time.Since(jobSet.CreationTimestamp.Time)
+}
+
+func getManagedXprofEnvs(jobSet *v1alpha2.JobSet) (displayName, runGroup, gcsPath string) {
+	for _, rj := range jobSet.Spec.ReplicatedJobs {
+		for _, c := range rj.Template.Spec.Template.Spec.Containers {
+			for _, env := range c.Env {
+				switch env.Name {
+				case constants.XmcEnvVarManagedXprofDisplayName:
+					displayName = env.Value
+				case constants.XmcEnvVarManagedXprofRunGroup:
+					runGroup = env.Value
+				case constants.XmcEnvVarManagedXprofGCSObjectFolder:
+					gcsPath = env.Value
+				}
+			}
+			// These environment variables are same on all containers, so we can return early.
+			if displayName != "" || runGroup != "" || gcsPath != "" {
+				return
+			}
+		}
+	}
+	return
+}
+
+// getMLRunURL extracts the MLRun URL from the WorkUnitExecution metadata safely.
+func getMLRunURL(execution *spb.WorkUnitExecution) string {
+	if execution != nil && execution.GetMetadata() != nil {
+		return execution.GetMetadata().GetMlrunUrl()
+	}
+	return ""
+}
+
+// isTerminalState returns true if the work unit state in ESS indicates it has stopped or is stopping.
+func isTerminalState(state spb.WorkUnitStatus_WorkUnitState) bool {
+	switch state {
+	case spb.WorkUnitStatus_COMPLETED, spb.WorkUnitStatus_FAILED, spb.WorkUnitStatus_STOPPED, spb.WorkUnitStatus_STOPPING:
+		return true
+	default:
+		return false
+	}
+}
+
+// checkWorkUnitStatusAndMLRun queries ESS to prevent redundant actions and retrieves the existing MLRun URL to maintain state.
+//
+// Returns:
+//   - string: The existing MLRun URL from ESS metadata.
+//   - bool: True if the WorkUnit is in a terminal state and status synchronization should be skipped.
+func (r *Reconciler) checkWorkUnitStatusAndMLRun(ctx context.Context, xid, wid int64) (string, bool) {
+	mlRunURL := ""
+	skipMLRunStatusSync := false
+	execution, fetchErr := r.Storage.FetchCurrentWorkUnitExecution(ctx, xid, wid)
+	if fetchErr != nil {
+		logging.Error(ctx, "Failed to fetch current WorkUnitExecution from ESS", "error", fetchErr)
+		return mlRunURL, skipMLRunStatusSync
+	}
+
+	mlRunURL = getMLRunURL(execution)
+
+	if execution != nil && isTerminalState(execution.GetStatus().GetState()) {
+		currentState := execution.GetStatus().GetState()
+		logging.Info(ctx, "WorkUnit execution is in terminal/stopping state in ESS, skipping status synchronization", "currentState", currentState.String())
+		skipMLRunStatusSync = true
+	}
+
+	return mlRunURL, skipMLRunStatusSync
 }
