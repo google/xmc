@@ -33,9 +33,9 @@ test.describe('QueueCardComponent - Screenshot Tests', () => {
   test('should match baseline screenshot for queue card section', async ({ page }) => {
     await mountComponentHarness(
       page,
-      `<xmc-rod-queue-card>
-        <div>gpu-cluster-queue</div>
-        <div>8 GPUs Available</div>
+      `<xmc-rod-queue-card style="display: block; width: 360px; height: 120px; box-sizing: border-box; padding: 16px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px;">
+        <div style="font-weight: 500; color: #202124;">gpu-cluster-queue</div>
+        <div style="color: #5f6368; margin-top: 8px;">8 GPUs Available</div>
       </xmc-rod-queue-card>`,
     );
 
