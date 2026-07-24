@@ -23,7 +23,6 @@ from unittest.mock import MagicMock
 from xmc.buffer import MetricTuple
 from xmc.flusher import MetricsFlusher
 from xmc.network import HTTPClient
-from xmc.types import format_metric_batch_payload
 
 
 class TestMetricsFlusherInitialization(unittest.TestCase):
@@ -202,9 +201,7 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
         mock_client.execution_id = "3003"
         mock_client.replica_id = "1"
         mock_client.is_silenced = False
-        mock_client.format_payload.side_effect = lambda items: format_metric_batch_payload(
-            items, xid="0", work_unit_id="0", execution_id="0", replica_id="0"
-        )
+
         flusher = MetricsFlusher(
             client=mock_client,
             flush_interval=60.0,
@@ -268,9 +265,7 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
         mock_client.execution_id = "3003"
         mock_client.replica_id = "replica-5"
         mock_client.is_silenced = False
-        mock_client.format_payload.side_effect = lambda items: format_metric_batch_payload(
-            items, xid="1001", work_unit_id="2002", execution_id="3003", replica_id="replica-5"
-        )
+
         env = {
             "XMC_XID": "1001",
             "XMC_WORK_UNIT_ID": "2002",

@@ -37,6 +37,7 @@ from xmc.resilience import (
     classify_outcome,
     parse_and_log_terminal_diagnostic,
 )
+from xmc.types import format_metric_batch_payload
 
 logger = logging.getLogger(__name__)
 
@@ -381,8 +382,14 @@ class MetricsFlusher:
         if self._client is None:
             raise ValueError("No client or flush_fn configured.")
 
-        # Client is guaranteed to implement format_payload and send_payload
-        payload = self._client.format_payload(items)
+        # Client is guaranteed to implement send_payload
+        payload = format_metric_batch_payload(
+            items,
+            xid=self._xid,
+            work_unit_id=self._work_unit_id,
+            execution_id=self._execution_id,
+            replica_id=self._replica_id,
+        )
         return self._client.send_payload(payload)
 
     def _send_batch(self, items: list[MetricTuple]) -> bool:

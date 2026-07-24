@@ -248,7 +248,7 @@ class TestHTTPClient(unittest.TestCase):
 
         mock_conn.close.assert_called_once()
 
-    def test_network_metadata_and_format_payload(self) -> None:
+    def test_network_metadata(self) -> None:
         env = {
             "XMC_XID": "10",
             "XMC_WORK_UNIT_ID": "20",
@@ -263,20 +263,6 @@ class TestHTTPClient(unittest.TestCase):
         self.assertEqual(client.work_unit_id, "20")
         self.assertEqual(client.execution_id, "30")
         self.assertEqual(client.replica_id, "replica-net")
-
-        items = [("loss", 0.5, 1, 100.0)]
-        payload = client.format_payload(items)
-        self.assertIsInstance(payload, list)
-        self.assertEqual(len(payload), 1)
-        item = payload[0]
-        self.assertEqual(item["xid"], "10")
-        self.assertEqual(item["work_unit_id"], "20")
-        self.assertEqual(item["execution_id"], "30")
-        self.assertEqual(item["replica_id"], "replica-net")
-        self.assertEqual(item["metric_name"], "loss")
-        self.assertEqual(item["metric_value"], 0.5)
-        self.assertEqual(item["step"], 1)
-        self.assertEqual(item["timestamp"], 100000000)
 
 
 if __name__ == "__main__":

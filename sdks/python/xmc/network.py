@@ -24,9 +24,7 @@ import urllib.parse
 from collections.abc import Mapping
 from typing import Any
 
-from xmc.buffer import MetricTuple
 from xmc.dist_harvest import harvest_client_metadata
-from xmc.types import format_metric_batch_payload
 
 
 class SendResult(enum.Enum):
@@ -148,16 +146,6 @@ class HTTPClient:
         WHY str: Identifier for parallel worker rank (e.g., "0", "3"). Defaults to "0".
         """
         return self._replica_id
-
-    def format_payload(self, items: list[MetricTuple]) -> list[dict[str, Any]]:
-        """Formats metric tuples into JSON payload list matching XMCMetricsBatch schema."""
-        return format_metric_batch_payload(
-            items,
-            xid=self._xid,
-            work_unit_id=self._work_unit_id,
-            execution_id=self._execution_id,
-            replica_id=self._replica_id,
-        )
 
     def send_payload(self, payload: list[dict[str, Any]]) -> SendResult:
         """Serializes and sends JSON payload list over persistent HTTP connection."""
