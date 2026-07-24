@@ -12,24 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import type { Route } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 
-const MOCK_USER = {
-  email: 'test@google.com',
-  name: 'Test User',
-  pictureUrl: '',
-  sessionExpiresAt: 9999999999,
-  allowedDomains: ['google.com'],
-};
-
-async function handleUserAuthRoute(route: Route) {
-  await route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify(MOCK_USER),
-  });
-}
+import { handleUserAuthRoute, setupScreenshotEnvironment } from '../test_utils';
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -38,22 +23,7 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
     await page.route('/api/user', handleUserAuthRoute);
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
-    await page.addStyleTag({
-      content: `
-        html, body { width: 1280px !important; margin: 0 !important; padding: 0 !important; }
-        .rod-container { width: 1216px !important; max-width: 1216px !important; min-width: 1216px !important; margin: 0 auto !important; }
-        xmc-smart-resource-finder, .rod-queue-list-placeholder {
-          display: block !important;
-          width: 1216px !important;
-          min-width: 1216px !important;
-          max-width: 1216px !important;
-          height: 200px !important;
-          min-height: 200px !important;
-          max-height: 200px !important;
-          box-sizing: border-box !important;
-        }
-      `,
-    });
+    await setupScreenshotEnvironment(page);
   });
 
   test('should match baseline screenshot for smart resource finder section', async ({ page }) => {
