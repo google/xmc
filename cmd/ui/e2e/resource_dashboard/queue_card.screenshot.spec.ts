@@ -31,19 +31,25 @@ async function handleUserAuthRoute(route: Route) {
   });
 }
 
+test.use({ viewport: { width: 1280, height: 800 } });
+
 test.describe('QueueCardComponent - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 800 });
     await page.route('/api/user', handleUserAuthRoute);
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
     await page.addStyleTag({
       content: `
-        .rod-container { width: 1216px !important; margin: 0 auto !important; }
+        html, body { width: 1280px !important; margin: 0 !important; padding: 0 !important; }
+        .rod-container { width: 1216px !important; max-width: 1216px !important; min-width: 1216px !important; margin: 0 auto !important; }
         xmc-rod-queue-card, .scaffolding-queue-item {
           display: block !important;
           width: 360px !important;
+          min-width: 360px !important;
+          max-width: 360px !important;
           height: 120px !important;
+          min-height: 120px !important;
+          max-height: 120px !important;
           box-sizing: border-box !important;
         }
       `,
