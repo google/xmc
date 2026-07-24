@@ -24,7 +24,7 @@ from typing import Any
 DEFAULT_CAPACITY: int = 500_000
 
 # Metric tuple type alias: (name, value, step, timestamp)
-MetricTuple = tuple[str, float, int, float]
+MetricTuple = tuple[str, float, int, int]
 
 
 def _coerce_float(val: Any) -> float:
@@ -100,7 +100,7 @@ class BoundedMetricsBuffer:
         c_name = str(name)
         c_value = _coerce_float(value)
         c_step = _coerce_int(step)
-        c_timestamp = time.time() if timestamp is None else _coerce_float(timestamp)
+        c_timestamp = _coerce_int(time.time() if timestamp is None else timestamp)
 
         item: MetricTuple = (c_name, c_value, c_step, c_timestamp)
 
@@ -133,7 +133,7 @@ class BoundedMetricsBuffer:
                     str(name),
                     _coerce_float(value),
                     _coerce_int(step),
-                    _coerce_float(ts),
+                    _coerce_int(ts),
                 )
             )
 

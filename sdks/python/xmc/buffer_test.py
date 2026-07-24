@@ -65,16 +65,16 @@ class TestBoundedMetricsBuffer(unittest.TestCase):
 
         items = buf.pop_all()
         self.assertEqual(len(items), 2)
-        self.assertEqual(items[0], ("loss", 0.5, 1, float(now)))
-        self.assertEqual(items[1], ("accuracy", 0.95, 2, float(now + 1.0)))
+        self.assertEqual(items[0], ("loss", 0.5, 1, int(now)))
+        self.assertEqual(items[1], ("accuracy", 0.95, 2, int(now + 1.0)))
         self.assertTrue(buf.is_empty())
 
     def test_put_many(self) -> None:
         buf = BoundedMetricsBuffer(capacity=10)
         metrics = [
-            ("m1", 1.0, 1, 100.0),
-            ("m2", 2.0, 2, 101.0),
-            ("m3", 3.0, 3, 102.0),
+            ("m1", 1.0, 1, 100),
+            ("m2", 2.0, 2, 101),
+            ("m3", 3.0, 3, 102),
         ]
         buf.put_many(metrics)
         self.assertEqual(len(buf), 3)
@@ -165,13 +165,13 @@ class TestBoundedMetricsBuffer(unittest.TestCase):
         self.assertIsInstance(name, str)
         self.assertIsInstance(val, float)
         self.assertIsInstance(step, int)
-        self.assertIsInstance(ts, float)
+        self.assertIsInstance(ts, int)
 
         self.assertNotIsInstance(val, MockTensor)
         self.assertNotIsInstance(step, MockTensor)
         self.assertEqual(val, 0.12345)
         self.assertEqual(step, 100)
-        self.assertEqual(ts, 1700000000.5)
+        self.assertEqual(ts, 1700000000)
 
     def test_thread_safety(self) -> None:
         """Verifies thread safety with concurrent producers and consumers."""
