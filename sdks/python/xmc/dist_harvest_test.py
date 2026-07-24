@@ -21,7 +21,79 @@ from xmc.client import Client
 from xmc.dist_harvest import (
     GetReplicaIDAndSilenceStatus,
     get_replica_id_and_silence_status,
+    harvest_client_metadata,
 )
+
+
+class TestHarvestClientMetadata(unittest.TestCase):
+    """Test suite for harvest_client_metadata function and fallback hierarchy."""
+
+    def test_explicit_parameters(self) -> None:
+        xid, wu_id, exec_id, rep_id = harvest_client_metadata(
+            xid=1001,
+            work_unit_id=2002,
+            execution_id=3003,
+            replica_id="replica-1",
+        )
+        self.assertEqual(xid, "1001")
+        self.assertEqual(wu_id, "2002")
+        self.assertEqual(exec_id, "3003")
+        self.assertEqual(rep_id, "replica-1")
+
+    def test_fallback_client_public_attributes(self) -> None:
+        mock_client = MagicMock()
+        mock_client.xid = 5005
+        mock_client.work_unit_id = 6006
+        mock_client.execution_id = 7007
+        mock_client.replica_id = "pub-replica"
+
+        xid, wu_id, exec_id, rep_id = harvest_client_metadata(fallback_client=mock_client)
+        self.assertEqual(xid, "5005")
+        self.assertEqual(wu_id, "6006")
+        self.assertEqual(exec_id, "7007")
+        self.assertEqual(rep_id, "pub-replica")
+
+    def test_fallback_client_private_attributes_fallback(self) -> None:
+        class PrivateOnlyClient:
+            _xid = 8008
+            _work_unit_id = 9009
+            _execution_id = 1010
+            _replica_id = "priv-replica"
+            xid = None
+            work_unit_id = None
+            execution_id = None
+            replica_id = None
+
+        client = PrivateOnlyClient()
+        xid, wu_id, exec_id, rep_id = harvest_client_metadata(fallback_client=client)
+        self.assertEqual(xid, "8008")
+        self.assertEqual(wu_id, "9009")
+        self.assertEqual(exec_id, "1010")
+        self.assertEqual(rep_id, "priv-replica")
+
+    def test_environment_variables(self) -> None:
+        env = {
+            "XMC_XID": "1111",
+            "XMC_WORK_UNIT_ID": "2222",
+            "XMC_EXECUTION_ID": "3333",
+            "XMC_REPLICA_ID": "env-replica",
+        }
+        xid, wu_id, exec_id, rep_id = harvest_client_metadata(env=env)
+        self.assertEqual(xid, "1111")
+        self.assertEqual(wu_id, "2222")
+        self.assertEqual(exec_id, "3333")
+        self.assertEqual(rep_id, "env-replica")
+
+    def test_defaults_unorchestrated(self) -> None:
+        xid, wu_id, exec_id, rep_id = harvest_client_metadata(env={})
+        self.assertEqual(xid, "0")
+        self.assertEqual(wu_id, "0")
+        self.assertEqual(exec_id, "0")
+        self.assertEqual(rep_id, "0")
+
+
+if __name__ == "__main__":
+    unittest.main()
 
 
 class TestDistHarvest(unittest.TestCase):
