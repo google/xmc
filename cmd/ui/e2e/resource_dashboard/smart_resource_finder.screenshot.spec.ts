@@ -37,6 +37,9 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
     await page.route('/api/user', handleUserAuthRoute);
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
+    await page.addStyleTag({
+      content: '.rod-queue-list-placeholder:empty { min-height: 154px; display: block; }',
+    });
   });
 
   test('should match baseline screenshot for smart resource finder section', async ({ page }) => {

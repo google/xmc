@@ -37,6 +37,9 @@ test.describe('QueueCardComponent - Screenshot Tests', () => {
     await page.route('/api/user', handleUserAuthRoute);
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
+    await page.addStyleTag({
+      content: '.scaffolding-queue-item:empty { min-height: 48px; display: block; }',
+    });
   });
 
   test('should match baseline screenshot for queue card section', async ({ page }) => {
