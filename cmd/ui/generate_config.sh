@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,7 +21,8 @@ echo "Generating runtime config.js at ${CONFIG_FILE}..."
 
 # Helper to parse boolean environment variables to lowercase 'true' or 'false'
 get_bool_env() {
-  local val=$(eval echo "\${$1:-$2}" | tr '[:upper:]' '[:lower:]')
+  local val
+  val="$(eval echo "\"\${$1:-$2}\"" | tr '[:upper:]' '[:lower:]')"
   [ "$val" = "true" ] && echo "true" || echo "false"
 }
 
