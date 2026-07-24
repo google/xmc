@@ -216,3 +216,46 @@ func TestEarlyAbortOptimization_BrokerFailure(t *testing.T) {
 		t.Errorf("expected early-abort to halt processing before sending all 10 records, but %d records were produced", len(recs))
 	}
 }
+
+func TestNewKafkaProducer(t *testing.T) {
+	cfg := &Config{
+		RedpandaBrokers: []string{"127.0.0.1:9092"},
+		TopicName:       "xmc-metrics",
+	}
+
+	client, err := NewKafkaProducer(cfg)
+	if err != nil {
+		t.Fatalf("failed to construct Kafka producer: %v", err)
+	}
+	if client == nil {
+		t.Fatalf("expected non-nil kgo.Client")
+	}
+	client.Close()
+}
+
+func TestBuildProducerOptions_SASLVariants(t *testing.T) {
+	mechanisms := []string{"SCRAM-SHA-512", "PLAIN"}
+	for _, mech := range mechanisms {
+		t.Run(mech, func(t *testing.T) {
+			cfg := &Config{
+				RedpandaBrokers: []string{"localhost:9092"},
+				SASLEnabled:     true,
+				SASLMechanism:   mech,
+				SASLUser:        "testuser",
+				SASLPassword:    "testpass",
+			}
+			opts := BuildProducerOptions(cfg)
+			if len(opts) == 0 {
+				t.Fatalf("expected options for mechanism %s", mech)
+			}
+		})
+	}
+}
+
+func TestMockProducer_Close(t *testing.T) {
+	mp := NewMockProducer()
+	mp.Close()
+	if !mp.closed {
+		t.Errorf("expected mp.closed to be true after Close()")
+	}
+}
