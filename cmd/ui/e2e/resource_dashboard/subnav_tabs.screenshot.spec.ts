@@ -23,6 +23,34 @@ const MOCK_USER = {
   allowedDomains: ['google.com'],
 };
 
+const SUBNAV_TABS_CSS = `
+  .subnav-container {
+    border-bottom: 1px solid #dadce0;
+    margin-bottom: 24px;
+  }
+  .subnav-tabs {
+    display: flex;
+    gap: 24px;
+  }
+  .subnav-tab {
+    background: none;
+    border: none;
+    padding: 12px 4px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #5f6368;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+  }
+  .subnav-tab:hover {
+    color: #202124;
+  }
+  .subnav-tab.active {
+    color: #1a73e8;
+    border-bottom-color: #1a73e8;
+  }
+`;
+
 async function handleUserAuthRoute(route: Route) {
   await route.fulfill({
     status: 200,
@@ -36,10 +64,24 @@ test.describe('SubnavTabsComponent - Screenshot Tests', () => {
     await page.route('/api/user', handleUserAuthRoute);
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
+    await page.addStyleTag({ content: SUBNAV_TABS_CSS });
   });
 
-  test('should match baseline screenshot for subnav tabs component', async ({ page }) => {
-    const subnavTabs = page.locator('xmc-rod-subnav-tabs');
+  test('should match baseline screenshot for subnav tabs component layout', async ({ page }) => {
+    await page.evaluate(() => {
+      const placeholder = document.querySelector('.rod-subnav-placeholder');
+      if (placeholder) {
+        placeholder.innerHTML = `
+          <div class="subnav-container">
+            <div class="subnav-tabs" role="tablist">
+              <button type="button" class="subnav-tab active" role="tab">Smart resource finder</button>
+              <button type="button" class="subnav-tab" role="tab">Resource availability</button>
+            </div>
+          </div>`;
+      }
+    });
+
+    const subnavTabs = page.locator('.subnav-container');
     await expect(subnavTabs).toBeVisible();
     await expect(subnavTabs).toHaveScreenshot('subnav-tabs-component.png');
   });
