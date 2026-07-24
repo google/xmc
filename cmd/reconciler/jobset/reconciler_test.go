@@ -1301,3 +1301,207 @@ func TestCheckPodsForUnschedulableTPUTopologyMismatch(t *testing.T) {
 		}
 	})
 }
+
+func withManagedXprofEnvs(jobSet *v1alpha2.JobSet) *v1alpha2.JobSet {
+	jobSet.Spec.ReplicatedJobs = []v1alpha2.ReplicatedJob{
+		{
+			Name: "worker",
+			Template: batchv1.JobTemplateSpec{
+				Spec: batchv1.JobSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Env: []corev1.EnvVar{
+										{Name: constants.XmcEnvVarManagedXprofDisplayName, Value: "test-display-name"},
+										{Name: constants.XmcEnvVarManagedXprofRunGroup, Value: "test-run-group"},
+										{Name: constants.XmcEnvVarManagedXprofGCSObjectFolder, Value: "gs://test-bucket/xmc-123-1-timestamp"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	return jobSet
+}
+
+func TestGetManagedXprofEnvs(t *testing.T) {
+	tests := []struct {
+		name            string
+		jobSet          *v1alpha2.JobSet
+		wantDisplayName string
+		wantRunGroup    string
+		wantGCSPath     string
+	}{
+		{
+			name:   "empty jobset",
+			jobSet: &v1alpha2.JobSet{},
+		},
+		{
+			name: "no replicated jobs",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{},
+				},
+			},
+		},
+		{
+			name: "no containers",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{
+							Name: "worker",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "no env vars",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{
+							Name: "worker",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "irrelevant env vars",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{
+							Name: "worker",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Env: []corev1.EnvVar{
+														{Name: "OTHER", Value: "value"},
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "partial env vars - display name only",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{
+							Name: "worker",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Env: []corev1.EnvVar{
+														{Name: constants.XmcEnvVarManagedXprofDisplayName, Value: "test-display-name"},
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantDisplayName: "test-display-name",
+		},
+		{
+			name:            "all env vars",
+			jobSet:          withManagedXprofEnvs(&v1alpha2.JobSet{}),
+			wantDisplayName: "test-display-name",
+			wantRunGroup:    "test-run-group",
+			wantGCSPath:     "gs://test-bucket/xmc-123-1-timestamp",
+		},
+		{
+			name: "multiple containers - early return",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{
+							Name: "worker",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Env: []corev1.EnvVar{
+														{Name: constants.XmcEnvVarManagedXprofDisplayName, Value: "test-display-name"},
+													},
+												},
+												{
+													Env: []corev1.EnvVar{
+														{Name: constants.XmcEnvVarManagedXprofRunGroup, Value: "test-run-group"},
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantDisplayName: "test-display-name",
+			wantRunGroup:    "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotDisplayName, gotRunGroup, gotGCSPath := getManagedXprofEnvs(tc.jobSet)
+			if gotDisplayName != tc.wantDisplayName {
+				t.Errorf("getManagedXprofEnvs() gotDisplayName = %q, want %q", gotDisplayName, tc.wantDisplayName)
+			}
+			if gotRunGroup != tc.wantRunGroup {
+				t.Errorf("getManagedXprofEnvs() gotRunGroup = %q, want %q", gotRunGroup, tc.wantRunGroup)
+			}
+			if gotGCSPath != tc.wantGCSPath {
+				t.Errorf("getManagedXprofEnvs() gotGCSPath = %q, want %q", gotGCSPath, tc.wantGCSPath)
+			}
+		})
+	}
+}

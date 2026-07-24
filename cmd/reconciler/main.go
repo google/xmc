@@ -232,6 +232,7 @@ func buildManager(ctx context.Context, cfg Config, storage storage.Storage, proj
 		MaxConcurrentReconciles:     cfg.MaxConcurrentReconciles,
 		StartupPodErrorCheckTime:    cfg.StartupPodErrorCheckTime,
 		StartupPodErrorCheckEnabled: cfg.StartupPodErrorCheckEnabled,
+		Storage:                     storage,
 	}
 
 	if err := jobsetReconciler.SetupWithManager(ctx, mgr); err != nil {
