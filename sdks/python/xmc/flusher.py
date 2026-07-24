@@ -387,49 +387,59 @@ class MetricsFlusher:
         if self._client is None:
             raise ValueError("No client or flush_fn configured.")
 
-        # WHY microsecond conversion and proto instantiation here: The training thread records raw
-        # float epoch seconds into the buffer tuple to minimize hot-path latency. In this background
-        # flusher thread, we instantiate Metric proto objects per item to validate schema compliance
-        # and defer microsecond int64 conversion (int(round(val * 1_000_000))) to match ClickHouse
-        # DateTime64(6, 'UTC') precision without slowing down the ML training loop.
-        def _to_microsecond_ts(ts: float | int) -> int:
-            val = float(ts)
-            if val > 1e11:
-                return int(val)
-            return int(round(val * 1_000_000))
-
-        def _to_int_id(val: str | int | None) -> int:
-            if not val:
-                return 0
+        payload: list[dict[str, Any]] | None = None
+        if hasattr(self._client, "format_payload") and callable(self._client.format_payload):
             try:
-                return int(val)
-            except ValueError:
-                return 0
+                formatted = self._client.format_payload(items)
+                if isinstance(formatted, list):
+                    payload = formatted
+            except Exception:
+                payload = None
 
-        payload = []
-        for name, val, step, ts in items:
-            m = Metric(
-                xid=_to_int_id(self._xid),
-                work_unit_id=_to_int_id(self._work_unit_id),
-                execution_id=_to_int_id(self._execution_id),
-                replica_id=self._replica_id,
-                metric_name=name,
-                metric_value=float(val),
-                step=int(step),
-                timestamp=_to_microsecond_ts(ts),
-            )
-            payload.append(
-                {
-                    "xid": self._xid,
-                    "work_unit_id": self._work_unit_id,
-                    "execution_id": self._execution_id,
-                    "replica_id": m.replica_id,
-                    "metric_name": m.metric_name,
-                    "metric_value": m.metric_value,
-                    "step": m.step,
-                    "timestamp": m.timestamp,
-                }
-            )
+        if payload is None:
+            # WHY microsecond conversion and proto instantiation here: The training thread records raw
+            # float epoch seconds into the buffer tuple to minimize hot-path latency. In this background
+            # flusher thread, we instantiate Metric proto objects per item to validate schema compliance
+            # and defer microsecond int64 conversion (int(round(val * 1_000_000))) to match ClickHouse
+            # DateTime64(6, 'UTC') precision without slowing down the ML training loop.
+            def _to_microsecond_ts(ts: float | int) -> int:
+                val = float(ts)
+                if val > 1e11:
+                    return int(val)
+                return int(round(val * 1_000_000))
+
+            def _to_int_id(val: str | int | None) -> int:
+                if not val:
+                    return 0
+                try:
+                    return int(val)
+                except ValueError:
+                    return 0
+
+            payload = []
+            for name, val, step, ts in items:
+                m = Metric(
+                    xid=_to_int_id(self._xid),
+                    work_unit_id=_to_int_id(self._work_unit_id),
+                    execution_id=_to_int_id(self._execution_id),
+                    replica_id=self._replica_id,
+                    metric_name=name,
+                    metric_value=float(val),
+                    step=int(step),
+                    timestamp=_to_microsecond_ts(ts),
+                )
+                payload.append(
+                    {
+                        "xid": self._xid,
+                        "work_unit_id": self._work_unit_id,
+                        "execution_id": self._execution_id,
+                        "replica_id": m.replica_id,
+                        "metric_name": m.metric_name,
+                        "metric_value": m.metric_value,
+                        "step": m.step,
+                        "timestamp": m.timestamp,
+                    }
+                )
 
         if hasattr(self._client, "send"):
             body = json.dumps(payload)

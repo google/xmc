@@ -25,6 +25,7 @@ from typing import Any
 
 from xmc.buffer import MetricTuple
 from xmc.dist_harvest import harvest_client_metadata
+from xmc.types import Metric
 
 
 class SendResult(enum.Enum):
@@ -164,19 +165,39 @@ class HTTPClient:
                 return int(val)
             return int(round(val * 1_000_000))
 
-        return [
-            {
-                "xid": self._xid,
-                "work_unit_id": self._work_unit_id,
-                "execution_id": self._execution_id,
-                "replica_id": self._replica_id,
-                "metric_name": name,
-                "metric_value": val,
-                "step": step,
-                "timestamp": _to_microsecond_ts(ts),
-            }
-            for name, val, step, ts in items
-        ]
+        def _to_int_id(val: str | int | None) -> int:
+            if not val:
+                return 0
+            try:
+                return int(val)
+            except ValueError:
+                return 0
+
+        payload = []
+        for name, val, step, ts in items:
+            m = Metric(
+                xid=_to_int_id(self._xid),
+                work_unit_id=_to_int_id(self._work_unit_id),
+                execution_id=_to_int_id(self._execution_id),
+                replica_id=self._replica_id,
+                metric_name=name,
+                metric_value=float(val),
+                step=int(step),
+                timestamp=_to_microsecond_ts(ts),
+            )
+            payload.append(
+                {
+                    "xid": self._xid,
+                    "work_unit_id": self._work_unit_id,
+                    "execution_id": self._execution_id,
+                    "replica_id": m.replica_id,
+                    "metric_name": m.metric_name,
+                    "metric_value": m.metric_value,
+                    "step": m.step,
+                    "timestamp": m.timestamp,
+                }
+            )
+        return payload
 
     def _calculate_ttl(self) -> float:
         """Calculates connection TTL with random jitter (base_ttl ± jitter)."""
