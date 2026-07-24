@@ -18,10 +18,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 def _compat_gen_srcs(target_name, srcs):
     compat_srcs = []
     for src in srcs:
-        if src.endswith("_test.go"):
-            compat_src = target_name + "_" + src.replace("_test.go", "_compat_test.go")
-        else:
-            compat_src = target_name + "_" + src.replace(".go", "_compat.go")
+        compat_src = target_name + "_" + src.replace(".go", "_compat.go")
         native.genrule(
             name = target_name + "_" + src + "_compat_gen",
             srcs = [src],
