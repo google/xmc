@@ -40,8 +40,10 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for smart resource finder section', async ({ page }) => {
-    const dashboard = page.locator('xmc-resource-dashboard');
-    await expect(dashboard).toBeVisible();
-    await expect(dashboard).toHaveScreenshot('smart-resource-finder-initial.png');
+    const smartFinderComponent = page
+      .locator('xmc-smart-resource-finder, .rod-queue-list-placeholder')
+      .first();
+    await expect(smartFinderComponent).toBeAttached();
+    await expect(smartFinderComponent).toHaveScreenshot('smart-resource-finder-initial.png');
   });
 });

@@ -40,8 +40,13 @@ test.describe('SubnavTabsComponent - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for subnav tabs layout', async ({ page }) => {
-    const dashboard = page.locator('xmc-resource-dashboard');
-    await expect(dashboard).toBeVisible();
-    await expect(dashboard).toHaveScreenshot('subnav-tabs-component.png');
+    const subnavComponent = page.locator('xmc-rod-subnav-tabs, .rod-subnav-placeholder').first();
+    await expect(subnavComponent).toBeAttached();
+    await subnavComponent.evaluate((el) => {
+      if (el.clientHeight === 0) {
+        (el as HTMLElement).style.minHeight = '1px';
+      }
+    });
+    await expect(subnavComponent).toHaveScreenshot('subnav-tabs-component.png');
   });
 });

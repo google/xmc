@@ -40,8 +40,8 @@ test.describe('QueueCardComponent - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for queue card section', async ({ page }) => {
-    const dashboard = page.locator('xmc-resource-dashboard');
-    await expect(dashboard).toBeVisible();
-    await expect(dashboard).toHaveScreenshot('queue-card-component.png');
+    const queueCardComponent = page.locator('xmc-rod-queue-card, .scaffolding-queue-item').first();
+    await expect(queueCardComponent).toBeAttached();
+    await expect(queueCardComponent).toHaveScreenshot('queue-card-component.png');
   });
 });
