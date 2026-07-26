@@ -38,6 +38,7 @@ import (
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/common/constants"
+	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
 	storagepkg "xmanager_cloud/storage/storage"
 )
 
@@ -49,6 +50,12 @@ type mockStorageUpdater struct {
 	calls     map[int64][]*storagepkg.WorkUnitExecutionUpdate
 	updateErr error
 	updateRes map[int64]*spb.WorkUnitExecution
+	fetchErr  error
+	fetchRes  *spb.WorkUnitExecution
+}
+
+func (m *mockStorageUpdater) FetchCurrentWorkUnitExecution(ctx context.Context, xid, wid int64) (*spb.WorkUnitExecution, error) {
+	return m.fetchRes, m.fetchErr
 }
 
 func (m *mockStorageUpdater) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*spb.WorkUnitExecution, error) {
@@ -57,6 +64,28 @@ func (m *mockStorageUpdater) UpdateWorkUnitExecutions(ctx context.Context, xid i
 	}
 	m.calls[xid] = append(m.calls[xid], updates...)
 	return m.updateRes, m.updateErr
+}
+
+// mockMLRunCreator records the arguments of the most recent CreateMLRun call so
+// tests can assert on the request the reconciler builds, and returns canned
+// results/errors to exercise both the success and failure paths.
+type mockMLRunCreator struct {
+	createCalls int
+	lastID      string
+	lastDisplay string
+	lastPhase   string
+	lastOpts    *hypercomputeclient.CreateMLRunOptions
+	retRes      map[string]any
+	retErr      error
+}
+
+func (m *mockMLRunCreator) CreateMLRun(ctx context.Context, name, displayName, runPhase string, opts *hypercomputeclient.CreateMLRunOptions) (map[string]any, error) {
+	m.createCalls++
+	m.lastID = name
+	m.lastDisplay = displayName
+	m.lastPhase = runPhase
+	m.lastOpts = opts
+	return m.retRes, m.retErr
 }
 
 type clientWithError struct {
@@ -1501,6 +1530,200 @@ func TestGetManagedXprofEnvs(t *testing.T) {
 			}
 			if gotGCSPath != tc.wantGCSPath {
 				t.Errorf("getManagedXprofEnvs() gotGCSPath = %q, want %q", gotGCSPath, tc.wantGCSPath)
+			}
+		})
+	}
+}
+
+func TestConstructMLRunID(t *testing.T) {
+	creationTime := time.UnixMilli(1680000000000)
+	tests := []struct {
+		name        string
+		project     string
+		location    string
+		clusterName string
+		xid         int64
+		wid         int64
+		eid         int64
+		want        string
+	}{
+		{
+			name:        "normal lowercase fields",
+			project:     "proj-a",
+			location:    "us-central1",
+			clusterName: "cluster-1",
+			xid:         123,
+			wid:         456,
+			eid:         789,
+			want:        "xmc-proj-a-us-central1-cluster-1-123-456-789-1680000000000",
+		},
+		{
+			name:        "uppercase and special characters requiring sanitization",
+			project:     "My_Project!",
+			location:    "US-Central1",
+			clusterName: "Cluster#2",
+			xid:         1,
+			wid:         2,
+			eid:         3,
+			want:        "xmc-my-project-us-central1-cluster-2-1-2-3-1680000000000",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ConstructMLRunID(tc.project, tc.location, tc.clusterName, tc.xid, tc.wid, tc.eid, creationTime)
+			if got != tc.want {
+				t.Errorf("ConstructMLRunID() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEnsureMLRunCreated(t *testing.T) {
+	now := time.UnixMilli(1680000000000)
+	jobSet := &v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test-jobset",
+			Namespace:         "test-ns",
+			CreationTimestamp: metav1.NewTime(now),
+		},
+	}
+
+	tests := []struct {
+		name       string
+		client     MLRunCreator
+		jobSet     *v1alpha2.JobSet
+		wantCalls  int
+		wantID     string
+		wantGroup  string
+		wantBucket string
+	}{
+		{
+			name:      "nil client",
+			client:    nil,
+			jobSet:    jobSet,
+			wantCalls: 0,
+		},
+		{
+			name:      "nil jobSet",
+			client:    &mockMLRunCreator{},
+			jobSet:    nil,
+			wantCalls: 0,
+		},
+		{
+			name:       "successful creation with correct options",
+			client:     &mockMLRunCreator{retRes: map[string]any{"name": "op-123", "url": "https://mlrun/op-123"}},
+			jobSet:     jobSet,
+			wantCalls:  1,
+			wantID:     "xmc-test-proj-us-central1-cluster-a-10-20-30-1680000000000",
+			wantGroup:  "group-abc",
+			wantBucket: "gs://bucket/folder",
+		},
+		{
+			name:       "creation error handled without panic",
+			client:     &mockMLRunCreator{retErr: errors.New("api error")},
+			jobSet:     jobSet,
+			wantCalls:  1,
+			wantID:     "xmc-test-proj-us-central1-cluster-a-10-20-30-1680000000000",
+			wantGroup:  "group-abc",
+			wantBucket: "gs://bucket/folder",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mock, ok := tc.client.(*mockMLRunCreator)
+			r := &Reconciler{
+				Project:     "test-proj",
+				Location:    "us-central1",
+				ClusterName: "cluster-a",
+				MLRunClient: tc.client,
+			}
+			_ = r.ensureMLRunCreated(context.Background(), tc.jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
+
+			if !ok && tc.wantCalls > 0 {
+				t.Fatalf("unexpected non-mock client")
+			}
+			if ok {
+				if mock.createCalls != tc.wantCalls {
+					t.Errorf("createCalls = %d, want %d", mock.createCalls, tc.wantCalls)
+				}
+				if tc.wantCalls > 0 {
+					if mock.lastID != tc.wantID {
+						t.Errorf("lastID = %q, want %q", mock.lastID, tc.wantID)
+					}
+					if mock.lastPhase != "ACTIVE" {
+						t.Errorf("lastPhase = %q, want %q", mock.lastPhase, "ACTIVE")
+					}
+					if mock.lastOpts.RunGroup != tc.wantGroup {
+						t.Errorf("RunGroup = %q, want %q", mock.lastOpts.RunGroup, tc.wantGroup)
+					}
+					if gotPath := mock.lastOpts.Artifacts["gcs_path"]; gotPath != tc.wantBucket {
+						t.Errorf("gcs_path artifact = %q, want %q", gotPath, tc.wantBucket)
+					}
+					wantCluster := "projects/test-proj/locations/us-central1/clusters/cluster-a"
+					if mock.lastOpts.WorkloadDetails.Cluster != wantCluster {
+						t.Errorf("WorkloadDetails.Cluster = %q, want %q", mock.lastOpts.WorkloadDetails.Cluster, wantCluster)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestCheckWorkUnitStatusAndMLRun(t *testing.T) {
+	tests := []struct {
+		name     string
+		storage  WorkUnitExecutionReader
+		wantURL  string
+		wantSkip bool
+	}{
+		{
+			name:     "nil storage",
+			storage:  nil,
+			wantURL:  "",
+			wantSkip: false,
+		},
+		{
+			name:     "fetch error returns empty and false",
+			storage:  &mockStorageUpdater{fetchErr: errors.New("fetch error")},
+			wantURL:  "",
+			wantSkip: false,
+		},
+		{
+			name: "running execution with mlrun url",
+			storage: &mockStorageUpdater{
+				fetchRes: &spb.WorkUnitExecution{
+					Status: &spb.WorkUnitStatus{State: spb.WorkUnitStatus_RUNNING},
+					Metadata: &spb.WorkUnitExecutionMetadata{
+						MlrunUrl: "https://mlrun.example.com/123",
+					},
+				},
+			},
+			wantURL:  "https://mlrun.example.com/123",
+			wantSkip: false,
+		},
+		{
+			name: "terminal status sets skip to true",
+			storage: &mockStorageUpdater{
+				fetchRes: &spb.WorkUnitExecution{
+					Status: &spb.WorkUnitStatus{State: spb.WorkUnitStatus_COMPLETED},
+					Metadata: &spb.WorkUnitExecutionMetadata{
+						MlrunUrl: "https://mlrun.example.com/123",
+					},
+				},
+			},
+			wantURL:  "https://mlrun.example.com/123",
+			wantSkip: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &Reconciler{Storage: tc.storage}
+			gotURL, gotSkip := r.checkWorkUnitStatusAndMLRun(context.Background(), 1, 1)
+			if gotURL != tc.wantURL || gotSkip != tc.wantSkip {
+				t.Errorf("checkWorkUnitStatusAndMLRun() = (%q, %v), want (%q, %v)", gotURL, gotSkip, tc.wantURL, tc.wantSkip)
 			}
 		})
 	}

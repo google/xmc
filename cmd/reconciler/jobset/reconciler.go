@@ -43,6 +43,7 @@ import (
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/common/labels"
+	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
@@ -83,11 +84,17 @@ type Reconciler struct {
 	StartupPodErrorCheckTime    time.Duration
 	StartupPodErrorCheckEnabled bool
 	Storage                     WorkUnitExecutionReader
+	MLRunClient                 MLRunCreator
 }
 
 // WorkUnitExecutionReader is an interface for reading WorkUnitExecutions from ESS.
 type WorkUnitExecutionReader interface {
 	FetchCurrentWorkUnitExecution(ctx context.Context, xid int64, wid int64) (*spb.WorkUnitExecution, error)
+}
+
+// MLRunCreator defines the interface required for creating MLRun tracking records.
+type MLRunCreator interface {
+	CreateMLRun(ctx context.Context, name, displayName, runPhase string, opts *hypercomputeclient.CreateMLRunOptions) (map[string]any, error)
 }
 
 func hasValidXMCLabels(ctx context.Context, jobSet *v1alpha2.JobSet) bool {
@@ -316,10 +323,13 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 			logging.Warn(ctx, "No run group found for Managed Xprof, skipping MLRun URL creation.", "namespace", jobSet.Namespace, "xid", xid, "wid", wid)
 		}
 	}
+	var mlRunURL string
 	if gcsPath != "" && displayName != "" && runGroup != "" {
-		mlRunURL, skip := r.checkWorkUnitStatusAndMLRun(ctx, xid, wid)
+		var skip bool
+		mlRunURL, skip = r.checkWorkUnitStatusAndMLRun(ctx, xid, wid)
 		if !skip && mlRunURL == "" {
 			logging.Info(ctx, "Begin to create MLRun URL.")
+			mlRunURL = r.ensureMLRunCreated(ctx, jobSet, xid, wid, eid, displayName, runGroup, gcsPath)
 		}
 	}
 
@@ -329,6 +339,7 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 		// we do not want to requeue as fields used in the update are monitored by predicate
 		return ctrl.Result{}, nil
 	}
+	setMLRunURL(update, mlRunURL)
 	logging.Debug(ctx, "Successfully converted JobSet", "namespace", jobSet.Namespace)
 
 	updatesSentTotal.WithLabelValues().Inc()
@@ -565,6 +576,61 @@ func calculateJobsetStartAge(jobSet *v1alpha2.JobSet) time.Duration {
 	return time.Since(jobSet.CreationTimestamp.Time)
 }
 
+// ConstructMLRunID deterministically constructs and sanitizes a unique MLRun identifier for an execution.
+//
+// Extracted into its own pure function so that ID formatting and sanitization are independently testable and
+// guaranteed idempotent when reconciliations are retried.
+func ConstructMLRunID(project, location, clusterName string, xid, wid, eid int64, creationTime time.Time) string {
+	rawID := fmt.Sprintf("xmc-%s-%s-%s-%d-%d-%d-%d", project, location, clusterName, xid, wid, eid, creationTime.UnixMilli())
+	return hypercomputeclient.SanitizeIdentifier(rawID)
+}
+
+// ensureMLRunCreated invokes CreateMLRun on the control plane and returns the resulting MLRun URL.
+//
+// Extracted to separate MLRun control-plane invocation and error logging from the core JobSet status synchronization workflow.
+// Returns the MLRun URL (or identifier if URL is not explicitly populated in the API response).
+func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64, displayName, runGroup, gcsPath string) string {
+	if r.MLRunClient == nil || jobSet == nil {
+		return ""
+	}
+
+	mlRunID := ConstructMLRunID(r.Project, r.Location, r.ClusterName, xid, wid, eid, jobSet.CreationTimestamp.Time)
+	clusterPath := r.ClusterName
+	if !strings.HasPrefix(clusterPath, "projects/") && r.Project != "" && r.Location != "" {
+		clusterPath = fmt.Sprintf("projects/%s/locations/%s/clusters/%s", r.Project, r.Location, r.ClusterName)
+	}
+
+	opts := &hypercomputeclient.CreateMLRunOptions{
+		RunGroup: runGroup,
+		Artifacts: map[string]string{
+			"gcs_path": gcsPath,
+		},
+		Orchestrator: "GKE",
+		WorkloadDetails: &hypercomputeclient.GKEWorkloadDetails{
+			Kind:      "JobSet",
+			Cluster:   clusterPath,
+			Namespace: jobSet.Namespace,
+			ID:        jobSet.Name,
+		},
+	}
+
+	logging.Info(ctx, "Creating MLRun for ManagedXprof execution", "mlRunID", mlRunID, "displayName", displayName, "runGroup", runGroup)
+	res, err := r.MLRunClient.CreateMLRun(ctx, mlRunID, displayName, "ACTIVE", opts)
+	if err != nil {
+		logging.Error(ctx, "Failed to create MLRun for ManagedXprof execution", "mlRunID", mlRunID, "error", err)
+		return ""
+	}
+	if res != nil {
+		if urlVal, ok := res["url"].(string); ok && urlVal != "" {
+			return urlVal
+		}
+		if nameVal, ok := res["name"].(string); ok && nameVal != "" {
+			return nameVal
+		}
+	}
+	return mlRunID
+}
+
 func getManagedXprofEnvs(jobSet *v1alpha2.JobSet) (displayName, runGroup, gcsPath string) {
 	for _, rj := range jobSet.Spec.ReplicatedJobs {
 		for _, c := range rj.Template.Spec.Template.Spec.Containers {
@@ -613,6 +679,9 @@ func isTerminalState(state spb.WorkUnitStatus_WorkUnitState) bool {
 func (r *Reconciler) checkWorkUnitStatusAndMLRun(ctx context.Context, xid, wid int64) (string, bool) {
 	mlRunURL := ""
 	skipMLRunStatusSync := false
+	if r.Storage == nil {
+		return mlRunURL, skipMLRunStatusSync
+	}
 	execution, fetchErr := r.Storage.FetchCurrentWorkUnitExecution(ctx, xid, wid)
 	if fetchErr != nil {
 		logging.Error(ctx, "Failed to fetch current WorkUnitExecution from ESS", "error", fetchErr)

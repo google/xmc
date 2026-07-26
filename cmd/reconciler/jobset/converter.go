@@ -329,3 +329,20 @@ func convertK8sReplicatedJobStatusToProto(k8sRJS v1alpha2.ReplicatedJobStatus) *
 		Failed:    int64(k8sRJS.Failed),
 	}
 }
+
+// setMLRunURL records the MLRun URL on the update's execution metadata and
+// marks the field in the update mask. It instantiates the metadata message when
+// absent so a not-yet-initialized metadata does not silently drop the URL. It is
+// a no-op when there is no URL or no execution to update.
+func setMLRunURL(update *storagepkg.WorkUnitExecutionUpdate, mlRunURL string) {
+	if mlRunURL == "" || update == nil || update.WorkUnitExecution == nil {
+		return
+	}
+	if update.WorkUnitExecution.Metadata == nil {
+		update.WorkUnitExecution.Metadata = &spb.WorkUnitExecutionMetadata{}
+	}
+	update.WorkUnitExecution.Metadata.MlrunUrl = mlRunURL
+	if update.UpdateMask != nil {
+		update.UpdateMask.Paths = append(update.UpdateMask.Paths, "metadata.mlrun_url")
+	}
+}

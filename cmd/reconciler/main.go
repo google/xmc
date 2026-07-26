@@ -32,6 +32,7 @@ import (
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	constants "xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
+	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
 	"xmanager_cloud/kubernetes/reconciler/jobset/jobset"
 	"xmanager_cloud/kubernetes/reconciler/kueue_sync/kueuesync"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
@@ -94,7 +95,9 @@ func main() {
 
 	cqCache := clusterqueue.NewNameCache()
 
-	mgr, batcher, err := buildManager(ctx, cfg, storage, projectID, location, clusterName, cqCache)
+	mlRunClient := newMLRunCreator(ctx, projectID, cfg.DiagonEnvironment, location)
+
+	mgr, batcher, err := buildManager(ctx, cfg, storage, projectID, location, clusterName, cqCache, mlRunClient)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to setup manager", "error", err)
 	}
@@ -167,7 +170,20 @@ func activeHealthChecker(k8s *k8sclient.Client, spClient health.SpannerHealthCli
 	}
 }
 
-func buildManager(ctx context.Context, cfg Config, storage storage.Storage, projectID, location, clusterName string, cqCache *clusterqueue.NameCache) (ctrl.Manager, *shared.UpdateBatcher, error) {
+// newMLRunCreator builds the MLRun control-plane client. It returns a nil
+// MLRunCreator interface (never a typed-nil *ControlPlaneClient) when
+// initialization fails, so the reconciler's r.MLRunClient == nil guard is not
+// defeated by a non-nil interface that wraps a nil pointer.
+func newMLRunCreator(ctx context.Context, projectID, environment, location string) jobset.MLRunCreator {
+	client, err := hypercomputeclient.NewControlPlaneClient(ctx, projectID, environment, location)
+	if err != nil {
+		logging.Error(ctx, "Failed to create MLRun control plane client", "error", err)
+		return nil
+	}
+	return client
+}
+
+func buildManager(ctx context.Context, cfg Config, storage storage.Storage, projectID, location, clusterName string, cqCache *clusterqueue.NameCache, mlRunClient jobset.MLRunCreator) (ctrl.Manager, *shared.UpdateBatcher, error) {
 	scheme := runtime.NewScheme()
 	clientgoscheme.AddToScheme(scheme)
 	v1alpha2.AddToScheme(scheme)
@@ -233,6 +249,7 @@ func buildManager(ctx context.Context, cfg Config, storage storage.Storage, proj
 		StartupPodErrorCheckTime:    cfg.StartupPodErrorCheckTime,
 		StartupPodErrorCheckEnabled: cfg.StartupPodErrorCheckEnabled,
 		Storage:                     storage,
+		MLRunClient:                 mlRunClient,
 	}
 
 	if err := jobsetReconciler.SetupWithManager(ctx, mgr); err != nil {
