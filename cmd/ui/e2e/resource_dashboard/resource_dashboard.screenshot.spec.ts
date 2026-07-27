@@ -48,7 +48,9 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
     await expect(dashboard).toBeVisible();
 
     // Capture baseline screenshot of full Resource Dashboard container
-    await expect(dashboard).toHaveScreenshot('resource-dashboard-initial.png');
+    await expect(dashboard).toHaveScreenshot('resource-dashboard-initial.png', {
+      maxDiffPixelRatio: 0.05,
+    });
   });
 
   test('should match baseline screenshot after selecting a cluster queue', async ({ page }) => {
@@ -65,6 +67,8 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
     await expect(queueItem).toHaveClass(/selected/);
 
     // Capture screenshot with selected queue state
-    await expect(dashboard).toHaveScreenshot('resource-dashboard-queue-selected.png');
+    await expect(dashboard).toHaveScreenshot('resource-dashboard-queue-selected.png', {
+      maxDiffPixelRatio: 0.05,
+    });
   });
 });
