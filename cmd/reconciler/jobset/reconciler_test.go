@@ -16,6 +16,8 @@ package jobset
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -77,6 +79,16 @@ type mockMLRunCreator struct {
 	lastOpts    *hypercomputeclient.CreateMLRunOptions
 	retRes      map[string]any
 	retErr      error
+
+	getCalls int
+	getRes   map[string]any
+	getErr   error
+
+	updateCalls    int
+	lastUpdateID   string
+	lastUpdateOpts *hypercomputeclient.UpdateMLRunOptions
+	updateRes      map[string]any
+	updateErr      error
 }
 
 func (m *mockMLRunCreator) CreateMLRun(ctx context.Context, name, displayName, runPhase string, opts *hypercomputeclient.CreateMLRunOptions) (map[string]any, error) {
@@ -86,6 +98,18 @@ func (m *mockMLRunCreator) CreateMLRun(ctx context.Context, name, displayName, r
 	m.lastPhase = runPhase
 	m.lastOpts = opts
 	return m.retRes, m.retErr
+}
+
+func (m *mockMLRunCreator) GetMLRun(ctx context.Context, name string) (map[string]any, error) {
+	m.getCalls++
+	return m.getRes, m.getErr
+}
+
+func (m *mockMLRunCreator) UpdateMLRun(ctx context.Context, name string, opts *hypercomputeclient.UpdateMLRunOptions) (map[string]any, error) {
+	m.updateCalls++
+	m.lastUpdateID = name
+	m.lastUpdateOpts = opts
+	return m.updateRes, m.updateErr
 }
 
 type clientWithError struct {
@@ -1724,6 +1748,118 @@ func TestCheckWorkUnitStatusAndMLRun(t *testing.T) {
 			gotURL, gotSkip := r.checkWorkUnitStatusAndMLRun(context.Background(), 1, 1)
 			if gotURL != tc.wantURL || gotSkip != tc.wantSkip {
 				t.Errorf("checkWorkUnitStatusAndMLRun() = (%q, %v), want (%q, %v)", gotURL, gotSkip, tc.wantURL, tc.wantSkip)
+			}
+		})
+	}
+}
+
+func TestParseExistingMLRunID(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "no match", text: "some other error", want: ""},
+		{name: "match", text: `already exists: projects/p/locations/l/machineLearningRuns/xmc-abc-123`, want: "xmc-abc-123"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := parseExistingMLRunID(tc.text); got != tc.want {
+				t.Errorf("parseExistingMLRunID(%q) = %q, want %q", tc.text, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsMLRunAlreadyExistsError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "other error", err: errors.New("deadline exceeded"), want: false},
+		{name: "http 409 conflict", err: &hypercomputeclient.APIError{StatusCode: http.StatusConflict, Body: "ALREADY_EXISTS"}, want: true},
+		{name: "http other status", err: &hypercomputeclient.APIError{StatusCode: http.StatusInternalServerError}, want: false},
+		{name: "lro already exists", err: &hypercomputeclient.OperationError{Code: hypercomputeclient.CodeAlreadyExists}, want: true},
+		{name: "lro other code", err: &hypercomputeclient.OperationError{Code: 3}, want: false},
+		{name: "wrapped http 409", err: fmt.Errorf("create failed: %w", &hypercomputeclient.APIError{StatusCode: http.StatusConflict}), want: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isMLRunAlreadyExistsError(tc.err); got != tc.want {
+				t.Errorf("isMLRunAlreadyExistsError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMLRunOwnedByXManager(t *testing.T) {
+	tests := []struct {
+		name  string
+		mlRun map[string]any
+		want  bool
+	}{
+		{name: "no labels", mlRun: map[string]any{}, want: false},
+		{name: "other owner", mlRun: map[string]any{"labels": map[string]any{"created-by": "someone"}}, want: false},
+		{name: "owned", mlRun: map[string]any{"labels": map[string]any{"created-by": createdByXManagerLabelValue}}, want: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mlRunOwnedByXManager(tc.mlRun); got != tc.want {
+				t.Errorf("mlRunOwnedByXManager(%v) = %v, want %v", tc.mlRun, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestUpsertExistingMLRun(t *testing.T) {
+	// The conflict body does not name a run, so upsert falls back to our own id.
+	conflictErr := &hypercomputeclient.APIError{StatusCode: http.StatusConflict, Body: "ALREADY_EXISTS"}
+	tests := []struct {
+		name            string
+		client          *mockMLRunCreator
+		wantURLContains string
+		wantGetCalls    int
+		wantUpdateCalls int
+	}{
+		{
+			name:            "already exists and owned is idempotent success",
+			client:          &mockMLRunCreator{getRes: map[string]any{"labels": map[string]any{"created-by": createdByXManagerLabelValue}}},
+			wantURLContains: "console.cloud.google.com",
+			wantGetCalls:    1,
+			wantUpdateCalls: 0,
+		},
+		{
+			name: "already exists and foreign is updated",
+			client: &mockMLRunCreator{
+				getRes:    map[string]any{"labels": map[string]any{"created-by": "someone-else"}},
+				updateRes: map[string]any{"url": "https://mlrun/updated"},
+			},
+			wantURLContains: "https://mlrun/updated",
+			wantGetCalls:    1,
+			wantUpdateCalls: 1,
+		},
+		{
+			name:            "get failure is treated as success via console url",
+			client:          &mockMLRunCreator{getErr: errors.New("not found")},
+			wantURLContains: "console.cloud.google.com",
+			wantGetCalls:    1,
+			wantUpdateCalls: 0,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &Reconciler{Project: "proj", Location: "us-central1", ClusterName: "clus", MLRunClient: tc.client}
+			got := r.upsertExistingMLRun(context.Background(), conflictErr, "xmc-fallback-id", "disp", "grp", buildMLRunLabels(1, 2), map[string]string{"gcs_path": "gs://b/o"})
+			if !strings.Contains(got, tc.wantURLContains) {
+				t.Errorf("upsertExistingMLRun() = %q, want containing %q", got, tc.wantURLContains)
+			}
+			if tc.client.getCalls != tc.wantGetCalls {
+				t.Errorf("getCalls = %d, want %d", tc.client.getCalls, tc.wantGetCalls)
+			}
+			if tc.client.updateCalls != tc.wantUpdateCalls {
+				t.Errorf("updateCalls = %d, want %d", tc.client.updateCalls, tc.wantUpdateCalls)
 			}
 		})
 	}

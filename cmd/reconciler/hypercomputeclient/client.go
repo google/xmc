@@ -124,6 +124,59 @@ func (c *ControlPlaneClient) authHeader(ctx context.Context) (string, error) {
 	return "Bearer " + token.AccessToken, nil
 }
 
+// APIError is returned by do for a non-2xx HTTP response. It carries the HTTP
+// status code so callers can branch on it (e.g. http.StatusConflict) instead of
+// matching on the error string.
+type APIError struct {
+	Method     string
+	URL        string
+	StatusCode int
+	Body       string
+}
+
+// Error preserves the original human-readable format.
+func (e *APIError) Error() string {
+	return fmt.Sprintf("http %s %s: status %d: %s", e.Method, e.URL, e.StatusCode, e.Body)
+}
+
+// CodeAlreadyExists is the google.rpc.Code (mirrors gRPC codes.AlreadyExists = 6)
+// the control plane embeds in a long-running-operation error when the target
+// resource already exists.
+const CodeAlreadyExists = 6
+
+// OperationError is returned when a long-running operation completes with an error.
+// It carries the numeric google.rpc.Code so callers can branch on it (e.g.
+// CodeAlreadyExists) instead of matching on the error string.
+type OperationError struct {
+	Name    string
+	Code    int
+	Message string
+	// Raw is the operation's original error payload, retained so the error string
+	// stays identical to the pre-refactor format.
+	Raw any
+}
+
+// Error preserves the original human-readable format.
+func (e *OperationError) Error() string {
+	return fmt.Sprintf("operation %s failed: %v", e.Name, e.Raw)
+}
+
+// newOperationError builds an OperationError from an operation's raw error payload,
+// extracting the numeric google.rpc.Code and message when present. JSON numbers
+// decode as float64, so the code is converted accordingly.
+func newOperationError(name string, errField any) *OperationError {
+	oe := &OperationError{Name: name, Raw: errField}
+	if m, ok := errField.(map[string]any); ok {
+		if code, ok := m["code"].(float64); ok {
+			oe.Code = int(code)
+		}
+		if msg, ok := m["message"].(string); ok {
+			oe.Message = msg
+		}
+	}
+	return oe
+}
+
 func (c *ControlPlaneClient) do(ctx context.Context, method, rawURL string, params url.Values, body any) (map[string]any, error) {
 	var reqBody io.Reader
 	if body != nil {
@@ -162,7 +215,7 @@ func (c *ControlPlaneClient) do(ctx context.Context, method, rawURL string, para
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("http %s %s: status %d: %s", method, rawURL, resp.StatusCode, string(respBytes))
+		return nil, &APIError{Method: method, URL: rawURL, StatusCode: resp.StatusCode, Body: string(respBytes)}
 	}
 
 	// An empty body is a valid response (e.g. HTTP 204); treat it as a nil
@@ -232,7 +285,7 @@ func (c *ControlPlaneClient) WaitForOperation(ctx context.Context, operationName
 
 		if done, _ := op["done"].(bool); done {
 			if errField, ok := op["error"]; ok && errField != nil {
-				return nil, fmt.Errorf("operation %s failed: %v", operationName, errField)
+				return nil, newOperationError(operationName, errField)
 			}
 			return op, nil
 		}
@@ -449,7 +502,8 @@ func (c *ControlPlaneClient) resolveOperation(ctx context.Context, result map[st
 	logging.Info(ctx, "Operation complete", "operation", operation)
 
 	if errField, ok := operation["error"]; ok && errField != nil {
-		return nil, fmt.Errorf("operation %s failed: %v", operation["name"], errField)
+		opName, _ := operation["name"].(string)
+		return nil, newOperationError(opName, errField)
 	}
 
 	if response, ok := operation["response"].(map[string]any); ok {
