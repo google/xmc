@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 compat_go_library(
     name = "config",
     srcs = ["config.go"],
-    importpath = "xmanager_cloud/cmd/experiment_state_server",
+    importpath = "xmanager_cloud/cmd/experiment_state_server/config",
     deps = [
         "//internal/auth",
         "//internal/compat/log",

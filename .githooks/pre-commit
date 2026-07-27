@@ -86,7 +86,10 @@ check_go() {
         FAILED=1
       fi
     else
-      $golangci_bin run --fix || true
+      if ! $golangci_bin run --fix; then
+        echo "❌ golangci-lint run --fix failed or found unfixed issues."
+        FAILED=1
+      fi
     fi
   else
     echo "--> WARNING: golangci-lint not found. Go linting skipped."

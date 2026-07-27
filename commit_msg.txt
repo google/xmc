@@ -1,4 +1,6 @@
-fix(bazel): update server package target labels to reference config subpackage directories
+refactor(bazel): update importpaths in subpackage BUILD files to match filesystem directory structure
+
+Update importpaths in cmd/experiment_state_server/config/BUILD.bazel, cmd/xid_service/config/BUILD.bazel, internal/security/keyreloader/BUILD.bazel, and compat.bzl to reflect their subpackage directory paths.
 
 TAG=agy
 CONV=45db6eeb-6770-4007-b22f-e7967de9db54

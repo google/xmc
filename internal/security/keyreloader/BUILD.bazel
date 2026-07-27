@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 compat_go_library(
     name = "keyreloader",
     srcs = ["key_reloader.go"],
-    importpath = "xmanager_cloud/internal/security",
+    importpath = "xmanager_cloud/internal/security/keyreloader",
     deps = [
         "//internal/compat/insecuresecretdataaccess",
         "//internal/compat/jwtkeyconverter",
