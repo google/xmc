@@ -90,7 +90,12 @@ class XmcKerasCallback(keras.callbacks.Callback):
             xmc.log_metric(metric_name, value, step=step)
 
     def _get_global_step(self) -> int | None:
-        """Extracts current global optimizer step from model if available."""
+        """Extracts global optimizer step from model iterations.
+
+        Why: We map metrics to the global optimizer iteration count rather than
+        the epoch-local batch index so step values monotonically increase across
+        epoch boundaries in ClickHouse time-series storage.
+        """
         if not hasattr(self, "model") or self.model is None:
             return None
         if not hasattr(self.model, "optimizer") or self.model.optimizer is None:
@@ -101,6 +106,7 @@ class XmcKerasCallback(keras.callbacks.Callback):
             return None
 
         iters = opt.iterations
+        # Handle PyTorch/CUDA tensors in Keras 3 backend where int(cuda_tensor) raises
         if hasattr(iters, "item") and callable(iters.item):
             try:
                 res = iters.item()
@@ -122,7 +128,13 @@ class XmcKerasCallback(keras.callbacks.Callback):
 
     @staticmethod
     def _extract_scalar(val: Any) -> float | int | None:
-        """Extracts a python float or int scalar from various scalar/tensor types."""
+        """Extracts a primitive float or int scalar from various framework tensor types.
+
+        Why: Keras 3 supports PyTorch, TensorFlow, and JAX backends. Metrics in 'logs'
+        may be raw floats, NumPy 0d arrays, or PyTorch/TF single-element Tensors.
+        We inspect .item() and .numpy() safely to coerce primitives without letting
+        conversion exceptions disrupt the main training loop.
+        """
         if isinstance(val, (int, float)):
             return val
 
@@ -153,7 +165,12 @@ class XmcKerasCallback(keras.callbacks.Callback):
             return None
 
     def on_epoch_begin(self, epoch: int, logs: dict[str, Any] | None = None) -> None:
-        """Keras callback hook fired at the start of each training epoch."""
+        """Resets batch counter at the start of each epoch.
+
+        Why: Re-aligns batch frequency throttling at epoch boundaries so logging
+        intervals do not phase-shift when steps-per-epoch is not a multiple of
+        log_batch_frequency.
+        """
         self._batch_count = 0
 
     def on_train_batch_end(self, batch: int, logs: dict[str, Any] | None = None) -> None:
