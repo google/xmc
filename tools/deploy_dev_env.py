@@ -24,7 +24,7 @@ import shutil
 import subprocess
 import sys
 import time
-from typing import Any
+from typing import Any, NoReturn
 
 from tool_utils import ensure_venv
 
@@ -63,7 +63,7 @@ def log_error(msg: str) -> None:
     print(f"\n{RED}[ERROR] {msg}{NC}", file=sys.stderr)
 
 
-def error_exit(msg: str) -> None:
+def error_exit(msg: str) -> NoReturn:
     """Logs an error message and exits with status 1.
 
     Args:
@@ -203,7 +203,7 @@ def _validate_config(config: dict[str, str], config_path: str) -> dict[str, str]
     Returns:
         A dictionary containing only the validated configuration keys.
     """
-    validated_config = {}
+    validated_config: dict[str, str] = {}
     for key, pattern_str in CONFIG_VALIDATION_SCHEMAS.items():
         val = config.get(key)
         if val is None:
