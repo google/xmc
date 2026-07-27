@@ -27,6 +27,10 @@ graph TD
 > [!IMPORTANT]
 > All execution steps in this skill MUST strictly adhere to the mandatory [PR Review & Inspection Guidelines](../../rules/pr_review_guidelines.md), [Skills & Automation Guidelines](../../rules/skills_and_automation.md), and [Core Engineering Standards](../../rules/core_engineering.md).
 
+### Trigger Phrases & Scope Exceptions
+- **Trigger Patterns**: `Address PR comment`, `Fix review comment`, `Resolve PR comments`, `Process review feedback`.
+- **GKE Redeployment Exception**: Section 7 (*Build, Push, and GKE Redeployment*) is executed **only** when review feedback explicitly targets running backend service logic **AND** an active GKE dev cluster is deployed. For PR comments on documentation (`*.md`), unit test files, formatting, or SDK logic, stop execution after commit & inline thread reply (Section 6) and proceed directly to Section 8 (*1-to-1 Thread Resolution Verification*).
+
 ---
 
 ## Guidelines for Using CLI Tools

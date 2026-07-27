@@ -10,6 +10,10 @@ This skill provides step-by-step procedures for creating, updating, and managing
 > [!IMPORTANT]
 > All execution steps in this skill MUST strictly adhere to the policy rules defined in [GitHub Authoring & PR Creation Standards](../../rules/github_authoring_and_prs.md), [Skills & Automation Guidelines](../../rules/skills_and_automation.md), and [Core Engineering Standards](../../rules/core_engineering.md).
 
+### Trigger Phrases & Fast-Path Exceptions
+- **Trigger Patterns**: `Create PR`, `Open pull request`, `Submit PR`, `Update PR description`, `Publish PR`.
+- **Direct PR Creation Fast-Path**: When the user explicitly requests direct/immediate PR creation (e.g., `"Create PR directly"`, `"Publish PR now"`), create the pull request directly without starting in draft mode or pausing for the 2-minute buffer period.
+
 ---
 
 ## Guidelines for Using CLI Tools

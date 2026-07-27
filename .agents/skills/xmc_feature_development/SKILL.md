@@ -10,6 +10,13 @@ This skill provides step-by-step procedures for implementing new features, refac
 > [!IMPORTANT]
 > All execution steps in this skill MUST strictly adhere to the policy rules defined in [Core Engineering Standards](../../rules/core_engineering.md) and [Skills & Automation Guidelines](../../rules/skills_and_automation.md).
 
+### Trigger Phrases & Workflow Selection
+- **Trigger Patterns**: `Implement b/...`, `Implement feature`, `Add feature`, `Fix bug`, `Fix b/...`, `Refactor package/code`, `Develop endpoint`.
+- **Full Skill Path**: Apply full procedure (scoping, `rdeps` query, affected test matrix, and `bazel coverage`) for major feature implementations, structural code refactors, or multi-file service components.
+- **Lightweight Fast-Path Exception**: For minor bug fixes (<10 lines), documentation updates, or quick prototyping spikes:
+  - Skip Bazel `rdeps` queries and full coverage report generation (`bazel coverage`).
+  - Focus strictly on clean code implementation, local package unit tests (`go test` / `bazel test`), and pre-commit checks.
+
 ---
 
 ## Guidelines for Using CLI Tools

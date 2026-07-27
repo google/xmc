@@ -29,16 +29,26 @@ Before modifying or reviewing code, check the file extensions of touched files a
 | `*.md` | [Markdown Guidelines](rules/languages/markdown.md) |
 
 ### Task Intent Routing Matrix
-Identify the primary task type to load the mandatory workflow rules and skills:
+Identify the primary task type to load mandatory workflow rules and skills based on explicit user prompt patterns:
 
-| Task Intent / Workflow | Primary Workflow Rule / Skill |
-| :--- | :--- |
-| PR Review / Inspection | [PR Review Guidelines](rules/pr_review_guidelines.md) |
-| PR Creation & Authoring | [XMC Create PR Skill](skills/xmc_create_pr/SKILL.md) & [GitHub Authoring Standards](rules/github_authoring_and_prs.md) |
-| Addressing PR Comments | [Address PR Comment Skill](skills/xmc_address_pr_comment/SKILL.md) & [PR Review Guidelines](rules/pr_review_guidelines.md) |
-| Feature Development & Refactoring | [XMC Feature Development Skill](skills/xmc_feature_development/SKILL.md) & [Core Engineering Standards](rules/core_engineering.md) |
-| Deploy / Upgrade / Cleanup Environment | [Deploy XMC Skill](skills/xmc_deploy/SKILL.md), [Upgrade XMC Skill](skills/xmc_upgrade/SKILL.md), [Cleanup Environment Skill](skills/xmc_cleanup_environment/SKILL.md) |
-| Reflection & Meta-Learning | [Iterative Reflection Skill](skills/xmc_iterative_reflection/SKILL.md) |
+| Task Intent / Workflow | Trigger Keywords & User Prompt Patterns | Primary Workflow Rule / Skill |
+| :--- | :--- | :--- |
+| **PR Review / Inspection** | `Review PR`, `Inspect diff`, `Audit code changes` | [PR Review Guidelines](rules/pr_review_guidelines.md) |
+| **PR Creation & Authoring** | `Create PR`, `Open pull request`, `Submit PR`, `Update PR description`, `Publish PR` | [XMC Create PR Skill](skills/xmc_create_pr/SKILL.md) & [GitHub Authoring Standards](rules/github_authoring_and_prs.md) |
+| **Addressing PR Comments** | `Address PR comment`, `Fix review comment`, `Resolve PR comments`, `Process review feedback` | [Address PR Comment Skill](skills/xmc_address_pr_comment/SKILL.md) & [PR Review Guidelines](rules/pr_review_guidelines.md) |
+| **Feature Development & Refactoring** | `Implement b/...`, `Implement feature`, `Add feature`, `Fix bug`, `Fix b/...`, `Refactor package/code`, `Develop endpoint` | [XMC Feature Development Skill](skills/xmc_feature_development/SKILL.md) & [Core Engineering Standards](rules/core_engineering.md) |
+| **Deploy Environment** | `Deploy environment`, `Setup XMC environment`, `Deploy Cluster Toolkit blueprint` | [Deploy XMC Skill](skills/xmc_deploy/SKILL.md) |
+| **Upgrade Environment** | `Upgrade environment`, `Sync deployed env to HEAD`, `Upgrade XMC on GKE` | [Upgrade XMC Skill](skills/xmc_upgrade/SKILL.md) |
+| **Cleanup Environment** | `Clean up environment`, `Tear down environment`, `Destroy XMC cluster`, `Delete dev environment` | [Cleanup Environment Skill](skills/xmc_cleanup_environment/SKILL.md) |
+| **Reflection & Meta-Learning** | `Reflect on session`, `Run session retrospective`, `Audit prompt performance` | [Iterative Reflection Skill](skills/xmc_iterative_reflection/SKILL.md) |
+
+> [!NOTE]
+> **Workflow Path Selection Policy (Fast-Path Exemptions)**:
+> - **Full Skill Path**: Apply full skill playbooks (coverage checks, affected test runs, CI wait buffers, GKE redeployments) for major features, complex multi-comment reviews, and environment setups.
+> - **Lightweight Fast-Path Exception**: For minor bug fixes (<10 lines), documentation updates, or prototyping spikes:
+>   - Skip Bazel `rdeps` and full coverage reports in feature development.
+>   - Skip GKE redeployment steps in PR comment resolution unless cloud redeployment is explicitly requested.
+>   - Skip draft/wait buffers when direct PR submission is requested.
 
 ---
 
