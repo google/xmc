@@ -17,18 +17,6 @@ load("//:compat.bzl", "compat_go_library", "compat_go_test")
 load("//:oci.bzl", "oci_image_for_service")
 
 compat_go_library(
-    name = "config",
-    srcs = ["config.go"],
-    importpath = "xmanager_cloud/cmd/xid_service",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//internal/auth",
-        "//internal/compat/log",
-        "//internal/logging",
-    ],
-)
-
-compat_go_library(
     name = "xid_service_lib",
     srcs = [
         "health.go",
@@ -37,11 +25,11 @@ compat_go_library(
     importpath = "xmanager_cloud/cmd/xid_service/main",
     visibility = ["//visibility:private"],
     deps = [
-        ":config",
         "//api/protos/xid:api_go_proto",
+        "//cmd/xid_service/config",
         "//cmd/xid_service/server",
         "//internal/auth",
-        "//internal/common:health",
+        "//internal/common/health",
         "//internal/compat/google",
         "//internal/compat/spanner",
         "//internal/logging",

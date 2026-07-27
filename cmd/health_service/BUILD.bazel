@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("//:compat.bzl", "compat_go_library")
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
 load("//:oci.bzl", "oci_image_for_service")
 
 compat_go_library(
@@ -21,13 +21,20 @@ compat_go_library(
     srcs = [
         "config.go",
         "main.go",
+        "server.go",
     ],
     importpath = "xmanager_cloud/cmd/health_service/main",
     visibility = ["//visibility:private"],
     deps = [
+        "//api/protos/health:api_go_proto",
         "//internal/compat/google",
         "//internal/logging",
         "//pkg/auth/oauth2",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
+        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//credentials/insecure:go_default_library",
+        "@org_golang_google_grpc//reflection:go_default_library",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
@@ -41,4 +48,10 @@ go_binary(
 oci_image_for_service(
     name = "health_service_image",
     binary = ":health_service",
+)
+
+compat_go_test(
+    name = "server_test",
+    srcs = ["server_test.go"],
+    embed = [":health_service_lib"],
 )

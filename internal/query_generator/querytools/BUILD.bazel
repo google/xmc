@@ -1,0 +1,45 @@
+# Copyright 2025 Google LLC
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "querytools",
+    srcs = [
+        "query_generator.go",
+        "query_generator_test_tables.go",
+        "unnest.go",
+    ],
+    importpath = "xmanager_cloud/query_generator/querytools",
+    deps = [
+        "//api/filter:filter_expression_go_proto",
+        "//api/filter/go/filtervisitor",
+        "//api/filter/go/queryfilterbase",
+        "//internal/compat/log",
+        "//internal/compat/proto",
+        "//internal/compat/safesql",
+        "//internal/compat/spanner",
+        "//internal/compat/status",
+        "//internal/query_generator/equalityvisitor",
+        "//internal/query_generator/filter",
+        "@com_google_cloud_go_spanner//:spanner",
+    ],
+)
+
+go_test(
+    name = "querytools_test",
+    srcs = ["query_generator_test.go"],
+    embed = [":querytools"],
+    deps = [
+        "//api/filter:filter_expression_go_proto",
+        "//api/filter/go/filter",
+        "//internal/compat/cmp",
+        "//internal/compat/cmpopts",
+        "//internal/compat/log",
+        "//internal/compat/protocmp",
+        "//internal/compat/safesql",
+        "//internal/compat/spanner",
+        "//internal/query_generator/predicate",
+        "@com_google_cloud_go_spanner//:spanner",
+    ],
+)

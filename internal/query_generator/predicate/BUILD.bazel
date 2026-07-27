@@ -1,0 +1,15 @@
+# Copyright 2025 Google LLC
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "predicate",
+    srcs = ["predicate.go"],
+    importpath = "xmanager_cloud/query_generator/predicate",
+    deps = [
+        "//api/filter:filter_expression_go_proto",
+        "//api/filter/go/filtervisitor",
+        "//internal/compat/proto",
+    ],
+)

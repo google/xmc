@@ -1,0 +1,37 @@
+# Copyright 2025 Google LLC
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "liststatement",
+    srcs = ["liststatement.go"],
+    importpath = "xmanager_cloud/query_generator/liststatement",
+    deps = [
+        "//api/filter:filter_expression_go_proto",
+        "//api/filter/go/filter",
+        "//internal/compat/safesql",
+        "//internal/compat/spanner",
+        "//internal/compat/status",
+        "//internal/logging",
+        "//internal/query_generator/querytools",
+        "@com_google_cloud_go_spanner//:spanner",
+    ],
+)
+
+go_test(
+    name = "liststatement_test",
+    srcs = ["liststatement_test.go"],
+    embed = [":liststatement"],
+    deps = [
+        "//api/filter:filter_expression_go_proto",
+        "//internal/compat/cmp",
+        "//internal/compat/cmpopts",
+        "//internal/compat/log",
+        "//internal/compat/safesql",
+        "//internal/compat/spanner",
+        "//internal/compat/status",
+        "//internal/query_generator/querytools",
+        "@com_google_cloud_go_spanner//:spanner",
+    ],
+)
