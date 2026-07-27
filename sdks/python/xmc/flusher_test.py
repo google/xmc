@@ -14,7 +14,7 @@
 
 """Unit tests for background flusher thread (sdks/python/xmc/flusher.py)."""
 
-import json
+import os
 import threading
 import time
 import unittest
@@ -22,10 +22,21 @@ from unittest.mock import MagicMock
 
 from xmc.buffer import MetricTuple
 from xmc.flusher import MetricsFlusher
+from xmc.network import HTTPClient
 
 
 class TestMetricsFlusherInitialization(unittest.TestCase):
     """Tests constructor, validation, lazy startup, and thread state."""
+
+    def setUp(self) -> None:
+        self._orig_env = os.environ.copy()
+        os.environ["XMC_XID"] = "1001"
+        os.environ["XMC_WORK_UNIT_ID"] = "2002"
+        os.environ["XMC_EXECUTION_ID"] = "3003"
+
+    def tearDown(self) -> None:
+        os.environ.clear()
+        os.environ.update(self._orig_env)
 
     def test_invalid_parameters(self) -> None:
         mock_fn = MagicMock()
@@ -88,6 +99,16 @@ class TestMetricsFlusherInitialization(unittest.TestCase):
 
 class TestMetricsFlusherFlushing(unittest.TestCase):
     """Tests early wakeup, non-blocking execution, and graceful shutdown flushing."""
+
+    def setUp(self) -> None:
+        self._orig_env = os.environ.copy()
+        os.environ["XMC_XID"] = "1001"
+        os.environ["XMC_WORK_UNIT_ID"] = "2002"
+        os.environ["XMC_EXECUTION_ID"] = "3003"
+
+    def tearDown(self) -> None:
+        os.environ.clear()
+        os.environ.update(self._orig_env)
 
     def test_early_wakeup_on_batch_size(self) -> None:
         flushed_batches: list[list[MetricTuple]] = []
@@ -174,7 +195,13 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
         self.assertTrue(flusher.is_shutdown)
 
     def test_client_integration_send_payload(self) -> None:
-        mock_client = MagicMock()
+        mock_client = MagicMock(spec=HTTPClient)
+        mock_client.xid = "1001"
+        mock_client.work_unit_id = "2002"
+        mock_client.execution_id = "3003"
+        mock_client.replica_id = "1"
+        mock_client.is_silenced = False
+
         flusher = MetricsFlusher(
             client=mock_client,
             flush_interval=60.0,
@@ -186,13 +213,13 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
 
         flusher.shutdown()
 
-        self.assertTrue(mock_client.send.called)
-        args, _ = mock_client.send.call_args
-        payload = json.loads(args[0])
-        self.assertIn("metrics", payload)
-        self.assertEqual(len(payload["metrics"]), 2)
-        self.assertEqual(payload["metrics"][0]["metric_name"], "accuracy")
-        self.assertEqual(payload["metrics"][0]["metric_value"], 0.95)
+        self.assertTrue(mock_client.send_payload.called)
+        args, _ = mock_client.send_payload.call_args
+        payload = args[0]
+        self.assertIsInstance(payload, list)
+        self.assertEqual(len(payload), 2)
+        self.assertEqual(payload[0]["metric_name"], "accuracy")
+        self.assertEqual(payload[0]["metric_value"], 0.95)
 
     def test_context_manager_support(self) -> None:
         flushed_metrics: list[MetricTuple] = []
@@ -230,6 +257,91 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
         # Should abort batch after max retries (3 attempts total)
         self.assertEqual(flushed_count, 0)
         self.assertEqual(fail_count, 3)
+
+    def test_client_metadata_harvesting_and_payload_fields(self) -> None:
+        mock_client = MagicMock(spec=HTTPClient)
+        mock_client.xid = "1001"
+        mock_client.work_unit_id = "2002"
+        mock_client.execution_id = "3003"
+        mock_client.replica_id = "replica-5"
+        mock_client.is_silenced = False
+
+        env = {
+            "XMC_XID": "1001",
+            "XMC_WORK_UNIT_ID": "2002",
+            "XMC_EXECUTION_ID": "3003",
+            "XMC_REPLICA_ID": "replica-5",
+        }
+        flusher = MetricsFlusher(
+            client=mock_client,
+            flush_interval=60.0,
+            batch_size=1,
+            env=env,
+        )
+
+        self.assertEqual(flusher.xid, "1001")
+        self.assertEqual(flusher.work_unit_id, "2002")
+        self.assertEqual(flusher.execution_id, "3003")
+        self.assertEqual(flusher.replica_id, "replica-5")
+
+        flusher.log_metric("loss", 0.123, 5, timestamp=100.0)
+        flusher.shutdown()
+
+        self.assertTrue(mock_client.send_payload.called)
+        args, _ = mock_client.send_payload.call_args
+        payload = args[0]
+        self.assertIsInstance(payload, list)
+        self.assertEqual(len(payload), 1)
+        metric_dict = payload[0]
+
+        # Verify all 8 required fields DoD per XMCMetricsBatch schema
+        self.assertEqual(metric_dict["xid"], "1001")
+        self.assertEqual(metric_dict["work_unit_id"], "2002")
+        self.assertEqual(metric_dict["execution_id"], "3003")
+        self.assertEqual(metric_dict["replica_id"], "replica-5")
+        self.assertEqual(metric_dict["metric_name"], "loss")
+        self.assertEqual(metric_dict["metric_value"], 0.123)
+        self.assertEqual(metric_dict["step"], 5)
+        self.assertEqual(metric_dict["timestamp"], 100000000)  # 100.0 * 1_000_000
+
+    def test_buffer_lightweight_tuples(self) -> None:
+        mock_client = MagicMock()
+        env = {
+            "XMC_XID": "123",
+            "XMC_WORK_UNIT_ID": "456",
+            "XMC_EXECUTION_ID": "789",
+            "XMC_REPLICA_ID": "rep-0",
+        }
+        flusher = MetricsFlusher(
+            client=mock_client,
+            flush_interval=60.0,
+            batch_size=10,
+            env=env,
+        )
+
+        flusher.log_metric("train_loss", 0.42, 1, timestamp=500.0)
+
+        # Buffer must store only 4-element tuples (name, val, step, ts_epoch)
+        raw_items = flusher.buffer.get_all()
+        self.assertEqual(len(raw_items), 1)
+        self.assertEqual(len(raw_items[0]), 4)
+        self.assertEqual(raw_items[0], ("train_loss", 0.42, 1, 500))
+
+        flusher.shutdown()
+
+    def test_silencing_support(self) -> None:
+        env_silenced = {"RANK": "3", "XMC_LOG_ALL_REPLICAS": "0"}
+        mock_client = MagicMock()
+        flusher = MetricsFlusher(
+            client=mock_client,
+            flush_interval=60.0,
+            batch_size=1,
+            env=env_silenced,
+        )
+        self.assertTrue(flusher.is_silenced)
+
+        flusher.log_metric("silenced_metric", 1.0, 1)
+        self.assertFalse(mock_client.send_payload.called)
 
 
 if __name__ == "__main__":

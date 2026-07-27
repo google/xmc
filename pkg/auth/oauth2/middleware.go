@@ -16,12 +16,15 @@ package oauth2
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/rs/cors"
 )
 
 type contextKey string
@@ -46,6 +49,17 @@ func (a *Authenticator) Authenticate(next http.Handler) http.Handler {
 		}
 		http.Error(w, "Unauthorized: Session token is invalid or missing", http.StatusUnauthorized)
 	})
+}
+
+// SecurityMiddlewares wraps the handler with all standard security middlewares
+// SecurityHeaders -> CrossOriginProtection -> CORS.
+func (a *Authenticator) SecurityMiddlewares(next http.Handler) http.Handler {
+	log.Printf("[Middleware Auth] Building security middleware chain (Security Headers -> CSRF -> CORS)")
+	handler := next
+	handler = a.corsMiddleware(handler)
+	handler = a.crossOriginProtection(handler)
+	handler = a.securityHeadersMiddleware(handler)
+	return handler
 }
 
 // authenticateCookie checks for and validates the session_token cookie.
@@ -178,32 +192,36 @@ func (a *Authenticator) authenticateOIDC(w http.ResponseWriter, r *http.Request,
 	return true
 }
 
-// CORSMiddleware configures cross-origin access.
-func (a *Authenticator) CORSMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		allowedOrigin := a.Config.FrontendURL
-		if origin != "" {
-			if origin == a.Config.FrontendURL || slices.Contains(a.Config.AllowedOrigins, origin) {
-				allowedOrigin = origin
-			}
+// corsMiddleware configures cross-origin access using rs/cors package.
+func (a *Authenticator) corsMiddleware(next http.Handler) http.Handler {
+	log.Printf("[Middleware CORS] Building CORS middleware")
+	origins := make([]string, len(a.Config.AllowedOrigins))
+	copy(origins, a.Config.AllowedOrigins)
+	if a.Config.FrontendURL != "" {
+		frontendOrigin := a.Config.FrontendURL
+		if u, err := url.Parse(a.Config.FrontendURL); err == nil && u.Scheme != "" && u.Host != "" {
+			frontendOrigin = fmt.Sprintf("%s://%s", u.Scheme, u.Host)
 		}
-		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-			return
+		if !slices.Contains(origins, frontendOrigin) {
+			origins = append(origins, frontendOrigin)
 		}
+	}
 
-		next.ServeHTTP(w, r)
+	log.Printf("[Middleware CORS] configuring CORS middleware with allowed origins: %v", origins)
+	c := cors.New(cors.Options{
+		AllowedOrigins:   origins,
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"*"},
+		ExposedHeaders:   []string{"grpc-metadata-content-type", "grpc-status", "grpc-message"},
+		AllowCredentials: true,
+		MaxAge:           300,
 	})
+	return c.Handler(next)
 }
 
-// SecurityHeadersMiddleware applies secure response headers.
-func (a *Authenticator) SecurityHeadersMiddleware(next http.Handler) http.Handler {
+// securityHeadersMiddleware applies secure response headers.
+func (a *Authenticator) securityHeadersMiddleware(next http.Handler) http.Handler {
+	log.Printf("[Middleware Headers] Building Security Headers middleware")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -217,4 +235,29 @@ func (a *Authenticator) SecurityHeadersMiddleware(next http.Handler) http.Handle
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// crossOriginProtection sets up the standard CrossOriginProtection filter.
+func (a *Authenticator) crossOriginProtection(next http.Handler) http.Handler {
+	log.Printf("[Middleware COP] Building Cross-Origin Protection (CSRF) middleware")
+	cop := http.NewCrossOriginProtection()
+	for _, origin := range a.Config.AllowedOrigins {
+		if err := cop.AddTrustedOrigin(origin); err != nil {
+			log.Printf("[Middleware COP] Failed to add allowed origin %q: %v", origin, err)
+		}
+	}
+	if a.Config.FrontendURL != "" {
+		u, err := url.Parse(a.Config.FrontendURL)
+		if err == nil && u.Scheme != "" && u.Host != "" {
+			frontendOrigin := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
+			if err := cop.AddTrustedOrigin(frontendOrigin); err != nil {
+				log.Printf("[Middleware COP] Failed to add frontend origin %q: %v", frontendOrigin, err)
+			}
+		} else if err != nil {
+			log.Printf("[Middleware COP] Failed to parse frontend URL %q: %v", a.Config.FrontendURL, err)
+		} else {
+			log.Printf("[Middleware COP] Frontend URL %q is missing scheme or host", a.Config.FrontendURL)
+		}
+	}
+	return cop.Handler(next)
 }

@@ -41,18 +41,7 @@ spec:
             items:
             - key: tls.key
               path: tls.key
-        {{- if .Values.secrets.csi.enabled }}
-        - name: gcp-secrets-volume
-          csi:
-            driver: secrets-store-gke.csi.k8s.io
-            readOnly: true
-            volumeAttributes:
-              secretProviderClass: "gcp-secrets-provider"
-        {{- else }}
-        - name: gcp-secrets-volume
-          secret:
-            secretName: backend-oauth-secrets
-        {{- end }}
+        {{- include "xmanager-cloud.gcpSecretsVolume" . | nindent 8 }}
       containers:
       - name: experiment-state-server
         image: {{ .Values.ess_custom_image | quote }}
@@ -95,8 +84,6 @@ spec:
             cpu: "10m"
             memory: "64Mi"
         env:
-        - name: IAP_EXPECTED_ISSUER
-          value: {{ .Values.experimentStateServer.iap.iapIssuer | quote }}
         - name: IAP_EXPECTED_HTTP_AUDIENCE
           value: {{ .Values.experimentStateServer.iap.httpAudience | quote }}
         - name: IAP_EXPECTED_GRPC_AUDIENCE
@@ -106,30 +93,7 @@ spec:
             secretKeyRef:
               name: redis-secret
               key: redis-password
-        - name: MOCK_AUTH
-          value: {{ .Values.experimentStateServer.mockAuth | quote }}
-        - name: ALLOWED_DOMAINS
-          value: {{ .Values.experimentStateServer.allowedDomains | quote }}
-        - name: ALLOWED_EMAILS
-          value: {{ .Values.experimentStateServer.allowedEmails | quote }}
-        - name: DISABLE_AUTHENTICATION
-          value: {{ .Values.experimentStateServer.disableAuthentication | default "false" | quote }}
-        - name: TRUST_X_FORWARDED_PROTO
-          value: {{ .Values.experimentStateServer.trustXForwardedProto | quote }}
-        - name: CLIENT_ID
-          value: {{ .Values.experimentStateServer.iap.clientId | quote }}
-        - name: GCP_PROJECT_ID
-          value: {{ .Values.projectId | quote }}
-        - name: AUTHORIZED_IAM_ROLE
-          value: {{ .Values.experimentStateServer.authorizedIamRole | quote }}
-        - name: JWT_SECRET_FILE
-          value: "/etc/gcp-secrets/jwt-secret"
-        - name: CLIENT_SECRET_FILE
-          value: "/etc/gcp-secrets/client-secret"
-        - name: REDIRECT_URL
-          value: "https://{{ include "xmanager-cloud.apiHostname" . }}/api/callback"
-        - name: FRONTEND_URL
-          value: "https://{{ include "xmanager-cloud.uiHostname" . }}"
+        {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
         args:
         - "-ess_tls_cert_file="
         - "-ess_tls_key_file="
@@ -141,7 +105,7 @@ spec:
         - "-ess_quota_project_id={{ .Values.projectId }}"
         - "-ess_service_account={{ required "gcpServiceAccount is required" .Values.gcpServiceAccount }}"
         - "-ess_signature_ttl_seconds={{ .Values.taskSignatureTtlSeconds }}"
-        - "-ess_allowed_origins={{ .Values.experimentStateServer.allowedOrigins }}"
+        - "-ess_allowed_origins={{ .Values.auth.allowedOrigins }}"
         - "-alsologtostderr"
         - "-ess_status_message_history_enabled={{ .Values.statusMessageHistoryEnabled }}"
         - "-redis_addr={{ .Values.redisAddr }}"

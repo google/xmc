@@ -56,7 +56,7 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
     await expect(dashboard).toBeVisible();
 
     // Click on resolved cluster queue item
-    const queueItem = dashboard.locator('.scaffolding-queue-item', {
+    const queueItem = dashboard.locator('.queue-card', {
       hasText: 'gpu-cluster-queue',
     });
     await queueItem.click();

@@ -23,6 +23,12 @@ proto_descriptor_set(
     deps = [":dashboard_messages_proto"],
 )
 
+proto_descriptor_set(
+    name = "dashboard_service_descriptor",
+    visibility = ["//visibility:public"],
+    deps = [":dashboard_service_proto"],
+)
+
 proto_library(
     name = "dashboard_messages_proto",
     srcs = ["messages.proto"],
@@ -35,12 +41,51 @@ proto_library(
     ],
 )
 
+proto_library(
+    name = "dashboard_service_proto",
+    srcs = ["dashboard_service.proto"],
+    import_prefix = "third_party/xmanager_cloud/dashboard_service/proto",
+    strip_import_prefix = "/api/protos/dashboard",
+    deps = [
+        ":dashboard_messages_proto",
+        "@com_google_googleapis//google/api:annotations_proto",
+        "@com_google_googleapis//google/api:client_proto",
+        "@com_google_googleapis//google/api:field_behavior_proto",
+        "@com_google_googleapis//google/api:resource_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:field_mask_proto",
+    ],
+)
+
 go_proto_library(
     name = "messages_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "xmanager_cloud/dashboard_service/proto/api_go_proto",
     proto = ":dashboard_messages_proto",
     deps = [
         "@org_golang_google_genproto_googleapis_api//:go_default_library",
         "@org_golang_google_genproto_googleapis_api//annotations",
     ],
+)
+
+go_proto_library(
+    name = "service_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "xmanager_cloud/dashboard_service/proto/service_go_proto",
+    proto = ":dashboard_service_proto",
+    deps = [
+        ":messages_go_proto",
+        "@org_golang_google_genproto_googleapis_api//:go_default_library",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+    ],
+)
+
+alias(
+    name = "api_go_proto",
+    actual = ":messages_go_proto",
+)
+
+alias(
+    name = "api_go_grpc_proto",
+    actual = ":service_go_proto",
 )

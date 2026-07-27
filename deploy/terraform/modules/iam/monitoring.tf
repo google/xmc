@@ -33,25 +33,25 @@ resource "google_project_service" "monitoring_api" {
 resource "google_project_iam_member" "service_usage_consumer_actuator" {
   project = google_project_service.iam_api.project
   role    = "roles/serviceusage.serviceUsageConsumer"
-  member  = "${local.actuator_wi_principal}"
+  member  = local.actuator_wi_principal
 }
 
 resource "google_project_iam_member" "service_usage_consumer_reconciler" {
   project = google_project_service.iam_api.project
   role    = "roles/serviceusage.serviceUsageConsumer"
-  member  = "${local.reconciler_wi_principal}"
+  member  = local.reconciler_wi_principal
 }
 
 resource "google_project_iam_member" "service_usage_consumer_ess" {
   project = google_project_service.iam_api.project
   role    = "roles/serviceusage.serviceUsageConsumer"
-  member  = "${local.ess_wi_principal}"
+  member  = local.ess_wi_principal
 }
 
 resource "google_project_iam_member" "service_usage_consumer_xid" {
   project = google_project_service.iam_api.project
   role    = "roles/serviceusage.serviceUsageConsumer"
-  member  = "${local.xid_wi_principal}"
+  member  = local.xid_wi_principal
 }
 
 resource "google_project_iam_member" "service_usage_consumer_log_monitor" {
@@ -67,19 +67,19 @@ resource "google_project_iam_member" "service_usage_consumer_log_monitor" {
 resource "google_project_iam_member" "monitoring_metric_writer_actuator" {
   project = google_project_service.iam_api.project
   role    = "roles/monitoring.metricWriter"
-  member  = "${local.actuator_wi_principal}"
+  member  = local.actuator_wi_principal
 }
 
 resource "google_project_iam_member" "monitoring_metric_writer_ess" {
   project = google_project_service.iam_api.project
   role    = "roles/monitoring.metricWriter"
-  member  = "${local.ess_wi_principal}"
+  member  = local.ess_wi_principal
 }
 
 resource "google_project_iam_member" "monitoring_metric_writer_xid" {
   project = google_project_service.iam_api.project
   role    = "roles/monitoring.metricWriter"
-  member  = "${local.xid_wi_principal}"
+  member  = local.xid_wi_principal
 }
 
 resource "google_project_iam_member" "monitoring_metric_writer_log_monitor" {

@@ -23,6 +23,13 @@ export class SmartResourceFinderHarness extends ComponentHarness {
   private readonly removeButtons = this.locatorForAll('.remove-resource-btn');
   private readonly addButton = this.locatorFor('.add-resource-btn');
   private readonly findButton = this.locatorFor('.find-queues-action');
+  private readonly optionElements = this.locatorForAll('.query-select-box option');
+
+  /** Gets all option labels available in the resource type dropdowns. */
+  async getResourceTypeOptions(): Promise<string[]> {
+    const options = await this.optionElements();
+    return Promise.all(options.map(async (opt) => (await opt.text()).trim()));
+  }
 
   /** Gets the amount input value as a string. */
   async getAmountValue(): Promise<string> {

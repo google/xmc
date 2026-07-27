@@ -26,6 +26,7 @@ import (
 
 	"go/google"
 	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/pkg/auth/oauth2"
 )
 
 func main() {
@@ -35,6 +36,15 @@ func main() {
 	cfg := LoadConfig()
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
 	ctx := logging.WithLogger(context.Background(), logger)
+
+	oauthCfg, err := oauth2.LoadConfig()
+	if err != nil {
+		logging.Fatal(ctx, "Failed to load OAuth config", "error", err)
+	}
+	if oauthCfg.GCPProjectID == "" {
+		oauthCfg.GCPProjectID = cfg.ProjectID
+	}
+	authenticator := oauth2.NewAuthenticator(oauthCfg)
 
 	mux := http.NewServeMux()
 
@@ -48,10 +58,33 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 
+	// Load balancer fallback probe (GCP defaults to "/")
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("OK"))
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	statusHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status": "ok", "message": "Health service status connection successful"}`))
+	})
+
+	// Authenticated endpoints under /v1/health/
+	mux.Handle("/v1/health/status", authenticator.Authenticate(statusHandler))
+
 	addr := fmt.Sprintf(":%s", cfg.Port)
+
+	// Apply security middlewares to the mux
+	handler := authenticator.SecurityMiddlewares(mux)
+
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 3 * time.Second,
 	}
 

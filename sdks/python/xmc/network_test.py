@@ -33,6 +33,20 @@ class TestSendResultEnum(unittest.TestCase):
 class TestHTTPClient(unittest.TestCase):
     """Tests for HTTPClient connection management and request sending."""
 
+    def setUp(self) -> None:
+        import os
+
+        self._orig_env = os.environ.copy()
+        os.environ["XMC_XID"] = "1001"
+        os.environ["XMC_WORK_UNIT_ID"] = "2002"
+        os.environ["XMC_EXECUTION_ID"] = "3003"
+
+    def tearDown(self) -> None:
+        import os
+
+        os.environ.clear()
+        os.environ.update(self._orig_env)
+
     def test_invalid_endpoint_raises_value_error(self) -> None:
         with self.assertRaises(ValueError):
             HTTPClient(endpoint="")
@@ -233,6 +247,22 @@ class TestHTTPClient(unittest.TestCase):
             client.send("body")
 
         mock_conn.close.assert_called_once()
+
+    def test_network_metadata(self) -> None:
+        env = {
+            "XMC_XID": "10",
+            "XMC_WORK_UNIT_ID": "20",
+            "XMC_EXECUTION_ID": "30",
+            "XMC_REPLICA_ID": "replica-net",
+        }
+        client = HTTPClient(
+            "http://localhost:8080",
+            env=env,
+        )
+        self.assertEqual(client.xid, "10")
+        self.assertEqual(client.work_unit_id, "20")
+        self.assertEqual(client.execution_id, "30")
+        self.assertEqual(client.replica_id, "replica-net")
 
 
 if __name__ == "__main__":

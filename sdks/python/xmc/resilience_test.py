@@ -15,6 +15,7 @@
 """Unit tests for resilience state machine, backoff, and terminal diagnostic parsing."""
 
 import json
+import os
 import threading
 import time
 import unittest
@@ -23,7 +24,7 @@ from unittest.mock import MagicMock
 from xmc.buffer import MetricTuple
 from xmc.client import XMCAPIError, XMCNetworkError
 from xmc.flusher import MetricsFlusher
-from xmc.network import SendResult
+from xmc.network import HTTPClient, SendResult
 from xmc.resilience import ResilienceState, ResilienceStateMachine, classify_outcome
 
 
@@ -113,6 +114,16 @@ class TestResilienceStateMachine(unittest.TestCase):
 
 class TestMetricsFlusherResilience(unittest.TestCase):
     """Tests flusher integration with resilience state machine, backoff, interruptible sleep, and 400/422 parsing."""
+
+    def setUp(self) -> None:
+        self._orig_env = os.environ.copy()
+        os.environ["XMC_XID"] = "1001"
+        os.environ["XMC_WORK_UNIT_ID"] = "2002"
+        os.environ["XMC_EXECUTION_ID"] = "3003"
+
+    def tearDown(self) -> None:
+        os.environ.clear()
+        os.environ.update(self._orig_env)
 
     def test_transient_error_backoff_and_retry_recovery(self) -> None:
         calls = 0
@@ -210,8 +221,13 @@ class TestMetricsFlusherResilience(unittest.TestCase):
         self.assertIn("index 2 failed due to: value out of range", log_output)
 
     def test_terminal_400_send_result_discard(self) -> None:
-        mock_client = MagicMock()
-        mock_client.send.side_effect = lambda body: SendResult.INVALID_PAYLOAD
+        mock_client = MagicMock(spec=HTTPClient)
+        mock_client.xid = "1"
+        mock_client.work_unit_id = "1"
+        mock_client.execution_id = "1"
+        mock_client.replica_id = "0"
+        mock_client.is_silenced = False
+        mock_client.send_payload.return_value = SendResult.INVALID_PAYLOAD
 
         flusher = MetricsFlusher(
             client=mock_client,
@@ -226,7 +242,7 @@ class TestMetricsFlusherResilience(unittest.TestCase):
 
         self.assertEqual(flushed_count, 0)
 
-        self.assertEqual(mock_client.send.call_count, 1)
+        self.assertEqual(mock_client.send_payload.call_count, 1)
         self.assertEqual(flusher.state, ResilienceState.HEALTHY)
         log_output = "\n".join(cm.output)
         self.assertIn("Terminal payload error (HTTP 400)", log_output)

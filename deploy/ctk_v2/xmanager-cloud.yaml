@@ -195,7 +195,6 @@ deployment_groups:
     settings:
       project_id: $(vars.project_id)
       environment: $(vars.environment)
-      domain_name: $(vars.domain_name)
       domains:
       - "$(vars.environment).$(vars.domain_name)"
       - "api.$(vars.environment).$(vars.domain_name)"
@@ -384,12 +383,12 @@ deployment_groups:
         value: $(vars.jwt_secret)
       - name: secrets.development.clientSecret
         value: $(vars.iap_client_secret)
-      - name: experimentStateServer.iap.clientId
+      - name: auth.iap.clientId
         value: $(vars.iap_client_id)
-      - name: experimentStateServer.allowedEmails
+      - name: auth.allowedEmails
         value: $(vars.allowed_emails)
         type: string
-      - name: experimentStateServer.authorizedIamRole
+      - name: auth.authorizedIamRole
         value: $(vars.authorized_iam_role)
       - name: statusMessageHistoryEnabled
         value: $(vars.status_message_history_enabled)

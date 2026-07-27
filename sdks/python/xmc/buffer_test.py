@@ -65,16 +65,16 @@ class TestBoundedMetricsBuffer(unittest.TestCase):
 
         items = buf.pop_all()
         self.assertEqual(len(items), 2)
-        self.assertEqual(items[0], ("loss", 0.5, 1, int(now)))
-        self.assertEqual(items[1], ("accuracy", 0.95, 2, int(now + 1.0)))
+        self.assertEqual(items[0], ("loss", 0.5, 1, now))
+        self.assertEqual(items[1], ("accuracy", 0.95, 2, now + 1.0))
         self.assertTrue(buf.is_empty())
 
     def test_put_many(self) -> None:
         buf = BoundedMetricsBuffer(capacity=10)
         metrics = [
-            ("m1", 1.0, 1, 100),
-            ("m2", 2.0, 2, 101),
-            ("m3", 3.0, 3, 102),
+            ("m1", 1.0, 1, 100.0),
+            ("m2", 2.0, 2, 101.0),
+            ("m3", 3.0, 3, 102.0),
         ]
         buf.put_many(metrics)
         self.assertEqual(len(buf), 3)
@@ -106,23 +106,6 @@ class TestBoundedMetricsBuffer(unittest.TestCase):
         self.assertEqual(len(remaining), 2)
         self.assertTrue(buf.is_empty())
 
-    def test_dropped_count(self) -> None:
-        buf = BoundedMetricsBuffer(capacity=5)
-        self.assertEqual(buf.dropped_count, 0)
-
-        # Fill buffer
-        for i in range(5):
-            buf.put(f"m_{i}", float(i), i)
-        self.assertEqual(buf.dropped_count, 0)
-
-        # Put 1 item beyond capacity
-        buf.put("m_overflow", 1.0, 5)
-        self.assertEqual(buf.dropped_count, 1)
-
-        # Put many (3 items) beyond capacity (buffer currently has 5 items)
-        buf.put_many([("m_a", 1.0, 6), ("m_b", 2.0, 7), ("m_c", 3.0, 8)])
-        self.assertEqual(buf.dropped_count, 4)
-
     def test_fifo_eviction(self) -> None:
         """Verifies strict FIFO eviction policy when capacity is exceeded."""
         capacity = 5
@@ -146,6 +129,24 @@ class TestBoundedMetricsBuffer(unittest.TestCase):
         actual_names = [item[0] for item in items]
         self.assertEqual(actual_names, expected_names)
 
+    def test_put_validation(self) -> None:
+        buf = BoundedMetricsBuffer(capacity=10)
+        # Invalid metric_name regex/length
+        with self.assertRaises(ValueError):
+            buf.put("", 0.5, 1)
+        with self.assertRaises(ValueError):
+            buf.put("invalid metric name with spaces", 0.5, 1)
+
+        # Invalid non-finite value (NaN / Inf)
+        with self.assertRaises(ValueError):
+            buf.put("loss", float("nan"), 1)
+        with self.assertRaises(ValueError):
+            buf.put("loss", float("inf"), 1)
+
+        # Negative step
+        with self.assertRaises(ValueError):
+            buf.put("loss", 0.5, -1)
+
     def test_tensor_detachment(self) -> None:
         """Verifies immediate type coercion detaches PyTorch/JAX computation graph references."""
         buf = BoundedMetricsBuffer(capacity=10)
@@ -165,13 +166,34 @@ class TestBoundedMetricsBuffer(unittest.TestCase):
         self.assertIsInstance(name, str)
         self.assertIsInstance(val, float)
         self.assertIsInstance(step, int)
-        self.assertIsInstance(ts, int)
+        self.assertIsInstance(ts, float)
 
         self.assertNotIsInstance(val, MockTensor)
         self.assertNotIsInstance(step, MockTensor)
         self.assertEqual(val, 0.12345)
         self.assertEqual(step, 100)
-        self.assertEqual(ts, 1700000000)
+        self.assertEqual(ts, 1700000000.5)
+
+    def test_pop_dropped_count(self) -> None:
+        """Verifies cumulative dropped metric counter tracking and reset behavior."""
+        buf = BoundedMetricsBuffer(capacity=5)
+        self.assertEqual(buf.pop_dropped_count(), 0)
+
+        # Fill buffer to capacity
+        for i in range(5):
+            buf.put(f"m_{i}", float(i), i)
+        self.assertEqual(buf.pop_dropped_count(), 0)
+
+        # Overflow by 1 item
+        buf.put("m_overflow", 1.0, 5)
+        self.assertEqual(buf.pop_dropped_count(), 1)
+        # Counter resets after pop
+        self.assertEqual(buf.pop_dropped_count(), 0)
+
+        # Overflow by 3 items via put_many
+        buf.put_many([("m_a", 1.0, 6), ("m_b", 2.0, 7), ("m_c", 3.0, 8)])
+        self.assertEqual(buf.pop_dropped_count(), 3)
+        self.assertEqual(buf.pop_dropped_count(), 0)
 
     def test_thread_safety(self) -> None:
         """Verifies thread safety with concurrent producers and consumers."""

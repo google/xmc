@@ -192,15 +192,14 @@ jobs:
             -- \
             ${{ matrix.bazel_args }}
 
-      - name: 'Prune Bazel Cache & Build Tree'
+      - name: 'Prune Stale Bazel Disk Cache'
         if: always()
         run: |
-          echo "=== Pruning Bazel cache and build tree ==="
+          echo "=== Pruning stale Bazel disk cache entries ==="
           if [ -d ~/.cache/bazel-disk ]; then
-            find ~/.cache/bazel-disk -type f -mtime +7 -delete || true
+            find ~/.cache/bazel-disk -type f -atime +3 -delete || true
             find ~/.cache/bazel-disk -type d -empty -delete || true
           fi
-          bazel clean || true
           df -h
 
       - name: 'Save Bazel Cache'

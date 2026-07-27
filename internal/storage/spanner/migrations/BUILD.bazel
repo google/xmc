@@ -41,13 +41,6 @@ genrule(
     cmd = "cp $< $@",
 )
 
-genrule(
-    name = "copy_dashboard_messages",
-    srcs = ["//api/protos/dashboard:dashboard_messages_descriptor"],
-    outs = ["dashboard_messages.pb"],
-    cmd = "cp $< $@",
-)
-
 compat_go_library(
     name = "migrations_lib",
     srcs = ["runner.go"],
@@ -57,7 +50,6 @@ compat_go_library(
     ]) + [
         ":ess_messages.pb",
         ":xid_messages.pb",
-        ":dashboard_messages.pb",
     ],
     importpath = "xmanager_cloud/internal/storage/spanner/migrations",
     visibility = ["//visibility:private"],

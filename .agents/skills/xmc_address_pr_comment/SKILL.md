@@ -25,21 +25,18 @@ graph TD
 ```
 
 > [!IMPORTANT]
-> All execution steps in this skill MUST strictly adhere to the mandatory [PR Review & Inspection Guidelines](../../rules/pr_review_guidelines.md) (enforcing mandatory programmatic comment enumeration, pre-edit consolidated review checklist artifacts, and 1-to-1 thread resolution verification).
+> All execution steps in this skill MUST strictly adhere to the mandatory [PR Review & Inspection Guidelines](../../rules/pr_review_guidelines.md), [Skills & Automation Guidelines](../../rules/skills_and_automation.md), and [Core Engineering Standards](../../rules/core_engineering.md).
 
 ---
 
 ## Guidelines for Using CLI Tools
 
 When invoking helper tools under `tools/` (e.g. `generate_review_checklist.py`, `fetch_pr_comment.py`, `reply_pr_comment.py`, `build_oci.py`):
-1. **Do not read tool source code**: You should not open or read the Python source code of these tools.
+1. **Do not read tool source code**: Do not open or read the Python source code of helper tools. Refer to [Skills & Automation Guidelines](../../rules/skills_and_automation.md#5-helper-tool-execution-policy--safety-constraints).
 2. **Use `--help`**: To learn about the tool's usage, options, and parameters, run it with the `--help` flag (e.g. `./tools/fetch_pr_comment.py --help`).
-3. **Parse Structured Output & Handle Errors**: All tools output structured JSON. Check the process exit code:
-   - **Exit code 0 (Success)**: The requested data is in the `"result"` field of the stdout JSON.
-   - **Exit code 1 (Handled Error)**: Read `"message"` and `"instruction"` from the JSON output. Follow the `"instruction"` step-by-step to fix the input, credentials, or environment.
-   - **Exit code 2 (Unhandled Error)**: The tool encountered an unexpected bug. Inspect the `"message"` and `"traceback"` fields to analyze the cause.
-
-4. **Shell & Payload Safety**: When running helper scripts or handling payloads containing Markdown/code formatting, execute standalone `.py` script files or pass arguments via script parameters. Avoid double-quoted inline commands (`python3 -c "..."`).
+3. **Parse Structured Output & Handle Errors**: All tools output structured JSON (exit code 0 for success, 1 for handled error, 2 for unhandled error).
+4. **Shell & Payload Safety**: Execute standalone `.py` script files or pass arguments via script parameters. Avoid double-quoted inline commands (`python3 -c "..."`).
+   - **Backtick Safety**: When passing reply messages containing backticks (e.g. markdown code spans), avoid double-quoted string arguments in bash. Use `--message-file` (or `-f`) to safely read the reply message from a file instead.
 
 
 
@@ -189,6 +186,17 @@ The agent runs the helper script `tools/reply_pr_comment.py` to notify the revie
 export GITHUB_TOKEN="your_github_token"
 ./tools/reply_pr_comment.py "<github_comment_url>" "code changed"
 ```
+
+Or pass a file containing the message via `--message-file` (or `-f`):
+```bash
+cat << 'EOF' > reply_message.txt
+Addressed review comment for `handlers.go`.
+EOF
+./tools/reply_pr_comment.py "<github_comment_url>" --message-file reply_message.txt
+```
+
+> [!WARNING]
+> **Backtick Subshell Command Safety**: Avoid passing double-quoted strings containing backticks (`` ` ``) directly on the command line (e.g. `./tools/reply_pr_comment.py "<url>" "Fixed `func_name()`"`). Bash evaluates backticks in double-quoted strings as subshell commands prior to executing python, causing unwanted command execution or syntax errors. Always use `--message-file` (or `-f`) when the reply message contains backticks or markdown code formatting.
 
 ### Usage Telemetry Tracking
 When `tools/reply_pr_comment.py` successfully posts a reply, it appends a hidden HTML comment block containing public usage metadata (authenticated GitHub user, comment ID, PR number, and UTC timestamp) to the comment body:

@@ -32,17 +32,17 @@ resource "google_service_account" "ui_gsa" {
 # Cloud Run Service for UI
 # -----------------------------------------------------------------------------
 resource "google_cloud_run_v2_service" "ui_service" {
-  name     = "xmc-ui-${var.environment}"
-  project  = google_project_service.cloud_run_api.project
-  location = var.ui_service_location
-  ingress  = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+  name                = "xmc-ui-${var.environment}"
+  project             = google_project_service.cloud_run_api.project
+  location            = var.ui_service_location
+  ingress             = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
   deletion_protection = !var.is_dev_environment
 
   default_uri_disabled = true
   invoker_iam_disabled = true
 
   template {
-    service_account = google_service_account.ui_gsa.email
+    service_account  = google_service_account.ui_gsa.email
     session_affinity = true
 
     scaling {
@@ -79,7 +79,7 @@ resource "google_cloud_run_v2_service" "ui_service" {
           cpu    = "1"
           memory = "512Mi"
         }
-        cpu_idle = true
+        cpu_idle          = true
         startup_cpu_boost = true
       }
 

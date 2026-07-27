@@ -16,6 +16,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: health-service
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
   labels:
     app: health-service
 spec:
