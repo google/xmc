@@ -18,6 +18,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,8 +26,15 @@ import (
 	"time"
 
 	"go/google"
+	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
+	"golang/grpc/credentials/insecure/insecure"
+	"golang/grpc/grpc"
+	"golang/grpc/reflection/reflection"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
+
+	gwpb "xmanager_cloud/health_service/proto/api_go_grpc_gateway_proto"
+	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 )
 
 func main() {
@@ -46,6 +54,33 @@ func main() {
 	}
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
 
+	// 1. Setup gRPC server
+	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
+	if err != nil {
+		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
+	}
+	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
+	spb.RegisterHealthServiceServer(grpcServer, newServer(cfg))
+	reflection.Register(grpcServer)
+
+	go func() {
+		logging.Info(ctx, "Health service gRPC starting", "addr", lis.Addr())
+		if err := grpcServer.Serve(lis); err != nil {
+			logging.Fatal(ctx, "gRPC server failed", "error", err)
+		}
+	}()
+
+	// 2. Setup gRPC Gateway
+	gwmux := runtime.NewServeMux()
+	dialOpts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
+	err = gwpb.RegisterHealthServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
+	if err != nil {
+		logging.Fatal(ctx, "Failed to register gateway", "error", err)
+	}
+
+	// 3. Setup HTTP Server mux
 	mux := http.NewServeMux()
 
 	// Probes
@@ -58,39 +93,31 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 
-	// Load balancer fallback probe (GCP defaults to "/")
+	// Secure private gRPC-Gateway endpoints with Authenticate middleware
+	authenticatedGwmux := authenticator.Authenticate(gwmux)
+
+	// Route gateway endpoints
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("OK"))
 			return
 		}
-		http.NotFound(w, r)
+		authenticatedGwmux.ServeHTTP(w, r)
 	})
-
-	statusHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status": "ok", "message": "Health service status connection successful"}`))
-	})
-
-	// Authenticated endpoints under /v1/health/
-	mux.Handle("/v1/health/status", authenticator.Authenticate(statusHandler))
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
-
-	// Apply security middlewares to the mux
 	handler := authenticator.SecurityMiddlewares(mux)
 
-	server := &http.Server{
+	httpServer := &http.Server{
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 3 * time.Second,
 	}
 
 	go func() {
-		logging.Info(ctx, "Health service starting", "addr", addr)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logging.Info(ctx, "Health service HTTP gateway starting", "addr", addr)
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logging.Fatal(ctx, "HTTP server failed", "error", err)
 		}
 	}()
@@ -104,8 +131,10 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		logging.Fatal(ctx, "Error shutting down server", "error", err)
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		logging.Info(ctx, "Error shutting down HTTP server", "error", err)
 	}
+	grpcServer.GracefulStop()
+
 	logging.Info(ctx, "Health service stopped")
 }
