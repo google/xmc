@@ -33,6 +33,7 @@ async function handleUserAuthRoute(route: Route) {
 
 test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1500, height: 850 });
     // Intercept user auth API endpoint so authGuard succeeds in e2e browser environment
     await page.route('/api/user', handleUserAuthRoute);
     // Navigate to production route /resources
