@@ -1,8 +1,0 @@
-refactor(bazel): modularize BUILD.bazel files into subpackage directories
-
-Create dedicated BUILD.bazel files inside each subpackage directory and update Bazel target references codebase-wide.
-
-This aligns Bazel build target declarations with standard Go package directory structure so srcs no longer reference parent-relative file paths.
-
-TAG=agy
-CONV=45db6eeb-6770-4007-b22f-e7967de9db54
