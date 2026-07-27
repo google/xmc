@@ -55,6 +55,7 @@ export class ResourceDashboard implements OnInit, OnDestroy {
     () => this.resolvedData()?.['clusterQueues'] ?? [],
   );
   protected readonly selectedQueue = signal<string>('gpu-cluster-queue');
+  protected readonly activeTab = signal<'queues' | 'predictability'>('queues');
 
   private readonly reloader: ReloaderControl = this.autoReloadService.createReloader({
     emitOnStart: false,

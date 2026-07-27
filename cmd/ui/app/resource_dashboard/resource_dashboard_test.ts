@@ -14,8 +14,6 @@
 
 import 'jasmine';
 
-import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { Component } from '@angular/core';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
@@ -59,8 +57,6 @@ describe('ResourceDashboard Container', () => {
       imports: [TestHostComponent, NoopAnimationsModule],
       providers: [
         provideRouter([]),
-        provideHttpClient(),
-        provideHttpClientTesting(),
         { provide: ResourceService, useValue: resourceService },
         { provide: AUTO_REFRESH_INTERVAL_MS, useValue: 30000 },
         {
