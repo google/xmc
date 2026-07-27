@@ -23,7 +23,7 @@ from github_utils import call_github_api
 from tool_utils import HandledError, run_tool
 
 
-def _fetch_comments(owner: str, repo: str, since: str = None):
+def _fetch_comments(owner: str, repo: str, since: str | None = None):
     """Fetches review comments from the repository via GitHub API."""
     comments = []
     page = 1

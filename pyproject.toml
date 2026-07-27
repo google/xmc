@@ -45,3 +45,21 @@ convention = "google"
 [tool.ruff.lint.isort]
 combine-as-imports = true
 
+[tool.mypy]
+files = ["."]
+disallow_subclassing_any = true
+ignore_missing_imports = true
+explicit_package_bases = true
+warn_unused_configs = true
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+exclude = [
+    '(^|/)venv/',
+    '(^|/)node_modules/',
+    '(^|/)bazel-',
+    '(^|/)ctk-out/',
+    '(^|/)test/regression/',
+]
+
+

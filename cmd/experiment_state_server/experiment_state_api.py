@@ -98,7 +98,9 @@ def get_current_user_email() -> str:
         raise RuntimeError("Failed to get current user email") from e
 
 
-class AuditMetadataInterceptor(grpc.UnaryUnaryClientInterceptor):
+# grpc.UnaryUnaryClientInterceptor comes from untyped third-party grpc package (type Any).
+# Note: [misc] ignore is required due to pyproject.toml disallow_subclassing_any = true.
+class AuditMetadataInterceptor(grpc.UnaryUnaryClientInterceptor):  # type: ignore[misc]
     """gRPC client interceptor to audit metadata."""
 
     def __init__(self, user_email: str):
