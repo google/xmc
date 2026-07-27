@@ -24,6 +24,7 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
 import "third_party/xmanager_cloud/dashboard_service/proto/messages.proto";
 
 service DashboardService {
@@ -150,14 +151,10 @@ message DeleteDashboardRequest {
 }
 
 message CreateChartRequest {
-  string parent = 1 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.resource_reference) = {
-      type: "cloud.xmanager.googleapis.com/Dashboard"
-    }
-  ];
-  Chart chart = 2 [(google.api.field_behavior) = REQUIRED];
-  string chart_id = 3 [(google.api.field_behavior) = OPTIONAL];
+  string parent_experiment = 1 [(google.api.field_behavior) = REQUIRED];
+  string parent_workunit = 2 [(google.api.field_behavior) = REQUIRED];
+  Chart chart = 3 [(google.api.field_behavior) = REQUIRED];
+  string chart_id = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
 message GetChartRequest {
@@ -176,9 +173,12 @@ message GetChartDataRequest {
       type: "cloud.xmanager.googleapis.com/Chart"
     }
   ];
-  string parent_experiment = 2 [(google.api.field_behavior) = OPTIONAL];
-  string parent_workunit = 3 [(google.api.field_behavior) = OPTIONAL];
-  int32 chart_width_pixels = 4 [(google.api.field_behavior) = OPTIONAL];
+  repeated string plot_ids = 2 [(google.api.field_behavior) = OPTIONAL];
+  int64 start_iteration = 3 [(google.api.field_behavior) = OPTIONAL];
+  int64 end_iteration = 4 [(google.api.field_behavior) = OPTIONAL];
+  google.protobuf.Timestamp start_time = 5 [(google.api.field_behavior) = OPTIONAL];
+  google.protobuf.Timestamp end_time = 6 [(google.api.field_behavior) = OPTIONAL];
+  int32 chart_width_pixels = 7 [(google.api.field_behavior) = OPTIONAL];
 }
 
 message ListChartsRequest {

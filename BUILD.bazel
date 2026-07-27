@@ -70,6 +70,8 @@ load("@bazel_gazelle//:def.bzl", "gazelle")
 
 # Proto stubs target package mappings (matching how Go codebase imports our proto stubs)
 # gazelle:resolve go api/filter/filter_expression_go_proto //api/filter:filter_expression_go_proto
+# gazelle:resolve go xmanager_cloud/dashboard_service/proto/api_go_proto //api/protos/dashboard:messages_go_proto
+# gazelle:resolve go xmanager_cloud/dashboard_service/proto/service_go_proto //api/protos/dashboard:service_go_proto
 # gazelle:resolve go xmanager_cloud/experiment_state_server/proto/messages_go_proto //api/protos/experiment:messages_go_proto
 # gazelle:resolve go xmanager_cloud/experiment_state_server/proto/api_go_proto //api/protos/experiment:api_go_proto
 # gazelle:resolve go xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto //api/protos/experiment:api_go_proto
