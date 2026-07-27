@@ -32,6 +32,9 @@ import (
 
 // AddWorkUnitOperation adds an operation to a work unit.
 func (r *Repository) AddWorkUnitOperation(ctx context.Context, xid int64, wid int64, operationMetadata *essmsgpb.OperationMetadata) (*longrunningpb.Operation, error) {
+	if operationMetadata == nil {
+		return nil, fmt.Errorf("operationMetadata must not be nil")
+	}
 	ctx = logging.WithWorkUnitName(ctx, validator.ConstructWorkUnitName(xid, wid))
 	logging.Info(ctx, "Add work unit operation to storage", "operationMetadata", operationMetadata)
 

@@ -33,6 +33,9 @@ import (
 
 // UpdateWorkUnitOperation updates the status of an operation.
 func (r *Repository) UpdateWorkUnitOperation(ctx context.Context, operationUpdate *storage.OperationUpdate) (*longrunningpb.Operation, error) {
+	if operationUpdate == nil {
+		return nil, fmt.Errorf("operationUpdate must not be nil")
+	}
 	ctx = logging.WithOperationName(ctx, validator.ConstructOperationName(operationUpdate.XID, operationUpdate.WID, operationUpdate.OID))
 	logging.Info(ctx, "Update work unit operation", "update", operationUpdate)
 

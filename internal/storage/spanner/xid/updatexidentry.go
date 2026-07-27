@@ -48,6 +48,9 @@ LIMIT 1;
 
 // UpdateXidEntry updates an XidEntry with the given update mask.
 func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntryUpdate) (*xidmsgpb.XidEntry, error) {
+	if update == nil {
+		return nil, fmt.Errorf("update must not be nil")
+	}
 	ctx = logging.WithXIDName(ctx, validator.ConstructXIDName(update.XID))
 	logging.Info(ctx, "UpdateXidEntry", "update", update.XidEntry)
 

@@ -35,6 +35,9 @@ import (
 
 // UpdateExperiment updates an experiment with the given update mask.
 func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.ExperimentUpdate) (*essmsgpb.Experiment, *essmsgpb.Experiment, error) {
+	if update == nil {
+		return nil, nil, fmt.Errorf("update must not be nil")
+	}
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(update.XID))
 	logging.Info(ctx, "Update experiment in storage", "update", update.Experiment)
 

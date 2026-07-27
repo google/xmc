@@ -173,14 +173,16 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 			logging.Info(ctx, fmt.Sprintf("Updated work unit execution: %s", protoDiff), "execution", execution)
 		}
 
-		if r.experimentRepo != nil {
-			var err error
-			exp, err = r.experimentRepo.FetchExperimentTransaction(ctx, xid, txn)
-			if err != nil {
-				return fmt.Errorf("failed to fetch experiment: %w", err)
-			}
-		} else {
-			exp = nil
+		if r.experimentRepo == nil {
+			return fmt.Errorf("experiment repository is not initialized")
+		}
+		var err error
+		exp, err = r.experimentRepo.FetchExperimentTransaction(ctx, xid, txn)
+		if err != nil {
+			return fmt.Errorf("failed to fetch experiment: %w", err)
+		}
+		if exp == nil {
+			return fmt.Errorf("experiment %d not found", xid)
 		}
 
 		currentExpStatus := proto.Clone(exp.Status).(*essmsgpb.ExperimentStatus)

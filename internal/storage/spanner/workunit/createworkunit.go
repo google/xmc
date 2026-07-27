@@ -74,11 +74,15 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 			return err
 		}
 
-		if r.experimentRepo != nil {
-			exp, err = r.experimentRepo.FetchExperimentTransaction(ctx, xid, tx)
-			if err != nil {
-				return fmt.Errorf("failed to fetch experiment: %w", err)
-			}
+		if r.experimentRepo == nil {
+			return fmt.Errorf("experiment repository is not initialized")
+		}
+		exp, err = r.experimentRepo.FetchExperimentTransaction(ctx, xid, tx)
+		if err != nil {
+			return fmt.Errorf("failed to fetch experiment: %w", err)
+		}
+		if exp == nil {
+			return fmt.Errorf("experiment %d not found", xid)
 		}
 
 		var executionDeltas []*state.WorkUnitStateDelta
@@ -128,9 +132,11 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 	logging.Info(ctx, "Written work unit to storage", "work_unit", wu)
 	logging.Info(ctx, "Updated experiment successfully", "experiment", exp)
 
-	sort.Slice(exp.Status.ChildStateCounts, func(i, j int) bool {
-		return exp.Status.ChildStateCounts[i].State < exp.Status.ChildStateCounts[j].State
-	})
+	if exp != nil && exp.Status != nil {
+		sort.Slice(exp.Status.ChildStateCounts, func(i, j int) bool {
+			return exp.Status.ChildStateCounts[i].State < exp.Status.ChildStateCounts[j].State
+		})
+	}
 
 	return wu, nil
 }

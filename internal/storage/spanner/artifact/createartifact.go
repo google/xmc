@@ -16,6 +16,7 @@ package artifact
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
@@ -28,6 +29,9 @@ import (
 
 // CreateArtifact creates a new artifact in Spanner.
 func (r *Repository) CreateArtifact(ctx context.Context, artifact *essmsgpb.Artifact) (*essmsgpb.Artifact, error) {
+	if artifact == nil {
+		return nil, fmt.Errorf("artifact must not be nil")
+	}
 	ctx = logging.WithArtifactName(ctx, artifact.GetName())
 	logging.Info(ctx, "Write artifact to storage", "artifact", artifact)
 

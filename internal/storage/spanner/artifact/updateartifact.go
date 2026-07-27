@@ -34,6 +34,9 @@ import (
 
 // UpdateArtifact updates an artifact with the given update mask.
 func (r *Repository) UpdateArtifact(ctx context.Context, update *storage.ArtifactUpdate) (originalArtifact *essmsgpb.Artifact, updatedArtifact *essmsgpb.Artifact, err error) {
+	if update == nil {
+		return nil, nil, fmt.Errorf("update must not be nil")
+	}
 	ctx = logging.WithArtifactName(ctx, validator.ConstructArtifactName(update.AID))
 	logging.Info(ctx, "Update artifact in storage", "update", update.Artifact)
 

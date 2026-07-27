@@ -34,6 +34,9 @@ import (
 
 // UpdateWorkUnit updates a work unit with the given update mask.
 func (r *Repository) UpdateWorkUnit(ctx context.Context, update *storage.WorkUnitUpdate) (originalWorkUnit *essmsgpb.WorkUnit, updatedWorkUnit *essmsgpb.WorkUnit, err error) {
+	if update == nil {
+		return nil, nil, fmt.Errorf("update must not be nil")
+	}
 	ctx = logging.WithWorkUnitName(ctx, validator.ConstructWorkUnitName(update.XID, update.WID))
 	logging.Info(ctx, "UpdateWorkUnit", "update", update.WorkUnit)
 

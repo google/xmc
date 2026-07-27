@@ -16,6 +16,7 @@ package experiment
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
@@ -38,6 +39,12 @@ func (r *Repository) CreateExperiment(ctx context.Context, exp *essmsgpb.Experim
 	}
 
 	_, err = r.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+		if exp == nil {
+			return fmt.Errorf("experiment must not be nil")
+		}
+		if exp.Status == nil {
+			exp.Status = &essmsgpb.ExperimentStatus{}
+		}
 		now := timestamppb.New(time.Now())
 		exp.CreateTime = now
 		exp.UpdateTime = now

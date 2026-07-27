@@ -50,6 +50,9 @@ THEN RETURN Xid
 
 // CreateXidEntry creates a new XidEntry in storage.
 func (r *Repository) CreateXidEntry(ctx context.Context, entry *xidpb.XidEntry) (*xidpb.XidEntry, error) {
+	if entry == nil {
+		return nil, fmt.Errorf("entry must not be nil")
+	}
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
 		now := timestamppb.New(time.Now())
 		entry.CreateTime = now

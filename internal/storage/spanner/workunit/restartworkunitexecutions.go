@@ -101,13 +101,17 @@ func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester st
 			})
 		}
 
+		if r.experimentRepo == nil {
+			return fmt.Errorf("experiment repository is not initialized")
+		}
 		var exp *essmsgpb.Experiment
 		var err error
-		if r.experimentRepo != nil {
-			exp, err = r.experimentRepo.FetchExperimentTransaction(ctx, xid, tx)
-			if err != nil {
-				return fmt.Errorf("failed to fetch experiment: %w", err)
-			}
+		exp, err = r.experimentRepo.FetchExperimentTransaction(ctx, xid, tx)
+		if err != nil {
+			return fmt.Errorf("failed to fetch experiment: %w", err)
+		}
+		if exp == nil {
+			return fmt.Errorf("experiment %d not found", xid)
 		}
 
 		exp, err = state.DenormalizeWorkUnitStatus(ctx, exp, executionDeltas)
