@@ -90,34 +90,38 @@ def teardown_benchmark(args: argparse.Namespace) -> dict[str, Any]:
 
     if args.manifest:
         manifest_path = Path(args.manifest)
-        if manifest_path.is_file():
-            try:
-                with open(manifest_path, encoding="utf-8") as f:
-                    data = json.load(f)
-                    if not isinstance(data, dict):
-                        raise HandledError(
-                            f"Manifest file '{args.manifest}' must contain a JSON object.",
-                            "Ensure the manifest file is structured as a JSON object/dictionary.",
-                        )
-                    for key, target in [
-                        ("pr_urls", prs),
-                        ("git_branches", branches),
-                        ("temp_files", temp_files),
-                    ]:
-                        val = data.get(key)
-                        if val is not None:
-                            if isinstance(val, list):
-                                target.extend(item for item in val if isinstance(item, str))
-                            else:
-                                raise HandledError(
-                                    f"Manifest key '{key}' must be a list, got {type(val).__name__}.",
-                                    "Ensure the manifest file contains valid lists for resource keys.",
-                                )
-            except (json.JSONDecodeError, OSError) as e:
-                raise HandledError(
-                    f"Failed to parse manifest file '{args.manifest}': {e}",
-                    "Ensure manifest file contains valid JSON.",
-                ) from e
+        if not manifest_path.is_file():
+            raise HandledError(
+                f"Manifest file not found: {args.manifest}",
+                "Verify the manifest file path is correct and the file exists.",
+            )
+        try:
+            with open(manifest_path, encoding="utf-8") as f:
+                data = json.load(f)
+                if not isinstance(data, dict):
+                    raise HandledError(
+                        f"Manifest file '{args.manifest}' must contain a JSON object.",
+                        "Ensure the manifest file is structured as a JSON object/dictionary.",
+                    )
+                for key, target in [
+                    ("pr_urls", prs),
+                    ("git_branches", branches),
+                    ("temp_files", temp_files),
+                ]:
+                    val = data.get(key)
+                    if val is not None:
+                        if isinstance(val, list):
+                            target.extend(item for item in val if isinstance(item, str))
+                        else:
+                            raise HandledError(
+                                f"Manifest key '{key}' must be a list, got {type(val).__name__}.",
+                                "Ensure the manifest file contains valid lists for resource keys.",
+                            )
+        except (json.JSONDecodeError, OSError) as e:
+            raise HandledError(
+                f"Failed to parse manifest file '{args.manifest}': {e}",
+                "Ensure manifest file contains valid JSON.",
+            ) from e
 
     if not prs and not branches and not temp_files:
         return {

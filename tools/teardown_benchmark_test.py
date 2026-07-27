@@ -14,12 +14,14 @@
 
 """Unit tests for teardown_benchmark tool."""
 
+import argparse
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from teardown_benchmark import teardown_resources
+from teardown_benchmark import teardown_benchmark, teardown_resources
+from tool_utils import HandledError
 
 
 class TeardownBenchmarkTest(unittest.TestCase):
@@ -60,6 +62,16 @@ class TeardownBenchmarkTest(unittest.TestCase):
 
         self.assertFalse(res["success"])
         self.assertEqual(len(res["failed_prs"]), 1)
+
+    def test_teardown_benchmark_missing_manifest(self):
+        args = argparse.Namespace(
+            manifest="/tmp/nonexistent_manifest_12345.json",
+            pr_url=[],
+            git_branch=[],
+            temp_file=[],
+        )
+        with self.assertRaises(HandledError):
+            teardown_benchmark(args)
 
 
 if __name__ == "__main__":

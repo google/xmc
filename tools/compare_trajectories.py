@@ -49,6 +49,8 @@ def parse_transcript(transcript_path: Path) -> dict[str, Any]:
                 total_steps += 1
                 try:
                     step = json.loads(line)
+                    if not isinstance(step, dict):
+                        continue
                 except json.JSONDecodeError:
                     continue
 
