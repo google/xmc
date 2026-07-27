@@ -21,9 +21,12 @@ import (
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/query_generator/querytools"
 	"xmanager_cloud/storage/spanner/schema/statusmessageschema"
 )
+
+var _ storage.StatusMessageStore = (*Repository)(nil)
 
 func reverseBits(x int64) int64 {
 	return int64(bits.Reverse64(uint64(x)))

@@ -21,7 +21,11 @@ import (
 	"math/bits"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+
+	"xmanager_cloud/internal/storage"
 )
+
+var _ storage.OperationStore = (*Repository)(nil)
 
 type spannerTransaction interface {
 	ReadRow(ctx context.Context, table string, key spanner.Key, columns []string) (*spanner.Row, error)

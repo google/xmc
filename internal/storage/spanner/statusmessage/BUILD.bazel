@@ -30,6 +30,7 @@ compat_go_library(
         "//internal/query_generator:liststatement",
         "//internal/query_generator:querytools",
         "//internal/query_generator/normalizer",
+        "//internal/storage",
         "//internal/storage/spanner/data:spannerdata",
         "//internal/storage/spanner/schema:statusmessageschema",
         "//internal/validator",
