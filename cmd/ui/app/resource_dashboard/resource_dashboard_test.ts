@@ -24,11 +24,16 @@ import {
   bootstrap,
   cleanState,
   flush,
+  getHarness,
   setupModule,
   setupObservableMatchers,
 } from 'xmanager_cloud/ui/app/testing/test';
 
+import { QueueListHarness } from './components/queue_list/queue_list_harness';
+import { SmartResourceFinderHarness } from './components/smart_resource_finder/smart_resource_finder_harness';
 import { ResourceDashboard } from './resource_dashboard';
+
+const SUBNAV_TAB_SELECTOR = '.subnav-tab';
 
 @Component({
   standalone: true,
@@ -40,9 +45,62 @@ class TestHostComponent {}
 describe('ResourceDashboard Container', () => {
   beforeAll(setupObservableMatchers);
 
-  const mockQueue = {
-    name: 'test-queue',
-    flavors: [],
+  const mockGpuQueue = {
+    name: 'gpu-cluster-queue',
+    strategy: 'BestEffortFIFO',
+    cohort: 'gpu-cohort',
+    status: 'Active',
+    statusMessage: 'Can admit new workloads',
+    lastTransitionTime: '2026-07-22T10:00:00Z',
+    admittedWorkloads: 1,
+    reservingWorkloads: 0,
+    pendingWorkloads: 0,
+    pendingJobsCount: 0,
+    admittedJobsCount: 1,
+    dominantResource: 'GPU H100',
+    dominantResourceUnits: 8,
+    requestedResources: '0',
+    localQueues: [{ name: 'gpu-queue', namespace: 'default' }],
+    flavors: [
+      {
+        name: 'h100-flavor',
+        resourceName: 'nvidia.com/gpu',
+        nominalQuota: '64',
+        inUse: '8',
+        reserved: '0',
+        freeCapacity: '56',
+        largestSlot: '56 → 64',
+      },
+    ],
+  } as ClusterQueue;
+
+  const mockCpuQueue = {
+    name: 'cpu-cluster-queue',
+    strategy: 'BestEffortFIFO',
+    cohort: 'cpu-cohort',
+    status: 'Active',
+    statusMessage: 'Can admit new workloads',
+    lastTransitionTime: '2026-07-22T10:00:00Z',
+    admittedWorkloads: 2,
+    reservingWorkloads: 0,
+    pendingWorkloads: 0,
+    pendingJobsCount: 0,
+    admittedJobsCount: 2,
+    dominantResource: 'CPU',
+    dominantResourceUnits: 32,
+    requestedResources: '0',
+    localQueues: [{ name: 'cpu-queue', namespace: 'default' }],
+    flavors: [
+      {
+        name: 'cpu-flavor',
+        resourceName: 'cpu',
+        nominalQuota: '512',
+        inUse: '64',
+        reserved: '0',
+        freeCapacity: '448',
+        largestSlot: '448 → 512',
+      },
+    ],
   } as ClusterQueue;
 
   cleanState(() => {
@@ -53,8 +111,8 @@ describe('ResourceDashboard Container', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            queryParams: of({ queue: 'test-queue' }),
-            data: of({ clusterQueues: [mockQueue] }),
+            queryParams: of({ queue: 'gpu-cluster-queue' }),
+            data: of({ clusterQueues: [mockGpuQueue, mockCpuQueue] }),
           },
         },
       ],
@@ -62,14 +120,71 @@ describe('ResourceDashboard Container', () => {
     return {};
   }, beforeEach);
 
-  it('should render resolved cluster queues', async () => {
-    const host = bootstrap(TestHostComponent);
+  it('should render subnav tabs, smart resource finder, and resolved cluster queues', async () => {
+    bootstrap(TestHostComponent);
     await flush();
 
-    expect(host).toBeTruthy();
+    const queueListHarness = (await getHarness(QueueListHarness)) as QueueListHarness;
+    expect(await queueListHarness.getQueueCardCount()).toBe(2);
+    expect(await (await queueListHarness.getQueueCard(0)).getQueueName()).toBe('gpu-cluster-queue');
 
-    const queueItems = document.querySelectorAll('.scaffolding-queue-item');
-    expect(queueItems.length).toBe(1);
-    expect(queueItems[0].textContent).toContain('test-queue');
+    const finderHarness = (await getHarness(
+      SmartResourceFinderHarness,
+    )) as SmartResourceFinderHarness;
+    expect(await finderHarness.getResourceTypeSelectCount()).toBe(1);
+  });
+
+  it('should filter queue list when finding matching queues in smart resource finder', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const queueListHarness = (await getHarness(QueueListHarness)) as QueueListHarness;
+    const finderHarness = (await getHarness(
+      SmartResourceFinderHarness,
+    )) as SmartResourceFinderHarness;
+
+    expect(await queueListHarness.getQueueCardCount()).toBe(2);
+
+    await finderHarness.selectResourceType(0, 'cpu');
+    await finderHarness.clickFindButton();
+    await flush();
+
+    expect(await queueListHarness.getQueueCardCount()).toBe(1);
+    expect(await (await queueListHarness.getQueueCard(0)).getQueueName()).toBe('cpu-cluster-queue');
+  });
+
+  it('should switch tabs and show all queues in resource availability tab', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const queueListHarness = (await getHarness(QueueListHarness)) as QueueListHarness;
+    const finderHarness = (await getHarness(
+      SmartResourceFinderHarness,
+    )) as SmartResourceFinderHarness;
+
+    await finderHarness.selectResourceType(0, 'cpu');
+    await finderHarness.clickFindButton();
+    await flush();
+    expect(await queueListHarness.getQueueCardCount()).toBe(1);
+
+    const tabs = document.querySelectorAll(SUBNAV_TAB_SELECTOR);
+    (tabs[1] as HTMLButtonElement).click();
+    await flush();
+
+    expect(await queueListHarness.getQueueCardCount()).toBe(2);
+  });
+
+  it('should select queue when a queue card is clicked', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const queueListHarness = (await getHarness(QueueListHarness)) as QueueListHarness;
+    const card1 = await queueListHarness.getQueueCard(1);
+
+    expect(await card1.isSelected()).toBeFalse();
+    await card1.click();
+    await flush();
+
+    expect(await card1.isSelected()).toBeTrue();
   });
 });
