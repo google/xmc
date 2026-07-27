@@ -59,13 +59,13 @@ func (m *mockRows) Scan(dest ...any) error {
 	return nil
 }
 
-func (m *mockRows) ScanStruct(dest any) error               { return nil }
-func (m *mockRows) ColumnTypes() []driver.ColumnType        { return nil }
-func (m *mockRows) Totals(dest ...any) error                { return nil }
-func (m *mockRows) Columns() []string                       { return m.cols }
-func (m *mockRows) Close() error                            { return nil }
-func (m *mockRows) Err() error                              { return m.err }
-func (m *mockRows) HasData() bool                           { return len(m.data) > 0 }
+func (m *mockRows) ScanStruct(dest any) error        { return nil }
+func (m *mockRows) ColumnTypes() []driver.ColumnType { return nil }
+func (m *mockRows) Totals(dest ...any) error         { return nil }
+func (m *mockRows) Columns() []string                { return m.cols }
+func (m *mockRows) Close() error                     { return nil }
+func (m *mockRows) Err() error                       { return m.err }
+func (m *mockRows) HasData() bool                    { return len(m.data) > 0 }
 
 func TestMicroOrTime_Scan(t *testing.T) {
 	tests := []struct {
