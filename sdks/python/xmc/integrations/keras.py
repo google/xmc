@@ -21,6 +21,14 @@ import xmc
 
 MIN_KERAS_VERSION = "3.0.0"
 
+try:
+    import keras
+except ImportError as exc:
+    raise ImportError(
+        "Keras is required to use XmcKerasCallback. Please install Keras >= 3.0.0 "
+        "via 'pip install xmc[keras]' or 'pip install keras>=3.0.0'."
+    ) from exc
+
 
 def _parse_version(version_str: str) -> tuple[int, ...]:
     """Parses a version string into an integer tuple for comparison."""
@@ -31,16 +39,8 @@ def _parse_version(version_str: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-def _validate_keras_dependency() -> Any:
-    """Validates eager import of Keras >= 3.0.0, failing fast if missing or incompatible."""
-    try:
-        import keras
-    except ImportError as exc:
-        raise ImportError(
-            "Keras is required to use XmcKerasCallback. Please install Keras >= 3.0.0 "
-            "via 'pip install xmc[keras]' or 'pip install keras>=3.0.0'."
-        ) from exc
-
+def _validate_keras_version() -> None:
+    """Validates Keras version >= 3.0.0, failing fast if incompatible."""
     version_str = getattr(keras, "__version__", None)
     if version_str is None:
         try:
@@ -55,13 +55,11 @@ def _validate_keras_dependency() -> Any:
             f"or 'pip install --upgrade keras>=3.0.0'."
         )
 
-    return keras
+
+_validate_keras_version()
 
 
-_keras = _validate_keras_dependency()
-
-
-class XmcKerasCallback(_keras.callbacks.Callback):
+class XmcKerasCallback(keras.callbacks.Callback):
     """Keras Callback for automatic metric logging to XMC SDK."""
 
     def __init__(
