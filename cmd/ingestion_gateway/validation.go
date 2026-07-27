@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io"
 
+	"google.golang.org/protobuf/encoding/protojson"
+
 	pb "xmanager_cloud/api/protos/metrics"
 	"xmanager_cloud/pkg/apis/metrics"
 )
@@ -94,6 +96,50 @@ func skipWhitespace(r *bufio.Reader) error {
 	}
 }
 
+func processNextRecord(dec *json.Decoder, idx int, consumer MetricConsumer) (bool, *FailedRecord, error) {
+	var raw json.RawMessage
+	if err := dec.Decode(&raw); err != nil {
+		return false, nil, fmt.Errorf("malformed JSON at record index %d: %w", idx, err)
+	}
+
+	var pbMetric pb.Metric
+	unmarshalOpts := protojson.UnmarshalOptions{
+		DiscardUnknown: true,
+	}
+	if err := unmarshalOpts.Unmarshal(raw, &pbMetric); err != nil {
+		return false, nil, fmt.Errorf("malformed JSON at record index %d: %w", idx, err)
+	}
+
+	m := &metrics.Metric{Metric: &pbMetric}
+	if valErr := m.IsValid(); valErr != nil {
+		return false, &FailedRecord{
+			Index:      idx,
+			MetricName: m.MetricName,
+			Reason:     valErr.Error(),
+		}, nil
+	}
+
+	if consumer != nil {
+		if err := consumer(m); err != nil {
+			return false, nil, err
+		}
+	}
+	return true, nil, nil
+}
+
+func buildStreamDecodeResult(validCount int, failed []FailedRecord) StreamDecodeResult {
+	if len(failed) > 0 {
+		return StreamDecodeResult{
+			ValidCount: validCount,
+			Validation: &ValidationErrorPayload{
+				Error:         "unprocessable_entity",
+				FailedRecords: failed,
+			},
+		}
+	}
+	return StreamDecodeResult{ValidCount: validCount}
+}
+
 func decodeJSONArray(dec *json.Decoder, consumer MetricConsumer) StreamDecodeResult {
 	t, err := dec.Token()
 	if err != nil || t != json.Delim('[') {
@@ -105,24 +151,13 @@ func decodeJSONArray(dec *json.Decoder, consumer MetricConsumer) StreamDecodeRes
 	idx := 0
 
 	for dec.More() {
-		var pbMetric pb.Metric
-		if err := dec.Decode(&pbMetric); err != nil {
-			return StreamDecodeResult{Err: fmt.Errorf("malformed JSON at record index %d: %w", idx, err)}
+		valid, failedRec, err := processNextRecord(dec, idx, consumer)
+		if err != nil {
+			return StreamDecodeResult{Err: err}
 		}
-
-		m := &metrics.Metric{Metric: &pbMetric}
-		if valErr := m.IsValid(); valErr != nil {
-			failed = append(failed, FailedRecord{
-				Index:      idx,
-				MetricName: m.MetricName,
-				Reason:     valErr.Error(),
-			})
-		} else {
-			if consumer != nil {
-				if err := consumer(m); err != nil {
-					return StreamDecodeResult{Err: fmt.Errorf("failed to process metric at index %d: %w", idx, err)}
-				}
-			}
+		if failedRec != nil {
+			failed = append(failed, *failedRec)
+		} else if valid {
 			validCount++
 		}
 		idx++
@@ -133,17 +168,7 @@ func decodeJSONArray(dec *json.Decoder, consumer MetricConsumer) StreamDecodeRes
 		return StreamDecodeResult{Err: fmt.Errorf("malformed JSON: expected array closing ']'")}
 	}
 
-	if len(failed) > 0 {
-		return StreamDecodeResult{
-			ValidCount: validCount,
-			Validation: &ValidationErrorPayload{
-				Error:         "unprocessable_entity",
-				FailedRecords: failed,
-			},
-		}
-	}
-
-	return StreamDecodeResult{ValidCount: validCount}
+	return buildStreamDecodeResult(validCount, failed)
 }
 
 // decodeJSONSequence loops dec.Decode() until io.EOF because dec.More() only checks
@@ -154,41 +179,20 @@ func decodeJSONSequence(dec *json.Decoder, consumer MetricConsumer) StreamDecode
 	idx := 0
 
 	for {
-		var pbMetric pb.Metric
-		if err := dec.Decode(&pbMetric); err != nil {
+		valid, failedRec, err := processNextRecord(dec, idx, consumer)
+		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return StreamDecodeResult{Err: fmt.Errorf("malformed JSON at record index %d: %w", idx, err)}
+			return StreamDecodeResult{Err: err}
 		}
-
-		m := &metrics.Metric{Metric: &pbMetric}
-		if valErr := m.IsValid(); valErr != nil {
-			failed = append(failed, FailedRecord{
-				Index:      idx,
-				MetricName: m.MetricName,
-				Reason:     valErr.Error(),
-			})
-		} else {
-			if consumer != nil {
-				if err := consumer(m); err != nil {
-					return StreamDecodeResult{Err: fmt.Errorf("failed to process metric at index %d: %w", idx, err)}
-				}
-			}
+		if failedRec != nil {
+			failed = append(failed, *failedRec)
+		} else if valid {
 			validCount++
 		}
 		idx++
 	}
 
-	if len(failed) > 0 {
-		return StreamDecodeResult{
-			ValidCount: validCount,
-			Validation: &ValidationErrorPayload{
-				Error:         "unprocessable_entity",
-				FailedRecords: failed,
-			},
-		}
-	}
-
-	return StreamDecodeResult{ValidCount: validCount}
+	return buildStreamDecodeResult(validCount, failed)
 }

@@ -31,7 +31,7 @@ go_library(
         "//api/protos/xid:messages_go_proto",
         "//internal/compat/log",
         "//internal/compat/status",
-        "//internal/kubernetes/common:jobsetutil",
+        "//internal/kubernetes/common/jobsetutil",
     ],
 )
 

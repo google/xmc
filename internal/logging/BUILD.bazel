@@ -26,7 +26,7 @@ go_library(
     deps = [
         # keep
         "//internal/compat/log",
-        "//internal/kubernetes/common:constants",
+        "//internal/kubernetes/common/constants",
         "//internal/compat/metadata",
         "//internal/compat/uuid",
         "//internal/validator",
@@ -44,6 +44,6 @@ go_test(
     deps = [
         "//internal/compat/cmp",
         "//internal/compat/metadata",
-        "//internal/kubernetes/common:constants",
+        "//internal/kubernetes/common/constants",
     ],
 )

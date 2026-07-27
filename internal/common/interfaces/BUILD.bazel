@@ -1,0 +1,13 @@
+# Copyright 2025 Google LLC
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "interfaces",
+    srcs = ["interfaces.go"],
+    importpath = "xmanager_cloud/common/interfaces",
+    deps = [
+        "//api/protos/task_queue:task_go_proto",
+    ],
+)

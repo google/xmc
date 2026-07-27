@@ -18,15 +18,24 @@ import io
 import os
 import socket
 import unittest
+from typing import TYPE_CHECKING
 from unittest import mock
 
-try:
+# TYPE_CHECKING is True only during static type analysis (e.g. Mypy/IDEs).
+# This exposes the canonical static import 'from cmd.ui import server' to Mypy
+# and Code Search tools without triggering duplicate symbol warnings (no-redef),
+# while preserving runtime fallback imports for different execution environments
+# (Bazel test runner, monorepo, and standalone execution).
+if TYPE_CHECKING:
     from cmd.ui import server
-except ImportError:
+else:
     try:
-        from xmanager_cloud.ui import server
+        from cmd.ui import server
     except ImportError:
-        import server
+        try:
+            from xmanager_cloud.ui import server
+        except ImportError:
+            import server
 
 
 class SPAHandlerTest(unittest.TestCase):
@@ -59,10 +68,11 @@ class SPAHandlerTest(unittest.TestCase):
         handler = server.SPAHandler(self.mock_request, self.mock_client_address, self.mock_server)
         handler.path = path
         handler.wfile = self.mock_wfile
-        # Mocking base class methods to avoid side effects
-        handler.send_response = mock.create_autospec(handler.send_response, spec_set=True)
-        handler.send_header = mock.create_autospec(handler.send_header, spec_set=True)
-        handler.end_headers = mock.create_autospec(handler.end_headers, spec_set=True)
+        # Mock instance methods to suppress side-effects during handler unit tests.
+        # Mypy disallows method reassignment on instances, requiring explicit [method-assign] ignore.
+        handler.send_response = mock.create_autospec(handler.send_response, spec_set=True)  # type: ignore[method-assign]
+        handler.send_header = mock.create_autospec(handler.send_header, spec_set=True)  # type: ignore[method-assign]
+        handler.end_headers = mock.create_autospec(handler.end_headers, spec_set=True)  # type: ignore[method-assign]
         return handler
 
     def enter_context(self, context_manager):

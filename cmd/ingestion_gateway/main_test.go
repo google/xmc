@@ -17,8 +17,6 @@ package main
 import (
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -142,6 +140,26 @@ func TestValidateTopicTopology(t *testing.T) {
 			minReplicas:   3,
 			wantErr:       true,
 		},
+		{
+			name: "Partition detail error fails topology validation",
+			querier: &mockTopologyQuerier{
+				details: kadm.TopicDetails{
+					"xmc-metrics": kadm.TopicDetail{
+						Topic: "xmc-metrics",
+						Partitions: kadm.PartitionDetails{
+							0: kadm.PartitionDetail{
+								Partition: 0,
+								Err:       errors.New("partition broker offline"),
+							},
+						},
+					},
+				},
+			},
+			topicName:     "xmc-metrics",
+			minPartitions: 1,
+			minReplicas:   1,
+			wantErr:       true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -154,72 +172,12 @@ func TestValidateTopicTopology(t *testing.T) {
 	}
 }
 
-func TestHealthAndReadinessHandlers(t *testing.T) {
-	server := startHTTPServer(context.Background(), "0") // 0 binds ephemeral port
-	defer server.Close()
+func TestStartHTTPServerWithProducer(t *testing.T) {
+	mp := NewMockProducer()
+	srv := startHTTPServer(context.Background(), "0", "xmc-metrics", mp)
+	defer srv.Close()
 
-	if server.ReadHeaderTimeout == 0 {
-		t.Errorf("server.ReadHeaderTimeout = 0, want > 0")
-	}
-
-	endpoints := []string{"/healthz", "/readyz"}
-	for _, ep := range endpoints {
-		t.Run(ep, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, ep, nil)
-			w := httptest.NewRecorder()
-
-			server.Handler.ServeHTTP(w, req)
-
-			if w.Code != http.StatusOK {
-				t.Errorf("%s returned status %d, want %d", ep, w.Code, http.StatusOK)
-			}
-			if body := w.Body.String(); body != "OK" {
-				t.Errorf("%s returned body %q, want %q", ep, body, "OK")
-			}
-		})
-	}
-}
-
-func TestBuildKgoOptions(t *testing.T) {
-	tests := []struct {
-		name string
-		cfg  Config
-	}{
-		{
-			name: "Default config without SASL",
-			cfg: Config{
-				RedpandaBrokers: []string{"localhost:9092"},
-				SASLEnabled:     false,
-			},
-		},
-		{
-			name: "SASL enabled SCRAM-SHA-256",
-			cfg: Config{
-				RedpandaBrokers: []string{"localhost:9092"},
-				SASLEnabled:     true,
-				SASLMechanism:   "SCRAM-SHA-256",
-				SASLUser:        "user",
-				SASLPassword:    "pass",
-			},
-		},
-		{
-			name: "SASL enabled PLAIN",
-			cfg: Config{
-				RedpandaBrokers: []string{"localhost:9092"},
-				SASLEnabled:     true,
-				SASLMechanism:   "PLAIN",
-				SASLUser:        "user",
-				SASLPassword:    "pass",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			opts := buildKgoOptions(&tt.cfg)
-			if len(opts) == 0 {
-				t.Errorf("buildKgoOptions() returned empty options slice")
-			}
-		})
+	if srv == nil {
+		t.Fatalf("expected non-nil server from startHTTPServer")
 	}
 }

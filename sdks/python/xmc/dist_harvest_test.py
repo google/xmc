@@ -168,7 +168,7 @@ class TestDistHarvest(unittest.TestCase):
         self.assertFalse(should_silence)
 
     def test_stage3_default_single_node(self) -> None:
-        env = {}
+        env: dict[str, str] = {}
         replica_id, should_silence = get_replica_id_and_silence_status(env)
         self.assertEqual(replica_id, "0")
         self.assertFalse(should_silence)

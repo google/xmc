@@ -20,6 +20,7 @@ import {
   bootstrap,
   cleanState,
   flush,
+  getHarness,
   setupModule,
   setupObservableMatchers,
 } from 'xmanager_cloud/ui/app/testing/test';
@@ -30,6 +31,7 @@ import {
   TAB_RESOURCE_AVAILABILITY,
   TAB_SMART_FINDER,
 } from './subnav_tabs';
+import { RodSubnavTabsHarness } from './subnav_tabs_harness';
 
 @Component({
   standalone: true,
@@ -56,16 +58,17 @@ describe('SubnavTabsComponent', () => {
     const host = bootstrap(TestHostComponent);
     await flush();
 
-    const tabs = document.querySelectorAll('.subnav-tab');
-    expect(tabs.length).toBe(2);
-    expect(tabs[0].classList.contains('active')).toBeTrue();
-    expect(tabs[1].classList.contains('active')).toBeFalse();
+    const harness = await getHarness(RodSubnavTabsHarness);
+    const tabTexts = await harness.getTabTexts();
+    expect(tabTexts.length).toBe(2);
+    expect(await harness.isTabActive(0)).toBeTrue();
+    expect(await harness.isTabActive(1)).toBeFalse();
 
-    (tabs[1] as HTMLButtonElement).click();
+    await harness.clickTab(1);
     await flush();
 
     expect(host.activeTab()).toBe(TAB_RESOURCE_AVAILABILITY);
-    expect(tabs[0].classList.contains('active')).toBeFalse();
-    expect(tabs[1].classList.contains('active')).toBeTrue();
+    expect(await harness.isTabActive(0)).toBeFalse();
+    expect(await harness.isTabActive(1)).toBeTrue();
   });
 });

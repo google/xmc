@@ -14,24 +14,21 @@
  limitations under the License.
 -->
 <div class="rod-container">
-  <div class="rod-subnav-placeholder"></div>
+  <xmc-rod-subnav-tabs [activeTab]="activeTab()" (activeTabChange)="onTabChange($event)" />
   <div class="rod-split-container">
-    <div class="rod-queue-list-placeholder">
-      <h3>Resolved Cluster Queues</h3>
-      @if (clusterQueues().length === 0) {
-        <p class="empty-queues-msg">No cluster queues resolved.</p>
-      } @else {
-        <ul class="scaffolding-queue-list">
-          @for (queue of clusterQueues(); track queue.name) {
-            <li
-              class="scaffolding-queue-item"
-              [class.selected]="selectedQueue() === queue.name"
-              (click)="onQueueSelect(queue.name)"
-            >
-              <span class="queue-name">{{ queue.name }}</span>
-            </li>
-          }
-        </ul>
+    <div class="rod-main-content">
+      @if (activeTab() === TAB_SMART_FINDER) {
+        <xmc-smart-resource-finder
+          [availableResourceTypes]="availableResourceTypes()"
+          (findMatchingQueues)="onFindMatchingQueues($event)"
+        />
+        <xmc-rod-queue-list
+          [queues]="filteredQueues()"
+          [selectedQueue]="selectedQueue()"
+          [isLoading]="isLoading()"
+          [(velocityPeriod)]="velocityPeriod"
+          (selectQueue)="onQueueSelect($event)"
+        />
       }
     </div>
   </div>

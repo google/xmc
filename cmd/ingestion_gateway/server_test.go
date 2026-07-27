@@ -185,3 +185,84 @@ func TestHTTPServerLiveSocket(t *testing.T) {
 		t.Errorf("POST large body status = %d, want %d", respLarge.StatusCode, http.StatusRequestEntityTooLarge)
 	}
 }
+
+func TestHealthzHandler_DisallowedMethods(t *testing.T) {
+	disallowedMethods := []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch}
+	endpoints := []string{"/healthz", "/readyz"}
+
+	cfg := DefaultServerConfig("0")
+	server := NewHTTPServer(cfg)
+
+	for _, ep := range endpoints {
+		for _, method := range disallowedMethods {
+			t.Run(method+" "+ep, func(t *testing.T) {
+				req := httptest.NewRequest(method, ep, nil)
+				w := httptest.NewRecorder()
+				server.Handler.ServeHTTP(w, req)
+				if w.Code != http.StatusMethodNotAllowed {
+					t.Errorf("%s %s status = %d, want %d", method, ep, w.Code, http.StatusMethodNotAllowed)
+				}
+			})
+		}
+	}
+}
+
+func TestDefaultServerConfig_Defaults(t *testing.T) {
+	cfg := DefaultServerConfig("9090")
+	if cfg.Addr != ":9090" {
+		t.Errorf("cfg.Addr = %q, want :9090", cfg.Addr)
+	}
+	if cfg.ReadTimeout != DefaultReadTimeout {
+		t.Errorf("cfg.ReadTimeout = %v, want %v", cfg.ReadTimeout, DefaultReadTimeout)
+	}
+	if cfg.WriteTimeout != DefaultWriteTimeout {
+		t.Errorf("cfg.WriteTimeout = %v, want %v", cfg.WriteTimeout, DefaultWriteTimeout)
+	}
+	if cfg.IdleTimeout != DefaultIdleTimeout {
+		t.Errorf("cfg.IdleTimeout = %v, want %v", cfg.IdleTimeout, DefaultIdleTimeout)
+	}
+	if cfg.ReadHeaderTimeout != DefaultReadHeaderTimeout {
+		t.Errorf("cfg.ReadHeaderTimeout = %v, want %v", cfg.ReadHeaderTimeout, DefaultReadHeaderTimeout)
+	}
+	if cfg.MaxHeaderBytes != DefaultMaxHeaderBytes {
+		t.Errorf("cfg.MaxHeaderBytes = %v, want %v", cfg.MaxHeaderBytes, DefaultMaxHeaderBytes)
+	}
+	if cfg.MaxBodyBytes != DefaultMaxBodyBytes {
+		t.Errorf("cfg.MaxBodyBytes = %v, want %v", cfg.MaxBodyBytes, DefaultMaxBodyBytes)
+	}
+}
+
+func TestNewHTTPServer_CustomConfig(t *testing.T) {
+	mp := NewMockProducer()
+	cfg := ServerConfig{
+		Addr:              "127.0.0.1:8080",
+		ReadTimeout:       1 * time.Second,
+		WriteTimeout:      2 * time.Second,
+		IdleTimeout:       3 * time.Second,
+		ReadHeaderTimeout: 4 * time.Second,
+		MaxHeaderBytes:    512 * 1024,
+		MaxBodyBytes:      5 * 1024 * 1024,
+		Producer:          mp,
+		TopicName:         "custom-topic",
+	}
+
+	server := NewHTTPServer(cfg)
+	if server.Addr != "127.0.0.1:8080" {
+		t.Errorf("server.Addr = %q, want %q", server.Addr, "127.0.0.1:8080")
+	}
+	if server.ReadTimeout != 1*time.Second {
+		t.Errorf("server.ReadTimeout = %v, want %v", server.ReadTimeout, 1*time.Second)
+	}
+	if server.WriteTimeout != 2*time.Second {
+		t.Errorf("server.WriteTimeout = %v, want %v", server.WriteTimeout, 2*time.Second)
+	}
+	if server.IdleTimeout != 3*time.Second {
+		t.Errorf("server.IdleTimeout = %v, want %v", server.IdleTimeout, 3*time.Second)
+	}
+	if server.ReadHeaderTimeout != 4*time.Second {
+		t.Errorf("server.ReadHeaderTimeout = %v, want %v", server.ReadHeaderTimeout, 4*time.Second)
+	}
+	if server.MaxHeaderBytes != 512*1024 {
+		t.Errorf("server.MaxHeaderBytes = %v, want %v", server.MaxHeaderBytes, 512*1024)
+	}
+}

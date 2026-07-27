@@ -55,6 +55,8 @@ spec:
         ports:
         - containerPort: 8080
           name: http-port
+        - containerPort: 50051
+          name: grpc-port
         env:
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
         readinessProbe:
