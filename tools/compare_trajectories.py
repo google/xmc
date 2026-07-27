@@ -167,18 +167,19 @@ def generate_markdown_report(
 </details>
 
 #### 🎯 LLM-as-a-Judge Outcome Scorecard
-*(To be evaluated by Main Agent against modified rule/skill requirements)*
+*(Evaluated by Main Agent applying Prompt Relevance & Pragmatism Filter: Do NOT reward extra turns or test execution if irrelevant to prompt intent)*
 
 | Evaluation Dimension | Baseline Output | Candidate Output | Superior Output |
 | :--- | :--- | :--- | :--- |
 | **Rule / Skill Adherence** | *[Evaluated by Agent]* | *[Evaluated by Agent]* | *[Baseline / Candidate / Tie]* |
-| **Functional Correctness** | *[Evaluated by Agent]* | *[Evaluated by Agent]* | *[Baseline / Candidate / Tie]* |
+| **Functional Correctness** | *[Evaluated by Agent or N/A]* | *[Evaluated by Agent or N/A (Irrelevant)]* | *[Baseline / Candidate / N/A]* |
 | **Completeness & Accuracy**| *[Evaluated by Agent]* | *[Evaluated by Agent]* | *[Baseline / Candidate / Tie]* |
 
 ---
 
 ### 🏆 Final Benchmark Verdict
-*[Main Agent Recommendation: PASSED / NEEDS REVIEW / REJECTED]*
+*[Main Agent Verdict: PASSED / PASSED WITH RESERVATIONS (NEEDS EFFICIENCY TUNING) / REJECTED]*
+*[Rationale: Evaluate whether Candidate improved output quality without causing unnecessary turn/token bloat for the given prompt.]*
 """
 
 

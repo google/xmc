@@ -18,7 +18,7 @@ graph TD
     E2 --> F2[Candidate Transcript Log & Outcome Artifacts]
     F1 & F2 --> G[4. Run teardown_benchmark.py]
     G --> H[5. Run compare_trajectories.py --prompt ...]
-    H --> I[6. Dual-Pillar Evaluation: Telemetry, Outcome Scorecard & Final Verdict]
+    H --> I[6. Dual-Pillar Evaluation: Telemetry, Relevance Gate & Verdict]
     I --> J[7. PR Integration & User Edit Gate]
 ```
 
@@ -72,19 +72,25 @@ After both subagents complete, run `tools/teardown_benchmark.py` to clean up any
 python3 tools/teardown_benchmark.py --manifest /tmp/benchmark_manifest_<id>.json
 ```
 
-### Phase 5: Dual-Pillar Evaluation & Scorecard Generation
+### Phase 5: Dual-Pillar Evaluation & Relevance Gate
 Pass the `transcript.jsonl` log file paths from both subagents to `tools/compare_trajectories.py`:
 
 ```bash
 python3 tools/compare_trajectories.py <baseline_transcript_path> <candidate_transcript_path> --prompt "<test_prompt>" -o /tmp/trajectory_report.md
 ```
 
-The main agent reviews the output and populates all 4 core scorecard sections:
-1. **Target Test Prompt**: State the exact prompt scenario evaluated.
-2. **Context & Token Footprint**: Report transcript byte size, estimated tokens, and context window footprint percentage.
+The main agent reviews the output and populates the scorecard using the **Prompt Relevance Gate**:
+
+1. **Target Test Prompt & Context Footprint**: Include prompt text and context window byte/token percentage.
+2. **Prompt Relevance Gate**: Ask: *"Were extra turns or tool executions (e.g. running unit tests, extra searches) directly relevant to fulfilling the test prompt?"*
+   - **If Relevant** (e.g. prompt modified code): Count test execution as a benefit (`🟢 Candidate`).
+   - **If Irrelevant** (e.g. prompt was a documentation summary): Flag extra turns as 🔴 **Unnecessary / Over-Zealous Overhead**, and mark Functional Correctness as `N/A (Irrelevant)`.
 3. **Pillar 1: Trajectory Telemetry**: Evaluate turn deltas, tool usage, error steps, and provide qualitative LLM reasoning on metric increases.
 4. **Pillar 2: Outcome Quality Evaluation**: Side-by-side output previews & LLM-as-a-Judge Scorecard (Rule adherence, functional correctness, completeness).
-5. **🏆 Final Benchmark Verdict**: Provide a clear recommendation (`PASSED`, `NEEDS REVIEW`, or `REJECTED`).
+5. **🏆 Final Benchmark Verdict**:
+   - **`PASSED`**: Candidate improved output quality with reasonable, prompt-relevant turn efficiency.
+   - **`PASSED WITH RESERVATIONS (NEEDS EFFICIENCY TUNING)`**: Candidate obeyed rules and improved output quality, but exhibited over-zealous tool execution irrelevant to the prompt.
+   - **`REJECTED`**: Candidate caused regressions, error loops, or severe token bloat without improving output quality.
 
 Save the benchmark markdown snippet to `/tmp/benchmark_report_<branch_name>.md`.
 
