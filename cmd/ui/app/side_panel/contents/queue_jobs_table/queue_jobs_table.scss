@@ -102,34 +102,7 @@
   color: #f9ab00;
 }
 
-.jobs-table-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 24px;
-  padding-top: 16px;
-  border-top: 1px solid #e0e0e0;
-  font-size: 13px;
-  color: #5f6368;
-}
-
-.rows-per-page {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.rows-select {
-  border: 1px solid #dadce0;
-  border-radius: 4px;
-  padding: 4px 8px;
-  background: #ffffff;
-}
-
-.pagination-nav {
-  display: flex;
-  gap: 4px;
-}
+// TODO(#186): Implement table pagination when job list volumes increase.
 
 .jobs-empty-state {
   text-align: center;

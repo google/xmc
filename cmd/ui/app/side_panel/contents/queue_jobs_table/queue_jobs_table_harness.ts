@@ -57,7 +57,8 @@ export class QueueJobsTableHarness extends ComponentHarness {
 
   private readonly headerCells = this.locatorForAll('th.mat-mdc-header-cell');
   private readonly tableRows = this.locatorForAll(QueueJobsTableRowHarness);
-  private readonly paginationInfoElement = this.locatorForOptional('.pagination-info');
+
+  // TODO(#186): Add pagination locators and helpers when table pagination is implemented.
 
   /** Gets an array of header cell texts. */
   async getHeaderCellTexts(): Promise<string[]> {
@@ -85,11 +86,5 @@ export class QueueJobsTableHarness extends ComponentHarness {
       throw new Error(`Row index ${rowIndex} out of bounds.`);
     }
     return rows[rowIndex].getCellsText();
-  }
-
-  /** Gets the pagination info string (e.g. "1-10 of 20"). */
-  async getPaginationInfoText(): Promise<string | null> {
-    const el = await this.paginationInfoElement();
-    return el ? el.text() : null;
   }
 }

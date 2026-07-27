@@ -53,7 +53,7 @@
     </div>
   } @else {
     <div class="jobs-table-container">
-      <table mat-table [dataSource]="pagedJobs()" class="jobs-mat-table">
+      <table mat-table [dataSource]="jobs()" class="jobs-mat-table">
         <!-- Position Column -->
         <ng-container matColumnDef="position">
           <th mat-header-cell *matHeaderCellDef>Position</th>
@@ -130,44 +130,7 @@
         <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
       </table>
 
-      <!-- Table Footer Pagination -->
-      <div class="jobs-table-footer">
-        <div class="rows-per-page">
-          <span>Rows per page</span>
-          <select
-            class="rows-select"
-            [ngModel]="pageSize()"
-            (ngModelChange)="onPageSizeChange($event)"
-          >
-            @for (opt of pageSizeOptions; track opt) {
-              <option [value]="opt">{{ opt }}</option>
-            }
-          </select>
-        </div>
-        <div class="pagination-info">{{ getPaginationRangeDisplay() }}</div>
-        <div class="pagination-nav">
-          <button mat-icon-button [disabled]="pageIndex() === 0" (click)="goToFirstPage()">
-            <mat-icon>first_page</mat-icon>
-          </button>
-          <button mat-icon-button [disabled]="pageIndex() === 0" (click)="goToPreviousPage()">
-            <mat-icon>chevron_left</mat-icon>
-          </button>
-          <button
-            mat-icon-button
-            [disabled]="pageIndex() >= getMaxPageIndex()"
-            (click)="goToNextPage()"
-          >
-            <mat-icon>chevron_right</mat-icon>
-          </button>
-          <button
-            mat-icon-button
-            [disabled]="pageIndex() >= getMaxPageIndex()"
-            (click)="goToLastPage()"
-          >
-            <mat-icon>last_page</mat-icon>
-          </button>
-        </div>
-      </div>
+      <!-- TODO(#186): Implement table pagination when job list volumes increase. -->
     </div>
   }
 </div>

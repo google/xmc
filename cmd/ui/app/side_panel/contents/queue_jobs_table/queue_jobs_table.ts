@@ -15,7 +15,6 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
@@ -45,7 +44,6 @@ export class QueueJobsTableData implements BaseSidePanelData {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
-    FormsModule,
     RouterModule,
     MatTableModule,
     MatIconModule,
@@ -64,9 +62,6 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   );
 
   protected readonly isLoading = signal<boolean>(false);
-  protected readonly pageIndex = signal<number>(0);
-  protected readonly pageSize = signal<number>(10);
-  protected readonly pageSizeOptions = [5, 10, 25];
 
   protected readonly jobs = toSignal(
     toObservable(this.activeQueueName).pipe(
@@ -85,11 +80,7 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
     { initialValue: [] },
   );
 
-  protected readonly pagedJobs = computed(() => {
-    const start = this.pageIndex() * this.pageSize();
-    return this.jobs().slice(start, start + this.pageSize());
-  });
-
+  // TODO(#186): Implement table pagination when job list volumes increase.
   protected readonly totalCount = computed(() => this.jobs().length);
 
   protected displayedColumns: string[] = [
@@ -100,43 +91,6 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
     'workUnitId',
     'user',
   ];
-
-  protected onPageSizeChange(newSize: string | number) {
-    const size = typeof newSize === 'string' ? parseInt(newSize, 10) : newSize;
-    if (!isNaN(size) && size > 0) {
-      this.pageSize.set(size);
-      this.pageIndex.set(0);
-    }
-  }
-
-  protected getMaxPageIndex(): number {
-    const total = this.jobs().length;
-    return Math.max(0, Math.ceil(total / this.pageSize()) - 1);
-  }
-
-  protected goToFirstPage() {
-    this.pageIndex.set(0);
-  }
-
-  protected goToPreviousPage() {
-    this.pageIndex.update((idx) => Math.max(0, idx - 1));
-  }
-
-  protected goToNextPage() {
-    this.pageIndex.update((idx) => Math.min(this.getMaxPageIndex(), idx + 1));
-  }
-
-  protected goToLastPage() {
-    this.pageIndex.set(this.getMaxPageIndex());
-  }
-
-  protected getPaginationRangeDisplay(): string {
-    const total = this.jobs().length;
-    if (total === 0) return '0-0 of 0';
-    const start = this.pageIndex() * this.pageSize() + 1;
-    const end = Math.min(total, (this.pageIndex() + 1) * this.pageSize());
-    return `${start}-${end} of ${total}`;
-  }
 
   protected getPriorityDisplay(priority?: string): string {
     if (!priority) return 'Normal';

@@ -124,12 +124,4 @@ describe('QueueJobsTable Component', () => {
     expect(secondRow.status).toContain('Pending');
     expect(secondRow.priority).toContain('High');
   });
-
-  it('should display correct pagination info using harness', async () => {
-    bootstrap(TestHostComponent);
-    await flush();
-
-    const harness = await getHarness(QueueJobsTableHarness);
-    expect(await harness.getPaginationInfoText()).toBe('1-2 of 2');
-  });
 });
