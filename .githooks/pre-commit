@@ -185,11 +185,11 @@ check_python() {
   elif command -v docker >/dev/null 2>&1; then
     echo "--> Running Ruff via Docker container..."
     if [ "$MODE" = "check" ]; then
-      if ! docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest check $py_files; then FAILED=1; fi
-      if ! docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest format --check $py_files; then FAILED=1; fi
+      if ! docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest check $py_files; then FAILED=1; fi
+      if ! docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest format --check $py_files; then FAILED=1; fi
     else
-      docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest check --fix $py_files
-      docker run --rm -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest format $py_files
+      docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest check --fix $py_files
+      docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$(pwd):/io" -w /io ghcr.io/astral-sh/ruff:latest format $py_files
     fi
   else
     echo "--> WARNING: ruff or docker not found. Python linting skipped."
