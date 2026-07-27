@@ -84,10 +84,10 @@ func TestTranslatePlotQuery(t *testing.T) {
 				ChartWidthPixels: 800,
 			},
 			wantSQLSub: []string{
-				"lttb(?)(step, metric_value) AS points",
+				"lttb(800)(step, metric_value) AS points",
 				"GROUP BY metric_name, work_unit_id, xid, execution_id, replica_id",
 			},
-			wantArgsLen: 4,
+			wantArgsLen: 3,
 		},
 		{
 			name: "Bar",
@@ -110,9 +110,9 @@ func TestTranslatePlotQuery(t *testing.T) {
 				Data:   basePlot.Data,
 			},
 			wantSQLSub: []string{
-				"histogram(?)(metric_value) AS histogram_buckets",
+				"histogram(10)(metric_value) AS histogram_buckets",
 			},
-			wantArgsLen: 4,
+			wantArgsLen: 3,
 		},
 	}
 
@@ -163,6 +163,9 @@ func TestTranslatePlotQuery_RangeFilters(t *testing.T) {
 
 	if !strings.Contains(got.SQL, "step >= ?") || !strings.Contains(got.SQL, "step <= ?") || !strings.Contains(got.SQL, "timestamp >= ?") {
 		t.Errorf("missing range filter SQL, got:\n%s", got.SQL)
+	}
+	if !strings.Contains(got.SQL, "((step >= ? AND step <= ?))") {
+		t.Errorf("missing grouped range filter SQL, got:\n%s", got.SQL)
 	}
 	if len(got.Args) != 6 {
 		t.Errorf("got %d args, want 6: %v", len(got.Args), got.Args)

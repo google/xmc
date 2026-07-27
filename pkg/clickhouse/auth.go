@@ -72,8 +72,9 @@ func getOptionsUserNoPassword() (*clickhouse.Options, error) {
 	if err != nil {
 		return nil, err
 	}
-	opts.Auth.Password = ""
-	return opts, nil
+	newOpts := *opts
+	newOpts.Auth.Password = ""
+	return &newOpts, nil
 }
 
 func getOptionsDefaultUser() (*clickhouse.Options, error) {
@@ -81,9 +82,10 @@ func getOptionsDefaultUser() (*clickhouse.Options, error) {
 	if err != nil {
 		return nil, err
 	}
-	opts.Auth.Username = "default"
-	opts.Auth.Password = ""
-	return opts, nil
+	newOpts := *opts
+	newOpts.Auth.Username = "default"
+	newOpts.Auth.Password = ""
+	return &newOpts, nil
 }
 
 func getOptionsNoCredentials() (*clickhouse.Options, error) {
@@ -91,7 +93,8 @@ func getOptionsNoCredentials() (*clickhouse.Options, error) {
 	if err != nil {
 		return nil, err
 	}
-	opts.Auth.Username = ""
-	opts.Auth.Password = ""
-	return opts, nil
+	newOpts := *opts
+	newOpts.Auth.Username = ""
+	newOpts.Auth.Password = ""
+	return &newOpts, nil
 }

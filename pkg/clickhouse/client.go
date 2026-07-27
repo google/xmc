@@ -128,6 +128,10 @@ func filterPlots(plots []*dashboardpb.PlotSpec, allowedIDs []string) []*dashboar
 }
 
 func (c *XMCClient) fetchPlotData(ctx context.Context, req *servicepb.GetChartDataRequest, xid, wid int64, plot *dashboardpb.PlotSpec) (*dashboardpb.ChartData_PlotData, error) {
+	if c.conn == nil {
+		return nil, fmt.Errorf("clickhouse connection is not initialized")
+	}
+
 	q, err := TranslatePlotQuery(plot, xid, wid, req, c.tableName)
 	if err != nil {
 		return nil, err

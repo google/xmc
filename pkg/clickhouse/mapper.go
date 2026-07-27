@@ -115,6 +115,9 @@ func mapScatterContent(rows driver.Rows, plot *dashboardpb.PlotSpec, req *servic
 // MapSummaryRows scans a summary box query result row into ChartData_SummaryBoxValue.
 func MapSummaryRows(rows driver.Rows) (*dashboardpb.ChartData_SummaryBoxValue, error) {
 	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("failed to fetch summary row: %w", err)
+		}
 		return nil, nil
 	}
 
@@ -177,12 +180,19 @@ func MapScatterRows(rows driver.Rows) (*dashboardpb.ChartData_SeriesData, error)
 		})
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration failed: %w", err)
+	}
+
 	return seriesData, nil
 }
 
 // MapScatterLTTBRows scans LTTB tuple points array rows into ChartData_SeriesData.
 func MapScatterLTTBRows(rows driver.Rows) (*dashboardpb.ChartData_SeriesData, error) {
 	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("failed to fetch lttb scatter row: %w", err)
+		}
 		return nil, nil
 	}
 
@@ -242,6 +252,10 @@ func MapBarRows(rows driver.Rows) (*dashboardpb.ChartData_BarData, error) {
 			CategoryOrBin: category,
 			ValueOrCount:  float64(count),
 		})
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration failed: %w", err)
 	}
 
 	return barData, nil

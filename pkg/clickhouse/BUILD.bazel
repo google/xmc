@@ -16,18 +16,39 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "clickhouse",
-    srcs = ["clickhouse.go"],
+    srcs = [
+        "auth.go",
+        "clickhouse.go",
+        "client.go",
+        "mapper.go",
+        "translator.go",
+    ],
     importpath = "xmanager_cloud/pkg/clickhouse",
     visibility = ["//visibility:public"],
     deps = [
+        "//api/protos/dashboard:messages_go_proto",
+        "//api/protos/dashboard:service_go_proto",
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
 go_test(
     name = "clickhouse_test",
-    srcs = ["clickhouse_test.go"],
+    srcs = [
+        "auth_test.go",
+        "clickhouse_test.go",
+        "client_test.go",
+        "mapper_test.go",
+        "translator_test.go",
+    ],
     embed = [":clickhouse"],
-    deps = ["@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go"],
+    deps = [
+        "//api/protos/dashboard:messages_go_proto",
+        "//api/protos/dashboard:service_go_proto",
+        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
 )

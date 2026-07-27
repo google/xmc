@@ -103,26 +103,34 @@ func appendRequestFilters(req *servicepb.GetChartDataRequest, clauses *[]string,
 }
 
 func appendPlotRangeFilters(plot *dashboardpb.PlotSpec, clauses *[]string, args *[]any) {
-	if plot == nil || plot.Data == nil {
+	if plot == nil || plot.Data == nil || len(plot.Data.Ranges) == 0 {
 		return
 	}
+	var rangeClauses []string
 	for _, r := range plot.Data.Ranges {
+		var rClauses []string
 		if startIt := r.GetStartIteration(); startIt != 0 {
-			*clauses = append(*clauses, "step >= ?")
+			rClauses = append(rClauses, "step >= ?")
 			*args = append(*args, startIt)
 		}
 		if endIt := r.GetEndIteration(); endIt != 0 {
-			*clauses = append(*clauses, "step <= ?")
+			rClauses = append(rClauses, "step <= ?")
 			*args = append(*args, endIt)
 		}
 		if startTime := r.GetStartTime(); startTime != nil {
-			*clauses = append(*clauses, "timestamp >= ?")
+			rClauses = append(rClauses, "timestamp >= ?")
 			*args = append(*args, startTime.AsTime().UnixMicro())
 		}
 		if endTime := r.GetEndTime(); endTime != nil {
-			*clauses = append(*clauses, "timestamp <= ?")
+			rClauses = append(rClauses, "timestamp <= ?")
 			*args = append(*args, endTime.AsTime().UnixMicro())
 		}
+		if len(rClauses) > 0 {
+			rangeClauses = append(rangeClauses, "("+strings.Join(rClauses, " AND ")+")")
+		}
+	}
+	if len(rangeClauses) > 0 {
+		*clauses = append(*clauses, "("+strings.Join(rangeClauses, " OR ")+")")
 	}
 }
 
@@ -179,12 +187,11 @@ func isDownsampledScatter(plot *dashboardpb.PlotSpec, req *servicepb.GetChartDat
 }
 
 func translateScatterLTTBQuery(plot *dashboardpb.PlotSpec, xid, wid int64, req *servicepb.GetChartDataRequest, tableName string) (*TranslatedQuery, error) {
-	whereSQL, baseArgs := buildWhereClause(xid, wid, plot, req)
+	whereSQL, args := buildWhereClause(xid, wid, plot, req)
 	maxPoints := int32(500)
 	if req != nil && req.GetChartWidthPixels() > 0 {
 		maxPoints = req.GetChartWidthPixels()
 	}
-	args := append([]any{maxPoints}, baseArgs...)
 
 	sql := fmt.Sprintf(`SELECT
   metric_name,
@@ -192,10 +199,10 @@ func translateScatterLTTBQuery(plot *dashboardpb.PlotSpec, xid, wid int64, req *
   xid,
   execution_id,
   replica_id,
-  lttb(?)(step, metric_value) AS points
+  lttb(%d)(step, metric_value) AS points
 FROM %s
 WHERE %s
-GROUP BY metric_name, work_unit_id, xid, execution_id, replica_id`, tableName, whereSQL)
+GROUP BY metric_name, work_unit_id, xid, execution_id, replica_id`, maxPoints, tableName, whereSQL)
 
 	return &TranslatedQuery{SQL: sql, Args: args}, nil
 }
@@ -214,16 +221,15 @@ GROUP BY metric_name, category_or_bin`, tableName, whereSQL)
 }
 
 func translateHistogramQuery(plot *dashboardpb.PlotSpec, xid, wid int64, req *servicepb.GetChartDataRequest, tableName string) (*TranslatedQuery, error) {
-	whereSQL, whereArgs := buildWhereClause(xid, wid, plot, req)
+	whereSQL, args := buildWhereClause(xid, wid, plot, req)
 	numBins := int32(10)
-	args := append([]any{numBins}, whereArgs...)
 
 	sql := fmt.Sprintf(`SELECT
   metric_name,
-  histogram(?)(metric_value) AS histogram_buckets
+  histogram(%d)(metric_value) AS histogram_buckets
 FROM %s
 WHERE %s
-GROUP BY metric_name`, tableName, whereSQL)
+GROUP BY metric_name`, numBins, tableName, whereSQL)
 
 	return &TranslatedQuery{SQL: sql, Args: args}, nil
 }
