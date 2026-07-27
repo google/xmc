@@ -56,10 +56,7 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string) http.
 
 		if producer == nil {
 			logging.Error(ctx, "Metrics ingestion request failed due to missing producer")
-			drainRequestBody(r.Body, MaxDrainBytes)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(ServiceUnavailableErrorPayload{
+			writeJSONResponse(w, r, http.StatusServiceUnavailable, ServiceUnavailableErrorPayload{
 				Error:   "service_unavailable",
 				Message: "producer is not initialized",
 			})
@@ -121,10 +118,7 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string) http.
 		// If any async publish failed, respond with 503 Service Unavailable.
 		if errPtr := publishErr.Load(); errPtr != nil {
 			logging.Error(ctx, "Metrics ingestion request failed due to broker publish error", "error", (*errPtr).Error())
-			drainRequestBody(r.Body, MaxDrainBytes)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(ServiceUnavailableErrorPayload{
+			writeJSONResponse(w, r, http.StatusServiceUnavailable, ServiceUnavailableErrorPayload{
 				Error:   "service_unavailable",
 				Message: (*errPtr).Error(),
 			})
@@ -133,10 +127,7 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string) http.
 
 		if res.Err != nil {
 			logging.Warn(ctx, "Metrics ingestion request failed with decoding error", "error", res.Err.Error())
-			drainRequestBody(r.Body, MaxDrainBytes)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(BadRequestErrorPayload{
+			writeJSONResponse(w, r, http.StatusBadRequest, BadRequestErrorPayload{
 				Error:   "bad_request",
 				Message: res.Err.Error(),
 			})
@@ -148,21 +139,25 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string) http.
 				"failed_count", len(res.Validation.FailedRecords),
 				"valid_count", res.ValidCount,
 			)
-			drainRequestBody(r.Body, MaxDrainBytes)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnprocessableEntity)
-			json.NewEncoder(w).Encode(res.Validation)
+			writeJSONResponse(w, r, http.StatusUnprocessableEntity, res.Validation)
 			return
 		}
 
 		logging.Info(ctx, "Metrics batch successfully accepted", "valid_count", res.ValidCount)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode(map[string]any{
+		writeJSONResponse(w, r, http.StatusAccepted, map[string]any{
 			"status": "accepted",
 			"count":  res.ValidCount,
 		})
 	}
+}
+
+func writeJSONResponse(w http.ResponseWriter, r *http.Request, statusCode int, payload any) {
+	if statusCode >= 400 && r != nil {
+		drainRequestBody(r.Body, MaxDrainBytes)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(payload)
 }
 
 func drainRequestBody(r io.Reader, maxBytes int64) {

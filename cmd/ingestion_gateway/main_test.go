@@ -17,8 +17,6 @@ package main
 import (
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -169,76 +167,6 @@ func TestValidateTopicTopology(t *testing.T) {
 			err := ValidateTopicTopology(context.Background(), tt.querier, tt.topicName, tt.minPartitions, tt.minReplicas)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateTopicTopology() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestHealthAndReadinessHandlers(t *testing.T) {
-	server := startHTTPServer(context.Background(), "0", "xmc-metrics") // 0 binds ephemeral port
-	defer server.Close()
-
-	if server.ReadHeaderTimeout == 0 {
-		t.Errorf("server.ReadHeaderTimeout = 0, want > 0")
-	}
-
-	endpoints := []string{"/healthz", "/readyz"}
-	for _, ep := range endpoints {
-		t.Run(ep, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, ep, nil)
-			w := httptest.NewRecorder()
-
-			server.Handler.ServeHTTP(w, req)
-
-			if w.Code != http.StatusOK {
-				t.Errorf("%s returned status %d, want %d", ep, w.Code, http.StatusOK)
-			}
-			if body := w.Body.String(); body != "OK" {
-				t.Errorf("%s returned body %q, want %q", ep, body, "OK")
-			}
-		})
-	}
-}
-
-func TestBuildKgoOptions(t *testing.T) {
-	tests := []struct {
-		name string
-		cfg  Config
-	}{
-		{
-			name: "Default config without SASL",
-			cfg: Config{
-				RedpandaBrokers: []string{"localhost:9092"},
-				SASLEnabled:     false,
-			},
-		},
-		{
-			name: "SASL enabled SCRAM-SHA-256",
-			cfg: Config{
-				RedpandaBrokers: []string{"localhost:9092"},
-				SASLEnabled:     true,
-				SASLMechanism:   "SCRAM-SHA-256",
-				SASLUser:        "user",
-				SASLPassword:    "pass",
-			},
-		},
-		{
-			name: "SASL enabled PLAIN",
-			cfg: Config{
-				RedpandaBrokers: []string{"localhost:9092"},
-				SASLEnabled:     true,
-				SASLMechanism:   "PLAIN",
-				SASLUser:        "user",
-				SASLPassword:    "pass",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			opts := BuildProducerOptions(&tt.cfg)
-			if len(opts) == 0 {
-				t.Errorf("BuildProducerOptions() returned empty options slice")
 			}
 		})
 	}

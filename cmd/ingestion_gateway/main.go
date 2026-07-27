@@ -31,11 +31,6 @@ import (
 	"xmanager_cloud/logging/logging"
 )
 
-// TopologyQuerier abstracts Redpanda metadata querying for testability.
-type TopologyQuerier interface {
-	ListTopics(ctx context.Context, topics ...string) (kadm.TopicDetails, error)
-}
-
 func main() {
 	google.Init()
 	flag.Parse()
@@ -65,40 +60,6 @@ func main() {
 
 	server := startHTTPServer(ctx, cfg.Port, cfg.TopicName, kClient)
 	awaitShutdown(ctx, server)
-}
-
-// ValidateTopicTopology asserts topic existence, partition count >= minPartitions, and replication factor >= minReplicas.
-func ValidateTopicTopology(ctx context.Context, querier TopologyQuerier, topicName string, minPartitions, minReplicas int) error {
-	details, err := querier.ListTopics(ctx, topicName)
-	if err != nil {
-		return fmt.Errorf("failed to query topic metadata: %w", err)
-	}
-
-	detail, ok := details[topicName]
-	if !ok {
-		return fmt.Errorf("required topic %q does not exist in cluster", topicName)
-	}
-
-	if detail.Err != nil {
-		return fmt.Errorf("topic %q metadata error: %w", topicName, detail.Err)
-	}
-
-	numPartitions := len(detail.Partitions)
-	if numPartitions < minPartitions {
-		return fmt.Errorf("topic %q has %d partitions, expected >= %d", topicName, numPartitions, minPartitions)
-	}
-
-	for pID, pDetail := range detail.Partitions {
-		if pDetail.Err != nil {
-			return fmt.Errorf("partition %d metadata error: %w", pID, pDetail.Err)
-		}
-		numReplicas := len(pDetail.Replicas)
-		if numReplicas < minReplicas {
-			return fmt.Errorf("partition %d of topic %q has %d replicas, expected >= %d", pID, topicName, numReplicas, minReplicas)
-		}
-	}
-
-	return nil
 }
 
 func startHTTPServer(ctx context.Context, port string, topicName string, optionalProducer ...MetricProducer) *http.Server {
