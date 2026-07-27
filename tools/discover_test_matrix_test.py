@@ -50,7 +50,7 @@ class DiscoverTestMatrixTest(unittest.TestCase):
         targets = convert_files_to_bazel_targets(
             ["internal/auth/auth.go", "cmd/ui/app/main.ts", "README.md"]
         )
-        self.assertEqual(targets, ["//:all", "//cmd/ui/app/...", "//internal/auth/..."])
+        self.assertEqual(targets, ["//:all", "//cmd/ui/...", "//internal/auth/..."])
 
     def test_is_global_change(self) -> None:
         self.assertTrue(is_global_change([".github/workflows/unit-tests.yml"]))

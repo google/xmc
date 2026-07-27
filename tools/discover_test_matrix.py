@@ -81,12 +81,26 @@ def convert_files_to_bazel_targets(changed_files: list[str]) -> list[str]:
     """
     targets: set[str] = set()
     for filepath in changed_files:
-        parts = filepath.strip().split("/")
-        if len(parts) <= 1:
+        filepath = filepath.strip()
+        dirname = os.path.dirname(filepath)
+        if not dirname:
             targets.add("//:all")
-        else:
-            pkg_dir = "/".join(parts[:-1])
-            targets.add(f"//{pkg_dir}/...")
+            continue
+
+        curr = dirname
+        found = False
+        while curr and curr != ".":
+            if os.path.exists(os.path.join(curr, "BUILD.bazel")) or os.path.exists(
+                os.path.join(curr, "BUILD")
+            ):
+                targets.add(f"//{curr}/...")
+                found = True
+                break
+            curr = os.path.dirname(curr)
+
+        if not found:
+            targets.add(f"//{dirname}/...")
+
     return sorted(targets)
 
 
@@ -103,7 +117,7 @@ def query_affected_test_targets(changed_files: list[str]) -> list[str] | None:
     if not pkg_targets or "//:all" in pkg_targets:
         return None
 
-    query_targets = " ".join(pkg_targets)
+    query_targets = " ".join(f'"{t}"' for t in pkg_targets)
     query_expr = f'kind(".*_test", rdeps(//..., set({query_targets})))'
     try:
         out = subprocess.check_output(["bazel", "query", query_expr]).decode("utf-8")
