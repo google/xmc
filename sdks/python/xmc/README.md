@@ -172,6 +172,13 @@ model.fit(
 - **Global Optimizer Step Mapping**: Batch and epoch metrics are mapped to the global optimizer iteration count (`model.optimizer.iterations`) to guarantee continuous time-series metrics across epoch boundaries in ClickHouse without step collisions.
 - **Rank-Zero Silencing**: Automatically drops metric logging on worker ranks (`RANK > 0`) during multi-replica distributed training unless explicit multi-replica logging is configured.
 
+> [!NOTE]
+> **Legacy Keras 2 Support**: `XmcKerasCallback` requires `keras>=3.0.0`. For legacy Keras 2 (`tf.keras` <= 2.15), use `xmc.log_metric()` directly inside a `LambdaCallback`:
+> ```python
+> from tensorflow.keras.callbacks import LambdaCallback
+> cb = LambdaCallback(on_epoch_end=lambda ep, logs: xmc.log_metric("loss", logs["loss"], step=ep))
+> ```
+
 ---
 
 ## ⚙️ Resilience & Rate-Limited Drop Logging
