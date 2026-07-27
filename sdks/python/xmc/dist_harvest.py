@@ -136,5 +136,47 @@ def get_replica_id_and_silence_status(
     return "0", False
 
 
-# Alias matching CamelCase specification if referenced.
+def harvest_client_metadata(
+    env: Mapping[str, str] | None = None,
+    log_all_replicas: bool = False,
+) -> tuple[str, str, str, str, bool]:
+    """Harvests mandatory XMC environment variables (XMC_XID, XMC_WORK_UNIT_ID, XMC_EXECUTION_ID, XMC_REPLICA_ID).
+
+    Returns:
+        tuple[xid, work_unit_id, execution_id, replica_id, is_silenced]
+
+    Fail-Closed Safety:
+        XMC_XID, XMC_WORK_UNIT_ID, and XMC_EXECUTION_ID are mandatory. If any are missing or empty,
+        the SDK logs an error and sets is_silenced=True to disable metric ingestion for misconfigured pods.
+    """
+    if env is None:
+        env = os.environ
+
+    raw_xid = env.get("XMC_XID", "").strip()
+    raw_wu = env.get("XMC_WORK_UNIT_ID", "").strip()
+    raw_exec = env.get("XMC_EXECUTION_ID", "").strip()
+
+    if not raw_xid or not raw_wu or not raw_exec:
+        logger.error(
+            "XMC metadata environment variables missing or empty (XMC_XID=%r, XMC_WORK_UNIT_ID=%r, XMC_EXECUTION_ID=%r). "
+            "Disabling metrics ingestion for misconfigured pod.",
+            raw_xid,
+            raw_wu,
+            raw_exec,
+        )
+        return "", "", "", "0", True
+
+    raw_replica = env.get("XMC_REPLICA_ID", "").strip()
+    if raw_replica:
+        replica_id = raw_replica
+        is_silenced = False
+    else:
+        replica_id, is_silenced = get_replica_id_and_silence_status(
+            env=env, log_all_replicas=log_all_replicas
+        )
+
+    return raw_xid, raw_wu, raw_exec, replica_id, is_silenced
+
+
+# Alias matching CamelCase specification for backward compatibility.
 GetReplicaIDAndSilenceStatus = get_replica_id_and_silence_status

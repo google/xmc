@@ -519,6 +519,7 @@ def step_restart(config: Config) -> None:
     services = [
         "actuator",
         "experiment-state-server",
+        "health-service",
         "log-monitor",
         "reconciler",
         "ui",

@@ -46,3 +46,43 @@ __all__ = [
     "GetReplicaIDAndSilenceStatus",
     "__version__",
 ]
+
+_global_flusher: MetricsFlusher | None = None
+
+
+def init(*args, **kwargs) -> None:
+    """Initializes the global SDK metrics flusher daemon."""
+    global _global_flusher
+    if _global_flusher is None:
+        _global_flusher = MetricsFlusher(client=Client(*args, **kwargs))
+
+
+def log_metric(name: str, value: float | int, step: int | None = None) -> None:
+    """Logs a metric to the background flusher daemon. Auto-initializes if needed."""
+    global _global_flusher
+    if _global_flusher is None:
+        init()
+    _global_flusher.log_metric(name, value, step)
+
+
+def log(name: str, value: float | int, step: int | None = None) -> None:
+    """Alias for log_metric."""
+    log_metric(name, value, step)
+
+
+def shutdown() -> None:
+    """Gracefully shuts down the global SDK metrics flusher."""
+    global _global_flusher
+    if _global_flusher is not None:
+        _global_flusher.shutdown()
+        _global_flusher = None
+
+
+__all__.extend(
+    [
+        "init",
+        "log_metric",
+        "log",
+        "shutdown",
+    ]
+)

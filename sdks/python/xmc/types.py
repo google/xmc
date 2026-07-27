@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""XMC Metrics data model and pre-validation logic using proto."""
+"""XMC Metrics data model, validation, and batch payload serialization."""
 
+import functools
 import math
 import re
-import threading
+from typing import Any
 
 # Import the generated proto. The path depends on the bazel package structure.
 from api.protos.metrics import metrics_pb2
@@ -24,10 +25,13 @@ from api.protos.metrics import metrics_pb2
 # Re-export the Metric class so it is available at xmc.types.Metric
 Metric = metrics_pb2.Metric
 
-_MAX_CACHED_METRIC_NAMES: int = 10000
 _METRIC_NAME_REGEX: re.Pattern[str] = re.compile(r"^[a-zA-Z0-9_\.\-\/]{1,255}$")
-_validated_metric_names: set[str] = set()
-_lock = threading.Lock()
+
+
+@functools.lru_cache(maxsize=10000)
+def is_valid_metric_name(name: str) -> bool:
+    """Checks whether a metric name matches the allowed character set and length."""
+    return bool(_METRIC_NAME_REGEX.match(name))
 
 
 def validate_metric(metric: metrics_pb2.Metric) -> None:
@@ -39,20 +43,11 @@ def validate_metric(metric: metrics_pb2.Metric) -> None:
     Raises:
         ValueError: If metric_name, metric_value, or step is invalid.
     """
-    global _validated_metric_names
-    metric_name = metric.metric_name
-    if metric_name not in _validated_metric_names:
-        if not _METRIC_NAME_REGEX.match(metric_name):
-            raise ValueError(
-                f"Invalid metric_name {metric_name!r}: must match regex"
-                " ^[a-zA-Z0-9_\\.\\-\\/]{1,255}$"
-            )
-        with _lock:
-            if metric_name not in _validated_metric_names:
-                if len(_validated_metric_names) >= _MAX_CACHED_METRIC_NAMES:
-                    _validated_metric_names = {metric_name}
-                else:
-                    _validated_metric_names = _validated_metric_names | {metric_name}
+    if not is_valid_metric_name(metric.metric_name):
+        raise ValueError(
+            f"Invalid metric_name {metric.metric_name!r}: must match regex"
+            " ^[a-zA-Z0-9_\\.\\-\\/]{1,255}$"
+        )
 
     if not math.isfinite(metric.metric_value):
         raise ValueError(f"Invalid metric_value {metric.metric_value!r}: must be a finite number")
@@ -61,6 +56,58 @@ def validate_metric(metric: metrics_pb2.Metric) -> None:
         raise ValueError(f"Invalid step {metric.step!r}: must be >= 0")
 
 
-# Add a validation method to the generated proto class dynamically for convenience,
-# matching the previous SDK contract.
 metrics_pb2.Metric.validate = validate_metric
+
+
+def format_metric_batch_payload(
+    items: list[tuple[str, float, int, float]],
+    xid: str,
+    work_unit_id: str,
+    execution_id: str,
+    replica_id: str,
+) -> list[dict[str, Any]]:
+    """Formats metric tuples into JSON payload list matching XMCMetricsBatch schema.
+
+    Instantiates Metric proto objects per item to validate schema compliance
+    and converts float epoch timestamp to microsecond int64.
+    """
+
+    def _to_microsecond_ts(ts: float | int) -> int:
+        val = float(ts)
+        if val > 1e11:
+            return int(val)
+        return int(round(val * 1_000_000))
+
+    def _to_int_id(val: str | int | None) -> int:
+        if not val:
+            return 0
+        try:
+            return int(val)
+        except ValueError:
+            return 0
+
+    payload = []
+    for name, val, step, ts in items:
+        m = Metric(
+            xid=_to_int_id(xid),
+            work_unit_id=_to_int_id(work_unit_id),
+            execution_id=_to_int_id(execution_id),
+            replica_id=replica_id,
+            metric_name=name,
+            metric_value=float(val),
+            step=int(step),
+            timestamp=_to_microsecond_ts(ts),
+        )
+        payload.append(
+            {
+                "xid": xid,
+                "work_unit_id": work_unit_id,
+                "execution_id": execution_id,
+                "replica_id": m.replica_id,
+                "metric_name": m.metric_name,
+                "metric_value": m.metric_value,
+                "step": m.step,
+                "timestamp": m.timestamp,
+            }
+        )
+    return payload

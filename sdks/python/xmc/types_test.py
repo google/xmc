@@ -16,19 +16,11 @@
 
 import unittest
 
-import xmc.types
-from xmc.types import _MAX_CACHED_METRIC_NAMES, Metric, validate_metric
+from xmc.types import Metric, format_metric_batch_payload, is_valid_metric_name
 
 
 class TestMetricValidation(unittest.TestCase):
-    def setUp(self):
-        xmc.types._validated_metric_names = set()
-
     def test_valid_metric(self):
-        # Note: proto fields use snake_case in Python, but we can also use
-        # positional or keyword args.
-        # work_unit_id in proto becomes work_unit_id (or workUnitId depending on
-        # proto 3 syntax but usually snake_case in python)
         metric = Metric(
             xid=100,
             work_unit_id=1,
@@ -39,33 +31,31 @@ class TestMetricValidation(unittest.TestCase):
             step=50,
         )
         metric.validate()
-        self.assertIn("eval/accuracy", xmc.types._validated_metric_names)
+        self.assertTrue(is_valid_metric_name("eval/accuracy"))
 
-    def test_set_caching(self):
-        m1 = Metric(metric_name="loss", metric_value=0.1, step=1)
-        m2 = Metric(metric_name="loss", metric_value=0.08, step=2)
+    def test_lru_caching(self):
+        self.assertTrue(is_valid_metric_name("loss"))
+        # Second call hits cache
+        self.assertTrue(is_valid_metric_name("loss"))
+        cache_info = is_valid_metric_name.cache_info()
+        self.assertGreater(cache_info.hits, 0)
 
-        validate_metric(m1)
-        self.assertEqual(len(xmc.types._validated_metric_names), 1)
-        self.assertIn("loss", xmc.types._validated_metric_names)
-
-        # Second validation hits cache
-        validate_metric(m2)
-        self.assertEqual(len(xmc.types._validated_metric_names), 1)
-
-    def test_cache_cap_eviction(self):
-        # Pre-fill cache up to MAX_CACHED_METRIC_NAMES
-        for i in range(_MAX_CACHED_METRIC_NAMES):
-            xmc.types._validated_metric_names.add(f"metric_{i}")
-
-        self.assertEqual(len(xmc.types._validated_metric_names), _MAX_CACHED_METRIC_NAMES)
-
-        # Adding a new metric name should reset the cache and add the new one
-        m_new = Metric(metric_name="new_metric", metric_value=1.0, step=0)
-        validate_metric(m_new)
-
-        self.assertEqual(len(xmc.types._validated_metric_names), 1)
-        self.assertIn("new_metric", xmc.types._validated_metric_names)
+    def test_format_metric_batch_payload(self):
+        items = [
+            ("loss", 0.123, 10, 100.0),
+            ("accuracy", 0.95, 11, 101.0),
+        ]
+        payload = format_metric_batch_payload(
+            items,
+            xid="1001",
+            work_unit_id="2002",
+            execution_id="3003",
+            replica_id="replica-0",
+        )
+        self.assertEqual(len(payload), 2)
+        self.assertEqual(payload[0]["xid"], "1001")
+        self.assertEqual(payload[0]["metric_name"], "loss")
+        self.assertEqual(payload[0]["timestamp"], 100000000)
 
     def test_invalid_metric_name_regex(self):
         invalid_names = [

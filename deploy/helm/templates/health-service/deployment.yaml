@@ -33,6 +33,8 @@ spec:
       securityContext:
         seccompProfile:
           type: RuntimeDefault
+      volumes:
+        {{- include "xmanager-cloud.gcpSecretsVolume" . | nindent 8 }}
       containers:
       - name: health-service
         image: {{ .Values.health_service_custom_image | quote }}
@@ -46,9 +48,15 @@ spec:
           capabilities:
             drop:
             - ALL
+        volumeMounts:
+          - name: gcp-secrets-volume
+            mountPath: /etc/gcp-secrets
+            readOnly: true
         ports:
         - containerPort: 8080
           name: http-port
+        env:
+        {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
         readinessProbe:
           httpGet:
             path: /readyz
