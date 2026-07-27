@@ -75,11 +75,15 @@ describe('ResourceDashboard Container', () => {
     return {};
   }, beforeEach);
 
-  it('should render split container with queue jobs side panel', async () => {
+  it('should render resolved cluster queues and jobs side panel', async () => {
     const host = bootstrap(TestHostComponent);
     await flush();
 
     expect(host).toBeTruthy();
+
+    const queueItems = document.querySelectorAll('.scaffolding-queue-item');
+    expect(queueItems.length).toBe(1);
+    expect(queueItems[0].textContent).toContain('gpu-cluster-queue');
 
     const jobsPanel = document.querySelector('xmc-queue-jobs-side-panel');
     expect(jobsPanel).toBeTruthy();

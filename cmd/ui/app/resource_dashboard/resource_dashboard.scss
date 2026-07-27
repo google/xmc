@@ -1,46 +1,28 @@
-/* Copyright 2026 Google LLC */
-/*
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
-.rod-container {
-  padding: 24px;
+:host {
+  display: block;
+  padding: 24px 32px;
+  background-color: #f8f9fa;
+  min-height: 100vh;
+  box-sizing: border-box;
+  font-family: Roboto, 'Helvetica Neue', sans-serif;
 }
 
-.rod-subnav-tabs {
-  display: flex;
-  gap: 24px;
-  border-bottom: 1px solid #dadce0;
+.rod-subnav-placeholder {
   margin-bottom: 24px;
-}
-
-.rod-tab-btn {
-  background: none;
-  border: none;
-  padding: 8px 0;
-  font-size: 14px;
-  font-weight: 500;
-  color: #5f6368;
-  cursor: pointer;
-}
-
-.rod-tab-btn.active-tab {
-  color: #1a73e8;
-  border-bottom: 2px solid #1a73e8;
-}
-
-.dashboard-shell-content {
-  width: 100%;
 }
 
 .rod-split-container {
@@ -49,9 +31,13 @@
   width: 100%;
 }
 
-.queues-side-pane {
+.rod-queue-list-placeholder {
   flex: 1 1 42%;
   min-width: 0;
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px 20px;
 }
 
 .jobs-side-pane {
@@ -61,9 +47,27 @@
   top: 16px;
 }
 
-.section-heading {
-  font-size: 16px;
-  font-weight: 500;
-  color: #202124;
-  margin: 0;
+.scaffolding-queue-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0 0;
+}
+
+.scaffolding-queue-item {
+  padding: 10px 14px;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background-color: #f1f3f4;
+  }
+
+  &.selected {
+    border-color: #1a73e8;
+    background-color: #e8f0fe;
+    font-weight: 500;
+  }
 }
