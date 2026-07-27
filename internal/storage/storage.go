@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 // Package storage defines the interface for all data persistence operations
 // required by the Experiment State Server.
 package storage
@@ -92,56 +93,121 @@ type XidEntryUpdate struct {
 
 // ExperimentStore defines storage operations for experiments.
 type ExperimentStore interface {
+	// CreateExperiment creates a new experiment.
 	CreateExperiment(ctx context.Context, exp *essmsgpb.Experiment) (*essmsgpb.Experiment, error)
+
+	// FetchExperiment retrieves an experiment by its unique ID.
 	FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error)
+
+	// FetchExperimentStatus retrieves only the status of an experiment by its unique ID.
 	FetchExperimentStatus(ctx context.Context, xid int64) (*essmsgpb.ExperimentStatus, error)
+
+	// ListExperiments retrieves a list of experiments matching the given filter. Staleness should
+	// be set to 0 for strong reads, and up to 15 seconds for stale reads.
+	// It uses cursor pagination.
 	ListExperiments(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.Experiment, string, error)
+
+	// UpdateExperiment updates an experiment with the given update mask. It returns both the
+	// original and updated experiments, so that the caller can choose whether to perform
+	// additional actions based on the original experiment state.
 	UpdateExperiment(ctx context.Context, update *ExperimentUpdate) (*essmsgpb.Experiment, *essmsgpb.Experiment, error)
+
+	// UpdateExperimentLaunchState updates the launch state of an experiment.
 	UpdateExperimentLaunchState(ctx context.Context, xid int64, launchState essmsgpb.ExperimentStatus_LaunchState) (*essmsgpb.Experiment, error)
 }
 
 // WorkUnitStore defines storage operations for work units and work unit executions.
 type WorkUnitStore interface {
+	// CreateWorkUnit creates a new work unit as a sub-collection of an experiment.
 	CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*essmsgpb.WorkUnit, error)
+
+	// FetchWorkUnit retrieves a work unit by its unique ID.
 	FetchWorkUnit(ctx context.Context, xid int64, wid int64) (*essmsgpb.WorkUnit, error)
+
+	// ListWorkUnits retrieves a list of work units matching the given filter. Staleness should
+	// be set to 0 for strong reads, and up to 15 seconds for stale reads.
+	// It uses cursor pagination.
 	ListWorkUnits(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.WorkUnit, string, error)
+
+	// UpdateWorkUnit updates a work unit with the given update mask. It returns both the
+	// original and updated work units, so that the caller can choose whether to perform
+	// additional actions based on the original work unit state.
 	UpdateWorkUnit(ctx context.Context, update *WorkUnitUpdate) (*essmsgpb.WorkUnit, *essmsgpb.WorkUnit, error)
+
+	// FetchCurrentWorkUnitExecution retrieves the current work unit execution.
 	FetchCurrentWorkUnitExecution(ctx context.Context, xid int64, wid int64) (*essmsgpb.WorkUnitExecution, error)
+
+	// ListWorkUnitExecutions retrieves the historical work unit executions for a given work unit.
 	ListWorkUnitExecutions(ctx context.Context, xid int64, wid int64) ([]*essmsgpb.WorkUnitExecution, error)
+
+	// UpdateWorkUnitExecutions updates the status of a work unit. It returns the canonical
+	// executions, either the updated executions or the original executions if no update was
+	// done.
 	UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error)
+
+	// RestartWorkUnitExecutions archives the active work unit execution for a given work unit,
+	// and generates a new current work unit execution in the given state.
 	RestartWorkUnitExecutions(ctx context.Context, requester string, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnitExecution, error)
 }
 
 // StatusMessageStore defines storage operations for status messages.
 type StatusMessageStore interface {
+	// ListStatusMessages retrieves a list of status messages for an experiment or work unit. Staleness should
+	// be set to 0 for strong reads, and up to 15 seconds for stale reads.
+	// It uses cursor pagination.
 	ListStatusMessages(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.StatusMessage, string, error)
 }
 
 // ArtifactStore defines storage operations for artifacts.
 type ArtifactStore interface {
+	// CreateArtifact creates a new artifact.
 	CreateArtifact(ctx context.Context, artifact *essmsgpb.Artifact) (*essmsgpb.Artifact, error)
+
+	// FetchArtifact retrieves an artifact by its unique ID.
 	FetchArtifact(ctx context.Context, aid int64) (*essmsgpb.Artifact, error)
+
+	// ListArtifacts retrieves a list of artifacts matching the given filter. Staleness should be set
+	// to 0 for strong reads, and up to 15 seconds for stale reads.
+	// It uses cursor pagination.
 	ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.Artifact, string, error)
+
+	// UpdateArtifact updates an artifact with the given update mask.
 	UpdateArtifact(ctx context.Context, update *ArtifactUpdate) (originalArtifact *essmsgpb.Artifact, updatedArtifact *essmsgpb.Artifact, err error)
+
+	// DeleteArtifact deletes an artifact by its unique ID.
 	DeleteArtifact(ctx context.Context, aid int64) error
 }
 
 // OperationStore defines storage operations for operations.
 type OperationStore interface {
+	// AddWorkUnitOperation adds an operation to a work unit.
 	AddWorkUnitOperation(ctx context.Context, xid int64, wid int64, operationMetadata *essmsgpb.OperationMetadata) (*longrunningpb.Operation, error)
+
+	// FetchWorkUnitOperation retrieves an operation by its unique ID.
 	FetchWorkUnitOperation(ctx context.Context, xid int64, wid int64, operationID string) (*longrunningpb.Operation, error)
+
+	// UpdateWorkUnitOperation updates the status of an operation.
 	UpdateWorkUnitOperation(ctx context.Context, operationUpdate *OperationUpdate) (*longrunningpb.Operation, error)
 }
 
 // XidEntryStore defines storage operations for XID entries.
 type XidEntryStore interface {
+	// CreateXidEntry creates a new XidEntry.
 	CreateXidEntry(ctx context.Context, entry *xidmsgpb.XidEntry) (*xidmsgpb.XidEntry, error)
+
+	// FetchXidEntry retrieves an XidEntry by its unique ID.
 	FetchXidEntry(ctx context.Context, xid int64) (*xidmsgpb.XidEntry, error)
+
+	// ListXidEntries retrieves a paginated and filtered list of XidEntries. Staleness should
+	// be set to 0 for strong reads, and up to 15 seconds for stale reads.
+	// It uses cursor pagination.
 	ListXidEntries(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*xidmsgpb.XidEntry, string, error)
+
+	// UpdateXidEntry updates an XidEntry with the given update mask.
 	UpdateXidEntry(ctx context.Context, update *XidEntryUpdate) (*xidmsgpb.XidEntry, error)
 }
 
-// Storage defines the unified interface for all data persistence operations.
+// Storage defines the interface for all data persistence operations.
 type Storage interface {
 	ExperimentStore
 	WorkUnitStore
