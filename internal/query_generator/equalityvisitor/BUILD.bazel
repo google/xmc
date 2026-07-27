@@ -1,0 +1,27 @@
+# Copyright 2025 Google LLC
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "equalityvisitor",
+    srcs = ["equalityvisitor.go"],
+    importpath = "xmanager_cloud/query_generator/equalityvisitor",
+    deps = [
+        "//api/filter:filter_expression_go_proto",
+        "//api/filter/go/filtervisitor",
+        "//internal/logging",
+    ],
+)
+
+go_test(
+    name = "equalityvisitor_test",
+    srcs = ["equalityvisitor_test.go"],
+    embed = [":equalityvisitor"],
+    deps = [
+        "//api/filter:filter_expression_go_proto",
+        "//api/filter/go/filter",
+        "//api/filter/go/filtervisitor",
+        "//internal/compat/log",
+    ],
+)

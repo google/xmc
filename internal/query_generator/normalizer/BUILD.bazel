@@ -24,7 +24,7 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/filter/go/filtervisitor",
-        "//internal/query_generator:querytools",
+        "//internal/query_generator/querytools",
     ],
 )
 
@@ -34,6 +34,6 @@ go_test(
     embed = [":normalizer"],
     deps = [
         "//api/filter/go/filtervisitor",
-        "//internal/query_generator:querytools",
+        "//internal/query_generator/querytools",
     ],
 )

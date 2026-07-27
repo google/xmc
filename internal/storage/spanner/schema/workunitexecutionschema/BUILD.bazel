@@ -1,0 +1,15 @@
+# Copyright 2025 Google LLC
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "workunitexecutionschema",
+    srcs = ["workunitexecutionschema.go"],
+    importpath = "xmanager_cloud/storage/spanner/schema/workunitexecutionschema",
+    deps = [
+        "//api/filter/go/filtervisitor",
+        "//internal/compat/safesql",
+        "//internal/query_generator/querytools",
+    ],
+)
