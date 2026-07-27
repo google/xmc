@@ -33,36 +33,7 @@ test.describe('QueueCardComponent - Screenshot Tests', () => {
   test('should match baseline screenshot for queue card section', async ({ page }) => {
     await mountComponentHarness(
       page,
-      `<xmc-rod-queue-card style="display: block; width: 440px; height: 204px; box-sizing: border-box; padding: 16px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; font-family: Roboto, sans-serif;">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-          <div>
-            <h3 style="margin: 0; font-size: 16px; font-weight: 500; color: #202124;">gpu-cluster-queue</h3>
-            <span style="font-size: 12px; color: #5f6368;">Cohort: prod-gpu</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 6px; background: #e6f4ea; color: #137333; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 500;">
-            <span style="width: 8px; height: 8px; background: #137333; border-radius: 50%;"></span>
-            Healthy
-          </div>
-        </div>
-        <div style="margin-bottom: 12px;">
-          <div style="font-size: 12px; font-weight: 500; color: #5f6368; margin-bottom: 6px;">Capacity & Predictability</div>
-          <div style="border: 1px solid #f1f3f4; border-radius: 4px; padding: 8px; font-size: 12px;">
-            <div style="display: flex; justify-content: space-between; font-weight: 500; color: #5f6368; padding-bottom: 4px; border-bottom: 1px solid #f1f3f4;">
-              <span>Resource</span>
-              <span>Max workload</span>
-              <span>Free / Total</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; padding-top: 6px; color: #202124;">
-              <span style="font-weight: 500;">nvidia-h100</span>
-              <span>64 GPUs</span>
-              <span>32 / 128 GPUs</span>
-            </div>
-          </div>
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px; background: #e8f0fe; color: #1a73e8; padding: 8px 12px; border-radius: 4px; font-size: 12px; font-weight: 500;">
-          <span>✓ High likelihood of immediate scheduling</span>
-        </div>
-      </xmc-rod-queue-card>`,
+      `<xmc-rod-queue-card style="display: block; width: 440px; height: 204px; box-sizing: border-box; padding: 16px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; font-family: Roboto, sans-serif;"></xmc-rod-queue-card>`,
     );
 
     const queueCardComponent = page.locator('xmc-rod-queue-card').first();

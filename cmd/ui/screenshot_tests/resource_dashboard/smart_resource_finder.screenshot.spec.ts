@@ -33,22 +33,7 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
   test('should match baseline screenshot for smart resource finder section', async ({ page }) => {
     await mountComponentHarness(
       page,
-      `<xmc-smart-resource-finder style="display: flex; align-items: center; gap: 16px; width: 960px; height: 88px; box-sizing: border-box; padding: 16px 24px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; font-family: Roboto, sans-serif;">
-        <span style="font-weight: 500; color: #202124; font-size: 14px;">I need</span>
-        <div style="display: flex; flex-direction: column; gap: 4px;">
-          <label style="font-size: 12px; color: #5f6368; font-weight: 500;">Amount *</label>
-          <input type="number" value="64" style="width: 80px; padding: 8px 10px; border: 1px solid #dadce0; border-radius: 4px; font-size: 14px;" />
-        </div>
-        <div style="display: flex; flex-direction: column; gap: 4px;">
-          <label style="font-size: 12px; color: #5f6368; font-weight: 500;">Resource type *</label>
-          <select style="width: 220px; padding: 8px 10px; border: 1px solid #dadce0; border-radius: 4px; font-size: 14px; background: #fff;">
-            <option>All resource types (Default)</option>
-            <option selected>NVIDIA H100 GPU</option>
-          </select>
-        </div>
-        <button type="button" style="background: none; border: none; color: #1a73e8; font-weight: 500; font-size: 14px; cursor: pointer; padding: 8px 12px;">+ Add resource type</button>
-        <button type="button" style="background: #1a73e8; color: #ffffff; border: none; border-radius: 4px; padding: 10px 20px; font-weight: 500; font-size: 14px; cursor: pointer; display: flex; align-items: center; gap: 8px; margin-left: auto;">Search queues</button>
-      </xmc-smart-resource-finder>`,
+      `<xmc-smart-resource-finder style="display: flex; align-items: center; gap: 16px; width: 960px; height: 88px; box-sizing: border-box; padding: 16px 24px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; font-family: Roboto, sans-serif;"></xmc-smart-resource-finder>`,
     );
 
     const smartFinderComponent = page.locator('xmc-smart-resource-finder').first();
