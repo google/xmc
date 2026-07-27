@@ -54,34 +54,6 @@
   margin: 0;
 }
 
-.jobs-filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border: 1px solid #dadce0;
-  border-radius: 6px;
-  padding: 6px 12px;
-  margin-bottom: 20px;
-  background: #f8f9fa;
-}
-
-.filter-menu-icon,
-.filter-action-icon {
-  color: #5f6368;
-  font-size: 20px;
-  width: 20px;
-  height: 20px;
-}
-
-.jobs-search-input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  outline: none;
-  font-size: 14px;
-  color: #202124;
-}
-
 .jobs-mat-table {
   width: 100%;
   border-collapse: collapse;

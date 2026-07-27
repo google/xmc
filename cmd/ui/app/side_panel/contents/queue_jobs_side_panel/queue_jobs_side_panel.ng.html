@@ -22,24 +22,11 @@
     <p class="jobs-card-subtitle">There are {{ totalCount() }} jobs ahead of you.</p>
   </div>
 
-  <div class="jobs-filter-bar">
-    <mat-icon class="filter-menu-icon">filter_list</mat-icon>
-    <input
-      type="text"
-      class="jobs-search-input"
-      placeholder="Filter by resource, priority or importance"
-      [ngModel]="filterQuery()"
-      (ngModelChange)="onFilterQueryChange($event)"
-    />
-    <mat-icon class="filter-action-icon" matTooltip="Help">help_outline</mat-icon>
-    <mat-icon class="filter-action-icon" matTooltip="Columns">view_column</mat-icon>
-  </div>
-
   @if (isLoading()) {
     <div class="loading-container">
       <span>Loading jobs...</span>
     </div>
-  } @else if (filteredJobs().length === 0) {
+  } @else if (jobs().length === 0) {
     <div class="jobs-empty-state">
       <div class="empty-star-illustration">
         <svg
