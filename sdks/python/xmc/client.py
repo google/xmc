@@ -24,16 +24,19 @@ import urllib.request
 from collections.abc import Mapping
 from typing import Any
 
-from xmc.dist_harvest import get_replica_id_and_silence_status
+from xmc.dist_harvest import (
+    harvest_client_metadata,
+)
 
 logger = logging.getLogger(__name__)
 
 _TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "t", "y"})
 
 
-def _is_metrics_disabled_env() -> bool:
+def _is_metrics_disabled_env(env: Mapping[str, str] | None = None) -> bool:
     """Checks whether XMC_METRICS_DISABLED env var is set to a truthy value."""
-    val = os.getenv("XMC_METRICS_DISABLED", "").strip().lower()
+    env_source = env if env is not None else os.environ
+    val = env_source.get("XMC_METRICS_DISABLED", "").strip().lower()
     return val in _TRUTHY_ENV_VALUES
 
 
@@ -76,33 +79,43 @@ class Client:
         replica_id: Auto-detected replica/rank ID.
         is_silenced: Whether metric logging is silenced for this replica.
         should_silence: Alias for is_silenced.
+        xid: Workload XID.
+        work_unit_id: Work unit ID.
+        execution_id: Execution ID.
     """
 
     def __init__(
         self,
-        base_url: str,
-        api_key: str | None = None,
-        timeout: float = 30.0,
-        default_headers: dict[str, str] | None = None,
-        disabled: bool | None = None,
         log_all_replicas: bool = False,
         env: Mapping[str, str] | None = None,
     ) -> None:
-        if not base_url:
-            raise ValueError("base_url must be specified and non-empty.")
-
-        self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
-        self.timeout = timeout
-        if disabled is not None:
-            self._disabled = bool(disabled)
-        else:
-            self._disabled = _is_metrics_disabled_env()
-
         self.log_all_replicas = log_all_replicas
-        self.replica_id, self.is_silenced = get_replica_id_and_silence_status(
-            env=env, log_all_replicas=log_all_replicas
+
+        env_dict = env if env is not None else os.environ
+
+        base_url = env_dict.get("XMC_GATEWAY_URL")
+        if not base_url:
+            base_url = "http://localhost:disabled"
+            self._disabled = True
+        else:
+            self._disabled = _is_metrics_disabled_env(env=env_dict)
+
+        self.base_url = str(base_url).rstrip("/")
+        self.api_key = env_dict.get("XMC_API_KEY")
+        self.timeout = 30.0
+
+        (
+            self._xid,
+            self._work_unit_id,
+            self._execution_id,
+            self._replica_id,
+            harvest_silenced,
+        ) = harvest_client_metadata(
+            env=env,
+            log_all_replicas=log_all_replicas,
         )
+        self.replica_id = self._replica_id
+        self.is_silenced = harvest_silenced or self._disabled
         self.should_silence = self.is_silenced
 
         self._headers = {
@@ -112,10 +125,23 @@ class Client:
         }
         if self.replica_id:
             self._headers["X-Replica-ID"] = self.replica_id
-        if default_headers:
-            self._headers.update(default_headers)
-        if api_key:
-            self._headers["Authorization"] = f"Bearer {api_key}"
+        if self.api_key:
+            self._headers["Authorization"] = f"Bearer {self.api_key}"
+
+    @property
+    def xid(self) -> str:
+        """Returns the workload XID metadata string."""
+        return self._xid
+
+    @property
+    def work_unit_id(self) -> str:
+        """Returns the work unit ID metadata string."""
+        return self._work_unit_id
+
+    @property
+    def execution_id(self) -> str:
+        """Returns the execution ID metadata string."""
+        return self._execution_id
 
     @property
     def disabled(self) -> bool:
@@ -212,6 +238,10 @@ class Client:
             logger.debug("POST request to %s silenced for replica %s", path, self.replica_id)
             return {}
         return self.request("POST", path, data=data, headers=headers)
+
+    def send_payload(self, payload: list[dict[str, Any]]) -> Any:
+        """Sends serialized batch payload list over the transport layer."""
+        return self.post("", payload)
 
     def close(self) -> None:
         """Closes any underlying network resources."""

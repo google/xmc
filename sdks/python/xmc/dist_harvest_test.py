@@ -21,7 +21,55 @@ from xmc.client import Client
 from xmc.dist_harvest import (
     GetReplicaIDAndSilenceStatus,
     get_replica_id_and_silence_status,
+    harvest_client_metadata,
 )
+
+
+class TestHarvestClientMetadata(unittest.TestCase):
+    """Test suite for harvest_client_metadata function and fail-closed safety."""
+
+    def test_environment_variables_success(self) -> None:
+        env = {
+            "XMC_XID": "1111",
+            "XMC_WORK_UNIT_ID": "2222",
+            "XMC_EXECUTION_ID": "3333",
+            "XMC_REPLICA_ID": "env-replica",
+        }
+        xid, wu_id, exec_id, rep_id, is_silenced = harvest_client_metadata(env=env)
+        self.assertEqual(xid, "1111")
+        self.assertEqual(wu_id, "2222")
+        self.assertEqual(exec_id, "3333")
+        self.assertEqual(rep_id, "env-replica")
+        self.assertFalse(is_silenced)
+
+    def test_fail_closed_missing_mandatory_vars(self) -> None:
+        # Missing any of XMC_XID, XMC_WORK_UNIT_ID, XMC_EXECUTION_ID fails closed (is_silenced=True)
+        invalid_envs = [
+            {},
+            {"XMC_XID": "100"},
+            {"XMC_XID": "100", "XMC_WORK_UNIT_ID": "200"},
+            {"XMC_XID": "  ", "XMC_WORK_UNIT_ID": "200", "XMC_EXECUTION_ID": "300"},
+        ]
+        for env in invalid_envs:
+            with self.subTest(env=env):
+                xid, wu_id, exec_id, rep_id, is_silenced = harvest_client_metadata(env=env)
+                self.assertTrue(is_silenced)
+
+    def test_replica_fallback_heuristics(self) -> None:
+        env = {
+            "XMC_XID": "100",
+            "XMC_WORK_UNIT_ID": "200",
+            "XMC_EXECUTION_ID": "300",
+            "RANK": "1",
+        }
+        xid, wu_id, exec_id, rep_id, is_silenced = harvest_client_metadata(env=env)
+        self.assertEqual(xid, "100")
+        self.assertEqual(rep_id, "1")
+        self.assertTrue(is_silenced)
+
+
+if __name__ == "__main__":
+    unittest.main()
 
 
 class TestDistHarvest(unittest.TestCase):
@@ -149,7 +197,7 @@ class TestDistHarvest(unittest.TestCase):
 
     def test_client_integration_silenced(self) -> None:
         env = {"RANK": "2"}
-        client = Client(base_url="https://xmc.example.com", env=env)
+        client = Client(env=env)
         self.assertEqual(client.replica_id, "2")
         self.assertTrue(client.is_silenced)
 
@@ -165,7 +213,7 @@ class TestDistHarvest(unittest.TestCase):
         mock_urlopen.return_value = mock_response
 
         env = {"RANK": "2"}
-        client = Client(base_url="https://xmc.example.com", env=env, log_all_replicas=True)
+        client = Client(env=env, log_all_replicas=True)
         self.assertEqual(client.replica_id, "2")
         self.assertFalse(client.is_silenced)
 

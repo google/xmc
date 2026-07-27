@@ -34,7 +34,6 @@ import (
 
 	"go/google"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/cors/cors"
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
 	"golang/google_api/option/option"
@@ -284,35 +283,8 @@ func main() {
 		authenticatedGwmux.ServeHTTP(w, r)
 	})
 
-	// 10. Configure CORS for the HTTP server.
-	// server.
-	logging.Info(ctx, "Configuring CORS")
-	logging.Debug(ctx, "Allowed origins", "origins", strings.Split(cfg.AllowedOrigins, ","))
-	c := cors.New(cors.Options{
-		AllowedOrigins:   strings.Split(cfg.AllowedOrigins, ","),
-		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"*"},
-		ExposedHeaders:   []string{"grpc-metadata-content-type", "grpc-status", "grpc-message"},
-		AllowCredentials: true,
-		MaxAge:           300,
-	})
-
-	// Apply the CORS middleware to the master mux.
-	handler := c.Handler(httpMux)
-
-	cop := http.NewCrossOriginProtection()
-	for _, origin := range strings.Split(cfg.AllowedOrigins, ",") {
-		origin = strings.TrimSpace(origin)
-		if origin == "" {
-			continue
-		}
-
-		if err := cop.AddTrustedOrigin(origin); err != nil {
-			logging.Error(ctx, "Failed to add trusted origin to CrossOriginProtection", "origin", origin, "error", err)
-		}
-	}
-	handler = cop.Handler(handler)
-	handler = oauthAuth.SecurityHeadersMiddleware(handler)
+	// 10. Apply security middlewares
+	handler := oauthAuth.SecurityMiddlewares(httpMux)
 
 	// 11. Start the HTTP server.
 	gwServer := &http.Server{

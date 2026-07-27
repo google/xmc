@@ -14,72 +14,26 @@
  limitations under the License.
 -->
 <div class="rod-container">
-  <div class="rod-subnav-tabs" role="tablist" aria-label="Resource Dashboard Tabs">
-    <button
-      id="tab-queues"
-      class="rod-tab-btn"
-      role="tab"
-      [attr.aria-selected]="activeTab() === 'queues'"
-      [attr.aria-controls]="'panel-queues'"
-      [class.active-tab]="activeTab() === 'queues'"
-      (click)="activeTab.set('queues')"
-    >
-      Smart resource finder
-    </button>
-    <button
-      id="tab-predictability"
-      class="rod-tab-btn"
-      role="tab"
-      [attr.aria-selected]="activeTab() === 'predictability'"
-      [attr.aria-controls]="'panel-predictability'"
-      [class.active-tab]="activeTab() === 'predictability'"
-      (click)="activeTab.set('predictability')"
-    >
-      Resource availability
-    </button>
-  </div>
-
-  <div class="dashboard-shell-content">
-    @if (activeTab() === 'queues') {
-      <div
-        role="tabpanel"
-        id="panel-queues"
-        [attr.aria-labelledby]="'tab-queues'"
-        class="rod-split-container"
-      >
-        <div class="rod-queue-list-placeholder">
-          <h3>Resolved Cluster Queues</h3>
-          @if (clusterQueues().length === 0) {
-            <p class="empty-queues-msg">No cluster queues resolved.</p>
-          } @else {
-            <ul class="scaffolding-queue-list">
-              @for (queue of clusterQueues(); track queue.name) {
-                <li
-                  class="scaffolding-queue-item"
-                  [class.selected]="selectedQueue() === queue.name"
-                  (click)="onQueueSelect(queue.name)"
-                >
-                  <span class="queue-name">{{ queue.name }}</span>
-                </li>
-              }
-            </ul>
-          }
-        </div>
-        <div class="jobs-side-pane">
-          <xmc-queue-jobs-table [queueName]="selectedQueue()"></xmc-queue-jobs-table>
-        </div>
-      </div>
-    } @else {
-      <div
-        role="tabpanel"
-        id="panel-predictability"
-        [attr.aria-labelledby]="'tab-predictability'"
-        class="predictability-panel"
-      >
-        <div class="predictability-placeholder">
-          <h3>Resource Availability & Predictability</h3>
-          <p>Predictability insights and reservation forecasting coming soon.</p>
-        </div>
+  <xmc-rod-subnav-tabs [activeTab]="activeTab()" (activeTabChange)="onTabChange($event)" />
+  <div class="rod-split-container">
+    <div class="rod-main-content">
+      @if (activeTab() === TAB_SMART_FINDER) {
+        <xmc-smart-resource-finder
+          [availableResourceTypes]="availableResourceTypes()"
+          (findMatchingQueues)="onFindMatchingQueues($event)"
+        />
+        <xmc-rod-queue-list
+          [queues]="filteredQueues()"
+          [selectedQueue]="selectedQueue()"
+          [isLoading]="isLoading()"
+          [(velocityPeriod)]="velocityPeriod"
+          (selectQueue)="onQueueSelect($event)"
+        />
+      }
+    </div>
+    @if (activeTab() === TAB_SMART_FINDER) {
+      <div class="jobs-side-pane">
+        <xmc-queue-jobs-table [queueName]="selectedQueue()"></xmc-queue-jobs-table>
       </div>
     }
   </div>
