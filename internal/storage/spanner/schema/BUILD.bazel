@@ -24,6 +24,18 @@ exports_files(
 )
 
 go_library(
+    name = "dashboardschema",
+    srcs = ["dashboardschema.go"],
+    importpath = "xmanager_cloud/storage/spanner/schema/dashboardschema",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/filter/go/filtervisitor",
+        "//internal/compat/safesql",
+        "//internal/query_generator:querytools",
+    ],
+)
+
+go_library(
     name = "artifactschema",
     srcs = ["artifactschema.go"],
     importpath = "xmanager_cloud/storage/spanner/schema/artifactschema",

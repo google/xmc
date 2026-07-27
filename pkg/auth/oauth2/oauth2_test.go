@@ -108,7 +108,7 @@ func TestIntegrationMockAuth(t *testing.T) {
 		w.Write([]byte("authorized:" + claims.Email))
 	})))
 
-	ts := httptest.NewServer(a.CORSMiddleware(mux))
+	ts := httptest.NewServer(a.corsMiddleware(mux))
 	defer ts.Close()
 
 	jar, err := cookiejar.New(nil)
@@ -406,9 +406,9 @@ func TestCORSMiddleware(t *testing.T) {
 		wantOrigin string
 	}{
 		{
-			name:       "Empty origin defaults to FrontendURL",
+			name:       "Empty origin returns no CORS headers",
 			origin:     "",
-			wantOrigin: "http://frontend.com",
+			wantOrigin: "",
 		},
 		{
 			name:       "FrontendURL matches",
@@ -426,15 +426,15 @@ func TestCORSMiddleware(t *testing.T) {
 			wantOrigin: "http://allowed2.com",
 		},
 		{
-			name:       "Disallowed origin defaults to FrontendURL",
+			name:       "Disallowed origin returns no CORS headers",
 			origin:     "http://disallowed.com",
-			wantOrigin: "http://frontend.com",
+			wantOrigin: "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := a.CORSMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := a.corsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			}))
 
@@ -452,8 +452,12 @@ func TestCORSMiddleware(t *testing.T) {
 			}
 
 			gotCreds := w.Header().Get("Access-Control-Allow-Credentials")
-			if gotCreds != "true" {
-				t.Errorf("Access-Control-Allow-Credentials = %q, want 'true'", gotCreds)
+			wantCreds := ""
+			if tt.wantOrigin != "" {
+				wantCreds = "true"
+			}
+			if gotCreds != wantCreds {
+				t.Errorf("Access-Control-Allow-Credentials = %q, want %q", gotCreds, wantCreds)
 			}
 		})
 	}
@@ -696,7 +700,7 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://frontend.com/api", nil)
 		w := httptest.NewRecorder()
 
-		a.SecurityHeadersMiddleware(targetHandler).ServeHTTP(w, req)
+		a.securityHeadersMiddleware(targetHandler).ServeHTTP(w, req)
 
 		if w.Header().Get("X-Frame-Options") != "DENY" {
 			t.Errorf("Expected X-Frame-Options: DENY, got %q", w.Header().Get("X-Frame-Options"))
@@ -714,7 +718,7 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 		req.TLS = &tls.ConnectionState{}
 		w := httptest.NewRecorder()
 
-		a.SecurityHeadersMiddleware(targetHandler).ServeHTTP(w, req)
+		a.securityHeadersMiddleware(targetHandler).ServeHTTP(w, req)
 
 		hsts := w.Header().Get("Strict-Transport-Security")
 		if !strings.Contains(hsts, "max-age=63072000") {
@@ -727,7 +731,7 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 		req.Header.Set("X-Forwarded-Proto", "https")
 		w := httptest.NewRecorder()
 
-		a.SecurityHeadersMiddleware(targetHandler).ServeHTTP(w, req)
+		a.securityHeadersMiddleware(targetHandler).ServeHTTP(w, req)
 
 		hsts := w.Header().Get("Strict-Transport-Security")
 		if !strings.Contains(hsts, "max-age=63072000") {
@@ -1070,6 +1074,80 @@ func (m *testMockOAuthProvider) ExchangeAndGetUserInfo(ctx context.Context, r *h
 		Name:    m.MockName,
 		Picture: m.MockPic,
 	}, nil
+}
+
+func TestSecurityMiddlewares(t *testing.T) {
+	cfg := &Config{
+		AllowedOrigins: []string{"http://allowed.com"},
+		FrontendURL:    "http://frontend.com",
+	}
+	a := newTestAuthenticator(cfg)
+
+	targetHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := a.SecurityMiddlewares(targetHandler)
+
+	t.Run("Applies CORS and Security Headers on GET", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "http://frontend.com/api", nil)
+		req.Header.Set("Origin", "http://allowed.com")
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+		// Check Security Headers (from securityHeadersMiddleware)
+		if w.Header().Get("X-Frame-Options") != "DENY" {
+			t.Errorf("Expected X-Frame-Options: DENY, got %q", w.Header().Get("X-Frame-Options"))
+		}
+		// Check CORS Headers (from corsMiddleware)
+		if w.Header().Get("Access-Control-Allow-Origin") != "http://allowed.com" {
+			t.Errorf("Expected Access-Control-Allow-Origin: http://allowed.com, got %q", w.Header().Get("Access-Control-Allow-Origin"))
+		}
+	})
+
+	t.Run("Applies CSRF and early terminates POST without token, keeping Security Headers", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "http://frontend.com/api", nil)
+		req.Header.Set("Origin", "http://disallowed.com")
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusForbidden {
+			t.Errorf("Expected status 403, got %d", w.Code)
+		}
+		// Check Security Headers (should still be present!)
+		if w.Header().Get("X-Frame-Options") != "DENY" {
+			t.Errorf("Expected X-Frame-Options: DENY, got %q", w.Header().Get("X-Frame-Options"))
+		}
+		// Check CORS Headers (should NOT be present because CORS is innermost)
+		if w.Header().Get("Access-Control-Allow-Origin") != "" {
+			t.Errorf("Expected no Access-Control-Allow-Origin header, got %q", w.Header().Get("Access-Control-Allow-Origin"))
+		}
+	})
+
+	t.Run("GET with disallowed origin omits CORS headers but keeps Security Headers", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "http://frontend.com/api", nil)
+		req.Header.Set("Origin", "http://disallowed.com")
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+		// Check Security Headers (should still be present!)
+		if w.Header().Get("X-Frame-Options") != "DENY" {
+			t.Errorf("Expected X-Frame-Options: DENY, got %q", w.Header().Get("X-Frame-Options"))
+		}
+		// Check CORS Headers (should NOT be present because origin is disallowed)
+		if w.Header().Get("Access-Control-Allow-Origin") != "" {
+			t.Errorf("Expected no Access-Control-Allow-Origin header, got %q", w.Header().Get("Access-Control-Allow-Origin"))
+		}
+	})
 }
 
 func newTestAuthenticator(cfg *Config) *Authenticator {
