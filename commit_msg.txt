@@ -1,17 +1,8 @@
-refactor(go): align multi-package directories into standard Go package layout
+refactor(bazel): modularize BUILD.bazel files into subpackage directories
 
-Restructure directories containing multiple package declarations into dedicated subpackage directories matching Go standard conventions and Bazel targets:
-- cmd/actuator/workunittaskhandler
-- cmd/experiment_state_server/config
-- cmd/xid_service/config
-- internal/common/{health, interfaces}
-- internal/kubernetes/common/{constants, jobsetutil}
-- internal/query_generator/{equalityvisitor, liststatement, predicate, querytools}
-- internal/security/{keyreloader, securitytest}
-- internal/storage/spanner/schema/{artifactschema, dashboardschema, experimentschema, operationschema, statusmessageschema, workunitexecutionschema, workunitschema, xidschema}
-- internal/task_queue_redis/{redisclient, validator}
+Create dedicated BUILD.bazel files inside each subpackage directory and update Bazel target references codebase-wide.
 
-This resolves Go toolchain and golangci-lint package loading conflicts cleanly.
+This aligns Bazel build target declarations with standard Go package directory structure so srcs no longer reference parent-relative file paths.
 
 TAG=agy
 CONV=45db6eeb-6770-4007-b22f-e7967de9db54

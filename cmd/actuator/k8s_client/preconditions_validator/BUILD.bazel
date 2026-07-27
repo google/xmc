@@ -20,7 +20,7 @@ compat_go_library(
     importpath = "xmanager_cloud/cmd/actuator/k8s_client/preconditions_validator",
     visibility = ["//visibility:public"],
     deps = [
-        "//internal/kubernetes/common:constants",
+        "//internal/kubernetes/common/constants",
         "//internal/logging",
         "//internal/validator",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
@@ -32,7 +32,7 @@ compat_go_test(
     srcs = ["preconditions_validator_test.go"],
     embed = [":preconditions_validator"],
     deps = [
-        "//internal/kubernetes/common:constants",
+        "//internal/kubernetes/common/constants",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
     ],
 )

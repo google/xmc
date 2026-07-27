@@ -1,0 +1,28 @@
+# Copyright 2025 Google LLC
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+compat_go_library(
+    name = "jobsetutil",
+    srcs = ["jobsetutil.go"],
+    importpath = "xmanager_cloud/kubernetes/common/jobsetutil",
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//internal/compat/log",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_sigs_jobset//api/jobset/v1alpha2",
+    ],
+)
+
+compat_go_test(
+    name = "jobsetutil_test",
+    srcs = ["jobsetutil_test.go"],
+    embed = [":jobsetutil"],
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//internal/compat/cmp",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_sigs_jobset//api/jobset/v1alpha2",
+    ],
+)

@@ -57,20 +57,10 @@ check_go() {
   local golangci_bin=""
   if command -v golangci-lint >/dev/null 2>&1; then
     golangci_bin="golangci-lint"
+  elif [ -n "${GOPATH:-}" ] && [ -f "$GOPATH/bin/golangci-lint" ]; then
+    golangci_bin="$GOPATH/bin/golangci-lint"
   elif [ -f "$HOME/go/bin/golangci-lint" ]; then
     golangci_bin="$HOME/go/bin/golangci-lint"
-  elif command -v go >/dev/null 2>&1 && [ -f "$(go env GOPATH)/bin/golangci-lint" ]; then
-    golangci_bin="$(go env GOPATH)/bin/golangci-lint"
-  fi
-
-  if [ -z "$golangci_bin" ] && command -v go >/dev/null 2>&1; then
-    echo "--> golangci-lint not found locally. Attempting automated installation (v1.64.6)..."
-    go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6 >/dev/null 2>&1 || true
-    if [ -f "$HOME/go/bin/golangci-lint" ]; then
-      golangci_bin="$HOME/go/bin/golangci-lint"
-    elif [ -f "$(go env GOPATH)/bin/golangci-lint" ]; then
-      golangci_bin="$(go env GOPATH)/bin/golangci-lint"
-    fi
   fi
 
   if [ -n "$golangci_bin" ]; then
@@ -84,8 +74,8 @@ check_go() {
       $golangci_bin run --fix || true
     fi
   else
-    echo "--> WARNING: golangci-lint not found and auto-install failed. Go linting skipped."
-    echo "   To install manually: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6"
+    echo "--> WARNING: golangci-lint not found. Go linting skipped."
+    echo "   To install: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6"
     if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
 }

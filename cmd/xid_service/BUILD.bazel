@@ -41,7 +41,7 @@ compat_go_library(
         "//api/protos/xid:api_go_proto",
         "//cmd/xid_service/server",
         "//internal/auth",
-        "//internal/common:health",
+        "//internal/common/health",
         "//internal/compat/google",
         "//internal/compat/spanner",
         "//internal/logging",

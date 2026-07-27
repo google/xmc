@@ -29,9 +29,3 @@ linters:
 linters-settings:
   gofmt:
     simplify: true
-
-issues:
-  exclude-rules:
-    - path: '.*'
-      linters:
-        - typecheck
