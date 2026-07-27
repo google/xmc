@@ -15,13 +15,13 @@
 -->
 <div class="rod-container">
   <xmc-rod-subnav-tabs [activeTab]="activeTab()" (activeTabChange)="onTabChange($event)" />
-  <div class="rod-split-container">
-    @if (activeTab() === TAB_SMART_FINDER) {
+  @if (activeTab() === TAB_SMART_FINDER) {
+    <xmc-smart-resource-finder
+      [availableResourceTypes]="availableResourceTypes()"
+      (findMatchingQueues)="onFindMatchingQueues($event)"
+    />
+    <div class="rod-split-container">
       <div class="rod-main-content">
-        <xmc-smart-resource-finder
-          [availableResourceTypes]="availableResourceTypes()"
-          (findMatchingQueues)="onFindMatchingQueues($event)"
-        />
         <xmc-rod-queue-list
           [queues]="filteredQueues()"
           [selectedQueue]="selectedQueue()"
@@ -33,6 +33,6 @@
       <div class="jobs-side-pane">
         <xmc-queue-jobs-table [queueName]="selectedQueue()"></xmc-queue-jobs-table>
       </div>
-    }
-  </div>
+    </div>
+  }
 </div>
