@@ -22,14 +22,14 @@
           [availableResourceTypes]="availableResourceTypes()"
           (findMatchingQueues)="onFindMatchingQueues($event)"
         />
+        <xmc-rod-queue-list
+          [queues]="filteredQueues()"
+          [selectedQueue]="selectedQueue()"
+          [isLoading]="isLoading()"
+          [(velocityPeriod)]="velocityPeriod"
+          (selectQueue)="onQueueSelect($event)"
+        />
       }
-      <xmc-rod-queue-list
-        [queues]="filteredQueues()"
-        [selectedQueue]="selectedQueue()"
-        [isLoading]="isLoading()"
-        [(velocityPeriod)]="velocityPeriod"
-        (selectQueue)="onQueueSelect($event)"
-      />
     </div>
   </div>
 </div>

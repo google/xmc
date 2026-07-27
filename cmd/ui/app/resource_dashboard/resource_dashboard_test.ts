@@ -134,7 +134,18 @@ describe('ResourceDashboard Container', () => {
     expect(await finderHarness.getResourceTypeSelectCount()).toBe(1);
   });
 
-  it('should filter queue list when finding matching queues in smart resource finder', async () => {
+  it('should populate picker dropdown with correct available resource types sorted alphabetically', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const finderHarness = (await getHarness(
+      SmartResourceFinderHarness,
+    )) as SmartResourceFinderHarness;
+    const options = await finderHarness.getResourceTypeOptions();
+    expect(options).toEqual(['All resource types (Default - empty)', 'cpu', 'nvidia.com/gpu']);
+  });
+
+  it('should filter queue list by resource type selection in the picker', async () => {
     bootstrap(TestHostComponent);
     await flush();
 
@@ -153,7 +164,7 @@ describe('ResourceDashboard Container', () => {
     expect(await (await queueListHarness.getQueueCard(0)).getQueueName()).toBe('cpu-cluster-queue');
   });
 
-  it('should switch tabs and show all queues in resource availability tab', async () => {
+  it('should filter queue list by amount requirement in the picker', async () => {
     bootstrap(TestHostComponent);
     await flush();
 
@@ -162,15 +173,58 @@ describe('ResourceDashboard Container', () => {
       SmartResourceFinderHarness,
     )) as SmartResourceFinderHarness;
 
-    await finderHarness.selectResourceType(0, 'cpu');
+    expect(await queueListHarness.getQueueCardCount()).toBe(2);
+
+    await finderHarness.setAmountValue('100');
     await finderHarness.clickFindButton();
     await flush();
+
     expect(await queueListHarness.getQueueCardCount()).toBe(1);
+    expect(await (await queueListHarness.getQueueCard(0)).getQueueName()).toBe('cpu-cluster-queue');
+  });
+
+  it('should filter queue list by both resource type and amount requirements', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const queueListHarness = (await getHarness(QueueListHarness)) as QueueListHarness;
+    const finderHarness = (await getHarness(
+      SmartResourceFinderHarness,
+    )) as SmartResourceFinderHarness;
+
+    await finderHarness.setAmountValue('32');
+    await finderHarness.selectResourceType(0, 'nvidia.com/gpu');
+    await finderHarness.clickFindButton();
+    await flush();
+
+    expect(await queueListHarness.getQueueCardCount()).toBe(1);
+    expect(await (await queueListHarness.getQueueCard(0)).getQueueName()).toBe('gpu-cluster-queue');
+
+    await finderHarness.setAmountValue('100');
+    await finderHarness.clickFindButton();
+    await flush();
+
+    expect(await queueListHarness.getQueueCardCount()).toBe(0);
+    expect(await queueListHarness.isEmpty()).toBeTrue();
+  });
+
+  it('should switch tabs to Resource availability and render an empty tab without queue list', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const queueListHarness = (await getHarness(QueueListHarness)) as QueueListHarness;
+    expect(await queueListHarness.getQueueCardCount()).toBe(2);
 
     const tabs = document.querySelectorAll(SUBNAV_TAB_SELECTOR);
     (tabs[1] as HTMLButtonElement).click();
     await flush();
 
+    expect(document.querySelectorAll(QUEUE_LIST_HOST_SELECTOR).length).toBe(0);
+
+    (tabs[0] as HTMLButtonElement).click();
+    await flush();
+
+    expect(document.querySelectorAll(QUEUE_LIST_HOST_SELECTOR).length).toBe(1);
     expect(await queueListHarness.getQueueCardCount()).toBe(2);
   });
 
