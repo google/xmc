@@ -30,7 +30,7 @@ import {
 } from 'xmanager_cloud/ui/app/side_panel/base_side_panel';
 
 /** Payload data required to open the queue jobs inspection panel. */
-export class QueueJobsSidePanelData implements BaseSidePanelData {
+export class QueueJobsTableData implements BaseSidePanelData {
   constructor(readonly queueName: string) {}
 }
 
@@ -38,10 +38,10 @@ export class QueueJobsSidePanelData implements BaseSidePanelData {
  * Modern Angular standalone component displaying pending and running jobs for a selected queue.
  */
 @Component({
-  selector: 'xmc-queue-jobs-side-panel',
+  selector: 'xmc-queue-jobs-table',
   standalone: true,
-  templateUrl: './queue_jobs_side_panel.ng.html',
-  styleUrl: './queue_jobs_side_panel.scss',
+  templateUrl: './queue_jobs_table.ng.html',
+  styleUrl: './queue_jobs_table.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
@@ -53,10 +53,10 @@ export class QueueJobsSidePanelData implements BaseSidePanelData {
     MatTooltipModule,
   ],
 })
-export class QueueJobsSidePanel implements BaseSidePanelContent<QueueJobsSidePanelData> {
+export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> {
   private readonly resourceService = inject(ResourceService);
 
-  readonly data = input<QueueJobsSidePanelData>();
+  readonly data = input<QueueJobsTableData>();
   readonly queueName = input<string>('gpu-cluster-queue');
 
   readonly activeQueueName = computed(

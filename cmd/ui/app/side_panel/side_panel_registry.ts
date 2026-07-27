@@ -19,10 +19,7 @@ import {
   EditExperimentForm,
   EditExperimentFormData,
 } from './contents/edit_experiment_form/edit_experiment_form';
-import {
-  QueueJobsSidePanel,
-  QueueJobsSidePanelData,
-} from './contents/queue_jobs_side_panel/queue_jobs_side_panel';
+import { QueueJobsTable, QueueJobsTableData } from './contents/queue_jobs_table/queue_jobs_table';
 
 type SidePanelComponent = BaseSidePanelContent<BaseSidePanelData>;
 
@@ -42,8 +39,5 @@ export const SIDE_PANEL_REGISTRY: Map<Type<BaseSidePanelData>, Type<SidePanelCom
     EditExperimentFormData as Type<BaseSidePanelData>,
     EditExperimentForm as Type<SidePanelComponent>,
   ],
-  [
-    QueueJobsSidePanelData as Type<BaseSidePanelData>,
-    QueueJobsSidePanel as Type<SidePanelComponent>,
-  ],
+  [QueueJobsTableData as Type<BaseSidePanelData>, QueueJobsTable as Type<SidePanelComponent>],
 ]);

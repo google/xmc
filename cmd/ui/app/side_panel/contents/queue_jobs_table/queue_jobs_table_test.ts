@@ -14,6 +14,8 @@
 
 import 'jasmine';
 
+import { getHarness } from '@angular/cdk/testing/catalyst/async';
+import { Component, signal } from '@angular/core';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
@@ -21,7 +23,8 @@ import { of } from 'rxjs';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import { bootstrap, cleanState, flush, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
-import { QueueJobsSidePanel } from './queue_jobs_side_panel';
+import { QueueJobsTable } from './queue_jobs_table';
+import { QueueJobsTableHarness } from './queue_jobs_table_harness';
 
 const TEST_QUEUE_JOBS_RESP = {
   queueName: 'gpu-cluster-queue',
@@ -53,7 +56,16 @@ const TEST_QUEUE_JOBS_RESP = {
   ],
 };
 
-describe('QueueJobsSidePanel Component', () => {
+@Component({
+  standalone: true,
+  imports: [QueueJobsTable],
+  template: `<xmc-queue-jobs-table [queueName]="queueName()" />`,
+})
+class TestHostComponent {
+  readonly queueName = signal<string>('gpu-cluster-queue');
+}
+
+describe('QueueJobsTable Component', () => {
   const state = cleanState(() => {
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
       'getQueueJobs',
@@ -61,7 +73,7 @@ describe('QueueJobsSidePanel Component', () => {
     resourceService.getQueueJobs.and.returnValue(of(TEST_QUEUE_JOBS_RESP));
 
     setupModule({
-      imports: [QueueJobsSidePanel, NoopAnimationsModule],
+      imports: [TestHostComponent, NoopAnimationsModule],
       providers: [provideRouter([]), { provide: ResourceService, useValue: resourceService }],
     });
 
@@ -71,24 +83,19 @@ describe('QueueJobsSidePanel Component', () => {
   }, beforeEach);
 
   it('should be created and load queue jobs', async () => {
-    const comp = bootstrap(QueueJobsSidePanel, {
-      inputs: { queueName: 'gpu-cluster-queue' },
-    });
+    const host = bootstrap(TestHostComponent);
     await flush();
 
-    expect(comp).toBeTruthy();
+    expect(host).toBeTruthy();
     expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith('gpu-cluster-queue');
   });
 
-  it('should properly render all table column headers', async () => {
-    bootstrap(QueueJobsSidePanel, {
-      inputs: { queueName: 'gpu-cluster-queue' },
-    });
+  it('should properly render all table column headers using harness', async () => {
+    bootstrap(TestHostComponent);
     await flush();
 
-    const headerCells = Array.from(document.querySelectorAll('th.mat-mdc-header-cell')).map((th) =>
-      th.textContent?.trim(),
-    );
+    const harness = await getHarness(QueueJobsTableHarness);
+    const headerCells = await harness.getHeaderCellTexts();
     expect(headerCells).toContain('Position');
     expect(headerCells).toContain('Experiment name');
     expect(headerCells).toContain('Status');
@@ -97,46 +104,32 @@ describe('QueueJobsSidePanel Component', () => {
     expect(headerCells).toContain('Author');
   });
 
-  it('should render correct row cell values for queue jobs', async () => {
-    bootstrap(QueueJobsSidePanel, {
-      inputs: { queueName: 'gpu-cluster-queue' },
-    });
+  it('should render correct row cell values for queue jobs using harness', async () => {
+    bootstrap(TestHostComponent);
     await flush();
 
-    const rows = document.querySelectorAll('tr.mat-mdc-row');
-    expect(rows.length).toBe(2);
+    const harness = await getHarness(QueueJobsTableHarness);
+    expect(await harness.getRowCount()).toBe(2);
 
-    const firstRow = rows[0];
-    const posCell = firstRow.querySelector('.position-cell')?.textContent?.trim();
-    const nameCell = firstRow.querySelector('.name-cell')?.textContent?.trim();
-    const statusCell = firstRow.querySelector('.status-cell')?.textContent?.trim();
-    const priorityCell = firstRow.querySelector('.priority-cell')?.textContent?.trim();
-    const workunitCell = firstRow.querySelector('.workunit-cell')?.textContent?.trim();
-    const authorCell = firstRow.querySelector('.author-cell')?.textContent?.trim();
+    const firstRow = await harness.getRowCellsText(0);
+    expect(firstRow.position).toBe('N/A-running');
+    expect(firstRow.jobName).toContain('xmc-operation-53296-1');
+    expect(firstRow.status).toContain('Running');
+    expect(firstRow.priority).toContain('Low');
+    expect(firstRow.workUnitId).toContain('1');
+    expect(firstRow.user).toContain('example@example.com');
 
-    expect(posCell).toBe('N/A-running');
-    expect(nameCell).toContain('xmc-operation-53296-1');
-    expect(statusCell).toContain('Running');
-    expect(priorityCell).toContain('Low');
-    expect(workunitCell).toContain('1');
-    expect(authorCell).toContain('example@example.com');
-
-    const secondRow = rows[1];
-    expect(secondRow.querySelector('.name-cell')?.textContent).toContain('xmc-operation-53308-1');
-    expect(secondRow.querySelector('.status-cell')?.textContent).toContain('Pending');
-    expect(secondRow.querySelector('.priority-cell')?.textContent).toContain('High');
-    expect(secondRow.querySelector('.priority-badge')?.classList.contains('priority-high')).toBe(
-      true,
-    );
+    const secondRow = await harness.getRowCellsText(1);
+    expect(secondRow.jobName).toContain('xmc-operation-53308-1');
+    expect(secondRow.status).toContain('Pending');
+    expect(secondRow.priority).toContain('High');
   });
 
-  it('should display correct pagination info', async () => {
-    bootstrap(QueueJobsSidePanel, {
-      inputs: { queueName: 'gpu-cluster-queue' },
-    });
+  it('should display correct pagination info using harness', async () => {
+    bootstrap(TestHostComponent);
     await flush();
 
-    const paginationInfo = document.querySelector('.pagination-info')?.textContent?.trim();
-    expect(paginationInfo).toBe('1-2 of 2');
+    const harness = await getHarness(QueueJobsTableHarness);
+    expect(await harness.getPaginationInfoText()).toBe('1-2 of 2');
   });
 });
