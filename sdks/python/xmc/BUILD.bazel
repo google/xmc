@@ -27,6 +27,7 @@ py_library(
         "types.py",
     ],
     data = [
+        "README.md",
         "py.typed",
         "pyproject.toml",
     ],
