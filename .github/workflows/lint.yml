@@ -43,7 +43,7 @@ jobs:
         run: ruff format --check .
 
   go-lint:
-    name: 'Go Linting (golangci-lint & gofmt)'
+    name: 'Go Formatting (gofmt)'
     runs-on: 'ubuntu-24.04'
     steps:
       - name: 'Checkout code'

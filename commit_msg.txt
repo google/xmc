@@ -1,6 +1,6 @@
-refactor(bazel): update importpaths in subpackage BUILD files to match filesystem directory structure
+fix(ci): restore job name to Go Formatting (gofmt) in lint.yml
 
-Update importpaths in cmd/experiment_state_server/config/BUILD.bazel, cmd/xid_service/config/BUILD.bazel, internal/security/keyreloader/BUILD.bazel, and compat.bzl to reflect their subpackage directory paths.
+Align job name with GitHub required status check name to satisfy branch protection rules without changing central repository settings.
 
 TAG=agy
 CONV=45db6eeb-6770-4007-b22f-e7967de9db54
