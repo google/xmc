@@ -1780,7 +1780,7 @@ func TestCheckWorkUnitStatusAndMLRun(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &Reconciler{Storage: tc.storage}
-			gotURL, gotSkip := r.checkWorkUnitStatusAndMLRun(context.Background(), 1, 1)
+			gotURL, gotSkip := r.checkWorkUnitStatusAndMLRun(context.Background(), 1, 1, 1)
 			if gotURL != tc.wantURL || gotSkip != tc.wantSkip {
 				t.Errorf("checkWorkUnitStatusAndMLRun() = (%q, %v), want (%q, %v)", gotURL, gotSkip, tc.wantURL, tc.wantSkip)
 			}
@@ -2039,6 +2039,41 @@ func TestLookupManagedXprofArtifact(t *testing.T) {
 				if m.listArtifactsCalls != tc.wantCalls {
 					t.Errorf("ListArtifacts called %d times, want %d", m.listArtifactsCalls, tc.wantCalls)
 				}
+			}
+		})
+	}
+}
+
+func TestIsStaleExecutionForMLRun(t *testing.T) {
+	tests := []struct {
+		name          string
+		executionName string
+		reconciledEID int64
+		want          bool
+	}{
+		{
+			name:          "same eid is not stale",
+			executionName: "experiments/1/workUnits/2/executions/3",
+			reconciledEID: 3,
+			want:          false,
+		},
+		{
+			name:          "different eid is stale",
+			executionName: "experiments/1/workUnits/2/executions/3",
+			reconciledEID: 4,
+			want:          true,
+		},
+		{
+			name:          "unparseable name is not stale",
+			executionName: "garbage",
+			reconciledEID: 3,
+			want:          false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isStaleExecutionForMLRun(tc.executionName, tc.reconciledEID); got != tc.want {
+				t.Errorf("isStaleExecutionForMLRun(%q, %d) = %v, want %v", tc.executionName, tc.reconciledEID, got, tc.want)
 			}
 		})
 	}
