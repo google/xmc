@@ -13,25 +13,15 @@
 // limitations under the License.
 
 import { CommonModule } from '@angular/common';
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  inject,
-  input,
-  OnChanges,
-  OnDestroy,
-  OnInit,
-  signal,
-  SimpleChanges,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterModule } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import { QueueJobInfo } from 'xmanager_cloud/ui/app/service/resource_types';
@@ -64,11 +54,8 @@ export class QueueJobsSidePanelData implements BaseSidePanelData {
     MatTooltipModule,
   ],
 })
-export class QueueJobsSidePanel
-  implements OnInit, OnChanges, OnDestroy, BaseSidePanelContent<QueueJobsSidePanelData>
-{
+export class QueueJobsSidePanel implements BaseSidePanelContent<QueueJobsSidePanelData> {
   private readonly resourceService = inject(ResourceService);
-  private jobsSubscription?: Subscription;
 
   readonly data = input<QueueJobsSidePanelData>();
   readonly queueName = input<string>('gpu-cluster-queue');
@@ -77,12 +64,28 @@ export class QueueJobsSidePanel
     () => this.data()?.queueName || this.queueName() || 'gpu-cluster-queue',
   );
 
-  protected readonly jobs = signal<QueueJobInfo[]>([]);
   protected readonly isLoading = signal<boolean>(false);
   protected readonly filterQuery = signal<string>('');
   protected readonly pageIndex = signal<number>(0);
   protected readonly pageSize = signal<number>(10);
   protected readonly pageSizeOptions = [5, 10, 25];
+
+  protected readonly jobs = toSignal(
+    toObservable(this.activeQueueName).pipe(
+      tap(() => this.isLoading.set(true)),
+      switchMap((qName) =>
+        this.resourceService.getQueueJobs(qName).pipe(
+          map((resp) => resp?.jobs ?? []),
+          tap(() => this.isLoading.set(false)),
+          catchError(() => {
+            this.isLoading.set(false);
+            return of([]);
+          }),
+        ),
+      ),
+    ),
+    { initialValue: [] },
+  );
 
   protected readonly filteredJobs = computed(() => {
     const query = this.filterQuery().trim().toLowerCase();
@@ -106,37 +109,6 @@ export class QueueJobsSidePanel
     'workUnitId',
     'user',
   ];
-
-  ngOnInit() {
-    this.loadJobs();
-  }
-
-  ngOnChanges(changes: SimpleChanges) {
-    if (!changes['queueName']?.isFirstChange() && !changes['data']?.isFirstChange()) {
-      this.loadJobs();
-    }
-  }
-
-  ngOnDestroy() {
-    this.jobsSubscription?.unsubscribe();
-  }
-
-  protected loadJobs() {
-    const qName = this.activeQueueName();
-    if (!qName) return;
-    this.jobsSubscription?.unsubscribe();
-    this.isLoading.set(true);
-    this.jobsSubscription = this.resourceService.getQueueJobs(qName).subscribe({
-      next: (resp) => {
-        this.jobs.set(resp?.jobs ?? []);
-        this.isLoading.set(false);
-      },
-      error: () => {
-        this.jobs.set([]);
-        this.isLoading.set(false);
-      },
-    });
-  }
 
   protected onFilterQueryChange(query: string) {
     this.filterQuery.set(query);
