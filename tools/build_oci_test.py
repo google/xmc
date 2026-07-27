@@ -106,9 +106,7 @@ class TestBuildOci(unittest.TestCase):
         elf_header[18] = 62  # EM_X86_64
 
         def exists_side_effect(path):
-            if path in ("/path/to/binary", "/etc/ssl/certs/ca-certificates.crt"):
-                return True
-            return False
+            return path in ("/path/to/binary", "/etc/ssl/certs/ca-certificates.crt")
 
         mock_exists.side_effect = exists_side_effect
         mock_realpath.return_value = "/path/to/binary"
@@ -118,7 +116,7 @@ class TestBuildOci(unittest.TestCase):
         def custom_open(path, mode="r", *args, **kwargs):
             if path == "/path/to/binary":
                 return mock_open(read_data=bytes(elf_header))()
-            elif "config.json" in path and "w" in mode:
+            if "config.json" in path and "w" in mode:
                 f = MagicMock()
                 f.__enter__.return_value = f
 
@@ -200,9 +198,7 @@ class TestBuildOci(unittest.TestCase):
         elf_header[18] = 183  # EM_AARCH64
 
         def exists_side_effect(path):
-            if path in ("/path/to/binary", "/etc/ssl/certs/ca-certificates.crt"):
-                return True
-            return False
+            return path in ("/path/to/binary", "/etc/ssl/certs/ca-certificates.crt")
 
         mock_exists.side_effect = exists_side_effect
         mock_realpath.return_value = "/path/to/binary"
@@ -212,7 +208,7 @@ class TestBuildOci(unittest.TestCase):
         def custom_open(path, mode="r", *args, **kwargs):
             if path == "/path/to/binary":
                 return mock_open(read_data=bytes(elf_header))()
-            elif "config.json" in path and "w" in mode:
+            if "config.json" in path and "w" in mode:
                 f = MagicMock()
                 f.__enter__.return_value = f
 

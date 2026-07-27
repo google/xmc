@@ -14,17 +14,35 @@
 
 """XMC Python SDK package."""
 
+from xmc.buffer import DEFAULT_CAPACITY, BoundedMetricsBuffer, MetricTuple
 from xmc.client import Client, XMCAPIError, XMCError, XMCNetworkError
+from xmc.dist_harvest import (
+    GetReplicaIDAndSilenceStatus,
+    get_replica_id_and_silence_status,
+)
+from xmc.flusher import MetricsFlusher
+from xmc.network import HTTPClient, SendResult
+from xmc.resilience import ResilienceState, ResilienceStateMachine
 from xmc.types import Metric, validate_metric
 
 __version__ = "0.1.0"
 
 __all__ = [
+    "BoundedMetricsBuffer",
+    "DEFAULT_CAPACITY",
+    "MetricTuple",
     "Client",
+    "HTTPClient",
+    "MetricsFlusher",
     "Metric",
+    "ResilienceState",
+    "ResilienceStateMachine",
+    "SendResult",
     "XMCError",
     "XMCNetworkError",
     "XMCAPIError",
     "validate_metric",
+    "get_replica_id_and_silence_status",
+    "GetReplicaIDAndSilenceStatus",
     "__version__",
 ]

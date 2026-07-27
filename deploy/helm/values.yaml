@@ -30,6 +30,7 @@ actuator_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/actuator-dev:l
 reconciler_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/reconciler-dev:latest"
 ess_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/experiment-state-server-dev:latest"
 health_service_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/health-service-dev:latest"
+rod_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/rod-dev:latest"
 
 essDeployment:
   enabled: true
@@ -59,9 +60,13 @@ certs:
 
 experimentStateServer:
   iap:
-    iapIssuer: "https://iap.googleapis.com"
     httpAudience: "placeholder-http-audience"
     grpcAudience: "placeholder-grpc-audience"
+  spannerDatabaseName: "projects/YOUR_GCP_PROJECT_ID/instances/YOUR_SPANNER_INSTANCE/databases/YOUR_SPANNER_DATABASE"
+
+auth:
+  iap:
+    iapIssuer: "https://iap.googleapis.com"
     clientId: "YOUR_IAP_CLIENT_ID"
   allowedOrigins: ""
   mockAuth: false
@@ -73,7 +78,6 @@ experimentStateServer:
   allowedDomains: "YOUR_ALLOWED_DOMAINS"
   allowedEmails: "YOUR_ALLOWED_EMAILS"
   authorizedIamRole: "projects/YOUR_GCP_PROJECT_ID/roles/YOUR_ROLE"
-  spannerDatabaseName: "projects/YOUR_GCP_PROJECT_ID/instances/YOUR_SPANNER_INSTANCE/databases/YOUR_SPANNER_DATABASE"
 
 # Overrides for the xid-service Spanner database. If empty, the conventional
 # name projects/<projectId>/instances/xmc-<environment>/databases/xids-db-<environment>

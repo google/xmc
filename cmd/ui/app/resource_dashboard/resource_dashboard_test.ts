@@ -1,0 +1,75 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import 'jasmine';
+
+import { Component } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
+import { of } from 'rxjs';
+
+import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
+import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
+import {
+  bootstrap,
+  cleanState,
+  flush,
+  setupModule,
+  setupObservableMatchers,
+} from 'xmanager_cloud/ui/app/testing/test';
+
+import { ResourceDashboard } from './resource_dashboard';
+
+@Component({
+  standalone: true,
+  imports: [ResourceDashboard],
+  template: `<xmc-resource-dashboard />`,
+})
+class TestHostComponent {}
+
+describe('ResourceDashboard Container', () => {
+  beforeAll(setupObservableMatchers);
+
+  const mockQueue = {
+    name: 'test-queue',
+    flavors: [],
+  } as ClusterQueue;
+
+  cleanState(() => {
+    setupModule({
+      imports: [TestHostComponent],
+      providers: [
+        { provide: AUTO_REFRESH_INTERVAL_MS, useValue: 30000 },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            queryParams: of({ queue: 'test-queue' }),
+            data: of({ clusterQueues: [mockQueue] }),
+          },
+        },
+      ],
+    });
+    return {};
+  }, beforeEach);
+
+  it('should render resolved cluster queues', async () => {
+    const host = bootstrap(TestHostComponent);
+    await flush();
+
+    expect(host).toBeTruthy();
+
+    const queueItems = document.querySelectorAll('.scaffolding-queue-item');
+    expect(queueItems.length).toBe(1);
+    expect(queueItems[0].textContent).toContain('test-queue');
+  });
+});

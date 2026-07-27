@@ -14,18 +14,21 @@
 
 import 'jasmine';
 
+import { adminPanelGuard } from './admin_panel.guard';
+import { AdminPanelPage } from './admin_panel/admin_panel';
 import { routes } from './app_routes';
 import { authGuard } from './auth.guard';
 import { ExperimentPage } from './experiment_page/experiment_page';
 import { ExperimentsListPage } from './experiments_list_page/experiments_list_page';
 import { guestGuard } from './guest.guard';
 import { HomePage } from './homepage/home_page';
+import { ResourceDashboard } from './resource_dashboard/resource_dashboard';
 import { WorkUnitPage } from './work_unit_page/work_unit_page';
 
 describe('App Routes', () => {
   it('should define route configuration', () => {
     expect(routes).toBeDefined();
-    expect(routes.length).toBe(2);
+    expect(routes.length).toBe(4);
   });
 
   it('should route "" to HomePage with guestGuard', () => {
@@ -34,6 +37,20 @@ describe('App Routes', () => {
     expect(route?.component).toBe(HomePage);
     expect(route?.canActivate).toContain(guestGuard);
     expect(route?.pathMatch).toBe('full');
+  });
+
+  it('should route "admin" to AdminPanelPage with authGuard and adminPanelGuard', () => {
+    const route = routes.find((r) => r.path === 'admin');
+    expect(route).toBeDefined();
+    expect(route?.component).toBe(AdminPanelPage);
+    expect(route?.canActivate).toEqual([authGuard, adminPanelGuard]);
+  });
+
+  it('should route "resources" to ResourceDashboard with authGuard', () => {
+    const route = routes.find((r) => r.path === 'resources');
+    expect(route).toBeDefined();
+    expect(route?.component).toBe(ResourceDashboard);
+    expect(route?.canActivate).toContain(authGuard);
   });
 
   it('should route "experiments" with authGuard and children', () => {

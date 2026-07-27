@@ -22,7 +22,6 @@ import subprocess
 import sys
 import traceback
 from pathlib import Path
-from typing import Optional
 
 
 def _should_bypass_venv() -> bool:
@@ -35,15 +34,15 @@ def _should_bypass_venv() -> bool:
         return True
     file_path_str = str(Path(__file__).resolve())
     cwd_path_str = str(Path.cwd().resolve())
-    if any(
-        token in file_path_str or token in cwd_path_str
-        for token in ("execroot", "bazel-out", "sandbox")
-    ):
-        return True
-    return False
+    return bool(
+        any(
+            token in file_path_str or token in cwd_path_str
+            for token in ("execroot", "bazel-out", "sandbox")
+        )
+    )
 
 
-def ensure_venv(venv_dir: Optional[Path] = None) -> None:
+def ensure_venv(venv_dir: Path | None = None) -> None:
     """Ensures the current process runs inside the tooling virtual environment."""
     if _should_bypass_venv():
         return
@@ -76,6 +75,7 @@ def ensure_venv(venv_dir: Optional[Path] = None) -> None:
 
 def _bootstrap_venv(venv_dir: Path) -> None:
     """Bootstraps the virtual environment if it does not yet exist."""
+    os.environ.setdefault("PIP_INDEX_URL", "https://pypi.org/simple")
     setup_script = Path(__file__).resolve().parent / "setup_venv.py"
     if setup_script.is_file():
         subprocess.run(

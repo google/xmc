@@ -37,4 +37,11 @@ export class FeatureFlagService {
   get isStatusMessageHistoryEnabled(): boolean {
     return this.isFeatureEnabled('statusMessageHistoryEnabled');
   }
+
+  /**
+   * Returns whether the admin panel is enabled.
+   */
+  get isAdminPanelEnabled(): boolean {
+    return this.isFeatureEnabled('adminPanelEnabled');
+  }
 }

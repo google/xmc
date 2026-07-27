@@ -45,11 +45,11 @@ resource "google_project_service_identity" "iap_sa" {
 # -----------------------------------------------------------------------------
 
 locals {
-  wi_principal_prefix          = "principal://iam.googleapis.com/projects/${data.google_project.cluster.number}/locations/global/workloadIdentityPools/${data.google_project.cluster.project_id}.svc.id.goog/subject/ns/${var.k8s_namespace}"
-  actuator_wi_principal        = "${local.wi_principal_prefix}/sa/${var.actuator_ksa_name}"
-  reconciler_wi_principal      = "${local.wi_principal_prefix}/sa/${var.reconciler_ksa_name}"
-  ess_wi_principal             = "${local.wi_principal_prefix}/sa/${var.ess_ksa_name}"
-  xid_wi_principal             = "${local.wi_principal_prefix}/sa/${var.xid_ksa_name}"
+  wi_principal_prefix     = "principal://iam.googleapis.com/projects/${data.google_project.cluster.number}/locations/global/workloadIdentityPools/${data.google_project.cluster.project_id}.svc.id.goog/subject/ns/${var.k8s_namespace}"
+  actuator_wi_principal   = "${local.wi_principal_prefix}/sa/${var.actuator_ksa_name}"
+  reconciler_wi_principal = "${local.wi_principal_prefix}/sa/${var.reconciler_ksa_name}"
+  ess_wi_principal        = "${local.wi_principal_prefix}/sa/${var.ess_ksa_name}"
+  xid_wi_principal        = "${local.wi_principal_prefix}/sa/${var.xid_ksa_name}"
 }
 
 data "google_project" "cluster" {
@@ -62,25 +62,25 @@ data "google_project" "cluster" {
 resource "google_project_iam_member" "wi_member_actuator" {
   project = data.google_project.cluster.project_id
   role    = "roles/iam.workloadIdentityUser"
-  member  = "${local.actuator_wi_principal}"
+  member  = local.actuator_wi_principal
 }
 
 resource "google_project_iam_member" "wi_member_reconciler" {
   project = data.google_project.cluster.project_id
   role    = "roles/iam.workloadIdentityUser"
-  member  = "${local.reconciler_wi_principal}"
+  member  = local.reconciler_wi_principal
 }
 
 resource "google_project_iam_member" "wi_member_ess" {
   project = data.google_project.cluster.project_id
   role    = "roles/iam.workloadIdentityUser"
-  member  = "${local.ess_wi_principal}"
+  member  = local.ess_wi_principal
 }
 
 resource "google_project_iam_member" "wi_member_xid" {
   project = data.google_project.cluster.project_id
   role    = "roles/iam.workloadIdentityUser"
-  member  = "${local.xid_wi_principal}"
+  member  = local.xid_wi_principal
 }
 
 # -----------------------------------------------------------------------------
@@ -95,5 +95,5 @@ resource "google_service_account" "ess_gsa" {
 resource "google_service_account_iam_member" "grant_act_as_permission" {
   service_account_id = google_service_account.ess_gsa.name
   role               = "roles/iam.serviceAccountUser"
-  member             = "${local.ess_wi_principal}"
+  member             = local.ess_wi_principal
 }

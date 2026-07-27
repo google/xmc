@@ -26,7 +26,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from tool_utils import ensure_venv
 
@@ -66,7 +66,7 @@ def error_exit(msg: str, exit_code: int = 1) -> None:
     sys.exit(exit_code)
 
 
-def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
+def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     """Parses command-line arguments and validates mutual exclusion rules.
 
     Args:
@@ -222,7 +222,7 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
 
 def run_cmd(
     cmd: list[str],
-    env: Optional[dict[str, str]] = None,
+    env: dict[str, str] | None = None,
     check: bool = True,
     capture_output: bool = False,
 ) -> subprocess.CompletedProcess:
@@ -489,7 +489,7 @@ def step_app(config: Config) -> None:
     log_success("Application upgrade initiated.")
 
 
-def resolve_deployment_name(service: str, namespace: str) -> Optional[str]:
+def resolve_deployment_name(service: str, namespace: str) -> str | None:
     """Resolves target Kubernetes deployment name with suffix fallback.
 
     Args:
@@ -519,6 +519,7 @@ def step_restart(config: Config) -> None:
     services = [
         "actuator",
         "experiment-state-server",
+        "health-service",
         "log-monitor",
         "reconciler",
         "ui",
@@ -631,7 +632,7 @@ def run_pipeline(args: argparse.Namespace, config: Config, steps: list[str]) -> 
     log_success("Upgrade completed end-to-end successfully!")
 
 
-def main(args_list: Optional[list[str]] = None) -> None:
+def main(args_list: list[str] | None = None) -> None:
     """Main entrypoint for the upgrade script."""
     ensure_venv()
     os.chdir(Path(__file__).resolve().parent.parent)

@@ -19,14 +19,13 @@ import (
 	"net/http"
 	"time"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/go_sync/errgroup/errgroup"
 	"xmanager_cloud/common/health"
 	"xmanager_cloud/logging/logging"
 )
 
 // activeHealthCheck returns an HTTP handler that performs active dependency checks.
-func activeHealthCheck(sc *spanner.Client, listener *Listener) http.HandlerFunc {
+func activeHealthCheck(sc health.SpannerHealthClient, listener *Listener) http.HandlerFunc {
 	const healthCheckTimeout = 2 * time.Second
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +36,7 @@ func activeHealthCheck(sc *spanner.Client, listener *Listener) http.HandlerFunc 
 
 		// 1. Spanner check
 		eg.Go(func() error {
-			return health.CheckSpanner(ctx, sc)
+			return health.CheckSpannerESS(ctx, sc)
 		})
 
 		// 2. Pub/Sub Listener check

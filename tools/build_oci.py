@@ -66,11 +66,11 @@ def detect_elf_architecture(binary_path: str):
 
             if e_machine == 62:  # EM_X86_64
                 return "amd64"
-            elif e_machine == 183:  # EM_AARCH64
+            if e_machine == 183:  # EM_AARCH64
                 return "arm64"
-            elif e_machine == 3:  # EM_386
+            if e_machine == 3:  # EM_386
                 return "386"
-            elif e_machine == 40:  # EM_ARM
+            if e_machine == 40:  # EM_ARM
                 return "arm"
     except Exception:
         pass

@@ -25,7 +25,6 @@ import subprocess
 import sys
 import venv
 from pathlib import Path
-from typing import Optional
 
 MINIMUM_PYTHON_VERSION = (3, 13, 14)
 MINIMUM_PYTHON_VERSION_STR = ".".join(map(str, MINIMUM_PYTHON_VERSION))
@@ -89,7 +88,7 @@ def install_requirements(venv_python: Path, req_path: Path) -> None:
         sys.exit(e.returncode)
 
 
-def main(args_list: Optional[list[str]] = None) -> None:
+def main(args_list: list[str] | None = None) -> None:
     """Orchestrates virtual environment creation and dependency installation."""
     check_prerequisites()
     parser = argparse.ArgumentParser(

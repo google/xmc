@@ -82,9 +82,8 @@ class TestInstallXmanager(unittest.TestCase):
 
     def test_check_prerequisites_missing(self) -> None:
         """Test check_prerequisites when git is missing."""
-        with mock.patch("shutil.which", return_value=None):
-            with self.assertRaises(SystemExit):
-                install_xmanager.check_prerequisites()
+        with mock.patch("shutil.which", return_value=None), self.assertRaises(SystemExit):
+            install_xmanager.check_prerequisites()
 
     def test_check_git_version_ok(self) -> None:
         """Test check_git_version with version 2.30.0."""

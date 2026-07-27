@@ -50,11 +50,9 @@ const (
 var (
 	// jobNameRegex matches valid Kubernetes job names (RFC 1123 DNS Label).
 	jobNameRegex = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
-	// serviceAccountRegex matches valid Kubernetes service account names (RFC 1123 DNS Subdomain).
-	serviceAccountRegex = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
 	// labelNameRegex matches valid Kubernetes label values and label name segments.
 	labelNameRegex = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-_.]*[a-zA-Z0-9])?$`)
-	// dnsSubdomainRegex matches valid DNS subdomains for Kubernetes label prefixes.
+	// dnsSubdomainRegex matches valid DNS subdomain names (RFC 1123).
 	dnsSubdomainRegex = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
 )
 
@@ -289,6 +287,9 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 	if err := validateJobSetNetwork(wu.GetExecutable().GetJobset().GetNetwork()); err != nil {
 		return err
 	}
+	if err := validateJobSetSuccessPolicy(wu.GetExecutable().GetJobset().GetSuccessPolicy(), wu.GetExecutable().GetJobset().GetJobs()); err != nil {
+		return err
+	}
 	// This is a limitation of Kueue; see
 	// https://github.com/kubernetes-sigs/kueue/blob/bacde9cdbc87bef550bb559c5b81c8c7d001c58a/apis/kueue/v1beta1/workload_types.go#L42
 	if len(wu.GetExecutable().GetJobset().Jobs) < 1 {
@@ -362,8 +363,16 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 			if len(sa) > 253 {
 				return fmt.Errorf("work_unit.executable.jobset.jobs.service_account cannot be longer than 253 characters: %w", status.ErrInvalidArgument)
 			}
-			if !serviceAccountRegex.MatchString(sa) {
+			if !dnsSubdomainRegex.MatchString(sa) {
 				return fmt.Errorf("work_unit.executable.jobset.jobs.service_account %q must be a valid DNS subdomain (RFC 1123): %w", sa, status.ErrInvalidArgument)
+			}
+		}
+		if pcn := job.GetPriorityClassName(); pcn != "" {
+			if len(pcn) > 253 {
+				return fmt.Errorf("work_unit.executable.jobset.jobs.priority_class_name cannot be longer than 253 characters: %w", status.ErrInvalidArgument)
+			}
+			if !dnsSubdomainRegex.MatchString(pcn) {
+				return fmt.Errorf("work_unit.executable.jobset.jobs.priority_class_name %q must be a valid DNS subdomain (RFC 1123): %w", pcn, status.ErrInvalidArgument)
 			}
 		}
 	}
@@ -616,6 +625,25 @@ func validateJobSetNetwork(net *essmsgpb.JobSetExecutable_Network) error {
 	if sub := net.GetSubdomain(); sub != "" {
 		if err := validateDNSLabel(sub, "work_unit.executable.jobset.network.subdomain"); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func validateJobSetSuccessPolicy(policy *essmsgpb.JobSetExecutable_SuccessPolicy, jobs []*essmsgpb.KubernetesJob) error {
+	if policy == nil {
+		return nil
+	}
+	jobNames := make(map[string]bool, len(jobs))
+	for _, j := range jobs {
+		jobNames[j.GetName()] = true
+	}
+	for i, target := range policy.GetTargetReplicatedJobs() {
+		if target == "" {
+			return fmt.Errorf("work_unit.executable.jobset.success_policy.target_replicated_jobs[%d] cannot be empty: %w", i, status.ErrInvalidArgument)
+		}
+		if !jobNames[target] {
+			return fmt.Errorf("work_unit.executable.jobset.success_policy.target_replicated_jobs[%d] %q does not match any job in work_unit.executable.jobset.jobs: %w", i, target, status.ErrInvalidArgument)
 		}
 	}
 	return nil

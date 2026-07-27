@@ -796,6 +796,41 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
+			name: "valid_priority_class_name",
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].PriorityClassName = "very-high"
+			}),
+			wantErr: nil,
+		},
+		{
+			name: "valid_priority_class_name_system_cluster_critical",
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].PriorityClassName = "system-cluster-critical"
+			}),
+			wantErr: nil,
+		},
+		{
+			name: "invalid_priority_class_name_format",
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].PriorityClassName = "INVALID_UPPERCASE"
+			}),
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_priority_class_name_prefix",
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].PriorityClassName = "-invalid-prefix"
+			}),
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "priority_class_name_too_long",
+			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
+				r.WorkUnit.Executable.GetJobset().Jobs[0].PriorityClassName = strings.Repeat("a", 254)
+			}),
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
 			name: "valid_job_with_sidecars",
 			req: proto.Modify(validReq, func(r *essapipb.CreateWorkUnitRequest) {
 				r.WorkUnit.Executable.GetJobset().Jobs[0].Spec.Name = "main-container"
@@ -1327,6 +1362,54 @@ func TestValidateCreateWorkUnitRequest(t *testing.T) {
 			err := ValidateCreateWorkUnitRequest(tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ValidateCreateWorkUnitRequest(%v) returned unexpected error: %v, want %v", tc.req, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+var baseWorkUnitReqWithSuccessPolicy = &essapipb.CreateWorkUnitRequest{
+	Parent: "experiments/123",
+	WorkUnit: &essmsgpb.WorkUnit{
+		Executable: &essmsgpb.Executable{
+			SchedulingConstraints: &essmsgpb.SchedulingConstraints{QueueName: "queue"},
+			Type: &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{
+				Jobs: []*essmsgpb.KubernetesJob{{
+					Name:     "pathways-head",
+					Replicas: 1,
+					Spec: &essmsgpb.ExecutableSpec{
+						DockerImage: "image",
+						Resources: &essmsgpb.ResourceSet{
+							Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{CpuMillicores: 1, MemoryBytes: 1}},
+						},
+					},
+				}},
+			}},
+		},
+		WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+	},
+}
+
+func createValidReqWithSuccessPolicy(policy *essmsgpb.JobSetExecutable_SuccessPolicy) *essapipb.CreateWorkUnitRequest {
+	return proto.Modify(baseWorkUnitReqWithSuccessPolicy, func(req *essapipb.CreateWorkUnitRequest) {
+		req.GetWorkUnit().GetExecutable().GetJobset().SuccessPolicy = policy
+	})
+}
+
+func TestValidateCreateWorkUnitRequest_SuccessPolicy(t *testing.T) {
+	tests := []struct {
+		name    string
+		policy  *essmsgpb.JobSetExecutable_SuccessPolicy
+		wantErr error
+	}{
+		{"valid_policy", &essmsgpb.JobSetExecutable_SuccessPolicy{Operator: essmsgpb.JobSetExecutable_SuccessPolicy_ALL, TargetReplicatedJobs: []string{"pathways-head"}}, nil},
+		{"empty_target", &essmsgpb.JobSetExecutable_SuccessPolicy{TargetReplicatedJobs: []string{""}}, status.ErrInvalidArgument},
+		{"unknown_job", &essmsgpb.JobSetExecutable_SuccessPolicy{TargetReplicatedJobs: []string{"non-existent"}}, status.ErrInvalidArgument},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateCreateWorkUnitRequest(createValidReqWithSuccessPolicy(tc.policy))
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateCreateWorkUnitRequest() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}

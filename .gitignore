@@ -10,6 +10,8 @@ cmd/ui/node_modules/
 cmd/ui/.angular/
 cmd/ui/dist/
 cmd/ui/build_tmp/
+cmd/ui/test-results/
+cmd/ui/playwright-report/
 
 **__pycache__**
 # proto binaries
@@ -20,7 +22,10 @@ cmd/ui/build_tmp/
 /cluster-toolkit
 
 # Compiled Cluster Toolkit deployments
-/ctk-out/
+/ctk-out
 
 # Python virtual environments
 venv/
+
+# PR review checklist artifacts
+pr_review_checklist.md

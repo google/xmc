@@ -38,7 +38,7 @@ def verify_resolution(args):
         )
 
     try:
-        with open(checklist_path, "r", encoding="utf-8") as f:
+        with open(checklist_path, encoding="utf-8") as f:
             content = f.read()
     except Exception as e:
         raise HandledError(

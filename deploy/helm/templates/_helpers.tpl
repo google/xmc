@@ -117,3 +117,55 @@ Get the UI API URL.
 {{- .Values.ui.apiUrl -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Common OAuth environment variables for XMC services.
+*/}}
+{{- define "xmanager-cloud.oauthEnv" -}}
+- name: MOCK_AUTH
+  value: {{ .Values.auth.mockAuth | quote }}
+- name: ALLOWED_ORIGINS
+  value: {{ .Values.auth.allowedOrigins | quote }}
+- name: ALLOWED_DOMAINS
+  value: {{ .Values.auth.allowedDomains | quote }}
+- name: ALLOWED_EMAILS
+  value: {{ .Values.auth.allowedEmails | quote }}
+- name: DISABLE_AUTHENTICATION
+  value: {{ .Values.auth.disableAuthentication | default "false" | quote }}
+- name: TRUST_X_FORWARDED_PROTO
+  value: {{ .Values.auth.trustXForwardedProto | quote }}
+- name: CLIENT_ID
+  value: {{ .Values.auth.iap.clientId | quote }}
+- name: IAP_EXPECTED_ISSUER
+  value: {{ .Values.auth.iap.iapIssuer | quote }}
+- name: GCP_PROJECT_ID
+  value: {{ .Values.projectId | quote }}
+- name: AUTHORIZED_IAM_ROLE
+  value: {{ .Values.auth.authorizedIamRole | quote }}
+- name: JWT_SECRET_FILE
+  value: "/etc/gcp-secrets/jwt-secret"
+- name: CLIENT_SECRET_FILE
+  value: "/etc/gcp-secrets/client-secret"
+- name: REDIRECT_URL
+  value: "https://{{ include "xmanager-cloud.apiHostname" . }}/api/callback"
+- name: FRONTEND_URL
+  value: "https://{{ include "xmanager-cloud.uiHostname" . }}"
+{{- end -}}
+
+{{/*
+Common GCP Secrets Volume definition.
+*/}}
+{{- define "xmanager-cloud.gcpSecretsVolume" -}}
+{{- if .Values.secrets.csi.enabled }}
+- name: gcp-secrets-volume
+  csi:
+    driver: secrets-store-gke.csi.k8s.io
+    readOnly: true
+    volumeAttributes:
+      secretProviderClass: "gcp-secrets-provider"
+{{- else }}
+- name: gcp-secrets-volume
+  secret:
+    secretName: backend-oauth-secrets
+{{- end }}
+{{- end -}}

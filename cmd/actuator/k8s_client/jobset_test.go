@@ -302,7 +302,9 @@ func TestConstructJobSet(t *testing.T) {
 							Annotations: jobAnnotations,
 						},
 						Spec: batchv1.JobSpec{
-							BackoffLimit: proto.Int32(1),
+							BackoffLimit:   proto.Int32(1),
+							CompletionMode: completionModePtr(batchv1.IndexedCompletion),
+							Completions:    proto.Int32(1),
 							PodFailurePolicy: &batchv1.PodFailurePolicy{
 								Rules: []batchv1.PodFailurePolicyRule{
 									{
@@ -351,6 +353,7 @@ func TestConstructJobSet(t *testing.T) {
 											Env: []corev1.EnvVar{
 												{Name: "env1", Value: "val1"},
 												{Name: constants.XmcEnvVarManagedBy, Value: "true"},
+												{Name: constants.XmcEnvVarMetricsEnabled, Value: "false"},
 												{
 													Name: constants.XmcEnvVarNamespace,
 													ValueFrom: &corev1.EnvVarSource{
@@ -396,6 +399,14 @@ func TestConstructJobSet(t *testing.T) {
 													ValueFrom: &corev1.EnvVarSource{
 														FieldRef: &corev1.ObjectFieldSelector{
 															FieldPath: fmt.Sprintf("metadata.annotations['%s']", constants.AuthorAnnotation),
+														},
+													},
+												},
+												{
+													Name: constants.XmcEnvVarJobIndex,
+													ValueFrom: &corev1.EnvVarSource{
+														FieldRef: &corev1.ObjectFieldSelector{
+															FieldPath: fmt.Sprintf("metadata.labels['%s']", constants.JobSetJobIndexLabel),
 														},
 													},
 												},
@@ -498,6 +509,30 @@ func TestConstructJobSet(t *testing.T) {
 
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("constructJobSet() returned diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestConstructJobSet_MetricsEnabled(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	client.RuntimeConfig.MetricsEnabled = true
+
+	got, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	container := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers[0]
+	found := false
+	for _, env := range container.Env {
+		if env.Name == constants.XmcEnvVarMetricsEnabled {
+			found = true
+			if env.Value != "true" {
+				t.Errorf("XMC_METRICS_ENABLED env var = %q, want %q", env.Value, "true")
+			}
+		}
+	}
+	if !found {
+		t.Errorf("XMC_METRICS_ENABLED env var not found in container spec")
 	}
 }
 
@@ -733,12 +768,14 @@ func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 	var gotEnv []corev1.EnvVar
 	for _, env := range container.Env {
 		if env.Name == constants.XmcEnvVarManagedBy ||
+			env.Name == constants.XmcEnvVarMetricsEnabled ||
 			env.Name == constants.XmcEnvVarNamespace ||
 			env.Name == constants.XmcEnvVarQueueName ||
 			env.Name == constants.XmcEnvVarExperimentID ||
 			env.Name == constants.XmcEnvVarWorkUnitID ||
 			env.Name == constants.XmcEnvVarExecutionID ||
-			env.Name == constants.XmcEnvVarAuthor {
+			env.Name == constants.XmcEnvVarAuthor ||
+			env.Name == constants.XmcEnvVarJobIndex {
 			continue
 		}
 		gotEnv = append(gotEnv, env)
@@ -2109,6 +2146,44 @@ func TestConstructJobSet_MultiReplicaNetwork(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_PriorityClassName(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Name = "workUnitPriorityClassName"
+		job1 := wu.Executable.GetJobset().Jobs[0]
+		job1.Name = "pathways-head"
+		job1.PriorityClassName = "very-high"
+
+		job2 := proto.Clone(job1).(*esspb.KubernetesJob)
+		job2.Name = "worker"
+		job2.PriorityClassName = ""
+
+		wu.Executable.GetJobset().Jobs = []*esspb.KubernetesJob{job1, job2}
+	})
+
+	priorities := Priorities{
+		ExperimentPriority: esspb.Priority_HIGH,
+		WorkUnitPriority:   esspb.Priority_NORMAL,
+	}
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, priorities)
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if got.ObjectMeta.Labels[kueuePriorityClassLabel] != "exp-high-wu-medium" {
+		t.Errorf("Expected kueuePriorityClassLabel to be %q, got %q", "exp-high-wu-medium", got.ObjectMeta.Labels[kueuePriorityClassLabel])
+	}
+	if len(got.Spec.ReplicatedJobs) != 2 {
+		t.Fatalf("Expected 2 replicated jobs, got %d", len(got.Spec.ReplicatedJobs))
+	}
+	if got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.PriorityClassName != "very-high" {
+		t.Errorf("Expected pathways-head PriorityClassName %q, got %q", "very-high", got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.PriorityClassName)
+	}
+	if got.Spec.ReplicatedJobs[1].Template.Spec.Template.Spec.PriorityClassName != "" {
+		t.Errorf("Expected worker PriorityClassName %q, got %q", "", got.Spec.ReplicatedJobs[1].Template.Spec.Template.Spec.PriorityClassName)
+	}
+}
+
 func TestShouldEnableJobSetNetwork_NilChecks(t *testing.T) {
 	if got := shouldEnableJobSetNetwork(&esspb.WorkUnit{Executable: nil}); got {
 		t.Errorf("shouldEnableJobSetNetwork(nil Executable) = true, want false")
@@ -2161,6 +2236,44 @@ func TestShouldEnableJobSetNetwork_Conditions(t *testing.T) {
 				t.Errorf("shouldEnableJobSetNetwork() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestBuildJobSetSuccessPolicy(t *testing.T) {
+	tests := []struct {
+		name string
+		wu   *esspb.WorkUnit
+		want *jobsetv1alpha2.SuccessPolicy
+	}{
+		{"nil_exec", &esspb.WorkUnit{}, &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAll}},
+		{"explicit_any", &esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{SuccessPolicy: &esspb.JobSetExecutable_SuccessPolicy{Operator: esspb.JobSetExecutable_SuccessPolicy_ANY, TargetReplicatedJobs: []string{"w"}}}}}}, &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAny, TargetReplicatedJobs: []string{"w"}}},
+		{"default_pathways", &esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{Jobs: []*esspb.KubernetesJob{{Name: constants.PathwaysHeadJobName}, {Name: "workers"}}}}}}, &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAll, TargetReplicatedJobs: []string{constants.PathwaysHeadJobName}}},
+		{"fallback_all", &esspb.WorkUnit{Executable: &esspb.Executable{Type: &esspb.Executable_Jobset{Jobset: &esspb.JobSetExecutable{Jobs: []*esspb.KubernetesJob{{Name: "job1"}}}}}}, &jobsetv1alpha2.SuccessPolicy{Operator: jobsetv1alpha2.OperatorAll}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, buildJobSetSuccessPolicy(tc.wu)); diff != "" {
+				t.Errorf("buildJobSetSuccessPolicy() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestConstructJobSet_SuccessPolicy(t *testing.T) {
+	ctx, client, _ := setupTestClient(true, &alwaysPassingPreconditionsValidator{})
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Executable.GetJobset().Jobs[0].Name = constants.PathwaysHeadJobName
+	})
+	jobSet, err := client.constructJobSet(ctx, workUnit, "experiments/1/workUnits/1/executions/1", "user", "test-queue", time.Now(), Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() unexpected error: %v", err)
+	}
+	want := &jobsetv1alpha2.SuccessPolicy{
+		Operator:             jobsetv1alpha2.OperatorAll,
+		TargetReplicatedJobs: []string{constants.PathwaysHeadJobName},
+	}
+	if diff := cmp.Diff(want, jobSet.Spec.SuccessPolicy); diff != "" {
+		t.Errorf("SuccessPolicy mismatch (-want +got):\n%s", diff)
 	}
 }
 

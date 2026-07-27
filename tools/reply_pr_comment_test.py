@@ -82,7 +82,7 @@ class TestReplyPRComment(unittest.TestCase):
         expected_body = (
             'done\n\n<!-- xmc-telemetry: {"git_username": "test_user", "date":'
             ' "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29",'
-            ' "comment_id": 1234, "skill_name": "address_pr_comment",'
+            ' "comment_id": 1234, "skill_name": "xmc_address_pr_comment",'
             ' "skill_commit_id": "mock_skill_commit_id"} -->'
         )
         mock_call.assert_any_call(
@@ -132,7 +132,7 @@ class TestReplyPRComment(unittest.TestCase):
         expected_body = (
             'done\n\n<!-- xmc-telemetry: {"git_username": "unknown", "date":'
             ' "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29",'
-            ' "comment_id": 1234, "skill_name": "address_pr_comment",'
+            ' "comment_id": 1234, "skill_name": "xmc_address_pr_comment",'
             ' "skill_commit_id": "mock_skill_commit_id"} -->'
         )
         mock_call.assert_any_call(
@@ -180,7 +180,7 @@ class TestReplyPRComment(unittest.TestCase):
         expected_body = (
             'done\n\n<!-- xmc-telemetry: {"git_username": "test_user", "date":'
             ' "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29",'
-            ' "comment_id": 1234, "skill_name": "address_pr_comment",'
+            ' "comment_id": 1234, "skill_name": "xmc_address_pr_comment",'
             ' "skill_commit_id": "unknown"} -->'
         )
         mock_call.assert_any_call(
@@ -228,7 +228,7 @@ class TestReplyPRComment(unittest.TestCase):
         expected_body = (
             'done\n\n<!-- xmc-telemetry: {"git_username": "test_user", "date":'
             ' "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29",'
-            ' "comment_id": 1234, "skill_name": "address_pr_comment",'
+            ' "comment_id": 1234, "skill_name": "xmc_address_pr_comment",'
             ' "skill_commit_id": "unknown"} -->'
         )
         mock_call.assert_any_call(
@@ -285,6 +285,140 @@ class TestReplyPRComment(unittest.TestCase):
         self.assertIn(
             "Ensure the repository and comment ID exist",
             ctx.exception.instruction,
+        )
+
+    @patch("reply_pr_comment.parse_comment_url")
+    @patch("reply_pr_comment.call_github_api")
+    @patch("reply_pr_comment.datetime")
+    @patch("reply_pr_comment.subprocess.check_output")
+    def test_reply_comment_with_message_file_success(
+        self, mock_git, mock_datetime, mock_call, mock_parse
+    ):
+        """Test reply_comment successfully reads message from message_file."""
+        mock_git.return_value = "mock_commit_id"
+        mock_now = MagicMock()
+        mock_now.strftime.side_effect = lambda fmt: {
+            "%Y-%m-%d": "2026-06-22",
+            "%H:%M:%S UTC": "12:00:00 UTC",
+        }[fmt]
+        mock_datetime.now.return_value = mock_now
+
+        mock_parse.return_value = {
+            "type": "review_comment",
+            "owner": "google",
+            "repo": "xmc",
+            "pull_number": "29",
+            "comment_id": 1234,
+        }
+
+        mock_call.side_effect = [
+            {"login": "test_user"},
+            {"id": 5678, "body": "file content"},
+        ]
+
+        args = MagicMock()
+        args.comment_url = "https://github.com/google/xmc/pull/29#discussion_r1234"
+        args.message = None
+        args.message_file = "msg.txt"
+
+        with patch("builtins.open", unittest.mock.mock_open(read_data="message from file")):
+            res = reply_comment(args)
+
+        self.assertEqual(res["id"], 5678)
+        expected_body = (
+            'message from file\n\n<!-- xmc-telemetry: {"git_username": "test_user", "date":'
+            ' "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29",'
+            ' "comment_id": 1234, "skill_name": "xmc_address_pr_comment",'
+            ' "skill_commit_id": "mock_commit_id"} -->'
+        )
+        mock_call.assert_any_call(
+            "/repos/google/xmc/pulls/29/comments",
+            method="POST",
+            payload={"body": expected_body, "in_reply_to": 1234},
+            user_agent="XMC-Comment-Replier-Agent",
+        )
+
+    @patch("reply_pr_comment.parse_comment_url")
+    def test_reply_comment_with_message_file_read_error(self, mock_parse):
+        """Test reply_comment raises HandledError when message_file cannot be read."""
+        mock_parse.return_value = {
+            "type": "review_comment",
+            "owner": "google",
+            "repo": "xmc",
+            "pull_number": "29",
+            "comment_id": 1234,
+        }
+
+        args = MagicMock()
+        args.comment_url = "https://github.com/google/xmc/pull/29#discussion_r1234"
+        args.message_file = "non_existent.txt"
+
+        with patch("builtins.open", side_effect=OSError("File not found")):
+            with self.assertRaises(HandledError) as ctx:
+                reply_comment(args)
+
+        self.assertIn("Failed to read message file 'non_existent.txt'", ctx.exception.message)
+        self.assertIn("Ensure the message file path exists", ctx.exception.instruction)
+
+    def test_reply_comment_mutual_exclusion_error(self):
+        """Test reply_comment raises HandledError when both message and message_file are supplied."""
+        args = MagicMock()
+        args.comment_url = "https://github.com/google/xmc/pull/29#discussion_r1234"
+        args.message = "hello"
+        args.message_file = "msg.txt"
+
+        with self.assertRaises(HandledError) as ctx:
+            reply_comment(args)
+
+        self.assertIn(
+            "Cannot specify both a message string and a message file", ctx.exception.message
+        )
+
+    @patch("reply_pr_comment.parse_comment_url")
+    @patch("reply_pr_comment.call_github_api")
+    @patch("reply_pr_comment.datetime")
+    @patch("reply_pr_comment.subprocess.check_output")
+    def test_reply_comment_empty_string_message(
+        self, mock_git, mock_datetime, mock_call, mock_parse
+    ):
+        """Test reply_comment preserves explicit empty string message."""
+        mock_git.return_value = "mock_commit_id"
+        mock_now = MagicMock()
+        mock_now.strftime.side_effect = lambda fmt: {
+            "%Y-%m-%d": "2026-06-22",
+            "%H:%M:%S UTC": "12:00:00 UTC",
+        }[fmt]
+        mock_datetime.now.return_value = mock_now
+        mock_parse.return_value = {
+            "type": "review_comment",
+            "owner": "google",
+            "repo": "xmc",
+            "pull_number": "29",
+            "comment_id": 1234,
+        }
+        mock_call.side_effect = [
+            {"login": "test_user"},
+            {"id": 5678, "body": ""},
+        ]
+
+        args = MagicMock()
+        args.comment_url = "https://github.com/google/xmc/pull/29#discussion_r1234"
+        args.message = ""
+        args.message_file = None
+
+        res = reply_comment(args)
+        self.assertEqual(res["id"], 5678)
+        expected_body = (
+            '\n\n<!-- xmc-telemetry: {"git_username": "test_user", "date":'
+            ' "2026-06-22", "time": "12:00:00 UTC", "pr_number": "29",'
+            ' "comment_id": 1234, "skill_name": "xmc_address_pr_comment",'
+            ' "skill_commit_id": "mock_commit_id"} -->'
+        )
+        mock_call.assert_any_call(
+            "/repos/google/xmc/pulls/29/comments",
+            method="POST",
+            payload={"body": expected_body, "in_reply_to": 1234},
+            user_agent="XMC-Comment-Replier-Agent",
         )
 
 
