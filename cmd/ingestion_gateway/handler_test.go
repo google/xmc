@@ -36,7 +36,7 @@ func (np *noopProducer) Produce(ctx context.Context, rec *kgo.Record, promise fu
 
 func (np *noopProducer) Close() {}
 
-func defaultTestHandler() http.HandlerFunc {
+func newTestHandler() http.HandlerFunc {
 	return NewMetricsIngestionHandler(NewMockProducer(), "xmc-metrics")
 }
 
@@ -60,7 +60,8 @@ func TestMetricsIngestionHandler_ValidArray(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
 	w := httptest.NewRecorder()
 
-	defaultTestHandler()(w, req)
+	handler := newTestHandler()
+	handler(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusAccepted {
@@ -86,7 +87,8 @@ func TestMetricsIngestionHandler_JSONSequence(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
 	w := httptest.NewRecorder()
 
-	defaultTestHandler()(w, req)
+	handler := newTestHandler()
+	handler(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusAccepted {
@@ -115,7 +117,8 @@ func TestMetricsIngestionHandler_ValidationFailure_HTTP422(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
 	w := httptest.NewRecorder()
 
-	defaultTestHandler()(w, req)
+	handler := newTestHandler()
+	handler(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
@@ -151,7 +154,8 @@ func TestMetricsIngestionHandler_MalformedJSON_HTTP400(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
 	w := httptest.NewRecorder()
 
-	defaultTestHandler()(w, req)
+	handler := newTestHandler()
+	handler(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusBadRequest {
@@ -177,7 +181,8 @@ func TestMetricsIngestionHandler_BodyDrainageOnFailure(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", tr)
 	w := httptest.NewRecorder()
 
-	defaultTestHandler()(w, req)
+	handler := newTestHandler()
+	handler(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
@@ -193,7 +198,8 @@ func TestMetricsIngestionHandler_MethodNotAllowed(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil)
 	w := httptest.NewRecorder()
 
-	defaultTestHandler()(w, req)
+	handler := newTestHandler()
+	handler(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusMethodNotAllowed {
@@ -339,7 +345,8 @@ func TestMetricsIngestionHandler_NilAndWhitespaceBody(t *testing.T) {
 	t.Run("nil body", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", nil)
 		w := httptest.NewRecorder()
-		defaultTestHandler()(w, req)
+		handler := newTestHandler()
+		handler(w, req)
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("expected 400 Bad Request for nil body, got %d", w.Code)
 		}
@@ -349,7 +356,8 @@ func TestMetricsIngestionHandler_NilAndWhitespaceBody(t *testing.T) {
 		payload := "   	  "
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
 		w := httptest.NewRecorder()
-		defaultTestHandler()(w, req)
+		handler := newTestHandler()
+		handler(w, req)
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("expected 400 Bad Request for whitespace body, got %d", w.Code)
 		}
