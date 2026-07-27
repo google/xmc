@@ -47,7 +47,9 @@ class TestSDKSetupAndDependencies(unittest.TestCase):
         """Verifies Client instantiates correctly without requiring network calls."""
         from xmc import Client
 
-        client = Client(base_url="https://xmc.googleapis.com", api_key="test-key")
+        client = Client(
+            env={"XMC_GATEWAY_URL": "https://xmc.googleapis.com", "XMC_API_KEY": "test-key"}
+        )
         self.assertEqual(client.base_url, "https://xmc.googleapis.com")
         self.assertEqual(client.api_key, "test-key")
 

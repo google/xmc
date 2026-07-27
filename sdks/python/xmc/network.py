@@ -16,11 +16,15 @@
 
 import enum
 import http.client
+import json
 import random
 import threading
 import time
 import urllib.parse
+from collections.abc import Mapping
 from typing import Any
+
+from xmc.dist_harvest import harvest_client_metadata
 
 
 class SendResult(enum.Enum):
@@ -48,6 +52,10 @@ class HTTPClient:
         max_requests: Maximum requests per persistent connection before recycling.
         base_ttl: Base TTL in seconds for connection lifetime before recycling.
         jitter: Jitter range in seconds applied to connection TTL.
+        xid: Workload XID metadata integer.
+        work_unit_id: Work unit ID metadata integer.
+        execution_id: Execution ID metadata integer.
+        replica_id: Replica/rank ID metadata string.
     """
 
     def __init__(
@@ -58,6 +66,8 @@ class HTTPClient:
         base_ttl: float = _BASE_TTL_SECONDS,
         jitter: float = _JITTER_RANGE_SECONDS,
         default_headers: dict[str, str] | None = None,
+        env: Mapping[str, str] | None = None,
+        log_all_replicas: bool = False,
     ) -> None:
         if not endpoint:
             raise ValueError("endpoint must be non-empty.")
@@ -77,11 +87,24 @@ class HTTPClient:
         self.base_ttl = base_ttl
         self.jitter = jitter
 
+        (
+            self._xid,
+            self._work_unit_id,
+            self._execution_id,
+            self._replica_id,
+            self.is_silenced,
+        ) = harvest_client_metadata(
+            env=env,
+            log_all_replicas=log_all_replicas,
+        )
+
         self._headers: dict[str, str] = {
             "Connection": "keep-alive",
             "Content-Type": "application/json",
             "User-Agent": "xmc-python-network/0.1.0",
         }
+        if self._replica_id:
+            self._headers["X-Replica-ID"] = self._replica_id
         if default_headers:
             self._headers.update(default_headers)
 
@@ -90,6 +113,44 @@ class HTTPClient:
         self._created_at: float = 0.0
         self._current_ttl: float = 0.0
         self._lock = threading.Lock()
+
+    @property
+    def xid(self) -> str:
+        """Returns the workload XID metadata string.
+
+        WHY str: 64-bit integer IDs are stringified in JSON payloads to prevent precision loss
+        in JavaScript IEEE 754 web dashboards (capped at 2^53 - 1) per Google AIP-127.
+        """
+        return self._xid
+
+    @property
+    def work_unit_id(self) -> str:
+        """Returns the work unit ID metadata string.
+
+        WHY str: Stringified 64-bit integer prevents JavaScript precision loss.
+        """
+        return self._work_unit_id
+
+    @property
+    def execution_id(self) -> str:
+        """Returns the execution ID metadata string.
+
+        WHY str: Stringified 64-bit integer prevents JavaScript precision loss.
+        """
+        return self._execution_id
+
+    @property
+    def replica_id(self) -> str:
+        """Returns the replica/rank ID metadata string.
+
+        WHY str: Identifier for parallel worker rank (e.g., "0", "3"). Defaults to "0".
+        """
+        return self._replica_id
+
+    def send_payload(self, payload: list[dict[str, Any]]) -> SendResult:
+        """Serializes and sends JSON payload list over persistent HTTP connection."""
+        body = json.dumps(payload)
+        return self.send(body)
 
     def _calculate_ttl(self) -> float:
         """Calculates connection TTL with random jitter (base_ttl ± jitter)."""
