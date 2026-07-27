@@ -84,7 +84,7 @@ func TestFetchNextWorkUnitIDTransaction(t *testing.T) {
 			var nextID int64
 			_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 				var err error
-				nextID, err = storage.fetchNextWorkUnitIDTransaction(ctx, tc.xid, txn)
+				nextID, err = storage.FetchNextWorkUnitIDTransaction(ctx, tc.xid, txn)
 				return err
 			})
 

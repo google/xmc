@@ -24,6 +24,7 @@ import (
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	timestamppb "protobuf/timestamp_go_proto"
+	"xmanager_cloud/internal/storage/spanner/xid"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/validator/validator"
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -408,7 +409,7 @@ func TestExtractXidEntryCursor(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := extractXidEntryCursor(tc.entry)
+			got, err := xid.ExtractXidEntryCursor(tc.entry)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("extractXidEntryCursor(%v) returned error %v, wantErr=%t", tc.entry, err, tc.wantErr)
 			}

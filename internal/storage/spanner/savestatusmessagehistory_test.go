@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 package spanner
 
 import (
@@ -18,6 +19,7 @@ import (
 	"testing"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 
 	timestamppb "protobuf/timestamp_go_proto"
@@ -25,48 +27,48 @@ import (
 )
 
 func TestSaveStatusMessageHistoryIfChanged_Disabled(t *testing.T) {
-	ctx, storage := setupTest(t, false)
+	ctx, _, essClient := setupTest(t, false)
 
 	currentMsg := &essmsgpb.StructuredMessage{UserFacingText: "old"}
 	newMsg := &essmsgpb.StructuredMessage{UserFacingText: "new"}
 
-	storage.saveStatusMessageHistoryIfChanged(ctx, 123, nil, nil, currentMsg, newMsg, nil)
+	statusmessage.SaveStatusMessageHistoryIfChanged(ctx, false, 123, nil, nil, currentMsg, newMsg, nil)
 
-	messages := listStatusMessagesForTest(ctx, t, storage, 123)
+	messages := listStatusMessagesForTest(ctx, t, essClient, 123)
 	if len(messages) > 0 {
 		t.Errorf("saveStatusMessageHistoryIfChanged() wrote %d messages when disabled, want 0", len(messages))
 	}
 }
 
 func TestSaveStatusMessageHistoryIfChanged_NilNewMessage(t *testing.T) {
-	ctx, storage := setupTest(t, true)
+	ctx, _, essClient := setupTest(t, true)
 
 	currentMsg := &essmsgpb.StructuredMessage{UserFacingText: "old"}
 
-	storage.saveStatusMessageHistoryIfChanged(ctx, 123, nil, nil, currentMsg, nil, nil)
+	statusmessage.SaveStatusMessageHistoryIfChanged(ctx, true, 123, nil, nil, currentMsg, nil, nil)
 
-	messages := listStatusMessagesForTest(ctx, t, storage, 123)
+	messages := listStatusMessagesForTest(ctx, t, essClient, 123)
 	if len(messages) > 0 {
 		t.Errorf("saveStatusMessageHistoryIfChanged() wrote %d messages when new message is nil, want 0", len(messages))
 	}
 }
 
 func TestSaveStatusMessageHistoryIfChanged_EqualMessages(t *testing.T) {
-	ctx, storage := setupTest(t, true)
+	ctx, _, essClient := setupTest(t, true)
 
 	currentMsg := &essmsgpb.StructuredMessage{UserFacingText: "same"}
 	newMsg := &essmsgpb.StructuredMessage{UserFacingText: "same"}
 
-	storage.saveStatusMessageHistoryIfChanged(ctx, 123, nil, nil, currentMsg, newMsg, nil)
+	statusmessage.SaveStatusMessageHistoryIfChanged(ctx, true, 123, nil, nil, currentMsg, newMsg, nil)
 
-	messages := listStatusMessagesForTest(ctx, t, storage, 123)
+	messages := listStatusMessagesForTest(ctx, t, essClient, 123)
 	if len(messages) > 0 {
 		t.Errorf("saveStatusMessageHistoryIfChanged() wrote %d messages when messages are equal, want 0", len(messages))
 	}
 }
 
 func TestSaveStatusMessageHistoryIfChanged_Success(t *testing.T) {
-	ctx, storage := setupTest(t, true)
+	ctx, storage, essClient := setupTest(t, true)
 
 	const xid int64 = 123
 	createBlankExperiment(ctx, t, storage, xid)
@@ -80,15 +82,15 @@ func TestSaveStatusMessageHistoryIfChanged_Success(t *testing.T) {
 		UserFacingText: "new",
 	}
 
-	_, err := storage.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		storage.saveStatusMessageHistoryIfChanged(ctx, xid, nil, nil, currentMsg, newMsg, txn)
+	_, err := essClient.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, true, xid, nil, nil, currentMsg, newMsg, txn)
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("saveStatusMessageHistoryIfChanged() ReadWriteTransaction failed: %v", err)
 	}
 
-	messages := listStatusMessagesForTest(ctx, t, storage, xid)
+	messages := listStatusMessagesForTest(ctx, t, essClient, xid)
 
 	if len(messages) != 1 {
 		t.Fatalf("saveStatusMessageHistoryIfChanged() wrote %d rows in StatusMessages, want 1", len(messages))
@@ -100,7 +102,7 @@ func TestSaveStatusMessageHistoryIfChanged_Success(t *testing.T) {
 }
 
 func TestSaveStatusMessageHistoryIfChanged_EqualMessagesDifferentTimestamp(t *testing.T) {
-	ctx, storage := setupTest(t, true)
+	ctx, _, essClient := setupTest(t, true)
 
 	currentMsg := &essmsgpb.StructuredMessage{
 		UserFacingText: "same",
@@ -111,15 +113,15 @@ func TestSaveStatusMessageHistoryIfChanged_EqualMessagesDifferentTimestamp(t *te
 		CreateTime:     &timestamppb.Timestamp{Seconds: 200},
 	}
 
-	storage.saveStatusMessageHistoryIfChanged(ctx, 123, nil, nil, currentMsg, newMsg, nil)
+	statusmessage.SaveStatusMessageHistoryIfChanged(ctx, true, 123, nil, nil, currentMsg, newMsg, nil)
 
-	messages := listStatusMessagesForTest(ctx, t, storage, 123)
+	messages := listStatusMessagesForTest(ctx, t, essClient, 123)
 	if len(messages) > 0 {
 		t.Errorf("saveStatusMessageHistoryIfChanged() wrote %d messages when messages are equal with different timestamps, want 0", len(messages))
 	}
 }
 
-func setupTest(t *testing.T, historyEnabled bool) (context.Context, *Storage) {
+func setupTest(t *testing.T, historyEnabled bool) (context.Context, *Storage, *spanner.Client) {
 	t.Helper()
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
@@ -127,16 +129,16 @@ func setupTest(t *testing.T, historyEnabled bool) (context.Context, *Storage) {
 	if err != nil {
 		t.Fatalf("NewStorageWithConfig() err = %v, want nil", err)
 	}
-	return ctx, storage
+	return ctx, storage, essClient
 }
 
-func listStatusMessagesForTest(ctx context.Context, t *testing.T, storage *Storage, xid int64) []string {
+func listStatusMessagesForTest(ctx context.Context, t *testing.T, essClient *spanner.Client, xid int64) []string {
 	t.Helper()
 	stmt := spanner.Statement{
 		SQL:    "SELECT UserFacingText FROM StatusMessages WHERE Xid = @xid",
 		Params: map[string]any{"xid": xid},
 	}
-	iter := storage.client.Single().Query(ctx, stmt)
+	iter := essClient.Single().Query(ctx, stmt)
 	defer iter.Stop()
 
 	var messages []string

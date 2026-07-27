@@ -1,0 +1,50 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("//:compat.bzl", "compat_go_library")
+
+compat_go_library(
+    name = "experiment",
+    srcs = [
+        "createexperiment.go",
+        "fetchexperiment.go",
+        "fetchexperimentstatus.go",
+        "listexperiments.go",
+        "repository.go",
+        "updateexperiment.go",
+        "updateexperimentlaunchstate.go",
+    ],
+    importpath = "xmanager_cloud/internal/storage/spanner/experiment",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//internal/compat/proto",
+        "//internal/compat/status",
+        "//internal/logging",
+        "//internal/query_generator:liststatement",
+        "//internal/query_generator:querytools",
+        "//internal/query_generator/normalizer",
+        "//internal/storage",
+        "//internal/storage/data",
+        "//internal/storage/spanner/data:spannerdata",
+        "//internal/storage/spanner/schema:experimentschema",
+        "//internal/storage/spanner/statusmessage",
+        "//internal/storage/state",
+        "//internal/validator",
+        "@com_github_kylelemons_godebug//diff",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_protobuf//encoding/prototext:go_default_library",
+        "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
+    ],
+)
