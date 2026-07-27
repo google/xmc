@@ -16,57 +16,110 @@
 <div
   class="queue-card"
   [class.selected]="isSelected()"
+  [class.selected-healthy]="isSelected() && isQueueHealthy()"
+  [class.selected-risk]="isSelected() && !isQueueHealthy()"
   (click)="onCardClick()"
   (keydown.enter)="onCardClick()"
   (keydown.space)="$event.preventDefault(); onCardClick()"
   tabindex="0"
   role="button"
 >
-  <div class="card-header">
-    <div class="title-group">
-      <h3 class="queue-name">{{ queue().name }}</h3>
-      <span class="queue-cohort">Cohort: {{ queue().cohort || 'None' }}</span>
-    </div>
-    @let badgeInfo = queue() | queueStatusBadge;
-    @if (badgeInfo) {
-      <div
-        class="status-badge"
-        [class.healthy]="badgeInfo.isHealthy"
-        [class.warning]="!badgeInfo.isHealthy"
-      >
-        <span class="status-dot"></span>
-        {{ badgeInfo.label }}
-      </div>
-    }
-  </div>
-
-  <div class="capacity-section">
-    <h4 class="section-title">Capacity & Predictability</h4>
-    <div class="capacity-table">
-      <div class="table-header">
-        <span class="col-resource">Resource</span>
-        <span class="col-max">Max workload size</span>
-        <span class="col-free">Free / total capacity</span>
-      </div>
-      @for (flavor of flavors(); track flavor.name) {
-        <div class="table-row">
-          <span class="col-resource font-medium">{{ flavor.resourceName || flavor.name }}</span>
-          <span class="col-max">{{ flavor | maxWorkloadDisplay }}</span>
-          <span class="col-free">{{ flavor | freeTotalDisplay }}</span>
-        </div>
+  <div class="card-top-bar">
+    <div class="queue-name-group">
+      <h3 class="queue-name queue-title">{{ queue().name }}</h3>
+      @let badgeInfo = queue() | queueStatusBadge;
+      @if (badgeInfo) {
+        <span
+          class="status-badge"
+          [class.healthy]="badgeInfo.isHealthy"
+          [class.available-badge]="badgeInfo.isHealthy"
+          [class.warning]="!badgeInfo.isHealthy"
+          [class.risk-badge]="!badgeInfo.isHealthy"
+        >
+          {{ badgeInfo.label }}
+        </span>
       }
     </div>
+    <div class="card-top-actions">
+      <button mat-stroked-button type="button" class="copy-flag-btn" (click)="copyFlag($event)">
+        <mat-icon class="copy-icon">content_copy</mat-icon>
+        {{ isCopied() ? 'Copied!' : 'Copy flag' }}
+      </button>
+    </div>
   </div>
 
-  @let predInfo = queue() | predictabilityMessage;
-  @if (predInfo) {
-    <div
-      class="predictability-banner"
-      [class.healthy-banner]="predInfo.isHealthy"
-      [class.warning-banner]="!predInfo.isHealthy"
-    >
-      <mat-icon class="banner-icon">{{ predInfo.isHealthy ? 'check_circle' : 'warning' }}</mat-icon>
-      <span class="banner-text">{{ predInfo.text }}</span>
+  <div class="card-grid-body">
+    <!-- Column 1: Capacity -->
+    <div class="card-section capacity-section">
+      <div class="section-title-row">
+        <mat-icon class="section-status-icon" [class.warn-icon]="!isQueueHealthy()">
+          {{ isQueueHealthy() ? 'check_circle_outline' : 'warning_amber' }}
+        </mat-icon>
+        <span class="section-title-text">Capacity</span>
+      </div>
+
+      <div class="capacity-boxes-stack">
+        @for (flavor of flavors(); track flavor.name + (flavor.resourceName ?? '')) {
+          <div class="capacity-box table-row">
+            <div class="capacity-box-header">
+              <span class="flavor-main-name">{{ flavor.resourceName || flavor.name }}</span>
+              <mat-icon
+                class="flavor-status-icon"
+                [class.flavor-check-icon]="isQueueHealthy()"
+                [class.flavor-warn-icon]="!isQueueHealthy()"
+              >
+                {{ isQueueHealthy() ? 'check_circle' : 'warning_amber' }}
+              </mat-icon>
+            </div>
+            <div class="capacity-stats-grid">
+              <div class="stat-cell">
+                <div class="cell-label">
+                  Max workload size
+                  <mat-icon
+                    class="help-tip-icon"
+                    matTooltipClass="rod-term-tooltip"
+                    [matTooltip]="termTooltips.maxWorkloadSize"
+                    >help_outline</mat-icon
+                  >
+                </div>
+                <div
+                  class="cell-value bold-metric"
+                  [class.green-text]="isQueueHealthy()"
+                  [class.amber-text]="!isQueueHealthy()"
+                >
+                  {{ flavor | maxWorkloadDisplay }}
+                </div>
+              </div>
+              <div class="stat-cell">
+                <div class="cell-label">
+                  Free / Total
+                  <mat-icon
+                    class="help-tip-icon"
+                    matTooltipClass="rod-term-tooltip"
+                    [matTooltip]="termTooltips.freeTotalCapacity"
+                    >help_outline</mat-icon
+                  >
+                </div>
+                <div class="cell-value bold-metric dark-text">
+                  {{ flavor | freeTotalDisplay }}
+                </div>
+              </div>
+            </div>
+          </div>
+        } @empty {
+          <div class="no-resource-flavor">No capacity data for selected resource.</div>
+        }
+      </div>
     </div>
-  }
+
+    <!-- Column 2: Predictability -->
+    <div class="card-section predictability-section">
+      <div class="section-title-row">
+        <mat-icon class="section-status-icon" [class.warn-icon]="!isQueueHealthy()">
+          {{ isQueueHealthy() ? 'check_circle_outline' : 'warning_amber' }}
+        </mat-icon>
+        <span class="section-title-text">Predictability</span>
+      </div>
+    </div>
+  </div>
 </div>
