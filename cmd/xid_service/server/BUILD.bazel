@@ -29,7 +29,7 @@ compat_go_library(
     deps = [
         "//api/protos/xid:api_go_proto",
         "//api/protos/xid:messages_go_proto",
-        "//cmd/xid_service:config",
+        "//cmd/xid_service/config",
         "//internal/auth",
         "//internal/compat/status",
         "//internal/logging",

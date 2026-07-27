@@ -1,6 +1,4 @@
-refactor(githooks): improve binary directory resolution in pre-commit hook
-
-Support GOBIN environment variable and handle multi-path GOPATH setups cleanly via shell parameter expansion.
+fix(bazel): update server package target labels to reference config subpackage directories
 
 TAG=agy
 CONV=45db6eeb-6770-4007-b22f-e7967de9db54
