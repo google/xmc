@@ -54,13 +54,28 @@ check_go() {
     fi
   fi
 
+  local go_bin_dir=""
+  if [ -n "${GOBIN:-}" ]; then
+    go_bin_dir="$GOBIN"
+  elif [ -n "${GOPATH:-}" ]; then
+    go_bin_dir="${GOPATH%%:*}/bin"
+  elif command -v go >/dev/null 2>&1; then
+    local gopath_env
+    gopath_env=$(go env GOPATH 2>/dev/null || true)
+    if [ -n "$gopath_env" ]; then
+      go_bin_dir="${gopath_env%%:*}/bin"
+    else
+      go_bin_dir="$HOME/go/bin"
+    fi
+  else
+    go_bin_dir="$HOME/go/bin"
+  fi
+
   local golangci_bin=""
   if command -v golangci-lint >/dev/null 2>&1; then
     golangci_bin="golangci-lint"
-  elif [ -n "${GOPATH:-}" ] && [ -f "$GOPATH/bin/golangci-lint" ]; then
-    golangci_bin="$GOPATH/bin/golangci-lint"
-  elif [ -f "$HOME/go/bin/golangci-lint" ]; then
-    golangci_bin="$HOME/go/bin/golangci-lint"
+  elif [ -f "$go_bin_dir/golangci-lint" ]; then
+    golangci_bin="$go_bin_dir/golangci-lint"
   fi
 
   if [ -n "$golangci_bin" ]; then
