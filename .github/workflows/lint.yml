@@ -65,10 +65,22 @@ jobs:
             exit 1
           fi
 
+      - name: 'Cache golangci-lint binary'
+        uses: 'actions/cache@v4'
+        with:
+          path: |
+            ~/.cache/golangci-lint
+            ~/go/bin/golangci-lint
+          key: ${{ runner.os }}-golangci-lint-v1.64.6
+
       - name: 'Install & Run golangci-lint'
         run: |
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6
-          $(go env GOPATH)/bin/golangci-lint run --timeout=5m
+          GOPATH_BIN="$(go env GOPATH)/bin"
+          if [ ! -f "$GOPATH_BIN/golangci-lint" ]; then
+            echo "--> Installing golangci-lint (v1.64.6)..."
+            go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6
+          fi
+          "$GOPATH_BIN/golangci-lint" run --timeout=5m
 
   bazel-lint:
     name: 'Bazel Linting (Buildifier)'
