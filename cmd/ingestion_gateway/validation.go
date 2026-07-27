@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 
 	pb "xmanager_cloud/api/protos/metrics"
 	"xmanager_cloud/pkg/apis/metrics"
@@ -95,49 +94,48 @@ func skipWhitespace(r *bufio.Reader) error {
 	}
 }
 
-type flexibleInt64 int64
-
-func (f *flexibleInt64) UnmarshalJSON(data []byte) error {
-	if len(data) == 0 {
-		*f = 0
-		return nil
-	}
-	s := string(data)
-	if s == "null" || s == `""` {
-		*f = 0
-		return nil
-	}
-	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
-		s = s[1 : len(s)-1]
-	}
-	val, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return fmt.Errorf("invalid int64 value %q: %w", string(data), err)
-	}
-	*f = flexibleInt64(val)
-	return nil
-}
-
 type jsonMetricInput struct {
-	Xid         flexibleInt64 `json:"xid"`
-	WorkUnitId  flexibleInt64 `json:"work_unit_id"`
-	ExecutionId flexibleInt64 `json:"execution_id"`
-	ReplicaId   string        `json:"replica_id"`
-	MetricName  string        `json:"metric_name"`
-	MetricValue float64       `json:"metric_value"`
-	Step        int64         `json:"step"`
-	Timestamp   int64         `json:"timestamp"`
+	Xid         json.Number `json:"xid"`
+	WorkUnitId  json.Number `json:"work_unit_id"`
+	ExecutionId json.Number `json:"execution_id"`
+	ReplicaId   string      `json:"replica_id"`
+	MetricName  string      `json:"metric_name"`
+	MetricValue float64     `json:"metric_value"`
+	Step        int64       `json:"step"`
+	Timestamp   int64       `json:"timestamp"`
 }
 
-func (input *jsonMetricInput) toProto(pbMetric *pb.Metric) {
-	pbMetric.Xid = int64(input.Xid)
-	pbMetric.WorkUnitId = int64(input.WorkUnitId)
-	pbMetric.ExecutionId = int64(input.ExecutionId)
+func (input *jsonMetricInput) toProto(pbMetric *pb.Metric) error {
+	if string(input.Xid) != "" {
+		val, err := input.Xid.Int64()
+		if err != nil {
+			return fmt.Errorf("invalid xid value %q: %w", input.Xid, err)
+		}
+		pbMetric.Xid = val
+	}
+
+	if string(input.WorkUnitId) != "" {
+		val, err := input.WorkUnitId.Int64()
+		if err != nil {
+			return fmt.Errorf("invalid work_unit_id value %q: %w", input.WorkUnitId, err)
+		}
+		pbMetric.WorkUnitId = val
+	}
+
+	if string(input.ExecutionId) != "" {
+		val, err := input.ExecutionId.Int64()
+		if err != nil {
+			return fmt.Errorf("invalid execution_id value %q: %w", input.ExecutionId, err)
+		}
+		pbMetric.ExecutionId = val
+	}
+
 	pbMetric.ReplicaId = input.ReplicaId
 	pbMetric.MetricName = input.MetricName
 	pbMetric.MetricValue = input.MetricValue
 	pbMetric.Step = input.Step
 	pbMetric.Timestamp = input.Timestamp
+	return nil
 }
 
 func processNextRecord(dec *json.Decoder, idx int, consumer MetricConsumer) (bool, *FailedRecord, error) {
@@ -147,7 +145,9 @@ func processNextRecord(dec *json.Decoder, idx int, consumer MetricConsumer) (boo
 	}
 
 	var pbMetric pb.Metric
-	input.toProto(&pbMetric)
+	if err := input.toProto(&pbMetric); err != nil {
+		return false, nil, err
+	}
 
 	m := &metrics.Metric{Metric: &pbMetric}
 	if valErr := m.IsValid(); valErr != nil {
