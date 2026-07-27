@@ -26,6 +26,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { Subscription } from 'rxjs';
 
+import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
 
 import {
@@ -60,10 +61,11 @@ import { ROD_TERM_TOOLTIPS } from './constants/rod_tooltips';
 export class ResourceDashboard implements OnInit, OnDestroy {
   private readonly autoReloadService = inject(AutoReloadService);
   private readonly route = inject(ActivatedRoute);
+  private readonly resourceService = inject(ResourceService);
 
-  private readonly resolvedData = toSignal(this.route.data);
+  private readonly clusterQueuesResponse = toSignal(this.resourceService.getClusterQueues());
   protected readonly clusterQueues = computed<ClusterQueue[]>(
-    () => this.resolvedData()?.['clusterQueues'] ?? [],
+    () => this.clusterQueuesResponse()?.clusterQueues ?? [],
   );
   protected readonly isLoading = signal<boolean>(false);
   protected readonly selectedQueue = signal<string>('gpu-cluster-queue');
