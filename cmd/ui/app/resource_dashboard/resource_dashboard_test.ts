@@ -19,6 +19,7 @@ import { ActivatedRoute } from '@angular/router';
 import { of } from 'rxjs';
 
 import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
+import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
 import {
   bootstrap,
@@ -105,20 +106,28 @@ describe('ResourceDashboard Container', () => {
   } as ClusterQueue;
 
   cleanState(() => {
+    const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
+      'getClusterQueues',
+    ]);
+    resourceService.getClusterQueues.and.returnValue(
+      of({ clusterQueues: [mockGpuQueue, mockCpuQueue] }),
+    );
+
     setupModule({
       imports: [TestHostComponent],
       providers: [
+        { provide: ResourceService, useValue: resourceService },
         { provide: AUTO_REFRESH_INTERVAL_MS, useValue: 30000 },
         {
           provide: ActivatedRoute,
           useValue: {
             queryParams: of({ queue: 'gpu-cluster-queue' }),
-            data: of({ clusterQueues: [mockGpuQueue, mockCpuQueue] }),
+            data: of({}),
           },
         },
       ],
     });
-    return {};
+    return { resourceService };
   }, beforeEach);
 
   it('should render subnav tabs, smart resource finder, and resolved cluster queues', async () => {
