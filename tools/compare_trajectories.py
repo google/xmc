@@ -112,10 +112,9 @@ def generate_markdown_report(
     prompt_header = f'- **Test Prompt**: *"{prompt}"*\n' if prompt else ""
     b_kb = baseline["file_bytes"] // 1024
     c_kb = candidate["file_bytes"] // 1024
-    footprint_header = (
-        f"- **Context Footprint**: Baseline ~{b_kb} KB (~{baseline['est_tokens']:,} tokens) | "
-        f"Candidate ~{c_kb} KB (~{candidate['est_tokens']:,} tokens)\n"
-    )
+    kb_diff = c_kb - b_kb
+    tok_diff = candidate["est_tokens"] - baseline["est_tokens"]
+    step_diff = candidate["total_steps"] - baseline["total_steps"]
 
     all_tools = sorted(set(baseline["tool_counts"].keys()) | set(candidate["tool_counts"].keys()))
     tool_rows = []
@@ -128,7 +127,7 @@ def generate_markdown_report(
 
     return f"""### 📊 Trajectory & Outcome Comparison Report
 
-{prompt_header}{footprint_header}
+{prompt_header}
 ---
 
 ### Pillar 1: Trajectory Telemetry (Efficiency & Behavior)
@@ -136,8 +135,9 @@ def generate_markdown_report(
 | Metric | Baseline (Clean) | Candidate (Modified) | Delta & LLM Assessment |
 | :--- | :--- | :--- | :--- |
 | **Turns (LLM Calls)** | {baseline["turns"]} | {candidate["turns"]} | {turn_summary} |
+| **Context Footprint** | ~{b_kb} KB (~{baseline["est_tokens"]:,} tokens) | ~{c_kb} KB (~{candidate["est_tokens"]:,} tokens) | {kb_diff:+d} KB ({tok_diff:+d} tokens) |
 | **Error / Retry Steps** | {baseline["error_count"]} | {candidate["error_count"]} | {error_diff:+d} errors |
-| **Total Steps** | {baseline["total_steps"]} | {candidate["total_steps"]} | {candidate["total_steps"] - baseline["total_steps"]:+d} steps |
+| **Total Steps** | {baseline["total_steps"]} | {candidate["total_steps"]} | {step_diff:+d} steps |
 
 #### 🛠️ Tool Call Breakdown
 | Tool Name | Baseline | Candidate | Delta |
