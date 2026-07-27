@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { HttpClient } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { Injectable } from '@angular/core';
 import { Observable, of } from 'rxjs';
 
 import { ClusterQueueListResponse, QueueJobListResponse } from './resource_types';
@@ -26,8 +25,6 @@ import { ClusterQueueListResponse, QueueJobListResponse } from './resource_types
   providedIn: 'root',
 })
 export class ResourceService {
-  private readonly http = inject(HttpClient);
-
   /**
    * Fetches the list of cluster queues.
    */
@@ -72,8 +69,9 @@ export class ResourceService {
    */
   getQueueJobs(queueName?: string): Observable<QueueJobListResponse> {
     // TODO(#186): Switch to real backend endpoint when rod-data-provider is deployed.
+    const targetQueueName = queueName || 'gpu-cluster-queue';
     return of({
-      queueName: queueName || 'gpu-cluster-queue',
+      queueName: targetQueueName,
       jobs: [
         {
           position: 'N/A-running',
@@ -85,7 +83,7 @@ export class ResourceService {
           priority: 'Low',
           status: 'Running',
           timeInQueue: '10m ago',
-          queueName: queueName || 'gpu-cluster-queue',
+          queueName: targetQueueName,
         },
         {
           position: 'N/A-running',
@@ -97,7 +95,7 @@ export class ResourceService {
           priority: 'Low',
           status: 'Running',
           timeInQueue: '5m ago',
-          queueName: queueName || 'gpu-cluster-queue',
+          queueName: targetQueueName,
         },
       ],
     });

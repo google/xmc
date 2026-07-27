@@ -14,8 +14,6 @@
 
 import 'jasmine';
 
-import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
@@ -27,7 +25,7 @@ describe('ResourceService', () => {
 
   const state = cleanState(() => {
     setupModule({
-      providers: [provideHttpClient(), provideHttpClientTesting(), ResourceService],
+      providers: [ResourceService],
     });
 
     return {
