@@ -39,11 +39,18 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+keras = [
+    "keras>=3.0.0",
+]
+
 [tool.setuptools]
-packages = ["xmc"]
+packages = ["xmc", "xmc.integrations"]
 
 [tool.setuptools.package-dir]
 "xmc" = "."
+"xmc.integrations" = "integrations"
 
 [tool.setuptools.package-data]
 "xmc" = ["py.typed"]
+

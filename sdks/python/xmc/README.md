@@ -134,6 +134,46 @@ xmc.shutdown()
 
 ---
 
+## ⚡ Framework Integrations & Autologging
+
+### Keras Integration (`XmcKerasCallback`)
+
+The `xmc.integrations.keras` subpackage provides explicit autologging for Keras models (`keras>=3.0.0`).
+
+#### 📦 Installation & Extra Dependencies
+
+Install the optional `keras` extra:
+
+```bash
+pip install xmc[keras]
+```
+
+#### 🚀 Quickstart Example
+
+```python
+import keras
+from xmc.integrations.keras import XmcKerasCallback
+
+# Instantiate model
+model = keras.Sequential([...])
+model.compile(optimizer="adam", loss="mse", metrics=["accuracy"])
+
+# Attach XmcKerasCallback to fit()
+model.fit(
+    x_train,
+    y_train,
+    epochs=5,
+    callbacks=[XmcKerasCallback(prefix="train/", log_batch_frequency=10)],
+)
+```
+
+#### 🔒 Guarantees & Operational Characteristics
+- **Strict Decoupled Eager Imports**: Importing `from xmc.integrations.keras import XmcKerasCallback` validates `keras>=3.0.0` eagerly at process startup (<10s fail-fast check). Missing or incompatible dependencies fail immediately before allocating GPU/TPU cluster resources.
+- **Global Optimizer Step Mapping**: Batch and epoch metrics are mapped to the global optimizer iteration count (`model.optimizer.iterations`) to guarantee continuous time-series metrics across epoch boundaries in ClickHouse without step collisions.
+- **Rank-Zero Silencing**: Automatically drops metric logging on worker ranks (`RANK > 0`) during multi-replica distributed training unless explicit multi-replica logging is configured.
+
+---
+
 ## ⚙️ Resilience & Rate-Limited Drop Logging
 
 - **Ring Buffer Overflow Protection**: `BoundedMetricsBuffer` defaults to 500,000 metrics (~85MB RAM). If network drops cause buffer overflow, oldest metrics are evicted FIFO.
