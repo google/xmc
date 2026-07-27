@@ -20,8 +20,10 @@ import {
   inject,
   input,
   OnChanges,
+  OnDestroy,
   OnInit,
   signal,
+  SimpleChanges,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -29,6 +31,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterModule } from '@angular/router';
+import { Subscription } from 'rxjs';
 
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import { QueueJobInfo } from 'xmanager_cloud/ui/app/service/resource_types';
@@ -62,9 +65,10 @@ export class QueueJobsSidePanelData implements BaseSidePanelData {
   ],
 })
 export class QueueJobsSidePanel
-  implements OnInit, OnChanges, BaseSidePanelContent<QueueJobsSidePanelData>
+  implements OnInit, OnChanges, OnDestroy, BaseSidePanelContent<QueueJobsSidePanelData>
 {
   private readonly resourceService = inject(ResourceService);
+  private jobsSubscription?: Subscription;
 
   readonly data = input<QueueJobsSidePanelData>();
   readonly queueName = input<string>('gpu-cluster-queue');
@@ -92,7 +96,7 @@ export class QueueJobsSidePanel
     return this.filteredJobs().slice(start, start + this.pageSize());
   });
 
-  protected readonly totalCount = computed(() => this.filteredJobs().length);
+  protected readonly totalCount = computed(() => this.jobs().length);
 
   protected displayedColumns: string[] = [
     'position',
@@ -107,15 +111,22 @@ export class QueueJobsSidePanel
     this.loadJobs();
   }
 
-  ngOnChanges() {
-    this.loadJobs();
+  ngOnChanges(changes: SimpleChanges) {
+    if (!changes['queueName']?.isFirstChange() && !changes['data']?.isFirstChange()) {
+      this.loadJobs();
+    }
+  }
+
+  ngOnDestroy() {
+    this.jobsSubscription?.unsubscribe();
   }
 
   protected loadJobs() {
     const qName = this.activeQueueName();
     if (!qName) return;
+    this.jobsSubscription?.unsubscribe();
     this.isLoading.set(true);
-    this.resourceService.getQueueJobs(qName).subscribe({
+    this.jobsSubscription = this.resourceService.getQueueJobs(qName).subscribe({
       next: (resp) => {
         this.jobs.set(resp?.jobs ?? []);
         this.isLoading.set(false);
