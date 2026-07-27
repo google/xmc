@@ -52,5 +52,10 @@ describe('ResourceService', () => {
       expect(response.jobs[0].jobName).toBe('xmc-operation-53296-1');
       expect(response.jobs[0].user).toBe('example@example.com');
     });
+
+    it('should default to gpu-cluster-queue when queueName is omitted', async () => {
+      const response: QueueJobListResponse = await firstValueFrom(state.service.getQueueJobs());
+      expect(response.queueName).toBe('gpu-cluster-queue');
+    });
   });
 });

@@ -69,7 +69,7 @@ export class ResourceService {
    */
   getQueueJobs(queueName?: string): Observable<QueueJobListResponse> {
     // TODO(#186): Switch to real backend endpoint when rod-data-provider is deployed.
-    const targetQueueName = queueName || 'gpu-cluster-queue';
+    const targetQueueName = queueName ?? 'gpu-cluster-queue';
     return of({
       queueName: targetQueueName,
       jobs: [
