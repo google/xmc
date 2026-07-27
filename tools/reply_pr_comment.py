@@ -47,7 +47,7 @@ def reply_comment(args):
             "Please provide either the message argument or the --message-file option, but not both.",
         )
 
-    if has_message_file:
+    if isinstance(message_file, str) and message_file:
         try:
             with open(message_file, encoding="utf-8") as f:
                 message = f.read()
@@ -57,7 +57,7 @@ def reply_comment(args):
                 "Ensure the message file path exists and is readable.",
             )
     elif has_raw_message:
-        message = raw_message
+        message = str(raw_message)
     else:
         message = "code changed"
 

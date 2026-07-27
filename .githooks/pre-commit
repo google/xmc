@@ -126,6 +126,8 @@ check_license() {
     -ignore "**/third_party/**"
     -ignore "**/node_modules/**"
     -ignore "**/.angular/**"
+    -ignore "**/venv/**"
+    -ignore "**/ctk-out/**"
     -ignore "**.json"
     -ignore "**.lock"
     -ignore "pyproject.toml"
@@ -151,7 +153,7 @@ check_license() {
 check_python() {
   local py_files
   if [ "$MODE" = "check" ]; then
-    py_files=$(find . -type f -name "*.py" -not -path "*/node_modules/*" -not -path "*/.git/*" || true)
+    py_files=$(find . -type f -name "*.py" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/venv/*" -not -path "*/ctk-out/*" || true)
   else
     py_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.py$' || true)
   fi
@@ -193,6 +195,41 @@ check_python() {
     fi
   else
     echo "--> WARNING: ruff or docker not found. Python linting skipped."
+    if [ "$MODE" = "check" ]; then FAILED=1; fi
+  fi
+}
+
+check_mypy() {
+  local py_files
+  if [ "$MODE" = "check" ]; then
+    py_files=$(find sdks/python/xmc tools deploy cmd/ui -type f -name "*.py" -not -path "*/venv/*" -not -path "*/node_modules/*" -not -path "*/bazel-*" -not -path "*/ctk-out/*" || true)
+  else
+    py_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(sdks/python/xmc|tools|deploy|cmd/ui)/.*\.py$' || true)
+  fi
+
+  if [ -z "$py_files" ]; then
+    return
+  fi
+
+  local mypy_bin=""
+  if command -v mypy >/dev/null 2>&1; then
+    mypy_bin="mypy"
+  elif [ -f "./tools/venv/bin/mypy" ]; then
+    mypy_bin="./tools/venv/bin/mypy"
+  elif [ -f "$HOME/.local/bin/mypy" ]; then
+    mypy_bin="$HOME/.local/bin/mypy"
+  elif python3 -m mypy --version >/dev/null 2>&1; then
+    mypy_bin="python3 -m mypy"
+  fi
+
+  if [ -n "$mypy_bin" ]; then
+    echo "--> Running Mypy Static Type Checker..."
+    if ! $mypy_bin $py_files; then
+      echo "❌ Mypy type check failed."
+      FAILED=1
+    fi
+  else
+    echo "--> WARNING: mypy not found. Python type checking skipped."
     if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
 }
@@ -273,6 +310,7 @@ main() {
   check_ui
   check_license
   check_python
+  check_mypy
   check_terraform
 
   if [ "$MODE" = "fix" ]; then

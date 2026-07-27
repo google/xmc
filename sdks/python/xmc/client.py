@@ -230,9 +230,9 @@ class Client:
     def post(
         self,
         path: str,
-        data: dict[str, Any] | None = None,
+        data: dict[str, Any] | list[Any] | None = None,
         headers: dict[str, str] | None = None,
-    ) -> dict[str, Any] | list:
+    ) -> dict[str, Any] | list[Any]:
         """Convenience method for HTTP POST requests."""
         if self.is_silenced:
             logger.debug("POST request to %s silenced for replica %s", path, self.replica_id)

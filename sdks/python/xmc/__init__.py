@@ -62,6 +62,7 @@ def log_metric(name: str, value: float | int, step: int | None = None) -> None:
     global _global_flusher
     if _global_flusher is None:
         init()
+    assert _global_flusher is not None
     _global_flusher.log_metric(name, value, step)
 
 

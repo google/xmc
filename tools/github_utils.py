@@ -52,7 +52,7 @@ def call_github_api(
     user_agent: str = "XMC-Github-Agent",
 ):
     """Orchestrates GitHub API call trying gh CLI, GITHUB_TOKEN, or unauthenticated."""
-    errors = []
+    errors: list[tuple[str, Exception]] = []
 
     # 1. Try gh CLI
     if shutil.which("gh"):
