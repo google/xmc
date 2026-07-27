@@ -14,8 +14,6 @@
 
 import 'jasmine';
 
-import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
@@ -64,12 +62,7 @@ describe('QueueJobsSidePanel Component', () => {
 
     setupModule({
       imports: [QueueJobsSidePanel, NoopAnimationsModule],
-      providers: [
-        provideRouter([]),
-        provideHttpClient(),
-        provideHttpClientTesting(),
-        { provide: ResourceService, useValue: resourceService },
-      ],
+      providers: [provideRouter([]), { provide: ResourceService, useValue: resourceService }],
     });
 
     return {
