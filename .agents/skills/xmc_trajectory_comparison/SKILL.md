@@ -17,8 +17,8 @@ graph TD
     E1 --> F1[Baseline Transcript Log & Outcome Artifacts]
     E2 --> F2[Candidate Transcript Log & Outcome Artifacts]
     F1 & F2 --> G[4. Run teardown_benchmark.py]
-    G --> H[5. Run compare_trajectories.py]
-    H --> I[6. Dual-Pillar Evaluation: Trajectory Telemetry + Outcome Quality Scorecard]
+    G --> H[5. Run compare_trajectories.py --prompt ...]
+    H --> I[6. Dual-Pillar Evaluation: Telemetry, Outcome Scorecard & Final Verdict]
     I --> J[7. PR Integration & User Edit Gate]
 ```
 
@@ -72,12 +72,19 @@ After both subagents complete, run `tools/teardown_benchmark.py` to clean up any
 python3 tools/teardown_benchmark.py --manifest /tmp/benchmark_manifest_<id>.json
 ```
 
-### Phase 5: Dual-Pillar Evaluation & Reporting
+### Phase 5: Dual-Pillar Evaluation & Scorecard Generation
 Pass the `transcript.jsonl` log file paths from both subagents to `tools/compare_trajectories.py`:
 
 ```bash
-python3 tools/compare_trajectories.py <baseline_transcript_path> <candidate_transcript_path> -o /tmp/trajectory_report.md
+python3 tools/compare_trajectories.py <baseline_transcript_path> <candidate_transcript_path> --prompt "<test_prompt>" -o /tmp/trajectory_report.md
 ```
+
+The main agent reviews the output and populates all 4 core scorecard sections:
+1. **Target Test Prompt**: State the exact prompt scenario evaluated.
+2. **Context & Token Footprint**: Report transcript byte size, estimated tokens, and context window footprint percentage.
+3. **Pillar 1: Trajectory Telemetry**: Evaluate turn deltas, tool usage, error steps, and provide qualitative LLM reasoning on metric increases.
+4. **Pillar 2: Outcome Quality Evaluation**: Side-by-side output previews & LLM-as-a-Judge Scorecard (Rule adherence, functional correctness, completeness).
+5. **🏆 Final Benchmark Verdict**: Provide a clear recommendation (`PASSED`, `NEEDS REVIEW`, or `REJECTED`).
 
 Save the benchmark markdown snippet to `/tmp/benchmark_report_<branch_name>.md`.
 

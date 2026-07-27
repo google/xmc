@@ -71,6 +71,8 @@ class CompareTrajectoriesTest(unittest.TestCase):
         self.assertEqual(res["total_steps"], 3)
         self.assertEqual(res["turns"], 2)
         self.assertEqual(res["error_count"], 1)
+        self.assertGreater(res["file_bytes"], 0)
+        self.assertGreaterEqual(res["est_tokens"], 0)
         self.assertEqual(res["tool_counts"]["run_command"], 2)
         self.assertEqual(res["tool_counts"]["view_file"], 1)
         self.assertEqual(res["last_response_snippet"], "Step 2 failed")
@@ -79,6 +81,8 @@ class CompareTrajectoriesTest(unittest.TestCase):
     def test_generate_markdown_report(self):
         baseline = {
             "turns": 5,
+            "file_bytes": 10240,
+            "est_tokens": 2560,
             "error_count": 1,
             "total_steps": 10,
             "tool_counts": {"run_command": 3},
@@ -86,17 +90,21 @@ class CompareTrajectoriesTest(unittest.TestCase):
         }
         candidate = {
             "turns": 3,
+            "file_bytes": 8192,
+            "est_tokens": 2048,
             "error_count": 0,
             "total_steps": 6,
             "tool_counts": {"run_command": 2},
             "last_response_snippet": "Candidate done",
         }
 
-        report = generate_markdown_report(baseline, candidate)
+        report = generate_markdown_report(baseline, candidate, prompt="Test prompt text")
+        self.assertIn("Test prompt text", report)
+        self.assertIn("Context Footprint", report)
         self.assertIn("fewer turns", report)
         self.assertIn("Pillar 1: Trajectory Telemetry", report)
         self.assertIn("Pillar 2: Outcome & Quality Evaluation", report)
-        self.assertIn("Candidate done", report)
+        self.assertIn("Final Benchmark Verdict", report)
 
 
 if __name__ == "__main__":

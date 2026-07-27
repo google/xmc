@@ -31,6 +31,8 @@ def parse_transcript(transcript_path: Path) -> dict[str, Any]:
             "Ensure the subagent execution finished and transcript log path is valid.",
         )
 
+    file_bytes = transcript_path.stat().st_size
+    est_tokens = file_bytes // 4
     total_steps = 0
     turns = 0
     error_count = 0
@@ -81,6 +83,8 @@ def parse_transcript(transcript_path: Path) -> dict[str, Any]:
 
     return {
         "transcript_path": str(transcript_path),
+        "file_bytes": file_bytes,
+        "est_tokens": est_tokens,
         "total_steps": total_steps,
         "turns": turns,
         "error_count": error_count,
@@ -91,7 +95,9 @@ def parse_transcript(transcript_path: Path) -> dict[str, Any]:
     }
 
 
-def generate_markdown_report(baseline: dict[str, Any], candidate: dict[str, Any]) -> str:
+def generate_markdown_report(
+    baseline: dict[str, Any], candidate: dict[str, Any], prompt: str | None = None
+) -> str:
     """Generates a Markdown report comparing baseline vs candidate trajectories and outcomes."""
     turn_diff = candidate["turns"] - baseline["turns"]
     error_diff = candidate["error_count"] - baseline["error_count"]
@@ -102,6 +108,14 @@ def generate_markdown_report(baseline: dict[str, Any], candidate: dict[str, Any]
         turn_summary = f"🔴 **{turn_diff} extra turns** (Deeper execution/overhead)"
     else:
         turn_summary = "⚪ **Equal turn count**"
+
+    prompt_header = f'- **Test Prompt**: *"{prompt}"*\n' if prompt else ""
+    b_kb = baseline["file_bytes"] // 1024
+    c_kb = candidate["file_bytes"] // 1024
+    footprint_header = (
+        f"- **Context Footprint**: Baseline ~{b_kb} KB (~{baseline['est_tokens']:,} tokens) | "
+        f"Candidate ~{c_kb} KB (~{candidate['est_tokens']:,} tokens)\n"
+    )
 
     all_tools = sorted(set(baseline["tool_counts"].keys()) | set(candidate["tool_counts"].keys()))
     tool_rows = []
@@ -114,11 +128,12 @@ def generate_markdown_report(baseline: dict[str, Any], candidate: dict[str, Any]
 
     return f"""### 📊 Trajectory & Outcome Comparison Report
 
+{prompt_header}{footprint_header}
 ---
 
 ### Pillar 1: Trajectory Telemetry (Efficiency & Behavior)
 
-| Metric | Baseline (Clean) | Candidate (Modified) | Delta / Assessment |
+| Metric | Baseline (Clean) | Candidate (Modified) | Delta & LLM Assessment |
 | :--- | :--- | :--- | :--- |
 | **Turns (LLM Calls)** | {baseline["turns"]} | {candidate["turns"]} | {turn_summary} |
 | **Error / Retry Steps** | {baseline["error_count"]} | {candidate["error_count"]} | {error_diff:+d} errors |
@@ -159,6 +174,11 @@ def generate_markdown_report(baseline: dict[str, Any], candidate: dict[str, Any]
 | **Rule / Skill Adherence** | *[Evaluated by Agent]* | *[Evaluated by Agent]* | *[Baseline / Candidate / Tie]* |
 | **Functional Correctness** | *[Evaluated by Agent]* | *[Evaluated by Agent]* | *[Baseline / Candidate / Tie]* |
 | **Completeness & Accuracy**| *[Evaluated by Agent]* | *[Evaluated by Agent]* | *[Baseline / Candidate / Tie]* |
+
+---
+
+### 🏆 Final Benchmark Verdict
+*[Main Agent Recommendation: PASSED / NEEDS REVIEW / REJECTED]*
 """
 
 
@@ -167,7 +187,7 @@ def compare_trajectories(args: argparse.Namespace) -> dict[str, Any]:
     baseline = parse_transcript(Path(args.baseline_transcript))
     candidate = parse_transcript(Path(args.candidate_transcript))
 
-    report = generate_markdown_report(baseline, candidate)
+    report = generate_markdown_report(baseline, candidate, prompt=args.prompt)
 
     result = {
         "baseline": baseline,
@@ -204,6 +224,10 @@ def main() -> None:
     parser.add_argument(
         "candidate_transcript",
         help="Path to candidate transcript.jsonl file.",
+    )
+    parser.add_argument(
+        "--prompt",
+        help="Optional test prompt text executed by the subagents.",
     )
     parser.add_argument(
         "-o",
