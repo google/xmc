@@ -92,7 +92,9 @@ def parse_transcript(transcript_path: Path) -> dict[str, Any]:
         "error_count": error_count,
         "tool_counts": tool_counts,
         "last_response": last_response,
-        "last_response_snippet": last_response[:500] if last_response else "N/A",
+        "last_response_snippet": (
+            last_response[:500].replace("```", "'''") if last_response else "N/A"
+        ),
         "modified_files": modified_files,
     }
 
