@@ -51,7 +51,11 @@ def teardown_resources(
         try:
             cmd = ["git", "push", "origin", "--delete", branch]
             res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            if res.returncode == 0:
+            if (
+                res.returncode == 0
+                or "remote ref does not exist" in res.stderr
+                or "no such ref" in res.stderr
+            ):
                 cleaned_branches.append(branch)
             else:
                 failed_branches.append({"branch": branch, "error": res.stderr.strip()})
@@ -90,9 +94,25 @@ def teardown_benchmark(args: argparse.Namespace) -> dict[str, Any]:
             try:
                 with open(manifest_path, encoding="utf-8") as f:
                     data = json.load(f)
-                    prs.extend(data.get("pr_urls", []))
-                    branches.extend(data.get("git_branches", []))
-                    temp_files.extend(data.get("temp_files", []))
+                    if not isinstance(data, dict):
+                        raise HandledError(
+                            f"Manifest file '{args.manifest}' must contain a JSON object.",
+                            "Ensure the manifest file is structured as a JSON object/dictionary.",
+                        )
+                    for key, target in [
+                        ("pr_urls", prs),
+                        ("git_branches", branches),
+                        ("temp_files", temp_files),
+                    ]:
+                        val = data.get(key)
+                        if val is not None:
+                            if isinstance(val, list):
+                                target.extend(item for item in val if isinstance(item, str))
+                            else:
+                                raise HandledError(
+                                    f"Manifest key '{key}' must be a list, got {type(val).__name__}.",
+                                    "Ensure the manifest file contains valid lists for resource keys.",
+                                )
             except (json.JSONDecodeError, OSError) as e:
                 raise HandledError(
                     f"Failed to parse manifest file '{args.manifest}': {e}",

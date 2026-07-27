@@ -37,25 +37,35 @@ def get_git_diff(target_dir: str, diff_spec: str | None = None) -> tuple[str, li
             f"Failed to execute git diff: {e.stderr}",
             "Verify that you are inside a valid git workspace.",
         ) from e
+    except OSError as e:
+        raise HandledError(
+            f"Git execution failed: {e}",
+            "Ensure git CLI is installed and accessible in system PATH.",
+        ) from e
 
+    is_cached = False
     # If diff is empty against HEAD/spec, fallback to checking unstaged or cached diff
-    if not diff_text.strip():
+    if not diff_text.strip() and not diff_spec:
         fallback_cmd = ["git", "diff", "--cached", "--", target_dir]
         try:
             res_cached = subprocess.run(fallback_cmd, capture_output=True, text=True, check=True)
-            diff_text = res_cached.stdout
-        except subprocess.CalledProcessError:
+            if res_cached.stdout.strip():
+                diff_text = res_cached.stdout
+                is_cached = True
+        except (subprocess.CalledProcessError, OSError):
             pass
 
     # Extract list of changed files
     name_cmd = ["git", "diff", "--name-only"]
     if diff_spec:
         name_cmd.append(diff_spec)
+    elif is_cached:
+        name_cmd.append("--cached")
     name_cmd.extend(["--", target_dir])
     try:
         name_res = subprocess.run(name_cmd, capture_output=True, text=True, check=True)
         changed_files = [f.strip() for f in name_res.stdout.splitlines() if f.strip()]
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, OSError):
         changed_files = []
 
     return diff_text, changed_files
