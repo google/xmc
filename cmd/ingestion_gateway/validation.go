@@ -99,12 +99,15 @@ func skipWhitespace(r *bufio.Reader) error {
 func processNextRecord(dec *json.Decoder, idx int, consumer MetricConsumer) (bool, *FailedRecord, error) {
 	var raw json.RawMessage
 	if err := dec.Decode(&raw); err != nil {
-		return false, nil, err
+		return false, nil, fmt.Errorf("malformed JSON at record index %d: %w", idx, err)
 	}
 
 	var pbMetric pb.Metric
-	if err := protojson.Unmarshal(raw, &pbMetric); err != nil {
-		return false, nil, err
+	unmarshalOpts := protojson.UnmarshalOptions{
+		DiscardUnknown: true,
+	}
+	if err := unmarshalOpts.Unmarshal(raw, &pbMetric); err != nil {
+		return false, nil, fmt.Errorf("malformed JSON at record index %d: %w", idx, err)
 	}
 
 	m := &metrics.Metric{Metric: &pbMetric}
@@ -118,7 +121,7 @@ func processNextRecord(dec *json.Decoder, idx int, consumer MetricConsumer) (boo
 
 	if consumer != nil {
 		if err := consumer(m); err != nil {
-			return false, nil, fmt.Errorf("failed to process metric at index %d: %w", idx, err)
+			return false, nil, err
 		}
 	}
 	return true, nil, nil
@@ -150,7 +153,7 @@ func decodeJSONArray(dec *json.Decoder, consumer MetricConsumer) StreamDecodeRes
 	for dec.More() {
 		valid, failedRec, err := processNextRecord(dec, idx, consumer)
 		if err != nil {
-			return StreamDecodeResult{Err: fmt.Errorf("malformed JSON at record index %d: %w", idx, err)}
+			return StreamDecodeResult{Err: err}
 		}
 		if failedRec != nil {
 			failed = append(failed, *failedRec)
@@ -181,7 +184,7 @@ func decodeJSONSequence(dec *json.Decoder, consumer MetricConsumer) StreamDecode
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return StreamDecodeResult{Err: fmt.Errorf("malformed JSON at record index %d: %w", idx, err)}
+			return StreamDecodeResult{Err: err}
 		}
 		if failedRec != nil {
 			failed = append(failed, *failedRec)
