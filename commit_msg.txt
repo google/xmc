@@ -1,6 +1,6 @@
-fix(ci): restore job name to Go Formatting (gofmt) in lint.yml
+perf(bazel): remove unused @org_golang_x_text dependencies in workunittaskhandler
 
-Align job name with GitHub required status check name to satisfy branch protection rules without changing central repository settings.
+Remove unused @org_golang_x_text//cases:go_default_library and @org_golang_x_text//language:go_default_library dependencies from cmd/actuator/workunittaskhandler/BUILD.bazel to simplify the build graph.
 
 TAG=agy
 CONV=45db6eeb-6770-4007-b22f-e7967de9db54
