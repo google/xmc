@@ -34,6 +34,7 @@ import { SmartResourceFinderHarness } from './components/smart_resource_finder/s
 import { ResourceDashboard } from './resource_dashboard';
 
 const SUBNAV_TAB_SELECTOR = '.subnav-tab';
+const QUEUE_LIST_HOST_SELECTOR = 'xmc-rod-queue-list';
 
 @Component({
   standalone: true,
