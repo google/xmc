@@ -68,3 +68,13 @@ private static readonly STATUS_CHIP_MAP = new Map<WorkUnitState, ChipStyle>([
   const AMOUNT_INPUT_SELECTOR = '#amount-input';
   const ADD_BTN_SELECTOR = '.add-resource-btn';
   ```
+
+## 8. Playwright Visual Screenshot Testing
+- **Mandatory Screenshot Tests for Angular Components**: Whenever adding or modifying Angular components in `cmd/ui/app/resource_dashboard/` (or UI components across `cmd/ui/app/`), every Angular component MUST have a corresponding Playwright visual screenshot test spec located under `cmd/ui/screenshot_tests/` (e.g. `cmd/ui/screenshot_tests/resource_dashboard/<component_name>.screenshot.spec.ts`).
+- **Direct Custom Component Host Tags (`<xmc-*>`)**: Instead of wrapping test components in generic container tags like `<div class="...">`, use direct custom component element tags (e.g. `<xmc-smart-resource-finder>`, `<xmc-rod-queue-card>`, `<xmc-rod-subnav-tabs>`) for component harness wrappers so it is explicitly clear which component is being tested.
+- **Realistic Card Layout Dimensions & Clean Styling**: Component harness wrappers MUST define explicit, realistic host container dimensions (`width`, `height`, `box-sizing: border-box`, `display: block`/`flex`, background, border) to prevent squished or unreadable screenshots (e.g. 40px height squished output). Avoid adding redundant inline styling details (such as `font-size` or `font-family`) to keep harness configs clean and focused.
+- **Cross-Platform Baseline & `maxDiffPixelRatio`**: Configure `maxDiffPixelRatio` (e.g. `0.05` / 5% in `playwright.config.ts` or spec options) to accommodate Linux/CI subpixel font rendering and anti-aliasing differences across environments while catching genuine layout/color bugs.
+- **Snapshot Synchronization**: Baseline PNG snapshots (`.png`) MUST be regenerated and committed alongside spec updates whenever component harness dimensions or HTML host tags change, ensuring identical canvas dimensions between expected and received captures.
+- **Strict Component Element Scoping**: Screenshot tests targeting a specific component MUST capture ONLY that specific component or element crop locator (`locator.first().toHaveScreenshot()`), never the entire page or container dashboard (`xmc-resource-dashboard`). Fallbacks or `if/else` conditionals capturing parent containers instead of the target component are strictly forbidden.
+- **Isolated Test-Level API Mocking**: Perform all network route mocking strictly within Playwright spec files (`await page.route(...)`) while navigating to production routes (`/resources`). Never add temporary test harness routes or mock data in production routing (`app_routes.ts`) or production source files.
+

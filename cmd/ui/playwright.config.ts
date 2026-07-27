@@ -15,7 +15,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
-  testDir: './e2e',
+  testDir: './screenshot_tests',
   fullyParallel: true,
   forbidOnly: !!process.env['CI'],
   retries: process.env['CI'] ? 2 : 0,
@@ -23,7 +23,7 @@ export default defineConfig({
   reporter: process.env['CI'] ? [['list'], ['github']] : 'list',
   expect: {
     toHaveScreenshot: {
-      maxDiffPixelRatio: 0.02,
+      maxDiffPixelRatio: 0.05,
       threshold: 0.2,
       animations: 'disabled',
     },
@@ -36,13 +36,16 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 720 },
+      },
     },
   ],
   webServer: {
     command: 'npx serve -s dist/browser -l 4200',
     url: 'http://localhost:4200',
     reuseExistingServer: true,
-    timeout: 30000,
+    timeout: 120000,
   },
 });
