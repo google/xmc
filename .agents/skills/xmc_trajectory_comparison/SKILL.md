@@ -63,7 +63,8 @@ Invoke two worker subagents concurrently via `invoke_subagent`:
 2. **Candidate Subagent**:
    - `Workspace`: `"branch"`
    - `Role`: `"Candidate Subagent"`
-   - `Prompt`: Execute the target test prompt directly within the modified worktree context.
+   - `Prompt`: Execute the target test prompt directly within the modified worktree context, adhering strictly to context-aware execution bounds (do NOT run unrequested test suites for read-only or document summary prompts).
+
 
 ### Phase 4: Resource Teardown & Manifest Cleanup
 After both subagents complete, run `tools/teardown_benchmark.py` to clean up any registered PRs, branches, or temporary manifest items:
