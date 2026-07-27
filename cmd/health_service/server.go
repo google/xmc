@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 )
 
@@ -61,6 +62,7 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 				HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
 			},
 		},
+		HealthCheckTime: timestamppb.Now(),
 	}, nil
 }
 

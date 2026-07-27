@@ -33,6 +33,10 @@ func TestGetHealthStatus(t *testing.T) {
 	if resp.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY {
 		t.Errorf("Expected status 'HEALTH_STATE_HEALTHY', got %v", resp.HealthState)
 	}
+
+	if resp.HealthCheckTime == nil {
+		t.Error("Expected HealthCheckTime to be populated, got nil")
+	}
 }
 
 func TestListConfigEntries(t *testing.T) {

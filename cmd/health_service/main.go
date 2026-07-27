@@ -131,7 +131,9 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	httpServer.Shutdown(shutdownCtx)
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		logging.Info(ctx, "Error shutting down HTTP server", "error", err)
+	}
 	grpcServer.GracefulStop()
 
 	logging.Info(ctx, "Health service stopped")
