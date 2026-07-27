@@ -37,6 +37,7 @@ compat_go_library(
         "@com_github_twmb_franz_go//pkg/sasl/plain",
         "@com_github_twmb_franz_go//pkg/sasl/scram",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
+        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
     ],
 )
@@ -68,6 +69,7 @@ compat_go_test(
         "@com_github_twmb_franz_go//pkg/sasl/plain",
         "@com_github_twmb_franz_go//pkg/sasl/scram",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
+        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
     ],
 )

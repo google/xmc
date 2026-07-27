@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io"
 
+	"google.golang.org/protobuf/encoding/protojson"
+
 	pb "xmanager_cloud/api/protos/metrics"
 	"xmanager_cloud/pkg/apis/metrics"
 )
@@ -94,58 +96,14 @@ func skipWhitespace(r *bufio.Reader) error {
 	}
 }
 
-type jsonMetricInput struct {
-	Xid         json.Number `json:"xid"`
-	WorkUnitId  json.Number `json:"work_unit_id"`
-	ExecutionId json.Number `json:"execution_id"`
-	ReplicaId   string      `json:"replica_id"`
-	MetricName  string      `json:"metric_name"`
-	MetricValue float64     `json:"metric_value"`
-	Step        int64       `json:"step"`
-	Timestamp   int64       `json:"timestamp"`
-}
-
-func (input *jsonMetricInput) toProto(pbMetric *pb.Metric) error {
-	if string(input.Xid) != "" {
-		val, err := input.Xid.Int64()
-		if err != nil {
-			return fmt.Errorf("invalid xid value %q: %w", input.Xid, err)
-		}
-		pbMetric.Xid = val
-	}
-
-	if string(input.WorkUnitId) != "" {
-		val, err := input.WorkUnitId.Int64()
-		if err != nil {
-			return fmt.Errorf("invalid work_unit_id value %q: %w", input.WorkUnitId, err)
-		}
-		pbMetric.WorkUnitId = val
-	}
-
-	if string(input.ExecutionId) != "" {
-		val, err := input.ExecutionId.Int64()
-		if err != nil {
-			return fmt.Errorf("invalid execution_id value %q: %w", input.ExecutionId, err)
-		}
-		pbMetric.ExecutionId = val
-	}
-
-	pbMetric.ReplicaId = input.ReplicaId
-	pbMetric.MetricName = input.MetricName
-	pbMetric.MetricValue = input.MetricValue
-	pbMetric.Step = input.Step
-	pbMetric.Timestamp = input.Timestamp
-	return nil
-}
-
 func processNextRecord(dec *json.Decoder, idx int, consumer MetricConsumer) (bool, *FailedRecord, error) {
-	var input jsonMetricInput
-	if err := dec.Decode(&input); err != nil {
+	var raw json.RawMessage
+	if err := dec.Decode(&raw); err != nil {
 		return false, nil, err
 	}
 
 	var pbMetric pb.Metric
-	if err := input.toProto(&pbMetric); err != nil {
+	if err := protojson.Unmarshal(raw, &pbMetric); err != nil {
 		return false, nil, err
 	}
 
