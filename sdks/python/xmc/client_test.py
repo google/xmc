@@ -14,6 +14,7 @@
 
 """Unit tests for XMC SDK base HTTP client."""
 
+import email.message
 import io
 import json
 import os
@@ -101,7 +102,7 @@ class TestClient(unittest.TestCase):
             url="https://xmc.googleapis.com/v1/missing",
             code=404,
             msg="Not Found",
-            hdrs={},
+            hdrs=email.message.Message(),
             fp=err_fp,
         )
         mock_urlopen.side_effect = http_err
