@@ -1,0 +1,9 @@
+feat(lint): initialize golangci-lint baseline and pre-commit hook
+
+Establish Phase 1 of incremental golangci-lint adoption across the Go codebase:
+- Create baseline .golangci.yml with gofmt enabled.
+- Update .githooks/pre-commit check_go function with automated golangci-lint detection and automatic installation fallback (v1.64.6).
+- Update .github/workflows/lint.yml go-lint job to run golangci/golangci-lint-action@v6.
+
+TAG=agy
+CONV=45db6eeb-6770-4007-b22f-e7967de9db54

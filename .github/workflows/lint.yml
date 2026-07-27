@@ -43,7 +43,7 @@ jobs:
         run: ruff format --check .
 
   go-lint:
-    name: 'Go Formatting (gofmt)'
+    name: 'Go Linting (golangci-lint & gofmt)'
     runs-on: 'ubuntu-24.04'
     steps:
       - name: 'Checkout code'
@@ -64,6 +64,12 @@ jobs:
             echo "$UNFORMATTED"
             exit 1
           fi
+
+      - name: 'Run golangci-lint'
+        uses: 'golangci/golangci-lint-action@v6'
+        with:
+          version: 'v1.64.6'
+          args: '--timeout=5m'
 
   bazel-lint:
     name: 'Bazel Linting (Buildifier)'
