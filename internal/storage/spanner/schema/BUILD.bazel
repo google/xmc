@@ -25,7 +25,7 @@ exports_files(
 
 go_library(
     name = "dashboardschema",
-    srcs = ["dashboardschema.go"],
+    srcs = ["dashboardschema/dashboardschema.go"],
     importpath = "xmanager_cloud/storage/spanner/schema/dashboardschema",
     visibility = ["//visibility:public"],
     deps = [
@@ -37,7 +37,7 @@ go_library(
 
 go_library(
     name = "artifactschema",
-    srcs = ["artifactschema.go"],
+    srcs = ["artifactschema/artifactschema.go"],
     importpath = "xmanager_cloud/storage/spanner/schema/artifactschema",
     visibility = ["//visibility:public"],
     deps = [
@@ -49,7 +49,7 @@ go_library(
 
 go_library(
     name = "experimentschema",
-    srcs = ["experimentschema.go"],
+    srcs = ["experimentschema/experimentschema.go"],
     importpath = "xmanager_cloud/storage/spanner/schema/experimentschema",
     visibility = ["//visibility:public"],
     deps = [
@@ -61,7 +61,7 @@ go_library(
 
 go_library(
     name = "operationschema",
-    srcs = ["operationschema.go"],
+    srcs = ["operationschema/operationschema.go"],
     importpath = "xmanager_cloud/storage/spanner/schema/operationschema",
     visibility = ["//visibility:public"],
     deps = [
@@ -73,7 +73,7 @@ go_library(
 
 go_library(
     name = "statusmessageschema",
-    srcs = ["statusmessageschema.go"],
+    srcs = ["statusmessageschema/statusmessageschema.go"],
     importpath = "xmanager_cloud/storage/spanner/schema/statusmessageschema",
     visibility = ["//visibility:public"],
     deps = [
@@ -85,7 +85,7 @@ go_library(
 
 go_library(
     name = "workunitschema",
-    srcs = ["workunitschema.go"],
+    srcs = ["workunitschema/workunitschema.go"],
     importpath = "xmanager_cloud/storage/spanner/schema/workunitschema",
     visibility = ["//visibility:public"],
     deps = [
@@ -97,7 +97,7 @@ go_library(
 
 go_library(
     name = "workunitexecutionschema",
-    srcs = ["workunitexecutionschema.go"],
+    srcs = ["workunitexecutionschema/workunitexecutionschema.go"],
     importpath = "xmanager_cloud/storage/spanner/schema/workunitexecutionschema",
     visibility = ["//visibility:public"],
     deps = [
@@ -109,7 +109,7 @@ go_library(
 
 go_library(
     name = "xidschema",
-    srcs = ["xidschema.go"],
+    srcs = ["xidschema/xidschema.go"],
     importpath = "xmanager_cloud/storage/spanner/schema/xidschema",
     visibility = ["//visibility:public"],
     deps = [

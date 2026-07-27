@@ -17,7 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "security",
-    srcs = ["key_reloader.go"],
+    srcs = ["keyreloader/key_reloader.go"],
     importpath = "xmanager_cloud/internal/security",
     visibility = ["//visibility:public"],
     deps = [
@@ -31,7 +31,7 @@ go_library(
 
 go_library(
     name = "securitytest",
-    srcs = ["test_utils.go"],
+    srcs = ["securitytest/test_utils.go"],
     importpath = "xmanager_cloud/security/securitytest",
     visibility = ["//visibility:public"],
     deps = [
@@ -43,7 +43,7 @@ go_library(
 
 go_test(
     name = "security_test",
-    srcs = ["key_reloader_test.go"],
+    srcs = ["keyreloader/key_reloader_test.go"],
     embed = [":security"],
     deps = [
         "//internal/compat/insecuresecretdataaccess",

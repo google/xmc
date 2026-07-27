@@ -21,7 +21,7 @@ package(default_visibility = ["//visibility:private"])
 # The workunittaskhandler logic library
 compat_go_library(
     name = "workunittaskhandler",
-    srcs = ["workunit_task_handler.go"],
+    srcs = ["workunittaskhandler/workunit_task_handler.go"],
     importpath = "xmanager_cloud/cmd/actuator/workunittaskhandler",
     visibility = ["//visibility:public"],
     deps = [
@@ -86,7 +86,7 @@ oci_image_for_service(
 # The handler test suite
 compat_go_test(
     name = "workunittaskhandler_test",
-    srcs = ["workunit_task_handler_test.go"],
+    srcs = ["workunittaskhandler/workunit_task_handler_test.go"],
     embed = [":workunittaskhandler"],
     deps = [
         "//cmd/actuator/k8s_client/preconditions_validator",

@@ -19,9 +19,9 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "querytools",
     srcs = [
-        "query_generator.go",
-        "query_generator_test_tables.go",
-        "unnest.go",
+        "querytools/query_generator.go",
+        "querytools/query_generator_test_tables.go",
+        "querytools/unnest.go",
     ],
     importpath = "xmanager_cloud/query_generator/querytools",
     deps = [
@@ -41,7 +41,7 @@ go_library(
 
 go_library(
     name = "equalityvisitor",
-    srcs = ["equalityvisitor.go"],
+    srcs = ["equalityvisitor/equalityvisitor.go"],
     importpath = "xmanager_cloud/query_generator/equalityvisitor",
     deps = [
         "//api/filter:filter_expression_go_proto",
@@ -52,7 +52,7 @@ go_library(
 
 go_library(
     name = "liststatement",
-    srcs = ["liststatement.go"],
+    srcs = ["liststatement/liststatement.go"],
     importpath = "xmanager_cloud/query_generator/liststatement",
     deps = [
         ":querytools",
@@ -68,7 +68,7 @@ go_library(
 
 go_library(
     name = "predicate",
-    srcs = ["predicate.go"],
+    srcs = ["predicate/predicate.go"],
     importpath = "xmanager_cloud/query_generator/predicate",
     deps = [
         "//api/filter:filter_expression_go_proto",
@@ -79,7 +79,7 @@ go_library(
 
 go_test(
     name = "querytools_test",
-    srcs = ["query_generator_test.go"],
+    srcs = ["querytools/query_generator_test.go"],
     embed = [":querytools"],
     deps = [
         ":predicate",
@@ -97,7 +97,7 @@ go_test(
 
 go_test(
     name = "equalityvisitor_test",
-    srcs = ["equalityvisitor_test.go"],
+    srcs = ["equalityvisitor/equalityvisitor_test.go"],
     embed = [":equalityvisitor"],
     deps = [
         "//api/filter:filter_expression_go_proto",
@@ -109,7 +109,7 @@ go_test(
 
 go_test(
     name = "liststatement_test",
-    srcs = ["liststatement_test.go"],
+    srcs = ["liststatement/liststatement_test.go"],
     embed = [":liststatement"],
     deps = [
         ":querytools",

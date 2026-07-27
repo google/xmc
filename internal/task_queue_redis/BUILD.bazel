@@ -18,10 +18,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "redisclient",
     srcs = [
-        "common.go",
-        "consumer.go",
-        "fake.go",
-        "publisher.go",
+        "redisclient/common.go",
+        "redisclient/consumer.go",
+        "redisclient/fake.go",
+        "redisclient/publisher.go",
     ],
     importpath = "xmanager_cloud/task_queue_redis/redisclient",
     visibility = ["//visibility:public"],
@@ -33,7 +33,7 @@ go_library(
 
 go_binary(
     name = "validator",
-    srcs = ["validator.go"],
+    srcs = ["validator/validator.go"],
     visibility = ["//visibility:public"],
     deps = [
         ":redisclient",

@@ -19,13 +19,13 @@ package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "constants",
-    srcs = ["constants.go"],
+    srcs = ["constants/constants.go"],
     importpath = "xmanager_cloud/kubernetes/common/constants",
 )
 
 compat_go_library(
     name = "jobsetutil",
-    srcs = ["jobsetutil.go"],
+    srcs = ["jobsetutil/jobsetutil.go"],
     importpath = "xmanager_cloud/kubernetes/common/jobsetutil",
     deps = [
         "//api/protos/experiment:messages_go_proto",
@@ -37,7 +37,7 @@ compat_go_library(
 
 compat_go_test(
     name = "jobsetutil_test",
-    srcs = ["jobsetutil_test.go"],
+    srcs = ["jobsetutil/jobsetutil_test.go"],
     embed = [":jobsetutil"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

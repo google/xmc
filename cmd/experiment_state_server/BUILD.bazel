@@ -18,7 +18,7 @@ load("//:oci.bzl", "oci_image_for_service")
 
 compat_go_library(
     name = "config",
-    srcs = ["config.go"],
+    srcs = ["config/config.go"],
     importpath = "xmanager_cloud/cmd/experiment_state_server",
     visibility = ["//visibility:public"],
     deps = [
