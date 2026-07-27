@@ -24,7 +24,6 @@ import { RouterModule } from '@angular/router';
 import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
-import { QueueJobInfo } from 'xmanager_cloud/ui/app/service/resource_types';
 import {
   BaseSidePanelContent,
   BaseSidePanelData,
@@ -65,7 +64,6 @@ export class QueueJobsSidePanel implements BaseSidePanelContent<QueueJobsSidePan
   );
 
   protected readonly isLoading = signal<boolean>(false);
-  protected readonly filterQuery = signal<string>('');
   protected readonly pageIndex = signal<number>(0);
   protected readonly pageSize = signal<number>(10);
   protected readonly pageSizeOptions = [5, 10, 25];
@@ -87,16 +85,9 @@ export class QueueJobsSidePanel implements BaseSidePanelContent<QueueJobsSidePan
     { initialValue: [] },
   );
 
-  protected readonly filteredJobs = computed(() => {
-    const query = this.filterQuery().trim().toLowerCase();
-    const all = this.jobs();
-    if (!query) return all;
-    return all.filter((job) => matchesSearchQuery(job, query));
-  });
-
   protected readonly pagedJobs = computed(() => {
     const start = this.pageIndex() * this.pageSize();
-    return this.filteredJobs().slice(start, start + this.pageSize());
+    return this.jobs().slice(start, start + this.pageSize());
   });
 
   protected readonly totalCount = computed(() => this.jobs().length);
@@ -110,11 +101,6 @@ export class QueueJobsSidePanel implements BaseSidePanelContent<QueueJobsSidePan
     'user',
   ];
 
-  protected onFilterQueryChange(query: string) {
-    this.filterQuery.set(query);
-    this.pageIndex.set(0);
-  }
-
   protected onPageSizeChange(newSize: string | number) {
     const size = typeof newSize === 'string' ? parseInt(newSize, 10) : newSize;
     if (!isNaN(size) && size > 0) {
@@ -124,7 +110,7 @@ export class QueueJobsSidePanel implements BaseSidePanelContent<QueueJobsSidePan
   }
 
   protected getMaxPageIndex(): number {
-    const total = this.filteredJobs().length;
+    const total = this.jobs().length;
     return Math.max(0, Math.ceil(total / this.pageSize()) - 1);
   }
 
@@ -145,7 +131,7 @@ export class QueueJobsSidePanel implements BaseSidePanelContent<QueueJobsSidePan
   }
 
   protected getPaginationRangeDisplay(): string {
-    const total = this.filteredJobs().length;
+    const total = this.jobs().length;
     if (total === 0) return '0-0 of 0';
     const start = this.pageIndex() * this.pageSize() + 1;
     const end = Math.min(total, (this.pageIndex() + 1) * this.pageSize());
@@ -164,18 +150,4 @@ export class QueueJobsSidePanel implements BaseSidePanelContent<QueueJobsSidePan
     const formatted = this.getPriorityDisplay(priority).toLowerCase();
     return `priority-${formatted}`;
   }
-}
-
-function matchesSearchQuery(job: QueueJobInfo, query: string): boolean {
-  const fields = [
-    job.jobName,
-    job.user,
-    job.status,
-    job.priority,
-    job.xid,
-    job.workUnitId,
-    job.resources,
-    job.position,
-  ];
-  return fields.some((field) => field?.toLowerCase()?.includes(query) ?? false);
 }

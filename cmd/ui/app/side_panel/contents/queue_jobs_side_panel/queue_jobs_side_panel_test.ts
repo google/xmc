@@ -130,24 +130,6 @@ describe('QueueJobsSidePanel Component', () => {
     );
   });
 
-  it('should filter jobs when search input changes', async () => {
-    const comp = bootstrap(QueueJobsSidePanel, {
-      inputs: { queueName: 'gpu-cluster-queue' },
-    });
-    await flush();
-
-    expect(document.querySelectorAll('tr.mat-mdc-row').length).toBe(2);
-
-    // Filter by specific xid present in the second job only
-    comp['onFilterQueryChange']('53308');
-    await flush();
-
-    const filteredRows = document.querySelectorAll('tr.mat-mdc-row');
-    expect(filteredRows.length).toBe(1);
-    expect(filteredRows[0].textContent).toContain('xmc-operation-53308-1');
-    expect(filteredRows[0].textContent).not.toContain('xmc-operation-53296-1');
-  });
-
   it('should display correct pagination info', async () => {
     bootstrap(QueueJobsSidePanel, {
       inputs: { queueName: 'gpu-cluster-queue' },
