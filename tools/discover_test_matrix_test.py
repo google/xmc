@@ -46,7 +46,17 @@ class DiscoverTestMatrixTest(unittest.TestCase):
         roots = extract_root_folders(self.sample_targets)
         self.assertEqual(roots, {"root", "cmd", "internal", "deploy", "pkg", "tools"})
 
-    def test_convert_files_to_bazel_targets(self) -> None:
+    @patch("os.path.exists")
+    def test_convert_files_to_bazel_targets(self, mock_exists) -> None:
+        mock_exists.side_effect = lambda path: (
+            path
+            in {
+                "internal/auth/BUILD.bazel",
+                "internal/auth/BUILD",
+                "cmd/ui/BUILD.bazel",
+                "cmd/ui/BUILD",
+            }
+        )
         targets = convert_files_to_bazel_targets(
             ["internal/auth/auth.go", "cmd/ui/app/main.ts", "README.md"]
         )
