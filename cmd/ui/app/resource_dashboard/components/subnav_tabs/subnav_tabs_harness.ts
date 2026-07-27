@@ -18,7 +18,7 @@ import { ComponentHarness } from '@angular/cdk/testing';
 export class RodSubnavTabsHarness extends ComponentHarness {
   static hostSelector = 'xmc-rod-subnav-tabs';
 
-  private readonly tabs = this.locatorForAll('button.subnav-tab');
+  private readonly tabs = this.locatorForAll('.subnav-tab');
 
   /** Gets the text of all subnav tabs. */
   async getTabTexts(): Promise<string[]> {

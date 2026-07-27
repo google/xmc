@@ -218,14 +218,21 @@ describe('ResourceDashboard Container', () => {
     expect(await queueListHarness.getQueueCardCount()).toBe(2);
 
     const tabsHarness = await dashboard.getSubnavTabs();
+    expect(await tabsHarness.isTabActive(0)).toBeTrue();
+    expect(await tabsHarness.isTabActive(1)).toBeFalse();
+
     await tabsHarness.clickTab(1);
     await flush();
 
+    expect(await tabsHarness.isTabActive(0)).toBeFalse();
+    expect(await tabsHarness.isTabActive(1)).toBeTrue();
     expect(await dashboard.getQueueList()).toBeNull();
 
     await tabsHarness.clickTab(0);
     await flush();
 
+    expect(await tabsHarness.isTabActive(0)).toBeTrue();
+    expect(await tabsHarness.isTabActive(1)).toBeFalse();
     const restoredQueueList = (await dashboard.getQueueList())!;
     expect(await restoredQueueList.getQueueCardCount()).toBe(2);
   });
