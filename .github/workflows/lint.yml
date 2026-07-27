@@ -71,6 +71,7 @@ jobs:
           path: |
             ~/.cache/golangci-lint
             ~/go/bin/golangci-lint
+            ~/go/pkg/mod
           key: ${{ runner.os }}-golangci-lint-v1.64.6
 
       - name: 'Install & Run golangci-lint'
