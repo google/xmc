@@ -23,7 +23,7 @@ export const MOCK_USER = {
 };
 
 /**
- * Generic base layout reset for E2E component screenshot testing.
+ * Generic base layout reset for component screenshot testing.
  */
 const BASE_SCREENSHOT_STYLES = `
   html, body {
