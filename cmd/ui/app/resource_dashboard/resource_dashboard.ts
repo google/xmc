@@ -27,7 +27,7 @@ import { ActivatedRoute } from '@angular/router';
 import { Subscription } from 'rxjs';
 
 import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
-import { QueueJobsSidePanel } from 'xmanager_cloud/ui/app/side_panel/contents/queue_jobs_side_panel/queue_jobs_side_panel';
+import { QueueJobsTable } from 'xmanager_cloud/ui/app/side_panel/contents/queue_jobs_table/queue_jobs_table';
 
 import {
   AutoReloadService,
@@ -44,7 +44,7 @@ import {
   templateUrl: './resource_dashboard.ng.html',
   styleUrl: './resource_dashboard.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, QueueJobsSidePanel],
+  imports: [CommonModule, QueueJobsTable],
 })
 export class ResourceDashboard implements OnInit, OnDestroy {
   private readonly autoReloadService = inject(AutoReloadService);

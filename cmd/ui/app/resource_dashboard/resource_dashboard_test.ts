@@ -81,7 +81,7 @@ describe('ResourceDashboard Container', () => {
     expect(queueItems.length).toBe(1);
     expect(queueItems[0].textContent).toContain('gpu-cluster-queue');
 
-    const jobsPanel = document.querySelector('xmc-queue-jobs-side-panel');
+    const jobsPanel = document.querySelector('xmc-queue-jobs-table');
     expect(jobsPanel).toBeTruthy();
   });
 });
