@@ -33,7 +33,7 @@ test.describe('QueueCardComponent - Screenshot Tests', () => {
   test('should match baseline screenshot for queue card section', async ({ page }) => {
     await mountComponentHarness(
       page,
-      `<xmc-rod-queue-card style="display: block; width: 440px; height: 204px; box-sizing: border-box; padding: 16px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; font-family: Roboto, sans-serif;"></xmc-rod-queue-card>`,
+      `<xmc-rod-queue-card style="display: block; width: 440px; height: 204px; box-sizing: border-box; padding: 16px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px;"></xmc-rod-queue-card>`,
     );
 
     const queueCardComponent = page.locator('xmc-rod-queue-card').first();

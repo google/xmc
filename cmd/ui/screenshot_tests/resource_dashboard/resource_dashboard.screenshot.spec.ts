@@ -12,24 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import type { Route } from '@playwright/test';
 import { expect, test } from '@playwright/test';
 
-const MOCK_USER = {
-  email: 'test@google.com',
-  name: 'Test User',
-  pictureUrl: '',
-  sessionExpiresAt: 9999999999,
-  allowedDomains: ['google.com'],
-};
-
-async function handleUserAuthRoute(route: Route) {
-  await route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify(MOCK_USER),
-  });
-}
+import { handleUserAuthRoute } from '../test_utils';
 
 test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {

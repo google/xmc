@@ -33,7 +33,7 @@ test.describe('SubnavTabsComponent - Screenshot Tests', () => {
   test('should match baseline screenshot for subnav tabs layout', async ({ page }) => {
     await mountComponentHarness(
       page,
-      `<xmc-rod-subnav-tabs style="display: block; width: 640px; height: 48px; box-sizing: border-box; background: #ffffff; padding: 8px 16px 0 16px; border-bottom: 1px solid #dadce0; font-family: Roboto, sans-serif;"></xmc-rod-subnav-tabs>`,
+      `<xmc-rod-subnav-tabs style="display: block; width: 640px; height: 48px; box-sizing: border-box; background: #ffffff; padding: 8px 16px 0 16px; border-bottom: 1px solid #dadce0;"></xmc-rod-subnav-tabs>`,
     );
 
     const subnavComponent = page.locator('xmc-rod-subnav-tabs').first();
