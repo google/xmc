@@ -35,12 +35,12 @@ func TestTranslatePlotQuery(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		plot         *dashboardpb.PlotSpec
-		req          *servicepb.GetChartDataRequest
-		wantSQLSub   []string
-		wantArgsLen  int
-		wantErr      bool
+		name        string
+		plot        *dashboardpb.PlotSpec
+		req         *servicepb.GetChartDataRequest
+		wantSQLSub  []string
+		wantArgsLen int
+		wantErr     bool
 	}{
 		{
 			name: "SummaryBox",
