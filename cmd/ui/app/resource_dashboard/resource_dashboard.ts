@@ -154,11 +154,12 @@ export class ResourceDashboard implements OnInit, OnDestroy {
 }
 
 function matchesResourceTypes(flavors: ClusterQueue['flavors'], activeFilters: string[]): boolean {
-  if (!flavors || !activeFilters.length) return true;
+  if (!activeFilters.length) return true;
+  if (!flavors) return false;
   return activeFilters.every((filter) =>
     flavors.some((f) => {
       const rName = (f.resourceName || f.name || '').toLowerCase();
-      return rName === filter || rName.includes(filter) || filter.includes(rName);
+      return !!rName && (rName === filter || rName.includes(filter) || filter.includes(rName));
     }),
   );
 }
@@ -168,13 +169,17 @@ function matchesRequestedAmount(
   activeFilters: string[],
   reqAmount?: number | null,
 ): boolean {
-  if (!flavors || !reqAmount || reqAmount <= 0) return true;
+  if (!reqAmount || reqAmount <= 0) return true;
+  if (!flavors) return false;
   const targetFlavors =
     activeFilters.length > 0
       ? flavors.filter((f) => {
           const rName = (f.resourceName || f.name || '').toLowerCase();
-          return activeFilters.some(
-            (filter) => rName === filter || rName.includes(filter) || filter.includes(rName),
+          return (
+            !!rName &&
+            activeFilters.some(
+              (filter) => rName === filter || rName.includes(filter) || filter.includes(rName),
+            )
           );
         })
       : flavors;
