@@ -346,8 +346,12 @@ func TestDynamicCertReloading_mTLSHandshake(t *testing.T) {
 				if err := tlsConn.Handshake(); err != nil {
 					return
 				}
-				// Echo handshake confirmation
-				c.Write([]byte("OK"))
+				state := tlsConn.ConnectionState()
+				if len(state.PeerCertificates) > 0 {
+					c.Write([]byte(state.PeerCertificates[0].Subject.CommonName))
+				} else {
+					c.Write([]byte("NO_CERT"))
+				}
 			}(conn)
 		}
 	}()
@@ -371,10 +375,14 @@ func TestDynamicCertReloading_mTLSHandshake(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initial mTLS handshake failed: %v", err)
 	}
-	buf1 := make([]byte, 2)
-	conn1.Read(buf1)
-	if string(buf1) != "OK" {
-		t.Fatalf("expected OK response on initial connection, got %q", string(buf1))
+	buf1 := make([]byte, 64)
+	n1, err := conn1.Read(buf1)
+	if err != nil {
+		t.Fatalf("failed to read from conn1: %v", err)
+	}
+	resp1 := string(buf1[:n1])
+	if resp1 != "Test Client v1" {
+		t.Fatalf("expected 'Test Client v1', got %q", resp1)
 	}
 
 	// 2. Rotate client cert on disk with new Certificate Common Name
@@ -410,9 +418,13 @@ func TestDynamicCertReloading_mTLSHandshake(t *testing.T) {
 		t.Fatalf("mTLS handshake after cert rotation failed: %v", err)
 	}
 	defer conn2.Close()
-	buf2 := make([]byte, 2)
-	conn2.Read(buf2)
-	if string(buf2) != "OK" {
-		t.Fatalf("expected OK response on rotated connection, got %q", string(buf2))
+	buf2 := make([]byte, 64)
+	n2, err := conn2.Read(buf2)
+	if err != nil {
+		t.Fatalf("failed to read from conn2: %v", err)
+	}
+	resp2 := string(buf2[:n2])
+	if resp2 != "Test Client v2 Rotated" {
+		t.Fatalf("expected 'Test Client v2 Rotated', got %q", resp2)
 	}
 }
