@@ -70,6 +70,7 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string) http.
 			wg         sync.WaitGroup
 			publishErr atomic.Pointer[error]
 		)
+		replicaIDHeader := r.Header.Get("X-Replica-ID")
 
 		consumer := func(m *metrics.Metric) error {
 			if err := ctx.Err(); err != nil {
@@ -83,6 +84,10 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string) http.
 
 			if m == nil || m.Metric == nil {
 				return fmt.Errorf("received nil metric record")
+			}
+
+			if m.ReplicaId == "" && replicaIDHeader != "" {
+				m.ReplicaId = replicaIDHeader
 			}
 
 			valBytes, err := proto.Marshal(m.Metric)

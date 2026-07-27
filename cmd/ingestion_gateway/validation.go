@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 
 	pb "xmanager_cloud/api/protos/metrics"
 	"xmanager_cloud/pkg/apis/metrics"
@@ -94,6 +95,51 @@ func skipWhitespace(r *bufio.Reader) error {
 	}
 }
 
+type flexibleInt64 int64
+
+func (f *flexibleInt64) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 {
+		*f = 0
+		return nil
+	}
+	s := string(data)
+	if s == "null" || s == `""` {
+		*f = 0
+		return nil
+	}
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		s = s[1 : len(s)-1]
+	}
+	val, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid int64 value %q: %w", string(data), err)
+	}
+	*f = flexibleInt64(val)
+	return nil
+}
+
+type jsonMetricInput struct {
+	Xid         flexibleInt64 `json:"xid"`
+	WorkUnitId  flexibleInt64 `json:"work_unit_id"`
+	ExecutionId flexibleInt64 `json:"execution_id"`
+	ReplicaId   string        `json:"replica_id"`
+	MetricName  string        `json:"metric_name"`
+	MetricValue float64       `json:"metric_value"`
+	Step        int64         `json:"step"`
+	Timestamp   int64         `json:"timestamp"`
+}
+
+func (input *jsonMetricInput) toProto(pbMetric *pb.Metric) {
+	pbMetric.Xid = int64(input.Xid)
+	pbMetric.WorkUnitId = int64(input.WorkUnitId)
+	pbMetric.ExecutionId = int64(input.ExecutionId)
+	pbMetric.ReplicaId = input.ReplicaId
+	pbMetric.MetricName = input.MetricName
+	pbMetric.MetricValue = input.MetricValue
+	pbMetric.Step = input.Step
+	pbMetric.Timestamp = input.Timestamp
+}
+
 func decodeJSONArray(dec *json.Decoder, consumer MetricConsumer) StreamDecodeResult {
 	t, err := dec.Token()
 	if err != nil || t != json.Delim('[') {
@@ -105,10 +151,13 @@ func decodeJSONArray(dec *json.Decoder, consumer MetricConsumer) StreamDecodeRes
 	idx := 0
 
 	for dec.More() {
-		var pbMetric pb.Metric
-		if err := dec.Decode(&pbMetric); err != nil {
+		var input jsonMetricInput
+		if err := dec.Decode(&input); err != nil {
 			return StreamDecodeResult{Err: fmt.Errorf("malformed JSON at record index %d: %w", idx, err)}
 		}
+
+		var pbMetric pb.Metric
+		input.toProto(&pbMetric)
 
 		m := &metrics.Metric{Metric: &pbMetric}
 		if valErr := m.IsValid(); valErr != nil {
@@ -154,13 +203,16 @@ func decodeJSONSequence(dec *json.Decoder, consumer MetricConsumer) StreamDecode
 	idx := 0
 
 	for {
-		var pbMetric pb.Metric
-		if err := dec.Decode(&pbMetric); err != nil {
+		var input jsonMetricInput
+		if err := dec.Decode(&input); err != nil {
 			if errors.Is(err, io.EOF) {
 				break
 			}
 			return StreamDecodeResult{Err: fmt.Errorf("malformed JSON at record index %d: %w", idx, err)}
 		}
+
+		var pbMetric pb.Metric
+		input.toProto(&pbMetric)
 
 		m := &metrics.Metric{Metric: &pbMetric}
 		if valErr := m.IsValid(); valErr != nil {

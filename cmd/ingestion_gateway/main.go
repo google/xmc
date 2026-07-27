@@ -63,7 +63,7 @@ func main() {
 	}
 	logging.Info(ctx, "Topic topology validation passed", "topic", cfg.TopicName, "min_partitions", cfg.MinPartitions, "min_replicas", cfg.MinReplicas)
 
-	server := startHTTPServer(ctx, cfg.Port, kClient)
+	server := startHTTPServer(ctx, cfg.Port, cfg.TopicName, kClient)
 	awaitShutdown(ctx, server)
 }
 
@@ -101,8 +101,9 @@ func ValidateTopicTopology(ctx context.Context, querier TopologyQuerier, topicNa
 	return nil
 }
 
-func startHTTPServer(ctx context.Context, port string, optionalProducer ...MetricProducer) *http.Server {
+func startHTTPServer(ctx context.Context, port string, topicName string, optionalProducer ...MetricProducer) *http.Server {
 	srvCfg := DefaultServerConfig(port)
+	srvCfg.TopicName = topicName
 	if len(optionalProducer) > 0 {
 		srvCfg.Producer = optionalProducer[0]
 	}

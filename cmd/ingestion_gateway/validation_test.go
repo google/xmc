@@ -139,3 +139,33 @@ func TestDecodeAndValidateMetrics_DeterministicO1Streaming(t *testing.T) {
 		t.Errorf("expected deterministic O(1) streaming (max 1 active metric at a time), got max %d active metrics", maxActiveCount)
 	}
 }
+
+func TestDecodeAndValidateMetrics_StringifiedIDs(t *testing.T) {
+	// Python SDK sends stringified 64-bit int IDs per AIP-127 (e.g. "xid": "1001", "work_unit_id": "1")
+	payload := `[
+		{"xid": "1001", "work_unit_id": "1", "execution_id": "1", "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}
+	]`
+
+	var captured *metrics.Metric
+	consumer := func(m *metrics.Metric) error {
+		captured = m
+		return nil
+	}
+
+	res := DecodeAndValidateMetrics(strings.NewReader(payload), consumer)
+	if res.Err != nil {
+		t.Fatalf("unexpected error decoding stringified IDs payload: %v", res.Err)
+	}
+	if res.ValidCount != 1 {
+		t.Errorf("expected ValidCount 1, got %d", res.ValidCount)
+	}
+	if captured == nil {
+		t.Fatal("expected captured metric to be non-nil")
+	}
+	if captured.Xid != 1001 {
+		t.Errorf("expected Xid 1001, got %d", captured.Xid)
+	}
+	if captured.WorkUnitId != 1 {
+		t.Errorf("expected WorkUnitId 1, got %d", captured.WorkUnitId)
+	}
+}

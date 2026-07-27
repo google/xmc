@@ -175,7 +175,7 @@ func TestValidateTopicTopology(t *testing.T) {
 }
 
 func TestHealthAndReadinessHandlers(t *testing.T) {
-	server := startHTTPServer(context.Background(), "0") // 0 binds ephemeral port
+	server := startHTTPServer(context.Background(), "0", "xmc-metrics") // 0 binds ephemeral port
 	defer server.Close()
 
 	if server.ReadHeaderTimeout == 0 {
@@ -246,7 +246,7 @@ func TestBuildKgoOptions(t *testing.T) {
 
 func TestStartHTTPServerWithProducer(t *testing.T) {
 	mp := NewMockProducer()
-	srv := startHTTPServer(context.Background(), "0", mp)
+	srv := startHTTPServer(context.Background(), "0", "xmc-metrics", mp)
 	defer srv.Close()
 
 	if srv == nil {
