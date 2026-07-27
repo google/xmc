@@ -149,7 +149,7 @@ WaitHealthy:
 	// healthy state. However, it does not fully test the graceful shutdown and transition back to
 	// an unhealthy state upon context cancellation. This is because the pstest fake Pub/Sub server's
 	// StreamingPull implementation does not reliably return when the client-side context provided to
-	// subscription.Receive() is cancelled. Attempts to force stream closure within the test were
+	// subscription.Receive() is canceled. Attempts to force stream closure within the test were
 	// unsuccessful. As a result, the l.Start() goroutine does not exit cleanly in the test,
 	// preventing verification of the final IsHealthy() state. A timeout is used in the test to
 	// prevent it from hanging indefinitely.

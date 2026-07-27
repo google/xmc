@@ -135,7 +135,7 @@ func (s *Storage) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updat
 
 			// Set the parent field in the structured status message. This is not strictly required, but
 			// it makes the caller's job easier since they don't need to construct the parent resource
-			// name, and it's easier for clients to consume these messages if they're inherently labelled
+			// name, and it's easier for clients to consume these messages if they're inherently labeled
 			// with their parent.
 			status := update.WorkUnitExecution.Status
 			if status != nil {

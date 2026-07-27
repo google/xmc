@@ -74,7 +74,7 @@ func (l *Listener) Start(ctx context.Context) {
 					// Channel closed, process remaining messages and exit
 					if len(batch) > 0 {
 						// Use context.Background() to ensure the final batch is processed even if the
-						// original context is cancelled.
+						// original context is canceled.
 						l.logProcessor.ProcessBatch(context.Background(), batch)
 					}
 					return
@@ -94,7 +94,7 @@ func (l *Listener) Start(ctx context.Context) {
 	}()
 
 	// Receive messages from Pub/Sub and send to channel.
-	// Receive blocks until context is cancelled or an error occurs.
+	// Receive blocks until context is canceled or an error occurs.
 	err := l.subscription.Receive(ctx, func(ctx context.Context, msg *pubsub.Message) {
 		msgCh <- msg
 	})

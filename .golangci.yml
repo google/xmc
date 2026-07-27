@@ -39,6 +39,3 @@ linters-settings:
     locale: US
     ignore-words:
       - commonhealth
-      - cancelled
-      - cancelling
-      - labelled

@@ -90,7 +90,7 @@ func main() {
 	<-quit
 	logging.Info(ctx, "Shutting down...")
 
-	logging.Info(ctx, "Cancelling listener context...")
+	logging.Info(ctx, "Canceling listener context...")
 	cancelListener()
 
 	logging.Info(ctx, "Waiting for listener to shut down fully...")
