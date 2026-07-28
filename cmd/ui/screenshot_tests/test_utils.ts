@@ -27,12 +27,12 @@ export const MOCK_USER = {
  */
 const BASE_SCREENSHOT_STYLES = `
   html, body {
-    width: 1600px !important;
+    width: 1280px !important;
     margin: 0 !important;
     padding: 0 !important;
   }
   [class*="-container"] {
-    width: 1536px !important;
+    width: 1216px !important;
     margin: 0 auto !important;
   }
   xmc-*,
@@ -41,15 +41,6 @@ const BASE_SCREENSHOT_STYLES = `
   [class*="scaffolding"] {
     display: block !important;
     box-sizing: border-box !important;
-  }
-  xmc-rod-subnav-tabs {
-    height: 48px !important;
-  }
-  xmc-smart-resource-finder {
-    height: 200px !important;
-  }
-  xmc-rod-queue-card {
-    height: 360px !important;
   }
 `;
 
@@ -75,18 +66,7 @@ export async function setupScreenshotEnvironment(page: Page) {
  */
 export async function mountComponentHarness(page: Page, htmlContent: string) {
   await page.evaluate((html) => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = html;
-    const targetElement = tempDiv.firstElementChild;
     const container = document.querySelector('.rod-container') || document.body;
-
-    if (targetElement) {
-      const tagName = targetElement.tagName.toLowerCase();
-      const liveElement = document.querySelector(tagName);
-      if (liveElement && !targetElement.innerHTML.trim()) {
-        targetElement.innerHTML = liveElement.innerHTML;
-      }
-    }
-    container.innerHTML = tempDiv.innerHTML;
+    container.innerHTML = html;
   }, htmlContent);
 }

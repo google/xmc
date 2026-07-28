@@ -25,35 +25,6 @@ import {
 } from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
 import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
 
-const DEFAULT_CLUSTER_QUEUE: ClusterQueue = {
-  name: 'gpu-cluster-queue',
-  strategy: 'BestEffortFIFO',
-  cohort: 'prod-gpu',
-  status: 'Active',
-  statusMessage: 'Can admit new workloads',
-  lastTransitionTime: '2026-07-22T10:00:00Z',
-  admittedWorkloads: 1,
-  reservingWorkloads: 0,
-  pendingWorkloads: 0,
-  pendingJobsCount: 0,
-  admittedJobsCount: 1,
-  dominantResource: 'GPU H100',
-  dominantResourceUnits: 8,
-  requestedResources: '0',
-  localQueues: [{ name: 'gpu-queue', namespace: 'default' }],
-  flavors: [
-    {
-      name: 'h100-flavor',
-      resourceName: 'nvidia.com/gpu',
-      nominalQuota: '64',
-      inUse: '8',
-      reserved: '0',
-      freeCapacity: '56',
-      largestSlot: '56 → 64',
-    },
-  ],
-};
-
 @Component({
   selector: 'xmc-rod-queue-card',
   standalone: true,
@@ -70,7 +41,7 @@ const DEFAULT_CLUSTER_QUEUE: ClusterQueue = {
   ],
 })
 export class QueueCardComponent {
-  readonly queue = input<ClusterQueue>(DEFAULT_CLUSTER_QUEUE);
+  readonly queue = input.required<ClusterQueue>();
   readonly isSelected = input<boolean>(false);
   readonly selectQueue = output<string>();
 

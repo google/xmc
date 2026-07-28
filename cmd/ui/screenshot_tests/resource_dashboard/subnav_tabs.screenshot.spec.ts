@@ -20,7 +20,7 @@ import {
   setupScreenshotEnvironment,
 } from '../test_utils';
 
-test.use({ viewport: { width: 1600, height: 900 } });
+test.use({ viewport: { width: 1280, height: 800 } });
 
 test.describe('SubnavTabsComponent - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {

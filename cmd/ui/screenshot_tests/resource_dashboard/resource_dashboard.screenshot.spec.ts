@@ -25,6 +25,13 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
     await setupScreenshotEnvironment(page);
+    await page.addStyleTag({
+      content: `
+        [class*="-container"] {
+          width: 1536px !important;
+        }
+      `,
+    });
   });
 
   test('should match baseline screenshot for initial layout and cluster queues', async ({
