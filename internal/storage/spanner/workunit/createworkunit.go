@@ -32,7 +32,6 @@ import (
 
 // CreateWorkUnit creates a new work unit in Spanner.
 // TODO(b/517479143): Refactor CreateWorkUnit to separate validation, status denormalization, status message saving, and resource set merging into a domain service layer above the storage repository.
-// CreateWorkUnit creates a new work unit in Spanner.
 func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*essmsgpb.WorkUnit, error) {
 	ctx = logging.WithWorkUnitExecutionName(ctx, wu.GetCurrentWorkUnitExecution().GetName())
 	logging.Info(ctx, "Write work unit to storage", "work_unit", wu)
@@ -143,12 +142,6 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 
 	logging.Info(ctx, "Written work unit to storage", "work_unit", wu)
 	logging.Info(ctx, "Updated experiment successfully", "experiment", exp)
-
-	if exp != nil && exp.Status != nil {
-		sort.Slice(exp.Status.ChildStateCounts, func(i, j int) bool {
-			return exp.Status.ChildStateCounts[i].State < exp.Status.ChildStateCounts[j].State
-		})
-	}
 
 	return wu, nil
 }
