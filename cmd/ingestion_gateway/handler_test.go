@@ -335,9 +335,8 @@ func TestMetricsIngestionHandler_ContextCancelled(t *testing.T) {
 		mp := NewMockProducer()
 		handler := NewMetricsIngestionHandler(mp, "test-topic")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
-		time.Sleep(2 * time.Millisecond)
-		cancel()
+		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-1*time.Second))
+		defer cancel()
 
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(`[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`)).WithContext(ctx)
 		w := httptest.NewRecorder()
