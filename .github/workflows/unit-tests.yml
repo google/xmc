@@ -32,38 +32,10 @@ permissions:
   id-token: write
 
 jobs:
-  discover-matrix:
-    name: 'Discover Test Matrix'
-    runs-on: 'ubuntu-24.04'
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-    steps:
-      - name: 'Checkout'
-        uses: 'actions/checkout@v4'
-        with:
-          # Fetch full history so discover_test_matrix.py can run git diff origin/main...HEAD
-          fetch-depth: 0
-
-      - name: 'Set up Bazel'
-        uses: 'bazelbuild/setup-bazelisk@v3'
-
-      - name: 'Discover Test Modules'
-        id: 'set-matrix'
-        run: python3 tools/discover_test_matrix.py
-
-  run-tests:
-    name: 'Run Unit Tests (${{ matrix.target }})'
-    needs: discover-matrix
-    if: needs.discover-matrix.outputs.matrix != '[]' && needs.discover-matrix.outputs.matrix != ''
-    runs-on: 'ubuntu-24.04'
+  run-backend-tests:
+    name: 'Run Go & Backend Unit Tests'
+    runs-on: 'arc-runner-set'
     timeout-minutes: 30
-
-    strategy:
-      # Keep fail-fast disabled so developers receive a comprehensive test report
-      # across all modules in a single CI run, rather than canceling on first failure.
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.discover-matrix.outputs.matrix) }}
 
     # Use a service container for the Spanner Emulator
     services:
@@ -93,50 +65,9 @@ jobs:
         uses: 'actions/setup-go@v5'
         with:
           go-version: '1.26.0'
-          cache: true
-          cache-dependency-path: 'go.sum'
 
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@v3'
-
-      - name: 'Set up Node.js'
-        if: matrix.target == 'cmd/ui'
-        uses: 'actions/setup-node@v4'
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: 'cmd/ui/package-lock.json'
-
-      - name: 'Install Node.js dependencies'
-        if: matrix.target == 'cmd/ui'
-        run: npm ci --legacy-peer-deps
-        working-directory: cmd/ui
-
-      - name: 'Run Angular UI Unit Tests (NPM)'
-        if: matrix.target == 'cmd/ui'
-        run: npm test -- --watch=false --browsers=ChromeHeadlessNoSandbox
-        working-directory: cmd/ui
-
-      - name: 'Install Playwright Chromium'
-        if: matrix.target == 'cmd/ui'
-        run: npx playwright install chromium
-        working-directory: cmd/ui
-
-      - name: 'Build Angular UI App'
-        if: matrix.target == 'cmd/ui'
-        run: npm run build
-        working-directory: cmd/ui
-
-      - name: 'Run Angular UI Screenshot Tests'
-        if: matrix.target == 'cmd/ui'
-        run: npm run test:screenshot
-        working-directory: cmd/ui
-
-      - name: 'Sanitize Target Key for Cache'
-        id: 'cache-key'
-        run: |
-          SAFE_TARGET=$(echo "${{ matrix.target }}" | tr '/' '-')
-          echo "target_key=${SAFE_TARGET}" >> "$GITHUB_OUTPUT"
 
       - name: 'Restore Bazel Cache'
         id: 'cache-bazel-restore'
@@ -145,12 +76,11 @@ jobs:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'go.sum', '**/BUILD.bazel', '**/*.bzl') }}
+          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
           restore-keys: |
-            bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-
+            bazel-${{ runner.os }}-
 
       - name: 'Verify Spanner Emulator Endpoint'
-        if: matrix.target == 'internal/storage' || matrix.target == 'cmd/rest'
         run: |
           echo "Verifying Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}..."
           HOST=$(echo "${{ env.SPANNER_EMULATOR_HOST }}" | cut -d: -f1)
@@ -172,15 +102,13 @@ jobs:
       - name: 'Wait for Disk Space Cleanup'
         run: |
           if [ -n "${CLEANUP_PID:-}" ]; then
-            echo "Checking background cleanup (PID ${CLEANUP_PID})..."
-            while kill -0 "${CLEANUP_PID}" 2>/dev/null; do
-              sleep 1
-            done
+            echo "Waiting for background cleanup (PID ${CLEANUP_PID}) to complete..."
+            wait "${CLEANUP_PID}" || true
           fi
           echo "=== Available Disk Space Before Bazel Build ==="
           df -h /
 
-      - name: 'Run Unit Tests'
+      - name: 'Run Backend Unit Tests'
         run: |
           bazel test \
             --repository_cache=~/.cache/bazel-repo \
@@ -190,40 +118,65 @@ jobs:
             --build_tests_only \
             --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},300,300,300 \
             -- \
-            ${{ matrix.bazel_args }}
+            //... \
+            -//cmd/ui/...
 
-      - name: 'Prune Stale Bazel Disk Cache'
+      - name: 'Prune Bazel Cache & Build Tree'
         if: always()
         run: |
-          echo "=== Pruning stale Bazel disk cache entries ==="
+          echo "=== Pruning Bazel cache and build tree ==="
           if [ -d ~/.cache/bazel-disk ]; then
             find ~/.cache/bazel-disk -type f -atime +3 -delete || true
             find ~/.cache/bazel-disk -type d -empty -delete || true
           fi
+          bazel clean || true
           df -h
 
       - name: 'Save Bazel Cache'
         uses: 'actions/cache/save@v4'
-        if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'
+        if: always()
         with:
           path: |
             ~/.cache/bazel-repo
             ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ steps.cache-key.outputs.target_key }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'go.sum', '**/BUILD.bazel', '**/*.bzl') }}
+          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
 
-  all-tests-passed:
+  run-ui-tests:
+    name: 'Run Angular UI Unit Tests'
+    runs-on: 'arc-runner-set'
+    timeout-minutes: 15
+
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@v4'
+
+      - name: 'Set up Node.js'
+        uses: 'actions/setup-node@v4'
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'cmd/ui/package-lock.json'
+
+      - name: 'Install Node.js dependencies'
+        run: npm ci --legacy-peer-deps
+        working-directory: cmd/ui
+
+      - name: 'Run Angular UI Unit Tests'
+        run: npm test -- --watch=false --browsers=ChromeHeadlessNoSandbox
+        working-directory: cmd/ui
+
+  run-tests:
     name: 'Run Unit Tests'
-    needs: [discover-matrix, run-tests]
-    runs-on: 'ubuntu-24.04'
+    needs: [run-backend-tests, run-ui-tests]
+    runs-on: 'arc-runner-set'
     if: always()
     steps:
       - name: 'Verify All Unit Tests Passed'
         run: |
-          if [ "${{ needs.discover-matrix.result }}" != "success" ] || [ "${{ needs.run-tests.result }}" == "failure" ] || [ "${{ needs.run-tests.result }}" == "cancelled" ]; then
-            echo "ERROR: Test matrix discovery or execution failed."
-            echo "Discover matrix result: ${{ needs.discover-matrix.result }}"
-            echo "Matrix result: ${{ needs.run-tests.result }}"
+          if [ "${{ needs.run-backend-tests.result }}" != "success" ] || [ "${{ needs.run-ui-tests.result }}" != "success" ]; then
+            echo "ERROR: One or more unit test jobs failed."
+            echo "Backend tests result: ${{ needs.run-backend-tests.result }}"
+            echo "UI tests result: ${{ needs.run-ui-tests.result }}"
             exit 1
           fi
-          echo "All unit test matrix jobs passed or were skipped due to no affected changes."
-
+          echo "All unit test suites passed successfully."

@@ -93,7 +93,8 @@ func FormatCompositeKey(xid, workUnitID int64) []byte {
 // - Max batch size: 1MB
 // - Required Acks: All (acks=all)
 // - Disable Auto Topic Creation: UnknownTopicRetries(0)
-func BuildProducerOptions(cfg *Config) []kgo.Opt {
+// - Optional TLS / mTLS configuration with dynamic certificate reloading
+func BuildProducerOptions(cfg *Config) ([]kgo.Opt, error) {
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(cfg.RedpandaBrokers...),
 		kgo.RecordPartitioner(kgo.StickyKeyPartitioner(nil)),
@@ -115,11 +116,24 @@ func BuildProducerOptions(cfg *Config) []kgo.Opt {
 		}
 	}
 
-	return opts
+	if cfg.TLSEnabled {
+		tlsConfig, _, err := BuildTLSConfig(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build TLS config: %w", err)
+		}
+		if tlsConfig != nil {
+			opts = append(opts, kgo.DialTLSConfig(tlsConfig))
+		}
+	}
+
+	return opts, nil
 }
 
 // NewKafkaProducer constructs a kgo.Client with default producer configuration.
 func NewKafkaProducer(cfg *Config) (*kgo.Client, error) {
-	opts := BuildProducerOptions(cfg)
+	opts, err := BuildProducerOptions(cfg)
+	if err != nil {
+		return nil, err
+	}
 	return kgo.NewClient(opts...)
 }

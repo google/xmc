@@ -34,7 +34,7 @@
   "exclude": [
     "**/*_test.ts",
     "**/*.spec.ts",
-    "e2e",
+    "screenshot_tests",
     "playwright.config.ts",
     "app/testing",
     "node_modules.bak",
