@@ -34,7 +34,7 @@ import { HealthService } from '../service/health_service';
 export class AdminPanelPage {
   private readonly healthService = inject(HealthService);
 
-  readonly healthStatus = toSignal(
+  protected readonly healthStatus = toSignal(
     this.healthService.getHealthStatus().pipe(
       catchError((error) => {
         console.error('Failed to fetch health status', error);
@@ -43,7 +43,7 @@ export class AdminPanelPage {
     ),
   );
 
-  readonly healthConfigs = toSignal(
+  protected readonly healthConfigs = toSignal(
     this.healthService.getHealthConfigs().pipe(
       catchError((error) => {
         console.error('Failed to fetch health configs', error);

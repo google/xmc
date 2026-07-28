@@ -19,8 +19,9 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
 import { HealthService } from '../service/health_service';
 import { MockHealthService } from '../service/testing/mock_health_service';
-import { bootstrap, cleanState, flush, getEls, setupModule } from '../testing/test';
+import { bootstrap, cleanState, flush, getHarness, setupModule } from '../testing/test';
 import { AdminPanelPage } from './admin_panel';
+import { AdminPanelHarness } from './testing/admin_panel_harness';
 
 describe('AdminPanelPage Component', () => {
   cleanState(() => {
@@ -40,12 +41,11 @@ describe('AdminPanelPage Component', () => {
     bootstrap(AdminPanelPage);
     await flush();
 
-    const preElements = getEls('pre.raw-json');
+    const harness = await getHarness(AdminPanelHarness);
 
-    expect(preElements.length).toBe(2);
-    expect(preElements[0].textContent).toContain('HEALTH_STATE_HEALTHY');
-    expect(preElements[0].textContent).toContain('mock-app-version-1.0.0');
-    expect(preElements[1].textContent).toContain('Health Service Config');
-    expect(preElements[1].textContent).toContain('mock-project');
+    expect(await harness.getHealthStatusText()).toContain('HEALTH_STATE_HEALTHY');
+    expect(await harness.getHealthStatusText()).toContain('mock-app-version-1.0.0');
+    expect(await harness.getHealthConfigsText()).toContain('Health Service Config');
+    expect(await harness.getHealthConfigsText()).toContain('mock-project');
   });
 });
