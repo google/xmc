@@ -69,7 +69,7 @@ func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.Exper
 		}
 
 		// 2.2. Update the UpdateTime column to the current time.
-		now := time.Now()
+		now := time.Now().Truncate(time.Microsecond)
 		updatedExperiment.UpdateTime = timestamppb.New(now)
 
 		// 3. Construct the Spanner mutation for the update.

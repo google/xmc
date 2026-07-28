@@ -48,7 +48,7 @@ func (r *Repository) CreateExperiment(ctx context.Context, exp *essmsgpb.Experim
 			exp.Status = &essmsgpb.ExperimentStatus{}
 		}
 		// 2. Set the timestamps to the current time.
-		now := timestamppb.New(time.Now())
+		now := timestamppb.New(time.Now().Truncate(time.Microsecond))
 		exp.CreateTime = now
 		exp.UpdateTime = now
 		exp.Status.LastChildStatusUpdateTime = now

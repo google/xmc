@@ -38,7 +38,7 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 
 	exp := &essmsgpb.Experiment{}
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
-		now := time.Now()
+		now := time.Now().Truncate(time.Microsecond)
 
 		// 1. Extract the XID and WID from the work unit name.
 		xid, wid, err := validator.ValidateWorkUnitNameAllowZeroWID(wu.GetName())
