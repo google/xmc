@@ -115,12 +115,14 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string) http.
 		// Wait for all in-flight async writes to complete before responding.
 		wg.Wait()
 
-		// If any async publish failed, respond with 503 Service Unavailable (unless request was canceled/timed out).
+		// If request context was canceled or timed out, log and return cleanly without writing error responses to a closed connection.
+		if ctx.Err() != nil {
+			logging.Info(ctx, "Metrics ingestion request canceled or timed out", "error", ctx.Err().Error())
+			return
+		}
+
+		// If any async publish failed, respond with 503 Service Unavailable.
 		if errPtr := publishErr.Load(); errPtr != nil {
-			if ctx.Err() != nil {
-				logging.Info(ctx, "Metrics ingestion request canceled or timed out during publish", "error", ctx.Err().Error())
-				return
-			}
 			logging.Error(ctx, "Metrics ingestion request failed due to broker publish error", "error", (*errPtr).Error())
 			writeJSONResponse(w, r, http.StatusServiceUnavailable, ServiceUnavailableErrorPayload{
 				Error:   "service_unavailable",

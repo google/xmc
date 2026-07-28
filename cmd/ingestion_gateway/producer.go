@@ -137,3 +137,34 @@ func NewKafkaProducer(cfg *Config) (*kgo.Client, error) {
 	}
 	return kgo.NewClient(opts...)
 }
+
+var congestionErrorSubstrings = []string{
+	"queue limit",
+	"queue full",
+	"buffer full",
+	"saturated",
+	"paused",
+	"unreachable",
+	"connection refused",
+	"broker outage",
+	"broker produce error",
+}
+
+// IsCongestionError determines if a produce error is caused by queue saturation, broker pause, or broker outage.
+func IsCongestionError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, kgo.ErrClientClosed) {
+		return true
+	}
+
+	msg := strings.ToLower(err.Error())
+	for _, sub := range congestionErrorSubstrings {
+		if strings.Contains(msg, sub) {
+			return true
+		}
+	}
+	return false
+}

@@ -297,3 +297,25 @@ func TestMockProducer_Close(t *testing.T) {
 		t.Errorf("expected mp.closed to be true after Close()")
 	}
 }
+
+func TestIsCongestionError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil error", err: nil, want: false},
+		{name: "kgo ErrClientClosed", err: kgo.ErrClientClosed, want: true},
+		{name: "queue limit exceeded", err: errors.New("franz-go: queue limit reached"), want: true},
+		{name: "broker outage", err: errors.New("broker outage: connection refused"), want: true},
+		{name: "unrelated error", err: errors.New("invalid proto format"), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsCongestionError(tt.err); got != tt.want {
+				t.Errorf("IsCongestionError(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
