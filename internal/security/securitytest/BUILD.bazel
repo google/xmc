@@ -1,0 +1,15 @@
+# Copyright 2025 Google LLC
+load("//:compat.bzl", "compat_go_library")
+
+package(default_visibility = ["//visibility:public"])
+
+compat_go_library(
+    name = "securitytest",
+    srcs = ["test_utils.go"],
+    importpath = "xmanager_cloud/security/securitytest",
+    deps = [
+        "//internal/compat/insecuresecretdataaccess",
+        "//internal/compat/jwtkeyconverter",
+        "@com_github_tink_crypto_tink_go_v2//jwt",
+    ],
+)

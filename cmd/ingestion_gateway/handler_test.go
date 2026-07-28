@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,7 +24,21 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/twmb/franz-go/pkg/kgo"
 )
+
+type noopProducer struct{}
+
+func (np *noopProducer) Produce(ctx context.Context, rec *kgo.Record, promise func(*kgo.Record, error)) {
+	promise(rec, nil)
+}
+
+func (np *noopProducer) Close() {}
+
+func newTestHandler() http.HandlerFunc {
+	return NewMetricsIngestionHandler(NewMockProducer(), "xmc-metrics")
+}
 
 type trackableReader struct {
 	io.Reader
@@ -45,7 +60,8 @@ func TestMetricsIngestionHandler_ValidArray(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
 	w := httptest.NewRecorder()
 
-	MetricsIngestionHandler(w, req)
+	handler := newTestHandler()
+	handler(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusAccepted {
@@ -71,7 +87,8 @@ func TestMetricsIngestionHandler_JSONSequence(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
 	w := httptest.NewRecorder()
 
-	MetricsIngestionHandler(w, req)
+	handler := newTestHandler()
+	handler(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusAccepted {
@@ -100,7 +117,8 @@ func TestMetricsIngestionHandler_ValidationFailure_HTTP422(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
 	w := httptest.NewRecorder()
 
-	MetricsIngestionHandler(w, req)
+	handler := newTestHandler()
+	handler(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
@@ -136,7 +154,8 @@ func TestMetricsIngestionHandler_MalformedJSON_HTTP400(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
 	w := httptest.NewRecorder()
 
-	MetricsIngestionHandler(w, req)
+	handler := newTestHandler()
+	handler(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusBadRequest {
@@ -162,7 +181,8 @@ func TestMetricsIngestionHandler_BodyDrainageOnFailure(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", tr)
 	w := httptest.NewRecorder()
 
-	MetricsIngestionHandler(w, req)
+	handler := newTestHandler()
+	handler(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusUnprocessableEntity {
@@ -178,7 +198,8 @@ func TestMetricsIngestionHandler_MethodNotAllowed(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil)
 	w := httptest.NewRecorder()
 
-	MetricsIngestionHandler(w, req)
+	handler := newTestHandler()
+	handler(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusMethodNotAllowed {
@@ -234,6 +255,7 @@ func (r *metricStreamReader) Read(p []byte) (int, error) {
 }
 
 func TestMetricsIngestionHandler_ConstantMemoryStreaming(t *testing.T) {
+	handler := NewMetricsIngestionHandler(&noopProducer{}, "xmc-metrics")
 	runtime.GC()
 	var mBefore runtime.MemStats
 	runtime.ReadMemStats(&mBefore)
@@ -243,7 +265,7 @@ func TestMetricsIngestionHandler_ConstantMemoryStreaming(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", stream)
 	w := httptest.NewRecorder()
 
-	MetricsIngestionHandler(w, req)
+	handler(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusAccepted {
@@ -262,5 +284,105 @@ func TestMetricsIngestionHandler_ConstantMemoryStreaming(t *testing.T) {
 	heapDelta := int64(mAfter.HeapAlloc) - int64(mBefore.HeapAlloc)
 	if heapDelta > maxAllowedHeapDelta {
 		t.Errorf("heap memory allocation increased by %d bytes, exceeding maximum allowed threshold of %d bytes", heapDelta, maxAllowedHeapDelta)
+	}
+}
+
+func TestNewMetricsIngestionHandler_NilProducer(t *testing.T) {
+	handler := NewMetricsIngestionHandler(nil, "test-topic")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(`[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`))
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected status 503 Service Unavailable when producer is nil, got %d", resp.StatusCode)
+	}
+
+	var errPayload ServiceUnavailableErrorPayload
+	if err := json.NewDecoder(resp.Body).Decode(&errPayload); err != nil {
+		t.Fatalf("failed to decode 503 response JSON: %v", err)
+	}
+	if errPayload.Error != "service_unavailable" {
+		t.Errorf("expected error service_unavailable, got %q", errPayload.Error)
+	}
+}
+
+func TestMetricsIngestionHandler_ContextCancelled(t *testing.T) {
+	mp := NewMockProducer()
+	handler := NewMetricsIngestionHandler(mp, "test-topic")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(`[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`)).WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status 400 Bad Request on cancelled context, got %d", resp.StatusCode)
+	}
+}
+
+func TestDrainRequestBody(t *testing.T) {
+	t.Run("nil reader does not panic", func(t *testing.T) {
+		drainRequestBody(nil, MaxDrainBytes)
+	})
+
+	t.Run("drains up to maxBytes", func(t *testing.T) {
+		largePayload := strings.Repeat("a", 10*1024*1024)
+		tr := &trackableReader{Reader: strings.NewReader(largePayload)}
+		drainRequestBody(tr, MaxDrainBytes)
+		if tr.bytesRead != MaxDrainBytes {
+			t.Errorf("expected %d bytes drained, got %d bytes read", MaxDrainBytes, tr.bytesRead)
+		}
+	})
+}
+
+func TestMetricsIngestionHandler_NilAndWhitespaceBody(t *testing.T) {
+	t.Run("nil body", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", nil)
+		w := httptest.NewRecorder()
+		handler := newTestHandler()
+		handler(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 Bad Request for nil body, got %d", w.Code)
+		}
+	})
+
+	t.Run("whitespace body", func(t *testing.T) {
+		payload := "   	  "
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
+		w := httptest.NewRecorder()
+		handler := newTestHandler()
+		handler(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 Bad Request for whitespace body, got %d", w.Code)
+		}
+	})
+}
+
+func TestMetricsIngestionHandler_XReplicaIDHeader(t *testing.T) {
+	mp := NewMockProducer()
+	handler := NewMetricsIngestionHandler(mp, "test-topic")
+
+	// Payload omits "replica_id" key
+	payload := `[{"xid": 101, "work_unit_id": 1, "execution_id": 1, "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
+	req.Header.Set("X-Replica-ID", "header-rep-7")
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected status 202 Accepted, got %d", resp.StatusCode)
+	}
+
+	recs := mp.ProducedRecords()
+	if len(recs) != 1 {
+		t.Fatalf("expected 1 record produced, got %d", len(recs))
 	}
 }

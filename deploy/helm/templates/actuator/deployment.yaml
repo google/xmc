@@ -53,6 +53,13 @@ spec:
             secretKeyRef:
               name: redis-secret
               key: redis-password
+        {{- if .Values.managedXprofGcsBucket }}
+        - name: MANAGED_XPROF_GCS_PATH
+          valueFrom:
+            configMapKeyRef:
+              name: managed-xprof-gcs-config
+              key: gcs_path
+        {{- end }}
         args:
         - "-port=8080"
         - "-spanner_database_name={{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) }}"

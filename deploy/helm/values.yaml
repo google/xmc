@@ -50,6 +50,7 @@ statusMessageHistoryEnabled: true
 redisAddr: "YOUR_REDIS_IP:6379"
 redisPassword: "YOUR_REDIS_PASSWORD"
 gcpServiceAccount: "YOUR_GCP_SERVICE_ACCOUNT_EMAIL"
+managedXprofGcsBucket: ""
 
 certs:
   type: "gts"
