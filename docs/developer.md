@@ -120,7 +120,7 @@ This test suite executes the following verified tests:
 
 ### Running Spanner Database Health Unit Tests
 
-Unit tests under `//internal/common:health_test` verify database query latency by connecting to a Cloud Spanner Emulator. If a background emulator is not running, these tests will timeout. To run a local Spanner Emulator in Docker:
+Unit tests under `//internal/common/health:health_test` verify database query latency by connecting to a Cloud Spanner Emulator. If a background emulator is not running, these tests will timeout. To run a local Spanner Emulator in Docker:
 
 1. **Start the Spanner Emulator Docker container**:
    ```bash
@@ -134,7 +134,7 @@ Unit tests under `//internal/common:health_test` verify database query latency b
 
 3. **Run the health tests target directly**:
    ```bash
-   bazel test //internal/common:health_test
+   bazel test //internal/common/health:health_test
    ```
 
 ---
