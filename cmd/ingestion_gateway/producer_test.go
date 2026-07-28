@@ -308,7 +308,9 @@ func TestIsCongestionError(t *testing.T) {
 	}{
 		{name: "nil error", err: nil, want: false},
 		{name: "kgo ErrClientClosed", err: kgo.ErrClientClosed, want: true},
-		{name: "kerr QueueFull (Code 53)", err: &kerr.Error{Code: 53}, want: true},
+		{name: "kerr ThrottlingQuotaExceeded (Code 89)", err: kerr.ThrottlingQuotaExceeded, want: true},
+		{name: "kerr NotEnoughReplicas (Code 19)", err: kerr.NotEnoughReplicas, want: true},
+		{name: "kerr LeaderNotAvailable (Code 5)", err: kerr.LeaderNotAvailable, want: true},
 		{name: "kerr RequestTimedOut (Code 7)", err: kerr.RequestTimedOut, want: true},
 		{name: "kerr BrokerNotAvailable (Code 8)", err: kerr.BrokerNotAvailable, want: true},
 		{name: "kerr KafkaStorageError (Code 56)", err: kerr.KafkaStorageError, want: true},
