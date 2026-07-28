@@ -14,16 +14,24 @@
 
 import { expect, test } from '@playwright/test';
 
-import { handleUserAuthRoute } from '../test_utils';
+import { handleUserAuthRoute, setupScreenshotEnvironment } from '../test_utils';
 
 test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.setViewportSize({ width: 1600, height: 900 });
     // Intercept user auth API endpoint so authGuard succeeds in screenshot test browser environment
     await page.route('/api/user', handleUserAuthRoute);
     // Navigate to production route /resources
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
+    await setupScreenshotEnvironment(page);
+    await page.addStyleTag({
+      content: `
+        [class*="-container"] {
+          width: 1536px !important;
+        }
+      `,
+    });
   });
 
   test('should match baseline screenshot for initial layout and cluster queues', async ({

@@ -15,13 +15,15 @@
 -->
 <div class="rod-container">
   <xmc-rod-subnav-tabs [activeTab]="activeTab()" (activeTabChange)="onTabChange($event)" />
+  @if (activeTab() === TAB_SMART_FINDER) {
+    <xmc-smart-resource-finder
+      [availableResourceTypes]="availableResourceTypes()"
+      (findMatchingQueues)="onFindMatchingQueues($event)"
+    />
+  }
   <div class="rod-split-container">
     <div class="rod-main-content">
       @if (activeTab() === TAB_SMART_FINDER) {
-        <xmc-smart-resource-finder
-          [availableResourceTypes]="availableResourceTypes()"
-          (findMatchingQueues)="onFindMatchingQueues($event)"
-        />
         <xmc-rod-queue-list
           [queues]="filteredQueues()"
           [selectedQueue]="selectedQueue()"

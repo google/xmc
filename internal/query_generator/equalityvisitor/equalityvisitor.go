@@ -53,10 +53,12 @@ func (ev *EqualityVisitor) ConjunctionExp(e *fpb.ExpressionList) (filtervisitor.
 		return filtervisitor.Invalid, errors.New("empty expression list")
 	}
 	var err error
-	for i, e := range e.GetExpressions() {
-		_, err := filtervisitor.Visit(ev, e)
+	for i, expr := range e.GetExpressions() {
+		ev.visitFromEqual = false
+		_, err = filtervisitor.Visit(ev, expr)
 		if err != nil {
 			err = propagateError(err, fmt.Sprintf("element %v", i))
+			break
 		}
 	}
 	return filtervisitor.Invalid, err

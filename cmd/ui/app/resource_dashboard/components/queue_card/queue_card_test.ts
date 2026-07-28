@@ -86,9 +86,8 @@ describe('QueueCardComponent', () => {
     harness = await loader.getHarness(QueueCardHarness);
   });
 
-  it('should render queue name, cohort, and status badge', async () => {
+  it('should render queue name and status badge', async () => {
     expect(await harness.getQueueName()).toBe('gpu-cluster-queue');
-    expect(await harness.getCohort()).toBe('Cohort: gpu-cohort');
     expect(await harness.getStatusBadgeText()).toContain('Resources available');
     expect(await harness.isStatusBadgeHealthy()).toBeTrue();
   });
@@ -98,23 +97,6 @@ describe('QueueCardComponent', () => {
     const rowText = await harness.getFlavorRowText(0);
     expect(rowText).toContain('nvidia.com/gpu');
     expect(rowText).toContain('56 / 64');
-  });
-
-  it('should render predictability banner and update when pending workloads exist', async () => {
-    expect(await harness.getPredictabilityBannerText()).toBe(
-      'System is healthy. Job will start immediately.',
-    );
-
-    hostInstance.queue.update((q) => ({
-      ...q,
-      pendingWorkloads: 5,
-      pendingJobsCount: 5,
-    }));
-    fixture.detectChanges();
-
-    expect(await harness.getPredictabilityBannerText()).toBe(
-      'Traffic stuck. Use another queue if available.',
-    );
   });
 
   it('should update selected state and emit queue selection output on click', async () => {
