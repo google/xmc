@@ -14,20 +14,39 @@
 
 import 'jasmine';
 
+import { provideHttpClient } from '@angular/common/http';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import { bootstrap, cleanState, setupModule } from '../testing/test';
+import { HealthService } from '../service/health_service';
+import { MockHealthService } from '../service/testing/mock_health_service';
+import { bootstrap, cleanState, flush, getEls, setupModule } from '../testing/test';
 import { AdminPanelPage } from './admin_panel';
 
 describe('AdminPanelPage Component', () => {
   cleanState(() => {
     setupModule({
       imports: [AdminPanelPage, NoopAnimationsModule],
+      providers: [provideHttpClient(), { provide: HealthService, useClass: MockHealthService }],
     });
   }, beforeEach);
 
   it('should be created', () => {
     const comp = bootstrap(AdminPanelPage);
     expect(comp).toBeTruthy();
+  });
+
+  it('should display health status, configs and user info', async () => {
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const preElements = getEls('pre.raw-json');
+    expect(preElements.length).toBe(3);
+
+    expect(preElements[0].textContent).toContain('HEALTH_STATE_HEALTHY');
+    expect(preElements[0].textContent).toContain('mock-app-version-1.0.0');
+    expect(preElements[1].textContent).toContain('Health Service Config');
+    expect(preElements[1].textContent).toContain('mock-project');
+    expect(preElements[2].textContent).toContain('mock-user@google.com');
+    expect(preElements[2].textContent).toContain('PRIVILEGE_ACCESS_ADMIN_PANEL');
   });
 });

@@ -14,4 +14,19 @@
 
 .admin-panel-container {
   padding: 24px;
+
+  .status-section,
+  .config-section {
+    margin-bottom: 32px;
+  }
+
+  .raw-json {
+    background-color: #f5f5f5;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 16px;
+    overflow-x: auto;
+    font-family: monospace;
+    font-size: 14px;
+  }
 }

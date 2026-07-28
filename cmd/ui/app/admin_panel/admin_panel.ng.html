@@ -14,5 +14,31 @@
 
 <div class="admin-panel-container">
   <h1>Admin Panel</h1>
-  <p>This is a placeholder for the XManager on Cloud Admin Panel.</p>
+
+  <div class="status-section">
+    <h2>Health Status</h2>
+    @if (healthStatus(); as status) {
+      <pre class="raw-json">{{ status | json }}</pre>
+    } @else {
+      <p>Loading Health Status...</p>
+    }
+  </div>
+
+  <div class="config-section">
+    <h2>Configuration</h2>
+    @if (healthConfigs(); as configs) {
+      <pre class="raw-json">{{ configs | json }}</pre>
+    } @else {
+      <p>Loading Configuration...</p>
+    }
+  </div>
+
+  <div class="user-info-section">
+    <h2>User Info</h2>
+    @if (userInfo(); as info) {
+      <pre class="raw-json">{{ info | json }}</pre>
+    } @else {
+      <p>Loading User Info...</p>
+    }
+  </div>
 </div>

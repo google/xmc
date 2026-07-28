@@ -77,3 +77,16 @@ declare module 'longrunning/*' {
   const _default: any;
   export default _default;
 }
+
+declare module 'xmanager_cloud/health_service/proto/*' {
+  export type HealthStatusResponse = any;
+  export const HealthStatusResponse: any;
+  export type ListConfigEntriesResponse = any;
+  export const ListConfigEntriesResponse: any;
+  export type UserInfoResponse = any;
+  export const UserInfoResponse: any;
+  export type Privilege = any;
+  export const Privilege: any;
+  const _default: any;
+  export default _default;
+}

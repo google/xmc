@@ -12,7 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { JsonPipe } from '@angular/common';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
+
+import { HealthService } from '../service/health_service';
 
 /**
  * Mock Admin Panel component for XMC.
@@ -20,8 +26,38 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
 @Component({
   selector: 'xmc-admin-panel',
   standalone: true,
+  imports: [JsonPipe],
   templateUrl: './admin_panel.ng.html',
   styleUrl: './admin_panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class AdminPanelPage {}
+export class AdminPanelPage {
+  private readonly healthService = inject(HealthService);
+
+  readonly healthStatus = toSignal(
+    this.healthService.getHealthStatus().pipe(
+      catchError((error) => {
+        console.error('Failed to fetch health status', error);
+        return of({ error: 'Failed to fetch health status' });
+      }),
+    ),
+  );
+
+  readonly healthConfigs = toSignal(
+    this.healthService.getHealthConfigs().pipe(
+      catchError((error) => {
+        console.error('Failed to fetch health configs', error);
+        return of({ error: 'Failed to fetch health configs' });
+      }),
+    ),
+  );
+
+  readonly userInfo = toSignal(
+    this.healthService.getUserInfo().pipe(
+      catchError((error) => {
+        console.error('Failed to fetch user info', error);
+        return of({ error: 'Failed to fetch user info' });
+      }),
+    ),
+  );
+}
