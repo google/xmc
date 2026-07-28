@@ -78,7 +78,6 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 		logging.Info(ctx, "Process work unit execution update", "update", update.WorkUnitExecution)
 	}
 
-	// 4.1. Determine the new experiment status message.
 	var updatedExecutions map[int64]*essmsgpb.WorkUnitExecution
 	exp := &essmsgpb.Experiment{}
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
@@ -111,7 +110,6 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 		}
 
 		originalExecutions := make(map[int64]*essmsgpb.WorkUnitExecution)
-		// 2.1. Update the database with the processed updates.
 		for wid, execution := range updatedExecutions {
 			originalExecutions[wid] = proto.Clone(execution).(*essmsgpb.WorkUnitExecution)
 		}
@@ -174,6 +172,7 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 			updatedExecutions[update.WID] = updatedExecution
 		}
 
+		// 2.1. Update the database with the processed updates.
 		for wid, execution := range updatedExecutions {
 			_, _, eid, err := validator.ValidateWorkUnitExecutionName(execution.GetName())
 			if err != nil {
@@ -214,6 +213,7 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 			return fmt.Errorf("failed to update experiment status: %w", err)
 		}
 
+		// 4.1. Determine the new experiment status message.
 		newExpMsg, err := r.findExperimentStatusMessage(ctx, xid, txn, updatedExp, updatedExecutions)
 		if err != nil {
 			return fmt.Errorf("failed to find experiment status message: %w", err)

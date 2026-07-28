@@ -57,7 +57,6 @@ func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntr
 	logging.Info(ctx, "UpdateXidEntry", "update", update.XidEntry)
 
 	var originalEntry *xidmsgpb.XidEntry
-	// 2.1. Check if the XidEntry has owners.
 	var updatedEntry *xidmsgpb.XidEntry
 	var mutated bool
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
@@ -88,6 +87,7 @@ func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntr
 			return fmt.Errorf("failed to merge XidEntry: %w", err)
 		}
 
+		// 2.1. Check if the XidEntry has owners.
 		hasOwners, err := r.xidEntryHasOwners(ctx, txn, updatedEntry)
 		if err != nil {
 			return err
@@ -127,7 +127,6 @@ func (r *Repository) xidEntryHasOwners(ctx context.Context, txn spannerTransacti
 
 	visited := make(map[string]bool)
 	visited[xidEntry.GetName()] = true
-	// 2.2. Get the parent XID from the storage layer.
 	parentXIDName := xidEntry.GetParentXid()
 	for !hasOwners {
 		// 1. If the parent XID is empty, we're done.
@@ -142,13 +141,14 @@ func (r *Repository) xidEntryHasOwners(ctx context.Context, txn spannerTransacti
 		}
 		visited[parentXIDName] = true
 
-		// 2.1.  Check if the parent XID is valid.
+		// 2.1. Check if the parent XID is valid.
 		parentXID, err := validator.ValidateXIDName(parentXIDName)
 		if err != nil {
 			logging.Warn(ctx, "Invalid parent XID", "parentXIDName", parentXIDName, "error", err)
 			return false, fmt.Errorf("invalid parent XID %q: %w", parentXIDName, status.ErrInvalidArgument)
 		}
 
+		// 2.2. Get the parent XID from the storage layer.
 		parentXIDEntry, err := r.FetchXidEntryTransaction(ctx, parentXID, txn)
 		if err != nil {
 			if errors.Is(err, status.ErrNotFound) {
