@@ -34,7 +34,7 @@ compat_go_library(
         "//internal/storage",
         "//internal/storage/data",
         "//internal/storage/spanner/data:spannerdata",
-        "//internal/storage/spanner/schema:operationschema",
+        "//internal/storage/spanner/schema/operationschema",
         "//internal/storage/spanner/utils:spannerutils",
         "//internal/validator",
         "@com_github_kylelemons_godebug//diff",
