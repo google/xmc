@@ -1,0 +1,39 @@
+<h2 mat-dialog-title>Add performance dashboard</h2>
+
+<mat-dialog-content>
+  <div class="dialog-form">
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Dashboard Title</mat-label>
+      <input
+        matInput
+        id="dashboard-title-input"
+        [ngModel]="title()"
+        (ngModelChange)="title.set($event)"
+        placeholder="e.g. Baseline Model Tune Comparison"
+      />
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Experiment XIDs (comma-separated)</mat-label>
+      <input
+        matInput
+        id="dashboard-xids-input"
+        [ngModel]="xidsInput()"
+        (ngModelChange)="xidsInput.set($event)"
+        placeholder="e.g. 1001, 1002"
+      />
+      <mat-hint>Enter one or more experiment IDs to compare</mat-hint>
+    </mat-form-field>
+
+    @if (errorMessage()) {
+      <div class="error-message">{{ errorMessage() }}</div>
+    }
+  </div>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button class="cancel-btn" (click)="onCancel()">Cancel</button>
+  <button mat-raised-button color="primary" class="submit-btn" (click)="onSubmit()">
+    Create Dashboard
+  </button>
+</mat-dialog-actions>

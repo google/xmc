@@ -1,0 +1,66 @@
+<div class="dashboards-page-container">
+  <div class="dashboards-header">
+    <div class="header-title">
+      <h1>Performance Dashboards</h1>
+      <span class="subtitle">Multi-experiment observability & live training curves</span>
+    </div>
+
+    <div class="header-actions">
+      <button
+        mat-stroked-button
+        class="auto-refresh-btn"
+        [class.active]="autoRefreshEnabled()"
+        (click)="toggleAutoRefresh()"
+      >
+        <mat-icon>{{ autoRefreshEnabled() ? 'pause' : 'play_arrow' }}</mat-icon>
+        <span>{{ autoRefreshEnabled() ? 'Auto-refresh ON' : 'Auto-refresh OFF' }}</span>
+      </button>
+
+      <button
+        mat-raised-button
+        color="primary"
+        class="add-dashboard-btn"
+        (click)="openAddDashboardPopup()"
+      >
+        <mat-icon>add</mat-icon>
+        <span>Add performance dashboard</span>
+      </button>
+    </div>
+  </div>
+
+  @if (dashboards().length > 1) {
+    <div class="dashboard-tabs">
+      @for (d of dashboards(); track d.name) {
+        <button
+          mat-button
+          class="dashboard-tab-btn"
+          [class.selected]="selectedDashboard()?.name === d.name"
+          (click)="selectDashboard(d)"
+        >
+          {{ d.title }}
+        </button>
+      }
+    </div>
+  }
+
+  <div class="dashboard-content">
+    @if (loading()) {
+      <div class="loading-state">
+        <mat-spinner diameter="40"></mat-spinner>
+        <span>Loading dashboards...</span>
+      </div>
+    } @else if (selectedDashboard(); as current) {
+      <xmc-dashboard-grid [dashboard]="current"></xmc-dashboard-grid>
+    } @else {
+      <div class="empty-state">
+        <mat-icon class="empty-icon">dashboard</mat-icon>
+        <h3>No performance dashboards available</h3>
+        <p>Create a new dashboard to start comparing experiment training curves.</p>
+        <button mat-raised-button color="primary" (click)="openAddDashboardPopup()">
+          <mat-icon>add</mat-icon>
+          <span>Add performance dashboard</span>
+        </button>
+      </div>
+    }
+  </div>
+</div>

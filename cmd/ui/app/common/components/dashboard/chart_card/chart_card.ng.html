@@ -1,0 +1,43 @@
+<mat-card class="chart-card">
+  <mat-card-header>
+    <mat-card-title class="chart-title">{{ chart().title }}</mat-card-title>
+    <mat-card-subtitle class="chart-subtitle">
+      <xmc-xid-badge [xid]="chart().xid"></xmc-xid-badge>
+      @if (chart().description) {
+        <span class="chart-description">{{ chart().description }}</span>
+      }
+    </mat-card-subtitle>
+    <div class="card-actions">
+      <button mat-icon-button class="refresh-btn" title="Refresh metrics" (click)="refresh()">
+        <mat-icon>refresh</mat-icon>
+      </button>
+    </div>
+  </mat-card-header>
+
+  <mat-card-content>
+    @if (loading()) {
+      <div class="loading-state">
+        <mat-spinner diameter="32"></mat-spinner>
+        <span>Loading experiment metrics...</span>
+      </div>
+    } @else if (error()) {
+      <div class="error-state">
+        <mat-icon color="warn">error</mat-icon>
+        <span class="error-text">{{ error() }}</span>
+        <button mat-button color="primary" (click)="refresh()">Retry</button>
+      </div>
+    } @else {
+      <div class="plots-grid" [class]="'layout-' + chart().plotLayout.type.toLowerCase()">
+        @for (plot of chart().plots; track plot.plotId) {
+          <div class="plot-item">
+            <xmc-plot-card
+              [plotSpec]="plot"
+              [plotData]="getPlotData(plot.plotId)"
+              [loading]="loading()"
+            ></xmc-plot-card>
+          </div>
+        }
+      </div>
+    }
+  </mat-card-content>
+</mat-card>

@@ -1,0 +1,12 @@
+.plot-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.plot-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--xmc-text-secondary, #9aa0a6);
+}

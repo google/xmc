@@ -1,0 +1,10 @@
+<div class="plot-container">
+  @if (plotSpec().title) {
+    <div class="plot-title">{{ plotSpec().title }}</div>
+  }
+  @if (plotSpec().type === PlotType.SUMMARY_BOX && plotData()?.summaryData) {
+    <xmc-summary-box-card [summary]="plotData()!.summaryData!"></xmc-summary-box-card>
+  } @else {
+    <xmc-echarts-wrapper [options]="chartOptions()" [loading]="loading()"></xmc-echarts-wrapper>
+  }
+</div>

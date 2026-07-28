@@ -47,6 +47,16 @@ limitations under the License.
           <button
             mat-button
             mat-raised-button
+            class="view-performance-btn"
+            [routerLink]="['/dashboards']"
+            [queryParams]="{ xid: xid }"
+          >
+            <mat-icon>insert_chart</mat-icon>
+            View Performance
+          </button>
+          <button
+            mat-button
+            mat-raised-button
             (click)="editExperiment(xid)"
             [disabled]="isEditing$ | async"
             [class.shimmer]="isEditing$ | async"

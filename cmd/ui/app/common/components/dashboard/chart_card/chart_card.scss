@@ -1,0 +1,79 @@
+.chart-card {
+  width: 100%;
+  border-radius: 12px;
+  background: var(--xmc-surface-card, #202124);
+  color: var(--xmc-text-primary, #e8eaed);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  margin-bottom: 16px;
+}
+
+mat-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.chart-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.chart-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.chart-description {
+  font-size: 0.85rem;
+  color: var(--xmc-text-secondary, #9aa0a6);
+}
+
+.card-actions {
+  margin-left: auto;
+}
+
+.loading-state,
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  gap: 12px;
+  color: var(--xmc-text-secondary, #9aa0a6);
+}
+
+.error-state {
+  color: #f28b82;
+}
+
+.plots-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  width: 100%;
+}
+
+.layout-side_by_side {
+  flex-direction: row;
+}
+
+.layout-side_by_side .plot-item {
+  flex: 1 1 calc(50% - 8px);
+}
+
+.layout-stacked {
+  flex-direction: column;
+}
+
+.layout-stacked .plot-item {
+  width: 100%;
+}
+
+.layout-grid .plot-item,
+.layout-wrap .plot-item {
+  flex: 1 1 100%;
+}

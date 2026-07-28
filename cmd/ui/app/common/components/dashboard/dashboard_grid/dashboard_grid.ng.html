@@ -1,0 +1,7 @@
+<div class="grid-container" [class]="'layout-' + dashboard().chartLayout.type.toLowerCase()">
+  @for (chart of dashboard().charts; track chart.name) {
+    <div class="grid-cell">
+      <xmc-chart-card [chart]="chart"></xmc-chart-card>
+    </div>
+  }
+</div>

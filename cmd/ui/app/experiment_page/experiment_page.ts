@@ -21,7 +21,7 @@ import { MatDividerModule } from '@angular/material/divider';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterModule } from '@angular/router';
 import { BehaviorSubject, combineLatest, Observable } from 'rxjs';
 import { filter, finalize, map, shareReplay, switchMap, tap, withLatestFrom } from 'rxjs/operators';
 
@@ -62,6 +62,7 @@ import { WorkUnitsTable } from './work_units_table/work_units_table';
   standalone: true,
   imports: [
     CommonModule,
+    RouterModule,
     MatCardModule,
     MatButtonModule,
     MatTabsModule,

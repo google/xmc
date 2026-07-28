@@ -1,0 +1,25 @@
+<mat-card class="summary-card">
+  <mat-card-header>
+    <mat-card-title class="metric-name">{{ summary().metricName }}</mat-card-title>
+    <mat-card-subtitle class="iteration-badge"
+      >Step {{ summary().latestIteration }}</mat-card-subtitle
+    >
+  </mat-card-header>
+  <mat-card-content>
+    <div class="latest-value">{{ summary().latestValue | number: '1.2-4' }}</div>
+    <div class="stats-grid">
+      <div class="stat-item">
+        <span class="stat-label">Min</span>
+        <span class="stat-value min-value">{{ summary().minValue | number: '1.2-4' }}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Max</span>
+        <span class="stat-value max-value">{{ summary().maxValue | number: '1.2-4' }}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Mean</span>
+        <span class="stat-value mean-value">{{ summary().meanValue | number: '1.2-4' }}</span>
+      </div>
+    </div>
+  </mat-card-content>
+</mat-card>

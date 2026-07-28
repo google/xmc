@@ -88,3 +88,98 @@ export const WORK_UNIT_LIST: any[] = [WORK_UNIT_1, WORK_UNIT_2, WORK_UNIT_3, WOR
 
 export const ARTIFACT_LIST: any[] = [];
 export const WORK_UNIT_1_ARTIFACT_LIST: any[] = [];
+
+export const MOCK_CHART_LOSS: any = {
+  name: 'experiments/1/charts/chart-loss-perf',
+  title: 'Training & Validation Loss Convergence',
+  xid: 1,
+  plots: [
+    {
+      plotId: 'plot_summary_loss',
+      title: 'Loss Summary',
+      type: 'SUMMARY_BOX',
+      data: { metrics: ['loss/train'], sources: [{ xid: 1 }] },
+    },
+    {
+      plotId: 'plot_curve_loss',
+      title: 'Loss Curves over Iterations',
+      type: 'SCATTER',
+      data: { metrics: ['loss/train', 'loss/val'], sources: [{ xid: 1 }] },
+    },
+  ],
+  plotLayout: {
+    type: 'GRID',
+    positions: [
+      { itemId: 'plot_summary_loss', x: 0, y: 0, width: 12, height: 2 },
+      { itemId: 'plot_curve_loss', x: 0, y: 2, width: 12, height: 4 },
+    ],
+  },
+};
+
+export const MOCK_DASHBOARD_1: any = {
+  name: 'dashboards/dash-baseline-eval',
+  title: 'XMC Baseline Tune Comparison',
+  description: 'Comparative performance evaluation across training runs',
+  owner: 'ml-researcher@google.com',
+  charts: [MOCK_CHART_LOSS],
+  chartLayout: {
+    type: 'SIDE_BY_SIDE',
+    positions: [
+      { itemId: 'experiments/1/charts/chart-loss-perf', x: 0, y: 0, width: 12, height: 6 },
+    ],
+  },
+};
+
+export const MOCK_DASHBOARDS_LIST: any[] = [MOCK_DASHBOARD_1];
+
+function buildMockSeriesPoints(minIter: number, maxIter: number): any[] {
+  const points = [];
+  const step = Math.max(1, Math.floor((maxIter - minIter) / 50));
+  for (let iter = minIter; iter <= maxIter; iter += step) {
+    const val = 2.5 * Math.exp(-0.003 * iter) + 0.1 * Math.sin(iter * 0.05);
+    points.push({
+      iteration: iter,
+      timestamp: new Date(Date.now() - (maxIter - iter) * 1000).toISOString(),
+      avgValue: Number(val.toFixed(4)),
+      minValue: Number((val * 0.95).toFixed(4)),
+      maxValue: Number((val * 1.05).toFixed(4)),
+    });
+  }
+  return points;
+}
+
+/** Generates deterministic mock ChartData for local testing. */
+export function generateMockChartData(request: any): any {
+  const minIter = request.startIteration ?? 0;
+  const maxIter = request.endIteration ?? 1000;
+  const points = buildMockSeriesPoints(minIter, maxIter);
+  return {
+    name: request.name,
+    xid: 1,
+    plotsData: [
+      {
+        plotId: 'plot_summary_loss',
+        type: 'SUMMARY_BOX',
+        summaryData: {
+          metricName: 'loss/train',
+          latestValue: points[points.length - 1]?.avgValue ?? 0.12,
+          minValue: 0.11,
+          maxValue: 2.5,
+          meanValue: 0.45,
+          latestIteration: maxIter,
+          latestTimestamp: new Date().toISOString(),
+        },
+      },
+      {
+        plotId: 'plot_curve_loss',
+        type: 'SCATTER',
+        scatterSeries: {
+          metricName: 'loss/train',
+          workUnitId: 'work-unit-1',
+          xid: 1,
+          points,
+        },
+      },
+    ],
+  };
+}

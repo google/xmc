@@ -1,0 +1,27 @@
+.grid-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  width: 100%;
+}
+
+.layout-side_by_side {
+  flex-direction: row;
+}
+
+.layout-side_by_side .grid-cell {
+  flex: 1 1 calc(50% - 10px);
+}
+
+.layout-stacked {
+  flex-direction: column;
+}
+
+.layout-stacked .grid-cell {
+  width: 100%;
+}
+
+.layout-grid .grid-cell,
+.layout-wrap .grid-cell {
+  flex: 1 1 100%;
+}

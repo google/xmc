@@ -22,13 +22,14 @@ import { ExperimentPage } from './experiment_page/experiment_page';
 import { ExperimentsListPage } from './experiments_list_page/experiments_list_page';
 import { guestGuard } from './guest.guard';
 import { HomePage } from './homepage/home_page';
+import { XmcDashboardsPageComponent } from './pages/dashboards/dashboards_page';
 import { ResourceDashboard } from './resource_dashboard/resource_dashboard';
 import { WorkUnitPage } from './work_unit_page/work_unit_page';
 
 describe('App Routes', () => {
   it('should define route configuration', () => {
     expect(routes).toBeDefined();
-    expect(routes.length).toBe(4);
+    expect(routes.length).toBe(5);
   });
 
   it('should route "" to HomePage with guestGuard', () => {
@@ -50,6 +51,13 @@ describe('App Routes', () => {
     const route = routes.find((r) => r.path === 'resources');
     expect(route).toBeDefined();
     expect(route?.component).toBe(ResourceDashboard);
+    expect(route?.canActivate).toContain(authGuard);
+  });
+
+  it('should route "dashboards" to XmcDashboardsPageComponent with authGuard', () => {
+    const route = routes.find((r) => r.path === 'dashboards');
+    expect(route).toBeDefined();
+    expect(route?.component).toBe(XmcDashboardsPageComponent);
     expect(route?.canActivate).toContain(authGuard);
   });
 

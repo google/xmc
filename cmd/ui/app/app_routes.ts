@@ -21,6 +21,7 @@ import { ExperimentPage } from './experiment_page/experiment_page';
 import { ExperimentsListPage } from './experiments_list_page/experiments_list_page';
 import { guestGuard } from './guest.guard';
 import { HomePage } from './homepage/home_page';
+import { XmcDashboardsPageComponent } from './pages/dashboards/dashboards_page';
 import { ClusterQueueResolver } from './resource_dashboard/resolvers/cluster_queue_resolver';
 import { ResourceDashboard } from './resource_dashboard/resource_dashboard';
 import { WorkUnitPage } from './work_unit_page/work_unit_page';
@@ -45,6 +46,11 @@ export const routes: Routes = [
     component: ResourceDashboard,
     canActivate: [authGuard],
     resolve: { clusterQueues: ClusterQueueResolver },
+  },
+  {
+    path: 'dashboards',
+    component: XmcDashboardsPageComponent,
+    canActivate: [authGuard],
   },
   {
     path: 'experiments',
