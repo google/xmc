@@ -74,20 +74,23 @@ class LightningIntegrationTest(unittest.TestCase):
 
     def test_import_succeeds_with_valid_lightning(self) -> None:
         """Verifies eager import succeeds when PyTorch Lightning >= 2.0.0 is present."""
-        mock_pl, _ = _create_mock_lightning(version="2.0.0")
-        with patch.dict(
-            sys.modules,
-            {
-                "lightning.pytorch": mock_pl,
-                "lightning.pytorch.loggers": mock_pl.loggers,
-                "lightning.pytorch.utilities": mock_pl.utilities,
-                "pytorch_lightning": mock_pl,
-                "pytorch_lightning.loggers": mock_pl.loggers,
-                "pytorch_lightning.utilities": mock_pl.utilities,
-            },
-        ):
-            mod = importlib.import_module("xmc.integrations.lightning")
-            self.assertTrue(hasattr(mod, "XmcLogger"))
+        for version in ("2.0.0", "2.0", "2"):
+            with self.subTest(version=version):
+                sys.modules.pop("xmc.integrations.lightning", None)
+                mock_pl, _ = _create_mock_lightning(version=version)
+                with patch.dict(
+                    sys.modules,
+                    {
+                        "lightning.pytorch": mock_pl,
+                        "lightning.pytorch.loggers": mock_pl.loggers,
+                        "lightning.pytorch.utilities": mock_pl.utilities,
+                        "pytorch_lightning": mock_pl,
+                        "pytorch_lightning.loggers": mock_pl.loggers,
+                        "pytorch_lightning.utilities": mock_pl.utilities,
+                    },
+                ):
+                    mod = importlib.import_module("xmc.integrations.lightning")
+                    self.assertTrue(hasattr(mod, "XmcLogger"))
 
     def test_logger_properties(self) -> None:
         """Verifies name, version, execution_id, and experiment properties."""
@@ -143,7 +146,9 @@ class LightningIntegrationTest(unittest.TestCase):
             mock_client.log_metric.assert_any_call("train/accuracy", 0.95, step=100)
 
     def test_logger_log_hyperparams(self) -> None:
-        """Verifies log_hyperparams logs parameters with hp/ prefix."""
+        """Verifies log_hyperparams logs parameters with hp/ prefix from dict and Namespace."""
+        from argparse import Namespace
+
         mock_pl, _ = _create_mock_lightning()
         with patch.dict(
             sys.modules,
@@ -160,8 +165,19 @@ class LightningIntegrationTest(unittest.TestCase):
             mock_client = MagicMock()
             logger = mod.XmcLogger(prefix="exp1/", client=mock_client)
 
-            params = {"learning_rate": 0.001, "batch_size": 32}
-            logger.log_hyperparams(params)
+            # Test with dict
+            params_dict = {"learning_rate": 0.001, "batch_size": 32}
+            logger.log_hyperparams(params_dict)
+            mock_client.log_metric.assert_any_call("exp1/hp/learning_rate", 0.001, step=None)
+            mock_client.log_metric.assert_any_call("exp1/hp/batch_size", 32, step=None)
+
+            mock_client.log_metric.reset_mock()
+
+            # Test with Namespace
+            params_ns = Namespace(learning_rate=0.001, batch_size=32)
+            logger.log_hyperparams(params_ns)
+            mock_client.log_metric.assert_any_call("exp1/hp/learning_rate", 0.001, step=None)
+            mock_client.log_metric.assert_any_call("exp1/hp/batch_size", 32, step=None)
 
             mock_client.log_metric.assert_any_call("exp1/hp/learning_rate", 0.001, step=None)
             mock_client.log_metric.assert_any_call("exp1/hp/batch_size", 32, step=None)

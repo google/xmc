@@ -45,6 +45,8 @@ def _parse_version(version_str: str) -> tuple[int, ...]:
     for segment in version_str.split(".")[:3]:
         digits = "".join(char for char in segment if char.isdigit())
         parts.append(int(digits) if digits else 0)
+    while len(parts) < 3:
+        parts.append(0)
     return tuple(parts)
 
 
@@ -176,6 +178,12 @@ class XmcLogger(Logger):  # type: ignore[misc]
     @rank_zero_only
     def log_hyperparams(self, params: dict[str, Any] | Any, *args: Any, **kwargs: Any) -> None:
         """Logs hyperparameters to XMC SDK on rank zero."""
+        if not isinstance(params, dict):
+            if hasattr(params, "__dict__"):
+                params = vars(params)
+            elif hasattr(params, "items"):
+                params = dict(params.items())
+
         if isinstance(params, dict):
             for key, val in params.items():
                 scalar_val = _extract_scalar(val)
