@@ -59,7 +59,7 @@ def _validate_keras_version() -> None:
 _validate_keras_version()
 
 
-class XmcKerasCallback(keras.callbacks.Callback):
+class XmcKerasCallback(keras.callbacks.Callback):  # type: ignore[misc]
     """Keras Callback for automatic metric logging to XMC SDK."""
 
     def __init__(
@@ -105,26 +105,8 @@ class XmcKerasCallback(keras.callbacks.Callback):
         if not hasattr(opt, "iterations"):
             return None
 
-        iters = opt.iterations
-        # Handle PyTorch/CUDA tensors in Keras 3 backend where int(cuda_tensor) raises
-        if hasattr(iters, "item") and callable(iters.item):
-            try:
-                res = iters.item()
-                if isinstance(res, (int, float)):
-                    return int(res)
-            except Exception:
-                pass
-
-        if callable(getattr(iters, "numpy", None)):
-            try:
-                return int(iters.numpy())
-            except Exception:
-                pass
-
-        try:
-            return int(iters)
-        except Exception:
-            return None
+        step_val = self._extract_scalar(opt.iterations)
+        return int(step_val) if step_val is not None else None
 
     @staticmethod
     def _extract_scalar(val: Any) -> float | int | None:
