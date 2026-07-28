@@ -15,6 +15,7 @@
 package statusmessage
 
 import (
+	//	http://www.apache.org/licenses/LICENSE-2.0
 	"context"
 	"crypto/rand"
 	"fmt"
@@ -73,6 +74,7 @@ func SaveStatusMessageHistory(ctx context.Context, xid int64, wid *int64, eid *i
 }
 
 func generateMessageID(ctx context.Context) (int64, error) {
+	// Generate a random number between 0 and math.MaxInt64
 	n, err := rand.Int(rand.Reader, big.NewInt(math.MaxInt64))
 	if err != nil {
 		return 0, fmt.Errorf("failed to generate random MessageId: %w", err)

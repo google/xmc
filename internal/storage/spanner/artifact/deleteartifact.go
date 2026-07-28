@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// 1. Read the existing artifact from storage so we can get the primary key.
 package artifact
 
 import (
@@ -37,6 +38,8 @@ func (r *Repository) DeleteArtifact(ctx context.Context, aid int64) error {
 			return err
 		}
 
+		// 2. Delete by mutation on the primary key. We can technically delete this by just the artifact
+		// ID, but the emulator doesn't like that. So we include the XID and WID in the primary key.
 		pk, err := generateArtifactPrimaryKey(artifact)
 		if err != nil {
 			return err
@@ -55,6 +58,7 @@ func (r *Repository) DeleteArtifact(ctx context.Context, aid int64) error {
 	return nil
 }
 
+// generateArtifactPrimaryKey generates the primary key for an artifact from its proto.
 func generateArtifactPrimaryKey(artifact *essmsgpb.Artifact) (spanner.Key, error) {
 	aid, err := validator.ValidateArtifactName(artifact.Name)
 	if err != nil {

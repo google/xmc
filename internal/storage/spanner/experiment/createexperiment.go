@@ -28,11 +28,13 @@ import (
 	"xmanager_cloud/validator/validator"
 )
 
-// CreateExperiment creates a new experiment in Spanner.
+// CreateExperiment creates a new experiment in Spanner. It returns the experiment proto with
+// the timestamps set to the initial commit timestamps.
 func (r *Repository) CreateExperiment(ctx context.Context, exp *essmsgpb.Experiment) (*essmsgpb.Experiment, error) {
 	ctx = logging.WithExperimentName(ctx, exp.GetName())
 	logging.Info(ctx, "Write experiment to storage", "experiment", exp)
 
+	// 1. Validate the experiment name and extract the XID.
 	xid, err := validator.ValidateExperimentName(exp.Name)
 	if err != nil {
 		return nil, err
@@ -45,18 +47,21 @@ func (r *Repository) CreateExperiment(ctx context.Context, exp *essmsgpb.Experim
 		if exp.Status == nil {
 			exp.Status = &essmsgpb.ExperimentStatus{}
 		}
+		// 2. Set the timestamps to the current time.
 		now := timestamppb.New(time.Now())
 		exp.CreateTime = now
 		exp.UpdateTime = now
 		exp.Status.LastChildStatusUpdateTime = now
 		exp.Status.UpdateTime = now
 
+		// 3. Generate the insert mutation for the experiment.
 		expMutation, err := spannerdata.ExperimentProtoToInsertMutation(exp)
 		if err != nil {
 			logging.Error(ctx, "failed to create mutation for experiment", "experiment", exp, "error", err)
 			return err
 		}
 
+		// 4. Buffer the write mutation.
 		err = tx.BufferWrite([]*spanner.Mutation{expMutation})
 		if err != nil {
 			logging.Error(ctx, "failed to buffer write mutation for create experiment", "error", err)

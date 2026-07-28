@@ -33,7 +33,9 @@ var nextWorkUnitIDSQL = safesql.New(`
 		BitReversedXid = @bit_reversed_xid
 `)
 
-// FetchNextWorkUnitIDTransaction retrieves the next work unit ID in a transaction.
+// fetchNextWorkUnitIDTransaction retrieves the next available WorkUnit ID for a given XID. This is
+// a private method because the caller MUST provide their own transaction to avoid a race condition,
+// so only the storage layer should call this method.
 func (r *Repository) FetchNextWorkUnitIDTransaction(ctx context.Context, xid int64, txn spannerTransaction) (int64, error) {
 	logging.Info(ctx, "Fetch next WorkUnit ID from storage")
 

@@ -35,6 +35,9 @@ import (
 
 // UpdateExperiment updates an experiment with the given update mask.
 // TODO(b/517479143): Refactor UpdateExperiment to extract experiment merging and status message persistence to a higher domain service layer.
+// UpdateExperiment updates an experiment with the given update mask. We return both the original
+// and updated experiments, so that the caller can choose whether to perform additional actions
+// based on the original experiment state.
 func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.ExperimentUpdate) (*essmsgpb.Experiment, *essmsgpb.Experiment, error) {
 	if update == nil {
 		return nil, nil, fmt.Errorf("update must not be nil")
@@ -48,29 +51,35 @@ func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.Exper
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		mutated = false
 
+		// 1. Read the existing experiment from storage.
 		var err error
 		originalExperiment, err = r.FetchExperimentTransaction(ctx, update.XID, txn)
 		if err != nil {
 			return err
 		}
 
+		// 2. Merge the current and new experiments based on the update mask.
 		updatedExperiment, err = data.MergeExperiments(originalExperiment, update.Experiment, update.UpdateMask)
 		if err != nil {
 			return fmt.Errorf("failed to merge Experiment: %w", err)
 		}
 
+		// 2.1. Check if the experiment has changed.
 		if proto.Equal(originalExperiment, updatedExperiment) {
 			return nil
 		}
 
+		// 2.2. Update the UpdateTime column to the current time.
 		now := time.Now()
 		updatedExperiment.UpdateTime = timestamppb.New(now)
 
+		// 3. Construct the Spanner mutation for the update.
 		mutation, err := spannerdata.ExperimentProtoToUpdateMutation(updatedExperiment)
 		if err != nil {
 			return fmt.Errorf("failed to create Spanner mutation for Experiment: %w", err)
 		}
 
+		// 4. Apply the mutation to the transaction.
 		mutated = true
 
 		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, update.XID, nil, nil, originalExperiment.GetStatus().GetStructuredStatusMessage(), updatedExperiment.GetStatus().GetStructuredStatusMessage(), txn)

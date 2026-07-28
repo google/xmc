@@ -25,15 +25,18 @@ import (
 	ls "xmanager_cloud/query_generator/liststatement"
 	"xmanager_cloud/query_generator/normalizer/normalizer"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
+	// 5. If there are more results than the page size, return the next page token.
 	"xmanager_cloud/storage/spanner/schema/artifactschema"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 
 // ListArtifacts returns a paginated list of Artifact protos based on the provided filter and order.
+// 3. Execute the query.
 func (r *Repository) ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.Artifact, string, error) {
 	logging.Info(ctx, "List artifacts", "pageSize", pageSize, "pageToken", pageToken, "filter", filter, "orderBy", orderBy, "staleness", staleness)
 
+	// 1. Ensure the results are filtered to the artifact's parent if present.
 	if parent != "" {
 		xid, wid, err := validator.ValidateArtifactParent(parent)
 		if err != nil {
@@ -41,6 +44,7 @@ func (r *Repository) ListArtifacts(ctx context.Context, parent string, pageSize 
 		}
 		ctx = logging.WithArtifactParent(ctx, parent)
 
+		// 1.1. Generate the filter for the parent.
 		bitReversedXid := spannerutils.ReverseBits(xid)
 		parentFilter := fmt.Sprintf("bit_reversed_xid = %d", bitReversedXid)
 		if wid != 0 {
@@ -58,6 +62,7 @@ func (r *Repository) ListArtifacts(ctx context.Context, parent string, pageSize 
 		return nil, "", fmt.Errorf("failed to normalize filter: %w", err)
 	}
 
+	// 2. Generate the list statement.
 	listParams := ls.ListParams{
 		PageSize:              pageSize,
 		Filter:                normalizedFilter,
@@ -82,6 +87,7 @@ func (r *Repository) ListArtifacts(ctx context.Context, parent string, pageSize 
 	expIter := r.client.Single().WithTimestampBound(spanner.ExactStaleness(staleness)).Query(ctx, *stmt)
 	defer expIter.Stop()
 
+	// 4. Convert the rows to Artifact protos.
 	var artifacts []*essmsgpb.Artifact
 	if err := expIter.Do(func(row *spanner.Row) error {
 		logging.Debug(ctx, "Converting row to Artifact proto", "row", row)
@@ -104,6 +110,7 @@ func (r *Repository) ListArtifacts(ctx context.Context, parent string, pageSize 
 
 	logging.Info(ctx, "Listed artifacts", "count", len(artifacts), "nextPageToken", nextPageToken)
 
+	// 6. Return the results.
 	return artifacts, nextPageToken, nil
 }
 

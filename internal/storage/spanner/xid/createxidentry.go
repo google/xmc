@@ -28,6 +28,8 @@ import (
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
+// We cannot use Mutations here, because we need to return the XID. Mutations do not support THEN
+// RETURN.
 var createXidSQL = safesql.New(`
 INSERT INTO Xids (
   ParentXid,
@@ -53,6 +55,7 @@ func (r *Repository) CreateXidEntry(ctx context.Context, entry *xidpb.XidEntry) 
 	if entry == nil {
 		return nil, fmt.Errorf("entry must not be nil")
 	}
+	// This needs to be in a transaction so we can ensure the time is consistent.
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
 		now := timestamppb.New(time.Now())
 		entry.CreateTime = now

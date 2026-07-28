@@ -36,7 +36,8 @@ func (r *Repository) FetchArtifact(ctx context.Context, aid int64) (*essmsgpb.Ar
 	return r.FetchArtifactTransaction(ctx, aid, r.client.Single())
 }
 
-// FetchArtifactTransaction retrieves a single Artifact from storage in a transaction.
+// fetchArtifactTransaction retrieves a single Artifact from storage by its unique
+// numerical ID in a read-only transaction.
 func (r *Repository) FetchArtifactTransaction(ctx context.Context, aid int64, txn spannerTransaction) (*essmsgpb.Artifact, error) {
 	logging.Info(ctx, "Fetch artifact row")
 
@@ -62,6 +63,11 @@ func (r *Repository) FetchArtifactTransaction(ctx context.Context, aid int64, tx
 	return artifact, nil
 }
 
+// For some reason, the emulator doesn't like it when we try to fetch artifacts by their primary key
+// from a specific index using the Golang functions. So we need to write a DML for it instead, which
+// seems to work fine. I have no idea why this would be the case, the emulator SHOULD support
+// secondary indices, but this is a pretty simple fix and debugging the problem seems like a waste
+// of time.
 func generateFetchArtifactStatement(aid int64) spanner.Statement {
 	return spanner.Statement{
 		SQL: `SELECT ` + strings.Join(artifactschema.ArtifactColumns, ", ") + `

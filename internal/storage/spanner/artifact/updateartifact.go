@@ -32,7 +32,8 @@ import (
 	"xmanager_cloud/validator/validator"
 )
 
-// UpdateArtifact updates an artifact with the given update mask.
+// UpdateArtifact updates an artifact with the given update mask. We return both the original and updated artifacts,
+// so that the caller can choose whether to perform additional actions based on the original artifact state.
 func (r *Repository) UpdateArtifact(ctx context.Context, update *storage.ArtifactUpdate) (originalArtifact *essmsgpb.Artifact, updatedArtifact *essmsgpb.Artifact, err error) {
 	if update == nil {
 		return nil, nil, fmt.Errorf("update must not be nil")
@@ -42,29 +43,35 @@ func (r *Repository) UpdateArtifact(ctx context.Context, update *storage.Artifac
 
 	var mutated bool
 	_, err = r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		// 1. Read the existing artifact from storage.
 		var err error
 		originalArtifact, err = r.FetchArtifactTransaction(ctx, update.AID, txn)
 		if err != nil {
 			return err
 		}
 
+		// 2. Merge the current and new artifacts based on the update mask.
 		updatedArtifact, err = data.MergeArtifacts(originalArtifact, update.Artifact, update.UpdateMask)
 		if err != nil {
 			return fmt.Errorf("failed to merge Artifact: %w", err)
 		}
 
+		// 2.1. Check if the artifact has changed.
 		if proto.Equal(originalArtifact, updatedArtifact) {
 			return nil
 		}
 
+		// 2.2. Update the UpdateTime column to the current time.
 		now := time.Now()
 		updatedArtifact.UpdateTime = timestamppb.New(now)
 
+		// 3. Construct the Spanner mutation for the update.
 		mutation, err := spannerdata.ArtifactProtoToUpdateMutation(updatedArtifact)
 		if err != nil {
 			return fmt.Errorf("failed to create Spanner mutation for Artifact: %w", err)
 		}
 
+		// 4. Apply the mutation to the transaction.
 		mutated = true
 		return txn.BufferWrite([]*spanner.Mutation{mutation})
 	})

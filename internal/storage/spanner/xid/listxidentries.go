@@ -23,7 +23,9 @@ import (
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/xidschema"
 
+	// 4. If there are more results than the page size, return the next page token.
 	"xmanager_cloud/query_generator/liststatement"
+	// 1. Normalize the filter.
 	"xmanager_cloud/query_generator/normalizer/normalizer"
 
 	"xmanager_cloud/logging/logging"
@@ -32,12 +34,14 @@ import (
 )
 
 // ListXidEntries returns a paginated list of XidEntry protos based on the provided filter and order.
+// 2. Execute the query.
 func (r *Repository) ListXidEntries(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*xidpb.XidEntry, string, error) {
 	normalizedFilter, err := normalizer.Normalize(filter, r.xidsQueryGen.Tables()[0])
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to normalize filter: %w", err)
 	}
 
+	// 1.1. Generate the list statement.
 	listParams := liststatement.ListParams{
 		PageSize:              pageSize,
 		Filter:                normalizedFilter,
@@ -52,6 +56,7 @@ func (r *Repository) ListXidEntries(ctx context.Context, pageSize int32, pageTok
 		return nil, "", err
 	}
 
+	// Generate the statement with pagination
 	stmt, err := liststatement.ListStatement(ctx, listParams)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
@@ -60,6 +65,7 @@ func (r *Repository) ListXidEntries(ctx context.Context, pageSize int32, pageTok
 	xidIter := r.client.Single().WithTimestampBound(spanner.ExactStaleness(staleness)).Query(ctx, *stmt)
 	defer xidIter.Stop()
 
+	// 3. Convert the rows to XidEntry protos.
 	var xidEntries []*xidpb.XidEntry
 	if err := xidIter.Do(func(row *spanner.Row) error {
 		xidEntry, err := spannerdata.XIDRowToProto(row)
@@ -81,6 +87,7 @@ func (r *Repository) ListXidEntries(ctx context.Context, pageSize int32, pageTok
 		return nil, "", err
 	}
 
+	// 5. Return the results.
 	return xidEntries, nextPageToken, nil
 }
 

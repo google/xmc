@@ -34,7 +34,8 @@ func (r *Repository) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.
 	return r.FetchExperimentTransaction(ctx, xid, r.client.Single())
 }
 
-// FetchExperimentTransaction retrieves a single Experiment from storage by its unique numerical ID in a transaction.
+// fetchExperimentTransaction retrieves a single Experiment from storage by its unique
+// numerical ID in a transaction.
 func (r *Repository) FetchExperimentTransaction(ctx context.Context, xid int64, txn spannerTransaction) (*essmsgpb.Experiment, error) {
 	logging.Info(ctx, "Fetch experiment row")
 

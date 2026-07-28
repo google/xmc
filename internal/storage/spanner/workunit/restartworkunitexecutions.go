@@ -30,7 +30,9 @@ import (
 	"xmanager_cloud/validator/validator"
 )
 
-// RestartWorkUnitExecutions archives the active work unit execution for a set of work units, and generates a new current work unit execution in the RESTARTING state.
+// RestartWorkUnitExecutions archives the active work unit execution for a set of work units, and
+// generates a new current work unit execution in the RESTARTING state. It returns a map of
+// work unit IDs to the newly created work unit executions.
 func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester string, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnitExecution, error) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
 	logging.Info(ctx, "Restarting work unit executions", "wids", wids)
@@ -43,22 +45,26 @@ func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester st
 		now := time.Now()
 
 		for _, wid := range wids {
+			// 1. Read the WorkUnit row.
 			// TODO(b/517479143): Move execution restart business logic out of the Spanner repository into a domain service layer.
 			wu, err := r.FetchWorkUnitTransaction(ctx, xid, wid, tx)
 			if err != nil {
 				return fmt.Errorf("failed to fetch work unit: %w", err)
 			}
 
+			// 2. Set the execution state to INACTIVE.
 			currentExecution := wu.GetCurrentWorkUnitExecution()
 			currentExecution.State = essmsgpb.WorkUnitExecution_INACTIVE
 			currentExecution.UpdateTime = timestamppb.New(now)
 
+			// 3. Archive the current execution.
 			archiveMutation, err := spannerdata.WorkUnitExecutionProtoToInsertMutation(currentExecution)
 			if err != nil {
 				return fmt.Errorf("failed to create mutation for archived work unit execution: %w", err)
 			}
 			tx.BufferWrite([]*spanner.Mutation{archiveMutation})
 
+			// 4. Get the EID so we can increment it.
 			_, _, eid, err := validator.ValidateWorkUnitExecutionName(currentExecution.GetName())
 			if err != nil {
 				return fmt.Errorf("failed to validate work unit execution name %q: %w", currentExecution.GetName(), err)
@@ -67,6 +73,7 @@ func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester st
 				return fmt.Errorf("invalid eid 0 from work unit execution name %q: %w", currentExecution.GetName(), status.ErrInternal)
 			}
 
+			// 4.1. Create a new execution with the given state.
 			newEID := eid + 1
 			newExecution := &essmsgpb.WorkUnitExecution{
 				Name: fmt.Sprintf("experiments/%v/workUnits/%v/executions/%v", xid, wid, newEID),
@@ -88,6 +95,7 @@ func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester st
 			}
 			newExecutions[wid] = newExecution
 
+			// 4.2. Add the new execution to the execution deltas to update the experiment status.
 			executionDeltas = append(executionDeltas, &state.WorkUnitStateDelta{
 				CurrentState:   currentExecution.GetStatus().GetState().Enum(),
 				NewState:       newExecution.GetStatus().GetState().Enum(),
@@ -97,6 +105,7 @@ func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester st
 
 			statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &wid, &newEID, currentExecution.GetStatus().GetSystemMessage(), newExecution.GetStatus().GetSystemMessage(), tx)
 
+			// 5. Write the new execution to storage.
 			tx.BufferWrite([]*spanner.Mutation{
 				spannerdata.CurrentWorkUnitExecutionProtoToUpdateMutation(xid, wid, newEID, newExecution),
 			})
@@ -107,6 +116,7 @@ func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester st
 		}
 		var exp *essmsgpb.Experiment
 		var err error
+		// 6. Read the Experiment row.
 		exp, err = r.experimentRepo.FetchExperimentTransaction(ctx, xid, tx)
 		if err != nil {
 			return fmt.Errorf("failed to fetch experiment: %w", err)
@@ -115,11 +125,13 @@ func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester st
 			return fmt.Errorf("experiment %d not found", xid)
 		}
 
+		// 7. Update the denormalized status fields in the Experiment row.
 		exp, err = state.DenormalizeWorkUnitStatus(ctx, exp, executionDeltas)
 		if err != nil {
 			return fmt.Errorf("failed to update experiment status: %w", err)
 		}
 
+		// 8. Update the Experiment row.
 		exp.UpdateTime = timestamppb.New(now)
 		exp.Status.LastChildStatusUpdateTime = timestamppb.New(now)
 		exp.Status.UpdateTime = timestamppb.New(now)

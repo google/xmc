@@ -34,6 +34,9 @@ import (
 
 // UpdateWorkUnit updates a work unit with the given update mask.
 // TODO(b/517479143): Move work unit update merging logic outside the repository layer into a domain service layer.
+// UpdateWorkUnit updates a work unit with the given update mask. It returns both the original and
+// updated work units in that order, so that the caller can choose whether to perform additional
+// actions based on the original work unit state.
 func (r *Repository) UpdateWorkUnit(ctx context.Context, update *storage.WorkUnitUpdate) (originalWorkUnit *essmsgpb.WorkUnit, updatedWorkUnit *essmsgpb.WorkUnit, err error) {
 	if update == nil {
 		return nil, nil, fmt.Errorf("update must not be nil")
@@ -45,29 +48,35 @@ func (r *Repository) UpdateWorkUnit(ctx context.Context, update *storage.WorkUni
 	_, err = r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		mutated = false
 
+		// 1. Read the existing WorkUnit from storage.
 		var err error
 		originalWorkUnit, err = r.FetchWorkUnitTransaction(ctx, update.XID, update.WID, txn)
 		if err != nil {
 			return err
 		}
 
+		// 2. Merge the current and new entries based on the update mask.
 		updatedWorkUnit, err = data.MergeWorkUnits(originalWorkUnit, update.WorkUnit, update.UpdateMask)
 		if err != nil {
 			return fmt.Errorf("failed to merge WorkUnit: %w", err)
 		}
 
+		// 2.1. Check if the work unit has changed.
 		if proto.Equal(originalWorkUnit, updatedWorkUnit) {
 			return nil
 		}
 
+		// 2.2. Update the UpdateTime column to the current time.
 		now := time.Now()
 		updatedWorkUnit.UpdateTime = timestamppb.New(now)
 
+		// 3. Construct the Spanner mutation for the update.
 		mutation, err := spannerdata.WorkUnitProtoToUpdateMutation(updatedWorkUnit)
 		if err != nil {
 			return fmt.Errorf("failed to create Spanner mutation for WorkUnit: %w", err)
 		}
 
+		// 4. Apply the mutation to the transaction.
 		mutated = true
 		return txn.BufferWrite([]*spanner.Mutation{mutation})
 	})

@@ -23,13 +23,16 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
 	ls "xmanager_cloud/query_generator/liststatement"
+	// 1. Normalize the filter.
 	"xmanager_cloud/query_generator/normalizer/normalizer"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
+	// 4. If there are more results than the page size, return the next page token.
 	"xmanager_cloud/storage/spanner/schema/experimentschema"
 	"xmanager_cloud/validator/validator"
 )
 
 // ListExperiments returns a paginated list of Experiment protos based on the provided filter and order.
+// 2. Execute the query.
 func (r *Repository) ListExperiments(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.Experiment, string, error) {
 	logging.Info(ctx, "List experiments", "pageSize", pageSize, "pageToken", pageToken, "filter", filter, "orderBy", orderBy, "staleness", staleness)
 
@@ -38,6 +41,7 @@ func (r *Repository) ListExperiments(ctx context.Context, pageSize int32, pageTo
 		return nil, "", fmt.Errorf("failed to normalize filter: %w", err)
 	}
 
+	// 1.1. Generate the list statement.
 	listParams := ls.ListParams{
 		PageSize:              pageSize,
 		Filter:                normalizedFilter,
@@ -62,6 +66,7 @@ func (r *Repository) ListExperiments(ctx context.Context, pageSize int32, pageTo
 	expIter := r.client.Single().WithTimestampBound(spanner.ExactStaleness(staleness)).Query(ctx, *stmt)
 	defer expIter.Stop()
 
+	// 3. Convert the rows to Experiment protos.
 	var experiments []*essmsgpb.Experiment
 	if err := expIter.Do(func(row *spanner.Row) error {
 		exp, err := spannerdata.ExperimentRowToProto(row)
@@ -82,6 +87,7 @@ func (r *Repository) ListExperiments(ctx context.Context, pageSize int32, pageTo
 
 	logging.Info(ctx, "Listed experiments", "count", len(experiments), "nextPageToken", nextPageToken)
 
+	// 5. Return the results.
 	return experiments, nextPageToken, nil
 }
 

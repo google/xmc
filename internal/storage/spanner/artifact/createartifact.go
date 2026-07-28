@@ -27,7 +27,8 @@ import (
 	"xmanager_cloud/validator/validator"
 )
 
-// CreateArtifact creates a new artifact in Spanner.
+// CreateArtifact creates a new artifact in Spanner. It returns the artifact proto with
+// the timestamps set to the initial commit timestamps.
 func (r *Repository) CreateArtifact(ctx context.Context, artifact *essmsgpb.Artifact) (*essmsgpb.Artifact, error) {
 	if artifact == nil {
 		return nil, fmt.Errorf("artifact must not be nil")
@@ -35,23 +36,27 @@ func (r *Repository) CreateArtifact(ctx context.Context, artifact *essmsgpb.Arti
 	ctx = logging.WithArtifactName(ctx, artifact.GetName())
 	logging.Info(ctx, "Write artifact to storage", "artifact", artifact)
 
+	// 1. Validate the experiment name and extract the XID.
 	_, err := validator.ValidateArtifactName(artifact.Name)
 	if err != nil {
 		return nil, err
 	}
 
 	_, err = r.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+		// 2. Set the timestamps to the current time.
 		now := timestamppb.New(time.Now())
 		artifact.CreateTime = now
 		artifact.UpdateTime = now
 
 		// TODO(b/517479143): Consider moving ArtifactProtoToInsertMutation from spannerdata package into the artifact repository package.
+		// 3. Generate the insert mutation for the artifact.
 		artifactMutation, err := spannerdata.ArtifactProtoToInsertMutation(artifact)
 		if err != nil {
 			logging.Error(ctx, "Failed to create mutation for artifact", "artifact", artifact, "error", err)
 			return err
 		}
 
+		// 4. Buffer the write mutation.
 		err = tx.BufferWrite([]*spanner.Mutation{artifactMutation})
 		if err != nil {
 			logging.Error(ctx, "Failed to buffer write mutation for create artifact", "error", err)

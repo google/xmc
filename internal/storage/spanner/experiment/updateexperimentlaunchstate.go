@@ -43,6 +43,7 @@ func (r *Repository) UpdateExperimentLaunchState(ctx context.Context, xid int64,
 	}
 
 	var currentExp *essmsgpb.Experiment
+	// 1. Read the existing ExperimentStatus from storage.
 	var updatedExp *essmsgpb.Experiment
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		var err error
@@ -58,16 +59,19 @@ func (r *Repository) UpdateExperimentLaunchState(ctx context.Context, xid int64,
 			return fmt.Errorf("experiment launch state is %v, want LAUNCHING: %w", updatedExp.GetStatus().GetLaunchState(), status.ErrFailedPrecondition)
 		}
 
+		// 2. Update the experiment status and timestamps.
 		updatedExp.Status.LaunchState = launchState
 		updatedExp.Status.UpdateTime = timestamppb.New(time.Now())
 		updatedExp.UpdateTime = updatedExp.Status.UpdateTime
 
+		// 3. Figure out what the new ACTIVE state should be.
 		updatedExp, err = state.UpdateExperimentActiveState(updatedExp)
 		if err != nil {
 			logging.Error(ctx, "Failed to update experiment active state", "error", err)
 			return err
 		}
 
+		// 4. Add a status message based on the launch state.
 		var newStructuredMessage *essmsgpb.StructuredMessage
 		if updatedExp.GetStatus().GetLaunchState() == essmsgpb.ExperimentStatus_FAILED {
 			newStructuredMessage = experimentMessageOnLaunchFailure(updatedExp)
@@ -81,6 +85,7 @@ func (r *Repository) UpdateExperimentLaunchState(ctx context.Context, xid int64,
 
 		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, nil, nil, currentExp.GetStatus().GetStructuredStatusMessage(), updatedExp.GetStatus().GetStructuredStatusMessage(), txn)
 
+		// 5. Buffer a write mutation for the experiment row.
 		mutation, err := spannerdata.ExperimentProtoToStatusUpdateMutation(updatedExp)
 		if err != nil {
 			return fmt.Errorf("failed to create mutation for experiment status update: %w", err)

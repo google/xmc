@@ -45,7 +45,8 @@ ORDER BY
   ExecutionId DESC;
 `)
 
-// ListWorkUnitExecutions retrieves a list of WorkUnitExecutions from storage by the parent work unit.
+// ListWorkUnitExecutions retrieves a list of WorkUnitExecutions from storage by the parent work
+// unit.
 func (r *Repository) ListWorkUnitExecutions(ctx context.Context, xid int64, wid int64) ([]*essmsgpb.WorkUnitExecution, error) {
 	ctx = logging.WithWorkUnitName(ctx, validator.ConstructWorkUnitName(xid, wid))
 	logging.Info(ctx, "Fetch work unit executions", "xid", xid, "wid", wid)
@@ -55,12 +56,14 @@ func (r *Repository) ListWorkUnitExecutions(ctx context.Context, xid int64, wid 
 
 	var workUnitExecutions []*essmsgpb.WorkUnitExecution
 
+	// 1. Fetch the current work unit execution.
 	wue, err := r.FetchCurrentWorkUnitExecutionTransaction(ctx, xid, wid, txn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch work unit: %w", err)
 	}
 	workUnitExecutions = append(workUnitExecutions, wue)
 
+	// 2. Fetch the work unit executions from storage.
 	stmt := spanner.NewStatement(listWorkUnitExecutionsSQL.String())
 	stmt.Params["bitReversedXid"] = spannerutils.ReverseBits(xid)
 	stmt.Params["workUnitId"] = wid

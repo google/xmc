@@ -32,6 +32,7 @@ import (
 
 // CreateWorkUnit creates a new work unit in Spanner.
 // TODO(b/517479143): Refactor CreateWorkUnit to separate validation, status denormalization, status message saving, and resource set merging into a domain service layer above the storage repository.
+// CreateWorkUnit creates a new work unit in Spanner.
 func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*essmsgpb.WorkUnit, error) {
 	ctx = logging.WithWorkUnitExecutionName(ctx, wu.GetCurrentWorkUnitExecution().GetName())
 	logging.Info(ctx, "Write work unit to storage", "work_unit", wu)
@@ -40,11 +41,13 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
 		now := time.Now()
 
+		// 1. Extract the XID and WID from the work unit name.
 		xid, wid, err := validator.ValidateWorkUnitNameAllowZeroWID(wu.GetName())
 		if err != nil {
 			return fmt.Errorf("failed to validate work unit name: %w", err)
 		}
 
+		// 1.1. If the work unit ID is 0, fetch the next available ID and update the names.
 		initialEID := int64(1)
 		if wid == 0 {
 			wid, err = r.FetchNextWorkUnitIDTransaction(ctx, xid, tx)
@@ -56,6 +59,7 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 			wu.CurrentWorkUnitExecution.Status.SystemMessage.Parent = wu.GetName()
 		}
 
+		// 1.2. Set the initial timestamps to the current time.
 		wu.CreateTime = timestamppb.New(now)
 		wu.UpdateTime = timestamppb.New(now)
 		wu.CurrentWorkUnitExecution.CreateTime = timestamppb.New(now)
@@ -63,17 +67,20 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 		wu.CurrentWorkUnitExecution.Status.UpdateTime = timestamppb.New(now)
 		wu.CurrentWorkUnitExecution.Status.StateUpdateTime = timestamppb.New(now)
 
+		// 2. Construct the Spanner mutation for the create work unit.
 		mutation, err := spannerdata.WorkUnitProtoToInsertMutation(wu)
 		if err != nil {
 			return err
 		}
 
+		// 3. Buffer the create work unit mutation.
 		err = tx.BufferWrite([]*spanner.Mutation{mutation})
 		if err != nil {
 			logging.Error(ctx, "failed to buffer write mutation for create work unit", "error", err)
 			return err
 		}
 
+		// 4. Read the Experiment row.
 		if r.experimentRepo == nil {
 			return fmt.Errorf("experiment repository is not initialized")
 		}
@@ -85,6 +92,7 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 			return fmt.Errorf("experiment %d not found", xid)
 		}
 
+		// 5. Update the denormalized status fields in the Experiment row.
 		var executionDeltas []*state.WorkUnitStateDelta
 		executionDeltas = append(executionDeltas, &state.WorkUnitStateDelta{
 			CurrentState:   nil,
@@ -100,6 +108,7 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 			return fmt.Errorf("failed to update experiment status: %w", err)
 		}
 
+		// 6. Update the Experiment row.
 		exp.UpdateTime = timestamppb.New(now)
 		exp.Status.LastChildStatusUpdateTime = timestamppb.New(now)
 		exp.Status.UpdateTime = timestamppb.New(now)
@@ -110,10 +119,13 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 		}
 		tx.BufferWrite([]*spanner.Mutation{expMutation})
 
+		// 7.1. Get the resources required by the work unit.
 		wuResources := GetWorkUnitResources(wu)
+		// 7.2. Merge the resources required by the work unit with the resources in the experiment.
 		if wuResources != nil {
 			exp.Resources = MergeResourceSets(exp.Resources, wuResources)
 
+			// 7.3. Update the Experiment's resources.
 			expResourcesMutation, err := spannerdata.ExperimentProtoToResourcesUpdateMutation(exp)
 			if err != nil {
 				logging.Error(ctx, "failed to create mutation for experiment", "experiment", exp, "error", err)
@@ -141,7 +153,9 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 	return wu, nil
 }
 
-// GetWorkUnitResources returns the resources required by the work unit in a minimal merged set of resources.
+// getWorkUnitResources returns the resources required by the work unit, in a minimal merged set
+// of resources. For example, if two work units require 1 V100 each, this will return 2 V100s,
+// not 2 x 1 V100s.
 func GetWorkUnitResources(wu *essmsgpb.WorkUnit) []*essmsgpb.ResourceSet {
 	var resources []*essmsgpb.ResourceSet
 	for _, job := range wu.GetExecutable().GetJobset().GetJobs() {
@@ -169,7 +183,8 @@ func GetWorkUnitResources(wu *essmsgpb.WorkUnit) []*essmsgpb.ResourceSet {
 	return MergeResourceSets(nil, resources)
 }
 
-// MergeResourceSets merges two sets of resources into a single set.
+// mergeResourceSets merges two sets of resources into a single set. If the same resource type is
+// present in both sets, the total amount of that resource type is the sum of the two sets.
 func MergeResourceSets(a, b []*essmsgpb.ResourceSet) []*essmsgpb.ResourceSet {
 	var allRes []*essmsgpb.ResourceSet
 	allRes = append(allRes, a...)
@@ -215,6 +230,7 @@ func MergeResourceSets(a, b []*essmsgpb.ResourceSet) []*essmsgpb.ResourceSet {
 		})
 	}
 
+	// Sort GPU types for deterministic order.
 	gpuTypes := make([]string, 0, len(gpus))
 	for gpuType := range gpus {
 		gpuTypes = append(gpuTypes, gpuType)
@@ -229,6 +245,7 @@ func MergeResourceSets(a, b []*essmsgpb.ResourceSet) []*essmsgpb.ResourceSet {
 		})
 	}
 
+	// Sort TPU types for deterministic order.
 	sort.Slice(tpus, func(i, j int) bool {
 		resI := tpus[i].GetTpuResources()
 		resJ := tpus[j].GetTpuResources()

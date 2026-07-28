@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// 1. Read the existing Operation from storage.
 package operation
 
 import (
@@ -33,6 +34,8 @@ import (
 
 // UpdateWorkUnitOperation updates the status of an operation.
 // TODO(b/517479143): Move operation update merging logic out of the repository layer into a domain service layer.
+// UpdateWorkUnitOperation updates the status of an operation. It returns the updated operation, or
+// an error if the update fails.
 func (r *Repository) UpdateWorkUnitOperation(ctx context.Context, operationUpdate *storage.OperationUpdate) (*longrunningpb.Operation, error) {
 	if operationUpdate == nil {
 		return nil, fmt.Errorf("operationUpdate must not be nil")
@@ -52,20 +55,24 @@ func (r *Repository) UpdateWorkUnitOperation(ctx context.Context, operationUpdat
 		}
 		originalOperation = proto.Clone(operation).(*longrunningpb.Operation)
 
+		// 2. Merge the current and new entries.
 		updatedOperation, err = data.MergeOperations(operation, operationUpdate.Operation, operationUpdate.UpdateMask)
 		if err != nil {
 			return fmt.Errorf("failed to merge Operation: %w", err)
 		}
 
+		// 2.1. Check if the operation hasn't changed.
 		if proto.Equal(operation, updatedOperation) {
 			return nil
 		}
 
+		// 3. Construct the Spanner mutation for the update.
 		mutation, err := spannerdata.OperationProtoToUpdateMutation(updatedOperation, time.Now())
 		if err != nil {
 			return fmt.Errorf("failed to create Spanner mutation for Operation: %w", err)
 		}
 
+		// 4. Apply the mutation to the transaction.
 		mutated = true
 		return txn.BufferWrite([]*spanner.Mutation{mutation})
 	})

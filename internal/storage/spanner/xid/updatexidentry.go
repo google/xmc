@@ -30,6 +30,7 @@ import (
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
+	// 1. Read the existing XidEntry from storage.
 	"xmanager_cloud/storage/spanner/schema/xidschema"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/storage/storage"
@@ -49,6 +50,7 @@ LIMIT 1;
 
 // UpdateXidEntry updates an XidEntry with the given update mask.
 // TODO(b/517479143): Refactor UpdateXidEntry to move parent iteration and entry merging out of the repository layer.
+// UpdateXidEntry updates an XidEntry with the given update mask.
 func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntryUpdate) (*xidmsgpb.XidEntry, error) {
 	if update == nil {
 		return nil, fmt.Errorf("update must not be nil")
@@ -57,6 +59,7 @@ func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntr
 	logging.Info(ctx, "UpdateXidEntry", "update", update.XidEntry)
 
 	var originalEntry *xidmsgpb.XidEntry
+	// 2.1. Check if the XidEntry has owners.
 	var updatedEntry *xidmsgpb.XidEntry
 	var mutated bool
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
@@ -72,6 +75,7 @@ func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntr
 			return fmt.Errorf("failed to read Xid row: %w", err)
 		}
 
+		// 1.1. Convert the Spanner row to an XidEntry proto message.
 		xidEntry, err := spannerdata.XIDRowToProto(row)
 		if err != nil {
 			logging.Error(ctx, "failed to extract XidEntry", "error", err)
@@ -79,6 +83,7 @@ func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntr
 		}
 		originalEntry = proto.Clone(xidEntry).(*xidmsgpb.XidEntry)
 
+		// 2. Merge the current and new entries based on the update mask.
 		updatedEntry, err = data.MergeXIDEntries(xidEntry, update.XidEntry, update.UpdateMask)
 		if err != nil {
 			return fmt.Errorf("failed to merge XidEntry: %w", err)
@@ -93,9 +98,11 @@ func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntr
 			return fmt.Errorf("XidEntry %s does not have owners after update: %w", updatedEntry.GetName(), status.ErrInvalidArgument)
 		}
 
+		// 3.1. Update the UpdateTime column to the current time.
 		now := time.Now()
 		updatedEntry.UpdateTime = timestamppb.New(now)
 
+		// 4. Construct the Spanner mutation for the update.
 		m := spannerdata.XIDEntryToMutation(update.XID, updatedEntry)
 		mutated = true
 		txn.BufferWrite([]*spanner.Mutation{m})
@@ -121,18 +128,22 @@ func (r *Repository) xidEntryHasOwners(ctx context.Context, txn spannerTransacti
 
 	visited := make(map[string]bool)
 	visited[xidEntry.GetName()] = true
+	// 2.2. Get the parent XID from the storage layer.
 	parentXIDName := xidEntry.GetParentXid()
 	for !hasOwners {
+		// 1. If the parent XID is empty, we're done.
 		if parentXIDName == "" {
 			break
 		}
 
+		// 1.1. Check if we've already visited this parent XID.
 		if visited[parentXIDName] {
 			logging.Warn(ctx, "Loop detected in XID parent chain", "xidEntryName", xidEntry.GetName())
 			return false, fmt.Errorf("loop detected in XID parent chain: %w", status.ErrInternal)
 		}
 		visited[parentXIDName] = true
 
+		// 2.1.  Check if the parent XID is valid.
 		parentXID, err := validator.ValidateXIDName(parentXIDName)
 		if err != nil {
 			logging.Warn(ctx, "Invalid parent XID", "parentXIDName", parentXIDName, "error", err)
