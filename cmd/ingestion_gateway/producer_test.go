@@ -126,7 +126,10 @@ func TestBuildProducerOptions(t *testing.T) {
 		SASLPassword:    "pass",
 	}
 
-	opts := BuildProducerOptions(cfg)
+	opts, err := BuildProducerOptions(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error building producer options: %v", err)
+	}
 	if len(opts) == 0 {
 		t.Fatalf("expected non-empty kgo options")
 	}
@@ -259,7 +262,10 @@ func TestBuildProducerOptions_AllSASLMechanisms(t *testing.T) {
 				SASLUser:        "testuser",
 				SASLPassword:    "testpass",
 			}
-			opts := BuildProducerOptions(cfg)
+			opts, err := BuildProducerOptions(cfg)
+			if err != nil {
+				t.Fatalf("unexpected error building producer options for %s: %v", tt.name, err)
+			}
 			if len(opts) == 0 {
 				t.Fatalf("expected options for %s", tt.name)
 			}
