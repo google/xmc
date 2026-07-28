@@ -31,9 +31,11 @@ linters:
     - asciicheck
     - bidichk
     - nakedret
-    # Phase 3: Code formatting & duplication checks
+    # Phase 3: Code formatting, duplication & complexity checks
     - whitespace
     - dupl
+    - gocyclo
+    - nestif
 
 linters-settings:
   gofmt:
@@ -47,9 +49,23 @@ linters-settings:
       - labelled
   dupl:
     threshold: 200
+  gocyclo:
+    min-complexity: 50
+  nestif:
+    min-complexity: 15
 
 issues:
+  exclude-dirs:
+    - api/filter
   exclude-rules:
     - path: ".*_test\\.go"
       linters:
         - dupl
+        - gocyclo
+        - nestif
+    - path: "internal/query_generator/querytools/query_generator\\.go"
+      linters:
+        - gocyclo
+    - path: "internal/validator/requests\\.go"
+      linters:
+        - gocyclo
