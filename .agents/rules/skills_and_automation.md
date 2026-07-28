@@ -33,3 +33,8 @@ This document provides standards for skill architecture, workflow automation, an
   - **Exit Code 2**: Unhandled Error. Inspect `"message"` and `"traceback"` fields to determine root cause.
 - **Shell Command & Inline Code Execution Safety**: Avoid double-quoted inline shell code invocations (`python3 -c "..."`) when passing Markdown, JSON, or multiline parameters. Execute standalone `.py` script files or pass explicit CLI flags.
 - **Localized Directory Scope (Strict Path Lock Policy)**: When executing operations or inspecting workspace state (e.g. `./ctk-out/`), agents MUST restrict searches strictly to the immediate working directory. Global recursive searches across parent directories, home folders, or system root (`find_by_name` across `~` or `/`) are strictly prohibited.
+
+## 6. Context-Aware Execution & Test Scope Constraints
+- **Conditional Test Suite Execution**: Agents MUST run unit test suites (`python3 tools/*_test.py` or `./tools/run_affected_tests.py`) ONLY when writing or modifying code, refactoring packages, or editing executable scripts.
+- **Prohibition on Unrequested Tests**: For read-only inspection, document summaries, rule/skill editing, PR description generation, or retrospective analysis tasks, agents MUST NOT run test suites or execute unrequested tool chains that add unnecessary turn count and token overhead.
+
