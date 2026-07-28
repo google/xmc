@@ -381,14 +381,12 @@ func buildContainerPorts(spec *esspb.ExecutableSpec) []corev1.ContainerPort {
 	}
 	ports := make([]corev1.ContainerPort, 0, len(spec.GetPorts()))
 	for _, p := range spec.GetPorts() {
-		protocol := corev1.ProtocolTCP
+		var protocol corev1.Protocol
 		switch p.GetProtocol() {
 		case esspb.ContainerPort_UDP:
 			protocol = corev1.ProtocolUDP
 		case esspb.ContainerPort_SCTP:
 			protocol = corev1.ProtocolSCTP
-		case esspb.ContainerPort_TCP, esspb.ContainerPort_PROTOCOL_UNSPECIFIED:
-			protocol = corev1.ProtocolTCP
 		default:
 			protocol = corev1.ProtocolTCP
 		}

@@ -25,7 +25,20 @@ linters:
   enable:
     # Phase 1: Go formatting enforcement
     - gofmt
+    # Phase 2: Static analysis & quality enforcement
+    - ineffassign
+    - misspell
+    - asciicheck
+    - bidichk
+    - nakedret
 
 linters-settings:
   gofmt:
     simplify: true
+  misspell:
+    locale: US
+    ignore-words:
+      - commonhealth
+      - cancelled
+      - cancelling
+      - labelled
