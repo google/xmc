@@ -76,7 +76,6 @@ compat_go_test(
         "updatexidentry_test.go",
     ],
     embed = [":spanner"],
-    tags = ["requires-network"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/xid:messages_go_proto",
