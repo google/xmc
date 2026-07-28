@@ -311,20 +311,43 @@ func TestNewMetricsIngestionHandler_NilProducer(t *testing.T) {
 }
 
 func TestMetricsIngestionHandler_ContextCancelled(t *testing.T) {
-	mp := NewMockProducer()
-	handler := NewMetricsIngestionHandler(mp, "test-topic")
+	t.Run("context cancelled returns 503", func(t *testing.T) {
+		mp := NewMockProducer()
+		handler := NewMetricsIngestionHandler(mp, "test-topic")
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(`[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`)).WithContext(ctx)
-	w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(`[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`)).WithContext(ctx)
+		w := httptest.NewRecorder()
 
-	handler(w, req)
+		handler(w, req)
 
-	if len(mp.ProducedRecords()) != 0 {
-		t.Fatalf("expected 0 produced records on cancelled context, got %d", len(mp.ProducedRecords()))
-	}
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("expected status 503 Service Unavailable on canceled context, got %d", w.Code)
+		}
+		if len(mp.ProducedRecords()) != 0 {
+			t.Fatalf("expected 0 produced records on cancelled context, got %d", len(mp.ProducedRecords()))
+		}
+	})
+
+	t.Run("context deadline exceeded returns 504", func(t *testing.T) {
+		mp := NewMockProducer()
+		handler := NewMetricsIngestionHandler(mp, "test-topic")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+		time.Sleep(2 * time.Millisecond)
+		cancel()
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(`[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`)).WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		handler(w, req)
+
+		if w.Code != http.StatusGatewayTimeout {
+			t.Errorf("expected status 504 Gateway Timeout on deadline exceeded context, got %d", w.Code)
+		}
+	})
 }
 
 func TestDrainRequestBody(t *testing.T) {

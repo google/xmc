@@ -15,7 +15,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -115,9 +117,20 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string) http.
 		// Wait for all in-flight async writes to complete before responding.
 		wg.Wait()
 
-		// If request context was canceled or timed out, log and return cleanly without writing error responses to a closed connection.
+		// If request context was canceled or timed out, log and respond with an appropriate error status
+		// to prevent returning a misleading 200 OK to clients if the connection is still open (e.g., during server shutdown or timeouts).
 		if ctx.Err() != nil {
 			logging.Info(ctx, "Metrics ingestion request canceled or timed out", "error", ctx.Err().Error())
+			statusCode := http.StatusServiceUnavailable
+			errType := "service_unavailable"
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				statusCode = http.StatusGatewayTimeout
+				errType = "gateway_timeout"
+			}
+			writeJSONResponse(w, r, statusCode, ServiceUnavailableErrorPayload{
+				Error:   errType,
+				Message: ctx.Err().Error(),
+			})
 			return
 		}
 
