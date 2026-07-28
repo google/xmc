@@ -152,6 +152,10 @@ var congestionErrorSubstrings = []string{
 	"broker produce error",
 }
 
+// kafkaErrQueueFull is the Kafka protocol error code 53 (QUEUE_FULL) returned when broker memory/queue is saturated.
+// Ref https://kafka.apache.org/43/design/protocol/#error-codes
+const kafkaErrQueueFull = 53
+
 // IsCongestionError determines if a produce error is caused by queue saturation, broker pause, or broker outage.
 func IsCongestionError(err error) bool {
 	if err == nil {
@@ -167,7 +171,7 @@ func IsCongestionError(err error) bool {
 	var kerrErr *kerr.Error
 	if errors.As(err, &kerrErr) {
 		switch kerrErr.Code {
-		case kerr.RequestTimedOut.Code, kerr.BrokerNotAvailable.Code, kerr.KafkaStorageError.Code, 53:
+		case kerr.RequestTimedOut.Code, kerr.BrokerNotAvailable.Code, kerr.KafkaStorageError.Code, kafkaErrQueueFull:
 			return true
 		}
 	}
