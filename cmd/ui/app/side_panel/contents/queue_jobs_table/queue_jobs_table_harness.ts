@@ -24,6 +24,8 @@ export class QueueJobsTableRowHarness extends ComponentHarness {
   private readonly priorityCell = this.locatorForOptional('.priority-cell');
   private readonly workunitCell = this.locatorForOptional('.workunit-cell');
   private readonly authorCell = this.locatorForOptional('.author-cell');
+  private readonly jobLink = this.locatorForOptional('.job-link');
+  private readonly workunitLink = this.locatorForOptional('.workunit-link');
 
   async getCellsText(): Promise<{
     position: string;
@@ -47,6 +49,15 @@ export class QueueJobsTableRowHarness extends ComponentHarness {
       priority: priority ? await priority.text() : '',
       workUnitId: workunit ? await workunit.text() : '',
       user: author ? await author.text() : '',
+    };
+  }
+
+  async getLinks(): Promise<{ jobLink: string | null; workUnitLink: string | null }> {
+    const jobEl = await this.jobLink();
+    const wuEl = await this.workunitLink();
+    return {
+      jobLink: jobEl ? await jobEl.getAttribute('href') : null,
+      workUnitLink: wuEl ? await wuEl.getAttribute('href') : null,
     };
   }
 }
@@ -86,5 +97,16 @@ export class QueueJobsTableHarness extends ComponentHarness {
       throw new Error(`Row index ${rowIndex} out of bounds.`);
     }
     return rows[rowIndex].getCellsText();
+  }
+
+  /** Gets the href attributes of the experiment and work unit links in the row at the specified index. */
+  async getRowLinks(
+    rowIndex: number,
+  ): Promise<{ jobLink: string | null; workUnitLink: string | null }> {
+    const rows = await this.tableRows();
+    if (!rows[rowIndex]) {
+      throw new Error(`Row index ${rowIndex} out of bounds.`);
+    }
+    return rows[rowIndex].getLinks();
   }
 }

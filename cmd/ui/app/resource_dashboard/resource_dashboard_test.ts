@@ -142,7 +142,7 @@ describe('ResourceDashboard Container', () => {
     const finderHarness = (await dashboard.getSmartResourceFinder())!;
     expect(await finderHarness.getResourceTypeSelectCount()).toBe(1);
 
-    expect(document.querySelector('xmc-queue-jobs-table')).toBeTruthy();
+    expect(await dashboard.getQueueJobsTable()).not.toBeNull();
   });
 
   it('should populate picker dropdown with correct available resource types sorted alphabetically', async () => {
@@ -233,7 +233,7 @@ describe('ResourceDashboard Container', () => {
     expect(await tabsHarness.isTabActive(0)).toBeFalse();
     expect(await tabsHarness.isTabActive(1)).toBeTrue();
     expect(await dashboard.getQueueList()).toBeNull();
-    expect(document.querySelector('xmc-queue-jobs-table')).toBeFalsy();
+    expect(await dashboard.getQueueJobsTable()).toBeNull();
 
     await tabsHarness.clickTab(0);
     await flush();
@@ -242,7 +242,7 @@ describe('ResourceDashboard Container', () => {
     expect(await tabsHarness.isTabActive(1)).toBeFalse();
     const restoredQueueList = (await dashboard.getQueueList())!;
     expect(await restoredQueueList.getQueueCardCount()).toBe(2);
-    expect(document.querySelector('xmc-queue-jobs-table')).toBeTruthy();
+    expect(await dashboard.getQueueJobsTable()).not.toBeNull();
   });
 
   it('should select queue when a queue card is clicked', async () => {

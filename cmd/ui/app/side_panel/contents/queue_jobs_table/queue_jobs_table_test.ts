@@ -124,4 +124,20 @@ describe('QueueJobsTable Component', () => {
     expect(secondRow.status).toContain('Pending');
     expect(secondRow.priority).toContain('High');
   });
+
+  it('should properly construct experiment and work unit router links using harness', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    expect(await harness.getRowCount()).toBe(2);
+
+    const firstRowLinks = await harness.getRowLinks(0);
+    expect(firstRowLinks.jobLink).toBe('/experiments/53296');
+    expect(firstRowLinks.workUnitLink).toBe('/experiments/53296/workUnits/1');
+
+    const secondRowLinks = await harness.getRowLinks(1);
+    expect(secondRowLinks.jobLink).toBe('/experiments/53308');
+    expect(secondRowLinks.workUnitLink).toBe('/experiments/53308/workUnits/2');
+  });
 });
