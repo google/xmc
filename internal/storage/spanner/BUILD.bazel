@@ -40,6 +40,7 @@ compat_go_library(
 # TODO(b/517479143): Relocate unit test files and Bazel test targets into their respective domain subpackages in a follow-up PR.
 compat_go_test(
     name = "spanner_test",
+    size = "medium",
     srcs = [
         "addworkunitoperation_test.go",
         "createartifact_test.go",
