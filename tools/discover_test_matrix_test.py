@@ -19,9 +19,12 @@ from unittest.mock import patch
 
 from tools.discover_test_matrix import (
     build_test_matrix,
+    convert_files_to_bazel_targets,
     extract_root_folders,
     get_changed_files,
     is_global_change,
+    map_test_targets_to_matrix,
+    query_affected_test_targets,
     query_bazel_test_targets,
 )
 
@@ -43,6 +46,22 @@ class DiscoverTestMatrixTest(unittest.TestCase):
         roots = extract_root_folders(self.sample_targets)
         self.assertEqual(roots, {"root", "cmd", "internal", "deploy", "pkg", "tools"})
 
+    @patch("os.path.exists")
+    def test_convert_files_to_bazel_targets(self, mock_exists) -> None:
+        mock_exists.side_effect = lambda path: (
+            path
+            in {
+                "internal/auth/BUILD.bazel",
+                "internal/auth/BUILD",
+                "cmd/ui/BUILD.bazel",
+                "cmd/ui/BUILD",
+            }
+        )
+        targets = convert_files_to_bazel_targets(
+            ["internal/auth/auth.go", "cmd/ui/app/main.ts", "README.md"]
+        )
+        self.assertEqual(targets, ["//:all", "//cmd/ui/...", "//internal/auth/..."])
+
     def test_is_global_change(self) -> None:
         self.assertTrue(is_global_change([".github/workflows/unit-tests.yml"]))
         self.assertTrue(is_global_change(["MODULE.bazel"]))
@@ -50,30 +69,63 @@ class DiscoverTestMatrixTest(unittest.TestCase):
         self.assertFalse(is_global_change(["pkg/auth/oauth2.go"]))
         self.assertFalse(is_global_change(["docs/README.md"]))
 
-    def test_build_test_matrix_unfiltered(self) -> None:
-        matrix = build_test_matrix(self.sample_targets, changed_files=None)
+    def test_map_test_targets_to_matrix(self) -> None:
+        matrix = map_test_targets_to_matrix(self.sample_targets)
         expected = [
             {"target": "root", "bazel_args": "//:all"},
-            {"target": "cmd/ui", "bazel_args": "//cmd/ui/..."},
             {"target": "cmd/rest", "bazel_args": "//cmd/... -//cmd/ui/..."},
+            {"target": "cmd/ui", "bazel_args": "//cmd/ui/..."},
             {"target": "deploy", "bazel_args": "//deploy/..."},
-            {"target": "internal/storage", "bazel_args": "//internal/storage/..."},
             {
                 "target": "internal/rest",
                 "bazel_args": "//internal/... -//internal/storage/...",
             },
+            {"target": "internal/storage", "bazel_args": "//internal/storage/..."},
             {"target": "pkg", "bazel_args": "//pkg/..."},
             {"target": "tools", "bazel_args": "//tools/..."},
         ]
         self.assertEqual(matrix, expected)
 
+    def test_build_test_matrix_unfiltered(self) -> None:
+        matrix = build_test_matrix(self.sample_targets, changed_files=None)
+        expected = map_test_targets_to_matrix(self.sample_targets)
+        self.assertEqual(matrix, expected)
+
+    def test_build_test_matrix_cross_dependencies(self) -> None:
+        # When internal/auth/auth.go is changed, rdeps discovers both internal/auth and cmd/actuator tests.
+        affected_override = [
+            "//cmd/actuator:workunittaskhandler_test",
+            "//internal/auth:auth_test",
+        ]
+        matrix = build_test_matrix(
+            self.sample_targets,
+            changed_files=["internal/auth/auth.go"],
+            affected_targets_override=affected_override,
+        )
+        expected = [
+            {"target": "cmd/rest", "bazel_args": "//cmd/... -//cmd/ui/..."},
+            {
+                "target": "internal/rest",
+                "bazel_args": "//internal/... -//internal/storage/...",
+            },
+        ]
+        self.assertEqual(matrix, expected)
+
     def test_build_test_matrix_pkg_only(self) -> None:
-        matrix = build_test_matrix(self.sample_targets, changed_files=["pkg/auth/oauth2.go"])
+        matrix = build_test_matrix(
+            self.sample_targets,
+            changed_files=["pkg/auth/oauth2.go"],
+            affected_targets_override=["//pkg/auth/oauth2:oauth2_test"],
+        )
         expected = [{"target": "pkg", "bazel_args": "//pkg/..."}]
         self.assertEqual(matrix, expected)
 
     def test_build_test_matrix_cmd_ui_only(self) -> None:
-        matrix = build_test_matrix(self.sample_targets, changed_files=["cmd/ui/app/main.ts"])
+        matrix = build_test_matrix(
+            self.sample_targets,
+            changed_files=["cmd/ui/app/main.ts"],
+            affected_targets_override=["//cmd/ui:server_test"],
+        )
         expected = [{"target": "cmd/ui", "bazel_args": "//cmd/ui/..."}]
         self.assertEqual(matrix, expected)
 
@@ -81,13 +133,24 @@ class DiscoverTestMatrixTest(unittest.TestCase):
         matrix = build_test_matrix(
             self.sample_targets,
             changed_files=["internal/storage/spanner/schema.go"],
+            affected_targets_override=["//internal/storage/spanner:spanner_test"],
         )
         expected = [{"target": "internal/storage", "bazel_args": "//internal/storage/..."}]
         self.assertEqual(matrix, expected)
 
     def test_build_test_matrix_docs_only_returns_empty(self) -> None:
-        matrix = build_test_matrix(self.sample_targets, changed_files=["docs/README.md"])
+        matrix = build_test_matrix(
+            self.sample_targets,
+            changed_files=["docs/README.md"],
+            affected_targets_override=[],
+        )
         self.assertEqual(matrix, [])
+
+    @patch("subprocess.check_output")
+    def test_query_affected_test_targets(self, mock_subprocess) -> None:
+        mock_subprocess.return_value = b"//cmd/actuator:test\n//internal/auth:test\n"
+        targets = query_affected_test_targets(["internal/auth/auth.go"])
+        self.assertEqual(targets, ["//cmd/actuator:test", "//internal/auth:test"])
 
     @patch("subprocess.check_output")
     def test_get_changed_files_fallback_to_none_on_git_error(self, mock_subprocess) -> None:
