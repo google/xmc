@@ -2410,3 +2410,92 @@ func TestShouldEnableJobSetCoordinator(t *testing.T) {
 		t.Errorf("shouldEnableJobSetCoordinator(valid Coordinator) = false, want true")
 	}
 }
+
+func TestConstructJobSet_ManagedXprofGCSInjection(t *testing.T) {
+	// The actuator injects the GCS destination purely from the MANAGED_XPROF_GCS_PATH
+	// env var, decoupled from the ManagedXprof artifact or any "requested" env flag.
+	tests := []struct {
+		name          string
+		gcsPathEnv    string
+		wantGCSBucket string
+		wantGCSObject string
+	}{
+		{
+			name:          "gcs path env present injects GCS env",
+			gcsPathEnv:    "gs://my-awesome-profile-bucket",
+			wantGCSBucket: "gs://my-awesome-profile-bucket",
+			wantGCSObject: "gs://my-awesome-profile-bucket/xmc-123-456-1764149578",
+		},
+		{
+			name: "gcs path env absent skips GCS env",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+			if tc.gcsPathEnv != "" {
+				t.Setenv(constants.XmcEnvVarManagedXprofGCSPath, tc.gcsPathEnv)
+			}
+
+			workUnit := &esspb.WorkUnit{
+				Name: "workUnit1",
+				Executable: &esspb.Executable{
+					Type: &esspb.Executable_Jobset{
+						Jobset: &esspb.JobSetExecutable{
+							Jobs: []*esspb.KubernetesJob{
+								{
+									Name: "job1",
+									Spec: &esspb.ExecutableSpec{
+										Resources: &esspb.ResourceSet{
+											Resources: &esspb.ResourceSet_CpuResources{
+												CpuResources: &esspb.CpuResources{
+													CpuMillicores: 100,
+													MemoryBytes:   1024,
+												},
+											},
+										},
+										DockerImage: "foo/bar",
+									},
+									Replicas: 1,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+			if err != nil {
+				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+			}
+			if len(got.Spec.ReplicatedJobs) != 1 {
+				t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
+			}
+			podSpec := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
+			if len(podSpec.Containers) != 1 {
+				t.Fatalf("Expected 1 container, got %d", len(podSpec.Containers))
+			}
+
+			envMap := make(map[string]string)
+			for _, ev := range podSpec.Containers[0].Env {
+				envMap[ev.Name] = ev.Value
+			}
+
+			if got := envMap[constants.XmcEnvVarManagedXprofGCSBucket]; got != tc.wantGCSBucket {
+				t.Errorf("GCS bucket env = %q, want %q", got, tc.wantGCSBucket)
+			}
+			if got := envMap[constants.XmcEnvVarManagedXprofGCSObjectFolder]; got != tc.wantGCSObject {
+				t.Errorf("GCS object folder env = %q, want %q", got, tc.wantGCSObject)
+			}
+			// The actuator must no longer inject display name / run group; those are
+			// resolved by the reconciler from the artifact.
+			if _, ok := envMap[constants.XmcEnvVarManagedXprofDisplayName]; ok {
+				t.Errorf("did not expect %s to be injected by the actuator", constants.XmcEnvVarManagedXprofDisplayName)
+			}
+			if _, ok := envMap[constants.XmcEnvVarManagedXprofRunGroup]; ok {
+				t.Errorf("did not expect %s to be injected by the actuator", constants.XmcEnvVarManagedXprofRunGroup)
+			}
+		})
+	}
+}

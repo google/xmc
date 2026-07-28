@@ -14,17 +14,21 @@
 
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
+import { map } from 'rxjs/operators';
 
-import { FeatureFlagService } from './service/feature_flag_service';
+import { HealthService } from './service/health_service';
 
 export const adminPanelGuard: CanActivateFn = () => {
-  const featureFlagService = inject(FeatureFlagService);
+  const healthService = inject(HealthService);
   const router = inject(Router);
 
-  if (featureFlagService.isAdminPanelEnabled) {
-    return true;
-  }
-
-  router.navigate(['/']);
-  return false;
+  return healthService.isAdminPanelAccessible().pipe(
+    map((accessible) => {
+      if (accessible) {
+        return true;
+      }
+      router.navigate(['/']);
+      return false;
+    }),
+  );
 };

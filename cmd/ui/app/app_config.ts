@@ -33,9 +33,11 @@ import {
   USE_MOCK_DATA,
 } from './service/constants';
 import { ExperimentService } from './service/experiment_service';
+import { HealthService } from './service/health_service';
 import { StatusMessageService } from './service/status_message_service';
 import { MockArtifactService } from './service/testing/mock_artifact_service';
 import { MockExperimentService } from './service/testing/mock_experiment_service';
+import { MockHealthService } from './service/testing/mock_health_service';
 import { MockStatusMessageService } from './service/testing/mock_status_message_service';
 import { MockWorkUnitsService } from './service/testing/mock_work_units_service';
 import { WorkUnitsService } from './service/work_units_service';
@@ -111,6 +113,10 @@ export const appConfig: ApplicationConfig = {
       provide: StatusMessageService,
       useFactory: () =>
         inject(USE_MOCK_DATA) ? new MockStatusMessageService() : new StatusMessageService(),
+    },
+    {
+      provide: HealthService,
+      useFactory: () => (inject(USE_MOCK_DATA) ? new MockHealthService() : new HealthService()),
     },
   ],
 };

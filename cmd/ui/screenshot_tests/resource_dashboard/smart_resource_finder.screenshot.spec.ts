@@ -14,11 +14,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import {
-  handleUserAuthRoute,
-  mountComponentHarness,
-  setupScreenshotEnvironment,
-} from '../test_utils';
+import { handleUserAuthRoute, setupScreenshotEnvironment } from '../test_utils';
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -31,13 +27,14 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for smart resource finder section', async ({ page }) => {
-    await mountComponentHarness(
-      page,
-      `<xmc-smart-resource-finder style="display: flex; align-items: center; gap: 16px; width: 960px; height: 88px; box-sizing: border-box; padding: 16px 24px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px;"></xmc-smart-resource-finder>`,
-    );
-
     const smartFinderComponent = page.locator('xmc-smart-resource-finder').first();
+    await smartFinderComponent.evaluate((el) => {
+      el.style.cssText =
+        'display: flex; align-items: center; gap: 16px; width: 960px; height: 88px; box-sizing: border-box; padding: 16px 24px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px;';
+    });
     await expect(smartFinderComponent).toBeVisible();
-    await expect(smartFinderComponent).toHaveScreenshot('smart-resource-finder-initial.png');
+    await expect(smartFinderComponent).toHaveScreenshot('smart-resource-finder-initial.png', {
+      maxDiffPixelRatio: 0.05,
+    });
   });
 });

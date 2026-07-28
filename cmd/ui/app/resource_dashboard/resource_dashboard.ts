@@ -28,6 +28,7 @@ import { Subscription } from 'rxjs';
 
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
+import { QueueJobsTable } from 'xmanager_cloud/ui/app/side_panel/contents/queue_jobs_table/queue_jobs_table';
 
 import {
   AutoReloadService,
@@ -56,7 +57,13 @@ import { ROD_TERM_TOOLTIPS } from './constants/rod_tooltips';
   templateUrl: './resource_dashboard.ng.html',
   styleUrl: './resource_dashboard.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, SubnavTabsComponent, SmartResourceFinderComponent, QueueListComponent],
+  imports: [
+    CommonModule,
+    SubnavTabsComponent,
+    SmartResourceFinderComponent,
+    QueueListComponent,
+    QueueJobsTable,
+  ],
 })
 export class ResourceDashboard implements OnInit, OnDestroy {
   private readonly autoReloadService = inject(AutoReloadService);

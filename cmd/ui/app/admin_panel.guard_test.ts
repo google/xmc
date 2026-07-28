@@ -16,30 +16,32 @@ import 'jasmine';
 
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
+import { firstValueFrom, Observable, of } from 'rxjs';
 
 import { adminPanelGuard } from './admin_panel.guard';
-import { FeatureFlagService } from './service/feature_flag_service';
+import { HealthService } from './service/health_service';
 import { cleanState, setupModule } from './testing/test';
 
 function setup() {
   return cleanState(() => {
-    let adminPanelEnabledValue = false;
-    const featureFlagServiceSpy = {
-      get isAdminPanelEnabled() {
-        return adminPanelEnabledValue;
+    let adminPanelAccessibleValue = false;
+
+    const healthServiceSpy = {
+      isAdminPanelAccessible() {
+        return of(adminPanelAccessibleValue);
       },
     };
     const routerSpy = jasmine.createSpyObj('Router', ['navigate']);
 
     setupModule({
       providers: [
-        { provide: FeatureFlagService, useValue: featureFlagServiceSpy },
+        { provide: HealthService, useValue: healthServiceSpy },
         { provide: Router, useValue: routerSpy },
       ],
     });
     return {
-      setAdminPanelEnabled: (val: boolean) => {
-        adminPanelEnabledValue = val;
+      setAdminPanelAccessible: (val: boolean) => {
+        adminPanelAccessibleValue = val;
       },
       routerSpy,
     };
@@ -49,19 +51,31 @@ function setup() {
 describe('adminPanelGuard', () => {
   const state = setup();
 
-  it('should return true if admin panel is enabled', () => {
-    state.setAdminPanelEnabled(true);
+  it('should return true if admin panel is accessible', async () => {
+    state.setAdminPanelAccessible(true);
 
-    const result = TestBed.runInInjectionContext(() => adminPanelGuard({} as any, {} as any));
+    const resultOrObservable = TestBed.runInInjectionContext(() =>
+      adminPanelGuard({} as any, {} as any),
+    );
+    const result =
+      resultOrObservable instanceof Observable
+        ? await firstValueFrom(resultOrObservable)
+        : resultOrObservable;
 
     expect(result).toBeTrue();
     expect(state.routerSpy.navigate).not.toHaveBeenCalled();
   });
 
-  it('should redirect to / and return false if admin panel is disabled', () => {
-    state.setAdminPanelEnabled(false);
+  it('should redirect to / and return false if admin panel is not accessible', async () => {
+    state.setAdminPanelAccessible(false);
 
-    const result = TestBed.runInInjectionContext(() => adminPanelGuard({} as any, {} as any));
+    const resultOrObservable = TestBed.runInInjectionContext(() =>
+      adminPanelGuard({} as any, {} as any),
+    );
+    const result =
+      resultOrObservable instanceof Observable
+        ? await firstValueFrom(resultOrObservable)
+        : resultOrObservable;
 
     expect(result).toBeFalse();
     expect(state.routerSpy.navigate).toHaveBeenCalledWith(['/']);
