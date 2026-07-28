@@ -115,7 +115,6 @@ jobs:
             --disk_cache=~/.cache/bazel-disk \
             --experimental_repository_cache_hardlinks \
             --test_output=errors \
-            --experimental_ui_max_stdouterr_bytes=10485760 \
             --build_tests_only \
             --test_timeout=${{ env.TEST_TIMEOUT_SECONDS }},300,300,300 \
             -- \
