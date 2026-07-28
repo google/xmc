@@ -22,6 +22,8 @@ py_library(
         "client.py",
         "dist_harvest.py",
         "flusher.py",
+        "integrations/__init__.py",
+        "integrations/keras.py",
         "network.py",
         "resilience.py",
         "types.py",
@@ -83,6 +85,13 @@ py_test(
 py_test(
     name = "sdk_setup_test",
     srcs = ["sdk_setup_test.py"],
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "keras_integration_test",
+    srcs = ["integrations/keras_test.py"],
+    main = "integrations/keras_test.py",
     deps = [":xmc"],
 )
 

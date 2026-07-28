@@ -25,31 +25,41 @@ import (
 
 // Config holds the runtime configuration for the Ingestion Gateway.
 type Config struct {
-	Port               string
-	RedpandaBrokers    []string
-	TopicName          string
-	MinPartitions      int
-	MinReplicas        int
-	SASLEnabled        bool
-	SASLMechanism      string
-	SASLUser           string
-	SASLPassword       string
-	SASLCredentialsDir string
-	ProjectID          string
+	Port                  string
+	RedpandaBrokers       []string
+	TopicName             string
+	MinPartitions         int
+	MinReplicas           int
+	SASLEnabled           bool
+	SASLMechanism         string
+	SASLUser              string
+	SASLPassword          string
+	SASLCredentialsDir    string
+	TLSEnabled            bool
+	TLSCertFile           string
+	TLSKeyFile            string
+	TLSCaFile             string
+	TLSInsecureSkipVerify bool
+	ProjectID             string
 }
 
 var (
-	port               string
-	redpandaBrokersStr string
-	topicName          string
-	minPartitions      int
-	minReplicas        int
-	saslEnabled        bool
-	saslMechanism      string
-	saslUser           string
-	saslPassword       string
-	saslCredentialsDir string
-	projectID          string
+	port                  string
+	redpandaBrokersStr    string
+	topicName             string
+	minPartitions         int
+	minReplicas           int
+	saslEnabled           bool
+	saslMechanism         string
+	saslUser              string
+	saslPassword          string
+	saslCredentialsDir    string
+	tlsEnabled            bool
+	tlsCertFile           string
+	tlsKeyFile            string
+	tlsCaFile             string
+	tlsInsecureSkipVerify bool
+	projectID             string
 )
 
 func init() {
@@ -63,6 +73,11 @@ func init() {
 	flag.StringVar(&saslUser, "sasl_user", "", "SASL username (if omitted, loaded from sasl_credentials_dir/username).")
 	flag.StringVar(&saslPassword, "sasl_password", "", "SASL password (if omitted, loaded from sasl_credentials_dir/password).")
 	flag.StringVar(&saslCredentialsDir, "sasl_credentials_dir", "/etc/kafka/credentials", "Directory containing mounted SASL secret files.")
+	flag.BoolVar(&tlsEnabled, "tls_enabled", false, "Whether TLS/mTLS is enabled for Redpanda connections.")
+	flag.StringVar(&tlsCertFile, "tls_cert_file", "", "Path to TLS client certificate file for mTLS.")
+	flag.StringVar(&tlsKeyFile, "tls_key_file", "", "Path to TLS client private key file for mTLS.")
+	flag.StringVar(&tlsCaFile, "tls_ca_file", "", "Path to TLS CA certificate file for server verification.")
+	flag.BoolVar(&tlsInsecureSkipVerify, "tls_insecure_skip_verify", false, "Skip TLS certificate verification (for testing only).")
 	flag.StringVar(&projectID, "project_id", "", "GCP project ID for logging.")
 }
 
@@ -71,17 +86,22 @@ func LoadConfig() (*Config, error) {
 	brokers := parseBrokers(redpandaBrokersStr)
 
 	cfg := &Config{
-		Port:               strings.TrimSpace(port),
-		RedpandaBrokers:    brokers,
-		TopicName:          strings.TrimSpace(topicName),
-		MinPartitions:      minPartitions,
-		MinReplicas:        minReplicas,
-		SASLEnabled:        saslEnabled,
-		SASLMechanism:      strings.ToUpper(strings.TrimSpace(saslMechanism)),
-		SASLUser:           strings.TrimSpace(saslUser),
-		SASLPassword:       strings.TrimSpace(saslPassword),
-		SASLCredentialsDir: strings.TrimSpace(saslCredentialsDir),
-		ProjectID:          strings.TrimSpace(projectID),
+		Port:                  strings.TrimSpace(port),
+		RedpandaBrokers:       brokers,
+		TopicName:             strings.TrimSpace(topicName),
+		MinPartitions:         minPartitions,
+		MinReplicas:           minReplicas,
+		SASLEnabled:           saslEnabled,
+		SASLMechanism:         strings.ToUpper(strings.TrimSpace(saslMechanism)),
+		SASLUser:              strings.TrimSpace(saslUser),
+		SASLPassword:          strings.TrimSpace(saslPassword),
+		SASLCredentialsDir:    strings.TrimSpace(saslCredentialsDir),
+		TLSEnabled:            tlsEnabled,
+		TLSCertFile:           strings.TrimSpace(tlsCertFile),
+		TLSKeyFile:            strings.TrimSpace(tlsKeyFile),
+		TLSCaFile:             strings.TrimSpace(tlsCaFile),
+		TLSInsecureSkipVerify: tlsInsecureSkipVerify,
+		ProjectID:             strings.TrimSpace(projectID),
 	}
 
 	if cfg.SASLEnabled {
@@ -170,6 +190,11 @@ func (c *Config) Validate() error {
 		}
 		if c.SASLPassword == "" {
 			return fmt.Errorf("sasl_password is required when sasl_enabled is true")
+		}
+	}
+	if c.TLSEnabled {
+		if (c.TLSCertFile != "" && c.TLSKeyFile == "") || (c.TLSCertFile == "" && c.TLSKeyFile != "") {
+			return fmt.Errorf("tls_cert_file and tls_key_file must both be provided for mTLS")
 		}
 	}
 	return nil
