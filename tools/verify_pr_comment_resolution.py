@@ -53,7 +53,7 @@ def verify_resolution(args):
             "Verify the checklist contains formatted items like 'Comment ID `12345`'.",
         )
 
-    endpoint = f"/repos/{owner}/{repo}/pulls/{pull_number}/comments?per_page=100"
+    endpoint = f"/repos/{owner}/{repo}/pulls/{pull_number}/comments"
     try:
         comments = call_github_api(endpoint, user_agent="XMC-Comment-Verifier-Agent")
     except GithubAuthError as e:
