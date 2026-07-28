@@ -40,7 +40,7 @@ func (r *Repository) AddWorkUnitOperation(ctx context.Context, xid int64, wid in
 
 	var operation *longrunningpb.Operation
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
-		now := time.Now().Truncate(time.Microsecond)
+		now := time.Now()
 		operationMetadata.CreateTime = timestamppb.New(now)
 		anyMetadata, err := anypb.New(operationMetadata)
 		if err != nil {

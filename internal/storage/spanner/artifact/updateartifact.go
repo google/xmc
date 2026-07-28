@@ -62,7 +62,7 @@ func (r *Repository) UpdateArtifact(ctx context.Context, update *storage.Artifac
 		}
 
 		// 2.2. Update the UpdateTime column to the current time.
-		now := time.Now().Truncate(time.Microsecond)
+		now := time.Now()
 		updatedArtifact.UpdateTime = timestamppb.New(now)
 
 		// 3. Construct the Spanner mutation for the update.
