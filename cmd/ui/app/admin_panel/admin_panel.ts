@@ -51,13 +51,4 @@ export class AdminPanelPage {
       }),
     ),
   );
-
-  readonly userInfo = toSignal(
-    this.healthService.getUserInfo().pipe(
-      catchError((error) => {
-        console.error('Failed to fetch user info', error);
-        return of({ error: 'Failed to fetch user info' });
-      }),
-    ),
-  );
 }

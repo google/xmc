@@ -32,13 +32,4 @@
       <p>Loading Configuration...</p>
     }
   </div>
-
-  <div class="user-info-section">
-    <h2>User Info</h2>
-    @if (userInfo(); as info) {
-      <pre class="raw-json">{{ info | json }}</pre>
-    } @else {
-      <p>Loading User Info...</p>
-    }
-  </div>
 </div>

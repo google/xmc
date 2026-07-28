@@ -32,21 +32,20 @@ describe('AdminPanelPage Component', () => {
 
   it('should be created', () => {
     const comp = bootstrap(AdminPanelPage);
+
     expect(comp).toBeTruthy();
   });
 
-  it('should display health status, configs and user info', async () => {
+  it('should display health status and configs', async () => {
     bootstrap(AdminPanelPage);
     await flush();
 
     const preElements = getEls('pre.raw-json');
-    expect(preElements.length).toBe(3);
 
+    expect(preElements.length).toBe(2);
     expect(preElements[0].textContent).toContain('HEALTH_STATE_HEALTHY');
     expect(preElements[0].textContent).toContain('mock-app-version-1.0.0');
     expect(preElements[1].textContent).toContain('Health Service Config');
     expect(preElements[1].textContent).toContain('mock-project');
-    expect(preElements[2].textContent).toContain('mock-user@google.com');
-    expect(preElements[2].textContent).toContain('PRIVILEGE_ACCESS_ADMIN_PANEL');
   });
 });

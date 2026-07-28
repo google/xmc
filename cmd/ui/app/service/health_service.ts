@@ -52,9 +52,9 @@ export class HealthService {
     );
   }
 
-  private userInfo$?: Observable<UserInfoResponse | null>;
+  private userInfo$?: Observable<UserInfoResponse>;
 
-  getUserInfo(): Observable<UserInfoResponse | null> {
+  getUserInfo(): Observable<UserInfoResponse> {
     if (!this.userInfo$) {
       this.userInfo$ = this.http
         .get<UserInfoResponse>(`${EXPERIMENT_STATE_SERVER_DOMAIN}/health/userinfo`, {
@@ -63,7 +63,8 @@ export class HealthService {
         .pipe(
           catchError((error) => {
             console.error('Failed to fetch user info', error);
-            return of(null);
+            this.userInfo$ = undefined;
+            throw error;
           }),
           shareReplay(1),
         );
@@ -77,6 +78,7 @@ export class HealthService {
     }
     return this.getUserInfo().pipe(
       map((info) => !!info?.privileges?.includes(PRIVILEGE_ACCESS_ADMIN_PANEL)),
+      catchError(() => of(false)),
     );
   }
 }

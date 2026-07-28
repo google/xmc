@@ -70,13 +70,12 @@ describe('HealthService', () => {
 
     it('should make api call correctly', async () => {
       const responsePromise = firstValueFrom(state.service.getHealthStatus());
-
       const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/health/status`);
-      expect(req.request.method).toBe('GET');
 
       req.flush(mockResponse);
-
       const response = await responsePromise;
+
+      expect(req.request.method).toBe('GET');
       expect(response).toEqual(mockResponse);
     });
   });
@@ -88,13 +87,12 @@ describe('HealthService', () => {
 
     it('should make api call correctly', async () => {
       const responsePromise = firstValueFrom(state.service.getHealthConfigs());
-
       const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/health/configs`);
-      expect(req.request.method).toBe('GET');
 
       req.flush(mockResponse);
-
       const response = await responsePromise;
+
+      expect(req.request.method).toBe('GET');
       expect(response).toEqual(mockResponse);
     });
   });
@@ -107,13 +105,12 @@ describe('HealthService', () => {
 
     it('should make api call correctly', async () => {
       const responsePromise = firstValueFrom(state.service.getUserInfo());
-
       const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/health/userinfo`);
-      expect(req.request.method).toBe('GET');
 
       req.flush(mockResponse);
-
       const response = await responsePromise;
+
+      expect(req.request.method).toBe('GET');
       expect(response).toEqual(mockResponse);
     });
   });
@@ -123,6 +120,7 @@ describe('HealthService', () => {
       state.setAdminPanelEnabled(false);
 
       const result = await firstValueFrom(state.service.isAdminPanelAccessible());
+
       expect(result).toBeFalse();
     });
 
@@ -133,11 +131,10 @@ describe('HealthService', () => {
       };
 
       const responsePromise = firstValueFrom(state.service.isAdminPanelAccessible());
-
       const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/health/userinfo`);
       req.flush(mockUserInfo);
-
       const result = await responsePromise;
+
       expect(result).toBeTrue();
     });
 
@@ -148,11 +145,10 @@ describe('HealthService', () => {
       };
 
       const responsePromise = firstValueFrom(state.service.isAdminPanelAccessible());
-
       const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/health/userinfo`);
       req.flush(mockUserInfo);
-
       const result = await responsePromise;
+
       expect(result).toBeFalse();
     });
   });

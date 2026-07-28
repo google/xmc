@@ -34,21 +34,27 @@ describe('MockHealthService', () => {
 
   it('should return mock health status', async () => {
     const service = mockState.service as MockHealthService;
+
     const response = await firstValueFrom(service.getHealthStatus());
+
     expect(response.healthState).toBe('HEALTH_STATE_HEALTHY');
     expect(response.systemInfo.appVersion).toBe('mock-app-version-1.0.0');
   });
 
   it('should return mock health configs', async () => {
     const service = mockState.service as MockHealthService;
+
     const response = await firstValueFrom(service.getHealthConfigs());
+
     expect(response.configGroups?.length).toBeGreaterThan(0);
     expect(response.configGroups?.[0].displayName).toBe('Health Service Config');
   });
 
   it('should return mock user info', async () => {
     const service = mockState.service as MockHealthService;
+
     const response = await firstValueFrom(service.getUserInfo());
+
     expect(response.userEmail).toBe('mock-user@google.com');
     expect(response.privileges).toContain('PRIVILEGE_ACCESS_ADMIN_PANEL');
   });
