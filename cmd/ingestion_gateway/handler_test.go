@@ -322,7 +322,7 @@ func TestMetricsIngestionHandler_ContextCancelled(t *testing.T) {
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected status 400 Bad Request on canceled context, got %d", resp.StatusCode)
+		t.Fatalf("expected status 400 Bad Request on cancelled context, got %d", resp.StatusCode)
 	}
 }
 
