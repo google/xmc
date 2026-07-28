@@ -43,7 +43,7 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 		// 1. Extract the XID and WID from the work unit name.
 		xid, wid, err := validator.ValidateWorkUnitNameAllowZeroWID(wu.GetName())
 		if err != nil {
-			return fmt.Errorf("failed to validate work unit name: %w", err)
+			return fmt.Errorf("failed to validate work unit name: %w (%v)", status.ErrInvalidArgument, err)
 		}
 
 		// 1.1. If the work unit ID is 0, fetch the next available ID and update the names.
