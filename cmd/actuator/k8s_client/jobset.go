@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	batchv1 "golang/k8s_io/api/v/v0_23/batch/v1/v1"
@@ -342,6 +343,26 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 	}
 }
 
+// injectManagedXprofGCSEnvVars appends the managed-xprof GCS destination env vars to
+// the primary container of the replicated job so the workload knows where to write
+// xprof output. No-op when no bucket was resolved.
+func injectManagedXprofGCSEnvVars(rj *jobsetv1alpha2.ReplicatedJob, xprofBucketURL, xprofObjectPath string) {
+	if xprofBucketURL == "" && xprofObjectPath == "" {
+		return
+	}
+	if len(rj.Template.Spec.Template.Spec.Containers) == 0 {
+		return
+	}
+	// Take a pointer to the element so appends write back to the JobSet in place.
+	container := &rj.Template.Spec.Template.Spec.Containers[0]
+	if xprofBucketURL != "" {
+		container.Env = append(container.Env, corev1.EnvVar{Name: constants.XmcEnvVarManagedXprofGCSBucket, Value: xprofBucketURL})
+	}
+	if xprofObjectPath != "" {
+		container.Env = append(container.Env, corev1.EnvVar{Name: constants.XmcEnvVarManagedXprofGCSObjectFolder, Value: xprofObjectPath})
+	}
+}
+
 // copyNodeSelector creates an immutable copy of the job node selector map.
 func copyNodeSelector(source map[string]string) map[string]string {
 	if len(source) == 0 {
@@ -381,14 +402,12 @@ func buildContainerPorts(spec *esspb.ExecutableSpec) []corev1.ContainerPort {
 	}
 	ports := make([]corev1.ContainerPort, 0, len(spec.GetPorts()))
 	for _, p := range spec.GetPorts() {
-		protocol := corev1.ProtocolTCP
+		var protocol corev1.Protocol
 		switch p.GetProtocol() {
 		case esspb.ContainerPort_UDP:
 			protocol = corev1.ProtocolUDP
 		case esspb.ContainerPort_SCTP:
 			protocol = corev1.ProtocolSCTP
-		case esspb.ContainerPort_TCP, esspb.ContainerPort_PROTOCOL_UNSPECIFIED:
-			protocol = corev1.ProtocolTCP
 		default:
 			protocol = corev1.ProtocolTCP
 		}
@@ -467,10 +486,25 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		constants.AutoscalerSafeToEvictAnnotation: "false",
 	}
 
+	// Inject the managed-xprof GCS destination whenever the cluster configures a
+	// managed-xprof GCS bucket. This is intentionally decoupled from the ManagedXprof
+	// artifact: the workload only needs to know where to write xprof output,
+	// regardless of whether or when the artifact is attached.
+	var xprofBucketURL string
+	var xprofObjectPath string
+	if bucket, bucketErr := c.ManagedXProfGCSBucket(ctx); bucketErr != nil {
+		logging.Warn(ctx, "Failed to resolve managed-xprof GCS path via Actuator", "error", bucketErr)
+	} else if bucket != "" {
+		xprofBucketURL = bucket
+		xprofObjectPath = fmt.Sprintf("%s/xmc-%s-%s-%s", strings.TrimSuffix(bucket, "/"), xid, wid, strconv.FormatInt(operationTime.Unix(), 10))
+	}
+
 	var replicatedJobs []jobsetv1alpha2.ReplicatedJob
 	if workUnit.GetExecutable().GetJobset() != nil {
 		for _, job := range workUnit.GetExecutable().GetJobset().GetJobs() {
-			replicatedJobs = append(replicatedJobs, c.k8sJobToReplicatedJob(ctx, job, jobLabels, jobSetAnnotations))
+			rj := c.k8sJobToReplicatedJob(ctx, job, jobLabels, jobSetAnnotations)
+			injectManagedXprofGCSEnvVars(&rj, xprofBucketURL, xprofObjectPath)
+			replicatedJobs = append(replicatedJobs, rj)
 		}
 	}
 

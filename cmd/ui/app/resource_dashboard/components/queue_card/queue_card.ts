@@ -15,11 +15,12 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
+import { MatTooltipModule } from '@angular/material/tooltip';
 
+import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
 import {
   FreeTotalDisplayPipe,
   MaxWorkloadDisplayPipe,
-  PredictabilityMessagePipe,
   QueueStatusBadgePipe,
 } from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
 import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
@@ -33,10 +34,10 @@ import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
   imports: [
     CommonModule,
     MatIconModule,
+    MatTooltipModule,
     MaxWorkloadDisplayPipe,
     FreeTotalDisplayPipe,
     QueueStatusBadgePipe,
-    PredictabilityMessagePipe,
   ],
 })
 export class QueueCardComponent {
@@ -44,9 +45,17 @@ export class QueueCardComponent {
   readonly isSelected = input<boolean>(false);
   readonly selectQueue = output<string>();
 
+  // TODO: Restore copyFlag functionality and isCopied signal once flag formatting and requirements are finalized.
+  protected readonly termTooltips = ROD_TERM_TOOLTIPS;
   protected readonly flavors = computed(() => this.queue()?.flavors ?? []);
 
-  protected onCardClick() {
+  protected readonly isQueueHealthy = computed(() => {
+    const q = this.queue();
+    if (!q || q.status !== 'Active') return false;
+    return (q.pendingWorkloads || 0) === 0;
+  });
+
+  protected onCardClick(): void {
     this.selectQueue.emit(this.queue().name);
   }
 }

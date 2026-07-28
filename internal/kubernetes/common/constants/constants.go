@@ -72,6 +72,24 @@ const (
 	// execution ID of the job.
 	XmcEnvVarExecutionID = "XMC_EXECUTION_ID"
 
+	// XmcEnvVarManagedXprofGCSPath is the environment variable on the actuator that
+	// provides the cluster-wide managed-xprof GCS bucket path. It is sourced from the
+	// managed-xprof-gcs-config ConfigMap by the Helm chart, and is empty when managed
+	// xprof is not configured for the cluster.
+	XmcEnvVarManagedXprofGCSPath = "MANAGED_XPROF_GCS_PATH"
+
+	// XmcEnvVarManagedXprofGCSBucket is the environment variable containing the GCS bucket for managed profiling, which is shared by the whole cluster.
+	XmcEnvVarManagedXprofGCSBucket = "XMC_MANAGED_XPROF_GCS_BUCKET"
+
+	// XmcEnvVarManagedXprofGCSObjectFolder is the environment variable containing the GCS object folder for managed profiling, which is per workunit.
+	XmcEnvVarManagedXprofGCSObjectFolder = "XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER"
+
+	// XmcEnvVarManagedXprofDisplayName is the environment variable containing the display name for managed profiling's machine learning run.
+	XmcEnvVarManagedXprofDisplayName = "XMC_MANAGED_XPROF_DISPLAY_NAME"
+
+	// XmcEnvVarManagedXprofRunGroup is the environment variable containing the run group for managed profiling's machine learning run.
+	XmcEnvVarManagedXprofRunGroup = "XMC_MANAGED_XPROF_RUN_GROUP"
+
 	// JobSetJobIndexLabel is the label set by JobSet for the job index.
 	JobSetJobIndexLabel = "jobset.sigs.k8s.io/job-index"
 

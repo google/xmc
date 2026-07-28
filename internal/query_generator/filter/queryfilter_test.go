@@ -376,7 +376,7 @@ func TestSingleLevelAppendSuccess(t *testing.T) {
 func TestSingleLevelAppendFailure(t *testing.T) {
 	tests := []failureTest{
 		{
-			`nmae = "42"`,
+			`name = "42"`,
 			map[string]appendix{},
 		},
 		{

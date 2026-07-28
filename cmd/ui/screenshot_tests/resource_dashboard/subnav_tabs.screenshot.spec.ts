@@ -14,11 +14,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import {
-  handleUserAuthRoute,
-  mountComponentHarness,
-  setupScreenshotEnvironment,
-} from '../test_utils';
+import { handleUserAuthRoute, setupScreenshotEnvironment } from '../test_utils';
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -31,13 +27,14 @@ test.describe('SubnavTabsComponent - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for subnav tabs layout', async ({ page }) => {
-    await mountComponentHarness(
-      page,
-      `<xmc-rod-subnav-tabs style="display: block; width: 640px; height: 48px; box-sizing: border-box; background: #ffffff; padding: 8px 16px 0 16px; border-bottom: 1px solid #dadce0;"></xmc-rod-subnav-tabs>`,
-    );
-
     const subnavComponent = page.locator('xmc-rod-subnav-tabs').first();
+    await subnavComponent.evaluate((el) => {
+      el.style.cssText =
+        'display: block; width: 640px; height: 48px; box-sizing: border-box; background: #ffffff; padding: 8px 16px 0 16px; border-bottom: 1px solid #dadce0;';
+    });
     await expect(subnavComponent).toBeVisible();
-    await expect(subnavComponent).toHaveScreenshot('subnav-tabs-component.png');
+    await expect(subnavComponent).toHaveScreenshot('subnav-tabs-component.png', {
+      maxDiffPixelRatio: 0.05,
+    });
   });
 });

@@ -19,6 +19,7 @@ import { of } from 'rxjs';
 
 import { App } from './app';
 import { AuthService } from './service/auth.service';
+import { HealthService } from './service/health_service';
 import { bootstrap, setupModule } from './testing/test';
 
 describe('App Component', () => {
@@ -26,11 +27,17 @@ describe('App Component', () => {
     const authServiceMock = jasmine.createSpyObj<AuthService>('AuthService', ['getUser']);
     authServiceMock.getUser.and.returnValue(of(null));
 
+    const healthServiceMock = jasmine.createSpyObj<HealthService>('HealthService', [
+      'isAdminPanelAccessible',
+    ]);
+    healthServiceMock.isAdminPanelAccessible.and.returnValue(of(false));
+
     setupModule({
       providers: [
         provideNoopAnimations(),
         provideRouter([]),
         { provide: AuthService, useValue: authServiceMock },
+        { provide: HealthService, useValue: healthServiceMock },
       ],
       imports: [App],
     });

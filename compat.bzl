@@ -41,6 +41,7 @@ content = content.replace("golang/prometheus/client/prometheus/promhttp/promhttp
 content = content.replace("prometheus_model/metrics_go_proto", "github.com/prometheus/client_model/go")
 content = content.replace("xmanager_cloud/kubernetes/reconciler/shared/shared", "xmanager_cloud/cmd/reconciler/shared")
 content = content.replace("xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue", "xmanager_cloud/cmd/reconciler/clusterqueue")
+content = content.replace("xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient", "xmanager_cloud/cmd/reconciler/hypercomputeclient")
 content = content.replace("protobuf/timestamp_go_proto", "google.golang.org/protobuf/types/known/timestamppb")
 content = content.replace("protobuf/any_go_proto", "google.golang.org/protobuf/types/known/anypb")
 content = content.replace("rpc/status_go_proto", "google.golang.org/genproto/googleapis/rpc/status")
