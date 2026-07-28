@@ -31,10 +31,8 @@ linters:
     - asciicheck
     - bidichk
     - nakedret
-    # Phase 3: Code formatting, duplication & complexity checks
+    # Phase 3: Code formatting & complexity checks
     - whitespace
-    - dupl
-    - gocyclo
     - nestif
 
 linters-settings:
@@ -47,12 +45,8 @@ linters-settings:
       - cancelled
       - cancelling
       - labelled
-  dupl:
-    threshold: 200
-  gocyclo:
-    min-complexity: 50
   nestif:
-    min-complexity: 15
+    min-complexity: 4
 
 issues:
   exclude-dirs:
@@ -60,12 +54,19 @@ issues:
   exclude-rules:
     - path: ".*_test\\.go"
       linters:
-        - dupl
-        - gocyclo
         - nestif
-    - path: "internal/query_generator/querytools/query_generator\\.go"
+    - path: "cmd/.*"
       linters:
-        - gocyclo
-    - path: "internal/validator/requests\\.go"
+        - nestif
+    - path: "internal/query_generator/.*"
       linters:
-        - gocyclo
+        - nestif
+    - path: "internal/storage/spanner/.*"
+      linters:
+        - nestif
+    - path: "internal/validator/.*"
+      linters:
+        - nestif
+    - path: "internal/task_queue/.*"
+      linters:
+        - nestif

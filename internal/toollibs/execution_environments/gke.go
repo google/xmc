@@ -266,25 +266,8 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 			return nil, err
 		}
 
-		if tpuRes := job.Spec.Resources.GetTpuResources(); tpuRes != nil {
-			updateTolerations(&replicatedJob.Template.Spec.Template.Spec)
-			nodesPerSlice, err := tpuNodesPerSlice(tpuRes.GetTopology())
-			if err != nil {
-				return nil, err
-			}
-			nodes := int32(nodesPerSlice)
-			completionMode := batchv1.IndexedCompletion
-			replicatedJob.Template.Spec.Parallelism = proto.Int32(nodes)
-			replicatedJob.Template.Spec.Completions = proto.Int32(nodes)
-			replicatedJob.Template.Spec.CompletionMode = &completionMode
-
-			if nodesPerSlice > 1 {
-				if jobSet.Annotations == nil {
-					jobSet.Annotations = make(map[string]string)
-				}
-				jobSet.Annotations[exclusiveTopologyAnnotation] = exclusiveTopologyValue
-				ensureJobSetNetworkConfigured(jobSet)
-			}
+		if err := configureTPUReplicatedJob(jobSet, replicatedJob, job.Spec.Resources.GetTpuResources()); err != nil {
+			return nil, err
 		} else if job.Spec.Resources.GetGpuResources() != nil {
 			// For GPU jobs, we use Replicas to specify the number of nodes, defaulting to 1 if unset.
 			nodes := replicatedJob.Replicas
@@ -313,6 +296,31 @@ func collapseReplicasToPods(jobSet *jobsetv1alpha2.JobSet, replicatedJob *jobset
 		jobSet.Spec.Coordinator.JobIndex = 0
 	}
 	replicatedJob.Replicas = 1
+}
+
+func configureTPUReplicatedJob(jobSet *jobsetv1alpha2.JobSet, replicatedJob *jobsetv1alpha2.ReplicatedJob, tpuRes *epb.TpuResources) error {
+	if tpuRes == nil {
+		return nil
+	}
+	updateTolerations(&replicatedJob.Template.Spec.Template.Spec)
+	nodesPerSlice, err := tpuNodesPerSlice(tpuRes.GetTopology())
+	if err != nil {
+		return err
+	}
+	nodes := int32(nodesPerSlice)
+	completionMode := batchv1.IndexedCompletion
+	replicatedJob.Template.Spec.Parallelism = proto.Int32(nodes)
+	replicatedJob.Template.Spec.Completions = proto.Int32(nodes)
+	replicatedJob.Template.Spec.CompletionMode = &completionMode
+
+	if nodesPerSlice > 1 {
+		if jobSet.Annotations == nil {
+			jobSet.Annotations = make(map[string]string)
+		}
+		jobSet.Annotations[exclusiveTopologyAnnotation] = exclusiveTopologyValue
+		ensureJobSetNetworkConfigured(jobSet)
+	}
+	return nil
 }
 
 func parseTotalChips(topology string) (int, error) {
