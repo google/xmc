@@ -91,6 +91,10 @@ type XidEntryUpdate struct {
 	UpdateMask *fmpb.FieldMask
 }
 
+// -----------------------
+// Experiment Methods
+// -----------------------
+
 // ExperimentStore defines storage operations for experiments.
 type ExperimentStore interface {
 	// CreateExperiment creates a new experiment.
@@ -116,6 +120,10 @@ type ExperimentStore interface {
 	UpdateExperimentLaunchState(ctx context.Context, xid int64, launchState essmsgpb.ExperimentStatus_LaunchState) (*essmsgpb.Experiment, error)
 }
 
+// -----------------------
+// WorkUnit Methods
+// -----------------------
+
 // WorkUnitStore defines storage operations for work units and work unit executions.
 type WorkUnitStore interface {
 	// CreateWorkUnit creates a new work unit as a sub-collection of an experiment.
@@ -134,6 +142,10 @@ type WorkUnitStore interface {
 	// additional actions based on the original work unit state.
 	UpdateWorkUnit(ctx context.Context, update *WorkUnitUpdate) (*essmsgpb.WorkUnit, *essmsgpb.WorkUnit, error)
 
+	// -----------------------
+	// WorkUnitExecution Methods
+	// -----------------------
+
 	// FetchCurrentWorkUnitExecution retrieves the current work unit execution.
 	FetchCurrentWorkUnitExecution(ctx context.Context, xid int64, wid int64) (*essmsgpb.WorkUnitExecution, error)
 
@@ -150,6 +162,10 @@ type WorkUnitStore interface {
 	RestartWorkUnitExecutions(ctx context.Context, requester string, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnitExecution, error)
 }
 
+// -----------------------
+// StatusMessage Methods
+// -----------------------
+
 // StatusMessageStore defines storage operations for status messages.
 type StatusMessageStore interface {
 	// ListStatusMessages retrieves a list of status messages for an experiment or work unit. Staleness should
@@ -157,6 +173,10 @@ type StatusMessageStore interface {
 	// It uses cursor pagination.
 	ListStatusMessages(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.StatusMessage, string, error)
 }
+
+// -----------------------
+// Artifact Methods
+// -----------------------
 
 // ArtifactStore defines storage operations for artifacts.
 type ArtifactStore interface {
@@ -178,6 +198,10 @@ type ArtifactStore interface {
 	DeleteArtifact(ctx context.Context, aid int64) error
 }
 
+// -----------------------
+// Operation Methods
+// -----------------------
+
 // OperationStore defines storage operations for operations.
 type OperationStore interface {
 	// AddWorkUnitOperation adds an operation to a work unit.
@@ -189,6 +213,10 @@ type OperationStore interface {
 	// UpdateWorkUnitOperation updates the status of an operation.
 	UpdateWorkUnitOperation(ctx context.Context, operationUpdate *OperationUpdate) (*longrunningpb.Operation, error)
 }
+
+// -----------------------
+// XidEntry Methods
+// -----------------------
 
 // XidEntryStore defines storage operations for XID entries.
 type XidEntryStore interface {
