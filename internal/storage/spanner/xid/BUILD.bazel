@@ -40,6 +40,7 @@ compat_go_library(
         "//internal/storage/data",
         "//internal/storage/spanner/data:spannerdata",
         "//internal/storage/spanner/schema:xidschema",
+        "//internal/storage/spanner/utils:spannerutils",
         "//internal/validator",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",

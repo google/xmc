@@ -33,6 +33,7 @@ import (
 )
 
 // UpdateWorkUnit updates a work unit with the given update mask.
+// TODO(b/517479143): Move work unit update merging logic outside the repository layer into a domain service layer.
 func (r *Repository) UpdateWorkUnit(ctx context.Context, update *storage.WorkUnitUpdate) (originalWorkUnit *essmsgpb.WorkUnit, updatedWorkUnit *essmsgpb.WorkUnit, err error) {
 	if update == nil {
 		return nil, nil, fmt.Errorf("update must not be nil")

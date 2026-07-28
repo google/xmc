@@ -21,8 +21,8 @@ import (
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/schema/artifactschema"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -67,7 +67,7 @@ func generateArtifactPrimaryKey(artifact *essmsgpb.Artifact) (spanner.Key, error
 	}
 
 	return spanner.Key{
-		data.ReverseBits(xid),
+		spannerutils.ReverseBits(xid),
 		spanner.NullInt64{Int64: wid, Valid: wid != 0},
 		aid,
 	}, nil

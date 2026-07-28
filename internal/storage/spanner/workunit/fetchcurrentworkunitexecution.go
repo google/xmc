@@ -24,6 +24,7 @@ import (
 	"xmanager_cloud/logging/logging"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/workunitschema"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -37,7 +38,7 @@ func (r *Repository) FetchCurrentWorkUnitExecution(ctx context.Context, xid int6
 func (r *Repository) FetchCurrentWorkUnitExecutionTransaction(ctx context.Context, xid int64, wid int64, txn spannerTransaction) (*essmsgpb.WorkUnitExecution, error) {
 	logging.Info(ctx, "Fetch current work unit execution row", "xid", xid, "wid", wid)
 
-	row, err := txn.ReadRow(ctx, workunitschema.WorkUnitTableName, spanner.Key{reverseBits(xid), wid}, workunitschema.CurrentWorkUnitExecutionColumns)
+	row, err := txn.ReadRow(ctx, workunitschema.WorkUnitTableName, spanner.Key{spannerutils.ReverseBits(xid), wid}, workunitschema.CurrentWorkUnitExecutionColumns)
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.NotFound {
 			return nil, fmt.Errorf("WorkUnit %d for XID %d not found: %w", wid, xid, status.ErrNotFound)

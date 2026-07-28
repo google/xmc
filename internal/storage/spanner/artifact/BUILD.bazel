@@ -38,6 +38,7 @@ compat_go_library(
         "//internal/storage/data",
         "//internal/storage/spanner/data:spannerdata",
         "//internal/storage/spanner/schema:artifactschema",
+        "//internal/storage/spanner/utils:spannerutils",
         "//internal/validator",
         "@com_github_kylelemons_godebug//diff",
         "@com_google_cloud_go_spanner//:spanner",

@@ -16,21 +16,30 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "spannerutils",
-    srcs = ["parseddl.go"],
+    srcs = [
+        "parseddl.go",
+        "reversebits.go",
+    ],
     importpath = "xmanager_cloud/storage/spanner/utils/spannerutils",
     visibility = ["//:__subpackages__"],
 )
 
 go_test(
     name = "utils_test",
-    srcs = ["parseddl_test.go"],
+    srcs = [
+        "parseddl_test.go",
+        "reversebits_test.go",
+    ],
     embed = [":utils"],
     deps = ["//internal/compat/cmp"],
 )
 
 go_library(
     name = "utils",
-    srcs = ["parseddl.go"],
+    srcs = [
+        "parseddl.go",
+        "reversebits.go",
+    ],
     importpath = "xmanager_cloud/internal/storage/spanner/utils",
     visibility = ["//:__subpackages__"],
 )

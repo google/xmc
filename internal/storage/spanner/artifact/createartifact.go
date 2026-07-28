@@ -45,6 +45,7 @@ func (r *Repository) CreateArtifact(ctx context.Context, artifact *essmsgpb.Arti
 		artifact.CreateTime = now
 		artifact.UpdateTime = now
 
+		// TODO(b/517479143): Consider moving ArtifactProtoToInsertMutation from spannerdata package into the artifact repository package.
 		artifactMutation, err := spannerdata.ArtifactProtoToInsertMutation(artifact)
 		if err != nil {
 			logging.Error(ctx, "Failed to create mutation for artifact", "artifact", artifact, "error", err)

@@ -34,6 +34,7 @@ import (
 )
 
 // UpdateExperiment updates an experiment with the given update mask.
+// TODO(b/517479143): Refactor UpdateExperiment to extract experiment merging and status message persistence to a higher domain service layer.
 func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.ExperimentUpdate) (*essmsgpb.Experiment, *essmsgpb.Experiment, error) {
 	if update == nil {
 		return nil, nil, fmt.Errorf("update must not be nil")

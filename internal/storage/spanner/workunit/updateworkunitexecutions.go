@@ -33,6 +33,7 @@ import (
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/storage/state/state"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
@@ -56,6 +57,7 @@ var getUpdatingCurrentWorkUnitExecutionSQL = safesql.New(`
 `)
 
 // UpdateWorkUnitExecutions updates the executions of a work unit.
+// TODO(b/517479143): Move work unit status update decision logic and status propagation outside the repository layer into a domain service layer.
 func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
 	logging.Info(ctx, "Update work unit executions", "updates", updates)
@@ -78,7 +80,7 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 	exp := &essmsgpb.Experiment{}
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		stmt := spanner.NewStatement(getUpdatingCurrentWorkUnitExecutionSQL.String())
-		stmt.Params["bitReversedXid"] = reverseBits(xid)
+		stmt.Params["bitReversedXid"] = spannerutils.ReverseBits(xid)
 		stmt.Params["workUnitIds"] = wids
 
 		iter := txn.Query(ctx, stmt)

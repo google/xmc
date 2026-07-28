@@ -26,6 +26,7 @@ import (
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/artifactschema"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -68,7 +69,7 @@ func generateFetchArtifactStatement(aid int64) spanner.Statement {
 					WHERE BitReversedArtifactId = @id
 					LIMIT 1`,
 		Params: map[string]any{
-			"id": reverseBits(aid),
+			"id": spannerutils.ReverseBits(aid),
 		},
 	}
 }

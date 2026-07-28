@@ -23,6 +23,7 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -61,7 +62,7 @@ func (r *Repository) ListWorkUnitExecutions(ctx context.Context, xid int64, wid 
 	workUnitExecutions = append(workUnitExecutions, wue)
 
 	stmt := spanner.NewStatement(listWorkUnitExecutionsSQL.String())
-	stmt.Params["bitReversedXid"] = reverseBits(xid)
+	stmt.Params["bitReversedXid"] = spannerutils.ReverseBits(xid)
 	stmt.Params["workUnitId"] = wid
 
 	iter := txn.Query(ctx, stmt)

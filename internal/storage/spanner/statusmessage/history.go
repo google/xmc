@@ -30,6 +30,7 @@ import (
 )
 
 // SaveStatusMessageHistoryIfChanged buffers a status message history mutation if the message changed and history is enabled.
+// TODO(b/517479143): Move feature flag evaluation and status message change detection above the repository layer.
 func SaveStatusMessageHistoryIfChanged(ctx context.Context, enabled bool, xid int64, wid *int64, eid *int64, currentMsg, newMsg *essmsgpb.StructuredMessage, txn *spanner.ReadWriteTransaction) {
 	if !enabled {
 		return

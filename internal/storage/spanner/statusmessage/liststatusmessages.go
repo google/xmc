@@ -26,6 +26,7 @@ import (
 	"xmanager_cloud/query_generator/normalizer/normalizer"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/statusmessageschema"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -38,7 +39,7 @@ func (r *Repository) ListStatusMessages(ctx context.Context, parent string, page
 		return nil, "", fmt.Errorf("invalid parent resource name %q: %w", parent, err)
 	}
 
-	bitReversedXid := reverseBits(xid)
+	bitReversedXid := spannerutils.ReverseBits(xid)
 	parentFilter := fmt.Sprintf("bit_reversed_xid = %d", bitReversedXid)
 	if wid != 0 {
 		parentFilter = fmt.Sprintf("%s AND work_unit_id = %d", parentFilter, wid)
@@ -103,7 +104,7 @@ func ExtractStatusMessageCursor(msg *essmsgpb.StatusMessage) (map[string]any, er
 	}
 
 	cursor := map[string]any{
-		"bit_reversed_xid": reverseBits(xid),
+		"bit_reversed_xid": spannerutils.ReverseBits(xid),
 		"message_id":       messageID,
 		"create_time":      msg.GetContent().GetCreateTime().AsTime(),
 	}

@@ -23,6 +23,7 @@ import (
 	"googlesql/safesql/go/safesql"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 )
 
 var listWorkUnitMessagesSQL = safesql.New(`
@@ -39,7 +40,7 @@ WHERE
 func (r *Repository) ListWorkUnitMessagesBySeverity(ctx context.Context, xid int64, severity essmsgpb.StructuredMessage_Severity, txn spannerTransaction) ([]*essmsgpb.StructuredMessage, error) {
 	logging.Info(ctx, "Fetch work unit messages by severity", "severity", severity)
 	stmt := spanner.NewStatement(listWorkUnitMessagesSQL.String())
-	stmt.Params["bitReversedXid"] = reverseBits(xid)
+	stmt.Params["bitReversedXid"] = spannerutils.ReverseBits(xid)
 	stmt.Params["severity"] = severity
 
 	iter := txn.Query(ctx, stmt)

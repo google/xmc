@@ -24,6 +24,7 @@ import (
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/operationschema"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -37,7 +38,7 @@ func (r *Repository) FetchWorkUnitOperation(ctx context.Context, xid int64, wid 
 func (r *Repository) FetchWorkUnitOperationTransaction(ctx context.Context, xid int64, wid int64, oid string, txn spannerTransaction) (*lropb.Operation, error) {
 	logging.Info(ctx, "Fetch work unit operation")
 
-	row, err := txn.ReadRow(ctx, operationschema.OperationsTable, spanner.Key{reverseBits(xid), wid, oid}, operationschema.OperationColumns)
+	row, err := txn.ReadRow(ctx, operationschema.OperationsTable, spanner.Key{spannerutils.ReverseBits(xid), wid, oid}, operationschema.OperationColumns)
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.NotFound {
 			return nil, fmt.Errorf("operation %s for XID %d, WID %d not found: %w", oid, xid, wid, status.ErrNotFound)

@@ -40,6 +40,7 @@ compat_go_library(
         "//internal/storage/spanner/data:spannerdata",
         "//internal/storage/spanner/schema:experimentschema",
         "//internal/storage/spanner/statusmessage",
+        "//internal/storage/spanner/utils:spannerutils",
         "//internal/storage/state",
         "//internal/validator",
         "@com_github_kylelemons_godebug//diff",

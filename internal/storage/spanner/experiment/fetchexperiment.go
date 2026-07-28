@@ -24,6 +24,7 @@ import (
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/experimentschema"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -37,7 +38,7 @@ func (r *Repository) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.
 func (r *Repository) FetchExperimentTransaction(ctx context.Context, xid int64, txn spannerTransaction) (*essmsgpb.Experiment, error) {
 	logging.Info(ctx, "Fetch experiment row")
 
-	row, err := txn.ReadRow(ctx, experimentschema.ExperimentTableName, spanner.Key{reverseBits(xid)}, experimentschema.ExperimentColumns)
+	row, err := txn.ReadRow(ctx, experimentschema.ExperimentTableName, spanner.Key{spannerutils.ReverseBits(xid)}, experimentschema.ExperimentColumns)
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.NotFound {
 			return nil, fmt.Errorf("experiment %d not found: %w", xid, status.ErrNotFound)

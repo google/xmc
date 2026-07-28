@@ -18,7 +18,6 @@ package workunit
 import (
 	"context"
 	"fmt"
-	"math/bits"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 
@@ -65,8 +64,4 @@ func NewRepository(client *spanner.Client, expRepo *experiment.Repository, cfg R
 		workUnitsQueryGen:           workUnitsQueryGen,
 		statusMessageHistoryEnabled: cfg.StatusMessageHistoryEnabled,
 	}, nil
-}
-
-func reverseBits(x int64) int64 {
-	return int64(bits.Reverse64(uint64(x)))
 }

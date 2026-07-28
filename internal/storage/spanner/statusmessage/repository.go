@@ -17,7 +17,6 @@ package statusmessage
 
 import (
 	"fmt"
-	"math/bits"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 
@@ -27,10 +26,6 @@ import (
 )
 
 var _ storage.StatusMessageStore = (*Repository)(nil)
-
-func reverseBits(x int64) int64 {
-	return int64(bits.Reverse64(uint64(x)))
-}
 
 // Repository manages persistence for status message entities in Cloud Spanner.
 type Repository struct {

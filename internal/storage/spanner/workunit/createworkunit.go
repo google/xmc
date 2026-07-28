@@ -22,7 +22,6 @@ import (
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	timestamppb "protobuf/timestamp_go_proto"
-	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/logging/logging"
@@ -32,6 +31,7 @@ import (
 )
 
 // CreateWorkUnit creates a new work unit in Spanner.
+// TODO(b/517479143): Refactor CreateWorkUnit to separate validation, status denormalization, status message saving, and resource set merging into a domain service layer above the storage repository.
 func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*essmsgpb.WorkUnit, error) {
 	ctx = logging.WithWorkUnitExecutionName(ctx, wu.GetCurrentWorkUnitExecution().GetName())
 	logging.Info(ctx, "Write work unit to storage", "work_unit", wu)
@@ -42,7 +42,7 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 
 		xid, wid, err := validator.ValidateWorkUnitNameAllowZeroWID(wu.GetName())
 		if err != nil {
-			return fmt.Errorf("failed to validate work unit name: %w (%v)", status.ErrInvalidArgument, err)
+			return fmt.Errorf("failed to validate work unit name: %w", err)
 		}
 
 		initialEID := int64(1)

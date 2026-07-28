@@ -33,6 +33,7 @@ compat_go_library(
         "//internal/storage",
         "//internal/storage/spanner/data:spannerdata",
         "//internal/storage/spanner/schema:statusmessageschema",
+        "//internal/storage/spanner/utils:spannerutils",
         "//internal/validator",
         "@com_google_cloud_go_spanner//:spanner",
     ],

@@ -23,6 +23,7 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/schema/experimentschema"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -35,7 +36,7 @@ func (r *Repository) FetchExperimentStatus(ctx context.Context, xid int64) (*ess
 func (r *Repository) fetchExperimentStatusTransaction(ctx context.Context, xid int64, txn spannerTransaction) (*essmsgpb.ExperimentStatus, error) {
 	logging.Info(ctx, "Fetch ExperimentStatus row")
 
-	row, err := txn.ReadRow(ctx, experimentschema.ExperimentTableName, spanner.Key{reverseBits(xid)}, []string{"Status"})
+	row, err := txn.ReadRow(ctx, experimentschema.ExperimentTableName, spanner.Key{spannerutils.ReverseBits(xid)}, []string{"Status"})
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.NotFound {
 			return nil, fmt.Errorf("experiment %d not found: %w", xid, status.ErrNotFound)

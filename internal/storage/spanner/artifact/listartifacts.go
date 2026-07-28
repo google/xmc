@@ -26,6 +26,7 @@ import (
 	"xmanager_cloud/query_generator/normalizer/normalizer"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/artifactschema"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -40,7 +41,7 @@ func (r *Repository) ListArtifacts(ctx context.Context, parent string, pageSize 
 		}
 		ctx = logging.WithArtifactParent(ctx, parent)
 
-		bitReversedXid := reverseBits(xid)
+		bitReversedXid := spannerutils.ReverseBits(xid)
 		parentFilter := fmt.Sprintf("bit_reversed_xid = %d", bitReversedXid)
 		if wid != 0 {
 			parentFilter = fmt.Sprintf("%s AND work_unit_id = %d", parentFilter, wid)

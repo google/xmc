@@ -32,6 +32,7 @@ import (
 )
 
 // UpdateWorkUnitOperation updates the status of an operation.
+// TODO(b/517479143): Move operation update merging logic out of the repository layer into a domain service layer.
 func (r *Repository) UpdateWorkUnitOperation(ctx context.Context, operationUpdate *storage.OperationUpdate) (*longrunningpb.Operation, error) {
 	if operationUpdate == nil {
 		return nil, fmt.Errorf("operationUpdate must not be nil")

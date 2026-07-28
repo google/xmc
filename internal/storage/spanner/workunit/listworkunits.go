@@ -26,6 +26,7 @@ import (
 	"xmanager_cloud/query_generator/normalizer/normalizer"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/workunitschema"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -38,7 +39,7 @@ func (r *Repository) ListWorkUnits(ctx context.Context, parent string, pageSize 
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to validate experiment name: %w", err)
 	}
-	bitReversedXid := reverseBits(xid)
+	bitReversedXid := spannerutils.ReverseBits(xid)
 	if filter == "" {
 		filter = fmt.Sprintf("bit_reversed_xid = %d", bitReversedXid)
 	} else {

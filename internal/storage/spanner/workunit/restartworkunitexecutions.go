@@ -43,9 +43,10 @@ func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester st
 		now := time.Now()
 
 		for _, wid := range wids {
+			// TODO(b/517479143): Move execution restart business logic out of the Spanner repository into a domain service layer.
 			wu, err := r.FetchWorkUnitTransaction(ctx, xid, wid, tx)
 			if err != nil {
-				return fmt.Errorf("failed to fetch work unit: %v: %w", err, status.ErrInternal)
+				return fmt.Errorf("failed to fetch work unit: %w", err)
 			}
 
 			currentExecution := wu.GetCurrentWorkUnitExecution()
@@ -54,13 +55,13 @@ func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester st
 
 			archiveMutation, err := spannerdata.WorkUnitExecutionProtoToInsertMutation(currentExecution)
 			if err != nil {
-				return fmt.Errorf("failed to create mutation for archived work unit execution: %v: %w", err, status.ErrInternal)
+				return fmt.Errorf("failed to create mutation for archived work unit execution: %w", err)
 			}
 			tx.BufferWrite([]*spanner.Mutation{archiveMutation})
 
 			_, _, eid, err := validator.ValidateWorkUnitExecutionName(currentExecution.GetName())
 			if err != nil {
-				return fmt.Errorf("failed to validate work unit execution name %q: %v: %w", currentExecution.GetName(), err, status.ErrInternal)
+				return fmt.Errorf("failed to validate work unit execution name %q: %w", currentExecution.GetName(), err)
 			}
 			if eid == 0 {
 				return fmt.Errorf("invalid eid 0 from work unit execution name %q: %w", currentExecution.GetName(), status.ErrInternal)

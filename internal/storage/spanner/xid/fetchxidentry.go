@@ -23,6 +23,7 @@ import (
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/xidschema"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -36,7 +37,7 @@ func (r *Repository) FetchXidEntry(ctx context.Context, xid int64) (*xidpb.XidEn
 // FetchXidEntryTransaction retrieves a single XidEntry from storage in a transaction.
 func (r *Repository) FetchXidEntryTransaction(ctx context.Context, xid int64, txn spannerTransaction) (*xidpb.XidEntry, error) {
 	logging.Info(ctx, "Fetch XID entry row")
-	row, err := txn.ReadRow(ctx, xidschema.XIDTableName, spanner.Key{reverseBits(xid)}, xidschema.FetchedXIDColumns)
+	row, err := txn.ReadRow(ctx, xidschema.XIDTableName, spanner.Key{spannerutils.ReverseBits(xid)}, xidschema.FetchedXIDColumns)
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.NotFound {
 			return nil, fmt.Errorf("XID %d not found: %w", xid, status.ErrNotFound)

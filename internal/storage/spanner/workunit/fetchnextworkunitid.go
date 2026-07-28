@@ -21,6 +21,7 @@ import (
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"googlesql/safesql/go/safesql"
 	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 )
 
 var nextWorkUnitIDSQL = safesql.New(`
@@ -38,7 +39,7 @@ func (r *Repository) FetchNextWorkUnitIDTransaction(ctx context.Context, xid int
 
 	stmt := spanner.Statement{
 		SQL:    nextWorkUnitIDSQL.String(),
-		Params: map[string]any{"bit_reversed_xid": reverseBits(xid)},
+		Params: map[string]any{"bit_reversed_xid": spannerutils.ReverseBits(xid)},
 	}
 
 	iter := txn.Query(ctx, stmt)

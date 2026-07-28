@@ -31,6 +31,7 @@ import (
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/xidschema"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -47,6 +48,7 @@ LIMIT 1;
 `)
 
 // UpdateXidEntry updates an XidEntry with the given update mask.
+// TODO(b/517479143): Refactor UpdateXidEntry to move parent iteration and entry merging out of the repository layer.
 func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntryUpdate) (*xidmsgpb.XidEntry, error) {
 	if update == nil {
 		return nil, fmt.Errorf("update must not be nil")
@@ -60,7 +62,7 @@ func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntr
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		mutated = false
 
-		row, err := txn.ReadRow(ctx, xidschema.XIDTableName, spanner.Key{reverseBits(update.XID)}, xidschema.FetchedXIDColumns)
+		row, err := txn.ReadRow(ctx, xidschema.XIDTableName, spanner.Key{spannerutils.ReverseBits(update.XID)}, xidschema.FetchedXIDColumns)
 		if err != nil {
 			if status.ExtractCanonicalCode(err) == status.NotFound {
 				return fmt.Errorf("XID %d not found: %w", update.XID, status.ErrNotFound)
