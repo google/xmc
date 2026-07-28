@@ -46,7 +46,7 @@ const BASE_SCREENSHOT_STYLES = `
     height: 48px !important;
   }
   xmc-smart-resource-finder {
-    height: 88px !important;
+    height: 200px !important;
   }
   xmc-rod-queue-card {
     height: 360px !important;

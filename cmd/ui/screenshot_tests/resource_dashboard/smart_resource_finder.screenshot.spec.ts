@@ -33,7 +33,7 @@ test.describe('SmartResourceFinderComponent - Screenshot Tests', () => {
   test('should match baseline screenshot for smart resource finder section', async ({ page }) => {
     await mountComponentHarness(
       page,
-      `<xmc-smart-resource-finder style="display: flex; align-items: center; gap: 16px; width: 960px; height: 88px; box-sizing: border-box; padding: 16px 24px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px;"></xmc-smart-resource-finder>`,
+      `<xmc-smart-resource-finder style="display: flex; align-items: center; gap: 16px; width: 960px; height: 200px; box-sizing: border-box; padding: 16px 24px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px;"></xmc-smart-resource-finder>`,
     );
 
     const smartFinderComponent = page.locator('xmc-smart-resource-finder').first();
