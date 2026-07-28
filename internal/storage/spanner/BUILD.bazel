@@ -41,6 +41,7 @@ compat_go_library(
 compat_go_test(
     name = "spanner_test",
     size = "medium",
+    timeout = "long",
     srcs = [
         "addworkunitoperation_test.go",
         "createartifact_test.go",
