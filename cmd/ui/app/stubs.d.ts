@@ -155,3 +155,23 @@ declare module 'javascript/closure/i18n/numberformat' {
     static Format: { COMPACT_SHORT: number; [key: string]: number };
   }
 }
+
+declare module 'xmanager_cloud/health_service/proto/api.jsonpb_decls' {
+  export interface HealthStatusResponse {
+    healthState?: string;
+    systemInfo?: any;
+    components?: any[];
+    healthCheckTime?: any;
+    [key: string]: any;
+  }
+  export interface ListConfigEntriesResponse {
+    configGroups?: any[];
+    [key: string]: any;
+  }
+  export type Privilege = string;
+  export interface UserInfoResponse {
+    userEmail?: string;
+    privileges?: Privilege[];
+    [key: string]: any;
+  }
+}
