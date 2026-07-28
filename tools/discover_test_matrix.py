@@ -71,6 +71,109 @@ def get_changed_files(base_ref: str = "origin/main") -> list[str] | None:
     return None
 
 
+def convert_files_to_bazel_targets(changed_files: list[str]) -> list[str]:
+    """Converts git changed file paths to Bazel package pattern targets.
+
+    For example:
+    - 'internal/auth/auth.go' -> '//internal/auth/...'
+    - 'cmd/ui/src/app.ts' -> '//cmd/ui/...'
+    - 'README.md' -> '//:all'
+    """
+    targets: set[str] = set()
+    for filepath in changed_files:
+        filepath = filepath.strip()
+        dirname = os.path.dirname(filepath)
+        if not dirname:
+            targets.add("//:all")
+            continue
+
+        curr = dirname
+        found = False
+        while curr and curr != ".":
+            if os.path.exists(os.path.join(curr, "BUILD.bazel")) or os.path.exists(
+                os.path.join(curr, "BUILD")
+            ):
+                targets.add(f"//{curr}/...")
+                found = True
+                break
+            curr = os.path.dirname(curr)
+
+        if not found:
+            targets.add(f"//{dirname}/...")
+
+    return sorted(targets)
+
+
+def query_affected_test_targets(changed_files: list[str]) -> list[str] | None:
+    """Queries Bazel for test targets affected by changed files using rdeps.
+
+    Returns None if global changes are detected or if query execution fails
+    (forcing fallback to full matrix discovery).
+    """
+    if is_global_change(changed_files):
+        return None
+
+    pkg_targets = convert_files_to_bazel_targets(changed_files)
+    if not pkg_targets or "//:all" in pkg_targets:
+        return None
+
+    query_targets = " ".join(f'"{t}"' for t in pkg_targets)
+    query_expr = f'kind(".*_test", rdeps(//..., set({query_targets})))'
+    try:
+        out = subprocess.check_output(["bazel", "query", query_expr]).decode("utf-8")
+        return [line.strip() for line in out.strip().split("\n") if line.strip()]
+    except Exception as e:
+        print(
+            f"Warning: Bazel rdeps query failed: {e}. Falling back to full matrix.", file=sys.stderr
+        )
+        return None
+
+
+def map_test_targets_to_matrix(test_targets: list[str]) -> list[dict[str, str]]:
+    """Maps a list of Bazel test targets to matrix execution entries."""
+    categories: set[str] = set()
+    for target in test_targets:
+        clean_target = target.removeprefix("//")
+        if clean_target.startswith("cmd/ui/") or clean_target.startswith("cmd/ui:"):
+            categories.add("cmd/ui")
+        elif clean_target.startswith("cmd/"):
+            categories.add("cmd/rest")
+        elif clean_target.startswith("internal/storage/"):
+            categories.add("internal/storage")
+        elif clean_target.startswith("internal/"):
+            categories.add("internal/rest")
+        else:
+            pkg_path = clean_target.split(":")[0]
+            root_folder = (
+                pkg_path.split("/")[0] if "/" in pkg_path else (pkg_path if pkg_path else "root")
+            )
+            categories.add(root_folder)
+
+    matrix: list[dict[str, str]] = []
+    sorted_cats = sorted(categories)
+    if "root" in sorted_cats:
+        sorted_cats.remove("root")
+        sorted_cats.insert(0, "root")
+
+    for cat in sorted_cats:
+        if cat == "cmd/ui":
+            matrix.append({"target": "cmd/ui", "bazel_args": "//cmd/ui/..."})
+        elif cat == "cmd/rest":
+            matrix.append({"target": "cmd/rest", "bazel_args": "//cmd/... -//cmd/ui/..."})
+        elif cat == "internal/storage":
+            matrix.append({"target": "internal/storage", "bazel_args": "//internal/storage/..."})
+        elif cat == "internal/rest":
+            matrix.append(
+                {"target": "internal/rest", "bazel_args": "//internal/... -//internal/storage/..."}
+            )
+        elif cat == "root":
+            matrix.append({"target": "root", "bazel_args": "//:all"})
+        else:
+            matrix.append({"target": cat, "bazel_args": f"//{cat}/..."})
+
+    return matrix
+
+
 def extract_root_folders(test_targets: list[str]) -> set[str]:
     """Extracts unique top-level root folders from Bazel test target paths."""
     top_level: set[str] = set()
@@ -83,87 +186,28 @@ def extract_root_folders(test_targets: list[str]) -> set[str]:
     return top_level
 
 
-def _build_cmd_matrix_entries(
-    folder_files: list[str] | None,
-) -> list[dict[str, str]]:
-    """Splits cmd into UI and backend runners to skip Node.js setup for backend Go binaries."""
-    ui_affected = folder_files is None or any(f.startswith("cmd/ui/") for f in folder_files)
-    rest_affected = folder_files is None or any(not f.startswith("cmd/ui/") for f in folder_files)
-
-    entries: list[dict[str, str]] = []
-    if ui_affected:
-        entries.append({"target": "cmd/ui", "bazel_args": "//cmd/ui/..."})
-    if rest_affected:
-        entries.append({"target": "cmd/rest", "bazel_args": "//cmd/... -//cmd/ui/..."})
-    return entries
-
-
-def _build_internal_matrix_entries(
-    folder_files: list[str] | None,
-) -> list[dict[str, str]]:
-    """Splits internal into storage and rest to isolate Spanner emulator checks to DB tests."""
-    storage_affected = folder_files is None or any(
-        f.startswith("internal/storage/") for f in folder_files
-    )
-    rest_affected = folder_files is None or any(
-        not f.startswith("internal/storage/") for f in folder_files
-    )
-
-    entries: list[dict[str, str]] = []
-    if storage_affected:
-        entries.append({"target": "internal/storage", "bazel_args": "//internal/storage/..."})
-    if rest_affected:
-        entries.append(
-            {
-                "target": "internal/rest",
-                "bazel_args": "//internal/... -//internal/storage/...",
-            }
-        )
-    return entries
-
-
-def _filter_affected_files(
-    changed_files: list[str] | None,
-) -> set[str] | None:
-    """Determines affected files set; returns None if a full test run is required."""
-    if changed_files is not None and not is_global_change(changed_files):
-        return set(changed_files)
-    return None
-
-
 def build_test_matrix(
-    test_targets: list[str], changed_files: list[str] | None = None
+    test_targets: list[str],
+    changed_files: list[str] | None = None,
+    affected_targets_override: list[str] | None = None,
 ) -> list[dict[str, str]]:
     """Builds matrix entries for Bazel test targets, filtering out unaffected modules."""
-    top_level_folders = extract_root_folders(test_targets)
-    affected_files_set = _filter_affected_files(changed_files)
-    matrix: list[dict[str, str]] = []
+    if changed_files is None:
+        return map_test_targets_to_matrix(test_targets)
 
-    if "root" in top_level_folders and (
-        affected_files_set is None
-        or any(f.count("/") == 0 or f.startswith(".") for f in affected_files_set)
-    ):
-        matrix.append({"target": "root", "bazel_args": "//:all"})
+    if is_global_change(changed_files):
+        return map_test_targets_to_matrix(test_targets)
 
-    for folder in sorted(top_level_folders):
-        if folder == "root":
-            continue
+    affected_test_targets: list[str] | None = None
+    if affected_targets_override is not None:
+        affected_test_targets = affected_targets_override
+    else:
+        affected_test_targets = query_affected_test_targets(changed_files)
 
-        if affected_files_set is not None:
-            folder_files = [f for f in affected_files_set if f.startswith(f"{folder}/")]
-            if not folder_files:
-                continue
-        else:
-            folder_files = None
+    if affected_test_targets is None:
+        return map_test_targets_to_matrix(test_targets)
 
-        if folder == "cmd":
-            matrix.extend(_build_cmd_matrix_entries(folder_files))
-        elif folder == "internal":
-            matrix.extend(_build_internal_matrix_entries(folder_files))
-        else:
-            matrix.append({"target": folder, "bazel_args": f"//{folder}/..."})
-
-    return matrix
+    return map_test_targets_to_matrix(affected_test_targets)
 
 
 def query_bazel_test_targets() -> list[str]:

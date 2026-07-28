@@ -21,7 +21,7 @@ go_library(
     srcs = ["labels.go"],
     importpath = "xmanager_cloud/internal/kubernetes/common/labels",
     deps = [
-        "//internal/kubernetes/common:constants",
+        "//internal/kubernetes/common/constants",
     ],
 )
 
@@ -30,6 +30,6 @@ go_test(
     srcs = ["labels_test.go"],
     embed = [":labels"],
     deps = [
-        "//internal/kubernetes/common:constants",
+        "//internal/kubernetes/common/constants",
     ],
 )

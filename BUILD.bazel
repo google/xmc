@@ -75,6 +75,8 @@ load("@bazel_gazelle//:def.bzl", "gazelle")
 # gazelle:resolve go xmanager_cloud/experiment_state_server/proto/messages_go_proto //api/protos/experiment:messages_go_proto
 # gazelle:resolve go xmanager_cloud/experiment_state_server/proto/api_go_proto //api/protos/experiment:api_go_proto
 # gazelle:resolve go xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto //api/protos/experiment:api_go_proto
+# gazelle:resolve go xmanager_cloud/health_service/proto/api_go_proto //api/protos/health:api_go_proto
+# gazelle:resolve go xmanager_cloud/health_service/proto/api_go_grpc_proto //api/protos/health:api_go_proto
 # gazelle:resolve go xmanager_cloud/xid_service/proto/messages_go_proto //api/protos/xid:messages_go_proto
 # gazelle:resolve go xmanager_cloud/xid_service/proto/api_go_proto //api/protos/xid:api_go_proto
 # gazelle:resolve go xmanager_cloud/xid_service/proto/api_go_grpc_proto //api/protos/xid:api_go_proto
@@ -83,35 +85,35 @@ load("@bazel_gazelle//:def.bzl", "gazelle")
 # Internal package package target mappings
 # gazelle:resolve go xmanager_cloud/auth/auth //internal/auth:auth
 # gazelle:resolve go xmanager_cloud/task_queue/client //internal/task_queue:client
-# gazelle:resolve go xmanager_cloud/task_queue_redis/redisclient //internal/task_queue_redis:redisclient
+# gazelle:resolve go xmanager_cloud/task_queue_redis/redisclient //internal/task_queue_redis/redisclient
 # gazelle:resolve go xmanager_cloud/logging/logging //internal/logging:logging
 # gazelle:resolve go xmanager_cloud/validator/validator //internal/validator:validator
-# gazelle:resolve go xmanager_cloud/common/interfaces //internal/common:interfaces
-# gazelle:resolve go xmanager_cloud/common/health //internal/common:health
+# gazelle:resolve go xmanager_cloud/common/interfaces //internal/common/interfaces
+# gazelle:resolve go xmanager_cloud/common/health //internal/common/health
 # gazelle:resolve go xmanager_cloud/storage/storage //internal/storage:storage
 # gazelle:resolve go xmanager_cloud/storage/data/data //internal/storage/data:data
 # gazelle:resolve go xmanager_cloud/storage/state/state //internal/storage/state:state
 # gazelle:resolve go xmanager_cloud/storage/spanner/data/spannerdata //internal/storage/spanner/data:spannerdata
 # gazelle:resolve go xmanager_cloud/storage/spanner/spanner //internal/storage/spanner:spanner
 # gazelle:resolve go xmanager_cloud/storage/spanner/utils/spannerutils //internal/storage/spanner/utils:spannerutils
-# gazelle:resolve go xmanager_cloud/storage/spanner/schema/artifactschema //internal/storage/spanner/schema:artifactschema
-# gazelle:resolve go xmanager_cloud/storage/spanner/schema/experimentschema //internal/storage/spanner/schema:experimentschema
-# gazelle:resolve go xmanager_cloud/storage/spanner/schema/operationschema //internal/storage/spanner/schema:operationschema
-# gazelle:resolve go xmanager_cloud/storage/spanner/schema/statusmessageschema //internal/storage/spanner/schema:statusmessageschema
-# gazelle:resolve go xmanager_cloud/storage/spanner/schema/workunitschema //internal/storage/spanner/schema:workunitschema
-# gazelle:resolve go xmanager_cloud/storage/spanner/schema/xidschema //internal/storage/spanner/schema:xidschema
-# gazelle:resolve go xmanager_cloud/storage/spanner/schema/workunitexecutionschema //internal/storage/spanner/schema:workunitexecutionschema
+# gazelle:resolve go xmanager_cloud/storage/spanner/schema/artifactschema //internal/storage/spanner/schema/artifactschema
+# gazelle:resolve go xmanager_cloud/storage/spanner/schema/experimentschema //internal/storage/spanner/schema/experimentschema
+# gazelle:resolve go xmanager_cloud/storage/spanner/schema/operationschema //internal/storage/spanner/schema/operationschema
+# gazelle:resolve go xmanager_cloud/storage/spanner/schema/statusmessageschema //internal/storage/spanner/schema/statusmessageschema
+# gazelle:resolve go xmanager_cloud/storage/spanner/schema/workunitschema //internal/storage/spanner/schema/workunitschema
+# gazelle:resolve go xmanager_cloud/storage/spanner/schema/xidschema //internal/storage/spanner/schema/xidschema
+# gazelle:resolve go xmanager_cloud/storage/spanner/schema/workunitexecutionschema //internal/storage/spanner/schema/workunitexecutionschema
 # gazelle:resolve go xmanager_cloud/storage/spanner/emulator/emulator //internal/storage/spanner/emulator:emulator
 # gazelle:resolve go xmanager_cloud/storage/spanner/migrations/testing/migrationtest //internal/storage/spanner/migrations/testing/migrationtest:migrationtest
-# gazelle:resolve go xmanager_cloud/kubernetes/common/constants //internal/kubernetes/common:constants
-# gazelle:resolve go xmanager_cloud/kubernetes/common/jobsetutil //internal/kubernetes/common:jobsetutil
-# gazelle:resolve go xmanager_cloud/security/securitytest //internal/security:securitytest
-# gazelle:resolve go xmanager_cloud/query_generator/liststatement //internal/query_generator:liststatement
+# gazelle:resolve go xmanager_cloud/kubernetes/common/constants //internal/kubernetes/common/constants
+# gazelle:resolve go xmanager_cloud/kubernetes/common/jobsetutil //internal/kubernetes/common/jobsetutil
+# gazelle:resolve go xmanager_cloud/security/securitytest //internal/security/securitytest
+# gazelle:resolve go xmanager_cloud/query_generator/liststatement //internal/query_generator/liststatement
 # gazelle:resolve go xmanager_cloud/query_generator/normalizer/normalizer //internal/query_generator/normalizer:normalizer
-# gazelle:resolve go xmanager_cloud/query_generator/querytools //internal/query_generator:querytools
-# gazelle:resolve go xmanager_cloud/query_generator/equalityvisitor //internal/query_generator:equalityvisitor
+# gazelle:resolve go xmanager_cloud/query_generator/querytools //internal/query_generator/querytools
+# gazelle:resolve go xmanager_cloud/query_generator/equalityvisitor //internal/query_generator/equalityvisitor
 # gazelle:resolve go xmanager_cloud/query_generator/filter/queryfilter //internal/query_generator/filter:filter
-# gazelle:resolve go xmanager_cloud/query_generator/predicate //internal/query_generator:predicate
+# gazelle:resolve go xmanager_cloud/query_generator/predicate //internal/query_generator/predicate
 
 gazelle(name = "gazelle")
 
@@ -119,20 +121,20 @@ filegroup(
     name = "internal_libs",
     srcs = [
         "//internal/auth",
-        "//internal/common:health",
-        "//internal/common:interfaces",
+        "//internal/common/health",
+        "//internal/common/interfaces",
         "//internal/kubernetes/common/labels",
         "//internal/logging",
-        "//internal/query_generator:equalityvisitor",
-        "//internal/query_generator:liststatement",
-        "//internal/query_generator:querytools",
+        "//internal/query_generator/equalityvisitor",
         "//internal/query_generator/filter",
+        "//internal/query_generator/liststatement",
         "//internal/query_generator/normalizer",
-        "//internal/security",
-        "//internal/security:securitytest",
+        "//internal/query_generator/querytools",
+        "//internal/security/keyreloader",
+        "//internal/security/securitytest",
         "//internal/task_queue:client",
-        "//internal/task_queue_redis:redisclient",
-        "//internal/task_queue_redis:validator",
+        "//internal/task_queue_redis/redisclient",
+        "//internal/task_queue_redis/validator",
         "//internal/validator",
     ],
     visibility = ["//visibility:public"],
@@ -142,15 +144,15 @@ test_suite(
     name = "internal_tests",
     tests = [
         "//internal/auth:auth_test",
-        "//internal/common:health_test",
+        "//internal/common/health:health_test",
         "//internal/kubernetes/common/labels:labels_test",
         "//internal/logging:logging_test",
-        "//internal/query_generator:equalityvisitor_test",
-        "//internal/query_generator:liststatement_test",
-        "//internal/query_generator:querytools_test",
+        "//internal/query_generator/equalityvisitor:equalityvisitor_test",
         "//internal/query_generator/filter:filter_test",
+        "//internal/query_generator/liststatement:liststatement_test",
         "//internal/query_generator/normalizer:normalizer_test",
-        "//internal/security:security_test",
+        "//internal/query_generator/querytools:querytools_test",
+        "//internal/security/keyreloader:keyreloader_test",
         "//internal/task_queue:task_queue_test",
         "//internal/validator:validator_test",
     ],

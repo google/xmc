@@ -19,6 +19,7 @@ import { ActivatedRoute } from '@angular/router';
 import { of } from 'rxjs';
 
 import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
+import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
 import {
   bootstrap,
@@ -29,12 +30,8 @@ import {
   setupObservableMatchers,
 } from 'xmanager_cloud/ui/app/testing/test';
 
-import { QueueListHarness } from './components/queue_list/queue_list_harness';
-import { SmartResourceFinderHarness } from './components/smart_resource_finder/smart_resource_finder_harness';
 import { ResourceDashboard } from './resource_dashboard';
-
-const SUBNAV_TAB_SELECTOR = '.subnav-tab';
-const QUEUE_LIST_HOST_SELECTOR = 'xmc-rod-queue-list';
+import { ResourceDashboardHarness } from './resource_dashboard_harness';
 
 @Component({
   standalone: true,
@@ -105,33 +102,40 @@ describe('ResourceDashboard Container', () => {
   } as ClusterQueue;
 
   cleanState(() => {
+    const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
+      'getClusterQueues',
+    ]);
+    resourceService.getClusterQueues.and.returnValue(
+      of({ clusterQueues: [mockGpuQueue, mockCpuQueue] }),
+    );
+
     setupModule({
       imports: [TestHostComponent],
       providers: [
+        { provide: ResourceService, useValue: resourceService },
         { provide: AUTO_REFRESH_INTERVAL_MS, useValue: 30000 },
         {
           provide: ActivatedRoute,
           useValue: {
             queryParams: of({ queue: 'gpu-cluster-queue' }),
-            data: of({ clusterQueues: [mockGpuQueue, mockCpuQueue] }),
+            data: of({}),
           },
         },
       ],
     });
-    return {};
+    return { resourceService };
   }, beforeEach);
 
   it('should render subnav tabs, smart resource finder, and resolved cluster queues', async () => {
     bootstrap(TestHostComponent);
     await flush();
 
-    const queueListHarness = (await getHarness(QueueListHarness)) as QueueListHarness;
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    const queueListHarness = (await dashboard.getQueueList())!;
     expect(await queueListHarness.getQueueCardCount()).toBe(2);
     expect(await (await queueListHarness.getQueueCard(0)).getQueueName()).toBe('gpu-cluster-queue');
 
-    const finderHarness = (await getHarness(
-      SmartResourceFinderHarness,
-    )) as SmartResourceFinderHarness;
+    const finderHarness = (await dashboard.getSmartResourceFinder())!;
     expect(await finderHarness.getResourceTypeSelectCount()).toBe(1);
   });
 
@@ -139,9 +143,8 @@ describe('ResourceDashboard Container', () => {
     bootstrap(TestHostComponent);
     await flush();
 
-    const finderHarness = (await getHarness(
-      SmartResourceFinderHarness,
-    )) as SmartResourceFinderHarness;
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    const finderHarness = (await dashboard.getSmartResourceFinder())!;
     const options = await finderHarness.getResourceTypeOptions();
     expect(options).toEqual(['All resource types (Default - empty)', 'cpu', 'nvidia.com/gpu']);
   });
@@ -150,10 +153,9 @@ describe('ResourceDashboard Container', () => {
     bootstrap(TestHostComponent);
     await flush();
 
-    const queueListHarness = (await getHarness(QueueListHarness)) as QueueListHarness;
-    const finderHarness = (await getHarness(
-      SmartResourceFinderHarness,
-    )) as SmartResourceFinderHarness;
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    const queueListHarness = (await dashboard.getQueueList())!;
+    const finderHarness = (await dashboard.getSmartResourceFinder())!;
 
     expect(await queueListHarness.getQueueCardCount()).toBe(2);
 
@@ -169,10 +171,9 @@ describe('ResourceDashboard Container', () => {
     bootstrap(TestHostComponent);
     await flush();
 
-    const queueListHarness = (await getHarness(QueueListHarness)) as QueueListHarness;
-    const finderHarness = (await getHarness(
-      SmartResourceFinderHarness,
-    )) as SmartResourceFinderHarness;
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    const queueListHarness = (await dashboard.getQueueList())!;
+    const finderHarness = (await dashboard.getSmartResourceFinder())!;
 
     expect(await queueListHarness.getQueueCardCount()).toBe(2);
 
@@ -188,10 +189,9 @@ describe('ResourceDashboard Container', () => {
     bootstrap(TestHostComponent);
     await flush();
 
-    const queueListHarness = (await getHarness(QueueListHarness)) as QueueListHarness;
-    const finderHarness = (await getHarness(
-      SmartResourceFinderHarness,
-    )) as SmartResourceFinderHarness;
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    const queueListHarness = (await dashboard.getQueueList())!;
+    const finderHarness = (await dashboard.getSmartResourceFinder())!;
 
     await finderHarness.setAmountValue('32');
     await finderHarness.selectResourceType(0, 'nvidia.com/gpu');
@@ -213,27 +213,36 @@ describe('ResourceDashboard Container', () => {
     bootstrap(TestHostComponent);
     await flush();
 
-    const queueListHarness = (await getHarness(QueueListHarness)) as QueueListHarness;
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    const queueListHarness = (await dashboard.getQueueList())!;
     expect(await queueListHarness.getQueueCardCount()).toBe(2);
 
-    const tabs = document.querySelectorAll(SUBNAV_TAB_SELECTOR);
-    (tabs[1] as HTMLButtonElement).click();
+    const tabsHarness = await dashboard.getSubnavTabs();
+    expect(await tabsHarness.isTabActive(0)).toBeTrue();
+    expect(await tabsHarness.isTabActive(1)).toBeFalse();
+
+    await tabsHarness.clickTab(1);
     await flush();
 
-    expect(document.querySelectorAll(QUEUE_LIST_HOST_SELECTOR).length).toBe(0);
+    expect(await tabsHarness.isTabActive(0)).toBeFalse();
+    expect(await tabsHarness.isTabActive(1)).toBeTrue();
+    expect(await dashboard.getQueueList()).toBeNull();
 
-    (tabs[0] as HTMLButtonElement).click();
+    await tabsHarness.clickTab(0);
     await flush();
 
-    expect(document.querySelectorAll(QUEUE_LIST_HOST_SELECTOR).length).toBe(1);
-    expect(await queueListHarness.getQueueCardCount()).toBe(2);
+    expect(await tabsHarness.isTabActive(0)).toBeTrue();
+    expect(await tabsHarness.isTabActive(1)).toBeFalse();
+    const restoredQueueList = (await dashboard.getQueueList())!;
+    expect(await restoredQueueList.getQueueCardCount()).toBe(2);
   });
 
   it('should select queue when a queue card is clicked', async () => {
     bootstrap(TestHostComponent);
     await flush();
 
-    const queueListHarness = (await getHarness(QueueListHarness)) as QueueListHarness;
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    const queueListHarness = (await dashboard.getQueueList())!;
     const card1 = await queueListHarness.getQueueCard(1);
 
     expect(await card1.isSelected()).toBeFalse();

@@ -23,6 +23,7 @@ compat_go_library(
         "config.go",
         "handler.go",
         "main.go",
+        "producer.go",
         "server.go",
         "validation.go",
     ],
@@ -36,6 +37,8 @@ compat_go_library(
         "@com_github_twmb_franz_go//pkg/sasl/plain",
         "@com_github_twmb_franz_go//pkg/sasl/scram",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -52,6 +55,7 @@ compat_go_test(
         "config_test.go",
         "handler_test.go",
         "main_test.go",
+        "producer_test.go",
         "server_test.go",
         "validation_test.go",
     ],
@@ -65,5 +69,7 @@ compat_go_test(
         "@com_github_twmb_franz_go//pkg/sasl/plain",
         "@com_github_twmb_franz_go//pkg/sasl/scram",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
     ],
 )

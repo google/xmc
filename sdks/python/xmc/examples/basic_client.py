@@ -85,8 +85,11 @@ def main() -> None:
 
     # 1. Start local mock HTTP server
     server = run_mock_server()
-    host, port = server.server_address
-    base_url = f"http://{host}:{port}"
+    if isinstance(server.server_address, tuple):
+        host, port = server.server_address[:2]
+        base_url = f"http://{str(host)}:{port}"
+    else:
+        base_url = f"http://{str(server.server_address)}"
     print(f"[1] Mock XMC Metrics server started at {base_url}")
 
     # 2. Instantiate XMC Client

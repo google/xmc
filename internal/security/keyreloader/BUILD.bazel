@@ -1,0 +1,29 @@
+# Copyright 2025 Google LLC
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+compat_go_library(
+    name = "keyreloader",
+    srcs = ["key_reloader.go"],
+    importpath = "xmanager_cloud/internal/security/keyreloader",
+    deps = [
+        "//internal/compat/insecuresecretdataaccess",
+        "//internal/compat/jwtkeyconverter",
+        "//internal/compat/log",
+        "//internal/logging",
+        "@com_github_tink_crypto_tink_go_v2//jwt",
+    ],
+)
+
+compat_go_test(
+    name = "keyreloader_test",
+    srcs = ["key_reloader_test.go"],
+    embed = [":keyreloader"],
+    deps = [
+        "//internal/compat/insecuresecretdataaccess",
+        "//internal/compat/jwtkeyconverter",
+        "//internal/security/securitytest",
+        "@com_github_tink_crypto_tink_go_v2//jwt",
+    ],
+)

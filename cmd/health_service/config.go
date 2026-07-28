@@ -21,11 +21,13 @@ import (
 // Config holds the configuration for the health service.
 type Config struct {
 	Port      string
+	GRPCPort  string
 	ProjectID string
 }
 
 var (
 	port      string
+	grpcPort  string
 	projectID string
 )
 
@@ -35,6 +37,7 @@ func init() {
 		defaultPort = "8080"
 	}
 	flag.StringVar(&port, "port", defaultPort, "The HTTP server port to listen on.")
+	flag.StringVar(&grpcPort, "grpc_port", "50051", "The gRPC server port to listen on.")
 	flag.StringVar(&projectID, "project_id", os.Getenv("GOOGLE_CLOUD_PROJECT"), "The GCP project ID.")
 }
 
@@ -42,6 +45,7 @@ func init() {
 func LoadConfig() *Config {
 	return &Config{
 		Port:      port,
+		GRPCPort:  grpcPort,
 		ProjectID: projectID,
 	}
 }
