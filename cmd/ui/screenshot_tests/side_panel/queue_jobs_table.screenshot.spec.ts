@@ -14,11 +14,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import {
-  handleUserAuthRoute,
-  mountComponentHarness,
-  setupScreenshotEnvironment,
-} from '../test_utils';
+import { handleUserAuthRoute, setupScreenshotEnvironment } from '../test_utils';
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -31,12 +27,11 @@ test.describe('QueueJobsTableComponent - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for queue jobs table section', async ({ page }) => {
-    await mountComponentHarness(
-      page,
-      `<xmc-queue-jobs-table style="display: block; width: 600px; min-height: 250px; box-sizing: border-box; padding: 16px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px;"></xmc-queue-jobs-table>`,
-    );
-
     const tableComponent = page.locator('xmc-queue-jobs-table').first();
+    await tableComponent.evaluate((el) => {
+      el.style.cssText =
+        'display: block; width: 600px; min-height: 250px; box-sizing: border-box; padding: 16px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px;';
+    });
     await expect(tableComponent).toBeVisible();
     await expect(tableComponent).toHaveScreenshot('queue-jobs-table-component.png', {
       maxDiffPixelRatio: 0.05,
