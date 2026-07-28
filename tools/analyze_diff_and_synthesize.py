@@ -93,6 +93,22 @@ def analyze_diff_and_synthesize(args: argparse.Namespace) -> dict[str, Any]:
 
     diff_text, changed_files = get_git_diff(target_dir, diff_spec)
     if not diff_text or not changed_files:
+        untracked_cmd = ["git", "ls-files", "--others", "--exclude-standard", "--", target_dir]
+        try:
+            untracked_res = subprocess.run(
+                untracked_cmd, capture_output=True, text=True, check=True
+            )
+            untracked_files = [f.strip() for f in untracked_res.stdout.splitlines() if f.strip()]
+        except (subprocess.CalledProcessError, OSError):
+            untracked_files = []
+
+        if untracked_files:
+            untracked_list = ", ".join(untracked_files[:3])
+            raise HandledError(
+                f"Untracked files detected under '{target_dir}' ({untracked_list}).",
+                f"Run 'git add {target_dir}' to stage new skills or rules before running the benchmark.",
+            )
+
         raise HandledError(
             f"No git diff found under target directory '{target_dir}'.",
             "Ensure you have modified files in your worktree under '.agents/' before running the benchmark.",

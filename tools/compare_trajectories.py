@@ -72,11 +72,18 @@ def parse_transcript(transcript_path: Path) -> dict[str, Any]:
                         if isinstance(tc, dict):
                             name = tc.get("name") or tc.get("tool_name") or "unknown_tool"
                             tool_counts[name] = tool_counts.get(name, 0) + 1
-                            args = tc.get("args") or {}
-                            if isinstance(args, dict):
-                                target = args.get("TargetFile") or args.get("AbsolutePath")
-                                if target and target not in modified_files:
-                                    modified_files.append(str(target))
+                            mutating_tools = {
+                                "write_to_file",
+                                "replace_file_content",
+                                "multi_replace_file_content",
+                            }
+                            if name in mutating_tools:
+                                args = tc.get("args") or {}
+                                if isinstance(args, dict):
+                                    target = args.get("TargetFile")
+                                    if target and target not in modified_files:
+                                        modified_files.append(str(target))
+
     except OSError as e:
         raise HandledError(
             f"Failed to read transcript file '{transcript_path}': {e}",

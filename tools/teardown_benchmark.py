@@ -48,15 +48,17 @@ def teardown_resources(
 
     # 2. Cleanup Git Remote Branches
     for branch in branches:
+        clean_branch = branch.replace("origin/", "").replace("origins/", "").strip()
         try:
-            cmd = ["git", "push", "origin", "--delete", branch]
+            cmd = ["git", "push", "origin", "--delete", clean_branch]
             res = subprocess.run(cmd, capture_output=True, text=True, check=False)
             if (
                 res.returncode == 0
                 or "remote ref does not exist" in res.stderr
                 or "no such ref" in res.stderr
             ):
-                cleaned_branches.append(branch)
+                cleaned_branches.append(clean_branch)
+
             else:
                 failed_branches.append({"branch": branch, "error": res.stderr.strip()})
         except Exception as e:

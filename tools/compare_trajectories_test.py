@@ -45,7 +45,7 @@ class CompareTrajectoriesTest(unittest.TestCase):
                         "status": "DONE",
                         "content": "Step 1 complete",
                         "tool_calls": [
-                            {"name": "run_command", "args": {"TargetFile": "/tmp/a.py"}}
+                            {"name": "write_to_file", "args": {"TargetFile": "/tmp/a.py"}}
                         ],
                     }
                 )
@@ -73,7 +73,9 @@ class CompareTrajectoriesTest(unittest.TestCase):
         self.assertEqual(res["error_count"], 1)
         self.assertGreater(res["file_bytes"], 0)
         self.assertGreaterEqual(res["est_tokens"], 0)
-        self.assertEqual(res["tool_counts"]["run_command"], 2)
+        self.assertEqual(res["tool_counts"]["write_to_file"], 1)
+        self.assertEqual(res["tool_counts"]["run_command"], 1)
+
         self.assertEqual(res["tool_counts"]["view_file"], 1)
         self.assertEqual(res["last_response_snippet"], "Step 2 failed")
         self.assertIn("/tmp/a.py", res["modified_files"])

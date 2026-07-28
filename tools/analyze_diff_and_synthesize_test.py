@@ -14,10 +14,16 @@
 
 """Unit tests for analyze_diff_and_synthesize tool."""
 
+import argparse
 import unittest
 from unittest.mock import MagicMock, patch
 
-from analyze_diff_and_synthesize import extract_diff_structure, get_git_diff
+from analyze_diff_and_synthesize import (
+    analyze_diff_and_synthesize,
+    extract_diff_structure,
+    get_git_diff,
+)
+from tool_utils import HandledError
 
 
 class AnalyzeDiffAndSynthesizeTest(unittest.TestCase):
@@ -52,6 +58,23 @@ class AnalyzeDiffAndSynthesizeTest(unittest.TestCase):
         diff_text, changed_files = get_git_diff(".agents", "HEAD")
         self.assertIn("+ test diff line", diff_text)
         self.assertEqual(changed_files, [".agents/rules/test.md"])
+
+    @patch("subprocess.run")
+    def test_analyze_diff_untracked_files_error(self, mock_run):
+        mock_diff = MagicMock()
+        mock_diff.stdout = ""
+        mock_name = MagicMock()
+        mock_name.stdout = ""
+        mock_untracked = MagicMock()
+        mock_untracked.stdout = ".agents/skills/new_skill/SKILL.md\n"
+
+        mock_run.side_effect = [mock_diff, mock_name, mock_untracked]
+
+        args = argparse.Namespace(target_dir=".agents", diff_spec=None)
+        with self.assertRaises(HandledError) as ctx:
+            analyze_diff_and_synthesize(args)
+
+        self.assertIn("Untracked files detected", str(ctx.exception))
 
 
 if __name__ == "__main__":
