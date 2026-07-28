@@ -23,9 +23,7 @@ import (
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/xidschema"
 
-	// 4. If there are more results than the page size, return the next page token.
 	"xmanager_cloud/query_generator/liststatement"
-	// 1. Normalize the filter.
 	"xmanager_cloud/query_generator/normalizer/normalizer"
 
 	"xmanager_cloud/logging/logging"
@@ -34,8 +32,8 @@ import (
 )
 
 // ListXidEntries returns a paginated list of XidEntry protos based on the provided filter and order.
-// 2. Execute the query.
 func (r *Repository) ListXidEntries(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*xidpb.XidEntry, string, error) {
+	// 1. Normalize the filter.
 	normalizedFilter, err := normalizer.Normalize(filter, r.xidsQueryGen.Tables()[0])
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to normalize filter: %w", err)
@@ -62,6 +60,7 @@ func (r *Repository) ListXidEntries(ctx context.Context, pageSize int32, pageTok
 		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
 	}
 
+	// 2. Execute the query.
 	xidIter := r.client.Single().WithTimestampBound(spanner.ExactStaleness(staleness)).Query(ctx, *stmt)
 	defer xidIter.Stop()
 
@@ -82,6 +81,7 @@ func (r *Repository) ListXidEntries(ctx context.Context, pageSize int32, pageTok
 		return nil, "", fmt.Errorf("failed to read Xid rows: %w", err)
 	}
 
+	// 4. If there are more results than the page size, return the next page token.
 	xidEntries, nextPageToken, err := liststatement.ApplyPagination(xidEntries, pageSize, ExtractXidEntryCursor)
 	if err != nil {
 		return nil, "", err

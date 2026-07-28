@@ -23,7 +23,6 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
 	ls "xmanager_cloud/query_generator/liststatement"
-	// 2. Normalize the filter.
 	"xmanager_cloud/query_generator/normalizer/normalizer"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/storage/spanner/schema/workunitschema"
@@ -77,6 +76,7 @@ func (r *Repository) ListWorkUnits(ctx context.Context, parent string, pageSize 
 
 	logging.Debug(ctx, "Generated list statement", "stmt", stmt)
 
+	// 3. Execute the query.
 	wuIter := r.client.Single().WithTimestampBound(spanner.ExactStaleness(staleness)).Query(ctx, *stmt)
 	defer wuIter.Stop()
 
@@ -95,6 +95,7 @@ func (r *Repository) ListWorkUnits(ctx context.Context, parent string, pageSize 
 		return nil, "", fmt.Errorf("failed to read WorkUnit rows: %w", err)
 	}
 
+	// 5. If there are more results than the page size, return the next page token.
 	workUnits, nextPageToken, err := ls.ApplyPagination(workUnits, pageSize, ExtractWorkUnitCursor)
 	if err != nil {
 		return nil, "", err
@@ -102,6 +103,7 @@ func (r *Repository) ListWorkUnits(ctx context.Context, parent string, pageSize 
 
 	logging.Info(ctx, "Fetched work units", "count", len(workUnits), "nextPageToken", nextPageToken)
 
+	// 6. Return the results.
 	return workUnits, nextPageToken, nil
 }
 

@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// 1. Read the existing artifact from storage so we can get the primary key.
 package artifact
 
 import (
@@ -33,6 +32,7 @@ func (r *Repository) DeleteArtifact(ctx context.Context, aid int64) error {
 	logging.Info(ctx, "Delete artifact in storage")
 
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+		// 1. Read the existing artifact from storage so we can get the primary key.
 		artifact, err := r.FetchArtifactTransaction(ctx, aid, tx)
 		if err != nil {
 			return err

@@ -30,7 +30,6 @@ import (
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/data/data"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
-	// 1. Read the existing XidEntry from storage.
 	"xmanager_cloud/storage/spanner/schema/xidschema"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/storage/storage"
@@ -50,7 +49,6 @@ LIMIT 1;
 
 // UpdateXidEntry updates an XidEntry with the given update mask.
 // TODO(b/517479143): Refactor UpdateXidEntry to move parent iteration and entry merging out of the repository layer.
-// UpdateXidEntry updates an XidEntry with the given update mask.
 func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntryUpdate) (*xidmsgpb.XidEntry, error) {
 	if update == nil {
 		return nil, fmt.Errorf("update must not be nil")
@@ -65,6 +63,7 @@ func (r *Repository) UpdateXidEntry(ctx context.Context, update *storage.XidEntr
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		mutated = false
 
+		// 1. Read the existing XidEntry from storage.
 		row, err := txn.ReadRow(ctx, xidschema.XIDTableName, spanner.Key{spannerutils.ReverseBits(update.XID)}, xidschema.FetchedXIDColumns)
 		if err != nil {
 			if status.ExtractCanonicalCode(err) == status.NotFound {

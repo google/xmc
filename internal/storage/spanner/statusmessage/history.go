@@ -15,7 +15,6 @@
 package statusmessage
 
 import (
-	//	http://www.apache.org/licenses/LICENSE-2.0
 	"context"
 	"crypto/rand"
 	"fmt"

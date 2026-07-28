@@ -43,11 +43,11 @@ func (r *Repository) UpdateExperimentLaunchState(ctx context.Context, xid int64,
 	}
 
 	var currentExp *essmsgpb.Experiment
-	// 1. Read the existing ExperimentStatus from storage.
 	var updatedExp *essmsgpb.Experiment
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		var err error
 
+		// 1. Read the existing ExperimentStatus from storage.
 		updatedExp, err = r.FetchExperimentTransaction(ctx, xid, txn)
 		if err != nil {
 			return err

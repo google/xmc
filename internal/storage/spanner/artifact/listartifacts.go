@@ -25,14 +25,12 @@ import (
 	ls "xmanager_cloud/query_generator/liststatement"
 	"xmanager_cloud/query_generator/normalizer/normalizer"
 	"xmanager_cloud/storage/spanner/data/spannerdata"
-	// 5. If there are more results than the page size, return the next page token.
 	"xmanager_cloud/storage/spanner/schema/artifactschema"
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 
 // ListArtifacts returns a paginated list of Artifact protos based on the provided filter and order.
-// 3. Execute the query.
 func (r *Repository) ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.Artifact, string, error) {
 	logging.Info(ctx, "List artifacts", "pageSize", pageSize, "pageToken", pageToken, "filter", filter, "orderBy", orderBy, "staleness", staleness)
 
@@ -84,6 +82,7 @@ func (r *Repository) ListArtifacts(ctx context.Context, parent string, pageSize 
 
 	logging.Debug(ctx, "Generated list statement", "stmt", stmt)
 
+	// 3. Execute the query.
 	expIter := r.client.Single().WithTimestampBound(spanner.ExactStaleness(staleness)).Query(ctx, *stmt)
 	defer expIter.Stop()
 
@@ -103,6 +102,7 @@ func (r *Repository) ListArtifacts(ctx context.Context, parent string, pageSize 
 		return nil, "", fmt.Errorf("failed to read Artifact rows: %w", err)
 	}
 
+	// 5. If there are more results than the page size, return the next page token.
 	artifacts, nextPageToken, err := ls.ApplyPagination(artifacts, pageSize, ExtractArtifactCursor)
 	if err != nil {
 		return nil, "", err

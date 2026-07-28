@@ -32,10 +32,9 @@ import (
 	"xmanager_cloud/validator/validator"
 )
 
-// UpdateWorkUnitOperation updates the status of an operation.
-// TODO(b/517479143): Move operation update merging logic out of the repository layer into a domain service layer.
 // UpdateWorkUnitOperation updates the status of an operation. It returns the updated operation, or
 // an error if the update fails.
+// TODO(b/517479143): Move operation update merging logic out of the repository layer into a domain service layer.
 func (r *Repository) UpdateWorkUnitOperation(ctx context.Context, operationUpdate *storage.OperationUpdate) (*longrunningpb.Operation, error) {
 	if operationUpdate == nil {
 		return nil, fmt.Errorf("operationUpdate must not be nil")
@@ -49,6 +48,7 @@ func (r *Repository) UpdateWorkUnitOperation(ctx context.Context, operationUpdat
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		mutated = false
 
+		// 1. Read the existing Operation from storage.
 		operation, err := r.FetchWorkUnitOperationTransaction(ctx, operationUpdate.XID, operationUpdate.WID, operationUpdate.OID, txn)
 		if err != nil {
 			return err
