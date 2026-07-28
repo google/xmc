@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 // Package storage defines the interface for all data persistence operations
 // required by the Experiment State Server.
 package storage
@@ -90,12 +91,12 @@ type XidEntryUpdate struct {
 	UpdateMask *fmpb.FieldMask
 }
 
-// Storage defines the interface for all data persistence operations.
-type Storage interface {
-	// -----------------------
-	// Experiment Methods
-	// -----------------------
+// -----------------------
+// Experiment Methods
+// -----------------------
 
+// ExperimentStore defines storage operations for experiments.
+type ExperimentStore interface {
 	// CreateExperiment creates a new experiment.
 	CreateExperiment(ctx context.Context, exp *essmsgpb.Experiment) (*essmsgpb.Experiment, error)
 
@@ -117,11 +118,14 @@ type Storage interface {
 
 	// UpdateExperimentLaunchState updates the launch state of an experiment.
 	UpdateExperimentLaunchState(ctx context.Context, xid int64, launchState essmsgpb.ExperimentStatus_LaunchState) (*essmsgpb.Experiment, error)
+}
 
-	// -----------------------
-	// WorkUnit Methods
-	// -----------------------
+// -----------------------
+// WorkUnit Methods
+// -----------------------
 
+// WorkUnitStore defines storage operations for work units and work unit executions.
+type WorkUnitStore interface {
 	// CreateWorkUnit creates a new work unit as a sub-collection of an experiment.
 	CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*essmsgpb.WorkUnit, error)
 
@@ -156,20 +160,26 @@ type Storage interface {
 	// RestartWorkUnitExecutions archives the active work unit execution for a given work unit,
 	// and generates a new current work unit execution in the given state.
 	RestartWorkUnitExecutions(ctx context.Context, requester string, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnitExecution, error)
+}
 
-	// -----------------------
-	// StatusMessage Methods
-	// -----------------------
+// -----------------------
+// StatusMessage Methods
+// -----------------------
 
+// StatusMessageStore defines storage operations for status messages.
+type StatusMessageStore interface {
 	// ListStatusMessages retrieves a list of status messages for an experiment or work unit. Staleness should
 	// be set to 0 for strong reads, and up to 15 seconds for stale reads.
 	// It uses cursor pagination.
 	ListStatusMessages(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.StatusMessage, string, error)
+}
 
-	// -----------------------
-	// Artifact Methods
-	// -----------------------
+// -----------------------
+// Artifact Methods
+// -----------------------
 
+// ArtifactStore defines storage operations for artifacts.
+type ArtifactStore interface {
 	// CreateArtifact creates a new artifact.
 	CreateArtifact(ctx context.Context, artifact *essmsgpb.Artifact) (*essmsgpb.Artifact, error)
 
@@ -186,11 +196,14 @@ type Storage interface {
 
 	// DeleteArtifact deletes an artifact by its unique ID.
 	DeleteArtifact(ctx context.Context, aid int64) error
+}
 
-	// -----------------------
-	// Operation Methods
-	// -----------------------
+// -----------------------
+// Operation Methods
+// -----------------------
 
+// OperationStore defines storage operations for operations.
+type OperationStore interface {
 	// AddWorkUnitOperation adds an operation to a work unit.
 	AddWorkUnitOperation(ctx context.Context, xid int64, wid int64, operationMetadata *essmsgpb.OperationMetadata) (*longrunningpb.Operation, error)
 
@@ -199,11 +212,14 @@ type Storage interface {
 
 	// UpdateWorkUnitOperation updates the status of an operation.
 	UpdateWorkUnitOperation(ctx context.Context, operationUpdate *OperationUpdate) (*longrunningpb.Operation, error)
+}
 
-	// -----------------------
-	// XidEntry Methods
-	// -----------------------
+// -----------------------
+// XidEntry Methods
+// -----------------------
 
+// XidEntryStore defines storage operations for XID entries.
+type XidEntryStore interface {
 	// CreateXidEntry creates a new XidEntry.
 	CreateXidEntry(ctx context.Context, entry *xidmsgpb.XidEntry) (*xidmsgpb.XidEntry, error)
 
@@ -217,4 +233,14 @@ type Storage interface {
 
 	// UpdateXidEntry updates an XidEntry with the given update mask.
 	UpdateXidEntry(ctx context.Context, update *XidEntryUpdate) (*xidmsgpb.XidEntry, error)
+}
+
+// Storage defines the interface for all data persistence operations.
+type Storage interface {
+	ExperimentStore
+	WorkUnitStore
+	StatusMessageStore
+	ArtifactStore
+	OperationStore
+	XidEntryStore
 }
