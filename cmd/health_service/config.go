@@ -20,15 +20,19 @@ import (
 
 // Config holds the configuration for the health service.
 type Config struct {
-	Port      string
-	GRPCPort  string
-	ProjectID string
+	Port        string
+	GRPCPort    string
+	ProjectID   string
+	TLSCertFile string
+	TLSKeyFile  string
 }
 
 var (
-	port      string
-	grpcPort  string
-	projectID string
+	port        string
+	grpcPort    string
+	projectID   string
+	tlsCertFile string
+	tlsKeyFile  string
 )
 
 func init() {
@@ -39,13 +43,17 @@ func init() {
 	flag.StringVar(&port, "port", defaultPort, "The HTTP server port to listen on.")
 	flag.StringVar(&grpcPort, "grpc_port", "50051", "The gRPC server port to listen on.")
 	flag.StringVar(&projectID, "project_id", os.Getenv("GOOGLE_CLOUD_PROJECT"), "The GCP project ID.")
+	flag.StringVar(&tlsCertFile, "tls_cert_file", "", "The TLS certificate file path.")
+	flag.StringVar(&tlsKeyFile, "tls_key_file", "", "The TLS private key file path.")
 }
 
 // LoadConfig loads and returns the configuration.
 func LoadConfig() *Config {
 	return &Config{
-		Port:      port,
-		GRPCPort:  grpcPort,
-		ProjectID: projectID,
+		Port:        port,
+		GRPCPort:    grpcPort,
+		ProjectID:   projectID,
+		TLSCertFile: tlsCertFile,
+		TLSKeyFile:  tlsKeyFile,
 	}
 }

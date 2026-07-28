@@ -27,9 +27,9 @@ import (
 
 	"go/google"
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
-	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
+	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 
@@ -59,7 +59,13 @@ func main() {
 	if err != nil {
 		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
 	}
-	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
+
+	transportCreds, err := tlsutil.NewServerCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
+	if err != nil {
+		logging.Fatal(ctx, "Failed to create server credentials", "error", err)
+	}
+
+	grpcServer := grpc.NewServer(grpc.Creds(transportCreds))
 	spb.RegisterHealthServiceServer(grpcServer, newServer(cfg))
 	reflection.Register(grpcServer)
 
@@ -71,9 +77,14 @@ func main() {
 	}()
 
 	// 2. Setup gRPC Gateway
-	gwmux := runtime.NewServeMux()
+	httpTransportCreds, err := tlsutil.NewClientCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
+	if err != nil {
+		logging.Fatal(ctx, "Failed to create client credentials", "error", err)
+	}
+
+	gwmux := runtime.NewServeMux(runtime.WithIncomingHeaderMatcher(oauth2.IncomingHeaderMatcher))
 	dialOpts := []grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(httpTransportCreds),
 	}
 	err = gwpb.RegisterHealthServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
 	if err != nil {
