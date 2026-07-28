@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -306,6 +307,7 @@ func TestIsCongestionError(t *testing.T) {
 	}{
 		{name: "nil error", err: nil, want: false},
 		{name: "kgo ErrClientClosed", err: kgo.ErrClientClosed, want: true},
+		{name: "net OpError dial failure", err: &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}, want: true},
 		{name: "queue limit exceeded", err: errors.New("franz-go: queue limit reached"), want: true},
 		{name: "broker outage", err: errors.New("broker outage: connection refused"), want: true},
 		{name: "unrelated error", err: errors.New("invalid proto format"), want: false},

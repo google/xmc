@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -156,10 +157,18 @@ func IsCongestionError(err error) bool {
 		return false
 	}
 
+	// 1. Check franz-go client lifecycle errors.
 	if errors.Is(err, kgo.ErrClientClosed) {
 		return true
 	}
 
+	// 2. Check standard network errors (e.g. broker outage, connection refused, dial timeout).
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+
+	// 3. Fallback string matching for custom error wrappers or mock test errors.
 	msg := strings.ToLower(err.Error())
 	for _, sub := range congestionErrorSubstrings {
 		if strings.Contains(msg, sub) {
