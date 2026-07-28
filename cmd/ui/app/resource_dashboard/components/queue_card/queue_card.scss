@@ -86,23 +86,7 @@
   }
 }
 
-button.copy-flag-btn {
-  font-size: 13px;
-  color: #1a73e8;
-  border-color: #dadce0;
-  border-radius: 4px;
-  padding: 0 12px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-
-  .copy-icon {
-    font-size: 16px;
-    width: 16px;
-    height: 16px;
-    margin-right: 6px;
-  }
-}
+// TODO: Restore copy-flag-btn styles once flag functionality and formatting are finalized.
 
 /* 2-Column Grid Inside Queue Card */
 .card-grid-body {

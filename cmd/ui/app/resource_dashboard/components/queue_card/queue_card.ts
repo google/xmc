@@ -13,8 +13,7 @@
 // limitations under the License.
 
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
@@ -63,7 +62,6 @@ const DEFAULT_CLUSTER_QUEUE: ClusterQueue = {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     CommonModule,
-    MatButtonModule,
     MatIconModule,
     MatTooltipModule,
     MaxWorkloadDisplayPipe,
@@ -76,7 +74,7 @@ export class QueueCardComponent {
   readonly isSelected = input<boolean>(false);
   readonly selectQueue = output<string>();
 
-  readonly isCopied = signal<boolean>(false);
+  // TODO: Restore copyFlag functionality and isCopied signal once flag formatting and requirements are finalized.
   protected readonly termTooltips = ROD_TERM_TOOLTIPS;
   protected readonly flavors = computed(() => this.queue()?.flavors ?? []);
 
@@ -85,26 +83,6 @@ export class QueueCardComponent {
     if (!q || q.status !== 'Active') return false;
     return (q.pendingWorkloads || 0) === 0;
   });
-
-  protected copyFlag(event: Event): void {
-    event.stopPropagation();
-    const qName = this.queue()?.name ?? '';
-    const cleanedQueue = qName.replace(/-cluster-/g, '-');
-    const flag = `--queue=${cleanedQueue}`;
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard
-        .writeText(flag)
-        .then(() => {
-          this.isCopied.set(true);
-          setTimeout(() => {
-            this.isCopied.set(false);
-          }, 2000);
-        })
-        .catch((err) => {
-          console.error('Failed to copy queue flag to clipboard:', err);
-        });
-    }
-  }
 
   protected onCardClick(): void {
     this.selectQueue.emit(this.queue().name);
