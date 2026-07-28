@@ -14,12 +14,13 @@
 
 :host {
   display: block;
+  width: 100%;
 }
 
 .rod-container {
   padding: 24px;
-  max-width: 1600px;
-  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
   font-family: Roboto, 'Helvetica Neue', sans-serif;
 }
 
