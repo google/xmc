@@ -27,13 +27,14 @@ export const MOCK_USER = {
  */
 const BASE_SCREENSHOT_STYLES = `
   html, body {
-    width: 1280px !important;
+    width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
   }
-  [class*="-container"] {
-    width: 1216px !important;
-    margin: 0 auto !important;
+  .screenshot-harness-container {
+    width: 100% !important;
+    padding: 24px !important;
+    box-sizing: border-box !important;
   }
   xmc-*,
   [data-screenshot-target],
@@ -52,6 +53,22 @@ export async function handleUserAuthRoute(route: Route) {
   });
 }
 
+export async function handleConfigRoute(route: Route) {
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/javascript',
+    body: `window.XMC_API_URL = ""; window.XMC_FEATURE_FLAGS = { statusMessageHistoryEnabled: true, adminPanelEnabled: true, resourceDashboardEnabled: true };`,
+  });
+}
+
+/**
+ * Mocks user auth and feature flag configuration routes for Playwright tests.
+ */
+export async function setupMockRoutes(page: Page) {
+  await page.route('/api/user', handleUserAuthRoute);
+  await page.route('/config.js', handleConfigRoute);
+}
+
 /**
  * Prepares the Playwright page runtime for deterministic component screenshot assertions.
  */
@@ -59,4 +76,28 @@ export async function setupScreenshotEnvironment(page: Page) {
   await page.addStyleTag({
     content: BASE_SCREENSHOT_STYLES,
   });
+}
+
+/**
+ * Mounts a component HTML harness into the DOM for isolated component screenshot testing.
+ */
+export async function mountComponentHarness(page: Page, htmlContent: string) {
+  await page.evaluate((html) => {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    const targetElement = tempDiv.firstElementChild as HTMLElement | null;
+    const container =
+      document.querySelector('.page-container, .guest-page-container') ||
+      document.querySelector('app-root') ||
+      document.body;
+
+    if (targetElement) {
+      const tagName = targetElement.tagName.toLowerCase();
+      const liveElement = document.querySelector(tagName);
+      if (liveElement && !targetElement.innerHTML.trim()) {
+        targetElement.innerHTML = liveElement.innerHTML;
+      }
+    }
+    container.innerHTML = `<div class="screenshot-harness-container">${tempDiv.innerHTML}</div>`;
+  }, htmlContent);
 }
