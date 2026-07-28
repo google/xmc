@@ -153,24 +153,17 @@ var congestionErrorSubstrings = []string{
 }
 
 // IsCongestionError determines if a produce error is caused by queue saturation, broker pause, or broker outage.
-// Ref Apache Kafka Protocol Error Codes Specification: https://kafka.apache.org/protocol.html#protocol_error_codes
-// Ref franz-go kerr Package Reference: https://pkg.go.dev/github.com/twmb/franz-go/pkg/kerr
-// Ref franz-go kgo Package Reference: https://pkg.go.dev/github.com/twmb/franz-go/pkg/kgo
 func IsCongestionError(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	// 1. Check franz-go client lifecycle and buffer limit errors (https://pkg.go.dev/github.com/twmb/franz-go/pkg/kgo).
+	// 1. Check franz-go client lifecycle errors.
 	if errors.Is(err, kgo.ErrClientClosed) {
 		return true
 	}
 
-	// 2. Check formal Kafka protocol error codes from broker (https://kafka.apache.org/protocol.html#protocol_error_codes).
-	// - Code 7 (REQUEST_TIMED_OUT): Request queue timeout on broker under high load.
-	// - Code 8 (BROKER_NOT_AVAILABLE): Broker is undergoing outage or restart.
-	// - Code 53 (QUEUE_FULL): Broker produce queue / memory buffer is full.
-	// - Code 56 (KAFKA_STORAGE_ERROR): Storage saturation or disk error on broker.
+	// 2. Check formal Kafka protocol error codes from broker (RequestTimedOut, BrokerNotAvailable, QueueFull, KafkaStorageError).
 	var kerrErr *kerr.Error
 	if errors.As(err, &kerrErr) {
 		switch kerrErr.Code {
