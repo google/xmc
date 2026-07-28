@@ -20,21 +20,12 @@ export class QueueCardHarness extends ComponentHarness {
 
   private readonly cardElement = this.locatorFor('.queue-card');
   private readonly queueNameElement = this.locatorFor('.queue-name');
-  private readonly cohortElement = this.locatorFor('.queue-cohort');
   private readonly statusBadgeElement = this.locatorForOptional('.status-badge');
   private readonly tableRows = this.locatorForAll('.table-row');
-  private readonly predictabilityBanner = this.locatorForOptional('.predictability-banner');
-  private readonly bannerText = this.locatorForOptional('.banner-text');
 
   /** Gets the queue name title text. */
   async getQueueName(): Promise<string> {
     const el = await this.queueNameElement();
-    return el.text();
-  }
-
-  /** Gets the cohort subtitle text. */
-  async getCohort(): Promise<string> {
-    const el = await this.cohortElement();
     return el.text();
   }
 
@@ -69,12 +60,6 @@ export class QueueCardHarness extends ComponentHarness {
       throw new Error(`No flavor row found at index ${index}`);
     }
     return rows[index].text();
-  }
-
-  /** Gets the predictability banner text if present. */
-  async getPredictabilityBannerText(): Promise<string | null> {
-    const banner = await this.bannerText();
-    return banner ? banner.text() : null;
   }
 
   /** Clicks the queue card element. */
