@@ -15,7 +15,8 @@
 import 'jasmine';
 
 import { Component } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
 import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
@@ -104,14 +105,17 @@ describe('ResourceDashboard Container', () => {
   cleanState(() => {
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
       'getClusterQueues',
+      'getQueueJobs',
     ]);
     resourceService.getClusterQueues.and.returnValue(
       of({ clusterQueues: [mockGpuQueue, mockCpuQueue] }),
     );
+    resourceService.getQueueJobs.and.returnValue(of({ queueName: 'gpu-cluster-queue', jobs: [] }));
 
     setupModule({
-      imports: [TestHostComponent],
+      imports: [TestHostComponent, NoopAnimationsModule],
       providers: [
+        provideRouter([]),
         { provide: ResourceService, useValue: resourceService },
         { provide: AUTO_REFRESH_INTERVAL_MS, useValue: 30000 },
         {
@@ -126,7 +130,7 @@ describe('ResourceDashboard Container', () => {
     return { resourceService };
   }, beforeEach);
 
-  it('should render subnav tabs, smart resource finder, and resolved cluster queues', async () => {
+  it('should render subnav tabs, smart resource finder, resolved cluster queues, and queue jobs table', async () => {
     bootstrap(TestHostComponent);
     await flush();
 
@@ -137,6 +141,8 @@ describe('ResourceDashboard Container', () => {
 
     const finderHarness = (await dashboard.getSmartResourceFinder())!;
     expect(await finderHarness.getResourceTypeSelectCount()).toBe(1);
+
+    expect(await dashboard.getQueueJobsTable()).not.toBeNull();
   });
 
   it('should populate picker dropdown with correct available resource types sorted alphabetically', async () => {
@@ -227,6 +233,7 @@ describe('ResourceDashboard Container', () => {
     expect(await tabsHarness.isTabActive(0)).toBeFalse();
     expect(await tabsHarness.isTabActive(1)).toBeTrue();
     expect(await dashboard.getQueueList()).toBeNull();
+    expect(await dashboard.getQueueJobsTable()).toBeNull();
 
     await tabsHarness.clickTab(0);
     await flush();
@@ -235,6 +242,7 @@ describe('ResourceDashboard Container', () => {
     expect(await tabsHarness.isTabActive(1)).toBeFalse();
     const restoredQueueList = (await dashboard.getQueueList())!;
     expect(await restoredQueueList.getQueueCardCount()).toBe(2);
+    expect(await dashboard.getQueueJobsTable()).not.toBeNull();
   });
 
   it('should select queue when a queue card is clicked', async () => {

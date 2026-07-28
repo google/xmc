@@ -14,14 +14,18 @@
 
 :host {
   display: block;
-  padding: 24px 32px;
-  background-color: #f8f9fa;
-  min-height: 100vh;
+  width: 100%;
+}
+
+.rod-container {
+  padding: 24px;
+  width: 100%;
   box-sizing: border-box;
   font-family: Roboto, 'Helvetica Neue', sans-serif;
 }
 
-xmc-rod-subnav-tabs {
+xmc-rod-subnav-tabs,
+xmc-smart-resource-finder {
   display: block;
   margin-bottom: 24px;
 }
@@ -35,11 +39,19 @@ xmc-smart-resource-finder {
   display: flex;
   gap: 24px;
   align-items: flex-start;
+  width: 100%;
 }
 
 .rod-main-content {
-  flex: 1;
+  flex: 1 1 50%;
   min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+.jobs-side-pane {
+  flex: 1 1 50%;
+  min-width: 0;
+  position: sticky;
+  top: 16px;
 }
