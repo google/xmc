@@ -25,7 +25,7 @@ cmd/ui/playwright-report/
 /ctk-out
 
 # Python virtual environments
-venv/
+**/venv/
 
 # PR review checklist artifacts
 pr_review_checklist.md
