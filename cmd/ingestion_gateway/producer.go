@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
@@ -152,23 +153,39 @@ var congestionErrorSubstrings = []string{
 }
 
 // IsCongestionError determines if a produce error is caused by queue saturation, broker pause, or broker outage.
+// Ref Apache Kafka Protocol Error Codes Specification: https://kafka.apache.org/protocol.html#protocol_error_codes
+// Ref franz-go kerr Package Reference: https://pkg.go.dev/github.com/twmb/franz-go/pkg/kerr
+// Ref franz-go kgo Package Reference: https://pkg.go.dev/github.com/twmb/franz-go/pkg/kgo
 func IsCongestionError(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	// 1. Check franz-go client lifecycle errors.
+	// 1. Check franz-go client lifecycle and buffer limit errors (https://pkg.go.dev/github.com/twmb/franz-go/pkg/kgo).
 	if errors.Is(err, kgo.ErrClientClosed) {
 		return true
 	}
 
-	// 2. Check standard network errors (e.g. broker outage, connection refused, dial timeout).
+	// 2. Check formal Kafka protocol error codes from broker (https://kafka.apache.org/protocol.html#protocol_error_codes).
+	// - Code 7 (REQUEST_TIMED_OUT): Request queue timeout on broker under high load.
+	// - Code 8 (BROKER_NOT_AVAILABLE): Broker is undergoing outage or restart.
+	// - Code 53 (QUEUE_FULL): Broker produce queue / memory buffer is full.
+	// - Code 56 (KAFKA_STORAGE_ERROR): Storage saturation or disk error on broker.
+	var kerrErr *kerr.Error
+	if errors.As(err, &kerrErr) {
+		switch kerrErr.Code {
+		case kerr.RequestTimedOut.Code, kerr.BrokerNotAvailable.Code, kerr.KafkaStorageError.Code, 53:
+			return true
+		}
+	}
+
+	// 3. Check standard Go network errors (e.g. broker outage, connection refused, dial timeout).
 	var netErr net.Error
 	if errors.As(err, &netErr) {
 		return true
 	}
 
-	// 3. Fallback string matching for custom error wrappers or mock test errors.
+	// 4. Fallback string matching for wrapped errors or mock test errors.
 	msg := strings.ToLower(err.Error())
 	for _, sub := range congestionErrorSubstrings {
 		if strings.Contains(msg, sub) {

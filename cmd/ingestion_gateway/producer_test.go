@@ -29,6 +29,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -307,9 +308,13 @@ func TestIsCongestionError(t *testing.T) {
 	}{
 		{name: "nil error", err: nil, want: false},
 		{name: "kgo ErrClientClosed", err: kgo.ErrClientClosed, want: true},
+		{name: "kerr QueueFull (Code 53)", err: &kerr.Error{Code: 53}, want: true},
+		{name: "kerr RequestTimedOut (Code 7)", err: kerr.RequestTimedOut, want: true},
+		{name: "kerr BrokerNotAvailable (Code 8)", err: kerr.BrokerNotAvailable, want: true},
+		{name: "kerr KafkaStorageError (Code 56)", err: kerr.KafkaStorageError, want: true},
 		{name: "net OpError dial failure", err: &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}, want: true},
-		{name: "queue limit exceeded", err: errors.New("franz-go: queue limit reached"), want: true},
-		{name: "broker outage", err: errors.New("broker outage: connection refused"), want: true},
+		{name: "queue limit exceeded string fallback", err: errors.New("franz-go: queue limit reached"), want: true},
+		{name: "broker outage string fallback", err: errors.New("broker outage: connection refused"), want: true},
 		{name: "unrelated error", err: errors.New("invalid proto format"), want: false},
 	}
 
