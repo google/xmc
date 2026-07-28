@@ -14,7 +14,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import { handleUserAuthRoute } from '../test_utils';
+import { handleUserAuthRoute, setupScreenshotEnvironment } from '../test_utils';
 
 test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
@@ -24,6 +24,7 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
     // Navigate to production route /resources
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
+    await setupScreenshotEnvironment(page);
   });
 
   test('should match baseline screenshot for initial layout and cluster queues', async ({
