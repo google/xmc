@@ -365,7 +365,6 @@ func TestWorkloadReconciler_Inadmissible(t *testing.T) {
 					t.Errorf("Expected status.scheduling_information to not be in update mask, got %v", update.UpdateMask.GetPaths())
 				}
 			}
-
 		})
 	}
 }

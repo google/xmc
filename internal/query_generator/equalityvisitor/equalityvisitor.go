@@ -170,7 +170,6 @@ func (ev *EqualityVisitor) ValueExp(e string) (filtervisitor.PrimType, error) {
 		}
 		ev.visitFromEqual = false
 		return filtervisitor.Unsigned, nil
-
 	}
 	// Sanitize float literal
 	if _, err := strconv.ParseFloat(e, 0); err == nil {

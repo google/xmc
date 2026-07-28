@@ -63,7 +63,6 @@ func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, s
 
 	payload, err := validateJWT(ctx, jwt, a.iapIssuer, a.iapAudiences)
 	if err != nil {
-
 		unverifiedPayload, parseErr := idtoken.ParsePayload(jwt)
 		if parseErr == nil && unverifiedPayload != nil {
 			logging.Error(ctx, "validateJWT: idtoken.Validate failed",
