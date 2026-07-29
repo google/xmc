@@ -195,3 +195,24 @@ func IsCongestionError(err error) bool {
 	}
 	return false
 }
+
+// IsClientProduceError determines if a produce error is caused by invalid client payload or configuration (e.g. MessageTooLarge).
+func IsClientProduceError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var kerrErr *kerr.Error
+	if errors.As(err, &kerrErr) {
+		switch kerrErr.Code {
+		case kerr.MessageTooLarge.Code,
+			kerr.RecordListTooLarge.Code,
+			kerr.InvalidRecord.Code,
+			kerr.InvalidTimestamp.Code,
+			kerr.InvalidRequiredAcks.Code,
+			kerr.UnsupportedCompressionType.Code:
+			return true
+		}
+	}
+	return false
+}

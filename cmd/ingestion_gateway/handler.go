@@ -134,12 +134,31 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string) http.
 			return
 		}
 
-		// If any async publish failed, respond with 503 Service Unavailable.
+		// If any async publish failed, evaluate error type before responding.
 		if errPtr := publishErr.Load(); errPtr != nil {
-			logging.Error(ctx, "Metrics ingestion request failed due to broker publish error", "error", (*errPtr).Error())
-			writeJSONResponse(w, r, http.StatusServiceUnavailable, ServiceUnavailableErrorPayload{
-				Error:   "service_unavailable",
-				Message: (*errPtr).Error(),
+			errVal := *errPtr
+			if IsClientProduceError(errVal) {
+				logging.Warn(ctx, "Metrics ingestion request failed due to invalid metric payload", "error", errVal.Error())
+				writeJSONResponse(w, r, http.StatusBadRequest, BadRequestErrorPayload{
+					Error:   "bad_request",
+					Message: errVal.Error(),
+				})
+				return
+			}
+
+			if IsCongestionError(errVal) {
+				logging.Error(ctx, "Metrics ingestion request failed due to broker congestion or outage", "error", errVal.Error())
+				writeJSONResponse(w, r, http.StatusServiceUnavailable, ServiceUnavailableErrorPayload{
+					Error:   "service_unavailable",
+					Message: errVal.Error(),
+				})
+				return
+			}
+
+			logging.Error(ctx, "Metrics ingestion request failed due to broker publish error", "error", errVal.Error())
+			writeJSONResponse(w, r, http.StatusInternalServerError, ServiceUnavailableErrorPayload{
+				Error:   "internal_server_error",
+				Message: errVal.Error(),
 			})
 			return
 		}

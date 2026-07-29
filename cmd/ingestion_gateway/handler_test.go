@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -489,7 +490,7 @@ func TestCongestionControl_BrokerSaturation_Returns503(t *testing.T) {
 	}
 }
 
-func TestCongestionControl_BrokerOutage_Returns503(t *testing.T) {
+func TestMetricsIngestionHandler_BrokerOutage_Returns503(t *testing.T) {
 	mp := NewMockProducer()
 	mp.failIndex = 0
 	mp.failErr = fmt.Errorf("redpanda broker unreachable: connection refused")
@@ -514,6 +515,62 @@ func TestCongestionControl_BrokerOutage_Returns503(t *testing.T) {
 
 	if payload503.Error != "service_unavailable" {
 		t.Errorf("expected error 'service_unavailable', got %q", payload503.Error)
+	}
+}
+
+func TestMetricsIngestionHandler_ClientProduceError_Returns400(t *testing.T) {
+	mp := NewMockProducer()
+	mp.failIndex = 0
+	mp.failErr = kerr.MessageTooLarge
+
+	handler := NewMetricsIngestionHandler(mp, "xmc-metrics")
+	payload := `[{"xid": 202, "work_unit_id": 2, "execution_id": 1, "replica_id": "rep-1", "metric_name": "large_metric", "metric_value": 1.0, "step": 1, "timestamp": 1700000000}]`
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status 400 Bad Request on client produce error (MessageTooLarge), got %d", resp.StatusCode)
+	}
+
+	var payload400 BadRequestErrorPayload
+	if err := json.NewDecoder(resp.Body).Decode(&payload400); err != nil {
+		t.Fatalf("failed to decode 400 payload: %v", err)
+	}
+
+	if payload400.Error != "bad_request" {
+		t.Errorf("expected error 'bad_request', got %q", payload400.Error)
+	}
+}
+
+func TestMetricsIngestionHandler_GenericBrokerError_Returns500(t *testing.T) {
+	mp := NewMockProducer()
+	mp.failIndex = 0
+	mp.failErr = kerr.UnknownServerError
+
+	handler := NewMetricsIngestionHandler(mp, "xmc-metrics")
+	payload := `[{"xid": 202, "work_unit_id": 2, "execution_id": 1, "replica_id": "rep-1", "metric_name": "test_metric", "metric_value": 1.0, "step": 1, "timestamp": 1700000000}]`
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected status 500 Internal Server Error on unknown broker error, got %d", resp.StatusCode)
+	}
+
+	var payload500 ServiceUnavailableErrorPayload
+	if err := json.NewDecoder(resp.Body).Decode(&payload500); err != nil {
+		t.Fatalf("failed to decode 500 payload: %v", err)
+	}
+
+	if payload500.Error != "internal_server_error" {
+		t.Errorf("expected error 'internal_server_error', got %q", payload500.Error)
 	}
 }
 
