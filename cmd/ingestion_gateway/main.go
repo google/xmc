@@ -46,7 +46,9 @@ func main() {
 
 	logging.Info(ctx, "Initializing Ingestion Gateway service", "brokers", cfg.RedpandaBrokers, "topic", cfg.TopicName)
 
-	kClient, err := NewKafkaProducer(cfg)
+	gMetrics := NewGatewayMetrics(nil)
+
+	kClient, err := NewKafkaProducer(cfg, gMetrics)
 	if err != nil {
 		logging.Fatal(ctx, "failed to create franz-go client", "error", err)
 	}
