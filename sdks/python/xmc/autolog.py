@@ -107,13 +107,17 @@ def patch_lightning() -> bool:
 
         @functools.wraps(original_fit)
         def custom_fit(self: Any, *args: Any, **kwargs: Any) -> Any:
-            loggers = getattr(self, "loggers", None)
-            if loggers is None and hasattr(self, "_loggers"):
-                loggers = self._loggers
-
-            if isinstance(loggers, list):
-                if not any(isinstance(logger_inst, XmcLogger) for logger_inst in loggers):
-                    loggers.append(XmcLogger())
+            if hasattr(self, "_loggers"):
+                if isinstance(self._loggers, list):
+                    if not any(isinstance(logger_inst, XmcLogger) for logger_inst in self._loggers):
+                        self._loggers.append(XmcLogger())
+                elif self._loggers is None:
+                    self._loggers = [XmcLogger()]
+            else:
+                loggers = getattr(self, "loggers", None)
+                if isinstance(loggers, list):
+                    if not any(isinstance(logger_inst, XmcLogger) for logger_inst in loggers):
+                        loggers.append(XmcLogger())
             return original_fit(self, *args, **kwargs)
 
         pl.Trainer.fit = custom_fit

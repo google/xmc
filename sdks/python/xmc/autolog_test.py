@@ -158,7 +158,11 @@ class AutologTest(unittest.TestCase):
 
         class DummyTrainer:
             def __init__(self) -> None:
-                self.loggers: list[object] = []
+                self._loggers: list[object] | None = None
+
+            @property
+            def loggers(self) -> list[object]:
+                return self._loggers if self._loggers is not None else []
 
             @property
             def logger(self) -> object:
@@ -232,7 +236,11 @@ class AutologTest(unittest.TestCase):
 
         class DummyTrainer:
             def __init__(self) -> None:
-                self.loggers: list[object] = []
+                self._loggers: list[object] | None = None
+
+            @property
+            def loggers(self) -> list[object]:
+                return self._loggers if self._loggers is not None else []
 
             @property
             def logger(self) -> object:
@@ -260,7 +268,7 @@ class AutologTest(unittest.TestCase):
 
             trainer_inst = DummyTrainer()
             existing_logger = mock_logger_cls()
-            trainer_inst.loggers = [existing_logger]
+            trainer_inst._loggers = [existing_logger]
             res = trainer_inst.fit("model", "dataloader")
             self.assertEqual(res, "trainer_fit_result")
 
