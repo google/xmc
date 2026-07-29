@@ -286,7 +286,7 @@ func TestBuildProducerOptions_WithTLSAndSASL(t *testing.T) {
 		TLSInsecureSkipVerify: true,
 	}
 
-	opts, err := BuildProducerOptions(cfg)
+	opts, err := BuildProducerOptions(cfg, nil)
 	if err != nil {
 		t.Fatalf("failed to build producer options: %v", err)
 	}

@@ -44,11 +44,7 @@ type ServiceUnavailableErrorPayload struct {
 }
 
 // NewMetricsIngestionHandler constructs an http.HandlerFunc that produces metrics asynchronously to Kafka/Redpanda.
-func NewMetricsIngestionHandler(producer MetricProducer, topicName string, optionalMetrics ...*GatewayMetrics) http.HandlerFunc {
-	var gMetrics *GatewayMetrics
-	if len(optionalMetrics) > 0 {
-		gMetrics = optionalMetrics[0]
-	}
+func NewMetricsIngestionHandler(producer MetricProducer, topicName string, gMetrics *GatewayMetrics) http.HandlerFunc {
 	if topicName == "" {
 		topicName = DefaultTopicName
 	}

@@ -27,6 +27,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
@@ -40,7 +42,7 @@ func (np *noopProducer) Produce(ctx context.Context, rec *kgo.Record, promise fu
 func (np *noopProducer) Close() {}
 
 func newTestHandler() http.HandlerFunc {
-	return NewMetricsIngestionHandler(NewMockProducer(), "xmc-metrics")
+	return NewMetricsIngestionHandler(NewMockProducer(), "xmc-metrics", nil)
 }
 
 type trackableReader struct {
@@ -258,7 +260,7 @@ func (r *metricStreamReader) Read(p []byte) (int, error) {
 }
 
 func TestMetricsIngestionHandler_ConstantMemoryStreaming(t *testing.T) {
-	handler := NewMetricsIngestionHandler(&noopProducer{}, "xmc-metrics")
+	handler := NewMetricsIngestionHandler(&noopProducer{}, "xmc-metrics", nil)
 	runtime.GC()
 	var mBefore runtime.MemStats
 	runtime.ReadMemStats(&mBefore)
@@ -291,7 +293,7 @@ func TestMetricsIngestionHandler_ConstantMemoryStreaming(t *testing.T) {
 }
 
 func TestNewMetricsIngestionHandler_NilProducer(t *testing.T) {
-	handler := NewMetricsIngestionHandler(nil, "test-topic")
+	handler := NewMetricsIngestionHandler(nil, "test-topic", nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(`[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`))
 	w := httptest.NewRecorder()
 
@@ -314,7 +316,7 @@ func TestNewMetricsIngestionHandler_NilProducer(t *testing.T) {
 func TestMetricsIngestionHandler_ContextCancelled(t *testing.T) {
 	t.Run("context cancelled returns 503", func(t *testing.T) {
 		mp := NewMockProducer()
-		handler := NewMetricsIngestionHandler(mp, "test-topic")
+		handler := NewMetricsIngestionHandler(mp, "test-topic", nil)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
@@ -334,7 +336,7 @@ func TestMetricsIngestionHandler_ContextCancelled(t *testing.T) {
 
 	t.Run("context deadline exceeded returns 504", func(t *testing.T) {
 		mp := NewMockProducer()
-		handler := NewMetricsIngestionHandler(mp, "test-topic")
+		handler := NewMetricsIngestionHandler(mp, "test-topic", nil)
 
 		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-1*time.Second))
 		defer cancel()
@@ -390,7 +392,7 @@ func TestMetricsIngestionHandler_NilAndWhitespaceBody(t *testing.T) {
 
 func TestMetricsIngestionHandler_XReplicaIDHeader(t *testing.T) {
 	mp := NewMockProducer()
-	handler := NewMetricsIngestionHandler(mp, "test-topic")
+	handler := NewMetricsIngestionHandler(mp, "test-topic", nil)
 
 	// Payload omits "replica_id" key
 	payload := `[{"xid": 101, "work_unit_id": 1, "execution_id": 1, "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`
@@ -459,7 +461,7 @@ func TestCongestionControl_BrokerSaturation_Returns503(t *testing.T) {
 			mp.failIndex = 0
 			mp.failErr = tt.failErr
 
-			handler := NewMetricsIngestionHandler(mp, "xmc-metrics")
+			handler := NewMetricsIngestionHandler(mp, "xmc-metrics", nil)
 			payload := `[
 				{"xid": 101, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000},
 				{"xid": 101, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "accuracy", "metric_value": 0.9, "step": 1, "timestamp": 1700000000}
@@ -495,7 +497,7 @@ func TestMetricsIngestionHandler_BrokerOutage_Returns503(t *testing.T) {
 	mp.failIndex = 0
 	mp.failErr = fmt.Errorf("redpanda broker unreachable: connection refused")
 
-	handler := NewMetricsIngestionHandler(mp, "xmc-metrics")
+	handler := NewMetricsIngestionHandler(mp, "xmc-metrics", nil)
 	payload := `[{"xid": 202, "work_unit_id": 2, "execution_id": 1, "replica_id": "rep-1", "metric_name": "gpu_mem", "metric_value": 8192.0, "step": 10, "timestamp": 1700000000}]`
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
@@ -523,7 +525,7 @@ func TestMetricsIngestionHandler_ClientProduceError_Returns400(t *testing.T) {
 	mp.failIndex = 0
 	mp.failErr = kerr.MessageTooLarge
 
-	handler := NewMetricsIngestionHandler(mp, "xmc-metrics")
+	handler := NewMetricsIngestionHandler(mp, "xmc-metrics", nil)
 	payload := `[{"xid": 202, "work_unit_id": 2, "execution_id": 1, "replica_id": "rep-1", "metric_name": "large_metric", "metric_value": 1.0, "step": 1, "timestamp": 1700000000}]`
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
@@ -551,7 +553,7 @@ func TestMetricsIngestionHandler_GenericBrokerError_Returns500(t *testing.T) {
 	mp.failIndex = 0
 	mp.failErr = kerr.UnknownServerError
 
-	handler := NewMetricsIngestionHandler(mp, "xmc-metrics")
+	handler := NewMetricsIngestionHandler(mp, "xmc-metrics", nil)
 	payload := `[{"xid": 202, "work_unit_id": 2, "execution_id": 1, "replica_id": "rep-1", "metric_name": "test_metric", "metric_value": 1.0, "step": 1, "timestamp": 1700000000}]`
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
@@ -576,7 +578,7 @@ func TestMetricsIngestionHandler_GenericBrokerError_Returns500(t *testing.T) {
 
 func TestCongestionControl_ContextCancellation_FastPropagation(t *testing.T) {
 	bp := &blockingProducer{}
-	handler := NewMetricsIngestionHandler(bp, "xmc-metrics")
+	handler := NewMetricsIngestionHandler(bp, "xmc-metrics", nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -608,7 +610,7 @@ func TestCongestionControl_GoroutineAndResourceLeakCheck(t *testing.T) {
 	mp.failIndex = 0
 	mp.failErr = fmt.Errorf("simulated queue saturation")
 
-	handler := NewMetricsIngestionHandler(mp, "xmc-metrics")
+	handler := NewMetricsIngestionHandler(mp, "xmc-metrics", nil)
 	payload := `[{"xid": 101, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`
 
 	var wg sync.WaitGroup
@@ -630,4 +632,82 @@ func TestCongestionControl_GoroutineAndResourceLeakCheck(t *testing.T) {
 	if finalGoroutines > initialGoroutines+3 {
 		t.Errorf("possible goroutine leak: initial=%d, final=%d", initialGoroutines, finalGoroutines)
 	}
+}
+
+func TestMetricsIngestionHandler_DroppedPayloadsMetrics(t *testing.T) {
+	t.Run("method_not_allowed", func(t *testing.T) {
+		reg := prometheus.NewRegistry()
+		gMetrics := NewGatewayMetrics(reg)
+		handler := NewMetricsIngestionHandler(NewMockProducer(), "xmc-metrics", gMetrics)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil)
+		w := httptest.NewRecorder()
+		handler(w, req)
+
+		if count := testutil.ToFloat64(gMetrics.DroppedPayloadsTotal.WithLabelValues("method_not_allowed")); count != 1.0 {
+			t.Errorf("expected DroppedPayloadsTotal for method_not_allowed to be 1.0, got %f", count)
+		}
+	})
+
+	t.Run("missing_producer", func(t *testing.T) {
+		reg := prometheus.NewRegistry()
+		gMetrics := NewGatewayMetrics(reg)
+		handler := NewMetricsIngestionHandler(nil, "xmc-metrics", gMetrics)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(`[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`))
+		w := httptest.NewRecorder()
+		handler(w, req)
+
+		if count := testutil.ToFloat64(gMetrics.DroppedPayloadsTotal.WithLabelValues("missing_producer")); count != 1.0 {
+			t.Errorf("expected DroppedPayloadsTotal for missing_producer to be 1.0, got %f", count)
+		}
+	})
+
+	t.Run("validation_error", func(t *testing.T) {
+		reg := prometheus.NewRegistry()
+		gMetrics := NewGatewayMetrics(reg)
+		handler := NewMetricsIngestionHandler(NewMockProducer(), "xmc-metrics", gMetrics)
+
+		payload := `[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "invalid metric!", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
+		w := httptest.NewRecorder()
+		handler(w, req)
+
+		if count := testutil.ToFloat64(gMetrics.DroppedPayloadsTotal.WithLabelValues("validation_error")); count != 1.0 {
+			t.Errorf("expected DroppedPayloadsTotal for validation_error to be 1.0, got %f", count)
+		}
+	})
+
+	t.Run("decode_error", func(t *testing.T) {
+		reg := prometheus.NewRegistry()
+		gMetrics := NewGatewayMetrics(reg)
+		handler := NewMetricsIngestionHandler(NewMockProducer(), "xmc-metrics", gMetrics)
+
+		payload := `[{"metric_name": "test", "metric_value": `
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
+		w := httptest.NewRecorder()
+		handler(w, req)
+
+		if count := testutil.ToFloat64(gMetrics.DroppedPayloadsTotal.WithLabelValues("decode_error")); count != 1.0 {
+			t.Errorf("expected DroppedPayloadsTotal for decode_error to be 1.0, got %f", count)
+		}
+	})
+
+	t.Run("client_produce_error", func(t *testing.T) {
+		reg := prometheus.NewRegistry()
+		gMetrics := NewGatewayMetrics(reg)
+		mp := NewMockProducer()
+		mp.failIndex = 0
+		mp.failErr = kerr.MessageTooLarge
+		handler := NewMetricsIngestionHandler(mp, "xmc-metrics", gMetrics)
+
+		payload := `[{"xid": 101, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
+		w := httptest.NewRecorder()
+		handler(w, req)
+
+		if count := testutil.ToFloat64(gMetrics.DroppedPayloadsTotal.WithLabelValues("client_produce_error")); count != 1.0 {
+			t.Errorf("expected DroppedPayloadsTotal for client_produce_error to be 1.0, got %f", count)
+		}
+	})
 }
