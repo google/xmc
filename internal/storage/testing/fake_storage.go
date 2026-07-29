@@ -25,6 +25,8 @@ import (
 
 	"golang/protobuf/v2/proto/proto"
 	longrunningpb "longrunning/operations_go_proto"
+	anypb "protobuf/any_go_proto"
+	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
@@ -502,12 +504,20 @@ func (f *FakeStorage) AddWorkUnitOperation(ctx context.Context, xid int64, wid i
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	oid := fmt.Sprintf("op-%d", time.Now().UnixNano())
+	now := time.Now()
+	operationMetadata.CreateTime = timestamppb.New(now)
+	anyMetadata, err := anypb.New(operationMetadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal operation metadata to Any: %w", err)
+	}
+
+	oid := fmt.Sprintf("op-%d", now.UnixNano())
 	opName := fmt.Sprintf("experiments/%d/workUnits/%d/operations/%s", xid, wid, oid)
 
 	op := &longrunningpb.Operation{
-		Name: opName,
-		Done: false,
+		Name:     opName,
+		Metadata: anyMetadata,
+		Done:     false,
 	}
 
 	f.operations[opName] = op

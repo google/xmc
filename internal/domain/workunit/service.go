@@ -30,13 +30,20 @@ import (
 	"xmanager_cloud/validator/validator"
 )
 
+// Store defines the storage operations required by the WorkUnit domain service.
+type Store interface {
+	storage.WorkUnitStore
+	FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error)
+	UpdateExperiment(ctx context.Context, update *storage.ExperimentUpdate) (*essmsgpb.Experiment, *essmsgpb.Experiment, error)
+}
+
 // Service provides domain-level operations for WorkUnit lifecycle management.
 type Service struct {
-	storage storage.Storage
+	storage Store
 }
 
 // NewService creates a new WorkUnit domain service instance.
-func NewService(store storage.Storage) (*Service, error) {
+func NewService(store Store) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("storage must not be nil")
 	}
