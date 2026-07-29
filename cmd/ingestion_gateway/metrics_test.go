@@ -200,3 +200,32 @@ func TestSanitizePath(t *testing.T) {
 		}
 	}
 }
+
+func TestStatusResponseWriterImplicitWrite(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sw := &statusResponseWriter{ResponseWriter: rec, statusCode: http.StatusOK}
+
+	sw.Write([]byte("hello world"))
+	if sw.statusCode != http.StatusOK {
+		t.Errorf("expected statusCode 200, got %d", sw.statusCode)
+	}
+
+	sw.WriteHeader(http.StatusBadRequest)
+	if sw.statusCode != http.StatusOK {
+		t.Errorf("expected statusCode to remain 200 after Write, got %d", sw.statusCode)
+	}
+}
+
+func TestFranzGoMetricsHookNilSafety(t *testing.T) {
+	var hook *FranzGoMetricsHook = nil
+	meta := kgo.BrokerMetadata{NodeID: 1}
+
+	hook.HookBrokerConnect(meta)
+	hook.HookBrokerDisconnect(meta)
+	hook.HookProduceRecordUnbuffered(&kgo.Record{}, nil)
+
+	hookWithNilMetrics := NewFranzGoMetricsHook(nil)
+	hookWithNilMetrics.HookBrokerConnect(meta)
+	hookWithNilMetrics.HookBrokerDisconnect(meta)
+	hookWithNilMetrics.HookProduceRecordUnbuffered(&kgo.Record{}, nil)
+}

@@ -203,6 +203,13 @@ func (w *statusResponseWriter) WriteHeader(code int) {
 	}
 }
 
+func (w *statusResponseWriter) Write(b []byte) (int, error) {
+	if !w.wroteHeader {
+		w.wroteHeader = true
+	}
+	return w.ResponseWriter.Write(b)
+}
+
 // MetricsHandler exposes the Prometheus metrics endpoint.
 func (m *GatewayMetrics) MetricsHandler() http.Handler {
 	return promhttp.HandlerFor(m.Registry, promhttp.HandlerOpts{
@@ -222,16 +229,26 @@ func NewFranzGoMetricsHook(m *GatewayMetrics) *FranzGoMetricsHook {
 
 // HookBrokerConnect implements kgo.HookBrokerConnect.
 func (h *FranzGoMetricsHook) HookBrokerConnect(meta kgo.BrokerMetadata) {
-	h.metrics.BrokersConnections.Inc()
+	if h != nil && h.metrics != nil {
+		h.metrics.BrokersConnections.Inc()
+	}
 }
 
 // HookBrokerDisconnect implements kgo.HookBrokerDisconnect.
 func (h *FranzGoMetricsHook) HookBrokerDisconnect(meta kgo.BrokerMetadata) {
-	h.metrics.BrokersConnections.Dec()
+	if h != nil && h.metrics != nil {
+		h.metrics.BrokersConnections.Dec()
+	}
 }
 
 // HookProduceRecordUnbuffered implements kgo.HookProduceRecordUnbuffered.
 func (h *FranzGoMetricsHook) HookProduceRecordUnbuffered(r *kgo.Record, err error) {
+	if h == nil || h.metrics == nil {
+		return
+	}
+	if r != nil && len(r.Value) > 0 {
+		h.metrics.ProduceBatchSizeBytes.Observe(float64(len(r.Value)))
+	}
 	if err != nil {
 		h.metrics.ProduceErrorsTotal.Inc()
 	} else {
