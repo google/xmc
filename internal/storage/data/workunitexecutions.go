@@ -76,6 +76,13 @@ func MergeWorkUnitExecution(ctx context.Context, currentExecution *pb.WorkUnitEx
 			newExecution.Metadata.ResourceFlavor = updatedExecution.Metadata.ResourceFlavor
 		case "metadata.multi_kueue_cluster_name":
 			newExecution.Metadata.MultiKueueClusterName = updatedExecution.Metadata.MultiKueueClusterName
+		case "metadata.mlrun_url":
+			// Use proto getters so a nil updatedExecution.Metadata is handled
+			// safely and an explicit reset (clearing mlrun_url) still applies.
+			if newExecution.Metadata == nil {
+				newExecution.Metadata = &pb.WorkUnitExecutionMetadata{}
+			}
+			newExecution.Metadata.MlrunUrl = updatedExecution.GetMetadata().GetMlrunUrl()
 		case "status":
 			newExecution.Status = updatedExecution.Status
 		case "status.state":
