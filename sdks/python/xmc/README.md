@@ -136,29 +136,47 @@ xmc.shutdown()
 
 ## ⚡ Framework Integrations & Autologging
 
-### Keras Integration (`XmcKerasCallback`)
+XMC provides two modes for framework integration: **Automatic Zero-Configuration Autologging (`xmc.autolog()`)** for zero-code-change telemetry, and **Explicit Callbacks & Loggers** for advanced customization.
 
-The `xmc.integrations.keras` subpackage provides explicit autologging for Keras models (`keras>=3.0.0`).
+---
 
-#### 📦 Installation & Extra Dependencies
+### 1. Automatic Autologging (`xmc.autolog()`) [Recommended]
 
-Install the optional `keras` extra:
+`xmc.autolog()` enables zero-configuration automatic framework patching for Keras (`keras>=3.0.0`) and PyTorch Lightning (`pytorch-lightning>=2.0.0`). When activated, `model.fit()` and `trainer.fit()` automatically log training/evaluation metrics without requiring manually instantiated callbacks or loggers.
 
-```bash
-pip install xmc[keras]
+```python
+import xmc
+
+# Activate automatic framework patching for Keras & PyTorch Lightning
+xmc.autolog()
+
+# Keras training automatically logs metrics without adding callbacks manually
+model.fit(x_train, y_train, epochs=5)
 ```
 
-#### 🚀 Quickstart Example
+#### ⚙️ Autologging Disable Knob & Override
+- **Environment Variable**: Set `XMC_DISABLE_AUTOLOG=1` in your environment to safely disable autologging and skip framework patching without modifying code.
+- **Explicit Disable Flag**: Call `xmc.autolog(disable=True)` to explicitly unpatch frameworks and disable autologging.
+
+---
+
+### 2. Explicit & Custom Integrations (Advanced Usage)
+
+If you need custom metric prefixes, custom logging frequencies, or explicit `Client` instances, you can use the explicit integration classes directly instead of `xmc.autolog()`.
+
+> [!TIP]
+> **Combining `xmc.autolog()` with Explicit Callbacks**: If `xmc.autolog()` is active and an explicit `XmcKerasCallback` or `XmcLogger` is passed to `fit()`, XMC automatically detects the explicit instance and preserves it without adding a duplicate callback or logger.
+
+#### 📦 Keras Explicit Callback (`XmcKerasCallback`)
 
 ```python
 import keras
 from xmc.integrations.keras import XmcKerasCallback
 
-# Instantiate model
 model = keras.Sequential([...])
 model.compile(optimizer="adam", loss="mse", metrics=["accuracy"])
 
-# Attach XmcKerasCallback to fit()
+# Attach XmcKerasCallback manually with custom prefix or batch frequency
 model.fit(
     x_train,
     y_train,
@@ -167,8 +185,20 @@ model.fit(
 )
 ```
 
+#### 📦 PyTorch Lightning Explicit Logger (`XmcLogger`)
+
+```python
+import lightning.pytorch as pl
+from xmc.integrations.lightning import XmcLogger
+
+# Instantiate XmcLogger with custom experiment name and prefix
+logger = XmcLogger(name="my_experiment", prefix="pl_metrics/")
+trainer = pl.Trainer(logger=logger)
+trainer.fit(model, dataloader)
+```
+
 #### 🔒 Guarantees & Operational Characteristics
-- **Strict Decoupled Eager Imports**: Importing `from xmc.integrations.keras import XmcKerasCallback` validates `keras>=3.0.0` eagerly at process startup (<10s fail-fast check). Missing or incompatible dependencies fail immediately before allocating GPU/TPU cluster resources.
+- **Strict Decoupled Eager Imports**: Importing from `xmc.integrations.keras` or `xmc.integrations.lightning` validates version constraints eagerly at process startup (<10s fail-fast check). Missing or incompatible dependencies fail immediately before allocating GPU/TPU cluster resources.
 - **Global Optimizer Step Mapping**: Batch and epoch metrics are mapped to the global optimizer iteration count (`model.optimizer.iterations`) to guarantee continuous time-series metrics across epoch boundaries in ClickHouse without step collisions.
 - **Rank-Zero Silencing**: Automatically drops metric logging on worker ranks (`RANK > 0`) during multi-replica distributed training unless explicit multi-replica logging is configured.
 
