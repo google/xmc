@@ -136,6 +136,24 @@ xmc.shutdown()
 
 ## ⚡ Framework Integrations & Autologging
 
+### Automatic Autologging (`xmc.autolog()`)
+
+`xmc.autolog()` enables zero-configuration automatic framework patching for Keras (`keras>=3.0.0`) and PyTorch Lightning (`pytorch-lightning>=2.0.0`).
+
+```python
+import xmc
+
+# Activate automatic framework patching for Keras & PyTorch Lightning
+xmc.autolog()
+
+# Framework model training automatically logs metrics without adding callbacks or loggers manually
+model.fit(x_train, y_train, epochs=5)
+```
+
+#### ⚙️ Autologging Disable Knob & Override
+- **Environment Variable**: Set `XMC_DISABLE_AUTOLOG=1` in your environment to safely disable autologging and skip framework patching without modifying code.
+- **Explicit Disable Flag**: Call `xmc.autolog(disable=True)` to explicitly unpatch frameworks and disable autologging.
+
 ### Keras Integration (`XmcKerasCallback`)
 
 The `xmc.integrations.keras` subpackage provides explicit autologging for Keras models (`keras>=3.0.0`).
