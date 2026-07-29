@@ -405,11 +405,13 @@ func TestUpdateMLRun(t *testing.T) {
 			switch r.Method {
 			case http.MethodGet:
 				json.NewEncoder(w).Encode(map[string]any{
-					"displayName": "old",
-					"runPhase":    "RUN_PHASE_TRAINING",
-					"createTime":  "t0",
-					"updateTime":  "t1",
-					"endTime":     "t2",
+					"displayName":     "old",
+					"runPhase":        "RUN_PHASE_TRAINING",
+					"createTime":      "t0",
+					"updateTime":      "t1",
+					"endTime":         "t2",
+					"orchestrator":    "GKE",
+					"workloadDetails": map[string]any{"gke": map[string]any{"id": "js-1"}},
 				})
 			case http.MethodPatch:
 				patchMask = r.URL.Query().Get("update_mask")
@@ -439,8 +441,46 @@ func TestUpdateMLRun(t *testing.T) {
 				t.Errorf("patch body still contains output-only field %q", f)
 			}
 		}
+		// orchestrator/workloadDetails are immutable and must not be echoed back
+		// when the caller is not explicitly updating the orchestrator.
+		for _, f := range []string{"orchestrator", "workloadDetails"} {
+			if _, ok := patchBody[f]; ok {
+				t.Errorf("patch body still contains immutable field %q", f)
+			}
+		}
 		if got["displayName"] != "new" {
 			t.Errorf("response displayName = %v, want %q", got["displayName"], "new")
+		}
+	})
+
+	t.Run("keeps orchestrator when explicitly updated", func(t *testing.T) {
+		var patchBody map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.Method {
+			case http.MethodGet:
+				json.NewEncoder(w).Encode(map[string]any{"displayName": "old", "orchestrator": "STALE"})
+			case http.MethodPatch:
+				json.NewDecoder(r.Body).Decode(&patchBody)
+				json.NewEncoder(w).Encode(map[string]any{"done": true, "response": map[string]any{}})
+			default:
+				http.Error(w, "unexpected method", http.StatusInternalServerError)
+			}
+		}))
+		defer server.Close()
+
+		_, err := newTestClient(server).UpdateMLRun(context.Background(), "run-1", &UpdateMLRunOptions{
+			Orchestrator:    "GKE",
+			WorkloadDetails: &GKEWorkloadDetails{},
+		})
+		if err != nil {
+			t.Fatalf("UpdateMLRun() unexpected error: %v", err)
+		}
+		if patchBody["orchestrator"] != "GKE" {
+			t.Errorf("orchestrator = %v, want %q (explicit update must be kept)", patchBody["orchestrator"], "GKE")
+		}
+		if _, ok := patchBody["workloadDetails"]; !ok {
+			t.Errorf("workloadDetails missing, want present on explicit orchestrator update")
 		}
 	})
 }
