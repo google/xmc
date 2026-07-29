@@ -156,12 +156,12 @@ To verify test coverage, the agent runs:
 ```bash
 bazel coverage --combined_report=lcov //pkg/auth/oauth2/...
 ```
-The output coverage file is generated under `bazel-out/_coverage/_coverage_report.dat`.
-The agent parses this file and verifies coverage using `./tools/parse_coverage_report.py`:
+The agent parses this file and verifies coverage by executing `./tools/parse_coverage_report.py` directly:
 ```bash
 ./tools/parse_coverage_report.py --package //pkg/auth/oauth2/... --min-coverage 80.0
 ```
-This outputs structured JSON containing total lines, covered lines, coverage percentage, and per-file lists of uncovered line numbers.
+This outputs structured JSON containing total lines, covered lines, coverage percentage, and per-file lists of uncovered line numbers. Do not perform manual file searches (`find_by_name`) or poll background task status.
+
 
 
 ---
