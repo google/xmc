@@ -92,8 +92,8 @@ func (s *Server) CreateWorkUnit(ctx context.Context, req *apipb.CreateWorkUnitRe
 		return nil, fmt.Errorf("failed to inject execution environment data into work unit: %w", err)
 	}
 
-	// 5. Persist the new work unit to the storage layer.
-	newWorkUnit, err := s.storage.CreateWorkUnit(ctx, wu)
+	// 5. Persist the new work unit and update experiment status via domain service.
+	newWorkUnit, err := s.workUnitService.CreateWorkUnit(ctx, wu)
 	if err != nil {
 		logging.Error(ctx, "Failed to save work unit", "error", err)
 
