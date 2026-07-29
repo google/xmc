@@ -17,9 +17,16 @@
 import os
 import sys
 import unittest
+from typing import Any
 from unittest.mock import MagicMock, patch
 
-from xmc.autolog import autolog, is_autolog_disabled, patch_keras, patch_lightning, unpatch_all
+from xmc.autolog import (
+    autolog,
+    is_autolog_disabled,
+    patch_keras,
+    patch_lightning,
+    unpatch_all,
+)
 
 
 class AutologTest(unittest.TestCase):
@@ -50,7 +57,10 @@ class AutologTest(unittest.TestCase):
 
     def test_autolog_activation_emits_log(self) -> None:
         """Verifies autolog() emits 'INFO: xmc: Autologging activated...' and returns True."""
-        with patch("xmc.autolog.logger.info") as mock_log_info:
+        with (
+            patch("xmc.autolog.logger.info") as mock_log_info,
+            patch("xmc.autolog.patch_keras", return_value=True),
+        ):
             result = autolog()
             self.assertTrue(result)
             mock_log_info.assert_called_with("INFO: xmc: Autologging activated...")
@@ -74,10 +84,14 @@ class AutologTest(unittest.TestCase):
                 "INFO: xmc: Autologging disabled via XMC_DISABLE_AUTOLOG=1 or disable flag."
             )
 
-    def test_patch_keras_injects_callback(self) -> None:
-        """Verifies patch_keras wraps Model.fit and injects XmcKerasCallback."""
+    def test_patch_keras_injects_callback_kwarg(self) -> None:
+        """Verifies patch_keras wraps Model.fit and injects XmcKerasCallback via kwargs."""
         mock_fit = MagicMock(return_value="fit_result")
-        mock_model_cls = type("Model", (), {"fit": mock_fit})
+
+        def dummy_fit(self, x=None, y=None, callbacks=None):
+            return mock_fit(self, x=x, y=y, callbacks=callbacks)
+
+        mock_model_cls = type("Model", (), {"fit": dummy_fit})
         mock_keras = MagicMock()
         mock_keras.Model = mock_model_cls
         mock_callback_cls = type("XmcKerasCallback", (), {})
@@ -93,7 +107,7 @@ class AutologTest(unittest.TestCase):
             self.assertTrue(success)
 
             model_inst = mock_model_cls()
-            res = model_inst.fit("x_data", "y_data", epochs=2)
+            res = model_inst.fit("x_data", "y_data")
             self.assertEqual(res, "fit_result")
 
             mock_fit.assert_called_once()
@@ -103,12 +117,58 @@ class AutologTest(unittest.TestCase):
             self.assertEqual(len(callbacks), 1)
             self.assertIsInstance(callbacks[0], mock_callback_cls)
 
+    def test_patch_keras_positional_callbacks_argument(self) -> None:
+        """Verifies patch_keras handles callbacks passed positionally without TypeError."""
+        mock_fit = MagicMock(return_value="fit_result")
+
+        def dummy_fit(self, x=None, y=None, batch_size=None, callbacks=None):
+            return mock_fit(self, x, y, batch_size, callbacks)
+
+        mock_model_cls = type("Model", (), {"fit": dummy_fit})
+        mock_keras = MagicMock()
+        mock_keras.Model = mock_model_cls
+        mock_callback_cls = type("XmcKerasCallback", (), {})
+
+        with patch.dict(
+            sys.modules,
+            {
+                "keras": mock_keras,
+                "xmc.integrations.keras": MagicMock(XmcKerasCallback=mock_callback_cls),
+            },
+        ):
+            success = patch_keras()
+            self.assertTrue(success)
+
+            model_inst = mock_model_cls()
+            custom_cbs: list[Any] = []
+            # Pass callbacks positionally as 4th argument
+            res = model_inst.fit("x_data", "y_data", 32, custom_cbs)
+            self.assertEqual(res, "fit_result")
+
+            mock_fit.assert_called_once()
+            args = mock_fit.call_args[0]
+            # Verify callbacks in positional args contains injected XmcKerasCallback
+            passed_callbacks = args[4]
+            self.assertEqual(len(passed_callbacks), 1)
+            self.assertIsInstance(passed_callbacks[0], mock_callback_cls)
+
     def test_patch_lightning_injects_logger(self) -> None:
-        """Verifies patch_lightning wraps Trainer.fit and injects XmcLogger."""
+        """Verifies patch_lightning wraps Trainer.fit and injects XmcLogger safely."""
         mock_fit = MagicMock(return_value="trainer_fit_result")
-        mock_trainer_cls = type("Trainer", (), {"fit": mock_fit})
+
+        class DummyTrainer:
+            def __init__(self) -> None:
+                self.loggers: list[object] = []
+
+            @property
+            def logger(self) -> object:
+                return self.loggers[0] if self.loggers else None
+
+            def fit(self, model: object, dataloader: object) -> object:
+                return mock_fit(self, model, dataloader)
+
         mock_pl = MagicMock()
-        mock_pl.Trainer = mock_trainer_cls
+        mock_pl.Trainer = DummyTrainer
         mock_lightning = MagicMock()
         mock_lightning.pytorch = mock_pl
         mock_logger_cls = type("XmcLogger", (), {})
@@ -124,8 +184,7 @@ class AutologTest(unittest.TestCase):
             success = patch_lightning()
             self.assertTrue(success)
 
-            trainer_inst = mock_trainer_cls()
-            trainer_inst.loggers = []
+            trainer_inst = DummyTrainer()
             res = trainer_inst.fit("model", "dataloader")
             self.assertEqual(res, "trainer_fit_result")
 

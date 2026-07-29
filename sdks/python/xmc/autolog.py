@@ -15,6 +15,7 @@
 """XMC Autologging Entrypoint and Framework Patching Module."""
 
 import functools
+import inspect
 import logging
 import os
 from collections.abc import Callable
@@ -48,15 +49,21 @@ def patch_keras() -> bool:
         from xmc.integrations.keras import XmcKerasCallback
 
         original_fit = keras.Model.fit
+        sig = inspect.signature(original_fit)
 
         @functools.wraps(original_fit)
         def custom_fit(self: Any, *args: Any, **kwargs: Any) -> Any:
-            callbacks = kwargs.get("callbacks", [])
-            callbacks_list = list(callbacks) if callbacks else []
-            if not any(isinstance(c, XmcKerasCallback) for c in callbacks_list):
-                callbacks_list.append(XmcKerasCallback())
-                kwargs["callbacks"] = callbacks_list
-            return original_fit(self, *args, **kwargs)
+            try:
+                bound_args = sig.bind(self, *args, **kwargs)
+                bound_args.apply_defaults()
+                callbacks = bound_args.arguments.get("callbacks", [])
+                callbacks_list = list(callbacks) if callbacks else []
+                if not any(isinstance(c, XmcKerasCallback) for c in callbacks_list):
+                    callbacks_list.append(XmcKerasCallback())
+                    bound_args.arguments["callbacks"] = callbacks_list
+                return original_fit(*bound_args.args, **bound_args.kwargs)
+            except TypeError:
+                return original_fit(self, *args, **kwargs)
 
         keras.Model.fit = custom_fit
         _patched_keras_original_fit = original_fit
@@ -100,15 +107,13 @@ def patch_lightning() -> bool:
 
         @functools.wraps(original_fit)
         def custom_fit(self: Any, *args: Any, **kwargs: Any) -> Any:
-            if hasattr(self, "loggers") and isinstance(self.loggers, list):
-                if not any(isinstance(logger_inst, XmcLogger) for logger_inst in self.loggers):
-                    self.loggers.append(XmcLogger())
-            elif hasattr(self, "logger"):
-                if self.logger is None:
-                    self.logger = XmcLogger()
-                elif not isinstance(self.logger, XmcLogger):
-                    if hasattr(self, "loggers") and isinstance(self.loggers, list):
-                        self.loggers.append(XmcLogger())
+            loggers = getattr(self, "loggers", None)
+            if loggers is None and hasattr(self, "_loggers"):
+                loggers = self._loggers
+
+            if isinstance(loggers, list):
+                if not any(isinstance(logger_inst, XmcLogger) for logger_inst in loggers):
+                    loggers.append(XmcLogger())
             return original_fit(self, *args, **kwargs)
 
         pl.Trainer.fit = custom_fit
@@ -158,4 +163,4 @@ def autolog(disable: bool = False) -> bool:
     lightning_patched = patch_lightning()
 
     logger.info("INFO: xmc: Autologging activated...")
-    return keras_patched or lightning_patched or True
+    return keras_patched or lightning_patched
