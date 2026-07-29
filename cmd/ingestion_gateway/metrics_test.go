@@ -139,8 +139,6 @@ func TestMetricsEndpoint(t *testing.T) {
 		"franz_go_produce_batch_size_bytes",
 		"franz_go_produce_records_total",
 		"franz_go_produce_errors_total",
-		"franz_go_produce_retries_total",
-		"franz_go_produce_queue_latency_seconds",
 		"go_goroutines",
 		"process_open_fds",
 	}

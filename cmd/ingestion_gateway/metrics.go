@@ -39,12 +39,10 @@ type GatewayMetrics struct {
 	DroppedPayloadsTotal       *prometheus.CounterVec
 
 	// Franz-Go Telemetry Metrics
-	BrokersConnections         prometheus.Gauge
-	ProduceBatchSizeBytes      prometheus.Histogram
-	ProduceRecordsTotal        prometheus.Counter
-	ProduceErrorsTotal         prometheus.Counter
-	ProduceRetriesTotal        prometheus.Counter
-	ProduceQueueLatencySeconds prometheus.Histogram
+	BrokersConnections    prometheus.Gauge
+	ProduceBatchSizeBytes prometheus.Histogram
+	ProduceRecordsTotal   prometheus.Counter
+	ProduceErrorsTotal    prometheus.Counter
 }
 
 // NewGatewayMetrics initializes and registers all Prometheus metrics with the given registry.
@@ -116,21 +114,6 @@ func NewGatewayMetrics(reg *prometheus.Registry) *GatewayMetrics {
 				Help: "Total number of produce errors.",
 			},
 		),
-
-		ProduceRetriesTotal: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Name: "franz_go_produce_retries_total",
-				Help: "Total number of produce retries.",
-			},
-		),
-
-		ProduceQueueLatencySeconds: prometheus.NewHistogram(
-			prometheus.HistogramOpts{
-				Name:    "franz_go_produce_queue_latency_seconds",
-				Help:    "Latency of produce requests in queue in seconds.",
-				Buckets: httpDurationBuckets,
-			},
-		),
 	}
 
 	reg.MustRegister(collectors.NewGoCollector())
@@ -145,8 +128,6 @@ func NewGatewayMetrics(reg *prometheus.Registry) *GatewayMetrics {
 	reg.MustRegister(m.ProduceBatchSizeBytes)
 	reg.MustRegister(m.ProduceRecordsTotal)
 	reg.MustRegister(m.ProduceErrorsTotal)
-	reg.MustRegister(m.ProduceRetriesTotal)
-	reg.MustRegister(m.ProduceQueueLatencySeconds)
 
 	return m
 }

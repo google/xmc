@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -634,80 +635,112 @@ func TestCongestionControl_GoroutineAndResourceLeakCheck(t *testing.T) {
 	}
 }
 
-func TestMetricsIngestionHandler_DroppedPayloadsMetrics(t *testing.T) {
-	t.Run("method_not_allowed", func(t *testing.T) {
-		reg := prometheus.NewRegistry()
-		gMetrics := NewGatewayMetrics(reg)
-		handler := NewMetricsIngestionHandler(NewMockProducer(), "xmc-metrics", gMetrics)
+func TestMetricsIngestionHandler_DroppedPayloadsRecording(t *testing.T) {
+	validPayload := `[{"xid": 101, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "train_loss", "metric_value": 0.42, "step": 100, "timestamp": 1700000000}]`
 
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil)
-		w := httptest.NewRecorder()
-		handler(w, req)
+	tests := []struct {
+		name       string
+		method     string
+		payload    string
+		setupMock  func(*MockProducer)
+		noProducer bool
+		wantStatus int
+		wantReason string
+	}{
+		{
+			name:       "method_not_allowed",
+			method:     http.MethodGet,
+			payload:    "",
+			wantStatus: http.StatusMethodNotAllowed,
+			wantReason: "method_not_allowed",
+		},
+		{
+			name:       "missing_producer",
+			method:     http.MethodPost,
+			payload:    validPayload,
+			noProducer: true,
+			wantStatus: http.StatusServiceUnavailable,
+			wantReason: "missing_producer",
+		},
+		{
+			name:       "decode_error",
+			method:     http.MethodPost,
+			payload:    "invalid-json-content",
+			wantStatus: http.StatusBadRequest,
+			wantReason: "decode_error",
+		},
+		{
+			name:       "validation_error",
+			method:     http.MethodPost,
+			payload:    `[{"xid": 0, "work_unit_id": 1}]`,
+			wantStatus: http.StatusUnprocessableEntity,
+			wantReason: "validation_error",
+		},
+		{
+			name:    "client_produce_error",
+			method:  http.MethodPost,
+			payload: validPayload,
+			setupMock: func(mp *MockProducer) {
+				mp.failIndex = 0
+				mp.failErr = kerr.MessageTooLarge
+			},
+			wantStatus: http.StatusBadRequest,
+			wantReason: "client_produce_error",
+		},
+		{
+			name:    "congestion_error",
+			method:  http.MethodPost,
+			payload: validPayload,
+			setupMock: func(mp *MockProducer) {
+				mp.failIndex = 0
+				mp.failErr = kgo.ErrClientClosed
+			},
+			wantStatus: http.StatusServiceUnavailable,
+			wantReason: "congestion_error",
+		},
+		{
+			name:    "broker_publish_error",
+			method:  http.MethodPost,
+			payload: validPayload,
+			setupMock: func(mp *MockProducer) {
+				mp.failIndex = 0
+				mp.failErr = errors.New("unhandled internal produce error")
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantReason: "broker_publish_error",
+		},
+	}
 
-		if count := testutil.ToFloat64(gMetrics.DroppedPayloadsTotal.WithLabelValues("method_not_allowed")); count != 1.0 {
-			t.Errorf("expected DroppedPayloadsTotal for method_not_allowed to be 1.0, got %f", count)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			gMetrics := NewGatewayMetrics(reg)
 
-	t.Run("missing_producer", func(t *testing.T) {
-		reg := prometheus.NewRegistry()
-		gMetrics := NewGatewayMetrics(reg)
-		handler := NewMetricsIngestionHandler(nil, "xmc-metrics", gMetrics)
+			var mp MetricProducer
+			if !tt.noProducer {
+				mock := NewMockProducer()
+				if tt.setupMock != nil {
+					tt.setupMock(mock)
+				}
+				mp = mock
+			}
 
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(`[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`))
-		w := httptest.NewRecorder()
-		handler(w, req)
+			handler := NewMetricsIngestionHandler(mp, "xmc-metrics", gMetrics)
 
-		if count := testutil.ToFloat64(gMetrics.DroppedPayloadsTotal.WithLabelValues("missing_producer")); count != 1.0 {
-			t.Errorf("expected DroppedPayloadsTotal for missing_producer to be 1.0, got %f", count)
-		}
-	})
+			req := httptest.NewRequest(tt.method, "/api/v1/metrics", strings.NewReader(tt.payload))
+			rec := httptest.NewRecorder()
 
-	t.Run("validation_error", func(t *testing.T) {
-		reg := prometheus.NewRegistry()
-		gMetrics := NewGatewayMetrics(reg)
-		handler := NewMetricsIngestionHandler(NewMockProducer(), "xmc-metrics", gMetrics)
+			handler(rec, req)
 
-		payload := `[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "invalid metric!", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
-		w := httptest.NewRecorder()
-		handler(w, req)
+			if rec.Code != tt.wantStatus {
+				t.Errorf("expected status code %d, got %d", tt.wantStatus, rec.Code)
+			}
 
-		if count := testutil.ToFloat64(gMetrics.DroppedPayloadsTotal.WithLabelValues("validation_error")); count != 1.0 {
-			t.Errorf("expected DroppedPayloadsTotal for validation_error to be 1.0, got %f", count)
-		}
-	})
-
-	t.Run("decode_error", func(t *testing.T) {
-		reg := prometheus.NewRegistry()
-		gMetrics := NewGatewayMetrics(reg)
-		handler := NewMetricsIngestionHandler(NewMockProducer(), "xmc-metrics", gMetrics)
-
-		payload := `[{"metric_name": "test", "metric_value": `
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
-		w := httptest.NewRecorder()
-		handler(w, req)
-
-		if count := testutil.ToFloat64(gMetrics.DroppedPayloadsTotal.WithLabelValues("decode_error")); count != 1.0 {
-			t.Errorf("expected DroppedPayloadsTotal for decode_error to be 1.0, got %f", count)
-		}
-	})
-
-	t.Run("client_produce_error", func(t *testing.T) {
-		reg := prometheus.NewRegistry()
-		gMetrics := NewGatewayMetrics(reg)
-		mp := NewMockProducer()
-		mp.failIndex = 0
-		mp.failErr = kerr.MessageTooLarge
-		handler := NewMetricsIngestionHandler(mp, "xmc-metrics", gMetrics)
-
-		payload := `[{"xid": 101, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
-		w := httptest.NewRecorder()
-		handler(w, req)
-
-		if count := testutil.ToFloat64(gMetrics.DroppedPayloadsTotal.WithLabelValues("client_produce_error")); count != 1.0 {
-			t.Errorf("expected DroppedPayloadsTotal for client_produce_error to be 1.0, got %f", count)
-		}
-	})
+			count := testutil.ToFloat64(gMetrics.DroppedPayloadsTotal.WithLabelValues(tt.wantReason))
+			if count != 1.0 {
+				t.Errorf("expected DroppedPayloadsTotal for reason %q to be 1.0, got %f", tt.wantReason, count)
+			}
+		})
+	}
+}
 }
