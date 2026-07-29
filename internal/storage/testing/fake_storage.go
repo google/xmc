@@ -297,7 +297,7 @@ func (f *FakeStorage) ListWorkUnitExecutions(ctx context.Context, xid int64, wid
 		}
 	}
 	sort.Slice(result, func(i, j int) bool {
-		return result[i].GetName() < result[j].GetName()
+		return result[i].GetName() > result[j].GetName()
 	})
 	return result, nil
 }
