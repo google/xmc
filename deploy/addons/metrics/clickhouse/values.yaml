@@ -1,0 +1,47 @@
+# values.yaml - Configuration for ClickHouse Helm Chart on GKE
+# Used to support metrics system testing in XManager on Cloud (XMC).
+# Chart Reference: https://github.com/ClickHouse/charts/blob/main/charts/clickhouse/values.yaml
+
+replicaCount: 1
+
+# Disable authentication for initial benchmark (optional)
+# auth:
+#   username: default
+#   password: ""
+
+# Service configuration to expose HTTP and TCP ports
+service:
+  type: ClusterIP
+  ports:
+    http: 8123
+    tcp: 9000
+
+# Persistence configuration for ClickHouse data
+persistence:
+  enabled: true
+  storageClassName: standard-rwo
+  size: 10Gi
+  accessModes:
+    - ReadWriteOnce
+
+# Resource limits for benchmarking and metrics system testing
+resources:
+  limits:
+    cpu: "2"
+    memory: "4Gi"
+  requests:
+    cpu: "100m"
+    memory: "512Mi"
+
+# Set timezone to UTC for consistency with metrics generators
+timezone: UTC
+
+# Ensure deployment on main-pool
+nodeSelector:
+  cloud.google.com/gke-nodepool: main-pool
+
+# Global storage configuration
+global:
+  persistence:
+    storageClassName: standard-rwo
+  storageClassName: standard-rwo
