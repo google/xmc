@@ -94,7 +94,8 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 		// 5. Update the denormalized status fields and resources in the Experiment row using domain rules.
 		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &wid, &initialEID, nil, wu.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage(), tx)
 
-		exp, err = experimentdomain.PrepareWorkUnitCreation(ctx, exp, wu, now)
+		var resourcesChanged bool
+		exp, resourcesChanged, err = experimentdomain.PrepareWorkUnitCreation(ctx, exp, wu, now)
 		if err != nil {
 			return fmt.Errorf("failed to prepare experiment status for work unit creation: %w", err)
 		}
@@ -105,12 +106,17 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 			logging.Error(ctx, "failed to create status mutation for experiment", "experiment", exp, "error", err)
 			return err
 		}
-		expResourcesMutation, err := spannerdata.ExperimentProtoToResourcesUpdateMutation(exp)
-		if err != nil {
-			logging.Error(ctx, "failed to create resources mutation for experiment", "experiment", exp, "error", err)
-			return err
+		mutations := []*spanner.Mutation{expMutation}
+
+		if resourcesChanged {
+			expResourcesMutation, err := spannerdata.ExperimentProtoToResourcesUpdateMutation(exp)
+			if err != nil {
+				logging.Error(ctx, "failed to create resources mutation for experiment", "experiment", exp, "error", err)
+				return err
+			}
+			mutations = append(mutations, expResourcesMutation)
 		}
-		tx.BufferWrite([]*spanner.Mutation{expMutation, expResourcesMutation})
+		tx.BufferWrite(mutations)
 
 		return nil
 	})

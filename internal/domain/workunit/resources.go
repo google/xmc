@@ -39,7 +39,7 @@ func GetWorkUnitResources(wu *essmsgpb.WorkUnit) []*essmsgpb.ResourceSet {
 		specs = append(specs, job.GetSidecars()...)
 		specs = append(specs, job.GetInitContainers()...)
 		for _, spec := range specs {
-			if spec.GetResources() == nil {
+			if spec == nil || spec.GetResources() == nil {
 				continue
 			}
 			for i := 0; i < int(replicas); i++ {

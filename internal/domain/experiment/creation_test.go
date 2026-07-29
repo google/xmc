@@ -29,10 +29,10 @@ func TestPrepareWorkUnitCreation_NilValidation(t *testing.T) {
 	exp := &essmsgpb.Experiment{}
 	wu := &essmsgpb.WorkUnit{}
 
-	if _, err := PrepareWorkUnitCreation(ctx, nil, wu, now); err == nil {
+	if _, _, err := PrepareWorkUnitCreation(ctx, nil, wu, now); err == nil {
 		t.Errorf("PrepareWorkUnitCreation(nil exp) succeeded, want error")
 	}
-	if _, err := PrepareWorkUnitCreation(ctx, exp, nil, now); err == nil {
+	if _, _, err := PrepareWorkUnitCreation(ctx, exp, nil, now); err == nil {
 		t.Errorf("PrepareWorkUnitCreation(nil wu) succeeded, want error")
 	}
 }
@@ -80,9 +80,13 @@ func TestPrepareWorkUnitCreation_Success(t *testing.T) {
 		},
 	}
 
-	updatedExp, err := PrepareWorkUnitCreation(ctx, exp, wu, now)
+	updatedExp, resourcesChanged, err := PrepareWorkUnitCreation(ctx, exp, wu, now)
 	if err != nil {
 		t.Fatalf("PrepareWorkUnitCreation failed: %v", err)
+	}
+
+	if !resourcesChanged {
+		t.Errorf("resourcesChanged = false, want true")
 	}
 
 	if updatedExp == nil {

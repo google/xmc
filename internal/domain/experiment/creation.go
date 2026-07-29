@@ -28,12 +28,17 @@ import (
 
 // PrepareWorkUnitCreation calculates the updated Experiment state and resources when a new WorkUnit is created.
 // This is a pure domain function with no side effects and no database coupling.
-func PrepareWorkUnitCreation(ctx context.Context, exp *essmsgpb.Experiment, wu *essmsgpb.WorkUnit, now time.Time) (*essmsgpb.Experiment, error) {
+// Returns the updated Experiment proto, a boolean indicating if resources changed, and an error if any.
+func PrepareWorkUnitCreation(ctx context.Context, exp *essmsgpb.Experiment, wu *essmsgpb.WorkUnit, now time.Time) (*essmsgpb.Experiment, bool, error) {
 	if exp == nil {
-		return nil, fmt.Errorf("experiment must not be nil")
+		return nil, false, fmt.Errorf("experiment must not be nil")
 	}
-	if wu == nil || wu.GetCurrentWorkUnitExecution() == nil {
-		return nil, fmt.Errorf("work unit and current execution must not be nil")
+	if wu == nil || wu.GetCurrentWorkUnitExecution() == nil || wu.GetCurrentWorkUnitExecution().GetStatus() == nil {
+		return nil, false, fmt.Errorf("work unit, current execution, and status must not be nil")
+	}
+
+	if exp.Status == nil {
+		exp.Status = &essmsgpb.ExperimentStatus{}
 	}
 
 	// 1. Calculate state deltas and denormalize status
@@ -47,13 +52,15 @@ func PrepareWorkUnitCreation(ctx context.Context, exp *essmsgpb.Experiment, wu *
 
 	updatedExp, err := state.DenormalizeWorkUnitStatus(ctx, exp, deltas)
 	if err != nil {
-		return nil, fmt.Errorf("failed to denormalize experiment status: %w", err)
+		return nil, false, fmt.Errorf("failed to denormalize experiment status: %w", err)
 	}
 
 	// 2. Merge resources required by WorkUnit into Experiment
 	wuResources := workunit.GetWorkUnitResources(wu)
+	resourcesChanged := false
 	if wuResources != nil {
 		updatedExp.Resources = workunit.MergeResourceSets(updatedExp.Resources, wuResources)
+		resourcesChanged = true
 	}
 
 	// 3. Update timestamps
@@ -63,5 +70,5 @@ func PrepareWorkUnitCreation(ctx context.Context, exp *essmsgpb.Experiment, wu *
 		updatedExp.Status.UpdateTime = timestamppb.New(now)
 	}
 
-	return updatedExp, nil
+	return updatedExp, resourcesChanged, nil
 }
