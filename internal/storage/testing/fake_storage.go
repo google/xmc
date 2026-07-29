@@ -304,13 +304,17 @@ func (f *FakeStorage) UpdateWorkUnitExecutions(ctx context.Context, xid int64, u
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	for _, u := range updates {
+		key := fmt.Sprintf("experiments/%d/workUnits/%d", xid, u.WID)
+		if _, exists := f.workUnits[key]; !exists {
+			return nil, fmt.Errorf("work unit %d for experiment %d not found: %w", u.WID, xid, status.ErrNotFound)
+		}
+	}
+
 	result := make(map[int64]*essmsgpb.WorkUnitExecution)
 	for _, u := range updates {
 		key := fmt.Sprintf("experiments/%d/workUnits/%d", xid, u.WID)
-		wu, exists := f.workUnits[key]
-		if !exists {
-			return nil, fmt.Errorf("work unit %d for experiment %d not found: %w", u.WID, xid, status.ErrNotFound)
-		}
+		wu := f.workUnits[key]
 
 		execClone := proto.Clone(u.WorkUnitExecution).(*essmsgpb.WorkUnitExecution)
 		wu.CurrentWorkUnitExecution = execClone
@@ -324,13 +328,17 @@ func (f *FakeStorage) RestartWorkUnitExecutions(ctx context.Context, requester s
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	for _, wid := range wids {
+		key := fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid)
+		if _, exists := f.workUnits[key]; !exists {
+			return nil, fmt.Errorf("work unit %d for experiment %d not found: %w", wid, xid, status.ErrNotFound)
+		}
+	}
+
 	result := make(map[int64]*essmsgpb.WorkUnitExecution)
 	for _, wid := range wids {
 		key := fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid)
-		wu, exists := f.workUnits[key]
-		if !exists {
-			return nil, fmt.Errorf("work unit %d for experiment %d not found: %w", wid, xid, status.ErrNotFound)
-		}
+		wu := f.workUnits[key]
 
 		currentExec := wu.GetCurrentWorkUnitExecution()
 		if currentExec != nil {

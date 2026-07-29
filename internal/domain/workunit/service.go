@@ -52,7 +52,7 @@ func (s *Service) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*e
 		return nil, fmt.Errorf("current work unit execution must not be nil")
 	}
 
-	xid, wid, err := validator.ValidateWorkUnitNameAllowZeroWID(wu.GetName())
+	xid, _, err := validator.ValidateWorkUnitNameAllowZeroWID(wu.GetName())
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate work unit name: %w (%v)", status.ErrInvalidArgument, err)
 	}
@@ -65,11 +65,20 @@ func (s *Service) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*e
 	if err != nil {
 		return nil, fmt.Errorf("failed to create work unit: %w", err)
 	}
+	if createdWu == nil {
+		return nil, fmt.Errorf("storage returned nil work unit")
+	}
+	if createdWu.GetCurrentWorkUnitExecution() == nil {
+		return nil, fmt.Errorf("created work unit has no current execution")
+	}
 
 	// 2. Fetch the Experiment to update denormalized status and resources
 	exp, err := s.storage.FetchExperiment(ctx, xid)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch experiment %d: %w", xid, err)
+	}
+	if exp.Status == nil {
+		exp.Status = &essmsgpb.ExperimentStatus{}
 	}
 
 	// 3. Calculate state deltas and denormalize status
@@ -108,7 +117,6 @@ func (s *Service) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*e
 		return nil, fmt.Errorf("failed to update experiment after work unit creation: %w", err)
 	}
 
-	_ = wid
 	return createdWu, nil
 }
 
@@ -128,14 +136,19 @@ func (s *Service) RestartWorkUnitExecutions(ctx context.Context, requester strin
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch experiment %d: %w", xid, err)
 	}
+	if exp.Status == nil {
+		exp.Status = &essmsgpb.ExperimentStatus{}
+	}
 
 	var deltas []*state.WorkUnitStateDelta
-	for wid, newExec := range newExecutions {
+	for _, newExec := range newExecutions {
+		if newExec == nil {
+			continue
+		}
 		deltas = append(deltas, &state.WorkUnitStateDelta{
 			NewState:   newExec.GetStatus().GetState().Enum(),
 			NewMessage: newExec.GetStatus().GetSystemMessage(),
 		})
-		_ = wid
 	}
 
 	exp, err = state.DenormalizeWorkUnitStatus(ctx, exp, deltas)

@@ -47,7 +47,10 @@ type taskQueueClientInterface interface {
 
 // New creates a new instance of the Experiment State Server.
 func New(storage storage.Storage, cfg *config.Config, auth auth.AuthorizerInterface, xidClient xidgrpcpb.XidServiceClient, taskQueueClient taskQueueClientInterface) *Server {
-	wuSvc, _ := workunitdomain.NewService(storage)
+	wuSvc, err := workunitdomain.NewService(storage)
+	if err != nil {
+		panic(fmt.Sprintf("failed to initialize workunit domain service: %v", err))
+	}
 
 	return &Server{
 		cfg:             cfg,
