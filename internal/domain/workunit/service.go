@@ -76,11 +76,11 @@ func (s *Service) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*e
 
 // RestartWorkUnitExecutions validates and restarts executions for specified work unit IDs.
 func (s *Service) RestartWorkUnitExecutions(ctx context.Context, requester string, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnitExecution, error) {
-	if xid == 0 {
-		return nil, fmt.Errorf("xid must not be 0")
+	if xid <= 0 {
+		return nil, fmt.Errorf("invalid experiment ID: %d", xid)
 	}
 	if len(wids) == 0 {
-		return nil, fmt.Errorf("wids must not be empty")
+		return nil, nil
 	}
 
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))

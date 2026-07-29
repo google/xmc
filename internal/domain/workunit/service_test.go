@@ -247,3 +247,26 @@ func TestRestartWorkUnitExecutions_HappyPath(t *testing.T) {
 		t.Errorf("RestartWorkUnitExecutions returned %d executions, want 2", len(res))
 	}
 }
+
+func TestRestartWorkUnitExecutions_EdgeCases(t *testing.T) {
+	ctx := context.Background()
+	mock := &mockStore{}
+	svc, _ := NewService(mock)
+
+	t.Run("invalid xid", func(t *testing.T) {
+		_, err := svc.RestartWorkUnitExecutions(ctx, "user", 0, []int64{1})
+		if err == nil {
+			t.Errorf("RestartWorkUnitExecutions(xid=0) succeeded, want error")
+		}
+	})
+
+	t.Run("empty wids", func(t *testing.T) {
+		res, err := svc.RestartWorkUnitExecutions(ctx, "user", 1001, nil)
+		if err != nil {
+			t.Errorf("RestartWorkUnitExecutions(wids=nil) returned error: %v", err)
+		}
+		if res != nil {
+			t.Errorf("RestartWorkUnitExecutions(wids=nil) = %v, want nil", res)
+		}
+	})
+}
