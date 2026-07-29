@@ -23,6 +23,7 @@ py_library(
         "dist_harvest.py",
         "flusher.py",
         "integrations/__init__.py",
+        "integrations/common.py",
         "integrations/keras.py",
         "integrations/lightning.py",
         "network.py",
@@ -93,6 +94,13 @@ py_test(
     name = "keras_integration_test",
     srcs = ["integrations/keras_test.py"],
     main = "integrations/keras_test.py",
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "common_integration_test",
+    srcs = ["integrations/common_test.py"],
+    main = "integrations/common_test.py",
     deps = [":xmc"],
 )
 

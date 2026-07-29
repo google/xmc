@@ -19,6 +19,7 @@ import os
 from typing import Any
 
 import xmc
+from xmc.integrations.common import extract_scalar, parse_version
 
 MIN_LIGHTNING_VERSION = "2.0.0"
 
@@ -38,16 +39,8 @@ except ImportError:
             "'pip install pytorch-lightning>=2.0.0'."
         ) from exc
 
-
-def _parse_version(version_str: str) -> tuple[int, ...]:
-    """Parses a version string into an integer tuple for comparison."""
-    parts = []
-    for segment in version_str.split(".")[:3]:
-        digits = "".join(char for char in segment if char.isdigit())
-        parts.append(int(digits) if digits else 0)
-    while len(parts) < 3:
-        parts.append(0)
-    return tuple(parts)
+_parse_version = parse_version
+_extract_scalar = extract_scalar
 
 
 def _validate_lightning_version() -> None:
@@ -71,38 +64,6 @@ def _validate_lightning_version() -> None:
 
 
 _validate_lightning_version()
-
-
-def _extract_scalar(val: Any) -> float | int | None:
-    """Extracts a primitive float or int scalar from various framework tensor types."""
-    if isinstance(val, (int, float)):
-        return val
-
-    if hasattr(val, "item") and callable(val.item):
-        try:
-            res = val.item()
-            if isinstance(res, (int, float)):
-                return res
-        except Exception:
-            pass
-
-    if hasattr(val, "numpy") and callable(val.numpy):
-        try:
-            n_val = val.numpy()
-            if isinstance(n_val, (int, float)):
-                return n_val
-            if hasattr(n_val, "item") and callable(n_val.item):
-                res = n_val.item()
-                if isinstance(res, (int, float)):
-                    return res
-            return float(n_val)
-        except Exception:
-            pass
-
-    try:
-        return float(val)
-    except Exception:
-        return None
 
 
 class XmcLogger(Logger):  # type: ignore[misc]
