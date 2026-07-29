@@ -18,6 +18,8 @@ package testing
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +28,7 @@ import (
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -120,6 +123,9 @@ func (f *FakeStorage) ListExperiments(ctx context.Context, pageSize int32, pageT
 	for _, exp := range f.experiments {
 		result = append(result, proto.Clone(exp).(*essmsgpb.Experiment))
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].GetName() < result[j].GetName()
+	})
 	return result, "", nil
 }
 
@@ -137,10 +143,13 @@ func (f *FakeStorage) UpdateExperiment(ctx context.Context, update *storage.Expe
 	}
 
 	originalClone := proto.Clone(original).(*essmsgpb.Experiment)
-	updatedClone := proto.Clone(update.Experiment).(*essmsgpb.Experiment)
-	f.experiments[update.XID] = updatedClone
+	merged, err := data.MergeExperiments(original, update.Experiment, update.UpdateMask)
+	if err != nil {
+		return nil, nil, err
+	}
+	f.experiments[update.XID] = merged
 
-	return originalClone, proto.Clone(updatedClone).(*essmsgpb.Experiment), nil
+	return originalClone, proto.Clone(merged).(*essmsgpb.Experiment), nil
 }
 
 func (f *FakeStorage) UpdateExperimentLaunchState(ctx context.Context, xid int64, launchState essmsgpb.ExperimentStatus_LaunchState) (*essmsgpb.Experiment, error) {
@@ -175,23 +184,28 @@ func (f *FakeStorage) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	cloned := proto.Clone(wu).(*essmsgpb.WorkUnit)
+
 	if wid == 0 {
 		f.nextWID[xid]++
 		wid = f.nextWID[xid]
-		wu.Name = fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid)
-		if wu.CurrentWorkUnitExecution != nil {
-			wu.CurrentWorkUnitExecution.Name = fmt.Sprintf("experiments/%d/workUnits/%d/executions/1", xid, wid)
-			if wu.CurrentWorkUnitExecution.Status != nil && wu.CurrentWorkUnitExecution.Status.SystemMessage != nil {
-				wu.CurrentWorkUnitExecution.Status.SystemMessage.Parent = wu.Name
+		cloned.Name = fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid)
+		if cloned.CurrentWorkUnitExecution != nil {
+			cloned.CurrentWorkUnitExecution.Name = fmt.Sprintf("experiments/%d/workUnits/%d/executions/1", xid, wid)
+			if cloned.CurrentWorkUnitExecution.Status != nil && cloned.CurrentWorkUnitExecution.Status.SystemMessage != nil {
+				cloned.CurrentWorkUnitExecution.Status.SystemMessage.Parent = cloned.Name
 			}
 		}
 	}
 
-	cloned := proto.Clone(wu).(*essmsgpb.WorkUnit)
-	f.workUnits[wu.GetName()] = cloned
+	if _, exists := f.workUnits[cloned.GetName()]; exists {
+		return nil, fmt.Errorf("work unit %s already exists: %w", cloned.GetName(), status.ErrAlreadyExists)
+	}
 
-	if wu.CurrentWorkUnitExecution != nil {
-		execCloned := proto.Clone(wu.CurrentWorkUnitExecution).(*essmsgpb.WorkUnitExecution)
+	f.workUnits[cloned.GetName()] = cloned
+
+	if cloned.CurrentWorkUnitExecution != nil {
+		execCloned := proto.Clone(cloned.CurrentWorkUnitExecution).(*essmsgpb.WorkUnitExecution)
 		f.executions[execCloned.GetName()] = execCloned
 	}
 
@@ -216,8 +230,13 @@ func (f *FakeStorage) ListWorkUnits(ctx context.Context, parent string, pageSize
 
 	var result []*essmsgpb.WorkUnit
 	for _, wu := range f.workUnits {
-		result = append(result, proto.Clone(wu).(*essmsgpb.WorkUnit))
+		if parent == "" || strings.HasPrefix(wu.GetName(), parent) {
+			result = append(result, proto.Clone(wu).(*essmsgpb.WorkUnit))
+		}
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].GetName() < result[j].GetName()
+	})
 	return result, "", nil
 }
 
@@ -236,10 +255,13 @@ func (f *FakeStorage) UpdateWorkUnit(ctx context.Context, update *storage.WorkUn
 	}
 
 	originalClone := proto.Clone(original).(*essmsgpb.WorkUnit)
-	updatedClone := proto.Clone(update.WorkUnit).(*essmsgpb.WorkUnit)
-	f.workUnits[key] = updatedClone
+	merged, err := data.MergeWorkUnits(original, update.WorkUnit, update.UpdateMask)
+	if err != nil {
+		return nil, nil, err
+	}
+	f.workUnits[key] = merged
 
-	return originalClone, proto.Clone(updatedClone).(*essmsgpb.WorkUnit), nil
+	return originalClone, proto.Clone(merged).(*essmsgpb.WorkUnit), nil
 }
 
 func (f *FakeStorage) FetchCurrentWorkUnitExecution(ctx context.Context, xid int64, wid int64) (*essmsgpb.WorkUnitExecution, error) {
@@ -260,10 +282,13 @@ func (f *FakeStorage) ListWorkUnitExecutions(ctx context.Context, xid int64, wid
 	prefix := fmt.Sprintf("experiments/%d/workUnits/%d/executions/", xid, wid)
 	var result []*essmsgpb.WorkUnitExecution
 	for name, exec := range f.executions {
-		if len(name) >= len(prefix) && name[:len(prefix)] == prefix {
+		if strings.HasPrefix(name, prefix) {
 			result = append(result, proto.Clone(exec).(*essmsgpb.WorkUnitExecution))
 		}
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].GetName() < result[j].GetName()
+	})
 	return result, nil
 }
 
@@ -302,6 +327,9 @@ func (f *FakeStorage) RestartWorkUnitExecutions(ctx context.Context, requester s
 		currentExec := wu.GetCurrentWorkUnitExecution()
 		if currentExec != nil {
 			currentExec.State = essmsgpb.WorkUnitExecution_INACTIVE
+			if storedExec, ok := f.executions[currentExec.GetName()]; ok {
+				storedExec.State = essmsgpb.WorkUnitExecution_INACTIVE
+			}
 		}
 
 		newEID := int64(2)
@@ -402,6 +430,9 @@ func (f *FakeStorage) ListArtifacts(ctx context.Context, parent string, pageSize
 			result = append(result, proto.Clone(art).(*essmsgpb.Artifact))
 		}
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].GetName() < result[j].GetName()
+	})
 	return result, "", nil
 }
 
@@ -419,10 +450,13 @@ func (f *FakeStorage) UpdateArtifact(ctx context.Context, update *storage.Artifa
 	}
 
 	originalClone := proto.Clone(original).(*essmsgpb.Artifact)
-	updatedClone := proto.Clone(update.Artifact).(*essmsgpb.Artifact)
-	f.artifacts[update.AID] = updatedClone
+	merged, err := data.MergeArtifacts(original, update.Artifact, update.UpdateMask)
+	if err != nil {
+		return nil, nil, err
+	}
+	f.artifacts[update.AID] = merged
 
-	return originalClone, proto.Clone(updatedClone).(*essmsgpb.Artifact), nil
+	return originalClone, proto.Clone(merged).(*essmsgpb.Artifact), nil
 }
 
 func (f *FakeStorage) DeleteArtifact(ctx context.Context, aid int64) error {
@@ -538,6 +572,9 @@ func (f *FakeStorage) ListXidEntries(ctx context.Context, pageSize int32, pageTo
 	for _, entry := range f.xidEntries {
 		result = append(result, proto.Clone(entry).(*xidmsgpb.XidEntry))
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].GetName() < result[j].GetName()
+	})
 	return result, "", nil
 }
 
@@ -554,9 +591,11 @@ func (f *FakeStorage) UpdateXidEntry(ctx context.Context, update *storage.XidEnt
 		return nil, fmt.Errorf("XID %d not found: %w", update.XID, status.ErrNotFound)
 	}
 
-	updatedClone := proto.Clone(update.XidEntry).(*xidmsgpb.XidEntry)
-	f.xidEntries[update.XID] = updatedClone
-	_ = original
+	merged, err := data.MergeXIDEntries(original, update.XidEntry, update.UpdateMask)
+	if err != nil {
+		return nil, err
+	}
+	f.xidEntries[update.XID] = merged
 
-	return proto.Clone(updatedClone).(*xidmsgpb.XidEntry), nil
+	return proto.Clone(merged).(*xidmsgpb.XidEntry), nil
 }
