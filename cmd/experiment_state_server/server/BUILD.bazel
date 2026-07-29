@@ -59,6 +59,7 @@ compat_go_library(
         "//internal/compat/proto",
         "//internal/compat/status",
         "//internal/compat/uuid",
+        "//internal/domain/workunit",
         "//internal/logging",
         "//internal/storage",
         "//internal/storage/data",

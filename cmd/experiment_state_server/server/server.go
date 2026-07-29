@@ -16,11 +16,13 @@ package server
 
 import (
 	"context"
+	"fmt"
 
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	workunitdomain "xmanager_cloud/internal/domain/workunit"
 	"xmanager_cloud/storage/storage"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
@@ -35,6 +37,7 @@ type Server struct {
 	auth            auth.AuthorizerInterface
 	xidClient       xidgrpcpb.XidServiceClient
 	taskQueueClient taskQueueClientInterface
+	workUnitService *workunitdomain.Service
 }
 
 type taskQueueClientInterface interface {
@@ -44,11 +47,16 @@ type taskQueueClientInterface interface {
 
 // New creates a new instance of the Experiment State Server.
 func New(storage storage.Storage, cfg *config.Config, auth auth.AuthorizerInterface, xidClient xidgrpcpb.XidServiceClient, taskQueueClient taskQueueClientInterface) *Server {
+	workUnitSvc, err := workunitdomain.NewService(storage)
+	if err != nil {
+		panic(fmt.Sprintf("failed to initialize WorkUnit domain service: %v", err))
+	}
 	return &Server{
 		cfg:             cfg,
 		storage:         storage,
 		auth:            auth,
 		xidClient:       xidClient,
 		taskQueueClient: taskQueueClient,
+		workUnitService: workUnitSvc,
 	}
 }
