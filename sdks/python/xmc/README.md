@@ -164,6 +164,9 @@ model.fit(x_train, y_train, epochs=5)
 
 If you need custom metric prefixes, custom logging frequencies, or explicit `Client` instances, you can use the explicit integration classes directly instead of `xmc.autolog()`.
 
+> [!TIP]
+> **Combining `xmc.autolog()` with Explicit Callbacks**: If `xmc.autolog()` is active and an explicit `XmcKerasCallback` or `XmcLogger` is passed to `fit()`, XMC automatically detects the explicit instance and preserves it without adding a duplicate callback or logger.
+
 #### 📦 Keras Explicit Callback (`XmcKerasCallback`)
 
 ```python
