@@ -25,9 +25,7 @@ compat_go_library(
         "//internal/compat/proto",
         "//internal/logging",
         "//internal/storage",
-        "//internal/storage/state",
         "//internal/validator",
-        "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
     ],
 )
 

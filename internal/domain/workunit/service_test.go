@@ -29,8 +29,6 @@ import (
 // mockStore is a lightweight, case-specific test double for Store interface.
 type mockStore struct {
 	createWorkUnitFn            func(ctx context.Context, wu *essmsgpb.WorkUnit) (*essmsgpb.WorkUnit, error)
-	fetchExperimentFn           func(ctx context.Context, xid int64) (*essmsgpb.Experiment, error)
-	updateExperimentFn          func(ctx context.Context, update *storage.ExperimentUpdate) (*essmsgpb.Experiment, *essmsgpb.Experiment, error)
 	restartWorkUnitExecutionsFn func(ctx context.Context, requester string, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnitExecution, error)
 
 	// Unused methods satisfying storage.WorkUnitStore interface
@@ -47,20 +45,6 @@ func (m *mockStore) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (
 		return m.createWorkUnitFn(ctx, wu)
 	}
 	return wu, nil
-}
-
-func (m *mockStore) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error) {
-	if m.fetchExperimentFn != nil {
-		return m.fetchExperimentFn(ctx, xid)
-	}
-	return &essmsgpb.Experiment{Name: "experiments/1001", Status: &essmsgpb.ExperimentStatus{}}, nil
-}
-
-func (m *mockStore) UpdateExperiment(ctx context.Context, update *storage.ExperimentUpdate) (*essmsgpb.Experiment, *essmsgpb.Experiment, error) {
-	if m.updateExperimentFn != nil {
-		return m.updateExperimentFn(ctx, update)
-	}
-	return update.Experiment, update.Experiment, nil
 }
 
 func (m *mockStore) RestartWorkUnitExecutions(ctx context.Context, requester string, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnitExecution, error) {
@@ -136,22 +120,9 @@ func TestCreateWorkUnit_HappyPath(t *testing.T) {
 		Executable: &essmsgpb.Executable{},
 	}
 
-	var updatedExp *essmsgpb.Experiment
 	mock := &mockStore{
 		createWorkUnitFn: func(ctx context.Context, wu *essmsgpb.WorkUnit) (*essmsgpb.WorkUnit, error) {
 			return wu, nil
-		},
-		fetchExperimentFn: func(ctx context.Context, xid int64) (*essmsgpb.Experiment, error) {
-			return &essmsgpb.Experiment{
-				Name: "experiments/1001",
-				Status: &essmsgpb.ExperimentStatus{
-					ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
-				},
-			}, nil
-		},
-		updateExperimentFn: func(ctx context.Context, update *storage.ExperimentUpdate) (*essmsgpb.Experiment, *essmsgpb.Experiment, error) {
-			updatedExp = update.Experiment
-			return update.Experiment, update.Experiment, nil
 		},
 	}
 
@@ -167,10 +138,6 @@ func TestCreateWorkUnit_HappyPath(t *testing.T) {
 
 	if diff := cmp.Diff(inputWu, created, protocmp.Transform()); diff != "" {
 		t.Errorf("CreateWorkUnit() returned unexpected diff (-want +got):\n%s", diff)
-	}
-
-	if updatedExp == nil {
-		t.Fatalf("UpdateExperiment was not called")
 	}
 }
 
@@ -260,22 +227,9 @@ func TestRestartWorkUnitExecutions_HappyPath(t *testing.T) {
 		},
 	}
 
-	var updatedExp *essmsgpb.Experiment
 	mock := &mockStore{
 		restartWorkUnitExecutionsFn: func(ctx context.Context, requester string, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnitExecution, error) {
 			return restartedExecs, nil
-		},
-		fetchExperimentFn: func(ctx context.Context, xid int64) (*essmsgpb.Experiment, error) {
-			return &essmsgpb.Experiment{
-				Name: "experiments/1001",
-				Status: &essmsgpb.ExperimentStatus{
-					ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
-				},
-			}, nil
-		},
-		updateExperimentFn: func(ctx context.Context, update *storage.ExperimentUpdate) (*essmsgpb.Experiment, *essmsgpb.Experiment, error) {
-			updatedExp = update.Experiment
-			return update.Experiment, update.Experiment, nil
 		},
 	}
 
@@ -291,8 +245,5 @@ func TestRestartWorkUnitExecutions_HappyPath(t *testing.T) {
 
 	if len(res) != 2 {
 		t.Errorf("RestartWorkUnitExecutions returned %d executions, want 2", len(res))
-	}
-	if updatedExp == nil {
-		t.Fatalf("UpdateExperiment was not called")
 	}
 }
