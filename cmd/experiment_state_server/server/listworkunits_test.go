@@ -28,8 +28,7 @@ import (
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/storage/spanner/spanner"
+	storagetesting "xmanager_cloud/internal/storage/testing"
 	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
@@ -275,8 +274,7 @@ func TestListWorkUnits_PermissionDenied(t *testing.T) {
 
 func createExperimentStateServerWithMockXid(ctx context.Context, t *testing.T) (*Server, *mockXidClient) {
 	t.Helper()
-	_, essStorageClient := emulator.Setup(ctx, t)
-	storage, _ := spanner.NewStorage(essStorageClient)
+	fakeStorage := storagetesting.NewFakeStorage()
 	cfg := config.Config{
 		EndpointURL:                 "http://localhost:8080",
 		DefaultExecutionEnvironment: "gke",
@@ -286,5 +284,5 @@ func createExperimentStateServerWithMockXid(ctx context.Context, t *testing.T) (
 		createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/1")},
 	}
 	taskQueueClient := &tq.FakeClient{}
-	return New(storage, &cfg, createTestAuthorizer(ctx, t), xidClient, taskQueueClient), xidClient
+	return New(fakeStorage, &cfg, createTestAuthorizer(ctx, t), xidClient, taskQueueClient), xidClient
 }
