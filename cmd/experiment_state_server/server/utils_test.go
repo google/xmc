@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"go/log"
-	googlespanner "golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/cmp/cmp"
 	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
 	"golang/grpc/credentials/insecure/insecure"
@@ -41,8 +40,7 @@ import (
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/storage/spanner/spanner"
+	storagetesting "xmanager_cloud/internal/storage/testing"
 	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
 	xidconfig "xmanager_cloud/xid_service/config"
@@ -91,9 +89,8 @@ func createTestAuthorizer(ctx context.Context, t *testing.T) authz.AuthorizerInt
 
 func createExperimentStateServer(ctx context.Context, t *testing.T) (*Server, *tq.FakeClient) {
 	t.Helper()
-	xidStorageClient, essStorageClient := emulator.Setup(ctx, t)
-	storage, _ := spanner.NewStorage(essStorageClient)
-	xidAddr := createXidServer(ctx, t, xidStorageClient)
+	fakeStorage := storagetesting.NewFakeStorage()
+	xidAddr := createXidServer(ctx, t, fakeStorage)
 	cfg := config.Config{
 		EndpointURL:                 "http://localhost:8080",
 		XidServiceAddr:              xidAddr.Addr().String(),
@@ -108,12 +105,11 @@ func createExperimentStateServer(ctx context.Context, t *testing.T) (*Server, *t
 	}
 	xidClient := xidgrpcpb.NewXidServiceClient(conn)
 	taskQueueClient := &tq.FakeClient{}
-	return New(storage, &cfg, createTestAuthorizer(ctx, t), xidClient, taskQueueClient), taskQueueClient
+	return New(fakeStorage, &cfg, createTestAuthorizer(ctx, t), xidClient, taskQueueClient), taskQueueClient
 }
 
-func createXidServer(ctx context.Context, t *testing.T, xidClient *googlespanner.Client) net.Listener {
+func createXidServer(ctx context.Context, t *testing.T, storage storage.Storage) net.Listener {
 	t.Helper()
-	storage, _ := spanner.NewStorage(xidClient)
 	cfg := xidconfig.Config{}
 
 	lis, err := net.Listen("tcp", "localhost:0")

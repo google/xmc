@@ -20,8 +20,7 @@ import (
 
 	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
 	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-	"xmanager_cloud/storage/spanner/spanner"
+	storagetesting "xmanager_cloud/internal/storage/testing"
 	"xmanager_cloud/xid_service/config"
 )
 
@@ -37,8 +36,7 @@ func createTestAuthorizer(ctx context.Context, t *testing.T) *auth.Authorizer {
 
 func createXidServer(ctx context.Context, t *testing.T) *XIDServer {
 	t.Helper()
-	xidClient, _ := emulator.Setup(ctx, t)
-	storage, _ := spanner.NewStorage(xidClient)
+	fakeStorage := storagetesting.NewFakeStorage()
 	cfg := config.Config{}
-	return NewXIDServer(cfg, createTestAuthorizer(ctx, t), storage)
+	return NewXIDServer(cfg, createTestAuthorizer(ctx, t), fakeStorage)
 }
