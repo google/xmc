@@ -37,6 +37,8 @@ compat_go_library(
         "//internal/compat/proto",
         "//internal/compat/safesql",
         "//internal/compat/status",
+        "//internal/domain/experiment",
+        "//internal/domain/workunit",
         "//internal/logging",
         "//internal/query_generator/liststatement",
         "//internal/query_generator/normalizer",

@@ -17,17 +17,16 @@ package workunit
 import (
 	"context"
 	"fmt"
-	"sort"
 	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	experimentdomain "xmanager_cloud/internal/domain/experiment"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/logging/logging"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
-	"xmanager_cloud/storage/state/state"
 	"xmanager_cloud/validator/validator"
 )
 
@@ -92,47 +91,26 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 			return fmt.Errorf("experiment %d not found", xid)
 		}
 
-		// 5. Update the denormalized status fields in the Experiment row.
-		var executionDeltas []*state.WorkUnitStateDelta
-		executionDeltas = append(executionDeltas, &state.WorkUnitStateDelta{
-			CurrentState:   nil,
-			NewState:       wu.GetCurrentWorkUnitExecution().GetStatus().GetState().Enum(),
-			CurrentMessage: nil,
-			NewMessage:     wu.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage(),
-		})
-
+		// 5. Update the denormalized status fields and resources in the Experiment row using domain rules.
 		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &wid, &initialEID, nil, wu.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage(), tx)
 
-		exp, err = state.DenormalizeWorkUnitStatus(ctx, exp, executionDeltas)
+		exp, err = experimentdomain.PrepareWorkUnitCreation(ctx, exp, wu, now)
 		if err != nil {
-			return fmt.Errorf("failed to update experiment status: %w", err)
+			return fmt.Errorf("failed to prepare experiment status for work unit creation: %w", err)
 		}
 
-		// 6. Update the Experiment row.
-		exp.UpdateTime = timestamppb.New(now)
-		exp.Status.LastChildStatusUpdateTime = timestamppb.New(now)
-		exp.Status.UpdateTime = timestamppb.New(now)
+		// 6. Buffer mutations for Experiment status and resources.
 		expMutation, err := spannerdata.ExperimentProtoToStatusUpdateMutation(exp)
 		if err != nil {
-			logging.Error(ctx, "failed to create mutation for experiment", "experiment", exp, "error", err)
+			logging.Error(ctx, "failed to create status mutation for experiment", "experiment", exp, "error", err)
 			return err
 		}
-		tx.BufferWrite([]*spanner.Mutation{expMutation})
-
-		// 7.1. Get the resources required by the work unit.
-		wuResources := GetWorkUnitResources(wu)
-		// 7.2. Merge the resources required by the work unit with the resources in the experiment.
-		if wuResources != nil {
-			exp.Resources = MergeResourceSets(exp.Resources, wuResources)
-
-			// 7.3. Update the Experiment's resources.
-			expResourcesMutation, err := spannerdata.ExperimentProtoToResourcesUpdateMutation(exp)
-			if err != nil {
-				logging.Error(ctx, "failed to create mutation for experiment", "experiment", exp, "error", err)
-				return err
-			}
-			tx.BufferWrite([]*spanner.Mutation{expResourcesMutation})
+		expResourcesMutation, err := spannerdata.ExperimentProtoToResourcesUpdateMutation(exp)
+		if err != nil {
+			logging.Error(ctx, "failed to create resources mutation for experiment", "experiment", exp, "error", err)
+			return err
 		}
+		tx.BufferWrite([]*spanner.Mutation{expMutation, expResourcesMutation})
 
 		return nil
 	})
@@ -145,113 +123,4 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 	logging.Info(ctx, "Updated experiment successfully", "experiment", exp)
 
 	return wu, nil
-}
-
-// getWorkUnitResources returns the resources required by the work unit, in a minimal merged set
-// of resources. For example, if two work units require 1 V100 each, this will return 2 V100s,
-// not 2 x 1 V100s.
-func GetWorkUnitResources(wu *essmsgpb.WorkUnit) []*essmsgpb.ResourceSet {
-	var resources []*essmsgpb.ResourceSet
-	for _, job := range wu.GetExecutable().GetJobset().GetJobs() {
-		replicas := job.GetReplicas()
-		if replicas == 0 {
-			replicas = 1
-		}
-		specs := []*essmsgpb.ExecutableSpec{job.GetSpec()}
-		specs = append(specs, job.GetSidecars()...)
-		specs = append(specs, job.GetInitContainers()...)
-		for _, spec := range specs {
-			if spec.GetResources() == nil {
-				continue
-			}
-			for i := 0; i < int(replicas); i++ {
-				resources = append(resources, spec.GetResources())
-			}
-		}
-	}
-
-	if len(resources) == 0 {
-		return nil
-	}
-
-	return MergeResourceSets(nil, resources)
-}
-
-// mergeResourceSets merges two sets of resources into a single set. If the same resource type is
-// present in both sets, the total amount of that resource type is the sum of the two sets.
-func MergeResourceSets(a, b []*essmsgpb.ResourceSet) []*essmsgpb.ResourceSet {
-	var allRes []*essmsgpb.ResourceSet
-	allRes = append(allRes, a...)
-	allRes = append(allRes, b...)
-	if len(allRes) == 0 {
-		return nil
-	}
-
-	var merged []*essmsgpb.ResourceSet
-	var cpu *essmsgpb.CpuResources
-	var cpuEphemeral int64
-	gpus := make(map[string]*essmsgpb.GpuResources)
-	gpuEphemeral := make(map[string]int64)
-	var tpus []*essmsgpb.ResourceSet
-
-	for _, rs := range allRes {
-		if rs == nil {
-			continue
-		}
-		if res := rs.GetCpuResources(); res != nil {
-			if cpu == nil {
-				cpu = &essmsgpb.CpuResources{}
-			}
-			cpu.CpuMillicores += res.GetCpuMillicores()
-			cpu.MemoryBytes += res.GetMemoryBytes()
-			cpuEphemeral += rs.GetEphemeralStorageBytes()
-			continue
-		}
-		if res := rs.GetGpuResources(); res != nil {
-			if _, ok := gpus[res.GetType()]; !ok {
-				gpus[res.GetType()] = &essmsgpb.GpuResources{Type: res.GetType()}
-			}
-			gpus[res.GetType()].Count += res.GetCount()
-			gpuEphemeral[res.GetType()] += rs.GetEphemeralStorageBytes()
-			continue
-		}
-		if res := rs.GetTpuResources(); res != nil {
-			tpus = append(tpus, rs)
-		}
-	}
-
-	if cpu != nil {
-		merged = append(merged, &essmsgpb.ResourceSet{
-			Resources:             &essmsgpb.ResourceSet_CpuResources{CpuResources: cpu},
-			EphemeralStorageBytes: cpuEphemeral,
-		})
-	}
-
-	// Sort GPU types for deterministic order.
-	gpuTypes := make([]string, 0, len(gpus))
-	for gpuType := range gpus {
-		gpuTypes = append(gpuTypes, gpuType)
-	}
-	sort.Strings(gpuTypes)
-
-	for _, gpuType := range gpuTypes {
-		gpu := gpus[gpuType]
-		merged = append(merged, &essmsgpb.ResourceSet{
-			Resources:             &essmsgpb.ResourceSet_GpuResources{GpuResources: gpu},
-			EphemeralStorageBytes: gpuEphemeral[gpu.GetType()],
-		})
-	}
-
-	// Sort TPU types for deterministic order.
-	sort.Slice(tpus, func(i, j int) bool {
-		resI := tpus[i].GetTpuResources()
-		resJ := tpus[j].GetTpuResources()
-		if resI.GetType() != resJ.GetType() {
-			return resI.GetType() < resJ.GetType()
-		}
-		return resI.GetTopology() < resJ.GetTopology()
-	})
-	merged = append(merged, tpus...)
-
-	return merged
 }
