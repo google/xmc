@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("//:compat.bzl", "compat_go_library")
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
 load("//:oci.bzl", "oci_image_for_service")
 
 compat_go_library(
@@ -28,6 +28,7 @@ compat_go_library(
         "//api/protos/experiment:messages_go_proto",
         "//cmd/actuator/k8s_client",
         "//cmd/reconciler/clusterqueue",
+        "//cmd/reconciler/hypercomputeclient",
         "//cmd/reconciler/jobset",
         "//cmd/reconciler/kueue_sync",
         "//cmd/reconciler/shared",
@@ -53,6 +54,12 @@ compat_go_library(
         "@org_golang_google_api//option",
         "@org_golang_x_sync//errgroup:go_default_library",
     ],
+)
+
+compat_go_test(
+    name = "reconciler_test",
+    srcs = ["main_test.go"],
+    embed = [":reconciler_lib"],
 )
 
 go_binary(
