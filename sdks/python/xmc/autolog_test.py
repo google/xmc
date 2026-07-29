@@ -192,6 +192,83 @@ class AutologTest(unittest.TestCase):
             self.assertEqual(len(trainer_inst.loggers), 1)
             self.assertIsInstance(trainer_inst.loggers[0], mock_logger_cls)
 
+    def test_patch_keras_preserves_existing_callback(self) -> None:
+        """Verifies patch_keras does not duplicate XmcKerasCallback if already present."""
+        mock_fit = MagicMock(return_value="fit_result")
+
+        def dummy_fit(self: Any, x: Any = None, y: Any = None, callbacks: Any = None) -> Any:
+            return mock_fit(self, x=x, y=y, callbacks=callbacks)
+
+        mock_model_cls = type("Model", (), {"fit": dummy_fit})
+        mock_keras = MagicMock()
+        mock_keras.Model = mock_model_cls
+        mock_callback_cls = type("XmcKerasCallback", (), {})
+
+        with patch.dict(
+            sys.modules,
+            {
+                "keras": mock_keras,
+                "xmc.integrations.keras": MagicMock(XmcKerasCallback=mock_callback_cls),
+            },
+        ):
+            success = patch_keras()
+            self.assertTrue(success)
+
+            model_inst = mock_model_cls()
+            existing_cb = mock_callback_cls()
+            res = model_inst.fit("x_data", "y_data", callbacks=[existing_cb])
+            self.assertEqual(res, "fit_result")
+
+            mock_fit.assert_called_once()
+            _, kwargs = mock_fit.call_args
+            callbacks = kwargs["callbacks"]
+            # Verify no duplicate callback was added
+            self.assertEqual(len(callbacks), 1)
+            self.assertIs(callbacks[0], existing_cb)
+
+    def test_patch_lightning_preserves_existing_logger(self) -> None:
+        """Verifies patch_lightning does not duplicate XmcLogger if already present."""
+        mock_fit = MagicMock(return_value="trainer_fit_result")
+
+        class DummyTrainer:
+            def __init__(self) -> None:
+                self.loggers: list[object] = []
+
+            @property
+            def logger(self) -> object:
+                return self.loggers[0] if self.loggers else None
+
+            def fit(self, model: object, dataloader: object) -> object:
+                return mock_fit(self, model, dataloader)
+
+        mock_pl = MagicMock()
+        mock_pl.Trainer = DummyTrainer
+        mock_lightning = MagicMock()
+        mock_lightning.pytorch = mock_pl
+        mock_logger_cls = type("XmcLogger", (), {})
+
+        with patch.dict(
+            sys.modules,
+            {
+                "lightning": mock_lightning,
+                "lightning.pytorch": mock_pl,
+                "xmc.integrations.lightning": MagicMock(XmcLogger=mock_logger_cls),
+            },
+        ):
+            success = patch_lightning()
+            self.assertTrue(success)
+
+            trainer_inst = DummyTrainer()
+            existing_logger = mock_logger_cls()
+            trainer_inst.loggers = [existing_logger]
+            res = trainer_inst.fit("model", "dataloader")
+            self.assertEqual(res, "trainer_fit_result")
+
+            mock_fit.assert_called_once()
+            # Verify no duplicate logger was added
+            self.assertEqual(len(trainer_inst.loggers), 1)
+            self.assertIs(trainer_inst.loggers[0], existing_logger)
+
 
 if __name__ == "__main__":
     unittest.main()
