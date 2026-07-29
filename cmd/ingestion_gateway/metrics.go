@@ -25,8 +25,8 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-// Specialized buckets for HTTP request duration: 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0
-var httpDurationBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0}
+// Specialized buckets for HTTP request duration: 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
+var httpDurationBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0}
 
 // GatewayMetrics encapsulates Prometheus metrics for ingestion gateway and Redpanda client telemetry.
 type GatewayMetrics struct {
@@ -39,12 +39,12 @@ type GatewayMetrics struct {
 	DroppedPayloadsTotal       *prometheus.CounterVec
 
 	// Franz-Go Telemetry Metrics
-	BrokersConnections      prometheus.Gauge
-	ProduceBatchSizeBytes   prometheus.Histogram
-	ProduceRecordsTotal     prometheus.Counter
-	ProduceErrorsTotal      prometheus.Counter
-	ProduceRetriesTotal     prometheus.Counter
-	ProduceQueueLatencySecs prometheus.Histogram
+	BrokersConnections         prometheus.Gauge
+	ProduceBatchSizeBytes      prometheus.Histogram
+	ProduceRecordsTotal        prometheus.Counter
+	ProduceErrorsTotal         prometheus.Counter
+	ProduceRetriesTotal        prometheus.Counter
+	ProduceQueueLatencySeconds prometheus.Histogram
 }
 
 // NewGatewayMetrics initializes and registers all Prometheus metrics with the given registry.
@@ -99,7 +99,7 @@ func NewGatewayMetrics(reg *prometheus.Registry) *GatewayMetrics {
 			prometheus.HistogramOpts{
 				Name:    "franz_go_produce_batch_size_bytes",
 				Help:    "Size of produce batches in bytes.",
-				Buckets: prometheus.ExponentialBuckets(64, 2, 12),
+				Buckets: prometheus.ExponentialBuckets(1024, 2, 12),
 			},
 		),
 
@@ -124,7 +124,7 @@ func NewGatewayMetrics(reg *prometheus.Registry) *GatewayMetrics {
 			},
 		),
 
-		ProduceQueueLatencySecs: prometheus.NewHistogram(
+		ProduceQueueLatencySeconds: prometheus.NewHistogram(
 			prometheus.HistogramOpts{
 				Name:    "franz_go_produce_queue_latency_seconds",
 				Help:    "Latency of produce requests in queue in seconds.",
@@ -146,7 +146,7 @@ func NewGatewayMetrics(reg *prometheus.Registry) *GatewayMetrics {
 	reg.MustRegister(m.ProduceRecordsTotal)
 	reg.MustRegister(m.ProduceErrorsTotal)
 	reg.MustRegister(m.ProduceRetriesTotal)
-	reg.MustRegister(m.ProduceQueueLatencySecs)
+	reg.MustRegister(m.ProduceQueueLatencySeconds)
 
 	return m
 }
@@ -163,6 +163,16 @@ func (m *GatewayMetrics) RecordDroppedPayload(reason string) {
 	m.DroppedPayloadsTotal.WithLabelValues(reason).Inc()
 }
 
+// sanitizePath normalizes dynamic or unknown URL paths to prevent cardinality explosion in Prometheus.
+func sanitizePath(p string) string {
+	switch p {
+	case "/api/v1/metrics", "/healthz", "/readyz", "/metrics":
+		return p
+	default:
+		return "other"
+	}
+}
+
 // HTTPMiddleware creates a middleware wrapping an http.Handler to instrument HTTP metrics.
 func (m *GatewayMetrics) HTTPMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -174,19 +184,23 @@ func (m *GatewayMetrics) HTTPMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(ww, r)
 
 		duration := time.Since(start)
-		m.RecordHTTPRequest(ww.statusCode, r.URL.Path, r.Method, duration)
+		m.RecordHTTPRequest(ww.statusCode, sanitizePath(r.URL.Path), r.Method, duration)
 	})
 }
 
-// statusResponseWriter wraps http.ResponseWriter to capture response status code.
+// statusResponseWriter wraps http.ResponseWriter to capture response status code accurately.
 type statusResponseWriter struct {
 	http.ResponseWriter
-	statusCode int
+	statusCode  int
+	wroteHeader bool
 }
 
 func (w *statusResponseWriter) WriteHeader(code int) {
-	w.statusCode = code
-	w.ResponseWriter.WriteHeader(code)
+	if !w.wroteHeader {
+		w.statusCode = code
+		w.wroteHeader = true
+		w.ResponseWriter.WriteHeader(code)
+	}
 }
 
 // MetricsHandler exposes the Prometheus metrics endpoint.

@@ -179,3 +179,24 @@ func TestFranzGoMetricsHook(t *testing.T) {
 		t.Errorf("expected ProduceErrorsTotal to be 1.0, got %f", errorsCount)
 	}
 }
+
+func TestSanitizePath(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"/api/v1/metrics", "/api/v1/metrics"},
+		{"/healthz", "/healthz"},
+		{"/readyz", "/readyz"},
+		{"/metrics", "/metrics"},
+		{"/unknown/path", "other"},
+		{"/api/v1/metrics/extra", "other"},
+	}
+
+	for _, tt := range tests {
+		got := sanitizePath(tt.input)
+		if got != tt.expected {
+			t.Errorf("sanitizePath(%q) = %q, want %q", tt.input, got, tt.expected)
+		}
+	}
+}
