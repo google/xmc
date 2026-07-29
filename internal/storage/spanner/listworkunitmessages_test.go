@@ -151,7 +151,7 @@ func TestListWorkUnitMessagesBySeverity(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.severity.String(), func(t *testing.T) {
-			got, err := storageClient.listWorkUnitMessagesBySeverity(ctx, xid, tc.severity, storageClient.client.Single())
+			got, err := storageClient.ListWorkUnitMessagesBySeverity(ctx, xid, tc.severity, essClient.Single())
 			if err != nil {
 				t.Fatalf("listWorkUnitMessagesBySeverity failed: %v", err)
 			}
@@ -208,7 +208,7 @@ func TestListWorkUnitMessagesBySeverity_EdgeCases(t *testing.T) {
 				essmsgpb.StructuredMessage_ERROR,
 				essmsgpb.StructuredMessage_FATAL,
 			} {
-				got, err := storageClient.listWorkUnitMessagesBySeverity(ctx, tc.xid, severity, storageClient.client.Single())
+				got, err := storageClient.ListWorkUnitMessagesBySeverity(ctx, tc.xid, severity, essClient.Single())
 				if err != nil {
 					t.Errorf("listWorkUnitMessagesBySeverity(%d, %s) failed: %v", tc.xid, severity, err)
 				}

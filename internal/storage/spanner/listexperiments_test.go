@@ -24,6 +24,7 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner/experiment"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/validator/validator"
 )
@@ -400,7 +401,7 @@ func TestExtractExperimentCursor(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := extractExperimentCursor(tc.entry)
+			got, err := experiment.ExtractExperimentCursor(tc.entry)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("extractExperimentCursor(%v) returned error %v, wantErr=%t", tc.entry, err, tc.wantErr)
 			}

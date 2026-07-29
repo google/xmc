@@ -21,6 +21,7 @@ import (
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner/workunit"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 )
 
@@ -488,7 +489,7 @@ func TestGetWorkUnitResources(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := getWorkUnitResources(tc.wu)
+			got := workunit.GetWorkUnitResources(tc.wu)
 			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
 				t.Errorf("getWorkUnitResources(%v) returned diff (-want +got):\n%s", tc.wu, diff)
 			}
@@ -840,7 +841,7 @@ func TestMergeResourceSets(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mergeResourceSets(tc.a, tc.b)
+			got := workunit.MergeResourceSets(tc.a, tc.b)
 			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
 				t.Errorf("mergeResourceSets(%v, %v) returned diff (-want +got):\n%s", tc.a, tc.b, diff)
 			}

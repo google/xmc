@@ -18,6 +18,7 @@ import importlib.metadata
 from typing import Any
 
 import xmc
+from xmc.integrations.common import extract_scalar, parse_version
 
 MIN_KERAS_VERSION = "3.0.0"
 
@@ -29,14 +30,7 @@ except ImportError as exc:
         "via 'pip install xmc[keras]' or 'pip install keras>=3.0.0'."
     ) from exc
 
-
-def _parse_version(version_str: str) -> tuple[int, ...]:
-    """Parses a version string into an integer tuple for comparison."""
-    parts = []
-    for segment in version_str.split(".")[:3]:
-        digits = "".join(char for char in segment if char.isdigit())
-        parts.append(int(digits) if digits else 0)
-    return tuple(parts)
+_parse_version = parse_version
 
 
 def _validate_keras_version() -> None:
@@ -110,41 +104,8 @@ class XmcKerasCallback(keras.callbacks.Callback):  # type: ignore[misc]
 
     @staticmethod
     def _extract_scalar(val: Any) -> float | int | None:
-        """Extracts a primitive float or int scalar from various framework tensor types.
-
-        Why: Keras 3 supports PyTorch, TensorFlow, and JAX backends. Metrics in 'logs'
-        may be raw floats, NumPy 0d arrays, or PyTorch/TF single-element Tensors.
-        We inspect .item() and .numpy() safely to coerce primitives without letting
-        conversion exceptions disrupt the main training loop.
-        """
-        if isinstance(val, (int, float)):
-            return val
-
-        if hasattr(val, "item") and callable(val.item):
-            try:
-                res = val.item()
-                if isinstance(res, (int, float)):
-                    return res
-            except Exception:
-                pass
-
-        if hasattr(val, "numpy") and callable(val.numpy):
-            try:
-                n_val = val.numpy()
-                if isinstance(n_val, (int, float)):
-                    return n_val
-                if hasattr(n_val, "item") and callable(n_val.item):
-                    res = n_val.item()
-                    if isinstance(res, (int, float)):
-                        return res
-                return float(n_val)
-            except Exception:
-                pass
-
-        try:
-            return float(val)
-        except Exception:
-            return None
+        """Extracts a primitive float or int scalar from various framework tensor types."""
+        return extract_scalar(val)
 
     def on_epoch_begin(self, epoch: int, logs: dict[str, Any] | None = None) -> None:
         """Resets batch counter at the start of each epoch.
