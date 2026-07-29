@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -295,5 +297,58 @@ func TestMockProducer_Close(t *testing.T) {
 	mp.Close()
 	if !mp.closed {
 		t.Errorf("expected mp.closed to be true after Close()")
+	}
+}
+
+func TestIsCongestionError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil error", err: nil, want: false},
+		{name: "kgo ErrClientClosed", err: kgo.ErrClientClosed, want: true},
+		{name: "kerr ThrottlingQuotaExceeded (Code 89)", err: kerr.ThrottlingQuotaExceeded, want: true},
+		{name: "kerr NotEnoughReplicas (Code 19)", err: kerr.NotEnoughReplicas, want: true},
+		{name: "kerr LeaderNotAvailable (Code 5)", err: kerr.LeaderNotAvailable, want: true},
+		{name: "kerr RequestTimedOut (Code 7)", err: kerr.RequestTimedOut, want: true},
+		{name: "kerr BrokerNotAvailable (Code 8)", err: kerr.BrokerNotAvailable, want: true},
+		{name: "kerr KafkaStorageError (Code 56)", err: kerr.KafkaStorageError, want: true},
+		{name: "net OpError dial failure", err: &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}, want: true},
+		{name: "queue limit exceeded string fallback", err: errors.New("franz-go: queue limit reached"), want: true},
+		{name: "broker outage string fallback", err: errors.New("broker outage: connection refused"), want: true},
+		{name: "unrelated error", err: errors.New("invalid proto format"), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsCongestionError(tt.err); got != tt.want {
+				t.Errorf("IsCongestionError(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsClientProduceError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil error", err: nil, want: false},
+		{name: "kerr MessageTooLarge (Code 10)", err: kerr.MessageTooLarge, want: true},
+		{name: "kerr RecordListTooLarge (Code 18)", err: kerr.RecordListTooLarge, want: true},
+		{name: "kerr InvalidRecord (Code 87)", err: kerr.InvalidRecord, want: true},
+		{name: "kerr InvalidTimestamp (Code 32)", err: kerr.InvalidTimestamp, want: true},
+		{name: "kerr RequestTimedOut (Code 7)", err: kerr.RequestTimedOut, want: false},
+		{name: "unrelated error", err: errors.New("some other error"), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsClientProduceError(tt.err); got != tt.want {
+				t.Errorf("IsClientProduceError(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
 	}
 }

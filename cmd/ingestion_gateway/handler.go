@@ -15,7 +15,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -115,16 +117,48 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string) http.
 		// Wait for all in-flight async writes to complete before responding.
 		wg.Wait()
 
-		// If any async publish failed, respond with 503 Service Unavailable (unless request was canceled/timed out).
+		// If request context was canceled or timed out, log and respond with an appropriate error status
+		// to prevent returning a misleading 200 OK to clients if the connection is still open (e.g., during server shutdown or timeouts).
+		if ctx.Err() != nil {
+			logging.Info(ctx, "Metrics ingestion request canceled or timed out", "error", ctx.Err().Error())
+			statusCode := http.StatusServiceUnavailable
+			errType := "service_unavailable"
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				statusCode = http.StatusGatewayTimeout
+				errType = "gateway_timeout"
+			}
+			writeJSONResponse(w, r, statusCode, ServiceUnavailableErrorPayload{
+				Error:   errType,
+				Message: ctx.Err().Error(),
+			})
+			return
+		}
+
+		// If any async publish failed, evaluate error type before responding.
 		if errPtr := publishErr.Load(); errPtr != nil {
-			if ctx.Err() != nil {
-				logging.Info(ctx, "Metrics ingestion request canceled or timed out during publish", "error", ctx.Err().Error())
+			errVal := *errPtr
+			if IsClientProduceError(errVal) {
+				logging.Warn(ctx, "Metrics ingestion request failed due to invalid metric payload", "error", errVal.Error())
+				writeJSONResponse(w, r, http.StatusBadRequest, BadRequestErrorPayload{
+					Error:   "bad_request",
+					Message: errVal.Error(),
+				})
 				return
 			}
-			logging.Error(ctx, "Metrics ingestion request failed due to broker publish error", "error", (*errPtr).Error())
-			writeJSONResponse(w, r, http.StatusServiceUnavailable, ServiceUnavailableErrorPayload{
-				Error:   "service_unavailable",
-				Message: (*errPtr).Error(),
+
+			if IsCongestionError(errVal) {
+				logging.Error(ctx, "Metrics ingestion request failed due to broker congestion or outage", "error", errVal.Error())
+				writeJSONResponse(w, r, http.StatusServiceUnavailable, ServiceUnavailableErrorPayload{
+					Error:   "service_unavailable",
+					Message: errVal.Error(),
+				})
+				return
+			}
+
+			logging.Error(ctx, "Metrics ingestion request failed due to broker publish error", "error", errVal.Error())
+			writeJSONResponse(w, r, http.StatusInternalServerError, ServiceUnavailableErrorPayload{
+				Error:   "internal_server_error",
+				Message: errVal.Error(),
 			})
 			return
 		}
