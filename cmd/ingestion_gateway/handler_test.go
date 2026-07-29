@@ -743,4 +743,3 @@ func TestMetricsIngestionHandler_DroppedPayloadsRecording(t *testing.T) {
 		})
 	}
 }
-}
