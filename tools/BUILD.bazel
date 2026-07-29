@@ -318,3 +318,23 @@ py_test(
         ":tool_utils",
     ],
 )
+
+py_library(
+    name = "parse_coverage_report_lib",
+    srcs = ["parse_coverage_report.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tool_utils",
+    ],
+)
+
+py_test(
+    name = "parse_coverage_report_test",
+    srcs = ["parse_coverage_report_test.py"],
+    imports = ["."],
+    deps = [
+        ":parse_coverage_report_lib",
+        ":tool_utils",
+    ],
+)

@@ -75,9 +75,14 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
    bazel coverage --combined_report=lcov //pkg/auth/oauth2/...
    ```
 2. **Parse & Verify Coverage**:
-   - Locate the coverage output at `bazel-out/_coverage/_coverage_report.dat`.
-   - Verify that 100% of newly added or modified lines of business logic are covered by unit tests.
+   - Parse and verify coverage using `./tools/parse_coverage_report.py`:
+     ```bash
+     ./tools/parse_coverage_report.py --package //pkg/auth/oauth2/...
+     ```
+   - Verify that 100% of newly added or modified lines of business logic are covered by unit tests, checking the `uncovered_line_numbers` array in the JSON output.
+   - Enforce minimum coverage thresholds where applicable (e.g. `--min-coverage 80.0`).
    - Ensure 1-to-1 test file cohesion (each source file must have a dedicated `*_test.go` or `*_test.py` file).
+
 
 ---
 
