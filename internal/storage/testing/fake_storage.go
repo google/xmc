@@ -147,7 +147,7 @@ func (f *FakeStorage) UpdateExperiment(ctx context.Context, update *storage.Expe
 		f.experiments[update.XID] = proto.Clone(update.Experiment).(*essmsgpb.Experiment)
 		return originalClone, proto.Clone(f.experiments[update.XID]).(*essmsgpb.Experiment), nil
 	}
-	merged, err := data.MergeExperiments(original, update.Experiment, update.UpdateMask)
+	merged, err := data.MergeExperiments(originalClone, update.Experiment, update.UpdateMask)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -263,7 +263,7 @@ func (f *FakeStorage) UpdateWorkUnit(ctx context.Context, update *storage.WorkUn
 		f.workUnits[key] = proto.Clone(update.WorkUnit).(*essmsgpb.WorkUnit)
 		return originalClone, proto.Clone(f.workUnits[key]).(*essmsgpb.WorkUnit), nil
 	}
-	merged, err := data.MergeWorkUnits(original, update.WorkUnit, update.UpdateMask)
+	merged, err := data.MergeWorkUnits(originalClone, update.WorkUnit, update.UpdateMask)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -348,7 +348,7 @@ func (f *FakeStorage) RestartWorkUnitExecutions(ctx context.Context, requester s
 			}
 		}
 
-		newEID := int64(2)
+		newEID := int64(1)
 		if currentExec != nil {
 			_, _, eid, err := validator.ValidateWorkUnitExecutionName(currentExec.GetName())
 			if err == nil && eid > 0 {
@@ -470,7 +470,7 @@ func (f *FakeStorage) UpdateArtifact(ctx context.Context, update *storage.Artifa
 		f.artifacts[update.AID] = proto.Clone(update.Artifact).(*essmsgpb.Artifact)
 		return originalClone, proto.Clone(f.artifacts[update.AID]).(*essmsgpb.Artifact), nil
 	}
-	merged, err := data.MergeArtifacts(original, update.Artifact, update.UpdateMask)
+	merged, err := data.MergeArtifacts(originalClone, update.Artifact, update.UpdateMask)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -611,11 +611,12 @@ func (f *FakeStorage) UpdateXidEntry(ctx context.Context, update *storage.XidEnt
 		return nil, fmt.Errorf("XID %d not found: %w", update.XID, status.ErrNotFound)
 	}
 
+	originalClone := proto.Clone(original).(*xidmsgpb.XidEntry)
 	if update.UpdateMask == nil || len(update.UpdateMask.Paths) == 0 {
 		f.xidEntries[update.XID] = proto.Clone(update.XidEntry).(*xidmsgpb.XidEntry)
 		return proto.Clone(f.xidEntries[update.XID]).(*xidmsgpb.XidEntry), nil
 	}
-	merged, err := data.MergeXIDEntries(original, update.XidEntry, update.UpdateMask)
+	merged, err := data.MergeXIDEntries(originalClone, update.XidEntry, update.UpdateMask)
 	if err != nil {
 		return nil, err
 	}

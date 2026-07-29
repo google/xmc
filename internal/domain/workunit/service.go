@@ -77,6 +77,9 @@ func (s *Service) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*e
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch experiment %d: %w", xid, err)
 	}
+	if exp == nil {
+		return nil, fmt.Errorf("experiment %d not found", xid)
+	}
 	if exp.Status == nil {
 		exp.Status = &essmsgpb.ExperimentStatus{}
 	}
@@ -135,6 +138,9 @@ func (s *Service) RestartWorkUnitExecutions(ctx context.Context, requester strin
 	exp, err := s.storage.FetchExperiment(ctx, xid)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch experiment %d: %w", xid, err)
+	}
+	if exp == nil {
+		return nil, fmt.Errorf("experiment %d not found", xid)
 	}
 	if exp.Status == nil {
 		exp.Status = &essmsgpb.ExperimentStatus{}
