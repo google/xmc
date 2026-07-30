@@ -97,7 +97,7 @@ func main() {
 		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
-	spb.RegisterRODDataServiceServer(grpcServer, newServer(cfg, kueueCache))
+	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache))
 	reflection.Register(grpcServer)
 
 	go func() {
@@ -112,7 +112,7 @@ func main() {
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
-	err = spb.RegisterRODDataServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
+	err = spb.RegisterResourceObservabilityServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to register gateway", "error", err)
 	}

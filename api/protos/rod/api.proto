@@ -20,8 +20,8 @@ import "google/api/annotations.proto";
 
 option go_package = "xmanager_cloud/api/protos/rod";
 
-// RODDataService provides Resource Observability Dashboard backend APIs.
-service RODDataService {
+// ResourceObservabilityService provides Resource Observability Dashboard backend APIs.
+service ResourceObservabilityService {
   // TODO: Implement the rest of methods
 
   // Gets ClusterQueues matching resource requirements and capacity constraints.

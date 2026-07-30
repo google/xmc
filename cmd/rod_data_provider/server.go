@@ -22,7 +22,7 @@ import (
 )
 
 type server struct {
-	spb.UnimplementedRODDataServiceServer
+	spb.UnimplementedResourceObservabilityServiceServer
 	cfg   *Config
 	cache *KueueCache
 }
