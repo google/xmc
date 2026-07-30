@@ -20,86 +20,75 @@ import (
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
-// KueueCache maintains an in-memory thread-safe cache of ClusterQueue, LocalQueue, and ResourceFlavor CRDs.
-type KueueCache struct {
-	mu              sync.RWMutex
-	clusterQueues   map[string]*kueuev1beta1.ClusterQueue
-	localQueues     map[string]*kueuev1beta1.LocalQueue
-	resourceFlavors map[string]*kueuev1beta1.ResourceFlavor
+// ResourceCache is an arbitrary, thread-safe, generic in-memory cache for any object type T.
+type ResourceCache[T any] struct {
+	mu    sync.RWMutex
+	items map[string]T
 }
 
-// NewKueueCache initializes an empty KueueCache.
-func NewKueueCache() *KueueCache {
-	return &KueueCache{
-		clusterQueues:   make(map[string]*kueuev1beta1.ClusterQueue),
-		localQueues:     make(map[string]*kueuev1beta1.LocalQueue),
-		resourceFlavors: make(map[string]*kueuev1beta1.ResourceFlavor),
+// NewResourceCache initializes a new empty ResourceCache for type T.
+func NewResourceCache[T any]() *ResourceCache[T] {
+	return &ResourceCache[T]{
+		items: make(map[string]T),
 	}
 }
 
-func (c *KueueCache) SetClusterQueue(cq *kueuev1beta1.ClusterQueue) {
+// Set stores a key-value pair in the cache.
+func (c *ResourceCache[T]) Set(key string, val T) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.clusterQueues[cq.Name] = cq.DeepCopy()
+	c.items[key] = val
 }
 
-func (c *KueueCache) DeleteClusterQueue(name string) {
+// Delete removes an item by key from the cache.
+func (c *ResourceCache[T]) Delete(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	delete(c.clusterQueues, name)
+	delete(c.items, key)
 }
 
-func (c *KueueCache) SetLocalQueue(lq *kueuev1beta1.LocalQueue) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	key := lq.Namespace + "/" + lq.Name
-	c.localQueues[key] = lq.DeepCopy()
-}
-
-func (c *KueueCache) DeleteLocalQueue(namespace, name string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.localQueues, namespace+"/"+name)
-}
-
-func (c *KueueCache) SetResourceFlavor(rf *kueuev1beta1.ResourceFlavor) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.resourceFlavors[rf.Name] = rf.DeepCopy()
-}
-
-func (c *KueueCache) DeleteResourceFlavor(name string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.resourceFlavors, name)
-}
-
-func (c *KueueCache) GetClusterQueues() []*kueuev1beta1.ClusterQueue {
+// Get retrieves an item by key from the cache.
+func (c *ResourceCache[T]) Get(key string) (T, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	list := make([]*kueuev1beta1.ClusterQueue, 0, len(c.clusterQueues))
-	for _, cq := range c.clusterQueues {
-		list = append(list, cq.DeepCopy())
+	val, ok := c.items[key]
+	return val, ok
+}
+
+// List returns all cached items as a slice.
+func (c *ResourceCache[T]) List() []T {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	list := make([]T, 0, len(c.items))
+	for _, item := range c.items {
+		list = append(list, item)
 	}
 	return list
 }
 
-func (c *KueueCache) GetLocalQueues() []*kueuev1beta1.LocalQueue {
+// Map returns a copy of the internal map of key-value pairs.
+func (c *ResourceCache[T]) Map() map[string]T {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	list := make([]*kueuev1beta1.LocalQueue, 0, len(c.localQueues))
-	for _, lq := range c.localQueues {
-		list = append(list, lq.DeepCopy())
-	}
-	return list
-}
-
-func (c *KueueCache) GetResourceFlavors() map[string]*kueuev1beta1.ResourceFlavor {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	m := make(map[string]*kueuev1beta1.ResourceFlavor, len(c.resourceFlavors))
-	for k, rf := range c.resourceFlavors {
-		m[k] = rf.DeepCopy()
+	m := make(map[string]T, len(c.items))
+	for k, v := range c.items {
+		m[k] = v
 	}
 	return m
+}
+
+// KueueCache holds 3 instances of generic ResourceCache for ClusterQueue, LocalQueue, and ResourceFlavor.
+type KueueCache struct {
+	ClusterQueues   *ResourceCache[*kueuev1beta1.ClusterQueue]
+	LocalQueues     *ResourceCache[*kueuev1beta1.LocalQueue]
+	ResourceFlavors *ResourceCache[*kueuev1beta1.ResourceFlavor]
+}
+
+// NewKueueCache initializes a KueueCache with 3 generic ResourceCache instances.
+func NewKueueCache() *KueueCache {
+	return &KueueCache{
+		ClusterQueues:   NewResourceCache[*kueuev1beta1.ClusterQueue](),
+		LocalQueues:     NewResourceCache[*kueuev1beta1.LocalQueue](),
+		ResourceFlavors: NewResourceCache[*kueuev1beta1.ResourceFlavor](),
+	}
 }

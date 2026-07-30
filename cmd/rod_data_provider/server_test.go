@@ -28,8 +28,8 @@ func TestGetFittingQueues(t *testing.T) {
 	cq1 := createTestClusterQueueTyped("cluster-queue-a", "default-cohort", "BestEffortFIFO", "8", "4", "2")
 	cq2 := createTestClusterQueueTyped("cluster-queue-b", "gpu-cohort", "StrictFIFO", "16", "8", "4")
 
-	cache.SetClusterQueue(cq1)
-	cache.SetClusterQueue(cq2)
+	cache.ClusterQueues.Set("cluster-queue-a", cq1)
+	cache.ClusterQueues.Set("cluster-queue-b", cq2)
 
 	cfg := &Config{
 		Port:     "8080",

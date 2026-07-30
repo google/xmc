@@ -27,8 +27,8 @@ func FetchClusterQueues(ctx context.Context, cache *KueueCache, req *spb.GetFitt
 		return []*spb.QueueOverview{}, nil
 	}
 
-	cqList := cache.GetClusterQueues()
-	rfMap := cache.GetResourceFlavors()
+	cqList := cache.ClusterQueues.List()
+	rfMap := cache.ResourceFlavors.Map()
 
 	var results []*spb.QueueOverview
 	for _, cq := range cqList {

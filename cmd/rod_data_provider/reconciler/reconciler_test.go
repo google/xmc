@@ -26,42 +26,20 @@ import (
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
-type mockCache struct {
-	clusterQueues   map[string]*kueuev1beta1.ClusterQueue
-	localQueues     map[string]*kueuev1beta1.LocalQueue
-	resourceFlavors map[string]*kueuev1beta1.ResourceFlavor
+type mockCache[T any] struct {
+	items map[string]T
 }
 
-func newMockCache() *mockCache {
-	return &mockCache{
-		clusterQueues:   make(map[string]*kueuev1beta1.ClusterQueue),
-		localQueues:     make(map[string]*kueuev1beta1.LocalQueue),
-		resourceFlavors: make(map[string]*kueuev1beta1.ResourceFlavor),
-	}
+func newMockCache[T any]() *mockCache[T] {
+	return &mockCache[T]{items: make(map[string]T)}
 }
 
-func (m *mockCache) SetClusterQueue(cq *kueuev1beta1.ClusterQueue) {
-	m.clusterQueues[cq.Name] = cq.DeepCopy()
+func (m *mockCache[T]) Set(key string, val T) {
+	m.items[key] = val
 }
 
-func (m *mockCache) DeleteClusterQueue(name string) {
-	delete(m.clusterQueues, name)
-}
-
-func (m *mockCache) SetLocalQueue(lq *kueuev1beta1.LocalQueue) {
-	m.localQueues[lq.Namespace+"/"+lq.Name] = lq.DeepCopy()
-}
-
-func (m *mockCache) DeleteLocalQueue(namespace, name string) {
-	delete(m.localQueues, namespace+"/"+name)
-}
-
-func (m *mockCache) SetResourceFlavor(rf *kueuev1beta1.ResourceFlavor) {
-	m.resourceFlavors[rf.Name] = rf.DeepCopy()
-}
-
-func (m *mockCache) DeleteResourceFlavor(name string) {
-	delete(m.resourceFlavors, name)
+func (m *mockCache[T]) Delete(key string) {
+	delete(m.items, key)
 }
 
 func TestClusterQueueReconciler(t *testing.T) {
@@ -72,7 +50,7 @@ func TestClusterQueueReconciler(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "cq-test"},
 	}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cq).Build()
-	cache := newMockCache()
+	cache := newMockCache[*kueuev1beta1.ClusterQueue]()
 
 	rec := &ClusterQueueReconciler{Client: client, Cache: cache}
 	ctx := context.Background()
@@ -82,7 +60,7 @@ func TestClusterQueueReconciler(t *testing.T) {
 		t.Fatalf("Reconcile failed: %v", err)
 	}
 
-	if _, ok := cache.clusterQueues["cq-test"]; !ok {
+	if _, ok := cache.items["cq-test"]; !ok {
 		t.Errorf("expected cq-test to be cached")
 	}
 
@@ -92,7 +70,7 @@ func TestClusterQueueReconciler(t *testing.T) {
 		t.Fatalf("Reconcile delete failed: %v", err)
 	}
 
-	if _, ok := cache.clusterQueues["cq-test"]; ok {
+	if _, ok := cache.items["cq-test"]; ok {
 		t.Errorf("expected cq-test to be deleted from cache")
 	}
 }
@@ -105,7 +83,7 @@ func TestLocalQueueReconciler(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "lq-test", Namespace: "default"},
 	}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(lq).Build()
-	cache := newMockCache()
+	cache := newMockCache[*kueuev1beta1.LocalQueue]()
 
 	rec := &LocalQueueReconciler{Client: client, Cache: cache}
 	ctx := context.Background()
@@ -115,7 +93,7 @@ func TestLocalQueueReconciler(t *testing.T) {
 		t.Fatalf("Reconcile failed: %v", err)
 	}
 
-	if _, ok := cache.localQueues["default/lq-test"]; !ok {
+	if _, ok := cache.items["default/lq-test"]; !ok {
 		t.Errorf("expected default/lq-test to be cached")
 	}
 
@@ -124,7 +102,7 @@ func TestLocalQueueReconciler(t *testing.T) {
 		t.Fatalf("Reconcile delete failed: %v", err)
 	}
 
-	if _, ok := cache.localQueues["default/lq-test"]; ok {
+	if _, ok := cache.items["default/lq-test"]; ok {
 		t.Errorf("expected default/lq-test to be deleted from cache")
 	}
 }
@@ -137,7 +115,7 @@ func TestResourceFlavorReconciler(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "rf-test"},
 	}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rf).Build()
-	cache := newMockCache()
+	cache := newMockCache[*kueuev1beta1.ResourceFlavor]()
 
 	rec := &ResourceFlavorReconciler{Client: client, Cache: cache}
 	ctx := context.Background()
@@ -147,7 +125,7 @@ func TestResourceFlavorReconciler(t *testing.T) {
 		t.Fatalf("Reconcile failed: %v", err)
 	}
 
-	if _, ok := cache.resourceFlavors["rf-test"]; !ok {
+	if _, ok := cache.items["rf-test"]; !ok {
 		t.Errorf("expected rf-test to be cached")
 	}
 
@@ -156,7 +134,7 @@ func TestResourceFlavorReconciler(t *testing.T) {
 		t.Fatalf("Reconcile delete failed: %v", err)
 	}
 
-	if _, ok := cache.resourceFlavors["rf-test"]; ok {
+	if _, ok := cache.items["rf-test"]; ok {
 		t.Errorf("expected rf-test to be deleted from cache")
 	}
 }

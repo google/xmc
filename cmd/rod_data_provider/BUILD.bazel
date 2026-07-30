@@ -71,6 +71,7 @@ oci_image_for_service(
 compat_go_test(
     name = "server_test",
     srcs = [
+        "cache_test.go",
         "config_test.go",
         "converters_test.go",
         "server_test.go",

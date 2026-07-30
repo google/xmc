@@ -74,8 +74,10 @@ func main() {
 			logging.Warn(ctx, "Failed to create controller-runtime manager", "error", err)
 		} else {
 			collector := &reconciler.KueueCollector{
-				Client: mgr.GetClient(),
-				Cache:  kueueCache,
+				Client:          mgr.GetClient(),
+				ClusterQueues:   kueueCache.ClusterQueues,
+				LocalQueues:     kueueCache.LocalQueues,
+				ResourceFlavors: kueueCache.ResourceFlavors,
 			}
 			if err := collector.SetupWithManager(ctx, mgr); err != nil {
 				logging.Warn(ctx, "Failed to setup KueueCollector with manager", "error", err)

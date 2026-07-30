@@ -26,19 +26,19 @@ import (
 // LocalQueueReconciler reconciles LocalQueue custom resources and updates the in-memory cache.
 type LocalQueueReconciler struct {
 	client.Client
-	Cache Cache
+	Cache Cache[*kueuev1beta1.LocalQueue]
 }
 
 func (r *LocalQueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var lq kueuev1beta1.LocalQueue
 	if err := r.Get(ctx, req.NamespacedName, &lq); err != nil {
 		if errors.IsNotFound(err) {
-			r.Cache.DeleteLocalQueue(req.Namespace, req.Name)
+			r.Cache.Delete(req.Namespace + "/" + req.Name)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
-	r.Cache.SetLocalQueue(&lq)
+	r.Cache.Set(req.Namespace+"/"+req.Name, lq.DeepCopy())
 	return ctrl.Result{}, nil
 }
 

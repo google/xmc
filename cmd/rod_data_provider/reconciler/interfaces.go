@@ -14,16 +14,8 @@
 
 package reconciler
 
-import (
-	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-)
-
-// Cache defines the cache operations consumed by Kueue reconcilers.
-type Cache interface {
-	SetClusterQueue(cq *kueuev1beta1.ClusterQueue)
-	DeleteClusterQueue(name string)
-	SetLocalQueue(lq *kueuev1beta1.LocalQueue)
-	DeleteLocalQueue(namespace, name string)
-	SetResourceFlavor(rf *kueuev1beta1.ResourceFlavor)
-	DeleteResourceFlavor(name string)
+// Cache defines generic cache operations for an entity type T consumed by Kueue reconcilers.
+type Cache[T any] interface {
+	Set(key string, val T)
+	Delete(key string)
 }

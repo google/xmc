@@ -120,10 +120,10 @@ func TestFetchClusterQueuesWithCache(t *testing.T) {
 	lq1 := createTestLocalQueueTyped("lq-team-a", "team-a", "cq-gpu-1")
 	rf1 := createTestResourceFlavorTyped("default-flavor", map[string]string{"cloud.google.com/gke-accelerator": "nvidia-tesla-h100"})
 
-	cache.SetClusterQueue(cq1)
-	cache.SetClusterQueue(cq2)
-	cache.SetLocalQueue(lq1)
-	cache.SetResourceFlavor(rf1)
+	cache.ClusterQueues.Set("cq-gpu-1", cq1)
+	cache.ClusterQueues.Set("cq-cpu-2", cq2)
+	cache.LocalQueues.Set("team-a/lq-team-a", lq1)
+	cache.ResourceFlavors.Set("default-flavor", rf1)
 
 	tests := []struct {
 		name      string
