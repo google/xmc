@@ -30,7 +30,8 @@ function setup() {
         return resourceDashboardEnabledValue;
       },
     };
-    const routerSpy = jasmine.createSpyObj('Router', ['navigate']);
+    const routerSpy = jasmine.createSpyObj('Router', ['parseUrl']);
+    routerSpy.parseUrl.and.callFake((url: string) => url as any);
 
     setupModule({
       providers: [
@@ -58,17 +59,17 @@ describe('resourceDashboardGuard', () => {
     );
 
     expect(result).toBeTrue();
-    expect(state.routerSpy.navigate).not.toHaveBeenCalled();
+    expect(state.routerSpy.parseUrl).not.toHaveBeenCalled();
   });
 
-  it('should redirect to / and return false if resource dashboard is disabled', () => {
+  it('should return UrlTree redirecting to / if resource dashboard is disabled', () => {
     state.setResourceDashboardEnabled(false);
 
     const result = TestBed.runInInjectionContext(() =>
       resourceDashboardGuard({} as any, {} as any),
     );
 
-    expect(result).toBeFalse();
-    expect(state.routerSpy.navigate).toHaveBeenCalledWith(['/']);
+    expect(result).toEqual('/' as any);
+    expect(state.routerSpy.parseUrl).toHaveBeenCalledWith('/');
   });
 });

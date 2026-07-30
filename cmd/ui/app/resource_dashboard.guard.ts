@@ -13,11 +13,11 @@
 // limitations under the License.
 
 import { inject } from '@angular/core';
-import { CanActivateFn, Router } from '@angular/router';
+import { CanActivateFn, Router, UrlTree } from '@angular/router';
 
 import { FeatureFlagService } from './service/feature_flag_service';
 
-export const resourceDashboardGuard: CanActivateFn = () => {
+export const resourceDashboardGuard: CanActivateFn = (): boolean | UrlTree => {
   const featureFlagService = inject(FeatureFlagService);
   const router = inject(Router);
 
@@ -25,6 +25,5 @@ export const resourceDashboardGuard: CanActivateFn = () => {
     return true;
   }
 
-  router.navigate(['/']);
-  return false;
+  return router.parseUrl('/');
 };
