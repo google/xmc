@@ -70,7 +70,11 @@ go_proto_library(
 
 go_proto_library(
     name = "service_go_proto",
-    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//api/protos/experiment:go_grpc_gateway",
+    ],
     importpath = "xmanager_cloud/dashboard_service/proto/service_go_proto",
     proto = ":dashboard_service_proto",
     deps = [
@@ -87,5 +91,10 @@ alias(
 
 alias(
     name = "api_go_grpc_proto",
+    actual = ":service_go_proto",
+)
+
+alias(
+    name = "api_go_grpc_gateway_proto",
     actual = ":service_go_proto",
 )
