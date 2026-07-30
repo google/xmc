@@ -7,7 +7,6 @@ This document defines coding standards and conventions for Go development across
 ## 1. Style & Conventions
 - **Idiomatic Go Style Guide**: Strictly follow standard Go conventions and Effective Go style recommendations.
 - **Simplicity & Readability**: Keep Go code clean, explicit, and idiomatic. Avoid unnecessary reflection or overly abstract abstractions.
-- **Function Return Limit (Max 2)**: Functions should return at most 2 values (e.g. `(T, error)` or `(T, bool)`). Avoid returning 3 or more values to prevent positional parameter ambiguity; define a dedicated struct (e.g., `type authIdentity struct { ... }`) instead.
 
 ## 2. Interface Design
 - **Small, Focused Interfaces**: Keep interfaces small and decoupled (typically 1–3 methods). Define interfaces where they are consumed rather than where they are implemented.
