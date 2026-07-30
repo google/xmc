@@ -21,11 +21,12 @@ package(default_visibility = ["//visibility:public"])
 compat_go_library(
     name = "rod_data_provider_lib",
     srcs = [
-        "cache.go",
         "config.go",
         "converters.go",
         "k8s_resource_utils.go",
+        "kueue_cache.go",
         "main.go",
+        "resource_cache.go",
         "server.go",
     ],
     visibility = ["//visibility:private"],

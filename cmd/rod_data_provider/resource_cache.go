@@ -16,8 +16,6 @@ package main
 
 import (
 	"sync"
-
-	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
 // ResourceCache is an arbitrary, thread-safe, generic in-memory cache for any object type T.
@@ -75,20 +73,4 @@ func (c *ResourceCache[T]) Map() map[string]T {
 		m[k] = v
 	}
 	return m
-}
-
-// KueueCache holds 3 instances of generic ResourceCache for ClusterQueue, LocalQueue, and ResourceFlavor.
-type KueueCache struct {
-	ClusterQueues   *ResourceCache[*kueuev1beta1.ClusterQueue]
-	LocalQueues     *ResourceCache[*kueuev1beta1.LocalQueue]
-	ResourceFlavors *ResourceCache[*kueuev1beta1.ResourceFlavor]
-}
-
-// NewKueueCache initializes a KueueCache with 3 generic ResourceCache instances.
-func NewKueueCache() *KueueCache {
-	return &KueueCache{
-		ClusterQueues:   NewResourceCache[*kueuev1beta1.ClusterQueue](),
-		LocalQueues:     NewResourceCache[*kueuev1beta1.LocalQueue](),
-		ResourceFlavors: NewResourceCache[*kueuev1beta1.ResourceFlavor](),
-	}
 }
