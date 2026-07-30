@@ -145,39 +145,7 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string, gMetr
 
 		// If any async publish failed, evaluate error type before responding.
 		if errPtr := publishErr.Load(); errPtr != nil {
-			errVal := *errPtr
-			if IsClientProduceError(errVal) {
-				logging.Warn(ctx, "Metrics ingestion request failed due to invalid metric payload", "error", errVal.Error())
-				if gMetrics != nil {
-					gMetrics.RecordDroppedPayload("client_produce_error")
-				}
-				writeJSONResponse(w, r, http.StatusBadRequest, BadRequestErrorPayload{
-					Error:   "bad_request",
-					Message: errVal.Error(),
-				})
-				return
-			}
-
-			if IsCongestionError(errVal) {
-				logging.Error(ctx, "Metrics ingestion request failed due to broker congestion or outage", "error", errVal.Error())
-				if gMetrics != nil {
-					gMetrics.RecordDroppedPayload("congestion_error")
-				}
-				writeJSONResponse(w, r, http.StatusServiceUnavailable, ServiceUnavailableErrorPayload{
-					Error:   "service_unavailable",
-					Message: errVal.Error(),
-				})
-				return
-			}
-
-			logging.Error(ctx, "Metrics ingestion request failed due to broker publish error", "error", errVal.Error())
-			if gMetrics != nil {
-				gMetrics.RecordDroppedPayload("broker_publish_error")
-			}
-			writeJSONResponse(w, r, http.StatusInternalServerError, ServiceUnavailableErrorPayload{
-				Error:   "internal_server_error",
-				Message: errVal.Error(),
-			})
+			handlePublishError(ctx, w, r, gMetrics, *errPtr)
 			return
 		}
 
@@ -227,4 +195,39 @@ func drainRequestBody(r io.Reader, maxBytes int64) {
 		return
 	}
 	io.Copy(io.Discard, io.LimitReader(r, maxBytes))
+}
+
+func handlePublishError(ctx context.Context, w http.ResponseWriter, r *http.Request, gMetrics *GatewayMetrics, err error) {
+	if IsClientProduceError(err) {
+		logging.Warn(ctx, "Metrics ingestion request failed due to invalid metric payload", "error", err.Error())
+		if gMetrics != nil {
+			gMetrics.RecordDroppedPayload("client_produce_error")
+		}
+		writeJSONResponse(w, r, http.StatusBadRequest, BadRequestErrorPayload{
+			Error:   "bad_request",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	if IsCongestionError(err) {
+		logging.Error(ctx, "Metrics ingestion request failed due to broker congestion or outage", "error", err.Error())
+		if gMetrics != nil {
+			gMetrics.RecordDroppedPayload("congestion_error")
+		}
+		writeJSONResponse(w, r, http.StatusServiceUnavailable, ServiceUnavailableErrorPayload{
+			Error:   "service_unavailable",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	logging.Error(ctx, "Metrics ingestion request failed due to broker publish error", "error", err.Error())
+	if gMetrics != nil {
+		gMetrics.RecordDroppedPayload("broker_publish_error")
+	}
+	writeJSONResponse(w, r, http.StatusInternalServerError, ServiceUnavailableErrorPayload{
+		Error:   "internal_server_error",
+		Message: err.Error(),
+	})
 }

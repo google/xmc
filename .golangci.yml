@@ -58,9 +58,6 @@ issues:
     - path: ".*_test\\.go"
       linters:
         - nestif
-    - path: "cmd/.*"
-      linters:
-        - nestif
     - path: "internal/query_generator/.*"
       linters:
         - nestif

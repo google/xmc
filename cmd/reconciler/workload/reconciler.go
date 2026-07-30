@@ -280,36 +280,8 @@ func areWorkloadStatusEqual(old, new *v1beta1.Workload) bool {
 		return false
 	}
 
-	if (o.Admission == nil) != (n.Admission == nil) {
+	if !admissionEqual(o.Admission, n.Admission) {
 		return false
-	}
-	if o.Admission != nil && n.Admission != nil {
-		if o.Admission.ClusterQueue != n.Admission.ClusterQueue {
-			return false
-		}
-		if len(o.Admission.PodSetAssignments) != len(n.Admission.PodSetAssignments) {
-			return false
-		}
-		for i := range o.Admission.PodSetAssignments {
-			oa, na := o.Admission.PodSetAssignments[i], n.Admission.PodSetAssignments[i]
-			if oa.Name != na.Name {
-				return false
-			}
-			if (oa.Count == nil) != (na.Count == nil) {
-				return false
-			}
-			if oa.Count != nil && na.Count != nil && *oa.Count != *na.Count {
-				return false
-			}
-			if len(oa.Flavors) != len(na.Flavors) {
-				return false
-			}
-			for k, v := range oa.Flavors {
-				if na.Flavors[k] != v {
-					return false
-				}
-			}
-		}
 	}
 
 	if len(o.Conditions) != len(n.Conditions) {
@@ -324,5 +296,47 @@ func areWorkloadStatusEqual(old, new *v1beta1.Workload) bool {
 		}
 	}
 
+	return true
+}
+
+func admissionEqual(o, n *v1beta1.Admission) bool {
+	if (o == nil) != (n == nil) {
+		return false
+	}
+	if o == nil && n == nil {
+		return true
+	}
+	if o.ClusterQueue != n.ClusterQueue {
+		return false
+	}
+	if len(o.PodSetAssignments) != len(n.PodSetAssignments) {
+		return false
+	}
+	for i := range o.PodSetAssignments {
+		if !podSetAssignmentEqual(&o.PodSetAssignments[i], &n.PodSetAssignments[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func podSetAssignmentEqual(oa, na *v1beta1.PodSetAssignment) bool {
+	if oa.Name != na.Name {
+		return false
+	}
+	if (oa.Count == nil) != (na.Count == nil) {
+		return false
+	}
+	if oa.Count != nil && na.Count != nil && *oa.Count != *na.Count {
+		return false
+	}
+	if len(oa.Flavors) != len(na.Flavors) {
+		return false
+	}
+	for k, v := range oa.Flavors {
+		if na.Flavors[k] != v {
+			return false
+		}
+	}
 	return true
 }
