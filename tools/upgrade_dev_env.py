@@ -472,9 +472,71 @@ def sanitize_workload_identity_module(ctk_dir: Path) -> None:
     for tf_file in ctk_dir.rglob("*.tf"):
         if "workload-identity" in str(tf_file):
             content = tf_file.read_text(encoding="utf-8")
-            if pattern.search(content):
-                new_content = pattern.sub("# moved block removed", content)
+            new_content, count = pattern.subn("# moved block removed", content)
+            if count > 0:
                 tf_file.write_text(new_content, encoding="utf-8")
+
+
+def _find_terraform_bin() -> str | None:
+    """Locates terraform binary in system PATH or HPC toolkit cache."""
+    tf_bin = shutil.which("terraform")
+    if tf_bin:
+        return tf_bin
+    hpc_cache = Path.home() / ".cache" / "hpc-toolkit"
+    if hpc_cache.exists():
+        tf_bins = list(hpc_cache.rglob("terraform"))
+        if tf_bins:
+            return str(tf_bins[0])
+    return None
+
+
+def _propagate_primary_outputs(ctk_dir: Path, config: Config) -> None:
+    """Exports and copies primary group outputs to dependent groups with fallback SA handling."""
+    log_info("Exporting outputs for deployment group 'primary'...")
+    run_cmd(
+        ["./cluster-toolkit/gcluster", "export-outputs", str(ctk_dir / "primary")],
+        check=False,
+    )
+
+    primary_artifact = ctk_dir / ".ghpc" / "artifacts" / "primary_outputs.tfvars"
+    if not primary_artifact.exists():
+        return
+
+    for group in ["compute", "xmc_app"]:
+        dest = ctk_dir / group / "primary_inputs.auto.tfvars"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(primary_artifact, dest)
+        content = dest.read_text(encoding="utf-8")
+        if "service_account_email_health_service_gcp_sa" not in content:
+            fallback_sa = (
+                f"{config.deployment_name}-xmc-wl-sa@{config.project_id}.iam.gserviceaccount.com"
+            )
+            dest.write_text(
+                f'{content.rstrip()}\nservice_account_email_health_service_gcp_sa = "{fallback_sa}"\n',
+                encoding="utf-8",
+            )
+
+
+def _propagate_compute_outputs(ctk_dir: Path) -> None:
+    """Exports and copies compute group outputs to xmc_app group."""
+    compute_dir = ctk_dir / "compute"
+    if not compute_dir.exists():
+        return
+
+    log_info("Exporting outputs for deployment group 'compute'...")
+    tf_bin = _find_terraform_bin()
+    if tf_bin:
+        run_cmd([tf_bin, f"-chdir={compute_dir}", "init", "-backend=false"], check=False)
+    run_cmd(
+        ["./cluster-toolkit/gcluster", "export-outputs", str(compute_dir)],
+        check=False,
+    )
+
+    compute_artifact = ctk_dir / ".ghpc" / "artifacts" / "compute_outputs.tfvars"
+    if compute_artifact.exists():
+        dest = ctk_dir / "xmc_app" / "compute_inputs.auto.tfvars"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(compute_artifact, dest)
 
 
 def step_app(config: Config) -> None:
@@ -506,47 +568,8 @@ def step_app(config: Config) -> None:
     )
 
     sanitize_workload_identity_module(ctk_dir)
-
-    log_info("Exporting outputs for deployment group 'primary'...")
-    run_cmd(
-        ["./cluster-toolkit/gcluster", "export-outputs", f"{ctk_dir}/primary"],
-        check=False,
-    )
-
-    primary_artifact = ctk_dir / ".ghpc" / "artifacts" / "primary_outputs.tfvars"
-    if primary_artifact.exists():
-        for group in ["compute", "xmc_app"]:
-            dest = ctk_dir / group / "primary_inputs.auto.tfvars"
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(primary_artifact, dest)
-            content = dest.read_text(encoding="utf-8")
-            if "service_account_email_health_service_gcp_sa" not in content:
-                # Provide fallback for health_service GCP SA when health_service is disabled
-                fallback_sa = f"{config.deployment_name}-xmc-wl-sa@{config.project_id}.iam.gserviceaccount.com"
-                with open(dest, "a", encoding="utf-8") as f:
-                    f.write(f'\nservice_account_email_health_service_gcp_sa = "{fallback_sa}"\n')
-
-    log_info("Exporting outputs for deployment group 'compute'...")
-    compute_dir = ctk_dir / "compute"
-    if compute_dir.exists():
-        tf_bin = shutil.which("terraform")
-        if not tf_bin:
-            hpc_cache = Path.home() / ".cache" / "hpc-toolkit"
-            tf_bins = list(hpc_cache.rglob("terraform")) if hpc_cache.exists() else []
-            if tf_bins:
-                tf_bin = str(tf_bins[0])
-        if tf_bin:
-            run_cmd([tf_bin, f"-chdir={compute_dir}", "init", "-backend=false"], check=False)
-        run_cmd(
-            ["./cluster-toolkit/gcluster", "export-outputs", str(compute_dir)],
-            check=False,
-        )
-
-    compute_artifact = ctk_dir / ".ghpc" / "artifacts" / "compute_outputs.tfvars"
-    if compute_artifact.exists():
-        dest = ctk_dir / "xmc_app" / "compute_inputs.auto.tfvars"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(compute_artifact, dest)
+    _propagate_primary_outputs(ctk_dir, config)
+    _propagate_compute_outputs(ctk_dir)
 
     log_info("Running gcluster deploy for group 'xmc_app'...")
     run_cmd(

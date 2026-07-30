@@ -99,7 +99,7 @@ If no migrations were pending, or if the user approved running migrations:
     ```
 
 > [!NOTE]
-> During the `app` step, `upgrade_dev_env.py` automatically re-compiles the Cluster Toolkit blueprint (`gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d ... --force`) and exports outputs across prerequisite groups (`apis`, `primary`, `compute`) so that all updated feature flags, environment variables, and Helm values are propagated to `ctk-out/` before applying Kubernetes workload updates.
+> During the `app` step, `upgrade_dev_env.py` automatically re-compiles the Cluster Toolkit blueprint (`gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d ... --force`) and exports outputs across prerequisite groups (`primary`, `compute`) so that all updated feature flags, environment variables, and Helm values are propagated to `ctk-out/` before applying Kubernetes workload updates.
 
 ### Resuming or Running Specific Steps (Advanced / Troubleshooting)
 If the upgrade fails at a specific phase, or if you need to rerun a specific part of the workflow:
