@@ -246,18 +246,25 @@ func (a *Authenticator) crossOriginProtection(next http.Handler) http.Handler {
 			log.Printf("[Middleware COP] Failed to add allowed origin %q: %v", origin, err)
 		}
 	}
-	if a.Config.FrontendURL != "" {
-		u, err := url.Parse(a.Config.FrontendURL)
-		if err == nil && u.Scheme != "" && u.Host != "" {
-			frontendOrigin := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
-			if err := cop.AddTrustedOrigin(frontendOrigin); err != nil {
-				log.Printf("[Middleware COP] Failed to add frontend origin %q: %v", frontendOrigin, err)
-			}
-		} else if err != nil {
-			log.Printf("[Middleware COP] Failed to parse frontend URL %q: %v", a.Config.FrontendURL, err)
-		} else {
-			log.Printf("[Middleware COP] Frontend URL %q is missing scheme or host", a.Config.FrontendURL)
-		}
-	}
+	addFrontendTrustedOrigin(cop, a.Config.FrontendURL)
 	return cop.Handler(next)
+}
+
+func addFrontendTrustedOrigin(cop *http.CrossOriginProtection, frontendURL string) {
+	if frontendURL == "" {
+		return
+	}
+	u, err := url.Parse(frontendURL)
+	if err != nil {
+		log.Printf("[Middleware COP] Failed to parse frontend URL %q: %v", frontendURL, err)
+		return
+	}
+	if u.Scheme == "" || u.Host == "" {
+		log.Printf("[Middleware COP] Frontend URL %q is missing scheme or host", frontendURL)
+		return
+	}
+	frontendOrigin := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
+	if err := cop.AddTrustedOrigin(frontendOrigin); err != nil {
+		log.Printf("[Middleware COP] Failed to add frontend origin %q: %v", frontendOrigin, err)
+	}
 }

@@ -722,7 +722,6 @@ func TestOptimizedSuccess(t *testing.T) {
 }
 
 func TestRestrictionTranslate(t *testing.T) {
-
 	type TestCase struct {
 		description    string
 		query          safesql.TrustedSQLString
@@ -819,7 +818,6 @@ func TestRestrictionTranslate(t *testing.T) {
 				out.GetRhs().GetPhrase().GetValues()[0] = newphrase
 			}
 			return out
-
 		}
 		if err := f.AppendFilters(exp); err != nil {
 			t.Errorf("%s - Append(%v): %v", tc.description, exp, err)

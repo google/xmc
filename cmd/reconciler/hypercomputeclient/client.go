@@ -412,7 +412,6 @@ type UpdateMLRunOptions struct {
 // UpdateMLRun updates an existing ML run. It fetches the current state, applies
 // the requested changes, and PATCHes the resource with update_mask=*.
 func (c *ControlPlaneClient) UpdateMLRun(ctx context.Context, name string, opts *UpdateMLRunOptions) (map[string]any, error) {
-
 	payload, err := c.GetMLRun(ctx, name)
 	if err != nil {
 		return nil, err
