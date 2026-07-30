@@ -62,6 +62,10 @@ type mockStorageUpdater struct {
 	listArtifactsErr   error
 	listArtifactsCalls int
 
+	// gotFilters records the filter argument passed to each ListArtifacts call so
+	// tests can assert the reconciler applies the server-side ManagedXprof filter.
+	gotFilters []string
+
 	// listArtifactsStuckToken, when set, makes ListArtifacts always return the same
 	// non-advancing cursor (and no artifacts) to exercise the loop's repeating-token
 	// guard.
@@ -73,6 +77,7 @@ func (m *mockStorageUpdater) FetchCurrentWorkUnitExecution(ctx context.Context, 
 }
 
 func (m *mockStorageUpdater) ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Artifact, string, error) {
+	m.gotFilters = append(m.gotFilters, filter)
 	if m.listArtifactsErr != nil {
 		return nil, "", m.listArtifactsErr
 	}
@@ -2038,6 +2043,14 @@ func TestLookupManagedXprofArtifact(t *testing.T) {
 				}
 				if m.listArtifactsCalls != tc.wantCalls {
 					t.Errorf("ListArtifacts called %d times, want %d", m.listArtifactsCalls, tc.wantCalls)
+				}
+			}
+			// Every ListArtifacts call must carry the server-side ManagedXprof filter.
+			if m, ok := tc.storage.(*mockStorageUpdater); ok {
+				for _, f := range m.gotFilters {
+					if f != managedXprofArtifactFilter {
+						t.Errorf("ListArtifacts filter = %q, want %q", f, managedXprofArtifactFilter)
+					}
 				}
 			}
 		})

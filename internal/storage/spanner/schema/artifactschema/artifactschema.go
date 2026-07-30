@@ -44,6 +44,11 @@ const (
 	payloadTableField           = querytools.TableField("payload")
 	searchableContentTableField = querytools.TableField("searchable_content")
 
+	// hasManagedXprofTableField is a filter-only virtual field. It is not a real
+	// column: it maps to a proto-presence check on the Payload column so callers
+	// can filter artifacts by payload type, e.g. `has_managed_xprof = true`.
+	hasManagedXprofTableField = querytools.TableField("has_managed_xprof")
+
 	createdTableField = querytools.TableField("created")
 	updatedTableField = querytools.TableField("updated")
 )
@@ -217,6 +222,18 @@ var (
 			searchableContentTableField: {
 				Name:         searchableContentTableField,
 				QueryLiteral: safesql.New("a.SearchableContent"),
+				Selectable:   false,
+				Indexed:      false,
+			},
+
+			hasManagedXprofTableField: {
+				Name: hasManagedXprofTableField,
+				// Proto-presence check. A filter such as "has_managed_xprof = true"
+				// is translated to "(a.Payload.managed_xprof IS NOT NULL) = TRUE".
+				// Derived and non-selectable because it is not a stored column.
+				QueryLiteral: safesql.New("(a.Payload.managed_xprof IS NOT NULL)"),
+				Type:         filtervisitor.Boolean,
+				Derived:      true,
 				Selectable:   false,
 				Indexed:      false,
 			},

@@ -778,6 +778,11 @@ func constructDiagnosticsConsoleURL(location, mlRunID, project string) string {
 // lookupManagedXprofArtifact pages through a work unit's artifacts.
 const artifactListPageSize = 100
 
+// managedXprofArtifactFilter restricts ListArtifacts to ManagedXprof artifacts
+// server-side (via the has_managed_xprof schema filter field), so the reconciler
+// no longer fetches and discards unrelated artifact types while searching.
+const managedXprofArtifactFilter = "has_managed_xprof = true"
+
 // lookupManagedXprofArtifact reads the ManagedXprof artifact attached to the work
 // unit and returns its display name and run group.
 //
@@ -794,12 +799,12 @@ func (r *Reconciler) lookupManagedXprofArtifact(ctx context.Context, xid, wid in
 	}
 	parent := fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid)
 
-	// Page until the first ManagedXprof artifact is found: it may be attached after
-	// the JobSet is created and can sort beyond the first page, so we keep paging
-	// until we find one or exhaust the list.
+	// The server filters to ManagedXprof artifacts; page until the first one is
+	// found because it may be attached after the JobSet is created and can sort
+	// beyond the first page, so we keep paging until we find one or exhaust the list.
 	var managed []*spb.ManagedXprofArtifact
 	for pageToken := ""; ; {
-		artifacts, nextToken, err := r.Storage.ListArtifacts(ctx, parent, artifactListPageSize, pageToken, "", "", 0)
+		artifacts, nextToken, err := r.Storage.ListArtifacts(ctx, parent, artifactListPageSize, pageToken, managedXprofArtifactFilter, "", 0)
 		if err != nil {
 			logging.Warn(ctx, "Failed to list artifacts for WorkUnit", "xid", xid, "wid", wid, "error", err)
 			return "", ""
