@@ -29,15 +29,22 @@ spec:
       labels:
         app: ingestion-gateway
     spec:
-      serviceAccountName: default
+      serviceAccountName: {{ .Values.ingestionGatewayDeployment.serviceAccountName | default "default" }}
       securityContext:
         seccompProfile:
           type: RuntimeDefault
-      {{- if and .Values.ingestionGatewayDeployment.sasl (and .Values.ingestionGatewayDeployment.sasl.enabled .Values.ingestionGatewayDeployment.sasl.secretName) }}
+      {{- if or (and .Values.ingestionGatewayDeployment.sasl (and .Values.ingestionGatewayDeployment.sasl.enabled .Values.ingestionGatewayDeployment.sasl.secretName)) (and .Values.ingestionGatewayDeployment.tls (and .Values.ingestionGatewayDeployment.tls.enabled .Values.ingestionGatewayDeployment.tls.secretName)) }}
       volumes:
+      {{- if and .Values.ingestionGatewayDeployment.sasl (and .Values.ingestionGatewayDeployment.sasl.enabled .Values.ingestionGatewayDeployment.sasl.secretName) }}
       - name: kafka-sasl-credentials
         secret:
           secretName: {{ .Values.ingestionGatewayDeployment.sasl.secretName }}
+      {{- end }}
+      {{- if and .Values.ingestionGatewayDeployment.tls (and .Values.ingestionGatewayDeployment.tls.enabled .Values.ingestionGatewayDeployment.tls.secretName) }}
+      - name: kafka-tls-credentials
+        secret:
+          secretName: {{ .Values.ingestionGatewayDeployment.tls.secretName }}
+      {{- end }}
       {{- end }}
       containers:
       - name: ingestion-gateway
@@ -52,11 +59,18 @@ spec:
           capabilities:
             drop:
             - ALL
-        {{- if and .Values.ingestionGatewayDeployment.sasl (and .Values.ingestionGatewayDeployment.sasl.enabled .Values.ingestionGatewayDeployment.sasl.secretName) }}
+        {{- if or (and .Values.ingestionGatewayDeployment.sasl (and .Values.ingestionGatewayDeployment.sasl.enabled .Values.ingestionGatewayDeployment.sasl.secretName)) (and .Values.ingestionGatewayDeployment.tls (and .Values.ingestionGatewayDeployment.tls.enabled .Values.ingestionGatewayDeployment.tls.secretName)) }}
         volumeMounts:
+        {{- if and .Values.ingestionGatewayDeployment.sasl (and .Values.ingestionGatewayDeployment.sasl.enabled .Values.ingestionGatewayDeployment.sasl.secretName) }}
         - name: kafka-sasl-credentials
           mountPath: /etc/kafka/credentials
           readOnly: true
+        {{- end }}
+        {{- if and .Values.ingestionGatewayDeployment.tls (and .Values.ingestionGatewayDeployment.tls.enabled .Values.ingestionGatewayDeployment.tls.secretName) }}
+        - name: kafka-tls-credentials
+          mountPath: /etc/kafka/tls
+          readOnly: true
+        {{- end }}
         {{- end }}
         ports:
         - containerPort: 8080
@@ -91,10 +105,5 @@ spec:
           initialDelaySeconds: 10
           periodSeconds: 10
         resources:
-          requests:
-            cpu: "10m"
-            memory: "64Mi"
-          limits:
-            cpu: "100m"
-            memory: "128Mi"
+          {{- toYaml .Values.ingestionGatewayDeployment.resources | nindent 10 }}
 {{- end }}
