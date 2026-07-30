@@ -64,7 +64,7 @@ func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, s
 		return "", "", fmt.Errorf("JWT validation failed: %w", status.ErrUnauthenticated)
 	}
 
-	email, err := extractEmail(ctx, payload)
+	email, err := resolveUserEmail(ctx, payload)
 	if err != nil {
 		return "", "", err
 	}
@@ -119,11 +119,16 @@ func extractEmailFromMetadata(ctx context.Context) (string, bool) {
 	}
 	return "", false
 }
-func extractEmail(ctx context.Context, payload *idtoken.Payload) (string, error) {
+
+// resolveUserEmail resolves the user's email by trying gRPC metadata first, then falling back to the JWT payload.
+func resolveUserEmail(ctx context.Context, payload *idtoken.Payload) (string, error) {
 	if email, ok := extractEmailFromMetadata(ctx); ok {
 		return email, nil
 	}
+	return extractEmailFromPayload(ctx, payload)
+}
 
+func extractEmailFromPayload(ctx context.Context, payload *idtoken.Payload) (string, error) {
 	email, ok := payload.Claims["email"].(string)
 	if !ok {
 		logging.Warn(ctx, "Email claim is missing or not a string")
