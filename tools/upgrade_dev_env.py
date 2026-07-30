@@ -549,6 +549,13 @@ def step_app(config: Config) -> None:
                     )
 
     log_info("Exporting outputs for deployment group 'compute'...")
+    compute_dir = ctk_dir / "compute"
+    if compute_dir.exists():
+        tf_bins = list((Path.home() / ".cache").rglob("terraform"))
+        if tf_bins:
+            run_cmd(
+                [str(tf_bins[0]), f"-chdir={compute_dir}", "init", "-backend=false"], check=False
+            )
     sanitize_workload_identity_module(ctk_dir)
     run_cmd(
         ["./cluster-toolkit/gcluster", "export-outputs", f"{ctk_dir}/compute"],
