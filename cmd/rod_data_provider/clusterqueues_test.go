@@ -137,18 +137,10 @@ func TestFetchClusterQueuesWithCache(t *testing.T) {
 			wantCount: 2,
 		},
 		{
-			name: "Filter By Queue Name Pattern",
-			req: &spb.GetFittingQueuesRequest{
-				QueueNamePattern: "gpu",
-			},
-			wantCount: 1,
-			wantQueue: "cq-gpu-1",
-		},
-		{
 			name: "Filter By Resource Requirement",
 			req: &spb.GetFittingQueuesRequest{
-				ResourceRequirements: []*spb.ResourceRequirement{
-					{ResourceName: "nvidia.com/gpu", Quantity: "2"},
+				Requirements: []*spb.Resource{
+					{ResourceType: "nvidia.com/gpu", Count: 2},
 				},
 			},
 			wantCount: 1,
@@ -157,8 +149,8 @@ func TestFetchClusterQueuesWithCache(t *testing.T) {
 		{
 			name: "Filter Out When Resource Requirement Exceeds Free Capacity",
 			req: &spb.GetFittingQueuesRequest{
-				ResourceRequirements: []*spb.ResourceRequirement{
-					{ResourceName: "nvidia.com/gpu", Quantity: "10"},
+				Requirements: []*spb.Resource{
+					{ResourceType: "nvidia.com/gpu", Count: 10},
 				},
 			},
 			wantCount: 0,
@@ -174,8 +166,8 @@ func TestFetchClusterQueuesWithCache(t *testing.T) {
 			if len(got) != tt.wantCount {
 				t.Errorf("FetchClusterQueues count = %d, want %d", len(got), tt.wantCount)
 			}
-			if tt.wantQueue != "" && len(got) > 0 && got[0].Name != tt.wantQueue {
-				t.Errorf("FetchClusterQueues queue name = %s, want %s", got[0].Name, tt.wantQueue)
+			if tt.wantQueue != "" && len(got) > 0 && got[0].QueueName != tt.wantQueue {
+				t.Errorf("FetchClusterQueues queue name = %s, want %s", got[0].QueueName, tt.wantQueue)
 			}
 		})
 	}
@@ -256,10 +248,26 @@ func TestCapacityMath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := computeFreeCapacityStr(tt.nominal, tt.reserved, tt.inUse)
-			if got != tt.want {
-				t.Errorf("computeFreeCapacityStr(%s, %s, %s) = %s, want %s", tt.nominal, tt.reserved, tt.inUse, got, tt.want)
+			nomRes := resource.MustParse(defaultString(tt.nominal, "0"))
+			resQuota := kueuev1beta1.ResourceQuota{
+				Name:         corev1.ResourceName("nvidia.com/gpu"),
+				NominalQuota: nomRes,
+			}
+			usageMap := map[string]string{"nvidia.com/gpu": tt.inUse}
+			resMap := map[string]string{"nvidia.com/gpu": tt.reserved}
+
+			capMetric := buildResourceCapacity(resQuota, usageMap, resMap)
+			wantVal, _ := parseK8sResourceVal(tt.want)
+			if capMetric.FreeCapacity != wantVal {
+				t.Errorf("buildResourceCapacity(%s, %s, %s).FreeCapacity = %v, want %v", tt.nominal, tt.reserved, tt.inUse, capMetric.FreeCapacity, wantVal)
 			}
 		})
 	}
+}
+
+func defaultString(val, fallback string) string {
+	if val == "" {
+		return fallback
+	}
+	return val
 }

@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -24,7 +24,7 @@ option go_package = "xmanager_cloud/api/protos/rod";
 service ResourceObservabilityService {
   // TODO: Implement the rest of methods
 
-  // Gets ClusterQueues matching resource requirements and capacity constraints.
+  // Get all queues that fit specific resource requirements.
   rpc GetFittingQueues(GetFittingQueuesRequest) returns (GetFittingQueuesResponse) {
     option (google.api.http) = {
       get: "/v1/clusterqueues"
@@ -32,60 +32,33 @@ service ResourceObservabilityService {
   }
 }
 
-// ResourceRequirement specifies requested quantities for compute resources.
-message ResourceRequirement {
-  string resource_name = 1;
-  string quantity = 2;
+// Resource represents requested or available compute resources.
+message Resource {
+  // Type of resource, e.g., "cpu", "memory", "nvidia.com/gpu", "google.com/tpu".
+  string resource_type = 1;
+  double count = 2;
+}
+
+// QueueResourceCapacity represents resource capacities for a queue.
+message QueueResourceCapacity {
+  string resource_type = 1;
+  double total_capacity = 2;
+  double free_capacity = 3;
+  double free_capacity_with_borrowing = 4;
+}
+
+// QueueOverview provides an overview of the queue and its resources.
+message QueueOverview {
+  string queue_name = 1;
+  repeated QueueResourceCapacity queue_capacity = 3;
 }
 
 // GetFittingQueuesRequest represents parameters for filtering matching ClusterQueues.
 message GetFittingQueuesRequest {
-  repeated ResourceRequirement resource_requirements = 1;
-  int32 min_available = 2;
-  string queue_name_pattern = 3;
-}
-
-// LocalQueueRef represents a reference to a connected LocalQueue.
-message LocalQueueRef {
-  string name = 1;
-  string namespace = 2;
-}
-
-// ResourceFlavorMetric represents primary resource metrics for a queue flavor.
-message ResourceFlavorMetric {
-  string name = 1;
-  string resource_name = 2;
-  string nominal_quota = 3;
-  string in_use = 4;
-  string reserved = 5;
-  string free_capacity = 6;
-  string largest_slot = 7;
-}
-
-// ClusterQueueInfo contains primary and secondary metrics for a ClusterQueue.
-message ClusterQueueInfo {
-  string name = 1;
-  string strategy = 2;
-  string cohort = 3;
-  string status = 4;
-  string status_message = 5;
-  string last_transition_time = 6;
-  int64 admitted_workloads = 7;
-  int64 reserving_workloads = 8;
-  int64 pending_workloads = 9;
-  int64 pending_jobs_count = 10;
-  string requested_resources = 11;
-  string dominant_resource = 12;
-  int64 dominant_resource_units = 13;
-  int64 admitted_jobs_count = 14;
-  string resource_velocity = 15;
-  string job_velocity = 16;
-  repeated LocalQueueRef local_queues = 17;
-  repeated ResourceFlavorMetric flavors = 18;
+  repeated Resource requirements = 1;
 }
 
 // GetFittingQueuesResponse contains the list of matching ClusterQueues.
 message GetFittingQueuesResponse {
-  repeated ClusterQueueInfo cluster_queues = 1;
-  int32 total_count = 2;
+  repeated QueueOverview queues = 1;
 }

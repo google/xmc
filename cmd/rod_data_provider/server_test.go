@@ -40,23 +40,21 @@ func TestGetFittingQueues(t *testing.T) {
 	tests := []struct {
 		name      string
 		req       *spb.GetFittingQueuesRequest
-		wantCount int32
+		wantCount int
 	}{
 		{
 			name: "Returns Matching Fitting Queues",
 			req: &spb.GetFittingQueuesRequest{
-				ResourceRequirements: []*spb.ResourceRequirement{
-					{ResourceName: "nvidia.com/gpu", Quantity: "2"},
+				Requirements: []*spb.Resource{
+					{ResourceType: "nvidia.com/gpu", Count: 2},
 				},
 			},
 			wantCount: 2,
 		},
 		{
-			name: "Filter By Pattern",
-			req: &spb.GetFittingQueuesRequest{
-				QueueNamePattern: "queue-a",
-			},
-			wantCount: 1,
+			name:      "Returns All Queues With Empty Requirements",
+			req:       &spb.GetFittingQueuesRequest{},
+			wantCount: 2,
 		},
 	}
 
@@ -66,11 +64,8 @@ func TestGetFittingQueues(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetFittingQueues failed: %v", err)
 			}
-			if resp.TotalCount != tt.wantCount {
-				t.Errorf("TotalCount = %d, want %d", resp.TotalCount, tt.wantCount)
-			}
-			if len(resp.ClusterQueues) != int(tt.wantCount) {
-				t.Errorf("ClusterQueues len = %d, want %d", len(resp.ClusterQueues), tt.wantCount)
+			if len(resp.Queues) != tt.wantCount {
+				t.Errorf("Queues len = %d, want %d", len(resp.Queues), tt.wantCount)
 			}
 		})
 	}
