@@ -22,8 +22,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: ingestion-gateway-deployment
-  minReplicas: {{ .Values.ingestionGatewayDeployment.hpa.minReplicas }}
-  maxReplicas: {{ .Values.ingestionGatewayDeployment.hpa.maxReplicas }}
+  minReplicas: {{ .Values.ingestionGatewayDeployment.hpa.minReplicas | default 3 }}
+  maxReplicas: {{ .Values.ingestionGatewayDeployment.hpa.maxReplicas | default 10 }}
   metrics:
   - type: Resource
     resource:
