@@ -117,11 +117,13 @@ When creating a new PR or populating its description:
 
 5. **Mandatory User Confirmation Gate Before PR Creation**:
    NEVER execute `gh pr create` (draft or non-draft) without explicit, affirmative user confirmation in the current conversation turn. Phrases like "proceed with next phase" authorize local work and verification, but DO NOT authorize opening a remote Pull Request. The agent MUST present `pr_body.md`, the planned PR title, body preview, and list of changes to the user for review and explicitly ask:
-   > *"I have drafted the PR description in `pr_body.md`. Preview:*
+   > *"I have prepared the Pull Request.*
+   > **Title**: `<type>(<scope>): <summary>`
+   > **Description Preview** (from `pr_body.md`):*
    > 
    > *[Markdown Preview]*
    > 
-   > *Shall I proceed with creating the Pull Request on GitHub? (Y/n)"*
+   > *Shall I proceed with creating the Draft Pull Request on GitHub? (Y/n)"*
 
 6. **Create PR via GitHub CLI**:
    ```bash
@@ -173,7 +175,9 @@ When creating and publishing Pull Requests, follow this mandatory 5-step lifecyc
 5. **Verify CI Checks & Publish**:
    Check CI status using `gh pr checks <pr_number>`:
    - **If CI checks fail**: Inspect failures, implement fixes, push commits, and re-run checks.
-   - **If CI checks succeed**: Mark the PR as ready for review:
+   - **If CI checks succeed**: Request explicit user confirmation before marking the PR as ready for review:
+     > *"CI checks passed! Shall I mark Pull Request #<pr_number> as ready for review on GitHub? (Y/n)"*
+     Once confirmed, mark the PR as ready for review:
      ```bash
      gh pr ready <pr_number>
      ```
