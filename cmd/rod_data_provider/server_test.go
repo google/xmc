@@ -22,11 +22,20 @@ import (
 )
 
 func TestGetFittingQueues(t *testing.T) {
+	ctx := context.Background()
+	cache := NewKueueCache()
+
+	cq1 := createTestClusterQueueTyped("cluster-queue-a", "default-cohort", "BestEffortFIFO", "8", "4", "2")
+	cq2 := createTestClusterQueueTyped("cluster-queue-b", "gpu-cohort", "StrictFIFO", "16", "8", "4")
+
+	cache.SetClusterQueue(cq1)
+	cache.SetClusterQueue(cq2)
+
 	cfg := &Config{
 		Port:     "8080",
 		GRPCPort: "50051",
 	}
-	srv := newServer(cfg)
+	srv := newServer(cfg, cache)
 
 	tests := []struct {
 		name      string
@@ -34,24 +43,34 @@ func TestGetFittingQueues(t *testing.T) {
 		wantCount int32
 	}{
 		{
-			name: "Returns Default Mock Fitting Queues",
+			name: "Returns Matching Fitting Queues",
 			req: &spb.GetFittingQueuesRequest{
-				Requirements: []*spb.Resource{
-					{ResourceType: "cpu", Count: 2},
+				ResourceRequirements: []*spb.ResourceRequirement{
+					{ResourceName: "nvidia.com/gpu", Quantity: "2"},
 				},
 			},
 			wantCount: 2,
+		},
+		{
+			name: "Filter By Pattern",
+			req: &spb.GetFittingQueuesRequest{
+				QueueNamePattern: "queue-a",
+			},
+			wantCount: 1,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp, err := srv.GetFittingQueues(context.Background(), tt.req)
+			resp, err := srv.GetFittingQueues(ctx, tt.req)
 			if err != nil {
 				t.Fatalf("GetFittingQueues failed: %v", err)
 			}
-			if len(resp.Queues) != int(tt.wantCount) {
-				t.Errorf("Queues len = %d, want %d", len(resp.Queues), tt.wantCount)
+			if resp.TotalCount != tt.wantCount {
+				t.Errorf("TotalCount = %d, want %d", resp.TotalCount, tt.wantCount)
+			}
+			if len(resp.ClusterQueues) != int(tt.wantCount) {
+				t.Errorf("ClusterQueues len = %d, want %d", len(resp.ClusterQueues), tt.wantCount)
 			}
 		})
 	}

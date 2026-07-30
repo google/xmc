@@ -27,14 +27,18 @@ import (
 	"time"
 
 	"go/google"
-	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
+	gwruntime "golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
+	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
+	clientgoscheme "golang/k8s_io/client_go/v/v0_23/kubernetes/scheme/scheme"
+	"golang/k8s_io/client_go/v/v0_23/rest/rest"
+	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
+	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
+	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
-
-	spb "xmanager_cloud/api/protos/rod"
 )
 
 func main() {
@@ -54,13 +58,46 @@ func main() {
 	}
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
 
+	kueueCache := NewKueueCache()
+
+	if k8sConfig, err := rest.InClusterConfig(); err == nil {
+		scheme := runtime.NewScheme()
+		clientgoscheme.AddToScheme(scheme)
+		kueuev1beta1.AddToScheme(scheme)
+
+		mgr, err := ctrl.NewManager(k8sConfig, ctrl.Options{
+			Scheme:         scheme,
+			LeaderElection: false,
+		})
+		if err != nil {
+			logging.Warn(ctx, "Failed to create controller-runtime manager", "error", err)
+		} else {
+			reconciler := &KueueReconciler{
+				Client: mgr.GetClient(),
+				Cache:  kueueCache,
+			}
+			if err := reconciler.SetupWithManager(ctx, mgr); err != nil {
+				logging.Warn(ctx, "Failed to setup KueueReconciler with manager", "error", err)
+			} else {
+				go func() {
+					logging.Info(ctx, "Starting controller-runtime Manager for KueueCache")
+					if err := mgr.Start(ctx); err != nil {
+						logging.Error(ctx, "Manager failed to start", "error", err)
+					}
+				}()
+			}
+		}
+	} else {
+		logging.Warn(ctx, "Failed to get in-cluster config for KueueCache reconciler", "error", err)
+	}
+
 	// 1. Setup gRPC server
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
-	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg))
+	spb.RegisterRODDataServiceServer(grpcServer, newServer(cfg, kueueCache))
 	reflection.Register(grpcServer)
 
 	go func() {
@@ -71,11 +108,11 @@ func main() {
 	}()
 
 	// 2. Setup gRPC Gateway
-	gwmux := runtime.NewServeMux()
+	gwmux := gwruntime.NewServeMux()
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
-	err = spb.RegisterResourceObservabilityServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
+	err = spb.RegisterRODDataServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to register gateway", "error", err)
 	}

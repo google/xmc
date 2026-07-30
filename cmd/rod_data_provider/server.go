@@ -16,53 +16,33 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	spb "xmanager_cloud/api/protos/rod"
 )
 
 type server struct {
-	spb.UnimplementedResourceObservabilityServiceServer
-	cfg *Config
+	spb.UnimplementedRODDataServiceServer
+	cfg   *Config
+	cache *KueueCache
 }
 
-func newServer(cfg *Config) *server {
-	return &server{cfg: cfg}
+func newServer(cfg *Config, cache *KueueCache) *server {
+	return &server{
+		cfg:   cfg,
+		cache: cache,
+	}
 }
 
-// GetFittingQueues returns ClusterQueues matching requested resource requirements.
+// GetFittingQueues returns ClusterQueues matching requested resource requirements directly from in-memory KueueCache.
 func (s *server) GetFittingQueues(ctx context.Context, req *spb.GetFittingQueuesRequest) (*spb.GetFittingQueuesResponse, error) {
-	queues := []*spb.QueueOverview{
-		{
-			QueueName: "cluster-queue-a",
-			QueueCapacity: []*spb.QueueResourceCapacity{
-				{
-					ResourceType:              "cpu",
-					TotalCapacity:             100,
-					FreeCapacity:              40,
-					FreeCapacityWithBorrowing: 60,
-				},
-				{
-					ResourceType:              "memory",
-					TotalCapacity:             500,
-					FreeCapacity:              200,
-					FreeCapacityWithBorrowing: 300,
-				},
-			},
-		},
-		{
-			QueueName: "cluster-queue-b",
-			QueueCapacity: []*spb.QueueResourceCapacity{
-				{
-					ResourceType:              "nvidia.com/gpu",
-					TotalCapacity:             8,
-					FreeCapacity:              2,
-					FreeCapacityWithBorrowing: 4,
-				},
-			},
-		},
+	queues, err := FetchClusterQueues(ctx, s.cache, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch cluster queues: %w", err)
 	}
 
 	return &spb.GetFittingQueuesResponse{
-		Queues: queues,
+		ClusterQueues: queues,
+		TotalCount:    int32(len(queues)),
 	}, nil
 }

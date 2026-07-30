@@ -21,6 +21,8 @@ package(default_visibility = ["//visibility:public"])
 compat_go_library(
     name = "rod_data_provider_lib",
     srcs = [
+        "cache.go",
+        "clusterqueues.go",
         "config.go",
         "main.go",
         "server.go",
@@ -33,6 +35,20 @@ compat_go_library(
         "//internal/logging",
         "//pkg/auth/oauth2",
         "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_client_go//kubernetes/scheme",
+        "@io_k8s_client_go//rest",
+        "@io_k8s_sigs_controller_runtime//:go_default_library",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@io_k8s_sigs_controller_runtime//pkg/controller",
+        "@io_k8s_sigs_controller_runtime//pkg/handler",
+        "@io_k8s_sigs_controller_runtime//pkg/predicate",
+        "@io_k8s_sigs_controller_runtime//pkg/source",
+        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//credentials/insecure:go_default_library",
         "@org_golang_google_grpc//reflection:go_default_library",
@@ -54,11 +70,18 @@ oci_image_for_service(
 compat_go_test(
     name = "server_test",
     srcs = [
+        "clusterqueues_test.go",
         "config_test.go",
         "server_test.go",
     ],
     embed = [":rod_data_provider_lib"],
     deps = [
         "//api/protos/rod",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/resource",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
     ],
 )
