@@ -24,14 +24,13 @@ compat_go_library(
         "config.go",
         "converters.go",
         "k8s_resource_utils.go",
-        "kueue_cache.go",
         "main.go",
-        "resource_cache.go",
         "server.go",
     ],
     visibility = ["//visibility:private"],
     deps = [
         "//api/protos/rod",
+        "//cmd/rod_data_provider/cache",
         "//cmd/rod_data_provider/reconciler",
         "//internal/compat/google",
         "//internal/logging",
@@ -72,7 +71,6 @@ oci_image_for_service(
 compat_go_test(
     name = "server_test",
     srcs = [
-        "cache_test.go",
         "config_test.go",
         "converters_test.go",
         "server_test.go",
@@ -80,6 +78,7 @@ compat_go_test(
     embed = [":rod_data_provider_lib"],
     deps = [
         "//api/protos/rod",
+        "//cmd/rod_data_provider/cache",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/resource",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",

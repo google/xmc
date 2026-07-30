@@ -24,6 +24,7 @@ import (
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
 func createTestClusterQueueTyped(name, cohort, strategy string, nominalGPU, inUseGPU, reservedGPU string) *kueuev1beta1.ClusterQueue {
@@ -113,17 +114,17 @@ func createTestResourceFlavorTyped(name string, nodeLabels map[string]string) *k
 
 func TestFetchClusterQueuesWithCache(t *testing.T) {
 	ctx := context.Background()
-	cache := NewKueueCache()
+	c := cache.NewKueueCache()
 
 	cq1 := createTestClusterQueueTyped("cq-gpu-1", "gpu-cohort", "StrictFIFO", "8", "4", "2")
 	cq2 := createTestClusterQueueTyped("cq-cpu-2", "cpu-cohort", "BestEffortFIFO", "0", "0", "0")
 	lq1 := createTestLocalQueueTyped("lq-team-a", "team-a", "cq-gpu-1")
 	rf1 := createTestResourceFlavorTyped("default-flavor", map[string]string{"cloud.google.com/gke-accelerator": "nvidia-tesla-h100"})
 
-	cache.ClusterQueues.Set("cq-gpu-1", cq1)
-	cache.ClusterQueues.Set("cq-cpu-2", cq2)
-	cache.LocalQueues.Set("team-a/lq-team-a", lq1)
-	cache.ResourceFlavors.Set("default-flavor", rf1)
+	c.ClusterQueues.Set("cq-gpu-1", cq1)
+	c.ClusterQueues.Set("cq-cpu-2", cq2)
+	c.LocalQueues.Set("team-a/lq-team-a", lq1)
+	c.ResourceFlavors.Set("default-flavor", rf1)
 
 	tests := []struct {
 		name      string
@@ -159,7 +160,7 @@ func TestFetchClusterQueuesWithCache(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := FetchClusterQueues(ctx, cache, tt.req)
+			got, err := FetchClusterQueues(ctx, c, tt.req)
 			if err != nil {
 				t.Fatalf("FetchClusterQueues failed: %v", err)
 			}

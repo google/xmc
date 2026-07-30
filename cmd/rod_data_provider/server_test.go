@@ -19,23 +19,24 @@ import (
 	"testing"
 
 	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
 func TestGetFittingQueues(t *testing.T) {
 	ctx := context.Background()
-	cache := NewKueueCache()
+	c := cache.NewKueueCache()
 
 	cq1 := createTestClusterQueueTyped("cluster-queue-a", "default-cohort", "BestEffortFIFO", "8", "4", "2")
 	cq2 := createTestClusterQueueTyped("cluster-queue-b", "gpu-cohort", "StrictFIFO", "16", "8", "4")
 
-	cache.ClusterQueues.Set("cluster-queue-a", cq1)
-	cache.ClusterQueues.Set("cluster-queue-b", cq2)
+	c.ClusterQueues.Set("cluster-queue-a", cq1)
+	c.ClusterQueues.Set("cluster-queue-b", cq2)
 
 	cfg := &Config{
 		Port:     "8080",
 		GRPCPort: "50051",
 	}
-	srv := newServer(cfg, cache)
+	srv := newServer(cfg, c)
 
 	tests := []struct {
 		name      string

@@ -19,15 +19,16 @@ import (
 	"fmt"
 
 	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
 type server struct {
 	spb.UnimplementedResourceObservabilityServiceServer
 	cfg   *Config
-	cache *KueueCache
+	cache *cache.KueueCache
 }
 
-func newServer(cfg *Config, cache *KueueCache) *server {
+func newServer(cfg *Config, cache *cache.KueueCache) *server {
 	return &server{
 		cfg:   cfg,
 		cache: cache,

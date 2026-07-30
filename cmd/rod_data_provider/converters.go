@@ -19,10 +19,11 @@ import (
 
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
 // FetchClusterQueues queries ClusterQueues directly from the in-memory KueueCache with zero network List calls.
-func FetchClusterQueues(ctx context.Context, cache *KueueCache, req *spb.GetFittingQueuesRequest) ([]*spb.QueueOverview, error) {
+func FetchClusterQueues(ctx context.Context, cache *cache.KueueCache, req *spb.GetFittingQueuesRequest) ([]*spb.QueueOverview, error) {
 	if cache == nil {
 		return []*spb.QueueOverview{}, nil
 	}

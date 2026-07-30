@@ -37,6 +37,7 @@ import (
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/cmd/rod_data_provider/cache"
 	"xmanager_cloud/cmd/rod_data_provider/reconciler"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
@@ -59,7 +60,7 @@ func main() {
 	}
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
 
-	kueueCache := NewKueueCache()
+	kueueCache := cache.NewKueueCache()
 
 	if k8sConfig, err := rest.InClusterConfig(); err == nil {
 		scheme := runtime.NewScheme()
