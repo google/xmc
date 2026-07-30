@@ -255,12 +255,35 @@ class TestStepSubprocesses(unittest.TestCase):
         )
 
     @mock.patch("tools.upgrade_dev_env.run_cmd")
-    def test_step_images(self, mock_run):
+    def test_step_images_default(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_images(self.config)
-        self.assertEqual(mock_run.call_count, 10)
+        # Default config has rod_deployment_enabled=False (6 base targets)
+        self.assertEqual(mock_run.call_count, 6)
+
+    @mock.patch("tools.upgrade_dev_env.run_cmd")
+    def test_step_images_rod_enabled(self, mock_run):
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        config = upgrade_dev_env.Config(
+            project_id="proj-123",
+            deployment_name="deploy-456",
+            region="us-central1",
+            environment="dev",
+            namespace="xmc",
+            registry="us-docker.pkg.dev/proj-123/xmc",
+            acr_target="us-docker.pkg.dev/proj-123/xmc",
+            gke_cluster="xmc-deploy-456-dev",
+            config_path="deploy/ctk_v2/xmanager-cloud-deployment.yaml",
+            rod_deployment_enabled=True,
+        )
+        upgrade_dev_env.step_images(config)
+        # Should push 7 targets when rod is enabled (6 base + rod_data_provider)
+        self.assertEqual(mock_run.call_count, 7)
+>>>>>>> 0ee60fcc (feat(rod): default resource dashboard feature flag to false across all components)
 
     @mock.patch.object(Path, "is_dir", return_value=True)
     @mock.patch("tools.upgrade_dev_env.run_cmd")
@@ -289,7 +312,32 @@ class TestStepSubprocesses(unittest.TestCase):
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_restart(self.config)
-        self.assertEqual(mock_run.call_count, 8)
+        # Default config has rod_deployment_enabled=False (6 base services)
+        self.assertEqual(mock_run.call_count, 6)
+
+    @mock.patch("tools.upgrade_dev_env.resolve_deployment_name")
+    @mock.patch("tools.upgrade_dev_env.run_cmd")
+    def test_step_restart_rod_enabled(self, mock_run, mock_resolve):
+        mock_resolve.return_value = "actuator"
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        config = upgrade_dev_env.Config(
+            project_id="proj-123",
+            deployment_name="deploy-456",
+            region="us-central1",
+            environment="dev",
+            namespace="xmc",
+            registry="us-docker.pkg.dev/proj-123/xmc",
+            acr_target="us-docker.pkg.dev/proj-123/xmc",
+            gke_cluster="xmc-deploy-456-dev",
+            config_path="deploy/ctk_v2/xmanager-cloud-deployment.yaml",
+            rod_deployment_enabled=True,
+        )
+        upgrade_dev_env.step_restart(config)
+        # 6 base services + rod-data-provider (7 total)
+        self.assertEqual(mock_run.call_count, 7)
+>>>>>>> 0ee60fcc (feat(rod): default resource dashboard feature flag to false across all components)
 
     @mock.patch("tools.upgrade_dev_env.run_cmd")
     def test_step_verify(self, mock_run):
