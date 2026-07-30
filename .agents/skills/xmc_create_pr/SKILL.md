@@ -115,13 +115,13 @@ When creating a new PR or populating its description:
    CONV=<conversation_id>
    ```
 
-5. **User Review & Edit Gate (Mandatory Pause)**:
-   Before opening the PR on GitHub, present `pr_body.md` to the user for review:
-   > *"I have drafted the PR description in `pr_body.md` incorporating the benchmark results. Preview:*
+5. **Mandatory User Confirmation Gate Before PR Creation**:
+   NEVER execute `gh pr create` (draft or non-draft) without explicit, affirmative user confirmation in the current conversation turn. Phrases like "proceed with next phase" authorize local work and verification, but DO NOT authorize opening a remote Pull Request. The agent MUST present `pr_body.md`, the planned PR title, body preview, and list of changes to the user for review and explicitly ask:
+   > *"I have drafted the PR description in `pr_body.md`. Preview:*
    > 
    > *[Markdown Preview]*
    > 
-   > *Feel free to make any manual edits to `pr_body.md`. Proceed with creating the PR via `gh pr create --body-file pr_body.md`? (Y/n)"*
+   > *Shall I proceed with creating the Pull Request on GitHub? (Y/n)"*
 
 6. **Create PR via GitHub CLI**:
    ```bash
@@ -157,7 +157,7 @@ When updating an existing Pull Request description:
 When creating and publishing Pull Requests, follow this mandatory 5-step lifecycle:
 
 1. **Create Draft PR**:
-   Create the pull request as a draft:
+   Obtain explicit user confirmation before executing `gh pr create` (draft or non-draft). Present the planned PR title, body preview, and list of changes to the user and ask for confirmation. Once confirmed, create the pull request as a draft:
    ```bash
    gh pr create --draft --title "<type>(<scope>): <summary>" --body-file pr_body.md
    ```

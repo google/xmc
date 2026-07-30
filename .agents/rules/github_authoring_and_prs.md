@@ -42,6 +42,7 @@ This document defines standards and policy rules for AI agents acting as **Code 
 - **Atomic Commits**: Keep commits logical, focused, and self-contained. Each commit must compile and pass relevant local tests.
 
 ## 3. Pull Request Creation & Field Formatting Policy
+- **Mandatory User Confirmation Gate Before PR Creation**: NEVER execute 'gh pr create' (draft or non-draft) without explicit, affirmative user confirmation in the current conversation turn. Phrases like 'proceed with next phase' authorize local work and verification, but DO NOT authorize opening a remote Pull Request. The agent MUST present the planned PR title, body preview, and list of changes, and explicitly ask: 'Shall I proceed with creating the Pull Request on GitHub? (Y/n)'
 - **Pre-Commit Verification**: Before committing or opening a PR, ensure all repository linter hooks pass (Bazel buildifier, Go formatter, addlicense, Ruff Python linter) and unit tests pass cleanly.
 - **Conventional PR Titles**: Match the PR title to Conventional Commits syntax (`<type>(<scope>): <summary>`).
 - **Mandatory PR Body Population**: ALWAYS populate the official PR Body/Description field upon creation with full context, summary, architectural intent, test verification results, and issue references.
