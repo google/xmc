@@ -53,9 +53,3 @@ timezone: UTC
 # Ensure deployment on main-pool
 nodeSelector:
   cloud.google.com/gke-nodepool: main-pool
-
-# Global storage configuration
-global:
-  persistence:
-    storageClassName: standard-rwo
-  storageClassName: standard-rwo
