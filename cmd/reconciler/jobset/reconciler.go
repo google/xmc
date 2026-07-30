@@ -85,13 +85,26 @@ type Reconciler struct {
 	MaxConcurrentReconciles     int
 	StartupPodErrorCheckTime    time.Duration
 	StartupPodErrorCheckEnabled bool
-	Storage                     WorkUnitExecutionReader
+	Storage                     ReconcilerStorage
 	MLRunClient                 MLRunCreator
 }
 
 // WorkUnitExecutionReader is an interface for reading WorkUnitExecutions from ESS.
 type WorkUnitExecutionReader interface {
 	FetchCurrentWorkUnitExecution(ctx context.Context, xid int64, wid int64) (*spb.WorkUnitExecution, error)
+}
+
+// ManagedXprofArtifactReader lists the artifacts attached to a resource so the
+// reconciler can read the ManagedXprof artifact directly from storage.
+type ManagedXprofArtifactReader interface {
+	ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Artifact, string, error)
+}
+
+// ReconcilerStorage is the storage surface the JobSet reconciler depends on. It is
+// composed from focused interfaces so callers and tests only implement what they use.
+type ReconcilerStorage interface {
+	WorkUnitExecutionReader
+	ManagedXprofArtifactReader
 }
 
 // MLRunCreator defines the interface required for creating, looking up, and
@@ -313,7 +326,19 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 		result, podErrorMsg, startupWarningMsg = r.handleStartupPodChecks(ctx, jobSet)
 	}
 
+	// The actuator injects the ManagedXprof GCS destination, display name, and run
+	// group into the JobSet env. The display name and run group can still be missing
+	// when the ManagedXprof artifact is attached after the JobSet is created (racing
+	// actuation), so fall back to reading them from the WorkUnit-level artifact. When
+	// they remain absent we skip this round and a later reconcile retries once the
+	// artifact is present.
 	displayName, runGroup, gcsPath := getManagedXprofEnvs(jobSet)
+	// Only query storage when ManagedXprof is enabled (gcsPath set) but the display
+	// metadata is missing. Standard JobSets leave gcsPath empty and skip MLRun
+	// creation anyway, so the lookup would be wasted work on the hot reconcile path.
+	if gcsPath != "" && (displayName == "" || runGroup == "") {
+		displayName, runGroup = r.lookupManagedXprofArtifact(ctx, xid, wid)
+	}
 	warnOnMissingManagedXprofEnvs(ctx, jobSet, displayName, runGroup, gcsPath, xid, wid)
 	var mlRunURL string
 	if gcsPath != "" && displayName != "" && runGroup != "" {
@@ -748,6 +773,70 @@ func constructDiagnosticsConsoleURL(location, mlRunID, project string) string {
 	return fmt.Sprintf("https://console.cloud.google.com/kubernetes/aiml/run/%s/%s?project=%s", location, mlRunID, project)
 }
 
+// artifactListPageSize bounds each ListArtifacts page while
+// lookupManagedXprofArtifact pages through a work unit's artifacts.
+const artifactListPageSize = 100
+
+// lookupManagedXprofArtifact reads the ManagedXprof artifact attached to the work
+// unit and returns its display name and run group.
+//
+// The artifact is read directly from storage (rather than from JobSet env) because
+// clients may attach it after the JobSet is created. An absent artifact yields
+// empty strings, so the caller skips MLRun creation this round and retries on a
+// later reconcile.
+func (r *Reconciler) lookupManagedXprofArtifact(ctx context.Context, xid, wid int64) (displayName, runGroup string) {
+	// Storage is optional in some reconciler configurations; without it there is
+	// no artifact source, so the fallback is a no-op (mirrors the nil-MLRunClient
+	// guard in ensureMLRunCreated).
+	if r.Storage == nil {
+		return "", ""
+	}
+	parent := fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid)
+
+	// Page until the first ManagedXprof artifact is found: it may be attached after
+	// the JobSet is created and can sort beyond the first page, so we keep paging
+	// until we find one or exhaust the list.
+	var managed []*spb.ManagedXprofArtifact
+	for pageToken := ""; ; {
+		artifacts, nextToken, err := r.Storage.ListArtifacts(ctx, parent, artifactListPageSize, pageToken, "", "", 0)
+		if err != nil {
+			logging.Warn(ctx, "Failed to list artifacts for WorkUnit", "xid", xid, "wid", wid, "error", err)
+			return "", ""
+		}
+		managed = append(managed, collectManagedXprofArtifacts(artifacts)...)
+		// Stop once we have a match (only the first is used), when the list is
+		// exhausted, or if the cursor fails to advance — the last guards against a
+		// storage impl/mock returning a repeating token, which would loop forever.
+		if len(managed) > 0 || nextToken == "" || nextToken == pageToken {
+			break
+		}
+		pageToken = nextToken
+	}
+
+	if len(managed) == 0 {
+		return "", ""
+	}
+	if len(managed) > 1 {
+		// At most one ManagedXprof artifact is expected per work unit; surface the
+		// anomaly and deterministically use the first so behavior stays predictable.
+		logging.Warn(ctx, "Multiple ManagedXprof artifacts found for WorkUnit; using the first", "xid", xid, "wid", wid, "count", len(managed))
+	}
+	return managed[0].GetDisplayName(), managed[0].GetRunGroup()
+}
+
+// collectManagedXprofArtifacts returns every ManagedXprof artifact in the list, in
+// order. Extracted as a pure function so artifact selection is independently
+// testable and so the caller can detect (and warn about) unexpected duplicates.
+func collectManagedXprofArtifacts(artifacts []*spb.Artifact) []*spb.ManagedXprofArtifact {
+	var managed []*spb.ManagedXprofArtifact
+	for _, art := range artifacts {
+		if mx := art.GetPayload().GetManagedXprof(); mx != nil {
+			managed = append(managed, mx)
+		}
+	}
+	return managed
+}
+
 func getManagedXprofEnvs(jobSet *v1alpha2.JobSet) (displayName, runGroup, gcsPath string) {
 	for _, rj := range jobSet.Spec.ReplicatedJobs {
 		for _, c := range rj.Template.Spec.Template.Spec.Containers {
@@ -770,22 +859,24 @@ func getManagedXprofEnvs(jobSet *v1alpha2.JobSet) (displayName, runGroup, gcsPat
 	return
 }
 
-// warnOnMissingManagedXprofEnvs logs a warning for each missing Managed Xprof
-// env var, but only for JobSets that opted into Managed Xprof (at least one var
-// set). Standard JobSets leave all three empty; skipping them keeps the reconcile
-// loop from flooding the logs with warnings on every reconciliation.
+// managedXprofMisconfigured reports the one actionable Managed Xprof
+// misconfiguration: a JobSet that carries display metadata (both display name and
+// run group) but no GCS path, so an MLRun can never be created for it. A missing
+// display name or run group while gcsPath is set is an expected transient (the
+// WorkUnit artifact may attach after the JobSet is created and is recovered by the
+// fallback lookup), so it is deliberately not flagged. Extracted as a pure
+// function so the warn policy is testable without a logging sink.
+func managedXprofMisconfigured(displayName, runGroup, gcsPath string) bool {
+	return displayName != "" && runGroup != "" && gcsPath == ""
+}
+
+// warnOnMissingManagedXprofEnvs warns when a JobSet is misconfigured for Managed
+// Xprof (see managedXprofMisconfigured). Standard JobSets and JobSets still waiting
+// on their WorkUnit artifact are intentionally silent to avoid flooding the
+// reconcile loop's logs.
 func warnOnMissingManagedXprofEnvs(ctx context.Context, jobSet *v1alpha2.JobSet, displayName, runGroup, gcsPath string, xid, wid int64) {
-	if gcsPath == "" && displayName == "" && runGroup == "" {
-		return
-	}
-	if gcsPath == "" {
+	if managedXprofMisconfigured(displayName, runGroup, gcsPath) {
 		logging.Warn(ctx, "No GCS path found for Managed Xprof, skipping MLRun URL creation.", "namespace", jobSet.Namespace, "xid", xid, "wid", wid)
-	}
-	if displayName == "" {
-		logging.Warn(ctx, "No display name found for Managed Xprof, skipping MLRun URL creation.", "namespace", jobSet.Namespace, "xid", xid, "wid", wid)
-	}
-	if runGroup == "" {
-		logging.Warn(ctx, "No run group found for Managed Xprof, skipping MLRun URL creation.", "namespace", jobSet.Namespace, "xid", xid, "wid", wid)
 	}
 }
 
