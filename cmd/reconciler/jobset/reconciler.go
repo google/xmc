@@ -343,7 +343,7 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	var mlRunURL string
 	if gcsPath != "" && displayName != "" && runGroup != "" {
 		var skipMLRunCreation bool
-		mlRunURL, skipMLRunCreation = r.checkWorkUnitStatusAndMLRun(ctx, xid, wid)
+		mlRunURL, skipMLRunCreation = r.checkWorkUnitStatusAndMLRun(ctx, xid, wid, eid)
 		if !skipMLRunCreation && mlRunURL == "" {
 			logging.Info(ctx, "Begin to create MLRun URL.")
 			mlRunURL = r.ensureMLRunCreated(ctx, jobSet, xid, wid, eid, displayName, runGroup, gcsPath)
@@ -748,9 +748,10 @@ func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, m
 
 	logging.Info(ctx, "MLRun exists but is not owned by XManager; updating with ManagedXprof fields", "mlRunID", existingID)
 	// UpdateMLRun re-sends the run fetched via GET, so the orchestrator and
-	// workloadDetails set at creation are preserved as-is. We intentionally do not
-	// override them here: the control plane rejects an orchestrator *change* (equal
-	// values are accepted), and in XMC they are fixed at creation.
+	// workloadDetails set at creation are preserved as-is. They are mutable, but we
+	// intentionally do not set them here: this upsert only updates the ManagedXprof
+	// fields, and UpdateMLRun drops orchestrator/workloadDetails from the patch so
+	// they are left untouched.
 	res, err := r.MLRunClient.UpdateMLRun(ctx, existingID, &hypercomputeclient.UpdateMLRunOptions{
 		DisplayName: displayName,
 		RunGroup:    runGroup,
@@ -903,7 +904,7 @@ func isTerminalState(state spb.WorkUnitStatus_WorkUnitState) bool {
 // Returns:
 //   - string: The existing MLRun URL from ESS metadata.
 //   - bool: True if the WorkUnit is in a terminal state and MLRun creation should be skipped.
-func (r *Reconciler) checkWorkUnitStatusAndMLRun(ctx context.Context, xid, wid int64) (string, bool) {
+func (r *Reconciler) checkWorkUnitStatusAndMLRun(ctx context.Context, xid, wid, eid int64) (string, bool) {
 	mlRunURL := ""
 	skipMLRunCreation := false
 	if r.Storage == nil {
@@ -923,6 +924,14 @@ func (r *Reconciler) checkWorkUnitStatusAndMLRun(ctx context.Context, xid, wid i
 
 	mlRunURL = getMLRunURL(execution)
 
+	// The execution is fetched by (xid, wid); if it belongs to a different execution
+	// than the one being reconciled (a re-execution race where ESS has not advanced
+	// its current execution), reusing its MLRun URL would misattribute it. We only
+	// warn for now to avoid premature optimization.
+	if mlRunURL != "" && execution != nil && isStaleExecutionForMLRun(execution.GetName(), eid) {
+		logging.Warn(ctx, "Reusing MLRun URL from a different current execution than the one being reconciled; possible re-execution race.", "reconciledEID", eid, "xid", xid, "wid", wid, "executionName", execution.GetName())
+	}
+
 	if execution != nil && isTerminalState(execution.GetStatus().GetState()) {
 		currentState := execution.GetStatus().GetState()
 		logging.Info(ctx, "WorkUnit execution is in terminal/stopping state in ESS, skipping MLRun creation", "currentState", currentState.String())
@@ -930,4 +939,16 @@ func (r *Reconciler) checkWorkUnitStatusAndMLRun(ctx context.Context, xid, wid i
 	}
 
 	return mlRunURL, skipMLRunCreation
+}
+
+// isStaleExecutionForMLRun reports whether executionName refers to a different
+// execution than the one currently being reconciled (reconciledEID). Extracted as a
+// pure function so the re-execution race detection is independently testable.
+// Returns false when the name cannot be parsed, since a mismatch cannot be proven.
+func isStaleExecutionForMLRun(executionName string, reconciledEID int64) bool {
+	_, _, currentEID, err := validator.ValidateWorkUnitExecutionName(executionName)
+	if err != nil {
+		return false
+	}
+	return currentEID != reconciledEID
 }

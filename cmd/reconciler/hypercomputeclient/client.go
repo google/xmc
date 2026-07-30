@@ -339,29 +339,7 @@ func (c *ControlPlaneClient) CreateMLRun(
 		"runPhase":    runPhase,
 	}
 
-	if opts != nil {
-		if len(opts.Configs) > 0 {
-			payload["configs"] = opts.Configs
-		}
-		if len(opts.Artifacts) > 0 {
-			payload["artifacts"] = opts.Artifacts
-		}
-		if opts.RunGroup != "" {
-			payload["runSet"] = opts.RunGroup
-		}
-		if len(opts.Labels) > 0 {
-			payload["labels"] = opts.Labels
-		}
-		if len(opts.Tools) > 0 {
-			payload["tools"] = opts.Tools
-		}
-		if opts.Orchestrator != "" {
-			payload["orchestrator"] = opts.Orchestrator
-			if opts.Orchestrator == "GKE" && opts.WorkloadDetails != nil {
-				payload["workloadDetails"] = map[string]any{"gke": opts.WorkloadDetails}
-			}
-		}
-	}
+	applyMLRunCreateOptions(payload, opts)
 
 	params := url.Values{"machine_learning_run_id": {SanitizeIdentifier(name)}}
 
@@ -394,6 +372,33 @@ func (c *ControlPlaneClient) GetMLRun(ctx context.Context, name string) (map[str
 // UpdateMLRunOptions holds optional parameters for UpdateMLRun.
 //
 // Unlike CreateMLRunOptions, it intentionally omits Configs and Tools: in the
+func applyMLRunCreateOptions(payload map[string]any, opts *CreateMLRunOptions) {
+	if opts == nil {
+		return
+	}
+	if len(opts.Configs) > 0 {
+		payload["configs"] = opts.Configs
+	}
+	if len(opts.Artifacts) > 0 {
+		payload["artifacts"] = opts.Artifacts
+	}
+	if opts.RunGroup != "" {
+		payload["runSet"] = opts.RunGroup
+	}
+	if len(opts.Labels) > 0 {
+		payload["labels"] = opts.Labels
+	}
+	if len(opts.Tools) > 0 {
+		payload["tools"] = opts.Tools
+	}
+	if opts.Orchestrator != "" {
+		payload["orchestrator"] = opts.Orchestrator
+		if opts.Orchestrator == "GKE" && opts.WorkloadDetails != nil {
+			payload["workloadDetails"] = map[string]any{"gke": opts.WorkloadDetails}
+		}
+	}
+}
+
 // XMC context these are set once at creation time and are never updated
 // afterwards, so they are excluded here to keep the update contract explicit
 // for callers.
@@ -409,10 +414,44 @@ type UpdateMLRunOptions struct {
 	WorkloadDetails *GKEWorkloadDetails
 }
 
+func applyMLRunUpdateOptions(payload map[string]any, opts *UpdateMLRunOptions) bool {
+	if opts == nil {
+		return false
+	}
+	needUpdate := opts.Force
+	if opts.DisplayName != "" && payload["displayName"] != opts.DisplayName {
+		payload["displayName"] = opts.DisplayName
+		needUpdate = true
+	}
+	if opts.RunPhase != "" && payload["runPhase"] != opts.RunPhase {
+		payload["runPhase"] = opts.RunPhase
+		needUpdate = true
+	}
+	if opts.RunGroup != "" && payload["runSet"] != opts.RunGroup {
+		payload["runSet"] = opts.RunGroup
+		needUpdate = true
+	}
+	if len(opts.Labels) > 0 {
+		payload["labels"] = opts.Labels
+		needUpdate = true
+	}
+	if len(opts.Artifacts) > 0 {
+		payload["artifacts"] = opts.Artifacts
+		needUpdate = true
+	}
+	if opts.Orchestrator != "" {
+		payload["orchestrator"] = opts.Orchestrator
+		if opts.Orchestrator == "GKE" && opts.WorkloadDetails != nil {
+			payload["workloadDetails"] = map[string]any{"gke": opts.WorkloadDetails}
+		}
+		needUpdate = true
+	}
+	return needUpdate
+}
+
 // UpdateMLRun updates an existing ML run. It fetches the current state, applies
 // the requested changes, and PATCHes the resource with update_mask=*.
 func (c *ControlPlaneClient) UpdateMLRun(ctx context.Context, name string, opts *UpdateMLRunOptions) (map[string]any, error) {
-
 	payload, err := c.GetMLRun(ctx, name)
 	if err != nil {
 		return nil, err
@@ -423,37 +462,7 @@ func (c *ControlPlaneClient) UpdateMLRun(ctx context.Context, name string, opts 
 		return nil, fmt.Errorf("update MLRun %q: GET returned empty payload", name)
 	}
 
-	needUpdate := false
-	if opts != nil {
-		needUpdate = opts.Force
-		if opts.DisplayName != "" && payload["displayName"] != opts.DisplayName {
-			payload["displayName"] = opts.DisplayName
-			needUpdate = true
-		}
-		if opts.RunPhase != "" && payload["runPhase"] != opts.RunPhase {
-			payload["runPhase"] = opts.RunPhase
-			needUpdate = true
-		}
-		if opts.RunGroup != "" && payload["runSet"] != opts.RunGroup {
-			payload["runSet"] = opts.RunGroup
-			needUpdate = true
-		}
-		if len(opts.Labels) > 0 {
-			payload["labels"] = opts.Labels
-			needUpdate = true
-		}
-		if len(opts.Artifacts) > 0 {
-			payload["artifacts"] = opts.Artifacts
-			needUpdate = true
-		}
-		if opts.Orchestrator != "" {
-			payload["orchestrator"] = opts.Orchestrator
-			if opts.Orchestrator == "GKE" && opts.WorkloadDetails != nil {
-				payload["workloadDetails"] = map[string]any{"gke": opts.WorkloadDetails}
-			}
-			needUpdate = true
-		}
-	}
+	needUpdate := applyMLRunUpdateOptions(payload, opts)
 
 	if !needUpdate {
 		return payload, nil
@@ -463,9 +472,11 @@ func (c *ControlPlaneClient) UpdateMLRun(ctx context.Context, name string, opts 
 	for _, field := range []string{"createTime", "updateTime", "endTime"} {
 		delete(payload, field)
 	}
-	// orchestrator and workloadDetails are immutable on the control plane: they
-	// come back from the GET above, and re-sending them under update_mask=* is
-	// rejected. Keep them only when this call explicitly updates the orchestrator.
+	// orchestrator and workloadDetails are mutable, but they are seeded from the GET
+	// above and update_mask=* only touches the fields present in the payload. When
+	// this call is not explicitly updating the orchestrator, drop them so the PATCH
+	// stays scoped to the fields we intend to change and leaves the existing values
+	// untouched.
 	if opts == nil || opts.Orchestrator == "" {
 		delete(payload, "orchestrator")
 		delete(payload, "workloadDetails")

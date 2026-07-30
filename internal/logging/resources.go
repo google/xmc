@@ -115,38 +115,41 @@ func WithStatusMessageParent(ctx context.Context, name string) context.Context {
 // WithJobSetName adds job_set group to logger in context. We can't use utils here, because
 // of circular dependencies, so we have to extract the labels manually.
 func WithJobSetName(ctx context.Context, name string, labels map[string]string) context.Context {
-	// If we have labels, we can use them to populate the context.
 	if labels != nil {
-		xid := labels[constants.ExperimentIDLabel]
-		if xid != "" {
-			ctx = WithLabels(ctx, slog.String(keyXID, xid))
-		}
-		wid := labels[constants.WorkUnitIDLabel]
-		if wid != "" {
-			ctx = WithLabels(ctx, slog.String(keyWID, wid))
-		}
-		eid := labels[constants.ExecutionIDLabel]
-		if eid != "" {
-			ctx = WithLabels(ctx, slog.String(keyEID, eid))
-		}
+		ctx = withJobSetLabels(ctx, labels)
 	} else {
-		// Otherwise, we can try to parse the name.
-		split := strings.Split(name, "-")
-		if len(split) != 4 {
-			Warn(ctx, "Failed to parse job set name in logging.WithJobSetName", "jobset", name, "split", split)
-		} else {
-			xid := split[2]
-			if xid != "" {
-				ctx = WithLabels(ctx, slog.String(keyXID, xid))
-			}
-			wid := split[3]
-			if wid != "" {
-				ctx = WithLabels(ctx, slog.String(keyWID, wid))
-			}
-		}
+		ctx = withJobSetParsedName(ctx, name)
 	}
-
 	return WithLabels(ctx, slog.String(keyJobSet, name))
+}
+
+func withJobSetLabels(ctx context.Context, labels map[string]string) context.Context {
+	if xid := labels[constants.ExperimentIDLabel]; xid != "" {
+		ctx = WithLabels(ctx, slog.String(keyXID, xid))
+	}
+	if wid := labels[constants.WorkUnitIDLabel]; wid != "" {
+		ctx = WithLabels(ctx, slog.String(keyWID, wid))
+	}
+	if eid := labels[constants.ExecutionIDLabel]; eid != "" {
+		ctx = WithLabels(ctx, slog.String(keyEID, eid))
+	}
+	return ctx
+}
+
+// TODO: Evaluate enforcing/validating label presence when all fields are missing.
+func withJobSetParsedName(ctx context.Context, name string) context.Context {
+	split := strings.Split(name, "-")
+	if len(split) != 4 {
+		Warn(ctx, "Failed to parse job set name in logging.WithJobSetName", "jobset", name, "split", split)
+		return ctx
+	}
+	if xid := split[2]; xid != "" {
+		ctx = WithLabels(ctx, slog.String(keyXID, xid))
+	}
+	if wid := split[3]; wid != "" {
+		ctx = WithLabels(ctx, slog.String(keyWID, wid))
+	}
+	return ctx
 }
 
 // withExperimentOrWorkUnitLabels adds experiment or work unit labels to logger in contexts.

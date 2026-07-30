@@ -128,22 +128,7 @@ func DenormalizeWorkUnitStatus(ctx context.Context, exp *essmsgpb.Experiment, wo
 			newSeverity = delta.NewMessage.Severity
 		}
 
-		if currentSeverity != newSeverity {
-			if currentSeverity != essmsgpb.StructuredMessage_SEVERITY_UNSPECIFIED {
-				if val, ok := severityCountsMap[currentSeverity]; ok {
-					severityCountsMap[currentSeverity] = val - 1
-				} else {
-					logging.Error(ctx, "Current severity not found in severity counts map", "current_severity", currentSeverity, "severity_counts_map", severityCountsMap)
-				}
-			}
-			if newSeverity != essmsgpb.StructuredMessage_SEVERITY_UNSPECIFIED {
-				if val, ok := severityCountsMap[newSeverity]; ok {
-					severityCountsMap[newSeverity] = val + 1
-				} else {
-					severityCountsMap[newSeverity] = 1
-				}
-			}
-		}
+		updateSeverityCounts(ctx, severityCountsMap, currentSeverity, newSeverity)
 	}
 
 	// 3. Convert the map back to a list.
@@ -166,6 +151,22 @@ func DenormalizeWorkUnitStatus(ctx context.Context, exp *essmsgpb.Experiment, wo
 
 	// 5. Update the active state of the experiment.
 	return UpdateExperimentActiveState(exp)
+}
+
+func updateSeverityCounts(ctx context.Context, severityCountsMap map[essmsgpb.StructuredMessage_Severity]int64, currentSeverity, newSeverity essmsgpb.StructuredMessage_Severity) {
+	if currentSeverity == newSeverity {
+		return
+	}
+	if currentSeverity != essmsgpb.StructuredMessage_SEVERITY_UNSPECIFIED {
+		if val, ok := severityCountsMap[currentSeverity]; ok {
+			severityCountsMap[currentSeverity] = val - 1
+		} else {
+			logging.Error(ctx, "Current severity not found in severity counts map", "current_severity", currentSeverity, "severity_counts_map", severityCountsMap)
+		}
+	}
+	if newSeverity != essmsgpb.StructuredMessage_SEVERITY_UNSPECIFIED {
+		severityCountsMap[newSeverity] = severityCountsMap[newSeverity] + 1
+	}
 }
 
 // UpdateExperimentActiveState updates the active state of an experiment based on the launch state

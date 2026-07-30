@@ -465,7 +465,6 @@ func (p *parser) parseRestriction() (*fpb.Expression, error) {
 	if comp == tokEq || comp == tokNotEq || comp == tokLt || comp == tokLtEq ||
 		comp == tokGt || comp == tokGtEq || comp == tokHas ||
 		comp == tokRegexMatch || comp == tokRegexNotMatch {
-
 		p.advance() // Consume comparator
 		var right *fpb.Expression
 		var err error

@@ -875,6 +875,10 @@ key5: "value5" # trailing comment with quotes
             ["bazel", "run", "//cmd/actuator:actuator_image_push"],
             env=ANY,
         )
+        mock_run.assert_any_call(
+            ["bazel", "run", "//cmd/ingestion_gateway:ingestion_gateway_image_push"],
+            env=ANY,
+        )
 
     @patch("deploy_dev_env.run_command")
     @patch("time.sleep")

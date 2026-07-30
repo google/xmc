@@ -83,8 +83,8 @@ The XMC services require OCI container images built from the codebase. You must 
    bazel run //cmd/ui:ui_image_push
    bazel run //cmd/reconciler:reconciler_image_push
    bazel run //cmd/log_monitor:log_monitor_image_push
-   bazel run //cmd/health_service:health_service_image_push
    bazel run //cmd/dashboard_service:dashboard_service_image_push
+   bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
    ```
 
 5. **Update image variables** in your deployment configuration file (e.g. `xmanager-cloud-deployment.yaml`, copy of [xmc-deployment-template.yaml](deploy/ctk_v2/xmc-deployment-template.yaml)):
@@ -97,6 +97,7 @@ The XMC services require OCI container images built from the codebase. You must 
    log_monitor_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/log-monitor-dev:<IMAGE_TAG>"
    health_service_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/health-service-dev:<IMAGE_TAG>"
    dashboard_service_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/dashboard-service-dev:<IMAGE_TAG>"
+   ingestion_gateway_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/ingestion-gateway-dev:<IMAGE_TAG>"
    ```
 
 ### 3. DNS and Domain Name Configuration
