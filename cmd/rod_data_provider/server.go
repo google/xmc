@@ -31,89 +31,38 @@ func newServer(cfg *Config) *server {
 
 // GetFittingQueues returns ClusterQueues matching requested resource requirements.
 func (s *server) GetFittingQueues(ctx context.Context, req *spb.GetFittingQueuesRequest) (*spb.GetFittingQueuesResponse, error) {
-	queues := []*spb.ClusterQueue{
+	queues := []*spb.QueueOverview{
 		{
-			Name:                  "cluster-queue-a",
-			Strategy:              "BestEffortFIFO",
-			Cohort:                "default-cohort",
-			Status:                "ACTIVE",
-			StatusMessage:         "ClusterQueue is active and accepting workloads",
-			LastTransitionTime:    "2026-07-29T08:00:00Z",
-			AdmittedWorkloads:     5,
-			ReservingWorkloads:    2,
-			PendingWorkloads:      1,
-			PendingJobsCount:      1,
-			RequestedResources:    "cpu: 2000m, memory: 4Gi",
-			DominantResource:      "cpu",
-			DominantResourceUnits: 20,
-			AdmittedJobsCount:     5,
-			ResourceVelocity:      "15.2 units/hour",
-			JobVelocity:           "12 jobs/hour",
-			LocalQueues: []*spb.LocalQueueRef{
+			QueueName: "cluster-queue-a",
+			QueueCapacity: []*spb.QueueResourceCapacity{
 				{
-					Name:      "team-a-queue",
-					Namespace: "team-a",
-				},
-			},
-			Flavors: []*spb.ResourceFlavorMetric{
-				{
-					Name:         "default-flavor",
-					ResourceName: "cpu",
-					NominalQuota: "100",
-					InUse:        "40",
-					Reserved:     "20",
-					FreeCapacity: "40",
-					LargestSlot:  "20",
+					ResourceType:              "cpu",
+					TotalCapacity:             100,
+					FreeCapacity:              40,
+					FreeCapacityWithBorrowing: 60,
 				},
 				{
-					Name:         "default-flavor",
-					ResourceName: "memory",
-					NominalQuota: "500Gi",
-					InUse:        "200Gi",
-					Reserved:     "100Gi",
-					FreeCapacity: "200Gi",
-					LargestSlot:  "100Gi",
+					ResourceType:              "memory",
+					TotalCapacity:             500,
+					FreeCapacity:              200,
+					FreeCapacityWithBorrowing: 300,
 				},
 			},
 		},
 		{
-			Name:                  "cluster-queue-b",
-			Strategy:              "StrictFIFO",
-			Cohort:                "gpu-cohort",
-			Status:                "ACTIVE",
-			StatusMessage:         "ClusterQueue is active and accepting workloads",
-			LastTransitionTime:    "2026-07-29T08:00:00Z",
-			AdmittedWorkloads:     2,
-			ReservingWorkloads:    1,
-			PendingWorkloads:      0,
-			PendingJobsCount:      0,
-			RequestedResources:    "nvidia.com/gpu: 2",
-			DominantResource:      "nvidia.com/gpu",
-			DominantResourceUnits: 4,
-			AdmittedJobsCount:     2,
-			ResourceVelocity:      "5.0 units/hour",
-			JobVelocity:           "4 jobs/hour",
-			LocalQueues: []*spb.LocalQueueRef{
+			QueueName: "cluster-queue-b",
+			QueueCapacity: []*spb.QueueResourceCapacity{
 				{
-					Name:      "gpu-queue",
-					Namespace: "default",
-				},
-			},
-			Flavors: []*spb.ResourceFlavorMetric{
-				{
-					Name:         "gpu-flavor",
-					ResourceName: "nvidia.com/gpu",
-					NominalQuota: "8",
-					InUse:        "4",
-					Reserved:     "2",
-					FreeCapacity: "2",
-					LargestSlot:  "2",
+					ResourceType:              "nvidia.com/gpu",
+					TotalCapacity:             8,
+					FreeCapacity:              2,
+					FreeCapacityWithBorrowing: 4,
 				},
 			},
 		},
 	}
 
 	return &spb.GetFittingQueuesResponse{
-		ClusterQueues: queues,
+		Queues: queues,
 	}, nil
 }
