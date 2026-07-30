@@ -48,12 +48,6 @@ func TestRequireAdminRoleMiddleware(t *testing.T) {
 	mock.ConfigureMockAuth(authenticator)
 
 	// 2. Setup mock gRPC server
-	grpcLis := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Mock endpoint for internal gRPC call (not strictly needed since we just test HTTP gateway routing,
-		// but needed to avoid dial errors on gRPC gateway).
-	}))
-	defer grpcLis.Close()
-
 	// Spin up a real local gRPC server with mock server implementation to serve gRPC-Gateway requests.
 	lis, err := netListen()
 	if err != nil {

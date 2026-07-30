@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -133,9 +134,11 @@ func (s *server) getUser(ctx context.Context) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	emails := md.Get("x-goog-user-email")
-	if len(emails) == 0 || emails[0] == "" {
-		return "", false
+	if emails := md.Get("x-goog-user-email"); len(emails) > 0 && emails[0] != "" {
+		return emails[0], true
 	}
-	return emails[0], true
+	if emails := md.Get("x-goog-authenticated-user-email"); len(emails) > 0 && emails[0] != "" {
+		return strings.TrimPrefix(emails[0], "accounts.google.com:"), true
+	}
+	return "", false
 }

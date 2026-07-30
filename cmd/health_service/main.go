@@ -55,7 +55,7 @@ func main() {
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
 
 	// 1. Setup gRPC server
-	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
+	lis, err := net.Listen("tcp", "127.0.0.1:"+cfg.GRPCPort)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
 	}
@@ -86,7 +86,7 @@ func main() {
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(httpTransportCreds),
 	}
-	err = gwpb.RegisterHealthServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
+	err = gwpb.RegisterHealthServiceHandlerFromEndpoint(ctx, gwmux, "127.0.0.1:"+cfg.GRPCPort, dialOpts)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to register gateway", "error", err)
 	}
