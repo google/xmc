@@ -129,7 +129,7 @@ export CLICKHOUSE_HOST="clickhouse.xmc-metrics.svc.cluster.local"
 export CLICKHOUSE_PORT="9000"
 export CLICKHOUSE_DATABASE="default"
 export CLICKHOUSE_USER="default"
-export CLICKHOUSE_PASSWORD=""
+export CLICKHOUSE_PASSWORD=$(kubectl get secret clickhouse -n xmc-metrics -o jsonpath="{.data.clickhouse-password}" | base64 --decode)
 ```
 
 Or connect via DSN:
