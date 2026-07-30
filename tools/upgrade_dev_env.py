@@ -484,6 +484,19 @@ def step_images(config: Config) -> None:
     log_success("All XMC service container images compiled and pushed from current branch state.")
 
 
+def sanitize_workload_identity_module(ctk_dir: Path) -> None:
+    """Removes unsupported Terraform 'moved' blocks from workload-identity modules in ctk_dir."""
+    for tf_file in ctk_dir.rglob("main.tf"):
+        if "workload-identity" in str(tf_file):
+            content = tf_file.read_text()
+            if "moved {" in content and "to   = kubernetes_service_account_v1.main" in content:
+                content = content.replace(
+                    "moved {\n  from = kubernetes_service_account.main\n  to   = kubernetes_service_account_v1.main\n}",
+                    "# moved block removed",
+                )
+                tf_file.write_text(content)
+
+
 def step_app(config: Config) -> None:
     """Upgrades XMC Kubernetes workloads via Cluster Toolkit gcluster CLI."""
     log_info("Upgrading XMC Kubernetes application workloads using Cluster Toolkit...")
@@ -512,25 +525,7 @@ def step_app(config: Config) -> None:
         ]
     )
 
-    # Clean up unsupported moved block in compute workload-identity module if present
-    wi_main_tf = (
-        ctk_dir
-        / "compute"
-        / ".terraform"
-        / "modules"
-        / "compute_cluster.workload_identity"
-        / "modules"
-        / "workload-identity"
-        / "main.tf"
-    )
-    if wi_main_tf.exists():
-        content = wi_main_tf.read_text()
-        if "moved {" in content and "to   = kubernetes_service_account_v1.main" in content:
-            content = content.replace(
-                "moved {\n  from = kubernetes_service_account.main\n  to   = kubernetes_service_account_v1.main\n}",
-                "# moved block removed",
-            )
-            wi_main_tf.write_text(content)
+    sanitize_workload_identity_module(ctk_dir)
 
     log_info("Exporting outputs for deployment group 'primary'...")
     run_cmd(
@@ -553,6 +548,7 @@ def step_app(config: Config) -> None:
                     )
 
     log_info("Exporting outputs for deployment group 'compute'...")
+    sanitize_workload_identity_module(ctk_dir)
     run_cmd(
         ["./cluster-toolkit/gcluster", "export-outputs", f"{ctk_dir}/compute"],
         check=False,
