@@ -52,3 +52,46 @@ func TestResourceCache(t *testing.T) {
 		t.Errorf("List() len after Delete = %d, want 1", len(cqCache.List()))
 	}
 }
+
+func TestResourceCacheConcurrent(t *testing.T) {
+	cqCache := NewResourceCache[int]()
+	const goroutines = 10
+	const iterations = 100
+
+	done := make(chan bool, goroutines*3)
+
+	// Concurrent Writers
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			for j := 0; j < iterations; j++ {
+				cqCache.Set(string(rune('a'+id)), j)
+			}
+			done <- true
+		}(i)
+	}
+
+	// Concurrent Readers
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			for j := 0; j < iterations; j++ {
+				cqCache.Get(string(rune('a' + id)))
+			}
+			done <- true
+		}(i)
+	}
+
+	// Concurrent Listers/Mappers
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			for j := 0; j < iterations; j++ {
+				cqCache.List()
+				cqCache.Map()
+			}
+			done <- true
+		}()
+	}
+
+	for i := 0; i < goroutines*3; i++ {
+		<-done
+	}
+}

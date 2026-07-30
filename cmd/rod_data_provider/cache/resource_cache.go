@@ -19,6 +19,8 @@ import (
 )
 
 // ResourceCache is an arbitrary, thread-safe, generic in-memory cache for any object type T.
+// Note: If T is a pointer type, the cache returns direct references to the stored objects.
+// Callers must not modify retrieved objects directly, or should perform a deep copy to avoid race conditions.
 type ResourceCache[T any] struct {
 	mu    sync.RWMutex
 	items map[string]T
