@@ -28,16 +28,6 @@ spec:
     - matches:
         - path:
             type: PathPrefix
-            value: /resources
-        - path:
-            type: PathPrefix
-            value: /queues
-      backendRefs:
-        - name: ui-service
-          port: 80
-    - matches:
-        - path:
-            type: PathPrefix
             value: /v1/clusterqueues
       backendRefs:
         - name: rod-data-provider-service
