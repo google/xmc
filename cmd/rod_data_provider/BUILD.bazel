@@ -27,10 +27,10 @@ compat_go_library(
         "main.go",
         "server.go",
     ],
-    importpath = "xmanager_cloud/cmd/rod_data_provider/main",
     visibility = ["//visibility:private"],
     deps = [
         "//api/protos/rod",
+        "//cmd/rod_data_provider/reconciler",
         "//internal/compat/google",
         "//internal/logging",
         "//pkg/auth/oauth2",

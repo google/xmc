@@ -37,6 +37,7 @@ import (
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/cmd/rod_data_provider/reconciler"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
@@ -72,11 +73,11 @@ func main() {
 		if err != nil {
 			logging.Warn(ctx, "Failed to create controller-runtime manager", "error", err)
 		} else {
-			reconciler := &KueueReconciler{
+			rec := &reconciler.KueueReconciler{
 				Client: mgr.GetClient(),
 				Cache:  kueueCache,
 			}
-			if err := reconciler.SetupWithManager(ctx, mgr); err != nil {
+			if err := rec.SetupWithManager(ctx, mgr); err != nil {
 				logging.Warn(ctx, "Failed to setup KueueReconciler with manager", "error", err)
 			} else {
 				go func() {

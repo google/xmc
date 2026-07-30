@@ -15,13 +15,8 @@
 package main
 
 import (
-	"context"
-	"fmt"
 	"sync"
 
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
-	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
-	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
@@ -107,98 +102,4 @@ func (c *KueueCache) GetResourceFlavors() map[string]*kueuev1beta1.ResourceFlavo
 		m[k] = rf.DeepCopy()
 	}
 	return m
-}
-
-type ClusterQueueReconciler struct {
-	client.Client
-	Cache *KueueCache
-}
-
-func (r *ClusterQueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var cq kueuev1beta1.ClusterQueue
-	if err := r.Get(ctx, req.NamespacedName, &cq); err != nil {
-		if errors.IsNotFound(err) {
-			r.Cache.DeleteClusterQueue(req.Name)
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, err
-	}
-	r.Cache.SetClusterQueue(&cq)
-	return ctrl.Result{}, nil
-}
-
-func (r *ClusterQueueReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&kueuev1beta1.ClusterQueue{}).
-		Complete(r)
-}
-
-type LocalQueueReconciler struct {
-	client.Client
-	Cache *KueueCache
-}
-
-func (r *LocalQueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var lq kueuev1beta1.LocalQueue
-	if err := r.Get(ctx, req.NamespacedName, &lq); err != nil {
-		if errors.IsNotFound(err) {
-			r.Cache.DeleteLocalQueue(req.Namespace, req.Name)
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, err
-	}
-	r.Cache.SetLocalQueue(&lq)
-	return ctrl.Result{}, nil
-}
-
-func (r *LocalQueueReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&kueuev1beta1.LocalQueue{}).
-		Complete(r)
-}
-
-type ResourceFlavorReconciler struct {
-	client.Client
-	Cache *KueueCache
-}
-
-func (r *ResourceFlavorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var rf kueuev1beta1.ResourceFlavor
-	if err := r.Get(ctx, req.NamespacedName, &rf); err != nil {
-		if errors.IsNotFound(err) {
-			r.Cache.DeleteResourceFlavor(req.Name)
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, err
-	}
-	r.Cache.SetResourceFlavor(&rf)
-	return ctrl.Result{}, nil
-}
-
-func (r *ResourceFlavorReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&kueuev1beta1.ResourceFlavor{}).
-		Complete(r)
-}
-
-// KueueReconciler orchestrates ClusterQueue, LocalQueue, and ResourceFlavor reconcilers.
-type KueueReconciler struct {
-	Client client.Client
-	Cache  *KueueCache
-}
-
-func (r *KueueReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
-	cqRec := &ClusterQueueReconciler{Client: r.Client, Cache: r.Cache}
-	if err := cqRec.SetupWithManager(ctx, mgr); err != nil {
-		return fmt.Errorf("failed to setup ClusterQueueReconciler: %w", err)
-	}
-	lqRec := &LocalQueueReconciler{Client: r.Client, Cache: r.Cache}
-	if err := lqRec.SetupWithManager(ctx, mgr); err != nil {
-		return fmt.Errorf("failed to setup LocalQueueReconciler: %w", err)
-	}
-	rfRec := &ResourceFlavorReconciler{Client: r.Client, Cache: r.Cache}
-	if err := rfRec.SetupWithManager(ctx, mgr); err != nil {
-		return fmt.Errorf("failed to setup ResourceFlavorReconciler: %w", err)
-	}
-	return nil
 }
