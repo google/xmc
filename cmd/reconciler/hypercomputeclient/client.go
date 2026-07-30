@@ -463,9 +463,11 @@ func (c *ControlPlaneClient) UpdateMLRun(ctx context.Context, name string, opts 
 	for _, field := range []string{"createTime", "updateTime", "endTime"} {
 		delete(payload, field)
 	}
-	// orchestrator and workloadDetails are immutable on the control plane: they
-	// come back from the GET above, and re-sending them under update_mask=* is
-	// rejected. Keep them only when this call explicitly updates the orchestrator.
+	// orchestrator and workloadDetails are mutable, but they are seeded from the GET
+	// above and update_mask=* only touches the fields present in the payload. When
+	// this call is not explicitly updating the orchestrator, drop them so the PATCH
+	// stays scoped to the fields we intend to change and leaves the existing values
+	// untouched.
 	if opts == nil || opts.Orchestrator == "" {
 		delete(payload, "orchestrator")
 		delete(payload, "workloadDetails")

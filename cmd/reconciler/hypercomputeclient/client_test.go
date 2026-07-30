@@ -441,8 +441,9 @@ func TestUpdateMLRun(t *testing.T) {
 				t.Errorf("patch body still contains output-only field %q", f)
 			}
 		}
-		// orchestrator/workloadDetails are immutable and must not be echoed back
-		// when the caller is not explicitly updating the orchestrator.
+		// orchestrator/workloadDetails are mutable but must not be echoed back when the
+		// caller is not explicitly updating the orchestrator: the PATCH stays scoped to
+		// the fields being changed and leaves the existing values untouched.
 		for _, f := range []string{"orchestrator", "workloadDetails"} {
 			if _, ok := patchBody[f]; ok {
 				t.Errorf("patch body still contains immutable field %q", f)
