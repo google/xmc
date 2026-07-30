@@ -471,10 +471,10 @@ def sanitize_workload_identity_module(ctk_dir: Path) -> None:
     )
     for tf_file in ctk_dir.rglob("*.tf"):
         if "workload-identity" in str(tf_file):
-            content = tf_file.read_text()
+            content = tf_file.read_text(encoding="utf-8")
             if pattern.search(content):
                 new_content = pattern.sub("# moved block removed", content)
-                tf_file.write_text(new_content)
+                tf_file.write_text(new_content, encoding="utf-8")
 
 
 def step_app(config: Config) -> None:
@@ -519,22 +519,24 @@ def step_app(config: Config) -> None:
             dest = ctk_dir / group / "primary_inputs.auto.tfvars"
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(primary_artifact, dest)
-            content = dest.read_text()
+            content = dest.read_text(encoding="utf-8")
             if "service_account_email_health_service_gcp_sa" not in content:
                 # Provide fallback for health_service GCP SA when health_service is disabled
-                with open(dest, "a") as f:
-                    f.write(
-                        '\nservice_account_email_health_service_gcp_sa = "xmc-v2-xmc-wl-sa@xmc-test-project-2.iam.gserviceaccount.com"\n'
-                    )
+                fallback_sa = f"{config.deployment_name}-xmc-wl-sa@{config.project_id}.iam.gserviceaccount.com"
+                with open(dest, "a", encoding="utf-8") as f:
+                    f.write(f'\nservice_account_email_health_service_gcp_sa = "{fallback_sa}"\n')
 
     log_info("Exporting outputs for deployment group 'compute'...")
     compute_dir = ctk_dir / "compute"
     if compute_dir.exists():
-        tf_bins = list((Path.home() / ".cache").rglob("terraform"))
-        if tf_bins:
-            run_cmd(
-                [str(tf_bins[0]), f"-chdir={compute_dir}", "init", "-backend=false"], check=False
-            )
+        tf_bin = shutil.which("terraform")
+        if not tf_bin:
+            hpc_cache = Path.home() / ".cache" / "hpc-toolkit"
+            tf_bins = list(hpc_cache.rglob("terraform")) if hpc_cache.exists() else []
+            if tf_bins:
+                tf_bin = str(tf_bins[0])
+        if tf_bin:
+            run_cmd([tf_bin, f"-chdir={compute_dir}", "init", "-backend=false"], check=False)
         run_cmd(
             ["./cluster-toolkit/gcluster", "export-outputs", str(compute_dir)],
             check=False,
