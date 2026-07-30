@@ -17,20 +17,29 @@ package main
 import (
 	"context"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/pkg/auth/oauth2"
 )
 
 type server struct {
 	spb.UnimplementedHealthServiceServer
-	cfg *Config
+	cfg           *Config
+	authenticator *oauth2.Authenticator
 }
 
-func newServer(cfg *Config) *server {
-	return &server{cfg: cfg}
+func newServer(cfg *Config, authenticator *oauth2.Authenticator) *server {
+	return &server{cfg: cfg, authenticator: authenticator}
 }
 
 func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRequest) (*spb.HealthStatusResponse, error) {
+	if err := s.checkAdminGuard(ctx); err != nil {
+		return nil, err
+	}
 	return &spb.HealthStatusResponse{
 		HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
 		SystemInfo: &spb.SystemInfo{
@@ -67,6 +76,9 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 }
 
 func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntriesRequest) (*spb.ListConfigEntriesResponse, error) {
+	if err := s.checkAdminGuard(ctx); err != nil {
+		return nil, err
+	}
 	return &spb.ListConfigEntriesResponse{
 		ConfigGroups: []*spb.ConfigGroup{
 			{
@@ -82,10 +94,48 @@ func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntri
 }
 
 func (s *server) GetUserInfo(ctx context.Context, req *spb.GetUserInfoRequest) (*spb.UserInfoResponse, error) {
+	email, _ := s.getUser(ctx)
+
+	if err := s.checkAdminGuard(ctx); err != nil {
+		return &spb.UserInfoResponse{UserEmail: email, Privileges: nil}, nil
+	}
+
 	return &spb.UserInfoResponse{
-		UserEmail: "mock-user@google.com",
-		Privileges: []spb.Privilege{
-			spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL,
-		},
+		UserEmail:  email,
+		Privileges: []spb.Privilege{spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL},
 	}, nil
+}
+
+func (s *server) checkAdminGuard(ctx context.Context) error {
+	if s.authenticator == nil || s.authenticator.Config.DisableAuthentication {
+		return nil
+	}
+
+	email, ok := s.getUser(ctx)
+	if !ok {
+		return status.Errorf(codes.Unauthenticated, "missing user identity")
+	}
+
+	authorized, err := s.authenticator.IsAdmin(ctx, email)
+	if err != nil {
+		logging.Error(ctx, "[Auth Guard] Admin check failed", "error", err, "user", email)
+		return status.Errorf(codes.Internal, "internal authorization check failed")
+	}
+	if !authorized {
+		return status.Errorf(codes.PermissionDenied, "forbidden: user lacks admin role")
+	}
+
+	return nil
+}
+
+func (s *server) getUser(ctx context.Context) (string, bool) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return "", false
+	}
+	emails := md.Get("x-goog-user-email")
+	if len(emails) == 0 || emails[0] == "" {
+		return "", false
+	}
+	return emails[0], true
 }

@@ -142,6 +142,8 @@ Common OAuth environment variables for XMC services.
   value: {{ .Values.projectId | quote }}
 - name: AUTHORIZED_IAM_ROLE
   value: {{ .Values.auth.authorizedIamRole | quote }}
+- name: ADMIN_IAM_ROLE
+  value: {{ .Values.auth.adminIamRole | quote }}
 - name: JWT_SECRET_FILE
   value: "/etc/gcp-secrets/jwt-secret"
 - name: CLIENT_SECRET_FILE

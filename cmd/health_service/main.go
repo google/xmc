@@ -66,7 +66,7 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer(grpc.Creds(transportCreds))
-	spb.RegisterHealthServiceServer(grpcServer, newServer(cfg))
+	spb.RegisterHealthServiceServer(grpcServer, newServer(cfg, authenticator))
 	reflection.Register(grpcServer)
 
 	go func() {

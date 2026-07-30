@@ -18,12 +18,15 @@ import (
 	"context"
 	"testing"
 
+	"google.golang.org/grpc/metadata"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/pkg/auth/oauth2/mock"
 )
 
 func TestGetHealthStatus(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051", ProjectID: "test-project"}
-	s := newServer(cfg)
+	s := newServer(cfg, nil)
 
 	resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
 	if err != nil {
@@ -41,7 +44,7 @@ func TestGetHealthStatus(t *testing.T) {
 
 func TestListConfigEntries(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051", ProjectID: "test-project"}
-	s := newServer(cfg)
+	s := newServer(cfg, nil)
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
 	if err != nil {
@@ -74,19 +77,68 @@ func TestListConfigEntries(t *testing.T) {
 }
 
 func TestGetUserInfo(t *testing.T) {
-	cfg := &Config{Port: "8080", GRPCPort: "50051", ProjectID: "test-project"}
-	s := newServer(cfg)
+	oauthCfg := &oauth2.Config{
+		DisableAuthentication: false,
+		AdminIAMRole:          "roles/owner",
+		TargetIAMRole:         "roles/viewer",
+		GCPProjectID:          "test-project-id",
+	}
+	authenticator := oauth2.NewAuthenticator(oauthCfg)
+	mock.ConfigureMockAuth(authenticator)
 
-	resp, err := s.GetUserInfo(context.Background(), &spb.GetUserInfoRequest{})
-	if err != nil {
-		t.Fatalf("GetUserInfo failed: %v", err)
+	s := newServer(&Config{}, authenticator)
+
+	tests := []struct {
+		name           string
+		email          string
+		wantEmail      string
+		wantPrivileges []spb.Privilege
+	}{
+		{
+			name:      "admin user gets admin privilege",
+			email:     "mock-admin@mycompany.com", // owner role in mock
+			wantEmail: "mock-admin@mycompany.com",
+			wantPrivileges: []spb.Privilege{
+				spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL,
+			},
+		},
+		{
+			name:           "regular viewer user does not get admin privilege",
+			email:          "mock-sa-user@mycompany.com", // viewer role in mock, not owner
+			wantEmail:      "mock-sa-user@mycompany.com",
+			wantPrivileges: nil,
+		},
+		{
+			name:           "missing email returns empty response",
+			email:          "",
+			wantEmail:      "",
+			wantPrivileges: nil,
+		},
 	}
 
-	if resp.UserEmail != "mock-user@google.com" {
-		t.Errorf("Expected UserEmail 'mock-user@google.com', got %q", resp.UserEmail)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			if tt.email != "" {
+				ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("x-goog-user-email", tt.email))
+			}
+			resp, err := s.GetUserInfo(ctx, &spb.GetUserInfoRequest{})
+			if err != nil {
+				t.Fatalf("GetUserInfo failed: %v", err)
+			}
 
-	if len(resp.Privileges) != 1 || resp.Privileges[0] != spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL {
-		t.Errorf("Expected privileges [PRIVILEGE_ACCESS_ADMIN_PANEL], got %v", resp.Privileges)
+			if resp.UserEmail != tt.wantEmail {
+				t.Errorf("Expected UserEmail %q, got %q", tt.wantEmail, resp.UserEmail)
+			}
+
+			if len(resp.Privileges) != len(tt.wantPrivileges) {
+				t.Fatalf("Expected %d privileges, got %d", len(tt.wantPrivileges), len(resp.Privileges))
+			}
+			for i, p := range resp.Privileges {
+				if p != tt.wantPrivileges[i] {
+					t.Errorf("Expected privilege at index %d to be %v, got %v", i, tt.wantPrivileges[i], p)
+				}
+			}
+		})
 	}
 }

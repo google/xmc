@@ -16,6 +16,7 @@ package oauth2
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -28,6 +29,8 @@ import (
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/api/idtoken"
 )
+
+var ErrAdminRoleNotConfigured = errors.New("admin IAM role not configured")
 
 type policyCacheEntry struct {
 	policy *iampb.Policy
@@ -198,8 +201,13 @@ func (a *Authenticator) IsUserAuthorized(ctx context.Context, email string) (boo
 	return false, nil
 }
 
-// IsUserAuthorizedViaIAM queries Google Cloud Resource Manager API to verify IAM role mappings.
+// IsUserAuthorizedViaIAM queries Google Cloud Resource Manager API to verify IAM role mappings for the default TargetIAMRole.
 func (a *Authenticator) IsUserAuthorizedViaIAM(ctx context.Context, email string) (bool, error) {
+	return a.IsUserAuthorizedForRoleViaIAM(ctx, email, a.Config.TargetIAMRole)
+}
+
+// IsUserAuthorizedForRoleViaIAM queries Google Cloud Resource Manager API to verify IAM role mappings for a specific role.
+func (a *Authenticator) IsUserAuthorizedForRoleViaIAM(ctx context.Context, email string, role string) (bool, error) {
 	policy, err := a.getIamPolicy(ctx)
 	if err != nil {
 		return false, err
@@ -213,11 +221,10 @@ func (a *Authenticator) IsUserAuthorizedViaIAM(ctx context.Context, email string
 		domainPrincipal = "domain:" + parts[1]
 	}
 
-	targetRole := a.Config.TargetIAMRole
-	log.Printf("[IAM Pipeline] Verifying role %q for members user:%s serviceaccount:%s domain:%s", targetRole, email, email, domainPrincipal)
+	log.Printf("[IAM Pipeline] Verifying role %q for members user:%s serviceaccount:%s domain:%s", role, email, email, domainPrincipal)
 
 	for _, binding := range policy.Bindings {
-		if binding.Role == targetRole {
+		if binding.Role == role {
 			for _, member := range binding.Members {
 				memberLower := strings.ToLower(member)
 				if memberLower == userPrincipal || memberLower == saPrincipal || (domainPrincipal != "" && memberLower == domainPrincipal) {
@@ -228,4 +235,18 @@ func (a *Authenticator) IsUserAuthorizedViaIAM(ctx context.Context, email string
 	}
 
 	return false, nil
+}
+
+// IsAdmin checks if the given user email has admin privileges.
+// If DisableAuthentication is true, it always returns true.
+// If AdminIAMRole is not configured, it returns ErrAdminRoleNotConfigured.
+func (a *Authenticator) IsAdmin(ctx context.Context, email string) (bool, error) {
+	if a.Config.DisableAuthentication {
+		return true, nil
+	}
+	adminRole := a.Config.AdminIAMRole
+	if adminRole == "" {
+		return false, ErrAdminRoleNotConfigured
+	}
+	return a.IsUserAuthorizedForRoleViaIAM(ctx, email, adminRole)
 }

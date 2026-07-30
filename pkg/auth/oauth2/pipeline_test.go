@@ -110,3 +110,89 @@ func TestIamPolicyCachingAndClientReuse(t *testing.T) {
 		t.Errorf("unexpected error on Close: %v", err)
 	}
 }
+
+func TestIsUserAuthorizedForRoleViaIAM(t *testing.T) {
+	cfg := &Config{
+		GCPProjectID:  "test-project-id",
+		TargetIAMRole: "roles/viewer",
+		AdminIAMRole:  "roles/owner",
+	}
+
+	a := NewAuthenticator(cfg)
+
+	mockPolicy := &iampb.Policy{
+		Bindings: []*iampb.Binding{
+			{
+				Role:    "roles/viewer",
+				Members: []string{"user:viewer@company.com"},
+			},
+			{
+				Role:    "roles/owner",
+				Members: []string{"user:owner@company.com"},
+			},
+		},
+	}
+
+	a.PolicyFetcher = func(ctx context.Context) (*iampb.Policy, error) {
+		return mockPolicy, nil
+	}
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		email   string
+		role    string
+		want    bool
+		wantErr bool
+	}{
+		{
+			name:    "viewer email has viewer role",
+			email:   "viewer@company.com",
+			role:    "roles/viewer",
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name:    "viewer email does not have owner role",
+			email:   "viewer@company.com",
+			role:    "roles/owner",
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name:    "owner email has owner role",
+			email:   "owner@company.com",
+			role:    "roles/owner",
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name:    "owner email does not have viewer role (IAM bindings are exact, owner is not implicitly viewer in this check)",
+			email:   "owner@company.com",
+			role:    "roles/viewer",
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name:    "empty role returns false",
+			email:   "owner@company.com",
+			role:    "",
+			want:    false,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := a.IsUserAuthorizedForRoleViaIAM(ctx, tt.email, tt.role)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("IsUserAuthorizedForRoleViaIAM() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("IsUserAuthorizedForRoleViaIAM() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
