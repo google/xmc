@@ -48,6 +48,8 @@ class Config:
     gke_cluster: str
     config_path: str
     run_migrations: bool = False
+    health_service_deployment_enabled: bool = False
+    rod_deployment_enabled: bool = True
 
 
 def log_info(msg: str) -> None:
@@ -206,6 +208,18 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
     acr_target = os.getenv("XMC_ACR_TARGET") or registry
     gke_cluster = f"xmc-{deployment_name}-{environment}"
 
+    health_svc_raw = yaml_vars.get("health_service_deployment_enabled", False)
+    if isinstance(health_svc_raw, str):
+        health_service_deployment_enabled = health_svc_raw.lower() == "true"
+    else:
+        health_service_deployment_enabled = bool(health_svc_raw)
+
+    rod_raw = yaml_vars.get("rod_deployment_enabled", True)
+    if isinstance(rod_raw, str):
+        rod_deployment_enabled = rod_raw.lower() == "true"
+    else:
+        rod_deployment_enabled = bool(rod_raw)
+
     return Config(
         project_id=project_id,
         deployment_name=deployment_name,
@@ -217,6 +231,8 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
         gke_cluster=gke_cluster,
         config_path=config_file,
         run_migrations=run_migrations,
+        health_service_deployment_enabled=health_service_deployment_enabled,
+        rod_deployment_enabled=rod_deployment_enabled,
     )
 
 
@@ -452,9 +468,13 @@ def step_images(config: Config) -> None:
         ("reconciler", "//cmd/reconciler:reconciler_image_push"),
         ("ui", "//cmd/ui:ui_image_push"),
         ("xid_service", "//cmd/xid_service:xid_service_image_push"),
-        ("health_service", "//cmd/health_service:health_service_image_push"),
-        ("rod_data_provider", "//cmd/rod_data_provider:rod_data_provider_image_push"),
     ]
+    if config.health_service_deployment_enabled:
+        targets.append(("health_service", "//cmd/health_service:health_service_image_push"))
+    if config.rod_deployment_enabled:
+        targets.append(
+            ("rod_data_provider", "//cmd/rod_data_provider:rod_data_provider_image_push")
+        )
 
     for name, target in targets:
         log_info(f"Pushing {name} image...")
@@ -520,12 +540,15 @@ def step_restart(config: Config) -> None:
     services = [
         "actuator",
         "experiment-state-server",
-        "health-service",
         "log-monitor",
         "reconciler",
         "ui",
         "xid-service",
     ]
+    if config.health_service_deployment_enabled:
+        services.append("health-service")
+    if config.rod_deployment_enabled:
+        services.append("rod-data-provider")
 
     for service in services:
         resolved_name = resolve_deployment_name(service, config.namespace)

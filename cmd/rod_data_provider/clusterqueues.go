@@ -286,8 +286,11 @@ func computeFreeCapacityStr(nominalStr, reservedStr, inUseStr string) string {
 	if unit == "m" {
 		return fmt.Sprintf("%.0fm", free*1000.0)
 	}
-	if unit == "Gi" || unit == "Mi" {
-		return fmt.Sprintf("%.0f%s", free, unit)
+	if unit == "Gi" {
+		return fmt.Sprintf("%.0fGi", free)
+	}
+	if unit == "Mi" {
+		return fmt.Sprintf("%.0fMi", free*1024.0)
 	}
 	if unit != "" {
 		return fmt.Sprintf("%.0f%s", free, unit)

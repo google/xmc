@@ -218,6 +218,13 @@ func TestCapacityMath(t *testing.T) {
 			want:     "300Gi",
 		},
 		{
+			name:     "Memory MiB Capacity Math",
+			nominal:  "1024Mi",
+			reserved: "256Mi",
+			inUse:    "512Mi",
+			want:     "512Mi",
+		},
+		{
 			name:     "CPU Millicores Math",
 			nominal:  "2000m",
 			reserved: "500m",

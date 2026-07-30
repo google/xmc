@@ -255,12 +255,34 @@ class TestStepSubprocesses(unittest.TestCase):
         )
 
     @mock.patch("tools.upgrade_dev_env.run_cmd")
-    def test_step_images(self, mock_run):
+    def test_step_images_default(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_images(self.config)
-        self.assertEqual(mock_run.call_count, 8)
+        # Default config has rod_deployment_enabled=True (7 targets: 6 base + rod_data_provider)
+        self.assertEqual(mock_run.call_count, 7)
+
+    @mock.patch("tools.upgrade_dev_env.run_cmd")
+    def test_step_images_rod_disabled(self, mock_run):
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        config = upgrade_dev_env.Config(
+            project_id="proj-123",
+            deployment_name="deploy-456",
+            region="us-central1",
+            environment="dev",
+            namespace="xmc",
+            registry="us-docker.pkg.dev/proj-123/xmc",
+            acr_target="us-docker.pkg.dev/proj-123/xmc",
+            gke_cluster="xmc-deploy-456-dev",
+            config_path="deploy/ctk_v2/xmanager-cloud-deployment.yaml",
+            rod_deployment_enabled=False,
+        )
+        upgrade_dev_env.step_images(config)
+        # Should push only 6 base targets when rod is disabled
+        self.assertEqual(mock_run.call_count, 6)
 
     @mock.patch.object(Path, "is_dir", return_value=True)
     @mock.patch("tools.upgrade_dev_env.run_cmd")
@@ -289,6 +311,7 @@ class TestStepSubprocesses(unittest.TestCase):
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_restart(self.config)
+        # 6 base services + rod-data-provider (7 total)
         self.assertEqual(mock_run.call_count, 7)
 
     @mock.patch("tools.upgrade_dev_env.run_cmd")
