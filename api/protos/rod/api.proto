@@ -1,0 +1,64 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package cloud.xmanager.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "xmanager_cloud/api/protos/rod";
+
+// ResourceObservabilityService provides Resource Observability Dashboard backend APIs.
+service ResourceObservabilityService {
+  // TODO: Implement the rest of methods
+
+  // Get all queues that fit specific resource requirements.
+  rpc GetFittingQueues(GetFittingQueuesRequest) returns (GetFittingQueuesResponse) {
+    option (google.api.http) = {
+      get: "/v1/clusterqueues"
+    };
+  }
+}
+
+// Resource represents requested or available compute resources.
+message Resource {
+  // Type of resource, e.g., "cpu", "memory", "nvidia.com/gpu", "google.com/tpu".
+  string resource_type = 1;
+  double count = 2;
+}
+
+// QueueResourceCapacity represents resource capacities for a queue.
+message QueueResourceCapacity {
+  string resource_type = 1;
+  double total_capacity = 2;
+  double free_capacity = 3;
+  double free_capacity_with_borrowing = 4;
+}
+
+// QueueOverview provides an overview of the queue and its resources.
+message QueueOverview {
+  string queue_name = 1;
+  repeated QueueResourceCapacity queue_capacity = 3;
+}
+
+// GetFittingQueuesRequest represents parameters for filtering matching ClusterQueues.
+message GetFittingQueuesRequest {
+  repeated Resource requirements = 1;
+}
+
+// GetFittingQueuesResponse contains the list of matching ClusterQueues.
+message GetFittingQueuesResponse {
+  repeated QueueOverview queues = 1;
+}

@@ -128,7 +128,7 @@ func TestBuildProducerOptions(t *testing.T) {
 		SASLPassword:    "pass",
 	}
 
-	opts, err := BuildProducerOptions(cfg)
+	opts, err := BuildProducerOptions(cfg, nil)
 	if err != nil {
 		t.Fatalf("unexpected error building producer options: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestAsyncPublishing_WaitGroupBlocking(t *testing.T) {
 	mp := NewMockProducer()
 	mp.produceDelay = 30 * time.Millisecond
 
-	handler := NewMetricsIngestionHandler(mp, "test-topic")
+	handler := NewMetricsIngestionHandler(mp, "test-topic", nil)
 
 	payload := `[
 		{"xid": 101, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000},
@@ -190,7 +190,7 @@ func TestEarlyAbortOptimization_BrokerFailure(t *testing.T) {
 	mp.failErr = errors.New("kafka cluster unreachable")
 	mp.produceDelay = 0
 
-	handler := NewMetricsIngestionHandler(mp, "test-topic")
+	handler := NewMetricsIngestionHandler(mp, "test-topic", nil)
 
 	var buf bytes.Buffer
 	buf.WriteString("[")
@@ -232,7 +232,7 @@ func TestNewKafkaProducer(t *testing.T) {
 		TopicName:       "xmc-metrics",
 	}
 
-	client, err := NewKafkaProducer(cfg)
+	client, err := NewKafkaProducer(cfg, nil)
 	if err != nil {
 		t.Fatalf("failed to construct Kafka producer: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestBuildProducerOptions_AllSASLMechanisms(t *testing.T) {
 				SASLUser:        "testuser",
 				SASLPassword:    "testpass",
 			}
-			opts, err := BuildProducerOptions(cfg)
+			opts, err := BuildProducerOptions(cfg, nil)
 			if err != nil {
 				t.Fatalf("unexpected error building producer options for %s: %v", tt.name, err)
 			}
@@ -284,7 +284,7 @@ func TestNewKafkaProducer_EmptyBrokers(t *testing.T) {
 	cfg := &Config{
 		RedpandaBrokers: nil,
 	}
-	client, err := NewKafkaProducer(cfg)
+	client, err := NewKafkaProducer(cfg, nil)
 	if err != nil {
 		t.Logf("NewKafkaProducer returned error for empty brokers as expected: %v", err)
 	} else if client != nil {

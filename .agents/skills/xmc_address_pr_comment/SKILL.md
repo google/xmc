@@ -127,6 +127,8 @@ Each `go_binary` mapped above is associated with an OCI image builder and GKE de
 | `//cmd/reconciler:reconciler` | `//cmd/reconciler:reconciler_image_push` | `deploy/helm/templates/reconciler/deployment.yaml` | `reconciler-deployment` |
 | `//cmd/log_monitor:log_monitor` | `//cmd/log_monitor:log_monitor_image_push` | N/A | N/A |
 | `//cmd/ui` (Frontend TS/HTML) | `//cmd/ui:ui_image_push` | `deploy/helm/templates/ess/ui-deployment.yaml` | `ui-deployment` |
+| `//cmd/health_service:health_service` | `//cmd/health_service:health_service_image_push` | `deploy/helm/templates/health-service/deployment.yaml` | `health-service-deployment` |
+| `//cmd/rod_data_provider:rod_data_provider` | `//cmd/rod_data_provider:rod_data_provider_image_push` | `deploy/helm/templates/rod/deployment.yaml` | `rod-data-provider-deployment` |
 
 ---
 
