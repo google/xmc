@@ -27,9 +27,9 @@ import (
 	"time"
 
 	"go/google"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/reflection"
+	"golang/grpc/credentials/insecure/insecure"
+	"golang/grpc/grpc"
+	"golang/grpc/reflection/reflection"
 	"xmanager_cloud/logging/logging"
 
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
