@@ -79,23 +79,15 @@ Review and adjust `deploy/addons/metrics/clickhouse/values.yaml` as needed for y
 Deploy ClickHouse using Helm with the provided `values.yaml`:
 
 ```bash
-# Using Public Repository (Option A)
-helm upgrade --install clickhouse clickstack/clickstack \
-    --namespace xmc-metrics \
-    --create-namespace \
-    -f deploy/addons/metrics/clickhouse/values.yaml
+# get chart
+helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts
+helm repo update
 
-# OR Using Official ClickHouse Chart
-helm upgrade --install clickhouse clickhouse/clickhouse \
-    --namespace xmc-metrics \
-    --create-namespace \
-    -f deploy/addons/metrics/clickhouse/values.yaml
+# install operators
+helm install clickstack-operators clickstack/clickstack-operators --namespace xmc-metrics --create-namespace -f values.yaml 
 
-# OR Using Artifact Registry OCI Mirror (Option B)
-helm upgrade --install clickhouse oci://us-central1-docker.pkg.dev/[PROJECT_ID]/[REPO_NAME]/clickhouse --version 3.4.0 \
-    --namespace xmc-metrics \
-    --create-namespace \
-    -f deploy/addons/metrics/clickhouse/values.yaml
+# install clickhouse
+helm install my-clickstack clickstack/clickstack
 ```
 
 ---
