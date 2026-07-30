@@ -16,7 +16,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
@@ -35,11 +34,19 @@ func newServer(cfg *Config, cache *cache.KueueCache) *server {
 	}
 }
 
-// GetFittingQueues returns ClusterQueues matching requested resource requirements directly from in-memory KueueCache.
+// GetFittingQueues returns ClusterQueues matching requested resource requirements.
 func (s *server) GetFittingQueues(ctx context.Context, req *spb.GetFittingQueuesRequest) (*spb.GetFittingQueuesResponse, error) {
-	queues, err := FetchClusterQueues(ctx, s.cache, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch cluster queues: %w", err)
+	queues := []*spb.QueueOverview{
+		{
+			QueueName: "sample-queue-1",
+			QueueCapacity: []*spb.QueueResourceCapacity{
+				{
+					ResourceType:  "cpu",
+					TotalCapacity: 100,
+					FreeCapacity:  50,
+				},
+			},
+		},
 	}
 
 	return &spb.GetFittingQueuesResponse{

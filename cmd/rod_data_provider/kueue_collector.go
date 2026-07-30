@@ -32,16 +32,19 @@ type KueueCollector struct {
 }
 
 func (c *KueueCollector) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
+	if c.Cache == nil {
+		return fmt.Errorf("kueue cache is nil")
+	}
 	cqRec := &reconciler.ClusterQueueReconciler{Client: c.Client, Cache: c.Cache.ClusterQueues}
-	if err := cqRec.SetupWithManager(ctx, mgr); err != nil {
+	if err := cqRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup ClusterQueueReconciler: %w", err)
 	}
 	lqRec := &reconciler.LocalQueueReconciler{Client: c.Client, Cache: c.Cache.LocalQueues}
-	if err := lqRec.SetupWithManager(ctx, mgr); err != nil {
+	if err := lqRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup LocalQueueReconciler: %w", err)
 	}
 	rfRec := &reconciler.ResourceFlavorReconciler{Client: c.Client, Cache: c.Cache.ResourceFlavors}
-	if err := rfRec.SetupWithManager(ctx, mgr); err != nil {
+	if err := rfRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup ResourceFlavorReconciler: %w", err)
 	}
 	return nil

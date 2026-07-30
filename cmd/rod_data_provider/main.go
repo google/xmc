@@ -82,7 +82,7 @@ func main() {
 			} else {
 				go func() {
 					logging.Info(ctx, "Starting controller-runtime Manager for KueueCache")
-					if err := mgr.Start(ctx); err != nil {
+					if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 						logging.Error(ctx, "Manager failed to start", "error", err)
 					}
 				}()
