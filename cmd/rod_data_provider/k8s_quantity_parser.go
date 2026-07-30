@@ -19,9 +19,9 @@ import (
 	"strings"
 
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-	spb "xmanager_cloud/api/protos/rod"
 )
 
+// extractResourceTotalsFromStatus converts Kueue FlavorUsage into a map of resource names to raw total strings.
 func extractResourceTotalsFromStatus(usage []kueuev1beta1.FlavorUsage) map[string]string {
 	resTotals := make(map[string]string)
 	for _, flv := range usage {
@@ -33,11 +33,13 @@ func extractResourceTotalsFromStatus(usage []kueuev1beta1.FlavorUsage) map[strin
 	return resTotals
 }
 
+// parseResourceUsageVal parses a raw resource usage string into a float64 value.
 func parseResourceUsageVal(s string) float64 {
 	val, _ := parseK8sResourceVal(s)
 	return val
 }
 
+// parseK8sResourceVal parses Kubernetes quantity strings (e.g. "8Gi", "1000m", "4") into a float64 value and unit.
 func parseK8sResourceVal(s string) (float64, string) {
 	s = strings.TrimSpace(s)
 	if s == "" || s == "-" {
@@ -62,24 +64,4 @@ func parseK8sResourceVal(s string) (float64, string) {
 		return v / 1024.0, unit
 	}
 	return v, unit
-}
-
-func satisfiesRequirements(q *spb.QueueOverview, reqs []*spb.Resource) bool {
-	for _, req := range reqs {
-		if !capacitySatisfiesRequirement(q.QueueCapacity, req) {
-			return false
-		}
-	}
-	return true
-}
-
-func capacitySatisfiesRequirement(capacities []*spb.QueueResourceCapacity, req *spb.Resource) bool {
-	for _, cap := range capacities {
-		if strings.EqualFold(cap.ResourceType, req.ResourceType) {
-			if cap.FreeCapacityWithBorrowing >= req.Count || cap.FreeCapacity >= req.Count {
-				return true
-			}
-		}
-	}
-	return false
 }

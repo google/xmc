@@ -16,8 +16,8 @@ package main
 
 import (
 	"context"
+	"strings"
 
-	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
@@ -40,55 +40,7 @@ func FetchClusterQueues(ctx context.Context, cache *cache.KueueCache, req *spb.G
 	return filterFittingQueues(results, req), nil
 }
 
-func buildQueueOverviewFromTyped(cq *kueuev1beta1.ClusterQueue, rfMap map[string]*kueuev1beta1.ResourceFlavor) *spb.QueueOverview {
-	usageMap := extractResourceTotalsFromStatus(cq.Status.FlavorsUsage)
-	resMap := extractResourceTotalsFromStatus(cq.Status.FlavorsReservation)
-
-	var capacities []*spb.QueueResourceCapacity
-	for _, rg := range cq.Spec.ResourceGroups {
-		for _, f := range rg.Flavors {
-			for _, res := range f.Resources {
-				capMetric := buildResourceCapacity(res, usageMap, resMap)
-				capacities = append(capacities, capMetric)
-			}
-		}
-	}
-
-	return &spb.QueueOverview{
-		QueueName:     cq.Name,
-		QueueCapacity: capacities,
-	}
-}
-
-func buildResourceCapacity(res kueuev1beta1.ResourceQuota, usageMap, resMap map[string]string) *spb.QueueResourceCapacity {
-	resName := string(res.Name)
-	nomVal, _ := parseK8sResourceVal(res.NominalQuota.String())
-	useVal := parseResourceUsageVal(usageMap[resName])
-	resVal := parseResourceUsageVal(resMap[resName])
-
-	usedVal := resVal
-	if useVal > usedVal {
-		usedVal = useVal
-	}
-
-	freeVal := nomVal - usedVal
-	if freeVal < 0 {
-		freeVal = 0
-	}
-
-	borrowVal := 0.0
-	if res.BorrowingLimit != nil {
-		borrowVal, _ = parseK8sResourceVal(res.BorrowingLimit.String())
-	}
-
-	return &spb.QueueResourceCapacity{
-		ResourceType:              resName,
-		TotalCapacity:             nomVal,
-		FreeCapacity:              freeVal,
-		FreeCapacityWithBorrowing: freeVal + borrowVal,
-	}
-}
-
+// filterFittingQueues filters queue overviews based on requested resource requirements.
 func filterFittingQueues(queues []*spb.QueueOverview, req *spb.GetFittingQueuesRequest) []*spb.QueueOverview {
 	if req == nil || len(req.Requirements) == 0 {
 		return queues
@@ -100,4 +52,26 @@ func filterFittingQueues(queues []*spb.QueueOverview, req *spb.GetFittingQueuesR
 		}
 	}
 	return filtered
+}
+
+// satisfiesRequirements checks if a QueueOverview satisfies all requested resource requirements.
+func satisfiesRequirements(q *spb.QueueOverview, reqs []*spb.Resource) bool {
+	for _, req := range reqs {
+		if !capacitySatisfiesRequirement(q.QueueCapacity, req) {
+			return false
+		}
+	}
+	return true
+}
+
+// capacitySatisfiesRequirement checks if any resource capacity metric meets a single resource requirement.
+func capacitySatisfiesRequirement(capacities []*spb.QueueResourceCapacity, req *spb.Resource) bool {
+	for _, cap := range capacities {
+		if strings.EqualFold(cap.ResourceType, req.ResourceType) {
+			if cap.FreeCapacityWithBorrowing >= req.Count || cap.FreeCapacity >= req.Count {
+				return true
+			}
+		}
+	}
+	return false
 }
