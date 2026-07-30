@@ -300,11 +300,8 @@ func areWorkloadStatusEqual(old, new *v1beta1.Workload) bool {
 }
 
 func admissionEqual(o, n *v1beta1.Admission) bool {
-	if (o == nil) != (n == nil) {
-		return false
-	}
-	if o == nil && n == nil {
-		return true
+	if o == nil || n == nil {
+		return o == n
 	}
 	if o.ClusterQueue != n.ClusterQueue {
 		return false
@@ -324,11 +321,10 @@ func podSetAssignmentEqual(oa, na *v1beta1.PodSetAssignment) bool {
 	if oa.Name != na.Name {
 		return false
 	}
-	if (oa.Count == nil) != (na.Count == nil) {
-		return false
-	}
-	if oa.Count != nil && na.Count != nil && *oa.Count != *na.Count {
-		return false
+	if oa.Count != na.Count {
+		if oa.Count == nil || na.Count == nil || *oa.Count != *na.Count {
+			return false
+		}
 	}
 	if len(oa.Flavors) != len(na.Flavors) {
 		return false

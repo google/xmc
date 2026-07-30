@@ -197,8 +197,11 @@ func (c *Client) restartJobSet(ctx context.Context, workUnit *esspb.WorkUnit, ta
 	jobSetUnstructured, err := c.getJobSetByTargetAndNamespace(ctx, target, namespace)
 	if err == nil && jobSetUnstructured != nil {
 		shouldCreate, err := c.validateAndDeleteJobSetForRestart(ctx, jobSetUnstructured, target, namespace, operationTime)
-		if err != nil || !shouldCreate {
+		if err != nil {
 			return err
+		}
+		if !shouldCreate {
+			return nil
 		}
 	}
 
