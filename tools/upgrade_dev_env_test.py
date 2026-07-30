@@ -293,7 +293,7 @@ class TestStepSubprocesses(unittest.TestCase):
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_app(self.config)
-        self.assertEqual(mock_run.call_count, 5)
+        self.assertEqual(mock_run.call_count, 2)
         mock_run.assert_any_call(
             [
                 "./cluster-toolkit/gcluster",

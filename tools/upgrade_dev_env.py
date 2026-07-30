@@ -512,17 +512,21 @@ def step_app(config: Config) -> None:
         ]
     )
 
-    for group in ["apis", "primary", "compute"]:
-        log_info(f"Exporting outputs for deployment group '{group}'...")
-        run_cmd(
-            ["./cluster-toolkit/gcluster", "export-outputs", f"{ctk_dir}/{group}"],
-            check=False,
-        )
+    primary_artifact = ctk_dir / ".ghpc" / "artifacts" / "primary_outputs.tfvars"
+    if primary_artifact.exists():
+        for group in ["compute", "xmc_app"]:
+            dest = ctk_dir / group / "primary_inputs.auto.tfvars"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(primary_artifact, dest)
 
-    compute_outputs_path = ctk_dir / ".ghpc" / "artifacts" / "compute_outputs.tfvars"
-    if not compute_outputs_path.exists():
-        compute_outputs_path.parent.mkdir(parents=True, exist_ok=True)
-        compute_outputs_path.touch()
+    compute_artifact = ctk_dir / ".ghpc" / "artifacts" / "compute_outputs.tfvars"
+    if compute_artifact.exists():
+        dest = ctk_dir / "xmc_app" / "compute_inputs.auto.tfvars"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(compute_artifact, dest)
+    else:
+        compute_artifact.parent.mkdir(parents=True, exist_ok=True)
+        compute_artifact.touch()
 
     log_info("Running gcluster deploy for group 'xmc_app'...")
     run_cmd(
