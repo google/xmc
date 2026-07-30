@@ -269,7 +269,100 @@ class TestStepSubprocesses(unittest.TestCase):
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_app(self.config)
-        self.assertGreaterEqual(mock_run.call_count, 2)
+        # Verify gcluster create and deploy calls are present
+        calls = [call_args[0][0] for call_args in mock_run.call_args_list]
+        self.assertIn(
+            [
+                "./cluster-toolkit/gcluster",
+                "create",
+                "deploy/ctk_v2/xmanager-cloud.yaml",
+                "-d",
+                "deploy/ctk_v2/xmanager-cloud-deployment.yaml",
+                "-o",
+                "ctk-out",
+                "-l",
+                "WARNING",
+                "-w",
+                "--force",
+            ],
+            calls,
+        )
+        self.assertIn(
+            [
+                "./cluster-toolkit/gcluster",
+                "--download-dependencies",
+                "deploy",
+                "ctk-out/deploy-456",
+                "--only",
+                "xmc_app",
+                "--auto-approve",
+            ],
+            calls,
+        )
+
+    def test_sanitize_workload_identity_module(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dir_path = Path(tmp_dir) / "workload-identity"
+            dir_path.mkdir(parents=True)
+            tf_file = dir_path / "main.tf"
+            tf_file.write_text(
+                'resource "kubernetes_service_account_v1" "main" {}\n'
+                "moved {\n  from = kubernetes_service_account.main\n  to = kubernetes_service_account_v1.main\n}\n",
+                encoding="utf-8",
+            )
+            upgrade_dev_env.sanitize_workload_identity_module(Path(tmp_dir))
+            content = tf_file.read_text(encoding="utf-8")
+            self.assertNotIn("moved {", content)
+            self.assertIn("# moved block removed", content)
+
+    @mock.patch.object(Path, "is_dir", return_value=True)
+    @mock.patch("tools.upgrade_dev_env.run_cmd")
+    def test_step_app_output_propagation(self, mock_run, _mock_dir):
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ctk_dir = Path(tmp_dir) / "ctk-out" / "deploy-456"
+            ctk_dir.mkdir(parents=True)
+            artifacts_dir = ctk_dir / ".ghpc" / "artifacts"
+            artifacts_dir.mkdir(parents=True)
+            (artifacts_dir / "primary_outputs.tfvars").write_text(
+                'service_account_email_workload_service_account = "sa@proj.iam.gserviceaccount.com"\n',
+                encoding="utf-8",
+            )
+            (artifacts_dir / "compute_outputs.tfvars").write_text(
+                'cluster_endpoint = "10.0.0.1"\n',
+                encoding="utf-8",
+            )
+            config = upgrade_dev_env.Config(
+                environment="dev",
+                deployment_name="deploy-456",
+                project_id="proj-123",
+                region="us-central1",
+                namespace="xmc",
+                registry="us-docker.pkg.dev/proj-123/xmc",
+                acr_target="us-docker.pkg.dev/proj-123/xmc",
+                gke_cluster="xmc-deploy-456-dev",
+                config_path="/tmp/test_config.yaml",
+            )
+            with mock.patch(
+                "tools.upgrade_dev_env.Path",
+                side_effect=lambda p: ctk_dir if "ctk-out/deploy-456" in str(p) else Path(p),
+            ):
+                upgrade_dev_env.step_app(config)
+
+            compute_inputs = ctk_dir / "compute" / "primary_inputs.auto.tfvars"
+            app_inputs = ctk_dir / "xmc_app" / "primary_inputs.auto.tfvars"
+            self.assertTrue(compute_inputs.exists())
+            self.assertTrue(app_inputs.exists())
+            self.assertIn(
+                "service_account_email_health_service_gcp_sa",
+                compute_inputs.read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "deploy-456-xmc-wl-sa@proj-123.iam.gserviceaccount.com",
+                compute_inputs.read_text(encoding="utf-8"),
+            )
 
     @mock.patch("tools.upgrade_dev_env.resolve_deployment_name")
     @mock.patch("tools.upgrade_dev_env.run_cmd")
