@@ -38,7 +38,9 @@ compat_go_library(
 compat_go_test(
     name = "reconciler_test",
     srcs = [
-        "reconciler_test.go",
+        "clusterqueue_test.go",
+        "localqueue_test.go",
+        "resourceflavor_test.go",
     ],
     embed = [":reconciler"],
     deps = [

@@ -27,39 +27,6 @@ import (
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
-func TestClusterQueueReconciler(t *testing.T) {
-	scheme := runtime.NewScheme()
-	kueuev1beta1.AddToScheme(scheme)
-
-	cq := &kueuev1beta1.ClusterQueue{
-		ObjectMeta: metav1.ObjectMeta{Name: "cq-test"},
-	}
-	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cq).Build()
-	c := cache.NewResourceCache[*kueuev1beta1.ClusterQueue]()
-
-	rec := &ClusterQueueReconciler{Client: client, Cache: c}
-	ctx := context.Background()
-
-	req := ctrlreq.Request{NamespacedName: ctrl.ObjectKey{Name: "cq-test"}}
-	if _, err := rec.Reconcile(ctx, req); err != nil {
-		t.Fatalf("Reconcile failed: %v", err)
-	}
-
-	if _, ok := c.Get("cq-test"); !ok {
-		t.Errorf("expected cq-test to be cached")
-	}
-
-	reqNotFound := ctrlreq.Request{NamespacedName: ctrl.ObjectKey{Name: "cq-test"}}
-	client.Delete(ctx, cq)
-	if _, err := rec.Reconcile(ctx, reqNotFound); err != nil {
-		t.Fatalf("Reconcile delete failed: %v", err)
-	}
-
-	if _, ok := c.Get("cq-test"); ok {
-		t.Errorf("expected cq-test to be deleted from cache")
-	}
-}
-
 func TestLocalQueueReconciler(t *testing.T) {
 	scheme := runtime.NewScheme()
 	kueuev1beta1.AddToScheme(scheme)
@@ -89,37 +56,5 @@ func TestLocalQueueReconciler(t *testing.T) {
 
 	if _, ok := c.Get("default/lq-test"); ok {
 		t.Errorf("expected default/lq-test to be deleted from cache")
-	}
-}
-
-func TestResourceFlavorReconciler(t *testing.T) {
-	scheme := runtime.NewScheme()
-	kueuev1beta1.AddToScheme(scheme)
-
-	rf := &kueuev1beta1.ResourceFlavor{
-		ObjectMeta: metav1.ObjectMeta{Name: "rf-test"},
-	}
-	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rf).Build()
-	c := cache.NewResourceCache[*kueuev1beta1.ResourceFlavor]()
-
-	rec := &ResourceFlavorReconciler{Client: client, Cache: c}
-	ctx := context.Background()
-
-	req := ctrlreq.Request{NamespacedName: ctrl.ObjectKey{Name: "rf-test"}}
-	if _, err := rec.Reconcile(ctx, req); err != nil {
-		t.Fatalf("Reconcile failed: %v", err)
-	}
-
-	if _, ok := c.Get("rf-test"); !ok {
-		t.Errorf("expected rf-test to be cached")
-	}
-
-	client.Delete(ctx, rf)
-	if _, err := rec.Reconcile(ctx, req); err != nil {
-		t.Fatalf("Reconcile delete failed: %v", err)
-	}
-
-	if _, ok := c.Get("rf-test"); ok {
-		t.Errorf("expected rf-test to be deleted from cache")
 	}
 }
