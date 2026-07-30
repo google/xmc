@@ -495,6 +495,30 @@ def step_app(config: Config) -> None:
             " has been deployed first."
         )
 
+    log_info("Re-compiling XMC blueprint with latest variables and templates...")
+    run_cmd(
+        [
+            "./cluster-toolkit/gcluster",
+            "create",
+            "deploy/ctk_v2/xmanager-cloud.yaml",
+            "-d",
+            config.config_path,
+            "-o",
+            "ctk-out",
+            "-l",
+            "WARNING",
+            "-w",
+            "--force",
+        ]
+    )
+
+    for group in ["apis", "primary", "compute"]:
+        log_info(f"Exporting outputs for deployment group '{group}'...")
+        run_cmd(
+            ["./cluster-toolkit/gcluster", "export-outputs", f"{ctk_dir}/{group}"],
+            check=False,
+        )
+
     log_info("Running gcluster deploy for group 'xmc_app'...")
     run_cmd(
         [
