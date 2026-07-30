@@ -24,23 +24,8 @@ import (
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/fake/fake"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
+	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
-
-type mockCache[T any] struct {
-	items map[string]T
-}
-
-func newMockCache[T any]() *mockCache[T] {
-	return &mockCache[T]{items: make(map[string]T)}
-}
-
-func (m *mockCache[T]) Set(key string, val T) {
-	m.items[key] = val
-}
-
-func (m *mockCache[T]) Delete(key string) {
-	delete(m.items, key)
-}
 
 func TestClusterQueueReconciler(t *testing.T) {
 	scheme := runtime.NewScheme()
@@ -50,9 +35,9 @@ func TestClusterQueueReconciler(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "cq-test"},
 	}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cq).Build()
-	cache := newMockCache[*kueuev1beta1.ClusterQueue]()
+	c := cache.NewResourceCache[*kueuev1beta1.ClusterQueue]()
 
-	rec := &ClusterQueueReconciler{Client: client, Cache: cache}
+	rec := &ClusterQueueReconciler{Client: client, Cache: c}
 	ctx := context.Background()
 
 	req := ctrlreq.Request{NamespacedName: ctrl.ObjectKey{Name: "cq-test"}}
@@ -60,7 +45,7 @@ func TestClusterQueueReconciler(t *testing.T) {
 		t.Fatalf("Reconcile failed: %v", err)
 	}
 
-	if _, ok := cache.items["cq-test"]; !ok {
+	if _, ok := c.Get("cq-test"); !ok {
 		t.Errorf("expected cq-test to be cached")
 	}
 
@@ -70,7 +55,7 @@ func TestClusterQueueReconciler(t *testing.T) {
 		t.Fatalf("Reconcile delete failed: %v", err)
 	}
 
-	if _, ok := cache.items["cq-test"]; ok {
+	if _, ok := c.Get("cq-test"); ok {
 		t.Errorf("expected cq-test to be deleted from cache")
 	}
 }
@@ -83,9 +68,9 @@ func TestLocalQueueReconciler(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "lq-test", Namespace: "default"},
 	}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(lq).Build()
-	cache := newMockCache[*kueuev1beta1.LocalQueue]()
+	c := cache.NewResourceCache[*kueuev1beta1.LocalQueue]()
 
-	rec := &LocalQueueReconciler{Client: client, Cache: cache}
+	rec := &LocalQueueReconciler{Client: client, Cache: c}
 	ctx := context.Background()
 
 	req := ctrlreq.Request{NamespacedName: ctrl.ObjectKey{Name: "lq-test", Namespace: "default"}}
@@ -93,7 +78,7 @@ func TestLocalQueueReconciler(t *testing.T) {
 		t.Fatalf("Reconcile failed: %v", err)
 	}
 
-	if _, ok := cache.items["default/lq-test"]; !ok {
+	if _, ok := c.Get("default/lq-test"); !ok {
 		t.Errorf("expected default/lq-test to be cached")
 	}
 
@@ -102,7 +87,7 @@ func TestLocalQueueReconciler(t *testing.T) {
 		t.Fatalf("Reconcile delete failed: %v", err)
 	}
 
-	if _, ok := cache.items["default/lq-test"]; ok {
+	if _, ok := c.Get("default/lq-test"); ok {
 		t.Errorf("expected default/lq-test to be deleted from cache")
 	}
 }
@@ -115,9 +100,9 @@ func TestResourceFlavorReconciler(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "rf-test"},
 	}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rf).Build()
-	cache := newMockCache[*kueuev1beta1.ResourceFlavor]()
+	c := cache.NewResourceCache[*kueuev1beta1.ResourceFlavor]()
 
-	rec := &ResourceFlavorReconciler{Client: client, Cache: cache}
+	rec := &ResourceFlavorReconciler{Client: client, Cache: c}
 	ctx := context.Background()
 
 	req := ctrlreq.Request{NamespacedName: ctrl.ObjectKey{Name: "rf-test"}}
@@ -125,7 +110,7 @@ func TestResourceFlavorReconciler(t *testing.T) {
 		t.Fatalf("Reconcile failed: %v", err)
 	}
 
-	if _, ok := cache.items["rf-test"]; !ok {
+	if _, ok := c.Get("rf-test"); !ok {
 		t.Errorf("expected rf-test to be cached")
 	}
 
@@ -134,7 +119,7 @@ func TestResourceFlavorReconciler(t *testing.T) {
 		t.Fatalf("Reconcile delete failed: %v", err)
 	}
 
-	if _, ok := cache.items["rf-test"]; ok {
+	if _, ok := c.Get("rf-test"); ok {
 		t.Errorf("expected rf-test to be deleted from cache")
 	}
 }

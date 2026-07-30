@@ -19,7 +19,6 @@ package(default_visibility = ["//visibility:public"])
 compat_go_library(
     name = "cache",
     srcs = [
-        "interfaces.go",
         "kueue_cache.go",
         "resource_cache.go",
     ],

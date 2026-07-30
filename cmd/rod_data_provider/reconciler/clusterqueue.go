@@ -27,7 +27,7 @@ import (
 // ClusterQueueReconciler reconciles ClusterQueue custom resources and updates the in-memory cache.
 type ClusterQueueReconciler struct {
 	client.Client
-	Cache cache.Cache[*kueuev1beta1.ClusterQueue]
+	Cache *cache.ResourceCache[*kueuev1beta1.ClusterQueue]
 }
 
 func (r *ClusterQueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

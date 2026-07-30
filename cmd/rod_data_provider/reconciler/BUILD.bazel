@@ -42,6 +42,7 @@ compat_go_test(
     ],
     embed = [":reconciler"],
     deps = [
+        "//cmd/rod_data_provider/cache",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_sigs_controller_runtime//:go_default_library",

@@ -27,7 +27,7 @@ import (
 // LocalQueueReconciler reconciles LocalQueue custom resources and updates the in-memory cache.
 type LocalQueueReconciler struct {
 	client.Client
-	Cache cache.Cache[*kueuev1beta1.LocalQueue]
+	Cache *cache.ResourceCache[*kueuev1beta1.LocalQueue]
 }
 
 func (r *LocalQueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

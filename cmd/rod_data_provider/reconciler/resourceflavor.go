@@ -27,7 +27,7 @@ import (
 // ResourceFlavorReconciler reconciles ResourceFlavor custom resources and updates the in-memory cache.
 type ResourceFlavorReconciler struct {
 	client.Client
-	Cache cache.Cache[*kueuev1beta1.ResourceFlavor]
+	Cache *cache.ResourceCache[*kueuev1beta1.ResourceFlavor]
 }
 
 func (r *ResourceFlavorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
