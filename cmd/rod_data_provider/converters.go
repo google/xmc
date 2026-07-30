@@ -16,8 +16,6 @@ package main
 
 import (
 	"context"
-	"strconv"
-	"strings"
 
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
@@ -90,48 +88,6 @@ func buildResourceCapacity(res kueuev1beta1.ResourceQuota, usageMap, resMap map[
 	}
 }
 
-func extractResourceTotalsFromStatus(usage []kueuev1beta1.FlavorUsage) map[string]string {
-	resTotals := make(map[string]string)
-	for _, flv := range usage {
-		for _, res := range flv.Resources {
-			resName := string(res.Name)
-			resTotals[resName] = res.Total.String()
-		}
-	}
-	return resTotals
-}
-
-func parseResourceUsageVal(s string) float64 {
-	val, _ := parseK8sResourceVal(s)
-	return val
-}
-
-func parseK8sResourceVal(s string) (float64, string) {
-	s = strings.TrimSpace(s)
-	if s == "" || s == "-" {
-		return 0, ""
-	}
-	unit := ""
-	for _, u := range []string{"Gi", "Mi", "Ki", "m", "M", "k", "G"} {
-		if strings.HasSuffix(s, u) {
-			unit = u
-			break
-		}
-	}
-	numStr := strings.TrimSuffix(s, unit)
-	v, err := strconv.ParseFloat(numStr, 64)
-	if err != nil {
-		return 0, unit
-	}
-	if unit == "m" {
-		return v / 1000.0, unit
-	}
-	if unit == "Mi" {
-		return v / 1024.0, unit
-	}
-	return v, unit
-}
-
 func filterFittingQueues(queues []*spb.QueueOverview, req *spb.GetFittingQueuesRequest) []*spb.QueueOverview {
 	if req == nil || len(req.Requirements) == 0 {
 		return queues
@@ -143,24 +99,4 @@ func filterFittingQueues(queues []*spb.QueueOverview, req *spb.GetFittingQueuesR
 		}
 	}
 	return filtered
-}
-
-func satisfiesRequirements(q *spb.QueueOverview, reqs []*spb.Resource) bool {
-	for _, req := range reqs {
-		if !capacitySatisfiesRequirement(q.QueueCapacity, req) {
-			return false
-		}
-	}
-	return true
-}
-
-func capacitySatisfiesRequirement(capacities []*spb.QueueResourceCapacity, req *spb.Resource) bool {
-	for _, cap := range capacities {
-		if strings.EqualFold(cap.ResourceType, req.ResourceType) {
-			if cap.FreeCapacityWithBorrowing >= req.Count || cap.FreeCapacity >= req.Count {
-				return true
-			}
-		}
-	}
-	return false
 }

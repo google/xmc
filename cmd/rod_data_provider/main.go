@@ -73,12 +73,12 @@ func main() {
 		if err != nil {
 			logging.Warn(ctx, "Failed to create controller-runtime manager", "error", err)
 		} else {
-			rec := &reconciler.KueueReconciler{
+			collector := &reconciler.KueueCollector{
 				Client: mgr.GetClient(),
 				Cache:  kueueCache,
 			}
-			if err := rec.SetupWithManager(ctx, mgr); err != nil {
-				logging.Warn(ctx, "Failed to setup KueueReconciler with manager", "error", err)
+			if err := collector.SetupWithManager(ctx, mgr); err != nil {
+				logging.Warn(ctx, "Failed to setup KueueCollector with manager", "error", err)
 			} else {
 				go func() {
 					logging.Info(ctx, "Starting controller-runtime Manager for KueueCache")

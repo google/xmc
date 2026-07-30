@@ -22,8 +22,9 @@ compat_go_library(
     name = "rod_data_provider_lib",
     srcs = [
         "cache.go",
-        "clusterqueues.go",
         "config.go",
+        "converters.go",
+        "k8s_resource_utils.go",
         "main.go",
         "server.go",
     ],
@@ -70,8 +71,8 @@ oci_image_for_service(
 compat_go_test(
     name = "server_test",
     srcs = [
-        "clusterqueues_test.go",
         "config_test.go",
+        "converters_test.go",
         "server_test.go",
     ],
     embed = [":rod_data_provider_lib"],
