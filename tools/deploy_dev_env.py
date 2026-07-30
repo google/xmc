@@ -786,17 +786,9 @@ def step_images(config: dict[str, Any], dns_project: str, dns_zone: str) -> None
         "//cmd/reconciler:reconciler_image_push",
         "//cmd/ui:ui_image_push",
         "//cmd/xid_service:xid_service_image_push",
+        "//cmd/health_service:health_service_image_push",
+        "//cmd/rod_data_provider:rod_data_provider_image_push",
     ]
-
-    health_service_enabled = (
-        str(config.get("health_service_deployment_enabled", "false")).lower() == "true"
-    )
-    if health_service_enabled:
-        bazel_targets.append("//cmd/health_service:health_service_image_push")
-
-    rod_enabled = str(config.get("rod_deployment_enabled", "true")).lower() == "true"
-    if rod_enabled:
-        bazel_targets.append("//cmd/rod_data_provider:rod_data_provider_image_push")
 
     for target in bazel_targets:
         log_info(f"Pushing {target.split(':')[-1]}...")
