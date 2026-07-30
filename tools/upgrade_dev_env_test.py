@@ -260,7 +260,7 @@ class TestStepSubprocesses(unittest.TestCase):
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_images(self.config)
-        self.assertEqual(mock_run.call_count, 7)
+        self.assertEqual(mock_run.call_count, 8)
 
     @mock.patch.object(Path, "is_dir", return_value=True)
     @mock.patch("tools.upgrade_dev_env.run_cmd")
@@ -289,7 +289,7 @@ class TestStepSubprocesses(unittest.TestCase):
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_restart(self.config)
-        self.assertEqual(mock_run.call_count, 7)
+        self.assertEqual(mock_run.call_count, 8)
 
     @mock.patch("tools.upgrade_dev_env.run_cmd")
     def test_step_verify(self, mock_run):

@@ -84,6 +84,7 @@ The XMC services require OCI container images built from the codebase. You must 
    bazel run //cmd/reconciler:reconciler_image_push
    bazel run //cmd/log_monitor:log_monitor_image_push
    bazel run //cmd/health_service:health_service_image_push
+   bazel run //cmd/dashboard_service:dashboard_service_image_push
    ```
 
 5. **Update image variables** in your deployment configuration file (e.g. `xmanager-cloud-deployment.yaml`, copy of [xmc-deployment-template.yaml](deploy/ctk_v2/xmc-deployment-template.yaml)):
@@ -95,6 +96,7 @@ The XMC services require OCI container images built from the codebase. You must 
    reconciler_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/reconciler-dev:<IMAGE_TAG>"
    log_monitor_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/log-monitor-dev:<IMAGE_TAG>"
    health_service_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/health-service-dev:<IMAGE_TAG>"
+   dashboard_service_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/dashboard-service-dev:<IMAGE_TAG>"
    ```
 
 ### 3. DNS and Domain Name Configuration
@@ -579,6 +581,7 @@ Supply these parameters in your Cluster Toolkit overrides file (`xmanager-cloud-
 | `ui_image` | **Yes** | - | Container image path for the Frontend UI portal |
 | `reconciler_image` | **Yes** | - | Container image path for the Kueue Reconciler service |
 | `log_monitor_image`| **Yes** | - | Container image path for the Pub/Sub Log Monitor |
+| `dashboard_service_image` | **Yes** | - | Container image path for the Dashboard service |
 | `namespace` | No | `"xmc"` | Target Kubernetes namespace for services |
 | `gcp_public_cidrs_access_enabled` | No | `false` | Toggles public endpoints on the GKE Control Plane |
 | `deletion_protection` | No | `false` | Enables deletion protection on supported GCP resources (databases, Cloud Run) |

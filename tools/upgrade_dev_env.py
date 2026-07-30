@@ -453,13 +453,14 @@ def step_images(config: Config) -> None:
         ("ui", "//cmd/ui:ui_image_push"),
         ("xid_service", "//cmd/xid_service:xid_service_image_push"),
         ("health_service", "//cmd/health_service:health_service_image_push"),
+        ("dashboard_service", "//cmd/dashboard_service:dashboard_service_image_push"),
     ]
 
     for name, target in targets:
         log_info(f"Pushing {name} image...")
         run_cmd(["bazel", "run", target], env=env)
 
-    log_success("All 7 XMC service container images compiled and pushed from current branch state.")
+    log_success("All 8 XMC service container images compiled and pushed from current branch state.")
 
 
 def step_app(config: Config) -> None:
@@ -518,6 +519,7 @@ def step_restart(config: Config) -> None:
     )
     services = [
         "actuator",
+        "dashboard-service",
         "experiment-state-server",
         "health-service",
         "log-monitor",
