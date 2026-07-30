@@ -117,9 +117,11 @@ When creating a new PR or populating its description:
 
 5. **Mandatory User Confirmation Gate Before PR Creation**:
    NEVER execute `gh pr create` (draft or non-draft) without explicit, affirmative user confirmation in the current conversation turn. Phrases like "proceed with next phase" authorize local work and verification, but DO NOT authorize opening a remote Pull Request. The agent MUST present `pr_body.md`, the planned PR title, body preview, and list of changes to the user for review and explicitly ask:
-   > *"I have prepared the Pull Request.*
+   > *"I have prepared the Pull Request."*
    > **Title**: `<type>(<scope>): <summary>`
-   > **Description Preview** (from `pr_body.md`):*
+   > **List of Changes**:
+   > - *[List of changes]*
+   > **Description Preview** (from `pr_body.md`):
    > 
    > *[Markdown Preview]*
    > 
