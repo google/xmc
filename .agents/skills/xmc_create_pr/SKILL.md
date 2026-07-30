@@ -160,11 +160,7 @@ When updating an existing Pull Request description:
 
 When creating and publishing Pull Requests, follow this mandatory 5-step lifecycle:
 
-1. **Create Draft PR**:
-   Obtain explicit user confirmation before executing `gh pr create` (draft or non-draft). Present the planned PR title, body preview, and list of changes to the user and ask for confirmation. Once confirmed, create the pull request as a draft:
-   ```bash
-   gh pr create --draft --title "<type>(<scope>): <summary>" --body-file pr_body.md
-   ```
+1. **Create Draft PR (Requires Confirmation Gate)**: Obtain explicit user confirmation per Section 3.5 (presenting Title, List of Changes, and Description Preview). Once confirmed, execute: `gh pr create --draft --title "<type>(<scope>): <summary>" --body-file pr_body.md`
 2. **Wait for Automated Review Bot**:
    Pause for 2–3 minutes to allow GitHub CI status checks and the automated Gemini review bot to inspect code diffs and post review comments.
 3. **Pull Review Comments**:
@@ -174,12 +170,4 @@ When creating and publishing Pull Requests, follow this mandatory 5-step lifecyc
    ```
 4. **Address Review Comments**:
    Implement requested code fixes, commit and push updates, post inline thread replies (`./tools/reply_pr_comment.py`), and verify 1-to-1 resolution (`./tools/verify_pr_comment_resolution.py`).
-5. **Verify CI Checks & Publish**:
-   Check CI status using `gh pr checks <pr_number>`:
-   - **If CI checks fail**: Inspect failures, implement fixes, push commits, and re-run checks.
-   - **If CI checks succeed**: Request explicit user confirmation before marking the PR as ready for review:
-     > *"CI checks passed! Shall I mark Pull Request #<pr_number> as ready for review on GitHub? (Y/n)"*
-     Once confirmed, mark the PR as ready for review:
-     ```bash
-     gh pr ready <pr_number>
-     ```
+5. **Verify CI Checks & Publish (Requires Confirmation Gate)**: Verify CI status with `gh pr checks <pr_number>`. When checks pass, obtain explicit user confirmation ('Shall I mark Pull Request #<pr_number> as ready for review? (Y/n)'), then run: `gh pr ready <pr_number>`
