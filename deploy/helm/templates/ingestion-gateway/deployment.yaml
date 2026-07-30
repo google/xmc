@@ -84,7 +84,7 @@ spec:
         - "-project_id={{ .Values.projectId }}"
         {{- if .Values.ingestionGatewayDeployment.sasl }}
         - "-sasl_enabled={{ .Values.ingestionGatewayDeployment.sasl.enabled | default false }}"
-        {{- if .Values.ingestionGatewayDeployment.sasl.enabled }}
+        {{- if and .Values.ingestionGatewayDeployment.sasl.enabled .Values.ingestionGatewayDeployment.sasl.secretName }}
         - "-sasl_mechanism={{ .Values.ingestionGatewayDeployment.sasl.mechanism | default "SCRAM-SHA-256" }}"
         - "-sasl_credentials_dir=/etc/kafka/credentials"
         {{- end }}
@@ -104,6 +104,8 @@ spec:
             port: 8080
           initialDelaySeconds: 10
           periodSeconds: 10
+        {{- if .Values.ingestionGatewayDeployment.resources }}
         resources:
           {{- toYaml .Values.ingestionGatewayDeployment.resources | nindent 10 }}
+        {{- end }}
 {{- end }}
