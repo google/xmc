@@ -16,63 +16,105 @@ package cache
 
 import (
 	"sync"
+	"sync/atomic"
 )
 
 // ResourceCache is an arbitrary, thread-safe, generic in-memory cache for any object type T.
+// Optimized for read-heavy workloads: Get() and List() are 100% lock-free (zero mutex acquisition).
+//
 // Note: If T is a pointer type, the cache returns direct references to the stored objects.
 // Callers must not modify retrieved objects directly, or should perform a deep copy to avoid race conditions.
 type ResourceCache[T any] struct {
-	mu    sync.RWMutex
-	items map[string]T
+	mu           sync.Mutex
+	mapSnapshot  atomic.Pointer[map[string]T]
+	listSnapshot atomic.Pointer[[]T]
 }
 
 // NewResourceCache initializes a new empty ResourceCache for type T.
 func NewResourceCache[T any]() *ResourceCache[T] {
-	return &ResourceCache[T]{
-		items: make(map[string]T),
-	}
+	c := &ResourceCache[T]{}
+	emptyMap := make(map[string]T)
+	emptyList := make([]T, 0)
+	c.mapSnapshot.Store(&emptyMap)
+	c.listSnapshot.Store(&emptyList)
+	return c
 }
 
-// Set stores a key-value pair in the cache.
+// Set stores a key-value pair and atomically updates map and list snapshots.
 func (c *ResourceCache[T]) Set(key string, val T) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.items[key] = val
+
+	currMap := c.mapSnapshot.Load()
+	newMap := make(map[string]T, len(*currMap)+1)
+	for k, v := range *currMap {
+		newMap[k] = v
+	}
+	newMap[key] = val
+
+	newList := make([]T, 0, len(newMap))
+	for _, item := range newMap {
+		newList = append(newList, item)
+	}
+
+	c.mapSnapshot.Store(&newMap)
+	c.listSnapshot.Store(&newList)
 }
 
-// Delete removes an item by key from the cache.
+// Delete removes an item by key from the cache and atomically updates map and list snapshots.
 func (c *ResourceCache[T]) Delete(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	delete(c.items, key)
+
+	currMap := c.mapSnapshot.Load()
+	if _, exists := (*currMap)[key]; !exists {
+		return
+	}
+
+	newMap := make(map[string]T, len(*currMap)-1)
+	for k, v := range *currMap {
+		if k != key {
+			newMap[k] = v
+		}
+	}
+
+	newList := make([]T, 0, len(newMap))
+	for _, item := range newMap {
+		newList = append(newList, item)
+	}
+
+	c.mapSnapshot.Store(&newMap)
+	c.listSnapshot.Store(&newList)
 }
 
-// Get retrieves an item by key from the cache.
+// Get retrieves an item by key from the cache without acquiring any locks (100% Lock-Free O(1)).
 func (c *ResourceCache[T]) Get(key string) (T, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	val, ok := c.items[key]
+	m := c.mapSnapshot.Load()
+	if m == nil {
+		var zero T
+		return zero, false
+	}
+	val, ok := (*m)[key]
 	return val, ok
 }
 
-// List returns all cached items as a slice.
+// List returns all cached items as a slice without acquiring any locks (100% Lock-Free O(1)).
 func (c *ResourceCache[T]) List() []T {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	list := make([]T, 0, len(c.items))
-	for _, item := range c.items {
-		list = append(list, item)
+	if ptr := c.listSnapshot.Load(); ptr != nil {
+		return *ptr
 	}
-	return list
+	return nil
 }
 
-// Map returns a copy of the internal map of key-value pairs.
+// Map returns a copy of the internal map of key-value pairs without acquiring any locks (100% Lock-Free).
 func (c *ResourceCache[T]) Map() map[string]T {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	m := make(map[string]T, len(c.items))
-	for k, v := range c.items {
-		m[k] = v
+	m := c.mapSnapshot.Load()
+	if m == nil {
+		return make(map[string]T)
 	}
-	return m
+	cp := make(map[string]T, len(*m))
+	for k, v := range *m {
+		cp[k] = v
+	}
+	return cp
 }
