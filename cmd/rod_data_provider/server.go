@@ -31,7 +31,7 @@ func newServer(cfg *Config) *server {
 
 // GetFittingQueues returns ClusterQueues matching requested resource requirements.
 func (s *server) GetFittingQueues(ctx context.Context, req *spb.GetFittingQueuesRequest) (*spb.GetFittingQueuesResponse, error) {
-	queues := []*spb.ClusterQueueInfo{
+	queues := []*spb.ClusterQueue{
 		{
 			Name:                  "cluster-queue-a",
 			Strategy:              "BestEffortFIFO",

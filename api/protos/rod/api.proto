@@ -62,8 +62,8 @@ message ResourceFlavorMetric {
   string largest_slot = 7;
 }
 
-// ClusterQueueInfo contains primary and secondary metrics for a ClusterQueue.
-message ClusterQueueInfo {
+// ClusterQueue contains primary and secondary metrics for a ClusterQueue.
+message ClusterQueue {
   string name = 1;
   string strategy = 2;
   string cohort = 3;
@@ -86,6 +86,6 @@ message ClusterQueueInfo {
 
 // GetFittingQueuesResponse contains the list of matching ClusterQueues.
 message GetFittingQueuesResponse {
-  repeated ClusterQueueInfo cluster_queues = 1;
+  repeated ClusterQueue cluster_queues = 1;
   int32 total_count = 2;
 }
