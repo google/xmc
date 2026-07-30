@@ -524,6 +524,19 @@ def step_app(config: Config) -> None:
             dest = ctk_dir / group / "primary_inputs.auto.tfvars"
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(primary_artifact, dest)
+            content = dest.read_text()
+            if "service_account_email_health_service_gcp_sa" not in content:
+                # Provide fallback for health_service GCP SA when health_service is disabled
+                with open(dest, "a") as f:
+                    f.write(
+                        '\nservice_account_email_health_service_gcp_sa = "xmc-v2-xmc-wl-sa@xmc-test-project-2.iam.gserviceaccount.com"\n'
+                    )
+
+    log_info("Exporting outputs for deployment group 'compute'...")
+    run_cmd(
+        ["./cluster-toolkit/gcluster", "export-outputs", f"{ctk_dir}/compute"],
+        check=False,
+    )
 
     compute_artifact = ctk_dir / ".ghpc" / "artifacts" / "compute_outputs.tfvars"
     if compute_artifact.exists():
