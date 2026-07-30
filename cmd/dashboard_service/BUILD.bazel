@@ -62,4 +62,3 @@ compat_go_test(
     srcs = ["server_test.go"],
     embed = [":dashboard_service_lib"],
 )
-
