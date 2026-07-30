@@ -27,13 +27,26 @@ import (
 	"time"
 
 	"go/google"
-	"golang/grpc/credentials/insecure/insecure"
-	"golang/grpc/grpc"
-	"golang/grpc/reflection/reflection"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/reflection"
 	"xmanager_cloud/logging/logging"
 
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 )
+
+func setupMux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+	return mux
+}
 
 func main() {
 	google.Init()
@@ -60,15 +73,7 @@ func main() {
 	}()
 
 	// 2. Setup HTTP Server for probes
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
+	mux := setupMux()
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	httpServer := &http.Server{

@@ -266,15 +266,7 @@ func TestDeleteChart(t *testing.T) {
 }
 
 func TestProbeEndpoints(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
+	mux := setupMux()
 
 	tests := []struct {
 		endpoint   string
