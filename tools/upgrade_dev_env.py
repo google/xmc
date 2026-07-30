@@ -472,7 +472,7 @@ def step_images(config: Config) -> None:
     ]
     if config.health_service_deployment_enabled:
         targets.append(("health_service", "//cmd/health_service:health_service_image_push"))
-    if config.rod_deployment_enabled:
+    if config.rod_deployment_enabled and Path("cmd/rod_data_provider/BUILD.bazel").exists():
         targets.append(
             ("rod_data_provider", "//cmd/rod_data_provider:rod_data_provider_image_push")
         )
