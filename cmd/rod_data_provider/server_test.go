@@ -36,7 +36,7 @@ func TestGetFittingQueues(t *testing.T) {
 		{
 			name: "Returns Default Mock Fitting Queues",
 			req: &spb.GetFittingQueuesRequest{
-				ResourceRequirements: []*spb.ResourceRequirement{
+				Requirements: []*spb.ResourceRequirement{
 					{ResourceName: "cpu", Quantity: "2"},
 				},
 			},
@@ -49,9 +49,6 @@ func TestGetFittingQueues(t *testing.T) {
 			resp, err := srv.GetFittingQueues(context.Background(), tt.req)
 			if err != nil {
 				t.Fatalf("GetFittingQueues failed: %v", err)
-			}
-			if resp.TotalCount != tt.wantCount {
-				t.Errorf("TotalCount = %d, want %d", resp.TotalCount, tt.wantCount)
 			}
 			if len(resp.ClusterQueues) != int(tt.wantCount) {
 				t.Errorf("ClusterQueues len = %d, want %d", len(resp.ClusterQueues), tt.wantCount)

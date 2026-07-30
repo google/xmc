@@ -115,6 +115,5 @@ func (s *server) GetFittingQueues(ctx context.Context, req *spb.GetFittingQueues
 
 	return &spb.GetFittingQueuesResponse{
 		ClusterQueues: queues,
-		TotalCount:    int32(len(queues)),
 	}, nil
 }

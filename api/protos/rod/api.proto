@@ -40,9 +40,7 @@ message ResourceRequirement {
 
 // GetFittingQueuesRequest represents parameters for filtering matching ClusterQueues.
 message GetFittingQueuesRequest {
-  repeated ResourceRequirement resource_requirements = 1;
-  int32 min_available = 2;
-  string queue_name_pattern = 3;
+  repeated ResourceRequirement requirements = 1;
 }
 
 // LocalQueueRef represents a reference to a connected LocalQueue.
@@ -87,5 +85,4 @@ message ClusterQueue {
 // GetFittingQueuesResponse contains the list of matching ClusterQueues.
 message GetFittingQueuesResponse {
   repeated ClusterQueue cluster_queues = 1;
-  int32 total_count = 2;
 }
