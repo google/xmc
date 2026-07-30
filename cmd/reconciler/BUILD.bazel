@@ -36,6 +36,7 @@ compat_go_library(
         "//internal/common/health",
         "//internal/compat/google",
         "//internal/compat/spanner",
+        "//internal/configutil",
         "//internal/kubernetes/common/constants",
         "//internal/logging",
         "//internal/storage",

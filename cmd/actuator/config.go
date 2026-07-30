@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"go/flag"
+	"xmanager_cloud/internal/configutil"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
@@ -70,26 +71,28 @@ var (
 )
 
 func init() {
-	flag.StringVar(&port, "port", "8080", "The HTTP server port to listen on.")
+	// Register actual CLI flags.
 	flag.BoolVar(&createNewNamespaces, "create_new_namespaces", true, "Whether a new namespace can be created when creating new Work Units.")
-	flag.StringVar(&spannerDatabaseName, "spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db", "The name of the Spanner database.")
-	flag.StringVar(&quotaProjectID, "quota_project_id", "xmc-test-project-1", "The ID of the quota project to use.")
-	flag.StringVar(&xmanagerServiceAccount, "xmanager_service_account", "", "The service account to use for OIDC authentication.")
-	flag.StringVar(&audience, "audience", "", "The audience to use for OIDC authentication. If empty, it defaults to https://actuator.xmanager.svc.cluster.local:<port>.")
 	flag.StringVar(&defaultExecutionEnvironment, "default_execution_environment", "gke", "The execution environment to use if not specified in the request.")
 	flag.StringVar(&verifyingKeyFile, "verifying_key_file", "/etc/verification-key/tls.crt", "Path to the key for verifying message signatures.")
 	flag.IntVar(&maxRecentKeys, "max_recent_keys", 2, "The maximum number of recent keys to keep for key rotation.")
-	flag.BoolVar(&statusMessageHistoryEnabled, "status_message_history_enabled", true, "Whether to enable status message history.")
 	flag.BoolVar(&metricsEnabled, "metrics_enabled", false, "Whether to enable XMC metrics in jobs.")
-	initRedisFlags()
+	registerConfigs()
 }
 
-func initRedisFlags() {
-	flag.StringVar(&redisAddr, "redis_addr", "", "The address of the Redis instance.")
-	flag.IntVar(&redisMaxRetries, "redis_max_retries", constants.RedisMaxRetries, "The maximum number of retries for a Redis task.")
-	flag.DurationVar(&redisProcessTimeout, "redis_process_timeout", constants.RedisProcessTimeout, "The timeout for processing a Redis task.")
-	flag.DurationVar(&redisAbandonedMessageTimeout, "redis_abandoned_message_timeout", constants.RedisAbandonedMessageTimeout, "The timeout for abandoned Redis messages.")
-	flag.Int64Var(&redisReadBatchSize, "redis_read_batch_size", constants.RedisReadBatchSize, "The batch size for reading Redis messages.")
+// registerConfigs loads ConfigMap managed values using configutil.
+func registerConfigs() {
+	configutil.StringVar(&port, "port", "8080")
+	configutil.StringVar(&spannerDatabaseName, "spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db")
+	configutil.StringVar(&quotaProjectID, "quota_project_id", "xmc-test-project-1")
+	configutil.StringVar(&xmanagerServiceAccount, "xmanager_service_account", "")
+	configutil.StringVar(&audience, "audience", "")
+	configutil.BoolVar(&statusMessageHistoryEnabled, "status_message_history_enabled", true)
+	configutil.StringVar(&redisAddr, "redis_addr", "")
+	configutil.IntVar(&redisMaxRetries, "redis_max_retries", constants.RedisMaxRetries)
+	configutil.DurationVar(&redisProcessTimeout, "redis_process_timeout", constants.RedisProcessTimeout)
+	configutil.DurationVar(&redisAbandonedMessageTimeout, "redis_abandoned_message_timeout", constants.RedisAbandonedMessageTimeout)
+	configutil.Int64Var(&redisReadBatchSize, "redis_read_batch_size", constants.RedisReadBatchSize)
 }
 
 func validate() error {
@@ -105,6 +108,7 @@ func validate() error {
 	return nil
 }
 
+// Load returns a Config struct populated with the values from ConfigMaps and parsed flags.
 func Load() Config {
 	ctx := context.Background()
 	if err := validate(); err != nil {
