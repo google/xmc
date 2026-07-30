@@ -46,9 +46,14 @@ func (c *ResourceCache[T]) Set(key string, val T) {
 	defer c.mu.Unlock()
 
 	currMap := c.mapSnapshot.Load()
-	newMap := make(map[string]T, len(*currMap)+1)
-	for k, v := range *currMap {
-		newMap[k] = v
+	var newMap map[string]T
+	if currMap == nil {
+		newMap = make(map[string]T, 1)
+	} else {
+		newMap = make(map[string]T, len(*currMap)+1)
+		for k, v := range *currMap {
+			newMap[k] = v
+		}
 	}
 	newMap[key] = val
 
@@ -67,6 +72,9 @@ func (c *ResourceCache[T]) Delete(key string) {
 	defer c.mu.Unlock()
 
 	currMap := c.mapSnapshot.Load()
+	if currMap == nil {
+		return
+	}
 	if _, exists := (*currMap)[key]; !exists {
 		return
 	}
