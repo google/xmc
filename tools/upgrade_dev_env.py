@@ -519,6 +519,11 @@ def step_app(config: Config) -> None:
             check=False,
         )
 
+    compute_outputs_path = ctk_dir / ".ghpc" / "artifacts" / "compute_outputs.tfvars"
+    if not compute_outputs_path.exists():
+        compute_outputs_path.parent.mkdir(parents=True, exist_ok=True)
+        compute_outputs_path.touch()
+
     log_info("Running gcluster deploy for group 'xmc_app'...")
     run_cmd(
         [
