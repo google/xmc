@@ -19,18 +19,35 @@ import { of } from 'rxjs';
 
 import { App } from './app';
 import { AuthService } from './service/auth.service';
+import { FeatureFlagService } from './service/feature_flag_service';
 import { HealthService } from './service/health_service';
-import { bootstrap, setupModule } from './testing/test';
+import { bootstrap, hasEl, setupModule } from './testing/test';
 
 describe('App Component', () => {
+  let featureFlagServiceMock: jasmine.SpyObj<FeatureFlagService>;
+
   beforeEach(() => {
     const authServiceMock = jasmine.createSpyObj<AuthService>('AuthService', ['getUser']);
-    authServiceMock.getUser.and.returnValue(of(null));
+    authServiceMock.getUser.and.returnValue(
+      of({
+        email: 'user@google.com',
+        name: 'Test User',
+        pictureUrl: 'pic.jpg',
+        sessionExpiresAt: 12345,
+        allowedDomains: ['google.com'],
+      }),
+    );
 
     const healthServiceMock = jasmine.createSpyObj<HealthService>('HealthService', [
       'isAdminPanelAccessible',
     ]);
     healthServiceMock.isAdminPanelAccessible.and.returnValue(of(false));
+
+    featureFlagServiceMock = jasmine.createSpyObj<FeatureFlagService>('FeatureFlagService', [], {
+      isResourceDashboardEnabled: true,
+      isAdminPanelEnabled: false,
+      isStatusMessageHistoryEnabled: true,
+    });
 
     setupModule({
       providers: [
@@ -38,6 +55,7 @@ describe('App Component', () => {
         provideRouter([]),
         { provide: AuthService, useValue: authServiceMock },
         { provide: HealthService, useValue: healthServiceMock },
+        { provide: FeatureFlagService, useValue: featureFlagServiceMock },
       ],
       imports: [App],
     });
@@ -46,5 +64,19 @@ describe('App Component', () => {
   it('should create the app', () => {
     const comp = bootstrap(App);
     expect(comp).toBeTruthy();
+  });
+
+  it('should display Resources menu item when isResourceDashboardEnabled is true', () => {
+    bootstrap(App);
+    expect(hasEl('a[routerLink="/resources"]')).toBeTrue();
+  });
+
+  it('should hide Resources menu item when isResourceDashboardEnabled is false', () => {
+    (
+      Object.getOwnPropertyDescriptor(featureFlagServiceMock, 'isResourceDashboardEnabled')
+        ?.get as jasmine.Spy
+    ).and.returnValue(false);
+    bootstrap(App);
+    expect(hasEl('a[routerLink="/resources"]')).toBeFalse();
   });
 });

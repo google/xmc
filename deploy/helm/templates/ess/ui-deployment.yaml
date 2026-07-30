@@ -49,6 +49,8 @@ spec:
           value: {{ .Values.statusMessageHistoryEnabled | quote }}
         - name: XMC_ADMIN_PANEL_ENABLED
           value: {{ .Values.healthServiceDeployment.enabled | quote }}
+        - name: XMC_RESOURCE_DASHBOARD_ENABLED
+          value: {{ .Values.rodDeployment.enabled | quote }}
         resources:
           requests:
             cpu: "10m"

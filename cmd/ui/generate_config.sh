@@ -30,13 +30,15 @@ API_URL="${XMC_API_URL:-https://api.example.com/v1}"
 REFRESH_MS="${XMC_REFRESH_INTERVAL_MS:-30000}"
 STATUS_HISTORY=$(get_bool_env XMC_STATUS_MESSAGE_HISTORY_ENABLED true)
 ADMIN_PANEL=$(get_bool_env XMC_ADMIN_PANEL_ENABLED false)
+RESOURCE_DASHBOARD=$(get_bool_env XMC_RESOURCE_DASHBOARD_ENABLED true)
 
 cat <<EOF > "${CONFIG_FILE}"
 window.XMC_API_URL = "${API_URL}";
 window.XMC_REFRESH_INTERVAL_MS = ${REFRESH_MS};
 window.XMC_FEATURE_FLAGS = {
   "statusMessageHistoryEnabled": ${STATUS_HISTORY},
-  "adminPanelEnabled": ${ADMIN_PANEL}
+  "adminPanelEnabled": ${ADMIN_PANEL},
+  "resourceDashboardEnabled": ${RESOURCE_DASHBOARD}
 };
 EOF
 
