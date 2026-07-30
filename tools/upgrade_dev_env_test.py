@@ -262,9 +262,11 @@ class TestStepSubprocesses(unittest.TestCase):
         upgrade_dev_env.step_images(self.config)
         self.assertEqual(mock_run.call_count, 8)
 
+    @mock.patch("tools.upgrade_dev_env._propagate_compute_outputs")
+    @mock.patch("tools.upgrade_dev_env._propagate_primary_outputs")
     @mock.patch.object(Path, "is_dir", return_value=True)
     @mock.patch("tools.upgrade_dev_env.run_cmd")
-    def test_step_app(self, mock_run, _mock_dir):
+    def test_step_app(self, mock_run, _mock_dir, _mock_primary, _mock_compute):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )

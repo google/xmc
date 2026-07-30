@@ -468,11 +468,14 @@ def _find_terraform_bin() -> str | None:
     tf_bin = shutil.which("terraform")
     if tf_bin:
         return tf_bin
-    hpc_cache = Path.home() / ".cache" / "hpc-toolkit"
-    if hpc_cache.exists():
-        tf_bins = list(hpc_cache.rglob("terraform"))
-        if tf_bins:
-            return str(tf_bins[0])
+    try:
+        hpc_cache = Path.home() / ".cache" / "hpc-toolkit"
+        if hpc_cache.exists():
+            for path in hpc_cache.rglob("terraform"):
+                if path.is_file() and os.access(path, os.X_OK):
+                    return str(path)
+    except Exception:
+        pass
     return None
 
 
@@ -481,12 +484,11 @@ def _propagate_primary_outputs(ctk_dir: Path, config: Config) -> None:
     log_info("Exporting outputs for deployment group 'primary'...")
     run_cmd(
         ["./cluster-toolkit/gcluster", "export-outputs", str(ctk_dir / "primary")],
-        check=False,
     )
 
     primary_artifact = ctk_dir / ".ghpc" / "artifacts" / "primary_outputs.tfvars"
     if not primary_artifact.exists():
-        return
+        error_exit(f"Primary outputs artifact not found at '{primary_artifact}' after export.")
 
     for group in ["compute", "xmc_app"]:
         dest = ctk_dir / group / "primary_inputs.auto.tfvars"
@@ -512,17 +514,18 @@ def _propagate_compute_outputs(ctk_dir: Path) -> None:
     log_info("Exporting outputs for deployment group 'compute'...")
     tf_bin = _find_terraform_bin()
     if tf_bin:
-        run_cmd([tf_bin, f"-chdir={compute_dir}", "init", "-backend=false"], check=False)
+        run_cmd([tf_bin, f"-chdir={compute_dir}", "init", "-backend=false"])
     run_cmd(
         ["./cluster-toolkit/gcluster", "export-outputs", str(compute_dir)],
-        check=False,
     )
 
     compute_artifact = ctk_dir / ".ghpc" / "artifacts" / "compute_outputs.tfvars"
-    if compute_artifact.exists():
-        dest = ctk_dir / "xmc_app" / "compute_inputs.auto.tfvars"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(compute_artifact, dest)
+    if not compute_artifact.exists():
+        error_exit(f"Compute outputs artifact not found at '{compute_artifact}' after export.")
+
+    dest = ctk_dir / "xmc_app" / "compute_inputs.auto.tfvars"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(compute_artifact, dest)
 
 
 def step_app(config: Config) -> None:
