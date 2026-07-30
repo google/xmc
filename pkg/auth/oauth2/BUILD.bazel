@@ -18,6 +18,7 @@ go_library(
     name = "oauth2",
     srcs = [
         "config.go",
+        "gateway.go",
         "handlers.go",
         "middleware.go",
         "pipeline.go",
@@ -28,6 +29,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_golang_jwt_jwt_v5//:jwt",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
         "@com_github_rs_cors//:go_default_library",
         "@com_google_cloud_go_iam//apiv1/iampb",
         "@com_google_cloud_go_resourcemanager//apiv3",
