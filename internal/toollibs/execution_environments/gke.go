@@ -285,15 +285,16 @@ func configureJobResources(jobSet *jobsetv1alpha2.JobSet, replicatedJob *jobsetv
 }
 
 func configureGPUReplicatedJob(jobSet *jobsetv1alpha2.JobSet, replicatedJob *jobsetv1alpha2.ReplicatedJob) {
-	nodes := replicatedJob.Replicas
-	if nodes < 1 {
-		nodes = 1
+	// For GPU jobs, Replicas specifies the number of pod replicas, defaulting to 1 if unset.
+	replicas := replicatedJob.Replicas
+	if replicas < 1 {
+		replicas = 1
 	}
 	completionMode := batchv1.IndexedCompletion
-	replicatedJob.Template.Spec.Parallelism = proto.Int32(nodes)
-	replicatedJob.Template.Spec.Completions = proto.Int32(nodes)
+	replicatedJob.Template.Spec.Parallelism = proto.Int32(replicas)
+	replicatedJob.Template.Spec.Completions = proto.Int32(replicas)
 	replicatedJob.Template.Spec.CompletionMode = &completionMode
-	if nodes > 1 {
+	if replicas > 1 {
 		ensureJobSetNetworkConfigured(jobSet)
 	}
 	collapseReplicasToPods(jobSet, replicatedJob)

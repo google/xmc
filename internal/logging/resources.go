@@ -136,6 +136,8 @@ func withJobSetLabels(ctx context.Context, labels map[string]string) context.Con
 	return ctx
 }
 
+// TODO: Evaluate enforcing/validating label presence when all fields are missing in a follow-up refactor.
+// This refactoring preserves existing behavior while extracting helper functions for nestif compliance.
 func withJobSetParsedName(ctx context.Context, name string) context.Context {
 	split := strings.Split(name, "-")
 	if len(split) != 4 {
