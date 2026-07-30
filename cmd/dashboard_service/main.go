@@ -27,14 +27,11 @@ import (
 	"time"
 
 	"go/google"
-	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/pkg/auth/oauth2"
 
-	gwpb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 )
 
@@ -46,15 +43,6 @@ func main() {
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
 	ctx := logging.WithLogger(context.Background(), logger)
 
-	oauthCfg, err := oauth2.LoadConfig()
-	if err != nil {
-		logging.Fatal(ctx, "Failed to load OAuth config", "error", err)
-	}
-	if oauthCfg.GCPProjectID == "" {
-		oauthCfg.GCPProjectID = cfg.ProjectID
-	}
-	authenticator := oauth2.NewAuthenticator(oauthCfg)
-
 	// 1. Setup gRPC server
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
@@ -65,26 +53,14 @@ func main() {
 	reflection.Register(grpcServer)
 
 	go func() {
-		logging.Info(ctx, "Dashboard service gRPC starting", "addr", lis.Addr())
+		logging.Info(ctx, "Dashboard service gRPC server starting", "addr", lis.Addr())
 		if err := grpcServer.Serve(lis); err != nil {
 			logging.Fatal(ctx, "gRPC server failed", "error", err)
 		}
 	}()
 
-	// 2. Setup gRPC Gateway
-	gwmux := runtime.NewServeMux()
-	dialOpts := []grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	}
-	err = gwpb.RegisterDashboardServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
-	if err != nil {
-		logging.Fatal(ctx, "Failed to register gateway", "error", err)
-	}
-
-	// 3. Setup HTTP Server mux
+	// 2. Setup HTTP Server for probes
 	mux := http.NewServeMux()
-
-	// Probes
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
@@ -94,30 +70,15 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 
-	// Secure private gRPC-Gateway endpoints with Authenticate middleware
-	authenticatedGwmux := authenticator.Authenticate(gwmux)
-
-	// Route gateway endpoints
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
-			return
-		}
-		authenticatedGwmux.ServeHTTP(w, r)
-	})
-
 	addr := fmt.Sprintf(":%s", cfg.Port)
-	handler := authenticator.SecurityMiddlewares(mux)
-
 	httpServer := &http.Server{
 		Addr:              addr,
-		Handler:           handler,
+		Handler:           mux,
 		ReadHeaderTimeout: 3 * time.Second,
 	}
 
 	go func() {
-		logging.Info(ctx, "Dashboard service HTTP gateway starting", "addr", addr)
+		logging.Info(ctx, "Dashboard service HTTP probe server starting", "addr", addr)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logging.Fatal(ctx, "HTTP server failed", "error", err)
 		}

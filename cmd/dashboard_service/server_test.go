@@ -16,6 +16,8 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	mpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
@@ -262,3 +264,40 @@ func TestDeleteChart(t *testing.T) {
 		t.Fatalf("DeleteChart failed: %v", err)
 	}
 }
+
+func TestProbeEndpoints(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
+	tests := []struct {
+		endpoint   string
+		wantBody   string
+		wantStatus int
+	}{
+		{endpoint: "/healthz", wantBody: "OK", wantStatus: http.StatusOK},
+		{endpoint: "/readyz", wantBody: "OK", wantStatus: http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.endpoint, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.endpoint, nil)
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Errorf("GET %s status = %d, want %d", tt.endpoint, rec.Code, tt.wantStatus)
+			}
+			if rec.Body.String() != tt.wantBody {
+				t.Errorf("GET %s body = %q, want %q", tt.endpoint, rec.Body.String(), tt.wantBody)
+			}
+		})
+	}
+}
+

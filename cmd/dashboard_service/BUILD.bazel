@@ -30,8 +30,6 @@ compat_go_library(
         "//api/protos/dashboard:api_go_proto",
         "//internal/compat/google",
         "//internal/logging",
-        "//pkg/auth/oauth2",
-        "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//credentials/insecure:go_default_library",
         "@org_golang_google_grpc//reflection:go_default_library",
