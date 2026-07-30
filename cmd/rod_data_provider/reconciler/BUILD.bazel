@@ -21,7 +21,6 @@ compat_go_library(
     srcs = [
         "clusterqueue.go",
         "localqueue.go",
-        "reconciler.go",
         "resourceflavor.go",
     ],
     importpath = "xmanager_cloud/cmd/rod_data_provider/reconciler",

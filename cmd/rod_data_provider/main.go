@@ -38,7 +38,6 @@ import (
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
-	"xmanager_cloud/cmd/rod_data_provider/reconciler"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
@@ -74,11 +73,9 @@ func main() {
 		if err != nil {
 			logging.Warn(ctx, "Failed to create controller-runtime manager", "error", err)
 		} else {
-			collector := &reconciler.KueueCollector{
-				Client:          mgr.GetClient(),
-				ClusterQueues:   kueueCache.ClusterQueues,
-				LocalQueues:     kueueCache.LocalQueues,
-				ResourceFlavors: kueueCache.ResourceFlavors,
+			collector := &KueueCollector{
+				Client: mgr.GetClient(),
+				Cache:  kueueCache,
 			}
 			if err := collector.SetupWithManager(ctx, mgr); err != nil {
 				logging.Warn(ctx, "Failed to setup KueueCollector with manager", "error", err)

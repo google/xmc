@@ -24,6 +24,7 @@ compat_go_library(
         "config.go",
         "converters.go",
         "k8s_resource_utils.go",
+        "kueue_collector.go",
         "main.go",
         "server.go",
     ],
