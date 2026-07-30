@@ -512,6 +512,12 @@ def step_app(config: Config) -> None:
         ]
     )
 
+    log_info("Exporting outputs for deployment group 'primary'...")
+    run_cmd(
+        ["./cluster-toolkit/gcluster", "export-outputs", f"{ctk_dir}/primary"],
+        check=False,
+    )
+
     primary_artifact = ctk_dir / ".ghpc" / "artifacts" / "primary_outputs.tfvars"
     if primary_artifact.exists():
         for group in ["compute", "xmc_app"]:
