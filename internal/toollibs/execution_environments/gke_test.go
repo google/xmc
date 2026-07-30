@@ -1306,6 +1306,8 @@ func TestInjectOnJobSetCreation_WithSidecars(t *testing.T) {
 								Spec: corev1.PodSpec{
 									Containers: []corev1.Container{
 										{Name: "primary"},
+									},
+									InitContainers: []corev1.Container{
 										{Name: "sidecar"},
 									},
 								},
@@ -1323,14 +1325,18 @@ func TestInjectOnJobSetCreation_WithSidecars(t *testing.T) {
 	}
 
 	containers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers
-	if len(containers) != 2 {
-		t.Fatalf("Expected 2 containers, got %d", len(containers))
+	if len(containers) != 1 {
+		t.Fatalf("Expected 1 primary container, got %d", len(containers))
 	}
 	if containers[0].Resources.Requests[corev1.ResourceCPU] != resource.MustParse("1000m") {
 		t.Errorf("Primary container CPU request mismatch: got %v", containers[0].Resources.Requests[corev1.ResourceCPU])
 	}
-	if containers[1].Resources.Requests[corev1.ResourceCPU] != resource.MustParse("200m") {
-		t.Errorf("Sidecar container CPU request mismatch: got %v", containers[1].Resources.Requests[corev1.ResourceCPU])
+	initContainers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.InitContainers
+	if len(initContainers) != 1 {
+		t.Fatalf("Expected 1 sidecar init container, got %d", len(initContainers))
+	}
+	if initContainers[0].Resources.Requests[corev1.ResourceCPU] != resource.MustParse("200m") {
+		t.Errorf("Sidecar container CPU request mismatch: got %v", initContainers[0].Resources.Requests[corev1.ResourceCPU])
 	}
 }
 

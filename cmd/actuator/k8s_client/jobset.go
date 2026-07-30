@@ -362,6 +362,16 @@ func injectManagedXprofGCSEnvVars(rj *jobsetv1alpha2.ReplicatedJob, xprofBucketU
 			container.Env = append(container.Env, corev1.EnvVar{Name: constants.XmcEnvVarManagedXprofGCSObjectFolder, Value: xprofObjectPath})
 		}
 	}
+	initContainers := rj.Template.Spec.Template.Spec.InitContainers
+	for i := range initContainers {
+		container := &initContainers[i]
+		if xprofBucketURL != "" {
+			container.Env = append(container.Env, corev1.EnvVar{Name: constants.XmcEnvVarManagedXprofGCSBucket, Value: xprofBucketURL})
+		}
+		if xprofObjectPath != "" {
+			container.Env = append(container.Env, corev1.EnvVar{Name: constants.XmcEnvVarManagedXprofGCSObjectFolder, Value: xprofObjectPath})
+		}
+	}
 }
 
 // copyNodeSelector creates an immutable copy of the job node selector map.
@@ -382,19 +392,21 @@ func (c *Client) buildInitContainersForJob(job *esspb.KubernetesJob) []corev1.Co
 		name := jobsetutil.InitContainerName(job, initContainer, i)
 		initContainers = append(initContainers, c.buildContainer(name, initContainer))
 	}
+	restartPolicyAlways := corev1.ContainerRestartPolicyAlways
+	for i, sidecar := range job.GetSidecars() {
+		name := jobsetutil.SidecarContainerName(job, sidecar, i)
+		container := c.buildContainer(name, sidecar)
+		container.RestartPolicy = &restartPolicyAlways
+		initContainers = append(initContainers, container)
+	}
 	return initContainers
 }
 
 func (c *Client) buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
 	primaryName := jobsetutil.PrimaryContainerName(job)
-	containers := []corev1.Container{
+	return []corev1.Container{
 		c.buildContainer(primaryName, job.GetSpec()),
 	}
-	for i, sidecar := range job.GetSidecars() {
-		sidecarName := jobsetutil.SidecarContainerName(job, sidecar, i)
-		containers = append(containers, c.buildContainer(sidecarName, sidecar))
-	}
-	return containers
 }
 
 func buildContainerPorts(spec *esspb.ExecutableSpec) []corev1.ContainerPort {

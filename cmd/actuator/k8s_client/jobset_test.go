@@ -2001,14 +2001,24 @@ func TestConstructJobSet_WithSidecars(t *testing.T) {
 	}
 
 	containers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers
-	if len(containers) != 2 {
-		t.Fatalf("Expected 2 containers (primary + sidecar), got %d", len(containers))
+	if len(containers) != 1 {
+		t.Fatalf("Expected 1 container (primary), got %d", len(containers))
 	}
-	if containers[0].Name != "job1" || containers[1].Name != "sidecar-1" {
-		t.Errorf("Container names mismatch: got [%s, %s], want [job1, sidecar-1]", containers[0].Name, containers[1].Name)
+	if containers[0].Name != "job1" {
+		t.Errorf("Container name mismatch: got %s, want job1", containers[0].Name)
 	}
-	if containers[1].Image != "sidecar-image:v1" {
-		t.Errorf("Sidecar image mismatch: got %q, want %q", containers[1].Image, "sidecar-image:v1")
+	initContainers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.InitContainers
+	if len(initContainers) != 1 {
+		t.Fatalf("Expected 1 init container (sidecar), got %d", len(initContainers))
+	}
+	if initContainers[0].Name != "sidecar-1" {
+		t.Errorf("Sidecar name mismatch: got %s, want sidecar-1", initContainers[0].Name)
+	}
+	if initContainers[0].Image != "sidecar-image:v1" {
+		t.Errorf("Sidecar image mismatch: got %q, want %q", initContainers[0].Image, "sidecar-image:v1")
+	}
+	if initContainers[0].RestartPolicy == nil || *initContainers[0].RestartPolicy != corev1.ContainerRestartPolicyAlways {
+		t.Errorf("Sidecar restart policy mismatch: got %v, want %s", initContainers[0].RestartPolicy, corev1.ContainerRestartPolicyAlways)
 	}
 }
 
@@ -2318,15 +2328,21 @@ func TestBuildContainerPorts_ExplicitAndDefault(t *testing.T) {
 	}
 
 	podSpec := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
-	if len(podSpec.InitContainers) != 1 {
-		t.Fatalf("Expected 1 init container, got %d", len(podSpec.InitContainers))
+	if len(podSpec.InitContainers) != 2 {
+		t.Fatalf("Expected 2 init containers (init + sidecar), got %d", len(podSpec.InitContainers))
 	}
 	if len(podSpec.InitContainers[0].Ports) != 1 || podSpec.InitContainers[0].Ports[0].ContainerPort != 29001 {
 		t.Errorf("Init container port mismatch: got %+v", podSpec.InitContainers[0].Ports)
 	}
+	if podSpec.InitContainers[0].RestartPolicy != nil {
+		t.Errorf("Init container restart policy should be nil, got %v", *podSpec.InitContainers[0].RestartPolicy)
+	}
+	if podSpec.InitContainers[1].RestartPolicy == nil || *podSpec.InitContainers[1].RestartPolicy != corev1.ContainerRestartPolicyAlways {
+		t.Errorf("Sidecar restart policy mismatch: got %v, want %s", podSpec.InitContainers[1].RestartPolicy, corev1.ContainerRestartPolicyAlways)
+	}
 
-	if len(podSpec.Containers) != 2 {
-		t.Fatalf("Expected 2 containers, got %d", len(podSpec.Containers))
+	if len(podSpec.Containers) != 1 {
+		t.Fatalf("Expected 1 container (primary), got %d", len(podSpec.Containers))
 	}
 	primaryPorts := podSpec.Containers[0].Ports
 	if len(primaryPorts) != 7 {
@@ -2345,7 +2361,7 @@ func TestBuildContainerPorts_ExplicitAndDefault(t *testing.T) {
 		t.Errorf("Primary container ports mismatch (-want +got):\n%s", diff)
 	}
 
-	sidecarPorts := podSpec.Containers[1].Ports
+	sidecarPorts := podSpec.InitContainers[1].Ports
 	if len(sidecarPorts) != 1 || sidecarPorts[0].ContainerPort != 9090 {
 		t.Errorf("Sidecar ports mismatch: got %+v", sidecarPorts)
 	}
