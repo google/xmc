@@ -344,22 +344,23 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 }
 
 // injectManagedXprofGCSEnvVars appends the managed-xprof GCS destination env vars to
-// the primary container of the replicated job so the workload knows where to write
-// xprof output. No-op when no bucket was resolved.
+// every container of the replicated job so all workloads in the pod know where to
+// write xprof output, not just the primary container. No-op when no bucket was
+// resolved.
 func injectManagedXprofGCSEnvVars(rj *jobsetv1alpha2.ReplicatedJob, xprofBucketURL, xprofObjectPath string) {
 	if xprofBucketURL == "" && xprofObjectPath == "" {
 		return
 	}
-	if len(rj.Template.Spec.Template.Spec.Containers) == 0 {
-		return
-	}
-	// Take a pointer to the element so appends write back to the JobSet in place.
-	container := &rj.Template.Spec.Template.Spec.Containers[0]
-	if xprofBucketURL != "" {
-		container.Env = append(container.Env, corev1.EnvVar{Name: constants.XmcEnvVarManagedXprofGCSBucket, Value: xprofBucketURL})
-	}
-	if xprofObjectPath != "" {
-		container.Env = append(container.Env, corev1.EnvVar{Name: constants.XmcEnvVarManagedXprofGCSObjectFolder, Value: xprofObjectPath})
+	containers := rj.Template.Spec.Template.Spec.Containers
+	for i := range containers {
+		// Index into the slice so appends write back to the JobSet in place.
+		container := &containers[i]
+		if xprofBucketURL != "" {
+			container.Env = append(container.Env, corev1.EnvVar{Name: constants.XmcEnvVarManagedXprofGCSBucket, Value: xprofBucketURL})
+		}
+		if xprofObjectPath != "" {
+			container.Env = append(container.Env, corev1.EnvVar{Name: constants.XmcEnvVarManagedXprofGCSObjectFolder, Value: xprofObjectPath})
+		}
 	}
 }
 
