@@ -33,7 +33,7 @@ func FetchClusterQueues(ctx context.Context, cache *cache.KueueCache, req *spb.G
 
 	var results []*spb.QueueOverview
 	for _, cq := range cqList {
-		overview := buildQueueOverviewFromTyped(cq, rfMap)
+		overview := buildQueueOverviewFromKueueData(cq, rfMap)
 		results = append(results, overview)
 	}
 
