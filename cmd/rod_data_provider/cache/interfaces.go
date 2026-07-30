@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package reconciler
+package cache
 
 // Cache defines generic cache operations for an entity type T consumed by Kueue reconcilers.
 type Cache[T any] interface {

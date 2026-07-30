@@ -21,12 +21,13 @@ import (
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
+	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
 // ClusterQueueReconciler reconciles ClusterQueue custom resources and updates the in-memory cache.
 type ClusterQueueReconciler struct {
 	client.Client
-	Cache Cache[*kueuev1beta1.ClusterQueue]
+	Cache cache.Cache[*kueuev1beta1.ClusterQueue]
 }
 
 func (r *ClusterQueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

@@ -21,12 +21,13 @@ import (
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
+	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
 // ResourceFlavorReconciler reconciles ResourceFlavor custom resources and updates the in-memory cache.
 type ResourceFlavorReconciler struct {
 	client.Client
-	Cache Cache[*kueuev1beta1.ResourceFlavor]
+	Cache cache.Cache[*kueuev1beta1.ResourceFlavor]
 }
 
 func (r *ResourceFlavorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
