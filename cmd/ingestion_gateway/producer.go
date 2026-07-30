@@ -96,7 +96,7 @@ func FormatCompositeKey(xid, workUnitID int64) []byte {
 // - Required Acks: All (acks=all)
 // - Disable Auto Topic Creation: UnknownTopicRetries(0)
 // - Optional TLS / mTLS configuration with dynamic certificate reloading
-func BuildProducerOptions(cfg *Config) ([]kgo.Opt, error) {
+func BuildProducerOptions(cfg *Config, gMetrics *GatewayMetrics) ([]kgo.Opt, error) {
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(cfg.RedpandaBrokers...),
 		kgo.RecordPartitioner(kgo.StickyKeyPartitioner(nil)),
@@ -105,6 +105,10 @@ func BuildProducerOptions(cfg *Config) ([]kgo.Opt, error) {
 		kgo.ProducerBatchMaxBytes(1 * 1024 * 1024),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.UnknownTopicRetries(0),
+	}
+
+	if gMetrics != nil {
+		opts = append(opts, kgo.WithHooks(NewFranzGoMetricsHook(gMetrics)))
 	}
 
 	if cfg.SASLEnabled {
@@ -132,8 +136,8 @@ func BuildProducerOptions(cfg *Config) ([]kgo.Opt, error) {
 }
 
 // NewKafkaProducer constructs a kgo.Client with default producer configuration.
-func NewKafkaProducer(cfg *Config) (*kgo.Client, error) {
-	opts, err := BuildProducerOptions(cfg)
+func NewKafkaProducer(cfg *Config, gMetrics *GatewayMetrics) (*kgo.Client, error) {
+	opts, err := BuildProducerOptions(cfg, gMetrics)
 	if err != nil {
 		return nil, err
 	}

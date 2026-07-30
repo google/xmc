@@ -857,11 +857,11 @@ key5: "value5" # trailing comment with quotes
         auth_res = MagicMock()
         bazel_res = MagicMock()
 
-        mock_run.side_effect = [auth_res] + [bazel_res] * 8
+        mock_run.side_effect = [auth_res] + [bazel_res] * 9
 
         deploy_dev_env.step_images(self.valid_config_dict, self.dns_project, self.dns_zone)
 
-        self.assertEqual(mock_run.call_count, 9)
+        self.assertEqual(mock_run.call_count, 10)
         mock_run.assert_any_call(
             [
                 "gcloud",
