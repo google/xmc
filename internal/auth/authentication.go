@@ -42,10 +42,11 @@ func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, s
 	}
 
 	// Try to parse the token using our custom JWT secret first, if one is configured.
-	if ident, err := a.parseCustomSessionToken(ctx, jwt); ident != nil || err != nil {
-		if err != nil {
-			return "", "", err
-		}
+	ident, err := a.parseCustomSessionToken(ctx, jwt)
+	if err != nil {
+		return "", "", err
+	}
+	if ident != nil {
 		return ident.email, ident.userID, nil
 	}
 

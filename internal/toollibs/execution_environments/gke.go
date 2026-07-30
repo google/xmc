@@ -266,27 +266,37 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 			return nil, err
 		}
 
-		if err := configureTPUReplicatedJob(jobSet, replicatedJob, job.Spec.Resources.GetTpuResources()); err != nil {
+		if err := configureJobResources(jobSet, replicatedJob, job.Spec.Resources); err != nil {
 			return nil, err
-		} else if job.Spec.Resources.GetGpuResources() != nil {
-			// For GPU jobs, we use Replicas to specify the number of nodes, defaulting to 1 if unset.
-			nodes := replicatedJob.Replicas
-			if nodes < 1 {
-				nodes = 1
-			}
-			completionMode := batchv1.IndexedCompletion
-			replicatedJob.Template.Spec.Parallelism = proto.Int32(nodes)
-			replicatedJob.Template.Spec.Completions = proto.Int32(nodes)
-			replicatedJob.Template.Spec.CompletionMode = &completionMode
-			if nodes > 1 {
-				ensureJobSetNetworkConfigured(jobSet)
-			}
-			// For indexed completion, Replicas must be 1.
-			collapseReplicasToPods(jobSet, replicatedJob)
 		}
 	}
 
 	return jobSet, nil
+}
+
+func configureJobResources(jobSet *jobsetv1alpha2.JobSet, replicatedJob *jobsetv1alpha2.ReplicatedJob, res *epb.ResourceSet) error {
+	if res.GetTpuResources() != nil {
+		return configureTPUReplicatedJob(jobSet, replicatedJob, res.GetTpuResources())
+	}
+	if res.GetGpuResources() != nil {
+		configureGPUReplicatedJob(jobSet, replicatedJob)
+	}
+	return nil
+}
+
+func configureGPUReplicatedJob(jobSet *jobsetv1alpha2.JobSet, replicatedJob *jobsetv1alpha2.ReplicatedJob) {
+	nodes := replicatedJob.Replicas
+	if nodes < 1 {
+		nodes = 1
+	}
+	completionMode := batchv1.IndexedCompletion
+	replicatedJob.Template.Spec.Parallelism = proto.Int32(nodes)
+	replicatedJob.Template.Spec.Completions = proto.Int32(nodes)
+	replicatedJob.Template.Spec.CompletionMode = &completionMode
+	if nodes > 1 {
+		ensureJobSetNetworkConfigured(jobSet)
+	}
+	collapseReplicasToPods(jobSet, replicatedJob)
 }
 
 // collapseReplicasToPods sets ReplicatedJob.Replicas to 1 and adjusts Coordinator indices if targeted.
