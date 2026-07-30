@@ -486,15 +486,16 @@ def step_images(config: Config) -> None:
 
 def sanitize_workload_identity_module(ctk_dir: Path) -> None:
     """Removes unsupported Terraform 'moved' blocks from workload-identity modules in ctk_dir."""
-    for tf_file in ctk_dir.rglob("main.tf"):
+    pattern = re.compile(
+        r"moved\s*\{\s*from\s*=\s*kubernetes_service_account\.main\s*to\s*=\s*kubernetes_service_account_v1\.main\s*\}",
+        re.DOTALL,
+    )
+    for tf_file in ctk_dir.rglob("*.tf"):
         if "workload-identity" in str(tf_file):
             content = tf_file.read_text()
-            if "moved {" in content and "to   = kubernetes_service_account_v1.main" in content:
-                content = content.replace(
-                    "moved {\n  from = kubernetes_service_account.main\n  to   = kubernetes_service_account_v1.main\n}",
-                    "# moved block removed",
-                )
-                tf_file.write_text(content)
+            if pattern.search(content):
+                new_content = pattern.sub("# moved block removed", content)
+                tf_file.write_text(new_content)
 
 
 def step_app(config: Config) -> None:
