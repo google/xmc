@@ -97,7 +97,12 @@ func (s *Server) listArtifactsWithStaleness(ctx context.Context, req *apipb.List
 		return nil, err
 	}
 
-	// 5. Return the successful response.
+	// 5. Enrich artifact output fields (e.g. ManagedXprof with the MLRun URL).
+	for _, artifact := range artifacts {
+		s.enrichArtifactOutputFields(ctx, artifact)
+	}
+
+	// 6. Return the successful response.
 	return &apipb.ListArtifactsResponse{
 		Artifacts:     artifacts,
 		NextPageToken: nextPageToken,
