@@ -18,10 +18,11 @@ package tlsutil
 import (
 	"crypto/tls"
 	"fmt"
+	"log/slog"
+	"xmanager_cloud/internal/security/keyreloader"
 
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"xmanager_cloud/internal/security/keyreloader"
 )
 
 // NewServerCredentials returns server transport credentials.
@@ -41,6 +42,7 @@ func NewServerCredentials(certFile, keyFile string) (credentials.TransportCreden
 		}
 		return credentials.NewTLS(tlsConfig), nil
 	}
+	slog.Warn("gRPC server is starting with insecure plaintext credentials")
 	return insecure.NewCredentials(), nil
 }
 
@@ -54,5 +56,6 @@ func NewClientCredentials(certFile, keyFile string) (credentials.TransportCreden
 	if certFile != "" {
 		return credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}), nil
 	}
+	slog.Warn("gRPC client transport is starting with insecure plaintext credentials")
 	return insecure.NewCredentials(), nil
 }
