@@ -21,7 +21,7 @@ import (
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
-func TestResourceCacheGeneric(t *testing.T) {
+func TestResourceCache(t *testing.T) {
 	cqCache := NewResourceCache[*kueuev1beta1.ClusterQueue]()
 
 	cq1 := &kueuev1beta1.ClusterQueue{ObjectMeta: metav1.ObjectMeta{Name: "cq1"}}
@@ -50,18 +50,5 @@ func TestResourceCacheGeneric(t *testing.T) {
 	}
 	if len(cqCache.List()) != 1 {
 		t.Errorf("List() len after Delete = %d, want 1", len(cqCache.List()))
-	}
-}
-
-func TestKueueCacheInitialization(t *testing.T) {
-	cache := NewKueueCache()
-	if cache.ClusterQueues == nil {
-		t.Errorf("ClusterQueues cache is nil")
-	}
-	if cache.LocalQueues == nil {
-		t.Errorf("LocalQueues cache is nil")
-	}
-	if cache.ResourceFlavors == nil {
-		t.Errorf("ResourceFlavors cache is nil")
 	}
 }

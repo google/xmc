@@ -33,7 +33,8 @@ compat_go_library(
 compat_go_test(
     name = "cache_test",
     srcs = [
-        "cache_test.go",
+        "kueue_cache_test.go",
+        "resource_cache_test.go",
     ],
     embed = [":cache"],
     deps = [
