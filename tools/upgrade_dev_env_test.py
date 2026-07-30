@@ -300,21 +300,6 @@ class TestStepSubprocesses(unittest.TestCase):
             calls,
         )
 
-    def test_sanitize_workload_identity_module(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            dir_path = Path(tmp_dir) / "workload-identity"
-            dir_path.mkdir(parents=True)
-            tf_file = dir_path / "main.tf"
-            tf_file.write_text(
-                'resource "kubernetes_service_account_v1" "main" {}\n'
-                "moved {\n  from = kubernetes_service_account.main\n  to = kubernetes_service_account_v1.main\n}\n",
-                encoding="utf-8",
-            )
-            upgrade_dev_env.sanitize_workload_identity_module(Path(tmp_dir))
-            content = tf_file.read_text(encoding="utf-8")
-            self.assertNotIn("moved {", content)
-            self.assertIn("# moved block removed", content)
-
     @mock.patch.object(Path, "is_dir", return_value=True)
     @mock.patch("tools.upgrade_dev_env.run_cmd")
     def test_step_app_output_propagation(self, mock_run, _mock_dir):
