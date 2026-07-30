@@ -163,6 +163,87 @@ func TestListArtifacts_Filter(t *testing.T) {
 	}
 }
 
+func TestListArtifacts_FilterByPayloadType(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storage, err := NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	createAndStoreExperiment(ctx, t, storage, blankExperimentProto(1))
+
+	// One managed-xprof artifact and one code-source artifact, so the filter is
+	// exercised against a different payload type rather than merely nil payload.
+	xprofArt := blankArtifactProto(1, 1)
+	xprofArt.Url.DisplayName = "xprof-art"
+	xprofArt.Payload = &essmsgpb.ArtifactPayload{
+		Type: &essmsgpb.ArtifactPayload_ManagedXprof{
+			ManagedXprof: &essmsgpb.ManagedXprofArtifact{
+				DisplayName: "xprof-display",
+				RunGroup:    "xprof-run-group",
+			},
+		},
+	}
+	createAndStoreArtifact(ctx, t, storage, xprofArt)
+
+	codeArt := blankArtifactProto(1, 2)
+	codeArt.Url.DisplayName = "code-art"
+	codeArt.Payload = &essmsgpb.ArtifactPayload{
+		Type: &essmsgpb.ArtifactPayload_CodeSource{
+			CodeSource: &essmsgpb.CodeSourceArtifact{
+				Title:     "code-title",
+				CodeBlock: "print('hi')",
+			},
+		},
+	}
+	createAndStoreArtifact(ctx, t, storage, codeArt)
+
+	tests := []struct {
+		name             string
+		filter           string
+		wantDisplayNames []string
+	}{
+		{
+			name:             "payload_type managed_xprof returns only xprof artifact",
+			filter:           `payload_type = "managed_xprof"`,
+			wantDisplayNames: []string{"xprof-art"},
+		},
+		{
+			name:             "payload_type code_source returns only code-source artifact",
+			filter:           `payload_type = "code_source"`,
+			wantDisplayNames: []string{"code-art"},
+		},
+		{
+			// An unset filter must not restrict results: every artifact is returned.
+			name:             "empty filter returns all artifacts",
+			filter:           "",
+			wantDisplayNames: []string{"code-art", "xprof-art"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _, err := storage.ListArtifacts(ctx, "", 10, "", tc.filter, "", 0)
+			if err != nil {
+				t.Fatalf("ListArtifacts(filter=%q) failed: %v", tc.filter, err)
+			}
+			gotNames := make([]string, 0, len(got))
+			for _, a := range got {
+				gotNames = append(gotNames, a.GetUrl().GetDisplayName())
+			}
+			// No orderBy is requested, so compare as a sorted set to stay robust
+			// against result ordering.
+			sort.Strings(gotNames)
+			want := append([]string(nil), tc.wantDisplayNames...)
+			sort.Strings(want)
+			if diff := cmp.Diff(want, gotNames); diff != "" {
+				t.Errorf("ListArtifacts(filter=%q) display names mismatch (-want +got):\n%s", tc.filter, diff)
+			}
+		})
+	}
+}
+
 func TestListArtifacts_OrderBy(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
