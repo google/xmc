@@ -42,8 +42,8 @@ func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, s
 	}
 
 	// Try to parse the token using our custom JWT secret first, if one is configured.
-	if email, userID, handled, err := a.tryParseCustomSessionToken(ctx, jwt); handled {
-		return email, userID, err
+	if ident, handled, err := a.parseCustomSessionToken(ctx, jwt); handled {
+		return ident.email, ident.userID, err
 	}
 
 	payload, err := validateJWT(ctx, jwt, a.iapIssuer, a.iapAudiences)
@@ -76,21 +76,26 @@ func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, s
 	return email, userID, nil
 }
 
-func (a *Authorizer) tryParseCustomSessionToken(ctx context.Context, jwt string) (string, string, bool, error) {
+type authIdentity struct {
+	email  string
+	userID string
+}
+
+func (a *Authorizer) parseCustomSessionToken(ctx context.Context, jwt string) (authIdentity, bool, error) {
 	if len(a.jwtSecret) == 0 {
-		return "", "", false, nil
+		return authIdentity{}, false, nil
 	}
 	claims, parseErr := oauth2.ParseSessionToken(jwt, a.jwtSecret)
 	if parseErr == nil && claims != nil {
 		if claims.Email == "" {
-			return "", "", true, fmt.Errorf("email in custom session token is empty: %w", status.ErrUnauthenticated)
+			return authIdentity{}, true, fmt.Errorf("email in custom session token is empty: %w", status.ErrUnauthenticated)
 		}
-		return claims.Email, claims.Email, true, nil
+		return authIdentity{email: claims.Email, userID: claims.Email}, true, nil
 	}
 	if parseErr != nil && !errors.Is(parseErr, oauth2.ErrInvalidToken) {
 		logging.Info(ctx, "Custom session token parsing failed", "error", parseErr)
 	}
-	return "", "", false, nil
+	return authIdentity{}, false, nil
 }
 
 func extractEmailFromMetadata(ctx context.Context) (string, bool) {
