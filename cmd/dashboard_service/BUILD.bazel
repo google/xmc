@@ -44,12 +44,6 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
-alias(
-    name = "xmc-dashboard-service",
-    actual = ":dashboard_service",
-    visibility = ["//visibility:public"],
-)
-
 oci_image_for_service(
     name = "dashboard_service_image",
     binary = ":dashboard_service",
