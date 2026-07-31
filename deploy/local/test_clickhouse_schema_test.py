@@ -18,7 +18,7 @@ import unittest
 import urllib.error
 from unittest.mock import MagicMock, patch
 
-from scripts import test_clickhouse_schema
+from deploy.local import test_clickhouse_schema
 
 
 class TestClickHouseSchema(unittest.TestCase):

@@ -10,7 +10,7 @@ Depending on your development goal, choose the appropriate workflow:
 
 1. **Local Standalone Workflow (Out-of-Band of CTK / GKE)**:
    - **Use Case**: Rapid local schema iteration, table DDL/DML testing, and unit/integration testing on your workstation without a Kubernetes cluster.
-   - **Configuration & Tools**: See [`deploy/local/README.md`](../../../local/README.md), [`deploy/local/clickhouse-standalone.yaml`](../../../local/clickhouse-standalone.yaml), and [`scripts/test_clickhouse_schema.py`](../../../../scripts/test_clickhouse_schema.py).
+   - **Configuration & Tools**: See [`deploy/local/README.md`](../../../local/README.md), [`deploy/local/clickhouse-standalone.yaml`](../../../local/clickhouse-standalone.yaml), and [`deploy/local/test_clickhouse_schema.py`](../../../local/test_clickhouse_schema.py).
 
 2. **GKE Cluster Addon Workflow (In-Cluster Testing & Production)**:
    - **Use Case**: Deploying ClickHouse onto a GKE cluster via Helm for full metrics system testing, Grafana visualization, and end-to-end integration.

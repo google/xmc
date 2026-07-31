@@ -218,10 +218,7 @@ def main() -> None:
     """Main entry point for ClickHouse schema test script."""
     args = parse_args()
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    repo_root = os.path.abspath(os.path.join(script_dir, ".."))
-    compose_file = args.compose_file or os.path.join(
-        repo_root, "deploy", "local", "clickhouse-standalone.yaml"
-    )
+    compose_file = args.compose_file or os.path.join(script_dir, "clickhouse-standalone.yaml")
 
     ensure_container_running(compose_file, args.host, args.port, args.tcp_port)
     wait_for_clickhouse(args.host, args.port, args.max_retries, args.retry_interval)

@@ -10,11 +10,11 @@ This directory contains configuration files for running a **standalone ClickHous
 - **Target User**: Developers iterating on ClickHouse SQL schemas, metrics table definitions, or writing local integration tests without needing access to a GKE cluster or running CTK blueprints.
 - **Components**:
   - `deploy/local/clickhouse-standalone.yaml`: Docker Compose file exposing ClickHouse HTTP (`8123`) and TCP (`9000`) ports locally.
-  - `scripts/test_clickhouse_schema.py`: Test runner script that spins up the container, waits for readiness (`/ping`), runs schema DDL/DML verification queries, and cleans up.
+  - `deploy/local/test_clickhouse_schema.py`: Test runner script that spins up the container, waits for readiness (`/ping`), runs schema DDL/DML verification queries, and cleans up.
 - **Quickstart**:
   ```bash
   # Run schema verification and cleanup container after test
-  python3 scripts/test_clickhouse_schema.py --cleanup
+  python3 deploy/local/test_clickhouse_schema.py --cleanup
   ```
 
 ### 2. GKE Cluster Addon Flow (Addons Directory)
@@ -38,7 +38,7 @@ curl http://localhost:8123/ping
 
 ### Running Schema Verification Tests
 ```bash
-python3 scripts/test_clickhouse_schema.py
+python3 deploy/local/test_clickhouse_schema.py
 ```
 
 ### Stopping the Local Container
