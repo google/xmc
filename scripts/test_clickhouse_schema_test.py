@@ -80,6 +80,18 @@ class TestClickHouseSchema(unittest.TestCase):
         )
         self.assertEqual(result, "24.3.1")
 
+    @patch("urllib.request.urlopen")
+    def test_execute_clickhouse_query_http_error(self, mock_urlopen: MagicMock) -> None:
+        """Test execute_clickhouse_query handles HTTPError and logs the error body."""
+        mock_err = urllib.error.HTTPError(
+            "http://localhost:8123/", 500, "Internal Server Error", {}, None
+        )
+        mock_err.read = MagicMock(return_value=b"Syntax error in query")
+        mock_urlopen.side_effect = mock_err
+
+        with self.assertRaises(urllib.error.HTTPError):
+            test_clickhouse_schema.execute_clickhouse_query("localhost", 8123, "SELECT invalid")
+
 
 if __name__ == "__main__":
     unittest.main()

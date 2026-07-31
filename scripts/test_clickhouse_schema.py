@@ -70,6 +70,12 @@ def ensure_container_running(compose_file: str, host: str, port: int, tcp_port: 
             return
 
     logger.info("Falling back to 'docker run' for ClickHouse container...")
+    subprocess.run(
+        [docker_bin, "rm", "-f", "clickhouse-standalone"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
     run_cmd = [
         docker_bin,
         "run",
@@ -113,8 +119,13 @@ def execute_clickhouse_query(host: str, port: int, query: str) -> str:
     url = f"http://{host}:{port}/"
     data = query.encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        return resp.read().decode("utf-8").strip()
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.read().decode("utf-8").strip()
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", errors="replace").strip()
+        logger.error("ClickHouse query failed with HTTP %d: %s", e.code, err_body)
+        raise
 
 
 def test_schema_queries(host: str, port: int) -> None:
@@ -164,10 +175,16 @@ def cleanup_container(compose_file: str, host: str, port: int) -> None:
     """Clean up local ClickHouse container if requested."""
     logger.info("Cleaning up local ClickHouse container...")
     docker_bin = shutil.which("docker")
-    if docker_bin and os.path.exists(compose_file):
+    if not docker_bin:
+        return
+    if os.path.exists(compose_file):
         subprocess.run([docker_bin, "compose", "-f", compose_file, "down"], check=False)
-    elif docker_bin:
-        subprocess.run([docker_bin, "rm", "-f", "clickhouse-standalone"], check=False)
+    subprocess.run(
+        [docker_bin, "rm", "-f", "clickhouse-standalone"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
     logger.info("Container cleanup completed.")
 
 
