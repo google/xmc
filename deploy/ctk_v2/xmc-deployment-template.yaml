@@ -86,5 +86,6 @@ vars:
   reconciler_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/reconciler:latest"
   log_monitor_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/log_monitor:latest"
   health_service_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/health-service:latest"
+  dashboard_service_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/dashboard-service:latest"
   rod_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/rod:latest"
   ingestion_gateway_image: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc/ingestion-gateway:latest"
