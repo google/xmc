@@ -53,6 +53,7 @@ issues:
   exclude-dirs:
     # TODO: Refactor api/filter for nestif complexity and remove exclude.
     - api/filter
+    - cmd/ui/node_modules
   exclude-rules:
     # TODO: Refactor test files and legacy packages for nestif and remove exclusions incrementally.
     - path: ".*_test\\.go"

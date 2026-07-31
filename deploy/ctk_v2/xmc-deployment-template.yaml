@@ -78,8 +78,7 @@ vars:
   # Enable status message history database persistence
   status_message_history_enabled: true
 
-  # Target Google Artifact Registry
+  # Target Google Artifact Registry and tag for all XMC microservices.
+  # Optional: You can override individual service images if needed (e.g. actuator_image: "custom-path:tag")
   image_registry: "us-docker.pkg.dev/YOUR_PROJECT_ID/xmc"
-
-  # Image tag to deploy (e.g., latest, stable, or a specific git commit hash)
   image_tag: "latest"
