@@ -174,7 +174,7 @@ class Chart:
     @property
     def experiment_id(self) -> int:
         """The XID of the experiment referenced by this chart."""
-        return getattr(self._chart_proto, "experiment_id", 0)
+        return getattr(self._chart_proto, "xid", 0)
 
     @property
     def experiment_name(self) -> str:
