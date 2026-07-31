@@ -36,7 +36,13 @@ func filterFittingQueues(queues []*spb.QueueOverview, req *spb.GetFittingQueuesR
 
 // satisfiesRequirements checks if a QueueOverview satisfies all requested resource requirements.
 func satisfiesRequirements(q *spb.QueueOverview, reqs []*spb.Resource) bool {
+	if q == nil {
+		return false
+	}
 	for _, req := range reqs {
+		if req == nil {
+			continue
+		}
 		if !capacitySatisfiesRequirement(q.QueueCapacity, req) {
 			return false
 		}
@@ -46,7 +52,13 @@ func satisfiesRequirements(q *spb.QueueOverview, reqs []*spb.Resource) bool {
 
 // capacitySatisfiesRequirement checks if any resource capacity metric meets a single resource requirement.
 func capacitySatisfiesRequirement(capacities []*spb.QueueResourceCapacity, req *spb.Resource) bool {
+	if req == nil {
+		return false
+	}
 	for _, cap := range capacities {
+		if cap == nil {
+			continue
+		}
 		if strings.EqualFold(cap.ResourceType, req.ResourceType) {
 			if cap.FreeCapacityWithBorrowing >= req.Count {
 				return true

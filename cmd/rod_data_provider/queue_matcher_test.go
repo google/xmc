@@ -106,4 +106,26 @@ func TestFilterFittingQueues_NilAndEmpty(t *testing.T) {
 	if got := filterFittingQueues([]*spb.QueueOverview{queue}, nil); len(got) != 1 {
 		t.Errorf("filterFittingQueues([q1], nil) count = %d, want 1", len(got))
 	}
+
+	// Test nil safety with nil elements inside slices
+	queuesWithNil := []*spb.QueueOverview{
+		nil,
+		{
+			QueueName: "q2",
+			QueueCapacity: []*spb.QueueResourceCapacity{
+				nil,
+				{ResourceType: "cpu", FreeCapacityWithBorrowing: 4},
+			},
+		},
+	}
+	reqWithNil := &spb.GetFittingQueuesRequest{
+		Requirements: []*spb.Resource{
+			nil,
+			{ResourceType: "cpu", Count: 2},
+		},
+	}
+	got := filterFittingQueues(queuesWithNil, reqWithNil)
+	if len(got) != 1 || got[0].QueueName != "q2" {
+		t.Errorf("filterFittingQueues with nil elements failed, got: %v", got)
+	}
 }
