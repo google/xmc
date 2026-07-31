@@ -190,8 +190,8 @@ func TestCapacityMath(t *testing.T) {
 				NominalQuota: nomRes,
 			}
 
-			agg := &resourceAggregator{}
-			accumulateResourceQuota(resQuota, agg)
+			aggregator := &ResourceQuotaAggregator{}
+			addFlavorResourceQuotaToAggregator(resQuota, aggregator)
 
 			useVal := parseK8sResourceVal("nvidia.com/gpu", tt.inUse)
 			resVal := parseK8sResourceVal("nvidia.com/gpu", tt.reserved)
@@ -200,10 +200,10 @@ func TestCapacityMath(t *testing.T) {
 				usedVal = useVal
 			}
 
-			capMetric := buildQueueResourceCapacity("nvidia.com/gpu", agg, usedVal)
+			capMetric := convertAggregatedQuotaToResourceCapacity("nvidia.com/gpu", aggregator, usedVal)
 			wantVal := parseK8sResourceVal("nvidia.com/gpu", tt.want)
 			if capMetric.FreeCapacity != wantVal {
-				t.Errorf("buildQueueResourceCapacity(%s, %s, %s).FreeCapacity = %v, want %v", tt.nominal, tt.reserved, tt.inUse, capMetric.FreeCapacity, wantVal)
+				t.Errorf("convertAggregatedQuotaToResourceCapacity(%s, %s, %s).FreeCapacity = %v, want %v", tt.nominal, tt.reserved, tt.inUse, capMetric.FreeCapacity, wantVal)
 			}
 		})
 	}

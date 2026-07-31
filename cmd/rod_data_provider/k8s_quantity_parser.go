@@ -21,35 +21,36 @@ import (
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
-// extractStatusUsageTotals calculates the total used capacity per resource type across all flavors in ClusterQueueStatus.
-func extractStatusUsageTotals(status kueuev1beta1.ClusterQueueStatus) map[string]float64 {
-	usageTotals := make(map[string]float64)
+// extractTotalResourceUsageByResourceType calculates the total used capacity per resource type across all flavors in ClusterQueueStatus.
+func extractTotalResourceUsageByResourceType(status kueuev1beta1.ClusterQueueStatus) map[string]float64 {
+	totalUsageByResourceType := make(map[string]float64)
 
-	// Build temporary map of flavor-level reservations: "flavor/resource" -> reservedVal
-	resMap := make(map[string]float64)
-	for _, flv := range status.FlavorsReservation {
-		for _, res := range flv.Resources {
-			resName := string(res.Name)
-			key := string(flv.Name) + "/" + resName
-			resMap[key] = parseK8sResourceVal(resName, res.Total.String())
+	// Build temporary map of flavor-level reservations: "flavorName/resourceType" -> reservedQuantity
+	reservationByFlavorAndResource := make(map[string]float64)
+	for _, flavorStatus := range status.FlavorsReservation {
+		for _, resourceUsage := range flavorStatus.Resources {
+			resourceType := string(resourceUsage.Name)
+			flavorResourceKey := string(flavorStatus.Name) + "/" + resourceType
+			reservationByFlavorAndResource[flavorResourceKey] = parseK8sResourceVal(resourceType, resourceUsage.Total.String())
 		}
 	}
 
 	// Sum max(usage, reservation) per resource type across all flavors
-	for _, flv := range status.FlavorsUsage {
-		for _, res := range flv.Resources {
-			resName := string(res.Name)
-			key := string(flv.Name) + "/" + resName
-			useVal := parseK8sResourceVal(resName, res.Total.String())
-			usedVal := useVal
-			if resVal, exists := resMap[key]; exists && resVal > usedVal {
-				usedVal = resVal
+	for _, flavorStatus := range status.FlavorsUsage {
+		for _, resourceUsage := range flavorStatus.Resources {
+			resourceType := string(resourceUsage.Name)
+			flavorResourceKey := string(flavorStatus.Name) + "/" + resourceType
+
+			usageQuantity := parseK8sResourceVal(resourceType, resourceUsage.Total.String())
+			effectiveUsedQuantity := usageQuantity
+			if reservedQuantity, exists := reservationByFlavorAndResource[flavorResourceKey]; exists && reservedQuantity > effectiveUsedQuantity {
+				effectiveUsedQuantity = reservedQuantity
 			}
-			usageTotals[resName] += usedVal
+			totalUsageByResourceType[resourceType] += effectiveUsedQuantity
 		}
 	}
 
-	return usageTotals
+	return totalUsageByResourceType
 }
 
 // parseK8sResourceVal parses Kubernetes quantity strings (e.g. "8Gi", "1024Ki", "1000m", "4") into a normalized float64 value.

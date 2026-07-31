@@ -19,69 +19,80 @@ import (
 	spb "xmanager_cloud/api/protos/rod"
 )
 
-type resourceAggregator struct {
-	totalNominal   float64
-	totalBorrowing float64
+// ResourceQuotaAggregator holds accumulated nominal quotas and borrowing limits for a specific resource type across all flavors.
+type ResourceQuotaAggregator struct {
+	nominalQuota   float64
+	borrowingLimit float64
 }
 
-// buildQueueOverviewFromClusterQueue transforms a Kueue ClusterQueue CRD into a QueueOverview proto message,
-// aggregating capacities across all configured resource flavors per distinct resource type.
-func buildQueueOverviewFromClusterQueue(cq *kueuev1beta1.ClusterQueue) *spb.QueueOverview {
-	usedMap := extractStatusUsageTotals(cq.Status)
-	aggMap, resourceOrder := accumulateClusterQueueQuotas(cq)
+// buildQueueOverviewFromClusterQueue transforms a Kueue ClusterQueue CRD into a QueueOverview proto message.
+// It executes a clear 3-step pipeline:
+//  1. Extract total used capacity per resource type from ClusterQueueStatus (summed across flavors).
+//  2. Aggregate nominal quotas and borrowing limits per resource type from ClusterQueueSpec (summed across flavors).
+//  3. Compute free capacity and construct QueueResourceCapacity proto messages for each resource type.
+func buildQueueOverviewFromClusterQueue(clusterQueue *kueuev1beta1.ClusterQueue) *spb.QueueOverview {
+	// Step 1: Extract active resource usage across all flavors from Status.
+	totalUsedCapacityByResourceType := extractTotalResourceUsageByResourceType(clusterQueue.Status)
 
-	var capacities []*spb.QueueResourceCapacity
-	for _, resName := range resourceOrder {
-		capMetric := buildQueueResourceCapacity(resName, aggMap[resName], usedMap[resName])
-		capacities = append(capacities, capMetric)
+	// Step 2: Aggregate nominal quotas and borrowing limits across all flavors from Spec.
+	quotaAggregatorByResourceType, orderedResourceTypes := aggregateClusterQueueNominalAndBorrowingLimits(clusterQueue)
+
+	// Step 3: Compute free capacities and build proto messages.
+	var queueCapacities []*spb.QueueResourceCapacity
+	for _, resourceType := range orderedResourceTypes {
+		quotaAggregator := quotaAggregatorByResourceType[resourceType]
+		usedCapacity := totalUsedCapacityByResourceType[resourceType]
+		capacityProto := convertAggregatedQuotaToResourceCapacity(resourceType, quotaAggregator, usedCapacity)
+		queueCapacities = append(queueCapacities, capacityProto)
 	}
 
 	return &spb.QueueOverview{
-		QueueName:     cq.Name,
-		QueueCapacity: capacities,
+		QueueName:     clusterQueue.Name,
+		QueueCapacity: queueCapacities,
 	}
 }
 
-// accumulateClusterQueueQuotas sums nominal quotas and borrowing limits across all flavors per resource type.
-func accumulateClusterQueueQuotas(cq *kueuev1beta1.ClusterQueue) (map[string]*resourceAggregator, []string) {
-	aggMap := make(map[string]*resourceAggregator)
-	var resourceOrder []string
+// aggregateClusterQueueNominalAndBorrowingLimits iterates over all resource groups and flavors in ClusterQueueSpec,
+// summing nominal quotas and borrowing limits for each distinct resource type across all flavors.
+func aggregateClusterQueueNominalAndBorrowingLimits(clusterQueue *kueuev1beta1.ClusterQueue) (map[string]*ResourceQuotaAggregator, []string) {
+	quotaAggregatorByResourceType := make(map[string]*ResourceQuotaAggregator)
+	var orderedResourceTypes []string
 
-	for _, rg := range cq.Spec.ResourceGroups {
-		for _, f := range rg.Flavors {
-			for _, res := range f.Resources {
-				resName := string(res.Name)
-				if _, exists := aggMap[resName]; !exists {
-					aggMap[resName] = &resourceAggregator{}
-					resourceOrder = append(resourceOrder, resName)
+	for _, resourceGroup := range clusterQueue.Spec.ResourceGroups {
+		for _, flavorQuota := range resourceGroup.Flavors {
+			for _, resourceQuota := range flavorQuota.Resources {
+				resourceType := string(resourceQuota.Name)
+				if _, exists := quotaAggregatorByResourceType[resourceType]; !exists {
+					quotaAggregatorByResourceType[resourceType] = &ResourceQuotaAggregator{}
+					orderedResourceTypes = append(orderedResourceTypes, resourceType)
 				}
-				accumulateResourceQuota(res, aggMap[resName])
+				addFlavorResourceQuotaToAggregator(resourceQuota, quotaAggregatorByResourceType[resourceType])
 			}
 		}
 	}
-	return aggMap, resourceOrder
+	return quotaAggregatorByResourceType, orderedResourceTypes
 }
 
-// accumulateResourceQuota parses and adds a single resource quota's nominal and borrowing limits to a resourceAggregator.
-func accumulateResourceQuota(res kueuev1beta1.ResourceQuota, agg *resourceAggregator) {
-	resName := string(res.Name)
-	agg.totalNominal += parseK8sResourceVal(resName, res.NominalQuota.String())
+// addFlavorResourceQuotaToAggregator parses a single flavor's ResourceQuota and adds its nominal quota and borrowing limit to the aggregator.
+func addFlavorResourceQuotaToAggregator(resourceQuota kueuev1beta1.ResourceQuota, aggregator *ResourceQuotaAggregator) {
+	resourceType := string(resourceQuota.Name)
+	aggregator.nominalQuota += parseK8sResourceVal(resourceType, resourceQuota.NominalQuota.String())
 
-	if res.BorrowingLimit != nil {
-		agg.totalBorrowing += parseK8sResourceVal(resName, res.BorrowingLimit.String())
+	if resourceQuota.BorrowingLimit != nil {
+		aggregator.borrowingLimit += parseK8sResourceVal(resourceType, resourceQuota.BorrowingLimit.String())
 	}
 }
 
-// buildQueueResourceCapacity converts an aggregated resourceAggregator and totalUsed value into a QueueResourceCapacity proto.
-func buildQueueResourceCapacity(resName string, agg *resourceAggregator, totalUsed float64) *spb.QueueResourceCapacity {
-	freeVal := agg.totalNominal - totalUsed
-	if freeVal < 0 {
-		freeVal = 0
+// convertAggregatedQuotaToResourceCapacity combines an aggregated ResourceQuotaAggregator and used capacity into a QueueResourceCapacity proto.
+func convertAggregatedQuotaToResourceCapacity(resourceType string, quotaAggregator *ResourceQuotaAggregator, totalUsedCapacity float64) *spb.QueueResourceCapacity {
+	freeCapacity := quotaAggregator.nominalQuota - totalUsedCapacity
+	if freeCapacity < 0 {
+		freeCapacity = 0
 	}
 	return &spb.QueueResourceCapacity{
-		ResourceType:              resName,
-		TotalCapacity:             agg.totalNominal,
-		FreeCapacity:              freeVal,
-		FreeCapacityWithBorrowing: freeVal + agg.totalBorrowing,
+		ResourceType:              resourceType,
+		TotalCapacity:             quotaAggregator.nominalQuota,
+		FreeCapacity:              freeCapacity,
+		FreeCapacityWithBorrowing: freeCapacity + quotaAggregator.borrowingLimit,
 	}
 }
