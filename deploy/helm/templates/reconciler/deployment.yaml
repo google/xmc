@@ -44,6 +44,11 @@ spec:
           capabilities:
             drop:
             - ALL
+        ports:
+        # Metrics port served by controller-runtime (MetricsBindAddress ":8081").
+        # Named so the PodMonitoring endpoint can reference it by name.
+        - containerPort: 8081
+          name: metrics
         args:
         - "-spanner_database_name={{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) }}"
         - "-quota_project_id={{ .Values.projectId }}"

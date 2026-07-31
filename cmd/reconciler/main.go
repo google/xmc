@@ -95,7 +95,9 @@ func main() {
 
 	cqCache := clusterqueue.NewNameCache()
 
-	mlRunClient := newMLRunCreator(ctx, projectID, cfg.DiagonEnvironment, location)
+	// Decorate the MLRun client so every control-plane call is measured (RED metrics).
+	mlRunClient := jobset.NewInstrumentedMLRunCreator(
+		newMLRunCreator(ctx, projectID, cfg.DiagonEnvironment, location))
 
 	mgr, batcher, err := buildManager(ctx, cfg, storage, projectID, location, clusterName, cqCache, mlRunClient)
 	if err != nil {

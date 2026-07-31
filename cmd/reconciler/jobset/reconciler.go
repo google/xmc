@@ -72,6 +72,15 @@ var (
 		Name: "jobset_updates_sent_to_batcher_total",
 		Help: "Total number of updates sent to the batcher from the JobSet reconciler",
 	}, []string{})
+
+	// mlRunSyncDuration measures the wall-clock the reconcile loop spends in the
+	// MLRun path, so we can tell how much MLRun creation adds to a reconcile
+	// (compare against jobset_reconcile_duration_milliseconds).
+	mlRunSyncDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "jobset_reconciler_mlrun_sync_duration_seconds",
+		Help:    "Wall-clock time the reconciler spends in the MLRun path per reconcile.",
+		Buckets: mlRunLatencyBuckets,
+	})
 )
 
 // Reconciler implements reconcile.Reconciler for JobSets.
@@ -332,6 +341,11 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	// actuation), so fall back to reading them from the WorkUnit-level artifact. When
 	// they remain absent we skip this round and a later reconcile retries once the
 	// artifact is present.
+	// Time the whole ManagedXprof/MLRun path (env extraction, the optional artifact
+	// lookup, and MLRun creation) so its cost is attributable independently of the
+	// rest of the reconcile loop. The histogram is only observed when the MLRun path
+	// is taken, so its _count doubles as the number of reconciles that entered it.
+	mlRunStart := time.Now()
 	displayName, runGroup, gcsPath := getManagedXprofEnvs(jobSet)
 	// Only query storage when ManagedXprof is enabled (gcsPath set) but the display
 	// metadata is missing. Standard JobSets leave gcsPath empty and skip MLRun
@@ -348,6 +362,7 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 			logging.Info(ctx, "Begin to create MLRun URL.")
 			mlRunURL = r.ensureMLRunCreated(ctx, jobSet, xid, wid, eid, displayName, runGroup, gcsPath)
 		}
+		mlRunSyncDuration.Observe(time.Since(mlRunStart).Seconds())
 	}
 
 	update, err := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg, startupWarningMsg)
