@@ -17,7 +17,7 @@
 
 Spins up a local standalone ClickHouse container (out-of-band of CTK),
 waits for readiness, and executes basic schema DDL/DML queries.
-Reference: Design Doc Section 4.1.1 & 7.2 (b/537681533).
+Reference: Design Doc Section 4.1.1 & 7.2.
 """
 
 import argparse
@@ -124,20 +124,17 @@ def execute_clickhouse_query(host: str, port: int, query: str) -> str:
             return resp.read().decode("utf-8").strip()
     except urllib.error.HTTPError as e:
         err_body = e.read().decode("utf-8", errors="replace").strip()
-        logger.error("ClickHouse query failed with HTTP %d: %s", e.code, err_body)
+        logger.error("ClickHouse query failed with HTTP %d: %s\nQuery: %s", e.code, err_body, query)
         raise
 
 
 def test_schema_queries(host: str, port: int) -> None:
     """Run ping, version, DDL table creation, DML insert, count query, and cleanup."""
     logger.info("Executing basic ping query...")
-    ping_url = f"http://{host}:{port}/ping"
-    with urllib.request.urlopen(ping_url, timeout=5) as resp:
-        body = resp.read().decode("utf-8").strip()
-        if not body.startswith("Ok"):
-            logger.error("Unexpected ping response: %s", body)
-            sys.exit(1)
-        logger.info("Ping query response: %s", body)
+    if not is_clickhouse_responsive(host, port):
+        logger.error("Unexpected ping response: ClickHouse is not responsive.")
+        sys.exit(1)
+    logger.info("Ping query response: Ok")
 
     logger.info("Executing version query...")
     version = execute_clickhouse_query(host, port, "SELECT version()")
@@ -191,7 +188,7 @@ def cleanup_container(compose_file: str, host: str, port: int) -> None:
 def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Test execution script for local ClickHouse schema iteration (b/537681533)."
+        description="Test execution script for local ClickHouse schema iteration."
     )
     parser.add_argument("--host", default="localhost", help="ClickHouse host (default: localhost)")
     parser.add_argument(
