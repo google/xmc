@@ -102,6 +102,9 @@ func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.Exper
 
 // UpdateExperimentStatus buffers a mutation to update an Experiment's status in Spanner.
 func (r *Repository) UpdateExperimentStatus(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error {
+	if exp == nil {
+		return fmt.Errorf("experiment must not be nil")
+	}
 	expMutation, err := spannerdata.ExperimentProtoToStatusUpdateMutation(exp)
 	if err != nil {
 		logging.Error(ctx, "failed to create status mutation for experiment", "experiment", exp, "error", err)
@@ -112,6 +115,9 @@ func (r *Repository) UpdateExperimentStatus(ctx context.Context, tx *spanner.Rea
 
 // UpdateExperimentResources buffers a mutation to update an Experiment's resources in Spanner.
 func (r *Repository) UpdateExperimentResources(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error {
+	if exp == nil {
+		return fmt.Errorf("experiment must not be nil")
+	}
 	expResourcesMutation, err := spannerdata.ExperimentProtoToResourcesUpdateMutation(exp)
 	if err != nil {
 		logging.Error(ctx, "failed to create resources mutation for experiment", "experiment", exp, "error", err)

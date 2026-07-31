@@ -117,6 +117,9 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 
 // InsertWorkUnit buffers a mutation to insert a new WorkUnit in Spanner.
 func (r *Repository) InsertWorkUnit(ctx context.Context, tx *spanner.ReadWriteTransaction, wu *essmsgpb.WorkUnit) error {
+	if wu == nil {
+		return fmt.Errorf("work unit must not be nil")
+	}
 	mutation, err := spannerdata.WorkUnitProtoToInsertMutation(wu)
 	if err != nil {
 		return err
