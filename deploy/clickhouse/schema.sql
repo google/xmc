@@ -14,6 +14,7 @@
 
 -- 1. Physical MergeTree Table for storing XMC metrics.
 -- Matches Spanner Int64 ID types and exact 7-column sorting key order.
+-- Partitioned by month (toYYYYMM(timestamp)) for efficient data retention and query pruning.
 CREATE TABLE IF NOT EXISTS xmc_metrics
 (
     xid Int64,
@@ -27,6 +28,7 @@ CREATE TABLE IF NOT EXISTS xmc_metrics
     created_at DateTime64(6, 'UTC') DEFAULT now64(6, 'UTC')
 )
 ENGINE = MergeTree()
+PARTITION BY toYYYYMM(timestamp)
 ORDER BY (xid, metric_name, work_unit_id, execution_id, replica_id, step, timestamp);
 
 -- 2. Virtual Queue Table reading native Protobuf binary records directly from Redpanda / Kafka.
@@ -53,21 +55,18 @@ SETTINGS
     kafka_num_consumers = 1,
     stream_flush_interval_ms = 1000;
 
--- 3. Materialized View to parse Protobuf fields, handle defaults via COALESCE/NULLIF,
+-- 3. Materialized View to parse Protobuf fields, handle defaults via IF expressions,
 -- convert microsecond epoch timestamps to DateTime64(6, 'UTC'), and populate xmc_metrics.
 CREATE MATERIALIZED VIEW IF NOT EXISTS xmc_metrics_mv TO xmc_metrics AS
 SELECT
     xid,
     work_unit_id,
     execution_id,
-    coalesce(nullIf(replica_id, ''), '0') AS replica_id,
+    if(replica_id = '', '0', replica_id) AS replica_id,
     metric_name,
     metric_value,
     step,
-    fromUnixTimestamp64Micro(
-        coalesce(nullIf(timestamp, 0), toUnixTimestamp64Micro(now64(6, 'UTC'))),
-        'UTC'
-    ) AS timestamp,
+    if(timestamp = 0, now64(6, 'UTC'), fromUnixTimestamp64Micro(timestamp, 'UTC')) AS timestamp,
     now64(6, 'UTC') AS created_at
 FROM xmc_metrics_queue
 WHERE xid != 0 AND metric_name != '' AND execution_id != 0;
