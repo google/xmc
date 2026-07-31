@@ -20,23 +20,25 @@ import (
 
 func TestParseK8sResourceVal(t *testing.T) {
 	tests := []struct {
-		input    string
-		wantVal  float64
-		wantUnit string
+		resName string
+		input   string
+		wantVal float64
 	}{
-		{input: "8", wantVal: 8.0, wantUnit: ""},
-		{input: "8Gi", wantVal: 8.0, wantUnit: "Gi"},
-		{input: "1024Mi", wantVal: 1.0, wantUnit: "Mi"},
-		{input: "2000m", wantVal: 2.0, wantUnit: "m"},
-		{input: "", wantVal: 0.0, wantUnit: ""},
-		{input: "-", wantVal: 0.0, wantUnit: ""},
+		{resName: "nvidia.com/gpu", input: "8", wantVal: 8.0},
+		{resName: "memory", input: "8Gi", wantVal: 8.0},
+		{resName: "memory", input: "1024Mi", wantVal: 1.0},
+		{resName: "memory", input: "1048576Ki", wantVal: 1.0},
+		{resName: "cpu", input: "500m", wantVal: 0.5},
+		{resName: "cpu", input: "2000m", wantVal: 2.0},
+		{resName: "memory", input: "", wantVal: 0.0},
+		{resName: "cpu", input: "-", wantVal: 0.0},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			gotVal, gotUnit := parseK8sResourceVal(tt.input)
-			if gotVal != tt.wantVal || gotUnit != tt.wantUnit {
-				t.Errorf("parseK8sResourceVal(%q) = (%v, %q), want (%v, %q)", tt.input, gotVal, gotUnit, tt.wantVal, tt.wantUnit)
+		t.Run(tt.resName+"_"+tt.input, func(t *testing.T) {
+			gotVal := parseK8sResourceVal(tt.resName, tt.input)
+			if gotVal != tt.wantVal {
+				t.Errorf("parseK8sResourceVal(%q, %q) = %v, want %v", tt.resName, tt.input, gotVal, tt.wantVal)
 			}
 		})
 	}

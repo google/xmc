@@ -15,53 +15,39 @@
 package main
 
 import (
-	"strconv"
 	"strings"
 
+	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
-// extractResourceTotalsFromStatus converts Kueue FlavorUsage into a map of resource names to raw total strings.
+// extractResourceTotalsFromStatus converts Kueue FlavorUsage into a map of "flavorName/resourceName" keys to raw total strings.
 func extractResourceTotalsFromStatus(usage []kueuev1beta1.FlavorUsage) map[string]string {
 	resTotals := make(map[string]string)
 	for _, flv := range usage {
 		for _, res := range flv.Resources {
-			resName := string(res.Name)
-			resTotals[resName] = res.Total.String()
+			key := string(flv.Name) + "/" + string(res.Name)
+			resTotals[key] = res.Total.String()
 		}
 	}
 	return resTotals
 }
 
-// parseResourceUsageVal parses a raw resource usage string into a float64 value.
-func parseResourceUsageVal(s string) float64 {
-	val, _ := parseK8sResourceVal(s)
-	return val
-}
-
-// parseK8sResourceVal parses Kubernetes quantity strings (e.g. "8Gi", "1000m", "4") into a float64 value and unit.
-func parseK8sResourceVal(s string) (float64, string) {
+// parseK8sResourceVal parses Kubernetes quantity strings (e.g. "8Gi", "1024Ki", "1000m", "4") into a normalized float64 value.
+// Memory and storage quantities are normalized to GiB, while CPU, GPU, and count quantities are normalized to Cores/Units.
+func parseK8sResourceVal(resName, s string) float64 {
 	s = strings.TrimSpace(s)
 	if s == "" || s == "-" {
-		return 0, ""
+		return 0
 	}
-	unit := ""
-	for _, u := range []string{"Gi", "Mi", "Ki", "m", "M", "k", "G"} {
-		if strings.HasSuffix(s, u) {
-			unit = u
-			break
-		}
-	}
-	numStr := strings.TrimSuffix(s, unit)
-	v, err := strconv.ParseFloat(numStr, 64)
+	q, err := resource.ParseQuantity(s)
 	if err != nil {
-		return 0, unit
+		return 0
 	}
-	if unit == "m" {
-		return v / 1000.0, unit
+	// Memory / Storage resources: normalize to GiB
+	if strings.Contains(strings.ToLower(resName), "memory") || strings.Contains(strings.ToLower(resName), "storage") {
+		return float64(q.Value()) / (1024 * 1024 * 1024)
 	}
-	if unit == "Mi" {
-		return v / 1024.0, unit
-	}
-	return v, unit
+	// CPU / GPU / Count resources: normalize to Cores / Units
+	return q.AsApproximateFloat64()
 }

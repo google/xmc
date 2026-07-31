@@ -189,15 +189,76 @@ func TestCapacityMath(t *testing.T) {
 				Name:         corev1.ResourceName("nvidia.com/gpu"),
 				NominalQuota: nomRes,
 			}
-			usageMap := map[string]string{"nvidia.com/gpu": tt.inUse}
-			resMap := map[string]string{"nvidia.com/gpu": tt.reserved}
+			usageMap := map[string]string{"default-flavor/nvidia.com/gpu": tt.inUse}
+			resMap := map[string]string{"default-flavor/nvidia.com/gpu": tt.reserved}
 
-			capMetric := buildResourceCapacity(resQuota, usageMap, resMap)
-			wantVal, _ := parseK8sResourceVal(tt.want)
+			capMetric := buildResourceCapacity("default-flavor", resQuota, usageMap, resMap)
+			wantVal := parseK8sResourceVal("nvidia.com/gpu", tt.want)
 			if capMetric.FreeCapacity != wantVal {
 				t.Errorf("buildResourceCapacity(%s, %s, %s).FreeCapacity = %v, want %v", tt.nominal, tt.reserved, tt.inUse, capMetric.FreeCapacity, wantVal)
 			}
 		})
+	}
+}
+
+func TestMultiFlavorQueueOverview(t *testing.T) {
+	cq := &kueuev1beta1.ClusterQueue{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "multi-flavor-cq",
+		},
+		Spec: kueuev1beta1.ClusterQueueSpec{
+			ResourceGroups: []kueuev1beta1.ResourceGroup{
+				{
+					Flavors: []kueuev1beta1.FlavorQuotas{
+						{
+							Name: "on-demand",
+							Resources: []kueuev1beta1.ResourceQuota{
+								{Name: corev1.ResourceCPU, NominalQuota: resource.MustParse("100")},
+							},
+						},
+						{
+							Name: "spot",
+							Resources: []kueuev1beta1.ResourceQuota{
+								{Name: corev1.ResourceCPU, NominalQuota: resource.MustParse("200")},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: kueuev1beta1.ClusterQueueStatus{
+			FlavorsUsage: []kueuev1beta1.FlavorUsage{
+				{
+					Name: "on-demand",
+					Resources: []kueuev1beta1.ResourceUsage{
+						{Name: corev1.ResourceCPU, Total: resource.MustParse("30")},
+					},
+				},
+				{
+					Name: "spot",
+					Resources: []kueuev1beta1.ResourceUsage{
+						{Name: corev1.ResourceCPU, Total: resource.MustParse("80")},
+					},
+				},
+			},
+		},
+	}
+
+	overview := buildQueueOverviewFromClusterQueue(cq)
+	if len(overview.QueueCapacity) != 2 {
+		t.Fatalf("buildQueueOverviewFromClusterQueue capacity count = %d, want 2", len(overview.QueueCapacity))
+	}
+
+	// Verify on-demand flavor capacity (Nominal: 100, Used: 30, Free: 70)
+	onDemandCap := overview.QueueCapacity[0]
+	if onDemandCap.TotalCapacity != 100.0 || onDemandCap.FreeCapacity != 70.0 {
+		t.Errorf("on-demand capacity = Total: %v, Free: %v; want Total: 100, Free: 70", onDemandCap.TotalCapacity, onDemandCap.FreeCapacity)
+	}
+
+	// Verify spot flavor capacity (Nominal: 200, Used: 80, Free: 120)
+	spotCap := overview.QueueCapacity[1]
+	if spotCap.TotalCapacity != 200.0 || spotCap.FreeCapacity != 120.0 {
+		t.Errorf("spot capacity = Total: %v, Free: %v; want Total: 200, Free: 120", spotCap.TotalCapacity, spotCap.FreeCapacity)
 	}
 }
 

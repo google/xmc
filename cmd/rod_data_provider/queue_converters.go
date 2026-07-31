@@ -27,8 +27,9 @@ func buildQueueOverviewFromClusterQueue(cq *kueuev1beta1.ClusterQueue) *spb.Queu
 	var capacities []*spb.QueueResourceCapacity
 	for _, rg := range cq.Spec.ResourceGroups {
 		for _, f := range rg.Flavors {
+			flvName := string(f.Name)
 			for _, res := range f.Resources {
-				capMetric := buildResourceCapacity(res, usageMap, resMap)
+				capMetric := buildResourceCapacity(flvName, res, usageMap, resMap)
 				capacities = append(capacities, capMetric)
 			}
 		}
@@ -41,11 +42,12 @@ func buildQueueOverviewFromClusterQueue(cq *kueuev1beta1.ClusterQueue) *spb.Queu
 }
 
 // buildResourceCapacity calculates nominal, used, free, and borrowing capacity for a single resource quota into a QueueResourceCapacity proto.
-func buildResourceCapacity(res kueuev1beta1.ResourceQuota, usageMap, resMap map[string]string) *spb.QueueResourceCapacity {
+func buildResourceCapacity(flavorName string, res kueuev1beta1.ResourceQuota, usageMap, resMap map[string]string) *spb.QueueResourceCapacity {
 	resName := string(res.Name)
-	nomVal, _ := parseK8sResourceVal(res.NominalQuota.String())
-	useVal := parseResourceUsageVal(usageMap[resName])
-	resVal := parseResourceUsageVal(resMap[resName])
+	lookupKey := flavorName + "/" + resName
+	nomVal := parseK8sResourceVal(resName, res.NominalQuota.String())
+	useVal := parseK8sResourceVal(resName, usageMap[lookupKey])
+	resVal := parseK8sResourceVal(resName, resMap[lookupKey])
 
 	usedVal := resVal
 	if useVal > usedVal {
@@ -59,7 +61,7 @@ func buildResourceCapacity(res kueuev1beta1.ResourceQuota, usageMap, resMap map[
 
 	borrowVal := 0.0
 	if res.BorrowingLimit != nil {
-		borrowVal, _ = parseK8sResourceVal(res.BorrowingLimit.String())
+		borrowVal = parseK8sResourceVal(resName, res.BorrowingLimit.String())
 	}
 
 	return &spb.QueueResourceCapacity{
