@@ -26,11 +26,8 @@ import (
 
 func createTestClusterQueueTyped(name, cohort, strategy string, nominalGPU, inUseGPU, reservedGPU string) *kueuev1beta1.ClusterQueue {
 	nomGPU := resource.MustParse(nominalGPU)
-	nomCPU := resource.MustParse("100")
 	resGPU := resource.MustParse(reservedGPU)
-	resCPU := resource.MustParse("20")
 	useGPU := resource.MustParse(inUseGPU)
-	useCPU := resource.MustParse("40")
 
 	return &kueuev1beta1.ClusterQueue{
 		ObjectMeta: metav1.ObjectMeta{
@@ -46,7 +43,6 @@ func createTestClusterQueueTyped(name, cohort, strategy string, nominalGPU, inUs
 							Name: "default-flavor",
 							Resources: []kueuev1beta1.ResourceQuota{
 								{Name: corev1.ResourceName("nvidia.com/gpu"), NominalQuota: nomGPU},
-								{Name: corev1.ResourceCPU, NominalQuota: nomCPU},
 							},
 						},
 					},
@@ -69,7 +65,6 @@ func createTestClusterQueueTyped(name, cohort, strategy string, nominalGPU, inUs
 					Name: "default-flavor",
 					Resources: []kueuev1beta1.ResourceUsage{
 						{Name: corev1.ResourceName("nvidia.com/gpu"), Total: resGPU},
-						{Name: corev1.ResourceCPU, Total: resCPU},
 					},
 				},
 			},
@@ -78,7 +73,6 @@ func createTestClusterQueueTyped(name, cohort, strategy string, nominalGPU, inUs
 					Name: "default-flavor",
 					Resources: []kueuev1beta1.ResourceUsage{
 						{Name: corev1.ResourceName("nvidia.com/gpu"), Total: useGPU},
-						{Name: corev1.ResourceCPU, Total: useCPU},
 					},
 				},
 			},
