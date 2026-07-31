@@ -103,101 +103,79 @@ func createTestResourceFlavorTyped(name string, nodeLabels map[string]string) *k
 	}
 }
 
-func TestCapacityMath(t *testing.T) {
+func TestConvertAggregatedQuotaToResourceCapacity(t *testing.T) {
 	tests := []struct {
-		name     string
-		nominal  string
-		reserved string
-		inUse    string
-		want     string
+		name                  string
+		nominalQuota          float64
+		borrowingLimit        float64
+		totalUsed             float64
+		wantTotal             float64
+		wantFree              float64
+		wantFreeWithBorrowing float64
 	}{
 		{
-			name:     "Nominal Minus InUse",
-			nominal:  "100",
-			reserved: "20",
-			inUse:    "40",
-			want:     "60",
+			name:                  "Nominal with partial usage",
+			nominalQuota:          100.0,
+			borrowingLimit:        0.0,
+			totalUsed:             40.0,
+			wantTotal:             100.0,
+			wantFree:              60.0,
+			wantFreeWithBorrowing: 60.0,
 		},
 		{
-			name:     "Nominal Minus Reserved When Reserved > InUse",
-			nominal:  "100",
-			reserved: "60",
-			inUse:    "40",
-			want:     "40",
+			name:                  "Nominal with borrowing limit and partial usage",
+			nominalQuota:          100.0,
+			borrowingLimit:        50.0,
+			totalUsed:             40.0,
+			wantTotal:             100.0,
+			wantFree:              60.0,
+			wantFreeWithBorrowing: 110.0,
 		},
 		{
-			name:     "GPU Capacity Math",
-			nominal:  "8",
-			reserved: "2",
-			inUse:    "4",
-			want:     "4",
+			name:                  "Fully used capacity",
+			nominalQuota:          8.0,
+			borrowingLimit:        0.0,
+			totalUsed:             8.0,
+			wantTotal:             8.0,
+			wantFree:              0.0,
+			wantFreeWithBorrowing: 0.0,
 		},
 		{
-			name:     "Memory Capacity Math",
-			nominal:  "500Gi",
-			reserved: "100Gi",
-			inUse:    "200Gi",
-			want:     "300Gi",
+			name:                  "Over-utilized capacity clamped to zero free",
+			nominalQuota:          10.0,
+			borrowingLimit:        5.0,
+			totalUsed:             15.0,
+			wantTotal:             10.0,
+			wantFree:              0.0,
+			wantFreeWithBorrowing: 5.0,
 		},
 		{
-			name:     "Memory MiB Capacity Math",
-			nominal:  "1024Mi",
-			reserved: "256Mi",
-			inUse:    "512Mi",
-			want:     "512Mi",
-		},
-		{
-			name:     "CPU Millicores Math",
-			nominal:  "2000m",
-			reserved: "500m",
-			inUse:    "1000m",
-			want:     "1000m",
-		},
-		{
-			name:     "Zero Nominal Quota",
-			nominal:  "0",
-			reserved: "0",
-			inUse:    "0",
-			want:     "0",
-		},
-		{
-			name:     "Empty Nominal Quota",
-			nominal:  "",
-			reserved: "0",
-			inUse:    "0",
-			want:     "0",
-		},
-		{
-			name:     "Full Utilization",
-			nominal:  "8",
-			reserved: "8",
-			inUse:    "8",
-			want:     "0",
+			name:                  "Zero quota and usage",
+			nominalQuota:          0.0,
+			borrowingLimit:        0.0,
+			totalUsed:             0.0,
+			wantTotal:             0.0,
+			wantFree:              0.0,
+			wantFreeWithBorrowing: 0.0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			nomRes := resource.MustParse(defaultString(tt.nominal, "0"))
-			resQuota := kueuev1beta1.ResourceQuota{
-				Name:         corev1.ResourceName("nvidia.com/gpu"),
-				NominalQuota: nomRes,
+			aggregator := &ResourceQuotaAggregator{
+				nominalQuota:   tt.nominalQuota,
+				borrowingLimit: tt.borrowingLimit,
 			}
+			capMetric := convertAggregatedQuotaToResourceCapacity("nvidia.com/gpu", aggregator, tt.totalUsed)
 
-			aggregator := &ResourceQuotaAggregator{}
-			addFlavorResourceQuotaToAggregator(resQuota, aggregator)
-
-			useVal := parseK8sResourceVal("nvidia.com/gpu", tt.inUse)
-			resVal := parseK8sResourceVal("nvidia.com/gpu", tt.reserved)
-			usedVal := resVal
-			if useVal > usedVal {
-				usedVal = useVal
+			if capMetric.TotalCapacity != tt.wantTotal {
+				t.Errorf("TotalCapacity = %v, want %v", capMetric.TotalCapacity, tt.wantTotal)
 			}
-
-			capMetric := convertAggregatedQuotaToResourceCapacity("nvidia.com/gpu", aggregator, usedVal)
-			wantVal := parseK8sResourceVal("nvidia.com/gpu", tt.want)
-			if capMetric.FreeCapacity != wantVal {
-				t.Errorf("convertAggregatedQuotaToResourceCapacity(%s, %s, %s).FreeCapacity = %v, want %v", tt.nominal, tt.reserved, tt.inUse, capMetric.FreeCapacity, wantVal)
+			if capMetric.FreeCapacity != tt.wantFree {
+				t.Errorf("FreeCapacity = %v, want %v", capMetric.FreeCapacity, tt.wantFree)
+			}
+			if capMetric.FreeCapacityWithBorrowing != tt.wantFreeWithBorrowing {
+				t.Errorf("FreeCapacityWithBorrowing = %v, want %v", capMetric.FreeCapacityWithBorrowing, tt.wantFreeWithBorrowing)
 			}
 		})
 	}
