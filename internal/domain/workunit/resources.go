@@ -66,7 +66,7 @@ func GetWorkUnitResources(wu *essmsgpb.WorkUnit) []*essmsgpb.ResourceSet {
 				})
 			} else {
 				for i := 0; i < int(replicas); i++ {
-					resources = append(resources, res)
+					resources = append(resources, proto.Clone(res).(*essmsgpb.ResourceSet))
 				}
 			}
 		}

@@ -90,10 +90,11 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &wid, &initialEID, nil, localWU.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage(), tx)
 
 		var resourcesChanged bool
-		exp, resourcesChanged, err = experimentdomain.PrepareWorkUnitCreation(ctx, exp, localWU, now)
+		updatedExp, resourcesChanged, err := experimentdomain.PrepareWorkUnitCreation(ctx, exp, localWU, now)
 		if err != nil {
 			return fmt.Errorf("failed to prepare experiment status for work unit creation: %w", err)
 		}
+		exp = updatedExp
 
 		// 5. Buffer mutations for Experiment status and resources via thin repository methods.
 		// TODO(b/517479143): Consolidate UpdateExperimentStatus and UpdateExperimentResources into a single mutation write to prevent duplicate row updates for the same Experiments row in Spanner.

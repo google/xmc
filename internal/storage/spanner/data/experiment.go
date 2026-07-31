@@ -160,9 +160,13 @@ func ExperimentProtoToStatusUpdateMutation(exp *pb.Experiment) (*spanner.Mutatio
 		[]any{
 			data.ReverseBits(xid), // BitReversedXID
 			exp.Status,            // Status
-			// TODO(b/517479143): Add defensive nil check for exp.Status and UpdateTime before calling .AsTime() to prevent nil pointer panics.
-			exp.Status.UpdateTime.AsTime(), // UpdateTime
-			completeTime,                   // CompleteTime
+			func() any {
+				if exp.GetStatus().GetUpdateTime() != nil {
+					return exp.Status.UpdateTime.AsTime()
+				}
+				return spanner.NullTime{}
+			}(), // UpdateTime
+			completeTime, // CompleteTime
 		},
 	), nil
 }
