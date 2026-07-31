@@ -32,17 +32,17 @@ func TestUpdateExperimentStatus_NilExperiment(t *testing.T) {
 	}
 }
 
-func TestUpdateExperimentStatus_InvalidExperimentName(t *testing.T) {
+func TestUpdateExperimentStatus_NilTransaction(t *testing.T) {
 	ctx := context.Background()
 	r := &Repository{}
 
 	exp := &essmsgpb.Experiment{
-		Name: "invalid-name",
+		Name: "experiments/1001",
 	}
 
 	err := r.UpdateExperimentStatus(ctx, nil, exp)
-	if err == nil {
-		t.Errorf("UpdateExperimentStatus(invalid name) succeeded, want error")
+	if err == nil || err.Error() != "transaction must not be nil" {
+		t.Errorf("UpdateExperimentStatus(nil tx) returned error: %v, want 'transaction must not be nil'", err)
 	}
 }
 
@@ -57,16 +57,16 @@ func TestUpdateExperimentResources_NilExperiment(t *testing.T) {
 	}
 }
 
-func TestUpdateExperimentResources_InvalidExperimentName(t *testing.T) {
+func TestUpdateExperimentResources_NilTransaction(t *testing.T) {
 	ctx := context.Background()
 	r := &Repository{}
 
 	exp := &essmsgpb.Experiment{
-		Name: "invalid-name",
+		Name: "experiments/1001",
 	}
 
 	err := r.UpdateExperimentResources(ctx, nil, exp)
-	if err == nil {
-		t.Errorf("UpdateExperimentResources(invalid name) succeeded, want error")
+	if err == nil || err.Error() != "transaction must not be nil" {
+		t.Errorf("UpdateExperimentResources(nil tx) returned error: %v, want 'transaction must not be nil'", err)
 	}
 }

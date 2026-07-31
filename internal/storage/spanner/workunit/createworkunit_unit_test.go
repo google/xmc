@@ -32,16 +32,16 @@ func TestInsertWorkUnit_NilWorkUnit(t *testing.T) {
 	}
 }
 
-func TestInsertWorkUnit_InvalidWorkUnitName(t *testing.T) {
+func TestInsertWorkUnit_NilTransaction(t *testing.T) {
 	ctx := context.Background()
 	r := &Repository{}
 
 	wu := &essmsgpb.WorkUnit{
-		Name: "invalid-name",
+		Name: "experiments/1001/workUnits/1",
 	}
 
 	err := r.InsertWorkUnit(ctx, nil, wu)
-	if err == nil {
-		t.Errorf("InsertWorkUnit(invalid name) succeeded, want error")
+	if err == nil || err.Error() != "transaction must not be nil" {
+		t.Errorf("InsertWorkUnit(nil tx) returned error: %v, want 'transaction must not be nil'", err)
 	}
 }

@@ -43,8 +43,31 @@ func GetWorkUnitResources(wu *essmsgpb.WorkUnit) []*essmsgpb.ResourceSet {
 			if spec == nil || spec.GetResources() == nil {
 				continue
 			}
-			for i := 0; i < int(replicas); i++ {
-				resources = append(resources, spec.GetResources())
+			res := spec.GetResources()
+			if cpu := res.GetCpuResources(); cpu != nil {
+				resources = append(resources, &essmsgpb.ResourceSet{
+					Resources: &essmsgpb.ResourceSet_CpuResources{
+						CpuResources: &essmsgpb.CpuResources{
+							CpuMillicores: cpu.GetCpuMillicores() * int64(replicas),
+							MemoryBytes:   cpu.GetMemoryBytes() * int64(replicas),
+						},
+					},
+					EphemeralStorageBytes: res.GetEphemeralStorageBytes() * int64(replicas),
+				})
+			} else if gpu := res.GetGpuResources(); gpu != nil {
+				resources = append(resources, &essmsgpb.ResourceSet{
+					Resources: &essmsgpb.ResourceSet_GpuResources{
+						GpuResources: &essmsgpb.GpuResources{
+							Type:  gpu.GetType(),
+							Count: gpu.GetCount() * int64(replicas),
+						},
+					},
+					EphemeralStorageBytes: res.GetEphemeralStorageBytes() * int64(replicas),
+				})
+			} else {
+				for i := 0; i < int(replicas); i++ {
+					resources = append(resources, res)
+				}
 			}
 		}
 	}
