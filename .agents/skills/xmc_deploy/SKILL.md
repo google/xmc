@@ -210,8 +210,10 @@ bazel run //cmd/ui:ui_image_push
 bazel run //cmd/xid_service:xid_service_image_push
 # Optional: Only run if health_service_deployment_enabled is true
 bazel run //cmd/health_service:health_service_image_push
+bazel run //cmd/dashboard_service:dashboard_service_image_push
 # Optional: Only run if rod_deployment_enabled is true (default: false)
 bazel run //cmd/rod_data_provider:rod_data_provider_image_push
+bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
 ```
 
 ### Step 9: Deploy XMC Application (`xmc_app` group)

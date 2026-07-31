@@ -469,6 +469,8 @@ def step_images(config: Config) -> None:
         ("reconciler", "//cmd/reconciler:reconciler_image_push"),
         ("ui", "//cmd/ui:ui_image_push"),
         ("xid_service", "//cmd/xid_service:xid_service_image_push"),
+        ("dashboard_service", "//cmd/dashboard_service:dashboard_service_image_push"),
+        ("ingestion_gateway", "//cmd/ingestion_gateway:ingestion_gateway_image_push"),
     ]
     if config.health_service_deployment_enabled:
         targets.append(("health_service", "//cmd/health_service:health_service_image_push"))
@@ -540,6 +542,7 @@ def step_restart(config: Config) -> None:
     )
     services = [
         "actuator",
+        "dashboard-service",
         "experiment-state-server",
         "log-monitor",
         "reconciler",

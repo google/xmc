@@ -53,6 +53,8 @@ vars:
   redis_region:
   status_message_history_enabled: true
   health_service_deployment_enabled: false
+  dashboard_service_deployment_enabled: false
+  ingestion_gateway_deployment_enabled: false
   rod_deployment_enabled: false
 
 deployment_groups:
@@ -404,6 +406,12 @@ deployment_groups:
         type: auto
       - name: healthServiceDeployment.enabled
         value: $(vars.health_service_deployment_enabled)
+        type: auto
+      - name: dashboardServiceDeployment.enabled
+        value: $(vars.dashboard_service_deployment_enabled)
+        type: auto
+      - name: ingestionGatewayDeployment.enabled
+        value: $(vars.ingestion_gateway_deployment_enabled)
         type: auto
       - name: rodDeployment.enabled
         value: $(vars.rod_deployment_enabled)
