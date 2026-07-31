@@ -15,26 +15,19 @@
 package main
 
 import (
-	"context"
 	"testing"
 
 	spb "xmanager_cloud/api/protos/rod"
-	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
-func TestFetchClusterQueuesWithCache(t *testing.T) {
-	ctx := context.Background()
-	c := cache.NewKueueCache()
-
+func TestFilterFittingQueues(t *testing.T) {
 	cq1 := createTestClusterQueueTyped("cq-gpu-1", "gpu-cohort", "StrictFIFO", "8", "4", "2")
 	cq2 := createTestClusterQueueTyped("cq-cpu-2", "cpu-cohort", "BestEffortFIFO", "0", "0", "0")
-	lq1 := createTestLocalQueueTyped("lq-team-a", "team-a", "cq-gpu-1")
-	rf1 := createTestResourceFlavorTyped("default-flavor", map[string]string{"cloud.google.com/gke-accelerator": "nvidia-tesla-h100"})
 
-	c.ClusterQueues.Set("cq-gpu-1", cq1)
-	c.ClusterQueues.Set("cq-cpu-2", cq2)
-	c.LocalQueues.Set("team-a/lq-team-a", lq1)
-	c.ResourceFlavors.Set("default-flavor", rf1)
+	overviews := []*spb.QueueOverview{
+		buildQueueOverviewFromClusterQueue(cq1),
+		buildQueueOverviewFromClusterQueue(cq2),
+	}
 
 	tests := []struct {
 		name      string
@@ -70,15 +63,12 @@ func TestFetchClusterQueuesWithCache(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := FetchClusterQueues(ctx, c, tt.req)
-			if err != nil {
-				t.Fatalf("FetchClusterQueues failed: %v", err)
-			}
+			got := filterFittingQueues(overviews, tt.req)
 			if len(got) != tt.wantCount {
-				t.Errorf("FetchClusterQueues count = %d, want %d", len(got), tt.wantCount)
+				t.Errorf("filterFittingQueues count = %d, want %d", len(got), tt.wantCount)
 			}
 			if tt.wantQueue != "" && len(got) > 0 && got[0].QueueName != tt.wantQueue {
-				t.Errorf("FetchClusterQueues queue name = %s, want %s", got[0].QueueName, tt.wantQueue)
+				t.Errorf("filterFittingQueues queue name = %s, want %s", got[0].QueueName, tt.wantQueue)
 			}
 		})
 	}

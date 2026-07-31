@@ -15,32 +15,10 @@
 package main
 
 import (
-	"context"
 	"strings"
 
 	spb "xmanager_cloud/api/protos/rod"
-	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
-
-// FetchClusterQueues queries ClusterQueues directly from the in-memory KueueCache with zero network List calls.
-func FetchClusterQueues(ctx context.Context, cache *cache.KueueCache, req *spb.GetFittingQueuesRequest) ([]*spb.QueueOverview, error) {
-	if cache == nil {
-		return []*spb.QueueOverview{}, nil
-	}
-
-	cqList := cache.ClusterQueues.List()
-
-	var results []*spb.QueueOverview
-	for _, cq := range cqList {
-		if cq == nil {
-			continue
-		}
-		overview := buildQueueOverviewFromClusterQueue(cq)
-		results = append(results, overview)
-	}
-
-	return filterFittingQueues(results, req), nil
-}
 
 // filterFittingQueues filters queue overviews based on requested resource requirements.
 func filterFittingQueues(queues []*spb.QueueOverview, req *spb.GetFittingQueuesRequest) []*spb.QueueOverview {
