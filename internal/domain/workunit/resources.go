@@ -78,20 +78,14 @@ func MergeResourceSets(a, b []*essmsgpb.ResourceSet) []*essmsgpb.ResourceSet {
 			continue
 		}
 		if res := rs.GetCpuResources(); res != nil {
-			if cpu == nil {
-				cpu = &essmsgpb.CpuResources{}
-			}
-			cpu.CpuMillicores += res.GetCpuMillicores()
-			cpu.MemoryBytes += res.GetMemoryBytes()
-			cpuEphemeral += rs.GetEphemeralStorageBytes()
-		} else if res := rs.GetGpuResources(); res != nil {
-			gpuRes := res
-			if _, ok := gpus[gpuRes.GetType()]; !ok {
-				gpus[gpuRes.GetType()] = &essmsgpb.GpuResources{Type: gpuRes.GetType()}
-			}
-			gpus[gpuRes.GetType()].Count += gpuRes.GetCount()
-			gpuEphemeral[gpuRes.GetType()] += rs.GetEphemeralStorageBytes()
-		} else if res := rs.GetTpuResources(); res != nil {
+			cpu, cpuEphemeral = mergeCpuResource(cpu, cpuEphemeral, rs, res)
+			continue
+		}
+		if res := rs.GetGpuResources(); res != nil {
+			mergeGpuResource(gpus, gpuEphemeral, rs, res)
+			continue
+		}
+		if rs.GetTpuResources() != nil {
 			tpus = append(tpus, proto.Clone(rs).(*essmsgpb.ResourceSet))
 		}
 	}
@@ -130,4 +124,22 @@ func MergeResourceSets(a, b []*essmsgpb.ResourceSet) []*essmsgpb.ResourceSet {
 	merged = append(merged, tpus...)
 
 	return merged
+}
+
+func mergeCpuResource(cpu *essmsgpb.CpuResources, cpuEphemeral int64, rs *essmsgpb.ResourceSet, res *essmsgpb.CpuResources) (*essmsgpb.CpuResources, int64) {
+	if cpu == nil {
+		cpu = &essmsgpb.CpuResources{}
+	}
+	cpu.CpuMillicores += res.GetCpuMillicores()
+	cpu.MemoryBytes += res.GetMemoryBytes()
+	return cpu, cpuEphemeral + rs.GetEphemeralStorageBytes()
+}
+
+func mergeGpuResource(gpus map[string]*essmsgpb.GpuResources, gpuEphemeral map[string]int64, rs *essmsgpb.ResourceSet, res *essmsgpb.GpuResources) {
+	gpuType := res.GetType()
+	if _, ok := gpus[gpuType]; !ok {
+		gpus[gpuType] = &essmsgpb.GpuResources{Type: gpuType}
+	}
+	gpus[gpuType].Count += res.GetCount()
+	gpuEphemeral[gpuType] += rs.GetEphemeralStorageBytes()
 }
