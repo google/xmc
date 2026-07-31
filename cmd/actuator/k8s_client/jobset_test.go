@@ -294,8 +294,9 @@ func TestConstructJobSet(t *testing.T) {
 		Spec: jobsetv1alpha2.JobSetSpec{
 			ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
 				{
-					Name:     "job1",
-					Replicas: 2,
+					Name:      "job1",
+					GroupName: "default",
+					Replicas:  2,
 					Template: batchv1.JobTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels:      jobLabels,
@@ -510,6 +511,39 @@ func TestConstructJobSet(t *testing.T) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("constructJobSet() returned diff (-want +got):\n%s", diff)
 	}
+}
+
+func TestConstructJobSet_GroupName(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+
+	t.Run("Default groupName when omitted", func(t *testing.T) {
+		jobSet, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+		if err != nil {
+			t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+		}
+		if len(jobSet.Spec.ReplicatedJobs) != 1 {
+			t.Fatalf("Expected 1 ReplicatedJob, got %d", len(jobSet.Spec.ReplicatedJobs))
+		}
+		if got := jobSet.Spec.ReplicatedJobs[0].GroupName; got != "default" {
+			t.Errorf("ReplicatedJob.GroupName = %q, want %q", got, "default")
+		}
+	})
+
+	t.Run("Explicit groupName set on KubernetesJob", func(t *testing.T) {
+		workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+			wu.Executable.GetJobset().Jobs[0].GroupName = "custom-group"
+		})
+		jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+		if err != nil {
+			t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+		}
+		if len(jobSet.Spec.ReplicatedJobs) != 1 {
+			t.Fatalf("Expected 1 ReplicatedJob, got %d", len(jobSet.Spec.ReplicatedJobs))
+		}
+		if got := jobSet.Spec.ReplicatedJobs[0].GroupName; got != "custom-group" {
+			t.Errorf("ReplicatedJob.GroupName = %q, want %q", got, "custom-group")
+		}
+	})
 }
 
 func TestConstructJobSet_MetricsEnabled(t *testing.T) {

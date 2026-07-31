@@ -316,8 +316,14 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 	primaryName := jobsetutil.PrimaryContainerName(job)
 	nodeSelector := copyNodeSelector(job.GetNodeSelector())
 
+	groupName := job.GetGroupName()
+	if groupName == "" {
+		groupName = "default"
+	}
+
 	return jobsetv1alpha2.ReplicatedJob{
 		Name:      job.GetName(),
+		GroupName: groupName,
 		Replicas:  job.GetReplicas(),
 		DependsOn: dependsOn,
 		Template: batchv1.JobTemplateSpec{
