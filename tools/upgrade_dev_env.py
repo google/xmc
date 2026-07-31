@@ -45,9 +45,9 @@ class Config:
     namespace: str
     registry: str
     image_registry: str
+    image_tag: str
     gke_cluster: str
     config_path: str
-    image_tag: str
     run_migrations: bool = False
 
 
@@ -197,7 +197,6 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
     region = os.getenv("GCP_REGION") or str(yaml_vars.get("region", "us-central1"))
     environment = os.getenv("XMANAGER_ENV") or str(yaml_vars.get("environment", "dev"))
     namespace = os.getenv("K8S_NAMESPACE") or str(yaml_vars.get("namespace", "xmc"))
-    image_tag = os.getenv("BUILD_TAG") or str(yaml_vars.get("image_tag", "latest"))
 
     if not project_id:
         error_exit(f"project_id is missing in vars of '{config_file}'.")
@@ -210,6 +209,7 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
         or os.getenv("XMC_ACR_TARGET")
         or str(yaml_vars.get("image_registry", registry))
     )
+    image_tag = os.getenv("BUILD_TAG") or str(yaml_vars.get("image_tag", "latest"))
     gke_cluster = f"xmc-{deployment_name}-{environment}"
 
     return Config(
@@ -220,9 +220,9 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
         namespace=namespace,
         registry=registry,
         image_registry=image_registry,
+        image_tag=image_tag,
         gke_cluster=gke_cluster,
         config_path=config_file,
-        image_tag=image_tag,
         run_migrations=run_migrations,
     )
 
@@ -275,7 +275,7 @@ def step_check(config: Config) -> None:
     log_info(f"Verifying gcloud target project ({config.project_id})...")
     run_cmd(["gcloud", "config", "set", "project", config.project_id, "--quiet"])
 
-    registry_host = config.acr_target.split("/")[0]
+    registry_host = config.image_registry.split("/")[0]
     if registry_host.endswith("gcr.io") or registry_host.endswith(".pkg.dev"):
         log_info(
             f"Configuring Docker authentication for Google Artifact Registry ({registry_host})..."

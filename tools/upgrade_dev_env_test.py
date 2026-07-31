@@ -126,9 +126,10 @@ class TestMigrationHelpers(unittest.TestCase):
             environment="e",
             namespace="n",
             registry="reg",
-            acr_target="tar",
             gke_cluster="c",
             config_path="cfg",
+            image_registry="us-docker.pkg.dev/p/xmc",
+            image_tag="latest",
         )
         with self.assertRaises(SystemExit) as cm:
             upgrade_dev_env.get_migration_status(config, "ess", "inst", "db")
@@ -144,9 +145,10 @@ class TestMigrationHelpers(unittest.TestCase):
             environment="e",
             namespace="n",
             registry="reg",
-            acr_target="tar",
             gke_cluster="c",
             config_path="cfg",
+            image_registry="us-docker.pkg.dev/p/xmc",
+            image_tag="latest",
             run_migrations=False,
         )
         with self.assertRaises(SystemExit) as cm:
@@ -164,9 +166,10 @@ class TestMigrationHelpers(unittest.TestCase):
             environment="dev",
             namespace="n",
             registry="reg",
-            acr_target="tar",
             gke_cluster="c",
             config_path="cfg",
+            image_registry="us-docker.pkg.dev/p/xmc",
+            image_tag="latest",
             run_migrations=True,
         )
         upgrade_dev_env.step_migrate(config)
@@ -213,9 +216,10 @@ class TestStepSubprocesses(unittest.TestCase):
             environment="dev",
             namespace="xmc",
             registry="us-docker.pkg.dev/proj-123/xmc",
-            acr_target="us-docker.pkg.dev/proj-123/xmc",
             gke_cluster="xmc-deploy-456-dev",
             config_path="deploy/ctk_v2/xmanager-cloud-deployment.yaml",
+            image_registry="us-docker.pkg.dev/proj-123/xmc",
+            image_tag="latest",
         )
 
     @mock.patch("shutil.which", return_value="/usr/bin/tool")
