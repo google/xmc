@@ -294,9 +294,8 @@ func TestConstructJobSet(t *testing.T) {
 		Spec: jobsetv1alpha2.JobSetSpec{
 			ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
 				{
-					Name:      "job1",
-					GroupName: "default",
-					Replicas:  2,
+					Name:     "job1",
+					Replicas: 2,
 					Template: batchv1.JobTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels:      jobLabels,
@@ -516,7 +515,7 @@ func TestConstructJobSet(t *testing.T) {
 func TestConstructJobSet_GroupName(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 
-	t.Run("Default groupName when omitted", func(t *testing.T) {
+	t.Run("Empty groupName when omitted", func(t *testing.T) {
 		jobSet, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
 		if err != nil {
 			t.Fatalf("constructJobSet() returned unexpected error: %v", err)
@@ -524,8 +523,8 @@ func TestConstructJobSet_GroupName(t *testing.T) {
 		if len(jobSet.Spec.ReplicatedJobs) != 1 {
 			t.Fatalf("Expected 1 ReplicatedJob, got %d", len(jobSet.Spec.ReplicatedJobs))
 		}
-		if got := jobSet.Spec.ReplicatedJobs[0].GroupName; got != "default" {
-			t.Errorf("ReplicatedJob.GroupName = %q, want %q", got, "default")
+		if got := jobSet.Spec.ReplicatedJobs[0].GroupName; got != "" {
+			t.Errorf("ReplicatedJob.GroupName = %q, want %q", got, "")
 		}
 	})
 
