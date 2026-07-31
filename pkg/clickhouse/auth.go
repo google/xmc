@@ -16,6 +16,7 @@ package clickhouse
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -45,7 +46,7 @@ func ConnectWithFallback(ctx context.Context) (driver.Conn, error) {
 		errs = append(errs, fmt.Errorf("strategy %q failed: %w", s.name, err))
 	}
 
-	return nil, fmt.Errorf("all clickhouse auth strategies failed: %v", errs)
+	return nil, fmt.Errorf("all clickhouse auth strategies failed: %w", errors.Join(errs...))
 }
 
 func tryConnectStrategy(ctx context.Context, strategy strategyFunc) (driver.Conn, error) {

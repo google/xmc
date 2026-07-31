@@ -16,6 +16,7 @@ package clickhouse
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -83,5 +84,8 @@ func TestConnectWithFallbackFailure(t *testing.T) {
 			_ = conn.Close()
 		}
 		t.Fatalf("expected error from ConnectWithFallback when database is unavailable")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected error chain to contain context.Canceled, got %v", err)
 	}
 }
