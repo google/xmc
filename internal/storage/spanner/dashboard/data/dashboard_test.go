@@ -152,5 +152,131 @@ func TestDashboardRowToProto_Nil(t *testing.T) {
 func TestChartRowToProto_Nil(t *testing.T) {
 	if _, err := ChartRowToProto(nil, nil); err == nil {
 		t.Errorf("ChartRowToProto(nil) expected error, got nil")
+
+func TestMergeDashboards_AllFieldsNoMask(t *testing.T) {
+	current := &dpb.Dashboard{
+		Name:        "dashboards/d1",
+		Title:       "Old Title",
+		Description: "Old Desc",
+		Owner:       "owner@example.com",
+		Charts:      []*dpb.Chart{{Name: "charts/c1"}},
+		ChartLayout: &dpb.LayoutSpec{Type: dpb.LayoutSpec_GRID, Columns: 1},
+	}
+	updated := &dpb.Dashboard{
+		Name:        "dashboards/d1",
+		Title:       "New Title",
+		Description: "New Desc",
+		Owner:       "attacker@example.com",
+		Charts:      []*dpb.Chart{{Name: "charts/c2"}},
+		ChartLayout: &dpb.LayoutSpec{Type: dpb.LayoutSpec_SIDE_BY_SIDE, Columns: 2},
+	}
+
+	merged, err := MergeDashboards(current, updated, nil)
+	if err != nil {
+		t.Fatalf("MergeDashboards failed: %v", err)
+	}
+
+	if merged.GetTitle() != "New Title" {
+		t.Errorf("Title: got %q, want 'New Title'", merged.GetTitle())
+	}
+	if merged.GetDescription() != "New Desc" {
+		t.Errorf("Description: got %q, want 'New Desc'", merged.GetDescription())
+	}
+	if merged.GetOwner() != "owner@example.com" {
+		t.Errorf("Owner: got %q, want 'owner@example.com' (owner must not be overwritten)", merged.GetOwner())
+	}
+	if len(merged.GetCharts()) != 1 || merged.GetCharts()[0].GetName() != "charts/c2" {
+		t.Errorf("Charts: got %v, want charts/c2", merged.GetCharts())
+	}
+	if merged.GetChartLayout().GetType() != dpb.LayoutSpec_SIDE_BY_SIDE {
+		t.Errorf("ChartLayout: got %v, want SIDE_BY_SIDE", merged.GetChartLayout().GetType())
+	}
+}
+
+func TestMergeDashboards_WithFieldMask(t *testing.T) {
+	current := &dpb.Dashboard{
+		Name:        "dashboards/d1",
+		Title:       "Old Title",
+		Description: "Old Desc",
+		Charts:      []*dpb.Chart{{Name: "charts/c1"}},
+	}
+	updated := &dpb.Dashboard{
+		Name:        "dashboards/d1",
+		Title:       "New Title",
+		Description: "New Desc",
+		Charts:      []*dpb.Chart{{Name: "charts/c2"}},
+	}
+
+	mask := &fieldmaskpb.FieldMask{Paths: []string{"title"}}
+	merged, err := MergeDashboards(current, updated, mask)
+	if err != nil {
+		t.Fatalf("MergeDashboards failed: %v", err)
+	}
+
+	if merged.GetTitle() != "New Title" {
+		t.Errorf("Title: got %q, want 'New Title'", merged.GetTitle())
+	}
+	if merged.GetDescription() != "Old Desc" {
+		t.Errorf("Description: got %q, want 'Old Desc' (should not have changed)", merged.GetDescription())
+	}
+	if len(merged.GetCharts()) != 1 || merged.GetCharts()[0].GetName() != "charts/c1" {
+		t.Errorf("Charts: got %v, want charts/c1 (should not have changed)", merged.GetCharts())
+	}
+}
+
+func TestMergeDashboards_InvalidPath(t *testing.T) {
+	current := &dpb.Dashboard{Name: "dashboards/d1"}
+	updated := &dpb.Dashboard{Name: "dashboards/d1"}
+	mask := &fieldmaskpb.FieldMask{Paths: []string{"invalid_field"}}
+
+	_, err := MergeDashboards(current, updated, mask)
+	if err == nil {
+		t.Errorf("MergeDashboards with invalid field mask path succeeded, want error")
+	}
+}
+
+func TestMergeDashboards_NilInputs(t *testing.T) {
+	if _, err := MergeDashboards(nil, &dpb.Dashboard{}, nil); err == nil {
+		t.Errorf("MergeDashboards(nil, updated, nil) succeeded, want error")
+	}
+	if _, err := MergeDashboards(&dpb.Dashboard{}, nil, nil); err == nil {
+		t.Errorf("MergeDashboards(current, nil, nil) succeeded, want error")
+	}
+}
+
+func TestDashboardProtoToUpdateMutations_Success(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name:        "dashboards/d1",
+		Title:       "Updated Title",
+		Description: "Updated Desc",
+		Charts:      []*dpb.Chart{{Name: "charts/c1"}, {Name: "charts/c2"}},
+	}
+
+	// Without charts update
+	mutsNoCharts, err := DashboardProtoToUpdateMutations(dash, false)
+	if err != nil {
+		t.Fatalf("DashboardProtoToUpdateMutations failed: %v", err)
+	}
+	if len(mutsNoCharts) != 1 {
+		t.Errorf("mutsNoCharts: got %d mutations, want 1", len(mutsNoCharts))
+	}
+
+	// With charts update
+	mutsWithCharts, err := DashboardProtoToUpdateMutations(dash, true)
+	if err != nil {
+		t.Fatalf("DashboardProtoToUpdateMutations with charts failed: %v", err)
+	}
+	// 1 dashboard update + 1 delete child prefix + 2 chart inserts = 4
+	if len(mutsWithCharts) != 4 {
+		t.Errorf("mutsWithCharts: got %d mutations, want 4", len(mutsWithCharts))
+	}
+}
+
+func TestDashboardProtoToUpdateMutations_InvalidInput(t *testing.T) {
+	if _, err := DashboardProtoToUpdateMutations(nil, false); err == nil {
+		t.Errorf("DashboardProtoToUpdateMutations(nil) succeeded, want error")
+	}
+	if _, err := DashboardProtoToUpdateMutations(&dpb.Dashboard{}, false); err == nil {
+		t.Errorf("DashboardProtoToUpdateMutations(empty name) succeeded, want error")
 	}
 }
