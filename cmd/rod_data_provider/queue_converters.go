@@ -85,10 +85,10 @@ func aggregateClusterQueueNominalAndBorrowingLimits(clusterQueue *kueuev1beta1.C
 // addFlavorResourceQuotaToAggregator parses a single flavor's ResourceQuota and adds its nominal quota and borrowing limit to the aggregator.
 func addFlavorResourceQuotaToAggregator(resourceQuota kueuev1beta1.ResourceQuota, aggregator *ResourceQuotaAggregator) {
 	resourceType := string(resourceQuota.Name)
-	aggregator.nominalQuota += parseK8sResourceVal(resourceType, resourceQuota.NominalQuota.String())
+	aggregator.nominalQuota += parseK8sResourceQuantity(resourceType, resourceQuota.NominalQuota)
 
 	if resourceQuota.BorrowingLimit != nil {
-		aggregator.borrowingLimit += parseK8sResourceVal(resourceType, resourceQuota.BorrowingLimit.String())
+		aggregator.borrowingLimit += parseK8sResourceQuantity(resourceType, *resourceQuota.BorrowingLimit)
 	}
 }
 
@@ -98,10 +98,14 @@ func convertAggregatedQuotaToResourceCapacity(resourceType string, quotaAggregat
 	if freeCapacity < 0 {
 		freeCapacity = 0
 	}
+	freeCapacityWithBorrowing := (quotaAggregator.nominalQuota + quotaAggregator.borrowingLimit) - totalUsedCapacity
+	if freeCapacityWithBorrowing < 0 {
+		freeCapacityWithBorrowing = 0
+	}
 	return &spb.QueueResourceCapacity{
 		ResourceType:              resourceType,
 		TotalCapacity:             quotaAggregator.nominalQuota,
 		FreeCapacity:              freeCapacity,
-		FreeCapacityWithBorrowing: freeCapacity + quotaAggregator.borrowingLimit,
+		FreeCapacityWithBorrowing: freeCapacityWithBorrowing,
 	}
 }

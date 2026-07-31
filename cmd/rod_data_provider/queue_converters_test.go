@@ -149,7 +149,7 @@ func TestConvertAggregatedQuotaToResourceCapacity(t *testing.T) {
 			totalUsed:             15.0,
 			wantTotal:             10.0,
 			wantFree:              0.0,
-			wantFreeWithBorrowing: 5.0,
+			wantFreeWithBorrowing: 0.0,
 		},
 		{
 			name:                  "Zero quota and usage",

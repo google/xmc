@@ -57,7 +57,7 @@ func extractTotalResourceUsageByResourceType(status kueuev1beta1.ClusterQueueSta
 		for _, resourceUsage := range flavorStatus.Resources {
 			rawResourceType := string(resourceUsage.Name)
 			resolvedType := resolveResourceType(rawResourceType, flavorName, rfMap)
-			usedQty := parseK8sResourceVal(rawResourceType, resourceUsage.Total.String())
+			usedQty := parseK8sResourceQuantity(rawResourceType, resourceUsage.Total)
 			totalUsageByResourceType[resolvedType] += usedQty
 		}
 	}
@@ -65,8 +65,16 @@ func extractTotalResourceUsageByResourceType(status kueuev1beta1.ClusterQueueSta
 	return totalUsageByResourceType
 }
 
-// parseK8sResourceVal parses Kubernetes quantity strings (e.g. "8Gi", "1024Ki", "1000m", "4") into a normalized float64 value.
+// parseK8sResourceQuantity normalizes a resource.Quantity into a float64 value.
 // Memory and storage quantities are normalized to GiB, while CPU, GPU, and count quantities are normalized to Cores/Units.
+func parseK8sResourceQuantity(resourceType string, q resource.Quantity) float64 {
+	if isMemoryOrStorageResource(resourceType) {
+		return float64(q.Value()) / (1024 * 1024 * 1024)
+	}
+	return q.AsApproximateFloat64()
+}
+
+// parseK8sResourceVal parses Kubernetes quantity strings (e.g. "8Gi", "1024Ki", "1000m", "4") into a normalized float64 value.
 func parseK8sResourceVal(resourceType, quantityStr string) float64 {
 	s := strings.TrimSpace(quantityStr)
 	if s == "" || s == "-" {
@@ -76,10 +84,7 @@ func parseK8sResourceVal(resourceType, quantityStr string) float64 {
 	if err != nil {
 		return 0
 	}
-	if isMemoryOrStorageResource(resourceType) {
-		return float64(q.Value()) / (1024 * 1024 * 1024)
-	}
-	return q.AsApproximateFloat64()
+	return parseK8sResourceQuantity(resourceType, q)
 }
 
 func isMemoryOrStorageResource(resourceType string) bool {

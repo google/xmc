@@ -22,7 +22,7 @@ import (
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
-func TestParseK8sResourceVal_MemoryNormalization(t *testing.T) {
+func TestParseK8sResourceQuantity_MemoryNormalization(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
@@ -37,15 +37,19 @@ func TestParseK8sResourceVal_MemoryNormalization(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotVal := parseK8sResourceVal("memory", tt.input)
+			var q resource.Quantity
+			if tt.input != "" {
+				q = resource.MustParse(tt.input)
+			}
+			gotVal := parseK8sResourceQuantity("memory", q)
 			if gotVal != tt.wantVal {
-				t.Errorf("parseK8sResourceVal('memory', %q) = %v, want %v", tt.input, gotVal, tt.wantVal)
+				t.Errorf("parseK8sResourceQuantity('memory', %q) = %v, want %v", tt.input, gotVal, tt.wantVal)
 			}
 		})
 	}
 }
 
-func TestParseK8sResourceVal_CPUNormalization(t *testing.T) {
+func TestParseK8sResourceQuantity_CPUNormalization(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
@@ -60,9 +64,13 @@ func TestParseK8sResourceVal_CPUNormalization(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotVal := parseK8sResourceVal("cpu", tt.input)
+			var q resource.Quantity
+			if tt.input != "" && tt.input != "-" {
+				q = resource.MustParse(tt.input)
+			}
+			gotVal := parseK8sResourceQuantity("cpu", q)
 			if gotVal != tt.wantVal {
-				t.Errorf("parseK8sResourceVal('cpu', %q) = %v, want %v", tt.input, gotVal, tt.wantVal)
+				t.Errorf("parseK8sResourceQuantity('cpu', %q) = %v, want %v", tt.input, gotVal, tt.wantVal)
 			}
 		})
 	}
