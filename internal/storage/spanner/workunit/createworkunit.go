@@ -41,7 +41,7 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 	var committedWU *essmsgpb.WorkUnit
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
 		now := time.Now()
-		localWU := proto.Clone(wu).(*essmsgpb.WorkUnit)
+		localWU := validator.FillWorkUnitNullValues(proto.Clone(wu).(*essmsgpb.WorkUnit))
 
 		// 1. Extract the XID and WID from the work unit name.
 		xid, wid, err := validator.ValidateWorkUnitNameAllowZeroWID(localWU.GetName())
