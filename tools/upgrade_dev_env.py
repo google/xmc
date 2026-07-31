@@ -26,9 +26,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from tool_utils import ensure_venv
+from tool_utils import ensure_venv, load_and_validate_config as tool_load_config
 
 STEPS = ["check", "migrate", "images", "app", "restart", "verify"]
 DEFAULT_CONFIG = "deploy/ctk_v2/xmanager-cloud-deployment.yaml"
@@ -117,68 +116,6 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     return parsed
 
 
-def parse_yaml_vars_line_fallback(content: str) -> dict[str, Any]:
-    """Parses key-value scalar entries under 'vars:' section in YAML content.
-
-    Args:
-      content: Raw YAML text content.
-
-    Returns:
-      Dictionary mapping variable names to scalar string/boolean values.
-    """
-    vars_dict: dict[str, Any] = {}
-    in_vars_section = False
-    for line in content.splitlines():
-        trimmed = line.strip()
-        if not trimmed or trimmed.startswith("#"):
-            continue
-        if line.startswith("vars:"):
-            in_vars_section = True
-            continue
-        if in_vars_section:
-            if line and not line.startswith(" ") and not line.startswith("\t"):
-                break
-            match = re.match(r"^\s*([a-zA-Z0-9_]+):\s*(.*)$", line)
-            if match:
-                key, val = match.group(1), match.group(2).strip()
-                val = val.split(" #")[0].strip()
-                if (val.startswith('"') and val.endswith('"')) or (
-                    val.startswith("'") and val.endswith("'")
-                ):
-                    val = val[1:-1]
-                vars_dict[key] = val
-    return vars_dict
-
-
-def parse_yaml_vars(config_path: Path) -> dict[str, Any]:
-    """Reads YAML vars section using PyYAML or fallback line parsing.
-
-    Args:
-      config_path: Path to the YAML deployment file.
-
-    Returns:
-      Dictionary of variables extracted from the vars block.
-    """
-    if not config_path.is_file():
-        error_exit(
-            f"Configuration file '{config_path}' not found. Please ensure you"
-            " have deployed the environment using Cluster Toolkit."
-        )
-
-    content = config_path.read_text(encoding="utf-8")
-    try:
-        import yaml  # pylint: disable=g-import-not-at-top
-
-        data = yaml.safe_load(content)
-        if isinstance(data, dict) and "vars" in data:
-            vars_data = data.get("vars") or {}
-            return {k: v for k, v in vars_data.items() if isinstance(v, (str, int, float, bool))}
-    except Exception:  # pylint: disable=broad-except
-        pass
-
-    return parse_yaml_vars_line_fallback(content)
-
-
 def load_config(config_file: str, run_migrations: bool = False) -> Config:
     """Loads YAML config file and merges with environment variable overrides.
 
@@ -189,31 +126,31 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
     Returns:
       Populated Config instance.
     """
-    path = Path(config_file)
     log_info(f"Loading configuration from '{config_file}'...")
-    yaml_vars = parse_yaml_vars(path)
 
-    project_id = os.getenv("PROJECT_ID") or str(yaml_vars.get("project_id", ""))
-    deployment_name = os.getenv("XMC_DEPLOYMENT_NAME") or str(yaml_vars.get("deployment_name", ""))
-    region = os.getenv("GCP_REGION") or str(yaml_vars.get("region", "us-central1"))
-    environment = os.getenv("XMANAGER_ENV") or str(yaml_vars.get("environment", "dev"))
-    namespace = os.getenv("K8S_NAMESPACE") or str(yaml_vars.get("namespace", "xmc"))
+    defaults = {
+        "region": "us-central1",
+        "environment": "dev",
+        "namespace": "xmc",
+        "image_tag": "latest",
+    }
 
-    if not project_id:
-        error_exit(f"project_id is missing in vars of '{config_file}'.")
-    if not deployment_name:
-        error_exit(f"deployment_name is missing in vars of '{config_file}'.")
+    try:
+        config_dict = tool_load_config(config_file, defaults=defaults)
+    except ValueError as e:
+        error_exit(str(e))
 
-    registry = f"us-docker.pkg.dev/{project_id}/xmc"
-    image_registry = (
-        os.getenv("IMAGE_REGISTRY")
-        or os.getenv("XMC_ACR_TARGET")
-        or str(yaml_vars.get("image_registry", registry))
-    )
-    image_tag = os.getenv("BUILD_TAG") or str(yaml_vars.get("image_tag", "latest"))
+    project_id = config_dict["project_id"]
+    deployment_name = config_dict["deployment_name"]
+    region = config_dict["region"]
+    environment = config_dict["environment"]
+    namespace = config_dict.get("namespace", "xmc")
+    image_registry = config_dict["image_registry"]
+    image_tag = config_dict["image_tag"]
     gke_cluster = f"xmc-{deployment_name}-{environment}"
+    registry_val = f"us-docker.pkg.dev/{project_id}/xmc"
 
-    rod_raw = yaml_vars.get("rod_deployment_enabled", False)
+    rod_raw = config_dict.get("rod_deployment_enabled", False)
     if isinstance(rod_raw, str):
         rod_deployment_enabled = rod_raw.lower() == "true"
     else:
@@ -225,7 +162,7 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
         region=region,
         environment=environment,
         namespace=namespace,
-        registry=registry,
+        registry=registry_val,
         image_registry=image_registry,
         image_tag=image_tag,
         gke_cluster=gke_cluster,

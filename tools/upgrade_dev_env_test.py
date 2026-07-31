@@ -58,6 +58,8 @@ class TestLoadConfig(unittest.TestCase):
   region: us-east1
   environment: staging
   namespace: custom-ns
+  domain_name: example.com
+  image_registry: us-docker.pkg.dev/yaml-project/xmc
 """
         self.config_path.write_text(self.config_content, encoding="utf-8")
 

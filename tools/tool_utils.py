@@ -18,10 +18,12 @@ import argparse
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import traceback
 from pathlib import Path
+from typing import Any
 
 
 def _should_bypass_venv() -> bool:
@@ -131,3 +133,133 @@ def run_tool(parser: argparse.ArgumentParser, main_fn):
         }
         print(json.dumps(output, indent=2), file=sys.stderr)
         sys.exit(2)
+
+
+# Config validation schemas
+CONFIG_VALIDATION_SCHEMAS = {
+    "deployment_name": r"^[a-zA-Z0-9_-]+$",
+    "project_id": r"^[a-z0-9:.-]+$",
+    "environment": r"^[a-zA-Z0-9_-]+$",
+    "region": r"^[a-z0-9-]+$",
+    "domain_name": r"^[a-zA-Z0-9.-]+$",
+    "image_registry": r"^[a-zA-Z0-9./:-]+$",
+    "image_tag": r"^[a-zA-Z0-9_.-]+$",
+}
+
+# Environment variable overrides mapping
+ENV_VAR_MAPPING = {
+    "PROJECT_ID": "project_id",
+    "XMC_DEPLOYMENT_NAME": "deployment_name",
+    "GCP_REGION": "region",
+    "XMANAGER_ENV": "environment",
+    "K8S_NAMESPACE": "namespace",
+    "XMC_ACR_TARGET": "image_registry",  # Alternative, processed first
+    "IMAGE_REGISTRY": "image_registry",  # Primary, processed second (wins)
+    "BUILD_TAG": "image_tag",
+    "XMC_BASE_DOMAIN": "domain_name",
+}
+
+
+def _parse_yaml_vars_line_fallback(content: str) -> dict[str, Any]:
+    """Parses key-value scalar entries under 'vars:' section in YAML content."""
+    vars_dict: dict[str, Any] = {}
+    in_vars_section = False
+    for line in content.splitlines():
+        trimmed = line.strip()
+        if not trimmed or trimmed.startswith("#"):
+            continue
+        if line.startswith("vars:"):
+            in_vars_section = True
+            continue
+        if in_vars_section:
+            if line and not line.startswith(" ") and not line.startswith("\t"):
+                break
+            match = re.match(r"^\s*([a-zA-Z0-9_]+):\s*(.*)$", line)
+            if match:
+                key, val = match.group(1), match.group(2).strip()
+                val = val.split(" #")[0].strip()
+                if (val.startswith('"') and val.endswith('"')) or (
+                    val.startswith("'") and val.endswith("'")
+                ):
+                    val = val[1:-1]
+                vars_dict[key] = val
+    return vars_dict
+
+
+def parse_yaml_vars(config_path: Path) -> dict[str, Any]:
+    """Reads YAML vars section using PyYAML or fallback line parsing."""
+    if not config_path.is_file():
+        raise FileNotFoundError(f"Configuration file '{config_path}' not found.")
+
+    content = config_path.read_text(encoding="utf-8")
+    try:
+        import yaml  # pylint: disable=g-import-not-at-top
+
+        data = yaml.safe_load(content)
+        if isinstance(data, dict) and "vars" in data:
+            vars_data = data.get("vars") or {}
+            return {k: v for k, v in vars_data.items() if isinstance(v, (str, int, float, bool))}
+    except Exception:  # pylint: disable=broad-except
+        pass
+
+    return _parse_yaml_vars_line_fallback(content)
+
+
+def load_and_validate_config(
+    config_file: str,
+    required_keys: list[str] | None = None,
+    defaults: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Loads YAML config file, merges with env overrides, and validates.
+
+    Args:
+        config_file: Path to the YAML configuration file.
+        required_keys: List of keys that MUST be present and valid. If None,
+          defaults to all keys in CONFIG_VALIDATION_SCHEMAS.
+        defaults: Default values for keys if they are missing.
+
+    Returns:
+        Dictionary of validated configuration.
+
+    Raises:
+        ValueError: If a required key is missing or invalid.
+        FileNotFoundError: If the config file does not exist.
+    """
+    path = Path(config_file)
+    yaml_vars = parse_yaml_vars(path)
+
+    config: dict[str, Any] = {}
+    if defaults:
+        config.update(defaults)
+
+    config.update(yaml_vars)
+
+    for env_var, config_key in ENV_VAR_MAPPING.items():
+        val = os.getenv(env_var)
+        if val:
+            config[config_key] = val
+
+    keys_to_validate = (
+        required_keys if required_keys is not None else list(CONFIG_VALIDATION_SCHEMAS.keys())
+    )
+
+    for key in keys_to_validate:
+        val = config.get(key)
+        if val is None:
+            raise ValueError(f"Required configuration field '{key}' is missing.")
+
+        pattern = CONFIG_VALIDATION_SCHEMAS.get(key)
+        if pattern and not re.match(pattern, str(val)):
+            raise ValueError(f"Field '{key}' value '{val}' is invalid. Must match regex: {pattern}")
+
+    # Preserve other keys from YAML (like namespace, redis_region, etc.)
+    for k, v in yaml_vars.items():
+        if k not in config:
+            config[k] = v
+
+    # Also apply env overrides for keys that might not be in CONFIG_VALIDATION_SCHEMAS but mapped
+    val_ns = os.getenv("K8S_NAMESPACE")
+    if val_ns:
+        config["namespace"] = val_ns
+
+    return config
