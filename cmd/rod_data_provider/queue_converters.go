@@ -21,21 +21,18 @@ import (
 
 type resourceAggregator struct {
 	totalNominal   float64
-	totalUsed      float64
 	totalBorrowing float64
 }
 
 // buildQueueOverviewFromClusterQueue transforms a Kueue ClusterQueue CRD into a QueueOverview proto message,
 // aggregating capacities across all configured resource flavors per distinct resource type.
 func buildQueueOverviewFromClusterQueue(cq *kueuev1beta1.ClusterQueue) *spb.QueueOverview {
-	usageMap := extractResourceTotalsFromStatus(cq.Status.FlavorsUsage)
-	resMap := extractResourceTotalsFromStatus(cq.Status.FlavorsReservation)
-
-	aggMap, resourceOrder := accumulateClusterQueueCapacities(cq, usageMap, resMap)
+	usedMap := extractStatusUsageTotals(cq.Status)
+	aggMap, resourceOrder := accumulateClusterQueueQuotas(cq)
 
 	var capacities []*spb.QueueResourceCapacity
 	for _, resName := range resourceOrder {
-		capMetric := buildQueueResourceCapacity(resName, aggMap[resName])
+		capMetric := buildQueueResourceCapacity(resName, aggMap[resName], usedMap[resName])
 		capacities = append(capacities, capMetric)
 	}
 
@@ -45,54 +42,39 @@ func buildQueueOverviewFromClusterQueue(cq *kueuev1beta1.ClusterQueue) *spb.Queu
 	}
 }
 
-// accumulateClusterQueueCapacities aggregates nominal, used, and borrowing quotas across all flavors in a ClusterQueue.
-func accumulateClusterQueueCapacities(cq *kueuev1beta1.ClusterQueue, usageMap, resMap map[string]string) (map[string]*resourceAggregator, []string) {
+// accumulateClusterQueueQuotas sums nominal quotas and borrowing limits across all flavors per resource type.
+func accumulateClusterQueueQuotas(cq *kueuev1beta1.ClusterQueue) (map[string]*resourceAggregator, []string) {
 	aggMap := make(map[string]*resourceAggregator)
 	var resourceOrder []string
 
 	for _, rg := range cq.Spec.ResourceGroups {
 		for _, f := range rg.Flavors {
-			flvName := string(f.Name)
 			for _, res := range f.Resources {
 				resName := string(res.Name)
 				if _, exists := aggMap[resName]; !exists {
 					aggMap[resName] = &resourceAggregator{}
 					resourceOrder = append(resourceOrder, resName)
 				}
-				accumulateResourceQuota(flvName, res, usageMap, resMap, aggMap[resName])
+				accumulateResourceQuota(res, aggMap[resName])
 			}
 		}
 	}
 	return aggMap, resourceOrder
 }
 
-// accumulateResourceQuota parses and adds a single resource quota's values to a resourceAggregator.
-func accumulateResourceQuota(flavorName string, res kueuev1beta1.ResourceQuota, usageMap, resMap map[string]string, agg *resourceAggregator) {
+// accumulateResourceQuota parses and adds a single resource quota's nominal and borrowing limits to a resourceAggregator.
+func accumulateResourceQuota(res kueuev1beta1.ResourceQuota, agg *resourceAggregator) {
 	resName := string(res.Name)
-	lookupKey := formatFlavorResourceKey(flavorName, resName)
+	agg.totalNominal += parseK8sResourceVal(resName, res.NominalQuota.String())
 
-	nomVal := parseK8sResourceVal(resName, res.NominalQuota.String())
-	useVal := parseK8sResourceVal(resName, usageMap[lookupKey])
-	resVal := parseK8sResourceVal(resName, resMap[lookupKey])
-
-	usedVal := resVal
-	if useVal > usedVal {
-		usedVal = useVal
-	}
-
-	borrowVal := 0.0
 	if res.BorrowingLimit != nil {
-		borrowVal = parseK8sResourceVal(resName, res.BorrowingLimit.String())
+		agg.totalBorrowing += parseK8sResourceVal(resName, res.BorrowingLimit.String())
 	}
-
-	agg.totalNominal += nomVal
-	agg.totalUsed += usedVal
-	agg.totalBorrowing += borrowVal
 }
 
-// buildQueueResourceCapacity converts an aggregated resourceAggregator into a QueueResourceCapacity proto.
-func buildQueueResourceCapacity(resName string, agg *resourceAggregator) *spb.QueueResourceCapacity {
-	freeVal := agg.totalNominal - agg.totalUsed
+// buildQueueResourceCapacity converts an aggregated resourceAggregator and totalUsed value into a QueueResourceCapacity proto.
+func buildQueueResourceCapacity(resName string, agg *resourceAggregator, totalUsed float64) *spb.QueueResourceCapacity {
+	freeVal := agg.totalNominal - totalUsed
 	if freeVal < 0 {
 		freeVal = 0
 	}

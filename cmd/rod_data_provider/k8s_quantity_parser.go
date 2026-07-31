@@ -21,21 +21,35 @@ import (
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
-// formatFlavorResourceKey constructs a unique lookup key for a resource within a flavor (e.g. "default-flavor/nvidia.com/gpu").
-func formatFlavorResourceKey(flavorName, resourceName string) string {
-	return flavorName + "/" + resourceName
-}
+// extractStatusUsageTotals calculates the total used capacity per resource type across all flavors in ClusterQueueStatus.
+func extractStatusUsageTotals(status kueuev1beta1.ClusterQueueStatus) map[string]float64 {
+	usageTotals := make(map[string]float64)
 
-// extractResourceTotalsFromStatus converts Kueue FlavorUsage into a map of "flavorName/resourceName" keys to raw total strings.
-func extractResourceTotalsFromStatus(usage []kueuev1beta1.FlavorUsage) map[string]string {
-	resTotals := make(map[string]string)
-	for _, flv := range usage {
+	// Build temporary map of flavor-level reservations: "flavor/resource" -> reservedVal
+	resMap := make(map[string]float64)
+	for _, flv := range status.FlavorsReservation {
 		for _, res := range flv.Resources {
-			key := formatFlavorResourceKey(string(flv.Name), string(res.Name))
-			resTotals[key] = res.Total.String()
+			resName := string(res.Name)
+			key := string(flv.Name) + "/" + resName
+			resMap[key] = parseK8sResourceVal(resName, res.Total.String())
 		}
 	}
-	return resTotals
+
+	// Sum max(usage, reservation) per resource type across all flavors
+	for _, flv := range status.FlavorsUsage {
+		for _, res := range flv.Resources {
+			resName := string(res.Name)
+			key := string(flv.Name) + "/" + resName
+			useVal := parseK8sResourceVal(resName, res.Total.String())
+			usedVal := useVal
+			if resVal, exists := resMap[key]; exists && resVal > usedVal {
+				usedVal = resVal
+			}
+			usageTotals[resName] += usedVal
+		}
+	}
+
+	return usageTotals
 }
 
 // parseK8sResourceVal parses Kubernetes quantity strings (e.g. "8Gi", "1024Ki", "1000m", "4") into a normalized float64 value.

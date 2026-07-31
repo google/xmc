@@ -189,16 +189,21 @@ func TestCapacityMath(t *testing.T) {
 				Name:         corev1.ResourceName("nvidia.com/gpu"),
 				NominalQuota: nomRes,
 			}
-			usageMap := map[string]string{formatFlavorResourceKey("default-flavor", "nvidia.com/gpu"): tt.inUse}
-			resMap := map[string]string{formatFlavorResourceKey("default-flavor", "nvidia.com/gpu"): tt.reserved}
 
 			agg := &resourceAggregator{}
-			accumulateResourceQuota("default-flavor", resQuota, usageMap, resMap, agg)
-			capMetric := buildQueueResourceCapacity("nvidia.com/gpu", agg)
+			accumulateResourceQuota(resQuota, agg)
 
+			useVal := parseK8sResourceVal("nvidia.com/gpu", tt.inUse)
+			resVal := parseK8sResourceVal("nvidia.com/gpu", tt.reserved)
+			usedVal := resVal
+			if useVal > usedVal {
+				usedVal = useVal
+			}
+
+			capMetric := buildQueueResourceCapacity("nvidia.com/gpu", agg, usedVal)
 			wantVal := parseK8sResourceVal("nvidia.com/gpu", tt.want)
 			if capMetric.FreeCapacity != wantVal {
-				t.Errorf("accumulateResourceQuota(%s, %s, %s).FreeCapacity = %v, want %v", tt.nominal, tt.reserved, tt.inUse, capMetric.FreeCapacity, wantVal)
+				t.Errorf("buildQueueResourceCapacity(%s, %s, %s).FreeCapacity = %v, want %v", tt.nominal, tt.reserved, tt.inUse, capMetric.FreeCapacity, wantVal)
 			}
 		})
 	}
