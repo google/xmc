@@ -193,47 +193,10 @@ func (k *KeyReloader[T, K]) reload() (T, error) {
 	k.mu.RUnlock()
 
 	if needsReload {
-		// Load the new key
-		keyData, err := os.ReadFile(k.keyPath)
-		if err != nil {
-			ctx := context.Background()
-			logging.Warn(ctx, "Failed to reload key", "error", err)
+		if err := k.reloadKey(latestModTime); err != nil {
 			var zero T
 			return zero, err
 		}
-
-		block, _ := pem.Decode(keyData)
-		if block == nil {
-			err := errors.New("failed to decode PEM block from key file")
-			ctx := context.Background()
-			logging.Warn(ctx, "Failed to decode PEM block from key file", "error", err)
-			var zero T
-			return zero, err
-		}
-
-		k.mu.RLock()
-		// Create a copy of recentKeys to pass to the converter,
-		// ensuring the slice isn't modified while being read.
-		keysToConvert := make([]K, len(k.recentKeys))
-		copy(keysToConvert, k.recentKeys)
-		k.mu.RUnlock()
-
-		key, newRecentKeys, err := k.converter(block, keysToConvert, k.maxRecentKeys)
-		if err != nil {
-			var zero T
-			return zero, err
-		}
-
-		// Update the cache (thread-safe)
-		k.mu.Lock()
-		// Re-check latestModTime against k.lastMod because another goroutine
-		// might have reloaded the key since we released the read lock.
-		if latestModTime.After(k.lastMod) {
-			k.cachedKey = key
-			k.recentKeys = newRecentKeys
-			k.lastMod = latestModTime
-		}
-		k.mu.Unlock()
 	}
 
 	k.mu.RLock()
@@ -245,6 +208,42 @@ func (k *KeyReloader[T, K]) reload() (T, error) {
 		return zero, errors.New("invalid cached key")
 	}
 	return key, nil
+}
+
+func (k *KeyReloader[T, K]) reloadKey(latestModTime time.Time) error {
+	keyData, err := os.ReadFile(k.keyPath)
+	if err != nil {
+		ctx := context.Background()
+		logging.Warn(ctx, "Failed to reload key", "error", err)
+		return err
+	}
+
+	block, _ := pem.Decode(keyData)
+	if block == nil {
+		err := errors.New("failed to decode PEM block from key file")
+		ctx := context.Background()
+		logging.Warn(ctx, "Failed to decode PEM block from key file", "error", err)
+		return err
+	}
+
+	k.mu.RLock()
+	keysToConvert := make([]K, len(k.recentKeys))
+	copy(keysToConvert, k.recentKeys)
+	k.mu.RUnlock()
+
+	key, newRecentKeys, err := k.converter(block, keysToConvert, k.maxRecentKeys)
+	if err != nil {
+		return err
+	}
+
+	k.mu.Lock()
+	if latestModTime.After(k.lastMod) {
+		k.cachedKey = key
+		k.recentKeys = newRecentKeys
+		k.lastMod = latestModTime
+	}
+	k.mu.Unlock()
+	return nil
 }
 
 // convertToSigner converts a PEM block to a jwt.Signer.

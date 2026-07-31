@@ -124,6 +124,59 @@ func (c *ControlPlaneClient) authHeader(ctx context.Context) (string, error) {
 	return "Bearer " + token.AccessToken, nil
 }
 
+// APIError is returned by do for a non-2xx HTTP response. It carries the HTTP
+// status code so callers can branch on it (e.g. http.StatusConflict) instead of
+// matching on the error string.
+type APIError struct {
+	Method     string
+	URL        string
+	StatusCode int
+	Body       string
+}
+
+// Error preserves the original human-readable format.
+func (e *APIError) Error() string {
+	return fmt.Sprintf("http %s %s: status %d: %s", e.Method, e.URL, e.StatusCode, e.Body)
+}
+
+// CodeAlreadyExists is the google.rpc.Code (mirrors gRPC codes.AlreadyExists = 6)
+// the control plane embeds in a long-running-operation error when the target
+// resource already exists.
+const CodeAlreadyExists = 6
+
+// OperationError is returned when a long-running operation completes with an error.
+// It carries the numeric google.rpc.Code so callers can branch on it (e.g.
+// CodeAlreadyExists) instead of matching on the error string.
+type OperationError struct {
+	Name    string
+	Code    int
+	Message string
+	// Raw is the operation's original error payload, retained so the error string
+	// stays identical to the pre-refactor format.
+	Raw any
+}
+
+// Error preserves the original human-readable format.
+func (e *OperationError) Error() string {
+	return fmt.Sprintf("operation %s failed: %v", e.Name, e.Raw)
+}
+
+// newOperationError builds an OperationError from an operation's raw error payload,
+// extracting the numeric google.rpc.Code and message when present. JSON numbers
+// decode as float64, so the code is converted accordingly.
+func newOperationError(name string, errField any) *OperationError {
+	oe := &OperationError{Name: name, Raw: errField}
+	if m, ok := errField.(map[string]any); ok {
+		if code, ok := m["code"].(float64); ok {
+			oe.Code = int(code)
+		}
+		if msg, ok := m["message"].(string); ok {
+			oe.Message = msg
+		}
+	}
+	return oe
+}
+
 func (c *ControlPlaneClient) do(ctx context.Context, method, rawURL string, params url.Values, body any) (map[string]any, error) {
 	var reqBody io.Reader
 	if body != nil {
@@ -162,7 +215,7 @@ func (c *ControlPlaneClient) do(ctx context.Context, method, rawURL string, para
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("http %s %s: status %d: %s", method, rawURL, resp.StatusCode, string(respBytes))
+		return nil, &APIError{Method: method, URL: rawURL, StatusCode: resp.StatusCode, Body: string(respBytes)}
 	}
 
 	// An empty body is a valid response (e.g. HTTP 204); treat it as a nil
@@ -232,7 +285,7 @@ func (c *ControlPlaneClient) WaitForOperation(ctx context.Context, operationName
 
 		if done, _ := op["done"].(bool); done {
 			if errField, ok := op["error"]; ok && errField != nil {
-				return nil, fmt.Errorf("operation %s failed: %v", operationName, errField)
+				return nil, newOperationError(operationName, errField)
 			}
 			return op, nil
 		}
@@ -286,29 +339,7 @@ func (c *ControlPlaneClient) CreateMLRun(
 		"runPhase":    runPhase,
 	}
 
-	if opts != nil {
-		if len(opts.Configs) > 0 {
-			payload["configs"] = opts.Configs
-		}
-		if len(opts.Artifacts) > 0 {
-			payload["artifacts"] = opts.Artifacts
-		}
-		if opts.RunGroup != "" {
-			payload["runSet"] = opts.RunGroup
-		}
-		if len(opts.Labels) > 0 {
-			payload["labels"] = opts.Labels
-		}
-		if len(opts.Tools) > 0 {
-			payload["tools"] = opts.Tools
-		}
-		if opts.Orchestrator != "" {
-			payload["orchestrator"] = opts.Orchestrator
-			if opts.Orchestrator == "GKE" && opts.WorkloadDetails != nil {
-				payload["workloadDetails"] = map[string]any{"gke": opts.WorkloadDetails}
-			}
-		}
-	}
+	applyMLRunCreateOptions(payload, opts)
 
 	params := url.Values{"machine_learning_run_id": {SanitizeIdentifier(name)}}
 
@@ -341,6 +372,33 @@ func (c *ControlPlaneClient) GetMLRun(ctx context.Context, name string) (map[str
 // UpdateMLRunOptions holds optional parameters for UpdateMLRun.
 //
 // Unlike CreateMLRunOptions, it intentionally omits Configs and Tools: in the
+func applyMLRunCreateOptions(payload map[string]any, opts *CreateMLRunOptions) {
+	if opts == nil {
+		return
+	}
+	if len(opts.Configs) > 0 {
+		payload["configs"] = opts.Configs
+	}
+	if len(opts.Artifacts) > 0 {
+		payload["artifacts"] = opts.Artifacts
+	}
+	if opts.RunGroup != "" {
+		payload["runSet"] = opts.RunGroup
+	}
+	if len(opts.Labels) > 0 {
+		payload["labels"] = opts.Labels
+	}
+	if len(opts.Tools) > 0 {
+		payload["tools"] = opts.Tools
+	}
+	if opts.Orchestrator != "" {
+		payload["orchestrator"] = opts.Orchestrator
+		if opts.Orchestrator == "GKE" && opts.WorkloadDetails != nil {
+			payload["workloadDetails"] = map[string]any{"gke": opts.WorkloadDetails}
+		}
+	}
+}
+
 // XMC context these are set once at creation time and are never updated
 // afterwards, so they are excluded here to keep the update contract explicit
 // for callers.
@@ -356,10 +414,44 @@ type UpdateMLRunOptions struct {
 	WorkloadDetails *GKEWorkloadDetails
 }
 
+func applyMLRunUpdateOptions(payload map[string]any, opts *UpdateMLRunOptions) bool {
+	if opts == nil {
+		return false
+	}
+	needUpdate := opts.Force
+	if opts.DisplayName != "" && payload["displayName"] != opts.DisplayName {
+		payload["displayName"] = opts.DisplayName
+		needUpdate = true
+	}
+	if opts.RunPhase != "" && payload["runPhase"] != opts.RunPhase {
+		payload["runPhase"] = opts.RunPhase
+		needUpdate = true
+	}
+	if opts.RunGroup != "" && payload["runSet"] != opts.RunGroup {
+		payload["runSet"] = opts.RunGroup
+		needUpdate = true
+	}
+	if len(opts.Labels) > 0 {
+		payload["labels"] = opts.Labels
+		needUpdate = true
+	}
+	if len(opts.Artifacts) > 0 {
+		payload["artifacts"] = opts.Artifacts
+		needUpdate = true
+	}
+	if opts.Orchestrator != "" {
+		payload["orchestrator"] = opts.Orchestrator
+		if opts.Orchestrator == "GKE" && opts.WorkloadDetails != nil {
+			payload["workloadDetails"] = map[string]any{"gke": opts.WorkloadDetails}
+		}
+		needUpdate = true
+	}
+	return needUpdate
+}
+
 // UpdateMLRun updates an existing ML run. It fetches the current state, applies
 // the requested changes, and PATCHes the resource with update_mask=*.
 func (c *ControlPlaneClient) UpdateMLRun(ctx context.Context, name string, opts *UpdateMLRunOptions) (map[string]any, error) {
-
 	payload, err := c.GetMLRun(ctx, name)
 	if err != nil {
 		return nil, err
@@ -370,37 +462,7 @@ func (c *ControlPlaneClient) UpdateMLRun(ctx context.Context, name string, opts 
 		return nil, fmt.Errorf("update MLRun %q: GET returned empty payload", name)
 	}
 
-	needUpdate := false
-	if opts != nil {
-		needUpdate = opts.Force
-		if opts.DisplayName != "" && payload["displayName"] != opts.DisplayName {
-			payload["displayName"] = opts.DisplayName
-			needUpdate = true
-		}
-		if opts.RunPhase != "" && payload["runPhase"] != opts.RunPhase {
-			payload["runPhase"] = opts.RunPhase
-			needUpdate = true
-		}
-		if opts.RunGroup != "" && payload["runSet"] != opts.RunGroup {
-			payload["runSet"] = opts.RunGroup
-			needUpdate = true
-		}
-		if len(opts.Labels) > 0 {
-			payload["labels"] = opts.Labels
-			needUpdate = true
-		}
-		if len(opts.Artifacts) > 0 {
-			payload["artifacts"] = opts.Artifacts
-			needUpdate = true
-		}
-		if opts.Orchestrator != "" {
-			payload["orchestrator"] = opts.Orchestrator
-			if opts.Orchestrator == "GKE" && opts.WorkloadDetails != nil {
-				payload["workloadDetails"] = map[string]any{"gke": opts.WorkloadDetails}
-			}
-			needUpdate = true
-		}
-	}
+	needUpdate := applyMLRunUpdateOptions(payload, opts)
 
 	if !needUpdate {
 		return payload, nil
@@ -409,6 +471,15 @@ func (c *ControlPlaneClient) UpdateMLRun(ctx context.Context, name string, opts 
 	// Remove output-only fields.
 	for _, field := range []string{"createTime", "updateTime", "endTime"} {
 		delete(payload, field)
+	}
+	// orchestrator and workloadDetails are mutable, but they are seeded from the GET
+	// above and update_mask=* only touches the fields present in the payload. When
+	// this call is not explicitly updating the orchestrator, drop them so the PATCH
+	// stays scoped to the fields we intend to change and leaves the existing values
+	// untouched.
+	if opts == nil || opts.Orchestrator == "" {
+		delete(payload, "orchestrator")
+		delete(payload, "workloadDetails")
 	}
 
 	runURL := fmt.Sprintf("%s/%s", c.mlRunsPath, name)
@@ -449,7 +520,8 @@ func (c *ControlPlaneClient) resolveOperation(ctx context.Context, result map[st
 	logging.Info(ctx, "Operation complete", "operation", operation)
 
 	if errField, ok := operation["error"]; ok && errField != nil {
-		return nil, fmt.Errorf("operation %s failed: %v", operation["name"], errField)
+		opName, _ := operation["name"].(string)
+		return nil, newOperationError(opName, errField)
 	}
 
 	if response, ok := operation["response"].(map[string]any); ok {

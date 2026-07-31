@@ -18,7 +18,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"embed"
 	"io/fs"
 	"log/slog"
@@ -37,7 +36,6 @@ import (
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
 	"golang/google_api/option/option"
-	"golang/grpc/credentials/credentials"
 	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
 	"golang/grpc/health/health"
@@ -50,6 +48,7 @@ import (
 	gwpb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_gateway_proto"
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
 	"xmanager_cloud/experiment_state_server/server/server"
+	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/logging/logging"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/security/keyreloader"
@@ -60,15 +59,6 @@ import (
 
 //go:embed xmanager_cloud/experiment_state_server/static/*
 var embedFS embed.FS
-
-func incomingHeaderMatcher(key string) (string, bool) {
-	switch strings.ToLower(key) {
-	case "x-goog-iap-jwt-assertion", "x-goog-user-email", "x-goog-authenticated-user-email", "x-goog-authenticated-user-id":
-		return key, true
-	default:
-		return runtime.DefaultHeaderMatcher(key)
-	}
-}
 
 // main starts the gRPC server and handles graceful shutdown.
 func main() {
@@ -135,23 +125,9 @@ func main() {
 	}
 	xidClient := xidgrpcpb.NewXidServiceClient(conn)
 
-	var transportCreds credentials.TransportCredentials
-	if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
-		reloader, err := keyreloader.NewKeyPairReloader(cfg.TLSCertFile, cfg.TLSKeyFile)
-		if err != nil {
-			logging.Fatal(ctx, "failed to load initial TLS certs", "error", err)
-		}
-
-		logging.Info(ctx, "Starting gRPC server with Hot-Reload TLS", "cert", cfg.TLSCertFile)
-
-		tlsConfig := &tls.Config{
-			GetCertificate: reloader.GetCertificate,
-		}
-
-		transportCreds = credentials.NewTLS(tlsConfig)
-	} else {
-		transportCreds = insecure.NewCredentials()
-		logging.Info(ctx, "Starting gRPC server in PLAINTEXT mode")
+	transportCreds, err := tlsutil.NewServerCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
+	if err != nil {
+		logging.Fatal(ctx, "failed to configure server credentials", "error", err)
 	}
 
 	opts := []grpc.ServerOption{
@@ -199,20 +175,12 @@ func main() {
 	}()
 
 	// 8. Initialize the gRPC gateway mux.
-	var httpTransportCreds credentials.TransportCredentials
-	if cfg.TLSCertFile != "" && cfg.TLSKeyFile != "" {
-		httpTransportCreds = credentials.NewTLS(
-			// a TLS connection between localhost and localhost. I'm unsure when MitM attacks would be
-			// possible.
-			&tls.Config{
-				InsecureSkipVerify: true, // NOLINT
-			},
-		)
-	} else {
-		httpTransportCreds = insecure.NewCredentials()
+	httpTransportCreds, err := tlsutil.NewClientCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
+	if err != nil {
+		logging.Fatal(ctx, "failed to configure client credentials", "error", err)
 	}
 
-	gwmux := runtime.NewServeMux(runtime.WithIncomingHeaderMatcher(incomingHeaderMatcher))
+	gwmux := runtime.NewServeMux(runtime.WithIncomingHeaderMatcher(oauth.IncomingHeaderMatcher))
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(httpTransportCreds),
 	}

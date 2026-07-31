@@ -253,6 +253,28 @@ func TestEnrichManagedXprof(t *testing.T) {
 			},
 			wantEnriched: true,
 		},
+		{
+			// An experiment-scoped artifact has no single MLRun (each work unit
+			// execution owns its own), so it must not be enriched even when storage
+			// has an MLRun URL.
+			name: "no_enrichment_experiment_parent",
+			artifact: &msgpb.Artifact{
+				Parent: "experiments/1",
+				Payload: &msgpb.ArtifactPayload{
+					Type: &msgpb.ArtifactPayload_ManagedXprof{
+						ManagedXprof: &msgpb.ManagedXprofArtifact{},
+					},
+				},
+			},
+			mockStorage: &storage.MockStorage{
+				WorkUnitExecution: &msgpb.WorkUnitExecution{
+					Metadata: &msgpb.WorkUnitExecutionMetadata{
+						MlrunUrl: "http://mlrun.url",
+					},
+				},
+			},
+			wantEnriched: false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -271,6 +293,13 @@ func TestEnrichManagedXprof(t *testing.T) {
 			gotURL := xprof.GetXprof().GetXprofUrl()
 			if (gotURL != "") != tc.wantEnriched {
 				t.Errorf("enrichManagedXprof() enriched = %v, want %v (URL: %q)", gotURL != "", tc.wantEnriched, gotURL)
+			}
+
+			// The top-level artifact URL must also carry the MLRun URL so clients that
+			// read artifact.url link directly to the run.
+			gotArtifactURL := tc.artifact.GetUrl().GetUrl()
+			if (gotArtifactURL != "") != tc.wantEnriched {
+				t.Errorf("enrichManagedXprof() top-level url enriched = %v, want %v (URL: %q)", gotArtifactURL != "", tc.wantEnriched, gotArtifactURL)
 			}
 		})
 	}

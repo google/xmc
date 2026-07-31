@@ -194,7 +194,7 @@ gcloud container clusters update <cluster_name> \
 ```
 
 ### Step 8: Build and Push XMC Service Images
-Before deploying the application Helm chart, build and push all 6 service Docker images to GCP Artifact Registry. You must set the project's target registry and environment variables:
+Before deploying the application Helm chart, build and push all service Docker images to GCP Artifact Registry. You must set the project's target registry and environment variables:
 
 ```bash
 export XMC_ACR_TARGET="us-docker.pkg.dev/<project_id>/<xmc_registry_name>"
@@ -206,6 +206,10 @@ bazel run //cmd/log_monitor:log_monitor_image_push
 bazel run //cmd/reconciler:reconciler_image_push
 bazel run //cmd/ui:ui_image_push
 bazel run //cmd/xid_service:xid_service_image_push
+bazel run //cmd/health_service:health_service_image_push
+bazel run //cmd/dashboard_service:dashboard_service_image_push
+bazel run //cmd/rod_data_provider:rod_data_provider_image_push
+bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
 ```
 
 ### Step 9: Deploy XMC Application (`xmc_app` group)

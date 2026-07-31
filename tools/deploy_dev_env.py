@@ -779,6 +779,7 @@ def step_images(config: dict[str, Any], dns_project: str, dns_zone: str) -> None
         "XMC_ACR_TARGET": acr_target,
     }
 
+    # TODO: Migrate hardcoded image targets to dynamic discovery or configuration flags to operate on flags cleanly.
     bazel_targets = [
         "//cmd/actuator:actuator_image_push",
         "//cmd/experiment_state_server:experiment_state_server_image_push",
@@ -787,6 +788,9 @@ def step_images(config: dict[str, Any], dns_project: str, dns_zone: str) -> None
         "//cmd/ui:ui_image_push",
         "//cmd/xid_service:xid_service_image_push",
         "//cmd/health_service:health_service_image_push",
+        "//cmd/dashboard_service:dashboard_service_image_push",
+        "//cmd/rod_data_provider:rod_data_provider_image_push",
+        "//cmd/ingestion_gateway:ingestion_gateway_image_push",
     ]
 
     for target in bazel_targets:

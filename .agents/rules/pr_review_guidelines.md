@@ -11,6 +11,7 @@ This document defines standards for AI agents acting as **Code Reviewers / Inspe
   - Enforce foundational guidelines defined in [Core Engineering Standards](core_engineering.md).
   - Enforce language-specific guidelines under `rules/languages/` matching modified file extensions: [Python Guidelines](languages/python.md), [Go Guidelines](languages/golang.md), [TypeScript & Modern Angular Guidelines](languages/typescript_javascript.md), [Shell Scripting Guidelines](languages/shell.md), [Markdown Guidelines](languages/markdown.md).
   - Ensure inline documentation, API specifications, and repository markdown docs are synchronized per [Markdown Guidelines](languages/markdown.md).
+- **Test Fixture & Telemetry Wire-Up Verification**: When reviewing PRs adding new services, capabilities, or telemetry recorders (e.g., `GatewayMetrics`), verify that test constructors do not silently bypass dependencies with `nil` or `null` per [Core Engineering Standards](core_engineering.md#4-high-fidelity-test-doubles--decoupling) and that test cases assert expected side effects (metric counters, log events, state changes).
 - **Feedback Quality & Review Presentation**:
   - **Actionable & Constructive Feedback**: Provide concrete code suggestions or diff blocks when highlighting non-compliant code during reviews.
   - **Objective Rules Alignment**: Base review findings explicitly on defined codebase rules rather than personal stylistic preferences.

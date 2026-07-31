@@ -266,44 +266,38 @@ func (g *GKE) InjectOnJobSetCreation(ctx context.Context, workUnit *epb.WorkUnit
 			return nil, err
 		}
 
-		if tpuRes := job.Spec.Resources.GetTpuResources(); tpuRes != nil {
-			updateTolerations(&replicatedJob.Template.Spec.Template.Spec)
-			nodesPerSlice, err := tpuNodesPerSlice(tpuRes.GetTopology())
-			if err != nil {
-				return nil, err
-			}
-			nodes := int32(nodesPerSlice)
-			completionMode := batchv1.IndexedCompletion
-			replicatedJob.Template.Spec.Parallelism = proto.Int32(nodes)
-			replicatedJob.Template.Spec.Completions = proto.Int32(nodes)
-			replicatedJob.Template.Spec.CompletionMode = &completionMode
-
-			if nodesPerSlice > 1 {
-				if jobSet.Annotations == nil {
-					jobSet.Annotations = make(map[string]string)
-				}
-				jobSet.Annotations[exclusiveTopologyAnnotation] = exclusiveTopologyValue
-				ensureJobSetNetworkConfigured(jobSet)
-			}
-		} else if job.Spec.Resources.GetGpuResources() != nil {
-			// For GPU jobs, we use Replicas to specify the number of nodes, defaulting to 1 if unset.
-			nodes := replicatedJob.Replicas
-			if nodes < 1 {
-				nodes = 1
-			}
-			completionMode := batchv1.IndexedCompletion
-			replicatedJob.Template.Spec.Parallelism = proto.Int32(nodes)
-			replicatedJob.Template.Spec.Completions = proto.Int32(nodes)
-			replicatedJob.Template.Spec.CompletionMode = &completionMode
-			if nodes > 1 {
-				ensureJobSetNetworkConfigured(jobSet)
-			}
-			// For indexed completion, Replicas must be 1.
-			collapseReplicasToPods(jobSet, replicatedJob)
+		if err := configureJobResources(jobSet, replicatedJob, job.Spec.Resources); err != nil {
+			return nil, err
 		}
 	}
 
 	return jobSet, nil
+}
+
+func configureJobResources(jobSet *jobsetv1alpha2.JobSet, replicatedJob *jobsetv1alpha2.ReplicatedJob, res *epb.ResourceSet) error {
+	if res.GetTpuResources() != nil {
+		return configureTPUReplicatedJob(jobSet, replicatedJob, res.GetTpuResources())
+	}
+	if res.GetGpuResources() != nil {
+		configureGPUReplicatedJob(jobSet, replicatedJob)
+	}
+	return nil
+}
+
+func configureGPUReplicatedJob(jobSet *jobsetv1alpha2.JobSet, replicatedJob *jobsetv1alpha2.ReplicatedJob) {
+	// For GPU jobs, Replicas specifies the number of pod replicas, defaulting to 1 if unset.
+	replicas := replicatedJob.Replicas
+	if replicas < 1 {
+		replicas = 1
+	}
+	completionMode := batchv1.IndexedCompletion
+	replicatedJob.Template.Spec.Parallelism = proto.Int32(replicas)
+	replicatedJob.Template.Spec.Completions = proto.Int32(replicas)
+	replicatedJob.Template.Spec.CompletionMode = &completionMode
+	if replicas > 1 {
+		ensureJobSetNetworkConfigured(jobSet)
+	}
+	collapseReplicasToPods(jobSet, replicatedJob)
 }
 
 // collapseReplicasToPods sets ReplicatedJob.Replicas to 1 and adjusts Coordinator indices if targeted.
@@ -313,6 +307,31 @@ func collapseReplicasToPods(jobSet *jobsetv1alpha2.JobSet, replicatedJob *jobset
 		jobSet.Spec.Coordinator.JobIndex = 0
 	}
 	replicatedJob.Replicas = 1
+}
+
+func configureTPUReplicatedJob(jobSet *jobsetv1alpha2.JobSet, replicatedJob *jobsetv1alpha2.ReplicatedJob, tpuRes *epb.TpuResources) error {
+	if tpuRes == nil {
+		return nil
+	}
+	updateTolerations(&replicatedJob.Template.Spec.Template.Spec)
+	nodesPerSlice, err := tpuNodesPerSlice(tpuRes.GetTopology())
+	if err != nil {
+		return err
+	}
+	nodes := int32(nodesPerSlice)
+	completionMode := batchv1.IndexedCompletion
+	replicatedJob.Template.Spec.Parallelism = proto.Int32(nodes)
+	replicatedJob.Template.Spec.Completions = proto.Int32(nodes)
+	replicatedJob.Template.Spec.CompletionMode = &completionMode
+
+	if nodesPerSlice > 1 {
+		if jobSet.Annotations == nil {
+			jobSet.Annotations = make(map[string]string)
+		}
+		jobSet.Annotations[exclusiveTopologyAnnotation] = exclusiveTopologyValue
+		ensureJobSetNetworkConfigured(jobSet)
+	}
+	return nil
 }
 
 func parseTotalChips(topology string) (int, error) {

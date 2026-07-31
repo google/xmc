@@ -19,6 +19,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -43,6 +45,7 @@ import (
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/common/labels"
+	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
@@ -82,12 +85,34 @@ type Reconciler struct {
 	MaxConcurrentReconciles     int
 	StartupPodErrorCheckTime    time.Duration
 	StartupPodErrorCheckEnabled bool
-	Storage                     WorkUnitExecutionReader
+	Storage                     ReconcilerStorage
+	MLRunClient                 MLRunCreator
 }
 
 // WorkUnitExecutionReader is an interface for reading WorkUnitExecutions from ESS.
 type WorkUnitExecutionReader interface {
 	FetchCurrentWorkUnitExecution(ctx context.Context, xid int64, wid int64) (*spb.WorkUnitExecution, error)
+}
+
+// ManagedXprofArtifactReader lists the artifacts attached to a resource so the
+// reconciler can read the ManagedXprof artifact directly from storage.
+type ManagedXprofArtifactReader interface {
+	ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Artifact, string, error)
+}
+
+// ReconcilerStorage is the storage surface the JobSet reconciler depends on. It is
+// composed from focused interfaces so callers and tests only implement what they use.
+type ReconcilerStorage interface {
+	WorkUnitExecutionReader
+	ManagedXprofArtifactReader
+}
+
+// MLRunCreator defines the interface required for creating, looking up, and
+// updating the single MLRun tracking record allowed per jobset.
+type MLRunCreator interface {
+	CreateMLRun(ctx context.Context, name, displayName, runPhase string, opts *hypercomputeclient.CreateMLRunOptions) (map[string]any, error)
+	GetMLRun(ctx context.Context, name string) (map[string]any, error)
+	UpdateMLRun(ctx context.Context, name string, opts *hypercomputeclient.UpdateMLRunOptions) (map[string]any, error)
 }
 
 func hasValidXMCLabels(ctx context.Context, jobSet *v1alpha2.JobSet) bool {
@@ -301,12 +326,27 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 		result, podErrorMsg, startupWarningMsg = r.handleStartupPodChecks(ctx, jobSet)
 	}
 
+	// The actuator injects the ManagedXprof GCS destination, display name, and run
+	// group into the JobSet env. The display name and run group can still be missing
+	// when the ManagedXprof artifact is attached after the JobSet is created (racing
+	// actuation), so fall back to reading them from the WorkUnit-level artifact. When
+	// they remain absent we skip this round and a later reconcile retries once the
+	// artifact is present.
 	displayName, runGroup, gcsPath := getManagedXprofEnvs(jobSet)
+	// Only query storage when ManagedXprof is enabled (gcsPath set) but the display
+	// metadata is missing. Standard JobSets leave gcsPath empty and skip MLRun
+	// creation anyway, so the lookup would be wasted work on the hot reconcile path.
+	if gcsPath != "" && (displayName == "" || runGroup == "") {
+		displayName, runGroup = r.lookupManagedXprofArtifact(ctx, xid, wid)
+	}
 	warnOnMissingManagedXprofEnvs(ctx, jobSet, displayName, runGroup, gcsPath, xid, wid)
+	var mlRunURL string
 	if gcsPath != "" && displayName != "" && runGroup != "" {
-		mlRunURL, skip := r.checkWorkUnitStatusAndMLRun(ctx, xid, wid)
-		if !skip && mlRunURL == "" {
+		var skipMLRunCreation bool
+		mlRunURL, skipMLRunCreation = r.checkWorkUnitStatusAndMLRun(ctx, xid, wid, eid)
+		if !skipMLRunCreation && mlRunURL == "" {
 			logging.Info(ctx, "Begin to create MLRun URL.")
+			mlRunURL = r.ensureMLRunCreated(ctx, jobSet, xid, wid, eid, displayName, runGroup, gcsPath)
 		}
 	}
 
@@ -316,6 +356,7 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 		// we do not want to requeue as fields used in the update are monitored by predicate
 		return ctrl.Result{}, nil
 	}
+	setMLRunURL(update, mlRunURL)
 	logging.Debug(ctx, "Successfully converted JobSet", "namespace", jobSet.Namespace)
 
 	updatesSentTotal.WithLabelValues().Inc()
@@ -552,6 +593,251 @@ func calculateJobsetStartAge(jobSet *v1alpha2.JobSet) time.Duration {
 	return time.Since(jobSet.CreationTimestamp.Time)
 }
 
+// createdByXManagerLabelValue marks an MLRun as owned by the XManager reconciler.
+// On a create conflict, a run carrying created-by equal to this value is treated as
+// our own (idempotent success); a run without it is adopted (updated) with our fields.
+const createdByXManagerLabelValue = "xmanager"
+
+// mlRunResourceNameRE captures the MLRun id embedded in an AlreadyExists error's
+// resource name, e.g. "projects/p/locations/l/machineLearningRuns/some-id".
+var mlRunResourceNameRE = regexp.MustCompile(`machineLearningRuns/([a-zA-Z0-9_-]+)`)
+
+// buildMLRunLabels returns the labels stamped on every MLRun the reconciler owns.
+// Extracted so create and upsert apply an identical label set (including the
+// created-by marker that lets us detect ownership on a create conflict).
+func buildMLRunLabels(xid, wid int64) map[string]string {
+	return map[string]string{
+		"experiment-id": fmt.Sprintf("%d", xid),
+		"workunit-id":   fmt.Sprintf("%d", wid),
+		"created-by":    createdByXManagerLabelValue,
+	}
+}
+
+// ConstructMLRunID deterministically constructs and sanitizes a unique MLRun identifier for an execution.
+//
+// Extracted into its own pure function so that ID formatting and sanitization are independently testable and
+// guaranteed idempotent when reconciliations are retried.
+func ConstructMLRunID(project, location, clusterName string, xid, wid, eid int64, creationTime time.Time) string {
+	rawID := fmt.Sprintf("xmc-%s-%s-%s-%d-%d-%d-%d", project, location, clusterName, xid, wid, eid, creationTime.UnixMilli())
+	return hypercomputeclient.SanitizeIdentifier(rawID)
+}
+
+// ensureMLRunCreated creates (or, on conflict, upserts) the single MLRun tracking
+// record for a ManagedXprof execution and returns its URL.
+//
+// Extracted to separate MLRun control-plane invocation and error handling from the
+// core JobSet status synchronization workflow.
+func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64, displayName, runGroup, gcsPath string) string {
+	if r.MLRunClient == nil || jobSet == nil {
+		return ""
+	}
+
+	mlRunID := ConstructMLRunID(r.Project, r.Location, r.ClusterName, xid, wid, eid, jobSet.CreationTimestamp.Time)
+	clusterPath := r.ClusterName
+	if !strings.HasPrefix(clusterPath, "projects/") && r.Project != "" && r.Location != "" {
+		clusterPath = fmt.Sprintf("projects/%s/locations/%s/clusters/%s", r.Project, r.Location, r.ClusterName)
+	}
+
+	// Build labels and artifacts once so an AlreadyExists upsert can apply the exact
+	// same ManagedXprof fields (and ownership marker) the create would have.
+	labels := buildMLRunLabels(xid, wid)
+	artifacts := map[string]string{"gcs_path": gcsPath}
+	opts := &hypercomputeclient.CreateMLRunOptions{
+		RunGroup:     runGroup,
+		Tools:        []map[string]any{{"xprof": map[string]any{}}},
+		Labels:       labels,
+		Artifacts:    artifacts,
+		Orchestrator: "GKE",
+		WorkloadDetails: &hypercomputeclient.GKEWorkloadDetails{
+			Kind:      "JobSet",
+			Cluster:   clusterPath,
+			Namespace: jobSet.Namespace,
+			ID:        jobSet.Name,
+		},
+	}
+
+	logging.Info(ctx, "Creating MLRun for ManagedXprof execution", "mlRunID", mlRunID, "displayName", displayName, "runGroup", runGroup)
+	res, err := r.MLRunClient.CreateMLRun(ctx, mlRunID, displayName, "ACTIVE", opts)
+	if err != nil {
+		// At most one MLRun may exist per jobset, so a conflict means one already
+		// exists (possibly created by another producer); adopt or refresh it instead
+		// of returning empty and looping forever on the 409.
+		if isMLRunAlreadyExistsError(err) {
+			return r.upsertExistingMLRun(ctx, err, mlRunID, displayName, runGroup, labels, artifacts)
+		}
+		logging.Error(ctx, "Failed to create MLRun for ManagedXprof execution", "mlRunID", mlRunID, "error", err)
+		return ""
+	}
+	return r.mlRunURL(res, mlRunID)
+}
+
+// isMLRunAlreadyExistsError reports whether err is the control plane's AlreadyExists
+// response. The control plane surfaces this two ways: an HTTP 409 Conflict from the
+// create call, and a long-running-operation failure carrying google.rpc.Code
+// AlreadyExists (6). We branch on the typed errors' codes rather than matching error
+// strings, which is brittle across message-wording changes.
+func isMLRunAlreadyExistsError(err error) bool {
+	var apiErr *hypercomputeclient.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode == http.StatusConflict
+	}
+	var opErr *hypercomputeclient.OperationError
+	if errors.As(err, &opErr) {
+		return opErr.Code == hypercomputeclient.CodeAlreadyExists
+	}
+	return false
+}
+
+// parseExistingMLRunID extracts the conflicting run's id from an AlreadyExists
+// error. Because only one MLRun may exist per jobset, the control plane embeds the
+// existing run's resource name in the error, letting us locate a run created with a
+// different id than ours without a separate List call. Returns "" if not found.
+func parseExistingMLRunID(errText string) string {
+	m := mlRunResourceNameRE.FindStringSubmatch(errText)
+	if len(m) < 2 {
+		return ""
+	}
+	return m[1]
+}
+
+// mlRunOwnedByXManager reports whether an MLRun resource carries our
+// created-by=xmanager label. A GET response decodes labels as map[string]any, so we
+// type-assert defensively.
+func mlRunOwnedByXManager(mlRun map[string]any) bool {
+	labels, ok := mlRun["labels"].(map[string]any)
+	if !ok {
+		return false
+	}
+	owner, _ := labels["created-by"].(string)
+	return owner == createdByXManagerLabelValue
+}
+
+// mlRunURL returns the URL to surface for an MLRun: the API-provided url when
+// present, otherwise the deterministic Cloud Console diagnostics URL for the id.
+func (r *Reconciler) mlRunURL(res map[string]any, mlRunID string) string {
+	if res != nil {
+		if urlVal, ok := res["url"].(string); ok && urlVal != "" {
+			return urlVal
+		}
+	}
+	return constructDiagnosticsConsoleURL(r.Location, mlRunID, r.Project)
+}
+
+// upsertExistingMLRun handles an MLRun create conflict. It locates the existing run
+// (its id is carried in the conflict error, falling back to our deterministic id)
+// and, if the run is not one we own, updates it with our ManagedXprof fields so
+// enrichment is applied even to runs created by other producers. A run we already
+// own is returned as an idempotent success without an update.
+func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, mlRunID, displayName, runGroup string, labels map[string]string, artifacts map[string]string) string {
+	existingID := parseExistingMLRunID(createErr.Error())
+	if existingID == "" {
+		// The conflict did not name the run; the common case is our own
+		// deterministic id, so fall back to it.
+		existingID = mlRunID
+	}
+
+	existing, err := r.MLRunClient.GetMLRun(ctx, existingID)
+	if err != nil {
+		logging.Warn(ctx, "MLRun already exists but could not be fetched; treating as success", "mlRunID", existingID, "error", err)
+		return constructDiagnosticsConsoleURL(r.Location, existingID, r.Project)
+	}
+	if mlRunOwnedByXManager(existing) {
+		logging.Info(ctx, "MLRun already exists and is owned by XManager; treating as success", "mlRunID", existingID)
+		return constructDiagnosticsConsoleURL(r.Location, existingID, r.Project)
+	}
+
+	logging.Info(ctx, "MLRun exists but is not owned by XManager; updating with ManagedXprof fields", "mlRunID", existingID)
+	// UpdateMLRun re-sends the run fetched via GET, so the orchestrator and
+	// workloadDetails set at creation are preserved as-is. They are mutable, but we
+	// intentionally do not set them here: this upsert only updates the ManagedXprof
+	// fields, and UpdateMLRun drops orchestrator/workloadDetails from the patch so
+	// they are left untouched.
+	res, err := r.MLRunClient.UpdateMLRun(ctx, existingID, &hypercomputeclient.UpdateMLRunOptions{
+		DisplayName: displayName,
+		RunGroup:    runGroup,
+		Labels:      labels,
+		Artifacts:   artifacts,
+	})
+	if err != nil {
+		logging.Error(ctx, "Failed to update existing MLRun for ManagedXprof execution", "mlRunID", existingID, "error", err)
+		return constructDiagnosticsConsoleURL(r.Location, existingID, r.Project)
+	}
+	return r.mlRunURL(res, existingID)
+}
+
+// constructDiagnosticsConsoleURL constructs the standard ML Diagnostics detail view
+// URL in Google Cloud Console.
+func constructDiagnosticsConsoleURL(location, mlRunID, project string) string {
+	if location == "" || mlRunID == "" || project == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://console.cloud.google.com/kubernetes/aiml/run/%s/%s?project=%s", location, mlRunID, project)
+}
+
+// artifactListPageSize bounds each ListArtifacts page while
+// lookupManagedXprofArtifact pages through a work unit's artifacts.
+const artifactListPageSize = 100
+
+// lookupManagedXprofArtifact reads the ManagedXprof artifact attached to the work
+// unit and returns its display name and run group.
+//
+// The artifact is read directly from storage (rather than from JobSet env) because
+// clients may attach it after the JobSet is created. An absent artifact yields
+// empty strings, so the caller skips MLRun creation this round and retries on a
+// later reconcile.
+func (r *Reconciler) lookupManagedXprofArtifact(ctx context.Context, xid, wid int64) (displayName, runGroup string) {
+	// Storage is optional in some reconciler configurations; without it there is
+	// no artifact source, so the fallback is a no-op (mirrors the nil-MLRunClient
+	// guard in ensureMLRunCreated).
+	if r.Storage == nil {
+		return "", ""
+	}
+	parent := fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid)
+
+	// Page until the first ManagedXprof artifact is found: it may be attached after
+	// the JobSet is created and can sort beyond the first page, so we keep paging
+	// until we find one or exhaust the list.
+	var managed []*spb.ManagedXprofArtifact
+	for pageToken := ""; ; {
+		artifacts, nextToken, err := r.Storage.ListArtifacts(ctx, parent, artifactListPageSize, pageToken, "", "", 0)
+		if err != nil {
+			logging.Warn(ctx, "Failed to list artifacts for WorkUnit", "xid", xid, "wid", wid, "error", err)
+			return "", ""
+		}
+		managed = append(managed, collectManagedXprofArtifacts(artifacts)...)
+		// Stop once we have a match (only the first is used), when the list is
+		// exhausted, or if the cursor fails to advance — the last guards against a
+		// storage impl/mock returning a repeating token, which would loop forever.
+		if len(managed) > 0 || nextToken == "" || nextToken == pageToken {
+			break
+		}
+		pageToken = nextToken
+	}
+
+	if len(managed) == 0 {
+		return "", ""
+	}
+	if len(managed) > 1 {
+		// At most one ManagedXprof artifact is expected per work unit; surface the
+		// anomaly and deterministically use the first so behavior stays predictable.
+		logging.Warn(ctx, "Multiple ManagedXprof artifacts found for WorkUnit; using the first", "xid", xid, "wid", wid, "count", len(managed))
+	}
+	return managed[0].GetDisplayName(), managed[0].GetRunGroup()
+}
+
+// collectManagedXprofArtifacts returns every ManagedXprof artifact in the list, in
+// order. Extracted as a pure function so artifact selection is independently
+// testable and so the caller can detect (and warn about) unexpected duplicates.
+func collectManagedXprofArtifacts(artifacts []*spb.Artifact) []*spb.ManagedXprofArtifact {
+	var managed []*spb.ManagedXprofArtifact
+	for _, art := range artifacts {
+		if mx := art.GetPayload().GetManagedXprof(); mx != nil {
+			managed = append(managed, mx)
+		}
+	}
+	return managed
+}
+
 func getManagedXprofEnvs(jobSet *v1alpha2.JobSet) (displayName, runGroup, gcsPath string) {
 	for _, rj := range jobSet.Spec.ReplicatedJobs {
 		for _, c := range rj.Template.Spec.Template.Spec.Containers {
@@ -574,22 +860,24 @@ func getManagedXprofEnvs(jobSet *v1alpha2.JobSet) (displayName, runGroup, gcsPat
 	return
 }
 
-// warnOnMissingManagedXprofEnvs logs a warning for each missing Managed Xprof
-// env var, but only for JobSets that opted into Managed Xprof (at least one var
-// set). Standard JobSets leave all three empty; skipping them keeps the reconcile
-// loop from flooding the logs with warnings on every reconciliation.
+// managedXprofMisconfigured reports the one actionable Managed Xprof
+// misconfiguration: a JobSet that carries display metadata (both display name and
+// run group) but no GCS path, so an MLRun can never be created for it. A missing
+// display name or run group while gcsPath is set is an expected transient (the
+// WorkUnit artifact may attach after the JobSet is created and is recovered by the
+// fallback lookup), so it is deliberately not flagged. Extracted as a pure
+// function so the warn policy is testable without a logging sink.
+func managedXprofMisconfigured(displayName, runGroup, gcsPath string) bool {
+	return displayName != "" && runGroup != "" && gcsPath == ""
+}
+
+// warnOnMissingManagedXprofEnvs warns when a JobSet is misconfigured for Managed
+// Xprof (see managedXprofMisconfigured). Standard JobSets and JobSets still waiting
+// on their WorkUnit artifact are intentionally silent to avoid flooding the
+// reconcile loop's logs.
 func warnOnMissingManagedXprofEnvs(ctx context.Context, jobSet *v1alpha2.JobSet, displayName, runGroup, gcsPath string, xid, wid int64) {
-	if gcsPath == "" && displayName == "" && runGroup == "" {
-		return
-	}
-	if gcsPath == "" {
+	if managedXprofMisconfigured(displayName, runGroup, gcsPath) {
 		logging.Warn(ctx, "No GCS path found for Managed Xprof, skipping MLRun URL creation.", "namespace", jobSet.Namespace, "xid", xid, "wid", wid)
-	}
-	if displayName == "" {
-		logging.Warn(ctx, "No display name found for Managed Xprof, skipping MLRun URL creation.", "namespace", jobSet.Namespace, "xid", xid, "wid", wid)
-	}
-	if runGroup == "" {
-		logging.Warn(ctx, "No run group found for Managed Xprof, skipping MLRun URL creation.", "namespace", jobSet.Namespace, "xid", xid, "wid", wid)
 	}
 }
 
@@ -616,9 +904,12 @@ func isTerminalState(state spb.WorkUnitStatus_WorkUnitState) bool {
 // Returns:
 //   - string: The existing MLRun URL from ESS metadata.
 //   - bool: True if the WorkUnit is in a terminal state and MLRun creation should be skipped.
-func (r *Reconciler) checkWorkUnitStatusAndMLRun(ctx context.Context, xid, wid int64) (string, bool) {
+func (r *Reconciler) checkWorkUnitStatusAndMLRun(ctx context.Context, xid, wid, eid int64) (string, bool) {
 	mlRunURL := ""
 	skipMLRunCreation := false
+	if r.Storage == nil {
+		return mlRunURL, skipMLRunCreation
+	}
 	execution, fetchErr := r.Storage.FetchCurrentWorkUnitExecution(ctx, xid, wid)
 	if fetchErr != nil {
 		// TODO: Only transient (e.g. network) errors should be retried here,
@@ -633,6 +924,14 @@ func (r *Reconciler) checkWorkUnitStatusAndMLRun(ctx context.Context, xid, wid i
 
 	mlRunURL = getMLRunURL(execution)
 
+	// The execution is fetched by (xid, wid); if it belongs to a different execution
+	// than the one being reconciled (a re-execution race where ESS has not advanced
+	// its current execution), reusing its MLRun URL would misattribute it. We only
+	// warn for now to avoid premature optimization.
+	if mlRunURL != "" && execution != nil && isStaleExecutionForMLRun(execution.GetName(), eid) {
+		logging.Warn(ctx, "Reusing MLRun URL from a different current execution than the one being reconciled; possible re-execution race.", "reconciledEID", eid, "xid", xid, "wid", wid, "executionName", execution.GetName())
+	}
+
 	if execution != nil && isTerminalState(execution.GetStatus().GetState()) {
 		currentState := execution.GetStatus().GetState()
 		logging.Info(ctx, "WorkUnit execution is in terminal/stopping state in ESS, skipping MLRun creation", "currentState", currentState.String())
@@ -640,4 +939,16 @@ func (r *Reconciler) checkWorkUnitStatusAndMLRun(ctx context.Context, xid, wid i
 	}
 
 	return mlRunURL, skipMLRunCreation
+}
+
+// isStaleExecutionForMLRun reports whether executionName refers to a different
+// execution than the one currently being reconciled (reconciledEID). Extracted as a
+// pure function so the re-execution race detection is independently testable.
+// Returns false when the name cannot be parsed, since a mismatch cannot be proven.
+func isStaleExecutionForMLRun(executionName string, reconciledEID int64) bool {
+	_, _, currentEID, err := validator.ValidateWorkUnitExecutionName(executionName)
+	if err != nil {
+		return false
+	}
+	return currentEID != reconciledEID
 }

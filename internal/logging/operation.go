@@ -32,22 +32,26 @@ const (
 // It injects the ID into context for gRPC metadata propagation,
 // and for structured logging compliant with GCP LogEntryOperation.
 func InjectOperation(ctx context.Context, id string) context.Context {
-	if id == "" {
-		if ctxID, ok := ctx.Value(traceIDKey).(string); ok && ctxID != "" {
-			id = ctxID
-		} else if md, ok := metadata.FromIncomingContext(ctx); ok {
-			if vals := md.Get(requestIDHeader); len(vals) > 0 && vals[0] != "" {
-				id = vals[0]
-			}
-		}
-	}
-	if id == "" {
-		id = uuid.New()
-	}
+	id = extractOperationID(ctx, id)
 
 	ctx = context.WithValue(ctx, traceIDKey, id)
 	ctx = metadata.AppendToOutgoingContext(ctx, requestIDHeader, id)
 	return WithValues(ctx, slog.Group(keyOperationGCP, slog.String("id", id)), slog.String(keyTrace, id))
+}
+
+func extractOperationID(ctx context.Context, id string) string {
+	if id != "" {
+		return id
+	}
+	if ctxID, ok := ctx.Value(traceIDKey).(string); ok && ctxID != "" {
+		return ctxID
+	}
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if vals := md.Get(requestIDHeader); len(vals) > 0 && vals[0] != "" {
+			return vals[0]
+		}
+	}
+	return uuid.New()
 }
 
 // OperationID returns the operation ID from the context if it exists.

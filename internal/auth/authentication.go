@@ -42,28 +42,16 @@ func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, s
 	}
 
 	// Try to parse the token using our custom JWT secret first, if one is configured.
-	// When no secret is set we deliberately skip this path (rather than falling back to
-	// a hardcoded value) and defer to IAP validation below.
-	if len(a.jwtSecret) > 0 {
-		claims, parseErr := oauth2.ParseSessionToken(jwt, a.jwtSecret)
-		if parseErr == nil && claims != nil {
-			if claims.Email == "" {
-				return "", "", fmt.Errorf("email in custom session token is empty: %w", status.ErrUnauthenticated)
-			}
-			return claims.Email, claims.Email, nil
-		}
-		// A plain ErrInvalidToken is the expected outcome for a token that simply
-		// isn't one of ours (e.g. an IAP-issued RS256 token), so we don't log it —
-		// that would spam logs on every IAP request. Only surface unexpected
-		// failures, such as an expired custom session token.
-		if parseErr != nil && !errors.Is(parseErr, oauth2.ErrInvalidToken) {
-			logging.Info(ctx, "Custom session token parsing failed", "error", parseErr)
-		}
+	ident, err := a.parseCustomSessionToken(ctx, jwt)
+	if err != nil {
+		return "", "", err
+	}
+	if ident != nil {
+		return ident.email, ident.userID, nil
 	}
 
 	payload, err := validateJWT(ctx, jwt, a.iapIssuer, a.iapAudiences)
 	if err != nil {
-
 		unverifiedPayload, parseErr := idtoken.ParsePayload(jwt)
 		if parseErr == nil && unverifiedPayload != nil {
 			logging.Error(ctx, "validateJWT: idtoken.Validate failed",
@@ -77,7 +65,7 @@ func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, s
 		return "", "", fmt.Errorf("JWT validation failed: %w", status.ErrUnauthenticated)
 	}
 
-	email, err := extractEmail(ctx, payload)
+	email, err := resolveUserEmail(ctx, payload)
 	if err != nil {
 		return "", "", err
 	}
@@ -92,24 +80,56 @@ func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, s
 	return email, userID, nil
 }
 
-// extractEmail extracts email from metadata or JWT payload.
-func extractEmail(ctx context.Context, payload *idtoken.Payload) (string, error) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if ok {
-		emails := md.Get("x-goog-user-email")
-		if len(emails) > 0 && emails[0] != "" {
-			logging.Info(ctx, "Using x-goog-user-email from metadata", "email", emails[0])
-			return emails[0], nil
-		}
-		if len(emails) == 0 {
-			logging.Info(ctx, "x-goog-user-email not in metadata, falling back to JWT payload")
-		} else {
-			logging.Info(ctx, "x-goog-user-email is empty in metadata, falling back to JWT payload")
-		}
-	} else {
-		logging.Info(ctx, "gRPC metadata not in context, falling back to JWT payload")
-	}
+type authIdentity struct {
+	email  string
+	userID string
+}
 
+func (a *Authorizer) parseCustomSessionToken(ctx context.Context, jwt string) (*authIdentity, error) {
+	if len(a.jwtSecret) == 0 {
+		return nil, nil
+	}
+	claims, parseErr := oauth2.ParseSessionToken(jwt, a.jwtSecret)
+	if parseErr != nil {
+		if !errors.Is(parseErr, oauth2.ErrInvalidToken) {
+			logging.Info(ctx, "Custom session token parsing failed", "error", parseErr)
+		}
+		return nil, nil
+	}
+	if claims == nil || claims.Email == "" {
+		return nil, fmt.Errorf("email in custom session token is empty: %w", status.ErrUnauthenticated)
+	}
+	return &authIdentity{email: claims.Email, userID: claims.Email}, nil
+}
+
+func extractEmailFromMetadata(ctx context.Context) (string, bool) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		logging.Info(ctx, "gRPC metadata not in context, falling back to JWT payload")
+		return "", false
+	}
+	emails := md.Get("x-goog-user-email")
+	if len(emails) > 0 && emails[0] != "" {
+		logging.Info(ctx, "Using x-goog-user-email from metadata", "email", emails[0])
+		return emails[0], true
+	}
+	if len(emails) == 0 {
+		logging.Info(ctx, "x-goog-user-email not in metadata, falling back to JWT payload")
+	} else {
+		logging.Info(ctx, "x-goog-user-email is empty in metadata, falling back to JWT payload")
+	}
+	return "", false
+}
+
+// resolveUserEmail resolves the user's email by trying gRPC metadata first, then falling back to the JWT payload.
+func resolveUserEmail(ctx context.Context, payload *idtoken.Payload) (string, error) {
+	if email, ok := extractEmailFromMetadata(ctx); ok {
+		return email, nil
+	}
+	return extractEmailFromPayload(ctx, payload)
+}
+
+func extractEmailFromPayload(ctx context.Context, payload *idtoken.Payload) (string, error) {
 	email, ok := payload.Claims["email"].(string)
 	if !ok {
 		logging.Warn(ctx, "Email claim is missing or not a string")

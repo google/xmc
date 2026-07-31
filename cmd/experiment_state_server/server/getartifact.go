@@ -129,7 +129,16 @@ func (s *Server) enrichManagedXprof(ctx context.Context, artifact *msgpb.Artifac
 		return
 	}
 
-	updateXprofURL(xprof, execution.GetMetadata().GetMlrunUrl())
+	// Surface the MLRun URL both on the nested xprof payload and the top-level
+	// artifact URL so clients that read either field link directly to the run.
+	mlrunURL := execution.GetMetadata().GetMlrunUrl()
+	updateXprofURL(xprof, mlrunURL)
+	if mlrunURL != "" {
+		if artifact.Url == nil {
+			artifact.Url = &msgpb.Url{}
+		}
+		artifact.Url.Url = mlrunURL
+	}
 }
 
 // isWorkUnitExecutionNotFound reports whether err indicates the work unit

@@ -100,37 +100,27 @@ func (h *Handler) handleActuatorPayload(ctx context.Context, payload *actuatorta
 
 	action := payload.GetAction()
 
-	if action.GetCreate() != nil {
+	switch {
+	case action.GetCreate() != nil:
 		logging.Info(ctx, "Received create request for work unit")
 		if err := h.k8sClient.CreateWorkUnit(ctx, payload); err != nil {
 			return err
 		}
 		workUnitsCreated.WithLabelValues().Inc()
-
-	} else if action.GetDelete() != nil {
+		return nil
+	case action.GetDelete() != nil:
 		logging.Info(ctx, "Received delete request for work unit")
-		if err := h.k8sClient.DeleteWorkUnit(ctx, payload); err != nil {
-			return err
-		}
-
-	} else if action.GetRestart() != nil {
+		return h.k8sClient.DeleteWorkUnit(ctx, payload)
+	case action.GetRestart() != nil:
 		logging.Info(ctx, "Received restart request for work unit")
-		if err := h.k8sClient.RestartWorkUnit(ctx, payload); err != nil {
-			return err
-		}
-
-	} else if action.GetUpdate() != nil {
+		return h.k8sClient.RestartWorkUnit(ctx, payload)
+	case action.GetUpdate() != nil:
 		logging.Info(ctx, "Received update request for work unit")
-		if err := h.k8sClient.UpdateWorkUnit(ctx, payload); err != nil {
-			return err
-		}
-
-	} else {
+		return h.k8sClient.UpdateWorkUnit(ctx, payload)
+	default:
 		logging.Warn(ctx, "Unsupported action type", "action", action)
 		return apierrors.NewBadRequest("unsupported action type")
 	}
-
-	return nil
 }
 
 // HandleWorkUnitRedisTask processes a task received from Redis.

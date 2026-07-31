@@ -205,7 +205,6 @@ func TestEquality(t *testing.T) {
 			t.Errorf("exp %v len(m) got: %v, wanted %v", exp, len(m), len(tc.expected))
 		}
 		for k := range m {
-
 			if ok, _ := tc.expected[k]; !ok {
 				t.Errorf("got: %v, want: %v", m, tc.expected)
 			}
