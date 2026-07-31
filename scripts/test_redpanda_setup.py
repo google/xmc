@@ -103,7 +103,12 @@ def setup_topic(topic_name: str = DEFAULT_TOPIC) -> None:
         text=True,
         check=False,
     )
-    if topic_name in list_res.stdout:
+    existing_topics = [
+        line.split()[0]
+        for line in list_res.stdout.strip().splitlines()
+        if line.split() and line.split()[0] != "NAME"
+    ]
+    if topic_name in existing_topics:
         print(f"Topic '{topic_name}' already exists.")
         return
 

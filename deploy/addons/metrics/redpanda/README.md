@@ -131,7 +131,7 @@ export REDPANDA_TOPIC="xmc-metrics"
 Start the Ingestion Gateway pointing to Redpanda:
 
 ```bash
-./cmd/ingestion_gateway/ingestion_gateway -broker="${REDPANDA_BROKER}" -topic="${REDPANDA_TOPIC}"
+./cmd/ingestion_gateway/ingestion_gateway -broker="${REDPANDA_BROKER}" -topic="${REDPANDA_TOPIC}" -min_partitions=1 -min_replicas=1
 ```
 
 ---
