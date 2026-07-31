@@ -284,7 +284,6 @@ class TestStepSubprocesses(unittest.TestCase):
         upgrade_dev_env.step_images(config)
         # Should push 7 targets when rod is enabled (6 base + rod_data_provider)
         self.assertEqual(mock_run.call_count, 7)
->>>>>>> 0ee60fcc (feat(rod): default resource dashboard feature flag to false across all components)
 
     @mock.patch.object(Path, "is_dir", return_value=True)
     @mock.patch("tools.upgrade_dev_env.run_cmd")
@@ -338,7 +337,6 @@ class TestStepSubprocesses(unittest.TestCase):
         upgrade_dev_env.step_restart(config)
         # 6 base services + rod-data-provider (7 total)
         self.assertEqual(mock_run.call_count, 7)
->>>>>>> 0ee60fcc (feat(rod): default resource dashboard feature flag to false across all components)
 
     @mock.patch("tools.upgrade_dev_env.run_cmd")
     def test_step_verify(self, mock_run):

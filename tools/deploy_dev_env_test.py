@@ -877,7 +877,7 @@ key5: "value5" # trailing comment with quotes
             env=ANY,
         )
         mock_run.assert_any_call(
-            ["bazel", "run", "//cmd/ingestion_gateway:ingestion_gateway_image_push"],
+            ["bazel", "run", "//cmd/xid_service:xid_service_image_push"],
             env=ANY,
         )
 
