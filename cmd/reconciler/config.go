@@ -34,7 +34,7 @@ type Config struct {
 	StatusMessageHistoryEnabled      bool
 	KubeAPIQPS                       float64
 	KubeAPIBurst                     int
-	DiagonEnvironment                string
+	MldiagnosticsEnvironment         string
 }
 
 // flags
@@ -54,7 +54,7 @@ var (
 	kubeAPIQPS                       float64
 	kubeAPIBurst                     int
 	statusMessageHistoryEnabled      bool
-	diagonEnvironment                string
+	mldiagnosticsEnvironment         string
 )
 
 func init() {
@@ -73,7 +73,7 @@ func init() {
 	flag.Float64Var(&kubeAPIQPS, "kube_api_qps", 100, "Maximum QPS to the API server.")
 	flag.IntVar(&kubeAPIBurst, "kube_api_burst", 200, "Maximum burst for throttle.")
 	flag.BoolVar(&statusMessageHistoryEnabled, "status_message_history_enabled", true, "Whether to enable status message history.")
-	flag.StringVar(&diagonEnvironment, "diagon_environment", "staging", "The Diagon (Hypercompute Cluster ML Run) control-plane environment: one of autopush, staging, or prod.")
+	flag.StringVar(&mldiagnosticsEnvironment, "mldiagnostics_environment", "prod", "The ML Diagnostics (Hypercompute Cluster ML Run) control-plane environment: one of autopush, staging, or prod.")
 }
 
 func Load() Config {
@@ -95,6 +95,6 @@ func Load() Config {
 		KubeAPIQPS:                       kubeAPIQPS,
 		KubeAPIBurst:                     kubeAPIBurst,
 		StatusMessageHistoryEnabled:      statusMessageHistoryEnabled,
-		DiagonEnvironment:                diagonEnvironment,
+		MldiagnosticsEnvironment:         mldiagnosticsEnvironment,
 	}
 }
