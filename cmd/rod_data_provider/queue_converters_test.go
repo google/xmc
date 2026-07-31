@@ -192,10 +192,13 @@ func TestCapacityMath(t *testing.T) {
 			usageMap := map[string]string{formatFlavorResourceKey("default-flavor", "nvidia.com/gpu"): tt.inUse}
 			resMap := map[string]string{formatFlavorResourceKey("default-flavor", "nvidia.com/gpu"): tt.reserved}
 
-			capMetric := buildResourceCapacity("default-flavor", resQuota, usageMap, resMap)
+			agg := &resourceAggregator{}
+			accumulateResourceQuota("default-flavor", resQuota, usageMap, resMap, agg)
+			capMetric := buildQueueResourceCapacity("nvidia.com/gpu", agg)
+
 			wantVal := parseK8sResourceVal("nvidia.com/gpu", tt.want)
 			if capMetric.FreeCapacity != wantVal {
-				t.Errorf("buildResourceCapacity(%s, %s, %s).FreeCapacity = %v, want %v", tt.nominal, tt.reserved, tt.inUse, capMetric.FreeCapacity, wantVal)
+				t.Errorf("accumulateResourceQuota(%s, %s, %s).FreeCapacity = %v, want %v", tt.nominal, tt.reserved, tt.inUse, capMetric.FreeCapacity, wantVal)
 			}
 		})
 	}
@@ -204,22 +207,26 @@ func TestCapacityMath(t *testing.T) {
 func TestMultiFlavorQueueOverview(t *testing.T) {
 	cq := &kueuev1beta1.ClusterQueue{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "multi-flavor-cq",
+			Name: "dynamic-gpu-cq",
 		},
 		Spec: kueuev1beta1.ClusterQueueSpec{
 			ResourceGroups: []kueuev1beta1.ResourceGroup{
 				{
 					Flavors: []kueuev1beta1.FlavorQuotas{
 						{
-							Name: "on-demand",
+							Name: "flavor-l4-spot",
 							Resources: []kueuev1beta1.ResourceQuota{
-								{Name: corev1.ResourceCPU, NominalQuota: resource.MustParse("100")},
+								{Name: corev1.ResourceName("nvidia.com/gpu"), NominalQuota: resource.MustParse("32")},
+								{Name: corev1.ResourceCPU, NominalQuota: resource.MustParse("128")},
+								{Name: corev1.ResourceMemory, NominalQuota: resource.MustParse("512Gi")},
 							},
 						},
 						{
-							Name: "spot",
+							Name: "flavor-h100-ondemand",
 							Resources: []kueuev1beta1.ResourceQuota{
-								{Name: corev1.ResourceCPU, NominalQuota: resource.MustParse("200")},
+								{Name: corev1.ResourceName("nvidia.com/gpu"), NominalQuota: resource.MustParse("8")},
+								{Name: corev1.ResourceCPU, NominalQuota: resource.MustParse("64")},
+								{Name: corev1.ResourceMemory, NominalQuota: resource.MustParse("256Gi")},
 							},
 						},
 					},
@@ -229,15 +236,19 @@ func TestMultiFlavorQueueOverview(t *testing.T) {
 		Status: kueuev1beta1.ClusterQueueStatus{
 			FlavorsUsage: []kueuev1beta1.FlavorUsage{
 				{
-					Name: "on-demand",
+					Name: "flavor-l4-spot",
 					Resources: []kueuev1beta1.ResourceUsage{
-						{Name: corev1.ResourceCPU, Total: resource.MustParse("30")},
+						{Name: corev1.ResourceName("nvidia.com/gpu"), Total: resource.MustParse("8")},
+						{Name: corev1.ResourceCPU, Total: resource.MustParse("28")},
+						{Name: corev1.ResourceMemory, Total: resource.MustParse("112Gi")},
 					},
 				},
 				{
-					Name: "spot",
+					Name: "flavor-h100-ondemand",
 					Resources: []kueuev1beta1.ResourceUsage{
-						{Name: corev1.ResourceCPU, Total: resource.MustParse("80")},
+						{Name: corev1.ResourceName("nvidia.com/gpu"), Total: resource.MustParse("2")},
+						{Name: corev1.ResourceCPU, Total: resource.MustParse("14")},
+						{Name: corev1.ResourceMemory, Total: resource.MustParse("56Gi")},
 					},
 				},
 			},
@@ -245,20 +256,53 @@ func TestMultiFlavorQueueOverview(t *testing.T) {
 	}
 
 	overview := buildQueueOverviewFromClusterQueue(cq)
-	if len(overview.QueueCapacity) != 2 {
-		t.Fatalf("buildQueueOverviewFromClusterQueue capacity count = %d, want 2", len(overview.QueueCapacity))
+	// Expect exactly 3 distinct resource types summed across all flavors: nvidia.com/gpu, cpu, memory
+	if len(overview.QueueCapacity) != 3 {
+		t.Fatalf("buildQueueOverviewFromClusterQueue capacity count = %d, want 3", len(overview.QueueCapacity))
 	}
 
-	// Verify on-demand flavor capacity (Nominal: 100, Used: 30, Free: 70)
-	onDemandCap := overview.QueueCapacity[0]
-	if onDemandCap.TotalCapacity != 100.0 || onDemandCap.FreeCapacity != 70.0 {
-		t.Errorf("on-demand capacity = Total: %v, Free: %v; want Total: 100, Free: 70", onDemandCap.TotalCapacity, onDemandCap.FreeCapacity)
+	capMap := make(map[string]*spb.QueueResourceCapacity)
+	for _, c := range overview.QueueCapacity {
+		capMap[c.ResourceType] = c
 	}
 
-	// Verify spot flavor capacity (Nominal: 200, Used: 80, Free: 120)
-	spotCap := overview.QueueCapacity[1]
-	if spotCap.TotalCapacity != 200.0 || spotCap.FreeCapacity != 120.0 {
-		t.Errorf("spot capacity = Total: %v, Free: %v; want Total: 200, Free: 120", spotCap.TotalCapacity, spotCap.FreeCapacity)
+	// 1. Verify GPU Quota Summation: 32 (L4 Spot) + 8 (H100 OnDemand) = 40 Total GPUs
+	gpuCap, exists := capMap["nvidia.com/gpu"]
+	if !exists {
+		t.Fatalf("Missing nvidia.com/gpu capacity")
+	}
+	if gpuCap.TotalCapacity != 40.0 {
+		t.Errorf("GPU TotalCapacity = %v, want 40.0", gpuCap.TotalCapacity)
+	}
+	// Used: 8 + 2 = 10, Free: 40 - 10 = 30
+	if gpuCap.FreeCapacity != 30.0 {
+		t.Errorf("GPU FreeCapacity = %v, want 30.0", gpuCap.FreeCapacity)
+	}
+
+	// 2. Verify CPU Quota Summation: 128 + 64 = 192 Total Cores
+	cpuCap, exists := capMap["cpu"]
+	if !exists {
+		t.Fatalf("Missing cpu capacity")
+	}
+	if cpuCap.TotalCapacity != 192.0 {
+		t.Errorf("CPU TotalCapacity = %v, want 192.0", cpuCap.TotalCapacity)
+	}
+	// Used: 28 + 14 = 42, Free: 192 - 42 = 150
+	if cpuCap.FreeCapacity != 150.0 {
+		t.Errorf("CPU FreeCapacity = %v, want 150.0", cpuCap.FreeCapacity)
+	}
+
+	// 3. Verify Memory Quota Summation: 512Gi + 256Gi = 768 Total GiB
+	memCap, exists := capMap["memory"]
+	if !exists {
+		t.Fatalf("Missing memory capacity")
+	}
+	if memCap.TotalCapacity != 768.0 {
+		t.Errorf("Memory TotalCapacity = %v, want 768.0", memCap.TotalCapacity)
+	}
+	// Used: 112Gi + 56Gi = 168Gi, Free: 768 - 168 = 600GiB
+	if memCap.FreeCapacity != 600.0 {
+		t.Errorf("Memory FreeCapacity = %v, want 600.0", memCap.FreeCapacity)
 	}
 }
 
