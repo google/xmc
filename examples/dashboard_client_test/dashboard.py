@@ -41,7 +41,7 @@ class _DummyProto:
     DashboardServiceStub: Any = _DummyProtoMessage
     Dashboard: Any = _DummyProtoMessage
     Chart: Any = _DummyProtoMessage
-    Plot: Any = _DummyProtoMessage
+    PlotSpec: Any = _DummyProtoMessage
 
     def __getattr__(self, name: str) -> Any:
         return _DummyProtoMessage
