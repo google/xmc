@@ -21,6 +21,7 @@ import (
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 )
 
@@ -309,7 +310,7 @@ func TestListStatusMessages_EmptyParent(t *testing.T) {
 func insertStatusMessage(ctx context.Context, t *testing.T, storage *Storage, essClient *spanner.Client, xid int64, wid *int64, msg *essmsgpb.StructuredMessage) {
 	t.Helper()
 	_, err := essClient.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		storage.saveStatusMessageHistory(ctx, xid, wid, nil, nil, msg, txn)
+		statusmessage.SaveStatusMessageHistory(ctx, xid, wid, nil, nil, msg, txn)
 		return nil
 	})
 	if err != nil {

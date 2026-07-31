@@ -368,7 +368,6 @@ func testLoadBalancing(ctx context.Context, consumer *redisclient.ConsumerClient
 		processedCount[data]++
 		mu.Unlock()
 		return redisclient.TaskResult{WasRunSuccessful: true, ShouldBeRetried: false, Error: nil}
-
 	})
 	// Publisher: Start the cleanup goroutine
 	cleanupHandle := runWorkerInBackground(ctx, "cleanup-1", consumer.RunCleanup)

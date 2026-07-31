@@ -442,6 +442,7 @@ def step_images(config: Config) -> None:
         "XMC_ACR_TARGET": config.acr_target,
     }
 
+    # TODO: Migrate hardcoded image targets to dynamic discovery or configuration flags to operate on flags cleanly.
     targets = [
         ("actuator", "//cmd/actuator:actuator_image_push"),
         (
@@ -453,13 +454,15 @@ def step_images(config: Config) -> None:
         ("ui", "//cmd/ui:ui_image_push"),
         ("xid_service", "//cmd/xid_service:xid_service_image_push"),
         ("health_service", "//cmd/health_service:health_service_image_push"),
+        ("rod_data_provider", "//cmd/rod_data_provider:rod_data_provider_image_push"),
+        ("ingestion_gateway", "//cmd/ingestion_gateway:ingestion_gateway_image_push"),
     ]
 
     for name, target in targets:
         log_info(f"Pushing {name} image...")
         run_cmd(["bazel", "run", target], env=env)
 
-    log_success("All 7 XMC service container images compiled and pushed from current branch state.")
+    log_success("All XMC service container images compiled and pushed from current branch state.")
 
 
 def step_app(config: Config) -> None:

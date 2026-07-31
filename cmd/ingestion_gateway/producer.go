@@ -18,11 +18,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
@@ -94,7 +96,7 @@ func FormatCompositeKey(xid, workUnitID int64) []byte {
 // - Required Acks: All (acks=all)
 // - Disable Auto Topic Creation: UnknownTopicRetries(0)
 // - Optional TLS / mTLS configuration with dynamic certificate reloading
-func BuildProducerOptions(cfg *Config) ([]kgo.Opt, error) {
+func BuildProducerOptions(cfg *Config, gMetrics *GatewayMetrics) ([]kgo.Opt, error) {
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(cfg.RedpandaBrokers...),
 		kgo.RecordPartitioner(kgo.StickyKeyPartitioner(nil)),
@@ -103,6 +105,10 @@ func BuildProducerOptions(cfg *Config) ([]kgo.Opt, error) {
 		kgo.ProducerBatchMaxBytes(1 * 1024 * 1024),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.UnknownTopicRetries(0),
+	}
+
+	if gMetrics != nil {
+		opts = append(opts, kgo.WithHooks(NewFranzGoMetricsHook(gMetrics)))
 	}
 
 	if cfg.SASLEnabled {
@@ -130,10 +136,87 @@ func BuildProducerOptions(cfg *Config) ([]kgo.Opt, error) {
 }
 
 // NewKafkaProducer constructs a kgo.Client with default producer configuration.
-func NewKafkaProducer(cfg *Config) (*kgo.Client, error) {
-	opts, err := BuildProducerOptions(cfg)
+func NewKafkaProducer(cfg *Config, gMetrics *GatewayMetrics) (*kgo.Client, error) {
+	opts, err := BuildProducerOptions(cfg, gMetrics)
 	if err != nil {
 		return nil, err
 	}
 	return kgo.NewClient(opts...)
+}
+
+var congestionErrorSubstrings = []string{
+	"queue limit",
+	"queue full",
+	"buffer full",
+	"saturated",
+	"paused",
+	"unreachable",
+	"connection refused",
+	"broker outage",
+	"broker produce error",
+}
+
+// IsCongestionError determines if a produce error is caused by queue saturation, broker pause, or broker outage.
+func IsCongestionError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// 1. Check franz-go client lifecycle errors.
+	if errors.Is(err, kgo.ErrClientClosed) {
+		return true
+	}
+
+	// 2. Check formal Kafka protocol error codes from broker representing transient congestion, overload, or outages.
+	var kerrErr *kerr.Error
+	if errors.As(err, &kerrErr) {
+		switch kerrErr.Code {
+		case kerr.RequestTimedOut.Code,
+			kerr.BrokerNotAvailable.Code,
+			kerr.ThrottlingQuotaExceeded.Code,
+			kerr.NotEnoughReplicas.Code,
+			kerr.NotEnoughReplicasAfterAppend.Code,
+			kerr.KafkaStorageError.Code,
+			kerr.LeaderNotAvailable.Code,
+			kerr.NotLeaderForPartition.Code,
+			kerr.NetworkException.Code:
+			return true
+		}
+	}
+
+	// 3. Check standard Go network errors (e.g. broker outage, connection refused, dial timeout).
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+
+	// 4. Fallback string matching for wrapped errors or mock test errors.
+	msg := strings.ToLower(err.Error())
+	for _, sub := range congestionErrorSubstrings {
+		if strings.Contains(msg, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsClientProduceError determines if a produce error is caused by invalid client payload or configuration (e.g. MessageTooLarge).
+func IsClientProduceError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var kerrErr *kerr.Error
+	if errors.As(err, &kerrErr) {
+		switch kerrErr.Code {
+		case kerr.MessageTooLarge.Code,
+			kerr.RecordListTooLarge.Code,
+			kerr.InvalidRecord.Code,
+			kerr.InvalidTimestamp.Code,
+			kerr.InvalidRequiredAcks.Code,
+			kerr.UnsupportedCompressionType.Code:
+			return true
+		}
+	}
+	return false
 }

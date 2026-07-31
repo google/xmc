@@ -142,7 +142,6 @@ func generateOrderBy(ctx context.Context, orderBy string, validFields []querytoo
 	logging.Info(ctx, "orderByParts", "parts", orderByParts)
 
 	for _, part := range orderByParts {
-
 		// Split the orderBy segment by spaces.
 		parts := strings.Fields(part)
 		if len(parts) > 2 {

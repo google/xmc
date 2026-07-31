@@ -60,13 +60,3 @@ export async function setupScreenshotEnvironment(page: Page) {
     content: BASE_SCREENSHOT_STYLES,
   });
 }
-
-/**
- * Mounts a component HTML harness into the DOM for isolated component screenshot testing.
- */
-export async function mountComponentHarness(page: Page, htmlContent: string) {
-  await page.evaluate((html) => {
-    const container = document.querySelector('.rod-container') || document.body;
-    container.innerHTML = html;
-  }, htmlContent);
-}

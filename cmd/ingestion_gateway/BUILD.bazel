@@ -14,6 +14,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("//:oci.bzl", "oci_image_for_service")
 
 package(default_visibility = ["//visibility:private"])
 
@@ -23,6 +24,7 @@ compat_go_library(
         "config.go",
         "handler.go",
         "main.go",
+        "metrics.go",
         "producer.go",
         "server.go",
         "tls.go",
@@ -35,6 +37,10 @@ compat_go_library(
         "//internal/logging",
         "//internal/security/keyreloader",
         "//pkg/apis/metrics",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_client_golang//prometheus/collectors",
+        "@com_github_prometheus_client_golang//prometheus/promhttp",
+        "@com_github_twmb_franz_go//pkg/kerr",
         "@com_github_twmb_franz_go//pkg/kgo",
         "@com_github_twmb_franz_go//pkg/sasl/plain",
         "@com_github_twmb_franz_go//pkg/sasl/scram",
@@ -51,12 +57,18 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
+oci_image_for_service(
+    name = "ingestion_gateway_image",
+    binary = ":ingestion_gateway",
+)
+
 compat_go_test(
     name = "ingestion_gateway_test",
     srcs = [
         "config_test.go",
         "handler_test.go",
         "main_test.go",
+        "metrics_test.go",
         "producer_test.go",
         "server_test.go",
         "tls_test.go",
@@ -68,6 +80,9 @@ compat_go_test(
         "//internal/compat/google",
         "//internal/logging",
         "//pkg/apis/metrics",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_client_golang//prometheus/testutil",
+        "@com_github_twmb_franz_go//pkg/kerr",
         "@com_github_twmb_franz_go//pkg/kgo",
         "@com_github_twmb_franz_go//pkg/sasl/plain",
         "@com_github_twmb_franz_go//pkg/sasl/scram",

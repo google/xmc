@@ -115,13 +115,17 @@ When creating a new PR or populating its description:
    CONV=<conversation_id>
    ```
 
-5. **User Review & Edit Gate (Mandatory Pause)**:
-   Before opening the PR on GitHub, present `pr_body.md` to the user for review:
-   > *"I have drafted the PR description in `pr_body.md` incorporating the benchmark results. Preview:*
+5. **Mandatory User Confirmation Gate Before PR Creation**:
+   NEVER execute `gh pr create` (draft or non-draft) without explicit, affirmative user confirmation in the current conversation turn. Phrases like "proceed with next phase" authorize local work and verification, but DO NOT authorize opening a remote Pull Request. The agent MUST present `pr_body.md`, the planned PR title, body preview, and list of changes to the user for review and explicitly ask:
+   > *"I have prepared the Pull Request."*
+   > **Title**: `<type>(<scope>): <summary>`
+   > **List of Changes**:
+   > - *[List of changes]*
+   > **Description Preview** (from `pr_body.md`):
    > 
    > *[Markdown Preview]*
    > 
-   > *Feel free to make any manual edits to `pr_body.md`. Proceed with creating the PR via `gh pr create --body-file pr_body.md`? (Y/n)"*
+   > *Shall I proceed with creating the Draft Pull Request on GitHub? (Y/n)"*
 
 6. **Create PR via GitHub CLI**:
    ```bash
@@ -156,11 +160,7 @@ When updating an existing Pull Request description:
 
 When creating and publishing Pull Requests, follow this mandatory 5-step lifecycle:
 
-1. **Create Draft PR**:
-   Create the pull request as a draft:
-   ```bash
-   gh pr create --draft --title "<type>(<scope>): <summary>" --body-file pr_body.md
-   ```
+1. **Create Draft PR (Requires Confirmation Gate)**: Obtain explicit user confirmation per Section 3.5 (presenting Title, List of Changes, and Description Preview). Once confirmed, execute: `gh pr create --draft --title "<type>(<scope>): <summary>" --body-file pr_body.md`
 2. **Wait for Automated Review Bot**:
    Pause for 2–3 minutes to allow GitHub CI status checks and the automated Gemini review bot to inspect code diffs and post review comments.
 3. **Pull Review Comments**:
@@ -170,10 +170,4 @@ When creating and publishing Pull Requests, follow this mandatory 5-step lifecyc
    ```
 4. **Address Review Comments**:
    Implement requested code fixes, commit and push updates, post inline thread replies (`./tools/reply_pr_comment.py`), and verify 1-to-1 resolution (`./tools/verify_pr_comment_resolution.py`).
-5. **Verify CI Checks & Publish**:
-   Check CI status using `gh pr checks <pr_number>`:
-   - **If CI checks fail**: Inspect failures, implement fixes, push commits, and re-run checks.
-   - **If CI checks succeed**: Mark the PR as ready for review:
-     ```bash
-     gh pr ready <pr_number>
-     ```
+5. **Verify CI Checks & Publish (Requires Confirmation Gate)**: Verify CI status with `gh pr checks <pr_number>`. When checks pass, obtain explicit user confirmation ('Shall I mark Pull Request #<pr_number> as ready for review? (Y/n)'), then run: `gh pr ready <pr_number>`

@@ -17,14 +17,20 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -37,7 +43,7 @@ func (np *noopProducer) Produce(ctx context.Context, rec *kgo.Record, promise fu
 func (np *noopProducer) Close() {}
 
 func newTestHandler() http.HandlerFunc {
-	return NewMetricsIngestionHandler(NewMockProducer(), "xmc-metrics")
+	return NewMetricsIngestionHandler(NewMockProducer(), "xmc-metrics", nil)
 }
 
 type trackableReader struct {
@@ -255,7 +261,7 @@ func (r *metricStreamReader) Read(p []byte) (int, error) {
 }
 
 func TestMetricsIngestionHandler_ConstantMemoryStreaming(t *testing.T) {
-	handler := NewMetricsIngestionHandler(&noopProducer{}, "xmc-metrics")
+	handler := NewMetricsIngestionHandler(&noopProducer{}, "xmc-metrics", nil)
 	runtime.GC()
 	var mBefore runtime.MemStats
 	runtime.ReadMemStats(&mBefore)
@@ -288,7 +294,7 @@ func TestMetricsIngestionHandler_ConstantMemoryStreaming(t *testing.T) {
 }
 
 func TestNewMetricsIngestionHandler_NilProducer(t *testing.T) {
-	handler := NewMetricsIngestionHandler(nil, "test-topic")
+	handler := NewMetricsIngestionHandler(nil, "test-topic", nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(`[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`))
 	w := httptest.NewRecorder()
 
@@ -309,21 +315,42 @@ func TestNewMetricsIngestionHandler_NilProducer(t *testing.T) {
 }
 
 func TestMetricsIngestionHandler_ContextCancelled(t *testing.T) {
-	mp := NewMockProducer()
-	handler := NewMetricsIngestionHandler(mp, "test-topic")
+	t.Run("context cancelled returns 503", func(t *testing.T) {
+		mp := NewMockProducer()
+		handler := NewMetricsIngestionHandler(mp, "test-topic", nil)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(`[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`)).WithContext(ctx)
-	w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(`[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`)).WithContext(ctx)
+		w := httptest.NewRecorder()
 
-	handler(w, req)
+		handler(w, req)
 
-	resp := w.Result()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected status 400 Bad Request on cancelled context, got %d", resp.StatusCode)
-	}
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("expected status 503 Service Unavailable on canceled context, got %d", w.Code)
+		}
+		if len(mp.ProducedRecords()) != 0 {
+			t.Fatalf("expected 0 produced records on cancelled context, got %d", len(mp.ProducedRecords()))
+		}
+	})
+
+	t.Run("context deadline exceeded returns 504", func(t *testing.T) {
+		mp := NewMockProducer()
+		handler := NewMetricsIngestionHandler(mp, "test-topic", nil)
+
+		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-1*time.Second))
+		defer cancel()
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(`[{"xid": 1, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`)).WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		handler(w, req)
+
+		if w.Code != http.StatusGatewayTimeout {
+			t.Errorf("expected status 504 Gateway Timeout on deadline exceeded context, got %d", w.Code)
+		}
+	})
 }
 
 func TestDrainRequestBody(t *testing.T) {
@@ -366,7 +393,7 @@ func TestMetricsIngestionHandler_NilAndWhitespaceBody(t *testing.T) {
 
 func TestMetricsIngestionHandler_XReplicaIDHeader(t *testing.T) {
 	mp := NewMockProducer()
-	handler := NewMetricsIngestionHandler(mp, "test-topic")
+	handler := NewMetricsIngestionHandler(mp, "test-topic", nil)
 
 	// Payload omits "replica_id" key
 	payload := `[{"xid": 101, "work_unit_id": 1, "execution_id": 1, "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`
@@ -384,5 +411,335 @@ func TestMetricsIngestionHandler_XReplicaIDHeader(t *testing.T) {
 	recs := mp.ProducedRecords()
 	if len(recs) != 1 {
 		t.Fatalf("expected 1 record produced, got %d", len(recs))
+	}
+}
+
+type blockingProducer struct {
+	mu           sync.Mutex
+	produceCalls int
+	cancelCalls  int
+}
+
+func (bp *blockingProducer) Produce(ctx context.Context, rec *kgo.Record, promise func(*kgo.Record, error)) {
+	bp.mu.Lock()
+	bp.produceCalls++
+	bp.mu.Unlock()
+
+	select {
+	case <-ctx.Done():
+		bp.mu.Lock()
+		bp.cancelCalls++
+		bp.mu.Unlock()
+		promise(rec, ctx.Err())
+	case <-time.After(5 * time.Second):
+		promise(rec, nil)
+	}
+}
+
+func (bp *blockingProducer) Close() {}
+
+func TestCongestionControl_BrokerSaturation_Returns503(t *testing.T) {
+	tests := []struct {
+		name        string
+		failErr     error
+		expectedMsg string
+	}{
+		{
+			name:        "queue saturation",
+			failErr:     fmt.Errorf("franz-go: client queue limit exceeded"),
+			expectedMsg: "async produce error: franz-go: client queue limit exceeded",
+		},
+		{
+			name:        "broker paused",
+			failErr:     fmt.Errorf("broker paused: buffer full"),
+			expectedMsg: "async produce error: broker paused: buffer full",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mp := NewMockProducer()
+			mp.failIndex = 0
+			mp.failErr = tt.failErr
+
+			handler := NewMetricsIngestionHandler(mp, "xmc-metrics", nil)
+			payload := `[
+				{"xid": 101, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000},
+				{"xid": 101, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "accuracy", "metric_value": 0.9, "step": 1, "timestamp": 1700000000}
+			]`
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
+			w := httptest.NewRecorder()
+
+			handler(w, req)
+
+			resp := w.Result()
+			if resp.StatusCode != http.StatusServiceUnavailable {
+				t.Fatalf("expected status 503 Service Unavailable, got %d", resp.StatusCode)
+			}
+
+			var payload503 ServiceUnavailableErrorPayload
+			if err := json.NewDecoder(resp.Body).Decode(&payload503); err != nil {
+				t.Fatalf("failed to decode 503 response JSON: %v", err)
+			}
+
+			if payload503.Error != "service_unavailable" {
+				t.Errorf("expected error 'service_unavailable', got %q", payload503.Error)
+			}
+			if payload503.Message != tt.expectedMsg {
+				t.Errorf("expected message %q, got %q", tt.expectedMsg, payload503.Message)
+			}
+		})
+	}
+}
+
+func TestMetricsIngestionHandler_BrokerOutage_Returns503(t *testing.T) {
+	mp := NewMockProducer()
+	mp.failIndex = 0
+	mp.failErr = fmt.Errorf("redpanda broker unreachable: connection refused")
+
+	handler := NewMetricsIngestionHandler(mp, "xmc-metrics", nil)
+	payload := `[{"xid": 202, "work_unit_id": 2, "execution_id": 1, "replica_id": "rep-1", "metric_name": "gpu_mem", "metric_value": 8192.0, "step": 10, "timestamp": 1700000000}]`
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected status 503 Service Unavailable on broker outage, got %d", resp.StatusCode)
+	}
+
+	var payload503 ServiceUnavailableErrorPayload
+	if err := json.NewDecoder(resp.Body).Decode(&payload503); err != nil {
+		t.Fatalf("failed to decode 503 payload: %v", err)
+	}
+
+	if payload503.Error != "service_unavailable" {
+		t.Errorf("expected error 'service_unavailable', got %q", payload503.Error)
+	}
+}
+
+func TestMetricsIngestionHandler_ClientProduceError_Returns400(t *testing.T) {
+	mp := NewMockProducer()
+	mp.failIndex = 0
+	mp.failErr = kerr.MessageTooLarge
+
+	handler := NewMetricsIngestionHandler(mp, "xmc-metrics", nil)
+	payload := `[{"xid": 202, "work_unit_id": 2, "execution_id": 1, "replica_id": "rep-1", "metric_name": "large_metric", "metric_value": 1.0, "step": 1, "timestamp": 1700000000}]`
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status 400 Bad Request on client produce error (MessageTooLarge), got %d", resp.StatusCode)
+	}
+
+	var payload400 BadRequestErrorPayload
+	if err := json.NewDecoder(resp.Body).Decode(&payload400); err != nil {
+		t.Fatalf("failed to decode 400 payload: %v", err)
+	}
+
+	if payload400.Error != "bad_request" {
+		t.Errorf("expected error 'bad_request', got %q", payload400.Error)
+	}
+}
+
+func TestMetricsIngestionHandler_GenericBrokerError_Returns500(t *testing.T) {
+	mp := NewMockProducer()
+	mp.failIndex = 0
+	mp.failErr = kerr.UnknownServerError
+
+	handler := NewMetricsIngestionHandler(mp, "xmc-metrics", nil)
+	payload := `[{"xid": 202, "work_unit_id": 2, "execution_id": 1, "replica_id": "rep-1", "metric_name": "test_metric", "metric_value": 1.0, "step": 1, "timestamp": 1700000000}]`
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected status 500 Internal Server Error on unknown broker error, got %d", resp.StatusCode)
+	}
+
+	var payload500 ServiceUnavailableErrorPayload
+	if err := json.NewDecoder(resp.Body).Decode(&payload500); err != nil {
+		t.Fatalf("failed to decode 500 payload: %v", err)
+	}
+
+	if payload500.Error != "internal_server_error" {
+		t.Errorf("expected error 'internal_server_error', got %q", payload500.Error)
+	}
+}
+
+func TestCongestionControl_ContextCancellation_FastPropagation(t *testing.T) {
+	bp := &blockingProducer{}
+	handler := NewMetricsIngestionHandler(bp, "xmc-metrics", nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	payload := `[{"xid": 101, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload)).WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	start := time.Now()
+	handler(w, req)
+	elapsed := time.Since(start)
+
+	if elapsed > 1*time.Second {
+		t.Errorf("handler took %v to abort on context cancellation, expected fast propagation (<1s)", elapsed)
+	}
+
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+	if bp.cancelCalls != 1 {
+		t.Errorf("expected 1 cancellation propagation call in producer, got %d", bp.cancelCalls)
+	}
+}
+
+func TestCongestionControl_GoroutineAndResourceLeakCheck(t *testing.T) {
+	runtime.GC()
+	initialGoroutines := runtime.NumGoroutine()
+
+	mp := NewMockProducer()
+	mp.failIndex = 0
+	mp.failErr = fmt.Errorf("simulated queue saturation")
+
+	handler := NewMetricsIngestionHandler(mp, "xmc-metrics", nil)
+	payload := `[{"xid": 101, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`
+
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
+			w := httptest.NewRecorder()
+			handler(w, req)
+		}()
+	}
+	wg.Wait()
+
+	runtime.GC()
+	time.Sleep(50 * time.Millisecond)
+	finalGoroutines := runtime.NumGoroutine()
+
+	if finalGoroutines > initialGoroutines+3 {
+		t.Errorf("possible goroutine leak: initial=%d, final=%d", initialGoroutines, finalGoroutines)
+	}
+}
+
+func TestMetricsIngestionHandler_DroppedPayloadsRecording(t *testing.T) {
+	validPayload := `[{"xid": 101, "work_unit_id": 1, "execution_id": 1, "replica_id": "rep-0", "metric_name": "train_loss", "metric_value": 0.42, "step": 100, "timestamp": 1700000000}]`
+
+	tests := []struct {
+		name       string
+		method     string
+		payload    string
+		setupMock  func(*MockProducer)
+		noProducer bool
+		wantStatus int
+		wantReason string
+	}{
+		{
+			name:       "method_not_allowed",
+			method:     http.MethodGet,
+			payload:    "",
+			wantStatus: http.StatusMethodNotAllowed,
+			wantReason: "method_not_allowed",
+		},
+		{
+			name:       "missing_producer",
+			method:     http.MethodPost,
+			payload:    validPayload,
+			noProducer: true,
+			wantStatus: http.StatusServiceUnavailable,
+			wantReason: "missing_producer",
+		},
+		{
+			name:       "decode_error",
+			method:     http.MethodPost,
+			payload:    "invalid-json-content",
+			wantStatus: http.StatusBadRequest,
+			wantReason: "decode_error",
+		},
+		{
+			name:       "validation_error",
+			method:     http.MethodPost,
+			payload:    `[{"xid": 0, "work_unit_id": 1}]`,
+			wantStatus: http.StatusUnprocessableEntity,
+			wantReason: "validation_error",
+		},
+		{
+			name:    "client_produce_error",
+			method:  http.MethodPost,
+			payload: validPayload,
+			setupMock: func(mp *MockProducer) {
+				mp.failIndex = 0
+				mp.failErr = kerr.MessageTooLarge
+			},
+			wantStatus: http.StatusBadRequest,
+			wantReason: "client_produce_error",
+		},
+		{
+			name:    "congestion_error",
+			method:  http.MethodPost,
+			payload: validPayload,
+			setupMock: func(mp *MockProducer) {
+				mp.failIndex = 0
+				mp.failErr = kgo.ErrClientClosed
+			},
+			wantStatus: http.StatusServiceUnavailable,
+			wantReason: "congestion_error",
+		},
+		{
+			name:    "broker_publish_error",
+			method:  http.MethodPost,
+			payload: validPayload,
+			setupMock: func(mp *MockProducer) {
+				mp.failIndex = 0
+				mp.failErr = errors.New("unhandled internal produce error")
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantReason: "broker_publish_error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			gMetrics := NewGatewayMetrics(reg)
+
+			var mp MetricProducer
+			if !tt.noProducer {
+				mock := NewMockProducer()
+				if tt.setupMock != nil {
+					tt.setupMock(mock)
+				}
+				mp = mock
+			}
+
+			handler := NewMetricsIngestionHandler(mp, "xmc-metrics", gMetrics)
+
+			req := httptest.NewRequest(tt.method, "/api/v1/metrics", strings.NewReader(tt.payload))
+			rec := httptest.NewRecorder()
+
+			handler(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Errorf("expected status code %d, got %d", tt.wantStatus, rec.Code)
+			}
+
+			count := testutil.ToFloat64(gMetrics.DroppedPayloadsTotal.WithLabelValues(tt.wantReason))
+			if count != 1.0 {
+				t.Errorf("expected DroppedPayloadsTotal for reason %q to be 1.0, got %f", tt.wantReason, count)
+			}
+		})
 	}
 }

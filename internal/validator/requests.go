@@ -203,6 +203,13 @@ func FillWorkUnitNullValues(wu *essmsgpb.WorkUnit) *essmsgpb.WorkUnit {
 	return wu
 }
 
+// isManagedXprofArtifact reports whether the artifact carries a ManagedXprof
+// payload. ManagedXprof artifacts are enriched with their MLRun URL on the ESS
+// read path, so unlike other artifacts they carry no URL at creation time.
+func isManagedXprofArtifact(art *essmsgpb.Artifact) bool {
+	return art.GetPayload().GetManagedXprof() != nil
+}
+
 // FillArtifactNullValues fills in any null values in the Artifact proto with default values.
 // This is necessary for fields that are optional in the proto definition, but are actually
 // required in the database schema.
@@ -214,6 +221,12 @@ func FillArtifactNullValues(art *essmsgpb.Artifact) *essmsgpb.Artifact {
 		art.Priority = art.Url.Priority
 	} else if art.Priority != 0 && art.Url != nil && art.Url.Priority == 0 {
 		art.Url.Priority = art.Priority
+	}
+	// A non-nil Url avoids nil-pointer dereferences in downstream Spanner
+	// mutations, which read Url subfields unconditionally. ManagedXprof artifacts
+	// legitimately carry no URL at creation, so this guard covers them too.
+	if art.Url == nil {
+		art.Url = &essmsgpb.Url{}
 	}
 	return art
 }
@@ -415,7 +428,10 @@ func ValidateCreateArtifactRequest(in *essapipb.CreateArtifactRequest) error {
 	if art.GetUpdateTime() != nil {
 		return fmt.Errorf("artifact.update_time must be empty for CreateArtifactRequest: %w", status.ErrInvalidArgument)
 	}
-	if art.GetUrl().GetUrl() == "" {
+	// Every artifact must carry a URL at creation, except ManagedXprof artifacts:
+	// those have no URL until the ESS read path enriches them with the resolved
+	// MLRun link, so requiring one here would reject them.
+	if !isManagedXprofArtifact(art) && art.GetUrl().GetUrl() == "" {
 		return fmt.Errorf("artifact.url.url must be set: %w", status.ErrInvalidArgument)
 	}
 	if len(art.GetUrl().GetUrl()) > maxURLLen {

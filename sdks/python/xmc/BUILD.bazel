@@ -18,12 +18,15 @@ py_library(
     name = "xmc",
     srcs = [
         "__init__.py",
+        "autolog.py",
         "buffer.py",
         "client.py",
         "dist_harvest.py",
         "flusher.py",
         "integrations/__init__.py",
+        "integrations/common.py",
         "integrations/keras.py",
+        "integrations/lightning.py",
         "network.py",
         "resilience.py",
         "types.py",
@@ -38,6 +41,12 @@ py_library(
     deps = [
         "//api/protos/metrics:metrics_py_proto",
     ],
+)
+
+py_test(
+    name = "autolog_test",
+    srcs = ["autolog_test.py"],
+    deps = [":xmc"],
 )
 
 py_test(
@@ -92,6 +101,20 @@ py_test(
     name = "keras_integration_test",
     srcs = ["integrations/keras_test.py"],
     main = "integrations/keras_test.py",
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "common_integration_test",
+    srcs = ["integrations/common_test.py"],
+    main = "integrations/common_test.py",
+    deps = [":xmc"],
+)
+
+py_test(
+    name = "lightning_integration_test",
+    srcs = ["integrations/lightning_test.py"],
+    main = "integrations/lightning_test.py",
     deps = [":xmc"],
 )
 

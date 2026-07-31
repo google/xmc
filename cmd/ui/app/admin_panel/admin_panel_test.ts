@@ -14,20 +14,38 @@
 
 import 'jasmine';
 
+import { provideHttpClient } from '@angular/common/http';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import { bootstrap, cleanState, setupModule } from '../testing/test';
+import { HealthService } from '../service/health_service';
+import { MockHealthService } from '../service/testing/mock_health_service';
+import { bootstrap, cleanState, flush, getHarness, setupModule } from '../testing/test';
 import { AdminPanelPage } from './admin_panel';
+import { AdminPanelHarness } from './testing/admin_panel_harness';
 
 describe('AdminPanelPage Component', () => {
   cleanState(() => {
     setupModule({
       imports: [AdminPanelPage, NoopAnimationsModule],
+      providers: [provideHttpClient(), { provide: HealthService, useClass: MockHealthService }],
     });
   }, beforeEach);
 
   it('should be created', () => {
     const comp = bootstrap(AdminPanelPage);
+
     expect(comp).toBeTruthy();
+  });
+
+  it('should display health status and configs', async () => {
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+
+    expect(await harness.getHealthStatusText()).toContain('HEALTH_STATE_HEALTHY');
+    expect(await harness.getHealthStatusText()).toContain('mock-app-version-1.0.0');
+    expect(await harness.getHealthConfigsText()).toContain('Health Service Config');
+    expect(await harness.getHealthConfigsText()).toContain('mock-project');
   });
 });

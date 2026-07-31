@@ -14,6 +14,7 @@
 
 """XMC Python SDK package."""
 
+from xmc.autolog import autolog
 from xmc.buffer import DEFAULT_CAPACITY, BoundedMetricsBuffer, MetricTuple
 from xmc.client import Client, XMCAPIError, XMCError, XMCNetworkError
 from xmc.dist_harvest import (
@@ -28,6 +29,7 @@ from xmc.types import Metric, validate_metric
 __version__ = "0.1.0"
 
 __all__ = [
+    "autolog",
     "BoundedMetricsBuffer",
     "DEFAULT_CAPACITY",
     "MetricTuple",

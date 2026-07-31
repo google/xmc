@@ -173,3 +173,290 @@ func TestGetArtifact_DependencyFailures(t *testing.T) {
 		})
 	}
 }
+
+func TestEnrichManagedXprof(t *testing.T) {
+	ctx := context.Background()
+
+	testCases := []struct {
+		name         string
+		artifact     *msgpb.Artifact
+		mockStorage  *storage.MockStorage
+		wantEnriched bool
+	}{
+		{
+			name: "not_managed_xprof",
+			artifact: &msgpb.Artifact{
+				Payload: &msgpb.ArtifactPayload{},
+			},
+			wantEnriched: false,
+		},
+		{
+			name: "malformed_parent",
+			artifact: &msgpb.Artifact{
+				Parent: "invalid-parent",
+				Payload: &msgpb.ArtifactPayload{
+					Type: &msgpb.ArtifactPayload_ManagedXprof{
+						ManagedXprof: &msgpb.ManagedXprofArtifact{},
+					},
+				},
+			},
+			wantEnriched: false,
+		},
+		{
+			name: "storage_error",
+			artifact: &msgpb.Artifact{
+				Parent: "experiments/1/workUnits/1",
+				Payload: &msgpb.ArtifactPayload{
+					Type: &msgpb.ArtifactPayload_ManagedXprof{
+						ManagedXprof: &msgpb.ManagedXprofArtifact{},
+					},
+				},
+			},
+			mockStorage: &storage.MockStorage{
+				FetchCurrentWorkUnitExecutionErr: fmt.Errorf("storage failed"),
+			},
+			wantEnriched: false,
+		},
+		{
+			// A NotFound execution is an expected pre-execution state, so enrichment
+			// is skipped without surfacing an error.
+			name: "storage_not_found",
+			artifact: &msgpb.Artifact{
+				Parent: "experiments/1/workUnits/1",
+				Payload: &msgpb.ArtifactPayload{
+					Type: &msgpb.ArtifactPayload_ManagedXprof{
+						ManagedXprof: &msgpb.ManagedXprofArtifact{},
+					},
+				},
+			},
+			mockStorage: &storage.MockStorage{
+				FetchCurrentWorkUnitExecutionErr: status.ErrNotFound,
+			},
+			wantEnriched: false,
+		},
+		{
+			name: "success_enrichment",
+			artifact: &msgpb.Artifact{
+				Parent: "experiments/1/workUnits/1",
+				Payload: &msgpb.ArtifactPayload{
+					Type: &msgpb.ArtifactPayload_ManagedXprof{
+						ManagedXprof: &msgpb.ManagedXprofArtifact{},
+					},
+				},
+			},
+			mockStorage: &storage.MockStorage{
+				WorkUnitExecution: &msgpb.WorkUnitExecution{
+					Metadata: &msgpb.WorkUnitExecutionMetadata{
+						MlrunUrl: "http://mlrun.url",
+					},
+				},
+			},
+			wantEnriched: true,
+		},
+		{
+			// An experiment-scoped artifact has no single MLRun (each work unit
+			// execution owns its own), so it must not be enriched even when storage
+			// has an MLRun URL.
+			name: "no_enrichment_experiment_parent",
+			artifact: &msgpb.Artifact{
+				Parent: "experiments/1",
+				Payload: &msgpb.ArtifactPayload{
+					Type: &msgpb.ArtifactPayload_ManagedXprof{
+						ManagedXprof: &msgpb.ManagedXprofArtifact{},
+					},
+				},
+			},
+			mockStorage: &storage.MockStorage{
+				WorkUnitExecution: &msgpb.WorkUnitExecution{
+					Metadata: &msgpb.WorkUnitExecutionMetadata{
+						MlrunUrl: "http://mlrun.url",
+					},
+				},
+			},
+			wantEnriched: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Server{storage: tc.mockStorage}
+			s.enrichManagedXprof(ctx, tc.artifact)
+
+			xprof := tc.artifact.GetPayload().GetManagedXprof()
+			if xprof == nil {
+				if tc.wantEnriched {
+					t.Error("enrichManagedXprof() expected enrichment but payload is not ManagedXprof")
+				}
+				return
+			}
+
+			gotURL := xprof.GetXprof().GetXprofUrl()
+			if (gotURL != "") != tc.wantEnriched {
+				t.Errorf("enrichManagedXprof() enriched = %v, want %v (URL: %q)", gotURL != "", tc.wantEnriched, gotURL)
+			}
+
+			// The top-level artifact URL must also carry the MLRun URL so clients that
+			// read artifact.url link directly to the run.
+			gotArtifactURL := tc.artifact.GetUrl().GetUrl()
+			if (gotArtifactURL != "") != tc.wantEnriched {
+				t.Errorf("enrichManagedXprof() top-level url enriched = %v, want %v (URL: %q)", gotArtifactURL != "", tc.wantEnriched, gotArtifactURL)
+			}
+		})
+	}
+}
+
+func TestEnrichArtifactOutputFields(t *testing.T) {
+	ctx := context.Background()
+
+	testCases := []struct {
+		name         string
+		artifact     *msgpb.Artifact
+		mockStorage  *storage.MockStorage
+		wantEnriched bool
+	}{
+		{
+			name: "ineligible_phase_unspecified",
+			artifact: &msgpb.Artifact{
+				LifecyclePhase: msgpb.Artifact_LIFECYCLE_PHASE_UNSPECIFIED,
+				Parent:         "experiments/1/workUnits/1",
+				Payload: &msgpb.ArtifactPayload{
+					Type: &msgpb.ArtifactPayload_ManagedXprof{
+						ManagedXprof: &msgpb.ManagedXprofArtifact{},
+					},
+				},
+			},
+			mockStorage: &storage.MockStorage{
+				WorkUnitExecution: &msgpb.WorkUnitExecution{
+					Metadata: &msgpb.WorkUnitExecutionMetadata{
+						MlrunUrl: "http://mlrun.url",
+					},
+				},
+			},
+			wantEnriched: false,
+		},
+		{
+			name: "ineligible_phase_input",
+			artifact: &msgpb.Artifact{
+				LifecyclePhase: msgpb.Artifact_INPUT,
+				Parent:         "experiments/1/workUnits/1",
+				Payload: &msgpb.ArtifactPayload{
+					Type: &msgpb.ArtifactPayload_ManagedXprof{
+						ManagedXprof: &msgpb.ManagedXprofArtifact{},
+					},
+				},
+			},
+			mockStorage: &storage.MockStorage{
+				WorkUnitExecution: &msgpb.WorkUnitExecution{
+					Metadata: &msgpb.WorkUnitExecutionMetadata{
+						MlrunUrl: "http://mlrun.url",
+					},
+				},
+			},
+			wantEnriched: false,
+		},
+		{
+			name: "eligible_phase_execution",
+			artifact: &msgpb.Artifact{
+				LifecyclePhase: msgpb.Artifact_EXECUTION,
+				Parent:         "experiments/1/workUnits/1",
+				Payload: &msgpb.ArtifactPayload{
+					Type: &msgpb.ArtifactPayload_ManagedXprof{
+						ManagedXprof: &msgpb.ManagedXprofArtifact{},
+					},
+				},
+			},
+			mockStorage: &storage.MockStorage{
+				WorkUnitExecution: &msgpb.WorkUnitExecution{
+					Metadata: &msgpb.WorkUnitExecutionMetadata{
+						MlrunUrl: "http://mlrun.url",
+					},
+				},
+			},
+			wantEnriched: true,
+		},
+		{
+			name: "eligible_phase_output",
+			artifact: &msgpb.Artifact{
+				LifecyclePhase: msgpb.Artifact_OUTPUT,
+				Parent:         "experiments/1/workUnits/1",
+				Payload: &msgpb.ArtifactPayload{
+					Type: &msgpb.ArtifactPayload_ManagedXprof{
+						ManagedXprof: &msgpb.ManagedXprofArtifact{},
+					},
+				},
+			},
+			mockStorage: &storage.MockStorage{
+				WorkUnitExecution: &msgpb.WorkUnitExecution{
+					Metadata: &msgpb.WorkUnitExecutionMetadata{
+						MlrunUrl: "http://mlrun.url",
+					},
+				},
+			},
+			wantEnriched: true,
+		},
+		{
+			name: "eligible_phase_but_not_managed_xprof",
+			artifact: &msgpb.Artifact{
+				LifecyclePhase: msgpb.Artifact_EXECUTION,
+				Payload:        &msgpb.ArtifactPayload{},
+			},
+			mockStorage:  &storage.MockStorage{},
+			wantEnriched: false,
+		},
+		{
+			name:         "nil_artifact",
+			artifact:     nil,
+			mockStorage:  &storage.MockStorage{},
+			wantEnriched: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Server{storage: tc.mockStorage}
+			s.enrichArtifactOutputFields(ctx, tc.artifact)
+
+			xprof := tc.artifact.GetPayload().GetManagedXprof()
+			if xprof == nil {
+				if tc.wantEnriched {
+					t.Error("enrichArtifactOutputFields() expected enrichment but payload is not ManagedXprof")
+				}
+				return
+			}
+
+			gotURL := xprof.GetXprof().GetXprofUrl()
+			if (gotURL != "") != tc.wantEnriched {
+				t.Errorf("enrichArtifactOutputFields() enriched = %v, want %v (URL: %q)", gotURL != "", tc.wantEnriched, gotURL)
+			}
+		})
+	}
+}
+
+func TestEnrichArtifactOutputFieldsNilSafety(t *testing.T) {
+	ctx := context.Background()
+	s := &Server{storage: &storage.MockStorage{}}
+
+	// Calling enrichArtifactOutputFields with a nil artifact should return immediately without panicking.
+	s.enrichArtifactOutputFields(ctx, nil)
+}
+
+func TestIsWorkUnitExecutionNotFound(t *testing.T) {
+	testCases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil_error", err: nil, want: false},
+		{name: "not_found_sentinel", err: status.ErrNotFound, want: true},
+		{name: "wrapped_not_found", err: fmt.Errorf("WorkUnit 1 for XID 1 not found: %w", status.ErrNotFound), want: true},
+		{name: "other_error", err: fmt.Errorf("boom"), want: false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isWorkUnitExecutionNotFound(tc.err); got != tc.want {
+				t.Errorf("isWorkUnitExecutionNotFound(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}

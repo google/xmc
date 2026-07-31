@@ -16,6 +16,8 @@ package jobset
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +40,7 @@ import (
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/common/constants"
+	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
 	storagepkg "xmanager_cloud/storage/storage"
 )
 
@@ -49,6 +52,47 @@ type mockStorageUpdater struct {
 	calls     map[int64][]*storagepkg.WorkUnitExecutionUpdate
 	updateErr error
 	updateRes map[int64]*spb.WorkUnitExecution
+	fetchErr  error
+	fetchRes  *spb.WorkUnitExecution
+
+	// listArtifactsPages returns one page per call, in order; every page except
+	// the last reports a non-empty nextToken so tests can exercise multi-page
+	// pagination. listArtifactsErr, when set, is returned on the first call.
+	listArtifactsPages [][]*spb.Artifact
+	listArtifactsErr   error
+	listArtifactsCalls int
+
+	// listArtifactsStuckToken, when set, makes ListArtifacts always return the same
+	// non-advancing cursor (and no artifacts) to exercise the loop's repeating-token
+	// guard.
+	listArtifactsStuckToken bool
+}
+
+func (m *mockStorageUpdater) FetchCurrentWorkUnitExecution(ctx context.Context, xid, wid int64) (*spb.WorkUnitExecution, error) {
+	return m.fetchRes, m.fetchErr
+}
+
+func (m *mockStorageUpdater) ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Artifact, string, error) {
+	if m.listArtifactsErr != nil {
+		return nil, "", m.listArtifactsErr
+	}
+	idx := m.listArtifactsCalls
+	m.listArtifactsCalls++
+	if m.listArtifactsStuckToken {
+		// Fail fast rather than hang the suite if the loop guard ever regresses.
+		if m.listArtifactsCalls > 100 {
+			return nil, "", errors.New("repeating-token loop guard failed")
+		}
+		return nil, "stuck", nil
+	}
+	if idx >= len(m.listArtifactsPages) {
+		return nil, "", nil
+	}
+	nextToken := ""
+	if idx < len(m.listArtifactsPages)-1 {
+		nextToken = fmt.Sprintf("page-%d", idx+1)
+	}
+	return m.listArtifactsPages[idx], nextToken, nil
 }
 
 func (m *mockStorageUpdater) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*spb.WorkUnitExecution, error) {
@@ -56,6 +100,50 @@ func (m *mockStorageUpdater) UpdateWorkUnitExecutions(ctx context.Context, xid i
 		m.calls = make(map[int64][]*storagepkg.WorkUnitExecutionUpdate)
 	}
 	m.calls[xid] = append(m.calls[xid], updates...)
+	return m.updateRes, m.updateErr
+}
+
+// mockMLRunCreator records the arguments of the most recent CreateMLRun call so
+// tests can assert on the request the reconciler builds, and returns canned
+// results/errors to exercise both the success and failure paths.
+type mockMLRunCreator struct {
+	createCalls int
+	lastID      string
+	lastDisplay string
+	lastPhase   string
+	lastOpts    *hypercomputeclient.CreateMLRunOptions
+	retRes      map[string]any
+	retErr      error
+
+	getCalls int
+	getRes   map[string]any
+	getErr   error
+
+	updateCalls    int
+	lastUpdateID   string
+	lastUpdateOpts *hypercomputeclient.UpdateMLRunOptions
+	updateRes      map[string]any
+	updateErr      error
+}
+
+func (m *mockMLRunCreator) CreateMLRun(ctx context.Context, name, displayName, runPhase string, opts *hypercomputeclient.CreateMLRunOptions) (map[string]any, error) {
+	m.createCalls++
+	m.lastID = name
+	m.lastDisplay = displayName
+	m.lastPhase = runPhase
+	m.lastOpts = opts
+	return m.retRes, m.retErr
+}
+
+func (m *mockMLRunCreator) GetMLRun(ctx context.Context, name string) (map[string]any, error) {
+	m.getCalls++
+	return m.getRes, m.getErr
+}
+
+func (m *mockMLRunCreator) UpdateMLRun(ctx context.Context, name string, opts *hypercomputeclient.UpdateMLRunOptions) (map[string]any, error) {
+	m.updateCalls++
+	m.lastUpdateID = name
+	m.lastUpdateOpts = opts
 	return m.updateRes, m.updateErr
 }
 
@@ -1300,4 +1388,693 @@ func TestCheckPodsForUnschedulableTPUTopologyMismatch(t *testing.T) {
 			t.Errorf("Expected generic 'Work unit may be unschedulable' warning, got %q", got)
 		}
 	})
+}
+
+func withManagedXprofEnvs(jobSet *v1alpha2.JobSet) *v1alpha2.JobSet {
+	jobSet.Spec.ReplicatedJobs = []v1alpha2.ReplicatedJob{
+		{
+			Name: "worker",
+			Template: batchv1.JobTemplateSpec{
+				Spec: batchv1.JobSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Env: []corev1.EnvVar{
+										{Name: constants.XmcEnvVarManagedXprofDisplayName, Value: "test-display-name"},
+										{Name: constants.XmcEnvVarManagedXprofRunGroup, Value: "test-run-group"},
+										{Name: constants.XmcEnvVarManagedXprofGCSObjectFolder, Value: "gs://test-bucket/xmc-123-1-timestamp"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	return jobSet
+}
+
+func TestGetManagedXprofEnvs(t *testing.T) {
+	tests := []struct {
+		name            string
+		jobSet          *v1alpha2.JobSet
+		wantDisplayName string
+		wantRunGroup    string
+		wantGCSPath     string
+	}{
+		{
+			name:   "empty jobset",
+			jobSet: &v1alpha2.JobSet{},
+		},
+		{
+			name: "no replicated jobs",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{},
+				},
+			},
+		},
+		{
+			name: "no containers",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{
+							Name: "worker",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "no env vars",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{
+							Name: "worker",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "irrelevant env vars",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{
+							Name: "worker",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Env: []corev1.EnvVar{
+														{Name: "OTHER", Value: "value"},
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "partial env vars - display name only",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{
+							Name: "worker",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Env: []corev1.EnvVar{
+														{Name: constants.XmcEnvVarManagedXprofDisplayName, Value: "test-display-name"},
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantDisplayName: "test-display-name",
+		},
+		{
+			name:            "all env vars",
+			jobSet:          withManagedXprofEnvs(&v1alpha2.JobSet{}),
+			wantDisplayName: "test-display-name",
+			wantRunGroup:    "test-run-group",
+			wantGCSPath:     "gs://test-bucket/xmc-123-1-timestamp",
+		},
+		{
+			name: "multiple containers - early return",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{
+							Name: "worker",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Env: []corev1.EnvVar{
+														{Name: constants.XmcEnvVarManagedXprofDisplayName, Value: "test-display-name"},
+													},
+												},
+												{
+													Env: []corev1.EnvVar{
+														{Name: constants.XmcEnvVarManagedXprofRunGroup, Value: "test-run-group"},
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantDisplayName: "test-display-name",
+			wantRunGroup:    "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotDisplayName, gotRunGroup, gotGCSPath := getManagedXprofEnvs(tc.jobSet)
+			if gotDisplayName != tc.wantDisplayName {
+				t.Errorf("getManagedXprofEnvs() gotDisplayName = %q, want %q", gotDisplayName, tc.wantDisplayName)
+			}
+			if gotRunGroup != tc.wantRunGroup {
+				t.Errorf("getManagedXprofEnvs() gotRunGroup = %q, want %q", gotRunGroup, tc.wantRunGroup)
+			}
+			if gotGCSPath != tc.wantGCSPath {
+				t.Errorf("getManagedXprofEnvs() gotGCSPath = %q, want %q", gotGCSPath, tc.wantGCSPath)
+			}
+		})
+	}
+}
+
+func TestConstructMLRunID(t *testing.T) {
+	creationTime := time.UnixMilli(1680000000000)
+	tests := []struct {
+		name        string
+		project     string
+		location    string
+		clusterName string
+		xid         int64
+		wid         int64
+		eid         int64
+		want        string
+	}{
+		{
+			name:        "normal lowercase fields",
+			project:     "proj-a",
+			location:    "us-central1",
+			clusterName: "cluster-1",
+			xid:         123,
+			wid:         456,
+			eid:         789,
+			want:        "xmc-proj-a-us-central1-cluster-1-123-456-789-1680000000000",
+		},
+		{
+			name:        "uppercase and special characters requiring sanitization",
+			project:     "My_Project!",
+			location:    "US-Central1",
+			clusterName: "Cluster#2",
+			xid:         1,
+			wid:         2,
+			eid:         3,
+			want:        "xmc-my-project-us-central1-cluster-2-1-2-3-1680000000000",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ConstructMLRunID(tc.project, tc.location, tc.clusterName, tc.xid, tc.wid, tc.eid, creationTime)
+			if got != tc.want {
+				t.Errorf("ConstructMLRunID() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEnsureMLRunCreated(t *testing.T) {
+	now := time.UnixMilli(1680000000000)
+	jobSet := &v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test-jobset",
+			Namespace:         "test-ns",
+			CreationTimestamp: metav1.NewTime(now),
+		},
+	}
+
+	tests := []struct {
+		name       string
+		client     MLRunCreator
+		jobSet     *v1alpha2.JobSet
+		wantCalls  int
+		wantID     string
+		wantGroup  string
+		wantBucket string
+	}{
+		{
+			name:      "nil client",
+			client:    nil,
+			jobSet:    jobSet,
+			wantCalls: 0,
+		},
+		{
+			name:      "nil jobSet",
+			client:    &mockMLRunCreator{},
+			jobSet:    nil,
+			wantCalls: 0,
+		},
+		{
+			name:       "successful creation with correct options",
+			client:     &mockMLRunCreator{retRes: map[string]any{"name": "op-123", "url": "https://mlrun/op-123"}},
+			jobSet:     jobSet,
+			wantCalls:  1,
+			wantID:     "xmc-test-proj-us-central1-cluster-a-10-20-30-1680000000000",
+			wantGroup:  "group-abc",
+			wantBucket: "gs://bucket/folder",
+		},
+		{
+			name:       "creation error handled without panic",
+			client:     &mockMLRunCreator{retErr: errors.New("api error")},
+			jobSet:     jobSet,
+			wantCalls:  1,
+			wantID:     "xmc-test-proj-us-central1-cluster-a-10-20-30-1680000000000",
+			wantGroup:  "group-abc",
+			wantBucket: "gs://bucket/folder",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mock, ok := tc.client.(*mockMLRunCreator)
+			r := &Reconciler{
+				Project:     "test-proj",
+				Location:    "us-central1",
+				ClusterName: "cluster-a",
+				MLRunClient: tc.client,
+			}
+			_ = r.ensureMLRunCreated(context.Background(), tc.jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
+
+			if !ok && tc.wantCalls > 0 {
+				t.Fatalf("unexpected non-mock client")
+			}
+			if ok {
+				if mock.createCalls != tc.wantCalls {
+					t.Errorf("createCalls = %d, want %d", mock.createCalls, tc.wantCalls)
+				}
+				if tc.wantCalls > 0 {
+					if mock.lastID != tc.wantID {
+						t.Errorf("lastID = %q, want %q", mock.lastID, tc.wantID)
+					}
+					if mock.lastPhase != "ACTIVE" {
+						t.Errorf("lastPhase = %q, want %q", mock.lastPhase, "ACTIVE")
+					}
+					if mock.lastOpts.RunGroup != tc.wantGroup {
+						t.Errorf("RunGroup = %q, want %q", mock.lastOpts.RunGroup, tc.wantGroup)
+					}
+					if gotPath := mock.lastOpts.Artifacts["gcs_path"]; gotPath != tc.wantBucket {
+						t.Errorf("gcs_path artifact = %q, want %q", gotPath, tc.wantBucket)
+					}
+					wantCluster := "projects/test-proj/locations/us-central1/clusters/cluster-a"
+					if mock.lastOpts.WorkloadDetails.Cluster != wantCluster {
+						t.Errorf("WorkloadDetails.Cluster = %q, want %q", mock.lastOpts.WorkloadDetails.Cluster, wantCluster)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestCheckWorkUnitStatusAndMLRun(t *testing.T) {
+	tests := []struct {
+		name     string
+		storage  ReconcilerStorage
+		wantURL  string
+		wantSkip bool
+	}{
+		{
+			name:     "nil storage",
+			storage:  nil,
+			wantURL:  "",
+			wantSkip: false,
+		},
+		{
+			name:     "fetch error returns empty and false",
+			storage:  &mockStorageUpdater{fetchErr: errors.New("fetch error")},
+			wantURL:  "",
+			wantSkip: false,
+		},
+		{
+			name: "running execution with mlrun url",
+			storage: &mockStorageUpdater{
+				fetchRes: &spb.WorkUnitExecution{
+					Status: &spb.WorkUnitStatus{State: spb.WorkUnitStatus_RUNNING},
+					Metadata: &spb.WorkUnitExecutionMetadata{
+						MlrunUrl: "https://mlrun.example.com/123",
+					},
+				},
+			},
+			wantURL:  "https://mlrun.example.com/123",
+			wantSkip: false,
+		},
+		{
+			name: "terminal status sets skip to true",
+			storage: &mockStorageUpdater{
+				fetchRes: &spb.WorkUnitExecution{
+					Status: &spb.WorkUnitStatus{State: spb.WorkUnitStatus_COMPLETED},
+					Metadata: &spb.WorkUnitExecutionMetadata{
+						MlrunUrl: "https://mlrun.example.com/123",
+					},
+				},
+			},
+			wantURL:  "https://mlrun.example.com/123",
+			wantSkip: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &Reconciler{Storage: tc.storage}
+			gotURL, gotSkip := r.checkWorkUnitStatusAndMLRun(context.Background(), 1, 1, 1)
+			if gotURL != tc.wantURL || gotSkip != tc.wantSkip {
+				t.Errorf("checkWorkUnitStatusAndMLRun() = (%q, %v), want (%q, %v)", gotURL, gotSkip, tc.wantURL, tc.wantSkip)
+			}
+		})
+	}
+}
+
+func TestParseExistingMLRunID(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "no match", text: "some other error", want: ""},
+		{name: "match", text: `already exists: projects/p/locations/l/machineLearningRuns/xmc-abc-123`, want: "xmc-abc-123"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := parseExistingMLRunID(tc.text); got != tc.want {
+				t.Errorf("parseExistingMLRunID(%q) = %q, want %q", tc.text, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsMLRunAlreadyExistsError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "other error", err: errors.New("deadline exceeded"), want: false},
+		{name: "http 409 conflict", err: &hypercomputeclient.APIError{StatusCode: http.StatusConflict, Body: "ALREADY_EXISTS"}, want: true},
+		{name: "http other status", err: &hypercomputeclient.APIError{StatusCode: http.StatusInternalServerError}, want: false},
+		{name: "lro already exists", err: &hypercomputeclient.OperationError{Code: hypercomputeclient.CodeAlreadyExists}, want: true},
+		{name: "lro other code", err: &hypercomputeclient.OperationError{Code: 3}, want: false},
+		{name: "wrapped http 409", err: fmt.Errorf("create failed: %w", &hypercomputeclient.APIError{StatusCode: http.StatusConflict}), want: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isMLRunAlreadyExistsError(tc.err); got != tc.want {
+				t.Errorf("isMLRunAlreadyExistsError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMLRunOwnedByXManager(t *testing.T) {
+	tests := []struct {
+		name  string
+		mlRun map[string]any
+		want  bool
+	}{
+		{name: "no labels", mlRun: map[string]any{}, want: false},
+		{name: "other owner", mlRun: map[string]any{"labels": map[string]any{"created-by": "someone"}}, want: false},
+		{name: "owned", mlRun: map[string]any{"labels": map[string]any{"created-by": createdByXManagerLabelValue}}, want: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mlRunOwnedByXManager(tc.mlRun); got != tc.want {
+				t.Errorf("mlRunOwnedByXManager(%v) = %v, want %v", tc.mlRun, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestUpsertExistingMLRun(t *testing.T) {
+	// The conflict body does not name a run, so upsert falls back to our own id.
+	conflictErr := &hypercomputeclient.APIError{StatusCode: http.StatusConflict, Body: "ALREADY_EXISTS"}
+	tests := []struct {
+		name            string
+		client          *mockMLRunCreator
+		wantURLContains string
+		wantGetCalls    int
+		wantUpdateCalls int
+	}{
+		{
+			name:            "already exists and owned is idempotent success",
+			client:          &mockMLRunCreator{getRes: map[string]any{"labels": map[string]any{"created-by": createdByXManagerLabelValue}}},
+			wantURLContains: "console.cloud.google.com",
+			wantGetCalls:    1,
+			wantUpdateCalls: 0,
+		},
+		{
+			name: "already exists and foreign is updated",
+			client: &mockMLRunCreator{
+				getRes:    map[string]any{"labels": map[string]any{"created-by": "someone-else"}},
+				updateRes: map[string]any{"url": "https://mlrun/updated"},
+			},
+			wantURLContains: "https://mlrun/updated",
+			wantGetCalls:    1,
+			wantUpdateCalls: 1,
+		},
+		{
+			name:            "get failure is treated as success via console url",
+			client:          &mockMLRunCreator{getErr: errors.New("not found")},
+			wantURLContains: "console.cloud.google.com",
+			wantGetCalls:    1,
+			wantUpdateCalls: 0,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &Reconciler{Project: "proj", Location: "us-central1", ClusterName: "clus", MLRunClient: tc.client}
+			got := r.upsertExistingMLRun(context.Background(), conflictErr, "xmc-fallback-id", "disp", "grp", buildMLRunLabels(1, 2), map[string]string{"gcs_path": "gs://b/o"})
+			if !strings.Contains(got, tc.wantURLContains) {
+				t.Errorf("upsertExistingMLRun() = %q, want containing %q", got, tc.wantURLContains)
+			}
+			if tc.client.getCalls != tc.wantGetCalls {
+				t.Errorf("getCalls = %d, want %d", tc.client.getCalls, tc.wantGetCalls)
+			}
+			if tc.client.updateCalls != tc.wantUpdateCalls {
+				t.Errorf("updateCalls = %d, want %d", tc.client.updateCalls, tc.wantUpdateCalls)
+			}
+		})
+	}
+}
+
+func managedXprofArtifact(displayName, runGroup string) *spb.Artifact {
+	return &spb.Artifact{
+		Payload: &spb.ArtifactPayload{
+			Type: &spb.ArtifactPayload_ManagedXprof{
+				ManagedXprof: &spb.ManagedXprofArtifact{DisplayName: displayName, RunGroup: runGroup},
+			},
+		},
+	}
+}
+
+// managedXprofWant is the expected (displayName, runGroup) of a ManagedXprof artifact.
+type managedXprofWant struct {
+	display, runGroup string
+}
+
+func TestManagedXprofMisconfigured(t *testing.T) {
+	tests := []struct {
+		name        string
+		displayName string
+		runGroup    string
+		gcsPath     string
+		want        bool
+	}{
+		{name: "standard jobset all empty", want: false},
+		{name: "fully configured", displayName: "d", runGroup: "g", gcsPath: "gs://b", want: false},
+		{name: "gcsPath set metadata missing is transient", gcsPath: "gs://b", want: false},
+		{name: "gcsPath set only run group missing is transient", displayName: "d", gcsPath: "gs://b", want: false},
+		{name: "metadata present but no gcsPath is misconfig", displayName: "d", runGroup: "g", want: true},
+		{name: "only display no gcsPath not enough signal", displayName: "d", want: false},
+		{name: "only run group no gcsPath not enough signal", runGroup: "g", want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := managedXprofMisconfigured(tc.displayName, tc.runGroup, tc.gcsPath); got != tc.want {
+				t.Errorf("managedXprofMisconfigured(%q,%q,%q) = %v, want %v", tc.displayName, tc.runGroup, tc.gcsPath, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCollectManagedXprofArtifacts(t *testing.T) {
+	tests := []struct {
+		name      string
+		artifacts []*spb.Artifact
+		want      []managedXprofWant
+	}{
+		{name: "nil list", artifacts: nil},
+		{name: "empty list", artifacts: []*spb.Artifact{}},
+		{name: "no managed xprof payload", artifacts: []*spb.Artifact{{}}},
+		{
+			name:      "single",
+			artifacts: []*spb.Artifact{managedXprofArtifact("disp", "grp")},
+			want:      []managedXprofWant{{"disp", "grp"}},
+		},
+		{
+			name:      "collects all in order, skipping non-managed",
+			artifacts: []*spb.Artifact{{}, managedXprofArtifact("d1", "g1"), managedXprofArtifact("d2", "g2")},
+			want:      []managedXprofWant{{"d1", "g1"}, {"d2", "g2"}},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := collectManagedXprofArtifacts(tc.artifacts)
+			if len(got) != len(tc.want) {
+				t.Fatalf("collectManagedXprofArtifacts() returned %d items, want %d", len(got), len(tc.want))
+			}
+			for i, w := range tc.want {
+				if got[i].GetDisplayName() != w.display || got[i].GetRunGroup() != w.runGroup {
+					t.Errorf("item %d = (%q,%q), want (%q,%q)", i, got[i].GetDisplayName(), got[i].GetRunGroup(), w.display, w.runGroup)
+				}
+			}
+		})
+	}
+}
+
+func TestLookupManagedXprofArtifact(t *testing.T) {
+	tests := []struct {
+		name         string
+		storage      ReconcilerStorage
+		wantDisplay  string
+		wantRunGroup string
+		// wantCalls, when > 0, asserts the number of ListArtifacts calls, verifying
+		// early termination (stop once found) and the repeating-cursor loop guard.
+		wantCalls int
+	}{
+		{name: "nil storage", storage: nil},
+		{name: "list error", storage: &mockStorageUpdater{listArtifactsErr: errors.New("boom")}},
+		{name: "no artifact", storage: &mockStorageUpdater{}},
+		{
+			name:         "artifact present",
+			storage:      &mockStorageUpdater{listArtifactsPages: [][]*spb.Artifact{{managedXprofArtifact("disp", "grp")}}},
+			wantDisplay:  "disp",
+			wantRunGroup: "grp",
+		},
+		{
+			name:         "multiple artifacts uses first",
+			storage:      &mockStorageUpdater{listArtifactsPages: [][]*spb.Artifact{{managedXprofArtifact("d1", "g1"), managedXprofArtifact("d2", "g2")}}},
+			wantDisplay:  "d1",
+			wantRunGroup: "g1",
+		},
+		{
+			name:         "paginates across pages",
+			storage:      &mockStorageUpdater{listArtifactsPages: [][]*spb.Artifact{{}, {managedXprofArtifact("paged", "grp")}}},
+			wantDisplay:  "paged",
+			wantRunGroup: "grp",
+		},
+		{
+			// A match on the first page must short-circuit paging: only the first
+			// artifact is used, so paging further is wasted work on the hot path.
+			name:         "stops paging once found",
+			storage:      &mockStorageUpdater{listArtifactsPages: [][]*spb.Artifact{{managedXprofArtifact("first", "g1")}, {managedXprofArtifact("second", "g2")}}},
+			wantDisplay:  "first",
+			wantRunGroup: "g1",
+			wantCalls:    1,
+		},
+		{
+			// A non-advancing cursor must not loop forever; the guard breaks when
+			// nextToken == pageToken. The first call advances "" -> "stuck", the
+			// second sees "stuck" == "stuck" and stops.
+			name:      "repeating cursor terminates",
+			storage:   &mockStorageUpdater{listArtifactsStuckToken: true},
+			wantCalls: 2,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &Reconciler{Storage: tc.storage}
+			gotDisplay, gotRunGroup := r.lookupManagedXprofArtifact(context.Background(), 1, 2)
+			if gotDisplay != tc.wantDisplay || gotRunGroup != tc.wantRunGroup {
+				t.Errorf("got (%q,%q), want (%q,%q)", gotDisplay, gotRunGroup, tc.wantDisplay, tc.wantRunGroup)
+			}
+			if tc.wantCalls > 0 {
+				m, ok := tc.storage.(*mockStorageUpdater)
+				if !ok {
+					t.Fatalf("wantCalls set but storage is %T, not *mockStorageUpdater", tc.storage)
+				}
+				if m.listArtifactsCalls != tc.wantCalls {
+					t.Errorf("ListArtifacts called %d times, want %d", m.listArtifactsCalls, tc.wantCalls)
+				}
+			}
+		})
+	}
+}
+
+func TestIsStaleExecutionForMLRun(t *testing.T) {
+	tests := []struct {
+		name          string
+		executionName string
+		reconciledEID int64
+		want          bool
+	}{
+		{
+			name:          "same eid is not stale",
+			executionName: "experiments/1/workUnits/2/executions/3",
+			reconciledEID: 3,
+			want:          false,
+		},
+		{
+			name:          "different eid is stale",
+			executionName: "experiments/1/workUnits/2/executions/3",
+			reconciledEID: 4,
+			want:          true,
+		},
+		{
+			name:          "unparseable name is not stale",
+			executionName: "garbage",
+			reconciledEID: 3,
+			want:          false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isStaleExecutionForMLRun(tc.executionName, tc.reconciledEID); got != tc.want {
+				t.Errorf("isStaleExecutionForMLRun(%q, %d) = %v, want %v", tc.executionName, tc.reconciledEID, got, tc.want)
+			}
+		})
+	}
 }

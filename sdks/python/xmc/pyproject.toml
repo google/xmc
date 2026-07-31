@@ -43,6 +43,10 @@ dependencies = []
 keras = [
     "keras>=3.0.0",
 ]
+lightning = [
+    "pytorch-lightning>=2.0.0",
+]
+
 
 [tool.setuptools]
 packages = ["xmc", "xmc.integrations"]

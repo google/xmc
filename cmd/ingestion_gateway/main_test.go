@@ -174,7 +174,7 @@ func TestValidateTopicTopology(t *testing.T) {
 
 func TestStartHTTPServerWithProducer(t *testing.T) {
 	mp := NewMockProducer()
-	srv := startHTTPServer(context.Background(), "0", "xmc-metrics", mp)
+	srv := startHTTPServer(context.Background(), "0", "xmc-metrics", nil, mp)
 	defer srv.Close()
 
 	if srv == nil {

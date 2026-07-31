@@ -20,10 +20,8 @@
       [availableResourceTypes]="availableResourceTypes()"
       (findMatchingQueues)="onFindMatchingQueues($event)"
     />
-  }
-  <div class="rod-split-container">
-    <div class="rod-main-content">
-      @if (activeTab() === TAB_SMART_FINDER) {
+    <div class="rod-split-container">
+      <div class="rod-main-content">
         <xmc-rod-queue-list
           [queues]="filteredQueues()"
           [selectedQueue]="selectedQueue()"
@@ -31,7 +29,10 @@
           [(velocityPeriod)]="velocityPeriod"
           (selectQueue)="onQueueSelect($event)"
         />
-      }
+      </div>
+      <div class="jobs-side-pane">
+        <xmc-queue-jobs-table [queueName]="selectedQueue()"></xmc-queue-jobs-table>
+      </div>
     </div>
-  </div>
+  }
 </div>

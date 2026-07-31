@@ -17,6 +17,7 @@ package k8sclient
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/k8s_io/client_go/v/v0_23/dynamic/dynamic"
@@ -30,6 +31,7 @@ import (
 	"task/go/status"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/preconditions_validator/preconditionsvalidator"
+	constants "xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
@@ -286,4 +288,12 @@ func createFailedOperationUpdate(xid int64, wid int64, oid string, jobSetErr err
 			Paths: []string{"done", "error"},
 		},
 	}
+}
+
+// ManagedXProfGCSBucket returns the cluster-wide managed-xprof GCS bucket path.
+// The bucket is provided to the actuator via the MANAGED_XPROF_GCS_PATH env var,
+// which the Helm chart sources from the managed-xprof-gcs-config ConfigMap. It
+// returns an empty string when managed xprof is not configured for the cluster.
+func (c *Client) ManagedXProfGCSBucket(ctx context.Context) (string, error) {
+	return os.Getenv(constants.XmcEnvVarManagedXprofGCSPath), nil
 }

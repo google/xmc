@@ -14,6 +14,7 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 
+import { QueueJobsTableHarness } from '../side_panel/contents/queue_jobs_table/queue_jobs_table_harness';
 import { QueueListHarness } from './components/queue_list/queue_list_harness';
 import { SmartResourceFinderHarness } from './components/smart_resource_finder/smart_resource_finder_harness';
 import { RodSubnavTabsHarness } from './components/subnav_tabs/subnav_tabs_harness';
@@ -35,5 +36,10 @@ export class ResourceDashboardHarness extends ComponentHarness {
   /** Gets the queue list harness if present. */
   async getQueueList(): Promise<QueueListHarness | null> {
     return this.locatorForOptional(QueueListHarness)();
+  }
+
+  /** Gets the queue jobs table harness if present. */
+  async getQueueJobsTable(): Promise<QueueJobsTableHarness | null> {
+    return this.locatorForOptional(QueueJobsTableHarness)();
   }
 }

@@ -361,14 +361,46 @@ func TestFillWorkUnitNullValues(t *testing.T) {
 }
 
 func TestFillArtifactNullValues(t *testing.T) {
-	art := &essmsgpb.Artifact{}
-	got := FillArtifactNullValues(art)
-	want := &essmsgpb.Artifact{
-		Tags: []string{},
-	}
-	if diff := cmp.Diff(got, want, protocmp.Transform()); diff != "" {
-		t.Errorf("FillArtifactNullValues(%v) returned unexpected diff (-got +want):\n%s", art, diff)
-	}
+	t.Run("basic", func(t *testing.T) {
+		art := &essmsgpb.Artifact{}
+		got := FillArtifactNullValues(art)
+		want := &essmsgpb.Artifact{
+			Tags: []string{},
+			Url:  &essmsgpb.Url{},
+		}
+		if diff := cmp.Diff(got, want, protocmp.Transform()); diff != "" {
+			t.Errorf("FillArtifactNullValues(%v) returned unexpected diff (-got +want):\n%s", art, diff)
+		}
+	})
+
+	t.Run("managed_xprof_keeps_unspecified_phase", func(t *testing.T) {
+		art := &essmsgpb.Artifact{
+			Payload: &essmsgpb.ArtifactPayload{
+				Type: &essmsgpb.ArtifactPayload_ManagedXprof{
+					ManagedXprof: &essmsgpb.ManagedXprofArtifact{
+						DisplayName: "display",
+						RunGroup:    "group",
+					},
+				},
+			},
+		}
+		got := FillArtifactNullValues(art)
+		want := &essmsgpb.Artifact{
+			Tags: []string{},
+			Url:  &essmsgpb.Url{},
+			Payload: &essmsgpb.ArtifactPayload{
+				Type: &essmsgpb.ArtifactPayload_ManagedXprof{
+					ManagedXprof: &essmsgpb.ManagedXprofArtifact{
+						DisplayName: "display",
+						RunGroup:    "group",
+					},
+				},
+			},
+		}
+		if diff := cmp.Diff(got, want, protocmp.Transform()); diff != "" {
+			t.Errorf("FillArtifactNullValues(%v) returned unexpected diff (-got +want):\n%s", art, diff)
+		}
+	})
 }
 
 func TestFillXidEntryNullValues(t *testing.T) {
@@ -1486,18 +1518,41 @@ func TestValidateCreateArtifactRequest(t *testing.T) {
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
-			name: "nil_url",
+			name: "nil_url_non_managed_xprof",
 			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
 				r.Artifact.Url = nil
 			}),
 			wantErr: status.ErrInvalidArgument,
 		},
 		{
-			name: "empty_url_url",
+			name: "empty_url_non_managed_xprof",
 			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
 				r.Artifact.Url = &essmsgpb.Url{}
 			}),
 			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			// EXECUTION phase alone must NOT exempt the URL requirement; only a
+			// ManagedXprof payload does.
+			name: "execution_phase_does_not_exempt_url",
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.LifecyclePhase = essmsgpb.Artifact_EXECUTION
+				r.Artifact.Url = nil
+			}),
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "managed_xprof_no_url_ok",
+			req: proto.Modify(validReq, func(r *essapipb.CreateArtifactRequest) {
+				r.Artifact.Url = nil
+				r.Artifact.Payload.Type = &essmsgpb.ArtifactPayload_ManagedXprof{
+					ManagedXprof: &essmsgpb.ManagedXprofArtifact{
+						DisplayName: "display_name",
+						RunGroup:    "run_group",
+					},
+				}
+			}),
+			wantErr: nil,
 		},
 		{
 			name: "url_url_too_long",

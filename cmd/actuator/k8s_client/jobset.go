@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	batchv1 "golang/k8s_io/api/v/v0_23/batch/v1/v1"
@@ -195,25 +196,12 @@ func (c *Client) restartJobSet(ctx context.Context, workUnit *esspb.WorkUnit, ta
 
 	jobSetUnstructured, err := c.getJobSetByTargetAndNamespace(ctx, target, namespace)
 	if err == nil && jobSetUnstructured != nil {
-		ctx = logging.WithJobSetName(ctx, jobSetUnstructured.GetName(), jobSetUnstructured.GetLabels())
-
-		valid, err := c.preconditionsValidator.IsActuationRequestValid(ctx, target, operationTime, jobSetUnstructured)
+		shouldCreate, err := c.validateAndDeleteJobSetForRestart(ctx, jobSetUnstructured, target, namespace, operationTime)
 		if err != nil {
-			logging.Warn(ctx, "Failed to validate restartJobSet request", "error", err)
 			return err
 		}
-		if !valid {
-			logging.Warn(ctx, "Discarding restart request")
+		if !shouldCreate {
 			return nil
-		}
-
-		deleted, err := c.deleteJobSet(ctx, target, namespace, operationTime)
-		if err != nil {
-			logging.Warn(ctx, "Failed to delete JobSet during restart", "error", err)
-		}
-
-		if !deleted {
-			logging.Warn(ctx, "JobSet not deleted during restart, proceeding with creation")
 		}
 	}
 
@@ -224,8 +212,31 @@ func (c *Client) restartJobSet(ctx context.Context, workUnit *esspb.WorkUnit, ta
 		return fmt.Errorf("failed to create JobSet %q in Kubernetes during restart: %w", buildJobSetName(target), err)
 	}
 	logging.Info(ctx, "Restarted JobSet", "target", target)
-
 	return nil
+}
+
+func (c *Client) validateAndDeleteJobSetForRestart(ctx context.Context, jobSetUnstructured *unstructured.Unstructured, target, namespace string, operationTime time.Time) (bool, error) {
+	ctx = logging.WithJobSetName(ctx, jobSetUnstructured.GetName(), jobSetUnstructured.GetLabels())
+
+	valid, err := c.preconditionsValidator.IsActuationRequestValid(ctx, target, operationTime, jobSetUnstructured)
+	if err != nil {
+		logging.Warn(ctx, "Failed to validate restartJobSet request", "error", err)
+		return false, err
+	}
+	if !valid {
+		logging.Warn(ctx, "Discarding restart request")
+		return false, nil
+	}
+
+	deleted, err := c.deleteJobSet(ctx, target, namespace, operationTime)
+	if err != nil {
+		logging.Warn(ctx, "Failed to delete JobSet during restart", "error", err)
+	}
+
+	if !deleted {
+		logging.Warn(ctx, "JobSet not deleted during restart, proceeding with creation")
+	}
+	return true, nil
 }
 
 func (c *Client) updateJobSetPriority(ctx context.Context, target string, priorities Priorities) error {
@@ -339,6 +350,27 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 				},
 			},
 		},
+	}
+}
+
+// injectManagedXprofGCSEnvVars appends the managed-xprof GCS destination env vars to
+// every container of the replicated job so all workloads in the pod know where to
+// write xprof output, not just the primary container. No-op when no bucket was
+// resolved.
+func injectManagedXprofGCSEnvVars(rj *jobsetv1alpha2.ReplicatedJob, xprofBucketURL, xprofObjectPath string) {
+	if xprofBucketURL == "" && xprofObjectPath == "" {
+		return
+	}
+	containers := rj.Template.Spec.Template.Spec.Containers
+	for i := range containers {
+		// Index into the slice so appends write back to the JobSet in place.
+		container := &containers[i]
+		if xprofBucketURL != "" {
+			container.Env = append(container.Env, corev1.EnvVar{Name: constants.XmcEnvVarManagedXprofGCSBucket, Value: xprofBucketURL})
+		}
+		if xprofObjectPath != "" {
+			container.Env = append(container.Env, corev1.EnvVar{Name: constants.XmcEnvVarManagedXprofGCSObjectFolder, Value: xprofObjectPath})
+		}
 	}
 }
 
@@ -465,10 +497,25 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		constants.AutoscalerSafeToEvictAnnotation: "false",
 	}
 
+	// Inject the managed-xprof GCS destination whenever the cluster configures a
+	// managed-xprof GCS bucket. This is intentionally decoupled from the ManagedXprof
+	// artifact: the workload only needs to know where to write xprof output,
+	// regardless of whether or when the artifact is attached.
+	var xprofBucketURL string
+	var xprofObjectPath string
+	if bucket, bucketErr := c.ManagedXProfGCSBucket(ctx); bucketErr != nil {
+		logging.Warn(ctx, "Failed to resolve managed-xprof GCS path via Actuator", "error", bucketErr)
+	} else if bucket != "" {
+		xprofBucketURL = bucket
+		xprofObjectPath = fmt.Sprintf("%s/xmc-%s-%s-%s", strings.TrimSuffix(bucket, "/"), xid, wid, strconv.FormatInt(operationTime.Unix(), 10))
+	}
+
 	var replicatedJobs []jobsetv1alpha2.ReplicatedJob
 	if workUnit.GetExecutable().GetJobset() != nil {
 		for _, job := range workUnit.GetExecutable().GetJobset().GetJobs() {
-			replicatedJobs = append(replicatedJobs, c.k8sJobToReplicatedJob(ctx, job, jobLabels, jobSetAnnotations))
+			rj := c.k8sJobToReplicatedJob(ctx, job, jobLabels, jobSetAnnotations)
+			injectManagedXprofGCSEnvVars(&rj, xprofBucketURL, xprofObjectPath)
+			replicatedJobs = append(replicatedJobs, rj)
 		}
 	}
 
