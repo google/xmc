@@ -1412,6 +1412,146 @@ func TestInjectOnJobSetCreation_WithInitContainers(t *testing.T) {
 	}
 }
 
+func TestInjectOnJobSetCreation_WithInitContainersAndSidecars(t *testing.T) {
+	g := &GKE{}
+	workUnit := &epb.WorkUnit{
+		Executable: &epb.Executable{
+			Type: &epb.Executable_Jobset{
+				Jobset: &epb.JobSetExecutable{
+					Jobs: []*epb.KubernetesJob{
+						{
+							Name: "job-1",
+							Spec: &epb.ExecutableSpec{
+								Resources: &epb.ResourceSet{
+									Resources: &epb.ResourceSet_CpuResources{
+										CpuResources: &epb.CpuResources{
+											CpuMillicores: 1000,
+											MemoryBytes:   1024,
+										},
+									},
+								},
+							},
+							InitContainers: []*epb.ExecutableSpec{
+								{
+									Resources: &epb.ResourceSet{
+										Resources: &epb.ResourceSet_CpuResources{
+											CpuResources: &epb.CpuResources{
+												CpuMillicores: 300,
+												MemoryBytes:   512,
+											},
+										},
+									},
+								},
+								{
+									Resources: &epb.ResourceSet{
+										Resources: &epb.ResourceSet_CpuResources{
+											CpuResources: &epb.CpuResources{
+												CpuMillicores: 400,
+												MemoryBytes:   1024,
+											},
+										},
+									},
+								},
+							},
+							Sidecars: []*epb.ExecutableSpec{
+								{
+									Resources: &epb.ResourceSet{
+										Resources: &epb.ResourceSet_CpuResources{
+											CpuResources: &epb.CpuResources{
+												CpuMillicores: 200,
+												MemoryBytes:   256,
+											},
+										},
+									},
+								},
+								{
+									Resources: &epb.ResourceSet{
+										Resources: &epb.ResourceSet_CpuResources{
+											CpuResources: &epb.CpuResources{
+												CpuMillicores: 500,
+												MemoryBytes:   2048,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	jobSet := &jobsetv1alpha2.JobSet{
+		Spec: jobsetv1alpha2.JobSetSpec{
+			ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+				{
+					Name: "job-1",
+					Template: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers: []corev1.Container{{Name: "main"}},
+									InitContainers: []corev1.Container{
+										{Name: "init-1"},
+										{Name: "init-2"},
+										{Name: "sidecar-1"},
+										{Name: "sidecar-2"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := g.InjectOnJobSetCreation(context.Background(), workUnit, jobSet)
+	if err != nil {
+		t.Fatalf("InjectOnJobSetCreation() returned error: %v", err)
+	}
+
+	containers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers
+	if len(containers) != 1 {
+		t.Fatalf("Expected 1 primary container, got %d", len(containers))
+	}
+	if containers[0].Resources.Requests[corev1.ResourceCPU] != resource.MustParse("1000m") {
+		t.Errorf("Primary container CPU request mismatch: got %v", containers[0].Resources.Requests[corev1.ResourceCPU])
+	}
+	if containers[0].Resources.Requests[corev1.ResourceMemory] != resource.MustParse("1024") {
+		t.Errorf("Primary container Memory request mismatch: got %v", containers[0].Resources.Requests[corev1.ResourceMemory])
+	}
+
+	initContainers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.InitContainers
+	if len(initContainers) != 4 {
+		t.Fatalf("Expected 4 init containers (2 init + 2 sidecars), got %d", len(initContainers))
+	}
+
+	expected := []struct {
+		name       string
+		wantCPU    string
+		wantMemory string
+	}{
+		{name: "init-1", wantCPU: "300m", wantMemory: "512"},
+		{name: "init-2", wantCPU: "400m", wantMemory: "1024"},
+		{name: "sidecar-1", wantCPU: "200m", wantMemory: "256"},
+		{name: "sidecar-2", wantCPU: "500m", wantMemory: "2048"},
+	}
+
+	for i, tt := range expected {
+		if initContainers[i].Name != tt.name {
+			t.Errorf("Init container %d name mismatch: want %s, got %s", i, tt.name, initContainers[i].Name)
+		}
+		if initContainers[i].Resources.Requests[corev1.ResourceCPU] != resource.MustParse(tt.wantCPU) {
+			t.Errorf("Init container %d (%s) CPU request mismatch: want %s, got %v", i, tt.name, tt.wantCPU, initContainers[i].Resources.Requests[corev1.ResourceCPU])
+		}
+		if initContainers[i].Resources.Requests[corev1.ResourceMemory] != resource.MustParse(tt.wantMemory) {
+			t.Errorf("Init container %d (%s) Memory request mismatch: want %s, got %v", i, tt.name, tt.wantMemory, initContainers[i].Resources.Requests[corev1.ResourceMemory])
+		}
+	}
+}
+
 func TestAnnotateContainersMismatchError(t *testing.T) {
 	replicatedJob := &jobsetv1alpha2.ReplicatedJob{
 		Template: batchv1.JobTemplateSpec{
