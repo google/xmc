@@ -13,7 +13,8 @@
 -- limitations under the License.
 
 -- 1. Physical MergeTree Table for storing XMC metrics.
--- Matches Spanner Int64 ID types and exact 7-column sorting key order per b/535543801 DoD.
+-- Matches Spanner Int64 ID types and 7-column sorting key order per b/535543801 DoD.
+-- Primary Key index (xid, metric_name, timestamp) enables fast time-range pruning in memory.
 -- Partitioned by month (toYYYYMM(timestamp)) for efficient data retention and query pruning.
 CREATE TABLE IF NOT EXISTS xmc_metrics
 (
@@ -29,11 +30,13 @@ CREATE TABLE IF NOT EXISTS xmc_metrics
 )
 ENGINE = MergeTree()
 PARTITION BY toYYYYMM(timestamp)
-ORDER BY (xid, metric_name, work_unit_id, execution_id, replica_id, step, timestamp);
+PRIMARY KEY (xid, metric_name, timestamp)
+ORDER BY (xid, metric_name, timestamp, work_unit_id, execution_id, replica_id, step);
 
 -- 2. Virtual Queue Table reading native Protobuf binary records directly from Redpanda / Kafka.
 -- Uses format 'ProtobufSingle' with schema 'metrics.proto:Metric' for single non-length-prefixed proto messages per Kafka record.
 -- Parameterized via ClickHouse macros with default fallbacks for multi-environment portability.
+-- Configured with kafka_skip_broken_messages = 100 for fault tolerance against malformed payloads.
 -- Note: 'metrics.proto' must be mounted at /var/lib/clickhouse/format_schemas/metrics.proto.
 CREATE TABLE IF NOT EXISTS xmc_metrics_queue
 (
@@ -54,7 +57,8 @@ SETTINGS
     kafka_format = 'ProtobufSingle',
     format_schema = 'metrics.proto:Metric',
     kafka_num_consumers = 1,
-    stream_flush_interval_ms = 1000;
+    stream_flush_interval_ms = 1000,
+    kafka_skip_broken_messages = 100;
 
 -- 3. Materialized View to parse Protobuf fields, handle defaults via IF expressions,
 -- sanitize microsecond epoch timestamps (preventing partition explosions from bad client timestamps),
