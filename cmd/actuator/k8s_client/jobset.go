@@ -361,20 +361,16 @@ func injectManagedXprofGCSEnvVars(rj *jobsetv1alpha2.ReplicatedJob, xprofBucketU
 	if xprofBucketURL == "" && xprofObjectPath == "" {
 		return
 	}
-	containers := rj.Template.Spec.Template.Spec.Containers
+	injectManagedXprofGCSEnvVarsToContainers(rj.Template.Spec.Template.Spec.Containers, xprofBucketURL, xprofObjectPath)
+	injectManagedXprofGCSEnvVarsToContainers(rj.Template.Spec.Template.Spec.InitContainers, xprofBucketURL, xprofObjectPath)
+}
+
+// injectManagedXprofGCSEnvVarsToContainers appends the managed-xprof GCS destination
+// env vars to each container in the provided slice in place.
+func injectManagedXprofGCSEnvVarsToContainers(containers []corev1.Container, xprofBucketURL, xprofObjectPath string) {
 	for i := range containers {
 		// Index into the slice so appends write back to the JobSet in place.
 		container := &containers[i]
-		if xprofBucketURL != "" {
-			container.Env = append(container.Env, corev1.EnvVar{Name: constants.XmcEnvVarManagedXprofGCSBucket, Value: xprofBucketURL})
-		}
-		if xprofObjectPath != "" {
-			container.Env = append(container.Env, corev1.EnvVar{Name: constants.XmcEnvVarManagedXprofGCSObjectFolder, Value: xprofObjectPath})
-		}
-	}
-	initContainers := rj.Template.Spec.Template.Spec.InitContainers
-	for i := range initContainers {
-		container := &initContainers[i]
 		if xprofBucketURL != "" {
 			container.Env = append(container.Env, corev1.EnvVar{Name: constants.XmcEnvVarManagedXprofGCSBucket, Value: xprofBucketURL})
 		}

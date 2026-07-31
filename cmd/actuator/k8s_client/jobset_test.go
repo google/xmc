@@ -2529,6 +2529,10 @@ func TestInjectManagedXprofGCSEnvVars_AllContainers(t *testing.T) {
 				rj.Template.Spec.Template.Spec.Containers,
 				corev1.Container{Name: fmt.Sprintf("container-%d", i)},
 			)
+			rj.Template.Spec.Template.Spec.InitContainers = append(
+				rj.Template.Spec.Template.Spec.InitContainers,
+				corev1.Container{Name: fmt.Sprintf("init-container-%d", i)},
+			)
 		}
 		return rj
 	}
@@ -2573,23 +2577,27 @@ func TestInjectManagedXprofGCSEnvVars_AllContainers(t *testing.T) {
 			rj := newReplicatedJob(tc.numContainers)
 			injectManagedXprofGCSEnvVars(rj, tc.bucket, tc.object)
 
-			containers := rj.Template.Spec.Template.Spec.Containers
-			for i := range containers {
-				envMap := make(map[string]string)
-				for _, ev := range containers[i].Env {
-					envMap[ev.Name] = ev.Value
-				}
-				gotBucket, hasBucket := envMap[constants.XmcEnvVarManagedXprofGCSBucket]
-				gotObject, hasObject := envMap[constants.XmcEnvVarManagedXprofGCSObjectFolder]
-				if tc.wantInjected {
-					if gotBucket != tc.bucket {
-						t.Errorf("container[%d] %s = %q, want %q", i, constants.XmcEnvVarManagedXprofGCSBucket, gotBucket, tc.bucket)
+			for _, containers := range [][]corev1.Container{
+				rj.Template.Spec.Template.Spec.Containers,
+				rj.Template.Spec.Template.Spec.InitContainers,
+			} {
+				for i := range containers {
+					envMap := make(map[string]string)
+					for _, ev := range containers[i].Env {
+						envMap[ev.Name] = ev.Value
 					}
-					if gotObject != tc.object {
-						t.Errorf("container[%d] %s = %q, want %q", i, constants.XmcEnvVarManagedXprofGCSObjectFolder, gotObject, tc.object)
+					gotBucket, hasBucket := envMap[constants.XmcEnvVarManagedXprofGCSBucket]
+					gotObject, hasObject := envMap[constants.XmcEnvVarManagedXprofGCSObjectFolder]
+					if tc.wantInjected {
+						if gotBucket != tc.bucket {
+							t.Errorf("container[%d] %s = %q, want %q", i, constants.XmcEnvVarManagedXprofGCSBucket, gotBucket, tc.bucket)
+						}
+						if gotObject != tc.object {
+							t.Errorf("container[%d] %s = %q, want %q", i, constants.XmcEnvVarManagedXprofGCSObjectFolder, gotObject, tc.object)
+						}
+					} else if hasBucket || hasObject {
+						t.Errorf("container[%d] unexpectedly got managed-xprof env vars: %v", i, envMap)
 					}
-				} else if hasBucket || hasObject {
-					t.Errorf("container[%d] unexpectedly got managed-xprof env vars: %v", i, envMap)
 				}
 			}
 		})
