@@ -66,20 +66,12 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 		wu.CurrentWorkUnitExecution.Status.UpdateTime = timestamppb.New(now)
 		wu.CurrentWorkUnitExecution.Status.StateUpdateTime = timestamppb.New(now)
 
-		// 2. Construct the Spanner mutation for the create work unit.
-		mutation, err := spannerdata.WorkUnitProtoToInsertMutation(wu)
-		if err != nil {
-			return err
+		// 2. Insert the work unit into Spanner.
+		if err := r.InsertWorkUnit(ctx, tx, wu); err != nil {
+			return fmt.Errorf("failed to insert work unit: %w", err)
 		}
 
-		// 3. Buffer the create work unit mutation.
-		err = tx.BufferWrite([]*spanner.Mutation{mutation})
-		if err != nil {
-			logging.Error(ctx, "failed to buffer write mutation for create work unit", "error", err)
-			return err
-		}
-
-		// 4. Read the Experiment row.
+		// 3. Read the Experiment row.
 		if r.experimentRepo == nil {
 			return fmt.Errorf("experiment repository is not initialized")
 		}
@@ -91,7 +83,7 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 			return fmt.Errorf("experiment %d not found", xid)
 		}
 
-		// 5. Update the denormalized status fields and resources in the Experiment row using domain rules.
+		// 4. Update the denormalized status fields and resources in the Experiment row using domain rules.
 		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &wid, &initialEID, nil, wu.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage(), tx)
 
 		var resourcesChanged bool
@@ -100,23 +92,15 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 			return fmt.Errorf("failed to prepare experiment status for work unit creation: %w", err)
 		}
 
-		// 6. Buffer mutations for Experiment status and resources.
-		expMutation, err := spannerdata.ExperimentProtoToStatusUpdateMutation(exp)
-		if err != nil {
-			logging.Error(ctx, "failed to create status mutation for experiment", "experiment", exp, "error", err)
-			return err
+		// 5. Buffer mutations for Experiment status and resources via thin repository methods.
+		if err := r.experimentRepo.UpdateExperimentStatus(ctx, tx, exp); err != nil {
+			return fmt.Errorf("failed to update experiment status: %w", err)
 		}
-		mutations := []*spanner.Mutation{expMutation}
-
 		if resourcesChanged {
-			expResourcesMutation, err := spannerdata.ExperimentProtoToResourcesUpdateMutation(exp)
-			if err != nil {
-				logging.Error(ctx, "failed to create resources mutation for experiment", "experiment", exp, "error", err)
-				return err
+			if err := r.experimentRepo.UpdateExperimentResources(ctx, tx, exp); err != nil {
+				return fmt.Errorf("failed to update experiment resources: %w", err)
 			}
-			mutations = append(mutations, expResourcesMutation)
 		}
-		tx.BufferWrite(mutations)
 
 		return nil
 	})
@@ -129,4 +113,17 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 	logging.Info(ctx, "Updated experiment successfully", "experiment", exp)
 
 	return wu, nil
+}
+
+// InsertWorkUnit buffers a mutation to insert a new WorkUnit in Spanner.
+func (r *Repository) InsertWorkUnit(ctx context.Context, tx *spanner.ReadWriteTransaction, wu *essmsgpb.WorkUnit) error {
+	mutation, err := spannerdata.WorkUnitProtoToInsertMutation(wu)
+	if err != nil {
+		return err
+	}
+	if err := tx.BufferWrite([]*spanner.Mutation{mutation}); err != nil {
+		logging.Error(ctx, "failed to buffer write mutation for create work unit", "error", err)
+		return err
+	}
+	return nil
 }
