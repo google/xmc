@@ -238,12 +238,12 @@ def create_plot(title: str, **kwargs: Any) -> Plot:
 
     Args:
         title: The title of the plot.
-        **kwargs: Additional fields on the Plot protobuf message.
+        **kwargs: Additional fields on the PlotSpec protobuf message.
 
     Returns:
         The created Plot wrapper instance.
     """
-    proto = dashboard_pb2.Plot(title=title, **kwargs)
+    proto = dashboard_pb2.PlotSpec(title=title, **kwargs)
     return Plot(proto)
 
 
