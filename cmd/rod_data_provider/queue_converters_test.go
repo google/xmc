@@ -233,7 +233,7 @@ func TestMultiFlavorQueueOverview(t *testing.T) {
 			},
 		},
 		Status: kueuev1beta1.ClusterQueueStatus{
-			FlavorsUsage: []kueuev1beta1.FlavorUsage{
+			FlavorsReservation: []kueuev1beta1.FlavorUsage{
 				{
 					Name: "flavor-l4-spot",
 					Resources: []kueuev1beta1.ResourceUsage{

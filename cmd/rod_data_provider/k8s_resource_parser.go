@@ -22,36 +22,19 @@ import (
 )
 
 // extractTotalResourceUsageByResourceType calculates total used capacity per resource type across all flavors in ClusterQueueStatus.
-// For each flavor and resource type, it computes max(usage, reservation) and sums them across flavors.
+// Kueue tracks admitted quota in FlavorsReservation (with fallback to FlavorsUsage for older Kueue versions).
 func extractTotalResourceUsageByResourceType(status kueuev1beta1.ClusterQueueStatus) map[string]float64 {
-	// 1. Record reservations per "flavorName/resourceType"
-	usageByFlavorAndResource := make(map[string]float64)
-	for _, flavorStatus := range status.FlavorsReservation {
-		for _, resourceUsage := range flavorStatus.Resources {
-			resourceType := string(resourceUsage.Name)
-			key := string(flavorStatus.Name) + "/" + resourceType
-			usageByFlavorAndResource[key] = parseK8sResourceVal(resourceType, resourceUsage.Total.String())
-		}
-	}
-
-	// 2. Update with actual usage if greater than reservation
-	for _, flavorStatus := range status.FlavorsUsage {
-		for _, resourceUsage := range flavorStatus.Resources {
-			resourceType := string(resourceUsage.Name)
-			key := string(flavorStatus.Name) + "/" + resourceType
-			usageQty := parseK8sResourceVal(resourceType, resourceUsage.Total.String())
-			if usageQty > usageByFlavorAndResource[key] {
-				usageByFlavorAndResource[key] = usageQty
-			}
-		}
-	}
-
-	// 3. Aggregate totals by resource type across all flavors
 	totalUsageByResourceType := make(map[string]float64)
-	for key, usedQty := range usageByFlavorAndResource {
-		parts := strings.Split(key, "/")
-		if len(parts) == 2 {
-			resourceType := parts[1]
+
+	flavorSource := status.FlavorsReservation
+	if len(flavorSource) == 0 {
+		flavorSource = status.FlavorsUsage
+	}
+
+	for _, flavorStatus := range flavorSource {
+		for _, resourceUsage := range flavorStatus.Resources {
+			resourceType := string(resourceUsage.Name)
+			usedQty := parseK8sResourceVal(resourceType, resourceUsage.Total.String())
 			totalUsageByResourceType[resourceType] += usedQty
 		}
 	}

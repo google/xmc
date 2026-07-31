@@ -68,7 +68,7 @@ func TestParseK8sResourceVal_CPUNormalization(t *testing.T) {
 	}
 }
 
-func TestExtractTotalResourceUsageByResourceType_CombinedUsageAndReservation(t *testing.T) {
+func TestExtractTotalResourceUsageByResourceType_Reservation(t *testing.T) {
 	status := kueuev1beta1.ClusterQueueStatus{
 		FlavorsReservation: []kueuev1beta1.FlavorUsage{
 			{
@@ -86,40 +86,25 @@ func TestExtractTotalResourceUsageByResourceType_CombinedUsageAndReservation(t *
 				},
 			},
 		},
-		FlavorsUsage: []kueuev1beta1.FlavorUsage{
-			{
-				Name: "flavor-spot",
-				Resources: []kueuev1beta1.ResourceUsage{
-					{Name: corev1.ResourceName("nvidia.com/gpu"), Total: resource.MustParse("12")}, // Usage > Reservation (12 > 8)
-					{Name: corev1.ResourceCPU, Total: resource.MustParse("20")},                    // Reservation > Usage (32 > 20)
-				},
-			},
-			{
-				Name: "flavor-ondemand",
-				Resources: []kueuev1beta1.ResourceUsage{
-					{Name: corev1.ResourceName("nvidia.com/gpu"), Total: resource.MustParse("2")}, // Reservation > Usage (4 > 2)
-					{Name: corev1.ResourceCPU, Total: resource.MustParse("16")},                   // Equal (16 == 16)
-				},
-			},
-		},
 	}
 
 	totals := extractTotalResourceUsageByResourceType(status)
 
-	// GPU Spot max(12, 8) + OnDemand max(2, 4) = 12 + 4 = 16 GPUs
-	if got := totals["nvidia.com/gpu"]; got != 16.0 {
-		t.Errorf("extractTotalResourceUsageByResourceType GPU = %v, want 16.0", got)
+	// GPU Spot (8) + OnDemand (4) = 12 GPUs
+	if got := totals["nvidia.com/gpu"]; got != 12.0 {
+		t.Errorf("extractTotalResourceUsageByResourceType GPU = %v, want 12.0", got)
 	}
 
-	// CPU Spot max(20, 32) + OnDemand max(16, 16) = 32 + 16 = 48 Cores
+	// CPU Spot (32) + OnDemand (16) = 48 Cores
 	if got := totals["cpu"]; got != 48.0 {
 		t.Errorf("extractTotalResourceUsageByResourceType CPU = %v, want 48.0", got)
 	}
 }
 
-func TestExtractTotalResourceUsageByResourceType_ReservationOnly(t *testing.T) {
+func TestExtractTotalResourceUsageByResourceType_FallbackToUsage(t *testing.T) {
 	status := kueuev1beta1.ClusterQueueStatus{
-		FlavorsReservation: []kueuev1beta1.FlavorUsage{
+		FlavorsReservation: []kueuev1beta1.FlavorUsage{}, // Empty reservation (older Kueue format)
+		FlavorsUsage: []kueuev1beta1.FlavorUsage{
 			{
 				Name: "spot",
 				Resources: []kueuev1beta1.ResourceUsage{
@@ -127,11 +112,10 @@ func TestExtractTotalResourceUsageByResourceType_ReservationOnly(t *testing.T) {
 				},
 			},
 		},
-		FlavorsUsage: []kueuev1beta1.FlavorUsage{}, // Empty usage
 	}
 
 	totals := extractTotalResourceUsageByResourceType(status)
 	if totals["nvidia.com/gpu"] != 16.0 {
-		t.Errorf("extractTotalResourceUsageByResourceType(reservation-only) = %v, want 16.0", totals["nvidia.com/gpu"])
+		t.Errorf("extractTotalResourceUsageByResourceType(usage-fallback) = %v, want 16.0", totals["nvidia.com/gpu"])
 	}
 }
