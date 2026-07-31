@@ -196,7 +196,7 @@ gcloud container clusters update <cluster_name> \
 ### Step 8: Build and Push XMC Service Images
 Before deploying the application Helm chart, build and push all service Docker images to GCP Artifact Registry. You must set the project's target registry and environment variables:
 > [!NOTE]
-> **Feature Flag Awareness**: `deploy_dev_env.py` and manual step 8 check feature flags in the deployment configuration YAML (such as `rod_deployment_enabled` and `health_service_deployment_enabled`). If a feature is disabled (e.g. `rod_deployment_enabled: false`), the corresponding image target (e.g. `//cmd/rod_data_provider:rod_data_provider_image_push`) is skipped.
+> **Feature Flag Awareness**: `deploy_dev_env.py` and manual step 8 check feature flags in the deployment configuration YAML (such as `rod_deployment_enabled: false`). If a feature is disabled (e.g. `rod_deployment_enabled: false`), the corresponding image target (e.g. `//cmd/rod_data_provider:rod_data_provider_image_push`) is skipped.
 
 ```bash
 export XMC_ACR_TARGET="us-docker.pkg.dev/<project_id>/<xmc_registry_name>"
