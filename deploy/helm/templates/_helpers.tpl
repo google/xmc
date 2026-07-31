@@ -146,12 +146,6 @@ Common OAuth environment variables for XMC services.
   value: "/etc/gcp-secrets/jwt-secret"
 - name: CLIENT_SECRET_FILE
   value: "/etc/gcp-secrets/client-secret"
-{{- if not (default dict .Values.secrets.csi).enabled }}
-- name: JWT_SECRET
-  value: {{ default "" (default dict (default dict .Values.secrets).development).jwtSecret | quote }}
-- name: CLIENT_SECRET
-  value: {{ default "" (default dict (default dict .Values.secrets).development).clientSecret | quote }}
-{{- end }}
 - name: REDIRECT_URL
   value: "https://{{ include "xmanager-cloud.apiHostname" . }}/api/callback"
 - name: FRONTEND_URL

@@ -293,23 +293,7 @@ class TestStepSubprocesses(unittest.TestCase):
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_app(self.config)
-        self.assertEqual(mock_run.call_count, 4)
-        mock_run.assert_any_call(
-            [
-                "./cluster-toolkit/gcluster",
-                "create",
-                "deploy/ctk_v2/xmanager-cloud.yaml",
-                "-d",
-                "deploy/ctk_v2/xmanager-cloud-deployment.yaml",
-                "-o",
-                "ctk-out",
-                "-l",
-                "WARNING",
-                "-w",
-                "--force",
-            ]
-        )
-        mock_run.assert_any_call(
+        mock_run.assert_called_once_with(
             [
                 "./cluster-toolkit/gcluster",
                 "--download-dependencies",

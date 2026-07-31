@@ -484,20 +484,6 @@ def step_images(config: Config) -> None:
     log_success("All XMC service container images compiled and pushed from current branch state.")
 
 
-def sanitize_workload_identity_module(ctk_dir: Path) -> None:
-    """Removes unsupported Terraform 'moved' blocks from workload-identity modules in ctk_dir."""
-    pattern = re.compile(
-        r"moved\s*\{\s*from\s*=\s*kubernetes_service_account\.main\s*to\s*=\s*kubernetes_service_account_v1\.main\s*\}",
-        re.DOTALL,
-    )
-    for tf_file in ctk_dir.rglob("*.tf"):
-        if "workload-identity" in str(tf_file):
-            content = tf_file.read_text()
-            if pattern.search(content):
-                new_content = pattern.sub("# moved block removed", content)
-                tf_file.write_text(new_content)
-
-
 def step_app(config: Config) -> None:
     """Upgrades XMC Kubernetes workloads via Cluster Toolkit gcluster CLI."""
     log_info("Upgrading XMC Kubernetes application workloads using Cluster Toolkit...")
@@ -508,68 +494,6 @@ def step_app(config: Config) -> None:
             f"Deployment directory '{ctk_dir}' not found. Ensure the environment"
             " has been deployed first."
         )
-
-    log_info("Re-compiling XMC blueprint with latest variables and templates...")
-    run_cmd(
-        [
-            "./cluster-toolkit/gcluster",
-            "create",
-            "deploy/ctk_v2/xmanager-cloud.yaml",
-            "-d",
-            config.config_path,
-            "-o",
-            "ctk-out",
-            "-l",
-            "WARNING",
-            "-w",
-            "--force",
-        ]
-    )
-
-    sanitize_workload_identity_module(ctk_dir)
-
-    log_info("Exporting outputs for deployment group 'primary'...")
-    run_cmd(
-        ["./cluster-toolkit/gcluster", "export-outputs", f"{ctk_dir}/primary"],
-        check=False,
-    )
-
-    primary_artifact = ctk_dir / ".ghpc" / "artifacts" / "primary_outputs.tfvars"
-    if primary_artifact.exists():
-        for group in ["compute", "xmc_app"]:
-            dest = ctk_dir / group / "primary_inputs.auto.tfvars"
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(primary_artifact, dest)
-            content = dest.read_text()
-            if "service_account_email_health_service_gcp_sa" not in content:
-                # Provide fallback for health_service GCP SA when health_service is disabled
-                with open(dest, "a") as f:
-                    f.write(
-                        '\nservice_account_email_health_service_gcp_sa = "xmc-v2-xmc-wl-sa@xmc-test-project-2.iam.gserviceaccount.com"\n'
-                    )
-
-    log_info("Exporting outputs for deployment group 'compute'...")
-    compute_dir = ctk_dir / "compute"
-    if compute_dir.exists():
-        tf_bins = list((Path.home() / ".cache").rglob("terraform"))
-        if tf_bins:
-            run_cmd(
-                [str(tf_bins[0]), f"-chdir={compute_dir}", "init", "-backend=false"], check=False
-            )
-    sanitize_workload_identity_module(ctk_dir)
-    run_cmd(
-        ["./cluster-toolkit/gcluster", "export-outputs", f"{ctk_dir}/compute"],
-        check=False,
-    )
-
-    compute_artifact = ctk_dir / ".ghpc" / "artifacts" / "compute_outputs.tfvars"
-    if compute_artifact.exists():
-        dest = ctk_dir / "xmc_app" / "compute_inputs.auto.tfvars"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(compute_artifact, dest)
-    else:
-        compute_artifact.parent.mkdir(parents=True, exist_ok=True)
-        compute_artifact.touch()
 
     log_info("Running gcluster deploy for group 'xmc_app'...")
     run_cmd(
