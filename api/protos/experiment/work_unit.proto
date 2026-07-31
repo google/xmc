@@ -204,6 +204,9 @@ message KubernetesJob {
   // namespace's default KSA is used.
   string service_account = 8;
   // Sidecar / auxiliary containers to run alongside the primary container in each Pod.
+  // Sidecars are implemented as Kubernetes native sidecar containers (init containers with
+  // restartPolicy: Always), meaning they start during pod initialization and are automatically
+  // terminated by Kubernetes when the primary container completes.
   repeated ExecutableSpec sidecars = 9;
   // Init containers to run before primary and sidecar containers start.
   repeated ExecutableSpec init_containers = 10;

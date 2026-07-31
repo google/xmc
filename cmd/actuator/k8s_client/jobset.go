@@ -361,7 +361,13 @@ func injectManagedXprofGCSEnvVars(rj *jobsetv1alpha2.ReplicatedJob, xprofBucketU
 	if xprofBucketURL == "" && xprofObjectPath == "" {
 		return
 	}
-	containers := rj.Template.Spec.Template.Spec.Containers
+	injectManagedXprofGCSEnvVarsToContainers(rj.Template.Spec.Template.Spec.Containers, xprofBucketURL, xprofObjectPath)
+	injectManagedXprofGCSEnvVarsToContainers(rj.Template.Spec.Template.Spec.InitContainers, xprofBucketURL, xprofObjectPath)
+}
+
+// injectManagedXprofGCSEnvVarsToContainers appends the managed-xprof GCS destination
+// env vars to each container in the provided slice in place.
+func injectManagedXprofGCSEnvVarsToContainers(containers []corev1.Container, xprofBucketURL, xprofObjectPath string) {
 	for i := range containers {
 		// Index into the slice so appends write back to the JobSet in place.
 		container := &containers[i]
@@ -387,24 +393,30 @@ func copyNodeSelector(source map[string]string) map[string]string {
 }
 
 func (c *Client) buildInitContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
-	var initContainers []corev1.Container
+	total := len(job.GetInitContainers()) + len(job.GetSidecars())
+	if total == 0 {
+		return nil
+	}
+	initContainers := make([]corev1.Container, 0, total)
 	for i, initContainer := range job.GetInitContainers() {
 		name := jobsetutil.InitContainerName(job, initContainer, i)
 		initContainers = append(initContainers, c.buildContainer(name, initContainer))
+	}
+	restartPolicyAlways := corev1.ContainerRestartPolicyAlways
+	for i, sidecar := range job.GetSidecars() {
+		name := jobsetutil.SidecarContainerName(job, sidecar, i)
+		container := c.buildContainer(name, sidecar)
+		container.RestartPolicy = &restartPolicyAlways
+		initContainers = append(initContainers, container)
 	}
 	return initContainers
 }
 
 func (c *Client) buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
 	primaryName := jobsetutil.PrimaryContainerName(job)
-	containers := []corev1.Container{
+	return []corev1.Container{
 		c.buildContainer(primaryName, job.GetSpec()),
 	}
-	for i, sidecar := range job.GetSidecars() {
-		sidecarName := jobsetutil.SidecarContainerName(job, sidecar, i)
-		containers = append(containers, c.buildContainer(sidecarName, sidecar))
-	}
-	return containers
 }
 
 func buildContainerPorts(spec *esspb.ExecutableSpec) []corev1.ContainerPort {
