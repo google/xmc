@@ -35,9 +35,7 @@ class TestInitStep(unittest.TestCase):
         mock_file.assert_called_once_with(
             "/dev/disk-scratch/init_ready.flag", "w", encoding="utf-8"
         )
-        mock_file().write.assert_called_once_with(
-            "Initialized by init-setup on unknown-pod\n"
-        )
+        mock_file().write.assert_called_once_with("Initialized by init-setup on unknown-pod\n")
 
 
 if __name__ == "__main__":
