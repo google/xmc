@@ -393,7 +393,11 @@ func copyNodeSelector(source map[string]string) map[string]string {
 }
 
 func (c *Client) buildInitContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
-	var initContainers []corev1.Container
+	total := len(job.GetInitContainers()) + len(job.GetSidecars())
+	if total == 0 {
+		return nil
+	}
+	initContainers := make([]corev1.Container, 0, total)
 	for i, initContainer := range job.GetInitContainers() {
 		name := jobsetutil.InitContainerName(job, initContainer, i)
 		initContainers = append(initContainers, c.buildContainer(name, initContainer))
