@@ -34,7 +34,6 @@ describe('App Component', () => {
       of({
         email: 'user@google.com',
         name: 'Test User',
-        pictureUrl: 'pic.jpg',
         sessionExpiresAt: 12345,
         allowedDomains: ['google.com'],
       }),

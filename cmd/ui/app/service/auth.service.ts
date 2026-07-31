@@ -20,7 +20,7 @@ import { catchError, shareReplay } from 'rxjs/operators';
 export interface UserResponse {
   email: string;
   name: string;
-  pictureUrl: string;
+  pictureUrl?: string;
   sessionExpiresAt: number;
   allowedDomains: string[];
 }
