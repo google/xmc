@@ -18,6 +18,7 @@ package workunit
 import (
 	"sort"
 
+	"golang/protobuf/v2/proto/proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
@@ -32,7 +33,7 @@ func GetWorkUnitResources(wu *essmsgpb.WorkUnit) []*essmsgpb.ResourceSet {
 			continue
 		}
 		replicas := job.GetReplicas()
-		if replicas == 0 {
+		if replicas <= 0 {
 			replicas = 1
 		}
 		specs := []*essmsgpb.ExecutableSpec{job.GetSpec()}
@@ -91,7 +92,7 @@ func MergeResourceSets(a, b []*essmsgpb.ResourceSet) []*essmsgpb.ResourceSet {
 			gpus[gpuRes.GetType()].Count += gpuRes.GetCount()
 			gpuEphemeral[gpuRes.GetType()] += rs.GetEphemeralStorageBytes()
 		} else if res := rs.GetTpuResources(); res != nil {
-			tpus = append(tpus, rs)
+			tpus = append(tpus, proto.Clone(rs).(*essmsgpb.ResourceSet))
 		}
 	}
 

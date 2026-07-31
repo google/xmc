@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"golang/protobuf/v2/proto/proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -37,11 +38,13 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 	logging.Info(ctx, "Write work unit to storage", "work_unit", wu)
 
 	exp := &essmsgpb.Experiment{}
+	var committedWU *essmsgpb.WorkUnit
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
 		now := time.Now()
+		localWU := proto.Clone(wu).(*essmsgpb.WorkUnit)
 
 		// 1. Extract the XID and WID from the work unit name.
-		xid, wid, err := validator.ValidateWorkUnitNameAllowZeroWID(wu.GetName())
+		xid, wid, err := validator.ValidateWorkUnitNameAllowZeroWID(localWU.GetName())
 		if err != nil {
 			return fmt.Errorf("failed to validate work unit name: %w (%v)", status.ErrInvalidArgument, err)
 		}
@@ -53,21 +56,21 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 			if err != nil {
 				return fmt.Errorf("failed to fetch next work unit ID: %w", err)
 			}
-			wu.Name = validator.ConstructWorkUnitName(xid, wid)
-			wu.CurrentWorkUnitExecution.Name = validator.ConstructWorkUnitExecutionName(xid, wid, initialEID)
-			wu.CurrentWorkUnitExecution.Status.SystemMessage.Parent = wu.GetName()
+			localWU.Name = validator.ConstructWorkUnitName(xid, wid)
+			localWU.CurrentWorkUnitExecution.Name = validator.ConstructWorkUnitExecutionName(xid, wid, initialEID)
+			localWU.CurrentWorkUnitExecution.Status.SystemMessage.Parent = localWU.GetName()
 		}
 
 		// 1.2. Set the initial timestamps to the current time.
-		wu.CreateTime = timestamppb.New(now)
-		wu.UpdateTime = timestamppb.New(now)
-		wu.CurrentWorkUnitExecution.CreateTime = timestamppb.New(now)
-		wu.CurrentWorkUnitExecution.UpdateTime = timestamppb.New(now)
-		wu.CurrentWorkUnitExecution.Status.UpdateTime = timestamppb.New(now)
-		wu.CurrentWorkUnitExecution.Status.StateUpdateTime = timestamppb.New(now)
+		localWU.CreateTime = timestamppb.New(now)
+		localWU.UpdateTime = timestamppb.New(now)
+		localWU.CurrentWorkUnitExecution.CreateTime = timestamppb.New(now)
+		localWU.CurrentWorkUnitExecution.UpdateTime = timestamppb.New(now)
+		localWU.CurrentWorkUnitExecution.Status.UpdateTime = timestamppb.New(now)
+		localWU.CurrentWorkUnitExecution.Status.StateUpdateTime = timestamppb.New(now)
 
 		// 2. Insert the work unit into Spanner.
-		if err := r.InsertWorkUnit(ctx, tx, wu); err != nil {
+		if err := r.InsertWorkUnit(ctx, tx, localWU); err != nil {
 			return fmt.Errorf("failed to insert work unit: %w", err)
 		}
 
@@ -84,10 +87,10 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 		}
 
 		// 4. Update the denormalized status fields and resources in the Experiment row using domain rules.
-		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &wid, &initialEID, nil, wu.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage(), tx)
+		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &wid, &initialEID, nil, localWU.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage(), tx)
 
 		var resourcesChanged bool
-		exp, resourcesChanged, err = experimentdomain.PrepareWorkUnitCreation(ctx, exp, wu, now)
+		exp, resourcesChanged, err = experimentdomain.PrepareWorkUnitCreation(ctx, exp, localWU, now)
 		if err != nil {
 			return fmt.Errorf("failed to prepare experiment status for work unit creation: %w", err)
 		}
@@ -102,6 +105,7 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 			}
 		}
 
+		committedWU = localWU
 		return nil
 	})
 	if err != nil {
@@ -109,16 +113,19 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 		return nil, err
 	}
 
-	logging.Info(ctx, "Written work unit to storage", "work_unit", wu)
+	logging.Info(ctx, "Written work unit to storage", "work_unit", committedWU)
 	logging.Info(ctx, "Updated experiment successfully", "experiment", exp)
 
-	return wu, nil
+	return committedWU, nil
 }
 
 // InsertWorkUnit buffers a mutation to insert a new WorkUnit in Spanner.
 func (r *Repository) InsertWorkUnit(ctx context.Context, tx *spanner.ReadWriteTransaction, wu *essmsgpb.WorkUnit) error {
 	if wu == nil {
 		return fmt.Errorf("work unit must not be nil")
+	}
+	if tx == nil {
+		return fmt.Errorf("transaction must not be nil")
 	}
 	mutation, err := spannerdata.WorkUnitProtoToInsertMutation(wu)
 	if err != nil {

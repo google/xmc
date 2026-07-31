@@ -22,6 +22,7 @@ compat_go_library(
     importpath = "xmanager_cloud/internal/domain/workunit",
     deps = [
         "//api/protos/experiment:messages_go_proto",
+        "//internal/compat/proto",
     ],
 )
 

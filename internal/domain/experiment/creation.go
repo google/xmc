@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"time"
 
+	"golang/protobuf/v2/proto/proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/domain/workunit"
@@ -37,8 +38,10 @@ func PrepareWorkUnitCreation(ctx context.Context, exp *essmsgpb.Experiment, wu *
 		return nil, false, fmt.Errorf("work unit, current execution, and status must not be nil")
 	}
 
-	if exp.Status == nil {
-		exp.Status = &essmsgpb.ExperimentStatus{}
+	clonedExp := proto.Clone(exp).(*essmsgpb.Experiment)
+
+	if clonedExp.Status == nil {
+		clonedExp.Status = &essmsgpb.ExperimentStatus{}
 	}
 
 	// 1. Calculate state deltas and denormalize status
@@ -50,7 +53,7 @@ func PrepareWorkUnitCreation(ctx context.Context, exp *essmsgpb.Experiment, wu *
 		NewMessage:     wu.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage(),
 	})
 
-	updatedExp, err := state.DenormalizeWorkUnitStatus(ctx, exp, deltas)
+	updatedExp, err := state.DenormalizeWorkUnitStatus(ctx, clonedExp, deltas)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to denormalize experiment status: %w", err)
 	}
