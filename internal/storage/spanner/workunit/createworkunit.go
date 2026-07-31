@@ -41,7 +41,7 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 	var committedWU *essmsgpb.WorkUnit
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
 		now := time.Now()
-		localWU := validator.FillWorkUnitNullValues(proto.Clone(wu).(*essmsgpb.WorkUnit))
+		localWU := proto.Clone(wu).(*essmsgpb.WorkUnit)
 
 		// 1. Extract the XID and WID from the work unit name.
 		xid, wid, err := validator.ValidateWorkUnitNameAllowZeroWID(localWU.GetName())
@@ -68,6 +68,18 @@ func (r *Repository) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) 
 		localWU.CurrentWorkUnitExecution.UpdateTime = timestamppb.New(now)
 		localWU.CurrentWorkUnitExecution.Status.UpdateTime = timestamppb.New(now)
 		localWU.CurrentWorkUnitExecution.Status.StateUpdateTime = timestamppb.New(now)
+
+		// Populate timestamps back onto input proto pointer for caller convenience (matching CreateExperiment behavior).
+		wu.CreateTime = localWU.CreateTime
+		wu.UpdateTime = localWU.UpdateTime
+		if wu.CurrentWorkUnitExecution != nil {
+			wu.CurrentWorkUnitExecution.CreateTime = localWU.CurrentWorkUnitExecution.CreateTime
+			wu.CurrentWorkUnitExecution.UpdateTime = localWU.CurrentWorkUnitExecution.UpdateTime
+			if wu.CurrentWorkUnitExecution.Status != nil {
+				wu.CurrentWorkUnitExecution.Status.UpdateTime = localWU.CurrentWorkUnitExecution.Status.UpdateTime
+				wu.CurrentWorkUnitExecution.Status.StateUpdateTime = localWU.CurrentWorkUnitExecution.Status.StateUpdateTime
+			}
+		}
 
 		// 2. Insert the work unit into Spanner.
 		if err := r.InsertWorkUnit(ctx, tx, localWU); err != nil {
