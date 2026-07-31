@@ -60,6 +60,7 @@ var cfg Config
 func init() {
 	flag.StringVar(&cfg.GRPCPort, "ess_grpc_port", "50051", "The gRPC server port to listen on.")
 	flag.StringVar(&cfg.HTTPPort, "ess_http_port", "8080", "The HTTP server port to listen on.")
+	flag.StringVar(&cfg.ActuatorAudience, "ess_actuator_audience", "", "The audience for OIDC tokens to authenticate to Actuator.")
 	flag.StringVar(&cfg.TLSCertFile, "ess_tls_cert_file", "/etc/tls/tls.crt", "Path to the TLS certificate file")
 	flag.StringVar(&cfg.TLSKeyFile, "ess_tls_key_file", "/etc/tls/tls.key", "Path to the TLS key file")
 	flag.StringVar(&cfg.DefaultExecutionEnvironment, "ess_default_execution_environment", "gke", "The default execution environment to use if not specified in the request.")
@@ -69,18 +70,17 @@ func init() {
 
 // registerConfigs loads ConfigMap managed values using configutil.
 func (c *Config) registerConfigs() {
-	configutil.StringVar(&c.ProjectID, "ess_gcp_project_id", "xmc-test-project-1")
-	configutil.StringVar(&c.QuotaProjectID, "ess_quota_project_id", "xmc-test-project-1")
-	configutil.StringVar(&c.SpannerDatabaseName, "ess_spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db")
-	configutil.StringVar(&c.XidServiceAddr, "ess_xid_service_addr", "localhost:50053")
-	configutil.StringVar(&c.EndpointURL, "ess_endpoint_url", "http://localhost:50051")
-	configutil.StringVar(&c.ActuatorURL, "ess_actuator_url", "https://actuator.xmanager.xmc.svc.cluster.local/actuate")
-	configutil.StringVar(&c.ActuatorAudience, "ess_actuator_audience", "")
-	configutil.StringVar(&c.InvokerSA, "ess_service_account", "")
-	configutil.IntVar(&c.SignatureTTLSeconds, "ess_signature_ttl_seconds", client.DefaultSignatureTTLSeconds)
-	configutil.StringVar(&c.AllowedOrigins, "ess_allowed_origins", "")
-	configutil.BoolVar(&c.StatusMessageHistoryEnabled, "ess_status_message_history_enabled", true)
-	configutil.StringVar(&c.RedisAddr, "redis_addr", "")
+	configutil.StringEnv(&c.ProjectID, "ess_gcp_project_id", "xmc-test-project-1")
+	configutil.StringEnv(&c.QuotaProjectID, "ess_quota_project_id", "xmc-test-project-1")
+	configutil.StringEnv(&c.SpannerDatabaseName, "ess_spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db")
+	configutil.StringEnv(&c.XidServiceAddr, "ess_xid_service_addr", "localhost:50053")
+	configutil.StringEnv(&c.EndpointURL, "ess_endpoint_url", "http://localhost:50051")
+	configutil.StringEnv(&c.ActuatorURL, "ess_actuator_url", "https://actuator.xmanager.xmc.svc.cluster.local/actuate")
+	configutil.StringEnv(&c.InvokerSA, "ess_service_account", "")
+	configutil.IntEnv(&c.SignatureTTLSeconds, "ess_signature_ttl_seconds", client.DefaultSignatureTTLSeconds)
+	configutil.StringEnv(&c.AllowedOrigins, "ess_allowed_origins", "")
+	configutil.BoolEnv(&c.StatusMessageHistoryEnabled, "ess_status_message_history_enabled", true)
+	configutil.StringEnv(&c.RedisAddr, "redis_addr", "")
 }
 
 // Load returns a Config struct populated with the values from ConfigMaps and parsed flags.

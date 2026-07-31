@@ -16,6 +16,7 @@
 package configutil
 
 import (
+	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -30,77 +31,87 @@ func getEnv(key, defaultVal string) string {
 	return defaultVal
 }
 
-// StringVar binds the env value for the key to the string pointer p.
-func StringVar(p *string, key, defaultVal string) {
+// StringEnv binds the env value for the key to the string pointer p.
+func StringEnv(p *string, key, defaultVal string) {
 	*p = getEnv(key, defaultVal)
 }
 
-// IntVar binds the env value for the key parsed as an int to the int pointer p.
-func IntVar(p *int, key string, defaultVal int) {
+// IntEnv binds the env value for the key parsed as an int to the int pointer p.
+func IntEnv(p *int, key string, defaultVal int) {
 	valStr := getEnv(key, "")
 	if valStr == "" {
 		*p = defaultVal
 		return
 	}
-	if i, err := strconv.Atoi(valStr); err == nil {
-		*p = i
+	i, err := strconv.Atoi(valStr)
+	if err != nil {
+		slog.Warn("Failed to parse config env var as int, falling back to default", "key", key, "value", valStr, "default", defaultVal, "error", err)
+		*p = defaultVal
 		return
 	}
-	*p = defaultVal
+	*p = i
 }
 
-// Int64Var binds the env value for the key parsed as an int64 to the int64 pointer p.
-func Int64Var(p *int64, key string, defaultVal int64) {
+// Int64Env binds the env value for the key parsed as an int64 to the int64 pointer p.
+func Int64Env(p *int64, key string, defaultVal int64) {
 	valStr := getEnv(key, "")
 	if valStr == "" {
 		*p = defaultVal
 		return
 	}
-	if i, err := strconv.ParseInt(valStr, 10, 64); err == nil {
-		*p = i
+	i, err := strconv.ParseInt(valStr, 10, 64)
+	if err != nil {
+		slog.Warn("Failed to parse config env var as int64, falling back to default", "key", key, "value", valStr, "default", defaultVal, "error", err)
+		*p = defaultVal
 		return
 	}
-	*p = defaultVal
+	*p = i
 }
 
-// BoolVar binds the env value for the key parsed as a bool to the bool pointer p.
-func BoolVar(p *bool, key string, defaultVal bool) {
+// BoolEnv binds the env value for the key parsed as a bool to the bool pointer p.
+func BoolEnv(p *bool, key string, defaultVal bool) {
 	valStr := getEnv(key, "")
 	if valStr == "" {
 		*p = defaultVal
 		return
 	}
-	if b, err := strconv.ParseBool(valStr); err == nil {
-		*p = b
+	b, err := strconv.ParseBool(valStr)
+	if err != nil {
+		slog.Warn("Failed to parse config env var as bool, falling back to default", "key", key, "value", valStr, "default", defaultVal, "error", err)
+		*p = defaultVal
 		return
 	}
-	*p = defaultVal
+	*p = b
 }
 
-// DurationVar binds the env value for the key parsed as a Duration to the Duration pointer p.
-func DurationVar(p *time.Duration, key string, defaultVal time.Duration) {
+// DurationEnv binds the env value for the key parsed as a Duration to the Duration pointer p.
+func DurationEnv(p *time.Duration, key string, defaultVal time.Duration) {
 	valStr := getEnv(key, "")
 	if valStr == "" {
 		*p = defaultVal
 		return
 	}
-	if d, err := time.ParseDuration(valStr); err == nil {
-		*p = d
+	d, err := time.ParseDuration(valStr)
+	if err != nil {
+		slog.Warn("Failed to parse config env var as duration, falling back to default", "key", key, "value", valStr, "default", defaultVal, "error", err)
+		*p = defaultVal
 		return
 	}
-	*p = defaultVal
+	*p = d
 }
 
-// Float64Var binds the env value for the key parsed as a float64 to the float64 pointer p.
-func Float64Var(p *float64, key string, defaultVal float64) {
+// Float64Env binds the env value for the key parsed as a float64 to the float64 pointer p.
+func Float64Env(p *float64, key string, defaultVal float64) {
 	valStr := getEnv(key, "")
 	if valStr == "" {
 		*p = defaultVal
 		return
 	}
-	if f, err := strconv.ParseFloat(valStr, 64); err == nil {
-		*p = f
+	f, err := strconv.ParseFloat(valStr, 64)
+	if err != nil {
+		slog.Warn("Failed to parse config env var as float64, falling back to default", "key", key, "value", valStr, "default", defaultVal, "error", err)
+		*p = defaultVal
 		return
 	}
-	*p = defaultVal
+	*p = f
 }

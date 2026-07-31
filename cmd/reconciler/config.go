@@ -71,18 +71,17 @@ func init() {
 
 // registerConfigs loads ConfigMap managed values using configutil.
 func registerConfigs() {
-	configutil.BoolVar(&detectInadmissibleWorkUnits, "detect_inadmissible_work_units", true)
-	configutil.StringVar(&spannerDatabaseName, "spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db")
-	configutil.StringVar(&quotaProjectID, "quota_project_id", "xmc-test-project-1")
-	configutil.DurationVar(&batcherTickDuration, "batcher_tick_duration", 250*time.Millisecond)
-	configutil.DurationVar(&kueueSyncTickDuration, "kueue_sync_tick_duration", 60*time.Second)
-	configutil.IntVar(&maxConcurrentKueueSyncReconciles, "max_concurrent_kueue_sync_reconciles", 1000)
-	configutil.DurationVar(&startupPodErrorCheckTime, "startup_pod_error_check_time", 2*time.Minute)
-	configutil.BoolVar(&startupPodErrorCheckEnabled, "startup_pod_error_check_enabled", true)
-	configutil.Float64Var(&kubeAPIQPS, "kube_api_qps", 100)
-	configutil.IntVar(&kubeAPIBurst, "kube_api_burst", 200)
-	configutil.BoolVar(&statusMessageHistoryEnabled, "status_message_history_enabled", true)
-	configutil.StringVar(&diagonEnvironment, "diagon_environment", "staging")
+	configutil.BoolEnv(&detectInadmissibleWorkUnits, "detect_inadmissible_work_units", true)
+	configutil.StringEnv(&spannerDatabaseName, "spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db")
+	configutil.StringEnv(&quotaProjectID, "quota_project_id", "xmc-test-project-1")
+	configutil.DurationEnv(&batcherTickDuration, "batcher_tick_duration", 250*time.Millisecond)
+	configutil.DurationEnv(&kueueSyncTickDuration, "kueue_sync_tick_duration", 60*time.Second)
+	configutil.IntEnv(&maxConcurrentKueueSyncReconciles, "max_concurrent_kueue_sync_reconciles", 1000)
+	configutil.DurationEnv(&startupPodErrorCheckTime, "startup_pod_error_check_time", 2*time.Minute)
+	configutil.BoolEnv(&startupPodErrorCheckEnabled, "startup_pod_error_check_enabled", true)
+	configutil.Float64Env(&kubeAPIQPS, "kube_api_qps", 100)
+	configutil.IntEnv(&kubeAPIBurst, "kube_api_burst", 200)
+	configutil.BoolEnv(&statusMessageHistoryEnabled, "status_message_history_enabled", true)
 }
 
 // Load returns a Config struct populated with values from ConfigMaps and parsed flags.

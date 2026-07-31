@@ -82,17 +82,17 @@ func init() {
 
 // registerConfigs loads ConfigMap managed values using configutil.
 func registerConfigs() {
-	configutil.StringVar(&port, "port", "8080")
-	configutil.StringVar(&spannerDatabaseName, "spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db")
-	configutil.StringVar(&quotaProjectID, "quota_project_id", "xmc-test-project-1")
-	configutil.StringVar(&xmanagerServiceAccount, "xmanager_service_account", "")
-	configutil.StringVar(&audience, "audience", "")
-	configutil.BoolVar(&statusMessageHistoryEnabled, "status_message_history_enabled", true)
-	configutil.StringVar(&redisAddr, "redis_addr", "")
-	configutil.IntVar(&redisMaxRetries, "redis_max_retries", constants.RedisMaxRetries)
-	configutil.DurationVar(&redisProcessTimeout, "redis_process_timeout", constants.RedisProcessTimeout)
-	configutil.DurationVar(&redisAbandonedMessageTimeout, "redis_abandoned_message_timeout", constants.RedisAbandonedMessageTimeout)
-	configutil.Int64Var(&redisReadBatchSize, "redis_read_batch_size", constants.RedisReadBatchSize)
+	configutil.StringEnv(&port, "port", "8080")
+	configutil.StringEnv(&spannerDatabaseName, "spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db")
+	configutil.StringEnv(&quotaProjectID, "quota_project_id", "xmc-test-project-1")
+	configutil.StringEnv(&xmanagerServiceAccount, "xmanager_service_account", "")
+	configutil.StringEnv(&audience, "audience", "")
+	configutil.BoolEnv(&statusMessageHistoryEnabled, "status_message_history_enabled", true)
+	configutil.StringEnv(&redisAddr, "redis_addr", "")
+	configutil.IntEnv(&redisMaxRetries, "redis_max_retries", constants.RedisMaxRetries)
+	configutil.DurationEnv(&redisProcessTimeout, "redis_process_timeout", constants.RedisProcessTimeout)
+	configutil.DurationEnv(&redisAbandonedMessageTimeout, "redis_abandoned_message_timeout", constants.RedisAbandonedMessageTimeout)
+	configutil.Int64Env(&redisReadBatchSize, "redis_read_batch_size", constants.RedisReadBatchSize)
 }
 
 func validate() error {
