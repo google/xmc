@@ -249,30 +249,13 @@ func TestMultiFlavorQueueOverview(t *testing.T) {
 
 	wantOverview := &spb.QueueOverview{
 		QueueName: "dynamic-gpu-cq",
+		// Summed CPU (128+64=192) and Memory (512+256=768) across all flavors, with distinct accelerator capacities for nvidia-l4 and nvidia-tesla-h100:
 		QueueCapacity: []*spb.QueueResourceCapacity{
 			{
 				ResourceType:              "nvidia-l4",
 				TotalCapacity:             32.0,
 				FreeCapacity:              24.0,
 				FreeCapacityWithBorrowing: 24.0,
-			},
-			{
-				ResourceType:              "cpu",
-				TotalCapacity:             128.0,
-				FreeCapacity:              100.0,
-				FreeCapacityWithBorrowing: 100.0,
-			},
-			{
-				ResourceType:              "memory",
-				TotalCapacity:             512.0,
-				FreeCapacity:              400.0,
-				FreeCapacityWithBorrowing: 400.0,
-			},
-			{
-				ResourceType:              "nvidia-tesla-h100",
-				TotalCapacity:             8.0,
-				FreeCapacity:              6.0,
-				FreeCapacityWithBorrowing: 6.0,
 			},
 			{
 				ResourceType:              "cpu",
@@ -286,39 +269,14 @@ func TestMultiFlavorQueueOverview(t *testing.T) {
 				FreeCapacity:              600.0,
 				FreeCapacityWithBorrowing: 600.0,
 			},
+			{
+				ResourceType:              "nvidia-tesla-h100",
+				TotalCapacity:             8.0,
+				FreeCapacity:              6.0,
+				FreeCapacityWithBorrowing: 6.0,
+			},
 		},
 	}
-
-	// Summed CPU and Memory across all flavors:
-	// CPU: 128 + 64 = 192, Free: 192 - (28+14) = 150
-	// Memory: 512 + 256 = 768, Free: 768 - (112+56) = 600
-	expectedCapacities := []*spb.QueueResourceCapacity{
-		{
-			ResourceType:              "nvidia-l4",
-			TotalCapacity:             32.0,
-			FreeCapacity:              24.0,
-			FreeCapacityWithBorrowing: 24.0,
-		},
-		{
-			ResourceType:              "cpu",
-			TotalCapacity:             192.0,
-			FreeCapacity:              150.0,
-			FreeCapacityWithBorrowing: 150.0,
-		},
-		{
-			ResourceType:              "memory",
-			TotalCapacity:             768.0,
-			FreeCapacity:              600.0,
-			FreeCapacityWithBorrowing: 600.0,
-		},
-		{
-			ResourceType:              "nvidia-tesla-h100",
-			TotalCapacity:             8.0,
-			FreeCapacity:              6.0,
-			FreeCapacityWithBorrowing: 6.0,
-		},
-	}
-	wantOverview.QueueCapacity = expectedCapacities
 
 	overview := buildQueueOverviewFromClusterQueue(cq, rfMap)
 	if diff := cmp.Diff(wantOverview, overview, protocmp.Transform()); diff != "" {
