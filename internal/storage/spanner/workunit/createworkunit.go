@@ -205,14 +205,17 @@ func MergeResourceSets(a, b []*essmsgpb.ResourceSet) []*essmsgpb.ResourceSet {
 			cpu.CpuMillicores += res.GetCpuMillicores()
 			cpu.MemoryBytes += res.GetMemoryBytes()
 			cpuEphemeral += rs.GetEphemeralStorageBytes()
-		} else if res := rs.GetGpuResources(); res != nil {
-			gpuRes := res
-			if _, ok := gpus[gpuRes.GetType()]; !ok {
-				gpus[gpuRes.GetType()] = &essmsgpb.GpuResources{Type: gpuRes.GetType()}
+			continue
+		}
+		if res := rs.GetGpuResources(); res != nil {
+			if _, ok := gpus[res.GetType()]; !ok {
+				gpus[res.GetType()] = &essmsgpb.GpuResources{Type: res.GetType()}
 			}
-			gpus[gpuRes.GetType()].Count += gpuRes.GetCount()
-			gpuEphemeral[gpuRes.GetType()] += rs.GetEphemeralStorageBytes()
-		} else if res := rs.GetTpuResources(); res != nil {
+			gpus[res.GetType()].Count += res.GetCount()
+			gpuEphemeral[res.GetType()] += rs.GetEphemeralStorageBytes()
+			continue
+		}
+		if res := rs.GetTpuResources(); res != nil {
 			tpus = append(tpus, rs)
 		}
 	}
