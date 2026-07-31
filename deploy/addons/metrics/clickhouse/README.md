@@ -2,7 +2,19 @@
 
 This directory contains the documentation and example Helm configuration (`values.yaml`) for deploying **ClickHouse** onto a Google Kubernetes Engine (GKE) cluster.
 
-ClickHouse serves as the high-performance analytical database backend for XManager on Cloud (XMC) metrics system testing and Flatboard-like visualization in Grafana.
+---
+
+## ClickHouse Development Workflows
+
+Depending on your development goal, choose the appropriate workflow:
+
+1. **Local Standalone Workflow (Out-of-Band of CTK / GKE)**:
+   - **Use Case**: Rapid local schema iteration, table DDL/DML testing, and unit/integration testing on your workstation without a Kubernetes cluster.
+   - **Configuration & Tools**: See [`deploy/local/README.md`](../../../local/README.md), [`deploy/local/clickhouse-standalone.yaml`](../../../local/clickhouse-standalone.yaml), and [`scripts/test-clickhouse-schema.sh`](../../../../scripts/test-clickhouse-schema.sh).
+
+2. **GKE Cluster Addon Workflow (In-Cluster Testing & Production)**:
+   - **Use Case**: Deploying ClickHouse onto a GKE cluster via Helm for full metrics system testing, Grafana visualization, and end-to-end integration.
+   - **Configuration**: Follow the instructions below in this document using [`values.yaml`](./values.yaml).
 
 ---
 
