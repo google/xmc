@@ -15,23 +15,21 @@
 import 'jasmine';
 
 import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { Router, UrlTree } from '@angular/router';
 
 import { resourceDashboardGuard } from './resource_dashboard.guard';
 import { FeatureFlagService } from './service/feature_flag_service';
 import { cleanState, setupModule } from './testing/test';
 
-function setup() {
+function setup(isResourceDashboardEnabled: boolean) {
   return cleanState(() => {
-    let resourceDashboardEnabledValue = false;
-
-    const featureFlagServiceSpy = {
-      get isResourceDashboardEnabled() {
-        return resourceDashboardEnabledValue;
-      },
-    };
-    const routerSpy = jasmine.createSpyObj('Router', ['parseUrl']);
-    routerSpy.parseUrl.and.callFake((url: string) => url as any);
+    const featureFlagServiceSpy = jasmine.createSpyObj<FeatureFlagService>(
+      'FeatureFlagService',
+      [],
+      { isResourceDashboardEnabled },
+    );
+    const routerSpy = jasmine.createSpyObj<Router>('Router', ['parseUrl']);
+    routerSpy.parseUrl.and.callFake((url: string) => url as unknown as UrlTree);
 
     setupModule({
       providers: [
@@ -40,36 +38,36 @@ function setup() {
       ],
     });
     return {
-      setResourceDashboardEnabled: (val: boolean) => {
-        resourceDashboardEnabledValue = val;
-      },
+      featureFlagServiceSpy,
       routerSpy,
     };
   }, beforeEach);
 }
 
 describe('resourceDashboardGuard', () => {
-  const state = setup();
+  describe('when resource dashboard is enabled', () => {
+    const state = setup(true);
 
-  it('should return true if resource dashboard is enabled', () => {
-    state.setResourceDashboardEnabled(true);
+    it('should return true and not redirect', () => {
+      const result = TestBed.runInInjectionContext(() =>
+        resourceDashboardGuard({} as any, {} as any),
+      );
 
-    const result = TestBed.runInInjectionContext(() =>
-      resourceDashboardGuard({} as any, {} as any),
-    );
-
-    expect(result).toBeTrue();
-    expect(state.routerSpy.parseUrl).not.toHaveBeenCalled();
+      expect(result).toBeTrue();
+      expect(state.routerSpy.parseUrl).not.toHaveBeenCalled();
+    });
   });
 
-  it('should return UrlTree redirecting to / if resource dashboard is disabled', () => {
-    state.setResourceDashboardEnabled(false);
+  describe('when resource dashboard is disabled', () => {
+    const state = setup(false);
 
-    const result = TestBed.runInInjectionContext(() =>
-      resourceDashboardGuard({} as any, {} as any),
-    );
+    it('should return UrlTree redirecting to /', () => {
+      const result = TestBed.runInInjectionContext(() =>
+        resourceDashboardGuard({} as any, {} as any),
+      );
 
-    expect(result).toEqual('/' as any);
-    expect(state.routerSpy.parseUrl).toHaveBeenCalledWith('/');
+      expect(result).toEqual('/' as unknown as UrlTree);
+      expect(state.routerSpy.parseUrl).toHaveBeenCalledWith('/');
+    });
   });
 });
