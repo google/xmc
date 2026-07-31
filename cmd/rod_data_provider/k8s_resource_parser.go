@@ -21,56 +21,48 @@ import (
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
-// extractTotalResourceUsageByResourceType calculates the total used capacity per resource type across all flavors in ClusterQueueStatus.
+// extractTotalResourceUsageByResourceType calculates total used capacity per resource type across all flavors in ClusterQueueStatus.
+// For each flavor and resource type, it computes max(usage, reservation) and sums them across flavors.
 func extractTotalResourceUsageByResourceType(status kueuev1beta1.ClusterQueueStatus) map[string]float64 {
-	reservationMap, usageMap, resourceTypeByKey := extractFlavorResourceQuantitiesMap(status)
-
-	totalUsageByResourceType := make(map[string]float64)
-	for flavorResourceKey, resourceType := range resourceTypeByKey {
-		reservedQuantity := reservationMap[flavorResourceKey]
-		usageQuantity := usageMap[flavorResourceKey]
-
-		effectiveUsedQuantity := usageQuantity
-		if reservedQuantity > effectiveUsedQuantity {
-			effectiveUsedQuantity = reservedQuantity
+	// 1. Record reservations per "flavorName/resourceType"
+	usageByFlavorAndResource := make(map[string]float64)
+	for _, flavorStatus := range status.FlavorsReservation {
+		for _, resourceUsage := range flavorStatus.Resources {
+			resourceType := string(resourceUsage.Name)
+			key := string(flavorStatus.Name) + "/" + resourceType
+			usageByFlavorAndResource[key] = parseK8sResourceVal(resourceType, resourceUsage.Total.String())
 		}
-		totalUsageByResourceType[resourceType] += effectiveUsedQuantity
+	}
+
+	// 2. Update with actual usage if greater than reservation
+	for _, flavorStatus := range status.FlavorsUsage {
+		for _, resourceUsage := range flavorStatus.Resources {
+			resourceType := string(resourceUsage.Name)
+			key := string(flavorStatus.Name) + "/" + resourceType
+			usageQty := parseK8sResourceVal(resourceType, resourceUsage.Total.String())
+			if usageQty > usageByFlavorAndResource[key] {
+				usageByFlavorAndResource[key] = usageQty
+			}
+		}
+	}
+
+	// 3. Aggregate totals by resource type across all flavors
+	totalUsageByResourceType := make(map[string]float64)
+	for key, usedQty := range usageByFlavorAndResource {
+		parts := strings.Split(key, "/")
+		if len(parts) == 2 {
+			resourceType := parts[1]
+			totalUsageByResourceType[resourceType] += usedQty
+		}
 	}
 
 	return totalUsageByResourceType
 }
 
-// extractFlavorResourceQuantitiesMap extracts reservation and usage quantities mapped by "flavorName/resourceType".
-func extractFlavorResourceQuantitiesMap(status kueuev1beta1.ClusterQueueStatus) (map[string]float64, map[string]float64, map[string]string) {
-	reservationMap := make(map[string]float64)
-	usageMap := make(map[string]float64)
-	resourceTypeByKey := make(map[string]string)
-
-	for _, flavorStatus := range status.FlavorsReservation {
-		for _, resourceUsage := range flavorStatus.Resources {
-			resourceType := string(resourceUsage.Name)
-			key := string(flavorStatus.Name) + "/" + resourceType
-			reservationMap[key] = parseK8sResourceVal(resourceType, resourceUsage.Total.String())
-			resourceTypeByKey[key] = resourceType
-		}
-	}
-
-	for _, flavorStatus := range status.FlavorsUsage {
-		for _, resourceUsage := range flavorStatus.Resources {
-			resourceType := string(resourceUsage.Name)
-			key := string(flavorStatus.Name) + "/" + resourceType
-			usageMap[key] = parseK8sResourceVal(resourceType, resourceUsage.Total.String())
-			resourceTypeByKey[key] = resourceType
-		}
-	}
-
-	return reservationMap, usageMap, resourceTypeByKey
-}
-
 // parseK8sResourceVal parses Kubernetes quantity strings (e.g. "8Gi", "1024Ki", "1000m", "4") into a normalized float64 value.
 // Memory and storage quantities are normalized to GiB, while CPU, GPU, and count quantities are normalized to Cores/Units.
-func parseK8sResourceVal(resName, s string) float64 {
-	s = strings.TrimSpace(s)
+func parseK8sResourceVal(resourceType, quantityStr string) float64 {
+	s := strings.TrimSpace(quantityStr)
 	if s == "" || s == "-" {
 		return 0
 	}
@@ -78,10 +70,13 @@ func parseK8sResourceVal(resName, s string) float64 {
 	if err != nil {
 		return 0
 	}
-	// Memory / Storage resources: normalize to GiB
-	if strings.Contains(strings.ToLower(resName), "memory") || strings.Contains(strings.ToLower(resName), "storage") {
+	if isMemoryOrStorageResource(resourceType) {
 		return float64(q.Value()) / (1024 * 1024 * 1024)
 	}
-	// CPU / GPU / Count resources: normalize to Cores / Units
 	return q.AsApproximateFloat64()
+}
+
+func isMemoryOrStorageResource(resourceType string) bool {
+	lower := strings.ToLower(resourceType)
+	return strings.Contains(lower, "memory") || strings.Contains(lower, "storage")
 }

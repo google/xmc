@@ -31,6 +31,10 @@ type ResourceQuotaAggregator struct {
 //  2. Aggregate nominal quotas and borrowing limits per resource type from ClusterQueueSpec (summed across flavors).
 //  3. Compute free capacity and construct QueueResourceCapacity proto messages for each resource type.
 func buildQueueOverviewFromClusterQueue(clusterQueue *kueuev1beta1.ClusterQueue) *spb.QueueOverview {
+	if clusterQueue == nil {
+		return nil
+	}
+
 	// Step 1: Extract active resource usage across all flavors from Status.
 	totalUsedCapacityByResourceType := extractTotalResourceUsageByResourceType(clusterQueue.Status)
 

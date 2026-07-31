@@ -305,6 +305,26 @@ func TestMultiFlavorQueueOverview(t *testing.T) {
 	}
 }
 
+func TestBuildQueueOverviewFromClusterQueue_NilAndEmpty(t *testing.T) {
+	if got := buildQueueOverviewFromClusterQueue(nil); got != nil {
+		t.Errorf("buildQueueOverviewFromClusterQueue(nil) = %v, want nil", got)
+	}
+
+	emptyCQ := &kueuev1beta1.ClusterQueue{
+		ObjectMeta: metav1.ObjectMeta{Name: "empty-cq"},
+	}
+	overview := buildQueueOverviewFromClusterQueue(emptyCQ)
+	if overview == nil {
+		t.Fatalf("buildQueueOverviewFromClusterQueue(emptyCQ) is nil, want non-nil")
+	}
+	if overview.QueueName != "empty-cq" {
+		t.Errorf("QueueName = %q, want 'empty-cq'", overview.QueueName)
+	}
+	if len(overview.QueueCapacity) != 0 {
+		t.Errorf("QueueCapacity count = %d, want 0", len(overview.QueueCapacity))
+	}
+}
+
 func defaultString(val, fallback string) string {
 	if val == "" {
 		return fallback

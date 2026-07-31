@@ -73,3 +73,14 @@ func TestFilterFittingQueues(t *testing.T) {
 		})
 	}
 }
+
+func TestFilterFittingQueues_NilAndEmpty(t *testing.T) {
+	if got := filterFittingQueues(nil, nil); len(got) != 0 {
+		t.Errorf("filterFittingQueues(nil, nil) count = %d, want 0", len(got))
+	}
+
+	queue := &spb.QueueOverview{QueueName: "q1"}
+	if got := filterFittingQueues([]*spb.QueueOverview{queue}, nil); len(got) != 1 {
+		t.Errorf("filterFittingQueues([q1], nil) count = %d, want 1", len(got))
+	}
+}

@@ -22,33 +22,102 @@ import (
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
-func TestParseK8sResourceVal(t *testing.T) {
+func TestParseK8sResourceVal_MemoryNormalization(t *testing.T) {
 	tests := []struct {
-		resName string
+		name    string
 		input   string
 		wantVal float64
 	}{
-		{resName: "nvidia.com/gpu", input: "8", wantVal: 8.0},
-		{resName: "memory", input: "8Gi", wantVal: 8.0},
-		{resName: "memory", input: "1024Mi", wantVal: 1.0},
-		{resName: "memory", input: "1048576Ki", wantVal: 1.0},
-		{resName: "cpu", input: "500m", wantVal: 0.5},
-		{resName: "cpu", input: "2000m", wantVal: 2.0},
-		{resName: "memory", input: "", wantVal: 0.0},
-		{resName: "cpu", input: "-", wantVal: 0.0},
+		{name: "Gigabytes", input: "8Gi", wantVal: 8.0},
+		{name: "Megabytes to GiB", input: "1024Mi", wantVal: 1.0},
+		{name: "Kilobytes to GiB", input: "1048576Ki", wantVal: 1.0},
+		{name: "Zero memory", input: "0", wantVal: 0.0},
+		{name: "Empty string", input: "", wantVal: 0.0},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.resName+"_"+tt.input, func(t *testing.T) {
-			gotVal := parseK8sResourceVal(tt.resName, tt.input)
+		t.Run(tt.name, func(t *testing.T) {
+			gotVal := parseK8sResourceVal("memory", tt.input)
 			if gotVal != tt.wantVal {
-				t.Errorf("parseK8sResourceVal(%q, %q) = %v, want %v", tt.resName, tt.input, gotVal, tt.wantVal)
+				t.Errorf("parseK8sResourceVal('memory', %q) = %v, want %v", tt.input, gotVal, tt.wantVal)
 			}
 		})
 	}
 }
 
-func TestExtractTotalResourceUsageByResourceTypeReservationOnly(t *testing.T) {
+func TestParseK8sResourceVal_CPUNormalization(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantVal float64
+	}{
+		{name: "Millicores 500m", input: "500m", wantVal: 0.5},
+		{name: "Millicores 2000m", input: "2000m", wantVal: 2.0},
+		{name: "Whole cores 4", input: "4", wantVal: 4.0},
+		{name: "Zero cores", input: "0", wantVal: 0.0},
+		{name: "Dash placeholder", input: "-", wantVal: 0.0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotVal := parseK8sResourceVal("cpu", tt.input)
+			if gotVal != tt.wantVal {
+				t.Errorf("parseK8sResourceVal('cpu', %q) = %v, want %v", tt.input, gotVal, tt.wantVal)
+			}
+		})
+	}
+}
+
+func TestExtractTotalResourceUsageByResourceType_CombinedUsageAndReservation(t *testing.T) {
+	status := kueuev1beta1.ClusterQueueStatus{
+		FlavorsReservation: []kueuev1beta1.FlavorUsage{
+			{
+				Name: "flavor-spot",
+				Resources: []kueuev1beta1.ResourceUsage{
+					{Name: corev1.ResourceName("nvidia.com/gpu"), Total: resource.MustParse("8")},
+					{Name: corev1.ResourceCPU, Total: resource.MustParse("32")},
+				},
+			},
+			{
+				Name: "flavor-ondemand",
+				Resources: []kueuev1beta1.ResourceUsage{
+					{Name: corev1.ResourceName("nvidia.com/gpu"), Total: resource.MustParse("4")},
+					{Name: corev1.ResourceCPU, Total: resource.MustParse("16")},
+				},
+			},
+		},
+		FlavorsUsage: []kueuev1beta1.FlavorUsage{
+			{
+				Name: "flavor-spot",
+				Resources: []kueuev1beta1.ResourceUsage{
+					{Name: corev1.ResourceName("nvidia.com/gpu"), Total: resource.MustParse("12")}, // Usage > Reservation (12 > 8)
+					{Name: corev1.ResourceCPU, Total: resource.MustParse("20")},                    // Reservation > Usage (32 > 20)
+				},
+			},
+			{
+				Name: "flavor-ondemand",
+				Resources: []kueuev1beta1.ResourceUsage{
+					{Name: corev1.ResourceName("nvidia.com/gpu"), Total: resource.MustParse("2")}, // Reservation > Usage (4 > 2)
+					{Name: corev1.ResourceCPU, Total: resource.MustParse("16")},                   // Equal (16 == 16)
+				},
+			},
+		},
+	}
+
+	totals := extractTotalResourceUsageByResourceType(status)
+
+	// GPU Spot max(12, 8) + OnDemand max(2, 4) = 12 + 4 = 16 GPUs
+	if got := totals["nvidia.com/gpu"]; got != 16.0 {
+		t.Errorf("extractTotalResourceUsageByResourceType GPU = %v, want 16.0", got)
+	}
+
+	// CPU Spot max(20, 32) + OnDemand max(16, 16) = 32 + 16 = 48 Cores
+	if got := totals["cpu"]; got != 48.0 {
+		t.Errorf("extractTotalResourceUsageByResourceType CPU = %v, want 48.0", got)
+	}
+}
+
+func TestExtractTotalResourceUsageByResourceType_ReservationOnly(t *testing.T) {
 	status := kueuev1beta1.ClusterQueueStatus{
 		FlavorsReservation: []kueuev1beta1.FlavorUsage{
 			{
