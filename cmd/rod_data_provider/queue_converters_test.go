@@ -184,6 +184,19 @@ func TestConvertAggregatedQuotaToResourceCapacity(t *testing.T) {
 }
 
 func TestMultiFlavorQueueOverview(t *testing.T) {
+	rfSpot := createTestResourceFlavorTyped("flavor-l4-spot", map[string]string{
+		"cloud.google.com/gke-accelerator":  "nvidia-l4",
+		"cloud.google.com/gke-provisioning": "spot",
+	})
+	rfOnDemand := createTestResourceFlavorTyped("flavor-h100-ondemand", map[string]string{
+		"cloud.google.com/gke-accelerator":  "nvidia-tesla-h100",
+		"cloud.google.com/gke-provisioning": "standard",
+	})
+	rfMap := map[string]*kueuev1beta1.ResourceFlavor{
+		"flavor-l4-spot":       rfSpot,
+		"flavor-h100-ondemand": rfOnDemand,
+	}
+
 	cq := &kueuev1beta1.ClusterQueue{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "dynamic-gpu-cq",
@@ -238,10 +251,28 @@ func TestMultiFlavorQueueOverview(t *testing.T) {
 		QueueName: "dynamic-gpu-cq",
 		QueueCapacity: []*spb.QueueResourceCapacity{
 			{
-				ResourceType:              "nvidia.com/gpu",
-				TotalCapacity:             40.0,
-				FreeCapacity:              30.0,
-				FreeCapacityWithBorrowing: 30.0,
+				ResourceType:              "nvidia-l4",
+				TotalCapacity:             32.0,
+				FreeCapacity:              24.0,
+				FreeCapacityWithBorrowing: 24.0,
+			},
+			{
+				ResourceType:              "cpu",
+				TotalCapacity:             128.0,
+				FreeCapacity:              100.0,
+				FreeCapacityWithBorrowing: 100.0,
+			},
+			{
+				ResourceType:              "memory",
+				TotalCapacity:             512.0,
+				FreeCapacity:              400.0,
+				FreeCapacityWithBorrowing: 400.0,
+			},
+			{
+				ResourceType:              "nvidia-tesla-h100",
+				TotalCapacity:             8.0,
+				FreeCapacity:              6.0,
+				FreeCapacityWithBorrowing: 6.0,
 			},
 			{
 				ResourceType:              "cpu",
@@ -258,21 +289,52 @@ func TestMultiFlavorQueueOverview(t *testing.T) {
 		},
 	}
 
-	overview := buildQueueOverviewFromClusterQueue(cq)
+	// Summed CPU and Memory across all flavors:
+	// CPU: 128 + 64 = 192, Free: 192 - (28+14) = 150
+	// Memory: 512 + 256 = 768, Free: 768 - (112+56) = 600
+	expectedCapacities := []*spb.QueueResourceCapacity{
+		{
+			ResourceType:              "nvidia-l4",
+			TotalCapacity:             32.0,
+			FreeCapacity:              24.0,
+			FreeCapacityWithBorrowing: 24.0,
+		},
+		{
+			ResourceType:              "cpu",
+			TotalCapacity:             192.0,
+			FreeCapacity:              150.0,
+			FreeCapacityWithBorrowing: 150.0,
+		},
+		{
+			ResourceType:              "memory",
+			TotalCapacity:             768.0,
+			FreeCapacity:              600.0,
+			FreeCapacityWithBorrowing: 600.0,
+		},
+		{
+			ResourceType:              "nvidia-tesla-h100",
+			TotalCapacity:             8.0,
+			FreeCapacity:              6.0,
+			FreeCapacityWithBorrowing: 6.0,
+		},
+	}
+	wantOverview.QueueCapacity = expectedCapacities
+
+	overview := buildQueueOverviewFromClusterQueue(cq, rfMap)
 	if diff := cmp.Diff(wantOverview, overview, protocmp.Transform()); diff != "" {
 		t.Errorf("buildQueueOverviewFromClusterQueue mismatch (-want +got):\n%s", diff)
 	}
 }
 
 func TestBuildQueueOverviewFromClusterQueue_NilAndEmpty(t *testing.T) {
-	if got := buildQueueOverviewFromClusterQueue(nil); got != nil {
+	if got := buildQueueOverviewFromClusterQueue(nil, nil); got != nil {
 		t.Errorf("buildQueueOverviewFromClusterQueue(nil) = %v, want nil", got)
 	}
 
 	emptyCQ := &kueuev1beta1.ClusterQueue{
 		ObjectMeta: metav1.ObjectMeta{Name: "empty-cq"},
 	}
-	overview := buildQueueOverviewFromClusterQueue(emptyCQ)
+	overview := buildQueueOverviewFromClusterQueue(emptyCQ, nil)
 	if overview == nil {
 		t.Fatalf("buildQueueOverviewFromClusterQueue(emptyCQ) is nil, want non-nil")
 	}

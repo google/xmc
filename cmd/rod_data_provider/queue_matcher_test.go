@@ -25,8 +25,8 @@ func TestFilterFittingQueues(t *testing.T) {
 	cq2 := createTestClusterQueueTyped("cq-cpu-2", "cpu-cohort", "BestEffortFIFO", "0", "0", "0")
 
 	overviews := []*spb.QueueOverview{
-		buildQueueOverviewFromClusterQueue(cq1),
-		buildQueueOverviewFromClusterQueue(cq2),
+		buildQueueOverviewFromClusterQueue(cq1, nil),
+		buildQueueOverviewFromClusterQueue(cq2, nil),
 	}
 
 	tests := []struct {

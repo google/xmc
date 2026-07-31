@@ -21,9 +21,30 @@ import (
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
+const gkeAcceleratorLabel = "cloud.google.com/gke-accelerator"
+
+// resolveResourceType resolves generic resource names like "nvidia.com/gpu" to specific accelerator names (e.g. "nvidia-tesla-h100")
+// using the ResourceFlavor's nodeLabels if present. Non-accelerator resources (like "cpu" or "memory") remain unchanged.
+func resolveResourceType(resourceName, flavorName string, rfMap map[string]*kueuev1beta1.ResourceFlavor) string {
+	if isAcceleratorResource(resourceName) && rfMap != nil {
+		if rf, exists := rfMap[flavorName]; exists && rf != nil {
+			if acc, ok := rf.Spec.NodeLabels[gkeAcceleratorLabel]; ok && acc != "" {
+				return acc
+			}
+		}
+	}
+	return resourceName
+}
+
+func isAcceleratorResource(resName string) bool {
+	lower := strings.ToLower(resName)
+	return strings.Contains(lower, "gpu") || strings.Contains(lower, "tpu") || strings.Contains(lower, "accelerator")
+}
+
 // extractTotalResourceUsageByResourceType calculates total used capacity per resource type across all flavors in ClusterQueueStatus.
 // Kueue tracks admitted quota in FlavorsReservation (with fallback to FlavorsUsage for older Kueue versions).
-func extractTotalResourceUsageByResourceType(status kueuev1beta1.ClusterQueueStatus) map[string]float64 {
+// Specific accelerator types (e.g. "nvidia-tesla-h100") are resolved using the provided ResourceFlavor map.
+func extractTotalResourceUsageByResourceType(status kueuev1beta1.ClusterQueueStatus, rfMap map[string]*kueuev1beta1.ResourceFlavor) map[string]float64 {
 	totalUsageByResourceType := make(map[string]float64)
 
 	flavorSource := status.FlavorsReservation
@@ -32,10 +53,12 @@ func extractTotalResourceUsageByResourceType(status kueuev1beta1.ClusterQueueSta
 	}
 
 	for _, flavorStatus := range flavorSource {
+		flavorName := string(flavorStatus.Name)
 		for _, resourceUsage := range flavorStatus.Resources {
-			resourceType := string(resourceUsage.Name)
-			usedQty := parseK8sResourceVal(resourceType, resourceUsage.Total.String())
-			totalUsageByResourceType[resourceType] += usedQty
+			rawResourceType := string(resourceUsage.Name)
+			resolvedType := resolveResourceType(rawResourceType, flavorName, rfMap)
+			usedQty := parseK8sResourceVal(rawResourceType, resourceUsage.Total.String())
+			totalUsageByResourceType[resolvedType] += usedQty
 		}
 	}
 

@@ -88,7 +88,7 @@ func TestExtractTotalResourceUsageByResourceType_Reservation(t *testing.T) {
 		},
 	}
 
-	totals := extractTotalResourceUsageByResourceType(status)
+	totals := extractTotalResourceUsageByResourceType(status, nil)
 
 	// GPU Spot (8) + OnDemand (4) = 12 GPUs
 	if got := totals["nvidia.com/gpu"]; got != 12.0 {
@@ -114,7 +114,7 @@ func TestExtractTotalResourceUsageByResourceType_FallbackToUsage(t *testing.T) {
 		},
 	}
 
-	totals := extractTotalResourceUsageByResourceType(status)
+	totals := extractTotalResourceUsageByResourceType(status, nil)
 	if totals["nvidia.com/gpu"] != 16.0 {
 		t.Errorf("extractTotalResourceUsageByResourceType(usage-fallback) = %v, want 16.0", totals["nvidia.com/gpu"])
 	}
