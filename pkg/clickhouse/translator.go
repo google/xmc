@@ -16,11 +16,22 @@ package clickhouse
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	dashboardpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	servicepb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 )
+
+var validTableNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_.]+$`)
+
+// ValidateTableName validates that tableName contains only alphanumeric characters, underscores, or periods.
+func ValidateTableName(tableName string) error {
+	if !validTableNameRegex.MatchString(tableName) {
+		return fmt.Errorf("invalid table name %q: must contain only alphanumeric characters, underscores, or periods", tableName)
+	}
+	return nil
+}
 
 // TranslatedQuery contains generated ClickHouse SQL string and parameterized arguments.
 type TranslatedQuery struct {
@@ -54,6 +65,10 @@ func TranslatePlotQuery(plot *dashboardpb.PlotSpec, xid, wid int64, req *service
 
 	if tableName == "" {
 		tableName = "xmc_metrics"
+	}
+
+	if err := ValidateTableName(tableName); err != nil {
+		return nil, err
 	}
 
 	switch plot.Type {
@@ -135,6 +150,9 @@ func appendPlotRangeFilters(plot *dashboardpb.PlotSpec, clauses *[]string, args 
 }
 
 func translateSummaryBoxQuery(plot *dashboardpb.PlotSpec, xid, wid int64, req *servicepb.GetChartDataRequest, tableName string) (*TranslatedQuery, error) {
+	if err := ValidateTableName(tableName); err != nil {
+		return nil, err
+	}
 	whereSQL, args := buildWhereClause(xid, wid, plot, req)
 	sql := fmt.Sprintf(`SELECT
   metric_name,
@@ -152,6 +170,9 @@ GROUP BY metric_name`, tableName, whereSQL)
 }
 
 func translateScatterQuery(plot *dashboardpb.PlotSpec, xid, wid int64, req *servicepb.GetChartDataRequest, tableName string) (*TranslatedQuery, error) {
+	if err := ValidateTableName(tableName); err != nil {
+		return nil, err
+	}
 	if isDownsampledScatter(plot, req) {
 		return translateScatterLTTBQuery(plot, xid, wid, req, tableName)
 	}
@@ -187,6 +208,9 @@ func isDownsampledScatter(plot *dashboardpb.PlotSpec, req *servicepb.GetChartDat
 }
 
 func translateScatterLTTBQuery(plot *dashboardpb.PlotSpec, xid, wid int64, req *servicepb.GetChartDataRequest, tableName string) (*TranslatedQuery, error) {
+	if err := ValidateTableName(tableName); err != nil {
+		return nil, err
+	}
 	whereSQL, args := buildWhereClause(xid, wid, plot, req)
 	maxPoints := int32(500)
 	if req != nil && req.GetChartWidthPixels() > 0 {
@@ -208,6 +232,9 @@ GROUP BY metric_name, work_unit_id, xid, execution_id, replica_id`, maxPoints, t
 }
 
 func translateBarQuery(plot *dashboardpb.PlotSpec, xid, wid int64, req *servicepb.GetChartDataRequest, tableName string) (*TranslatedQuery, error) {
+	if err := ValidateTableName(tableName); err != nil {
+		return nil, err
+	}
 	whereSQL, args := buildWhereClause(xid, wid, plot, req)
 	sql := fmt.Sprintf(`SELECT
   metric_name,
@@ -221,6 +248,9 @@ GROUP BY metric_name, category_or_bin`, tableName, whereSQL)
 }
 
 func translateHistogramQuery(plot *dashboardpb.PlotSpec, xid, wid int64, req *servicepb.GetChartDataRequest, tableName string) (*TranslatedQuery, error) {
+	if err := ValidateTableName(tableName); err != nil {
+		return nil, err
+	}
 	whereSQL, args := buildWhereClause(xid, wid, plot, req)
 	numBins := int32(10)
 

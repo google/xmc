@@ -171,3 +171,76 @@ func TestTranslatePlotQuery_RangeFilters(t *testing.T) {
 		t.Errorf("got %d args, want 6: %v", len(got.Args), got.Args)
 	}
 }
+
+func TestValidateTableName(t *testing.T) {
+	tests := []struct {
+		name      string
+		tableName string
+		wantErr   bool
+	}{
+		{
+			name:      "ValidSimpleName",
+			tableName: "xmc_metrics",
+			wantErr:   false,
+		},
+		{
+			name:      "ValidQualifiedName",
+			tableName: "default.xmc_metrics",
+			wantErr:   false,
+		},
+		{
+			name:      "ValidAlphanumericWithUnderscore",
+			tableName: "test_metrics_v2",
+			wantErr:   false,
+		},
+		{
+			name:      "InvalidEmptyName",
+			tableName: "",
+			wantErr:   true,
+		},
+		{
+			name:      "InvalidWithSpaces",
+			tableName: "xmc metrics",
+			wantErr:   true,
+		},
+		{
+			name:      "InvalidWithSemicolon",
+			tableName: "xmc_metrics; DROP TABLE users; --",
+			wantErr:   true,
+		},
+		{
+			name:      "InvalidWithQuotes",
+			tableName: "`xmc_metrics`",
+			wantErr:   true,
+		},
+		{
+			name:      "InvalidWithComment",
+			tableName: "xmc_metrics--",
+			wantErr:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateTableName(tc.tableName)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("ValidateTableName(%q) error = %v, wantErr %v", tc.tableName, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestTranslatePlotQuery_InvalidTableName(t *testing.T) {
+	plot := &dashboardpb.PlotSpec{
+		PlotId: "p-invalid-table",
+		Type:   dashboardpb.PlotType_SUMMARY_BOX,
+		Data: &dashboardpb.DataSpec{
+			Metrics: []string{"loss/train"},
+		},
+	}
+
+	_, err := TranslatePlotQuery(plot, 1001, 2001, nil, "invalid; DROP TABLE xmc_metrics; --")
+	if err == nil {
+		t.Fatalf("expected error for invalid table name, got nil")
+	}
+}
