@@ -16,6 +16,10 @@ package main
 
 import (
 	"testing"
+
+	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
+	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
+	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
 func TestParseK8sResourceVal(t *testing.T) {
@@ -41,5 +45,24 @@ func TestParseK8sResourceVal(t *testing.T) {
 				t.Errorf("parseK8sResourceVal(%q, %q) = %v, want %v", tt.resName, tt.input, gotVal, tt.wantVal)
 			}
 		})
+	}
+}
+
+func TestExtractTotalResourceUsageByResourceTypeReservationOnly(t *testing.T) {
+	status := kueuev1beta1.ClusterQueueStatus{
+		FlavorsReservation: []kueuev1beta1.FlavorUsage{
+			{
+				Name: "spot",
+				Resources: []kueuev1beta1.ResourceUsage{
+					{Name: corev1.ResourceName("nvidia.com/gpu"), Total: resource.MustParse("16")},
+				},
+			},
+		},
+		FlavorsUsage: []kueuev1beta1.FlavorUsage{}, // Empty usage
+	}
+
+	totals := extractTotalResourceUsageByResourceType(status)
+	if totals["nvidia.com/gpu"] != 16.0 {
+		t.Errorf("extractTotalResourceUsageByResourceType(reservation-only) = %v, want 16.0", totals["nvidia.com/gpu"])
 	}
 }

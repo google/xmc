@@ -23,34 +23,48 @@ import (
 
 // extractTotalResourceUsageByResourceType calculates the total used capacity per resource type across all flavors in ClusterQueueStatus.
 func extractTotalResourceUsageByResourceType(status kueuev1beta1.ClusterQueueStatus) map[string]float64 {
+	reservationMap, usageMap, resourceTypeByKey := extractFlavorResourceQuantitiesMap(status)
+
 	totalUsageByResourceType := make(map[string]float64)
+	for flavorResourceKey, resourceType := range resourceTypeByKey {
+		reservedQuantity := reservationMap[flavorResourceKey]
+		usageQuantity := usageMap[flavorResourceKey]
 
-	// Build temporary map of flavor-level reservations: "flavorName/resourceType" -> reservedQuantity
-	reservationByFlavorAndResource := make(map[string]float64)
-	for _, flavorStatus := range status.FlavorsReservation {
-		for _, resourceUsage := range flavorStatus.Resources {
-			resourceType := string(resourceUsage.Name)
-			flavorResourceKey := string(flavorStatus.Name) + "/" + resourceType
-			reservationByFlavorAndResource[flavorResourceKey] = parseK8sResourceVal(resourceType, resourceUsage.Total.String())
+		effectiveUsedQuantity := usageQuantity
+		if reservedQuantity > effectiveUsedQuantity {
+			effectiveUsedQuantity = reservedQuantity
 		}
-	}
-
-	// Sum max(usage, reservation) per resource type across all flavors
-	for _, flavorStatus := range status.FlavorsUsage {
-		for _, resourceUsage := range flavorStatus.Resources {
-			resourceType := string(resourceUsage.Name)
-			flavorResourceKey := string(flavorStatus.Name) + "/" + resourceType
-
-			usageQuantity := parseK8sResourceVal(resourceType, resourceUsage.Total.String())
-			effectiveUsedQuantity := usageQuantity
-			if reservedQuantity, exists := reservationByFlavorAndResource[flavorResourceKey]; exists && reservedQuantity > effectiveUsedQuantity {
-				effectiveUsedQuantity = reservedQuantity
-			}
-			totalUsageByResourceType[resourceType] += effectiveUsedQuantity
-		}
+		totalUsageByResourceType[resourceType] += effectiveUsedQuantity
 	}
 
 	return totalUsageByResourceType
+}
+
+// extractFlavorResourceQuantitiesMap extracts reservation and usage quantities mapped by "flavorName/resourceType".
+func extractFlavorResourceQuantitiesMap(status kueuev1beta1.ClusterQueueStatus) (map[string]float64, map[string]float64, map[string]string) {
+	reservationMap := make(map[string]float64)
+	usageMap := make(map[string]float64)
+	resourceTypeByKey := make(map[string]string)
+
+	for _, flavorStatus := range status.FlavorsReservation {
+		for _, resourceUsage := range flavorStatus.Resources {
+			resourceType := string(resourceUsage.Name)
+			key := string(flavorStatus.Name) + "/" + resourceType
+			reservationMap[key] = parseK8sResourceVal(resourceType, resourceUsage.Total.String())
+			resourceTypeByKey[key] = resourceType
+		}
+	}
+
+	for _, flavorStatus := range status.FlavorsUsage {
+		for _, resourceUsage := range flavorStatus.Resources {
+			resourceType := string(resourceUsage.Name)
+			key := string(flavorStatus.Name) + "/" + resourceType
+			usageMap[key] = parseK8sResourceVal(resourceType, resourceUsage.Total.String())
+			resourceTypeByKey[key] = resourceType
+		}
+	}
+
+	return reservationMap, usageMap, resourceTypeByKey
 }
 
 // parseK8sResourceVal parses Kubernetes quantity strings (e.g. "8Gi", "1024Ki", "1000m", "4") into a normalized float64 value.
