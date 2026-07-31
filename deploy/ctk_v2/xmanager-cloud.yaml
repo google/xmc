@@ -36,16 +36,8 @@ vars:
   deletion_protection: false
   
   # Image Settings
-  xid_image:          # Required. Container image for xid service
-  actuator_image:     # Required. Container image for actuator
-  ess_image:          # Required. Container image for experiment state server
-  ui_image:           # Required. Container image for UI
-  reconciler_image:   # Required. Container image for reconciler
-  log_monitor_image:  # Required. Container image for log monitor
-  health_service_image: # Required. Container image for health service
-  dashboard_service_image: # Container image for dashboard service
-  rod_image:          # Container image for ROD service
-  ingestion_gateway_image: # Container image for ingestion gateway service
+  image_registry:
+  image_tag: latest
   
   task_signature_ttl_seconds: 86400
   use_redis_queue: true
@@ -343,27 +335,27 @@ deployment_groups:
       - name: domainSuffix
         value: $(vars.domain_name)
       - name: xid_custom_image
-        value: $(vars.xid_image)
+        value: "$(vars.image_registry)/xid-service-$(vars.environment):$(vars.image_tag)"
       - name: actuator_custom_image
-        value: $(vars.actuator_image)
+        value: "$(vars.image_registry)/actuator-$(vars.environment):$(vars.image_tag)"
       - name: ess_custom_image
-        value: $(vars.ess_image)
+        value: "$(vars.image_registry)/experiment-state-server-$(vars.environment):$(vars.image_tag)"
       - name: reconciler_custom_image
-        value: $(vars.reconciler_image)
+        value: "$(vars.image_registry)/reconciler-$(vars.environment):$(vars.image_tag)"
       - name: ui.image
-        value: $(vars.ui_image)
+        value: "$(vars.image_registry)/ui-$(vars.environment):$(vars.image_tag)"
       - name: health_service_custom_image
-        value: $(vars.health_service_image)
+        value: "$(vars.image_registry)/health-service-$(vars.environment):$(vars.image_tag)"
       - name: healthService.gcpServiceAccount
         value: $(health_service_gcp_sa.service_account_email)
       - name: dashboard_service_custom_image
-        value: $(vars.dashboard_service_image)
+        value: "$(vars.image_registry)/dashboard-service-$(vars.environment):$(vars.image_tag)"
       - name: dashboardService.gcpServiceAccount
         value: $(workload_service_account.service_account_email)
       - name: rod_custom_image
-        value: $(vars.rod_image)
+        value: "$(vars.image_registry)/rod-data-provider-$(vars.environment):$(vars.image_tag)"
       - name: ingestion_gateway_custom_image
-        value: $(vars.ingestion_gateway_image)
+        value: "$(vars.image_registry)/ingestion-gateway-$(vars.environment):$(vars.image_tag)"
       - name: taskSignatureTtlSeconds
         value: $(vars.task_signature_ttl_seconds)
         type: auto
@@ -440,7 +432,7 @@ deployment_groups:
       project_id: $(vars.project_id)
       region: $(vars.region)
       environment: $(vars.environment)
-      image_url: $(vars.log_monitor_image)
+      image_url: "$(vars.image_registry)/log-monitor-$(vars.environment):$(vars.image_tag)"
       service_account_email: $(log_monitor_service_account.service_account_email)
       deletion_protection: $(vars.deletion_protection)
       status_message_history_enabled: $(vars.status_message_history_enabled)

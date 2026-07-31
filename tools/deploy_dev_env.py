@@ -94,7 +94,8 @@ CONFIG_VALIDATION_SCHEMAS = {
     "environment": r"^[a-zA-Z0-9_-]+$",
     "region": r"^[a-z0-9-]+$",
     "domain_name": r"^[a-zA-Z0-9.-]+$",
-    "xmc_acr_target": r"^[a-zA-Z0-9./:-]+$",
+    "image_registry": r"^[a-zA-Z0-9./:-]+$",
+    "image_tag": r"^[a-zA-Z0-9_.-]+$",
 }
 
 
@@ -764,7 +765,7 @@ def step_images(config: dict[str, Any], dns_project: str, dns_zone: str) -> None
         dns_zone: Cloud DNS Managed Zone name.
     """
     log_info("Configuring Docker registry authorization for registry...")
-    acr_target = config["xmc_acr_target"]
+    acr_target = config["image_registry"]
     registry_host = acr_target.split("/")[0]
 
     if registry_host.endswith("gcr.io") or registry_host.endswith(".pkg.dev"):
@@ -777,6 +778,7 @@ def step_images(config: dict[str, Any], dns_project: str, dns_zone: str) -> None
     env_vars = {
         "XMC_ENV": config["environment"],
         "XMC_ACR_TARGET": acr_target,
+        "BUILD_TAG": config["image_tag"],
     }
 
     # TODO: Migrate hardcoded image targets to dynamic discovery or configuration flags to operate on flags cleanly.

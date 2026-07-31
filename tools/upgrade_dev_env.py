@@ -44,9 +44,10 @@ class Config:
     environment: str
     namespace: str
     registry: str
-    acr_target: str
+    image_registry: str
     gke_cluster: str
     config_path: str
+    image_tag: str
     run_migrations: bool = False
 
 
@@ -196,6 +197,7 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
     region = os.getenv("GCP_REGION") or str(yaml_vars.get("region", "us-central1"))
     environment = os.getenv("XMANAGER_ENV") or str(yaml_vars.get("environment", "dev"))
     namespace = os.getenv("K8S_NAMESPACE") or str(yaml_vars.get("namespace", "xmc"))
+    image_tag = os.getenv("BUILD_TAG") or str(yaml_vars.get("image_tag", "latest"))
 
     if not project_id:
         error_exit(f"project_id is missing in vars of '{config_file}'.")
@@ -203,7 +205,11 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
         error_exit(f"deployment_name is missing in vars of '{config_file}'.")
 
     registry = f"us-docker.pkg.dev/{project_id}/xmc"
-    acr_target = os.getenv("XMC_ACR_TARGET") or registry
+    image_registry = (
+        os.getenv("IMAGE_REGISTRY")
+        or os.getenv("XMC_ACR_TARGET")
+        or str(yaml_vars.get("image_registry", registry))
+    )
     gke_cluster = f"xmc-{deployment_name}-{environment}"
 
     return Config(
@@ -213,9 +219,10 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
         environment=environment,
         namespace=namespace,
         registry=registry,
-        acr_target=acr_target,
+        image_registry=image_registry,
         gke_cluster=gke_cluster,
         config_path=config_file,
+        image_tag=image_tag,
         run_migrations=run_migrations,
     )
 
@@ -435,11 +442,12 @@ def step_migrate(config: Config) -> None:
 def step_images(config: Config) -> None:
     """Rebuilds and pushes XMC microservice OCI images to Artifact Registry."""
     log_info(
-        f"Rebuilding and pushing latest XMC microservice OCI images to '{config.acr_target}'..."
+        f"Rebuilding and pushing latest XMC microservice OCI images to '{config.image_registry}'..."
     )
     env = {
         "XMC_ENV": config.environment,
-        "XMC_ACR_TARGET": config.acr_target,
+        "XMC_ACR_TARGET": config.image_registry,
+        "BUILD_TAG": config.image_tag,
     }
 
     # TODO: Migrate hardcoded image targets to dynamic discovery or configuration flags to operate on flags cleanly.
