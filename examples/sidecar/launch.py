@@ -143,7 +143,7 @@ def main(argv: Sequence[str]) -> None:
         )
         created_wu = stub.create_work_unit(create_req)
         print(f"Created Work Unit successfully: {created_wu.name}")
-        print(f"Experiment Dashboard URL: https://{os.environ.get('XMC_DOMAIN')}")
+        print(f"Experiment Dashboard URL: https://{os.environ.get('XMC_DOMAIN', 'localhost')}")
 
 
 if __name__ == "__main__":
