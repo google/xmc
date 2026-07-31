@@ -47,6 +47,7 @@ go_test(
     deps = [
         "//api/protos/dashboard:messages_go_proto",
         "//api/protos/dashboard:service_go_proto",
+        "//internal/compat/proto",
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
         "@org_golang_google_protobuf//types/known/timestamppb",
