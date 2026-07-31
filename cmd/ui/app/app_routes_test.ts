@@ -22,6 +22,7 @@ import { ExperimentPage } from './experiment_page/experiment_page';
 import { ExperimentsListPage } from './experiments_list_page/experiments_list_page';
 import { guestGuard } from './guest.guard';
 import { HomePage } from './homepage/home_page';
+import { resourceDashboardGuard } from './resource_dashboard.guard';
 import { ResourceDashboard } from './resource_dashboard/resource_dashboard';
 import { WorkUnitPage } from './work_unit_page/work_unit_page';
 
@@ -46,11 +47,11 @@ describe('App Routes', () => {
     expect(route?.canActivate).toEqual([authGuard, adminPanelGuard]);
   });
 
-  it('should route "resources" to ResourceDashboard with authGuard', () => {
+  it('should route "resources" to ResourceDashboard with authGuard and resourceDashboardGuard', () => {
     const route = routes.find((r) => r.path === 'resources');
     expect(route).toBeDefined();
     expect(route?.component).toBe(ResourceDashboard);
-    expect(route?.canActivate).toContain(authGuard);
+    expect(route?.canActivate).toEqual([authGuard, resourceDashboardGuard]);
   });
 
   it('should route "experiments" with authGuard and children', () => {

@@ -791,9 +791,12 @@ def step_images(config: dict[str, Any], dns_project: str, dns_zone: str) -> None
         "//cmd/xid_service:xid_service_image_push",
         "//cmd/health_service:health_service_image_push",
         "//cmd/dashboard_service:dashboard_service_image_push",
-        "//cmd/rod_data_provider:rod_data_provider_image_push",
         "//cmd/ingestion_gateway:ingestion_gateway_image_push",
     ]
+
+    rod_enabled = str(config.get("rod_deployment_enabled", "false")).lower() == "true"
+    if rod_enabled:
+        bazel_targets.append("//cmd/rod_data_provider:rod_data_provider_image_push")
 
     for target in bazel_targets:
         log_info(f"Pushing {target.split(':')[-1]}...")

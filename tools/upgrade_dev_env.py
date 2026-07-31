@@ -49,6 +49,7 @@ class Config:
     gke_cluster: str
     config_path: str
     run_migrations: bool = False
+    rod_deployment_enabled: bool = False
 
 
 def log_info(msg: str) -> None:
@@ -212,6 +213,12 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
     image_tag = os.getenv("BUILD_TAG") or str(yaml_vars.get("image_tag", "latest"))
     gke_cluster = f"xmc-{deployment_name}-{environment}"
 
+    rod_raw = yaml_vars.get("rod_deployment_enabled", False)
+    if isinstance(rod_raw, str):
+        rod_deployment_enabled = rod_raw.lower() == "true"
+    else:
+        rod_deployment_enabled = bool(rod_raw)
+
     return Config(
         project_id=project_id,
         deployment_name=deployment_name,
@@ -224,6 +231,7 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
         gke_cluster=gke_cluster,
         config_path=config_file,
         run_migrations=run_migrations,
+        rod_deployment_enabled=rod_deployment_enabled,
     )
 
 
@@ -463,9 +471,12 @@ def step_images(config: Config) -> None:
         ("xid_service", "//cmd/xid_service:xid_service_image_push"),
         ("health_service", "//cmd/health_service:health_service_image_push"),
         ("dashboard_service", "//cmd/dashboard_service:dashboard_service_image_push"),
-        ("rod_data_provider", "//cmd/rod_data_provider:rod_data_provider_image_push"),
         ("ingestion_gateway", "//cmd/ingestion_gateway:ingestion_gateway_image_push"),
     ]
+    if config.rod_deployment_enabled:
+        targets.append(
+            ("rod_data_provider", "//cmd/rod_data_provider:rod_data_provider_image_push")
+        )
 
     for name, target in targets:
         log_info(f"Pushing {name} image...")
@@ -538,6 +549,8 @@ def step_restart(config: Config) -> None:
         "ui",
         "xid-service",
     ]
+    if config.rod_deployment_enabled:
+        services.append("rod-data-provider")
 
     for service in services:
         resolved_name = resolve_deployment_name(service, config.namespace)

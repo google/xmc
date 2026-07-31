@@ -68,6 +68,9 @@ ingestionGatewayDeployment:
       cpu: "100m"
       memory: "256Mi"
 
+rodDeployment:
+  enabled: false
+
 healthService:
   gcpServiceAccount: ""
 
