@@ -151,6 +151,12 @@ message JobSetExecutable {
   // Success policy for the JobSet. If not specified, defaults to requiring all jobs to succeed,
   // unless a known leader role like "pathways-head" is detected in jobs.
   optional SuccessPolicy success_policy = 4;
+
+  // Custom annotations to apply to the top-level JobSet resource.
+  map<string, string> annotations = 6;
+
+  // Custom labels to apply to the top-level JobSet resource.
+  map<string, string> labels = 7;
 }
 
 // A KubernetesJob is a single Kubernetes Job that is run as part of a

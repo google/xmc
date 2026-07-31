@@ -497,6 +497,19 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		constants.AutoscalerSafeToEvictAnnotation: "false",
 	}
 
+	if jobset := workUnit.GetExecutable().GetJobset(); jobset != nil {
+		for k, v := range jobset.GetAnnotations() {
+			if _, exists := jobSetAnnotations[k]; !exists {
+				jobSetAnnotations[k] = v
+			}
+		}
+		for k, v := range jobset.GetLabels() {
+			if _, exists := jobSetLabels[k]; !exists {
+				jobSetLabels[k] = v
+			}
+		}
+	}
+
 	// Inject the managed-xprof GCS destination whenever the cluster configures a
 	// managed-xprof GCS bucket. This is intentionally decoupled from the ManagedXprof
 	// artifact: the workload only needs to know where to write xprof output,

@@ -2579,3 +2579,80 @@ func TestInjectManagedXprofGCSEnvVars_AllContainers(t *testing.T) {
 		})
 	}
 }
+
+func TestConstructJobSet_CustomAnnotationsAndLabels(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnit1",
+		Executable: &esspb.Executable{
+			SchedulingConstraints: &esspb.SchedulingConstraints{
+				QueueName: testNamespace,
+			},
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Annotations: map[string]string{
+						"custom.company.com/release": "v1.2.3",
+						"helm.sh/hook":               "pre-install",
+						constants.AuthorAnnotation:   "malicious-author-override",
+					},
+					Labels: map[string]string{
+						"custom.company.com/team":   "ml-platform",
+						"env":                       "production",
+						constants.ExperimentIDLabel: "99999",
+						kueueQueueLabel:             "malicious-queue-override",
+					},
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name: "job1",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_CpuResources{
+										CpuResources: &esspb.CpuResources{
+											CpuMillicores: 100,
+											MemoryBytes:   1024,
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+							},
+							Replicas: 1,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	// Verify custom annotations were merged.
+	if got.Annotations["custom.company.com/release"] != "v1.2.3" {
+		t.Errorf("Annotations[\"custom.company.com/release\"] = %q, want \"v1.2.3\"", got.Annotations["custom.company.com/release"])
+	}
+	if got.Annotations["helm.sh/hook"] != "pre-install" {
+		t.Errorf("Annotations[\"helm.sh/hook\"] = %q, want \"pre-install\"", got.Annotations["helm.sh/hook"])
+	}
+	// Verify reserved author annotation was not overwritten.
+	if got.Annotations[constants.AuthorAnnotation] != "test-author" {
+		t.Errorf("Annotations[%q] = %q, want \"test-author\"", constants.AuthorAnnotation, got.Annotations[constants.AuthorAnnotation])
+	}
+
+	// Verify custom labels were merged.
+	if got.Labels["custom.company.com/team"] != "ml-platform" {
+		t.Errorf("Labels[\"custom.company.com/team\"] = %q, want \"ml-platform\"", got.Labels["custom.company.com/team"])
+	}
+	if got.Labels["env"] != "production" {
+		t.Errorf("Labels[\"env\"] = %q, want \"production\"", got.Labels["env"])
+	}
+	// Verify reserved experiment ID label and queue label were not overwritten.
+	if got.Labels[constants.ExperimentIDLabel] != "123" {
+		t.Errorf("Labels[%q] = %q, want \"123\"", constants.ExperimentIDLabel, got.Labels[constants.ExperimentIDLabel])
+	}
+	if got.Labels[kueueQueueLabel] != testNamespace {
+		t.Errorf("Labels[%q] = %q, want %q", kueueQueueLabel, got.Labels[kueueQueueLabel], testNamespace)
+	}
+}
