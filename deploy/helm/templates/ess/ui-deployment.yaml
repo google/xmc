@@ -50,7 +50,7 @@ spec:
         - name: XMC_ADMIN_PANEL_ENABLED
           value: {{ .Values.healthServiceDeployment.enabled | quote }}
         - name: XMC_RESOURCE_DASHBOARD_ENABLED
-          value: {{ if .Values.rodDeployment }}{{ .Values.rodDeployment.enabled | quote }}{{ else }}"false"{{ end }}
+          value: {{ (default dict .Values.rodDeployment).enabled | quote }}
         resources:
           requests:
             cpu: "10m"
