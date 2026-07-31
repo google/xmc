@@ -35,7 +35,7 @@ func FetchClusterQueues(ctx context.Context, cache *cache.KueueCache, req *spb.G
 		if cq == nil {
 			continue
 		}
-		overview := buildQueueOverviewFromKueueData(cq)
+		overview := buildQueueOverviewFromClusterQueue(cq)
 		results = append(results, overview)
 	}
 

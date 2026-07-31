@@ -19,8 +19,8 @@ import (
 	spb "xmanager_cloud/api/protos/rod"
 )
 
-// buildQueueOverviewFromKueueData transforms a Kueue ClusterQueue CRD into a QueueOverview proto message.
-func buildQueueOverviewFromKueueData(cq *kueuev1beta1.ClusterQueue) *spb.QueueOverview {
+// buildQueueOverviewFromClusterQueue transforms a Kueue ClusterQueue CRD into a QueueOverview proto message.
+func buildQueueOverviewFromClusterQueue(cq *kueuev1beta1.ClusterQueue) *spb.QueueOverview {
 	usageMap := extractResourceTotalsFromStatus(cq.Status.FlavorsUsage)
 	resMap := extractResourceTotalsFromStatus(cq.Status.FlavorsReservation)
 
