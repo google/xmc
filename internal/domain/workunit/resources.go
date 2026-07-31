@@ -110,7 +110,11 @@ func MergeResourceSets(a, b []*essmsgpb.ResourceSet) []*essmsgpb.ResourceSet {
 		}
 		if rs.GetTpuResources() != nil {
 			tpus = append(tpus, proto.Clone(rs).(*essmsgpb.ResourceSet))
+			continue
 		}
+		// Default to CPU resources to ensure EphemeralStorageBytes is not lost even if CpuResources is nil.
+		res := rs.GetCpuResources()
+		cpu, cpuEphemeral = mergeCpuResource(cpu, cpuEphemeral, rs, res)
 	}
 
 	if cpu != nil {
@@ -153,8 +157,10 @@ func mergeCpuResource(cpu *essmsgpb.CpuResources, cpuEphemeral int64, rs *essmsg
 	if cpu == nil {
 		cpu = &essmsgpb.CpuResources{}
 	}
-	cpu.CpuMillicores += res.GetCpuMillicores()
-	cpu.MemoryBytes += res.GetMemoryBytes()
+	if res != nil {
+		cpu.CpuMillicores += res.GetCpuMillicores()
+		cpu.MemoryBytes += res.GetMemoryBytes()
+	}
 	return cpu, cpuEphemeral + rs.GetEphemeralStorageBytes()
 }
 

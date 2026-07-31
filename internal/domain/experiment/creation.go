@@ -61,9 +61,12 @@ func PrepareWorkUnitCreation(ctx context.Context, exp *essmsgpb.Experiment, wu *
 	// 2. Merge resources required by WorkUnit into Experiment
 	wuResources := workunit.GetWorkUnitResources(wu)
 	resourcesChanged := false
-	if wuResources != nil {
-		updatedExp.Resources = workunit.MergeResourceSets(updatedExp.Resources, wuResources)
-		resourcesChanged = true
+	if len(wuResources) > 0 {
+		oldResources := updatedExp.Resources
+		updatedExp.Resources = workunit.MergeResourceSets(oldResources, wuResources)
+		if !equalResourceSets(oldResources, updatedExp.Resources) {
+			resourcesChanged = true
+		}
 	}
 
 	// 3. Update timestamps
@@ -74,4 +77,16 @@ func PrepareWorkUnitCreation(ctx context.Context, exp *essmsgpb.Experiment, wu *
 	}
 
 	return updatedExp, resourcesChanged, nil
+}
+
+func equalResourceSets(a, b []*essmsgpb.ResourceSet) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !proto.Equal(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
 }
