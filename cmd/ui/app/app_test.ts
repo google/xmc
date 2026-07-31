@@ -24,9 +24,11 @@ import { HealthService } from './service/health_service';
 import { bootstrap, hasEl, setupModule } from './testing/test';
 
 describe('App Component', () => {
-  let featureFlagServiceMock: jasmine.SpyObj<FeatureFlagService>;
+  let isResourceDashboardEnabled = true;
 
   beforeEach(() => {
+    isResourceDashboardEnabled = true;
+
     const authServiceMock = jasmine.createSpyObj<AuthService>('AuthService', ['getUser']);
     authServiceMock.getUser.and.returnValue(
       of({
@@ -43,11 +45,17 @@ describe('App Component', () => {
     ]);
     healthServiceMock.isAdminPanelAccessible.and.returnValue(of(false));
 
-    featureFlagServiceMock = jasmine.createSpyObj<FeatureFlagService>('FeatureFlagService', [], {
-      isResourceDashboardEnabled: true,
-      isAdminPanelEnabled: false,
-      isStatusMessageHistoryEnabled: true,
-    });
+    const featureFlagServiceMock = {
+      get isResourceDashboardEnabled() {
+        return isResourceDashboardEnabled;
+      },
+      get isAdminPanelEnabled() {
+        return false;
+      },
+      get isStatusMessageHistoryEnabled() {
+        return true;
+      },
+    } as FeatureFlagService;
 
     setupModule({
       providers: [
@@ -72,10 +80,7 @@ describe('App Component', () => {
   });
 
   it('should hide Resources menu item when isResourceDashboardEnabled is false', () => {
-    (
-      Object.getOwnPropertyDescriptor(featureFlagServiceMock, 'isResourceDashboardEnabled')
-        ?.get as jasmine.Spy
-    ).and.returnValue(false);
+    isResourceDashboardEnabled = false;
     bootstrap(App);
     expect(hasEl('a[routerLink="/resources"]')).toBeFalse();
   });
