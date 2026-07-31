@@ -492,6 +492,11 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 	}
 	jobSetLabels[kueuePriorityClassLabel] = getPriorityClassName(priorities)
 
+	defaultAnnotations := map[string]string{
+		constants.AuthorAnnotation:                author,
+		constants.AutoscalerSafeToEvictAnnotation: "false",
+	}
+
 	jobSetAnnotations := map[string]string{
 		constants.AuthorAnnotation:                author,
 		constants.AutoscalerSafeToEvictAnnotation: "false",
@@ -526,7 +531,7 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 	var replicatedJobs []jobsetv1alpha2.ReplicatedJob
 	if workUnit.GetExecutable().GetJobset() != nil {
 		for _, job := range workUnit.GetExecutable().GetJobset().GetJobs() {
-			rj := c.k8sJobToReplicatedJob(ctx, job, jobLabels, jobSetAnnotations)
+			rj := c.k8sJobToReplicatedJob(ctx, job, jobLabels, defaultAnnotations)
 			injectManagedXprofGCSEnvVars(&rj, xprofBucketURL, xprofObjectPath)
 			replicatedJobs = append(replicatedJobs, rj)
 		}
