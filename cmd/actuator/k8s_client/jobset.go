@@ -492,9 +492,27 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 	}
 	jobSetLabels[kueuePriorityClassLabel] = getPriorityClassName(priorities)
 
-	jobSetAnnotations := map[string]string{
+	defaultAnnotations := map[string]string{
 		constants.AuthorAnnotation:                author,
 		constants.AutoscalerSafeToEvictAnnotation: "false",
+	}
+
+	jobSetAnnotations := make(map[string]string, len(defaultAnnotations))
+	for k, v := range defaultAnnotations {
+		jobSetAnnotations[k] = v
+	}
+
+	if jobset := workUnit.GetExecutable().GetJobset(); jobset != nil {
+		for k, v := range jobset.GetAnnotations() {
+			if _, exists := jobSetAnnotations[k]; !exists {
+				jobSetAnnotations[k] = v
+			}
+		}
+		for k, v := range jobset.GetLabels() {
+			if _, exists := jobSetLabels[k]; !exists {
+				jobSetLabels[k] = v
+			}
+		}
 	}
 
 	// Inject the managed-xprof GCS destination whenever the cluster configures a
@@ -513,7 +531,7 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 	var replicatedJobs []jobsetv1alpha2.ReplicatedJob
 	if workUnit.GetExecutable().GetJobset() != nil {
 		for _, job := range workUnit.GetExecutable().GetJobset().GetJobs() {
-			rj := c.k8sJobToReplicatedJob(ctx, job, jobLabels, jobSetAnnotations)
+			rj := c.k8sJobToReplicatedJob(ctx, job, jobLabels, defaultAnnotations)
 			injectManagedXprofGCSEnvVars(&rj, xprofBucketURL, xprofObjectPath)
 			replicatedJobs = append(replicatedJobs, rj)
 		}
