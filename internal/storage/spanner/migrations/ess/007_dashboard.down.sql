@@ -12,8 +12,11 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
+DROP INDEX ArtifactChartsByChartId;
 DROP TABLE ArtifactCharts;
 DROP TABLE ChartPlots;
+DROP INDEX DashboardChartsByChartId;
 DROP TABLE DashboardCharts;
 DROP TABLE Charts;
 DROP TABLE Dashboards;
+

@@ -204,7 +204,7 @@ var (
 				QueryLiteral: safesql.New("dc.ChartId"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
-				Indexed:      false,
+				Indexed:      true,
 			},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
@@ -281,7 +281,7 @@ var (
 				QueryLiteral: safesql.New("ac.ChartId"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
-				Indexed:      false,
+				Indexed:      true,
 			},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{

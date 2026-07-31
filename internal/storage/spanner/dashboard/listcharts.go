@@ -39,7 +39,7 @@ import (
 func (r *Repository) ListCharts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Chart, string, error) {
 	logging.Info(ctx, "List charts", "parent", parent, "pageSize", pageSize, "pageToken", pageToken, "filter", filter, "orderBy", orderBy)
 
-	parentFilter, hasMatches, err := r.buildParentFilter(ctx, parent)
+	parentFilter, hasMatches, err := r.buildParentFilter(ctx, parent, staleness)
 	if err != nil {
 		return nil, "", err
 	}
@@ -112,12 +112,12 @@ func combineFilters(parentFilter, filter string) string {
 	return fmt.Sprintf("(%s) AND (%s)", parentFilter, filter)
 }
 
-func (r *Repository) buildParentFilter(ctx context.Context, parent string) (string, bool, error) {
+func (r *Repository) buildParentFilter(ctx context.Context, parent string, staleness time.Duration) (string, bool, error) {
 	if parent == "" {
 		return "", true, nil
 	}
 	if strings.HasPrefix(parent, "dashboards/") || (!strings.HasPrefix(parent, "experiments/") && !strings.Contains(parent, "/")) {
-		chartIDs, err := r.fetchDashboardChartIDs(ctx, parent)
+		chartIDs, err := r.fetchDashboardChartIDs(ctx, parent, staleness)
 		if err != nil {
 			return "", false, err
 		}
@@ -137,10 +137,10 @@ func (r *Repository) buildParentFilter(ctx context.Context, parent string) (stri
 		}
 		return fmt.Sprintf("xid = %d", xid), true, nil
 	}
-	return "", true, nil
+	return "", false, fmt.Errorf("unsupported parent format: %q", parent)
 }
 
-func (r *Repository) fetchDashboardChartIDs(ctx context.Context, parent string) ([]string, error) {
+func (r *Repository) fetchDashboardChartIDs(ctx context.Context, parent string, staleness time.Duration) ([]string, error) {
 	trimmed := strings.TrimPrefix(parent, "dashboards/")
 	withPrefix := "dashboards/" + trimmed
 
@@ -161,7 +161,11 @@ func (r *Repository) fetchDashboardChartIDs(ctx context.Context, parent string) 
 		return nil, fmt.Errorf("failed to generate dashboard charts query: %w", err)
 	}
 
-	iter := r.client.Single().Query(ctx, *stmt)
+	tx := r.client.Single()
+	if staleness > 0 {
+		tx = tx.WithTimestampBound(spanner.ExactStaleness(staleness))
+	}
+	iter := tx.Query(ctx, *stmt)
 	defer iter.Stop()
 
 	var chartIDs []string

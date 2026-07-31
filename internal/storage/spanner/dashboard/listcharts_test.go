@@ -195,6 +195,41 @@ func TestListCharts_InvalidPageToken(t *testing.T) {
 	}
 }
 
+func TestListCharts_UnsupportedParentFormat(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	if _, _, err := repo.ListCharts(ctx, "invalid/parent/format", 10, "", "", "", 0); err == nil {
+		t.Errorf("ListCharts with unsupported parent format succeeded, want error")
+	}
+}
+
+func TestListCharts_ParentDashboard_WithStaleness(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	c1 := blankChartProto("charts/dash-stale-1", 100, 1)
+	if err := repo.CreateChart(ctx, c1); err != nil {
+		t.Fatalf("CreateChart c1 failed: %v", err)
+	}
+
+	dash := blankDashboardProto("dashboards/parent-dash-stale")
+	dash.Charts = []*dpb.Chart{{Name: "charts/dash-stale-1"}}
+	if err := repo.CreateDashboard(ctx, dash); err != nil {
+		t.Fatalf("CreateDashboard failed: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	charts, _, err := repo.ListCharts(ctx, "dashboards/parent-dash-stale", 10, "", "", "", 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("ListCharts with staleness failed: %v", err)
+	}
+	if len(charts) != 1 || charts[0].GetName() != "charts/dash-stale-1" {
+		t.Errorf("ListCharts with staleness mismatch: got %+v", charts)
+	}
+}
+
 func TestExtractChartCursor_Nil(t *testing.T) {
 	if _, err := ExtractChartCursor(nil); err == nil {
 		t.Errorf("ExtractChartCursor(nil) expected error, got nil")
