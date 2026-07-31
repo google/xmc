@@ -21,12 +21,17 @@ import (
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
+// formatFlavorResourceKey constructs a unique lookup key for a resource within a flavor (e.g. "default-flavor/nvidia.com/gpu").
+func formatFlavorResourceKey(flavorName, resourceName string) string {
+	return flavorName + "/" + resourceName
+}
+
 // extractResourceTotalsFromStatus converts Kueue FlavorUsage into a map of "flavorName/resourceName" keys to raw total strings.
 func extractResourceTotalsFromStatus(usage []kueuev1beta1.FlavorUsage) map[string]string {
 	resTotals := make(map[string]string)
 	for _, flv := range usage {
 		for _, res := range flv.Resources {
-			key := string(flv.Name) + "/" + string(res.Name)
+			key := formatFlavorResourceKey(string(flv.Name), string(res.Name))
 			resTotals[key] = res.Total.String()
 		}
 	}

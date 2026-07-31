@@ -44,7 +44,7 @@ func buildQueueOverviewFromClusterQueue(cq *kueuev1beta1.ClusterQueue) *spb.Queu
 // buildResourceCapacity calculates nominal, used, free, and borrowing capacity for a single resource quota into a QueueResourceCapacity proto.
 func buildResourceCapacity(flavorName string, res kueuev1beta1.ResourceQuota, usageMap, resMap map[string]string) *spb.QueueResourceCapacity {
 	resName := string(res.Name)
-	lookupKey := flavorName + "/" + resName
+	lookupKey := formatFlavorResourceKey(flavorName, resName)
 	nomVal := parseK8sResourceVal(resName, res.NominalQuota.String())
 	useVal := parseK8sResourceVal(resName, usageMap[lookupKey])
 	resVal := parseK8sResourceVal(resName, resMap[lookupKey])

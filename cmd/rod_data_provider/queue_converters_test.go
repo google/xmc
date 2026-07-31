@@ -189,8 +189,8 @@ func TestCapacityMath(t *testing.T) {
 				Name:         corev1.ResourceName("nvidia.com/gpu"),
 				NominalQuota: nomRes,
 			}
-			usageMap := map[string]string{"default-flavor/nvidia.com/gpu": tt.inUse}
-			resMap := map[string]string{"default-flavor/nvidia.com/gpu": tt.reserved}
+			usageMap := map[string]string{formatFlavorResourceKey("default-flavor", "nvidia.com/gpu"): tt.inUse}
+			resMap := map[string]string{formatFlavorResourceKey("default-flavor", "nvidia.com/gpu"): tt.reserved}
 
 			capMetric := buildResourceCapacity("default-flavor", resQuota, usageMap, resMap)
 			wantVal := parseK8sResourceVal("nvidia.com/gpu", tt.want)
