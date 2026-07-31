@@ -497,9 +497,9 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		constants.AutoscalerSafeToEvictAnnotation: "false",
 	}
 
-	jobSetAnnotations := map[string]string{
-		constants.AuthorAnnotation:                author,
-		constants.AutoscalerSafeToEvictAnnotation: "false",
+	jobSetAnnotations := make(map[string]string, len(defaultAnnotations))
+	for k, v := range defaultAnnotations {
+		jobSetAnnotations[k] = v
 	}
 
 	if jobset := workUnit.GetExecutable().GetJobset(); jobset != nil {
