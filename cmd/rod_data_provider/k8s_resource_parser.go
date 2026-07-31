@@ -68,10 +68,11 @@ func extractTotalResourceUsageByResourceType(status kueuev1beta1.ClusterQueueSta
 // parseK8sResourceQuantity normalizes a resource.Quantity into a float64 value.
 // Memory and storage quantities are normalized to GiB, while CPU, GPU, and count quantities are normalized to Cores/Units.
 func parseK8sResourceQuantity(resourceType string, q resource.Quantity) float64 {
+	val := q.AsApproximateFloat64()
 	if isMemoryOrStorageResource(resourceType) {
-		return float64(q.Value()) / (1024 * 1024 * 1024)
+		return val / (1024 * 1024 * 1024)
 	}
-	return q.AsApproximateFloat64()
+	return val
 }
 
 // parseK8sResourceVal parses Kubernetes quantity strings (e.g. "8Gi", "1024Ki", "1000m", "4") into a normalized float64 value.

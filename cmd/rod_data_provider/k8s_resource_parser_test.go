@@ -127,3 +127,30 @@ func TestExtractTotalResourceUsageByResourceType_FallbackToUsage(t *testing.T) {
 		t.Errorf("extractTotalResourceUsageByResourceType(usage-fallback) = %v, want 16.0", totals["nvidia.com/gpu"])
 	}
 }
+
+func TestExtractTotalResourceUsageByResourceType_WithAcceleratorResolution(t *testing.T) {
+	status := kueuev1beta1.ClusterQueueStatus{
+		FlavorsReservation: []kueuev1beta1.FlavorUsage{
+			{
+				Name: "flavor-h100",
+				Resources: []kueuev1beta1.ResourceUsage{
+					{Name: corev1.ResourceName("nvidia.com/gpu"), Total: resource.MustParse("2")},
+				},
+			},
+		},
+	}
+	rfMap := map[string]*kueuev1beta1.ResourceFlavor{
+		"flavor-h100": {
+			Spec: kueuev1beta1.ResourceFlavorSpec{
+				NodeLabels: map[string]string{
+					"cloud.google.com/gke-accelerator": "nvidia-tesla-h100",
+				},
+			},
+		},
+	}
+
+	totals := extractTotalResourceUsageByResourceType(status, rfMap)
+	if got := totals["nvidia-tesla-h100"]; got != 2.0 {
+		t.Errorf("Expected resolved accelerator type 'nvidia-tesla-h100' to have usage 2.0, got %v", got)
+	}
+}
