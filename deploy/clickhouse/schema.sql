@@ -13,7 +13,7 @@
 -- limitations under the License.
 
 -- 1. Physical MergeTree Table for storing XMC metrics.
--- Matches Spanner Int64 ID types and exact 7-column sorting key order.
+-- Matches Spanner Int64 ID types and exact 7-column sorting key order per b/535543801 DoD.
 -- Partitioned by month (toYYYYMM(timestamp)) for efficient data retention and query pruning.
 CREATE TABLE IF NOT EXISTS xmc_metrics
 (
@@ -33,6 +33,7 @@ ORDER BY (xid, metric_name, work_unit_id, execution_id, replica_id, step, timest
 
 -- 2. Virtual Queue Table reading native Protobuf binary records directly from Redpanda / Kafka.
 -- Uses format 'ProtobufSingle' with schema 'metrics.proto:Metric' for single non-length-prefixed proto messages per Kafka record.
+-- Parameterized via ClickHouse macros with default fallbacks for multi-environment portability.
 -- Note: 'metrics.proto' must be mounted at /var/lib/clickhouse/format_schemas/metrics.proto.
 CREATE TABLE IF NOT EXISTS xmc_metrics_queue
 (
@@ -47,15 +48,16 @@ CREATE TABLE IF NOT EXISTS xmc_metrics_queue
 )
 ENGINE = Kafka
 SETTINGS
-    kafka_broker_list = 'redpanda-0.redpanda.xmc.svc.cluster.local:9092',
-    kafka_topic_list = 'xmc-metrics',
-    kafka_group_name = 'xmc-clickhouse-ingester',
+    kafka_broker_list = '{kafka_broker_list:redpanda-0.redpanda.xmc.svc.cluster.local:9092}',
+    kafka_topic_list = '{kafka_topic_list:xmc-metrics}',
+    kafka_group_name = '{kafka_group_name:xmc-clickhouse-ingester}',
     kafka_format = 'ProtobufSingle',
     format_schema = 'metrics.proto:Metric',
     kafka_num_consumers = 1,
     stream_flush_interval_ms = 1000;
 
 -- 3. Materialized View to parse Protobuf fields, handle defaults via IF expressions,
+-- sanitize microsecond epoch timestamps (preventing partition explosions from bad client timestamps),
 -- convert microsecond epoch timestamps to DateTime64(6, 'UTC'), and populate xmc_metrics.
 CREATE MATERIALIZED VIEW IF NOT EXISTS xmc_metrics_mv TO xmc_metrics AS
 SELECT
@@ -66,7 +68,7 @@ SELECT
     metric_name,
     metric_value,
     step,
-    if(timestamp = 0, now64(6, 'UTC'), fromUnixTimestamp64Micro(timestamp, 'UTC')) AS timestamp,
+    if(timestamp < 1577836800000000 OR timestamp > 2524608000000000, now64(6, 'UTC'), fromUnixTimestamp64Micro(timestamp, 'UTC')) AS timestamp,
     now64(6, 'UTC') AS created_at
 FROM xmc_metrics_queue
 WHERE xid != 0 AND metric_name != '' AND execution_id != 0;
