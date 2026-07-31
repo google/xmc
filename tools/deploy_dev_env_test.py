@@ -857,12 +857,12 @@ key5: "value5" # trailing comment with quotes
         auth_res = MagicMock()
         bazel_res = MagicMock()
 
-        # 1 auth call + 8 bazel run calls (8 base targets, rod_data_provider disabled by default)
-        mock_run.side_effect = [auth_res] + [bazel_res] * 8
+        # 1 auth call + 9 bazel run calls (9 base targets, rod_data_provider disabled by default)
+        mock_run.side_effect = [auth_res] + [bazel_res] * 9
 
         deploy_dev_env.step_images(self.valid_config_dict, self.dns_project, self.dns_zone)
 
-        self.assertEqual(mock_run.call_count, 9)
+        self.assertEqual(mock_run.call_count, 10)
         mock_run.assert_any_call(
             [
                 "gcloud",
@@ -886,15 +886,15 @@ key5: "value5" # trailing comment with quotes
         auth_res = MagicMock()
         bazel_res = MagicMock()
 
-        # 1 auth call + 9 bazel run calls (8 base + rod_data_provider)
-        mock_run.side_effect = [auth_res] + [bazel_res] * 9
+        # 1 auth call + 10 bazel run calls (9 base + rod_data_provider)
+        mock_run.side_effect = [auth_res] + [bazel_res] * 10
 
         config_rod_enabled = dict(self.valid_config_dict)
         config_rod_enabled["rod_deployment_enabled"] = "true"
 
         deploy_dev_env.step_images(config_rod_enabled, self.dns_project, self.dns_zone)
 
-        self.assertEqual(mock_run.call_count, 10)
+        self.assertEqual(mock_run.call_count, 11)
         mock_run.assert_any_call(
             ["bazel", "run", "//cmd/rod_data_provider:rod_data_provider_image_push"],
             env=ANY,

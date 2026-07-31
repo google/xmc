@@ -88,7 +88,7 @@ python3 ./tools/upgrade_dev_env.py --only migrate
 If no migrations were pending, or if the user approved running migrations:
 
 > [!NOTE]
-> **Feature Flag Awareness**: During the `images` step (building/pushing microservice OCI images) and `restart` step (rolling restarts of Kubernetes deployments), `upgrade_dev_env.py` reads feature flags from the deployment configuration YAML (e.g. `rod_deployment_enabled` and `health_service_deployment_enabled`). If a feature is disabled (e.g., `rod_deployment_enabled: false`), `rod_data_provider` image pushing and `rod-data-provider` deployment restarts are automatically skipped.
+> **Feature Flag Awareness**: During the `images` step (building/pushing microservice OCI images) and `restart` step (rolling restarts of Kubernetes deployments), `upgrade_dev_env.py` reads feature flags from the deployment configuration YAML (e.g. `rod_deployment_enabled: false`). If a feature is disabled (e.g., `rod_deployment_enabled: false`), `rod_data_provider` image pushing and `rod-data-provider` deployment restarts are automatically skipped.
 
 *   **Case A: No pending migrations**:
     Run the upgrade starting from the `images` step (skipping migration step):

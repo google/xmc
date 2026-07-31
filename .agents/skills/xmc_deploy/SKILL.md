@@ -208,7 +208,6 @@ bazel run //cmd/log_monitor:log_monitor_image_push
 bazel run //cmd/reconciler:reconciler_image_push
 bazel run //cmd/ui:ui_image_push
 bazel run //cmd/xid_service:xid_service_image_push
-# Optional: Only run if health_service_deployment_enabled is true
 bazel run //cmd/health_service:health_service_image_push
 bazel run //cmd/dashboard_service:dashboard_service_image_push
 # Optional: Only run if rod_deployment_enabled is true (default: false)

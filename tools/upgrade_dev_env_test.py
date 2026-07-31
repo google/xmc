@@ -260,8 +260,8 @@ class TestStepSubprocesses(unittest.TestCase):
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_images(self.config)
-        # Default config has rod_deployment_enabled=False (8 base targets)
-        self.assertEqual(mock_run.call_count, 8)
+        # Default config has rod_deployment_enabled=False (9 base targets)
+        self.assertEqual(mock_run.call_count, 9)
 
     @mock.patch.object(Path, "exists", return_value=True)
     @mock.patch("tools.upgrade_dev_env.run_cmd")
@@ -282,8 +282,8 @@ class TestStepSubprocesses(unittest.TestCase):
             rod_deployment_enabled=True,
         )
         upgrade_dev_env.step_images(config)
-        # Should push 9 targets when rod is enabled (8 base + rod_data_provider)
-        self.assertEqual(mock_run.call_count, 9)
+        # Should push 10 targets when rod is enabled (9 base + rod_data_provider)
+        self.assertEqual(mock_run.call_count, 10)
 
     @mock.patch.object(Path, "is_dir", return_value=True)
     @mock.patch("tools.upgrade_dev_env.run_cmd")
@@ -312,8 +312,8 @@ class TestStepSubprocesses(unittest.TestCase):
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_restart(self.config)
-        # Default config has rod_deployment_enabled=False (7 base services)
-        self.assertEqual(mock_run.call_count, 7)
+        # Default config has rod_deployment_enabled=False (8 base services)
+        self.assertEqual(mock_run.call_count, 8)
 
     @mock.patch("tools.upgrade_dev_env.resolve_deployment_name")
     @mock.patch("tools.upgrade_dev_env.run_cmd")
@@ -335,8 +335,8 @@ class TestStepSubprocesses(unittest.TestCase):
             rod_deployment_enabled=True,
         )
         upgrade_dev_env.step_restart(config)
-        # 7 base services + rod-data-provider (8 total)
-        self.assertEqual(mock_run.call_count, 8)
+        # 8 base services + rod-data-provider (9 total)
+        self.assertEqual(mock_run.call_count, 9)
 
     @mock.patch("tools.upgrade_dev_env.run_cmd")
     def test_step_verify(self, mock_run):
