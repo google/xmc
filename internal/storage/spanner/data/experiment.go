@@ -158,8 +158,9 @@ func ExperimentProtoToStatusUpdateMutation(exp *pb.Experiment) (*spanner.Mutatio
 		experimentschema.ExperimentTableName,
 		experimentschema.ExperimentStatusUpdateColumns,
 		[]any{
-			data.ReverseBits(xid),          // BitReversedXID
-			exp.Status,                     // Status
+			data.ReverseBits(xid), // BitReversedXID
+			exp.Status,            // Status
+			// TODO(b/517479143): Add defensive nil check for exp.Status and UpdateTime before calling .AsTime() to prevent nil pointer panics.
 			exp.Status.UpdateTime.AsTime(), // UpdateTime
 			completeTime,                   // CompleteTime
 		},

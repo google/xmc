@@ -25,10 +25,9 @@ func TestInsertWorkUnit_NilWorkUnit(t *testing.T) {
 	ctx := context.Background()
 	r := &Repository{}
 
-	// InsertWorkUnit with nil work unit should fail during mutation generation.
 	err := r.InsertWorkUnit(ctx, nil, nil)
-	if err == nil {
-		t.Errorf("InsertWorkUnit(nil) succeeded, want error")
+	if err == nil || err.Error() != "work unit must not be nil" {
+		t.Errorf("InsertWorkUnit(nil wu) returned error: %v, want 'work unit must not be nil'", err)
 	}
 }
 

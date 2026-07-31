@@ -25,10 +25,9 @@ func TestUpdateExperimentStatus_NilExperiment(t *testing.T) {
 	ctx := context.Background()
 	r := &Repository{}
 
-	// UpdateExperimentStatus with nil experiment should fail during mutation generation.
 	err := r.UpdateExperimentStatus(ctx, nil, nil)
-	if err == nil {
-		t.Errorf("UpdateExperimentStatus(nil) succeeded, want error")
+	if err == nil || err.Error() != "experiment must not be nil" {
+		t.Errorf("UpdateExperimentStatus(nil exp) returned error: %v, want 'experiment must not be nil'", err)
 	}
 }
 
@@ -50,10 +49,9 @@ func TestUpdateExperimentResources_NilExperiment(t *testing.T) {
 	ctx := context.Background()
 	r := &Repository{}
 
-	// UpdateExperimentResources with nil experiment should fail during mutation generation.
 	err := r.UpdateExperimentResources(ctx, nil, nil)
-	if err == nil {
-		t.Errorf("UpdateExperimentResources(nil) succeeded, want error")
+	if err == nil || err.Error() != "experiment must not be nil" {
+		t.Errorf("UpdateExperimentResources(nil exp) returned error: %v, want 'experiment must not be nil'", err)
 	}
 }
 

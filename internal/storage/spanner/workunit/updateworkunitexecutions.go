@@ -232,6 +232,7 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 				logging.Info(ctx, "Marking experiment as complete", "completeTime", exp.CompleteTime)
 			}
 
+			// TODO(b/517479143): Refactor to use r.experimentRepo.UpdateExperimentStatus(ctx, txn, updatedExp) DAO method.
 			expStatusMutation, err := spannerdata.ExperimentProtoToStatusUpdateMutation(updatedExp)
 			if err != nil {
 				logging.Error(ctx, "Failed to create mutation for experiment status update", "error", err)

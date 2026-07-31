@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"golang/protobuf/v2/proto/proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
@@ -29,11 +30,106 @@ func TestPrepareWorkUnitCreation_NilValidation(t *testing.T) {
 	exp := &essmsgpb.Experiment{}
 	wu := &essmsgpb.WorkUnit{}
 
-	if _, _, err := PrepareWorkUnitCreation(ctx, nil, wu, now); err == nil {
-		t.Errorf("PrepareWorkUnitCreation(nil exp) succeeded, want error")
+	if _, _, err := PrepareWorkUnitCreation(ctx, nil, wu, now); err == nil || err.Error() != "experiment must not be nil" {
+		t.Errorf("PrepareWorkUnitCreation(nil exp) error = %v, want 'experiment must not be nil'", err)
 	}
-	if _, _, err := PrepareWorkUnitCreation(ctx, exp, nil, now); err == nil {
-		t.Errorf("PrepareWorkUnitCreation(nil wu) succeeded, want error")
+	if _, _, err := PrepareWorkUnitCreation(ctx, exp, nil, now); err == nil || err.Error() != "work unit, current execution, and status must not be nil" {
+		t.Errorf("PrepareWorkUnitCreation(nil wu) error = %v, want 'work unit, current execution, and status must not be nil'", err)
+	}
+}
+
+func TestPrepareWorkUnitCreation_Immutability(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	exp := &essmsgpb.Experiment{
+		Name: "experiments/1001",
+		Status: &essmsgpb.ExperimentStatus{
+			ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
+		},
+	}
+	expClone := proto.Clone(exp).(*essmsgpb.Experiment)
+
+	wu := &essmsgpb.WorkUnit{
+		Name: "experiments/1001/workUnits/1",
+		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+			Name: "experiments/1001/workUnits/1/executions/1",
+			Status: &essmsgpb.WorkUnitStatus{
+				State: essmsgpb.WorkUnitStatus_RUNNING,
+			},
+		},
+	}
+	wuClone := proto.Clone(wu).(*essmsgpb.WorkUnit)
+
+	_, _, err := PrepareWorkUnitCreation(ctx, exp, wu, now)
+	if err != nil {
+		t.Fatalf("PrepareWorkUnitCreation failed: %v", err)
+	}
+
+	if !proto.Equal(exp, expClone) {
+		t.Errorf("PrepareWorkUnitCreation mutated input experiment! got: %v, want: %v", exp, expClone)
+	}
+	if !proto.Equal(wu, wuClone) {
+		t.Errorf("PrepareWorkUnitCreation mutated input work unit! got: %v, want: %v", wu, wuClone)
+	}
+}
+
+func TestPrepareWorkUnitCreation_NilStatus(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	exp := &essmsgpb.Experiment{
+		Name: "experiments/1001",
+	}
+
+	wu := &essmsgpb.WorkUnit{
+		Name: "experiments/1001/workUnits/1",
+		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+			Name: "experiments/1001/workUnits/1/executions/1",
+			Status: &essmsgpb.WorkUnitStatus{
+				State: essmsgpb.WorkUnitStatus_RUNNING,
+			},
+		},
+	}
+
+	updatedExp, _, err := PrepareWorkUnitCreation(ctx, exp, wu, now)
+	if err != nil {
+		t.Fatalf("PrepareWorkUnitCreation failed: %v", err)
+	}
+
+	if updatedExp.Status == nil {
+		t.Errorf("updatedExp.Status is nil, expected initialized status")
+	}
+}
+
+func TestPrepareWorkUnitCreation_NoResourceChange(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	exp := &essmsgpb.Experiment{
+		Name: "experiments/1001",
+		Status: &essmsgpb.ExperimentStatus{
+			ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
+		},
+	}
+
+	wu := &essmsgpb.WorkUnit{
+		Name: "experiments/1001/workUnits/1",
+		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+			Name: "experiments/1001/workUnits/1/executions/1",
+			Status: &essmsgpb.WorkUnitStatus{
+				State: essmsgpb.WorkUnitStatus_RUNNING,
+			},
+		},
+	}
+
+	_, resourcesChanged, err := PrepareWorkUnitCreation(ctx, exp, wu, now)
+	if err != nil {
+		t.Fatalf("PrepareWorkUnitCreation failed: %v", err)
+	}
+
+	if resourcesChanged {
+		t.Errorf("resourcesChanged = true for work unit with no resources, want false")
 	}
 }
 
@@ -101,5 +197,15 @@ func TestPrepareWorkUnitCreation_Success(t *testing.T) {
 	gotCpu := updatedExp.Resources[0].GetCpuResources().GetCpuMillicores()
 	if gotCpu != wantCpu {
 		t.Errorf("CpuMillicores = %d, want %d", gotCpu, wantCpu)
+	}
+
+	if updatedExp.UpdateTime.AsTime() != now {
+		t.Errorf("UpdateTime = %v, want %v", updatedExp.UpdateTime.AsTime(), now)
+	}
+	if updatedExp.Status.UpdateTime.AsTime() != now {
+		t.Errorf("Status.UpdateTime = %v, want %v", updatedExp.Status.UpdateTime.AsTime(), now)
+	}
+	if updatedExp.Status.LastChildStatusUpdateTime.AsTime() != now {
+		t.Errorf("Status.LastChildStatusUpdateTime = %v, want %v", updatedExp.Status.LastChildStatusUpdateTime.AsTime(), now)
 	}
 }
