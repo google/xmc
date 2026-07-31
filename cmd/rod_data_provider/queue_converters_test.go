@@ -18,9 +18,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/resource/resource"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
+	"google.golang.org/protobuf/testing/protocmp"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
@@ -232,54 +234,33 @@ func TestMultiFlavorQueueOverview(t *testing.T) {
 		},
 	}
 
+	wantOverview := &spb.QueueOverview{
+		QueueName: "dynamic-gpu-cq",
+		QueueCapacity: []*spb.QueueResourceCapacity{
+			{
+				ResourceType:              "nvidia.com/gpu",
+				TotalCapacity:             40.0,
+				FreeCapacity:              30.0,
+				FreeCapacityWithBorrowing: 30.0,
+			},
+			{
+				ResourceType:              "cpu",
+				TotalCapacity:             192.0,
+				FreeCapacity:              150.0,
+				FreeCapacityWithBorrowing: 150.0,
+			},
+			{
+				ResourceType:              "memory",
+				TotalCapacity:             768.0,
+				FreeCapacity:              600.0,
+				FreeCapacityWithBorrowing: 600.0,
+			},
+		},
+	}
+
 	overview := buildQueueOverviewFromClusterQueue(cq)
-	// Expect exactly 3 distinct resource types summed across all flavors: nvidia.com/gpu, cpu, memory
-	if len(overview.QueueCapacity) != 3 {
-		t.Fatalf("buildQueueOverviewFromClusterQueue capacity count = %d, want 3", len(overview.QueueCapacity))
-	}
-
-	capMap := make(map[string]*spb.QueueResourceCapacity)
-	for _, c := range overview.QueueCapacity {
-		capMap[c.ResourceType] = c
-	}
-
-	// 1. Verify GPU Quota Summation: 32 (L4 Spot) + 8 (H100 OnDemand) = 40 Total GPUs
-	gpuCap, exists := capMap["nvidia.com/gpu"]
-	if !exists {
-		t.Fatalf("Missing nvidia.com/gpu capacity")
-	}
-	if gpuCap.TotalCapacity != 40.0 {
-		t.Errorf("GPU TotalCapacity = %v, want 40.0", gpuCap.TotalCapacity)
-	}
-	// Used: 8 + 2 = 10, Free: 40 - 10 = 30
-	if gpuCap.FreeCapacity != 30.0 {
-		t.Errorf("GPU FreeCapacity = %v, want 30.0", gpuCap.FreeCapacity)
-	}
-
-	// 2. Verify CPU Quota Summation: 128 + 64 = 192 Total Cores
-	cpuCap, exists := capMap["cpu"]
-	if !exists {
-		t.Fatalf("Missing cpu capacity")
-	}
-	if cpuCap.TotalCapacity != 192.0 {
-		t.Errorf("CPU TotalCapacity = %v, want 192.0", cpuCap.TotalCapacity)
-	}
-	// Used: 28 + 14 = 42, Free: 192 - 42 = 150
-	if cpuCap.FreeCapacity != 150.0 {
-		t.Errorf("CPU FreeCapacity = %v, want 150.0", cpuCap.FreeCapacity)
-	}
-
-	// 3. Verify Memory Quota Summation: 512Gi + 256Gi = 768 Total GiB
-	memCap, exists := capMap["memory"]
-	if !exists {
-		t.Fatalf("Missing memory capacity")
-	}
-	if memCap.TotalCapacity != 768.0 {
-		t.Errorf("Memory TotalCapacity = %v, want 768.0", memCap.TotalCapacity)
-	}
-	// Used: 112Gi + 56Gi = 168Gi, Free: 768 - 168 = 600GiB
-	if memCap.FreeCapacity != 600.0 {
-		t.Errorf("Memory FreeCapacity = %v, want 600.0", memCap.FreeCapacity)
+	if diff := cmp.Diff(wantOverview, overview, protocmp.Transform()); diff != "" {
+		t.Errorf("buildQueueOverviewFromClusterQueue mismatch (-want +got):\n%s", diff)
 	}
 }
 
