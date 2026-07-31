@@ -2656,7 +2656,7 @@ func TestConstructJobSet_CustomAnnotationsAndLabels(t *testing.T) {
 		t.Errorf("Labels[%q] = %q, want %q", kueueQueueLabel, got.Labels[kueueQueueLabel], testNamespace)
 	}
 
-	// Verify custom top-level annotations were NOT propagated to replicated jobs/pods.
+	// Verify custom top-level annotations and labels were NOT propagated to replicated jobs/pods.
 	if len(got.Spec.ReplicatedJobs) != 1 {
 		t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
 	}
@@ -2666,5 +2666,13 @@ func TestConstructJobSet_CustomAnnotationsAndLabels(t *testing.T) {
 	}
 	if _, ok := jobAnnotations["helm.sh/hook"]; ok {
 		t.Errorf("ReplicatedJob unexpectedly received top-level annotation \"helm.sh/hook\"")
+	}
+
+	jobLabels := got.Spec.ReplicatedJobs[0].Template.ObjectMeta.Labels
+	if _, ok := jobLabels["custom.company.com/team"]; ok {
+		t.Errorf("ReplicatedJob unexpectedly received top-level label \"custom.company.com/team\"")
+	}
+	if _, ok := jobLabels["env"]; ok {
+		t.Errorf("ReplicatedJob unexpectedly received top-level label \"env\"")
 	}
 }
