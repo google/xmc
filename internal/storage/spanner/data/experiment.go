@@ -161,7 +161,7 @@ func ExperimentProtoToStatusUpdateMutation(exp *pb.Experiment) (*spanner.Mutatio
 			data.ReverseBits(xid), // BitReversedXID
 			exp.Status,            // Status
 			func() any {
-				if exp.GetStatus().GetUpdateTime() != nil {
+				if exp.GetStatus() != nil {
 					return exp.Status.UpdateTime.AsTime()
 				}
 				return spanner.NullTime{}
