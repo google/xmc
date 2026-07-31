@@ -314,7 +314,8 @@ class TestStepSubprocesses(unittest.TestCase):
             artifacts_dir = ctk_dir / ".ghpc" / "artifacts"
             artifacts_dir.mkdir(parents=True)
             (artifacts_dir / "primary_outputs.tfvars").write_text(
-                'service_account_email_workload_service_account = "sa@proj.iam.gserviceaccount.com"\n',
+                'service_account_email_workload_service_account = "sa@proj.iam.gserviceaccount.com"\n'
+                'service_account_email_health_service_gcp_sa = "hs-sa@proj.iam.gserviceaccount.com"\n',
                 encoding="utf-8",
             )
             (artifacts_dir / "compute_outputs.tfvars").write_text(
@@ -347,7 +348,7 @@ class TestStepSubprocesses(unittest.TestCase):
                 compute_inputs.read_text(encoding="utf-8"),
             )
             self.assertIn(
-                "deploy-456-xmc-wl-sa@proj-123.iam.gserviceaccount.com",
+                "hs-sa@proj.iam.gserviceaccount.com",
                 compute_inputs.read_text(encoding="utf-8"),
             )
 

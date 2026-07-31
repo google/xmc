@@ -479,8 +479,8 @@ def _find_terraform_bin() -> str | None:
     return None
 
 
-def _propagate_primary_outputs(ctk_dir: Path, config: Config) -> None:
-    """Exports and copies primary group outputs to dependent groups with fallback SA handling."""
+def _propagate_primary_outputs(ctk_dir: Path) -> None:
+    """Exports and copies primary group outputs to dependent deployment groups."""
     log_info("Exporting outputs for deployment group 'primary'...")
     run_cmd(
         ["./cluster-toolkit/gcluster", "export-outputs", str(ctk_dir / "primary")],
@@ -494,15 +494,6 @@ def _propagate_primary_outputs(ctk_dir: Path, config: Config) -> None:
         dest = ctk_dir / group / "primary_inputs.auto.tfvars"
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(primary_artifact, dest)
-        content = dest.read_text(encoding="utf-8")
-        if "service_account_email_health_service_gcp_sa" not in content:
-            fallback_sa = (
-                f"{config.deployment_name}-xmc-wl-sa@{config.project_id}.iam.gserviceaccount.com"
-            )
-            dest.write_text(
-                f'{content.rstrip()}\nservice_account_email_health_service_gcp_sa = "{fallback_sa}"\n',
-                encoding="utf-8",
-            )
 
 
 def _propagate_compute_outputs(ctk_dir: Path) -> None:
@@ -556,7 +547,7 @@ def step_app(config: Config) -> None:
         ]
     )
 
-    _propagate_primary_outputs(ctk_dir, config)
+    _propagate_primary_outputs(ctk_dir)
     _propagate_compute_outputs(ctk_dir)
 
     log_info("Running gcluster deploy for group 'xmc_app'...")
