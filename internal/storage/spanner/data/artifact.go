@@ -199,55 +199,60 @@ func getSearchableContent(payload *pb.ArtifactPayload) string {
 
 	switch p := payload.Type.(type) {
 	case *pb.ArtifactPayload_ManagedXprof:
-		if p.ManagedXprof != nil {
-			if p.ManagedXprof.DisplayName != "" {
-				parts = append(parts, p.ManagedXprof.DisplayName)
-			}
-			if p.ManagedXprof.RunGroup != "" {
-				parts = append(parts, p.ManagedXprof.RunGroup)
-			}
+		if p.ManagedXprof == nil {
+			break
+		}
+		if p.ManagedXprof.DisplayName != "" {
+			parts = append(parts, p.ManagedXprof.DisplayName)
+		}
+		if p.ManagedXprof.RunGroup != "" {
+			parts = append(parts, p.ManagedXprof.RunGroup)
 		}
 	case *pb.ArtifactPayload_CodeSource:
-		if p.CodeSource != nil {
-			if p.CodeSource.Title != "" {
-				parts = append(parts, p.CodeSource.Title)
-			}
-			if p.CodeSource.Description != "" {
-				parts = append(parts, p.CodeSource.Description)
-			}
-			if p.CodeSource.CodeBlock != "" {
-				parts = append(parts, p.CodeSource.CodeBlock)
-			}
-			if p.CodeSource.CodeUrl != "" {
-				parts = append(parts, p.CodeSource.CodeUrl)
-			}
+		if p.CodeSource == nil {
+			break
+		}
+		if p.CodeSource.Title != "" {
+			parts = append(parts, p.CodeSource.Title)
+		}
+		if p.CodeSource.Description != "" {
+			parts = append(parts, p.CodeSource.Description)
+		}
+		if p.CodeSource.CodeBlock != "" {
+			parts = append(parts, p.CodeSource.CodeBlock)
+		}
+		if p.CodeSource.CodeUrl != "" {
+			parts = append(parts, p.CodeSource.CodeUrl)
 		}
 	case *pb.ArtifactPayload_Text:
-		if p.Text != nil {
-			if p.Text.Title != "" {
-				parts = append(parts, p.Text.Title)
-			}
-			if p.Text.Text != "" {
-				parts = append(parts, p.Text.Text)
-			}
+		if p.Text == nil {
+			break
+		}
+		if p.Text.Title != "" {
+			parts = append(parts, p.Text.Title)
+		}
+		if p.Text.Text != "" {
+			parts = append(parts, p.Text.Text)
 		}
 	case *pb.ArtifactPayload_Url:
-		if p.Url != nil {
-			if p.Url.Url != "" {
-				parts = append(parts, p.Url.Url)
-			}
-			if p.Url.DisplayName != "" {
-				parts = append(parts, p.Url.DisplayName)
-			}
+		if p.Url == nil {
+			break
+		}
+		if p.Url.Url != "" {
+			parts = append(parts, p.Url.Url)
+		}
+		if p.Url.DisplayName != "" {
+			parts = append(parts, p.Url.DisplayName)
 		}
 	case *pb.ArtifactPayload_Chart:
-		if p.Chart != nil {
-			if p.Chart.Title != "" {
-				parts = append(parts, p.Chart.Title)
-			}
-			if len(p.Chart.MetricNames) > 0 {
-				parts = append(parts, p.Chart.MetricNames...)
-			}
+		if p.Chart == nil {
+			break
+		}
+		if p.Chart.Title != "" {
+			parts = append(parts, p.Chart.Title)
+		}
+		if len(p.Chart.MetricNames) > 0 {
+			parts = append(parts, p.Chart.MetricNames...)
 		}
 	}
 
