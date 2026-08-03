@@ -125,7 +125,8 @@ func run() int {
 	fmt.Println(out)
 	if report.OverallStatus == StatusFailed {
 		return 2
-	} else if report.OverallStatus == StatusDegraded {
+	}
+	if report.OverallStatus == StatusDegraded {
 		return 3
 	}
 	return 0

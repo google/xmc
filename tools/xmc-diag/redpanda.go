@@ -71,8 +71,8 @@ func CalculateConsumerLag(endOffsets kadm.ListedOffsets, groupOffsets kadm.Offse
 		var committed int64
 		if ok {
 			if cOffset, exists := topCommitted[pID]; exists && cOffset.Err == nil {
-				if cOffset.At >= 0 {
-					committed = cOffset.At
+				if cOffset.Offset.At >= 0 {
+					committed = cOffset.Offset.At
 				}
 			}
 		}
