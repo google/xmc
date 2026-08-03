@@ -54,6 +54,7 @@ vars:
   deploy_redis: true
   redis_region:
   status_message_history_enabled: true
+  enable_metrics: false
   health_service_deployment_enabled: false
   dashboard_service_deployment_enabled: false
   enable_metrics: false
@@ -417,7 +418,7 @@ deployment_groups:
         value: $(vars.enable_metrics)
         type: auto
       - name: ingestionGatewayDeployment.enabled
-        value: $(vars.ingestion_gateway_deployment_enabled)
+        value: $(vars.enable_metrics)
         type: auto
       - name: rodDeployment.enabled
         value: $(vars.rod_deployment_enabled)
