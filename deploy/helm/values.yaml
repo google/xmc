@@ -73,6 +73,8 @@ ingestionGatewayDeployment:
 
 rodDeployment:
   enabled: false
+  serviceAccountName: "rod-data-provider-service-account"
+  gcpServiceAccount: ""
 
 healthService:
   gcpServiceAccount: ""
