@@ -547,8 +547,9 @@ func TestConstructJobSet_GroupName(t *testing.T) {
 	t.Run("Custom labels set on KubernetesJob", func(t *testing.T) {
 		workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 			wu.Executable.GetJobset().Jobs[0].Labels = map[string]string{
-				"kueue.x-k8s.io/podset": "pathways-head",
-				"custom.label/key":      "value",
+				"kueue.x-k8s.io/podset":     "pathways-head",
+				"custom.label/key":          "value",
+				constants.ExperimentIDLabel: "hacked",
 			}
 		})
 		jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})

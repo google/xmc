@@ -300,13 +300,15 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 		annotations[k] = v
 	}
 
-	// Merge custom job labels with base job labels.
+	// Merge custom job labels with base job labels, preventing overrides of system labels.
 	labels := make(map[string]string)
 	for k, v := range jobLabels {
 		labels[k] = v
 	}
 	for k, v := range job.GetLabels() {
-		labels[k] = v
+		if _, exists := labels[k]; !exists {
+			labels[k] = v
+		}
 	}
 
 	var dependsOn []jobsetv1alpha2.DependsOn
