@@ -34,19 +34,19 @@ flowchart TD
 
 ## 2. Port-Forwarding to GKE Developer Cluster
 
-Authenticate to the target GKE cluster (e.g. `xmc-xmc-v2-vluk-test-vluk-test` in namespace `xmc`) and open port-forwards for local testing:
+Authenticate to your target GKE developer cluster and open port-forwards for local testing:
 
 ```bash
 # 1. Authenticate to GKE cluster
-gcloud container clusters get-credentials xmc-xmc-v2-vluk-test-vluk-test \
-    --region europe-west4 \
-    --project xmc-test-project-3
+gcloud container clusters get-credentials <CLUSTER_NAME> \
+    --region <REGION> \
+    --project <PROJECT_ID>
 
 # 2. Port-forward ClickHouse native TCP port (9000)
 kubectl port-forward svc/clickhouse 9000:9000 -n xmc &
 
-# 3. Port-forward Redpanda seed broker (9092)
-kubectl port-forward pod/redpanda-0 9092:9092 -n xmc &
+# 3. Port-forward Redpanda service (9092)
+kubectl port-forward svc/redpanda 9092:9092 -n xmc &
 
 # 4. Port-forward Ingestion Gateway HTTP service (8080)
 kubectl port-forward svc/ingestion-gateway 8080:8080 -n xmc &
