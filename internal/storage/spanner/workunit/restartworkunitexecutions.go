@@ -132,6 +132,7 @@ func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester st
 		}
 
 		// 8. Update the Experiment row.
+		// TODO(b/517479143): Refactor to use r.experimentRepo.UpdateExperimentStatus(ctx, tx, exp) DAO method.
 		exp.UpdateTime = timestamppb.New(now)
 		exp.Status.LastChildStatusUpdateTime = timestamppb.New(now)
 		exp.Status.UpdateTime = timestamppb.New(now)

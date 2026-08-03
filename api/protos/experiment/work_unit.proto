@@ -224,6 +224,9 @@ message KubernetesJob {
 
   // Custom volumes available to containers in the pod.
   repeated Volume volumes = 13;
+
+  // Group name for Kueue podSet grouping. If omitted, Kueue defaults the podSet name to the ReplicatedJob name.
+  string group_name = 16;
 }
 
 // Represents a volume that can be mounted by containers in a KubernetesJob.

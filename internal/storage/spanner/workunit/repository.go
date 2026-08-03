@@ -21,23 +21,31 @@ import (
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 
+	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/experiment"
 	"xmanager_cloud/query_generator/querytools"
 	"xmanager_cloud/storage/spanner/schema/workunitschema"
 )
 
-var _ storage.WorkUnitStore = (*Repository)(nil)
-
 type spannerTransaction interface {
 	ReadRow(ctx context.Context, table string, key spanner.Key, columns []string) (*spanner.Row, error)
 	Query(ctx context.Context, stmt spanner.Statement) *spanner.RowIterator
 }
 
+// ExperimentTxStore defines transactional experiment operations required by WorkUnit repository.
+type ExperimentTxStore interface {
+	FetchExperimentTransaction(ctx context.Context, xid int64, tx experiment.SpannerTransaction) (*essmsgpb.Experiment, error)
+	UpdateExperimentStatus(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error
+	UpdateExperimentResources(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error
+}
+
+var _ storage.WorkUnitStore = (*Repository)(nil)
+
 // Repository manages persistence for work unit entities in Cloud Spanner.
 type Repository struct {
 	client                      *spanner.Client
-	experimentRepo              *experiment.Repository
+	experimentRepo              ExperimentTxStore
 	workUnitsQueryGen           querytools.QueryGenerator
 	statusMessageHistoryEnabled bool
 }
@@ -48,7 +56,7 @@ type RepositoryConfig struct {
 }
 
 // NewRepository creates a new WorkUnit repository instance with initialized query generator.
-func NewRepository(client *spanner.Client, expRepo *experiment.Repository, cfg RepositoryConfig) (*Repository, error) {
+func NewRepository(client *spanner.Client, expRepo ExperimentTxStore, cfg RepositoryConfig) (*Repository, error) {
 	if client == nil {
 		return nil, fmt.Errorf("spanner client must not be nil")
 	}

@@ -85,6 +85,7 @@ compat_go_test(
         "//internal/compat/protocmp",
         "//internal/compat/spanner",
         "//internal/compat/status",
+        "//internal/domain/workunit",
         "//internal/storage",
         "//internal/storage/spanner/artifact",
         "//internal/storage/spanner/emulator",

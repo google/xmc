@@ -31,6 +31,7 @@ type Repository struct {
 	chartsQueryGen          querytools.QueryGenerator
 	dashboardChartsQueryGen querytools.QueryGenerator
 	chartPlotsQueryGen      querytools.QueryGenerator
+	artifactChartsQueryGen  querytools.QueryGenerator
 }
 
 // NewRepository creates a new Dashboard repository instance with initialized query generators.
@@ -59,11 +60,17 @@ func NewRepository(client *spanner.Client) (*Repository, error) {
 		return nil, fmt.Errorf("failed to create chart plots query generator: %w", err)
 	}
 
+	artifactChartsQueryGen, err := querytools.NewQueryGenerator(dashboardschema.ArtifactChartsTables, nil, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create artifact charts query generator: %w", err)
+	}
+
 	return &Repository{
 		client:                  client,
 		dashboardsQueryGen:      dashboardsQueryGen,
 		chartsQueryGen:          chartsQueryGen,
 		dashboardChartsQueryGen: dashboardChartsQueryGen,
 		chartPlotsQueryGen:      chartPlotsQueryGen,
+		artifactChartsQueryGen:  artifactChartsQueryGen,
 	}, nil
 }
