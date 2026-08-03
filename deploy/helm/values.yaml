@@ -71,6 +71,16 @@ ingestionGatewayDeployment:
 rodDeployment:
   enabled: false
 
+metrics:
+  enabled: false
+  clickhouseSetupJob:
+    enabled: false
+
+clickhouse:
+  bootstrap:
+    enabled: true
+  endpoint: "clickhouse.xmc-metrics.svc.cluster.local:8123"
+
 healthService:
   gcpServiceAccount: ""
 
