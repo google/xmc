@@ -25,25 +25,21 @@ import (
 func TestParseK8sResourceQuantity_MemoryNormalization(t *testing.T) {
 	tests := []struct {
 		name    string
-		input   string
+		input   resource.Quantity
 		wantVal float64
 	}{
-		{name: "Gigabytes", input: "8Gi", wantVal: 8.0},
-		{name: "Megabytes to GiB", input: "1024Mi", wantVal: 1.0},
-		{name: "Kilobytes to GiB", input: "1048576Ki", wantVal: 1.0},
-		{name: "Zero memory", input: "0", wantVal: 0.0},
-		{name: "Empty string", input: "", wantVal: 0.0},
+		{name: "Gigabytes", input: resource.MustParse("8Gi"), wantVal: 8.0},
+		{name: "Megabytes to GiB", input: resource.MustParse("1024Mi"), wantVal: 1.0},
+		{name: "Kilobytes to GiB", input: resource.MustParse("1048576Ki"), wantVal: 1.0},
+		{name: "Zero memory", input: resource.MustParse("0"), wantVal: 0.0},
+		{name: "Zero-value Quantity", input: resource.Quantity{}, wantVal: 0.0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var q resource.Quantity
-			if tt.input != "" {
-				q = resource.MustParse(tt.input)
-			}
-			gotVal := parseK8sResourceQuantity("memory", q)
+			gotVal := parseK8sResourceQuantity("memory", tt.input)
 			if gotVal != tt.wantVal {
-				t.Errorf("parseK8sResourceQuantity('memory', %q) = %v, want %v", tt.input, gotVal, tt.wantVal)
+				t.Errorf("parseK8sResourceQuantity('memory', %v) = %v, want %v", tt.input, gotVal, tt.wantVal)
 			}
 		})
 	}
@@ -52,25 +48,21 @@ func TestParseK8sResourceQuantity_MemoryNormalization(t *testing.T) {
 func TestParseK8sResourceQuantity_CPUNormalization(t *testing.T) {
 	tests := []struct {
 		name    string
-		input   string
+		input   resource.Quantity
 		wantVal float64
 	}{
-		{name: "Millicores 500m", input: "500m", wantVal: 0.5},
-		{name: "Millicores 2000m", input: "2000m", wantVal: 2.0},
-		{name: "Whole cores 4", input: "4", wantVal: 4.0},
-		{name: "Zero cores", input: "0", wantVal: 0.0},
-		{name: "Dash placeholder", input: "-", wantVal: 0.0},
+		{name: "Millicores 500m", input: resource.MustParse("500m"), wantVal: 0.5},
+		{name: "Millicores 2000m", input: resource.MustParse("2000m"), wantVal: 2.0},
+		{name: "Whole cores 4", input: resource.MustParse("4"), wantVal: 4.0},
+		{name: "Zero cores", input: resource.MustParse("0"), wantVal: 0.0},
+		{name: "Zero-value Quantity", input: resource.Quantity{}, wantVal: 0.0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var q resource.Quantity
-			if tt.input != "" && tt.input != "-" {
-				q = resource.MustParse(tt.input)
-			}
-			gotVal := parseK8sResourceQuantity("cpu", q)
+			gotVal := parseK8sResourceQuantity("cpu", tt.input)
 			if gotVal != tt.wantVal {
-				t.Errorf("parseK8sResourceQuantity('cpu', %q) = %v, want %v", tt.input, gotVal, tt.wantVal)
+				t.Errorf("parseK8sResourceQuantity('cpu', %v) = %v, want %v", tt.input, gotVal, tt.wantVal)
 			}
 		})
 	}

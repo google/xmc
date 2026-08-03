@@ -21,17 +21,23 @@ import (
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
-const gkeAcceleratorLabel = "cloud.google.com/gke-accelerator"
+const (
+	gkeAcceleratorLabel = "cloud.google.com/gke-accelerator"
+	bytesPerGiB         = 1024 * 1024 * 1024
+)
 
 // resolveResourceType resolves generic resource names like "nvidia.com/gpu" to specific accelerator names (e.g. "nvidia-tesla-h100")
 // using the ResourceFlavor's nodeLabels if present. Non-accelerator resources (like "cpu" or "memory") remain unchanged.
 func resolveResourceType(resourceName, flavorName string, rfMap map[string]*kueuev1beta1.ResourceFlavor) string {
-	if isAcceleratorResource(resourceName) && rfMap != nil {
-		if rf, exists := rfMap[flavorName]; exists && rf != nil {
-			if acc, ok := rf.Spec.NodeLabels[gkeAcceleratorLabel]; ok && acc != "" {
-				return acc
-			}
-		}
+	if !isAcceleratorResource(resourceName) || rfMap == nil {
+		return resourceName
+	}
+	rf := rfMap[flavorName]
+	if rf == nil {
+		return resourceName
+	}
+	if acc := rf.Spec.NodeLabels[gkeAcceleratorLabel]; acc != "" {
+		return acc
 	}
 	return resourceName
 }
@@ -70,22 +76,9 @@ func extractTotalResourceUsageByResourceType(status kueuev1beta1.ClusterQueueSta
 func parseK8sResourceQuantity(resourceType string, q resource.Quantity) float64 {
 	val := q.AsApproximateFloat64()
 	if isMemoryOrStorageResource(resourceType) {
-		return val / (1024 * 1024 * 1024)
+		return val / bytesPerGiB
 	}
 	return val
-}
-
-// parseK8sResourceVal parses Kubernetes quantity strings (e.g. "8Gi", "1024Ki", "1000m", "4") into a normalized float64 value.
-func parseK8sResourceVal(resourceType, quantityStr string) float64 {
-	s := strings.TrimSpace(quantityStr)
-	if s == "" || s == "-" {
-		return 0
-	}
-	q, err := resource.ParseQuantity(s)
-	if err != nil {
-		return 0
-	}
-	return parseK8sResourceQuantity(resourceType, q)
 }
 
 func isMemoryOrStorageResource(resourceType string) bool {
