@@ -16,8 +16,10 @@ package dashboard
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"task/go/status"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 )
 
@@ -74,8 +76,12 @@ func TestDeleteDashboard_NotFound(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	if err := repo.DeleteDashboard(ctx, "dashboards/non-existent-delete"); err == nil {
-		t.Errorf("DeleteDashboard for non-existent dashboard succeeded, want error")
+	err := repo.DeleteDashboard(ctx, "dashboards/non-existent-delete")
+	if err == nil {
+		t.Fatalf("DeleteDashboard for non-existent dashboard succeeded, want error")
+	}
+	if !errors.Is(err, status.ErrNotFound) {
+		t.Errorf("DeleteDashboard error = %v, want status.ErrNotFound", err)
 	}
 }
 

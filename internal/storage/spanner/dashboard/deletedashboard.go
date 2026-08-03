@@ -37,6 +37,9 @@ func (r *Repository) DeleteDashboard(ctx context.Context, dashboardId string) er
 		// 1. Verify that the dashboard exists.
 		_, err := txn.ReadRow(ctx, dashboardschema.DashboardsTableName, spanner.Key{dashboardId}, []string{"DashboardId"})
 		if err != nil {
+			if err == spanner.ErrRowNotFound || status.ExtractCanonicalCode(err) == status.NotFound {
+				return fmt.Errorf("dashboard %s not found: %w", dashboardId, status.ErrNotFound)
+			}
 			return fmt.Errorf("failed to read dashboard %s: %w", dashboardId, err)
 		}
 

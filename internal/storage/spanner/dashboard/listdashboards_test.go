@@ -18,6 +18,10 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
+
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 )
 
 func TestListDashboards_Empty(t *testing.T) {
@@ -187,4 +191,68 @@ func TestListDashboards_WithStaleness(t *testing.T) {
 	if len(dashboards) != 1 {
 		t.Fatalf("got %d dashboards, want 1", len(dashboards))
 	}
+}
+
+func TestExtractDashboardCursor(t *testing.T) {
+	t.Run("nil dashboard", func(t *testing.T) {
+		_, err := ExtractDashboardCursor(nil)
+		if err == nil {
+			t.Errorf("ExtractDashboardCursor(nil) succeeded, want error")
+		}
+	})
+
+	t.Run("empty fields populated with zero values", func(t *testing.T) {
+		dash := &dpb.Dashboard{
+			Name: "dashboards/d1",
+		}
+		cursor, err := ExtractDashboardCursor(dash)
+		if err != nil {
+			t.Fatalf("ExtractDashboardCursor failed: %v", err)
+		}
+		if cursor["dashboard_id"] != "dashboards/d1" {
+			t.Errorf("dashboard_id = %v, want 'dashboards/d1'", cursor["dashboard_id"])
+		}
+		if cursor["title"] != "" {
+			t.Errorf("title = %v, want ''", cursor["title"])
+		}
+		if cursor["owner"] != "" {
+			t.Errorf("owner = %v, want ''", cursor["owner"])
+		}
+		if cursor["created"] != (time.Time{}) {
+			t.Errorf("created = %v, want zero time", cursor["created"])
+		}
+		if cursor["updated"] != (time.Time{}) {
+			t.Errorf("updated = %v, want zero time", cursor["updated"])
+		}
+	})
+
+	t.Run("populated fields", func(t *testing.T) {
+		now := time.Now().Truncate(time.Microsecond)
+		dash := &dpb.Dashboard{
+			Name:       "dashboards/d2",
+			Title:      "My Dashboard",
+			Owner:      "user@example.com",
+			CreateTime: timestamppb.New(now),
+			UpdateTime: timestamppb.New(now),
+		}
+		cursor, err := ExtractDashboardCursor(dash)
+		if err != nil {
+			t.Fatalf("ExtractDashboardCursor failed: %v", err)
+		}
+		if cursor["dashboard_id"] != "dashboards/d2" {
+			t.Errorf("dashboard_id = %v, want 'dashboards/d2'", cursor["dashboard_id"])
+		}
+		if cursor["title"] != "My Dashboard" {
+			t.Errorf("title = %v, want 'My Dashboard'", cursor["title"])
+		}
+		if cursor["owner"] != "user@example.com" {
+			t.Errorf("owner = %v, want 'user@example.com'", cursor["owner"])
+		}
+		if cursor["created"] != now.UTC() {
+			t.Errorf("created = %v, want %v", cursor["created"], now.UTC())
+		}
+		if cursor["updated"] != now.UTC() {
+			t.Errorf("updated = %v, want %v", cursor["updated"], now.UTC())
+		}
+	})
 }

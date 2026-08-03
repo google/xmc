@@ -16,9 +16,12 @@ package dashboard
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+
+	"task/go/status"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 )
 
@@ -150,8 +153,12 @@ func TestUpdateDashboard_NotFound(t *testing.T) {
 	repo := setupDashboardRepository(ctx, t)
 
 	update := blankDashboardProto("dashboards/non-existent-update")
-	if _, err := repo.UpdateDashboard(ctx, update, nil); err == nil {
-		t.Errorf("UpdateDashboard for non-existent dashboard succeeded, want error")
+	_, err := repo.UpdateDashboard(ctx, update, nil)
+	if err == nil {
+		t.Fatalf("UpdateDashboard for non-existent dashboard succeeded, want error")
+	}
+	if !errors.Is(err, status.ErrNotFound) {
+		t.Errorf("UpdateDashboard error = %v, want status.ErrNotFound", err)
 	}
 }
 
@@ -164,5 +171,74 @@ func TestUpdateDashboard_NilOrInvalid(t *testing.T) {
 	}
 	if _, err := repo.UpdateDashboard(ctx, &dpb.Dashboard{}, nil); err == nil {
 		t.Errorf("UpdateDashboard(empty name) succeeded, want error")
+	}
+}
+
+func TestChartsEqual_NilElements(t *testing.T) {
+	chartA := &dpb.Chart{Name: "charts/c1"}
+	chartB := &dpb.Chart{Name: "charts/c2"}
+
+	tests := []struct {
+		name string
+		a    []*dpb.Chart
+		b    []*dpb.Chart
+		want bool
+	}{
+		{
+			name: "both nil slices",
+			a:    nil,
+			b:    nil,
+			want: true,
+		},
+		{
+			name: "both empty slices",
+			a:    []*dpb.Chart{},
+			b:    []*dpb.Chart{},
+			want: true,
+		},
+		{
+			name: "different lengths",
+			a:    []*dpb.Chart{chartA},
+			b:    []*dpb.Chart{chartA, chartB},
+			want: false,
+		},
+		{
+			name: "both have nil element at same position",
+			a:    []*dpb.Chart{nil},
+			b:    []*dpb.Chart{nil},
+			want: true,
+		},
+		{
+			name: "one has nil element, other has non-nil",
+			a:    []*dpb.Chart{nil},
+			b:    []*dpb.Chart{chartA},
+			want: false,
+		},
+		{
+			name: "one has non-nil element, other has nil",
+			a:    []*dpb.Chart{chartA},
+			b:    []*dpb.Chart{nil},
+			want: false,
+		},
+		{
+			name: "equal chart names",
+			a:    []*dpb.Chart{chartA},
+			b:    []*dpb.Chart{{Name: "charts/c1"}},
+			want: true,
+		},
+		{
+			name: "different chart names",
+			a:    []*dpb.Chart{chartA},
+			b:    []*dpb.Chart{chartB},
+			want: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := chartsEqual(tc.a, tc.b); got != tc.want {
+				t.Errorf("chartsEqual() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

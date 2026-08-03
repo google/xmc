@@ -87,11 +87,14 @@ func DashboardProtoToInsertMutations(dashboard *dpb.Dashboard) ([]*spanner.Mutat
 	})
 	mutations = append(mutations, m)
 
-	for _, chart := range dashboard.Charts {
+	for _, chart := range dashboard.GetCharts() {
+		if chart == nil {
+			return nil, fmt.Errorf("chart in dashboard charts list must not be nil: %w", status.ErrInvalidArgument)
+		}
 		mChart := spanner.InsertOrUpdate(dashboardschema.DashboardChartsTableName, []string{
 			"DashboardId", "DashboardChartId", "ChartId", "GridPosition", "CreatedAt",
 		}, []interface{}{
-			dashboard.Name, chart.Name, chart.Name, nil, spanner.CommitTimestamp,
+			dashboard.GetName(), chart.GetName(), chart.GetName(), nil, spanner.CommitTimestamp,
 		})
 		mutations = append(mutations, mChart)
 	}
@@ -132,7 +135,10 @@ func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateCharts bool
 		mutations = append(mutations, mDel)
 
 		for _, chart := range dashboard.GetCharts() {
-			mChart := spanner.Insert(dashboardschema.DashboardChartsTableName, []string{
+			if chart == nil {
+				return nil, fmt.Errorf("chart in dashboard charts list must not be nil: %w", status.ErrInvalidArgument)
+			}
+			mChart := spanner.InsertOrUpdate(dashboardschema.DashboardChartsTableName, []string{
 				"DashboardId", "DashboardChartId", "ChartId", "GridPosition", "CreatedAt",
 			}, []interface{}{
 				dashboard.GetName(), chart.GetName(), chart.GetName(), nil, spanner.CommitTimestamp,

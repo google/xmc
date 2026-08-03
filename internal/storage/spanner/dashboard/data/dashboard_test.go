@@ -17,6 +17,7 @@ package data
 import (
 	"testing"
 
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 )
 
@@ -152,6 +153,8 @@ func TestDashboardRowToProto_Nil(t *testing.T) {
 func TestChartRowToProto_Nil(t *testing.T) {
 	if _, err := ChartRowToProto(nil, nil); err == nil {
 		t.Errorf("ChartRowToProto(nil) expected error, got nil")
+	}
+}
 
 func TestMergeDashboards_AllFieldsNoMask(t *testing.T) {
 	current := &dpb.Dashboard{
@@ -278,5 +281,25 @@ func TestDashboardProtoToUpdateMutations_InvalidInput(t *testing.T) {
 	}
 	if _, err := DashboardProtoToUpdateMutations(&dpb.Dashboard{}, false); err == nil {
 		t.Errorf("DashboardProtoToUpdateMutations(empty name) succeeded, want error")
+	}
+}
+
+func TestDashboardProtoToInsertMutations_NilChart(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name:   "dashboards/d1",
+		Charts: []*dpb.Chart{nil},
+	}
+	if _, err := DashboardProtoToInsertMutations(dash); err == nil {
+		t.Errorf("DashboardProtoToInsertMutations with nil chart succeeded, want error")
+	}
+}
+
+func TestDashboardProtoToUpdateMutations_NilChart(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name:   "dashboards/d1",
+		Charts: []*dpb.Chart{nil},
+	}
+	if _, err := DashboardProtoToUpdateMutations(dash, true); err == nil {
+		t.Errorf("DashboardProtoToUpdateMutations with nil chart succeeded, want error")
 	}
 }
