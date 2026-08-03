@@ -13,6 +13,7 @@
 # limitations under the License.
 
 # Standalone single-node Redpanda configuration for local testing and Go Ingestion Gateway development.
+# Note: Storage is intentionally ephemeral (no volume mount) to guarantee clean state isolation across test runs.
 name: redpanda-standalone
 
 services:
@@ -38,8 +39,14 @@ services:
       - 0.0.0.0:9092
       - --advertise-kafka-addr
       - localhost:9092
+      - --schema-registry-addr
+      - 0.0.0.0:8081
+      - --pandaproxy-addr
+      - 0.0.0.0:8082
     ports:
       - "9092:9092"
+      - "8081:8081"
+      - "8082:8082"
       - "9644:9644"
     healthcheck:
       test: ["CMD", "rpk", "cluster", "health"]
