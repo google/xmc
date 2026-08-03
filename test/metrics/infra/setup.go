@@ -20,8 +20,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
-	"strings"
 	"time"
 
 	clickhousego "github.com/ClickHouse/clickhouse-go/v2"
@@ -83,14 +81,20 @@ func StartRedpanda(ctx context.Context) (*redpanda.Container, []string, error) {
 }
 
 // StartClickHouse spins up a ClickHouse test container and establishes a native driver connection.
-func StartClickHouse(ctx context.Context) (*clickhouse.ClickHouseContainer, driver.Conn, string, error) {
-	c, err := clickhouse.Run(
-		ctx,
-		defaultClickHouseImage,
+func StartClickHouse(ctx context.Context, initScripts ...string) (*clickhouse.ClickHouseContainer, driver.Conn, string, error) {
+	opts := []testcontainers.ContainerCustomizer{
 		clickhouse.WithUsername("clickhouse"),
 		clickhouse.WithPassword("clickhouse"),
 		clickhouse.WithDatabase("default"),
-	)
+	}
+
+	for _, script := range initScripts {
+		if script != "" {
+			opts = append(opts, clickhouse.WithInitScripts(script))
+		}
+	}
+
+	c, err := clickhouse.Run(ctx, defaultClickHouseImage, opts...)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("failed to start clickhouse container: %w", err)
 	}
@@ -137,137 +141,14 @@ func StartClickHouse(ctx context.Context) (*clickhouse.ClickHouseContainer, driv
 	return c, conn, addr, nil
 }
 
-func cleanSQLStatement(stmt string) string {
-	var lines []string
-	for _, line := range strings.Split(stmt, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "--") {
-			continue
-		}
-		lines = append(lines, line)
-	}
-	return strings.TrimSpace(strings.Join(lines, "\n"))
-}
-
-func isEscaped(runes []rune, i int) bool {
-	return i > 0 && runes[i-1] == '\\'
-}
-
-// splitSQLStatements splits SQL content by semicolons, ignoring semicolons inside quotes or comments.
-func splitSQLStatements(content string) []string {
-	var statements []string
-	var current strings.Builder
-	inSingleQuote := false
-	inDoubleQuote := false
-	inLineComment := false
-	inBlockComment := false
-
-	runes := []rune(content)
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-
-		if inLineComment {
-			if r == '\n' {
-				inLineComment = false
-			}
-			current.WriteRune(r)
-			continue
-		}
-		if inBlockComment {
-			if r == '*' && i+1 < len(runes) && runes[i+1] == '/' {
-				inBlockComment = false
-				current.WriteRune(r)
-				current.WriteRune('/')
-				i++
-			} else {
-				current.WriteRune(r)
-			}
-			continue
-		}
-		if inSingleQuote {
-			if r == '\'' && !isEscaped(runes, i) {
-				inSingleQuote = false
-			}
-			current.WriteRune(r)
-			continue
-		}
-		if inDoubleQuote {
-			if r == '"' && !isEscaped(runes, i) {
-				inDoubleQuote = false
-			}
-			current.WriteRune(r)
-			continue
-		}
-
-		if r == '-' && i+1 < len(runes) && runes[i+1] == '-' {
-			inLineComment = true
-			current.WriteRune(r)
-			continue
-		}
-		if r == '/' && i+1 < len(runes) && runes[i+1] == '*' {
-			inBlockComment = true
-			current.WriteRune(r)
-			continue
-		}
-
-		if r == '\'' {
-			inSingleQuote = true
-			current.WriteRune(r)
-			continue
-		}
-		if r == '"' {
-			inDoubleQuote = true
-			current.WriteRune(r)
-			continue
-		}
-
-		if r == ';' {
-			statements = append(statements, current.String())
-			current.Reset()
-			continue
-		}
-
-		current.WriteRune(r)
-	}
-	if current.Len() > 0 {
-		statements = append(statements, current.String())
-	}
-	return statements
-}
-
-// ApplyClickHouseSchema reads and executes SQL statements from a file against ClickHouse.
-func ApplyClickHouseSchema(ctx context.Context, conn driver.Conn, schemaPath string) error {
-	content, err := os.ReadFile(schemaPath)
-	if err != nil {
-		return fmt.Errorf("failed to read schema file %s: %w", schemaPath, err)
-	}
-
-	statements := splitSQLStatements(string(content))
-	for _, rawStmt := range statements {
-		stmt := cleanSQLStatement(rawStmt)
-		if stmt == "" {
-			continue
-		}
-		if err := conn.Exec(ctx, stmt); err != nil {
-			// Skip errors for Kafka engine virtual queues if Kafka/proto schemas are optional in basic tests
-			if strings.Contains(stmt, "ENGINE = Kafka") || strings.Contains(stmt, "xmc_metrics_mv") {
-				fmt.Fprintf(os.Stderr, "Warning: skipping error for statement %q: %v\n", stmt, err)
-				continue
-			}
-			return fmt.Errorf("failed executing schema statement %q: %w", stmt, err)
-		}
-	}
-	return nil
-}
-
-// StartHarness initializes both Redpanda and ClickHouse containers and applies the DDL schema if provided.
+// StartHarness initializes both Redpanda and ClickHouse containers and applies init scripts if provided.
 func StartHarness(ctx context.Context, schemaPath string) (*Harness, error) {
 	rpContainer, brokers, err := StartRedpanda(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed starting redpanda: %w", err)
 	}
 
-	chContainer, conn, chAddr, err := StartClickHouse(ctx)
+	chContainer, conn, chAddr, err := StartClickHouse(ctx, schemaPath)
 	if err != nil {
 		_ = testcontainers.TerminateContainer(rpContainer)
 		return nil, fmt.Errorf("failed starting clickhouse: %w", err)
@@ -279,13 +160,6 @@ func StartHarness(ctx context.Context, schemaPath string) (*Harness, error) {
 		ClickHouseConn:       conn,
 		RedpandaBrokers:      brokers,
 		ClickHouseNativeAddr: chAddr,
-	}
-
-	if schemaPath != "" {
-		if err := ApplyClickHouseSchema(ctx, conn, schemaPath); err != nil {
-			_ = harness.Teardown(ctx)
-			return nil, fmt.Errorf("failed applying schema: %w", err)
-		}
 	}
 
 	return harness, nil
@@ -317,7 +191,7 @@ func (h *Harness) Teardown(ctx context.Context) error {
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("teardown errors: %s", strings.Join(errs, "; "))
+		return fmt.Errorf("teardown errors: %s", fmt.Sprintf("%v", errs))
 	}
 	return nil
 }

@@ -52,13 +52,13 @@ CREATE TABLE IF NOT EXISTS xmc_metrics_queue
 )
 ENGINE = Kafka
 SETTINGS
-    kafka_broker_list = '{kafka_broker_list:redpanda-0.redpanda.xmc.svc.cluster.local:9092}',
-    kafka_topic_list = '{kafka_topic_list:xmc-metrics}',
-    kafka_group_name = '{kafka_group_name:xmc-clickhouse-ingester}',
+    kafka_broker_list = 'redpanda-0.redpanda.xmc.svc.cluster.local:9092',
+    kafka_topic_list = 'xmc-metrics',
+    kafka_group_name = 'xmc-clickhouse-ingester',
     kafka_format = 'ProtobufSingle',
     format_schema = 'metrics.proto:Metric',
     kafka_num_consumers = 1,
-    stream_flush_interval_ms = 1000,
+    kafka_flush_interval_ms = 1000,
     kafka_skip_broken_messages = 100;
 
 -- 3. Materialized View to parse Protobuf fields, handle defaults via IF expressions,
