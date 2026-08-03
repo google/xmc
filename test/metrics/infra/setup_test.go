@@ -22,6 +22,25 @@ import (
 	"time"
 )
 
+func locateSchemaFile(t *testing.T) string {
+	t.Helper()
+	if srcDir := os.Getenv("TEST_SRCDIR"); srcDir != "" {
+		workspace := os.Getenv("TEST_WORKSPACE")
+		if workspace == "" {
+			workspace = "xmanager_cloud"
+		}
+		path := filepath.Join(srcDir, workspace, "deploy", "clickhouse", "schema.sql")
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	path := filepath.Join("..", "..", "..", "deploy", "clickhouse", "schema.sql")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("schema.sql not found at %s: %v", path, err)
+	}
+	return path
+}
+
 func TestHermeticInfraSetup(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -30,17 +49,16 @@ func TestHermeticInfraSetup(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	schemaPath := filepath.Join("..", "..", "..", "deploy", "clickhouse", "schema.sql")
-	if _, err := os.Stat(schemaPath); err != nil {
-		t.Fatalf("schema.sql not found at %s: %v", schemaPath, err)
-	}
+	schemaPath := locateSchemaFile(t)
 
 	harness, err := StartHarness(ctx, schemaPath)
 	if err != nil {
 		t.Fatalf("StartHarness failed: %v", err)
 	}
 	defer func() {
-		if err := harness.Teardown(ctx); err != nil {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cleanupCancel()
+		if err := harness.Teardown(cleanupCtx); err != nil {
 			t.Errorf("Teardown failed: %v", err)
 		}
 	}()
@@ -73,17 +91,16 @@ func TestClickHouseInsertAndSelect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	schemaPath := filepath.Join("..", "..", "..", "deploy", "clickhouse", "schema.sql")
-	if _, err := os.Stat(schemaPath); err != nil {
-		t.Fatalf("schema.sql not found at %s: %v", schemaPath, err)
-	}
+	schemaPath := locateSchemaFile(t)
 
 	harness, err := StartHarness(ctx, schemaPath)
 	if err != nil {
 		t.Fatalf("StartHarness failed: %v", err)
 	}
 	defer func() {
-		if err := harness.Teardown(ctx); err != nil {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cleanupCancel()
+		if err := harness.Teardown(cleanupCtx); err != nil {
 			t.Errorf("Teardown failed: %v", err)
 		}
 	}()

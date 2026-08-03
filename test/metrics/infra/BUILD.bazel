@@ -23,6 +23,7 @@ go_library(
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
         "@com_github_testcontainers_testcontainers_go//:testcontainers-go",
+        "@com_github_testcontainers_testcontainers_go//network",
         "@com_github_testcontainers_testcontainers_go_modules_clickhouse//:clickhouse",
         "@com_github_testcontainers_testcontainers_go_modules_redpanda//:redpanda",
     ],
@@ -36,6 +37,7 @@ go_test(
     ],
     embed = [":infra"],
     tags = [
+        "local",
         "manual",
         "requires-network",
     ],
