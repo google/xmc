@@ -35,7 +35,7 @@ import (
 func setClickHouseEnvs(cfg *Config) {
 	if cfg.ClickHouseDSN != "" {
 		_ = os.Setenv("CLICKHOUSE_DSN", cfg.ClickHouseDSN)
-	} else if cfg.ClickHouseHost != "" || cfg.ClickHousePort != 9000 || cfg.ClickHouseUser != "default" || cfg.ClickHouseDatabase != "default" || cfg.ClickHousePassword != "" {
+	} else if cfg.ClickHouseHost != "" || cfg.ClickHousePort != 0 || cfg.ClickHouseUser != "" || cfg.ClickHouseDatabase != "" || cfg.ClickHousePassword != "" {
 		_ = os.Unsetenv("CLICKHOUSE_DSN")
 	}
 
@@ -86,10 +86,14 @@ func createRedpandaOptions(cfg *Config) []kgo.Opt {
 }
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	cfg, err := ParseFlags(os.Args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -115,13 +119,14 @@ func main() {
 	out, err := FormatReport(report, cfg.OutputFormat)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error formatting report: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	fmt.Println(out)
 	if report.OverallStatus == StatusFailed {
-		os.Exit(2)
+		return 2
 	} else if report.OverallStatus == StatusDegraded {
-		os.Exit(3)
+		return 3
 	}
+	return 0
 }

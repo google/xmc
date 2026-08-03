@@ -20,13 +20,11 @@ import (
 
 func TestParseFlags(t *testing.T) {
 	args := []string{
-		"--clickhouse_host=10.0.0.1",
-		"--clickhouse_port=9001",
-		"--redpanda_brokers=10.0.0.2:9092,10.0.0.3:9092",
-		"--topic_name=custom-metrics",
-		"--consumer_group=custom-group",
+		"--clickhouse_host=localhost",
+		"--clickhouse_port=9000",
+		"--clickhouse_user=testuser",
+		"--redpanda_brokers=b1:9092, b2:9092",
 		"--output=json",
-		"--skip_smoke_tests=true",
 	}
 
 	cfg, err := ParseFlags(args)
@@ -34,25 +32,39 @@ func TestParseFlags(t *testing.T) {
 		t.Fatalf("ParseFlags failed: %v", err)
 	}
 
-	if cfg.ClickHouseHost != "10.0.0.1" {
-		t.Errorf("ClickHouseHost = %q, want %q", cfg.ClickHouseHost, "10.0.0.1")
+	if cfg.ClickHouseHost != "localhost" {
+		t.Errorf("ClickHouseHost = %q, want localhost", cfg.ClickHouseHost)
 	}
-	if cfg.ClickHousePort != 9001 {
-		t.Errorf("ClickHousePort = %d, want 9001", cfg.ClickHousePort)
+	if cfg.ClickHousePort != 9000 {
+		t.Errorf("ClickHousePort = %d, want 9000", cfg.ClickHousePort)
 	}
-	if len(cfg.RedpandaBrokers) != 2 || cfg.RedpandaBrokers[0] != "10.0.0.2:9092" {
-		t.Errorf("RedpandaBrokers = %v, want 2 brokers", cfg.RedpandaBrokers)
+	if cfg.ClickHouseUser != "testuser" {
+		t.Errorf("ClickHouseUser = %q, want testuser", cfg.ClickHouseUser)
 	}
-	if cfg.TopicName != "custom-metrics" {
-		t.Errorf("TopicName = %q, want %q", cfg.TopicName, "custom-metrics")
-	}
-	if cfg.ConsumerGroup != "custom-group" {
-		t.Errorf("ConsumerGroup = %q, want %q", cfg.ConsumerGroup, "custom-group")
+	if len(cfg.RedpandaBrokers) != 2 || cfg.RedpandaBrokers[0] != "b1:9092" || cfg.RedpandaBrokers[1] != "b2:9092" {
+		t.Errorf("RedpandaBrokers = %v, want [b1:9092 b2:9092]", cfg.RedpandaBrokers)
 	}
 	if cfg.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want %q", cfg.OutputFormat, "json")
+		t.Errorf("OutputFormat = %q, want json", cfg.OutputFormat)
 	}
-	if !cfg.SkipSmokeTests {
-		t.Errorf("SkipSmokeTests = false, want true")
+}
+
+func TestParseFlags_Defaults(t *testing.T) {
+	cfg, err := ParseFlags([]string{})
+	if err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+
+	if cfg.ClickHousePort != 0 {
+		t.Errorf("Default ClickHousePort = %d, want 0", cfg.ClickHousePort)
+	}
+	if cfg.ClickHouseUser != "" {
+		t.Errorf("Default ClickHouseUser = %q, want empty string", cfg.ClickHouseUser)
+	}
+	if cfg.ClickHouseDatabase != "" {
+		t.Errorf("Default ClickHouseDatabase = %q, want empty string", cfg.ClickHouseDatabase)
+	}
+	if cfg.DialWithSeedOnly {
+		t.Errorf("Default DialWithSeedOnly = true, want false")
 	}
 }

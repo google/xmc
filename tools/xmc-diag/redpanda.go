@@ -98,15 +98,16 @@ func CalculateConsumerLag(endOffsets kadm.ListedOffsets, groupOffsets kadm.Offse
 	return report
 }
 
-// CheckRedpanda performs Redpanda diagnostics using querier and optional connection error.
+// CheckRedpanda performs Redpanda diagnostics using querier.
 func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, connErr error, topic, group string, skipSmoke bool) RedpandaReport {
 	if connErr != nil {
 		return RedpandaReport{
 			Status: StatusFailed,
-			Reason: "Failed connecting to Redpanda endpoint",
+			Reason: "Failed initializing Redpanda client",
 			Error:  connErr.Error(),
 		}
 	}
+
 	if querier == nil {
 		return RedpandaReport{
 			Status: StatusFailed,
@@ -118,7 +119,7 @@ func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, connErr error, 
 	var pingLatStr string
 	var brokerCount int
 	if !skipSmoke {
-		count, lat, err := querier.Ping(ctx)
+		bCount, lat, err := querier.Ping(ctx)
 		if err != nil {
 			return RedpandaReport{
 				Status: StatusFailed,
@@ -126,14 +127,15 @@ func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, connErr error, 
 				Error:  fmt.Sprintf("ping failed: %v", err),
 			}
 		}
+		brokerCount = bCount
 		pingLatStr = lat.String()
-		brokerCount = count
 	}
 
 	topics, err := querier.ListTopics(ctx, topic)
 	if err != nil {
 		return RedpandaReport{
 			Status:      StatusFailed,
+			Connected:   brokerCount > 0,
 			BrokerCount: brokerCount,
 			PingLatency: pingLatStr,
 			Reason:      fmt.Sprintf("Failed listing metadata for topic %q", topic),
@@ -141,40 +143,46 @@ func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, connErr error, 
 		}
 	}
 
-	tDetail, ok := topics[topic]
-	if !ok || tDetail.Err != nil {
-		var detailErrMsg string
-		if ok && tDetail.Err != nil {
-			detailErrMsg = tDetail.Err.Error()
-		} else {
-			detailErrMsg = "topic not found in metadata"
-		}
+	topicDetail, exists := topics[topic]
+	if !exists {
 		return RedpandaReport{
 			Status:      StatusFailed,
 			Connected:   true,
 			BrokerCount: brokerCount,
 			PingLatency: pingLatStr,
-			Reason:      fmt.Sprintf("Topic %q not found or encountered error: %s", topic, detailErrMsg),
-			Error:       fmt.Sprintf("topic %q error: %s", topic, detailErrMsg),
+			Reason:      fmt.Sprintf("Required metrics topic %q does not exist", topic),
+			Error:       fmt.Sprintf("topic %q not found", topic),
 		}
 	}
 
+	if topicDetail.Err != nil {
+		return RedpandaReport{
+			Status:      StatusFailed,
+			Connected:   true,
+			BrokerCount: brokerCount,
+			PingLatency: pingLatStr,
+			Reason:      fmt.Sprintf("Topic %q reports error", topic),
+			Error:       topicDetail.Err.Error(),
+		}
+	}
+
+	numPartitions := len(topicDetail.Partitions)
 	var statusReasons []string
 	status := StatusHealthy
 
 	endOffsets, err := querier.ListEndOffsets(ctx, topic)
 	if err != nil {
 		status = StatusDegraded
-		statusReasons = append(statusReasons, fmt.Sprintf("failed listing partition end offsets: %v", err))
+		statusReasons = append(statusReasons, fmt.Sprintf("failed listing partition end offsets for topic %q: %v", topic, err))
 	}
 
-	grpOffsets, err := querier.FetchOffsets(ctx, group)
+	groupOffsets, err := querier.FetchOffsets(ctx, group)
 	if err != nil {
 		status = StatusDegraded
 		statusReasons = append(statusReasons, fmt.Sprintf("failed fetching consumer group offsets for %q: %v", group, err))
 	}
 
-	lagRep := CalculateConsumerLag(endOffsets, grpOffsets, topic, group)
+	lagRep := CalculateConsumerLag(endOffsets, groupOffsets, topic, group)
 
 	var reason string
 	if len(statusReasons) > 0 {
@@ -185,7 +193,7 @@ func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, connErr error, 
 		Status:          status,
 		Connected:       true,
 		BrokerCount:     brokerCount,
-		TopicPartitions: len(tDetail.Partitions),
+		TopicPartitions: numPartitions,
 		Lag:             lagRep,
 		PingLatency:     pingLatStr,
 		Reason:          reason,

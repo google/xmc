@@ -49,10 +49,10 @@ func ParseFlags(args []string) (*Config, error) {
 
 	var (
 		chHost      = fs.String("clickhouse_host", "", "ClickHouse host (overrides CLICKHOUSE_HOST env)")
-		chPort      = fs.Int("clickhouse_port", 9000, "ClickHouse native protocol port")
-		chUser      = fs.String("clickhouse_user", "default", "ClickHouse user")
+		chPort      = fs.Int("clickhouse_port", 0, "ClickHouse native protocol port (overrides CLICKHOUSE_PORT env, default 9000)")
+		chUser      = fs.String("clickhouse_user", "", "ClickHouse user (overrides CLICKHOUSE_USER env, default \"default\")")
 		chPassword  = fs.String("clickhouse_password", "", "ClickHouse password")
-		chDatabase  = fs.String("clickhouse_database", "default", "ClickHouse database name")
+		chDatabase  = fs.String("clickhouse_database", "", "ClickHouse database name (overrides CLICKHOUSE_DATABASE env, default \"default\")")
 		chDSN       = fs.String("clickhouse_dsn", "", "ClickHouse DSN string")
 		brokersStr  = fs.String("redpanda_brokers", "localhost:9092", "Comma-separated Redpanda broker addresses")
 		topicName   = fs.String("topic_name", "xmc-metrics", "Redpanda metrics topic name")
@@ -65,16 +65,21 @@ func ParseFlags(args []string) (*Config, error) {
 		tlsInsecure = fs.Bool("tls_insecure_skip_verify", false, "Skip TLS verification for Redpanda")
 		seedOnly    = fs.Bool("dial_with_seed_only", false, "Dial only seed brokers (useful for port-forwarding/tunneling)")
 		outFormat   = fs.String("output", "text", "Output format: text or json")
-		skipSmoke   = fs.Bool("skip_smoke_tests", false, "Skip latency performance smoke tests")
+		skipSmoke   = fs.Bool("skip_smoke_tests", false, "Skip database and topic smoke queries")
 	)
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
 
-	brokers := strings.Split(*brokersStr, ",")
-	for i, b := range brokers {
-		brokers[i] = strings.TrimSpace(b)
+	var brokers []string
+	if *brokersStr != "" {
+		for _, b := range strings.Split(*brokersStr, ",") {
+			b = strings.TrimSpace(b)
+			if b != "" {
+				brokers = append(brokers, b)
+			}
+		}
 	}
 
 	return &Config{
