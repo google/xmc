@@ -16,7 +16,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: clickhouse-schema-setup-script
+  name: {{ .Release.Name }}-clickhouse-schema-setup-script
   labels:
     {{- include "xmanager-cloud.labels" . | nindent 4 }}
 data:
@@ -77,12 +77,12 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: clickhouse-schema-setup
+  name: {{ .Release.Name }}-clickhouse-schema-setup
   labels:
     {{- include "xmanager-cloud.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-delete-policy": before-hook-creation
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   template:
     metadata:
@@ -92,13 +92,20 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: schema-setup
-          image: "curlimages/curl:latest"
+          image: "curlimages/curl:8.2.1"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
           command:
             - /bin/sh
             - -c
             - |
               echo "Applying ClickHouse schema DDL..."
-              curl -s -f "http://{{ .Values.clickhouse.endpoint }}/" --data-binary @/scripts/schema.sql
+              curl -s -f --retry 10 --retry-connrefused --retry-delay 3 "http://{{ .Values.clickhouse.endpoint }}/" --data-binary @/scripts/schema.sql
               echo "ClickHouse schema DDL migration complete."
           volumeMounts:
             - name: schema-volume
@@ -106,5 +113,6 @@ spec:
       volumes:
         - name: schema-volume
           configMap:
-            name: clickhouse-schema-setup-script
+            name: {{ .Release.Name }}-clickhouse-schema-setup-script
 {{- end }}
+
