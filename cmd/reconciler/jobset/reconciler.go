@@ -30,6 +30,7 @@ import (
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	k8slabels "golang/k8s_io/apimachinery/v/v0_23/pkg/labels/labels"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
+	"golang/k8s_io/apimachinery/v/v0_23/pkg/types/types"
 	"golang/prometheus/client/prometheus/promauto/promauto"
 	"golang/prometheus/client/prometheus/prometheus"
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
@@ -42,6 +43,7 @@ import (
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/source/source"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/common/labels"
@@ -340,17 +342,25 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 		displayName, runGroup = r.lookupManagedXprofArtifact(ctx, xid, wid)
 	}
 	warnOnMissingManagedXprofEnvs(ctx, jobSet, displayName, runGroup, gcsPath, xid, wid)
+
+	// Under MultiKueue the JobSet executes on a remote WORKER cluster, so BOTH the
+	// log/dashboard links AND the Diagon MLRun (its workloadDetails cluster + the
+	// MLRun ID) must reference the worker, not the manager (r.Project/...). Resolve
+	// once here from the JobSet's Workload -> MultiKueueCluster labels; falls back
+	// to the manager values if not dispatched via MultiKueue.
+	project, location, clusterName := r.resolveExecutionCluster(ctx, jobSet)
+
 	var mlRunURL string
 	if gcsPath != "" && displayName != "" && runGroup != "" {
 		var skipMLRunCreation bool
 		mlRunURL, skipMLRunCreation = r.checkWorkUnitStatusAndMLRun(ctx, xid, wid, eid)
 		if !skipMLRunCreation && mlRunURL == "" {
 			logging.Info(ctx, "Begin to create MLRun URL.")
-			mlRunURL = r.ensureMLRunCreated(ctx, jobSet, xid, wid, eid, displayName, runGroup, gcsPath)
+			mlRunURL = r.ensureMLRunCreated(ctx, jobSet, project, location, clusterName, xid, wid, eid, displayName, runGroup, gcsPath)
 		}
 	}
 
-	update, err := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg, startupWarningMsg)
+	update, err := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, project, location, clusterName, podErrorMsg, startupWarningMsg)
 	if err != nil {
 		logging.Error(ctx, "Failed to convert JobSet to WorkUnitExecutionUpdate", "namespace", jobSet.Namespace, "error", err)
 		// we do not want to requeue as fields used in the update are monitored by predicate
@@ -413,6 +423,55 @@ func (r *Reconciler) listJobSetPods(ctx context.Context, jobSet *v1alpha2.JobSet
 		return nil, fmt.Errorf("failed to list pods: %w", err)
 	}
 	return podList.Items, nil
+}
+
+// resolveExecutionCluster returns the project/location/cluster where the JobSet
+// actually runs. Under MultiKueue that is the remote WORKER cluster: the JobSet's
+// Workload carries status.clusterName (the MultiKueueCluster name), whose
+// xmc.google.com/* labels describe the worker. Falls back to the manager values
+// (r.Project/Location/ClusterName) when the workload isn't MultiKueue-dispatched.
+func (r *Reconciler) resolveExecutionCluster(ctx context.Context, jobSet *v1alpha2.JobSet) (project, location, clusterName string) {
+	project, location, clusterName = r.Project, r.Location, r.ClusterName
+
+	// Find the Workload owned by this JobSet (Kueue sets an owner reference).
+	var wlList v1beta1.WorkloadList
+	if err := r.List(logging.Strip(ctx), &wlList, client.InNamespace(jobSet.Namespace)); err != nil {
+		logging.Warn(ctx, "resolveExecutionCluster: failed to list workloads; using manager cluster", "error", err)
+		return project, location, clusterName
+	}
+	var wl *v1beta1.Workload
+	for i := range wlList.Items {
+		for _, or := range wlList.Items[i].OwnerReferences {
+			if or.Kind == "JobSet" && or.Name == jobSet.Name {
+				wl = &wlList.Items[i]
+				break
+			}
+		}
+		if wl != nil {
+			break
+		}
+	}
+	if wl == nil || wl.Status.ClusterName == nil || *wl.Status.ClusterName == "" {
+		return project, location, clusterName // not MultiKueue-dispatched
+	}
+
+	var mc v1beta1.MultiKueueCluster
+	if err := r.Get(logging.Strip(ctx), types.NamespacedName{Name: *wl.Status.ClusterName}, &mc); err != nil {
+		logging.Warn(ctx, "resolveExecutionCluster: failed to get MultiKueueCluster; using manager cluster", "cluster", *wl.Status.ClusterName, "error", err)
+		return project, location, clusterName
+	}
+	if mc.Labels != nil {
+		if v := mc.Labels["xmc.google.com/project"]; v != "" {
+			project = v
+		}
+		if v := mc.Labels["xmc.google.com/location"]; v != "" {
+			location = v
+		}
+		if v := mc.Labels["xmc.google.com/cluster-name"]; v != "" {
+			clusterName = v
+		}
+	}
+	return project, location, clusterName
 }
 
 // checkPodsForUnschedulable returns a human-readable warning if any pod of the
@@ -627,15 +686,19 @@ func ConstructMLRunID(project, location, clusterName string, xid, wid, eid int64
 //
 // Extracted to separate MLRun control-plane invocation and error handling from the
 // core JobSet status synchronization workflow.
-func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64, displayName, runGroup, gcsPath string) string {
+// project/location/clusterName identify the WORKER cluster the JobSet actually
+// runs on (resolved via resolveExecutionCluster). The MLRun ID and its
+// workloadDetails.Cluster must reference the worker, not the manager, so the
+// Diagon MLRun points at the real workload under MultiKueue.
+func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.JobSet, project, location, clusterName string, xid, wid, eid int64, displayName, runGroup, gcsPath string) string {
 	if r.MLRunClient == nil || jobSet == nil {
 		return ""
 	}
 
-	mlRunID := ConstructMLRunID(r.Project, r.Location, r.ClusterName, xid, wid, eid, jobSet.CreationTimestamp.Time)
-	clusterPath := r.ClusterName
-	if !strings.HasPrefix(clusterPath, "projects/") && r.Project != "" && r.Location != "" {
-		clusterPath = fmt.Sprintf("projects/%s/locations/%s/clusters/%s", r.Project, r.Location, r.ClusterName)
+	mlRunID := ConstructMLRunID(project, location, clusterName, xid, wid, eid, jobSet.CreationTimestamp.Time)
+	clusterPath := clusterName
+	if !strings.HasPrefix(clusterPath, "projects/") && project != "" && location != "" {
+		clusterPath = fmt.Sprintf("projects/%s/locations/%s/clusters/%s", project, location, clusterName)
 	}
 
 	// Build labels and artifacts once so an AlreadyExists upsert can apply the exact

@@ -14,6 +14,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("//:oci.bzl", "oci_image_for_service")
 
 filegroup(
     name = "ess_migrations",
@@ -71,7 +72,18 @@ compat_go_library(
 go_binary(
     name = "migrations",
     embed = [":migrations_lib"],
+    pure = "on",
     visibility = ["//:__subpackages__"],
+)
+
+# Container image for running the Spanner schema migrator as a Kubernetes Job on
+# the manager cluster. Pushes to
+# ${XMC_ACR_TARGET}/spanner-migrator-${XMC_ENV}:${BUILD_TAG} via
+# :spanner_migrator_image_push. The migration .sql files and proto descriptors
+# are go:embedded into the binary, so the image is self-contained.
+oci_image_for_service(
+    name = "spanner_migrator_image",
+    binary = ":migrations",
 )
 
 compat_go_test(

@@ -140,29 +140,40 @@ def _create_experiment_state_server_stub(
         )
         client_sa = input("Enter XMC_CLIENT_SA: ")
 
-    try:
-        credentials, _ = google.auth.default()
-        authed_session = google.auth.transport.requests.AuthorizedSession(credentials)
-        url = (
-            "https://iamcredentials.googleapis.com/v1/projects/-/"
-            f"serviceAccounts/{client_sa}:generateIdToken"
-        )
-        body = {"audience": iap_client_id, "includeEmail": True}
-        response = authed_session.post(url, json=body)
-        response.raise_for_status()
-        open_id_connect_token = response.json()["token"]
-    except Exception as e:
-        raise RuntimeError("Failed to get identity token via google-auth") from e
-    else:
+    # XMC_INSECURE=true -> plaintext h2c channel. ESS gRPC behind a private L4 ILB
+    # (PSC) has no TLS; the default secure_channel fails the TLS handshake with
+    # WRONG_VERSION_NUMBER. Insecure is safe when auth is disabled / on a private path.
+    insecure = os.environ.get("XMC_INSECURE", "").lower() in ("1", "true", "yes")
+
+    if insecure:
         user_email = get_current_user_email()
-
-        channel_creds = grpc.ssl_channel_credentials()
-        call_creds = grpc.access_token_call_credentials(open_id_connect_token)
-        composite_creds = grpc.composite_channel_credentials(channel_creds, call_creds)
-        channel = grpc.secure_channel(endpoint, composite_creds)
-
+        channel = grpc.insecure_channel(endpoint)
         audit_interceptor = AuditMetadataInterceptor(user_email)
         intercepted_channel = grpc.intercept_channel(channel, audit_interceptor)
+    else:
+        try:
+            credentials, _ = google.auth.default()
+            authed_session = google.auth.transport.requests.AuthorizedSession(credentials)
+            url = (
+                "https://iamcredentials.googleapis.com/v1/projects/-/"
+                f"serviceAccounts/{client_sa}:generateIdToken"
+            )
+            body = {"audience": iap_client_id, "includeEmail": True}
+            response = authed_session.post(url, json=body)
+            response.raise_for_status()
+            open_id_connect_token = response.json()["token"]
+        except Exception as e:
+            raise RuntimeError("Failed to get identity token via google-auth") from e
+        else:
+            user_email = get_current_user_email()
+
+            channel_creds = grpc.ssl_channel_credentials()
+            call_creds = grpc.access_token_call_credentials(open_id_connect_token)
+            composite_creds = grpc.composite_channel_credentials(channel_creds, call_creds)
+            channel = grpc.secure_channel(endpoint, composite_creds)
+
+            audit_interceptor = AuditMetadataInterceptor(user_email)
+            intercepted_channel = grpc.intercept_channel(channel, audit_interceptor)
 
     grpc.channel_ready_future(intercepted_channel).result(_CHANNEL_READY_TIMEOUT_SEC)
     return (
