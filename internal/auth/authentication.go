@@ -32,7 +32,18 @@ var validate = idtoken.Validate
 // AuthenticateUserFromContext authenticates a user's identity from the context.
 func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
 	// This is a temporary workaround to allow testing without IAP.
+	// Even with authentication disabled, honor the x-goog-user-email metadata
+	// header (the xmanager client always sends it) so the experiment is
+	// attributed to the real submitting identity instead of a hardcoded value.
+	// NOTE: this is attribution only, NOT authentication — with auth disabled the
+	// header is trusted blindly and must not be relied on for access control.
 	if a.disableAuthentication {
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			if emails := md.Get("x-goog-user-email"); len(emails) > 0 && emails[0] != "" {
+				logging.Info(ctx, "Auth disabled: attributing to x-goog-user-email", "email", emails[0])
+				return emails[0], emails[0], nil
+			}
+		}
 		return "test@example.com", "test_user_id", nil
 	}
 

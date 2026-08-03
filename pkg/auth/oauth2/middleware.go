@@ -41,6 +41,13 @@ func GetClaims(ctx context.Context) (*SessionClaims, bool) {
 // Authenticate is a middleware verifying interactive session cookies or programmatic Bearer tokens.
 func (a *Authenticator) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// When authentication is disabled (prototype/dev), inject a fixed identity
+		// and skip the session-cookie/Bearer checks so the UI works without OAuth.
+		if a.Config != nil && a.Config.DisableAuthentication {
+			claims := &SessionClaims{Email: "test@example.com", Name: "test"}
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), UserClaimsContextKey, claims)))
+			return
+		}
 		if a.authenticateCookie(w, r, next) {
 			return
 		}

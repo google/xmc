@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
@@ -106,15 +107,30 @@ func generateStructuredMessage(ctx context.Context, jobSet *v1alpha2.JobSet, sta
 	}
 
 	var debugLink string
-	if state == spb.WorkUnitStatus_FAILED || state == spb.WorkUnitStatus_PARTIALLY_FAILED {
+	// Emit the dashboard link for all TERMINAL states (COMPLETED, FAILED,
+	// PARTIALLY_FAILED, STOPPED) so users always get a working /overview link,
+	// not just on failure.
+	isTerminal := state == spb.WorkUnitStatus_COMPLETED ||
+		state == spb.WorkUnitStatus_FAILED ||
+		state == spb.WorkUnitStatus_PARTIALLY_FAILED ||
+		state == spb.WorkUnitStatus_STOPPED
+	if isTerminal {
 		if project != "" && location != "" && clusterName != "" {
+			// Under MultiKueue the live JobSet is deleted on completion, so point
+			// the /overview link at the retained archive copy ("xmc-archive-<name>")
+			// created by the worker JobSet-retainer, which persists. Non-archive
+			// (single-cluster) names are unaffected because the original lingers.
+			dashboardName := jobSet.Name
+			if !strings.HasPrefix(dashboardName, "xmc-archive-") {
+				dashboardName = "xmc-archive-" + dashboardName
+			}
 			debugLink = fmt.Sprintf(
 				"https://console.cloud.google.com/kubernetes/aiml/jobset/%s/GKE_CLUSTER/%s/%s/%s/%s/overview?project=%s",
 				url.PathEscape(project),
 				url.PathEscape(location),
 				url.PathEscape(clusterName),
 				url.PathEscape(jobSet.Namespace),
-				url.PathEscape(jobSet.Name),
+				url.PathEscape(dashboardName),
 				url.QueryEscape(project),
 			)
 		} else {
