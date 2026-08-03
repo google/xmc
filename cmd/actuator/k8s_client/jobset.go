@@ -318,6 +318,7 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 
 	return jobsetv1alpha2.ReplicatedJob{
 		Name:      job.GetName(),
+		GroupName: job.GetGroupName(),
 		Replicas:  job.GetReplicas(),
 		DependsOn: dependsOn,
 		Template: batchv1.JobTemplateSpec{
