@@ -55,10 +55,10 @@ def cleanup_container() -> None:
             "-v",
             "--remove-orphans",
         ]
-        subprocess.run(cmd, check=False)
+        subprocess.run(cmd, check=True)
     except Exception:
         subprocess.run(["docker", "stop", CONTAINER_NAME], check=False)
-        subprocess.run(["docker", "rm", CONTAINER_NAME], check=False)
+        subprocess.run(["docker", "rm", "-v", CONTAINER_NAME], check=False)
     print("Cleanup completed successfully.")
 
 

@@ -58,7 +58,7 @@ To pull and mirror the chart to your project's Artifact Registry:
 # 1. Authenticate Helm with Google Cloud Artifact Registry
 gcloud auth configure-docker us-central1-docker.pkg.dev
 
-# 2. Pull chart and push to OCI registry
+# 2. Pull chart (version 5.8.3 packages Redpanda v24.1.x application binary) and push to OCI registry
 helm pull redpanda/redpanda --version 5.8.3
 helm push redpanda-5.8.3.tgz oci://us-central1-docker.pkg.dev/[PROJECT_ID]/[REPO_NAME]
 ```
@@ -121,17 +121,17 @@ rpk cluster health --brokers localhost:9092
 
 ### 4. Connect from XMC Ingestion Gateway
 
-The Go Ingestion Gateway ([cmd/ingestion_gateway](../../../../cmd/ingestion_gateway/README.md)) connects using the `-broker` flag or environment variables. When running workloads inside the cluster, configure:
+The Go Ingestion Gateway ([cmd/ingestion_gateway](../../../../cmd/ingestion_gateway/README.md)) connects using the `-redpanda_brokers` and `-topic_name` flags. When running workloads inside the cluster, configure:
 
 ```bash
-export REDPANDA_BROKER="redpanda.xmc-metrics.svc.cluster.local:9092"
-export REDPANDA_TOPIC="xmc-metrics"
+export REDPANDA_BROKERS="redpanda.xmc-metrics.svc.cluster.local:9092"
+export TOPIC_NAME="xmc-metrics"
 ```
 
 Start the Ingestion Gateway pointing to Redpanda:
 
 ```bash
-./cmd/ingestion_gateway/ingestion_gateway -broker="${REDPANDA_BROKER}" -topic="${REDPANDA_TOPIC}" -min_partitions=1 -min_replicas=1
+./cmd/ingestion_gateway/ingestion_gateway -redpanda_brokers="${REDPANDA_BROKERS}" -topic_name="${TOPIC_NAME}" -min_partitions=1 -min_replicas=1
 ```
 
 ---
