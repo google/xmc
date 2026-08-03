@@ -24,8 +24,9 @@ import (
 
 func TestCheckClickHouse_Healthy(t *testing.T) {
 	ctx := context.Background()
+	const wantVersion = "mock-clickhouse-24.3"
 	mock := &MockClickHouseQuerier{
-		version: "24.3.1",
+		version: wantVersion,
 		latency: 12 * time.Millisecond,
 	}
 
@@ -36,8 +37,8 @@ func TestCheckClickHouse_Healthy(t *testing.T) {
 	if !rep.Connected {
 		t.Errorf("Connected = false, want true")
 	}
-	if rep.Version != "24.3.1" {
-		t.Errorf("Version = %q, want 24.3.1", rep.Version)
+	if rep.Version != wantVersion {
+		t.Errorf("Version = %q, want %q", rep.Version, wantVersion)
 	}
 	if len(rep.MissingTables) > 0 {
 		t.Errorf("MissingTables = %v, want empty", rep.MissingTables)
@@ -46,8 +47,9 @@ func TestCheckClickHouse_Healthy(t *testing.T) {
 
 func TestCheckClickHouse_MissingTables_DegradedReason(t *testing.T) {
 	ctx := context.Background()
+	const wantVersion = "mock-clickhouse-24.3"
 	mock := &MockClickHouseQuerier{
-		version:       "24.3.1",
+		version:       wantVersion,
 		missingTables: []string{"xmc_metrics_mv"},
 		latency:       10 * time.Millisecond,
 	}

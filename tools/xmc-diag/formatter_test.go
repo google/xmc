@@ -27,7 +27,7 @@ func TestRunDiagnostics_OverallStatus(t *testing.T) {
 	ctx := context.Background()
 	cfg := &Config{TopicName: "xmc-metrics", ConsumerGroup: "xmc-group", SkipSmokeTests: true}
 
-	chMock := &MockClickHouseQuerier{version: "24.1.0"}
+	chMock := &MockClickHouseQuerier{version: "mock-clickhouse-24.3"}
 	rpMock := &MockRedpandaQuerier{
 		topicDetails: kadm.TopicDetails{
 			"xmc-metrics": kadm.TopicDetail{
@@ -52,7 +52,7 @@ func TestFormatReport(t *testing.T) {
 		ClickHouse: ClickHouseReport{
 			Status:    StatusDegraded,
 			Connected: true,
-			Version:   "24.3.1",
+			Version:   "mock-clickhouse-24.3",
 			Reason:    "missing required schema tables: xmc_metrics_mv",
 		},
 		Redpanda: RedpandaReport{
