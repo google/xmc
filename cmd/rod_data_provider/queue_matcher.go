@@ -23,7 +23,7 @@ import (
 // filterFittingQueues filters queue overviews based on requested resource requirements.
 func filterFittingQueues(queues []*spb.QueueOverview, req *spb.GetFittingQueuesRequest) []*spb.QueueOverview {
 	if req == nil || len(req.Requirements) == 0 {
-		return queues
+		return append([]*spb.QueueOverview(nil), queues...)
 	}
 	var filtered []*spb.QueueOverview
 	for _, q := range queues {
@@ -55,14 +55,9 @@ func capacitySatisfiesRequirement(capacities []*spb.QueueResourceCapacity, req *
 	if req == nil {
 		return false
 	}
-	for _, cap := range capacities {
-		if cap == nil {
-			continue
-		}
-		if strings.EqualFold(cap.ResourceType, req.ResourceType) {
-			if cap.FreeCapacityWithBorrowing >= req.Count {
-				return true
-			}
+	for _, c := range capacities {
+		if c != nil && strings.EqualFold(c.ResourceType, req.ResourceType) && c.FreeCapacityWithBorrowing >= req.Count {
+			return true
 		}
 	}
 	return false

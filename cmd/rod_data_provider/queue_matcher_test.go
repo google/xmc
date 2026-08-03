@@ -82,6 +82,37 @@ func TestFilterFittingQueues(t *testing.T) {
 			},
 			wantCount: 0,
 		},
+		{
+			name: "Case-Insensitive Resource Type Matching",
+			req: &spb.GetFittingQueuesRequest{
+				Requirements: []*spb.Resource{
+					{ResourceType: "CPU", Count: 12},
+				},
+			},
+			wantCount: 1,
+			wantQueue: "cq-gpu-1",
+		},
+		{
+			name: "Multi-Resource Filter Requirement Satisfies Both GPU and CPU",
+			req: &spb.GetFittingQueuesRequest{
+				Requirements: []*spb.Resource{
+					{ResourceType: "nvidia.com/gpu", Count: 4},
+					{ResourceType: "cpu", Count: 16},
+				},
+			},
+			wantCount: 1,
+			wantQueue: "cq-gpu-1",
+		},
+		{
+			name: "Multi-Resource Filter Requirement Fails When One Resource Exceeds Capacity",
+			req: &spb.GetFittingQueuesRequest{
+				Requirements: []*spb.Resource{
+					{ResourceType: "nvidia.com/gpu", Count: 4},
+					{ResourceType: "cpu", Count: 32},
+				},
+			},
+			wantCount: 0,
+		},
 	}
 
 	for _, tt := range tests {
@@ -90,8 +121,12 @@ func TestFilterFittingQueues(t *testing.T) {
 			if len(got) != tt.wantCount {
 				t.Errorf("filterFittingQueues count = %d, want %d", len(got), tt.wantCount)
 			}
-			if tt.wantQueue != "" && len(got) > 0 && got[0].QueueName != tt.wantQueue {
-				t.Errorf("filterFittingQueues queue name = %s, want %s", got[0].QueueName, tt.wantQueue)
+			if tt.wantQueue != "" && (len(got) == 0 || got[0].QueueName != tt.wantQueue) {
+				var gotQueue string
+				if len(got) > 0 {
+					gotQueue = got[0].QueueName
+				}
+				t.Errorf("filterFittingQueues queue name = %q, want %q", gotQueue, tt.wantQueue)
 			}
 		})
 	}
@@ -103,8 +138,18 @@ func TestFilterFittingQueues_NilAndEmpty(t *testing.T) {
 	}
 
 	queue := &spb.QueueOverview{QueueName: "q1"}
-	if got := filterFittingQueues([]*spb.QueueOverview{queue}, nil); len(got) != 1 {
-		t.Errorf("filterFittingQueues([q1], nil) count = %d, want 1", len(got))
+	inputQueues := []*spb.QueueOverview{queue}
+	resultQueues := filterFittingQueues(inputQueues, nil)
+	if len(resultQueues) != 1 {
+		t.Errorf("filterFittingQueues([q1], nil) count = %d, want 1", len(resultQueues))
+	}
+
+	// Verify slice immutability when request is nil/empty
+	if len(resultQueues) > 0 {
+		resultQueues[0] = &spb.QueueOverview{QueueName: "mutated"}
+	}
+	if inputQueues[0].QueueName != "q1" {
+		t.Errorf("filterFittingQueues bypassed slice immutability; original slice mutated")
 	}
 
 	// Test nil safety with nil elements inside slices
