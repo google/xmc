@@ -136,6 +136,46 @@ Start the Ingestion Gateway pointing to Redpanda:
 
 ---
 
+## Production / External (BYOD) Redpanda Integration
+
+Once initial setup and validation are complete, users can connect `cmd/ingestion_gateway` to production or external Bring-Your-Own-Device (BYOD) Redpanda or Apache Kafka clusters.
+
+### 1. External Broker Configuration
+Point `ingestion_gateway` to your external cluster using flags or environment variables (`REDPANDA_BROKERS`, `TOPIC_NAME`):
+
+```bash
+export REDPANDA_BROKERS="prod-kafka-1.internal:9092,prod-kafka-2.internal:9092"
+export TOPIC_NAME="xmc-metrics"
+```
+
+### 2. SASL Authentication (Optional)
+If your production cluster requires SASL authentication (`SCRAM-SHA-256`, `SCRAM-SHA-512`, or `PLAIN`), configure SASL flags or mount credential files:
+
+```bash
+./cmd/ingestion_gateway/ingestion_gateway \
+    -redpanda_brokers="${REDPANDA_BROKERS}" \
+    -topic_name="${TOPIC_NAME}" \
+    -sasl_enabled=true \
+    -sasl_mechanism="SCRAM-SHA-256" \
+    -sasl_user="ingestion-gateway" \
+    -sasl_password="YOUR_SASL_PASSWORD"
+```
+
+### 3. TLS / mTLS Security (Optional)
+For encrypted transit or mutual TLS (mTLS) verification:
+
+```bash
+./cmd/ingestion_gateway/ingestion_gateway \
+    -redpanda_brokers="${REDPANDA_BROKERS}" \
+    -topic_name="${TOPIC_NAME}" \
+    -tls_enabled=true \
+    -tls_ca_file="/path/to/ca.crt" \
+    -tls_cert_file="/path/to/client.crt" \
+    -tls_key_file="/path/to/client.key"
+```
+
+---
+
 ## Cleanup & Uninstallation
 
 To remove the Redpanda release and delete persistent volumes:
