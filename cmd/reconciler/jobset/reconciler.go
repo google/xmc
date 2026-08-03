@@ -78,12 +78,18 @@ var (
 
 // Reconciler implements reconcile.Reconciler for JobSets.
 type Reconciler struct {
-	client.Client               // Embed the controller-runtime client
-	Scheme                      *runtime.Scheme
-	Batcher                     *shared.UpdateBatcher
-	Project                     string
-	Location                    string
-	ClusterName                 string
+	client.Client // Embed the controller-runtime client
+	Scheme        *runtime.Scheme
+	Batcher       *shared.UpdateBatcher
+	Project       string
+	Location      string
+	ClusterName   string
+	// MLRunProject/MLRunLocation are the project/location of the Diagon MLRun
+	// resource (the USER project B), used to build the Pantheon console URL so it
+	// points where the MLRun actually lives. Fall back to Project/Location (the
+	// manager) when unset, preserving upstream single-project behavior.
+	MLRunProject                string
+	MLRunLocation               string
 	MaxConcurrentReconciles     int
 	StartupPodErrorCheckTime    time.Duration
 	StartupPodErrorCheckEnabled bool
@@ -777,13 +783,30 @@ func mlRunOwnedByXManager(mlRun map[string]any) bool {
 
 // mlRunURL returns the URL to surface for an MLRun: the API-provided url when
 // present, otherwise the deterministic Cloud Console diagnostics URL for the id.
+// consoleProject/consoleLocation return where the Diagon MLRun actually lives
+// (the USER project B, via MLRunProject/MLRunLocation) so the Pantheon console
+// URL is correct. They fall back to the manager's Project/Location when unset.
+func (r *Reconciler) consoleProject() string {
+	if r.MLRunProject != "" {
+		return r.MLRunProject
+	}
+	return r.Project
+}
+
+func (r *Reconciler) consoleLocation() string {
+	if r.MLRunLocation != "" {
+		return r.MLRunLocation
+	}
+	return r.Location
+}
+
 func (r *Reconciler) mlRunURL(res map[string]any, mlRunID string) string {
 	if res != nil {
 		if urlVal, ok := res["url"].(string); ok && urlVal != "" {
 			return urlVal
 		}
 	}
-	return constructDiagnosticsConsoleURL(r.Location, mlRunID, r.Project)
+	return constructDiagnosticsConsoleURL(r.consoleLocation(), mlRunID, r.consoleProject())
 }
 
 // upsertExistingMLRun handles an MLRun create conflict. It locates the existing run
@@ -802,11 +825,11 @@ func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, m
 	existing, err := r.MLRunClient.GetMLRun(ctx, existingID)
 	if err != nil {
 		logging.Warn(ctx, "MLRun already exists but could not be fetched; treating as success", "mlRunID", existingID, "error", err)
-		return constructDiagnosticsConsoleURL(r.Location, existingID, r.Project)
+		return constructDiagnosticsConsoleURL(r.consoleLocation(), existingID, r.consoleProject())
 	}
 	if mlRunOwnedByXManager(existing) {
 		logging.Info(ctx, "MLRun already exists and is owned by XManager; treating as success", "mlRunID", existingID)
-		return constructDiagnosticsConsoleURL(r.Location, existingID, r.Project)
+		return constructDiagnosticsConsoleURL(r.consoleLocation(), existingID, r.consoleProject())
 	}
 
 	logging.Info(ctx, "MLRun exists but is not owned by XManager; updating with ManagedXprof fields", "mlRunID", existingID)
@@ -823,7 +846,7 @@ func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, m
 	})
 	if err != nil {
 		logging.Error(ctx, "Failed to update existing MLRun for ManagedXprof execution", "mlRunID", existingID, "error", err)
-		return constructDiagnosticsConsoleURL(r.Location, existingID, r.Project)
+		return constructDiagnosticsConsoleURL(r.consoleLocation(), existingID, r.consoleProject())
 	}
 	return r.mlRunURL(res, existingID)
 }

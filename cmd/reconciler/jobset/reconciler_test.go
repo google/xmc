@@ -1698,7 +1698,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 				ClusterName: "cluster-a",
 				MLRunClient: tc.client,
 			}
-			_ = r.ensureMLRunCreated(context.Background(), tc.jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
+			_ = r.ensureMLRunCreated(context.Background(), tc.jobSet, "test-proj", "us-central1", "cluster-a", 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
 
 			if !ok && tc.wantCalls > 0 {
 				t.Fatalf("unexpected non-mock client")

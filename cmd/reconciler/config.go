@@ -35,6 +35,11 @@ type Config struct {
 	KubeAPIQPS                       float64
 	KubeAPIBurst                     int
 	MldiagnosticsEnvironment         string
+	// MLRunProject/MLRunLocation target the Diagon MLRun API + console URL at the
+	// USER project (B) instead of the manager's metadata project (A). Empty =
+	// fall back to the manager values (upstream single-project behavior).
+	MLRunProject  string
+	MLRunLocation string
 }
 
 // flags
@@ -55,6 +60,8 @@ var (
 	kubeAPIBurst                     int
 	statusMessageHistoryEnabled      bool
 	mldiagnosticsEnvironment         string
+	mlRunProject                     string
+	mlRunLocation                    string
 )
 
 func init() {
@@ -74,6 +81,8 @@ func init() {
 	flag.IntVar(&kubeAPIBurst, "kube_api_burst", 200, "Maximum burst for throttle.")
 	flag.BoolVar(&statusMessageHistoryEnabled, "status_message_history_enabled", true, "Whether to enable status message history.")
 	flag.StringVar(&mldiagnosticsEnvironment, "mldiagnostics_environment", "prod", "The ML Diagnostics (Hypercompute Cluster ML Run) control-plane environment: one of autopush, staging, or prod.")
+	flag.StringVar(&mlRunProject, "mlrun_project", "", "GCP project for the Diagon MLRun API + console URL (the USER project B). Empty = use the manager's metadata project.")
+	flag.StringVar(&mlRunLocation, "mlrun_location", "", "Location for the Diagon MLRun API. Empty = use the manager's metadata location.")
 }
 
 func Load() Config {
@@ -96,5 +105,7 @@ func Load() Config {
 		KubeAPIBurst:                     kubeAPIBurst,
 		StatusMessageHistoryEnabled:      statusMessageHistoryEnabled,
 		MldiagnosticsEnvironment:         mldiagnosticsEnvironment,
+		MLRunProject:                     mlRunProject,
+		MLRunLocation:                    mlRunLocation,
 	}
 }

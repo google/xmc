@@ -95,7 +95,18 @@ func main() {
 
 	cqCache := clusterqueue.NewNameCache()
 
-	mlRunClient := newMLRunCreator(ctx, projectID, cfg.MldiagnosticsEnvironment, location)
+	// The Diagon MLRun API is project-scoped in its URL path; target the USER
+	// project B (cfg.MLRunProject/Location) when set, else fall back to the
+	// manager's metadata project (upstream single-project behavior).
+	mlRunProject := cfg.MLRunProject
+	if mlRunProject == "" {
+		mlRunProject = projectID
+	}
+	mlRunLocation := cfg.MLRunLocation
+	if mlRunLocation == "" {
+		mlRunLocation = location
+	}
+	mlRunClient := newMLRunCreator(ctx, mlRunProject, cfg.MldiagnosticsEnvironment, mlRunLocation)
 
 	mgr, batcher, err := buildManager(ctx, cfg, storage, projectID, location, clusterName, cqCache, mlRunClient)
 	if err != nil {
@@ -244,6 +255,8 @@ func buildManager(ctx context.Context, cfg Config, storage storage.Storage, proj
 		Project:                     projectID,
 		Location:                    location,
 		ClusterName:                 clusterName,
+		MLRunProject:                cfg.MLRunProject,
+		MLRunLocation:               cfg.MLRunLocation,
 		Batcher:                     batcher,
 		MaxConcurrentReconciles:     cfg.MaxConcurrentReconciles,
 		StartupPodErrorCheckTime:    cfg.StartupPodErrorCheckTime,
