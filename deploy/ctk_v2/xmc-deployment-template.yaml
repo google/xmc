@@ -64,6 +64,9 @@ vars:
   # If true, deletion protection will be enabled on supported resources (databases, Cloud Run)
   deletion_protection: false
 
+  # Enable Metrics Pipeline (Ingestion Gateway & ROD Data Provider)
+  enable_metrics: false
+
   # The physical address range allowed to call the GKE control plane
   authorized_cidr: 0.0.0.0/0
 

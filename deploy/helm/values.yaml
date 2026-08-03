@@ -43,6 +43,9 @@ essDeployment:
 healthServiceDeployment:
   enabled: false
 
+metrics:
+  enabled: false
+
 ingestionGatewayDeployment:
   enabled: false
   hpa:
