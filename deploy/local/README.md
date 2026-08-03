@@ -12,12 +12,12 @@ This directory documents the developer cluster testing workflow for XManager on 
 
 ```mermaid
 flowchart TD
-    subgraph Local Workstation / Developer Machine
+    subgraph "Local Workstation / Developer Machine"
         DIAG["xmc-diag CLI"]
         CURL["curl / Python Client"]
     end
 
-    subgraph GKE Developer Cluster (Namespace: xmc)
+    subgraph "GKE Developer Cluster (Namespace: xmc)"
         GW["svc/ingestion-gateway (8080)"]
         RP["pod/redpanda-0 (9092)"]
         CH["svc/clickhouse (9000 / 8123)"]
