@@ -75,17 +75,17 @@ func StartRedpanda(ctx context.Context, nw *testcontainers.DockerNetwork) (*redp
 
 	broker, err := c.KafkaSeedBroker(ctx)
 	if err != nil {
-		_ = c.Terminate(ctx)
+		terminateWithTimeout(c)
 		return nil, nil, fmt.Errorf("failed to get redpanda seed broker: %w", err)
 	}
 
 	if broker == "" {
-		_ = c.Terminate(ctx)
+		terminateWithTimeout(c)
 		return nil, nil, fmt.Errorf("no redpanda seed broker returned")
 	}
 
 	if err := VerifyTCPConnectivity(ctx, broker); err != nil {
-		_ = c.Terminate(ctx)
+		terminateWithTimeout(c)
 		return nil, nil, fmt.Errorf("redpanda TCP verification failed: %w", err)
 	}
 
@@ -165,7 +165,7 @@ func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork, init
 
 	nativePort, err := c.MappedPort(ctx, "9000/tcp")
 	if err != nil {
-		_ = c.Terminate(ctx)
+		terminateWithTimeout(c)
 		for _, cl := range cleanups {
 			cl()
 		}
@@ -174,7 +174,7 @@ func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork, init
 
 	host, err := c.Host(ctx)
 	if err != nil {
-		_ = c.Terminate(ctx)
+		terminateWithTimeout(c)
 		for _, cl := range cleanups {
 			cl()
 		}
@@ -184,7 +184,7 @@ func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork, init
 	addr := net.JoinHostPort(host, nativePort.Port())
 
 	if err := VerifyTCPConnectivity(ctx, addr); err != nil {
-		_ = c.Terminate(ctx)
+		terminateWithTimeout(c)
 		for _, cl := range cleanups {
 			cl()
 		}
@@ -201,7 +201,7 @@ func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork, init
 		DialTimeout: 5 * time.Second,
 	})
 	if err != nil {
-		_ = c.Terminate(ctx)
+		terminateWithTimeout(c)
 		for _, cl := range cleanups {
 			cl()
 		}
@@ -210,7 +210,7 @@ func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork, init
 
 	if err := conn.Ping(ctx); err != nil {
 		_ = conn.Close()
-		_ = c.Terminate(ctx)
+		terminateWithTimeout(c)
 		for _, cl := range cleanups {
 			cl()
 		}
@@ -229,14 +229,14 @@ func StartHarness(ctx context.Context, schemaPath string) (*Harness, error) {
 
 	rpContainer, brokers, err := StartRedpanda(ctx, nw)
 	if err != nil {
-		_ = nw.Remove(ctx)
+		removeNetworkWithTimeout(nw)
 		return nil, fmt.Errorf("failed starting redpanda: %w", err)
 	}
 
 	chContainer, conn, chAddr, cleanups, err := StartClickHouse(ctx, nw, schemaPath)
 	if err != nil {
-		_ = rpContainer.Terminate(ctx)
-		_ = nw.Remove(ctx)
+		terminateWithTimeout(rpContainer)
+		removeNetworkWithTimeout(nw)
 		return nil, fmt.Errorf("failed starting clickhouse: %w", err)
 	}
 
@@ -292,4 +292,22 @@ func (h *Harness) Teardown(ctx context.Context) error {
 		return errors.Join(errs...)
 	}
 	return nil
+}
+
+func terminateWithTimeout(c testcontainers.Container) {
+	if c == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = c.Terminate(ctx)
+}
+
+func removeNetworkWithTimeout(nw *testcontainers.DockerNetwork) {
+	if nw == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = nw.Remove(ctx)
 }

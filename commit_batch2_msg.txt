@@ -1,9 +1,0 @@
-fix(metrics): address second round of code review feedback on PR #324
-
-- Use c.Terminate(ctx) container instance method throughout setup.go.
-- Add locateSchemaFile helper in setup_test.go supporting Bazel TEST_SRCDIR runfiles and go test fallback.
-- Wrap deferred Teardown in setup_test.go with a dedicated cleanupCtx (30s timeout) to guarantee teardown on test context timeout.
-- Add local tag to infra_test rule in test/metrics/infra/BUILD.bazel.
-
-TAG=agy
-CONV=284cf383-9c62-42f8-a23b-879866186538
