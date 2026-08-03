@@ -262,16 +262,14 @@ class TestStepSubprocesses(unittest.TestCase):
         upgrade_dev_env.step_images(self.config)
         self.assertEqual(mock_run.call_count, 8)
 
-    @mock.patch("tools.upgrade_dev_env._propagate_compute_outputs")
-    @mock.patch("tools.upgrade_dev_env._propagate_primary_outputs")
     @mock.patch.object(Path, "is_dir", return_value=True)
     @mock.patch("tools.upgrade_dev_env.run_cmd")
-    def test_step_app(self, mock_run, _mock_dir, _mock_primary, _mock_compute):
+    def test_step_app(self, mock_run, _mock_dir):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_app(self.config)
-        # Verify gcluster create and deploy calls are present
+        # Verify gcluster create, export-outputs, import-inputs, and deploy calls are present
         calls = [call_args[0][0] for call_args in mock_run.call_args_list]
         self.assertIn(
             [
@@ -290,6 +288,26 @@ class TestStepSubprocesses(unittest.TestCase):
             calls,
         )
         self.assertIn(
+            ["./cluster-toolkit/gcluster", "export-outputs", "ctk-out/deploy-456/primary"],
+            calls,
+        )
+        self.assertIn(
+            ["./cluster-toolkit/gcluster", "import-inputs", "ctk-out/deploy-456/compute"],
+            calls,
+        )
+        self.assertIn(
+            ["./cluster-toolkit/gcluster", "export-outputs", "ctk-out/deploy-456/compute"],
+            calls,
+        )
+        self.assertIn(
+            [
+                "./cluster-toolkit/gcluster",
+                "import-inputs",
+                "ctk-out/deploy-456/kubernetes_prereqs",
+            ],
+            calls,
+        )
+        self.assertIn(
             [
                 "./cluster-toolkit/gcluster",
                 "--download-dependencies",
@@ -301,56 +319,6 @@ class TestStepSubprocesses(unittest.TestCase):
             ],
             calls,
         )
-
-    @mock.patch.object(Path, "is_dir", return_value=True)
-    @mock.patch("tools.upgrade_dev_env.run_cmd")
-    def test_step_app_output_propagation(self, mock_run, _mock_dir):
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr=""
-        )
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            ctk_dir = Path(tmp_dir) / "ctk-out" / "deploy-456"
-            ctk_dir.mkdir(parents=True)
-            artifacts_dir = ctk_dir / ".ghpc" / "artifacts"
-            artifacts_dir.mkdir(parents=True)
-            (artifacts_dir / "primary_outputs.tfvars").write_text(
-                'service_account_email_workload_service_account = "sa@proj.iam.gserviceaccount.com"\n'
-                'service_account_email_health_service_gcp_sa = "hs-sa@proj.iam.gserviceaccount.com"\n',
-                encoding="utf-8",
-            )
-            (artifacts_dir / "compute_outputs.tfvars").write_text(
-                'cluster_endpoint = "10.0.0.1"\n',
-                encoding="utf-8",
-            )
-            config = upgrade_dev_env.Config(
-                environment="dev",
-                deployment_name="deploy-456",
-                project_id="proj-123",
-                region="us-central1",
-                namespace="xmc",
-                registry="us-docker.pkg.dev/proj-123/xmc",
-                acr_target="us-docker.pkg.dev/proj-123/xmc",
-                gke_cluster="xmc-deploy-456-dev",
-                config_path="/tmp/test_config.yaml",
-            )
-            with mock.patch(
-                "tools.upgrade_dev_env.Path",
-                side_effect=lambda p: ctk_dir if "ctk-out/deploy-456" in str(p) else Path(p),
-            ):
-                upgrade_dev_env.step_app(config)
-
-            compute_inputs = ctk_dir / "compute" / "primary_inputs.auto.tfvars"
-            app_inputs = ctk_dir / "xmc_app" / "primary_inputs.auto.tfvars"
-            self.assertTrue(compute_inputs.exists())
-            self.assertTrue(app_inputs.exists())
-            self.assertIn(
-                "service_account_email_health_service_gcp_sa",
-                compute_inputs.read_text(encoding="utf-8"),
-            )
-            self.assertIn(
-                "hs-sa@proj.iam.gserviceaccount.com",
-                compute_inputs.read_text(encoding="utf-8"),
-            )
 
     @mock.patch("tools.upgrade_dev_env.resolve_deployment_name")
     @mock.patch("tools.upgrade_dev_env.run_cmd")

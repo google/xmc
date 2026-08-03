@@ -463,62 +463,6 @@ def step_images(config: Config) -> None:
     log_success("All XMC service container images compiled and pushed from current branch state.")
 
 
-def _find_terraform_bin() -> str | None:
-    """Locates terraform binary in system PATH or HPC toolkit cache."""
-    tf_bin = shutil.which("terraform")
-    if tf_bin:
-        return tf_bin
-    try:
-        hpc_cache = Path.home() / ".cache" / "hpc-toolkit"
-        if hpc_cache.exists():
-            for path in hpc_cache.rglob("terraform"):
-                if path.is_file() and os.access(path, os.X_OK):
-                    return str(path)
-    except Exception:
-        pass
-    return None
-
-
-def _propagate_primary_outputs(ctk_dir: Path) -> None:
-    """Exports and copies primary group outputs to dependent deployment groups."""
-    log_info("Exporting outputs for deployment group 'primary'...")
-    run_cmd(
-        ["./cluster-toolkit/gcluster", "export-outputs", str(ctk_dir / "primary")],
-    )
-
-    primary_artifact = ctk_dir / ".ghpc" / "artifacts" / "primary_outputs.tfvars"
-    if not primary_artifact.exists():
-        error_exit(f"Primary outputs artifact not found at '{primary_artifact}' after export.")
-
-    for group in ["compute", "xmc_app"]:
-        dest = ctk_dir / group / "primary_inputs.auto.tfvars"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(primary_artifact, dest)
-
-
-def _propagate_compute_outputs(ctk_dir: Path) -> None:
-    """Exports and copies compute group outputs to xmc_app group."""
-    compute_dir = ctk_dir / "compute"
-    if not compute_dir.exists():
-        return
-
-    log_info("Exporting outputs for deployment group 'compute'...")
-    tf_bin = _find_terraform_bin()
-    if tf_bin:
-        run_cmd([tf_bin, f"-chdir={compute_dir}", "init", "-backend=false"])
-    run_cmd(
-        ["./cluster-toolkit/gcluster", "export-outputs", str(compute_dir)],
-    )
-
-    compute_artifact = ctk_dir / ".ghpc" / "artifacts" / "compute_outputs.tfvars"
-    if not compute_artifact.exists():
-        error_exit(f"Compute outputs artifact not found at '{compute_artifact}' after export.")
-
-    dest = ctk_dir / "xmc_app" / "compute_inputs.auto.tfvars"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy(compute_artifact, dest)
-
-
 def step_app(config: Config) -> None:
     """Upgrades XMC Kubernetes workloads via Cluster Toolkit gcluster CLI."""
     log_info("Upgrading XMC Kubernetes application workloads using Cluster Toolkit...")
@@ -547,8 +491,18 @@ def step_app(config: Config) -> None:
         ]
     )
 
-    _propagate_primary_outputs(ctk_dir)
-    _propagate_compute_outputs(ctk_dir)
+    log_info("Exporting and importing Cluster Toolkit deployment group outputs...")
+    if (ctk_dir / "primary").is_dir():
+        run_cmd(["./cluster-toolkit/gcluster", "export-outputs", str(ctk_dir / "primary")])
+
+    if (ctk_dir / "compute").is_dir():
+        run_cmd(["./cluster-toolkit/gcluster", "import-inputs", str(ctk_dir / "compute")])
+        run_cmd(["./cluster-toolkit/gcluster", "export-outputs", str(ctk_dir / "compute")])
+
+    if (ctk_dir / "kubernetes_prereqs").is_dir():
+        run_cmd(
+            ["./cluster-toolkit/gcluster", "import-inputs", str(ctk_dir / "kubernetes_prereqs")]
+        )
 
     log_info("Running gcluster deploy for group 'xmc_app'...")
     run_cmd(
