@@ -108,9 +108,10 @@ func convertAggregatedQuotaToResourceCapacity(resourceType string, quotaAggregat
 		freeCapacityWithBorrowing = 0
 	}
 	return &spb.QueueResourceCapacity{
-		ResourceType:              resourceType,
-		TotalCapacity:             nominalQuota,
-		FreeCapacity:              freeCapacity,
+		ResourceType:  resourceType,
+		TotalCapacity: nominalQuota,
+		FreeCapacity:  freeCapacity,
+		// TODO: Make sure that FreeCapacityWithBorrowing doesn't go above what is already used within the same cohort
 		FreeCapacityWithBorrowing: freeCapacityWithBorrowing,
 	}
 }
