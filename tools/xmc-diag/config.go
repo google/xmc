@@ -28,15 +28,16 @@ type Config struct {
 	ClickHouseDatabase string
 	ClickHouseDSN      string
 
-	RedpandaBrokers []string
-	TopicName       string
-	ConsumerGroup   string
-	SASLEnabled     bool
-	SASLMechanism   string
-	SASLUser        string
-	SASLPassword    string
-	TLSEnabled      bool
-	TLSInsecure     bool
+	RedpandaBrokers  []string
+	TopicName        string
+	ConsumerGroup    string
+	SASLEnabled      bool
+	SASLMechanism    string
+	SASLUser         string
+	SASLPassword     string
+	TLSEnabled       bool
+	TLSInsecure      bool
+	DialWithSeedOnly bool
 
 	OutputFormat   string
 	SkipSmokeTests bool
@@ -62,6 +63,7 @@ func ParseFlags(args []string) (*Config, error) {
 		saslPass    = fs.String("sasl_password", "", "SASL password")
 		tlsEnable   = fs.Bool("tls_enabled", false, "Enable TLS for Redpanda connection")
 		tlsInsecure = fs.Bool("tls_insecure_skip_verify", false, "Skip TLS verification for Redpanda")
+		seedOnly    = fs.Bool("dial_with_seed_only", true, "Dial only seed brokers (useful for port-forwarding/tunneling)")
 		outFormat   = fs.String("output", "text", "Output format: text or json")
 		skipSmoke   = fs.Bool("skip_smoke_tests", false, "Skip latency performance smoke tests")
 	)
@@ -91,6 +93,7 @@ func ParseFlags(args []string) (*Config, error) {
 		SASLPassword:       *saslPass,
 		TLSEnabled:         *tlsEnable,
 		TLSInsecure:        *tlsInsecure,
+		DialWithSeedOnly:   *seedOnly,
 		OutputFormat:       strings.ToLower(*outFormat),
 		SkipSmokeTests:     *skipSmoke,
 	}, nil

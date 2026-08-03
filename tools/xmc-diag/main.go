@@ -19,6 +19,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -54,6 +55,13 @@ func setClickHouseEnvs(cfg *Config) {
 
 func createRedpandaOptions(cfg *Config) []kgo.Opt {
 	opts := []kgo.Opt{kgo.SeedBrokers(cfg.RedpandaBrokers...)}
+	if cfg.DialWithSeedOnly && len(cfg.RedpandaBrokers) > 0 {
+		seed := cfg.RedpandaBrokers[0]
+		var dialer net.Dialer
+		opts = append(opts, kgo.Dialer(func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dialer.DialContext(ctx, network, seed)
+		}))
+	}
 	if cfg.TLSEnabled {
 		opts = append(opts, kgo.DialTLSConfig(&tls.Config{InsecureSkipVerify: cfg.TLSInsecure}))
 	}
