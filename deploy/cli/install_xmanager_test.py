@@ -59,6 +59,7 @@ class TestInstallXmanager(unittest.TestCase):
             )
             self.assertEqual(args.xmanager_branch, "xm-cloud")
             self.assertEqual(args.venv, "./venv")
+            self.assertFalse(args.enable_metrics)
 
     def test_parse_args_custom(self) -> None:
         """Test parse_args with custom CLI arguments."""
@@ -69,11 +70,13 @@ class TestInstallXmanager(unittest.TestCase):
             "custom-branch",
             "--venv",
             "/custom/venv",
+            "--enable-metrics",
         ]
         args = install_xmanager.parse_args(cli_args)
         self.assertEqual(args.protos_loc, "/custom/protos")
         self.assertEqual(args.xmanager_branch, "custom-branch")
         self.assertEqual(args.venv, "/custom/venv")
+        self.assertTrue(args.enable_metrics)
 
     def test_check_prerequisites_success(self) -> None:
         """Test check_prerequisites when all binaries are found."""

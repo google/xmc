@@ -56,6 +56,7 @@ vars:
   status_message_history_enabled: true
   health_service_deployment_enabled: false
   dashboard_service_deployment_enabled: false
+  enable_metrics: false
   ingestion_gateway_deployment_enabled: false
   rod_deployment_enabled: false
 
@@ -411,6 +412,9 @@ deployment_groups:
         type: auto
       - name: dashboardServiceDeployment.enabled
         value: $(vars.dashboard_service_deployment_enabled)
+        type: auto
+      - name: metrics.enabled
+        value: $(vars.enable_metrics)
         type: auto
       - name: ingestionGatewayDeployment.enabled
         value: $(vars.ingestion_gateway_deployment_enabled)
