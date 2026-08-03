@@ -31,6 +31,9 @@ go_library(
 go_test(
     name = "infra_test",
     srcs = ["setup_test.go"],
+    data = [
+        "//deploy/clickhouse:schema.sql",
+    ],
     embed = [":infra"],
     tags = [
         "manual",

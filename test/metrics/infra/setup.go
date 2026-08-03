@@ -34,7 +34,6 @@ import (
 const (
 	defaultRedpandaImage   = "docker.redpanda.com/redpandadata/redpanda:v24.1.1"
 	defaultClickHouseImage = "clickhouse/clickhouse-server:24.3-alpine"
-	defaultTimeout         = 30 * time.Second
 )
 
 // Harness holds container instances and active connections for hermetic testing.
@@ -150,6 +149,92 @@ func cleanSQLStatement(stmt string) string {
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
+func isEscaped(runes []rune, i int) bool {
+	return i > 0 && runes[i-1] == '\\'
+}
+
+// splitSQLStatements splits SQL content by semicolons, ignoring semicolons inside quotes or comments.
+func splitSQLStatements(content string) []string {
+	var statements []string
+	var current strings.Builder
+	inSingleQuote := false
+	inDoubleQuote := false
+	inLineComment := false
+	inBlockComment := false
+
+	runes := []rune(content)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+
+		if inLineComment {
+			if r == '\n' {
+				inLineComment = false
+			}
+			current.WriteRune(r)
+			continue
+		}
+		if inBlockComment {
+			if r == '*' && i+1 < len(runes) && runes[i+1] == '/' {
+				inBlockComment = false
+				current.WriteRune(r)
+				current.WriteRune('/')
+				i++
+			} else {
+				current.WriteRune(r)
+			}
+			continue
+		}
+		if inSingleQuote {
+			if r == '\'' && !isEscaped(runes, i) {
+				inSingleQuote = false
+			}
+			current.WriteRune(r)
+			continue
+		}
+		if inDoubleQuote {
+			if r == '"' && !isEscaped(runes, i) {
+				inDoubleQuote = false
+			}
+			current.WriteRune(r)
+			continue
+		}
+
+		if r == '-' && i+1 < len(runes) && runes[i+1] == '-' {
+			inLineComment = true
+			current.WriteRune(r)
+			continue
+		}
+		if r == '/' && i+1 < len(runes) && runes[i+1] == '*' {
+			inBlockComment = true
+			current.WriteRune(r)
+			continue
+		}
+
+		if r == '\'' {
+			inSingleQuote = true
+			current.WriteRune(r)
+			continue
+		}
+		if r == '"' {
+			inDoubleQuote = true
+			current.WriteRune(r)
+			continue
+		}
+
+		if r == ';' {
+			statements = append(statements, current.String())
+			current.Reset()
+			continue
+		}
+
+		current.WriteRune(r)
+	}
+	if current.Len() > 0 {
+		statements = append(statements, current.String())
+	}
+	return statements
+}
+
 // ApplyClickHouseSchema reads and executes SQL statements from a file against ClickHouse.
 func ApplyClickHouseSchema(ctx context.Context, conn driver.Conn, schemaPath string) error {
 	content, err := os.ReadFile(schemaPath)
@@ -157,7 +242,7 @@ func ApplyClickHouseSchema(ctx context.Context, conn driver.Conn, schemaPath str
 		return fmt.Errorf("failed to read schema file %s: %w", schemaPath, err)
 	}
 
-	statements := strings.Split(string(content), ";")
+	statements := splitSQLStatements(string(content))
 	for _, rawStmt := range statements {
 		stmt := cleanSQLStatement(rawStmt)
 		if stmt == "" {
@@ -166,6 +251,7 @@ func ApplyClickHouseSchema(ctx context.Context, conn driver.Conn, schemaPath str
 		if err := conn.Exec(ctx, stmt); err != nil {
 			// Skip errors for Kafka engine virtual queues if Kafka/proto schemas are optional in basic tests
 			if strings.Contains(stmt, "ENGINE = Kafka") || strings.Contains(stmt, "xmc_metrics_mv") {
+				fmt.Fprintf(os.Stderr, "Warning: skipping error for statement %q: %v\n", stmt, err)
 				continue
 			}
 			return fmt.Errorf("failed executing schema statement %q: %w", stmt, err)
@@ -207,6 +293,9 @@ func StartHarness(ctx context.Context, schemaPath string) (*Harness, error) {
 
 // Teardown closes connections and terminates container instances.
 func (h *Harness) Teardown(ctx context.Context) error {
+	if h == nil {
+		return nil
+	}
 	var errs []string
 
 	if h.ClickHouseConn != nil {
