@@ -18,6 +18,7 @@ package infra
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -29,11 +30,13 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/clickhouse"
 	"github.com/testcontainers/testcontainers-go/modules/redpanda"
+	tcnetwork "github.com/testcontainers/testcontainers-go/network"
 )
 
 const (
 	defaultRedpandaImage   = "docker.redpanda.com/redpandadata/redpanda:v24.1.1"
 	defaultClickHouseImage = "clickhouse/clickhouse-server:24.3-alpine"
+	internalRedpandaAddr   = "redpanda:9092"
 )
 
 // Harness holds container instances and active connections for hermetic testing.
@@ -43,6 +46,7 @@ type Harness struct {
 	ClickHouseConn       driver.Conn
 	RedpandaBrokers      []string
 	ClickHouseNativeAddr string
+	network              *testcontainers.DockerNetwork
 	cleanups             []func()
 }
 
@@ -58,8 +62,13 @@ func VerifyTCPConnectivity(ctx context.Context, addr string) error {
 }
 
 // StartRedpanda spins up a Redpanda test container and returns the container instance and broker address.
-func StartRedpanda(ctx context.Context) (*redpanda.Container, []string, error) {
-	c, err := redpanda.Run(ctx, defaultRedpandaImage)
+func StartRedpanda(ctx context.Context, nw *testcontainers.DockerNetwork) (*redpanda.Container, []string, error) {
+	opts := []testcontainers.ContainerCustomizer{}
+	if nw != nil {
+		opts = append(opts, tcnetwork.WithNetwork([]string{"redpanda"}, nw))
+	}
+
+	c, err := redpanda.Run(ctx, defaultRedpandaImage, opts...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to start redpanda container: %w", err)
 	}
@@ -83,14 +92,14 @@ func StartRedpanda(ctx context.Context) (*redpanda.Container, []string, error) {
 	return c, []string{broker}, nil
 }
 
-func prepareInitScript(scriptPath string) (string, func(), error) {
+func prepareInitScript(scriptPath string, internalBroker string) (string, func(), error) {
 	content, err := os.ReadFile(scriptPath)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to read init script %s: %w", scriptPath, err)
 	}
 
 	s := string(content)
-	s = strings.ReplaceAll(s, "{kafka_broker_list:redpanda-0.redpanda.xmc.svc.cluster.local:9092}", "localhost:9092")
+	s = strings.ReplaceAll(s, "{kafka_broker_list:redpanda-0.redpanda.xmc.svc.cluster.local:9092}", internalBroker)
 	s = strings.ReplaceAll(s, "{kafka_topic_list:xmc-metrics}", "xmc-metrics")
 	s = strings.ReplaceAll(s, "{kafka_group_name:xmc-clickhouse-ingester}", "xmc-clickhouse-ingester")
 	s = strings.ReplaceAll(s, "stream_flush_interval_ms", "kafka_flush_interval_ms")
@@ -107,6 +116,11 @@ func prepareInitScript(scriptPath string) (string, func(), error) {
 	}
 	_ = tmpFile.Close()
 
+	if err := os.Chmod(tmpFile.Name(), 0644); err != nil {
+		_ = os.Remove(tmpFile.Name())
+		return "", nil, fmt.Errorf("failed to set permissions on temp init script: %w", err)
+	}
+
 	cleanup := func() {
 		_ = os.Remove(tmpFile.Name())
 	}
@@ -114,11 +128,15 @@ func prepareInitScript(scriptPath string) (string, func(), error) {
 }
 
 // StartClickHouse spins up a ClickHouse test container and establishes a native driver connection.
-func StartClickHouse(ctx context.Context, initScripts ...string) (*clickhouse.ClickHouseContainer, driver.Conn, string, []func(), error) {
+func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork, initScripts ...string) (*clickhouse.ClickHouseContainer, driver.Conn, string, []func(), error) {
 	opts := []testcontainers.ContainerCustomizer{
 		clickhouse.WithUsername("clickhouse"),
 		clickhouse.WithPassword("clickhouse"),
 		clickhouse.WithDatabase("default"),
+	}
+
+	if nw != nil {
+		opts = append(opts, tcnetwork.WithNetwork([]string{"clickhouse"}, nw))
 	}
 
 	var cleanups []func()
@@ -126,7 +144,7 @@ func StartClickHouse(ctx context.Context, initScripts ...string) (*clickhouse.Cl
 		if script == "" {
 			continue
 		}
-		preparedScript, cleanup, err := prepareInitScript(script)
+		preparedScript, cleanup, err := prepareInitScript(script, internalRedpandaAddr)
 		if err != nil {
 			for _, cl := range cleanups {
 				cl()
@@ -202,16 +220,23 @@ func StartClickHouse(ctx context.Context, initScripts ...string) (*clickhouse.Cl
 	return c, conn, addr, cleanups, nil
 }
 
-// StartHarness initializes both Redpanda and ClickHouse containers and applies init scripts if provided.
+// StartHarness initializes both Redpanda and ClickHouse containers on a shared network.
 func StartHarness(ctx context.Context, schemaPath string) (*Harness, error) {
-	rpContainer, brokers, err := StartRedpanda(ctx)
+	nw, err := tcnetwork.New(ctx, tcnetwork.WithCheckDuplicate())
 	if err != nil {
+		return nil, fmt.Errorf("failed creating container network: %w", err)
+	}
+
+	rpContainer, brokers, err := StartRedpanda(ctx, nw)
+	if err != nil {
+		_ = nw.Remove(ctx)
 		return nil, fmt.Errorf("failed starting redpanda: %w", err)
 	}
 
-	chContainer, conn, chAddr, cleanups, err := StartClickHouse(ctx, schemaPath)
+	chContainer, conn, chAddr, cleanups, err := StartClickHouse(ctx, nw, schemaPath)
 	if err != nil {
 		_ = testcontainers.TerminateContainer(rpContainer)
+		_ = nw.Remove(ctx)
 		return nil, fmt.Errorf("failed starting clickhouse: %w", err)
 	}
 
@@ -221,34 +246,41 @@ func StartHarness(ctx context.Context, schemaPath string) (*Harness, error) {
 		ClickHouseConn:       conn,
 		RedpandaBrokers:      brokers,
 		ClickHouseNativeAddr: chAddr,
+		network:              nw,
 		cleanups:             cleanups,
 	}
 
 	return harness, nil
 }
 
-// Teardown closes connections and terminates container instances.
+// Teardown closes connections, terminates container instances, and removes the shared network.
 func (h *Harness) Teardown(ctx context.Context) error {
 	if h == nil {
 		return nil
 	}
-	var errs []string
+	var errs []error
 
 	if h.ClickHouseConn != nil {
 		if err := h.ClickHouseConn.Close(); err != nil {
-			errs = append(errs, fmt.Sprintf("failed to close clickhouse connection: %v", err))
+			errs = append(errs, fmt.Errorf("failed to close clickhouse connection: %w", err))
 		}
 	}
 
 	if h.ClickHouseContainer != nil {
 		if err := testcontainers.TerminateContainer(h.ClickHouseContainer); err != nil {
-			errs = append(errs, fmt.Sprintf("failed to terminate clickhouse container: %v", err))
+			errs = append(errs, fmt.Errorf("failed to terminate clickhouse container: %w", err))
 		}
 	}
 
 	if h.RedpandaContainer != nil {
 		if err := testcontainers.TerminateContainer(h.RedpandaContainer); err != nil {
-			errs = append(errs, fmt.Sprintf("failed to terminate redpanda container: %v", err))
+			errs = append(errs, fmt.Errorf("failed to terminate redpanda container: %v", err))
+		}
+	}
+
+	if h.network != nil {
+		if err := h.network.Remove(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("failed to remove container network: %w", err))
 		}
 	}
 
@@ -257,7 +289,7 @@ func (h *Harness) Teardown(ctx context.Context) error {
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("teardown errors: %s", fmt.Sprintf("%v", errs))
+		return errors.Join(errs...)
 	}
 	return nil
 }

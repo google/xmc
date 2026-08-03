@@ -30,11 +30,9 @@ func TestHermeticInfraSetup(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	// Find root relative schema path
 	schemaPath := filepath.Join("..", "..", "..", "deploy", "clickhouse", "schema.sql")
 	if _, err := os.Stat(schemaPath); err != nil {
-		t.Logf("schema.sql not found at %s, proceeding without schema", schemaPath)
-		schemaPath = ""
+		t.Fatalf("schema.sql not found at %s: %v", schemaPath, err)
 	}
 
 	harness, err := StartHarness(ctx, schemaPath)
@@ -76,6 +74,10 @@ func TestClickHouseInsertAndSelect(t *testing.T) {
 	defer cancel()
 
 	schemaPath := filepath.Join("..", "..", "..", "deploy", "clickhouse", "schema.sql")
+	if _, err := os.Stat(schemaPath); err != nil {
+		t.Fatalf("schema.sql not found at %s: %v", schemaPath, err)
+	}
+
 	harness, err := StartHarness(ctx, schemaPath)
 	if err != nil {
 		t.Fatalf("StartHarness failed: %v", err)
