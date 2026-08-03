@@ -48,7 +48,13 @@ go_binary(
 
 compat_go_test(
     name = "xmc_diag_test",
-    srcs = ["main_test.go"],
+    srcs = [
+        "clickhouse_test.go",
+        "config_test.go",
+        "formatter_test.go",
+        "redpanda_test.go",
+        "test_mocks.go",
+    ],
     embed = [":xmc_diag_lib"],
     deps = [
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
