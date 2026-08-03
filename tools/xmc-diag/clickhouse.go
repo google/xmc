@@ -55,7 +55,7 @@ func (r *RealClickHouseQuerier) CheckTablesExist(ctx context.Context, tables []s
 
 func (r *RealClickHouseQuerier) MeasureLatency(ctx context.Context) (time.Duration, error) {
 	start := time.Now()
-	var dummy int
+	var dummy uint8
 	err := r.conn.QueryRow(ctx, "SELECT 1").Scan(&dummy)
 	return time.Since(start), err
 }
