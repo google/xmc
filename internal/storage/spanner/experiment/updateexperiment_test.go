@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package experiment_test
 
 import (
 	"context"
@@ -23,6 +23,7 @@ import (
 	fmpb "protobuf/field_mask_go_proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
@@ -31,10 +32,10 @@ import (
 func TestUpdateExperiment(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	s, _ := NewStorage(essClient)
+	s, _ := spanner.NewStorage(essClient)
 
 	// 1. Create an Experiment.
-	createdExp := createBlankExperiment(ctx, t, s, 123)
+	createdExp := spanner.CreateBlankExperiment(ctx, t, s, 123)
 
 	xid, err := validator.ValidateExperimentName(createdExp.GetName())
 	if err != nil {
@@ -91,9 +92,9 @@ func TestUpdateExperiment(t *testing.T) {
 func TestUpdateExperiment_ImmutableField(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	s, _ := NewStorage(essClient)
+	s, _ := spanner.NewStorage(essClient)
 
-	createdExp := createBlankExperiment(ctx, t, s, 123)
+	createdExp := spanner.CreateBlankExperiment(ctx, t, s, 123)
 
 	xid, err := validator.ValidateExperimentName(createdExp.GetName())
 	if err != nil {
@@ -116,7 +117,7 @@ func TestUpdateExperiment_ImmutableField(t *testing.T) {
 func TestUpdateExperiment_NotFound(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	s, _ := NewStorage(essClient)
+	s, _ := spanner.NewStorage(essClient)
 
 	update := &storage.ExperimentUpdate{
 		XID: 123456789,
@@ -134,9 +135,9 @@ func TestUpdateExperiment_NotFound(t *testing.T) {
 func TestUpdateExperiment_EmptyMask(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	s, _ := NewStorage(essClient)
+	s, _ := spanner.NewStorage(essClient)
 
-	createdExp := createBlankExperiment(ctx, t, s, 123)
+	createdExp := spanner.CreateBlankExperiment(ctx, t, s, 123)
 
 	xid, err := validator.ValidateExperimentName(createdExp.GetName())
 	if err != nil {

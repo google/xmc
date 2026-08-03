@@ -11,20 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package experiment_test
 
 import (
 	"context"
 	"testing"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 )
 
 func TestCreateExperiment(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	exp := &essmsgpb.Experiment{
 		Name:    "experiments/123",
@@ -71,7 +72,7 @@ func TestCreateExperiment(t *testing.T) {
 func TestCreateExperiment_InvalidName(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	exp := &essmsgpb.Experiment{
 		Name: "invalid-name",

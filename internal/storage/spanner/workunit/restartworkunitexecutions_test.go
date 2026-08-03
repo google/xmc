@@ -11,12 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package workunit_test
 
 import (
 	"context"
 	"fmt"
 	"testing"
+	"xmanager_cloud/internal/storage/spanner"
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
@@ -29,28 +30,28 @@ import (
 func TestRestartWorkUnitExecutions_HappyPath(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	xid := int64(123)
 	wids := []int64{1, 2}
-	createBlankExperiment(ctx, t, storageClient, xid)
-	createBlankWorkUnitWithState(ctx, t, storageClient, xid, 1, essmsgpb.WorkUnitStatus_FAILED)
-	createBlankWorkUnitWithState(ctx, t, storageClient, xid, 2, essmsgpb.WorkUnitStatus_STOPPED)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
+	spanner.CreateBlankWorkUnitWithState(ctx, t, storageClient, xid, 1, essmsgpb.WorkUnitStatus_FAILED)
+	spanner.CreateBlankWorkUnitWithState(ctx, t, storageClient, xid, 2, essmsgpb.WorkUnitStatus_STOPPED)
 
 	initialExperiment, err := storageClient.FetchExperiment(ctx, xid)
 	if err != nil {
 		t.Fatalf("FetchExperiment(%d) failed: %v", xid, err)
 	}
-	if got, want := childStateCountInState(t, initialExperiment, essmsgpb.WorkUnitStatus_FAILED), int64(1); got != want {
+	if got, want := spanner.ChildStateCountInState(t, initialExperiment, essmsgpb.WorkUnitStatus_FAILED), int64(1); got != want {
 		t.Errorf("Initial experiment state count for FAILED is %d, want %d", got, want)
 	}
-	if got, want := childStateCountInState(t, initialExperiment, essmsgpb.WorkUnitStatus_STOPPED), int64(1); got != want {
+	if got, want := spanner.ChildStateCountInState(t, initialExperiment, essmsgpb.WorkUnitStatus_STOPPED), int64(1); got != want {
 		t.Errorf("Initial experiment state count for STOPPED is %d, want %d", got, want)
 	}
-	if got, want := messageSeverityCountInState(t, initialExperiment, essmsgpb.StructuredMessage_INFO), int64(2); got != want {
+	if got, want := spanner.MessageSeverityCountInState(t, initialExperiment, essmsgpb.StructuredMessage_INFO), int64(2); got != want {
 		t.Errorf("Initial experiment message severity count for INFO is %d, want %d", got, want)
 	}
 
@@ -92,16 +93,16 @@ func TestRestartWorkUnitExecutions_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchExperiment(%d) failed: %v", xid, err)
 	}
-	if got, want := childStateCountInState(t, exp, essmsgpb.WorkUnitStatus_FAILED), int64(0); got != want {
+	if got, want := spanner.ChildStateCountInState(t, exp, essmsgpb.WorkUnitStatus_FAILED), int64(0); got != want {
 		t.Errorf("Experiment state count for FAILED is %d, want %d", got, want)
 	}
-	if got, want := childStateCountInState(t, exp, essmsgpb.WorkUnitStatus_STOPPED), int64(0); got != want {
+	if got, want := spanner.ChildStateCountInState(t, exp, essmsgpb.WorkUnitStatus_STOPPED), int64(0); got != want {
 		t.Errorf("Experiment state count for STOPPED is %d, want %d", got, want)
 	}
-	if got, want := childStateCountInState(t, exp, essmsgpb.WorkUnitStatus_RESTARTING), int64(2); got != want {
+	if got, want := spanner.ChildStateCountInState(t, exp, essmsgpb.WorkUnitStatus_RESTARTING), int64(2); got != want {
 		t.Errorf("Experiment state count for RESTARTING is %d, want %d", got, want)
 	}
-	if got, want := messageSeverityCountInState(t, exp, essmsgpb.StructuredMessage_INFO), int64(2); got != want {
+	if got, want := spanner.MessageSeverityCountInState(t, exp, essmsgpb.StructuredMessage_INFO), int64(2); got != want {
 		t.Errorf("Experiment message severity count for INFO is %d, want %d", got, want)
 	}
 }
@@ -109,14 +110,14 @@ func TestRestartWorkUnitExecutions_HappyPath(t *testing.T) {
 func TestRestartWorkUnitExecutions_WorkUnitNotFound(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	xid := int64(456)
 	wids := []int64{1}
-	createBlankExperiment(ctx, t, storageClient, xid)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
 
 	_, err = storageClient.RestartWorkUnitExecutions(ctx, "test@example.com", xid, wids)
 	if status.ExtractCanonicalCode(err) != status.Internal {

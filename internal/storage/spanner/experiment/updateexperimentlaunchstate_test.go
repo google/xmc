@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package experiment_test
 
 import (
 	"context"
@@ -21,12 +21,12 @@ import (
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
+	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/validator/validator"
-
-	timestamppb "protobuf/timestamp_go_proto"
 )
 
 func TestUpdateExperimentLaunchState_Success(t *testing.T) {
@@ -51,10 +51,10 @@ func TestUpdateExperimentLaunchState_Success(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			_, essClient := emulator.Setup(ctx, t)
-			storage, _ := NewStorage(essClient)
+			storage, _ := spanner.NewStorage(essClient)
 
-			exp := createBlankExperimentWithLaunchState(ctx, t, storage, 1, essmsgpb.ExperimentStatus_LAUNCHING)
-			createBlankWorkUnit(ctx, t, storage, 1, 1)
+			exp := spanner.CreateBlankExperimentWithLaunchState(ctx, t, storage, 1, essmsgpb.ExperimentStatus_LAUNCHING)
+			spanner.CreateBlankWorkUnit(ctx, t, storage, 1, 1)
 
 			xid, err := validator.ValidateExperimentName(exp.GetName())
 			if err != nil {
@@ -108,7 +108,7 @@ func TestUpdateExperimentLaunchState_Success(t *testing.T) {
 func TestUpdateExperimentLaunchState_StatusMessageUpdate(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	exp := &essmsgpb.Experiment{
 		Name:      validator.ConstructExperimentName(999),
@@ -155,7 +155,7 @@ func TestUpdateExperimentLaunchState_StatusMessageUpdate(t *testing.T) {
 func TestUpdateExperimentLaunchState_InvalidTargetState(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	exp := &essmsgpb.Experiment{
 		Name:      "experiments/123",
@@ -184,7 +184,7 @@ func TestUpdateExperimentLaunchState_InvalidTargetState(t *testing.T) {
 func TestUpdateExperimentLaunchState_NotFound(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	_, err := storage.UpdateExperimentLaunchState(ctx, 123, essmsgpb.ExperimentStatus_COMPLETED)
 	if !errors.Is(err, status.ErrNotFound) {
@@ -195,7 +195,7 @@ func TestUpdateExperimentLaunchState_NotFound(t *testing.T) {
 func TestUpdateExperimentLaunchState_FailedPrecondition(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	exp := &essmsgpb.Experiment{
 		Name:      "experiments/123",

@@ -11,11 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package artifact_test
 
 import (
 	"context"
 	"testing"
+	"xmanager_cloud/internal/storage/spanner"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
@@ -24,9 +25,9 @@ import (
 func TestCreateArtifact(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	exp := &essmsgpb.Experiment{
@@ -83,9 +84,9 @@ func TestCreateArtifact(t *testing.T) {
 func TestCreateArtifact_InvalidName(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	art := &essmsgpb.Artifact{

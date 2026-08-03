@@ -11,11 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package xid_test
 
 import (
 	"context"
 	"testing"
+	"xmanager_cloud/internal/storage/spanner"
 
 	"golang/protobuf/v2/proto/proto"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
@@ -25,7 +26,7 @@ import (
 func TestCreateXidEntry(t *testing.T) {
 	ctx := context.Background()
 	xidClient, _ := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(xidClient)
+	storage, _ := spanner.NewStorage(xidClient)
 
 	parentEntry := &xidpb.XidEntry{
 		Creator: proto.String("test-creator"),

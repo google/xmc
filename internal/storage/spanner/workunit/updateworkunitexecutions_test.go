@@ -11,12 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package workunit_test
 
 import (
 	"context"
 	"testing"
 	"time"
+	"xmanager_cloud/internal/storage/spanner"
 
 	"go/log"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
@@ -30,9 +31,9 @@ import (
 func TestUpdateWorkUnitExecutions_EmptyUpdates(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	got, err := storageClient.UpdateWorkUnitExecutions(ctx, 123, []*storage.WorkUnitExecutionUpdate{})
@@ -47,22 +48,22 @@ func TestUpdateWorkUnitExecutions_EmptyUpdates(t *testing.T) {
 func TestUpdateWorkUnitExecutions(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
-	createBlankExperiment(ctx, t, storageClient, 123)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, 123)
 
-	createBlankWorkUnit(ctx, t, storageClient, 123, 1)
-	createBlankWorkUnit(ctx, t, storageClient, 123, 2)
+	spanner.CreateBlankWorkUnit(ctx, t, storageClient, 123, 1)
+	spanner.CreateBlankWorkUnit(ctx, t, storageClient, 123, 2)
 
 	initialExperiment, err := storageClient.FetchExperiment(ctx, 123)
 	if err != nil {
 		t.Fatalf("FetchExperiment(123) failed: %v", err)
 	}
-	if childStateCountInState(t, initialExperiment, essmsgpb.WorkUnitStatus_INITIALIZING) != 2 {
-		t.Errorf("Initial experiment state count for INITIALIZING is %d, want 2", childStateCountInState(t, initialExperiment, essmsgpb.WorkUnitStatus_INITIALIZING))
+	if spanner.ChildStateCountInState(t, initialExperiment, essmsgpb.WorkUnitStatus_INITIALIZING) != 2 {
+		t.Errorf("Initial experiment state count for INITIALIZING is %d, want 2", spanner.ChildStateCountInState(t, initialExperiment, essmsgpb.WorkUnitStatus_INITIALIZING))
 	}
 
 	updates := []*storage.WorkUnitExecutionUpdate{
@@ -126,24 +127,24 @@ func TestUpdateWorkUnitExecutions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("After UpdateWorkUnitExecutions, FetchExperiment(123) failed: %v", err)
 	}
-	if childStateCountInState(t, exp, essmsgpb.WorkUnitStatus_INITIALIZING) != 1 {
-		t.Errorf("After UpdateWorkUnitExecutions, experiment state count for INITIALIZING is %d, want 1", childStateCountInState(t, exp, essmsgpb.WorkUnitStatus_INITIALIZING))
+	if spanner.ChildStateCountInState(t, exp, essmsgpb.WorkUnitStatus_INITIALIZING) != 1 {
+		t.Errorf("After UpdateWorkUnitExecutions, experiment state count for INITIALIZING is %d, want 1", spanner.ChildStateCountInState(t, exp, essmsgpb.WorkUnitStatus_INITIALIZING))
 	}
-	if childStateCountInState(t, exp, essmsgpb.WorkUnitStatus_COMPLETED) != 1 {
-		t.Errorf("After UpdateWorkUnitExecutions, experiment state count for COMPLETED is %d, want 1", childStateCountInState(t, exp, essmsgpb.WorkUnitStatus_COMPLETED))
+	if spanner.ChildStateCountInState(t, exp, essmsgpb.WorkUnitStatus_COMPLETED) != 1 {
+		t.Errorf("After UpdateWorkUnitExecutions, experiment state count for COMPLETED is %d, want 1", spanner.ChildStateCountInState(t, exp, essmsgpb.WorkUnitStatus_COMPLETED))
 	}
 }
 
 func TestUpdateWorkUnitExecutions_StateTransitions(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	xid := int64(456)
-	createBlankExperiment(ctx, t, storageClient, xid)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
 	workUnitsToCreate := []struct {
 		wid   int64
 		state essmsgpb.WorkUnitStatus_WorkUnitState
@@ -155,20 +156,20 @@ func TestUpdateWorkUnitExecutions_StateTransitions(t *testing.T) {
 		{5, essmsgpb.WorkUnitStatus_FAILED},
 	}
 	for _, wc := range workUnitsToCreate {
-		createBlankWorkUnitWithState(ctx, t, storageClient, xid, wc.wid, wc.state)
+		spanner.CreateBlankWorkUnitWithState(ctx, t, storageClient, xid, wc.wid, wc.state)
 	}
 
 	initialExperiment, err := storageClient.FetchExperiment(ctx, xid)
 	if err != nil {
 		t.Fatalf("FetchExperiment(%d) failed: %v", xid, err)
 	}
-	if got, want := childStateCountInState(t, initialExperiment, essmsgpb.WorkUnitStatus_INITIALIZING), int64(2); got != want {
+	if got, want := spanner.ChildStateCountInState(t, initialExperiment, essmsgpb.WorkUnitStatus_INITIALIZING), int64(2); got != want {
 		t.Errorf("Initial experiment state count for INITIALIZING is %d, want %d", got, want)
 	}
-	if got, want := childStateCountInState(t, initialExperiment, essmsgpb.WorkUnitStatus_RUNNING), int64(2); got != want {
+	if got, want := spanner.ChildStateCountInState(t, initialExperiment, essmsgpb.WorkUnitStatus_RUNNING), int64(2); got != want {
 		t.Errorf("Initial experiment state count for RUNNING is %d, want %d", got, want)
 	}
-	if got, want := childStateCountInState(t, initialExperiment, essmsgpb.WorkUnitStatus_FAILED), int64(1); got != want {
+	if got, want := spanner.ChildStateCountInState(t, initialExperiment, essmsgpb.WorkUnitStatus_FAILED), int64(1); got != want {
 		t.Errorf("Initial experiment state count for FAILED is %d, want %d", got, want)
 	}
 
@@ -256,19 +257,19 @@ func TestUpdateWorkUnitExecutions_StateTransitions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("After UpdateWorkUnitExecutions, FetchExperiment(%d) failed: %v", xid, err)
 	}
-	if got, want := childStateCountInState(t, exp, essmsgpb.WorkUnitStatus_INITIALIZING), int64(0); got != want {
+	if got, want := spanner.ChildStateCountInState(t, exp, essmsgpb.WorkUnitStatus_INITIALIZING), int64(0); got != want {
 		t.Errorf("After UpdateWorkUnitExecutions, experiment state count for INITIALIZING is %d, want %d", got, want)
 	}
-	if got, want := childStateCountInState(t, exp, essmsgpb.WorkUnitStatus_RUNNING), int64(1); got != want {
+	if got, want := spanner.ChildStateCountInState(t, exp, essmsgpb.WorkUnitStatus_RUNNING), int64(1); got != want {
 		t.Errorf("After UpdateWorkUnitExecutions, experiment state count for RUNNING is %d, want %d", got, want)
 	}
-	if got, want := childStateCountInState(t, exp, essmsgpb.WorkUnitStatus_COMPLETED), int64(1); got != want {
+	if got, want := spanner.ChildStateCountInState(t, exp, essmsgpb.WorkUnitStatus_COMPLETED), int64(1); got != want {
 		t.Errorf("After UpdateWorkUnitExecutions, experiment state count for COMPLETED is %d, want %d", got, want)
 	}
-	if got, want := childStateCountInState(t, exp, essmsgpb.WorkUnitStatus_FAILED), int64(2); got != want {
+	if got, want := spanner.ChildStateCountInState(t, exp, essmsgpb.WorkUnitStatus_FAILED), int64(2); got != want {
 		t.Errorf("After UpdateWorkUnitExecutions, experiment state count for FAILED is %d, want %d", got, want)
 	}
-	if got, want := childStateCountInState(t, exp, essmsgpb.WorkUnitStatus_STOPPED), int64(1); got != want {
+	if got, want := spanner.ChildStateCountInState(t, exp, essmsgpb.WorkUnitStatus_STOPPED), int64(1); got != want {
 		t.Errorf("After UpdateWorkUnitExecutions, experiment state count for STOPPED is %d, want %d", got, want)
 	}
 }
@@ -276,14 +277,14 @@ func TestUpdateWorkUnitExecutions_StateTransitions(t *testing.T) {
 func TestUpdateWorkUnitExecutions_NoStateChange(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
-	createBlankExperiment(ctx, t, storageClient, 234)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, 234)
 
-	createdWu := createBlankWorkUnitWithState(ctx, t, storageClient, 234, 1, essmsgpb.WorkUnitStatus_RUNNING)
+	createdWu := spanner.CreateBlankWorkUnitWithState(ctx, t, storageClient, 234, 1, essmsgpb.WorkUnitStatus_RUNNING)
 
 	updates := []*storage.WorkUnitExecutionUpdate{
 		{
@@ -317,13 +318,13 @@ func TestUpdateWorkUnitExecutions_NoStateChange(t *testing.T) {
 func TestUpdateWorkUnitExecutions_InvalidStateTransitions(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	xid := int64(789)
-	createBlankExperiment(ctx, t, storageClient, xid)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
 	tests := []struct {
 		wid          int64
 		initialState essmsgpb.WorkUnitStatus_WorkUnitState
@@ -337,7 +338,7 @@ func TestUpdateWorkUnitExecutions_InvalidStateTransitions(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		createBlankWorkUnitWithState(ctx, t, storageClient, xid, tc.wid, tc.initialState)
+		spanner.CreateBlankWorkUnitWithState(ctx, t, storageClient, xid, tc.wid, tc.initialState)
 	}
 
 	// These updates should be ignored because they are invalid transitions.
@@ -377,14 +378,14 @@ func TestUpdateWorkUnitExecutions_InvalidStateTransitions(t *testing.T) {
 func TestUpdateWorkUnitExecutions_StaleUpdate(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	xid := int64(890)
-	createBlankExperiment(ctx, t, storageClient, xid)
-	createBlankWorkUnit(ctx, t, storageClient, xid, 1)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
+	spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, 1)
 
 	// Update to RUNNING to set StateUpdateTime
 	updates1 := []*storage.WorkUnitExecutionUpdate{
@@ -449,9 +450,9 @@ func TestUpdateWorkUnitExecutions_StaleUpdate(t *testing.T) {
 func TestUpdateWorkUnitExecutions_StructuredMessageUpdate(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	tests := []struct {
@@ -485,8 +486,8 @@ func TestUpdateWorkUnitExecutions_StructuredMessageUpdate(t *testing.T) {
 	for i, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			xid := int64(101 + i)
-			createBlankExperiment(ctx, t, storageClient, xid)
-			createBlankWorkUnit(ctx, t, storageClient, xid, 1)
+			spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
+			spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, 1)
 
 			// Set initial message to ERROR
 			initialMsg := &essmsgpb.StructuredMessage{
@@ -578,9 +579,9 @@ func TestUpdateWorkUnitExecutions_StructuredMessageUpdate(t *testing.T) {
 func TestUpdateWorkUnitExecutions_StatusMessageUpdate_DeferToExistingMessage(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	tests := []struct {
@@ -627,8 +628,8 @@ func TestUpdateWorkUnitExecutions_StatusMessageUpdate_DeferToExistingMessage(t *
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			createBlankExperiment(ctx, t, storageClient, tc.xid)
-			createBlankWorkUnit(ctx, t, storageClient, tc.xid, 1)
+			spanner.CreateBlankExperiment(ctx, t, storageClient, tc.xid)
+			spanner.CreateBlankWorkUnit(ctx, t, storageClient, tc.xid, 1)
 
 			// Set initial message to INFO
 			initialMsg := &essmsgpb.StructuredMessage{
@@ -686,12 +687,12 @@ func TestUpdateWorkUnitExecutions_StatusMessageUpdate_DeferToExistingMessage(t *
 func TestUpdateWorkUnitExecutions_NonExistentWorkUnit(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
-	createBlankExperiment(ctx, t, storageClient, 345)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, 345)
 	updates := []*storage.WorkUnitExecutionUpdate{
 		{
 			WID: 999, // non-existent
@@ -714,21 +715,21 @@ func TestUpdateWorkUnitExecutions_NonExistentWorkUnit(t *testing.T) {
 func TestUpdateWorkUnitExecutions_ExperimentStatusMessageUpdate(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	xid := int64(102)
-	createBlankExperiment(ctx, t, storageClient, xid)
-	createBlankWorkUnit(ctx, t, storageClient, xid, 1)
-	createBlankWorkUnit(ctx, t, storageClient, xid, 2)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
+	spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, 1)
+	spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, 2)
 
 	initialExperiment, err := storageClient.FetchExperiment(ctx, xid)
 	if err != nil {
 		t.Fatalf("FetchExperiment(%d) failed: %v", xid, err)
 	}
-	if got, want := messageSeverityCountInState(t, initialExperiment, essmsgpb.StructuredMessage_INFO), int64(2); got != want {
+	if got, want := spanner.MessageSeverityCountInState(t, initialExperiment, essmsgpb.StructuredMessage_INFO), int64(2); got != want {
 		t.Errorf("Initial experiment message severity count for INFO is %d, want %d", got, want)
 	}
 
@@ -775,7 +776,7 @@ func TestUpdateWorkUnitExecutions_ExperimentStatusMessageUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchExperiment(%d) failed: %v", xid, err)
 	}
-	if got, want := messageSeverityCountInState(t, exp1, essmsgpb.StructuredMessage_INFO), int64(2); got != want {
+	if got, want := spanner.MessageSeverityCountInState(t, exp1, essmsgpb.StructuredMessage_INFO), int64(2); got != want {
 		t.Errorf("After updates1, experiment message severity count for INFO is %d, want %d", got, want)
 	}
 
@@ -809,7 +810,7 @@ func TestUpdateWorkUnitExecutions_ExperimentStatusMessageUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchExperiment(%d) failed: %v", xid, err)
 	}
-	if got, want := messageSeverityCountInState(t, exp2, essmsgpb.StructuredMessage_INFO), int64(2); got != want {
+	if got, want := spanner.MessageSeverityCountInState(t, exp2, essmsgpb.StructuredMessage_INFO), int64(2); got != want {
 		t.Errorf("After updates2, experiment message severity count for INFO is %d, want %d", got, want)
 	}
 }
@@ -817,15 +818,15 @@ func TestUpdateWorkUnitExecutions_ExperimentStatusMessageUpdate(t *testing.T) {
 func TestUpdateWorkUnitExecutions_CompletionTime(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	xid := int64(678)
-	createBlankExperiment(ctx, t, storageClient, xid)
-	createBlankWorkUnitWithState(ctx, t, storageClient, xid, 1, essmsgpb.WorkUnitStatus_INITIALIZING)
-	createBlankWorkUnitWithState(ctx, t, storageClient, xid, 2, essmsgpb.WorkUnitStatus_RUNNING)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
+	spanner.CreateBlankWorkUnitWithState(ctx, t, storageClient, xid, 1, essmsgpb.WorkUnitStatus_INITIALIZING)
+	spanner.CreateBlankWorkUnitWithState(ctx, t, storageClient, xid, 2, essmsgpb.WorkUnitStatus_RUNNING)
 
 	exp, err := storageClient.FetchExperiment(ctx, xid)
 	if err != nil {
@@ -934,16 +935,16 @@ func TestUpdateWorkUnitExecutions_CompletionTime(t *testing.T) {
 func TestUpdateWorkUnitExecutions_ReturnValue(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	const xid = 124
-	createBlankExperiment(ctx, t, storageClient, xid)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
 
-	createBlankWorkUnit(ctx, t, storageClient, xid, 1)
-	createBlankWorkUnit(ctx, t, storageClient, xid, 2)
+	spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, 1)
+	spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, 2)
 
 	updates := []*storage.WorkUnitExecutionUpdate{
 		{
@@ -989,14 +990,14 @@ func TestUpdateWorkUnitExecutions_ReturnValue(t *testing.T) {
 func TestUpdateWorkUnitExecutions_MultipleUpdatesPerWorkUnit(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	const xid = 125
-	createBlankExperiment(ctx, t, storageClient, xid)
-	createBlankWorkUnit(ctx, t, storageClient, xid, 1)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
+	spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, 1)
 
 	updates := []*storage.WorkUnitExecutionUpdate{
 		{
@@ -1055,13 +1056,13 @@ func TestUpdateWorkUnitExecutions_MultipleUpdatesPerWorkUnit(t *testing.T) {
 func TestUpdateWorkUnitExecutions_MultipleUpdatesSameField(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	const xid = 126
-	createBlankExperiment(ctx, t, storageClient, xid)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
 
 	tOutdated := time.Now()
 	tLatest := tOutdated.Add(time.Second)
@@ -1131,7 +1132,7 @@ func TestUpdateWorkUnitExecutions_MultipleUpdatesSameField(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			createBlankWorkUnit(ctx, t, storageClient, xid, tc.wid)
+			spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, tc.wid)
 
 			updatedWUs, err := storageClient.UpdateWorkUnitExecutions(ctx, xid, tc.updates)
 			if err != nil {
@@ -1162,14 +1163,14 @@ func TestUpdateWorkUnitExecutions_MultipleUpdatesSameField(t *testing.T) {
 func TestUpdateWorkUnitExecutions_MismatchedEID(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	const xid = 127
-	createBlankExperiment(ctx, t, storageClient, xid)
-	createdWu := createBlankWorkUnitWithState(ctx, t, storageClient, xid, 1, essmsgpb.WorkUnitStatus_RUNNING)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
+	createdWu := spanner.CreateBlankWorkUnitWithState(ctx, t, storageClient, xid, 1, essmsgpb.WorkUnitStatus_RUNNING)
 
 	updates := []*storage.WorkUnitExecutionUpdate{
 		{
@@ -1206,9 +1207,9 @@ func TestUpdateWorkUnitExecutions_MismatchedEID(t *testing.T) {
 func TestUpdateWorkUnitExecutions_ExperimentStatusMessagePropagation(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	type updateSpec struct {
@@ -1293,9 +1294,9 @@ func TestUpdateWorkUnitExecutions_ExperimentStatusMessagePropagation(t *testing.
 	for i, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			xid := int64(1000 + i)
-			createBlankExperiment(ctx, t, storageClient, xid)
+			spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
 			for j := int64(1); j <= 4; j++ {
-				createBlankWorkUnit(ctx, t, storageClient, xid, j)
+				spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, j)
 			}
 
 			baseTime := time.Now().Add(time.Hour)
@@ -1373,9 +1374,9 @@ func TestUpdateWorkUnitExecutions_ExperimentStatusMessagePropagation(t *testing.
 func TestUpdateWorkUnitExecutions_OptimizationLogic(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	type updateSpec struct {
@@ -1449,10 +1450,10 @@ func TestUpdateWorkUnitExecutions_OptimizationLogic(t *testing.T) {
 	for i, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			xid := int64(2000 + i)
-			createBlankExperiment(ctx, t, storageClient, xid)
-			createBlankWorkUnit(ctx, t, storageClient, xid, 1) // Potential Champion
-			createBlankWorkUnit(ctx, t, storageClient, xid, 2) // Challenger
-			createBlankWorkUnit(ctx, t, storageClient, xid, 3) // Bystander (Runner up)
+			spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
+			spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, 1) // Potential Champion
+			spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, 2) // Challenger
+			spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, 3) // Bystander (Runner up)
 
 			baseTime := time.Now().Add(time.Hour)
 			makeUpdate := func(spec updateSpec) *storage.WorkUnitExecutionUpdate {
@@ -1507,18 +1508,18 @@ func TestUpdateWorkUnitExecutions_OptimizationLogic(t *testing.T) {
 func TestUpdateWorkUnitExecutions_SavesLatestMessage(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	xid := int64(9999)
-	createBlankExperiment(ctx, t, storageClient, xid)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
 
 	// Create work unit with NO status message.
-	wuProto := blankWorkUnitProto(xid, 1)
+	wuProto := spanner.BlankWorkUnitProto(xid, 1)
 	wuProto.CurrentWorkUnitExecution.Status.SystemMessage = nil
-	createAndStoreWorkUnit(ctx, t, storageClient, wuProto)
+	spanner.CreateAndStoreWorkUnit(ctx, t, storageClient, wuProto)
 
 	tOld := time.Now().Add(-2 * time.Hour)
 	tNew := tOld.Add(time.Minute)

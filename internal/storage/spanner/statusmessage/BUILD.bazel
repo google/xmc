@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//:compat.bzl", "compat_go_library")
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
 compat_go_library(
     name = "statusmessage",
@@ -36,5 +36,27 @@ compat_go_library(
         "//internal/storage/spanner/utils:spannerutils",
         "//internal/validator",
         "@com_google_cloud_go_spanner//:spanner",
+    ],
+)
+
+compat_go_test(
+    name = "statusmessage_test",
+    srcs = [
+        "liststatusmessages_test.go",
+        "savestatusmessagehistory_test.go",
+    ],
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//internal/compat/cmp",
+        "//internal/compat/protocmp",
+        "//internal/compat/status",
+        "//internal/storage",
+        "//internal/storage/spanner",
+        "//internal/storage/spanner/emulator",
+        "//internal/storage/spanner/statusmessage",
+        "//internal/validator",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
     ],
 )

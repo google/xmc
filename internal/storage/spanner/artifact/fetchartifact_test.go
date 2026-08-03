@@ -11,12 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package artifact_test
 
 import (
 	"context"
 	"errors"
 	"testing"
+	"xmanager_cloud/internal/storage/spanner"
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
@@ -29,12 +30,12 @@ import (
 func TestFetchArtifact(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
-	createBlankExperiment(ctx, t, storage, 123)
+	spanner.CreateBlankExperiment(ctx, t, storage, 123)
 
 	art := &essmsgpb.Artifact{
 		Name:   "artifacts/456",
@@ -67,9 +68,9 @@ func TestFetchArtifact(t *testing.T) {
 func TestFetchArtifact_NotFound(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	_, err = storage.FetchArtifact(ctx, 123456789)

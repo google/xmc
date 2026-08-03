@@ -11,12 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package workunit_test
 
 import (
 	"context"
 	"errors"
 	"testing"
+	"xmanager_cloud/internal/storage/spanner"
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
@@ -29,14 +30,14 @@ import (
 func TestFetchCurrentWorkUnitExecution(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
-	createBlankExperiment(ctx, t, storage, 123)
+	spanner.CreateBlankExperiment(ctx, t, storage, 123)
 
-	createdWu := createBlankWorkUnit(ctx, t, storage, 123, 1)
+	createdWu := spanner.CreateBlankWorkUnit(ctx, t, storage, 123, 1)
 
 	xid, wid, err := validator.ValidateWorkUnitName(createdWu.GetName())
 	if err != nil {
@@ -58,9 +59,9 @@ func TestFetchCurrentWorkUnitExecution(t *testing.T) {
 func TestFetchCurrentWorkUnitExecution_NotFound(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	_, err = storage.FetchCurrentWorkUnitExecution(ctx, 123456789, 1)
@@ -72,12 +73,12 @@ func TestFetchCurrentWorkUnitExecution_NotFound(t *testing.T) {
 func TestFetchCurrentWorkUnitExecution_ExperimentExists_NotFound(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
-	createBlankExperiment(ctx, t, storage, 123)
+	spanner.CreateBlankExperiment(ctx, t, storage, 123)
 
 	_, err = storage.FetchCurrentWorkUnitExecution(ctx, 123, 999)
 	if !errors.Is(err, status.ErrNotFound) {

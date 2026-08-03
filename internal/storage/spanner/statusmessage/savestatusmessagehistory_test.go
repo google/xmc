@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package spanner
+package statusmessage_test
 
 import (
 	"context"
 	"testing"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"xmanager_cloud/internal/storage/spanner/statusmessage"
-	"xmanager_cloud/storage/spanner/emulator/emulator"
-
+	cloudspanner "golang/cloud_google_com/go/spanner/v/v1/spanner"
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/storage/spanner/statusmessage"
+	"xmanager_cloud/storage/spanner/emulator/emulator"
 )
 
 func TestSaveStatusMessageHistoryIfChanged_Disabled(t *testing.T) {
@@ -71,7 +71,7 @@ func TestSaveStatusMessageHistoryIfChanged_Success(t *testing.T) {
 	ctx, storage, essClient := setupTest(t, true)
 
 	const xid int64 = 123
-	createBlankExperiment(ctx, t, storage, xid)
+	spanner.CreateBlankExperiment(ctx, t, storage, xid)
 
 	currentMsg := &essmsgpb.StructuredMessage{
 		Parent:         "experiments/123",
@@ -82,7 +82,7 @@ func TestSaveStatusMessageHistoryIfChanged_Success(t *testing.T) {
 		UserFacingText: "new",
 	}
 
-	_, err := essClient.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+	_, err := essClient.ReadWriteTransaction(ctx, func(ctx context.Context, txn *cloudspanner.ReadWriteTransaction) error {
 		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, true, xid, nil, nil, currentMsg, newMsg, txn)
 		return nil
 	})
@@ -121,20 +121,20 @@ func TestSaveStatusMessageHistoryIfChanged_EqualMessagesDifferentTimestamp(t *te
 	}
 }
 
-func setupTest(t *testing.T, historyEnabled bool) (context.Context, *Storage, *spanner.Client) {
+func setupTest(t *testing.T, historyEnabled bool) (context.Context, *spanner.Storage, *cloudspanner.Client) {
 	t.Helper()
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorageWithConfig(essClient, StorageConfig{StatusMessageHistoryEnabled: historyEnabled})
+	storage, err := spanner.NewStorageWithConfig(essClient, spanner.StorageConfig{StatusMessageHistoryEnabled: historyEnabled})
 	if err != nil {
 		t.Fatalf("NewStorageWithConfig() err = %v, want nil", err)
 	}
 	return ctx, storage, essClient
 }
 
-func listStatusMessagesForTest(ctx context.Context, t *testing.T, essClient *spanner.Client, xid int64) []string {
+func listStatusMessagesForTest(ctx context.Context, t *testing.T, essClient *cloudspanner.Client, xid int64) []string {
 	t.Helper()
-	stmt := spanner.Statement{
+	stmt := cloudspanner.Statement{
 		SQL:    "SELECT UserFacingText FROM StatusMessages WHERE Xid = @xid",
 		Params: map[string]any{"xid": xid},
 	}
@@ -142,7 +142,7 @@ func listStatusMessagesForTest(ctx context.Context, t *testing.T, essClient *spa
 	defer iter.Stop()
 
 	var messages []string
-	if err := iter.Do(func(r *spanner.Row) error {
+	if err := iter.Do(func(r *cloudspanner.Row) error {
 		var text string
 		if err := r.ColumnByName("UserFacingText", &text); err != nil {
 			return err

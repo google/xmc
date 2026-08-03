@@ -11,12 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package xid_test
 
 import (
 	"context"
 	"errors"
 	"testing"
+	"xmanager_cloud/internal/storage/spanner"
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
@@ -33,7 +34,7 @@ import (
 func TestUpdateXidEntry(t *testing.T) {
 	ctx := context.Background()
 	xidClient, _ := emulator.Setup(ctx, t)
-	s, _ := NewStorage(xidClient)
+	s, _ := spanner.NewStorage(xidClient)
 
 	// 1. Create an XidEntry.
 	entry := &xidpb.XidEntry{
@@ -99,7 +100,7 @@ func TestUpdateXidEntry(t *testing.T) {
 func TestUpdateXidEntry_ImmutableField(t *testing.T) {
 	ctx := context.Background()
 	xidClient, _ := emulator.Setup(ctx, t)
-	s, _ := NewStorage(xidClient)
+	s, _ := spanner.NewStorage(xidClient)
 
 	entry := &xidpb.XidEntry{
 		Creator: proto.String("test-creator"),
@@ -137,7 +138,7 @@ func TestUpdateXidEntry_ImmutableField(t *testing.T) {
 func TestUpdateXidEntry_ImmutableParentField(t *testing.T) {
 	ctx := context.Background()
 	xidClient, _ := emulator.Setup(ctx, t)
-	s, _ := NewStorage(xidClient)
+	s, _ := spanner.NewStorage(xidClient)
 
 	entry := &xidpb.XidEntry{
 		Creator: proto.String("test-creator"),
@@ -175,7 +176,7 @@ func TestUpdateXidEntry_ImmutableParentField(t *testing.T) {
 func TestUpdateXidEntry_NotFound(t *testing.T) {
 	ctx := context.Background()
 	xidClient, _ := emulator.Setup(ctx, t)
-	s, _ := NewStorage(xidClient)
+	s, _ := spanner.NewStorage(xidClient)
 
 	update := &storage.XidEntryUpdate{
 		XID:     123456789,
@@ -194,7 +195,7 @@ func TestUpdateXidEntry_NotFound(t *testing.T) {
 func TestUpdateXidEntry_NoOwnerFailsWithoutParent(t *testing.T) {
 	ctx := context.Background()
 	xidClient, _ := emulator.Setup(ctx, t)
-	s, _ := NewStorage(xidClient)
+	s, _ := spanner.NewStorage(xidClient)
 
 	// 1. Create entry with owner.
 	entry := &xidpb.XidEntry{
@@ -234,7 +235,7 @@ func TestUpdateXidEntry_NoOwnerFailsWithoutParent(t *testing.T) {
 func TestUpdateXidEntry_NoOwnerSucceedsWithParent(t *testing.T) {
 	ctx := context.Background()
 	xidClient, _ := emulator.Setup(ctx, t)
-	s, _ := NewStorage(xidClient)
+	s, _ := spanner.NewStorage(xidClient)
 
 	// 1. Create parent with owner.
 	parentEntry := &xidpb.XidEntry{
@@ -290,7 +291,7 @@ func TestUpdateXidEntry_NoOwnerSucceedsWithParent(t *testing.T) {
 func TestUpdateXidEntry_NoUpdateableFields(t *testing.T) {
 	ctx := context.Background()
 	xidClient, _ := emulator.Setup(ctx, t)
-	s, _ := NewStorage(xidClient)
+	s, _ := spanner.NewStorage(xidClient)
 
 	entry := &xidpb.XidEntry{
 		Creator: proto.String("test-creator"),
