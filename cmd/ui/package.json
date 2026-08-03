@@ -59,10 +59,10 @@
     "piscina": "5.2.0",
     "http-proxy-middleware": "3.0.7",
     "js-yaml": "4.3.0",
-    "@babel/core": "^7.29.1",
-    "postcss": "^8.5.18",
-    "vite": "^7.3.4",
-    "@hono/node-server": "^2.0.5",
-    "webpack-dev-server": "^5.2.6"
+    "@babel/core": "7.29.7",
+    "postcss": "8.5.25",
+    "vite": "7.3.6",
+    "@hono/node-server": "2.0.12",
+    "webpack-dev-server": "5.2.6"
   }
 }
