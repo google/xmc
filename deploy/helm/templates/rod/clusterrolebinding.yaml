@@ -16,7 +16,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ .Release.Name }}-rod-data-provider-role
+  name: rod-data-provider-role
 rules:
 - apiGroups: ["kueue.x-k8s.io"]
   resources: ["clusterqueues", "localqueues", "resourceflavors", "workloads"]
@@ -25,13 +25,13 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ .Release.Name }}-rod-data-provider-binding
+  name: rod-data-provider-binding
 subjects:
 - kind: ServiceAccount
-  name: {{ .Values.rodDeployment.serviceAccountName }}
-  namespace: {{ .Release.Namespace }}
+  name: rod-data-provider-service-account
+  namespace: xmc
 roleRef:
   kind: ClusterRole
-  name: {{ .Release.Name }}-rod-data-provider-role
+  name: rod-data-provider-role
   apiGroup: rbac.authorization.k8s.io
 {{- end }}
