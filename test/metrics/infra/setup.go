@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
+	"strings"
 	"time"
 
 	clickhousego "github.com/ClickHouse/clickhouse-go/v2"
@@ -41,6 +43,7 @@ type Harness struct {
 	ClickHouseConn       driver.Conn
 	RedpandaBrokers      []string
 	ClickHouseNativeAddr string
+	cleanups             []func()
 }
 
 // VerifyTCPConnectivity attempts a TCP connection to the specified address.
@@ -80,42 +83,94 @@ func StartRedpanda(ctx context.Context) (*redpanda.Container, []string, error) {
 	return c, []string{broker}, nil
 }
 
+func prepareInitScript(scriptPath string) (string, func(), error) {
+	content, err := os.ReadFile(scriptPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to read init script %s: %w", scriptPath, err)
+	}
+
+	s := string(content)
+	s = strings.ReplaceAll(s, "{kafka_broker_list:redpanda-0.redpanda.xmc.svc.cluster.local:9092}", "localhost:9092")
+	s = strings.ReplaceAll(s, "{kafka_topic_list:xmc-metrics}", "xmc-metrics")
+	s = strings.ReplaceAll(s, "{kafka_group_name:xmc-clickhouse-ingester}", "xmc-clickhouse-ingester")
+	s = strings.ReplaceAll(s, "stream_flush_interval_ms", "kafka_flush_interval_ms")
+
+	tmpFile, err := os.CreateTemp("", "clickhouse-init-*.sql")
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create temp init script: %w", err)
+	}
+
+	if _, err := tmpFile.WriteString(s); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
+		return "", nil, fmt.Errorf("failed to write temp init script: %w", err)
+	}
+	_ = tmpFile.Close()
+
+	cleanup := func() {
+		_ = os.Remove(tmpFile.Name())
+	}
+	return tmpFile.Name(), cleanup, nil
+}
+
 // StartClickHouse spins up a ClickHouse test container and establishes a native driver connection.
-func StartClickHouse(ctx context.Context, initScripts ...string) (*clickhouse.ClickHouseContainer, driver.Conn, string, error) {
+func StartClickHouse(ctx context.Context, initScripts ...string) (*clickhouse.ClickHouseContainer, driver.Conn, string, []func(), error) {
 	opts := []testcontainers.ContainerCustomizer{
 		clickhouse.WithUsername("clickhouse"),
 		clickhouse.WithPassword("clickhouse"),
 		clickhouse.WithDatabase("default"),
 	}
 
+	var cleanups []func()
 	for _, script := range initScripts {
-		if script != "" {
-			opts = append(opts, clickhouse.WithInitScripts(script))
+		if script == "" {
+			continue
 		}
+		preparedScript, cleanup, err := prepareInitScript(script)
+		if err != nil {
+			for _, cl := range cleanups {
+				cl()
+			}
+			return nil, nil, "", nil, fmt.Errorf("failed to prepare init script %s: %w", script, err)
+		}
+		cleanups = append(cleanups, cleanup)
+		opts = append(opts, clickhouse.WithInitScripts(preparedScript))
 	}
 
 	c, err := clickhouse.Run(ctx, defaultClickHouseImage, opts...)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("failed to start clickhouse container: %w", err)
+		for _, cl := range cleanups {
+			cl()
+		}
+		return nil, nil, "", nil, fmt.Errorf("failed to start clickhouse container: %w", err)
 	}
 
 	nativePort, err := c.MappedPort(ctx, "9000/tcp")
 	if err != nil {
 		_ = testcontainers.TerminateContainer(c)
-		return nil, nil, "", fmt.Errorf("failed to get clickhouse native port: %w", err)
+		for _, cl := range cleanups {
+			cl()
+		}
+		return nil, nil, "", nil, fmt.Errorf("failed to get clickhouse native port: %w", err)
 	}
 
 	host, err := c.Host(ctx)
 	if err != nil {
 		_ = testcontainers.TerminateContainer(c)
-		return nil, nil, "", fmt.Errorf("failed to get clickhouse host: %w", err)
+		for _, cl := range cleanups {
+			cl()
+		}
+		return nil, nil, "", nil, fmt.Errorf("failed to get clickhouse host: %w", err)
 	}
 
 	addr := net.JoinHostPort(host, nativePort.Port())
 
 	if err := VerifyTCPConnectivity(ctx, addr); err != nil {
 		_ = testcontainers.TerminateContainer(c)
-		return nil, nil, "", fmt.Errorf("clickhouse TCP verification failed: %w", err)
+		for _, cl := range cleanups {
+			cl()
+		}
+		return nil, nil, "", nil, fmt.Errorf("clickhouse TCP verification failed: %w", err)
 	}
 
 	conn, err := clickhousego.Open(&clickhousego.Options{
@@ -129,16 +184,22 @@ func StartClickHouse(ctx context.Context, initScripts ...string) (*clickhouse.Cl
 	})
 	if err != nil {
 		_ = testcontainers.TerminateContainer(c)
-		return nil, nil, "", fmt.Errorf("failed to open clickhouse connection: %w", err)
+		for _, cl := range cleanups {
+			cl()
+		}
+		return nil, nil, "", nil, fmt.Errorf("failed to open clickhouse connection: %w", err)
 	}
 
 	if err := conn.Ping(ctx); err != nil {
 		_ = conn.Close()
 		_ = testcontainers.TerminateContainer(c)
-		return nil, nil, "", fmt.Errorf("clickhouse ping failed: %w", err)
+		for _, cl := range cleanups {
+			cl()
+		}
+		return nil, nil, "", nil, fmt.Errorf("clickhouse ping failed: %w", err)
 	}
 
-	return c, conn, addr, nil
+	return c, conn, addr, cleanups, nil
 }
 
 // StartHarness initializes both Redpanda and ClickHouse containers and applies init scripts if provided.
@@ -148,7 +209,7 @@ func StartHarness(ctx context.Context, schemaPath string) (*Harness, error) {
 		return nil, fmt.Errorf("failed starting redpanda: %w", err)
 	}
 
-	chContainer, conn, chAddr, err := StartClickHouse(ctx, schemaPath)
+	chContainer, conn, chAddr, cleanups, err := StartClickHouse(ctx, schemaPath)
 	if err != nil {
 		_ = testcontainers.TerminateContainer(rpContainer)
 		return nil, fmt.Errorf("failed starting clickhouse: %w", err)
@@ -160,6 +221,7 @@ func StartHarness(ctx context.Context, schemaPath string) (*Harness, error) {
 		ClickHouseConn:       conn,
 		RedpandaBrokers:      brokers,
 		ClickHouseNativeAddr: chAddr,
+		cleanups:             cleanups,
 	}
 
 	return harness, nil
@@ -188,6 +250,10 @@ func (h *Harness) Teardown(ctx context.Context) error {
 		if err := testcontainers.TerminateContainer(h.RedpandaContainer); err != nil {
 			errs = append(errs, fmt.Sprintf("failed to terminate redpanda container: %v", err))
 		}
+	}
+
+	for _, cl := range h.cleanups {
+		cl()
 	}
 
 	if len(errs) > 0 {
