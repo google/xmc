@@ -57,7 +57,7 @@ export async function handleConfigRoute(route: Route) {
   await route.fulfill({
     status: 200,
     contentType: 'application/javascript',
-    body: `window.XMC_API_URL = ""; window.XMC_FEATURE_FLAGS = { statusMessageHistoryEnabled: true, adminPanelEnabled: true, resourceDashboardEnabled: true };`,
+    body: `window.XMC_API_URL = ""; window.XMC_FEATURE_FLAGS = new Proxy({}, { get: () => true });`,
   });
 }
 
