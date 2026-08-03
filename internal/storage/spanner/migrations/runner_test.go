@@ -135,13 +135,10 @@ func TestRun(t *testing.T) {
 							if err != migrate.ErrNilVersion {
 								t.Errorf("Version() error = %v, want %v", err, migrate.ErrNilVersion)
 							}
-						} else {
-							if err != nil {
-								t.Errorf("Version() failed: %v", err)
-							}
-							if int(v) != ft.wantVersion {
-								t.Errorf("Version(): got %v, want %d", v, ft.wantVersion)
-							}
+						} else if err != nil {
+							t.Errorf("Version() failed: %v", err)
+						} else if int(v) != ft.wantVersion {
+							t.Errorf("Version(): got %v, want %d", v, ft.wantVersion)
 						}
 						if dirty {
 							t.Errorf("Version(): got dirty=true, want false")

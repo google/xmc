@@ -1353,17 +1353,18 @@ func TestUpdateWorkUnitExecutions_ExperimentStatusMessagePropagation(t *testing.
 				if exp.GetStatus().GetStructuredStatusMessage() != nil {
 					t.Errorf("Experiment status message should be nil, got %v", exp.GetStatus().GetStructuredStatusMessage())
 				}
-			} else {
-				if got, want := exp.GetStatus().GetStructuredStatusMessage().GetUserFacingText(), tc.wantMsgText; got != want {
-					t.Errorf("Experiment status message is %q, want %q", got, want)
-				}
-				wantStackTrace := ""
-				if tc.wantMsgText == "user error" {
-					wantStackTrace = "test-stack-trace"
-				}
-				if got, want := exp.GetStatus().GetStructuredStatusMessage().GetAuxiliaryInfo().GetStackTrace(), wantStackTrace; got != want {
-					t.Errorf("Experiment status message stack trace is %q, want %q", got, want)
-				}
+				return
+			}
+
+			if got, want := exp.GetStatus().GetStructuredStatusMessage().GetUserFacingText(), tc.wantMsgText; got != want {
+				t.Errorf("Experiment status message is %q, want %q", got, want)
+			}
+			wantStackTrace := ""
+			if tc.wantMsgText == "user error" {
+				wantStackTrace = "test-stack-trace"
+			}
+			if got, want := exp.GetStatus().GetStructuredStatusMessage().GetAuxiliaryInfo().GetStackTrace(), wantStackTrace; got != want {
+				t.Errorf("Experiment status message stack trace is %q, want %q", got, want)
 			}
 		})
 	}

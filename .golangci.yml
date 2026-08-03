@@ -49,12 +49,7 @@ linters-settings:
     min-complexity: 4
 
 issues:
-  # TODO: Refactor api/filter for nestif complexity in Phase 3.4.
+  # TODO: Refactor api/filter for nestif complexity in Phase 3.5.
   exclude-dirs:
     - api/filter
     - cmd/ui/node_modules
-  exclude-rules:
-    # TODO: Refactor test files for nestif and remove exclusion incrementally.
-    - path: ".*_test\\.go"
-      linters:
-        - nestif
