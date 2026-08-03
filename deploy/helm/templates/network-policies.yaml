@@ -31,7 +31,6 @@ spec:
         - podSelector:
             matchLabels:
               xmc.google.com/metrics-client: "true"
-          namespaceSelector: {}
       ports:
         - protocol: TCP
           port: 8080
