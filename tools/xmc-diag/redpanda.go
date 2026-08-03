@@ -174,12 +174,26 @@ func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, connErr error, 
 	if err != nil {
 		status = StatusDegraded
 		statusReasons = append(statusReasons, fmt.Sprintf("failed listing partition end offsets for topic %q: %v", topic, err))
+	} else {
+		for p, o := range endOffsets[topic] {
+			if o.Err != nil {
+				status = StatusDegraded
+				statusReasons = append(statusReasons, fmt.Sprintf("partition %d end offset error: %v", p, o.Err))
+			}
+		}
 	}
 
 	groupOffsets, err := querier.FetchOffsets(ctx, group)
 	if err != nil {
 		status = StatusDegraded
 		statusReasons = append(statusReasons, fmt.Sprintf("failed fetching consumer group offsets for %q: %v", group, err))
+	} else {
+		for p, o := range groupOffsets[topic] {
+			if o.Err != nil {
+				status = StatusDegraded
+				statusReasons = append(statusReasons, fmt.Sprintf("partition %d committed offset error: %v", p, o.Err))
+			}
+		}
 	}
 
 	lagRep := CalculateConsumerLag(endOffsets, groupOffsets, topic, group)

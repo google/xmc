@@ -68,3 +68,15 @@ func TestParseFlags_Defaults(t *testing.T) {
 		t.Errorf("Default DialWithSeedOnly = true, want false")
 	}
 }
+
+func TestParseFlags_ValidationErrors(t *testing.T) {
+	_, err := ParseFlags([]string{"--sasl_enabled=true", "--sasl_mechanism=INVALID"})
+	if err == nil {
+		t.Errorf("ParseFlags with invalid SASL mechanism wanted error, got nil")
+	}
+
+	_, err = ParseFlags([]string{"--output=xml"})
+	if err == nil {
+		t.Errorf("ParseFlags with invalid output format wanted error, got nil")
+	}
+}

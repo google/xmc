@@ -16,6 +16,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"strings"
 )
 
@@ -72,6 +73,18 @@ func ParseFlags(args []string) (*Config, error) {
 		return nil, err
 	}
 
+	if *saslEnable {
+		mech := strings.ToUpper(*saslMech)
+		if mech != "PLAIN" && mech != "SCRAM-SHA-256" && mech != "SCRAM-SHA-512" {
+			return nil, fmt.Errorf("unsupported SASL mechanism %q (must be 'PLAIN', 'SCRAM-SHA-256', or 'SCRAM-SHA-512')", *saslMech)
+		}
+	}
+
+	out := strings.ToLower(*outFormat)
+	if out != "text" && out != "json" {
+		return nil, fmt.Errorf("unsupported output format %q (must be 'text' or 'json')", *outFormat)
+	}
+
 	var brokers []string
 	if *brokersStr != "" {
 		for _, b := range strings.Split(*brokersStr, ",") {
@@ -99,7 +112,7 @@ func ParseFlags(args []string) (*Config, error) {
 		TLSEnabled:         *tlsEnable,
 		TLSInsecure:        *tlsInsecure,
 		DialWithSeedOnly:   *seedOnly,
-		OutputFormat:       strings.ToLower(*outFormat),
+		OutputFormat:       out,
 		SkipSmokeTests:     *skipSmoke,
 	}, nil
 }
