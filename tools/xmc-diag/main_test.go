@@ -138,7 +138,7 @@ func TestCheckClickHouse_Healthy(t *testing.T) {
 	}
 }
 
-func TestCheckClickHouse_MissingTables_Degraded(t *testing.T) {
+func TestCheckClickHouse_MissingTables_DegradedReason(t *testing.T) {
 	ctx := context.Background()
 	mock := &MockClickHouseQuerier{
 		version:       "24.3.1",
@@ -152,6 +152,9 @@ func TestCheckClickHouse_MissingTables_Degraded(t *testing.T) {
 	}
 	if len(rep.MissingTables) != 1 || rep.MissingTables[0] != "xmc_metrics_mv" {
 		t.Errorf("MissingTables = %v, want [xmc_metrics_mv]", rep.MissingTables)
+	}
+	if !strings.Contains(rep.Reason, "missing required schema tables: xmc_metrics_mv") {
+		t.Errorf("Reason = %q, expected missing schema tables explanation", rep.Reason)
 	}
 }
 
@@ -168,6 +171,9 @@ func TestCheckClickHouse_PingFailed(t *testing.T) {
 	if rep.Connected {
 		t.Errorf("Connected = true, want false")
 	}
+	if !strings.Contains(rep.Reason, "Failed to ping ClickHouse endpoint") {
+		t.Errorf("Reason = %q, expected ping failure explanation", rep.Reason)
+	}
 }
 
 func TestCalculateConsumerLag(t *testing.T) {
@@ -176,8 +182,8 @@ func TestCalculateConsumerLag(t *testing.T) {
 
 	endOffsets := kadm.ListedOffsets{
 		topic: {
-			0: kadm.ListedOffset{Topic: topic, Partition: 0, Offset: 1000},
 			1: kadm.ListedOffset{Topic: topic, Partition: 1, Offset: 2500},
+			0: kadm.ListedOffset{Topic: topic, Partition: 0, Offset: 1000},
 		},
 	}
 
@@ -193,7 +199,10 @@ func TestCalculateConsumerLag(t *testing.T) {
 		t.Errorf("TotalLag = %d, want 700 (200 + 500)", lagRep.TotalLag)
 	}
 	if len(lagRep.Partitions) != 2 {
-		t.Errorf("Partitions len = %d, want 2", len(lagRep.Partitions))
+		t.Fatalf("Partitions len = %d, want 2", len(lagRep.Partitions))
+	}
+	if lagRep.Partitions[0].Partition != 0 || lagRep.Partitions[1].Partition != 1 {
+		t.Errorf("Partitions not sorted deterministically: %v", lagRep.Partitions)
 	}
 }
 
@@ -239,6 +248,38 @@ func TestCheckRedpanda_Healthy(t *testing.T) {
 	}
 }
 
+func TestCheckRedpanda_DegradedReason(t *testing.T) {
+	ctx := context.Background()
+	topic := "xmc-metrics"
+	group := "xmc-ingester"
+
+	mock := &MockRedpandaQuerier{
+		pingLat: 5 * time.Millisecond,
+		topicDetails: kadm.TopicDetails{
+			topic: kadm.TopicDetail{
+				Topic: topic,
+				Partitions: kadm.PartitionDetails{
+					0: kadm.PartitionDetail{Partition: 0, Leader: 1, Replicas: []int32{1}},
+				},
+			},
+		},
+		endOffsets: kadm.ListedOffsets{
+			topic: {
+				0: kadm.ListedOffset{Topic: topic, Partition: 0, Offset: 500},
+			},
+		},
+		offsetErr: errors.New("group offsets fetch error"),
+	}
+
+	rep := CheckRedpanda(ctx, mock, topic, group, false)
+	if rep.Status != StatusDegraded {
+		t.Errorf("Status = %q, want %q", rep.Status, StatusDegraded)
+	}
+	if !strings.Contains(rep.Reason, "failed fetching consumer group offsets for \"xmc-ingester\"") {
+		t.Errorf("Reason = %q, expected group offset error reason", rep.Reason)
+	}
+}
+
 func TestRunDiagnostics_OverallStatus(t *testing.T) {
 	ctx := context.Background()
 	cfg := &Config{TopicName: "xmc-metrics", ConsumerGroup: "xmc-group", SkipSmokeTests: true}
@@ -263,12 +304,13 @@ func TestRunDiagnostics_OverallStatus(t *testing.T) {
 
 func TestFormatReport(t *testing.T) {
 	report := &DiagReport{
-		OverallStatus: StatusHealthy,
+		OverallStatus: StatusDegraded,
 		Timestamp:     time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC),
 		ClickHouse: ClickHouseReport{
-			Status:    StatusHealthy,
+			Status:    StatusDegraded,
 			Connected: true,
 			Version:   "24.3.1",
+			Reason:    "missing required schema tables: xmc_metrics_mv",
 		},
 		Redpanda: RedpandaReport{
 			Status:          StatusHealthy,
@@ -286,18 +328,18 @@ func TestFormatReport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FormatReport text failed: %v", err)
 	}
-	if !strings.Contains(textOut, "Status: HEALTHY") {
-		t.Errorf("text output missing healthy status: %s", textOut)
+	if !strings.Contains(textOut, "Status: DEGRADED") {
+		t.Errorf("text output missing degraded status: %s", textOut)
 	}
-	if !strings.Contains(textOut, "Aggregate Lag: 50 records") {
-		t.Errorf("text output missing lag: %s", textOut)
+	if !strings.Contains(textOut, "Reason: missing required schema tables: xmc_metrics_mv") {
+		t.Errorf("text output missing degradation reason: %s", textOut)
 	}
 
 	jsonOut, err := FormatReport(report, "json")
 	if err != nil {
 		t.Fatalf("FormatReport json failed: %v", err)
 	}
-	if !strings.Contains(jsonOut, `"overall_status": "HEALTHY"`) {
-		t.Errorf("json output missing overall status: %s", jsonOut)
+	if !strings.Contains(jsonOut, `"reason": "missing required schema tables: xmc_metrics_mv"`) {
+		t.Errorf("json output missing reason field: %s", jsonOut)
 	}
 }
