@@ -245,6 +245,12 @@ deployment_groups:
       service_account_email: $(health_service_gcp_sa.service_account_email)
       k8s_service_account_name: health-service-account
 
+  - id: xmc_wi_binding_rod
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: rod-data-provider-service-account
+
   - id: compute_cluster
     source: modules/scheduler/gke-cluster
     use: [network, workload_service_account]
@@ -435,6 +441,10 @@ deployment_groups:
           gcp_service_account_email: $(workload_service_account.service_account_email)
           tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
         reconciler-service-account:
+          namespace: $(vars.namespace)
+          gcp_service_account_email: $(workload_service_account.service_account_email)
+          tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
+        rod-data-provider-service-account:
           namespace: $(vars.namespace)
           gcp_service_account_email: $(workload_service_account.service_account_email)
           tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
