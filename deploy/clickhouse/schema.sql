@@ -16,13 +16,14 @@
 -- Matches Spanner Int64 ID types and 7-column sorting key order per b/535543801 DoD.
 -- Primary Key index (xid, metric_name, timestamp) enables fast time-range pruning in memory.
 -- Partitioned by month (toYYYYMM(timestamp)) for efficient data retention and query pruning.
+-- metric_name uses LowCardinality(String) dictionary encoding for storage/RAM optimization.
 CREATE TABLE IF NOT EXISTS xmc_metrics
 (
     xid Int64,
     work_unit_id Int64,
     execution_id Int64,
     replica_id String,
-    metric_name String,
+    metric_name LowCardinality(String),
     metric_value Float64,
     step Int64,
     timestamp DateTime64(6, 'UTC'),
@@ -44,7 +45,7 @@ CREATE TABLE IF NOT EXISTS xmc_metrics_queue
     work_unit_id Int64,
     execution_id Int64,
     replica_id String,
-    metric_name String,
+    metric_name LowCardinality(String),
     metric_value Float64,
     step Int64,
     timestamp Int64
