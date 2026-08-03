@@ -52,6 +52,7 @@ issues:
   # TODO: Refactor api/filter for nestif complexity in Phase 3.4.
   exclude-dirs:
     - api/filter
+    - cmd/ui/node_modules
   exclude-rules:
     # TODO: Refactor test files for nestif and remove exclusion incrementally.
     - path: ".*_test\\.go"

@@ -36,7 +36,8 @@ project_id: my-project
 environment: dev
 region: us-central1
 domain_name: example.com
-xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
+image_registry: us-central1-docker.pkg.dev/my-project/xmc
+image_tag: latest
 """
         self.valid_config_dict = {
             "deployment_name": "xmc-dev",
@@ -44,7 +45,8 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
             "environment": "dev",
             "region": "us-central1",
             "domain_name": "example.com",
-            "xmc_acr_target": "us-central1-docker.pkg.dev/my-project/xmc",
+            "image_registry": "us-central1-docker.pkg.dev/my-project/xmc",
+            "image_tag": "latest",
         }
         self.dns_project = "dns-project"
         self.dns_zone = "dns-zone"
@@ -100,7 +102,8 @@ project_id: my-project
 # environment is missing
 region: us-central1
 domain_name: example.com
-xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
+image_registry: us-central1-docker.pkg.dev/my-project/xmc
+image_tag: latest
 """
         mo = mock_open(read_data=invalid_yaml)
         with patch("builtins.open", mo), self.assertRaises(SystemExit):
@@ -114,7 +117,8 @@ project_id: my-project
 environment: dev
 region: us-central1
 domain_name: example.com
-xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
+image_registry: us-central1-docker.pkg.dev/my-project/xmc
+image_tag: latest
 """
         mo = mock_open(read_data=invalid_yaml)
         with patch("builtins.open", mo), self.assertRaises(SystemExit):
@@ -151,7 +155,8 @@ key5: "value5" # trailing comment with quotes
             "environment": "dev",
             "region": "us-central1",
             "domain_name": "example.com",
-            "xmc_acr_target": "us-central1-docker.pkg.dev/my-project/xmc",
+            "image_registry": "us-central1-docker.pkg.dev/my-project/xmc",
+            "image_tag": "latest",
             "extra_key": "ignored",
         }
         validated = deploy_dev_env._validate_config(config, "dummy.yaml")
@@ -164,7 +169,8 @@ key5: "value5" # trailing comment with quotes
             "environment": "dev",
             "region": "us-central1",
             "domain_name": "example.com",
-            "xmc_acr_target": "us-central1-docker.pkg.dev/my-project/xmc",
+            "image_registry": "us-central1-docker.pkg.dev/my-project/xmc",
+            "image_tag": "latest",
         }
         with self.assertRaises(SystemExit):
             deploy_dev_env._validate_config(config, "dummy.yaml")
