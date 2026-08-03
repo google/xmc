@@ -14,24 +14,17 @@
 
 import { expect, test } from '@playwright/test';
 
-import { handleUserAuthRoute, setupScreenshotEnvironment } from '../test_utils';
+import { setupMockRoutes, setupScreenshotEnvironment } from '../test_utils';
 
 test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 1600, height: 900 });
-    // Intercept user auth API endpoint so authGuard succeeds in screenshot test browser environment
-    await page.route('/api/user', handleUserAuthRoute);
+    // Intercept user auth and config API endpoints so authGuard and feature flags succeed
+    await setupMockRoutes(page);
     // Navigate to production route /resources
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
     await setupScreenshotEnvironment(page);
-    await page.addStyleTag({
-      content: `
-        [class*="-container"] {
-          width: 1536px !important;
-        }
-      `,
-    });
   });
 
   test('should match baseline screenshot for initial layout and cluster queues', async ({
@@ -41,9 +34,7 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
     await expect(dashboard).toBeVisible();
 
     // Capture baseline screenshot of full Resource Dashboard container
-    await expect(dashboard).toHaveScreenshot('resource-dashboard-initial.png', {
-      maxDiffPixelRatio: 0.05,
-    });
+    await expect(dashboard).toHaveScreenshot('resource-dashboard-initial.png');
   });
 
   test('should match baseline screenshot after selecting a cluster queue', async ({ page }) => {
@@ -60,8 +51,6 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
     await expect(queueItem).toHaveClass(/selected/);
 
     // Capture screenshot with selected queue state
-    await expect(dashboard).toHaveScreenshot('resource-dashboard-queue-selected.png', {
-      maxDiffPixelRatio: 0.05,
-    });
+    await expect(dashboard).toHaveScreenshot('resource-dashboard-queue-selected.png');
   });
 });
