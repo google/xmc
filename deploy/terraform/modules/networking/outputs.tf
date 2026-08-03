@@ -35,3 +35,14 @@ output "ui_url" {
   description = "The URL of the XMC UI."
   value       = "https://ui.${var.domain_name}"
 }
+
+output "xmc_to_redpanda_peering_id" {
+  description = "The ID of the VPC peering connection from XMC VPC to Redpanda VPC."
+  value       = length(google_compute_network_peering.xmc_to_redpanda) > 0 ? google_compute_network_peering.xmc_to_redpanda[0].id : null
+}
+
+output "clickhouse_to_redpanda_peering_id" {
+  description = "The ID of the VPC peering connection from ClickHouse VPC to Redpanda VPC."
+  value       = length(google_compute_network_peering.clickhouse_to_redpanda) > 0 ? google_compute_network_peering.clickhouse_to_redpanda[0].id : null
+}
+

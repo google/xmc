@@ -53,3 +53,40 @@ variable "environment" {
   type        = string
   description = "The environment name."
 }
+
+variable "enable_metrics_networking" {
+  type        = bool
+  default     = false
+  description = "Whether to enable VPC peering and firewall rules for metrics services (Redpanda and ClickHouse)."
+}
+
+variable "xmc_vpc_network_id" {
+  type        = string
+  default     = ""
+  description = "The ID or self link of the XMC Application VPC network."
+}
+
+variable "byo_redpanda_vpc_id" {
+  type        = string
+  default     = ""
+  description = "The ID or self link of the external BYO Redpanda VPC network."
+}
+
+variable "byo_clickhouse_vpc_id" {
+  type        = string
+  default     = ""
+  description = "The ID or self link of the external BYO ClickHouse VPC network."
+}
+
+variable "gateway_source_cidrs" {
+  type        = list(string)
+  default     = []
+  description = "List of CIDR ranges for XMC Gateway allowed to communicate with Redpanda."
+}
+
+variable "clickhouse_source_cidrs" {
+  type        = list(string)
+  default     = []
+  description = "List of CIDR ranges for ClickHouse allowed to communicate with Redpanda."
+}
+
