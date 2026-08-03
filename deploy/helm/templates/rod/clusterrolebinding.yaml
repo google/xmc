@@ -28,8 +28,8 @@ metadata:
   name: rod-data-provider-binding
 subjects:
 - kind: ServiceAccount
-  name: rod-data-provider-service-account
-  namespace: xmc
+  name: {{ .Values.rodDeployment.serviceAccountName }}
+  namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
   name: rod-data-provider-role
