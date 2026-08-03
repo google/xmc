@@ -22,7 +22,9 @@ compat_go_library(
     name = "rod_data_provider_lib",
     srcs = [
         "config.go",
+        "kueue_resource_extractor.go",
         "main.go",
+        "queue_matcher.go",
         "server.go",
     ],
     importpath = "xmanager_cloud/cmd/rod_data_provider/main",
@@ -33,6 +35,8 @@ compat_go_library(
         "//internal/logging",
         "//pkg/auth/oauth2",
         "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
+        "@io_k8s_apimachinery//pkg/api/resource",
+        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//credentials/insecure:go_default_library",
         "@org_golang_google_grpc//reflection:go_default_library",
@@ -55,10 +59,24 @@ compat_go_test(
     name = "server_test",
     srcs = [
         "config_test.go",
+        "queue_matcher_test.go",
         "server_test.go",
     ],
     embed = [":rod_data_provider_lib"],
     deps = [
         "//api/protos/rod",
+    ],
+)
+
+compat_go_test(
+    name = "kueue_resource_extractor_test",
+    srcs = [
+        "kueue_resource_extractor_test.go",
+    ],
+    embed = [":rod_data_provider_lib"],
+    deps = [
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/resource",
+        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
     ],
 )

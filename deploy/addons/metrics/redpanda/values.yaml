@@ -1,0 +1,50 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# values.yaml - Configuration for Redpanda Helm Chart on GKE
+# Used to support metrics system testing and Go Ingestion Gateway in XManager on Cloud (XMC).
+# Chart Reference: https://github.com/redpanda-data/redpanda-k8s-operator/tree/main/charts/redpanda
+
+statefulset:
+  replicas: 1
+
+resources:
+  cpu:
+    cores: 1
+  memory:
+    container:
+      max: 2Gi
+      min: 1Gi
+
+storage:
+  persistentVolume:
+    enabled: true
+    size: 10Gi
+    storageClass: standard-rwo
+
+service:
+  type: ClusterIP
+  ports:
+    kafka: 9092
+    schemaRegistry: 8081
+    pandaproxy: 8082
+    admin: 9644
+
+# Disable TLS for internal testing inside cluster
+tls:
+  enabled: false
+
+# Target main-pool nodepool in GKE cluster
+nodeSelector:
+  cloud.google.com/gke-nodepool: main-pool
