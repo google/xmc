@@ -37,78 +37,105 @@ func createTestResourceFlavorTyped(name string, nodeLabels map[string]string) *k
 }
 
 func TestConvertAggregatedQuotaToResourceCapacity(t *testing.T) {
+	type input struct {
+		nominalQuota   float64
+		borrowingLimit float64
+		totalUsed      float64
+	}
+	type want struct {
+		total             float64
+		free              float64
+		freeWithBorrowing float64
+	}
+
 	tests := []struct {
-		name                  string
-		nominalQuota          float64
-		borrowingLimit        float64
-		totalUsed             float64
-		wantTotal             float64
-		wantFree              float64
-		wantFreeWithBorrowing float64
+		name string
+		in   input
+		want want
 	}{
 		{
-			name:                  "Nominal with partial usage",
-			nominalQuota:          100.0,
-			borrowingLimit:        0.0,
-			totalUsed:             40.0,
-			wantTotal:             100.0,
-			wantFree:              60.0,
-			wantFreeWithBorrowing: 60.0,
+			name: "Nominal with partial usage",
+			in: input{
+				nominalQuota:   100.0,
+				borrowingLimit: 0.0,
+				totalUsed:      40.0,
+			},
+			want: want{
+				total:             100.0,
+				free:              60.0,
+				freeWithBorrowing: 60.0,
+			},
 		},
 		{
-			name:                  "Nominal with borrowing limit and partial usage",
-			nominalQuota:          100.0,
-			borrowingLimit:        50.0,
-			totalUsed:             40.0,
-			wantTotal:             100.0,
-			wantFree:              60.0,
-			wantFreeWithBorrowing: 110.0,
+			name: "Nominal with borrowing limit and partial usage",
+			in: input{
+				nominalQuota:   100.0,
+				borrowingLimit: 50.0,
+				totalUsed:      40.0,
+			},
+			want: want{
+				total:             100.0,
+				free:              60.0,
+				freeWithBorrowing: 110.0,
+			},
 		},
 		{
-			name:                  "Fully used capacity",
-			nominalQuota:          8.0,
-			borrowingLimit:        0.0,
-			totalUsed:             8.0,
-			wantTotal:             8.0,
-			wantFree:              0.0,
-			wantFreeWithBorrowing: 0.0,
+			name: "Fully used capacity",
+			in: input{
+				nominalQuota:   8.0,
+				borrowingLimit: 0.0,
+				totalUsed:      8.0,
+			},
+			want: want{
+				total:             8.0,
+				free:              0.0,
+				freeWithBorrowing: 0.0,
+			},
 		},
 		{
-			name:                  "Over-utilized capacity clamped to zero free",
-			nominalQuota:          10.0,
-			borrowingLimit:        5.0,
-			totalUsed:             15.0,
-			wantTotal:             10.0,
-			wantFree:              0.0,
-			wantFreeWithBorrowing: 0.0,
+			name: "Over-utilized capacity clamped to zero free",
+			in: input{
+				nominalQuota:   10.0,
+				borrowingLimit: 5.0,
+				totalUsed:      15.0,
+			},
+			want: want{
+				total:             10.0,
+				free:              0.0,
+				freeWithBorrowing: 0.0,
+			},
 		},
 		{
-			name:                  "Zero quota and usage",
-			nominalQuota:          0.0,
-			borrowingLimit:        0.0,
-			totalUsed:             0.0,
-			wantTotal:             0.0,
-			wantFree:              0.0,
-			wantFreeWithBorrowing: 0.0,
+			name: "Zero quota and usage",
+			in: input{
+				nominalQuota:   0.0,
+				borrowingLimit: 0.0,
+				totalUsed:      0.0,
+			},
+			want: want{
+				total:             0.0,
+				free:              0.0,
+				freeWithBorrowing: 0.0,
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			aggregator := &ResourceQuotaAggregator{
-				nominalQuota:   tt.nominalQuota,
-				borrowingLimit: tt.borrowingLimit,
+				nominalQuota:   tt.in.nominalQuota,
+				borrowingLimit: tt.in.borrowingLimit,
 			}
-			capMetric := convertAggregatedQuotaToResourceCapacity("nvidia.com/gpu", aggregator, tt.totalUsed)
+			capMetric := convertAggregatedQuotaToResourceCapacity("nvidia.com/gpu", aggregator, tt.in.totalUsed)
 
-			if capMetric.TotalCapacity != tt.wantTotal {
-				t.Errorf("TotalCapacity = %v, want %v", capMetric.TotalCapacity, tt.wantTotal)
+			if capMetric.TotalCapacity != tt.want.total {
+				t.Errorf("TotalCapacity = %v, want %v", capMetric.TotalCapacity, tt.want.total)
 			}
-			if capMetric.FreeCapacity != tt.wantFree {
-				t.Errorf("FreeCapacity = %v, want %v", capMetric.FreeCapacity, tt.wantFree)
+			if capMetric.FreeCapacity != tt.want.free {
+				t.Errorf("FreeCapacity = %v, want %v", capMetric.FreeCapacity, tt.want.free)
 			}
-			if capMetric.FreeCapacityWithBorrowing != tt.wantFreeWithBorrowing {
-				t.Errorf("FreeCapacityWithBorrowing = %v, want %v", capMetric.FreeCapacityWithBorrowing, tt.wantFreeWithBorrowing)
+			if capMetric.FreeCapacityWithBorrowing != tt.want.freeWithBorrowing {
+				t.Errorf("FreeCapacityWithBorrowing = %v, want %v", capMetric.FreeCapacityWithBorrowing, tt.want.freeWithBorrowing)
 			}
 		})
 	}
