@@ -17,17 +17,21 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/sasl"
+	"github.com/twmb/franz-go/pkg/sasl/plain"
+	"github.com/twmb/franz-go/pkg/sasl/scram"
 	"xmanager_cloud/pkg/clickhouse"
 )
 
@@ -143,7 +147,7 @@ func (r *RealClickHouseQuerier) CheckTablesExist(ctx context.Context, tables []s
 	var missing []string
 	for _, tbl := range tables {
 		var count uint64
-		err := r.conn.QueryRow(ctx, "SELECT count() FROM system.tables WHERE name = ?", tbl).Scan(&count)
+		err := r.conn.QueryRow(ctx, "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = ?", tbl).Scan(&count)
 		if err != nil {
 			return nil, fmt.Errorf("failed checking table %q: %w", tbl, err)
 		}
@@ -307,7 +311,9 @@ func CalculateConsumerLag(endOffsets kadm.ListedOffsets, groupOffsets kadm.Offse
 		var committed int64
 		if ok {
 			if cOffset, exists := topCommitted[pID]; exists && cOffset.Err == nil {
-				committed = cOffset.At
+				if cOffset.At >= 0 {
+					committed = cOffset.At
+				}
 			}
 		}
 
@@ -324,6 +330,10 @@ func CalculateConsumerLag(endOffsets kadm.ListedOffsets, groupOffsets kadm.Offse
 			Lag:       lag,
 		})
 	}
+
+	sort.Slice(report.Partitions, func(i, j int) bool {
+		return report.Partitions[i].Partition < report.Partitions[j].Partition
+	})
 
 	return report
 }
@@ -353,7 +363,17 @@ func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, topic, group st
 		return RedpandaReport{Status: StatusFailed, Connected: true, PingLatency: pingLatStr, Error: fmt.Sprintf("topic %q not found or error", topic)}
 	}
 
-	endOffsets, _ := querier.ListEndOffsets(ctx, topic)
+	endOffsets, err := querier.ListEndOffsets(ctx, topic)
+	if err != nil {
+		return RedpandaReport{
+			Status:          StatusDegraded,
+			Connected:       true,
+			TopicPartitions: len(tDetail.Partitions),
+			PingLatency:     pingLatStr,
+			Error:           fmt.Sprintf("failed listing end offsets for topic %q: %v", topic, err),
+		}
+	}
+
 	grpOffsets, err := querier.FetchOffsets(ctx, group)
 	if err != nil {
 		return RedpandaReport{
@@ -477,8 +497,39 @@ func main() {
 		defer chConn.Close()
 	}
 
+	opts := []kgo.Opt{kgo.SeedBrokers(cfg.RedpandaBrokers...)}
+	if cfg.TLSEnabled {
+		tlsCfg := &tls.Config{
+			InsecureSkipVerify: cfg.TLSInsecure,
+		}
+		opts = append(opts, kgo.DialTLSConfig(tlsCfg))
+	}
+	if cfg.SASLEnabled {
+		var mechanism sasl.Mechanism
+		switch strings.ToUpper(cfg.SASLMechanism) {
+		case "PLAIN":
+			mechanism = plain.Auth{
+				User: cfg.SASLUser,
+				Pass: cfg.SASLPassword,
+			}.AsMechanism()
+		case "SCRAM-SHA-256":
+			mechanism = scram.Auth{
+				User: cfg.SASLUser,
+				Pass: cfg.SASLPassword,
+			}.AsSha256Mechanism()
+		case "SCRAM-SHA-512":
+			mechanism = scram.Auth{
+				User: cfg.SASLUser,
+				Pass: cfg.SASLPassword,
+			}.AsSha512Mechanism()
+		}
+		if mechanism != nil {
+			opts = append(opts, kgo.SASL(mechanism))
+		}
+	}
+
 	var rpQuerier RedpandaQuerier
-	kClient, err := kgo.NewClient(kgo.SeedBrokers(cfg.RedpandaBrokers...))
+	kClient, err := kgo.NewClient(opts...)
 	if err == nil && kClient != nil {
 		admClient := kadm.NewClient(kClient)
 		rpQuerier = &RealRedpandaQuerier{client: admClient}
@@ -496,9 +547,4 @@ func main() {
 	if report.OverallStatus == StatusFailed {
 		os.Exit(2)
 	}
-}
-
-// OutputWriter prints message to writer.
-func OutputWriter(w io.Writer, msg string) {
-	fmt.Fprintln(w, msg)
 }

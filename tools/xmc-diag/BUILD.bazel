@@ -25,6 +25,9 @@ compat_go_library(
         "//pkg/clickhouse",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
         "@com_github_twmb_franz_go//pkg/kgo",
+        "@com_github_twmb_franz_go//pkg/sasl",
+        "@com_github_twmb_franz_go//pkg/sasl/plain",
+        "@com_github_twmb_franz_go//pkg/sasl/scram",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
     ],
 )
