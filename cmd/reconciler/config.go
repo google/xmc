@@ -40,6 +40,14 @@ type Config struct {
 	// fall back to the manager values (upstream single-project behavior).
 	MLRunProject  string
 	MLRunLocation string
+	// MLRunImpersonateSA, when set, makes the reconciler impersonate this service
+	// account (mint a token via serviceAccountTokenCreator) to call the MLRun API,
+	// instead of using its own ADC identity. Prod sets this to the user-project
+	// VTC P6SA (service-<B#>@gcp-sa-vertex-vtc...) so the MLRun is created as the
+	// user-project agent (DRS-clean; prod-identity-model.md). Empty = ADC (the
+	// prototype's direct-editor-on-B path). Requires the reconciler identity to
+	// hold serviceAccountTokenCreator on the target SA.
+	MLRunImpersonateSA string
 }
 
 // flags
@@ -62,6 +70,7 @@ var (
 	mldiagnosticsEnvironment         string
 	mlRunProject                     string
 	mlRunLocation                    string
+	mlRunImpersonateSA               string
 )
 
 func init() {
@@ -83,6 +92,7 @@ func init() {
 	flag.StringVar(&mldiagnosticsEnvironment, "mldiagnostics_environment", "prod", "The ML Diagnostics (Hypercompute Cluster ML Run) control-plane environment: one of autopush, staging, or prod.")
 	flag.StringVar(&mlRunProject, "mlrun_project", "", "GCP project for the Diagon MLRun API + console URL (the USER project B). Empty = use the manager's metadata project.")
 	flag.StringVar(&mlRunLocation, "mlrun_location", "", "Location for the Diagon MLRun API. Empty = use the manager's metadata location.")
+	flag.StringVar(&mlRunImpersonateSA, "mlrun_impersonate_sa", "", "Service account to impersonate for the Diagon MLRun API (prod: the user-project VTC P6SA). Empty = use ADC (the reconciler's own identity). Requires serviceAccountTokenCreator on the target SA.")
 }
 
 func Load() Config {
@@ -107,5 +117,6 @@ func Load() Config {
 		MldiagnosticsEnvironment:         mldiagnosticsEnvironment,
 		MLRunProject:                     mlRunProject,
 		MLRunLocation:                    mlRunLocation,
+		MLRunImpersonateSA:               mlRunImpersonateSA,
 	}
 }

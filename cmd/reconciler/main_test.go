@@ -35,7 +35,7 @@ func TestNewMLRunCreatorReturnsNilInterfaceOnError(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// An invalid environment makes NewControlPlaneClient fail before it
 			// needs ambient credentials, exercising the failure path hermetically.
-			got := newMLRunCreator(context.Background(), "test-project", tc.environment, "us-central1")
+			got := newMLRunCreator(context.Background(), "test-project", tc.environment, "us-central1", "")
 			if got != nil {
 				t.Errorf("newMLRunCreator() = %v, want nil interface on init failure", got)
 			}

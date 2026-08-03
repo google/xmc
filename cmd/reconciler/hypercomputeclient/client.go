@@ -57,19 +57,44 @@ type ControlPlaneClient struct {
 	httpClient  *http.Client
 }
 
+// Option customizes a ControlPlaneClient.
+type Option func(*clientOptions)
+
+type clientOptions struct {
+	tokenSource oauth2.TokenSource
+}
+
+// WithTokenSource overrides the credential the client uses to call the MLRun API.
+// When unset, the client falls back to Application Default Credentials (the
+// reconciler pod's own identity). Prod uses this to inject a P6SA-impersonated
+// token source so the MLRun is created as the user-project agent — see
+// prod-identity-model.md. The hypercomputeclient package stays dependency-free
+// (the impersonated source is built by the caller in main.go).
+func WithTokenSource(ts oauth2.TokenSource) Option {
+	return func(o *clientOptions) { o.tokenSource = ts }
+}
+
 // NewControlPlaneClient creates a new ControlPlaneClient.
 //
 // environment must be one of "autopush", "staging", or "prod".
 // location defaults to "us-central1" when empty.
-func NewControlPlaneClient(ctx context.Context, projectID, environment, location string) (*ControlPlaneClient, error) {
+func NewControlPlaneClient(ctx context.Context, projectID, environment, location string, opts ...Option) (*ControlPlaneClient, error) {
 	cfg, err := resolveEndpoint(projectID, environment, location)
 	if err != nil {
 		return nil, err
 	}
 
-	ts, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/cloud-platform")
-	if err != nil {
-		return nil, fmt.Errorf("get default token source: %w", err)
+	var o clientOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	ts := o.tokenSource
+	if ts == nil {
+		ts, err = google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/cloud-platform")
+		if err != nil {
+			return nil, fmt.Errorf("get default token source: %w", err)
+		}
 	}
 
 	return &ControlPlaneClient{

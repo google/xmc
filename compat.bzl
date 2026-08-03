@@ -63,6 +63,7 @@ content = content.replace("golang/cloud_google_com/go/spanner/v/v1/admin/instanc
 content = content.replace("golang/protobuf/v2/reflect/protodesc/protodesc", "google.golang.org/protobuf/reflect/protodesc")
 content = content.replace("protobuf/empty_go_proto", "google.golang.org/protobuf/types/known/emptypb")
 content = content.replace("golang/google_api/option/option", "google.golang.org/api/option")
+content = content.replace("golang/google_api/impersonate/impersonate", "google.golang.org/api/impersonate")
 content = content.replace("golang/google_api/iterator/iterator", "google.golang.org/api/iterator")
 content = content.replace("golang/k8s_io/client_go/v/v0_23/dynamic/dynamic", "k8s.io/client-go/dynamic")
 content = content.replace("golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes", "k8s.io/client-go/kubernetes")

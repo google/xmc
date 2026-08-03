@@ -24,6 +24,7 @@ import (
 	"golang/cloud_google_com/go/compute/metadata/v/v0/metadata"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/go_sync/errgroup/errgroup"
+	"golang/google_api/impersonate/impersonate"
 	"golang/google_api/option/option"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
@@ -106,7 +107,7 @@ func main() {
 	if mlRunLocation == "" {
 		mlRunLocation = location
 	}
-	mlRunClient := newMLRunCreator(ctx, mlRunProject, cfg.MldiagnosticsEnvironment, mlRunLocation)
+	mlRunClient := newMLRunCreator(ctx, mlRunProject, cfg.MldiagnosticsEnvironment, mlRunLocation, cfg.MLRunImpersonateSA)
 
 	mgr, batcher, err := buildManager(ctx, cfg, storage, projectID, location, clusterName, cqCache, mlRunClient)
 	if err != nil {
@@ -185,8 +186,25 @@ func activeHealthChecker(k8s *k8sclient.Client, spClient health.SpannerHealthCli
 // MLRunCreator interface (never a typed-nil *ControlPlaneClient) when
 // initialization fails, so the reconciler's r.MLRunClient == nil guard is not
 // defeated by a non-nil interface that wraps a nil pointer.
-func newMLRunCreator(ctx context.Context, projectID, environment, location string) jobset.MLRunCreator {
-	client, err := hypercomputeclient.NewControlPlaneClient(ctx, projectID, environment, location)
+//
+// impersonateSA, when non-empty, makes the client call the MLRun API as that
+// service account (prod: the user-project VTC P6SA) instead of the reconciler's
+// own ADC identity. See prod-identity-model.md.
+func newMLRunCreator(ctx context.Context, projectID, environment, location, impersonateSA string) jobset.MLRunCreator {
+	var opts []hypercomputeclient.Option
+	if impersonateSA != "" {
+		ts, err := impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
+			TargetPrincipal: impersonateSA,
+			Scopes:          []string{"https://www.googleapis.com/auth/cloud-platform"},
+		})
+		if err != nil {
+			logging.Error(ctx, "Failed to create impersonated token source for MLRun client", "targetSA", impersonateSA, "error", err)
+			return nil
+		}
+		logging.Info(ctx, "MLRun client will impersonate service account", "targetSA", impersonateSA)
+		opts = append(opts, hypercomputeclient.WithTokenSource(ts))
+	}
+	client, err := hypercomputeclient.NewControlPlaneClient(ctx, projectID, environment, location, opts...)
 	if err != nil {
 		logging.Error(ctx, "Failed to create MLRun control plane client", "error", err)
 		return nil
