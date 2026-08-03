@@ -28,7 +28,7 @@ metadata:
   name: {{ .Release.Name }}-rod-data-provider-binding
 subjects:
 - kind: ServiceAccount
-  name: rod-data-provider-service-account
+  name: {{ .Values.rodDeployment.serviceAccountName }}
   namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
