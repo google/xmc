@@ -168,12 +168,6 @@ def parse_args(
         default=default_venv,
         help="Virtual environment target directory (default: ./venv)",
     )
-    parser.add_argument(
-        "--enable-metrics",
-        action="store_true",
-        default=os.environ.get("ENABLE_METRICS", "false").lower() in ("true", "1", "yes"),
-        help="Enable metrics pipeline components (ingestion gateway & ROD data provider)",
-    )
     return parser.parse_args(args)
 
 

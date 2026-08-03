@@ -39,7 +39,6 @@ Options:
                                  (default: local checkout if available, else https://github.com/google/xmc/tree/main/api/protos)
   --xmanager-branch <branch>     The XManager Git branch/tag to clone (default: xm-cloud)
   --venv <path>                  Target directory for the Python virtual environment (default: ./venv)
-  --enable-metrics               Enable metrics pipeline components (default: disabled)
   -h, --help                     Show usage information
 ```
 
