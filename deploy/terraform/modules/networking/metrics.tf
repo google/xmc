@@ -24,7 +24,7 @@ locals {
   peer_xmc_redpanda        = local.metrics_networking_enabled && local.has_xmc_vpc && local.has_redpanda_vpc
   peer_clickhouse_redpanda = local.metrics_networking_enabled && local.has_clickhouse_vpc && local.has_redpanda_vpc
 
-  redpanda_project_id = local.has_redpanda_vpc && length(split("/", var.byo_redpanda_vpc_id)) >= 2 ? split("/", var.byo_redpanda_vpc_id)[1] : var.project_id
+  redpanda_project_id = local.has_redpanda_vpc && length(regexall("projects/([^/]+)/", var.byo_redpanda_vpc_id)) > 0 ? regex("projects/([^/]+)/", var.byo_redpanda_vpc_id)[0] : var.project_id
 }
 
 # -----------------------------------------------------------------------------
