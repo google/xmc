@@ -60,7 +60,8 @@ func TestCheckRedpanda_Healthy(t *testing.T) {
 	group := "xmc-ingester"
 
 	mock := &MockRedpandaQuerier{
-		pingLat: 5 * time.Millisecond,
+		brokerCount: 3,
+		pingLat:     5 * time.Millisecond,
 		topicDetails: kadm.TopicDetails{
 			topic: kadm.TopicDetail{
 				Topic: topic,
@@ -81,12 +82,15 @@ func TestCheckRedpanda_Healthy(t *testing.T) {
 		},
 	}
 
-	rep := CheckRedpanda(ctx, mock, topic, group, false)
+	rep := CheckRedpanda(ctx, mock, nil, topic, group, false)
 	if rep.Status != StatusHealthy {
 		t.Errorf("Status = %q, want %q", rep.Status, StatusHealthy)
 	}
 	if !rep.Connected {
 		t.Errorf("Connected = false, want true")
+	}
+	if rep.BrokerCount != 3 {
+		t.Errorf("BrokerCount = %d, want 3", rep.BrokerCount)
 	}
 	if rep.TopicPartitions != 1 {
 		t.Errorf("TopicPartitions = %d, want 1", rep.TopicPartitions)
@@ -96,13 +100,27 @@ func TestCheckRedpanda_Healthy(t *testing.T) {
 	}
 }
 
+func TestCheckRedpanda_ConnError(t *testing.T) {
+	ctx := context.Background()
+	connErr := errors.New("unable to dial seed broker")
+
+	rep := CheckRedpanda(ctx, nil, connErr, "xmc-metrics", "xmc-group", false)
+	if rep.Status != StatusFailed {
+		t.Errorf("Status = %q, want %q", rep.Status, StatusFailed)
+	}
+	if rep.Error != connErr.Error() {
+		t.Errorf("Error = %q, want %q", rep.Error, connErr.Error())
+	}
+}
+
 func TestCheckRedpanda_DegradedReason(t *testing.T) {
 	ctx := context.Background()
 	topic := "xmc-metrics"
 	group := "xmc-ingester"
 
 	mock := &MockRedpandaQuerier{
-		pingLat: 5 * time.Millisecond,
+		brokerCount: 1,
+		pingLat:     5 * time.Millisecond,
 		topicDetails: kadm.TopicDetails{
 			topic: kadm.TopicDetail{
 				Topic: topic,
@@ -119,7 +137,7 @@ func TestCheckRedpanda_DegradedReason(t *testing.T) {
 		offsetErr: errors.New("group offsets fetch error"),
 	}
 
-	rep := CheckRedpanda(ctx, mock, topic, group, false)
+	rep := CheckRedpanda(ctx, mock, nil, topic, group, false)
 	if rep.Status != StatusDegraded {
 		t.Errorf("Status = %q, want %q", rep.Status, StatusDegraded)
 	}

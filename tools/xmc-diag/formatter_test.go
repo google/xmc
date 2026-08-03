@@ -29,6 +29,7 @@ func TestRunDiagnostics_OverallStatus(t *testing.T) {
 
 	chMock := &MockClickHouseQuerier{version: "mock-clickhouse-24.3"}
 	rpMock := &MockRedpandaQuerier{
+		brokerCount: 3,
 		topicDetails: kadm.TopicDetails{
 			"xmc-metrics": kadm.TopicDetail{
 				Topic: "xmc-metrics",
@@ -39,7 +40,7 @@ func TestRunDiagnostics_OverallStatus(t *testing.T) {
 		},
 	}
 
-	report := RunDiagnostics(ctx, cfg, chMock, rpMock)
+	report := RunDiagnostics(ctx, cfg, chMock, nil, rpMock, nil)
 	if report.OverallStatus != StatusHealthy {
 		t.Errorf("OverallStatus = %q, want %q", report.OverallStatus, StatusHealthy)
 	}
@@ -58,6 +59,7 @@ func TestFormatReport(t *testing.T) {
 		Redpanda: RedpandaReport{
 			Status:          StatusHealthy,
 			Connected:       true,
+			BrokerCount:     3,
 			TopicPartitions: 4,
 			Lag: LagReport{
 				ConsumerGroup: "xmc-group",
@@ -76,6 +78,9 @@ func TestFormatReport(t *testing.T) {
 	}
 	if !strings.Contains(textOut, "Reason: missing required schema tables: xmc_metrics_mv") {
 		t.Errorf("text output missing degradation reason: %s", textOut)
+	}
+	if !strings.Contains(textOut, "Broker Count: 3") {
+		t.Errorf("text output missing broker count: %s", textOut)
 	}
 
 	jsonOut, err := FormatReport(report, "json")

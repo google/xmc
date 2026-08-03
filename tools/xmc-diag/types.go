@@ -87,7 +87,7 @@ type ClickHouseQuerier interface {
 
 // RedpandaQuerier abstracts Redpanda/Kafka queries for testing.
 type RedpandaQuerier interface {
-	Ping(ctx context.Context) (time.Duration, error)
+	Ping(ctx context.Context) (int, time.Duration, error)
 	ListTopics(ctx context.Context, topics ...string) (kadm.TopicDetails, error)
 	ListEndOffsets(ctx context.Context, topics ...string) (kadm.ListedOffsets, error)
 	FetchOffsets(ctx context.Context, group string) (kadm.OffsetResponses, error)

@@ -58,6 +58,9 @@ func FormatReport(report *DiagReport, format string) (string, error) {
 
 	sb.WriteString(fmt.Sprintf("\n[Redpanda/Kafka Diagnostics] Status: %s\n", report.Redpanda.Status))
 	sb.WriteString(fmt.Sprintf("  Connected: %t\n", report.Redpanda.Connected))
+	if report.Redpanda.BrokerCount > 0 {
+		sb.WriteString(fmt.Sprintf("  Broker Count: %d\n", report.Redpanda.BrokerCount))
+	}
 	sb.WriteString(fmt.Sprintf("  Topic Partitions (%s): %d\n", report.Redpanda.Lag.Topic, report.Redpanda.TopicPartitions))
 	sb.WriteString(fmt.Sprintf("  Consumer Group (%s) Aggregate Lag: %d records\n", report.Redpanda.Lag.ConsumerGroup, report.Redpanda.Lag.TotalLag))
 	if report.Redpanda.PingLatency != "" {
@@ -74,9 +77,9 @@ func FormatReport(report *DiagReport, format string) (string, error) {
 }
 
 // RunDiagnostics executes checks for ClickHouse and Redpanda and builds overall report.
-func RunDiagnostics(ctx context.Context, cfg *Config, chQuerier ClickHouseQuerier, rpQuerier RedpandaQuerier) *DiagReport {
-	chRep := CheckClickHouse(ctx, chQuerier, cfg.SkipSmokeTests)
-	rpRep := CheckRedpanda(ctx, rpQuerier, cfg.TopicName, cfg.ConsumerGroup, cfg.SkipSmokeTests)
+func RunDiagnostics(ctx context.Context, cfg *Config, chQuerier ClickHouseQuerier, chConnErr error, rpQuerier RedpandaQuerier, rpConnErr error) *DiagReport {
+	chRep := CheckClickHouse(ctx, chQuerier, chConnErr, cfg.SkipSmokeTests)
+	rpRep := CheckRedpanda(ctx, rpQuerier, rpConnErr, cfg.TopicName, cfg.ConsumerGroup, cfg.SkipSmokeTests)
 
 	overall := StatusHealthy
 	if chRep.Status == StatusFailed || rpRep.Status == StatusFailed {

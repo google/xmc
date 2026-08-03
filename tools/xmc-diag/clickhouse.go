@@ -39,14 +39,27 @@ func (r *RealClickHouseQuerier) SelectVersion(ctx context.Context) (string, erro
 }
 
 func (r *RealClickHouseQuerier) CheckTablesExist(ctx context.Context, tables []string) ([]string, error) {
+	rows, err := r.conn.Query(ctx, "SELECT name FROM system.tables WHERE database = currentDatabase() AND name IN ?", tables)
+	if err != nil {
+		return nil, fmt.Errorf("failed querying system.tables: %w", err)
+	}
+	defer rows.Close()
+
+	found := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("failed scanning table name: %w", err)
+		}
+		found[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+
 	var missing []string
 	for _, tbl := range tables {
-		var count uint64
-		err := r.conn.QueryRow(ctx, "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = ?", tbl).Scan(&count)
-		if err != nil {
-			return nil, fmt.Errorf("failed checking table %q: %w", tbl, err)
-		}
-		if count == 0 {
+		if !found[tbl] {
 			missing = append(missing, tbl)
 		}
 	}
@@ -60,8 +73,15 @@ func (r *RealClickHouseQuerier) MeasureLatency(ctx context.Context) (time.Durati
 	return time.Since(start), err
 }
 
-// CheckClickHouse performs ClickHouse diagnostics using querier.
-func CheckClickHouse(ctx context.Context, querier ClickHouseQuerier, skipSmoke bool) ClickHouseReport {
+// CheckClickHouse performs ClickHouse diagnostics using querier and optional connection error.
+func CheckClickHouse(ctx context.Context, querier ClickHouseQuerier, connErr error, skipSmoke bool) ClickHouseReport {
+	if connErr != nil {
+		return ClickHouseReport{
+			Status: StatusFailed,
+			Reason: "Failed connecting to ClickHouse endpoint",
+			Error:  connErr.Error(),
+		}
+	}
 	if querier == nil {
 		return ClickHouseReport{
 			Status: StatusFailed,

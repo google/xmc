@@ -33,6 +33,12 @@ import (
 )
 
 func setClickHouseEnvs(cfg *Config) {
+	if cfg.ClickHouseDSN != "" {
+		_ = os.Setenv("CLICKHOUSE_DSN", cfg.ClickHouseDSN)
+	} else if cfg.ClickHouseHost != "" || cfg.ClickHousePort != 9000 || cfg.ClickHouseUser != "default" || cfg.ClickHouseDatabase != "default" || cfg.ClickHousePassword != "" {
+		_ = os.Unsetenv("CLICKHOUSE_DSN")
+	}
+
 	if cfg.ClickHouseHost != "" {
 		_ = os.Setenv("CLICKHOUSE_HOST", cfg.ClickHouseHost)
 	}
@@ -47,9 +53,6 @@ func setClickHouseEnvs(cfg *Config) {
 	}
 	if cfg.ClickHouseDatabase != "" {
 		_ = os.Setenv("CLICKHOUSE_DATABASE", cfg.ClickHouseDatabase)
-	}
-	if cfg.ClickHouseDSN != "" {
-		_ = os.Setenv("CLICKHOUSE_DSN", cfg.ClickHouseDSN)
 	}
 }
 
@@ -95,18 +98,20 @@ func main() {
 	setClickHouseEnvs(cfg)
 
 	var chQuerier ClickHouseQuerier
-	if chConn, err := clickhouse.Connect(ctx); err == nil && chConn != nil {
+	chConn, chConnErr := clickhouse.Connect(ctx)
+	if chConnErr == nil && chConn != nil {
 		chQuerier = &RealClickHouseQuerier{conn: chConn}
 		defer chConn.Close()
 	}
 
 	var rpQuerier RedpandaQuerier
-	if kClient, err := kgo.NewClient(createRedpandaOptions(cfg)...); err == nil && kClient != nil {
+	kClient, rpConnErr := kgo.NewClient(createRedpandaOptions(cfg)...)
+	if rpConnErr == nil && kClient != nil {
 		rpQuerier = &RealRedpandaQuerier{client: kadm.NewClient(kClient)}
 		defer kClient.Close()
 	}
 
-	report := RunDiagnostics(ctx, cfg, chQuerier, rpQuerier)
+	report := RunDiagnostics(ctx, cfg, chQuerier, chConnErr, rpQuerier, rpConnErr)
 	out, err := FormatReport(report, cfg.OutputFormat)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error formatting report: %v\n", err)
@@ -116,5 +121,7 @@ func main() {
 	fmt.Println(out)
 	if report.OverallStatus == StatusFailed {
 		os.Exit(2)
+	} else if report.OverallStatus == StatusDegraded {
+		os.Exit(3)
 	}
 }

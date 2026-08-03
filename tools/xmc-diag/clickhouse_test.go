@@ -30,7 +30,7 @@ func TestCheckClickHouse_Healthy(t *testing.T) {
 		latency: 12 * time.Millisecond,
 	}
 
-	rep := CheckClickHouse(ctx, mock, false)
+	rep := CheckClickHouse(ctx, mock, nil, false)
 	if rep.Status != StatusHealthy {
 		t.Errorf("Status = %q, want %q", rep.Status, StatusHealthy)
 	}
@@ -45,6 +45,22 @@ func TestCheckClickHouse_Healthy(t *testing.T) {
 	}
 }
 
+func TestCheckClickHouse_ConnError(t *testing.T) {
+	ctx := context.Background()
+	connErr := errors.New("dial tcp 127.0.0.1:9000: connect: connection refused")
+
+	rep := CheckClickHouse(ctx, nil, connErr, false)
+	if rep.Status != StatusFailed {
+		t.Errorf("Status = %q, want %q", rep.Status, StatusFailed)
+	}
+	if rep.Connected {
+		t.Errorf("Connected = true, want false")
+	}
+	if rep.Error != connErr.Error() {
+		t.Errorf("Error = %q, want %q", rep.Error, connErr.Error())
+	}
+}
+
 func TestCheckClickHouse_MissingTables_DegradedReason(t *testing.T) {
 	ctx := context.Background()
 	const wantVersion = "mock-clickhouse-24.3"
@@ -54,7 +70,7 @@ func TestCheckClickHouse_MissingTables_DegradedReason(t *testing.T) {
 		latency:       10 * time.Millisecond,
 	}
 
-	rep := CheckClickHouse(ctx, mock, false)
+	rep := CheckClickHouse(ctx, mock, nil, false)
 	if rep.Status != StatusDegraded {
 		t.Errorf("Status = %q, want %q", rep.Status, StatusDegraded)
 	}
@@ -72,7 +88,7 @@ func TestCheckClickHouse_PingFailed(t *testing.T) {
 		pingErr: errors.New("connection refused"),
 	}
 
-	rep := CheckClickHouse(ctx, mock, false)
+	rep := CheckClickHouse(ctx, mock, nil, false)
 	if rep.Status != StatusFailed {
 		t.Errorf("Status = %q, want %q", rep.Status, StatusFailed)
 	}

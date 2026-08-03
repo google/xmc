@@ -48,6 +48,7 @@ func (m *MockClickHouseQuerier) MeasureLatency(ctx context.Context) (time.Durati
 }
 
 type MockRedpandaQuerier struct {
+	brokerCount  int
 	pingLat      time.Duration
 	pingErr      error
 	topicDetails kadm.TopicDetails
@@ -58,8 +59,8 @@ type MockRedpandaQuerier struct {
 	offsetErr    error
 }
 
-func (m *MockRedpandaQuerier) Ping(ctx context.Context) (time.Duration, error) {
-	return m.pingLat, m.pingErr
+func (m *MockRedpandaQuerier) Ping(ctx context.Context) (int, time.Duration, error) {
+	return m.brokerCount, m.pingLat, m.pingErr
 }
 
 func (m *MockRedpandaQuerier) ListTopics(ctx context.Context, topics ...string) (kadm.TopicDetails, error) {

@@ -29,10 +29,10 @@ type RealRedpandaQuerier struct {
 	client *kadm.Client
 }
 
-func (r *RealRedpandaQuerier) Ping(ctx context.Context) (time.Duration, error) {
+func (r *RealRedpandaQuerier) Ping(ctx context.Context) (int, time.Duration, error) {
 	start := time.Now()
-	_, err := r.client.ListBrokers(ctx)
-	return time.Since(start), err
+	brokers, err := r.client.ListBrokers(ctx)
+	return len(brokers), time.Since(start), err
 }
 
 func (r *RealRedpandaQuerier) ListTopics(ctx context.Context, topics ...string) (kadm.TopicDetails, error) {
@@ -98,8 +98,15 @@ func CalculateConsumerLag(endOffsets kadm.ListedOffsets, groupOffsets kadm.Offse
 	return report
 }
 
-// CheckRedpanda performs Redpanda diagnostics using querier.
-func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, topic, group string, skipSmoke bool) RedpandaReport {
+// CheckRedpanda performs Redpanda diagnostics using querier and optional connection error.
+func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, connErr error, topic, group string, skipSmoke bool) RedpandaReport {
+	if connErr != nil {
+		return RedpandaReport{
+			Status: StatusFailed,
+			Reason: "Failed connecting to Redpanda endpoint",
+			Error:  connErr.Error(),
+		}
+	}
 	if querier == nil {
 		return RedpandaReport{
 			Status: StatusFailed,
@@ -109,8 +116,9 @@ func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, topic, group st
 	}
 
 	var pingLatStr string
+	var brokerCount int
 	if !skipSmoke {
-		lat, err := querier.Ping(ctx)
+		count, lat, err := querier.Ping(ctx)
 		if err != nil {
 			return RedpandaReport{
 				Status: StatusFailed,
@@ -119,12 +127,14 @@ func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, topic, group st
 			}
 		}
 		pingLatStr = lat.String()
+		brokerCount = count
 	}
 
 	topics, err := querier.ListTopics(ctx, topic)
 	if err != nil {
 		return RedpandaReport{
 			Status:      StatusFailed,
+			BrokerCount: brokerCount,
 			PingLatency: pingLatStr,
 			Reason:      fmt.Sprintf("Failed listing metadata for topic %q", topic),
 			Error:       fmt.Sprintf("failed listing topics: %v", err),
@@ -142,6 +152,7 @@ func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, topic, group st
 		return RedpandaReport{
 			Status:      StatusFailed,
 			Connected:   true,
+			BrokerCount: brokerCount,
 			PingLatency: pingLatStr,
 			Reason:      fmt.Sprintf("Topic %q not found or encountered error: %s", topic, detailErrMsg),
 			Error:       fmt.Sprintf("topic %q error: %s", topic, detailErrMsg),
@@ -173,6 +184,7 @@ func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, topic, group st
 	return RedpandaReport{
 		Status:          status,
 		Connected:       true,
+		BrokerCount:     brokerCount,
 		TopicPartitions: len(tDetail.Partitions),
 		Lag:             lagRep,
 		PingLatency:     pingLatStr,

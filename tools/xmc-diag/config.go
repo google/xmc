@@ -63,7 +63,7 @@ func ParseFlags(args []string) (*Config, error) {
 		saslPass    = fs.String("sasl_password", "", "SASL password")
 		tlsEnable   = fs.Bool("tls_enabled", false, "Enable TLS for Redpanda connection")
 		tlsInsecure = fs.Bool("tls_insecure_skip_verify", false, "Skip TLS verification for Redpanda")
-		seedOnly    = fs.Bool("dial_with_seed_only", true, "Dial only seed brokers (useful for port-forwarding/tunneling)")
+		seedOnly    = fs.Bool("dial_with_seed_only", false, "Dial only seed brokers (useful for port-forwarding/tunneling)")
 		outFormat   = fs.String("output", "text", "Output format: text or json")
 		skipSmoke   = fs.Bool("skip_smoke_tests", false, "Skip latency performance smoke tests")
 	)
