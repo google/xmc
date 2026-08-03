@@ -16,7 +16,6 @@ package main
 
 import (
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	corev1 "golang/k8s_io/api/v/v0_23/core/v1/v1"
@@ -25,74 +24,6 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
-
-func createTestClusterQueueTyped(name, cohort, strategy string, nominalGPU, inUseGPU, reservedGPU string) *kueuev1beta1.ClusterQueue {
-	nomGPU := resource.MustParse(nominalGPU)
-	resGPU := resource.MustParse(reservedGPU)
-	useGPU := resource.MustParse(inUseGPU)
-
-	return &kueuev1beta1.ClusterQueue{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-		},
-		Spec: kueuev1beta1.ClusterQueueSpec{
-			Cohort:           kueuev1beta1.CohortReference(cohort),
-			QueueingStrategy: kueuev1beta1.QueueingStrategy(strategy),
-			ResourceGroups: []kueuev1beta1.ResourceGroup{
-				{
-					Flavors: []kueuev1beta1.FlavorQuotas{
-						{
-							Name: "default-flavor",
-							Resources: []kueuev1beta1.ResourceQuota{
-								{Name: corev1.ResourceName("nvidia.com/gpu"), NominalQuota: nomGPU},
-							},
-						},
-					},
-				},
-			},
-		},
-		Status: kueuev1beta1.ClusterQueueStatus{
-			AdmittedWorkloads: 1,
-			PendingWorkloads:  1,
-			Conditions: []metav1.Condition{
-				{
-					Type:               kueuev1beta1.ClusterQueueActive,
-					Status:             metav1.ConditionTrue,
-					Message:            "ClusterQueue is active",
-					LastTransitionTime: metav1.NewTime(time.Date(2026, 7, 29, 10, 0, 0, 0, time.UTC)),
-				},
-			},
-			FlavorsReservation: []kueuev1beta1.FlavorUsage{
-				{
-					Name: "default-flavor",
-					Resources: []kueuev1beta1.ResourceUsage{
-						{Name: corev1.ResourceName("nvidia.com/gpu"), Total: resGPU},
-					},
-				},
-			},
-			FlavorsUsage: []kueuev1beta1.FlavorUsage{
-				{
-					Name: "default-flavor",
-					Resources: []kueuev1beta1.ResourceUsage{
-						{Name: corev1.ResourceName("nvidia.com/gpu"), Total: useGPU},
-					},
-				},
-			},
-		},
-	}
-}
-
-func createTestLocalQueueTyped(name, namespace, clusterQueue string) *kueuev1beta1.LocalQueue {
-	return &kueuev1beta1.LocalQueue{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: kueuev1beta1.LocalQueueSpec{
-			ClusterQueue: kueuev1beta1.ClusterQueueReference(clusterQueue),
-		},
-	}
-}
 
 func createTestResourceFlavorTyped(name string, nodeLabels map[string]string) *kueuev1beta1.ResourceFlavor {
 	return &kueuev1beta1.ResourceFlavor{
@@ -181,6 +112,13 @@ func TestConvertAggregatedQuotaToResourceCapacity(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("Nil aggregator safety", func(t *testing.T) {
+		capMetric := convertAggregatedQuotaToResourceCapacity("cpu", nil, 5.0)
+		if capMetric.TotalCapacity != 0 || capMetric.FreeCapacity != 0 || capMetric.FreeCapacityWithBorrowing != 0 {
+			t.Errorf("convertAggregatedQuotaToResourceCapacity(nil) = %v, want all zero capacities", capMetric)
+		}
+	})
 }
 
 func TestMultiFlavorQueueOverview(t *testing.T) {
@@ -302,11 +240,4 @@ func TestBuildQueueOverviewFromClusterQueue_NilAndEmpty(t *testing.T) {
 	if len(overview.QueueCapacity) != 0 {
 		t.Errorf("QueueCapacity count = %d, want 0", len(overview.QueueCapacity))
 	}
-}
-
-func defaultString(val, fallback string) string {
-	if val == "" {
-		return fallback
-	}
-	return val
 }

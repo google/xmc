@@ -94,17 +94,22 @@ func addFlavorResourceQuotaToAggregator(resourceQuota kueuev1beta1.ResourceQuota
 
 // convertAggregatedQuotaToResourceCapacity combines an aggregated ResourceQuotaAggregator and used capacity into a QueueResourceCapacity proto.
 func convertAggregatedQuotaToResourceCapacity(resourceType string, quotaAggregator *ResourceQuotaAggregator, totalUsedCapacity float64) *spb.QueueResourceCapacity {
-	freeCapacity := quotaAggregator.nominalQuota - totalUsedCapacity
+	var nominalQuota, borrowingLimit float64
+	if quotaAggregator != nil {
+		nominalQuota = quotaAggregator.nominalQuota
+		borrowingLimit = quotaAggregator.borrowingLimit
+	}
+	freeCapacity := nominalQuota - totalUsedCapacity
 	if freeCapacity < 0 {
 		freeCapacity = 0
 	}
-	freeCapacityWithBorrowing := (quotaAggregator.nominalQuota + quotaAggregator.borrowingLimit) - totalUsedCapacity
+	freeCapacityWithBorrowing := (nominalQuota + borrowingLimit) - totalUsedCapacity
 	if freeCapacityWithBorrowing < 0 {
 		freeCapacityWithBorrowing = 0
 	}
 	return &spb.QueueResourceCapacity{
 		ResourceType:              resourceType,
-		TotalCapacity:             quotaAggregator.nominalQuota,
+		TotalCapacity:             nominalQuota,
 		FreeCapacity:              freeCapacity,
 		FreeCapacityWithBorrowing: freeCapacityWithBorrowing,
 	}
