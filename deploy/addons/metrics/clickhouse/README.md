@@ -52,7 +52,7 @@ helm repo update
 #### Option B: Mirror Charts to Artifact Registry (For Restricted Networks)
 
 > [!CAUTION]
-> Workstations on restricted networks or private cloud environments may block access to external Helm repositories (`dial tcp: lookup... no such host`). If you cannot access external Helm repositories directly, mirror the chart to Google Cloud Artifact Registry from an internet-enabled environment.
+> Machines on restricted networks or private cloud environments may block access to external Helm repositories (`dial tcp: lookup... no such host`). If you cannot access external Helm repositories directly, mirror the chart to Google Cloud Artifact Registry from an internet-enabled environment.
 
 To pull and mirror the chart to your project's Artifact Registry:
 
