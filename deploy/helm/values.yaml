@@ -70,6 +70,7 @@ ingestionGatewayDeployment:
 
 rodDeployment:
   enabled: false
+  gcpServiceAccount: ""
 
 healthService:
   gcpServiceAccount: ""
