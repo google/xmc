@@ -49,10 +49,6 @@ func BlankExperimentProto(xid int64) *essmsgpb.Experiment {
 	}
 }
 
-func blankExperimentProto(xid int64) *essmsgpb.Experiment {
-	return BlankExperimentProto(xid)
-}
-
 func CreateAndStoreExperiment(ctx context.Context, t *testing.T, storage *Storage, exp *essmsgpb.Experiment) *essmsgpb.Experiment {
 	t.Helper()
 	createdExp, err := storage.CreateExperiment(ctx, exp)
@@ -62,18 +58,10 @@ func CreateAndStoreExperiment(ctx context.Context, t *testing.T, storage *Storag
 	return createdExp
 }
 
-func createAndStoreExperiment(ctx context.Context, t *testing.T, storage *Storage, exp *essmsgpb.Experiment) *essmsgpb.Experiment {
-	return CreateAndStoreExperiment(ctx, t, storage, exp)
-}
-
 func CreateBlankExperiment(ctx context.Context, t *testing.T, storage *Storage, xid int64) *essmsgpb.Experiment {
 	t.Helper()
 	exp := BlankExperimentProto(xid)
 	return CreateAndStoreExperiment(ctx, t, storage, exp)
-}
-
-func createBlankExperiment(ctx context.Context, t *testing.T, storage *Storage, xid int64) *essmsgpb.Experiment {
-	return CreateBlankExperiment(ctx, t, storage, xid)
 }
 
 func CreateBlankExperimentWithLaunchState(ctx context.Context, t *testing.T, storage *Storage, xid int64, launchState essmsgpb.ExperimentStatus_LaunchState) *essmsgpb.Experiment {
@@ -81,10 +69,6 @@ func CreateBlankExperimentWithLaunchState(ctx context.Context, t *testing.T, sto
 	exp := BlankExperimentProto(xid)
 	exp.Status.LaunchState = launchState
 	return CreateAndStoreExperiment(ctx, t, storage, exp)
-}
-
-func createBlankExperimentWithLaunchState(ctx context.Context, t *testing.T, storage *Storage, xid int64, launchState essmsgpb.ExperimentStatus_LaunchState) *essmsgpb.Experiment {
-	return CreateBlankExperimentWithLaunchState(ctx, t, storage, xid, launchState)
 }
 
 func BlankWorkUnitProto(xid int64, wid int64) *essmsgpb.WorkUnit {
@@ -122,10 +106,6 @@ func BlankWorkUnitProto(xid int64, wid int64) *essmsgpb.WorkUnit {
 	}
 }
 
-func blankWorkUnitProto(xid int64, wid int64) *essmsgpb.WorkUnit {
-	return BlankWorkUnitProto(xid, wid)
-}
-
 func CreateAndStoreWorkUnit(ctx context.Context, t *testing.T, storage *Storage, wu *essmsgpb.WorkUnit) *essmsgpb.WorkUnit {
 	t.Helper()
 	createdWu, err := storage.CreateWorkUnit(ctx, wu)
@@ -135,18 +115,10 @@ func CreateAndStoreWorkUnit(ctx context.Context, t *testing.T, storage *Storage,
 	return createdWu
 }
 
-func createAndStoreWorkUnit(ctx context.Context, t *testing.T, storage *Storage, wu *essmsgpb.WorkUnit) *essmsgpb.WorkUnit {
-	return CreateAndStoreWorkUnit(ctx, t, storage, wu)
-}
-
 func CreateBlankWorkUnit(ctx context.Context, t *testing.T, storage *Storage, xid int64, wid int64) *essmsgpb.WorkUnit {
 	t.Helper()
 	wu := BlankWorkUnitProto(xid, wid)
 	return CreateAndStoreWorkUnit(ctx, t, storage, wu)
-}
-
-func createBlankWorkUnit(ctx context.Context, t *testing.T, storage *Storage, xid int64, wid int64) *essmsgpb.WorkUnit {
-	return CreateBlankWorkUnit(ctx, t, storage, xid, wid)
 }
 
 func CreateBlankWorkUnitWithState(ctx context.Context, t *testing.T, storage *Storage, xid int64, wid int64, state essmsgpb.WorkUnitStatus_WorkUnitState) *essmsgpb.WorkUnit {
@@ -154,10 +126,6 @@ func CreateBlankWorkUnitWithState(ctx context.Context, t *testing.T, storage *St
 	wu := BlankWorkUnitProto(xid, wid)
 	wu.CurrentWorkUnitExecution.Status.State = state
 	return CreateAndStoreWorkUnit(ctx, t, storage, wu)
-}
-
-func createBlankWorkUnitWithState(ctx context.Context, t *testing.T, storage *Storage, xid int64, wid int64, state essmsgpb.WorkUnitStatus_WorkUnitState) *essmsgpb.WorkUnit {
-	return CreateBlankWorkUnitWithState(ctx, t, storage, xid, wid, state)
 }
 
 func ChildStateCountInState(t *testing.T, exp *essmsgpb.Experiment, state essmsgpb.WorkUnitStatus_WorkUnitState) int64 {
@@ -170,10 +138,6 @@ func ChildStateCountInState(t *testing.T, exp *essmsgpb.Experiment, state essmsg
 	return 0
 }
 
-func childStateCountInState(t *testing.T, exp *essmsgpb.Experiment, state essmsgpb.WorkUnitStatus_WorkUnitState) int64 {
-	return ChildStateCountInState(t, exp, state)
-}
-
 func MessageSeverityCountInState(t *testing.T, exp *essmsgpb.Experiment, severity essmsgpb.StructuredMessage_Severity) int64 {
 	t.Helper()
 	for _, severityCount := range exp.Status.MessageSeverityCounts {
@@ -182,10 +146,6 @@ func MessageSeverityCountInState(t *testing.T, exp *essmsgpb.Experiment, severit
 		}
 	}
 	return 0
-}
-
-func messageSeverityCountInState(t *testing.T, exp *essmsgpb.Experiment, severity essmsgpb.StructuredMessage_Severity) int64 {
-	return MessageSeverityCountInState(t, exp, severity)
 }
 
 func BlankArtifactProto(xid, aid int64) *essmsgpb.Artifact {
@@ -200,10 +160,6 @@ func BlankArtifactProto(xid, aid int64) *essmsgpb.Artifact {
 	}
 }
 
-func blankArtifactProto(xid, aid int64) *essmsgpb.Artifact {
-	return BlankArtifactProto(xid, aid)
-}
-
 func CreateAndStoreArtifact(ctx context.Context, t *testing.T, storage *Storage, art *essmsgpb.Artifact) *essmsgpb.Artifact {
 	t.Helper()
 	createdArt, err := storage.CreateArtifact(ctx, art)
@@ -211,8 +167,4 @@ func CreateAndStoreArtifact(ctx context.Context, t *testing.T, storage *Storage,
 		t.Fatalf("CreateArtifact(%v) failed: %v", art, err)
 	}
 	return createdArt
-}
-
-func createAndStoreArtifact(ctx context.Context, t *testing.T, storage *Storage, art *essmsgpb.Artifact) *essmsgpb.Artifact {
-	return CreateAndStoreArtifact(ctx, t, storage, art)
 }
