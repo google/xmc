@@ -29,7 +29,7 @@ metadata:
 subjects:
 - kind: ServiceAccount
   name: {{ .Values.rodDeployment.serviceAccountName }}
-  namespace: {{ .Release.Namespace }}
+  namespace: xmc
 roleRef:
   kind: ClusterRole
   name: rod-data-provider-role
