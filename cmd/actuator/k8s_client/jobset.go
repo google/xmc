@@ -301,7 +301,7 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 	}
 
 	// Merge custom job labels with base job labels, preventing overrides of system labels.
-	labels := make(map[string]string)
+	labels := make(map[string]string, len(jobLabels)+len(job.GetLabels()))
 	for k, v := range jobLabels {
 		labels[k] = v
 	}
@@ -309,6 +309,12 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 		if _, exists := labels[k]; !exists {
 			labels[k] = v
 		}
+	}
+
+	// Create a shallow copy for PodTemplateSpec to prevent sharing the map pointer.
+	podLabels := make(map[string]string, len(labels))
+	for k, v := range labels {
+		podLabels[k] = v
 	}
 
 	var dependsOn []jobsetv1alpha2.DependsOn
@@ -346,7 +352,7 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 				ActiveDeadlineSeconds:   activeDeadlineSeconds,
 				Template: corev1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{
-						Labels:      labels,
+						Labels:      podLabels,
 						Annotations: annotations,
 					},
 					Spec: corev1.PodSpec{

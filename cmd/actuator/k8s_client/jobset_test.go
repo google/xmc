@@ -543,40 +543,41 @@ func TestConstructJobSet_GroupName(t *testing.T) {
 			t.Errorf("ReplicatedJob.GroupName = %q, want %q", got, "custom-group")
 		}
 	})
+}
 
-	t.Run("Custom labels set on KubernetesJob", func(t *testing.T) {
-		workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
-			wu.Executable.GetJobset().Jobs[0].Labels = map[string]string{
-				"kueue.x-k8s.io/podset":     "pathways-head",
-				"custom.label/key":          "value",
-				constants.ExperimentIDLabel: "hacked",
-			}
-		})
-		jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
-		if err != nil {
-			t.Fatalf("constructJobSet() returned unexpected error: %v", err)
-		}
-		if len(jobSet.Spec.ReplicatedJobs) != 1 {
-			t.Fatalf("Expected 1 ReplicatedJob, got %d", len(jobSet.Spec.ReplicatedJobs))
-		}
-		rj := jobSet.Spec.ReplicatedJobs[0]
-		if rj.Template.ObjectMeta.Labels["kueue.x-k8s.io/podset"] != "pathways-head" {
-			t.Errorf("JobTemplateSpec.ObjectMeta.Labels[kueue.x-k8s.io/podset] = %q, want %q", rj.Template.ObjectMeta.Labels["kueue.x-k8s.io/podset"], "pathways-head")
-		}
-		if rj.Template.ObjectMeta.Labels["custom.label/key"] != "value" {
-			t.Errorf("JobTemplateSpec.ObjectMeta.Labels[custom.label/key] = %q, want %q", rj.Template.ObjectMeta.Labels["custom.label/key"], "value")
-		}
-		podLabels := rj.Template.Spec.Template.ObjectMeta.Labels
-		if podLabels["kueue.x-k8s.io/podset"] != "pathways-head" {
-			t.Errorf("PodTemplateSpec.ObjectMeta.Labels[kueue.x-k8s.io/podset] = %q, want %q", podLabels["kueue.x-k8s.io/podset"], "pathways-head")
-		}
-		if podLabels["custom.label/key"] != "value" {
-			t.Errorf("PodTemplateSpec.ObjectMeta.Labels[custom.label/key] = %q, want %q", podLabels["custom.label/key"], "value")
-		}
-		if podLabels[constants.ExperimentIDLabel] != "123" {
-			t.Errorf("PodTemplateSpec.ObjectMeta.Labels[%s] = %q, want %q", constants.ExperimentIDLabel, podLabels[constants.ExperimentIDLabel], "123")
+func TestConstructJobSet_PerJobCustomLabels(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Executable.GetJobset().Jobs[0].Labels = map[string]string{
+			"kueue.x-k8s.io/podset":     "pathways-head",
+			"custom.label/key":          "value",
+			constants.ExperimentIDLabel: "hacked",
 		}
 	})
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+	if len(jobSet.Spec.ReplicatedJobs) != 1 {
+		t.Fatalf("Expected 1 ReplicatedJob, got %d", len(jobSet.Spec.ReplicatedJobs))
+	}
+	rj := jobSet.Spec.ReplicatedJobs[0]
+	if rj.Template.ObjectMeta.Labels["kueue.x-k8s.io/podset"] != "pathways-head" {
+		t.Errorf("JobTemplateSpec.ObjectMeta.Labels[kueue.x-k8s.io/podset] = %q, want %q", rj.Template.ObjectMeta.Labels["kueue.x-k8s.io/podset"], "pathways-head")
+	}
+	if rj.Template.ObjectMeta.Labels["custom.label/key"] != "value" {
+		t.Errorf("JobTemplateSpec.ObjectMeta.Labels[custom.label/key] = %q, want %q", rj.Template.ObjectMeta.Labels["custom.label/key"], "value")
+	}
+	podLabels := rj.Template.Spec.Template.ObjectMeta.Labels
+	if podLabels["kueue.x-k8s.io/podset"] != "pathways-head" {
+		t.Errorf("PodTemplateSpec.ObjectMeta.Labels[kueue.x-k8s.io/podset] = %q, want %q", podLabels["kueue.x-k8s.io/podset"], "pathways-head")
+	}
+	if podLabels["custom.label/key"] != "value" {
+		t.Errorf("PodTemplateSpec.ObjectMeta.Labels[custom.label/key] = %q, want %q", podLabels["custom.label/key"], "value")
+	}
+	if podLabels[constants.ExperimentIDLabel] != "123" {
+		t.Errorf("PodTemplateSpec.ObjectMeta.Labels[%s] = %q, want %q", constants.ExperimentIDLabel, podLabels[constants.ExperimentIDLabel], "123")
+	}
 }
 
 func TestConstructJobSet_MetricsEnabled(t *testing.T) {
