@@ -49,6 +49,7 @@ jobs:
       TEST_TIMEOUT_SECONDS: 60
       SPANNER_CHECK_TIMEOUT: 15
       SPANNER_EMULATOR_HOST: 127.0.0.1:9010
+      GOMAXPROCS: 2
 
     steps:
       - name: 'Checkout'
@@ -117,7 +118,6 @@ jobs:
             --experimental_ui_max_stdouterr_bytes=2097152 \
             --build_tests_only \
             --local_test_jobs=2 \
-            --test_arg=-test.parallel=2 \
             --test_timeout=${TEST_TIMEOUT_SECONDS},300,300,300 \
             -- \
             //... \
