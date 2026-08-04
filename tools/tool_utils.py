@@ -211,15 +211,12 @@ def parse_yaml_vars(config_path: Path) -> dict[str, Any]:
 
 def load_and_validate_config(
     config_file: str,
-    required_keys: list[str] | None = None,
     defaults: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Loads YAML config file, merges with env overrides, and validates.
 
     Args:
         config_file: Path to the YAML configuration file.
-        required_keys: List of keys that MUST be present and valid. If None,
-          defaults to all keys in CONFIG_VALIDATION_SCHEMAS.
         defaults: Default values for keys if they are missing.
 
     Returns:
@@ -243,11 +240,7 @@ def load_and_validate_config(
         if val:
             config[config_key] = val
 
-    keys_to_validate = (
-        required_keys if required_keys is not None else list(CONFIG_VALIDATION_SCHEMAS.keys())
-    )
-
-    for key in keys_to_validate:
+    for key in CONFIG_VALIDATION_SCHEMAS:
         val = config.get(key)
         if val is None:
             raise ValueError(f"Required configuration field '{key}' is missing.")

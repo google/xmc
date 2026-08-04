@@ -128,15 +128,8 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
     """
     log_info(f"Loading configuration from '{config_file}'...")
 
-    defaults = {
-        "region": "us-central1",
-        "environment": "dev",
-        "namespace": "xmc",
-        "image_tag": "latest",
-    }
-
     try:
-        config_dict = tool_load_config(config_file, defaults=defaults)
+        config_dict = tool_load_config(config_file)
     except ValueError as e:
         error_exit(str(e))
 
@@ -148,7 +141,7 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
     image_registry = config_dict["image_registry"]
     image_tag = config_dict["image_tag"]
     gke_cluster = f"xmc-{deployment_name}-{environment}"
-    registry_val = f"us-docker.pkg.dev/{project_id}/xmc"
+    registry = f"us-docker.pkg.dev/{project_id}/xmc"
 
     rod_raw = config_dict.get("rod_deployment_enabled", False)
     if isinstance(rod_raw, str):
@@ -162,7 +155,7 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
         region=region,
         environment=environment,
         namespace=namespace,
-        registry=registry_val,
+        registry=registry,
         image_registry=image_registry,
         image_tag=image_tag,
         gke_cluster=gke_cluster,
