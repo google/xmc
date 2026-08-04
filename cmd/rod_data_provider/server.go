@@ -17,52 +17,72 @@ package main
 import (
 	"context"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
 type server struct {
 	spb.UnimplementedResourceObservabilityServiceServer
-	cfg *Config
+	cfg   *Config
+	cache *cache.KueueCache
 }
 
-func newServer(cfg *Config) *server {
-	return &server{cfg: cfg}
+func newServer(cfg *Config, cache *cache.KueueCache) *server {
+	return &server{
+		cfg:   cfg,
+		cache: cache,
+	}
 }
 
-// GetFittingQueues returns ClusterQueues matching requested resource requirements.
+// GetFittingQueues returns ClusterQueues matching requested resource requirements directly from in-memory KueueCache.
 func (s *server) GetFittingQueues(ctx context.Context, req *spb.GetFittingQueuesRequest) (*spb.GetFittingQueuesResponse, error) {
-	queues := []*spb.QueueOverview{
-		{
-			QueueName: "cluster-queue-a",
-			QueueCapacity: []*spb.QueueResourceCapacity{
-				{
-					ResourceType:              "cpu",
-					TotalCapacity:             100,
-					FreeCapacity:              40,
-					FreeCapacityWithBorrowing: 60,
-				},
-				{
-					ResourceType:              "memory",
-					TotalCapacity:             500,
-					FreeCapacity:              200,
-					FreeCapacityWithBorrowing: 300,
-				},
-			},
-		},
-		{
-			QueueName: "cluster-queue-b",
-			QueueCapacity: []*spb.QueueResourceCapacity{
-				{
-					ResourceType:              "nvidia.com/gpu",
-					TotalCapacity:             8,
-					FreeCapacity:              2,
-					FreeCapacityWithBorrowing: 4,
-				},
-			},
-		},
+	if err := ctx.Err(); err != nil {
+		return nil, status.Error(codes.Canceled, err.Error())
+	}
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if s.cache == nil || s.cache.ClusterQueues == nil {
+		return nil, status.Error(codes.Unavailable, "kueue cache is uninitialized")
 	}
 
+	rfMap := buildResourceFlavorMap(s.cache)
+	overviews := buildQueueOverviews(s.cache, rfMap)
+	fittingQueues := filterFittingQueues(overviews, req)
+
 	return &spb.GetFittingQueuesResponse{
-		Queues: queues,
+		Queues: fittingQueues,
 	}, nil
+}
+
+func buildResourceFlavorMap(c *cache.KueueCache) map[string]*kueuev1beta1.ResourceFlavor {
+	rfMap := make(map[string]*kueuev1beta1.ResourceFlavor)
+	if c != nil && c.ResourceFlavors != nil {
+		for _, rf := range c.ResourceFlavors.List() {
+			if rf != nil {
+				rfMap[rf.Name] = rf
+			}
+		}
+	}
+	return rfMap
+}
+
+func buildQueueOverviews(c *cache.KueueCache, rfMap map[string]*kueuev1beta1.ResourceFlavor) []*spb.QueueOverview {
+	if c == nil || c.ClusterQueues == nil {
+		return nil
+	}
+	clusterQueues := c.ClusterQueues.List()
+	overviews := make([]*spb.QueueOverview, 0, len(clusterQueues))
+	for _, cq := range clusterQueues {
+		if cq == nil {
+			continue
+		}
+		if overview := buildQueueOverviewFromClusterQueue(cq, rfMap); overview != nil {
+			overviews = append(overviews, overview)
+		}
+	}
+	return overviews
 }
