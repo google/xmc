@@ -31,18 +31,20 @@ This document defines coding standards and conventions for Go development across
 - Always inspect proto package `BUILD.bazel` to verify exact `go_proto_library` target name (typically ending in `_go_proto`) before adding Bazel dependencies.
 
 ## 9. Context Safety in `defer` Cleanups & Error Branches
-- **Fresh Cleanup Context**: Deferred cleanup functions (`Teardown`, `Close`, container termination) MUST NOT pass a parent context (`ctx`) that might already be canceled or timed out. Wrap cleanups in a fresh context:
+- **Fresh Cleanup Context**: Deferred cleanup functions (`Teardown`, `Close`, container termination) MUST NOT pass a parent context (`ctx`) that might already be canceled or timed out. Wrap the context creation and cleanup call inside a deferred closure so the timeout begins when cleanup actually starts:
   ```go
-  cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-  defer cancel()
-  c.Terminate(cleanupCtx)
+  defer func() {
+      cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+      defer cancel()
+      c.Terminate(cleanupCtx)
+  }()
   ```
 
 ## 10. Integration Testing & Testcontainers Best Practices
 - **Host File Mount Permissions**: Call `os.Chmod(path, 0644)` on temporary host files mounted into Docker containers so non-root container users (e.g. `clickhouse`) have read access.
 - **Shared Container Networks**: Multi-container integration tests requiring inter-service resolution MUST create and attach a shared bridge network (`testcontainers.NewDockerNetwork(ctx, ...)`).
-- **Bazel Runfiles & Local Tag**: Integration tests reading repo files MUST declare `data` dependencies in `BUILD.bazel`, resolve runfiles via `os.Getenv("TEST_SRCDIR")`, and set `tags = ["local"]`.
-- **Status Error Wrapping Integrity**: Preserve gRPC status error wrappers (`status.ErrInternal`, `status.ErrInvalidArgument` from `task/go/status` or `google.golang.org/grpc/status`). Replacing status error wrappers with generic `fmt.Errorf` breaks upstream RPC status code contracts.
+- **Bazel Runfiles & Local Tag**: Integration tests reading repo files MUST declare `data` dependencies in `BUILD.bazel`, resolve runfiles using the official `bazel.Runfile(path)` helper from `github.com/bazelbuild/rules_go/go/tools/bazel` (or `os.Getenv("TEST_SRCDIR")`), and set `tags = ["local"]`.
+- **Status Error Wrapping Integrity**: Preserve gRPC status error constructors (`status.Error(codes.Internal, ...)` / `status.Errorf(...)` from `google.golang.org/grpc/status` or package-level error variables from `internal/compat/status` / `task/go/status`). Replacing status error wrappers with generic `fmt.Errorf` breaks upstream RPC status code contracts.
 - **Compile-Time Interface Assertions**: All concrete repository implementations MUST include explicit compile-time interface assertions:
   ```go
   var _ storage.WorkUnitStore = (*Repository)(nil)
