@@ -142,13 +142,59 @@ func (g *GKE) IsCompatibleWithWorkUnit(workUnit *epb.WorkUnit) (bool, string) {
 	return true, ""
 }
 
-func applyCPUResources(cpuRes *epb.CpuResources, reqs *corev1.ResourceRequirements) {
-	reqs.Requests[corev1.ResourceCPU] = resource.MustParse(fmt.Sprintf("%dm", cpuRes.GetCpuMillicores()))
-	if limitCPU := cpuRes.GetLimitCpuMillicores(); limitCPU > 0 {
+func applyCPUResources(cpuRes *epb.CpuResources, reqs *corev1.ResourceRequirements) error {
+	if cpuRes == nil || reqs == nil {
+		return nil
+	}
+	if reqs.Requests == nil {
+		reqs.Requests = make(corev1.ResourceList)
+	}
+	if reqs.Limits == nil {
+		reqs.Limits = make(corev1.ResourceList)
+	}
+
+	cpuMillicores := cpuRes.GetCpuMillicores()
+	limitCPU := cpuRes.GetLimitCpuMillicores()
+	if limitCPU > 0 && limitCPU < cpuMillicores {
+		return fmt.Errorf("CPU limit (%dm) cannot be less than CPU request (%dm)", limitCPU, cpuMillicores)
+	}
+
+	reqs.Requests[corev1.ResourceCPU] = resource.MustParse(fmt.Sprintf("%dm", cpuMillicores))
+	if limitCPU > 0 {
 		reqs.Limits[corev1.ResourceCPU] = resource.MustParse(fmt.Sprintf("%dm", limitCPU))
 	}
 	reqs.Limits[corev1.ResourceMemory] = resource.MustParse(fmt.Sprintf("%d", cpuRes.GetMemoryBytes()))
 	reqs.Requests[corev1.ResourceMemory] = resource.MustParse(fmt.Sprintf("%d", cpuRes.GetMemoryBytes()))
+	return nil
+}
+
+func applyGPUResources(gpuRes *epb.GpuResources, reqs *corev1.ResourceRequirements) {
+	reqs.Limits[nvidiaGPUKey] = resource.MustParse(fmt.Sprintf("%d", gpuRes.GetCount()))
+}
+
+func applyTPUResources(tpuRes *epb.TpuResources, reqs *corev1.ResourceRequirements) error {
+	chipsPerNode, err := tpuChipsPerNode(tpuRes.GetTopology())
+	if err != nil {
+		return err
+	}
+	chips := resource.MustParse(strconv.Itoa(chipsPerNode))
+	reqs.Limits[tpuResourceKey] = chips
+	reqs.Requests[tpuResourceKey] = chips
+	return nil
+}
+
+func applyResourceSet(resourceSet *epb.ResourceSet, reqs *corev1.ResourceRequirements) error {
+	if cpuRes := resourceSet.GetCpuResources(); cpuRes != nil {
+		return applyCPUResources(cpuRes, reqs)
+	}
+	if gpuRes := resourceSet.GetGpuResources(); gpuRes != nil {
+		applyGPUResources(gpuRes, reqs)
+		return nil
+	}
+	if tpuRes := resourceSet.GetTpuResources(); tpuRes != nil {
+		return applyTPUResources(tpuRes, reqs)
+	}
+	return nil
 }
 
 // resourceRequirements returns the resource requirements for the given resource set.
@@ -158,18 +204,8 @@ func resourceRequirements(resourceSet *epb.ResourceSet) (corev1.ResourceRequirem
 		Requests: make(corev1.ResourceList),
 	}
 
-	if cpuRes := resourceSet.GetCpuResources(); cpuRes != nil {
-		applyCPUResources(cpuRes, &resourceRequirements)
-	} else if gpuRes := resourceSet.GetGpuResources(); gpuRes != nil {
-		resourceRequirements.Limits[nvidiaGPUKey] = resource.MustParse(fmt.Sprintf("%d", gpuRes.GetCount()))
-	} else if tpuRes := resourceSet.GetTpuResources(); tpuRes != nil {
-		chipsPerNode, err := tpuChipsPerNode(tpuRes.GetTopology())
-		if err != nil {
-			return resourceRequirements, err
-		}
-		chips := resource.MustParse(strconv.Itoa(chipsPerNode))
-		resourceRequirements.Limits[tpuResourceKey] = chips
-		resourceRequirements.Requests[tpuResourceKey] = chips
+	if err := applyResourceSet(resourceSet, &resourceRequirements); err != nil {
+		return resourceRequirements, err
 	}
 
 	if storageBytes := resourceSet.GetEphemeralStorageBytes(); storageBytes > 0 {

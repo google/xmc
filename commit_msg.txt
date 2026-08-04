@@ -1,0 +1,11 @@
+refactor(execution_environments): standardize gke_test.go to use proto.Modify fixture pattern
+
+Address review comment from @janzak-dev on PR #336:
+- Introduced baseCPUWorkUnit fixture in TestGKEInjectOnJobSetCreation.
+- Standardized test cases to use proto.Modify for expressing concise delta modifications.
+- Extracted applyResourceSet helper in gke.go for clean, linear resource dispatching.
+
+Comment link: https://github.com/google/xmc/pull/336#discussion_r3712068277
+
+TAG=agy
+CONV=f4203c8a-7e5d-4a56-aa3a-a9ffc5e8b8db

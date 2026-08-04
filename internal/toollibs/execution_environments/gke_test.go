@@ -123,29 +123,19 @@ func TestGKEIsCompatibleWithWorkUnit(t *testing.T) {
 
 func TestGKEInjectOnJobSetCreation(t *testing.T) {
 	gke := &GKE{}
-	tests := []struct {
-		name       string
-		workUnit   *epb.WorkUnit
-		jobSet     *jobsetv1alpha2.JobSet
-		wantJobSet *jobsetv1alpha2.JobSet
-	}{
-		{
-			name: "cpu_resources",
-			workUnit: &epb.WorkUnit{
-				Executable: &epb.Executable{
-					Type: &epb.Executable_Jobset{
-						Jobset: &epb.JobSetExecutable{
-							Jobs: []*epb.KubernetesJob{
-								{
-									Name: "test-job",
-									Spec: &epb.ExecutableSpec{
-										Resources: &epb.ResourceSet{
-											Resources: &epb.ResourceSet_CpuResources{
-												CpuResources: &epb.CpuResources{
-													CpuMillicores: 1000,
-													MemoryBytes:   2048,
-												},
-											},
+	baseCPUWorkUnit := &epb.WorkUnit{
+		Executable: &epb.Executable{
+			Type: &epb.Executable_Jobset{
+				Jobset: &epb.JobSetExecutable{
+					Jobs: []*epb.KubernetesJob{
+						{
+							Name: "test-job",
+							Spec: &epb.ExecutableSpec{
+								Resources: &epb.ResourceSet{
+									Resources: &epb.ResourceSet_CpuResources{
+										CpuResources: &epb.CpuResources{
+											CpuMillicores: 1000,
+											MemoryBytes:   2048,
 										},
 									},
 								},
@@ -154,6 +144,18 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 					},
 				},
 			},
+		},
+	}
+
+	tests := []struct {
+		name       string
+		workUnit   *epb.WorkUnit
+		jobSet     *jobsetv1alpha2.JobSet
+		wantJobSet *jobsetv1alpha2.JobSet
+	}{
+		{
+			name:     "cpu_resources",
+			workUnit: baseCPUWorkUnit,
 			jobSet: &jobsetv1alpha2.JobSet{
 				Spec: jobsetv1alpha2.JobSetSpec{
 					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
@@ -207,30 +209,9 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 		},
 		{
 			name: "cpu_resources_with_limit",
-			workUnit: &epb.WorkUnit{
-				Executable: &epb.Executable{
-					Type: &epb.Executable_Jobset{
-						Jobset: &epb.JobSetExecutable{
-							Jobs: []*epb.KubernetesJob{
-								{
-									Name: "test-job",
-									Spec: &epb.ExecutableSpec{
-										Resources: &epb.ResourceSet{
-											Resources: &epb.ResourceSet_CpuResources{
-												CpuResources: &epb.CpuResources{
-													CpuMillicores:      1000,
-													MemoryBytes:        2048,
-													LimitCpuMillicores: 2000,
-												},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
+			workUnit: proto.Modify(baseCPUWorkUnit, func(wu *epb.WorkUnit) {
+				wu.Executable.GetJobset().Jobs[0].Spec.Resources.GetCpuResources().LimitCpuMillicores = 2000
+			}),
 			jobSet: &jobsetv1alpha2.JobSet{
 				Spec: jobsetv1alpha2.JobSetSpec{
 					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
@@ -2027,5 +2008,74 @@ func TestInjectOnJobSetCreation_GPUMultiNode_WithCoordinator(t *testing.T) {
 	}
 	if got.Spec.Coordinator.PodIndex != 2 {
 		t.Errorf("Expected Coordinator.PodIndex to be 2, got %d", got.Spec.Coordinator.PodIndex)
+	}
+}
+
+func TestApplyCPUResources(t *testing.T) {
+	tests := []struct {
+		name         string
+		cpuRes       *epb.CpuResources
+		reqs         *corev1.ResourceRequirements
+		wantErr      bool
+		wantCPU      string
+		wantLimitCPU string
+	}{
+		{
+			name:    "nil inputs",
+			cpuRes:  nil,
+			reqs:    nil,
+			wantErr: false,
+		},
+		{
+			name: "valid request and limit",
+			cpuRes: &epb.CpuResources{
+				CpuMillicores:      1000,
+				LimitCpuMillicores: 2000,
+				MemoryBytes:        1024,
+			},
+			reqs:         &corev1.ResourceRequirements{},
+			wantErr:      false,
+			wantCPU:      "1",
+			wantLimitCPU: "2",
+		},
+		{
+			name: "limit less than request error",
+			cpuRes: &epb.CpuResources{
+				CpuMillicores:      2000,
+				LimitCpuMillicores: 1000,
+				MemoryBytes:        1024,
+			},
+			reqs:    &corev1.ResourceRequirements{},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := applyCPUResources(tc.cpuRes, tc.reqs)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("applyCPUResources() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErr || tc.reqs == nil {
+				return
+			}
+			checkQuantityMatch(t, tc.reqs.Requests, corev1.ResourceCPU, tc.wantCPU)
+			checkQuantityMatch(t, tc.reqs.Limits, corev1.ResourceCPU, tc.wantLimitCPU)
+		})
+	}
+}
+
+func checkQuantityMatch(t *testing.T, list corev1.ResourceList, key corev1.ResourceName, want string) {
+	t.Helper()
+	if want == "" {
+		return
+	}
+	q, ok := list[key]
+	if !ok {
+		t.Errorf("%s missing, want %q", key, want)
+		return
+	}
+	if got := q.String(); got != want {
+		t.Errorf("%s = %q, want %q", key, got, want)
 	}
 }
