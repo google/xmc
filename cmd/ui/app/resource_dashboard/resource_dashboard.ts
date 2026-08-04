@@ -31,7 +31,6 @@ import {
   QueueResourceCapacity,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
-import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
 import { QueueJobsTable } from 'xmanager_cloud/ui/app/side_panel/contents/queue_jobs_table/queue_jobs_table';
 
 import {
