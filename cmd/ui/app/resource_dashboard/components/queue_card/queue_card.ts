@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -32,7 +31,6 @@ import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
   styleUrl: './queue_card.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    CommonModule,
     MatIconModule,
     MatTooltipModule,
     MaxWorkloadDisplayPipe,

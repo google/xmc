@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { CommonModule } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -61,7 +60,6 @@ import { ROD_TERM_TOOLTIPS } from './constants/rod_tooltips';
   styleUrl: './resource_dashboard.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    CommonModule,
     SubnavTabsComponent,
     SmartResourceFinderComponent,
     QueueListComponent,

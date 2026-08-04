@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, input, model, output } from '@angular/core';
 
 import { QueueCardComponent } from 'xmanager_cloud/ui/app/resource_dashboard/components/queue_card/queue_card';
@@ -24,7 +23,7 @@ import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
   templateUrl: './queue_list.ng.html',
   styleUrl: './queue_list.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, QueueCardComponent],
+  imports: [QueueCardComponent],
 })
 export class QueueListComponent {
   readonly queues = input<QueueOverview[]>([]);
