@@ -35,6 +35,7 @@ import (
 	clientgoscheme "golang/k8s_io/client_go/v/v0_23/kubernetes/scheme/scheme"
 	"golang/k8s_io/client_go/v/v0_23/rest/rest"
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
+	metricsserver "golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/metrics/server/server"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
@@ -165,8 +166,12 @@ func setupKueueManager(ctx context.Context, kueueCache *cache.KueueCache) {
 		return
 	}
 
+	metricsServerOptions := metricsserver.Options{
+		BindAddress: "0",
+	}
 	mgr, err := ctrl.NewManager(k8sConfig, ctrl.Options{
 		Scheme:         scheme,
+		Metrics:        metricsServerOptions,
 		LeaderElection: false,
 	})
 	if err != nil {
