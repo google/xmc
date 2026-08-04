@@ -26,7 +26,7 @@ import {
   setupObservableMatchers,
 } from 'xmanager_cloud/ui/app/testing/test';
 
-import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
+import { XMC_API_DOMAIN } from './constants';
 import { StatusMessageService } from './status_message_service';
 
 describe('StatusMessageService', () => {
@@ -58,9 +58,7 @@ describe('StatusMessageService', () => {
         state.service.listStatusMessages({ parent: 'experiments/1' }),
       );
 
-      const req = state.httpMock.expectOne(
-        `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/statusMessages`,
-      );
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/experiments/1/statusMessages`);
       expect(req.request.method).toBe('GET');
       req.flush(mockResponse);
 
