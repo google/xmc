@@ -49,6 +49,7 @@ export class QueueCardComponent {
   protected readonly termTooltips = ROD_TERM_TOOLTIPS;
   protected readonly capacities = computed(() => this.queue()?.queueCapacity ?? []);
 
+  // TODO: Restore actual health check logic once queue status/pending workloads are available in backend API.
   protected readonly isQueueHealthy = computed(() => true);
 
   protected onCardClick(): void {

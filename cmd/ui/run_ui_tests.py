@@ -34,8 +34,9 @@ def main():
     # Ensure node, npm, npx, and local node_modules/.bin are in PATH
     env = dict(os.environ)
     local_bin = os.path.join(user_home, ".local", "bin")
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     modules_bin = os.path.join(real_ui_dir, "node_modules", ".bin")
-    main_repo_modules_bin = "/usr/local/google/home/janzak/Documents/XMC/cmd/ui/node_modules/.bin"
+    main_repo_modules_bin = os.path.join(script_dir, "node_modules", ".bin")
     node_dir = os.path.join(user_home, ".nvm", "versions", "node")
     
     extra_paths = [modules_bin, main_repo_modules_bin, local_bin]
@@ -56,7 +57,7 @@ def main():
 
     target_dir = real_ui_dir
     if not os.path.exists(os.path.join(target_dir, "node_modules")):
-        main_repo_ui = "/usr/local/google/home/janzak/Documents/XMC/cmd/ui"
+        main_repo_ui = script_dir
         if os.path.exists(os.path.join(main_repo_ui, "node_modules")):
             target_dir = main_repo_ui
 

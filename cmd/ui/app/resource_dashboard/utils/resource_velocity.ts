@@ -60,6 +60,7 @@ export function getVelocityHours(period: string): number {
  * Calculate pending jobs count for a cluster queue.
  */
 export function getPendingJobsCount(queue: Partial<QueueOverview | QueueSecondaryData>): number {
+  // TODO: Implement pending jobs count calculation using QueueSecondaryData.
   return 0;
 }
 
@@ -67,6 +68,7 @@ export function getPendingJobsCount(queue: Partial<QueueOverview | QueueSecondar
  * Calculate resource velocity string for a cluster queue over a timeframe.
  */
 export function calculateResourceVelocity(queue: Partial<QueueOverview | QueueSecondaryData>, period: string): string {
+  // TODO: Implement resource velocity calculation using QueueSecondaryData.velocityMetrics.
   const hours = getVelocityHours(period);
   return `~0 GPUs/hr`;
 }
@@ -75,6 +77,7 @@ export function calculateResourceVelocity(queue: Partial<QueueOverview | QueueSe
  * Calculate job velocity string for a cluster queue over a timeframe.
  */
 export function calculateJobVelocity(queue: Partial<QueueOverview | QueueSecondaryData>, period: string): string {
+  // TODO: Implement job velocity calculation using QueueSecondaryData.velocityMetrics.
   return `0 jobs/hr`;
 }
 
@@ -82,5 +85,6 @@ export function calculateJobVelocity(queue: Partial<QueueOverview | QueueSeconda
  * Calculate pending resource requests display text for a cluster queue.
  */
 export function calculatePendingRequestsDisplay(queue: Partial<QueueOverview | QueueSecondaryData>): string {
+  // TODO: Implement pending requests display calculation.
   return '0';
 }
