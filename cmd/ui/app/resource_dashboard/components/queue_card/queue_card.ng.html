@@ -26,7 +26,7 @@
 >
   <div class="card-top-bar">
     <div class="queue-name-group">
-      <h3 class="queue-name queue-title">{{ queue().name }}</h3>
+      <h3 class="queue-name queue-title">{{ queue().queueName }}</h3>
       @let badgeInfo = queue() | queueStatusBadge;
       @if (badgeInfo) {
         <span
@@ -54,10 +54,10 @@
       </div>
 
       <div class="capacity-boxes-stack">
-        @for (flavor of flavors(); track flavor.name + (flavor.resourceName ?? '')) {
+        @for (cap of capacities(); track cap.resourceType) {
           <div class="capacity-box table-row">
             <div class="capacity-box-header">
-              <span class="flavor-main-name">{{ flavor.resourceName || flavor.name }}</span>
+              <span class="flavor-main-name">{{ cap.resourceType }}</span>
               <mat-icon
                 class="flavor-status-icon"
                 [class.flavor-check-icon]="isQueueHealthy()"
@@ -82,7 +82,7 @@
                   [class.green-text]="isQueueHealthy()"
                   [class.amber-text]="!isQueueHealthy()"
                 >
-                  {{ flavor | maxWorkloadDisplay }}
+                  {{ cap | maxWorkloadDisplay }}
                 </div>
               </div>
               <div class="stat-cell">
@@ -96,7 +96,7 @@
                   >
                 </div>
                 <div class="cell-value bold-metric dark-text">
-                  {{ flavor | freeTotalDisplay }}
+                  {{ cap | freeTotalDisplay }}
                 </div>
               </div>
             </div>
