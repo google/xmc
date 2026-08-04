@@ -39,7 +39,7 @@ jobs:
     # Use a service container for the Spanner Emulator
     services:
       spanner-emulator:
-        image: gcr.io/cloud-spanner-emulator/emulator:1.5.21
+        image: gcr.io/cloud-spanner-emulator/emulator:1.5.56
         ports:
           - 9010:9010
           - 9020:9020
