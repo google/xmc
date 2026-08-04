@@ -135,16 +135,17 @@ func (c *Client) deleteJobSet(ctx context.Context, target, namespace string, ope
 		return false, nil
 	}
 
-	res, err := c.getJobsetUIDByTarget(ctx, target, namespace)
+	aligned, err := c.preconditionsValidator.IsExecutionIDAligned(ctx, target, jobSetUnstructured)
 	if err != nil {
-		return false, fmt.Errorf("getJobsetUIDByTarget failed in deleteJobSet: %w", err)
+		logging.Warn(ctx, "Failed during execution ID alignment check", "error", err, "target", target)
+		return false, fmt.Errorf("failed during execution ID alignment check for %q: %w", target, err)
 	}
-	targetMatches, uid := res.IsAligned, res.UID
-	if !targetMatches {
+	if !aligned {
 		logging.Warn(ctx, "Jobset EID does not match target, skipping deletion")
 		return false, nil
 	}
 
+	uid := jobSetUnstructured.GetUID()
 	// Set the UID in the options, so we make sure we ONLY delete the Jobset for the current target
 	// and not any other Jobset that may have been created in the meantime.
 	deleteOptions := metav1.DeleteOptions{
