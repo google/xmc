@@ -40,12 +40,12 @@ func buildQueueOverviewFromClusterQueue(clusterQueue *kueuev1beta1.ClusterQueue,
 	totalUsedCapacityByResourceType := extractTotalResourceUsageByResourceType(clusterQueue.Status, rfMap)
 
 	// Step 2: Aggregate nominal quotas and borrowing limits across all flavors from Spec.
-	quotaAggregatorByResourceType, orderedResourceTypes := aggregateClusterQueueNominalAndBorrowingLimits(clusterQueue, rfMap)
+	aggregatedQuotas := aggregateClusterQueueNominalAndBorrowingLimits(clusterQueue, rfMap)
 
 	// Step 3: Compute free capacities and build proto messages.
 	var queueCapacities []*spb.QueueResourceCapacity
-	for _, resourceType := range orderedResourceTypes {
-		quotaAggregator := quotaAggregatorByResourceType[resourceType]
+	for _, resourceType := range aggregatedQuotas.orderedTypes {
+		quotaAggregator := aggregatedQuotas.aggregators[resourceType]
 		usedCapacity := totalUsedCapacityByResourceType[resourceType]
 		capacityProto := convertAggregatedQuotaToResourceCapacity(resourceType, quotaAggregator, usedCapacity)
 		queueCapacities = append(queueCapacities, capacityProto)
@@ -57,12 +57,19 @@ func buildQueueOverviewFromClusterQueue(clusterQueue *kueuev1beta1.ClusterQueue,
 	}
 }
 
+// aggregatedClusterQueueQuotas holds aggregated quotas per resource type and preserves insertion order.
+type aggregatedClusterQueueQuotas struct {
+	aggregators  map[string]*ResourceQuotaAggregator
+	orderedTypes []string
+}
+
 // aggregateClusterQueueNominalAndBorrowingLimits iterates over all resource groups and flavors in ClusterQueueSpec,
 // summing nominal quotas and borrowing limits for each distinct resource type across all flavors.
 // Generic accelerator names (e.g. "nvidia.com/gpu") are resolved to specific accelerator types (e.g. "nvidia-tesla-h100") using rfMap.
-func aggregateClusterQueueNominalAndBorrowingLimits(clusterQueue *kueuev1beta1.ClusterQueue, rfMap map[string]*kueuev1beta1.ResourceFlavor) (map[string]*ResourceQuotaAggregator, []string) {
-	quotaAggregatorByResourceType := make(map[string]*ResourceQuotaAggregator)
-	var orderedResourceTypes []string
+func aggregateClusterQueueNominalAndBorrowingLimits(clusterQueue *kueuev1beta1.ClusterQueue, rfMap map[string]*kueuev1beta1.ResourceFlavor) *aggregatedClusterQueueQuotas {
+	result := &aggregatedClusterQueueQuotas{
+		aggregators: make(map[string]*ResourceQuotaAggregator),
+	}
 
 	for _, resourceGroup := range clusterQueue.Spec.ResourceGroups {
 		for _, flavorQuota := range resourceGroup.Flavors {
@@ -71,15 +78,15 @@ func aggregateClusterQueueNominalAndBorrowingLimits(clusterQueue *kueuev1beta1.C
 				rawResourceType := string(resourceQuota.Name)
 				resolvedType := resolveResourceType(rawResourceType, flavorName, rfMap)
 
-				if _, exists := quotaAggregatorByResourceType[resolvedType]; !exists {
-					quotaAggregatorByResourceType[resolvedType] = &ResourceQuotaAggregator{}
-					orderedResourceTypes = append(orderedResourceTypes, resolvedType)
+				if _, exists := result.aggregators[resolvedType]; !exists {
+					result.aggregators[resolvedType] = &ResourceQuotaAggregator{}
+					result.orderedTypes = append(result.orderedTypes, resolvedType)
 				}
-				addFlavorResourceQuotaToAggregator(resourceQuota, quotaAggregatorByResourceType[resolvedType])
+				addFlavorResourceQuotaToAggregator(resourceQuota, result.aggregators[resolvedType])
 			}
 		}
 	}
-	return quotaAggregatorByResourceType, orderedResourceTypes
+	return result
 }
 
 // addFlavorResourceQuotaToAggregator parses a single flavor's ResourceQuota and adds its nominal quota and borrowing limit to the aggregator.
