@@ -136,12 +136,25 @@ func DisjunctionExp(qfv QueryFilterVisitor, el *fpb.ExpressionList) (filtervisit
 	return VisitDisjunction(qfv, exprs)
 }
 
-func VisitDisjunction(qfv QueryFilterVisitor, exprs []*fpb.Expression) (filtervisitor.PrimType, error) {
-	type groupEntry struct {
-		path   []string
-		exprs  []*fpb.Expression
-		values []string
+type groupEntry struct {
+	path   []string
+	exprs  []*fpb.Expression
+	values []string
+}
+
+func isExprOptimized(g *groupEntry, expr *fpb.Expression) bool {
+	if g == nil || len(g.exprs) < 2 {
+		return false
 	}
+	for _, optExpr := range g.exprs {
+		if optExpr == expr {
+			return true
+		}
+	}
+	return false
+}
+
+func VisitDisjunction(qfv QueryFilterVisitor, exprs []*fpb.Expression) (filtervisitor.PrimType, error) {
 	groups := make(map[string]*groupEntry)
 
 	for _, expr := range exprs {
@@ -169,9 +182,7 @@ func VisitDisjunction(qfv QueryFilterVisitor, exprs []*fpb.Expression) (filtervi
 		var key string
 		if len(path) > 0 {
 			key = strings.Join(path, ".")
-			if g, ok := groups[key]; ok && len(g.exprs) >= 2 {
-				isOptimized = true
-			}
+			isOptimized = isExprOptimized(groups[key], expr)
 		}
 
 		if !isOptimized {
