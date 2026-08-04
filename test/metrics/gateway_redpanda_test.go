@@ -22,11 +22,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/testcontainers/testcontainers-go/modules/redpanda"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -36,6 +38,35 @@ import (
 	ingestiongateway "xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
 	"xmanager_cloud/test/metrics/infra"
 )
+
+var (
+	sharedRedpanda *redpanda.Container
+	sharedBrokers  []string
+)
+
+func TestMain(m *testing.M) {
+	for _, arg := range os.Args {
+		if arg == "-test.short" || arg == "--test.short" {
+			os.Exit(m.Run())
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	rp, brokers, err := infra.StartRedpanda(ctx, nil)
+	if err != nil {
+		fmt.Printf("failed to start shared Redpanda container: %v\n", err)
+		os.Exit(1)
+	}
+	sharedRedpanda = rp
+	sharedBrokers = brokers
+
+	code := m.Run()
+
+	_ = rp.Terminate(context.Background())
+	os.Exit(code)
+}
 
 // createTestMetricRecord marshals a single Metric record into JSON payload for ingestion.
 func createTestMetricRecord(tb testing.TB, xid, workUnitID int64) []byte {
@@ -67,19 +98,11 @@ func TestGatewayRedpanda_EndToEndHappyPath(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	rpContainer, brokers, err := infra.StartRedpanda(ctx, nil)
-	if err != nil {
-		t.Fatalf("failed to start Redpanda container: %v", err)
-	}
-	defer func() {
-		_ = rpContainer.Terminate(context.Background())
-	}()
-
 	cfg := &ingestiongateway.Config{
-		RedpandaBrokers: brokers,
+		RedpandaBrokers: sharedBrokers,
 	}
 
 	producer, err := ingestiongateway.NewKafkaProducer(cfg, nil)
@@ -96,7 +119,7 @@ func TestGatewayRedpanda_EndToEndHappyPath(t *testing.T) {
 
 	// Create a dedicated consumer to consume published messages from Redpanda.
 	consumerOpts := []kgo.Opt{
-		kgo.SeedBrokers(brokers...),
+		kgo.SeedBrokers(sharedBrokers...),
 		kgo.ConsumeTopics(topicName),
 		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
 	}
@@ -167,33 +190,27 @@ func TestGatewayRedpanda_BrokerOutage(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	rpContainer, brokers, err := infra.StartRedpanda(ctx, nil)
-	if err != nil {
-		t.Fatalf("failed to start Redpanda container: %v", err)
-	}
-	defer func() {
-		_ = rpContainer.Terminate(context.Background())
-	}()
-
 	cfg := &ingestiongateway.Config{
-		RedpandaBrokers: brokers,
+		RedpandaBrokers: sharedBrokers,
 	}
 
-	producer, err := ingestiongateway.NewKafkaProducer(cfg, nil)
+	// Configure 0 retries so produce attempts fail fast during broker outage.
+	producer, err := ingestiongateway.NewKafkaProducer(cfg, nil, kgo.RecordRetries(0))
 	if err != nil {
 		t.Fatalf("failed to initialize producer: %v", err)
 	}
 	defer producer.Close()
 
+	topicName := fmt.Sprintf("xmc-metrics-outage-%d", time.Now().UnixNano())
 	adminClient := kadm.NewClient(producer)
-	if _, err := adminClient.CreateTopics(ctx, 1, 1, nil, "xmc-metrics"); err != nil {
-		t.Fatalf("failed to create topic xmc-metrics: %v", err)
+	if _, err := adminClient.CreateTopics(ctx, 1, 1, nil, topicName); err != nil {
+		t.Fatalf("failed to create topic %s: %v", topicName, err)
 	}
 
-	handler := ingestiongateway.NewMetricsIngestionHandler(producer, "xmc-metrics", nil)
+	handler := ingestiongateway.NewMetricsIngestionHandler(producer, topicName, nil)
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
@@ -207,14 +224,14 @@ func TestGatewayRedpanda_BrokerOutage(t *testing.T) {
 		t.Fatalf("expected HTTP status 202, got %d", resp.StatusCode)
 	}
 
-	if err := infra.PauseContainer(ctx, rpContainer); err != nil {
+	if err := infra.PauseContainer(ctx, sharedRedpanda); err != nil {
 		t.Fatalf("failed to pause Redpanda container: %v", err)
 	}
 	defer func() {
-		_ = infra.UnpauseContainer(context.Background(), rpContainer)
+		_ = infra.UnpauseContainer(context.Background(), sharedRedpanda)
 	}()
 
-	outageCtx, outageCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	outageCtx, outageCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer outageCancel()
 
 	outageReq, err := http.NewRequestWithContext(outageCtx, http.MethodPost, server.URL, bytes.NewReader(body))
@@ -227,8 +244,9 @@ func TestGatewayRedpanda_BrokerOutage(t *testing.T) {
 	outageResp, err := httpClient.Do(outageReq)
 	if err != nil {
 		if !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(err.Error(), "context deadline exceeded") {
-			t.Fatalf("request failed unexpectedly during broker outage: %v", err)
+			t.Fatalf("outage produce request failed unexpectedly: %v", err)
 		}
+		t.Logf("produce request timed out during broker outage: %v", err)
 	} else {
 		defer outageResp.Body.Close()
 		if outageResp.StatusCode != http.StatusServiceUnavailable && outageResp.StatusCode != http.StatusGatewayTimeout {
@@ -236,19 +254,23 @@ func TestGatewayRedpanda_BrokerOutage(t *testing.T) {
 		}
 	}
 
-	if err := infra.UnpauseContainer(ctx, rpContainer); err != nil {
+	if err := infra.UnpauseContainer(ctx, sharedRedpanda); err != nil {
 		t.Fatalf("failed to unpause Redpanda container: %v", err)
 	}
 
 	// Poll until Redpanda recovers TCP connectivity and handler accepts request.
 	var recResp *http.Response
+	var lastStatus int
 	recovered := false
 	for i := 0; i < 50; i++ {
 		recResp, err = http.Post(server.URL, "application/json", bytes.NewReader(body))
-		if err == nil && recResp.StatusCode == http.StatusAccepted {
-			_ = recResp.Body.Close()
-			recovered = true
-			break
+		if err == nil {
+			lastStatus = recResp.StatusCode
+			if recResp.StatusCode == http.StatusAccepted {
+				_ = recResp.Body.Close()
+				recovered = true
+				break
+			}
 		}
 		if recResp != nil {
 			_ = recResp.Body.Close()
@@ -257,7 +279,7 @@ func TestGatewayRedpanda_BrokerOutage(t *testing.T) {
 	}
 
 	if !recovered {
-		t.Fatalf("post-outage produce request failed to recover within deadline, last error: %v", err)
+		t.Fatalf("post-outage produce request failed to recover within deadline, last status: %d, last error: %v", lastStatus, err)
 	}
 }
 
@@ -267,18 +289,10 @@ func TestGatewayRedpanda_MurmurHash2Partitioning(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	rpContainer, brokers, err := infra.StartRedpanda(ctx, nil)
-	if err != nil {
-		t.Fatalf("failed to start Redpanda container: %v", err)
-	}
-	defer func() {
-		_ = rpContainer.Terminate(context.Background())
-	}()
-
-	clientOpts := []kgo.Opt{kgo.SeedBrokers(brokers...)}
+	clientOpts := []kgo.Opt{kgo.SeedBrokers(sharedBrokers...)}
 	client, err := kgo.NewClient(clientOpts...)
 	if err != nil {
 		t.Fatalf("failed to create kgo client: %v", err)
@@ -286,14 +300,14 @@ func TestGatewayRedpanda_MurmurHash2Partitioning(t *testing.T) {
 	defer client.Close()
 
 	adminClient := kadm.NewClient(client)
-	topicName := "xmc-partition-test"
+	topicName := fmt.Sprintf("xmc-partition-test-%d", time.Now().UnixNano())
 	_, err = adminClient.CreateTopics(ctx, 4, 1, nil, topicName)
 	if err != nil {
 		t.Fatalf("failed to create topic %s: %v", topicName, err)
 	}
 
 	cfg := &ingestiongateway.Config{
-		RedpandaBrokers: brokers,
+		RedpandaBrokers: sharedBrokers,
 	}
 
 	producer, err := ingestiongateway.NewKafkaProducer(cfg, nil)

@@ -135,12 +135,13 @@ func BuildProducerOptions(cfg *Config, gMetrics *GatewayMetrics) ([]kgo.Opt, err
 	return opts, nil
 }
 
-// NewKafkaProducer constructs a kgo.Client with default producer configuration.
-func NewKafkaProducer(cfg *Config, gMetrics *GatewayMetrics) (*kgo.Client, error) {
+// NewKafkaProducer constructs a kgo.Client with default producer configuration plus any optional extra kgo.Opt overrides.
+func NewKafkaProducer(cfg *Config, gMetrics *GatewayMetrics, extraOpts ...kgo.Opt) (*kgo.Client, error) {
 	opts, err := BuildProducerOptions(cfg, gMetrics)
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, extraOpts...)
 	return kgo.NewClient(opts...)
 }
 

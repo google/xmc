@@ -35,10 +35,10 @@ import (
 
 func main() {
 	google.Init()
-	ingestiongateway.RegisterFlags(flag.CommandLine)
+	flags := ingestiongateway.RegisterFlags(flag.CommandLine)
 	flag.Parse()
 
-	cfg, err := ingestiongateway.LoadConfig()
+	cfg, err := ingestiongateway.LoadConfig(flags)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
 		os.Exit(1)

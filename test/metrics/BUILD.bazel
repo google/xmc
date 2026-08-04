@@ -29,6 +29,7 @@ compat_go_test(
         "//api/protos/metrics:metrics_go_proto",
         "//cmd/ingestion_gateway/ingestiongateway",
         "//test/metrics/infra",
+        "@com_github_testcontainers_testcontainers_go_modules_redpanda//:redpanda",
         "@com_github_twmb_franz_go//pkg/kgo",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
         "@org_golang_google_protobuf//encoding/protojson",
