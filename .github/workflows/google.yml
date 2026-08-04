@@ -24,7 +24,7 @@ on:
 jobs:
   deploy-helloworld:
     name: 'Build and Deploy HelloWorld'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-24.04'
     environment: janzak-dev-test
 
     permissions:

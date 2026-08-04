@@ -28,7 +28,7 @@ permissions:
 jobs:
   python-lint:
     name: 'PEP 8 Lint (Ruff)'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-24.04'
     steps:
       - name: 'Checkout code'
         uses: 'actions/checkout@v4'
@@ -44,7 +44,7 @@ jobs:
 
   go-lint:
     name: 'Go Formatting (gofmt)'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-24.04'
     steps:
       - name: 'Checkout code'
         uses: 'actions/checkout@v4'
@@ -85,7 +85,7 @@ jobs:
 
   bazel-lint:
     name: 'Bazel Linting (Buildifier)'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-24.04'
     steps:
       - name: 'Checkout code'
         uses: 'actions/checkout@v4'
@@ -109,7 +109,7 @@ jobs:
 
   ui-lint:
     name: 'UI Lint & Format (Prettier & ESLint)'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-24.04'
     steps:
       - name: 'Checkout code'
         uses: 'actions/checkout@v4'
@@ -135,7 +135,7 @@ jobs:
 
   license-check:
     name: 'License Headers (addlicense)'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-24.04'
     steps:
       - name: 'Checkout code'
         uses: 'actions/checkout@v4'

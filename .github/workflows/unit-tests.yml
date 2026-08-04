@@ -34,7 +34,7 @@ permissions:
 jobs:
   run-backend-tests:
     name: 'Run Go & Backend Unit Tests'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-24.04'
     timeout-minutes: 30
 
     # Use a service container for the Spanner Emulator
@@ -144,7 +144,7 @@ jobs:
 
   run-ui-tests:
     name: 'Run Angular UI Unit Tests'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-24.04'
     timeout-minutes: 15
 
     steps:
@@ -169,7 +169,7 @@ jobs:
   run-tests:
     name: 'Run Unit Tests'
     needs: [run-backend-tests, run-ui-tests]
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-24.04'
     if: always()
     steps:
       - name: 'Verify All Unit Tests Passed'

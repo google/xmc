@@ -31,7 +31,7 @@ permissions:
 jobs:
   assign-reviewers:
     name: 'Assign One Reviewer from OWNERS'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-24.04'
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
     steps:
       - name: 'Checkout repository'
