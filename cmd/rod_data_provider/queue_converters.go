@@ -25,6 +25,12 @@ type ResourceQuotaAggregator struct {
 	borrowingLimit float64
 }
 
+// aggregatedClusterQueueQuotas holds aggregated quotas per resource type and preserves insertion order.
+type aggregatedClusterQueueQuotas struct {
+	aggregators  map[string]*ResourceQuotaAggregator
+	orderedTypes []string
+}
+
 // buildQueueOverviewFromClusterQueue transforms a Kueue ClusterQueue CRD into a QueueOverview proto message.
 // It resolves specific accelerator names (e.g. "nvidia-tesla-h100" or "nvidia-l4") using the provided ResourceFlavor map.
 // It executes a clear 3-step pipeline:
@@ -55,12 +61,6 @@ func buildQueueOverviewFromClusterQueue(clusterQueue *kueuev1beta1.ClusterQueue,
 		QueueName:     clusterQueue.Name,
 		QueueCapacity: queueCapacities,
 	}
-}
-
-// aggregatedClusterQueueQuotas holds aggregated quotas per resource type and preserves insertion order.
-type aggregatedClusterQueueQuotas struct {
-	aggregators  map[string]*ResourceQuotaAggregator
-	orderedTypes []string
 }
 
 // aggregateClusterQueueNominalAndBorrowingLimits iterates over all resource groups and flavors in ClusterQueueSpec,
