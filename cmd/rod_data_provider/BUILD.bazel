@@ -24,6 +24,7 @@ compat_go_library(
         "config.go",
         "kueue_resource_extractor.go",
         "main.go",
+        "queue_converters.go",
         "queue_matcher.go",
         "server.go",
     ],
@@ -36,6 +37,7 @@ compat_go_library(
         "//pkg/auth/oauth2",
         "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
         "@io_k8s_apimachinery//pkg/api/resource",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//credentials/insecure:go_default_library",
@@ -78,5 +80,22 @@ compat_go_test(
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/resource",
         "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
+    ],
+)
+
+compat_go_test(
+    name = "queue_converters_test",
+    srcs = [
+        "queue_converters_test.go",
+    ],
+    embed = [":rod_data_provider_lib"],
+    deps = [
+        "//api/protos/rod",
+        "@com_github_google_go_cmp//cmp",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/resource",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )
