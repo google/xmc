@@ -22,7 +22,7 @@ import {
   QueueJobListResponse,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
-import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
+import { XMC_API_DOMAIN } from './constants';
 
 /**
  * Angular injectable data service client for fetching Resource Observability Dashboard (ROD)
@@ -39,7 +39,7 @@ export class ResourceService {
    */
   getClusterQueues(): Observable<GetFittingQueuesResponse> {
     return this.http
-      .get<GetFittingQueuesResponse>(`${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues`, {
+      .get<GetFittingQueuesResponse>(`${XMC_API_DOMAIN}/clusterqueues`, {
         withCredentials: true,
       })
       .pipe(

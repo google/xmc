@@ -24,7 +24,7 @@ import {
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
-import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
+import { XMC_API_DOMAIN } from './constants';
 import { ResourceService } from './resource_service';
 
 describe('ResourceService', () => {
@@ -66,7 +66,7 @@ describe('ResourceService', () => {
         state.service.getClusterQueues(),
       );
 
-      const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues`);
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/clusterqueues`);
       expect(req.request.method).toBe('GET');
       req.flush(mockResponse);
 
@@ -82,7 +82,7 @@ describe('ResourceService', () => {
         state.service.getClusterQueues(),
       );
 
-      const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues`);
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/clusterqueues`);
       req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
 
       const response = await responsePromise;
