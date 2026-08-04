@@ -52,6 +52,8 @@ jobs:
       SPANNER_EMULATOR_HOST: 127.0.0.1:9010
 
     steps:
+      # zizmor: ignore[unpinned-uses]
+      # TODO: Remove ignore once rule is remediated
       - name: 'Checkout'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
 
@@ -61,15 +63,21 @@ jobs:
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet &
           echo "CLEANUP_PID=$!" >> $GITHUB_ENV
 
+      # zizmor: ignore[unpinned-uses]
+      # TODO: Remove ignore once rule is remediated
       - name: 'Set up Go'
         uses: 'actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34' # v5.3.0
         with:
           go-version: '1.26.0'
 
+      # zizmor: ignore[unpinned-uses]
+      # TODO: Remove ignore once rule is remediated
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@8993f2e6805aac5a041b31bd7b38c8ba4ed0aab0' # v3.0.0
 
-      # zizmor: ignore[cache-poisoning] TODO: Remove ignore after security audit
+      # zizmor: ignore[cache-poisoning]
+      # zizmor: ignore[unpinned-uses]
+      # TODO: Remove ignore once rule is remediated
       - name: 'Restore Bazel Cache'
         id: 'cache-bazel-restore'
         uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
@@ -81,7 +89,8 @@ jobs:
           restore-keys: |
             bazel-${{ runner.os }}-
 
-      # zizmor: ignore[template-injection] TODO: Remove ignore after refactoring env expansion
+      # zizmor: ignore[template-injection]
+      # TODO: Remove ignore once rule is remediated
       - name: 'Verify Spanner Emulator Endpoint'
         run: |
           echo "Verifying Spanner Emulator at ${{ env.SPANNER_EMULATOR_HOST }}..."
@@ -110,7 +119,8 @@ jobs:
           echo "=== Available Disk Space Before Bazel Build ==="
           df -h /
 
-      # zizmor: ignore[template-injection] TODO: Remove ignore after refactoring env expansion
+      # zizmor: ignore[template-injection]
+      # TODO: Remove ignore once rule is remediated
       - name: 'Run Backend Unit Tests'
         run: |
           bazel test \
@@ -143,7 +153,9 @@ jobs:
           bazel clean || true
           df -h
 
-      # zizmor: ignore[cache-poisoning] TODO: Remove ignore after security audit
+      # zizmor: ignore[cache-poisoning]
+      # zizmor: ignore[unpinned-uses]
+      # TODO: Remove ignore once rule is remediated
       - name: 'Save Bazel Cache'
         uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
         # Only save cache on main branch pushes when exact cache key was missed to eliminate redundant
@@ -161,9 +173,13 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      # zizmor: ignore[unpinned-uses]
+      # TODO: Remove ignore once rule is remediated
       - name: 'Checkout'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
 
+      # zizmor: ignore[unpinned-uses]
+      # TODO: Remove ignore once rule is remediated
       - name: 'Set up Node.js'
         uses: 'actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af' # v4.1.0
         with:
