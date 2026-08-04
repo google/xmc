@@ -25,7 +25,7 @@ import {
 import { ARTIFACT_LIST } from '../common/mock_data';
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
 import { ArtifactService } from './artifact_service';
-import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
+import { XMC_API_DOMAIN } from './constants';
 
 describe('ArtifactService Service', () => {
   beforeAll(setupObservableMatchers);
@@ -63,7 +63,7 @@ describe('ArtifactService Service', () => {
       const responsePromise = firstValueFrom(state.service.listArtifacts(request));
 
       const req = state.httpMock.expectOne(
-        `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/artifacts:search?pageSize=950&filter=foo&orderBy=bar`,
+        `${XMC_API_DOMAIN}/experiments/1/artifacts:search?pageSize=950&filter=foo&orderBy=bar`,
       );
       expect(req.request.method).toBe('GET');
       expect(req.request.params.get('pageSize')).toBe('950');
@@ -92,7 +92,7 @@ describe('ArtifactService Service', () => {
       const responsePromise = firstValueFrom(state.service.listArtifacts(request));
 
       const req = state.httpMock.expectOne(
-        `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/artifacts:search?pageSize=950&filter=foo&orderBy=priority`,
+        `${XMC_API_DOMAIN}/experiments/1/artifacts:search?pageSize=950&filter=foo&orderBy=priority`,
       );
       expect(req.request.method).toBe('GET');
       expect(req.request.params.get('pageSize')).toBe('950');

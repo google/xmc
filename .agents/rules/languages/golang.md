@@ -30,7 +30,18 @@ This document defines coding standards and conventions for Go development across
 ## 6. Go Dependencies / Bazel
 - Always inspect proto package `BUILD.bazel` to verify exact `go_proto_library` target name (typically ending in `_go_proto`) before adding Bazel dependencies.
 
-## 9. Context Safety in `defer` Cleanups & Error Branches
+## 7. Go Map Safety, Mutability & Pointer Isolation
+- **Map Pointer Isolation**: NEVER assign the same map reference to multiple struct fields or nested objects (e.g., `JobTemplateSpec.ObjectMeta.Labels` and `PodTemplateSpec.ObjectMeta.Labels`). Construct a shallow copy for each sub-struct:
+  ```go
+  podLabels := make(map[string]string, len(labels))
+  for k, v := range labels {
+      podLabels[k] = v
+  }
+  ```
+- **Pre-allocating Map Capacity**: Specify initial capacity `make(map[K]V, capacity)` whenever map entry counts are known to prevent runtime re-allocations.
+- **Deterministic Map Iteration**: Map iteration in Go is non-deterministic. Always sort slice outputs derived from map keys prior to serialization or return.
+
+## 8. Context Safety in `defer` Cleanups & Error Branches
 - **Fresh Cleanup Context**: Deferred cleanup functions (`Teardown`, `Close`, container termination) MUST NOT pass a parent context (`ctx`) that might already be canceled or timed out. Wrap the context creation and cleanup call inside a deferred closure so the timeout begins when cleanup actually starts:
   ```go
   defer func() {
@@ -40,7 +51,7 @@ This document defines coding standards and conventions for Go development across
   }()
   ```
 
-## 10. Integration Testing & Testcontainers Best Practices
+## 9. Integration Testing & Testcontainers Best Practices
 - **Host File Mount Permissions**: Call `os.Chmod(path, 0644)` on temporary host files mounted into Docker containers so non-root container users (e.g. `clickhouse`) have read access.
 - **Shared Container Networks**: Multi-container integration tests requiring inter-service resolution MUST create and attach a shared bridge network (`testcontainers.NewDockerNetwork(ctx, ...)`).
 - **Bazel Runfiles & Local Tag**: Integration tests reading repo files MUST declare `data` dependencies in `BUILD.bazel`, resolve runfiles using the official `bazel.Runfile(path)` helper from `github.com/bazelbuild/rules_go/go/tools/bazel` (or `os.Getenv("TEST_SRCDIR")`), and set `tags = ["local"]`.

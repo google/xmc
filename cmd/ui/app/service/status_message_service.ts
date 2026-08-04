@@ -20,7 +20,7 @@ import {
   ListStatusMessagesResponse,
 } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
-import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
+import { XMC_API_DOMAIN } from './constants';
 
 /**
  * Service to fetch status messages.
@@ -46,9 +46,9 @@ export class StatusMessageService {
       params = params.set('orderBy', orderBy);
     }
 
-    return this.http.get<ListStatusMessagesResponse>(
-      `${EXPERIMENT_STATE_SERVER_DOMAIN}/${parent}/statusMessages`,
-      { params, withCredentials: true },
-    );
+    return this.http.get<ListStatusMessagesResponse>(`${XMC_API_DOMAIN}/${parent}/statusMessages`, {
+      params,
+      withCredentials: true,
+    });
   }
 }
