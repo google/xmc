@@ -15,10 +15,11 @@
 import 'jasmine';
 
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
+import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
 import { ResourceService } from './resource_service';
 import { ClusterQueueListResponse, QueueJobListResponse } from './resource_types';
 
@@ -32,31 +33,56 @@ describe('ResourceService', () => {
 
     return {
       service: get(ResourceService),
+      httpMock: get(HttpTestingController),
     };
   }, beforeEach);
 
+  afterEach(() => {
+    state.httpMock.verify();
+  });
+
   describe('getClusterQueues', () => {
-    it('should return cluster queues dummy data', async () => {
-      const response: ClusterQueueListResponse = await firstValueFrom(
+    it('should fetch cluster queues from backend and map capacities to flavors', async () => {
+      const mockResponse = {
+        queues: [
+          {
+            queueName: 'gpu-cluster-queue',
+            queueCapacity: [
+              {
+                resourceType: 'nvidia-tesla-h100',
+                totalCapacity: 64,
+                freeCapacity: 16,
+              },
+            ],
+          },
+        ],
+      };
+
+      const responsePromise: Promise<ClusterQueueListResponse> = firstValueFrom(
         state.service.getClusterQueues(),
       );
+
+      const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/queues/fitting`);
+      expect(req.request.method).toBe('POST');
+      req.flush(mockResponse);
+
+      const response = await responsePromise;
       expect(response.clusterQueues.length).toBe(1);
       expect(response.clusterQueues[0].name).toBe('gpu-cluster-queue');
+      expect(response.clusterQueues[0].flavors.length).toBe(1);
+      expect(response.clusterQueues[0].flavors[0].name).toBe('nvidia-tesla-h100');
+      expect(response.clusterQueues[0].flavors[0].nominalQuota).toBe('64');
+      expect(response.clusterQueues[0].flavors[0].freeCapacity).toBe('16');
+      expect(response.clusterQueues[0].flavors[0].inUse).toBe('48');
     });
   });
 
   describe('getQueueJobs', () => {
-    it('should return queue jobs dummy data', async () => {
+    it('should return empty queue jobs list', async () => {
       const response: QueueJobListResponse = await firstValueFrom(
         state.service.getQueueJobs('gpu-cluster-queue'),
       );
-      expect(response.jobs.length).toBe(2);
-      expect(response.jobs[0].jobName).toBe('xmc-operation-53296-1');
-      expect(response.jobs[0].user).toBe('example@example.com');
-    });
-
-    it('should default to gpu-cluster-queue when queueName is omitted', async () => {
-      const response: QueueJobListResponse = await firstValueFrom(state.service.getQueueJobs());
+      expect(response.jobs.length).toBe(0);
       expect(response.queueName).toBe('gpu-cluster-queue');
     });
   });
