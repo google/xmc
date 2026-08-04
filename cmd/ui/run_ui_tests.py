@@ -31,44 +31,28 @@ def main():
     except Exception:
         user_home = os.path.expanduser("~")
 
-    # Ensure node, npm, npx, and local node_modules/.bin are in PATH
+    # Ensure ~/.local/bin is in PATH if npx/npm/node are installed there
     env = dict(os.environ)
     local_bin = os.path.join(user_home, ".local", "bin")
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    modules_bin = os.path.join(real_ui_dir, "node_modules", ".bin")
-    main_repo_modules_bin = os.path.join(script_dir, "node_modules", ".bin")
-    node_dir = os.path.join(user_home, ".nvm", "versions", "node")
-    
-    extra_paths = [modules_bin, main_repo_modules_bin, local_bin]
-    if os.path.exists(node_dir):
-        versions = sorted(os.listdir(node_dir))
-        if versions:
-            extra_paths.append(os.path.join(node_dir, versions[-1], "bin"))
-
     current_path = env.get("PATH", "")
-    env["PATH"] = os.pathsep.join(extra_paths + ([current_path] if current_path else []))
+    if local_bin not in current_path.split(os.pathsep):
+        env["PATH"] = f"{local_bin}{os.pathsep}{current_path}" if current_path else local_bin
 
     # Check if NVM exists in the user's real home and source it
     nvm_sh = os.path.join(user_home, ".nvm", "nvm.sh")
     if os.path.exists(nvm_sh):
-        cmd = f"source {nvm_sh} && ng test --watch=false"
+        cmd = f"source {nvm_sh} && npx ng test --watch=false"
     else:
-        cmd = "ng test --watch=false"
+        cmd = "npx ng test --watch=false"
 
-    target_dir = real_ui_dir
-    if not os.path.exists(os.path.join(target_dir, "node_modules")):
-        main_repo_ui = script_dir
-        if os.path.exists(os.path.join(main_repo_ui, "node_modules")):
-            target_dir = main_repo_ui
-
-    print(f"Executing Angular tests in physical workspace: {target_dir}")
+    print(f"Executing Angular tests in physical workspace: {real_ui_dir}")
 
     # Run the command with bash so we can source nvm
     res = subprocess.run(
         cmd,
         shell=True,
         executable="/bin/bash",
-        cwd=target_dir,
+        cwd=real_ui_dir,
         env=env,
         check=False,
     )
