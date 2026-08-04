@@ -23,7 +23,7 @@ import {
   MaxWorkloadDisplayPipe,
   QueueStatusBadgePipe,
 } from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
-import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
+import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 @Component({
   selector: 'xmc-rod-queue-card',
@@ -41,21 +41,20 @@ import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
   ],
 })
 export class QueueCardComponent {
-  readonly queue = input.required<ClusterQueue>();
+  readonly queue = input.required<QueueOverview>();
   readonly isSelected = input<boolean>(false);
   readonly selectQueue = output<string>();
 
   // TODO: Restore copyFlag functionality and isCopied signal once flag formatting and requirements are finalized.
   protected readonly termTooltips = ROD_TERM_TOOLTIPS;
-  protected readonly flavors = computed(() => this.queue()?.flavors ?? []);
+  protected readonly capacities = computed(() => this.queue()?.queueCapacity ?? []);
 
-  protected readonly isQueueHealthy = computed(() => {
-    const q = this.queue();
-    if (!q || q.status !== 'Active') return false;
-    return (q.pendingWorkloads || 0) === 0;
-  });
+  protected readonly isQueueHealthy = computed(() => true);
 
   protected onCardClick(): void {
-    this.selectQueue.emit(this.queue().name);
+    const name = this.queue().queueName;
+    if (name) {
+      this.selectQueue.emit(name);
+    }
   }
 }

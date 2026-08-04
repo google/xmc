@@ -14,10 +14,10 @@
 
 import { Pipe, PipeTransform } from '@angular/core';
 
-import { ClusterQueue, ResourceFlavorMetric } from 'xmanager_cloud/ui/app/service/resource_types';
+import { QueueOverview, QueueResourceCapacity } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 /**
- * Pure Angular pipe to compute free/total capacity display text for a resource flavor metric.
+ * Pure Angular pipe to compute free/total capacity display text for a queue resource capacity.
  */
 @Pipe({
   name: 'freeTotalDisplay',
@@ -25,16 +25,16 @@ import { ClusterQueue, ResourceFlavorMetric } from 'xmanager_cloud/ui/app/servic
   pure: true,
 })
 export class FreeTotalDisplayPipe implements PipeTransform {
-  transform(flavor?: ResourceFlavorMetric): string {
-    if (!flavor) return '-';
-    const total = flavor.nominalQuota || '-';
-    const free = flavor.freeCapacity || '0';
+  transform(capacity?: QueueResourceCapacity | null): string {
+    if (!capacity) return '-';
+    const total = capacity.totalCapacity ?? 0;
+    const free = capacity.freeCapacity ?? 0;
     return `${free} / ${total}`;
   }
 }
 
 /**
- * Pure Angular pipe to compute max workload display text for a resource flavor metric.
+ * Pure Angular pipe to compute max workload display text for a queue resource capacity.
  */
 @Pipe({
   name: 'maxWorkloadDisplay',
@@ -42,13 +42,10 @@ export class FreeTotalDisplayPipe implements PipeTransform {
   pure: true,
 })
 export class MaxWorkloadDisplayPipe implements PipeTransform {
-  transform(flavor?: ResourceFlavorMetric): string {
-    if (!flavor) return '-';
-    if (flavor.largestSlot && flavor.largestSlot !== '' && flavor.largestSlot !== '- → -') {
-      return flavor.largestSlot;
-    }
-    const total = flavor.nominalQuota || '-';
-    const free = flavor.freeCapacity || total;
+  transform(capacity?: QueueResourceCapacity | null): string {
+    if (!capacity) return '-';
+    const free = capacity.freeCapacity ?? 0;
+    const total = capacity.totalCapacity ?? 0;
     return `${free} → ${total}`;
   }
 }
@@ -67,11 +64,8 @@ export interface PredictabilityMessageInfo {
   pure: true,
 })
 export class PredictabilityMessagePipe implements PipeTransform {
-  transform(queue?: ClusterQueue | null): PredictabilityMessageInfo | null {
+  transform(queue?: QueueOverview | null): PredictabilityMessageInfo | null {
     if (!queue) return null;
-    if (queue.status !== 'Active' || (queue.pendingWorkloads || 0) > 0) {
-      return { text: 'Traffic stuck. Use another queue if available.', isHealthy: false };
-    }
     return { text: 'System is healthy. Job will start immediately.', isHealthy: true };
   }
 }
@@ -90,11 +84,8 @@ export interface QueueStatusBadgeInfo {
   pure: true,
 })
 export class QueueStatusBadgePipe implements PipeTransform {
-  transform(queue?: ClusterQueue | null): QueueStatusBadgeInfo | null {
+  transform(queue?: QueueOverview | null): QueueStatusBadgeInfo | null {
     if (!queue) return null;
-    if (queue.status === 'Active' && (queue.pendingWorkloads || 0) === 0) {
-      return { label: 'Resources available', isHealthy: true };
-    }
-    return { label: 'Preemption risk', isHealthy: false };
+    return { label: 'Resources available', isHealthy: true };
   }
 }

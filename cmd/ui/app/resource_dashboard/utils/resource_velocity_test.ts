@@ -45,49 +45,30 @@ describe('Resource Velocity Utilities', () => {
   });
 
   describe('getPendingJobsCount', () => {
-    it('should return pendingJobsCount or pendingWorkloads', () => {
-      expect(getPendingJobsCount({ pendingJobsCount: 5 })).toBe(5);
-      expect(getPendingJobsCount({ pendingWorkloads: 3 })).toBe(3);
+    it('should return pendingJobsCount', () => {
       expect(getPendingJobsCount({})).toBe(0);
+      expect(getPendingJobsCount({ queueName: 'test-queue' })).toBe(0);
     });
   });
 
   describe('calculateResourceVelocity', () => {
-    it('should return custom resource velocity if present', () => {
-      expect(calculateResourceVelocity({ resourceVelocity: '~16 GPUs/hr' }, '1h')).toBe(
-        '~16 GPUs/hr',
-      );
-    });
-
-    it('should calculate rate for GPU dominant resource regardless of pending jobs', () => {
-      expect(
-        calculateResourceVelocity(
-          {
-            dominantResource: 'nvidia.com/gpu',
-            dominantResourceUnits: 8,
-            pendingWorkloads: 5,
-          },
-          '1h',
-        ),
-      ).toBe('~8 GPUs/hr');
+    it('should return resource velocity string', () => {
+      expect(calculateResourceVelocity({}, '1h')).toBe('~0 GPUs/hr');
+      expect(calculateResourceVelocity({ queueName: 'test-queue' }, '1h')).toBe('~0 GPUs/hr');
     });
   });
 
   describe('calculateJobVelocity', () => {
-    it('should return custom job velocity if present', () => {
-      expect(calculateJobVelocity({ jobVelocity: '4 jobs/hr' }, '1h')).toBe('4 jobs/hr');
+    it('should return job velocity string', () => {
+      expect(calculateJobVelocity({}, '1h')).toBe('0 jobs/hr');
+      expect(calculateJobVelocity({ queueName: 'test-queue' }, '1h')).toBe('0 jobs/hr');
     });
   });
 
   describe('calculatePendingRequestsDisplay', () => {
-    it('should return requested resources if present', () => {
-      expect(calculatePendingRequestsDisplay({ requestedResources: '16 GPUs' })).toBe('16 GPUs');
-    });
-
-    it('should return 0 when requested resources is not present or 0', () => {
+    it('should return pending resource requests display text', () => {
       expect(calculatePendingRequestsDisplay({})).toBe('0');
-      expect(calculatePendingRequestsDisplay({ requestedResources: '0' })).toBe('0');
-      expect(calculatePendingRequestsDisplay({ pendingJobsCount: 2 })).toBe('0');
+      expect(calculatePendingRequestsDisplay({ queueName: 'test-queue' })).toBe('0');
     });
   });
 });

@@ -14,47 +14,57 @@
 
 import 'jasmine';
 
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
+import { GetFittingQueuesResponse, QueueJobListResponse } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
 import { ResourceService } from './resource_service';
-import { ClusterQueueListResponse, QueueJobListResponse } from './resource_types';
 
 describe('ResourceService', () => {
   beforeAll(setupObservableMatchers);
 
   const state = cleanState(() => {
     setupModule({
-      providers: [ResourceService],
+      providers: [provideHttpClient(), provideHttpClientTesting(), ResourceService],
     });
 
     return {
       service: get(ResourceService),
+      httpMock: get(HttpTestingController),
     };
   }, beforeEach);
 
+  afterEach(() => {
+    state.httpMock.verify();
+  });
+
   describe('getClusterQueues', () => {
-    it('should return cluster queues dummy data', async () => {
-      const response: ClusterQueueListResponse = await firstValueFrom(
-        state.service.getClusterQueues(),
-      );
-      expect(response.clusterQueues.length).toBe(1);
-      expect(response.clusterQueues[0].name).toBe('gpu-cluster-queue');
+    it('should return cluster queues matching GetFittingQueuesResponse proto shape', async () => {
+      const response = await firstValueFrom(state.service.getClusterQueues());
+      expect(response.queues?.length).toBe(1);
+      expect(response.queues?.[0].queueName).toBe('gpu-cluster-queue');
+      expect(response.queues?.[0].queueCapacity?.[0].resourceType).toBe('nvidia.com/gpu');
+      expect(response.queues?.[0].queueCapacity?.[0].totalCapacity).toBe(64);
     });
   });
 
   describe('getQueueJobs', () => {
-    it('should return queue jobs dummy data', async () => {
+    it('should return mock queue jobs list for given queue', async () => {
       const response: QueueJobListResponse = await firstValueFrom(
-        state.service.getQueueJobs('gpu-cluster-queue'),
+        state.service.getQueueJobs('custom-queue'),
       );
       expect(response.jobs.length).toBe(2);
-      expect(response.jobs[0].jobName).toBe('xmc-operation-53296-1');
-      expect(response.jobs[0].user).toBe('example@example.com');
+      expect(response.queueName).toBe('custom-queue');
+      expect(response.jobs[0].queueName).toBe('custom-queue');
     });
 
-    it('should default to gpu-cluster-queue when queueName is omitted', async () => {
-      const response: QueueJobListResponse = await firstValueFrom(state.service.getQueueJobs());
+    it('should fallback to default queueName when parameter is omitted', async () => {
+      const response: QueueJobListResponse = await firstValueFrom(
+        state.service.getQueueJobs(),
+      );
       expect(response.queueName).toBe('gpu-cluster-queue');
     });
   });
