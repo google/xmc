@@ -11,12 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package workunit_test
 
 import (
 	"context"
 	"errors"
 	"testing"
+	"xmanager_cloud/internal/storage/spanner"
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/proto/proto"
@@ -31,13 +32,13 @@ import (
 func TestUpdateWorkUnit(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	s, _ := NewStorage(essClient)
+	s, _ := spanner.NewStorage(essClient)
 
 	// 1. Create an Experiment and WorkUnit.
 	xid := int64(123)
 	wid := int64(1)
-	createBlankExperiment(ctx, t, s, xid)
-	createdWu := createBlankWorkUnit(ctx, t, s, xid, wid)
+	spanner.CreateBlankExperiment(ctx, t, s, xid)
+	createdWu := spanner.CreateBlankWorkUnit(ctx, t, s, xid, wid)
 
 	// 2. Update the WorkUnit.
 	update := &storage.WorkUnitUpdate{
@@ -85,12 +86,12 @@ func TestUpdateWorkUnit(t *testing.T) {
 func TestUpdateWorkUnit_ImmutableField(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	s, _ := NewStorage(essClient)
+	s, _ := spanner.NewStorage(essClient)
 
 	xid := int64(123)
 	wid := int64(1)
-	createBlankExperiment(ctx, t, s, xid)
-	createBlankWorkUnit(ctx, t, s, xid, wid)
+	spanner.CreateBlankExperiment(ctx, t, s, xid)
+	spanner.CreateBlankWorkUnit(ctx, t, s, xid, wid)
 
 	update := &storage.WorkUnitUpdate{
 		XID: xid,
@@ -109,7 +110,7 @@ func TestUpdateWorkUnit_ImmutableField(t *testing.T) {
 func TestUpdateWorkUnit_NotFound(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	s, _ := NewStorage(essClient)
+	s, _ := spanner.NewStorage(essClient)
 
 	update := &storage.WorkUnitUpdate{
 		XID: 123456789,
@@ -128,12 +129,12 @@ func TestUpdateWorkUnit_NotFound(t *testing.T) {
 func TestUpdateWorkUnit_EmptyMask(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	s, _ := NewStorage(essClient)
+	s, _ := spanner.NewStorage(essClient)
 
 	xid := int64(123)
 	wid := int64(1)
-	createBlankExperiment(ctx, t, s, xid)
-	createBlankWorkUnit(ctx, t, s, xid, wid)
+	spanner.CreateBlankExperiment(ctx, t, s, xid)
+	spanner.CreateBlankWorkUnit(ctx, t, s, xid, wid)
 
 	update := &storage.WorkUnitUpdate{
 		XID:        xid,

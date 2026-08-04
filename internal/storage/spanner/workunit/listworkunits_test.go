@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package workunit_test
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"sort"
 	"testing"
 	"time"
+	"xmanager_cloud/internal/storage/spanner"
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
@@ -32,17 +33,17 @@ import (
 func TestListWorkUnits(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// Create one experiment and some work units for it.
 	xid := int64(1)
-	exp := createBlankExperiment(ctx, t, storage, xid)
+	exp := spanner.CreateBlankExperiment(ctx, t, storage, xid)
 	var workUnits []*essmsgpb.WorkUnit
 	for i := 0; i < 5; i++ {
-		wu := createBlankWorkUnit(ctx, t, storage, xid, int64(i+1))
+		wu := spanner.CreateBlankWorkUnit(ctx, t, storage, xid, int64(i+1))
 		workUnits = append(workUnits, wu)
 	}
 
@@ -74,16 +75,16 @@ func TestListWorkUnits(t *testing.T) {
 func TestListWorkUnits_Pagination(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// Create one experiment and some work units for it.
 	xid := int64(7)
-	exp := createBlankExperiment(ctx, t, storage, xid)
+	exp := spanner.CreateBlankExperiment(ctx, t, storage, xid)
 	for i := 0; i < 5; i++ {
-		createBlankWorkUnit(ctx, t, storage, xid, int64(i+1))
+		spanner.CreateBlankWorkUnit(ctx, t, storage, xid, int64(i+1))
 	}
 
 	tests := []struct {
@@ -126,16 +127,16 @@ func TestListWorkUnits_Pagination(t *testing.T) {
 func TestListWorkUnits_Filter(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// Create one experiment and some work units for it.
 	xid := int64(3)
-	exp := createBlankExperiment(ctx, t, storage, xid)
-	createBlankWorkUnit(ctx, t, storage, xid, 1)
-	createBlankWorkUnitWithState(ctx, t, storage, xid, 2, essmsgpb.WorkUnitStatus_STOPPED)
+	exp := spanner.CreateBlankExperiment(ctx, t, storage, xid)
+	spanner.CreateBlankWorkUnit(ctx, t, storage, xid, 1)
+	spanner.CreateBlankWorkUnitWithState(ctx, t, storage, xid, 2, essmsgpb.WorkUnitStatus_STOPPED)
 
 	tests := []struct {
 		name     string
@@ -176,16 +177,16 @@ func TestListWorkUnits_Filter(t *testing.T) {
 func TestListWorkUnits_OrderBy(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// Create one experiment and some work units for it.
 	xid := int64(4)
-	exp := createBlankExperiment(ctx, t, storage, xid)
+	exp := spanner.CreateBlankExperiment(ctx, t, storage, xid)
 	for i := 0; i < 3; i++ {
-		createBlankWorkUnit(ctx, t, storage, xid, int64(i+1))
+		spanner.CreateBlankWorkUnit(ctx, t, storage, xid, int64(i+1))
 	}
 
 	tests := []struct {
@@ -218,19 +219,19 @@ func TestListWorkUnits_OrderBy(t *testing.T) {
 func TestListWorkUnits_ParentFiltering(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// Create two experiments and one work unit for each.
 	xid1 := int64(5)
-	exp1 := createBlankExperiment(ctx, t, storage, xid1)
-	createBlankWorkUnit(ctx, t, storage, xid1, 1)
+	exp1 := spanner.CreateBlankExperiment(ctx, t, storage, xid1)
+	spanner.CreateBlankWorkUnit(ctx, t, storage, xid1, 1)
 
 	xid2 := int64(6)
-	_ = createBlankExperiment(ctx, t, storage, xid2)
-	createBlankWorkUnit(ctx, t, storage, xid2, 1)
+	_ = spanner.CreateBlankExperiment(ctx, t, storage, xid2)
+	spanner.CreateBlankWorkUnit(ctx, t, storage, xid2, 1)
 
 	// List work units for exp1.
 	gotWorkUnits, _, err := storage.ListWorkUnits(ctx, exp1.GetName(), 10, "", "", "", 0)
@@ -252,9 +253,9 @@ func TestListWorkUnits_ParentFiltering(t *testing.T) {
 func TestListWorkUnits_InvalidParent(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	_, _, err = storage.ListWorkUnits(ctx, "invalid-parent", 10, "", "", "", 0)

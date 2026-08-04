@@ -11,12 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package artifact_test
 
 import (
 	"context"
 	"errors"
 	"testing"
+	"xmanager_cloud/internal/storage/spanner"
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
@@ -31,14 +32,14 @@ import (
 func TestUpdateArtifact(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	s, _ := NewStorage(essClient)
+	s, _ := spanner.NewStorage(essClient)
 
 	// 1. Create an Experiment and Artifact.
 	xid := int64(123)
 	aid := int64(456)
-	createBlankExperiment(ctx, t, s, xid)
-	artifactProto := blankArtifactProto(xid, aid)
-	createdArt := createAndStoreArtifact(ctx, t, s, artifactProto)
+	spanner.CreateBlankExperiment(ctx, t, s, xid)
+	artifactProto := spanner.BlankArtifactProto(xid, aid)
+	createdArt := spanner.CreateAndStoreArtifact(ctx, t, s, artifactProto)
 
 	_, err := validator.ValidateArtifactName(createdArt.GetName())
 	if err != nil {
@@ -93,13 +94,13 @@ func TestUpdateArtifact(t *testing.T) {
 func TestUpdateArtifact_ImmutableField(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	s, _ := NewStorage(essClient)
+	s, _ := spanner.NewStorage(essClient)
 
 	xid := int64(123)
 	aid := int64(456)
-	createBlankExperiment(ctx, t, s, xid)
-	artifactProto := blankArtifactProto(xid, aid)
-	createAndStoreArtifact(ctx, t, s, artifactProto)
+	spanner.CreateBlankExperiment(ctx, t, s, xid)
+	artifactProto := spanner.BlankArtifactProto(xid, aid)
+	spanner.CreateAndStoreArtifact(ctx, t, s, artifactProto)
 
 	update := &storage.ArtifactUpdate{
 		AID: aid,
@@ -117,7 +118,7 @@ func TestUpdateArtifact_ImmutableField(t *testing.T) {
 func TestUpdateArtifact_NotFound(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	s, _ := NewStorage(essClient)
+	s, _ := spanner.NewStorage(essClient)
 
 	update := &storage.ArtifactUpdate{
 		AID: 123456789,
@@ -135,13 +136,13 @@ func TestUpdateArtifact_NotFound(t *testing.T) {
 func TestUpdateArtifact_EmptyMask(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	s, _ := NewStorage(essClient)
+	s, _ := spanner.NewStorage(essClient)
 
 	xid := int64(123)
 	aid := int64(456)
-	createBlankExperiment(ctx, t, s, xid)
-	artifactProto := blankArtifactProto(xid, aid)
-	createAndStoreArtifact(ctx, t, s, artifactProto)
+	spanner.CreateBlankExperiment(ctx, t, s, xid)
+	artifactProto := spanner.BlankArtifactProto(xid, aid)
+	spanner.CreateAndStoreArtifact(ctx, t, s, artifactProto)
 
 	update := &storage.ArtifactUpdate{
 		AID:        aid,

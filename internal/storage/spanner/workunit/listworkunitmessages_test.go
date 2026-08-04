@@ -11,13 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package workunit_test
 
 import (
 	"fmt"
 	"sort"
 	"testing"
 	"time"
+	"xmanager_cloud/internal/storage/spanner"
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
@@ -32,13 +33,13 @@ import (
 func TestListWorkUnitMessagesBySeverity(t *testing.T) {
 	ctx := t.Context()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	xid := int64(1)
-	createBlankExperiment(ctx, t, storageClient, xid)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid)
 
 	sysInfoMsg1 := &essmsgpb.StructuredMessage{
 		UserFacingText: "info 1",
@@ -82,11 +83,11 @@ func TestListWorkUnitMessagesBySeverity(t *testing.T) {
 		{wid: 8, system: sysErrorMsg2, user: userErrorMsg2},
 	}
 	// Add a work unit with only a default status message.
-	wu5 := createBlankWorkUnit(ctx, t, storageClient, xid, 5)
+	wu5 := spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, 5)
 	sysInfoMsg5 := wu5.CurrentWorkUnitExecution.Status.SystemMessage
 
 	for _, msg := range messages {
-		createBlankWorkUnit(ctx, t, storageClient, xid, msg.wid)
+		spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid, msg.wid)
 
 		if msg.system != nil {
 			msg.system.Parent = fmt.Sprintf("experiments/%d/workUnits/%d", xid, msg.wid)
@@ -118,8 +119,8 @@ func TestListWorkUnitMessagesBySeverity(t *testing.T) {
 
 	// Create another experiment with a work unit to ensure we only list messages for the requested xid.
 	xid2 := int64(2)
-	createBlankExperiment(ctx, t, storageClient, xid2)
-	createBlankWorkUnit(ctx, t, storageClient, xid2, 1)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid2)
+	spanner.CreateBlankWorkUnit(ctx, t, storageClient, xid2, 1)
 	sysInfoMsgXID2 := &essmsgpb.StructuredMessage{
 		UserFacingText: "info xid2",
 		Severity:       essmsgpb.StructuredMessage_INFO,
@@ -172,24 +173,24 @@ func TestListWorkUnitMessagesBySeverity(t *testing.T) {
 func TestListWorkUnitMessagesBySeverity_EdgeCases(t *testing.T) {
 	ctx := t.Context()
 	_, essClient := emulator.Setup(ctx, t)
-	storageClient, err := NewStorage(essClient)
+	storageClient, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// Create an experiment with no work units.
 	xid1 := int64(10)
-	createBlankExperiment(ctx, t, storageClient, xid1)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid1)
 
 	// Create an experiment with work units, but no status messages.
 	xid2 := int64(11)
-	createBlankExperiment(ctx, t, storageClient, xid2)
-	wu1 := blankWorkUnitProto(xid2, 1)
+	spanner.CreateBlankExperiment(ctx, t, storageClient, xid2)
+	wu1 := spanner.BlankWorkUnitProto(xid2, 1)
 	wu1.CurrentWorkUnitExecution.Status.SystemMessage = nil
-	createAndStoreWorkUnit(ctx, t, storageClient, wu1)
-	wu2 := blankWorkUnitProto(xid2, 2)
+	spanner.CreateAndStoreWorkUnit(ctx, t, storageClient, wu1)
+	wu2 := spanner.BlankWorkUnitProto(xid2, 2)
 	wu2.CurrentWorkUnitExecution.Status.SystemMessage = nil
-	createAndStoreWorkUnit(ctx, t, storageClient, wu2)
+	spanner.CreateAndStoreWorkUnit(ctx, t, storageClient, wu2)
 
 	tests := []struct {
 		name string

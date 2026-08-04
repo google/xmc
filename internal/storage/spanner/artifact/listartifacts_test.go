@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package artifact_test
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"sort"
 	"testing"
 	"time"
+	"xmanager_cloud/internal/storage/spanner"
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
@@ -32,22 +33,22 @@ import (
 func TestListArtifacts(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// Create parent experiment
-	createAndStoreExperiment(ctx, t, storage, blankExperimentProto(1))
+	spanner.CreateAndStoreExperiment(ctx, t, storage, spanner.BlankExperimentProto(1))
 
 	// Create some artifacts
 	var artifacts []*essmsgpb.Artifact
 	for i := 1; i < 6; i++ {
-		art := blankArtifactProto(1, int64(i))
+		art := spanner.BlankArtifactProto(1, int64(i))
 		art.Url.DisplayName = fmt.Sprintf("display-%d", i)
 		art.Notes = "test-notes"
 		art.Tags = []string{"tag1", "tag2"}
-		createdArt := createAndStoreArtifact(ctx, t, storage, art)
+		createdArt := spanner.CreateAndStoreArtifact(ctx, t, storage, art)
 		artifacts = append(artifacts, createdArt)
 	}
 
@@ -81,17 +82,17 @@ func TestListArtifacts(t *testing.T) {
 func TestListArtifacts_Pagination(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// Create parent experiment
-	createAndStoreExperiment(ctx, t, storage, blankExperimentProto(1))
+	spanner.CreateAndStoreExperiment(ctx, t, storage, spanner.BlankExperimentProto(1))
 
 	// Create some artifacts
 	for i := 1; i < 6; i++ {
-		createAndStoreArtifact(ctx, t, storage, blankArtifactProto(1, int64(i)))
+		spanner.CreateAndStoreArtifact(ctx, t, storage, spanner.BlankArtifactProto(1, int64(i)))
 	}
 
 	tests := []struct {
@@ -134,21 +135,21 @@ func TestListArtifacts_Pagination(t *testing.T) {
 func TestListArtifacts_Filter(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// Create parent experiment
-	createAndStoreExperiment(ctx, t, storage, blankExperimentProto(1))
+	spanner.CreateAndStoreExperiment(ctx, t, storage, spanner.BlankExperimentProto(1))
 
 	// Create some artifacts
-	art1 := blankArtifactProto(1, 1)
+	art1 := spanner.BlankArtifactProto(1, 1)
 	art1.Url.DisplayName = "display-1"
-	createAndStoreArtifact(ctx, t, storage, art1)
-	art2 := blankArtifactProto(1, 2)
+	spanner.CreateAndStoreArtifact(ctx, t, storage, art1)
+	art2 := spanner.BlankArtifactProto(1, 2)
 	art2.Url.DisplayName = "display-2"
-	createAndStoreArtifact(ctx, t, storage, art2)
+	spanner.CreateAndStoreArtifact(ctx, t, storage, art2)
 
 	// List with filter
 	gotArtifacts, _, err := storage.ListArtifacts(ctx, "", 10, "", `display_name="display-1"`, "", 0)
@@ -166,20 +167,20 @@ func TestListArtifacts_Filter(t *testing.T) {
 func TestListArtifacts_OrderBy(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// Create parent experiment
-	createAndStoreExperiment(ctx, t, storage, blankExperimentProto(1))
+	spanner.CreateAndStoreExperiment(ctx, t, storage, spanner.BlankExperimentProto(1))
 
 	// Create some artifacts
 	var aids []int64
 	for i := 1; i < 4; i++ {
-		art := blankArtifactProto(1, int64(i))
+		art := spanner.BlankArtifactProto(1, int64(i))
 		art.Url.Priority = int32(10 - i) // 9,8,7
-		created := createAndStoreArtifact(ctx, t, storage, art)
+		created := spanner.CreateAndStoreArtifact(ctx, t, storage, art)
 		aid, _ := validator.ValidateArtifactName(created.GetName())
 		aids = append(aids, aid)
 	}
@@ -205,13 +206,13 @@ func TestListArtifacts_OrderBy(t *testing.T) {
 func TestListArtifacts_Complex(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// Create parent experiment
-	createAndStoreExperiment(ctx, t, storage, blankExperimentProto(1))
+	spanner.CreateAndStoreExperiment(ctx, t, storage, spanner.BlankExperimentProto(1))
 
 	testData := []struct {
 		displayName string
@@ -225,10 +226,10 @@ func TestListArtifacts_Complex(t *testing.T) {
 	}
 	artifacts := make([]*essmsgpb.Artifact, len(testData))
 	for i, d := range testData {
-		art := blankArtifactProto(1, int64(i+1))
+		art := spanner.BlankArtifactProto(1, int64(i+1))
 		art.Url.DisplayName = d.displayName
 		art.MimeType = d.mimeType
-		createdArt := createAndStoreArtifact(ctx, t, storage, art)
+		createdArt := spanner.CreateAndStoreArtifact(ctx, t, storage, art)
 		artifacts[i] = createdArt
 	}
 
@@ -271,19 +272,19 @@ func TestListArtifacts_Complex(t *testing.T) {
 func TestListArtifacts_FilterFields(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// Create parent experiment
-	createAndStoreExperiment(ctx, t, storage, blankExperimentProto(1))
+	spanner.CreateAndStoreExperiment(ctx, t, storage, spanner.BlankExperimentProto(1))
 
 	// Create some artifacts
 	arts := []*essmsgpb.Artifact{
-		blankArtifactProto(1, 1),
-		blankArtifactProto(1, 2),
-		blankArtifactProto(1, 3),
+		spanner.BlankArtifactProto(1, 1),
+		spanner.BlankArtifactProto(1, 2),
+		spanner.BlankArtifactProto(1, 3),
 	}
 	arts[0].Url.DisplayName = "name-1"
 	arts[0].Tags = []string{"tag1"}
@@ -299,7 +300,7 @@ func TestListArtifacts_FilterFields(t *testing.T) {
 	arts[2].MimeType = "mime-3"
 
 	for _, art := range arts {
-		createAndStoreArtifact(ctx, t, storage, art)
+		spanner.CreateAndStoreArtifact(ctx, t, storage, art)
 	}
 
 	testCases := []struct {
@@ -335,19 +336,19 @@ func TestListArtifacts_FilterFields(t *testing.T) {
 func TestListArtifacts_OrderByFields(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// Create parent experiment
-	createAndStoreExperiment(ctx, t, storage, blankExperimentProto(1))
+	spanner.CreateAndStoreExperiment(ctx, t, storage, spanner.BlankExperimentProto(1))
 
 	// Create some artifacts
 	aids := []int64{3, 1, 2}
 	for _, aid := range aids {
-		art := blankArtifactProto(1, aid)
-		createAndStoreArtifact(ctx, t, storage, art)
+		art := spanner.BlankArtifactProto(1, aid)
+		spanner.CreateAndStoreArtifact(ctx, t, storage, art)
 	}
 
 	testCases := []struct {

@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package xid_test
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"sort"
 	"testing"
 	"time"
+	"xmanager_cloud/internal/storage/spanner"
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/proto/proto"
@@ -33,7 +34,7 @@ import (
 func TestListXidEntries(t *testing.T) {
 	ctx := context.Background()
 	xidClient, _ := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(xidClient)
+	storage, _ := spanner.NewStorage(xidClient)
 
 	// Create some entries
 	var entries []*xidpb.XidEntry
@@ -80,7 +81,7 @@ func TestListXidEntries(t *testing.T) {
 func TestListXidEntries_Pagination(t *testing.T) {
 	ctx := context.Background()
 	xidClient, _ := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(xidClient)
+	storage, _ := spanner.NewStorage(xidClient)
 
 	// Create some entries
 	for i := 0; i < 5; i++ {
@@ -137,7 +138,7 @@ func TestListXidEntries_Pagination(t *testing.T) {
 func TestListXidEntries_FilterFields(t *testing.T) {
 	ctx := context.Background()
 	xidClient, _ := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(xidClient)
+	storage, _ := spanner.NewStorage(xidClient)
 
 	// Create some entries
 	entry1, err := storage.CreateXidEntry(ctx, &xidpb.XidEntry{
@@ -234,7 +235,7 @@ func TestListXidEntries_FilterFields(t *testing.T) {
 func TestListXidEntries_OrderByFields(t *testing.T) {
 	ctx := context.Background()
 	xidClient, _ := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(xidClient)
+	storage, _ := spanner.NewStorage(xidClient)
 
 	var entries []*xidpb.XidEntry
 	for i := 0; i < 3; i++ {
@@ -303,7 +304,7 @@ func TestListXidEntries_OrderByFields(t *testing.T) {
 func TestListXidEntries_Complex(t *testing.T) {
 	ctx := context.Background()
 	xidClient, _ := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(xidClient)
+	storage, _ := spanner.NewStorage(xidClient)
 
 	testData := []struct {
 		creator  string

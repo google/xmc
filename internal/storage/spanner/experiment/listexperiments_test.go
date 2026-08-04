@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package experiment_test
 
 import (
 	"context"
@@ -24,6 +24,7 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/experiment"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/validator/validator"
@@ -32,12 +33,12 @@ import (
 func TestListExperiments(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	// Create some experiments.
 	var experiments []*essmsgpb.Experiment
 	for i := 1; i < 6; i++ {
-		exp := blankExperimentProto(int64(i))
+		exp := spanner.BlankExperimentProto(int64(i))
 		exp.Title = fmt.Sprintf("title-%d", i)
 		exp.Creator = fmt.Sprintf("creator-%d", i)
 		exp.Notes = "test-notes"
@@ -47,7 +48,7 @@ func TestListExperiments(t *testing.T) {
 				Url: "http://test.com",
 			},
 		}
-		createdExp := createAndStoreExperiment(ctx, t, storage, exp)
+		createdExp := spanner.CreateAndStoreExperiment(ctx, t, storage, exp)
 		experiments = append(experiments, createdExp)
 	}
 
@@ -81,11 +82,11 @@ func TestListExperiments(t *testing.T) {
 func TestListExperiments_Pagination(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	// Create some experiments.
 	for i := 1; i < 6; i++ {
-		createBlankExperiment(ctx, t, storage, int64(i))
+		spanner.CreateBlankExperiment(ctx, t, storage, int64(i))
 	}
 
 	tests := []struct {
@@ -128,17 +129,17 @@ func TestListExperiments_Pagination(t *testing.T) {
 func TestListExperiments_Filter(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	// Create some experiments
-	exp1 := blankExperimentProto(1)
+	exp1 := spanner.BlankExperimentProto(1)
 	exp1.Creator = "creator-1"
 	exp1.Title = "title-1"
-	createAndStoreExperiment(ctx, t, storage, exp1)
-	exp2 := blankExperimentProto(2)
+	spanner.CreateAndStoreExperiment(ctx, t, storage, exp1)
+	exp2 := spanner.BlankExperimentProto(2)
 	exp2.Creator = "creator-2"
 	exp2.Title = "title-2"
-	createAndStoreExperiment(ctx, t, storage, exp2)
+	spanner.CreateAndStoreExperiment(ctx, t, storage, exp2)
 
 	// List with filter.
 	gotExperiments, _, err := storage.ListExperiments(ctx, 10, "", "creator=\"creator-1\"", "", 0)
@@ -156,13 +157,13 @@ func TestListExperiments_Filter(t *testing.T) {
 func TestListExperiments_OrderBy(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	// Create some experiments.
 	var xids []int64
 	for i := 1; i < 4; i++ {
-		exp := blankExperimentProto(int64(i))
-		created := createAndStoreExperiment(ctx, t, storage, exp)
+		exp := spanner.BlankExperimentProto(int64(i))
+		created := spanner.CreateAndStoreExperiment(ctx, t, storage, exp)
 		xid, _ := validator.ValidateExperimentName(created.GetName())
 		xids = append(xids, xid)
 	}
@@ -188,7 +189,7 @@ func TestListExperiments_OrderBy(t *testing.T) {
 func TestListExperiments_Complex(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	testData := []struct {
 		creator string
@@ -202,10 +203,10 @@ func TestListExperiments_Complex(t *testing.T) {
 	}
 	experiments := make([]*essmsgpb.Experiment, len(testData))
 	for i, d := range testData {
-		exp := blankExperimentProto(int64(i + 1))
+		exp := spanner.BlankExperimentProto(int64(i + 1))
 		exp.Creator = d.creator
 		exp.Title = d.title
-		createdExp := createAndStoreExperiment(ctx, t, storage, exp)
+		createdExp := spanner.CreateAndStoreExperiment(ctx, t, storage, exp)
 		experiments[i] = createdExp
 	}
 
@@ -248,13 +249,13 @@ func TestListExperiments_Complex(t *testing.T) {
 func TestListExperiments_FilterFields(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	// Create some experiments.
 	exps := []*essmsgpb.Experiment{
-		blankExperimentProto(1),
-		blankExperimentProto(2),
-		blankExperimentProto(3),
+		spanner.BlankExperimentProto(1),
+		spanner.BlankExperimentProto(2),
+		spanner.BlankExperimentProto(3),
 	}
 	exps[0].Creator = "creator-1"
 	exps[0].Title = "title-1"
@@ -274,7 +275,7 @@ func TestListExperiments_FilterFields(t *testing.T) {
 	exps[2].Status.LaunchState = essmsgpb.ExperimentStatus_LAUNCHING
 
 	for _, exp := range exps {
-		createAndStoreExperiment(ctx, t, storage, exp)
+		spanner.CreateAndStoreExperiment(ctx, t, storage, exp)
 	}
 
 	testCases := []struct {
@@ -313,13 +314,13 @@ func TestListExperiments_FilterFields(t *testing.T) {
 func TestListExperiments_OrderByFields(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	// Create some experiments.
 	xids := []int64{3, 1, 2}
 	for _, xid := range xids {
-		exp := blankExperimentProto(xid)
-		createAndStoreExperiment(ctx, t, storage, exp)
+		exp := spanner.BlankExperimentProto(xid)
+		spanner.CreateAndStoreExperiment(ctx, t, storage, exp)
 	}
 
 	testCases := []struct {

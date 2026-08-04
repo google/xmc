@@ -11,16 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package statusmessage_test
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	cloudspanner "golang/cloud_google_com/go/spanner/v/v1/spanner"
 	timestamppb "protobuf/timestamp_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 )
@@ -28,10 +29,10 @@ import (
 func TestListStatusMessages(t *testing.T) {
 	ctx := t.Context()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	const xid int64 = 123
-	createBlankExperiment(ctx, t, storage, xid)
+	spanner.CreateBlankExperiment(ctx, t, storage, xid)
 
 	// Insert a status message
 	msg := &essmsgpb.StructuredMessage{
@@ -86,10 +87,10 @@ func TestListStatusMessages(t *testing.T) {
 func TestListStatusMessages_Filtering(t *testing.T) {
 	ctx := t.Context()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	const xid int64 = 123
-	createBlankExperiment(ctx, t, storage, xid)
+	spanner.CreateBlankExperiment(ctx, t, storage, xid)
 
 	insertStatusMessage(ctx, t, storage, essClient, xid, nil, &essmsgpb.StructuredMessage{
 		UserFacingText: "Message One",
@@ -132,10 +133,10 @@ func TestListStatusMessages_Filtering(t *testing.T) {
 func TestListStatusMessages_Ordering(t *testing.T) {
 	ctx := t.Context()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	const xid int64 = 123
-	createBlankExperiment(ctx, t, storage, xid)
+	spanner.CreateBlankExperiment(ctx, t, storage, xid)
 
 	now := time.Now()
 	insertStatusMessage(ctx, t, storage, essClient, xid, nil, &essmsgpb.StructuredMessage{
@@ -186,10 +187,10 @@ func TestListStatusMessages_Ordering(t *testing.T) {
 func TestListStatusMessages_Pagination(t *testing.T) {
 	ctx := t.Context()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	const xid int64 = 123
-	createBlankExperiment(ctx, t, storage, xid)
+	spanner.CreateBlankExperiment(ctx, t, storage, xid)
 
 	now := time.Now()
 	insertStatusMessage(ctx, t, storage, essClient, xid, nil, &essmsgpb.StructuredMessage{
@@ -248,10 +249,10 @@ func TestListStatusMessages_Pagination(t *testing.T) {
 func TestPagination_Experiment(t *testing.T) {
 	ctx := t.Context()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	const xid int64 = 123
-	createBlankExperiment(ctx, t, storage, xid)
+	spanner.CreateBlankExperiment(ctx, t, storage, xid)
 
 	now := time.Now()
 	insertStatusMessage(ctx, t, storage, essClient, xid, nil, &essmsgpb.StructuredMessage{
@@ -298,7 +299,7 @@ func TestPagination_Experiment(t *testing.T) {
 func TestListStatusMessages_EmptyParent(t *testing.T) {
 	ctx := t.Context()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	// List with empty parent should fail
 	_, _, err := storage.ListStatusMessages(ctx, "", 10, "", "", "", 0)
@@ -307,9 +308,9 @@ func TestListStatusMessages_EmptyParent(t *testing.T) {
 	}
 }
 
-func insertStatusMessage(ctx context.Context, t *testing.T, storage *Storage, essClient *spanner.Client, xid int64, wid *int64, msg *essmsgpb.StructuredMessage) {
+func insertStatusMessage(ctx context.Context, t *testing.T, storage *spanner.Storage, essClient *cloudspanner.Client, xid int64, wid *int64, msg *essmsgpb.StructuredMessage) {
 	t.Helper()
-	_, err := essClient.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+	_, err := essClient.ReadWriteTransaction(ctx, func(ctx context.Context, txn *cloudspanner.ReadWriteTransaction) error {
 		statusmessage.SaveStatusMessageHistory(ctx, xid, wid, nil, nil, msg, txn)
 		return nil
 	})
@@ -321,10 +322,10 @@ func insertStatusMessage(ctx context.Context, t *testing.T, storage *Storage, es
 func TestListStatusMessages_DefaultOrdering(t *testing.T) {
 	ctx := t.Context()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
 	xid := int64(123)
-	createBlankExperiment(ctx, t, storage, xid)
+	spanner.CreateBlankExperiment(ctx, t, storage, xid)
 
 	testTime := time.Date(2026, time.April, 13, 0, 0, 0, 0, time.UTC)
 

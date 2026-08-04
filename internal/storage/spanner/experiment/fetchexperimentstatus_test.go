@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package experiment_test
 
 import (
 	"context"
@@ -21,40 +21,40 @@ import (
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
-	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/validator/validator"
 )
 
-func TestFetchExperiment(t *testing.T) {
+func TestFetchExperimentStatus(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
-	createdExp := createBlankExperiment(ctx, t, storage, 123)
+	createdExp := spanner.CreateBlankExperiment(ctx, t, storage, 123)
 
 	xid, err := validator.ValidateExperimentName(createdExp.GetName())
 	if err != nil {
 		t.Fatalf("Could not parse XID from name %q: %v", createdExp.GetName(), err)
 	}
 
-	gotExp, err := storage.FetchExperiment(ctx, xid)
+	gotStatus, err := storage.FetchExperimentStatus(ctx, xid)
 	if err != nil {
-		t.Fatalf("FetchExperiment failed: %v", err)
+		t.Fatalf("FetchExperimentStatus failed: %v", err)
 	}
 
-	if diff := cmp.Diff(createdExp, gotExp, protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.Experiment{}, "acls")); diff != "" {
-		t.Errorf("FetchExperiment(%d) returned diff (-want +got):\n%s", xid, diff)
+	if diff := cmp.Diff(createdExp.Status, gotStatus, protocmp.Transform()); diff != "" {
+		t.Errorf("FetchExperimentStatus(%d) returned diff (-want +got):\n%s", xid, diff)
 	}
 }
 
-func TestFetchExperiment_NotFound(t *testing.T) {
+func TestFetchExperimentStatus_NotFound(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(essClient)
+	storage, _ := spanner.NewStorage(essClient)
 
-	_, err := storage.FetchExperiment(ctx, 123456789)
+	_, err := storage.FetchExperimentStatus(ctx, 123456789)
 	if !errors.Is(err, status.ErrNotFound) {
-		t.Errorf("FetchExperiment for non-existent XID returned error %v, want %v", err, status.ErrNotFound)
+		t.Errorf("FetchExperimentStatus for non-existent XID returned error %v, want %v", err, status.ErrNotFound)
 	}
 }

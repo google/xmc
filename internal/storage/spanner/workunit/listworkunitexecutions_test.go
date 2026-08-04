@@ -11,11 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package workunit_test
 
 import (
 	"context"
 	"testing"
+	"xmanager_cloud/internal/storage/spanner"
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
@@ -28,16 +29,16 @@ import (
 func TestListWorkUnitExecutions(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// Create experiment.
-	createBlankExperiment(ctx, t, storage, 123)
+	spanner.CreateBlankExperiment(ctx, t, storage, 123)
 
 	// Create work unit.
-	createdWu := createBlankWorkUnit(ctx, t, storage, 123, 1)
+	createdWu := spanner.CreateBlankWorkUnit(ctx, t, storage, 123, 1)
 
 	xid, wid, err := validator.ValidateWorkUnitName(createdWu.GetName())
 	if err != nil {
@@ -95,13 +96,13 @@ func TestListWorkUnitExecutions(t *testing.T) {
 func TestListWorkUnitExecutions_NotFound(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// Create experiment.
-	createBlankExperiment(ctx, t, storage, 123)
+	spanner.CreateBlankExperiment(ctx, t, storage, 123)
 
 	testCases := []struct {
 		name string

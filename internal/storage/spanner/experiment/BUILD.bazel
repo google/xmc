@@ -58,3 +58,28 @@ compat_go_test(
         "//api/protos/experiment:messages_go_proto",
     ],
 )
+
+compat_go_test(
+    name = "experiment_test",
+    srcs = [
+        "createexperiment_test.go",
+        "fetchexperiment_test.go",
+        "fetchexperimentstatus_test.go",
+        "listexperiments_test.go",
+        "updateexperiment_test.go",
+        "updateexperimentlaunchstate_test.go",
+    ],
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//internal/compat/cmp",
+        "//internal/compat/field_mask",
+        "//internal/compat/protocmp",
+        "//internal/compat/status",
+        "//internal/storage",
+        "//internal/storage/spanner",
+        "//internal/storage/spanner/emulator",
+        "//internal/storage/spanner/experiment",
+        "//internal/validator",
+        "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
+    ],
+)

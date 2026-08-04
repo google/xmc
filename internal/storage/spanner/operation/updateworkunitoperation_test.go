@@ -11,11 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package operation_test
 
 import (
 	"context"
 	"testing"
+	"xmanager_cloud/internal/storage/spanner"
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
@@ -32,16 +33,16 @@ import (
 func TestUpdateWorkUnitOperation(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	s, err := NewStorage(essClient)
+	s, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// 1. Create an Experiment and WorkUnit.
 	xid := int64(123)
 	wid := int64(1)
-	createBlankExperiment(ctx, t, s, xid)
-	createBlankWorkUnit(ctx, t, s, xid, wid)
+	spanner.CreateBlankExperiment(ctx, t, s, xid)
+	spanner.CreateBlankWorkUnit(ctx, t, s, xid, wid)
 
 	// 2. Add an operation.
 	metadata := &pb.OperationMetadata{ActionType: pb.OperationMetadata_CREATE}
@@ -100,16 +101,16 @@ func TestUpdateWorkUnitOperation(t *testing.T) {
 func TestUpdateWorkUnitOperation_Error(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	s, err := NewStorage(essClient)
+	s, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	// 1. Create an Experiment and WorkUnit.
 	xid := int64(123)
 	wid := int64(1)
-	createBlankExperiment(ctx, t, s, xid)
-	createBlankWorkUnit(ctx, t, s, xid, wid)
+	spanner.CreateBlankExperiment(ctx, t, s, xid)
+	spanner.CreateBlankWorkUnit(ctx, t, s, xid, wid)
 
 	// 2. Add an operation.
 	metadata := &pb.OperationMetadata{ActionType: pb.OperationMetadata_CREATE}

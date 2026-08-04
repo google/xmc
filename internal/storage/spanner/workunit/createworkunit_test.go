@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package workunit_test
 
 import (
 	"context"
@@ -22,20 +22,21 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	domainworkunit "xmanager_cloud/internal/domain/workunit"
+	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 )
 
 func TestCreateWorkUnit(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
-	createBlankExperiment(ctx, t, storage, 123)
+	spanner.CreateBlankExperiment(ctx, t, storage, 123)
 
-	wu := blankWorkUnitProto(123, 1)
+	wu := spanner.BlankWorkUnitProto(123, 1)
 	wu.CurrentWorkUnitExecution.Status.SystemMessage = &essmsgpb.StructuredMessage{
 		UserFacingText: "test message",
 		Severity:       essmsgpb.StructuredMessage_INFO,
@@ -99,10 +100,10 @@ func TestCreateWorkUnit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchExperiment(123) failed: %v", err)
 	}
-	if got, want := childStateCountInState(t, exp, essmsgpb.WorkUnitStatus_INITIALIZING), int64(1); got != want {
+	if got, want := spanner.ChildStateCountInState(t, exp, essmsgpb.WorkUnitStatus_INITIALIZING), int64(1); got != want {
 		t.Errorf("Experiment state count for INITIALIZING is %d, want %d", got, want)
 	}
-	if got, want := messageSeverityCountInState(t, exp, essmsgpb.StructuredMessage_INFO), int64(1); got != want {
+	if got, want := spanner.MessageSeverityCountInState(t, exp, essmsgpb.StructuredMessage_INFO), int64(1); got != want {
 		t.Errorf("Experiment message severity count for INFO is %d, want %d", got, want)
 	}
 
@@ -129,14 +130,14 @@ func TestCreateWorkUnit(t *testing.T) {
 func TestCreateWorkUnit_InvalidName(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
-	createBlankExperiment(ctx, t, storage, 123)
+	spanner.CreateBlankExperiment(ctx, t, storage, 123)
 
-	wu := blankWorkUnitProto(123, 1)
+	wu := spanner.BlankWorkUnitProto(123, 1)
 	wu.Name = "invalid-name"
 	_, err = storage.CreateWorkUnit(ctx, wu)
 	if err == nil {
@@ -147,13 +148,13 @@ func TestCreateWorkUnit_InvalidName(t *testing.T) {
 func TestCreateWorkUnit_AutoID(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-	storage, err := NewStorage(essClient)
+	storage, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
 	xid := int64(123)
-	createBlankExperiment(ctx, t, storage, xid)
+	spanner.CreateBlankExperiment(ctx, t, storage, xid)
 
 	tests := []struct {
 		name    string
@@ -184,7 +185,7 @@ func TestCreateWorkUnit_AutoID(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			wu := blankWorkUnitProto(xid, tc.inputID)
+			wu := spanner.BlankWorkUnitProto(xid, tc.inputID)
 			createdWu, err := storage.CreateWorkUnit(ctx, wu)
 			if err != nil {
 				t.Fatalf("CreateWorkUnit failed: %v", err)

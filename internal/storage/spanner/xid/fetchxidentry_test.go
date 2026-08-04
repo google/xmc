@@ -11,12 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package spanner
+package xid_test
 
 import (
 	"context"
 	"errors"
 	"testing"
+	"xmanager_cloud/internal/storage/spanner"
 
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/proto/proto"
@@ -30,7 +31,7 @@ import (
 func TestFetchXidEntry(t *testing.T) {
 	ctx := context.Background()
 	xidClient, _ := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(xidClient)
+	storage, _ := spanner.NewStorage(xidClient)
 
 	parentEntry := &xidpb.XidEntry{
 		Creator: proto.String("test-creator"),
@@ -76,7 +77,7 @@ func TestFetchXidEntry(t *testing.T) {
 func TestFetchXidEntry_NotFound(t *testing.T) {
 	ctx := context.Background()
 	xidClient, _ := emulator.Setup(ctx, t)
-	storage, _ := NewStorage(xidClient)
+	storage, _ := spanner.NewStorage(xidClient)
 
 	_, err := storage.FetchXidEntry(ctx, 123456789)
 	if !errors.Is(err, status.ErrNotFound) {
