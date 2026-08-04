@@ -60,37 +60,7 @@ func main() {
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
 
 	kueueCache := cache.NewKueueCache()
-
-	if k8sConfig, err := rest.InClusterConfig(); err == nil {
-		scheme := runtime.NewScheme()
-		clientgoscheme.AddToScheme(scheme)
-		kueuev1beta1.AddToScheme(scheme)
-
-		mgr, err := ctrl.NewManager(k8sConfig, ctrl.Options{
-			Scheme:         scheme,
-			LeaderElection: false,
-		})
-		if err != nil {
-			logging.Warn(ctx, "Failed to create controller-runtime manager", "error", err)
-		} else {
-			collector := &KueueCollector{
-				Client: mgr.GetClient(),
-				Cache:  kueueCache,
-			}
-			if err := collector.SetupWithManager(ctx, mgr); err != nil {
-				logging.Warn(ctx, "Failed to setup KueueCollector with manager", "error", err)
-			} else {
-				go func() {
-					logging.Info(ctx, "Starting controller-runtime Manager for KueueCache")
-					if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-						logging.Error(ctx, "Manager failed to start", "error", err)
-					}
-				}()
-			}
-		}
-	} else {
-		logging.Warn(ctx, "Failed to get in-cluster config for KueueCache reconciler", "error", err)
-	}
+	setupKueueManager(ctx, kueueCache)
 
 	// 1. Setup gRPC server
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
@@ -175,4 +145,48 @@ func main() {
 	grpcServer.GracefulStop()
 
 	logging.Info(ctx, "ROD data provider service stopped")
+}
+
+// setupKueueManager initializes the Kubernetes controller-runtime manager and Kueue reconcilers if running in-cluster.
+func setupKueueManager(ctx context.Context, kueueCache *cache.KueueCache) {
+	k8sConfig, err := rest.InClusterConfig()
+	if err != nil {
+		logging.Warn(ctx, "Failed to get in-cluster config for KueueCache reconciler", "error", err)
+		return
+	}
+
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		logging.Warn(ctx, "Failed to add client-go scheme", "error", err)
+		return
+	}
+	if err := kueuev1beta1.AddToScheme(scheme); err != nil {
+		logging.Warn(ctx, "Failed to add Kueue v1beta1 scheme", "error", err)
+		return
+	}
+
+	mgr, err := ctrl.NewManager(k8sConfig, ctrl.Options{
+		Scheme:         scheme,
+		LeaderElection: false,
+	})
+	if err != nil {
+		logging.Warn(ctx, "Failed to create controller-runtime manager", "error", err)
+		return
+	}
+
+	collector := &KueueCollector{
+		Client: mgr.GetClient(),
+		Cache:  kueueCache,
+	}
+	if err := collector.SetupWithManager(ctx, mgr); err != nil {
+		logging.Warn(ctx, "Failed to setup KueueCollector with manager", "error", err)
+		return
+	}
+
+	go func() {
+		logging.Info(ctx, "Starting controller-runtime Manager for KueueCache")
+		if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+			logging.Error(ctx, "Manager failed to start", "error", err)
+		}
+	}()
 }
