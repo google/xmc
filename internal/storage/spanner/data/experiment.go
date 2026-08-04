@@ -153,15 +153,19 @@ func ExperimentProtoToStatusUpdateMutation(exp *pb.Experiment) (*spanner.Mutatio
 		completeTime.Time = exp.CompleteTime.AsTime()
 		completeTime.Valid = true
 	}
+	var updateTime any = spanner.NullTime{}
+	if exp.GetStatus() != nil {
+		updateTime = exp.Status.UpdateTime.AsTime()
+	}
 
 	return spanner.Update(
 		experimentschema.ExperimentTableName,
 		experimentschema.ExperimentStatusUpdateColumns,
 		[]any{
-			data.ReverseBits(xid),          // BitReversedXID
-			exp.Status,                     // Status
-			exp.Status.UpdateTime.AsTime(), // UpdateTime
-			completeTime,                   // CompleteTime
+			data.ReverseBits(xid), // BitReversedXID
+			exp.Status,            // Status
+			updateTime,            // UpdateTime
+			completeTime,          // CompleteTime
 		},
 	), nil
 }

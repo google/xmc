@@ -157,22 +157,22 @@ func TestFranzGoMetricsHook(t *testing.T) {
 	_ = kgo.WithHooks(hook)
 	meta := kgo.BrokerMetadata{NodeID: 1, Host: "localhost", Port: 9092}
 
-	hook.HookBrokerConnect(meta)
+	hook.OnBrokerConnect(meta, time.Millisecond, nil, nil)
 	if count := testutil.ToFloat64(m.BrokersConnections); count != 1.0 {
 		t.Errorf("expected BrokersConnections to be 1.0, got %f", count)
 	}
 
-	hook.HookBrokerDisconnect(meta)
+	hook.OnBrokerDisconnect(meta, nil)
 	if count := testutil.ToFloat64(m.BrokersConnections); count != 0.0 {
 		t.Errorf("expected BrokersConnections to be 0.0, got %f", count)
 	}
 
-	hook.HookProduceRecordUnbuffered(&kgo.Record{}, nil)
+	hook.OnProduceRecordUnbuffered(&kgo.Record{}, nil)
 	if records := testutil.ToFloat64(m.ProduceRecordsTotal); records != 1.0 {
 		t.Errorf("expected ProduceRecordsTotal to be 1.0, got %f", records)
 	}
 
-	hook.HookProduceRecordUnbuffered(&kgo.Record{}, errors.New("write error"))
+	hook.OnProduceRecordUnbuffered(&kgo.Record{}, errors.New("write error"))
 	if errorsCount := testutil.ToFloat64(m.ProduceErrorsTotal); errorsCount != 1.0 {
 		t.Errorf("expected ProduceErrorsTotal to be 1.0, got %f", errorsCount)
 	}
@@ -218,12 +218,12 @@ func TestFranzGoMetricsHookNilSafety(t *testing.T) {
 	var hook *FranzGoMetricsHook = nil
 	meta := kgo.BrokerMetadata{NodeID: 1}
 
-	hook.HookBrokerConnect(meta)
-	hook.HookBrokerDisconnect(meta)
-	hook.HookProduceRecordUnbuffered(&kgo.Record{}, nil)
+	hook.OnBrokerConnect(meta, time.Millisecond, nil, nil)
+	hook.OnBrokerDisconnect(meta, nil)
+	hook.OnProduceRecordUnbuffered(&kgo.Record{}, nil)
 
 	hookWithNilMetrics := NewFranzGoMetricsHook(nil)
-	hookWithNilMetrics.HookBrokerConnect(meta)
-	hookWithNilMetrics.HookBrokerDisconnect(meta)
-	hookWithNilMetrics.HookProduceRecordUnbuffered(&kgo.Record{}, nil)
+	hookWithNilMetrics.OnBrokerConnect(meta, time.Millisecond, nil, nil)
+	hookWithNilMetrics.OnBrokerDisconnect(meta, nil)
+	hookWithNilMetrics.OnProduceRecordUnbuffered(&kgo.Record{}, nil)
 }

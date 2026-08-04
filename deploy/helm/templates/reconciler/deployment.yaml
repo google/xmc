@@ -44,18 +44,11 @@ spec:
           capabilities:
             drop:
             - ALL
+        envFrom:
+        - configMapRef:
+            name: reconciler-config
         args:
-        - "-spanner_database_name={{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) }}"
-        - "-quota_project_id={{ .Values.projectId }}"
         - "-alsologtostderr"
-        - "-batcher_tick_duration=250ms"
-        - "-kueue_sync_tick_duration=60s"
-        - "-max_concurrent_kueue_sync_reconciles=1000"
-        - "-detect_inadmissible_work_units={{ .Values.detectInadmissibleWorkUnits }}"
-        - "-startup_pod_error_check_enabled={{ .Values.startupPodErrorCheckEnabled }}"
-        - "-startup_pod_error_check_time=2m"
-        - "-kube_api_qps=100"
-        - "-kube_api_burst=200"
         - "--logtostderr"
         - "--enforce_kernel_ipv6_support=false"
         - "--enable_streamz_rpc_service=false"
@@ -64,7 +57,6 @@ spec:
         - "--envelope_enabled=false"
         - "--notracelog"
         - "--remote_coredump_enabled"
-        - "-status_message_history_enabled={{ .Values.statusMessageHistoryEnabled }}"
         resources:
           requests:
             cpu: 500m

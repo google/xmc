@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"go/flag"
+	"xmanager_cloud/internal/configutil"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 )
 
@@ -34,10 +35,10 @@ type Config struct {
 	StatusMessageHistoryEnabled      bool
 	KubeAPIQPS                       float64
 	KubeAPIBurst                     int
-	DiagonEnvironment                string
+	MldiagnosticsEnvironment         string
 }
 
-// flags
+// Flags and ConfigMap configurations.
 var (
 	createNewNamespaces              bool
 	detectInadmissibleWorkUnits      bool
@@ -54,28 +55,36 @@ var (
 	kubeAPIQPS                       float64
 	kubeAPIBurst                     int
 	statusMessageHistoryEnabled      bool
-	diagonEnvironment                string
+	mldiagnosticsEnvironment         string
 )
 
+// init runs when the package is imported. It defines CLI flags and loads ConfigMaps.
 func init() {
+	// CLI Flags
 	flag.BoolVar(&createNewNamespaces, "create_new_namespaces", true, "Whether a new namespace can be created when creating new Work Units.")
-	flag.BoolVar(&detectInadmissibleWorkUnits, "detect_inadmissible_work_units", true, "Whether to detect inadmissible work units by inspecting Workload objects.")
-	flag.StringVar(&spannerDatabaseName, "spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db", "The name of the Spanner database.")
-	flag.StringVar(&quotaProjectID, "quota_project_id", "xmc-test-project-1", "The ID of the quota project to use.")
-	flag.DurationVar(&batcherTickDuration, "batcher_tick_duration", 250*time.Millisecond, "The tick duration for the batch processor.")
 	flag.IntVar(&maxConcurrentReconciles, "max_concurrent_reconciles", 10, "The maximum number of concurrent reconciles.")
 	flag.IntVar(&maxParallelExperiments, "max_parallel_experiments", 10, "The maximum number of goroutines concurrently processing experiment updates.")
 	flag.StringVar(&defaultExecutionEnvironment, "default_execution_environment", "gke", "The execution environment to use if not specified in the request.")
-	flag.DurationVar(&kueueSyncTickDuration, "kueue_sync_tick_duration", 60*time.Second, "The tick duration for kueue sync.")
-	flag.IntVar(&maxConcurrentKueueSyncReconciles, "max_concurrent_kueue_sync_reconciles", 1000, "The maximum number of concurrent work unit updates in kueue sync.")
-	flag.DurationVar(&startupPodErrorCheckTime, "startup_pod_error_check_time", 2*time.Minute, "The time to wait before checking for pod errors during startup.")
-	flag.BoolVar(&startupPodErrorCheckEnabled, "startup_pod_error_check_enabled", true, "Whether to enable checking for pod errors during startup.")
-	flag.Float64Var(&kubeAPIQPS, "kube_api_qps", 100, "Maximum QPS to the API server.")
-	flag.IntVar(&kubeAPIBurst, "kube_api_burst", 200, "Maximum burst for throttle.")
-	flag.BoolVar(&statusMessageHistoryEnabled, "status_message_history_enabled", true, "Whether to enable status message history.")
-	flag.StringVar(&diagonEnvironment, "diagon_environment", "staging", "The Diagon (Hypercompute Cluster ML Run) control-plane environment: one of autopush, staging, or prod.")
+	flag.StringVar(&mldiagnosticsEnvironment, "mldiagnostics_environment", "prod", "The ML Diagnostics (Hypercompute Cluster ML Run) control-plane environment: one of autopush, staging, or prod.")
+	registerConfigs()
 }
 
+// registerConfigs loads ConfigMap managed values using configutil.
+func registerConfigs() {
+	configutil.BoolEnv(&detectInadmissibleWorkUnits, "detect_inadmissible_work_units", true)
+	configutil.StringEnv(&spannerDatabaseName, "spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db")
+	configutil.StringEnv(&quotaProjectID, "quota_project_id", "xmc-test-project-1")
+	configutil.DurationEnv(&batcherTickDuration, "batcher_tick_duration", 250*time.Millisecond)
+	configutil.DurationEnv(&kueueSyncTickDuration, "kueue_sync_tick_duration", 60*time.Second)
+	configutil.IntEnv(&maxConcurrentKueueSyncReconciles, "max_concurrent_kueue_sync_reconciles", 1000)
+	configutil.DurationEnv(&startupPodErrorCheckTime, "startup_pod_error_check_time", 2*time.Minute)
+	configutil.BoolEnv(&startupPodErrorCheckEnabled, "startup_pod_error_check_enabled", true)
+	configutil.Float64Env(&kubeAPIQPS, "kube_api_qps", 100)
+	configutil.IntEnv(&kubeAPIBurst, "kube_api_burst", 200)
+	configutil.BoolEnv(&statusMessageHistoryEnabled, "status_message_history_enabled", true)
+}
+
+// Load returns a Config struct populated with values from ConfigMaps and parsed flags.
 func Load() Config {
 	return Config{
 		RuntimeConfig: k8sclient.ActuatorRuntimeConfig{
@@ -95,6 +104,6 @@ func Load() Config {
 		KubeAPIQPS:                       kubeAPIQPS,
 		KubeAPIBurst:                     kubeAPIBurst,
 		StatusMessageHistoryEnabled:      statusMessageHistoryEnabled,
-		DiagonEnvironment:                diagonEnvironment,
+		MldiagnosticsEnvironment:         mldiagnosticsEnvironment,
 	}
 }
