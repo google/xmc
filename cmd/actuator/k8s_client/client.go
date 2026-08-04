@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/k8s_io/client_go/v/v0_23/dynamic/dynamic"
