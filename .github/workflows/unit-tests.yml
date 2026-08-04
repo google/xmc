@@ -29,7 +29,6 @@ concurrency:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   run-backend-tests:
@@ -37,10 +36,14 @@ jobs:
     runs-on: 'arc-runner-set'
     timeout-minutes: 30
 
+    permissions:
+      contents: read
+      id-token: write
+
     # Use a service container for the Spanner Emulator
     services:
       spanner-emulator:
-        image: gcr.io/cloud-spanner-emulator/emulator
+        image: gcr.io/cloud-spanner-emulator/emulator:1.5.2
         ports:
           - 9010:9010
           - 9020:9020
@@ -54,6 +57,8 @@ jobs:
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: 'Start Async Disk Space Cleanup'
         run: |
@@ -159,6 +164,8 @@ jobs:
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: 'Set up Node.js'
         uses: 'actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af' # v4.1.0
@@ -182,11 +189,14 @@ jobs:
     if: always()
     steps:
       - name: 'Verify All Unit Tests Passed'
+        env:
+          BACKEND_RESULT: ${{ needs.run-backend-tests.result }}
+          UI_RESULT: ${{ needs.run-ui-tests.result }}
         run: |
-          if [ "${{ needs.run-backend-tests.result }}" != "success" ] || [ "${{ needs.run-ui-tests.result }}" != "success" ]; then
-            echo "ERROR: One or more unit test jobs failed."
-            echo "Backend tests result: ${{ needs.run-backend-tests.result }}"
-            echo "UI tests result: ${{ needs.run-ui-tests.result }}"
+          if [ "${BACKEND_RESULT}" != "success" ] || [ "${UI_RESULT}" != "success" ]; then
+            echo "ERROR: One or more unit test suites failed."
+            echo "Backend tests result: ${BACKEND_RESULT}"
+            echo "UI tests result: ${UI_RESULT}"
             exit 1
           fi
           echo "All unit test suites passed successfully."
