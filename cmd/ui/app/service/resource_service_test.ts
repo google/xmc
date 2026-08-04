@@ -78,11 +78,19 @@ describe('ResourceService', () => {
   });
 
   describe('getQueueJobs', () => {
-    it('should return empty queue jobs list', async () => {
+    it('should return mock queue jobs list for given queue', async () => {
       const response: QueueJobListResponse = await firstValueFrom(
-        state.service.getQueueJobs('gpu-cluster-queue'),
+        state.service.getQueueJobs('custom-queue'),
       );
-      expect(response.jobs.length).toBe(0);
+      expect(response.jobs.length).toBe(2);
+      expect(response.queueName).toBe('custom-queue');
+      expect(response.jobs[0].queueName).toBe('custom-queue');
+    });
+
+    it('should fallback to default queueName when parameter is omitted', async () => {
+      const response: QueueJobListResponse = await firstValueFrom(
+        state.service.getQueueJobs(),
+      );
       expect(response.queueName).toBe('gpu-cluster-queue');
     });
   });

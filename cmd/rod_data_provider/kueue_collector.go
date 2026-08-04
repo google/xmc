@@ -15,7 +15,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
@@ -24,26 +23,21 @@ import (
 	"xmanager_cloud/cmd/rod_data_provider/reconciler"
 )
 
-// KueueCollector orchestrates ClusterQueue, LocalQueue, and ResourceFlavor reconcilers
+// SetupKueueReconcilers orchestrates ClusterQueue, LocalQueue, and ResourceFlavor reconcilers
 // to collect and sync Kueue entity information into the in-memory cache.
-type KueueCollector struct {
-	Client client.Client
-	Cache  *cache.KueueCache
-}
-
-func (c *KueueCollector) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
-	if c.Cache == nil {
+func SetupKueueReconcilers(mgr ctrl.Manager, client client.Client, cache *cache.KueueCache) error {
+	if cache == nil {
 		return fmt.Errorf("kueue cache is nil")
 	}
-	cqRec := &reconciler.ClusterQueueReconciler{Client: c.Client, Cache: c.Cache.ClusterQueues}
+	cqRec := &reconciler.ClusterQueueReconciler{Client: client, Cache: cache.ClusterQueues}
 	if err := cqRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup ClusterQueueReconciler: %w", err)
 	}
-	lqRec := &reconciler.LocalQueueReconciler{Client: c.Client, Cache: c.Cache.LocalQueues}
+	lqRec := &reconciler.LocalQueueReconciler{Client: client, Cache: cache.LocalQueues}
 	if err := lqRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup LocalQueueReconciler: %w", err)
 	}
-	rfRec := &reconciler.ResourceFlavorReconciler{Client: c.Client, Cache: c.Cache.ResourceFlavors}
+	rfRec := &reconciler.ResourceFlavorReconciler{Client: client, Cache: cache.ResourceFlavors}
 	if err := rfRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup ResourceFlavorReconciler: %w", err)
 	}

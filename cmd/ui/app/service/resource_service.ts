@@ -14,7 +14,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, of } from 'rxjs';
 
 import { GetFittingQueuesResponse } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
@@ -45,11 +45,36 @@ export class ResourceService {
    * Fetches the list of pending and running jobs for a given queue.
    */
   getQueueJobs(queueName?: string): Observable<QueueJobListResponse> {
-    const targetQueueName = queueName ?? '';
-    const query = targetQueueName ? `?queueName=${encodeURIComponent(targetQueueName)}` : '';
-    return this.http.get<QueueJobListResponse>(
-      `${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues/jobs${query}`,
-      { withCredentials: true },
-    );
+    // TODO(#186): Switch to real backend endpoint when rod-data-provider is deployed.
+    const targetQueueName = queueName ?? 'gpu-cluster-queue';
+    return of({
+      queueName: targetQueueName,
+      jobs: [
+        {
+          position: 'N/A-running',
+          xid: '53296',
+          workUnitId: '1',
+          jobName: 'xmc-operation-53296-1',
+          user: 'example@example.com',
+          resources: 'GPU: 8, CPU: 32',
+          priority: 'Low',
+          status: 'Running',
+          timeInQueue: '10m ago',
+          queueName: targetQueueName,
+        },
+        {
+          position: 'N/A-running',
+          xid: '53308',
+          workUnitId: '1',
+          jobName: 'xmc-operation-53308-1',
+          user: 'example@example.com',
+          resources: 'GPU: 8, CPU: 32',
+          priority: 'Low',
+          status: 'Running',
+          timeInQueue: '5m ago',
+          queueName: targetQueueName,
+        },
+      ],
+    });
   }
 }
