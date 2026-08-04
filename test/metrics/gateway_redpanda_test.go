@@ -33,7 +33,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	metricspb "xmanager_cloud/api/protos/metrics"
-	ingestiongateway "xmanager_cloud/cmd/ingestion_gateway"
+	ingestiongateway "xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
 	"xmanager_cloud/test/metrics/infra"
 )
 
@@ -98,6 +98,7 @@ func TestGatewayRedpanda_EndToEndHappyPath(t *testing.T) {
 	consumerOpts := []kgo.Opt{
 		kgo.SeedBrokers(brokers...),
 		kgo.ConsumeTopics(topicName),
+		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
 	}
 	consumer, err := kgo.NewClient(consumerOpts...)
 	if err != nil {

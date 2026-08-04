@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package ingestiongateway implements the Ingestion Gateway service.
-package ingestiongateway
+// Package main provides the entrypoint binary for the Ingestion Gateway service.
+package main
 
 import (
 	"context"
@@ -27,17 +27,18 @@ import (
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kadm"
-	"go/google"
 
+	google "go/google"
+	"xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
 	"xmanager_cloud/logging/logging"
 )
 
 func main() {
 	google.Init()
-	RegisterFlags(flag.CommandLine)
+	ingestiongateway.RegisterFlags(flag.CommandLine)
 	flag.Parse()
 
-	cfg, err := LoadConfig()
+	cfg, err := ingestiongateway.LoadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
 		os.Exit(1)
@@ -48,16 +49,16 @@ func main() {
 
 	logging.Info(ctx, "Initializing Ingestion Gateway service", "brokers", cfg.RedpandaBrokers, "topic", cfg.TopicName)
 
-	gMetrics := NewGatewayMetrics(nil)
+	gMetrics := ingestiongateway.NewGatewayMetrics(nil)
 
-	kClient, err := NewKafkaProducer(cfg, gMetrics)
+	kClient, err := ingestiongateway.NewKafkaProducer(cfg, gMetrics)
 	if err != nil {
 		logging.Fatal(ctx, "failed to create franz-go client", "error", err)
 	}
 	defer kClient.Close()
 
 	adminClient := kadm.NewClient(kClient)
-	if err := ValidateTopicTopology(ctx, adminClient, cfg.TopicName, cfg.MinPartitions, cfg.MinReplicas); err != nil {
+	if err := ingestiongateway.ValidateTopicTopology(ctx, adminClient, cfg.TopicName, cfg.MinPartitions, cfg.MinReplicas); err != nil {
 		logging.Fatal(ctx, "topic topology validation failed", "error", err)
 	}
 	logging.Info(ctx, "Topic topology validation passed", "topic", cfg.TopicName, "min_partitions", cfg.MinPartitions, "min_replicas", cfg.MinReplicas)
@@ -66,8 +67,8 @@ func main() {
 	awaitShutdown(ctx, server)
 }
 
-func startHTTPServer(ctx context.Context, port string, topicName string, metrics *GatewayMetrics, optionalProducer ...MetricProducer) *http.Server {
-	srvCfg := DefaultServerConfig(port)
+func startHTTPServer(ctx context.Context, port string, topicName string, metrics *ingestiongateway.GatewayMetrics, optionalProducer ...ingestiongateway.MetricProducer) *http.Server {
+	srvCfg := ingestiongateway.DefaultServerConfig(port)
 	srvCfg.TopicName = topicName
 	if metrics != nil {
 		srvCfg.Metrics = metrics
@@ -75,7 +76,7 @@ func startHTTPServer(ctx context.Context, port string, topicName string, metrics
 	if len(optionalProducer) > 0 {
 		srvCfg.Producer = optionalProducer[0]
 	}
-	server := NewHTTPServer(srvCfg)
+	server := ingestiongateway.NewHTTPServer(srvCfg)
 
 	go func() {
 		logging.Info(ctx, "Ingestion Gateway server listening", "port", port)

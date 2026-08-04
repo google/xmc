@@ -12,45 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("//:compat.bzl", "compat_go_library", "compat_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("//:oci.bzl", "oci_image_for_service")
 
 package(default_visibility = ["//visibility:private"])
 
-compat_go_library(
+go_library(
     name = "ingestion_gateway_lib",
-    srcs = [
-        "config.go",
-        "handler.go",
-        "main.go",
-        "metrics.go",
-        "producer.go",
-        "server.go",
-        "tls.go",
-        "validation.go",
-    ],
+    srcs = ["main.go"],
     importpath = "xmanager_cloud/cmd/ingestion_gateway",
-    visibility = [
-        "//cmd/ingestion_gateway:__pkg__",
-        "//test/metrics:__pkg__",
-    ],
     deps = [
-        "//api/protos/metrics:metrics_go_proto",
+        "//cmd/ingestion_gateway/ingestiongateway",
         "//internal/compat/google",
         "//internal/logging",
-        "//internal/security/keyreloader",
-        "//pkg/apis/metrics",
-        "@com_github_prometheus_client_golang//prometheus",
-        "@com_github_prometheus_client_golang//prometheus/collectors",
-        "@com_github_prometheus_client_golang//prometheus/promhttp",
-        "@com_github_twmb_franz_go//pkg/kerr",
-        "@com_github_twmb_franz_go//pkg/kgo",
-        "@com_github_twmb_franz_go//pkg/sasl/plain",
-        "@com_github_twmb_franz_go//pkg/sasl/scram",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
-        "@org_golang_google_protobuf//encoding/protojson",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -66,32 +41,13 @@ oci_image_for_service(
     binary = ":ingestion_gateway",
 )
 
-compat_go_test(
+go_test(
     name = "ingestion_gateway_test",
-    srcs = [
-        "config_test.go",
-        "handler_test.go",
-        "main_test.go",
-        "metrics_test.go",
-        "producer_test.go",
-        "server_test.go",
-        "tls_test.go",
-        "validation_test.go",
-    ],
+    srcs = ["main_test.go"],
     embed = [":ingestion_gateway_lib"],
     deps = [
-        "//api/protos/metrics:metrics_go_proto",
-        "//internal/compat/google",
-        "//internal/logging",
-        "//pkg/apis/metrics",
-        "@com_github_prometheus_client_golang//prometheus",
-        "@com_github_prometheus_client_golang//prometheus/testutil",
-        "@com_github_twmb_franz_go//pkg/kerr",
+        "//cmd/ingestion_gateway/ingestiongateway",
         "@com_github_twmb_franz_go//pkg/kgo",
-        "@com_github_twmb_franz_go//pkg/sasl/plain",
-        "@com_github_twmb_franz_go//pkg/sasl/scram",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
-        "@org_golang_google_protobuf//encoding/protojson",
-        "@org_golang_google_protobuf//proto",
     ],
 )

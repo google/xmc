@@ -27,7 +27,7 @@ compat_go_test(
     ],
     deps = [
         "//api/protos/metrics:metrics_go_proto",
-        "//cmd/ingestion_gateway:ingestion_gateway_lib",
+        "//cmd/ingestion_gateway/ingestiongateway",
         "//test/metrics/infra",
         "@com_github_twmb_franz_go//pkg/kgo",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
