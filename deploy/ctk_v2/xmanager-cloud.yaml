@@ -247,7 +247,7 @@ deployment_groups:
       enable_persistent_disk_csi: true
       enable_private_endpoint: false
       gcp_public_cidrs_access_enabled: $(vars.gcp_public_cidrs_access_enabled)
-      configure_workload_identity_sa: false
+      configure_workload_identity_sa: true
       enable_vertical_pod_autoscaling: true
       master_authorized_networks:
       - cidr_block: $(vars.authorized_cidr)
