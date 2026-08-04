@@ -116,7 +116,7 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 	instID := fmt.Sprintf("test-inst-%s", suffix)
 	instURI := fmt.Sprintf("projects/%s/instances/%s", projectID, instID)
 
-	if err := createInstanceNamed(ctx, emu, instID, instURI); err != nil {
+	if err := createInstanceNamed(ctx, emu, instID); err != nil {
 		t.Fatalf("failed to create instance: %v", err)
 	}
 
@@ -163,16 +163,17 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 }
 
 func createInstance(ctx context.Context, emu *Emulator) error {
-	return createInstanceNamed(ctx, emu, instanceID, instanceURI)
+	return createInstanceNamed(ctx, emu, instanceID)
 }
 
-func createInstanceNamed(ctx context.Context, emu *Emulator, instID string, instURI string) error {
+func createInstanceNamed(ctx context.Context, emu *Emulator, instID string) error {
 	i, err := instance.NewInstanceAdminClient(ctx, emu.ClientOptions()...)
 	if err != nil {
 		return err
 	}
 	defer i.Close()
 
+	instURI := fmt.Sprintf("projects/%s/instances/%s", projectID, instID)
 	_, err = i.GetInstance(ctx, &instancepb.GetInstanceRequest{Name: instURI})
 	if err == nil {
 		return nil
