@@ -58,4 +58,3 @@ py_test(
     main = "setup_test.py",
     deps = [":infra_py"],
 )
-

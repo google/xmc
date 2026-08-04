@@ -128,20 +128,21 @@ class TestMetricsInfraSetup(unittest.TestCase):
     def test_tcp_connectivity_and_smoke_test(self) -> None:
         """Verifies TCP connectivity checks against an active local socket server."""
         server = socketserver.TCPServer(("127.0.0.1", 0), DummyTCPHandler)
-        host, port = server.server_address
+        host_str: str = str(server.server_address[0])
+        port_int: int = int(server.server_address[1])
 
         server_thread = threading.Thread(target=server.serve_forever)
         server_thread.daemon = True
         server_thread.start()
 
         try:
-            self.assertTrue(verify_tcp_connectivity(host, port, timeout=2.0))
+            self.assertTrue(verify_tcp_connectivity(host_str, port_int, timeout=2.0))
             self.assertFalse(verify_tcp_connectivity("127.0.0.1", 1, timeout=0.1))
 
             harness = MetricsTestHarness(
-                redpanda=(host, port),
-                clickhouse_native=(host, port),
-                clickhouse_http=(host, port),
+                redpanda=(host_str, port_int),
+                clickhouse_native=(host_str, port_int),
+                clickhouse_http=(host_str, port_int),
             )
             smoke_res = harness.smoke_test(timeout=2.0)
             self.assertTrue(smoke_res["redpanda"])
