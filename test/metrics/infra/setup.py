@@ -75,16 +75,18 @@ def parse_endpoint(addr: str | tuple[str, int] | Endpoint, default_port: int) ->
         Normalized Endpoint object.
     """
     if isinstance(addr, Endpoint):
-        return addr
-
-    if isinstance(addr, tuple):
-        return Endpoint(host=addr[0], port=int(addr[1]))
-
-    if ":" in addr:
+        ep = addr
+    elif isinstance(addr, tuple):
+        ep = Endpoint(host=addr[0], port=int(addr[1]))
+    elif ":" in addr:
         parts = addr.rsplit(":", 1)
-        return Endpoint(host=parts[0], port=int(parts[1]))
+        ep = Endpoint(host=parts[0], port=int(parts[1]))
+    else:
+        ep = Endpoint(host=addr, port=default_port)
 
-    return Endpoint(host=addr, port=default_port)
+    if ep.host == "0.0.0.0":
+        return Endpoint(host="127.0.0.1", port=ep.port)
+    return ep
 
 
 def resolve_container_endpoint(
@@ -119,7 +121,7 @@ def resolve_container_endpoint(
         first_line = res.stdout.strip().splitlines()[0]
         mapped_addr = first_line.split("->")[-1].strip()
         return parse_endpoint(mapped_addr, default_port=fallback_port)
-    except (subprocess.SubprocessError, FileNotFoundError):
+    except (subprocess.SubprocessError, OSError):
         return Endpoint(host=default_host, port=fallback_port)
 
 
@@ -143,11 +145,23 @@ class MetricsTestHarness:
         gateway_url: str = DEFAULT_GATEWAY_URL,
         env_overrides: Mapping[str, str] | None = None,
     ) -> None:
+        self.env_overrides = dict(env_overrides) if env_overrides else {}
+
+        redpanda = self.env_overrides.get(
+            "XMC_REDPANDA_BROKERS",
+            self.env_overrides.get("REDPANDA_BROKERS", redpanda),
+        )
+        clickhouse_native = self.env_overrides.get(
+            "XMC_CLICKHOUSE_ADDR",
+            self.env_overrides.get("CLICKHOUSE_ADDR", clickhouse_native),
+        )
+        clickhouse_http = self.env_overrides.get("XMC_CLICKHOUSE_HTTP_ADDR", clickhouse_http)
+        gateway_url = self.env_overrides.get("XMC_GATEWAY_URL", gateway_url)
+
         self.redpanda = parse_endpoint(redpanda, DEFAULT_REDPANDA_PORT)
         self.clickhouse_native = parse_endpoint(clickhouse_native, DEFAULT_CLICKHOUSE_NATIVE_PORT)
         self.clickhouse_http = parse_endpoint(clickhouse_http, DEFAULT_CLICKHOUSE_HTTP_PORT)
         self.gateway_url = gateway_url
-        self.env_overrides = dict(env_overrides) if env_overrides else {}
         self._saved_env: dict[str, str | None] = {}
 
     def get_env_mapping(self) -> dict[str, str]:
@@ -211,7 +225,13 @@ class MetricsTestHarness:
     def verify_all_endpoints(self, timeout: float = 5.0) -> None:
         """Verifies all endpoints respond to TCP connectivity checks."""
         results = self.smoke_test(timeout=timeout)
-        failed = [ep for ep, status in results.items() if not status]
+        failed = []
+        if not results.get("redpanda", False):
+            failed.append(f"redpanda ({self.redpanda.address})")
+        if not results.get("clickhouse_native", False):
+            failed.append(f"clickhouse_native ({self.clickhouse_native.address})")
+        if not results.get("clickhouse_http", False):
+            failed.append(f"clickhouse_http ({self.clickhouse_http.address})")
         if failed:
             raise ConnectionError(f"Smoke test failed for endpoints: {', '.join(failed)}")
 
