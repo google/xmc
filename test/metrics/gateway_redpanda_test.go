@@ -23,12 +23,14 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -213,8 +215,11 @@ func TestGatewayRedpanda_BrokerOutage(t *testing.T) {
 	if err := exec.CommandContext(ctx, "docker", "pause", containerID).Run(); err != nil {
 		t.Fatalf("failed to pause Redpanda container %s: %v", containerID, err)
 	}
+	defer func() {
+		_ = exec.CommandContext(context.Background(), "docker", "unpause", containerID).Run()
+	}()
 
-	outageCtx, outageCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	outageCtx, outageCancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer outageCancel()
 
 	outageReq, err := http.NewRequestWithContext(outageCtx, http.MethodPost, server.URL, bytes.NewReader(body))
@@ -223,10 +228,14 @@ func TestGatewayRedpanda_BrokerOutage(t *testing.T) {
 	}
 	outageReq.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 3 * time.Second}
+	client := &http.Client{}
 	outageResp, err := client.Do(outageReq)
-	if err == nil {
-		_ = outageResp.Body.Close()
+	if err != nil {
+		if !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(err.Error(), "context deadline exceeded") {
+			t.Fatalf("request failed unexpectedly during broker outage: %v", err)
+		}
+	} else {
+		defer outageResp.Body.Close()
 		if outageResp.StatusCode != http.StatusServiceUnavailable && outageResp.StatusCode != http.StatusGatewayTimeout {
 			t.Errorf("expected HTTP status 503 or 504 during broker outage, got %d", outageResp.StatusCode)
 		}
@@ -348,11 +357,6 @@ func (b *blockingProducer) Close() {}
 
 // TestGatewayRedpanda_ContextCancellation verifies request abort on context cancellation.
 func TestGatewayRedpanda_ContextCancellation(t *testing.T) {
-	dir := t.TempDir()
-	certPath := filepath.Join(dir, "tls.crt")
-	keyPath := filepath.Join(dir, "tls.key")
-	generateCertKeyPair(t, certPath, keyPath, "ctx-cancel.xmc.local")
-
 	body := createTestMetricRecord(t, 555, 777)
 
 	canceledCtx, cancel := context.WithCancel(context.Background())
