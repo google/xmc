@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 
+	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
@@ -34,22 +35,39 @@ func newServer(cfg *Config, cache *cache.KueueCache) *server {
 	}
 }
 
-// GetFittingQueues returns ClusterQueues matching requested resource requirements.
+// GetFittingQueues returns ClusterQueues matching requested resource requirements directly from in-memory KueueCache.
 func (s *server) GetFittingQueues(ctx context.Context, req *spb.GetFittingQueuesRequest) (*spb.GetFittingQueuesResponse, error) {
-	queues := []*spb.QueueOverview{
-		{
-			QueueName: "sample-queue-1",
-			QueueCapacity: []*spb.QueueResourceCapacity{
-				{
-					ResourceType:  "cpu",
-					TotalCapacity: 100,
-					FreeCapacity:  50,
-				},
-			},
-		},
+	if s.cache == nil || s.cache.ClusterQueues == nil {
+		return &spb.GetFittingQueuesResponse{}, nil
 	}
 
+	// Step 1: Build ResourceFlavor map from cached ResourceFlavor CRDs.
+	rfMap := make(map[string]*kueuev1beta1.ResourceFlavor)
+	if s.cache.ResourceFlavors != nil {
+		for _, rf := range s.cache.ResourceFlavors.List() {
+			if rf != nil {
+				rfMap[rf.Name] = rf
+			}
+		}
+	}
+
+	// Step 2: Convert cached ClusterQueue CRDs into QueueOverview proto messages.
+	clusterQueues := s.cache.ClusterQueues.List()
+	overviews := make([]*spb.QueueOverview, 0, len(clusterQueues))
+	for _, cq := range clusterQueues {
+		if cq == nil {
+			continue
+		}
+		overview := buildQueueOverviewFromClusterQueue(cq, rfMap)
+		if overview != nil {
+			overviews = append(overviews, overview)
+		}
+	}
+
+	// Step 3: Filter fitting queues based on request requirements.
+	fittingQueues := filterFittingQueues(overviews, req)
+
 	return &spb.GetFittingQueuesResponse{
-		Queues: queues,
+		Queues: fittingQueues,
 	}, nil
 }

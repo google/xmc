@@ -75,6 +75,9 @@ compat_go_test(
     deps = [
         "//api/protos/rod",
         "//cmd/rod_data_provider/cache",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/resource",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
     ],
 )
