@@ -84,7 +84,7 @@ def parse_endpoint(addr: str | tuple[str, int] | Endpoint, default_port: int) ->
     else:
         ep = Endpoint(host=addr, port=default_port)
 
-    if ep.host == "0.0.0.0":
+    if ep.host in ("0.0.0.0", "::", "[::]", "localhost"):
         return Endpoint(host="127.0.0.1", port=ep.port)
     return ep
 
@@ -109,7 +109,7 @@ def resolve_container_endpoint(
     fallback_port = default_port if default_port is not None else internal_port
     try:
         res = subprocess.run(
-            ["docker", "port", container_name, f"{internal_port}/tcp"],
+            ["docker", "port", "--", container_name, f"{internal_port}/tcp"],
             capture_output=True,
             text=True,
             check=False,
@@ -120,8 +120,10 @@ def resolve_container_endpoint(
 
         first_line = res.stdout.strip().splitlines()[0]
         mapped_addr = first_line.split("->")[-1].strip()
+        if ":" not in mapped_addr:
+            return Endpoint(host=default_host, port=fallback_port)
         return parse_endpoint(mapped_addr, default_port=fallback_port)
-    except (subprocess.SubprocessError, OSError):
+    except (subprocess.SubprocessError, OSError, ValueError, IndexError):
         return Endpoint(host=default_host, port=fallback_port)
 
 

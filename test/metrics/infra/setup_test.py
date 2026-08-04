@@ -15,9 +15,7 @@
 """Unit tests for Python metrics testing harness (test/metrics/infra/setup.py)."""
 
 import os
-import socketserver
 import sys
-import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -29,13 +27,6 @@ from test.metrics.infra.setup import (
     resolve_container_endpoint,
     verify_tcp_connectivity,
 )
-
-
-class DummyTCPHandler(socketserver.BaseRequestHandler):
-    """Simple handler that immediately closes connection."""
-
-    def handle(self) -> None:
-        pass
 
 
 class TestMetricsInfraSetup(unittest.TestCase):
@@ -51,8 +42,8 @@ class TestMetricsInfraSetup(unittest.TestCase):
         ep1 = parse_endpoint("192.168.1.1:9000", default_port=80)
         self.assertEqual(ep1, Endpoint("192.168.1.1", 9000))
 
-        ep2 = parse_endpoint("localhost", default_port=8123)
-        self.assertEqual(ep2, Endpoint("localhost", 8123))
+        ep2 = parse_endpoint("10.0.0.1", default_port=8123)
+        self.assertEqual(ep2, Endpoint("10.0.0.1", 8123))
 
         ep3 = parse_endpoint(("10.0.0.1", 9092), default_port=80)
         self.assertEqual(ep3, Endpoint("10.0.0.1", 9092))
@@ -60,11 +51,12 @@ class TestMetricsInfraSetup(unittest.TestCase):
         ep_orig = Endpoint("127.0.0.1", 9092)
         self.assertEqual(parse_endpoint(ep_orig, default_port=80), ep_orig)
 
-        ep_wildcard = parse_endpoint("0.0.0.0:9092", default_port=9092)
-        self.assertEqual(ep_wildcard, Endpoint("127.0.0.1", 9092))
+        for wildcard in ("0.0.0.0", "::", "[::]", "localhost"):
+            ep_norm = parse_endpoint(f"{wildcard}:9092", default_port=9092)
+            self.assertEqual(ep_norm, Endpoint("127.0.0.1", 9092))
 
     def test_resolve_container_endpoint_fallback(self) -> None:
-        """Ensures fallback defaults are returned when Docker CLI fails."""
+        """Ensures fallback defaults are returned when Docker CLI fails or parses invalid text."""
         with patch("subprocess.run", side_effect=OSError("docker process error")):
             ep = resolve_container_endpoint(
                 container_name="redpanda",
@@ -74,19 +66,38 @@ class TestMetricsInfraSetup(unittest.TestCase):
             )
             self.assertEqual(ep, Endpoint("127.0.0.1", 9092))
 
+        mock_bad_res = MagicMock()
+        mock_bad_res.returncode = 0
+        mock_bad_res.stdout = "invalid-stdout-without-delimiter\n"
+        with patch("subprocess.run", return_value=mock_bad_res):
+            ep_invalid = resolve_container_endpoint(
+                container_name="redpanda",
+                internal_port=9092,
+                default_host="127.0.0.1",
+                default_port=9092,
+            )
+            self.assertEqual(ep_invalid, Endpoint("127.0.0.1", 9092))
+
     def test_resolve_container_endpoint_mock_docker(self) -> None:
         """Verifies successful parsing of docker port CLI output and 0.0.0.0 normalization."""
         mock_res = MagicMock()
         mock_res.returncode = 0
         mock_res.stdout = "0.0.0.0:32768\n"
 
-        with patch("subprocess.run", return_value=mock_res):
+        with patch("subprocess.run", return_value=mock_res) as mock_run:
             ep = resolve_container_endpoint(
-                container_name="redpanda",
+                container_name="my-container",
                 internal_port=9092,
                 default_host="127.0.0.1",
             )
             self.assertEqual(ep, Endpoint("127.0.0.1", 32768))
+            mock_run.assert_called_once_with(
+                ["docker", "port", "--", "my-container", "9092/tcp"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=3.0,
+            )
 
     def test_env_overrides_extraction(self) -> None:
         """Verifies env_overrides extract endpoint attributes during initialization."""
@@ -126,23 +137,14 @@ class TestMetricsInfraSetup(unittest.TestCase):
         self.assertNotIn("XMC_CUSTOM_FLAG", os.environ)
 
     def test_tcp_connectivity_and_smoke_test(self) -> None:
-        """Verifies TCP connectivity checks against an active local socket server."""
-        server = socketserver.TCPServer(("127.0.0.1", 0), DummyTCPHandler)
-        host_str: str = str(server.server_address[0])
-        port_int: int = int(server.server_address[1])
-
-        server_thread = threading.Thread(target=server.serve_forever)
-        server_thread.daemon = True
-        server_thread.start()
-
-        try:
-            self.assertTrue(verify_tcp_connectivity(host_str, port_int, timeout=2.0))
-            self.assertFalse(verify_tcp_connectivity("127.0.0.1", 1, timeout=0.1))
+        """Verifies TCP connectivity checks using mocked socket connections."""
+        with patch("socket.create_connection", return_value=MagicMock()):
+            self.assertTrue(verify_tcp_connectivity("127.0.0.1", 9092, timeout=2.0))
 
             harness = MetricsTestHarness(
-                redpanda=(host_str, port_int),
-                clickhouse_native=(host_str, port_int),
-                clickhouse_http=(host_str, port_int),
+                redpanda=("127.0.0.1", 9092),
+                clickhouse_native=("127.0.0.1", 9000),
+                clickhouse_http=("127.0.0.1", 8123),
             )
             smoke_res = harness.smoke_test(timeout=2.0)
             self.assertTrue(smoke_res["redpanda"])
@@ -150,10 +152,9 @@ class TestMetricsInfraSetup(unittest.TestCase):
             self.assertTrue(smoke_res["clickhouse_http"])
 
             harness.verify_all_endpoints(timeout=2.0)
-        finally:
-            server.shutdown()
-            server.server_close()
-            server_thread.join()
+
+        with patch("socket.create_connection", side_effect=OSError("connection refused")):
+            self.assertFalse(verify_tcp_connectivity("127.0.0.1", 9092, timeout=0.1))
 
     def test_verify_all_endpoints_failure_message(self) -> None:
         """Verifies detailed error message formatting when smoke test fails."""
