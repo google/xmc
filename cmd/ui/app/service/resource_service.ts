@@ -15,6 +15,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 
 import {
   GetFittingQueuesResponse,
@@ -35,25 +36,17 @@ export class ResourceService {
    * Fetches the list of cluster queues strictly matching the GetFittingQueuesResponse proto shape.
    */
   getClusterQueues(): Observable<GetFittingQueuesResponse> {
-    return of({
-      queues: [
-        {
-          queueName: 'gpu-cluster-queue',
-          queueCapacity: [
-            {
-              resourceType: 'nvidia.com/gpu',
-              totalCapacity: 64,
-              freeCapacity: 56,
-            },
-            {
-              resourceType: 'cpu',
-              totalCapacity: 512,
-              freeCapacity: 448,
-            },
-          ],
-        },
-      ],
-    });
+    return this.http
+      .get<GetFittingQueuesResponse>(
+        `${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues`,
+        { withCredentials: true },
+      )
+      .pipe(
+        catchError((error) => {
+          console.error('Failed to fetch cluster queues:', error);
+          return of({ queues: [] });
+        }),
+      );
   }
 
   /**
