@@ -16,10 +16,11 @@ import 'jasmine';
 
 import { provideHttpClient } from '@angular/common/http';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { of, throwError } from 'rxjs';
 
 import { HealthService } from '../service/health_service';
 import { MockHealthService } from '../service/testing/mock_health_service';
-import { bootstrap, cleanState, flush, getHarness, setupModule } from '../testing/test';
+import { bootstrap, cleanState, flush, get, getHarness, setupModule } from '../testing/test';
 import { AdminPanelPage } from './admin_panel';
 import { AdminPanelHarness } from './testing/admin_panel_harness';
 
@@ -37,15 +38,67 @@ describe('AdminPanelPage Component', () => {
     expect(comp).toBeTruthy();
   });
 
-  it('should display health status and configs', async () => {
+  it('should display correct page header and version info', async () => {
     bootstrap(AdminPanelPage);
     await flush();
 
     const harness = await getHarness(AdminPanelHarness);
+    const expectedTime = new Date(1717804800 * 1000).toLocaleTimeString();
 
-    expect(await harness.getHealthStatusText()).toContain('HEALTH_STATE_HEALTHY');
-    expect(await harness.getHealthStatusText()).toContain('mock-app-version-1.0.0');
-    expect(await harness.getHealthConfigsText()).toContain('Health Service Config');
-    expect(await harness.getHealthConfigsText()).toContain('mock-project');
+    expect(await harness.getTimestampText()).toContain(expectedTime);
+
+    const systemInfoHarness = await harness.getSystemInfoCard();
+    expect(systemInfoHarness).not.toBeNull();
+    expect(await systemInfoHarness!.getAppVersionText()).toBe('mock-app-version-1.0.0');
+    expect(await systemInfoHarness!.getEssSchemaText()).toBe('6');
+    expect(await systemInfoHarness!.getXidSchemaText()).toBe('1');
+  });
+
+  it('should display system observability link if observabilityUrl is present', async () => {
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const systemInfoHarness = await harness.getSystemInfoCard();
+    expect(systemInfoHarness).not.toBeNull();
+    expect(await systemInfoHarness!.getObservabilityLinkHref()).toBe(
+      'http://mock-observability-url',
+    );
+  });
+
+  it('should not display system observability link if observabilityUrl is missing', async () => {
+    const healthService = get(HealthService);
+    spyOn(healthService, 'getHealthStatus').and.returnValue(
+      of({
+        healthState: 'HEALTH_STATE_HEALTHY',
+        systemInfo: {
+          appVersion: 'mock-app-version-1.0.0',
+          essDbSchemaVersion: '6',
+          xidDbSchemaVersion: '1',
+        },
+        healthCheckTime: { seconds: 1717804800, nanos: 0 },
+      } as any),
+    );
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const systemInfoHarness = await harness.getSystemInfoCard();
+    expect(systemInfoHarness).not.toBeNull();
+    expect(await systemInfoHarness!.getObservabilityLinkHref()).toBeNull();
+  });
+
+  it('should display error message if health status fails to load', async () => {
+    const healthService = get(HealthService);
+    spyOn(healthService, 'getHealthStatus').and.returnValue(
+      throwError(() => new Error('Mock error')),
+    );
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    expect(await harness.getErrorText()).toContain('Failed to load health status');
   });
 });

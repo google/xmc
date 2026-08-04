@@ -10,6 +10,7 @@ compat_go_library(
     deps = [
         "//internal/auth",
         "//internal/compat/log",
+        "//internal/configutil",
         "//internal/logging",
     ],
 )
