@@ -67,3 +67,26 @@ function processUser(user: User | null) {
 
 ## 6. Post-Implementation Reflection & Meta-Learning
 - **Selective Triggers**: Trigger the [Iterative Reflection Skill](../skills/xmc_iterative_reflection/SKILL.md) only after major implementations, PRs with high comment volume (>3-5 comments), or explicit user request. Do NOT trigger for routine minor edits.
+
+
+## 7. System Attribute Immutability & Precedence
+- **System Key Precedence**: User-supplied custom maps (labels, annotations, environment variables) MUST NEVER overwrite reserved internal system attributes or security identifiers (`xid`, `wid`, `eid`, `queue-name`):
+  ```go
+  if systemMap == nil {
+      systemMap = make(map[string]string)
+  }
+  for k, v := range userMap {
+      if _, exists := systemMap[k]; !exists {
+          systemMap[k] = v
+      }
+  }
+  ```
+
+## 8. Documentation Preservation & Production Manifest Isolation
+- **100% Comment Preservation During Refactoring**: When decomposing monolithic source files into subpackages, preserve ALL existing docstrings, package headers, section dividers (`// ------`), and step-by-step numbered algorithm comments (`// 1. ...`) verbatim inside method bodies.
+- **Production Manifest Isolation**: NEVER modify production deployment manifests (`deploy/`, `helm/`, production SQL DDLs) to work around test container limitations. Dynamically sanitize DDLs in temporary memory buffers.
+- **Library First Policy**: Inspect third-party library documentation for built-in capabilities (e.g. `clickhouse.WithInitScripts()`) prior to implementing custom parsers or state machines.
+
+## 9. Bazel CI Diagnostic Protocol & Zero Task Polling
+- **No Speculative Attribute Changes**: NEVER modify Bazel test parameters (`size`, `timeout`, `tags`) speculatively upon CI test failure. Always inspect complete test logs via `bazel test --test_output=errors //...` to identify exact failure root causes.
+- **Reactive Background Task Handling**: NEVER poll background tasks in a loop using `manage_task action=status`. Rely on system reactive notifications after launching background tasks.
