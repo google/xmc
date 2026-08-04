@@ -31,6 +31,7 @@ compat_go_test(
         "//test/metrics/infra",
         "@com_github_twmb_franz_go//pkg/kgo",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
+        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
     ],
 )

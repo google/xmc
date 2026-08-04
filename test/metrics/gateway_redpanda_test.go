@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -37,6 +38,8 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	metricspb "xmanager_cloud/api/protos/metrics"
 	ingestiongateway "xmanager_cloud/cmd/ingestion_gateway"
@@ -111,12 +114,112 @@ func createTestMetricRecord(tb testing.TB, xid, workUnitID int64) []byte {
 		Timestamp:   time.Now().Unix(),
 	}
 
-	data, err := json.Marshal(m)
+	data, err := protojson.Marshal(m)
 	if err != nil {
 		tb.Fatalf("failed to marshal test metric: %v", err)
 	}
 
 	return data
+}
+
+// TestGatewayRedpanda_EndToEndHappyPath validates the complete happy path flow:
+// HTTP POST -> Ingestion Gateway -> Kafka Producer -> Redpanda Broker -> Kafka Consumer.
+func TestGatewayRedpanda_EndToEndHappyPath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	rpContainer, brokers, err := infra.StartRedpanda(ctx, nil)
+	if err != nil {
+		t.Fatalf("failed to start Redpanda container: %v", err)
+	}
+	defer func() {
+		_ = rpContainer.Terminate(context.Background())
+	}()
+
+	cfg := &ingestiongateway.Config{
+		RedpandaBrokers: brokers,
+	}
+
+	producer, err := ingestiongateway.NewKafkaProducer(cfg, nil)
+	if err != nil {
+		t.Fatalf("failed to initialize producer: %v", err)
+	}
+	defer producer.Close()
+
+	topicName := fmt.Sprintf("xmc-metrics-happypath-%d", time.Now().UnixNano())
+	adminClient := kadm.NewClient(producer)
+	if _, err := adminClient.CreateTopics(ctx, 1, 1, nil, topicName); err != nil {
+		t.Fatalf("failed to create topic %s: %v", topicName, err)
+	}
+
+	// Create a dedicated consumer to consume published messages from Redpanda.
+	consumerOpts := []kgo.Opt{
+		kgo.SeedBrokers(brokers...),
+		kgo.ConsumeTopics(topicName),
+	}
+	consumer, err := kgo.NewClient(consumerOpts...)
+	if err != nil {
+		t.Fatalf("failed to initialize consumer: %v", err)
+	}
+	defer consumer.Close()
+
+	handler := ingestiongateway.NewMetricsIngestionHandler(producer, topicName, nil)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	xid := int64(12345)
+	workUnitID := int64(67890)
+	body := createTestMetricRecord(t, xid, workUnitID)
+
+	resp, err := http.Post(server.URL, "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("HTTP POST produce request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected HTTP status 202 Accepted, got %d", resp.StatusCode)
+	}
+
+	var respPayload map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&respPayload); err != nil {
+		t.Fatalf("failed to decode response payload: %v", err)
+	}
+	if respPayload["status"] != "accepted" {
+		t.Errorf("expected status 'accepted' in response, got %v", respPayload["status"])
+	}
+
+	// Poll Redpanda to verify message was persisted and readable.
+	pollCtx, pollCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer pollCancel()
+
+	fetches := consumer.PollFetches(pollCtx)
+	if errs := fetches.Errors(); len(errs) > 0 {
+		t.Fatalf("consumer poll failed: %v", errs[0].Err)
+	}
+
+	records := fetches.Records()
+	if len(records) == 0 {
+		t.Fatalf("expected at least 1 record consumed from Redpanda, got 0")
+	}
+
+	expectedKey := ingestiongateway.FormatCompositeKey(xid, workUnitID)
+	rec := records[0]
+	if !bytes.Equal(rec.Key, expectedKey) {
+		t.Errorf("consumed record key = %s, expected %s", string(rec.Key), string(expectedKey))
+	}
+
+	var consumedMetric metricspb.Metric
+	if err := proto.Unmarshal(rec.Value, &consumedMetric); err != nil {
+		t.Fatalf("failed to unmarshal consumed binary metric proto: %v", err)
+	}
+	if consumedMetric.Xid != xid || consumedMetric.WorkUnitId != workUnitID {
+		t.Errorf("consumed metric mismatch: got xid=%d, workUnitID=%d", consumedMetric.Xid, consumedMetric.WorkUnitId)
+	}
 }
 
 // TestGatewayRedpanda_MTLSKeyReloader verifies dynamic cert rotation using keyreloader.
