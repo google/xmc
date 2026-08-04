@@ -111,18 +111,21 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 
 	emu := &Emulator{addr: addr}
 
-	if err := createInstance(ctx, emu); err != nil {
+	suffix := RandomSuffix()
+	instID := fmt.Sprintf("test-inst-%s", suffix)
+	instURI := fmt.Sprintf("projects/%s/instances/%s", projectID, instID)
+
+	if err := createInstanceNamed(ctx, emu, instID, instURI); err != nil {
 		t.Fatalf("failed to create instance: %v", err)
 	}
 
-	suffix := RandomSuffix()
 	xidDatabase := fmt.Sprintf("test-xid-db-%s", suffix)
 	essDatabase := fmt.Sprintf("test-ess-db-%s", suffix)
 
 	emu.XIDDatabase = xidDatabase
 	emu.ESSDatabase = essDatabase
-	xidDBURI := fmt.Sprintf("projects/%s/instances/%s/databases/%s", projectID, instanceID, xidDatabase)
-	essDBURI := fmt.Sprintf("projects/%s/instances/%s/databases/%s", projectID, instanceID, essDatabase)
+	xidDBURI := fmt.Sprintf("projects/%s/instances/%s/databases/%s", projectID, instID, xidDatabase)
+	essDBURI := fmt.Sprintf("projects/%s/instances/%s/databases/%s", projectID, instID, essDatabase)
 
 	if err := createDatabase(ctx, emu, xidDatabase, xidDBURI, xidSchema, xidDescriptors, applySchema); err != nil {
 		t.Fatalf("failed to create XID database: %v", err)
@@ -146,35 +149,34 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 
 	t.Cleanup(func() {
 		cleanupCtx := context.WithoutCancel(ctx)
-		dba, err := database.NewDatabaseAdminClient(cleanupCtx, emu.ClientOptions()...)
+		instClient, err := instance.NewInstanceAdminClient(cleanupCtx, emu.ClientOptions()...)
 		if err != nil {
 			return
 		}
-		defer dba.Close()
-		_ = dba.DropDatabase(cleanupCtx, &dbadminpb.DropDatabaseRequest{Database: xidDBURI})
-		_ = dba.DropDatabase(cleanupCtx, &dbadminpb.DropDatabaseRequest{Database: essDBURI})
+		defer instClient.Close()
+		_ = instClient.DeleteInstance(cleanupCtx, &instancepb.DeleteInstanceRequest{Name: instURI})
 	})
 
 	return xidClient, essClient, emu
 }
 
-func createInstance(ctx context.Context, emu *Emulator) error {
+func createInstanceNamed(ctx context.Context, emu *Emulator, instID string, instURI string) error {
 	i, err := instance.NewInstanceAdminClient(ctx, emu.ClientOptions()...)
 	if err != nil {
 		return err
 	}
 	defer i.Close()
 
-	_, err = i.GetInstance(ctx, &instancepb.GetInstanceRequest{Name: instanceURI})
+	_, err = i.GetInstance(ctx, &instancepb.GetInstanceRequest{Name: instURI})
 	if err == nil {
 		return nil
 	}
 
 	op, err := i.CreateInstance(ctx, &instancepb.CreateInstanceRequest{
 		Parent:     projectURI,
-		InstanceId: instanceID,
+		InstanceId: instID,
 		Instance: &instancepb.Instance{
-			DisplayName: instanceID,
+			DisplayName: instID,
 			NodeCount:   1,
 		},
 	})
