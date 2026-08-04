@@ -56,3 +56,16 @@ func TestGetFittingQueues(t *testing.T) {
 		})
 	}
 }
+
+func TestServerInitialization(t *testing.T) {
+	cfg := &Config{Port: "8080", GRPCPort: "50051"}
+	srv := newServer(cfg)
+	if srv.cfg != cfg {
+		t.Errorf("srv.cfg = %v, want %v", srv.cfg, cfg)
+	}
+
+	fetcherSrv := newServerWithFetcher(cfg, nil)
+	if fetcherSrv.cfg != cfg {
+		t.Errorf("fetcherSrv.cfg = %v, want %v", fetcherSrv.cfg, cfg)
+	}
+}

@@ -30,7 +30,15 @@ service ResourceObservabilityService {
       get: "/v1/clusterqueues"
     };
   }
+
+  // Get all running and pending jobs for a specific cluster queue.
+  rpc GetRunningAndPendingJobs(GetRunningAndPendingJobsRequest) returns (GetRunningAndPendingJobsResponse) {
+    option (google.api.http) = {
+      get: "/v1/clusterqueues/{queue_name}/jobs"
+    };
+  }
 }
+
 
 // Resource represents requested or available compute resources.
 message Resource {
@@ -62,3 +70,33 @@ message GetFittingQueuesRequest {
 message GetFittingQueuesResponse {
   repeated QueueOverview queues = 1;
 }
+
+// GetRunningAndPendingJobsRequest represents query parameters for fetching active jobs of a queue.
+message GetRunningAndPendingJobsRequest {
+  string queue_name = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+// JobInfo represents details of a running or pending job.
+message JobInfo {
+  string position = 1;
+  string xid = 2;
+  string work_unit_id = 3;
+  string job_name = 4;
+  string user = 5;
+  string resources = 6;
+  string priority = 7;
+  string status = 8;
+  string time_in_queue = 9;
+  string queue_name = 10;
+  string creation_time = 11;
+}
+
+// GetRunningAndPendingJobsResponse represents the paginated list of running and pending jobs.
+message GetRunningAndPendingJobsResponse {
+  string queue_name = 1;
+  repeated JobInfo jobs = 2;
+  string next_page_token = 3;
+}
+

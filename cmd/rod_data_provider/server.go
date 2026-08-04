@@ -20,13 +20,26 @@ import (
 	spb "xmanager_cloud/api/protos/rod"
 )
 
+// WorkUnitFetcher defines storage operations required to fetch active jobs by queue name.
+type WorkUnitFetcher interface {
+	FetchActiveWorkUnitsByQueue(ctx context.Context, queueName string, pageSize int32, pageToken string) ([]*spb.JobInfo, string, error)
+}
+
 type server struct {
 	spb.UnimplementedResourceObservabilityServiceServer
-	cfg *Config
+	cfg           *Config
+	workUnitStore WorkUnitFetcher
 }
 
 func newServer(cfg *Config) *server {
 	return &server{cfg: cfg}
+}
+
+func newServerWithFetcher(cfg *Config, fetcher WorkUnitFetcher) *server {
+	return &server{
+		cfg:           cfg,
+		workUnitStore: fetcher,
+	}
 }
 
 // GetFittingQueues returns ClusterQueues matching requested resource requirements.

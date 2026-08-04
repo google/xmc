@@ -18,6 +18,7 @@ compat_go_library(
     name = "workunit",
     srcs = [
         "createworkunit.go",
+        "fetch_active_work_units.go",
         "fetchcurrentworkunitexecution.go",
         "fetchnextworkunitid.go",
         "fetchworkunit.go",
@@ -33,6 +34,7 @@ compat_go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
+        "//api/protos/rod",
         "//internal/compat/field_mask",
         "//internal/compat/proto",
         "//internal/compat/safesql",
@@ -63,7 +65,10 @@ compat_go_library(
 
 compat_go_test(
     name = "workunit_unit_test",
-    srcs = ["createworkunit_unit_test.go"],
+    srcs = [
+        "createworkunit_unit_test.go",
+        "fetch_active_work_units_test.go",
+    ],
     embed = [":workunit"],
     deps = [
         "//api/protos/experiment:messages_go_proto",

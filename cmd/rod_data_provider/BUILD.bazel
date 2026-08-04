@@ -22,6 +22,7 @@ compat_go_library(
     name = "rod_data_provider_lib",
     srcs = [
         "config.go",
+        "jobs.go",
         "kueue_resource_extractor.go",
         "main.go",
         "queue_converters.go",
@@ -40,8 +41,10 @@ compat_go_library(
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
         "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure:go_default_library",
         "@org_golang_google_grpc//reflection:go_default_library",
+        "@org_golang_google_grpc//status",
     ],
 )
 
@@ -61,12 +64,15 @@ compat_go_test(
     name = "server_test",
     srcs = [
         "config_test.go",
+        "jobs_test.go",
         "queue_matcher_test.go",
         "server_test.go",
     ],
     embed = [":rod_data_provider_lib"],
     deps = [
         "//api/protos/rod",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )
 
