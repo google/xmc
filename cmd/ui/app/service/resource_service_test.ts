@@ -24,7 +24,7 @@ import {
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
-import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
+import { XMC_API_DOMAIN } from './constants';
 import { ResourceService } from './resource_service';
 
 describe('ResourceService', () => {
@@ -46,14 +46,47 @@ describe('ResourceService', () => {
   });
 
   describe('getClusterQueues', () => {
-    it('should return cluster queues matching GetFittingQueuesResponse proto shape', async () => {
-      const response: GetFittingQueuesResponse = await firstValueFrom(
+    it('should fetch cluster queues directly matching GetFittingQueuesResponse proto shape', async () => {
+      const mockResponse: GetFittingQueuesResponse = {
+        queues: [
+          {
+            queueName: 'gpu-cluster-queue',
+            queueCapacity: [
+              {
+                resourceType: 'nvidia.com/gpu',
+                totalCapacity: 64,
+                freeCapacity: 16,
+              },
+            ],
+          },
+        ],
+      };
+
+      const responsePromise: Promise<GetFittingQueuesResponse> = firstValueFrom(
         state.service.getClusterQueues(),
       );
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/clusterqueues`);
+      expect(req.request.method).toBe('GET');
+      req.flush(mockResponse);
+
+      const response = await responsePromise;
       expect(response.queues?.length).toBe(1);
       expect(response.queues?.[0].queueName).toBe('gpu-cluster-queue');
       expect(response.queues?.[0].queueCapacity?.[0].resourceType).toBe('nvidia.com/gpu');
       expect(response.queues?.[0].queueCapacity?.[0].totalCapacity).toBe(64);
+    });
+
+    it('should handle HTTP error gracefully and return empty queues response', async () => {
+      const responsePromise: Promise<GetFittingQueuesResponse> = firstValueFrom(
+        state.service.getClusterQueues(),
+      );
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/clusterqueues`);
+      req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
+
+      const response = await responsePromise;
+      expect(response.queues).toEqual([]);
     });
   });
 
