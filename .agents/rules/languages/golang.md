@@ -29,3 +29,14 @@ This document defines coding standards and conventions for Go development across
 
 ## 6. Go Dependencies / Bazel
 - Always inspect proto package `BUILD.bazel` to verify exact `go_proto_library` target name (typically ending in `_go_proto`) before adding Bazel dependencies.
+
+## 8. Go Map Safety, Mutability & Pointer Isolation
+- **Map Pointer Isolation**: NEVER assign the same map reference to multiple struct fields or nested objects (e.g., `JobTemplateSpec.ObjectMeta.Labels` and `PodTemplateSpec.ObjectMeta.Labels`). Construct a shallow copy for each sub-struct:
+  ```go
+  podLabels := make(map[string]string, len(labels))
+  for k, v := range labels {
+      podLabels[k] = v
+  }
+  ```
+- **Pre-allocating Map Capacity**: Specify initial capacity `make(map[K]V, capacity)` whenever map entry counts are known to prevent runtime re-allocations.
+- **Deterministic Map Iteration**: Map iteration in Go is non-deterministic. Always sort slice outputs derived from map keys prior to serialization or return.
