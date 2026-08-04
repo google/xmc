@@ -127,15 +127,24 @@ jobs:
         run: |
           echo "=== Pruning Bazel cache and build tree ==="
           if [ -d ~/.cache/bazel-disk ]; then
-            find ~/.cache/bazel-disk -type f -atime +3 -delete || true
-            find ~/.cache/bazel-disk -type d -empty -delete || true
+            # Size-based pruning: Keep disk cache under 3GB so tar/compression remains fast,
+            # while avoiding mtime/atime traps that delete valid restored cache entries.
+            MAX_SIZE_MB=3000
+            CURRENT_SIZE_MB=$(du -sm ~/.cache/bazel-disk | cut -f1)
+            if [ "${CURRENT_SIZE_MB}" -gt "${MAX_SIZE_MB}" ]; then
+              echo "Bazel disk cache (${CURRENT_SIZE_MB}MB) exceeds limit (${MAX_SIZE_MB}MB). Pruning oldest files..."
+              find ~/.cache/bazel-disk -type f -printf '%T@ %p\n' | sort -n | head -n 1000 | cut -d' ' -f2- | xargs rm -f || true
+              find ~/.cache/bazel-disk -type d -empty -delete || true
+            fi
           fi
           bazel clean || true
           df -h
 
       - name: 'Save Bazel Cache'
         uses: 'actions/cache/save@v4'
-        if: always()
+        # Only save cache on main branch pushes when exact cache key was missed to eliminate redundant
+        # tar/compress/upload overhead on PR branches that saturates self-hosted runners.
+        if: github.ref == 'refs/heads/main' && steps.cache-bazel-restore.outputs.cache-hit != 'true'
         with:
           path: |
             ~/.cache/bazel-repo
