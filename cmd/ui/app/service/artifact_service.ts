@@ -20,7 +20,7 @@ import {
   ListArtifactsResponse,
 } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 
-import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
+import { XMC_API_DOMAIN } from './constants';
 
 const PAGE_SIZE = 950;
 
@@ -48,9 +48,9 @@ export class ArtifactService {
     }
     const params = new HttpParams({ fromObject: paramsMap });
 
-    return this.http.get<ListArtifactsResponse>(
-      `${EXPERIMENT_STATE_SERVER_DOMAIN}/${parent}/artifacts:search`,
-      { params, withCredentials: true },
-    );
+    return this.http.get<ListArtifactsResponse>(`${XMC_API_DOMAIN}/${parent}/artifacts:search`, {
+      params,
+      withCredentials: true,
+    });
   }
 }

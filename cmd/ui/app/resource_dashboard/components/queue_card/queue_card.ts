@@ -12,18 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
+import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
 import {
   FreeTotalDisplayPipe,
   MaxWorkloadDisplayPipe,
   QueueStatusBadgePipe,
 } from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
-import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
 
 @Component({
   selector: 'xmc-rod-queue-card',
@@ -32,7 +31,6 @@ import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
   styleUrl: './queue_card.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    CommonModule,
     MatIconModule,
     MatTooltipModule,
     MaxWorkloadDisplayPipe,
@@ -41,21 +39,21 @@ import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
   ],
 })
 export class QueueCardComponent {
-  readonly queue = input.required<ClusterQueue>();
+  readonly queue = input.required<QueueOverview>();
   readonly isSelected = input<boolean>(false);
   readonly selectQueue = output<string>();
 
   // TODO: Restore copyFlag functionality and isCopied signal once flag formatting and requirements are finalized.
   protected readonly termTooltips = ROD_TERM_TOOLTIPS;
-  protected readonly flavors = computed(() => this.queue()?.flavors ?? []);
+  protected readonly capacities = computed(() => this.queue()?.queueCapacity ?? []);
 
-  protected readonly isQueueHealthy = computed(() => {
-    const q = this.queue();
-    if (!q || q.status !== 'Active') return false;
-    return (q.pendingWorkloads || 0) === 0;
-  });
+  // TODO: Restore actual health check logic once queue status/pending workloads are available in backend API.
+  protected readonly isQueueHealthy = computed(() => true);
 
   protected onCardClick(): void {
-    this.selectQueue.emit(this.queue().name);
+    const name = this.queue().queueName;
+    if (name) {
+      this.selectQueue.emit(name);
+    }
   }
 }
