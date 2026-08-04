@@ -19,9 +19,10 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { firstValueFrom } from 'rxjs';
 
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
+import { GetFittingQueuesResponse } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
 import { ResourceService } from './resource_service';
-import { ClusterQueueListResponse, QueueJobListResponse } from './resource_types';
+import { QueueJobListResponse } from './resource_types';
 
 describe('ResourceService', () => {
   beforeAll(setupObservableMatchers);
@@ -42,8 +43,8 @@ describe('ResourceService', () => {
   });
 
   describe('getClusterQueues', () => {
-    it('should fetch cluster queues from backend and map capacities to flavors', async () => {
-      const mockResponse = {
+    it('should fetch cluster queues directly matching GetFittingQueuesResponse proto shape', async () => {
+      const mockResponse: GetFittingQueuesResponse = {
         queues: [
           {
             queueName: 'gpu-cluster-queue',
@@ -52,13 +53,14 @@ describe('ResourceService', () => {
                 resourceType: 'nvidia-tesla-h100',
                 totalCapacity: 64,
                 freeCapacity: 16,
+                freeCapacityWithBorrowing: 16,
               },
             ],
           },
         ],
       };
 
-      const responsePromise: Promise<ClusterQueueListResponse> = firstValueFrom(
+      const responsePromise: Promise<GetFittingQueuesResponse> = firstValueFrom(
         state.service.getClusterQueues(),
       );
 
@@ -67,13 +69,11 @@ describe('ResourceService', () => {
       req.flush(mockResponse);
 
       const response = await responsePromise;
-      expect(response.clusterQueues.length).toBe(1);
-      expect(response.clusterQueues[0].name).toBe('gpu-cluster-queue');
-      expect(response.clusterQueues[0].flavors.length).toBe(1);
-      expect(response.clusterQueues[0].flavors[0].name).toBe('nvidia-tesla-h100');
-      expect(response.clusterQueues[0].flavors[0].nominalQuota).toBe('64');
-      expect(response.clusterQueues[0].flavors[0].freeCapacity).toBe('16');
-      expect(response.clusterQueues[0].flavors[0].inUse).toBe('48');
+      expect(response.queues?.length).toBe(1);
+      expect(response.queues?.[0].queueName).toBe('gpu-cluster-queue');
+      expect(response.queues?.[0].queueCapacity?.[0].resourceType).toBe('nvidia-tesla-h100');
+      expect(response.queues?.[0].queueCapacity?.[0].totalCapacity).toBe(64);
+      expect(response.queues?.[0].queueCapacity?.[0].freeCapacity).toBe(16);
     });
   });
 

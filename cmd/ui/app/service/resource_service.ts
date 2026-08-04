@@ -14,17 +14,12 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { Observable, of } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { Observable } from 'rxjs';
 
-import {
-  GetFittingQueuesResponse,
-  QueueOverview,
-  QueueResourceCapacity,
-} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { GetFittingQueuesResponse } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
-import { ClusterQueue, ClusterQueueListResponse, QueueJobListResponse } from './resource_types';
+import { QueueJobListResponse } from './resource_types';
 
 /**
  * Angular injectable data service client for fetching Resource Observability Dashboard (ROD)
@@ -37,52 +32,13 @@ export class ResourceService {
   private readonly http = inject(HttpClient);
 
   /**
-   * Fetches the list of cluster queues.
+   * Fetches the list of cluster queues strictly matching the GetFittingQueuesResponse proto shape.
    */
-  getClusterQueues(): Observable<ClusterQueueListResponse> {
-    return this.http
-      .get<GetFittingQueuesResponse>(`${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues`, {
-        withCredentials: true,
-      })
-      .pipe(
-        map((res) => {
-          const rawQueues: QueueOverview[] = res?.queues || [];
-          const clusterQueues: ClusterQueue[] = rawQueues.map((q) => {
-            const name = q.queueName || 'cluster-queue';
-            const rawCapacities: QueueResourceCapacity[] = q.queueCapacity || [];
-            const flavors = rawCapacities.map((cap) => {
-              const resourceType = cap.resourceType || 'resource';
-              const totalCapacity = cap.totalCapacity ?? 0;
-              const freeCapacity = cap.freeCapacity ?? 0;
-              const inUse = Math.max(0, totalCapacity - freeCapacity);
-              return {
-                name: resourceType,
-                resourceName: resourceType,
-                nominalQuota: String(totalCapacity),
-                inUse: String(inUse),
-                reserved: '0',
-                freeCapacity: String(freeCapacity),
-                largestSlot: String(freeCapacity),
-              };
-            });
-
-            return {
-              name,
-              strategy: 'BestEffortFIFO',
-              cohort: '',
-              status: 'Active',
-              admittedWorkloads: 0,
-              reservingWorkloads: 0,
-              pendingWorkloads: 0,
-              pendingJobsCount: 0,
-              admittedJobsCount: 0,
-              localQueues: [],
-              flavors,
-            };
-          });
-          return { clusterQueues };
-        }),
-      );
+  getClusterQueues(): Observable<GetFittingQueuesResponse> {
+    return this.http.get<GetFittingQueuesResponse>(
+      `${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues`,
+      { withCredentials: true },
+    );
   }
 
   /**
@@ -90,9 +46,10 @@ export class ResourceService {
    */
   getQueueJobs(queueName?: string): Observable<QueueJobListResponse> {
     const targetQueueName = queueName ?? '';
-    return of({
-      queueName: targetQueueName,
-      jobs: [],
-    });
+    const query = targetQueueName ? `?queueName=${encodeURIComponent(targetQueueName)}` : '';
+    return this.http.get<QueueJobListResponse>(
+      `${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues/jobs${query}`,
+      { withCredentials: true },
+    );
   }
 }
