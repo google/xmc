@@ -551,7 +551,10 @@ func TestConstructJobSet_PerJobCustomLabels(t *testing.T) {
 		wu.Executable.GetJobset().Jobs[0].Labels = map[string]string{
 			"kueue.x-k8s.io/podset":     "pathways-head",
 			"custom.label/key":          "value",
-			constants.ExperimentIDLabel: "hacked",
+			constants.ExperimentIDLabel: "hacked-xid",
+			constants.WorkUnitIDLabel:   "hacked-wid",
+			constants.ExecutionIDLabel:  "hacked-eid",
+			"kueue.x-k8s.io/queue-name": "hacked-queue",
 		}
 	})
 	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
@@ -562,21 +565,37 @@ func TestConstructJobSet_PerJobCustomLabels(t *testing.T) {
 		t.Fatalf("Expected 1 ReplicatedJob, got %d", len(jobSet.Spec.ReplicatedJobs))
 	}
 	rj := jobSet.Spec.ReplicatedJobs[0]
-	if rj.Template.ObjectMeta.Labels["kueue.x-k8s.io/podset"] != "pathways-head" {
-		t.Errorf("JobTemplateSpec.ObjectMeta.Labels[kueue.x-k8s.io/podset] = %q, want %q", rj.Template.ObjectMeta.Labels["kueue.x-k8s.io/podset"], "pathways-head")
+
+	// Verify custom labels are applied
+	if got := rj.Template.ObjectMeta.Labels["kueue.x-k8s.io/podset"]; got != "pathways-head" {
+		t.Errorf("JobTemplateSpec.ObjectMeta.Labels[kueue.x-k8s.io/podset] = %q, want %q", got, "pathways-head")
 	}
-	if rj.Template.ObjectMeta.Labels["custom.label/key"] != "value" {
-		t.Errorf("JobTemplateSpec.ObjectMeta.Labels[custom.label/key] = %q, want %q", rj.Template.ObjectMeta.Labels["custom.label/key"], "value")
+	if got := rj.Template.ObjectMeta.Labels["custom.label/key"]; got != "value" {
+		t.Errorf("JobTemplateSpec.ObjectMeta.Labels[custom.label/key] = %q, want %q", got, "value")
 	}
+
 	podLabels := rj.Template.Spec.Template.ObjectMeta.Labels
-	if podLabels["kueue.x-k8s.io/podset"] != "pathways-head" {
-		t.Errorf("PodTemplateSpec.ObjectMeta.Labels[kueue.x-k8s.io/podset] = %q, want %q", podLabels["kueue.x-k8s.io/podset"], "pathways-head")
+	if got := podLabels["kueue.x-k8s.io/podset"]; got != "pathways-head" {
+		t.Errorf("PodTemplateSpec.ObjectMeta.Labels[kueue.x-k8s.io/podset] = %q, want %q", got, "pathways-head")
 	}
-	if podLabels["custom.label/key"] != "value" {
-		t.Errorf("PodTemplateSpec.ObjectMeta.Labels[custom.label/key] = %q, want %q", podLabels["custom.label/key"], "value")
+	if got := podLabels["custom.label/key"]; got != "value" {
+		t.Errorf("PodTemplateSpec.ObjectMeta.Labels[custom.label/key] = %q, want %q", got, "value")
 	}
-	if podLabels[constants.ExperimentIDLabel] != "123" {
-		t.Errorf("PodTemplateSpec.ObjectMeta.Labels[%s] = %q, want %q", constants.ExperimentIDLabel, podLabels[constants.ExperimentIDLabel], "123")
+
+	// Verify system jobLabels take precedence over job.GetLabels()
+	expectedSystemLabels := map[string]string{
+		constants.ExperimentIDLabel: "123",
+		constants.WorkUnitIDLabel:   "456",
+		constants.ExecutionIDLabel:  "1",
+		"kueue.x-k8s.io/queue-name": testNamespace,
+	}
+	for labelKey, wantValue := range expectedSystemLabels {
+		if got := rj.Template.ObjectMeta.Labels[labelKey]; got != wantValue {
+			t.Errorf("JobTemplateSpec system label %s = %q, want %q (system label must take precedence)", labelKey, got, wantValue)
+		}
+		if got := podLabels[labelKey]; got != wantValue {
+			t.Errorf("PodTemplateSpec system label %s = %q, want %q (system label must take precedence)", labelKey, got, wantValue)
+		}
 	}
 }
 
