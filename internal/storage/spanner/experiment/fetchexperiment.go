@@ -36,7 +36,7 @@ func (r *Repository) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.
 
 // fetchExperimentTransaction retrieves a single Experiment from storage by its unique
 // numerical ID in a transaction.
-func (r *Repository) FetchExperimentTransaction(ctx context.Context, xid int64, txn spannerTransaction) (*essmsgpb.Experiment, error) {
+func (r *Repository) FetchExperimentTransaction(ctx context.Context, xid int64, txn SpannerTransaction) (*essmsgpb.Experiment, error) {
 	logging.Info(ctx, "Fetch experiment row")
 
 	row, err := txn.ReadRow(ctx, experimentschema.ExperimentTableName, spanner.Key{spannerutils.ReverseBits(xid)}, experimentschema.ExperimentColumns)

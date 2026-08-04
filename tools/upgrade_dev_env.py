@@ -44,10 +44,12 @@ class Config:
     environment: str
     namespace: str
     registry: str
-    acr_target: str
+    image_registry: str
+    image_tag: str
     gke_cluster: str
     config_path: str
     run_migrations: bool = False
+    rod_deployment_enabled: bool = False
 
 
 def log_info(msg: str) -> None:
@@ -203,8 +205,19 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
         error_exit(f"deployment_name is missing in vars of '{config_file}'.")
 
     registry = f"us-docker.pkg.dev/{project_id}/xmc"
-    acr_target = os.getenv("XMC_ACR_TARGET") or registry
+    image_registry = (
+        os.getenv("IMAGE_REGISTRY")
+        or os.getenv("XMC_ACR_TARGET")
+        or str(yaml_vars.get("image_registry", registry))
+    )
+    image_tag = os.getenv("BUILD_TAG") or str(yaml_vars.get("image_tag", "latest"))
     gke_cluster = f"xmc-{deployment_name}-{environment}"
+
+    rod_raw = yaml_vars.get("rod_deployment_enabled", False)
+    if isinstance(rod_raw, str):
+        rod_deployment_enabled = rod_raw.lower() == "true"
+    else:
+        rod_deployment_enabled = bool(rod_raw)
 
     return Config(
         project_id=project_id,
@@ -213,10 +226,12 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
         environment=environment,
         namespace=namespace,
         registry=registry,
-        acr_target=acr_target,
+        image_registry=image_registry,
+        image_tag=image_tag,
         gke_cluster=gke_cluster,
         config_path=config_file,
         run_migrations=run_migrations,
+        rod_deployment_enabled=rod_deployment_enabled,
     )
 
 
@@ -268,7 +283,7 @@ def step_check(config: Config) -> None:
     log_info(f"Verifying gcloud target project ({config.project_id})...")
     run_cmd(["gcloud", "config", "set", "project", config.project_id, "--quiet"])
 
-    registry_host = config.acr_target.split("/")[0]
+    registry_host = config.image_registry.split("/")[0]
     if registry_host.endswith("gcr.io") or registry_host.endswith(".pkg.dev"):
         log_info(
             f"Configuring Docker authentication for Google Artifact Registry ({registry_host})..."
@@ -435,11 +450,12 @@ def step_migrate(config: Config) -> None:
 def step_images(config: Config) -> None:
     """Rebuilds and pushes XMC microservice OCI images to Artifact Registry."""
     log_info(
-        f"Rebuilding and pushing latest XMC microservice OCI images to '{config.acr_target}'..."
+        f"Rebuilding and pushing latest XMC microservice OCI images to '{config.image_registry}'..."
     )
     env = {
         "XMC_ENV": config.environment,
-        "XMC_ACR_TARGET": config.acr_target,
+        "XMC_ACR_TARGET": config.image_registry,
+        "BUILD_TAG": config.image_tag,
     }
 
     # TODO: Migrate hardcoded image targets to dynamic discovery or configuration flags to operate on flags cleanly.
@@ -455,9 +471,12 @@ def step_images(config: Config) -> None:
         ("xid_service", "//cmd/xid_service:xid_service_image_push"),
         ("health_service", "//cmd/health_service:health_service_image_push"),
         ("dashboard_service", "//cmd/dashboard_service:dashboard_service_image_push"),
-        ("rod_data_provider", "//cmd/rod_data_provider:rod_data_provider_image_push"),
         ("ingestion_gateway", "//cmd/ingestion_gateway:ingestion_gateway_image_push"),
     ]
+    if config.rod_deployment_enabled:
+        targets.append(
+            ("rod_data_provider", "//cmd/rod_data_provider:rod_data_provider_image_push")
+        )
 
     for name, target in targets:
         log_info(f"Pushing {name} image...")
@@ -530,6 +549,8 @@ def step_restart(config: Config) -> None:
         "ui",
         "xid-service",
     ]
+    if config.rod_deployment_enabled:
+        services.append("rod-data-provider")
 
     for service in services:
         resolved_name = resolve_deployment_name(service, config.namespace)

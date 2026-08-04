@@ -81,14 +81,18 @@ func init() {
 	flag.StringVar(&projectID, "project_id", "", "GCP project ID for logging.")
 }
 
-// LoadConfig creates and validates a Config struct from flags and mounted secrets.
+// LoadConfig creates and validates a Config struct from flags, environment variables, and mounted secrets.
 func LoadConfig() (*Config, error) {
-	brokers := parseBrokers(redpandaBrokersStr)
+	effectivePort := getEnvOrDefault(port, "8080", "PORT")
+	effectiveBrokersStr := getEnvOrDefault(redpandaBrokersStr, "localhost:9092", "REDPANDA_BROKERS", "REDPANDA_BROKER")
+	effectiveTopicName := getEnvOrDefault(topicName, "xmc-metrics", "TOPIC_NAME", "REDPANDA_TOPIC")
+
+	brokers := parseBrokers(effectiveBrokersStr)
 
 	cfg := &Config{
-		Port:                  strings.TrimSpace(port),
+		Port:                  strings.TrimSpace(effectivePort),
 		RedpandaBrokers:       brokers,
-		TopicName:             strings.TrimSpace(topicName),
+		TopicName:             strings.TrimSpace(effectiveTopicName),
 		MinPartitions:         minPartitions,
 		MinReplicas:           minReplicas,
 		SASLEnabled:           saslEnabled,
@@ -115,6 +119,19 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// getEnvOrDefault returns flagVal if set (differs from default or non-empty), otherwise falls back to environment variables.
+func getEnvOrDefault(flagVal, defaultVal string, envKeys ...string) string {
+	if flagVal != defaultVal && strings.TrimSpace(flagVal) != "" {
+		return flagVal
+	}
+	for _, envKey := range envKeys {
+		if envVal := strings.TrimSpace(os.Getenv(envKey)); envVal != "" {
+			return envVal
+		}
+	}
+	return flagVal
 }
 
 func parseBrokers(brokersStr string) []string {
