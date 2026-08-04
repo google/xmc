@@ -21,6 +21,9 @@ on:
       - test # Trigger on push to the 'test' branch
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   deploy-helloworld:
     name: 'Build and Deploy HelloWorld'
