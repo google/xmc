@@ -138,20 +138,16 @@ func (c *Client) executeWorkUnitAction(ctx context.Context, payload *actuatortas
 	return nil
 }
 
-func (c *Client) executePrioritizedAction(ctx context.Context, payload *actuatortaskpb.ActuatorPayload, actionName string, expPriority esspb.Priority, author string, targetFn func(context.Context, *esspb.WorkUnit, string, string, time.Time, Priorities) error) error {
-	return c.executeWorkUnitAction(ctx, payload, actionName, func(ctx context.Context) error {
-		priorities := Priorities{
-			WorkUnitPriority:   payload.GetWorkUnit().GetPriority(),
-			ExperimentPriority: expPriority,
-		}
-		return targetFn(ctx, payload.GetWorkUnit(), payload.GetTarget(), author, payload.GetCreateTime().AsTime(), priorities)
-	})
-}
-
 // CreateWorkUnit creates a new WorkUnit in Kubernetes.
 func (c *Client) CreateWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
-	act := payload.GetAction().GetCreate()
-	return c.executePrioritizedAction(ctx, payload, "create", act.GetExperimentPriority(), act.GetAuthor(), c.createJobSet)
+	return c.executeWorkUnitAction(ctx, payload, "create", func(ctx context.Context) error {
+		act := payload.GetAction().GetCreate()
+		priorities := Priorities{
+			WorkUnitPriority:   payload.GetWorkUnit().GetPriority(),
+			ExperimentPriority: act.GetExperimentPriority(),
+		}
+		return c.createJobSet(ctx, payload.GetWorkUnit(), payload.GetTarget(), act.GetAuthor(), payload.GetCreateTime().AsTime(), priorities)
+	})
 }
 
 // DeleteWorkUnit deletes a WorkUnit in Kubernetes.
@@ -168,8 +164,14 @@ func (c *Client) DeleteWorkUnit(ctx context.Context, payload *actuatortaskpb.Act
 
 // RestartWorkUnit restarts a WorkUnit in Kubernetes.
 func (c *Client) RestartWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
-	act := payload.GetAction().GetRestart()
-	return c.executePrioritizedAction(ctx, payload, "restart", act.GetExperimentPriority(), act.GetAuthor(), c.restartJobSet)
+	return c.executeWorkUnitAction(ctx, payload, "restart", func(ctx context.Context) error {
+		act := payload.GetAction().GetRestart()
+		priorities := Priorities{
+			WorkUnitPriority:   payload.GetWorkUnit().GetPriority(),
+			ExperimentPriority: act.GetExperimentPriority(),
+		}
+		return c.restartJobSet(ctx, payload.GetWorkUnit(), payload.GetTarget(), act.GetAuthor(), payload.GetCreateTime().AsTime(), priorities)
+	})
 }
 
 // Clientset returns the kubernetes clientset.

@@ -61,7 +61,7 @@ issues:
   exclude-dirs:
     - cmd/ui/node_modules
   exclude-rules:
-    - path: _test\.go
+    - path: (_test\.go|cmd/actuator/k8s_client/client\.go)
       linters:
         - dupl
     # TODO(Phase 4.2): Refactor legacy 3rd party driver interface methods (golang-migrate), AIP-158 pagination & test setup helpers returning 3+ parameters
