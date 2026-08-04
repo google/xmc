@@ -72,6 +72,9 @@ function processUser(user: User | null) {
 ## 7. System Attribute Immutability & Precedence
 - **System Key Precedence**: User-supplied custom maps (labels, annotations, environment variables) MUST NEVER overwrite reserved internal system attributes or security identifiers (`xid`, `wid`, `eid`, `queue-name`):
   ```go
+  if systemMap == nil {
+      systemMap = make(map[string]string)
+  }
   for k, v := range userMap {
       if _, exists := systemMap[k]; !exists {
           systemMap[k] = v
