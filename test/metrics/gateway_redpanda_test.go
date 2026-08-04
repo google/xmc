@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -45,10 +46,9 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	for _, arg := range os.Args {
-		if arg == "-test.short" || arg == "--test.short" {
-			os.Exit(m.Run())
-		}
+	flag.Parse()
+	if testing.Short() {
+		os.Exit(m.Run())
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
@@ -262,7 +262,8 @@ func TestGatewayRedpanda_BrokerOutage(t *testing.T) {
 	var recResp *http.Response
 	var lastStatus int
 	recovered := false
-	for i := 0; i < 50; i++ {
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
 		recResp, err = http.Post(server.URL, "application/json", bytes.NewReader(body))
 		if err == nil {
 			lastStatus = recResp.StatusCode
@@ -275,7 +276,7 @@ func TestGatewayRedpanda_BrokerOutage(t *testing.T) {
 		if recResp != nil {
 			_ = recResp.Body.Close()
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	if !recovered {

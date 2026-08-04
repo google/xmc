@@ -92,6 +92,16 @@ func LoadConfig(optionalFlags ...*Flags) (*Config, error) {
 		f = *optionalFlags[0]
 	}
 
+	if f.Port == "" {
+		f.Port = "8080"
+	}
+	if f.RedpandaBrokers == "" {
+		f.RedpandaBrokers = "localhost:9092"
+	}
+	if f.TopicName == "" {
+		f.TopicName = "xmc-metrics"
+	}
+
 	effectivePort := getEnvOrDefault(f.Port, "8080", "PORT")
 	effectiveBrokersStr := getEnvOrDefault(f.RedpandaBrokers, "localhost:9092", "REDPANDA_BROKERS", "REDPANDA_BROKER")
 	effectiveTopicName := getEnvOrDefault(f.TopicName, "xmc-metrics", "TOPIC_NAME", "REDPANDA_TOPIC")
