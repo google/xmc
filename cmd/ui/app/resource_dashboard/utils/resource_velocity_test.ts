@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import 'jasmine';
+import { QueueSecondaryData } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import {
   calculateJobVelocity,
@@ -24,6 +25,37 @@ import {
 } from './resource_velocity';
 
 describe('Resource Velocity Utilities', () => {
+  const mockSecondaryData: QueueSecondaryData = {
+    queuePredictability: [
+      {
+        velocityRange: 'LAST_HOUR',
+        pendingJobs: 5,
+        jobVelocity: 12.5,
+        resourceVelocity: {
+          resourceType: 'nvidia.com/gpu',
+          velocity: 4.5,
+        },
+        pendingResourceRequests: {
+          resourceType: 'nvidia.com/gpu',
+          count: 16,
+        },
+      },
+      {
+        velocityRange: 'LAST_DAY',
+        pendingJobs: 5,
+        jobVelocity: 8.2,
+        resourceVelocity: {
+          resourceType: 'nvidia.com/gpu',
+          velocity: 2.1,
+        },
+        pendingResourceRequests: {
+          resourceType: 'nvidia.com/gpu',
+          count: 16,
+        },
+      },
+    ],
+  };
+
   describe('formatRate', () => {
     it('should format rate values correctly', () => {
       expect(formatRate(0)).toBe('0');
@@ -45,30 +77,32 @@ describe('Resource Velocity Utilities', () => {
   });
 
   describe('getPendingJobsCount', () => {
-    it('should return pendingJobsCount', () => {
+    it('should return pendingJobsCount fallback and calculated values', () => {
       expect(getPendingJobsCount({})).toBe(0);
-      expect(getPendingJobsCount({ queueName: 'test-queue' })).toBe(0);
+      expect(getPendingJobsCount(mockSecondaryData)).toBe(5);
     });
   });
 
   describe('calculateResourceVelocity', () => {
-    it('should return resource velocity string', () => {
+    it('should return resource velocity string for matching timeframe', () => {
       expect(calculateResourceVelocity({}, '1h')).toBe('~0 GPUs/hr');
-      expect(calculateResourceVelocity({ queueName: 'test-queue' }, '1h')).toBe('~0 GPUs/hr');
+      expect(calculateResourceVelocity(mockSecondaryData, '1h')).toBe('~4.5 GPUs/hr');
+      expect(calculateResourceVelocity(mockSecondaryData, '24h')).toBe('~2.1 GPUs/hr');
     });
   });
 
   describe('calculateJobVelocity', () => {
-    it('should return job velocity string', () => {
+    it('should return job velocity string for matching timeframe', () => {
       expect(calculateJobVelocity({}, '1h')).toBe('0 jobs/hr');
-      expect(calculateJobVelocity({ queueName: 'test-queue' }, '1h')).toBe('0 jobs/hr');
+      expect(calculateJobVelocity(mockSecondaryData, '1h')).toBe('12.5 jobs/hr');
+      expect(calculateJobVelocity(mockSecondaryData, '24h')).toBe('8.2 jobs/hr');
     });
   });
 
   describe('calculatePendingRequestsDisplay', () => {
     it('should return pending resource requests display text', () => {
       expect(calculatePendingRequestsDisplay({})).toBe('0');
-      expect(calculatePendingRequestsDisplay({ queueName: 'test-queue' })).toBe('0');
+      expect(calculatePendingRequestsDisplay(mockSecondaryData)).toBe('16');
     });
   });
 });

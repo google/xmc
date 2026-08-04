@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { QueueOverview, QueueSecondaryData } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { RangePreset, QueueOverview, QueueSecondaryData } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 /**
  * Velocity period options for queue resource calculations.
@@ -57,34 +57,82 @@ export function getVelocityHours(period: string): number {
 }
 
 /**
+ * Map period string to RangePreset enum.
+ */
+export function mapPeriodToRangePreset(period: string): RangePreset {
+  switch (period) {
+    case '1h':
+    case '1 hour':
+      return 'LAST_HOUR';
+    case '24h':
+    case '1 day':
+      return 'LAST_DAY';
+    case '7d':
+    case '7 days':
+      return 'LAST_WEEK';
+    default:
+      return 'LAST_WEEK';
+  }
+}
+
+/**
  * Calculate pending jobs count for a cluster queue.
  */
 export function getPendingJobsCount(queue: Partial<QueueOverview | QueueSecondaryData>): number {
-  // TODO: Implement pending jobs count calculation using QueueSecondaryData.
+  const predictabilities = (queue as QueueSecondaryData)?.queuePredictability ?? [];
+  for (const p of predictabilities) {
+    if (p.pendingJobs !== undefined && p.pendingJobs !== null) {
+      return p.pendingJobs;
+    }
+  }
   return 0;
 }
 
 /**
  * Calculate resource velocity string for a cluster queue over a timeframe.
  */
-export function calculateResourceVelocity(queue: Partial<QueueOverview | QueueSecondaryData>, period: string): string {
-  // TODO: Implement resource velocity calculation using QueueSecondaryData.velocityMetrics.
-  const hours = getVelocityHours(period);
-  return `~0 GPUs/hr`;
+export function calculateResourceVelocity(
+  queue: Partial<QueueOverview | QueueSecondaryData>,
+  period: string,
+): string {
+  const targetRange = mapPeriodToRangePreset(period);
+  const predictabilities = (queue as QueueSecondaryData)?.queuePredictability ?? [];
+  const match = predictabilities.find(
+    (p) => p.velocityRange === targetRange || (p.velocityRange as any) === getVelocityHours(period),
+  ) ?? predictabilities[0];
+
+  const vel = match?.resourceVelocity?.velocity ?? 0;
+  return `~${formatRate(vel)} GPUs/hr`;
 }
 
 /**
  * Calculate job velocity string for a cluster queue over a timeframe.
  */
-export function calculateJobVelocity(queue: Partial<QueueOverview | QueueSecondaryData>, period: string): string {
-  // TODO: Implement job velocity calculation using QueueSecondaryData.velocityMetrics.
-  return `0 jobs/hr`;
+export function calculateJobVelocity(
+  queue: Partial<QueueOverview | QueueSecondaryData>,
+  period: string,
+): string {
+  const targetRange = mapPeriodToRangePreset(period);
+  const predictabilities = (queue as QueueSecondaryData)?.queuePredictability ?? [];
+  const match = predictabilities.find(
+    (p) => p.velocityRange === targetRange || (p.velocityRange as any) === getVelocityHours(period),
+  ) ?? predictabilities[0];
+
+  const vel = match?.jobVelocity ?? 0;
+  return `${formatRate(vel)} jobs/hr`;
 }
 
 /**
  * Calculate pending resource requests display text for a cluster queue.
  */
-export function calculatePendingRequestsDisplay(queue: Partial<QueueOverview | QueueSecondaryData>): string {
-  // TODO: Implement pending requests display calculation.
+export function calculatePendingRequestsDisplay(
+  queue: Partial<QueueOverview | QueueSecondaryData>,
+): string {
+  const predictabilities = (queue as QueueSecondaryData)?.queuePredictability ?? [];
+  for (const p of predictabilities) {
+    if (p.pendingResourceRequests?.count !== undefined && p.pendingResourceRequests?.count !== null) {
+      return formatRate(p.pendingResourceRequests.count);
+    }
+  }
   return '0';
 }
