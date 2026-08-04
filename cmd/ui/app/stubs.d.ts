@@ -175,3 +175,26 @@ declare module 'xmanager_cloud/health_service/proto/api.jsonpb_decls' {
     [key: string]: any;
   }
 }
+
+declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
+  export interface Resource {
+    resourceType?: string;
+    count?: number;
+  }
+  export interface QueueResourceCapacity {
+    resourceType?: string;
+    totalCapacity?: number;
+    freeCapacity?: number;
+    freeCapacityWithBorrowing?: number;
+  }
+  export interface QueueOverview {
+    queueName?: string;
+    queueCapacity?: QueueResourceCapacity[];
+  }
+  export interface GetFittingQueuesRequest {
+    requirements?: Resource[];
+  }
+  export interface GetFittingQueuesResponse {
+    queues?: QueueOverview[];
+  }
+}

@@ -17,30 +17,14 @@ import { inject, Injectable } from '@angular/core';
 import { Observable, of } from 'rxjs';
 import { map } from 'rxjs/operators';
 
+import {
+  GetFittingQueuesResponse,
+  QueueOverview,
+  QueueResourceCapacity,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+
 import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
 import { ClusterQueue, ClusterQueueListResponse, QueueJobListResponse } from './resource_types';
-
-interface RawQueueCapacity {
-  resourceType?: string;
-  resource_type?: string;
-  totalCapacity?: number;
-  total_capacity?: number;
-  freeCapacity?: number;
-  free_capacity?: number;
-  freeCapacityWithBorrowing?: number;
-  free_capacity_with_borrowing?: number;
-}
-
-interface RawQueueOverview {
-  queueName?: string;
-  queue_name?: string;
-  queueCapacity?: RawQueueCapacity[];
-  queue_capacity?: RawQueueCapacity[];
-}
-
-interface RawGetFittingQueuesResponse {
-  queues?: RawQueueOverview[];
-}
 
 /**
  * Angular injectable data service client for fetching Resource Observability Dashboard (ROD)
@@ -57,21 +41,19 @@ export class ResourceService {
    */
   getClusterQueues(): Observable<ClusterQueueListResponse> {
     return this.http
-      .post<RawGetFittingQueuesResponse>(
-        `${EXPERIMENT_STATE_SERVER_DOMAIN}/queues/fitting`,
-        {},
-        { withCredentials: true },
-      )
+      .get<GetFittingQueuesResponse>(`${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues`, {
+        withCredentials: true,
+      })
       .pipe(
         map((res) => {
-          const rawQueues = res?.queues || [];
+          const rawQueues: QueueOverview[] = res?.queues || [];
           const clusterQueues: ClusterQueue[] = rawQueues.map((q) => {
-            const name = q.queueName || q.queue_name || 'cluster-queue';
-            const rawCapacities = q.queueCapacity || q.queue_capacity || [];
+            const name = q.queueName || 'cluster-queue';
+            const rawCapacities: QueueResourceCapacity[] = q.queueCapacity || [];
             const flavors = rawCapacities.map((cap) => {
-              const resourceType = cap.resourceType || cap.resource_type || 'resource';
-              const totalCapacity = cap.totalCapacity ?? cap.total_capacity ?? 0;
-              const freeCapacity = cap.freeCapacity ?? cap.free_capacity ?? 0;
+              const resourceType = cap.resourceType || 'resource';
+              const totalCapacity = cap.totalCapacity ?? 0;
+              const freeCapacity = cap.freeCapacity ?? 0;
               const inUse = Math.max(0, totalCapacity - freeCapacity);
               return {
                 name: resourceType,

@@ -62,8 +62,8 @@ describe('ResourceService', () => {
         state.service.getClusterQueues(),
       );
 
-      const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/queues/fitting`);
-      expect(req.request.method).toBe('POST');
+      const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues`);
+      expect(req.request.method).toBe('GET');
       req.flush(mockResponse);
 
       const response = await responsePromise;
