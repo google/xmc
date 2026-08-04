@@ -34,10 +34,12 @@ import (
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
 	clientgoscheme "golang/k8s_io/client_go/v/v0_23/kubernetes/scheme/scheme"
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
+	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
 	metricsserver "golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/metrics/server/server"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
+	"xmanager_cloud/cmd/rod_data_provider/reconciler"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
@@ -238,4 +240,25 @@ func setupKueueManager(ctx context.Context, kueueCache *cache.KueueCache) (ctrl.
 	}
 
 	return mgr, nil
+}
+
+// SetupKueueReconcilers orchestrates ClusterQueue, LocalQueue, and ResourceFlavor reconcilers
+// to collect and sync Kueue entity information into the in-memory cache.
+func SetupKueueReconcilers(mgr ctrl.Manager, client client.Client, cache *cache.KueueCache) error {
+	if cache == nil || cache.ClusterQueues == nil || cache.LocalQueues == nil || cache.ResourceFlavors == nil {
+		return fmt.Errorf("kueue cache or its fields are uninitialized")
+	}
+	cqRec := &reconciler.ClusterQueueReconciler{Client: client, Cache: cache.ClusterQueues}
+	if err := cqRec.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("failed to setup ClusterQueueReconciler: %w", err)
+	}
+	lqRec := &reconciler.LocalQueueReconciler{Client: client, Cache: cache.LocalQueues}
+	if err := lqRec.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("failed to setup LocalQueueReconciler: %w", err)
+	}
+	rfRec := &reconciler.ResourceFlavorReconciler{Client: client, Cache: cache.ResourceFlavors}
+	if err := rfRec.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("failed to setup ResourceFlavorReconciler: %w", err)
+	}
+	return nil
 }

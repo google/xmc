@@ -22,7 +22,6 @@ compat_go_library(
     name = "rod_data_provider_lib",
     srcs = [
         "config.go",
-        "kueue_collector.go",
         "kueue_resource_extractor.go",
         "main.go",
         "queue_converters.go",
