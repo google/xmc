@@ -387,6 +387,8 @@ CREATE TABLE DashboardCharts (
 ) PRIMARY KEY (DashboardId, DashboardChartId),
   INTERLEAVE IN PARENT Dashboards ON DELETE CASCADE;
 
+CREATE INDEX DashboardChartsByChartId ON DashboardCharts (ChartId);
+
 CREATE TABLE ChartPlots (
   ChartId STRING(MAX) NOT NULL,
   PlotId STRING(MAX) NOT NULL,
@@ -407,4 +409,6 @@ CREATE TABLE ArtifactCharts (
   CONSTRAINT FK_ArtifactChart_ChartId FOREIGN KEY (ChartId) REFERENCES Charts(ChartId)
 ) PRIMARY KEY (BitReversedXid, WorkUnitId, ArtifactId, ArtifactChartId),
   INTERLEAVE IN PARENT Artifacts ON DELETE CASCADE;
+
+CREATE INDEX ArtifactChartsByChartId ON ArtifactCharts (ChartId);
 

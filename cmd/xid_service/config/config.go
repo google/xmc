@@ -11,7 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-// Package config provides functionality to load application configuration from command-line flags.
+
+// Package config provides functionality to load application configuration from command-line flags and ConfigMaps.
 package config
 
 import (
@@ -24,6 +25,7 @@ import (
 
 	"go/log"
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/internal/configutil"
 	"xmanager_cloud/logging/logging"
 )
 
@@ -41,17 +43,17 @@ type Config struct {
 
 var cfg Config
 
-// init runs when the package is imported. It defines all the command-line flags
-// for the application. The actual parsing is triggered in main().
+// init runs when the package is imported. It defines the command-line flags and loads ConfigMaps.
 func init() {
 	cfg.registerFlags(nil)
+	cfg.registerConfigs()
+}
+
+// Load returns a Config struct populated with values from ConfigMaps/envs and parsed flags.
+func Load() Config {
 	if err := cfg.validate(); err != nil {
 		log.Fatalf("Invalid configuration: %v", err)
 	}
-}
-
-// Load returns a Config struct populated with values from env vars and parsed flags.
-func Load() Config {
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.QuotaProjectID)
 	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
@@ -77,24 +79,23 @@ func Load() Config {
 	return cfg
 }
 
-// registerFlags registers the flags for the configuration.
+// registerFlags registers only the flags that are NOT managed by ConfigMaps.
 func (c *Config) registerFlags(fs *flag.FlagSet) {
 	if fs == nil {
 		fs = flag.CommandLine
 	}
-	fs.StringVar(&c.Port, "xid_grpc_port", "50051", "The gRPC server port to listen on.")
-	fs.StringVar(&c.QuotaProjectID, "xid_quota_project_id", "xmc-test-project-1", "The ID of the quota project to use.")
-	fs.StringVar(
-		&c.SpannerDatabaseName,
-		"xid_spanner_database_name",
-		"projects/xmc-test-project-1/instances/xmc/databases/xids-db",
-		"The ID of the Spanner database to use.",
-	)
 	fs.StringVar(&c.Audience, "xid_audience", "https://test-xmanager-gcp.corp.goog", "The audience of the IAP JWT.")
 	fs.BoolVar(&c.DisableAuthentication, "xid_disable_authentication", false, "Disables authentication for testing.")
 }
 
-// Validate checks if the Config is valid.
+// registerConfigs loads ConfigMap managed values using configutil.
+func (c *Config) registerConfigs() {
+	configutil.StringEnv(&c.Port, "xid_grpc_port", "50051")
+	configutil.StringEnv(&c.QuotaProjectID, "xid_quota_project_id", "xmc-test-project-1")
+	configutil.StringEnv(&c.SpannerDatabaseName, "xid_spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/xids-db")
+}
+
+// validate checks if the Config is valid.
 func (c Config) validate() error {
 	portNum, err := strconv.Atoi(c.Port)
 	if err != nil {

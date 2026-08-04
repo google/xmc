@@ -22,6 +22,7 @@ import { RouterModule, RouterOutlet } from '@angular/router';
 
 import { Header } from './common/components/header/header';
 import { AuthService } from './service/auth.service';
+import { FeatureFlagService } from './service/feature_flag_service';
 import { HealthService } from './service/health_service';
 import { SidePanel } from './side_panel/side_panel';
 
@@ -52,6 +53,10 @@ export class App {
   private readonly authService = inject(AuthService);
   protected readonly user = toSignal(this.authService.getUser());
   private readonly healthService = inject(HealthService);
+  private readonly featureFlagService = inject(FeatureFlagService);
+
+  protected readonly isResourceDashboardEnabled =
+    this.featureFlagService.isResourceDashboardEnabled;
 
   protected readonly isAdminPanelEnabled = toSignal(this.healthService.isAdminPanelAccessible(), {
     initialValue: false,

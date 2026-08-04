@@ -56,6 +56,7 @@ func SaveStatusMessageHistoryIfChanged(ctx context.Context, enabled bool, xid in
 }
 
 // SaveStatusMessageHistory buffers a status message history mutation in the Spanner transaction.
+// TODO(b/517479143): Refactor SaveStatusMessageHistory to return an error and propagate it so status message history failures fail the transaction instead of silently logging.
 func SaveStatusMessageHistory(ctx context.Context, xid int64, wid *int64, eid *int64, oldMsg, newMsg *essmsgpb.StructuredMessage, txn *spanner.ReadWriteTransaction) {
 	messageID, err := generateMessageID(ctx)
 	if err != nil {

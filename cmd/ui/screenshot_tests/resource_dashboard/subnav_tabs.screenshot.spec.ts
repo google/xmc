@@ -14,27 +14,26 @@
 
 import { expect, test } from '@playwright/test';
 
-import { handleUserAuthRoute, setupScreenshotEnvironment } from '../test_utils';
+import { mountComponentHarness, setupMockRoutes, setupScreenshotEnvironment } from '../test_utils';
 
-test.use({ viewport: { width: 1280, height: 800 } });
+test.use({ viewport: { width: 1600, height: 900 } });
 
 test.describe('SubnavTabsComponent - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('/api/user', handleUserAuthRoute);
+    await setupMockRoutes(page);
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
     await setupScreenshotEnvironment(page);
   });
 
   test('should match baseline screenshot for subnav tabs layout', async ({ page }) => {
+    await mountComponentHarness(
+      page,
+      `<xmc-rod-subnav-tabs style="display: block; width: 640px; min-height: 48px;"></xmc-rod-subnav-tabs>`,
+    );
+
     const subnavComponent = page.locator('xmc-rod-subnav-tabs').first();
-    await subnavComponent.evaluate((el) => {
-      el.style.cssText =
-        'display: block; width: 640px; height: 48px; box-sizing: border-box; background: #ffffff; padding: 8px 16px 0 16px; border-bottom: 1px solid #dadce0;';
-    });
     await expect(subnavComponent).toBeVisible();
-    await expect(subnavComponent).toHaveScreenshot('subnav-tabs-component.png', {
-      maxDiffPixelRatio: 0.05,
-    });
+    await expect(subnavComponent).toHaveScreenshot('subnav-tabs-component.png');
   });
 });
