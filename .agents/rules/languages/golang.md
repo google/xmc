@@ -30,7 +30,7 @@ This document defines coding standards and conventions for Go development across
 ## 6. Go Dependencies / Bazel
 - Always inspect proto package `BUILD.bazel` to verify exact `go_proto_library` target name (typically ending in `_go_proto`) before adding Bazel dependencies.
 
-## 8. Go Map Safety, Mutability & Pointer Isolation
+## 7. Go Map Safety, Mutability & Pointer Isolation
 - **Map Pointer Isolation**: NEVER assign the same map reference to multiple struct fields or nested objects (e.g., `JobTemplateSpec.ObjectMeta.Labels` and `PodTemplateSpec.ObjectMeta.Labels`). Construct a shallow copy for each sub-struct:
   ```go
   podLabels := make(map[string]string, len(labels))
