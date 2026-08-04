@@ -39,10 +39,9 @@ export class ResourceService {
    */
   getClusterQueues(): Observable<GetFittingQueuesResponse> {
     return this.http
-      .get<GetFittingQueuesResponse>(
-        `${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues`,
-        { withCredentials: true },
-      )
+      .get<GetFittingQueuesResponse>(`${EXPERIMENT_STATE_SERVER_DOMAIN}/clusterqueues`, {
+        withCredentials: true,
+      })
       .pipe(
         catchError((error) => {
           console.error('Failed to fetch cluster queues:', error);
