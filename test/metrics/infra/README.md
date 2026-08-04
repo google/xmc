@@ -79,7 +79,6 @@ from xmc import Client
 
 
 class TestPythonMetricsIntegration(unittest.TestCase):
-
     def test_python_sdk_with_harness(self) -> None:
         harness = create_test_harness(auto_resolve_containers=True)
 
