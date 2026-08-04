@@ -52,6 +52,7 @@ jobs:
       SPANNER_EMULATOR_HOST: 127.0.0.1:9010
 
     steps:
+      # zizmor: ignore[unpinned-uses] TODO: Pin action reference
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
 
@@ -61,15 +62,18 @@ jobs:
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet &
           echo "CLEANUP_PID=$!" >> $GITHUB_ENV
 
+      # zizmor: ignore[unpinned-uses] TODO: Pin action reference
       - name: 'Set up Go'
         uses: 'actions/setup-go@v5'
         with:
           go-version: '1.26.0'
 
+      # zizmor: ignore[unpinned-uses] TODO: Pin action reference
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@v3'
 
       # zizmor: ignore[cache-poisoning] TODO: Remove ignore after security audit
+      # zizmor: ignore[unpinned-uses] TODO: Pin action reference
       - name: 'Restore Bazel Cache'
         id: 'cache-bazel-restore'
         uses: 'actions/cache/restore@v4'
@@ -144,6 +148,7 @@ jobs:
           df -h
 
       # zizmor: ignore[cache-poisoning] TODO: Remove ignore after security audit
+      # zizmor: ignore[unpinned-uses] TODO: Pin action reference
       - name: 'Save Bazel Cache'
         uses: 'actions/cache/save@v4'
         # Only save cache on main branch pushes when exact cache key was missed to eliminate redundant
@@ -161,9 +166,11 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      # zizmor: ignore[unpinned-uses] TODO: Pin action reference
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
 
+      # zizmor: ignore[unpinned-uses] TODO: Pin action reference
       - name: 'Set up Node.js'
         uses: 'actions/setup-node@v4'
         with:
