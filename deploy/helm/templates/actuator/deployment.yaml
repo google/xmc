@@ -47,6 +47,9 @@ spec:
         ports:
         - name: http
           containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: actuator-config
         env:
         - name: REDIS_PASSWORD
           valueFrom:
@@ -61,9 +64,6 @@ spec:
               key: gcs_path
         {{- end }}
         args:
-        - "-port=8080"
-        - "-spanner_database_name={{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) }}"
-        - "-quota_project_id={{ .Values.projectId }}"
         - "-alsologtostderr"
         - "--logtostderr"
         - "--enforce_kernel_ipv6_support=false"
@@ -73,22 +73,6 @@ spec:
         - "--envelope_enabled=false"
         - "--notracelog"
         - "--remote_coredump_enabled"
-        - "-status_message_history_enabled={{ .Values.statusMessageHistoryEnabled }}"
-        - "-redis_addr={{ .Values.redisAddr }}"
-        {{- if .Values.redisMaxRetries }}
-        - "-redis_max_retries={{ .Values.redisMaxRetries }}"
-        {{- end }}
-        {{- if .Values.redisProcessTimeout }}
-        - "-redis_process_timeout={{ .Values.redisProcessTimeout }}"
-        {{- end }}
-        {{- if .Values.redisAbandonedMessageTimeout }}
-        - "-redis_abandoned_message_timeout={{ .Values.redisAbandonedMessageTimeout }}"
-        {{- end }}
-        {{- if .Values.redisReadBatchSize }}
-        - "-redis_read_batch_size={{ .Values.redisReadBatchSize }}"
-        {{- end }}
-        - "--xmanager_service_account={{ required "gcpServiceAccount is required" .Values.gcpServiceAccount }}"
-        - "--audience=https://actuator.api.{{ .Values.environment }}.{{ .Values.domainSuffix }}/actuate"
         resources:
           requests:
             cpu: 500m

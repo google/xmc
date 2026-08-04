@@ -15,6 +15,7 @@
 package main
 
 import (
+	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -212,22 +213,22 @@ func NewFranzGoMetricsHook(m *GatewayMetrics) *FranzGoMetricsHook {
 	return &FranzGoMetricsHook{metrics: m}
 }
 
-// HookBrokerConnect implements kgo.HookBrokerConnect.
-func (h *FranzGoMetricsHook) HookBrokerConnect(meta kgo.BrokerMetadata) {
-	if h != nil && h.metrics != nil {
+// OnBrokerConnect implements kgo.HookBrokerConnect.
+func (h *FranzGoMetricsHook) OnBrokerConnect(meta kgo.BrokerMetadata, dialDur time.Duration, conn net.Conn, err error) {
+	if h != nil && h.metrics != nil && err == nil {
 		h.metrics.BrokersConnections.Inc()
 	}
 }
 
-// HookBrokerDisconnect implements kgo.HookBrokerDisconnect.
-func (h *FranzGoMetricsHook) HookBrokerDisconnect(meta kgo.BrokerMetadata) {
+// OnBrokerDisconnect implements kgo.HookBrokerDisconnect.
+func (h *FranzGoMetricsHook) OnBrokerDisconnect(meta kgo.BrokerMetadata, conn net.Conn) {
 	if h != nil && h.metrics != nil {
 		h.metrics.BrokersConnections.Dec()
 	}
 }
 
-// HookProduceRecordUnbuffered implements kgo.HookProduceRecordUnbuffered.
-func (h *FranzGoMetricsHook) HookProduceRecordUnbuffered(r *kgo.Record, err error) {
+// OnProduceRecordUnbuffered implements kgo.HookProduceRecordUnbuffered.
+func (h *FranzGoMetricsHook) OnProduceRecordUnbuffered(r *kgo.Record, err error) {
 	if h == nil || h.metrics == nil {
 		return
 	}
@@ -240,3 +241,9 @@ func (h *FranzGoMetricsHook) HookProduceRecordUnbuffered(r *kgo.Record, err erro
 		h.metrics.ProduceRecordsTotal.Inc()
 	}
 }
+
+var (
+	_ kgo.HookBrokerConnect           = (*FranzGoMetricsHook)(nil)
+	_ kgo.HookBrokerDisconnect        = (*FranzGoMetricsHook)(nil)
+	_ kgo.HookProduceRecordUnbuffered = (*FranzGoMetricsHook)(nil)
+)

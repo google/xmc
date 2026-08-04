@@ -44,6 +44,10 @@ describe('FeatureFlagService', () => {
     it('isAdminPanelEnabled should be false', () => {
       expect(state.service.isAdminPanelEnabled).toBeFalse();
     });
+
+    it('isResourceDashboardEnabled should be false', () => {
+      expect(state.service.isResourceDashboardEnabled).toBeFalse();
+    });
   });
 
   describe('when XMC_FEATURE_FLAGS is defined', () => {
@@ -80,6 +84,24 @@ describe('FeatureFlagService', () => {
       it('isAdminPanelEnabled should be false if adminPanelEnabled is false', () => {
         expect(state.service.isAdminPanelEnabled).toBeFalse();
         expect(state.service.isFeatureEnabled('adminPanelEnabled')).toBeFalse();
+      });
+    });
+
+    describe('when resourceDashboardEnabled is true', () => {
+      const state = setup({ resourceDashboardEnabled: true });
+
+      it('isResourceDashboardEnabled should be true if resourceDashboardEnabled is true', () => {
+        expect(state.service.isResourceDashboardEnabled).toBeTrue();
+        expect(state.service.isFeatureEnabled('resourceDashboardEnabled')).toBeTrue();
+      });
+    });
+
+    describe('when resourceDashboardEnabled is false', () => {
+      const state = setup({ resourceDashboardEnabled: false });
+
+      it('isResourceDashboardEnabled should be false if resourceDashboardEnabled is false', () => {
+        expect(state.service.isResourceDashboardEnabled).toBeFalse();
+        expect(state.service.isFeatureEnabled('resourceDashboardEnabled')).toBeFalse();
       });
     });
   });

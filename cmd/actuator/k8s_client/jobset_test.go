@@ -512,6 +512,93 @@ func TestConstructJobSet(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_GroupName(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+
+	t.Run("Empty groupName when omitted", func(t *testing.T) {
+		jobSet, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+		if err != nil {
+			t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+		}
+		if len(jobSet.Spec.ReplicatedJobs) != 1 {
+			t.Fatalf("Expected 1 ReplicatedJob, got %d", len(jobSet.Spec.ReplicatedJobs))
+		}
+		if got := jobSet.Spec.ReplicatedJobs[0].GroupName; got != "" {
+			t.Errorf("ReplicatedJob.GroupName = %q, want %q", got, "")
+		}
+	})
+
+	t.Run("Explicit groupName set on KubernetesJob", func(t *testing.T) {
+		workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+			wu.Executable.GetJobset().Jobs[0].GroupName = "custom-group"
+		})
+		jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+		if err != nil {
+			t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+		}
+		if len(jobSet.Spec.ReplicatedJobs) != 1 {
+			t.Fatalf("Expected 1 ReplicatedJob, got %d", len(jobSet.Spec.ReplicatedJobs))
+		}
+		if got := jobSet.Spec.ReplicatedJobs[0].GroupName; got != "custom-group" {
+			t.Errorf("ReplicatedJob.GroupName = %q, want %q", got, "custom-group")
+		}
+	})
+}
+
+func TestConstructJobSet_PerJobCustomLabels(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Executable.GetJobset().Jobs[0].Labels = map[string]string{
+			"kueue.x-k8s.io/podset":     "pathways-head",
+			"custom.label/key":          "value",
+			constants.ExperimentIDLabel: "hacked-xid",
+			constants.WorkUnitIDLabel:   "hacked-wid",
+			constants.ExecutionIDLabel:  "hacked-eid",
+			"kueue.x-k8s.io/queue-name": "hacked-queue",
+		}
+	})
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+	if len(jobSet.Spec.ReplicatedJobs) != 1 {
+		t.Fatalf("Expected 1 ReplicatedJob, got %d", len(jobSet.Spec.ReplicatedJobs))
+	}
+	rj := jobSet.Spec.ReplicatedJobs[0]
+
+	// Verify custom labels are applied
+	if got := rj.Template.ObjectMeta.Labels["kueue.x-k8s.io/podset"]; got != "pathways-head" {
+		t.Errorf("JobTemplateSpec.ObjectMeta.Labels[kueue.x-k8s.io/podset] = %q, want %q", got, "pathways-head")
+	}
+	if got := rj.Template.ObjectMeta.Labels["custom.label/key"]; got != "value" {
+		t.Errorf("JobTemplateSpec.ObjectMeta.Labels[custom.label/key] = %q, want %q", got, "value")
+	}
+
+	podLabels := rj.Template.Spec.Template.ObjectMeta.Labels
+	if got := podLabels["kueue.x-k8s.io/podset"]; got != "pathways-head" {
+		t.Errorf("PodTemplateSpec.ObjectMeta.Labels[kueue.x-k8s.io/podset] = %q, want %q", got, "pathways-head")
+	}
+	if got := podLabels["custom.label/key"]; got != "value" {
+		t.Errorf("PodTemplateSpec.ObjectMeta.Labels[custom.label/key] = %q, want %q", got, "value")
+	}
+
+	// Verify system jobLabels take precedence over job.GetLabels()
+	expectedSystemLabels := map[string]string{
+		constants.ExperimentIDLabel: "123",
+		constants.WorkUnitIDLabel:   "456",
+		constants.ExecutionIDLabel:  "1",
+		"kueue.x-k8s.io/queue-name": testNamespace,
+	}
+	for labelKey, wantValue := range expectedSystemLabels {
+		if got := rj.Template.ObjectMeta.Labels[labelKey]; got != wantValue {
+			t.Errorf("JobTemplateSpec system label %s = %q, want %q (system label must take precedence)", labelKey, got, wantValue)
+		}
+		if got := podLabels[labelKey]; got != wantValue {
+			t.Errorf("PodTemplateSpec system label %s = %q, want %q (system label must take precedence)", labelKey, got, wantValue)
+		}
+	}
+}
+
 func TestConstructJobSet_MetricsEnabled(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	client.RuntimeConfig.MetricsEnabled = true
@@ -2001,14 +2088,24 @@ func TestConstructJobSet_WithSidecars(t *testing.T) {
 	}
 
 	containers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers
-	if len(containers) != 2 {
-		t.Fatalf("Expected 2 containers (primary + sidecar), got %d", len(containers))
+	if len(containers) != 1 {
+		t.Fatalf("Expected 1 container (primary), got %d", len(containers))
 	}
-	if containers[0].Name != "job1" || containers[1].Name != "sidecar-1" {
-		t.Errorf("Container names mismatch: got [%s, %s], want [job1, sidecar-1]", containers[0].Name, containers[1].Name)
+	if containers[0].Name != "job1" {
+		t.Errorf("Container name mismatch: got %s, want job1", containers[0].Name)
 	}
-	if containers[1].Image != "sidecar-image:v1" {
-		t.Errorf("Sidecar image mismatch: got %q, want %q", containers[1].Image, "sidecar-image:v1")
+	initContainers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.InitContainers
+	if len(initContainers) != 1 {
+		t.Fatalf("Expected 1 init container (sidecar), got %d", len(initContainers))
+	}
+	if initContainers[0].Name != "sidecar-1" {
+		t.Errorf("Sidecar name mismatch: got %s, want sidecar-1", initContainers[0].Name)
+	}
+	if initContainers[0].Image != "sidecar-image:v1" {
+		t.Errorf("Sidecar image mismatch: got %q, want %q", initContainers[0].Image, "sidecar-image:v1")
+	}
+	if initContainers[0].RestartPolicy == nil || *initContainers[0].RestartPolicy != corev1.ContainerRestartPolicyAlways {
+		t.Errorf("Sidecar restart policy mismatch: got %v, want %s", initContainers[0].RestartPolicy, corev1.ContainerRestartPolicyAlways)
 	}
 }
 
@@ -2318,15 +2415,21 @@ func TestBuildContainerPorts_ExplicitAndDefault(t *testing.T) {
 	}
 
 	podSpec := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
-	if len(podSpec.InitContainers) != 1 {
-		t.Fatalf("Expected 1 init container, got %d", len(podSpec.InitContainers))
+	if len(podSpec.InitContainers) != 2 {
+		t.Fatalf("Expected 2 init containers (init + sidecar), got %d", len(podSpec.InitContainers))
 	}
 	if len(podSpec.InitContainers[0].Ports) != 1 || podSpec.InitContainers[0].Ports[0].ContainerPort != 29001 {
 		t.Errorf("Init container port mismatch: got %+v", podSpec.InitContainers[0].Ports)
 	}
+	if podSpec.InitContainers[0].RestartPolicy != nil {
+		t.Errorf("Init container restart policy should be nil, got %v", *podSpec.InitContainers[0].RestartPolicy)
+	}
+	if podSpec.InitContainers[1].RestartPolicy == nil || *podSpec.InitContainers[1].RestartPolicy != corev1.ContainerRestartPolicyAlways {
+		t.Errorf("Sidecar restart policy mismatch: got %v, want %s", podSpec.InitContainers[1].RestartPolicy, corev1.ContainerRestartPolicyAlways)
+	}
 
-	if len(podSpec.Containers) != 2 {
-		t.Fatalf("Expected 2 containers, got %d", len(podSpec.Containers))
+	if len(podSpec.Containers) != 1 {
+		t.Fatalf("Expected 1 container (primary), got %d", len(podSpec.Containers))
 	}
 	primaryPorts := podSpec.Containers[0].Ports
 	if len(primaryPorts) != 7 {
@@ -2345,7 +2448,7 @@ func TestBuildContainerPorts_ExplicitAndDefault(t *testing.T) {
 		t.Errorf("Primary container ports mismatch (-want +got):\n%s", diff)
 	}
 
-	sidecarPorts := podSpec.Containers[1].Ports
+	sidecarPorts := podSpec.InitContainers[1].Ports
 	if len(sidecarPorts) != 1 || sidecarPorts[0].ContainerPort != 9090 {
 		t.Errorf("Sidecar ports mismatch: got %+v", sidecarPorts)
 	}
@@ -2513,6 +2616,10 @@ func TestInjectManagedXprofGCSEnvVars_AllContainers(t *testing.T) {
 				rj.Template.Spec.Template.Spec.Containers,
 				corev1.Container{Name: fmt.Sprintf("container-%d", i)},
 			)
+			rj.Template.Spec.Template.Spec.InitContainers = append(
+				rj.Template.Spec.Template.Spec.InitContainers,
+				corev1.Container{Name: fmt.Sprintf("init-container-%d", i)},
+			)
 		}
 		return rj
 	}
@@ -2557,25 +2664,126 @@ func TestInjectManagedXprofGCSEnvVars_AllContainers(t *testing.T) {
 			rj := newReplicatedJob(tc.numContainers)
 			injectManagedXprofGCSEnvVars(rj, tc.bucket, tc.object)
 
-			containers := rj.Template.Spec.Template.Spec.Containers
-			for i := range containers {
-				envMap := make(map[string]string)
-				for _, ev := range containers[i].Env {
-					envMap[ev.Name] = ev.Value
-				}
-				gotBucket, hasBucket := envMap[constants.XmcEnvVarManagedXprofGCSBucket]
-				gotObject, hasObject := envMap[constants.XmcEnvVarManagedXprofGCSObjectFolder]
-				if tc.wantInjected {
-					if gotBucket != tc.bucket {
-						t.Errorf("container[%d] %s = %q, want %q", i, constants.XmcEnvVarManagedXprofGCSBucket, gotBucket, tc.bucket)
+			for _, containers := range [][]corev1.Container{
+				rj.Template.Spec.Template.Spec.Containers,
+				rj.Template.Spec.Template.Spec.InitContainers,
+			} {
+				for i := range containers {
+					envMap := make(map[string]string)
+					for _, ev := range containers[i].Env {
+						envMap[ev.Name] = ev.Value
 					}
-					if gotObject != tc.object {
-						t.Errorf("container[%d] %s = %q, want %q", i, constants.XmcEnvVarManagedXprofGCSObjectFolder, gotObject, tc.object)
+					gotBucket, hasBucket := envMap[constants.XmcEnvVarManagedXprofGCSBucket]
+					gotObject, hasObject := envMap[constants.XmcEnvVarManagedXprofGCSObjectFolder]
+					if tc.wantInjected {
+						if gotBucket != tc.bucket {
+							t.Errorf("container[%d] %s = %q, want %q", i, constants.XmcEnvVarManagedXprofGCSBucket, gotBucket, tc.bucket)
+						}
+						if gotObject != tc.object {
+							t.Errorf("container[%d] %s = %q, want %q", i, constants.XmcEnvVarManagedXprofGCSObjectFolder, gotObject, tc.object)
+						}
+					} else if hasBucket || hasObject {
+						t.Errorf("container[%d] unexpectedly got managed-xprof env vars: %v", i, envMap)
 					}
-				} else if hasBucket || hasObject {
-					t.Errorf("container[%d] unexpectedly got managed-xprof env vars: %v", i, envMap)
 				}
 			}
 		})
+	}
+}
+
+func TestConstructJobSet_CustomAnnotationsAndLabels(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnit1",
+		Executable: &esspb.Executable{
+			SchedulingConstraints: &esspb.SchedulingConstraints{
+				QueueName: testNamespace,
+			},
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Annotations: map[string]string{
+						"custom.company.com/release": "v1.2.3",
+						"helm.sh/hook":               "pre-install",
+						constants.AuthorAnnotation:   "malicious-author-override",
+					},
+					Labels: map[string]string{
+						"custom.company.com/team":   "ml-platform",
+						"env":                       "production",
+						constants.ExperimentIDLabel: "99999",
+						kueueQueueLabel:             "malicious-queue-override",
+					},
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name: "job1",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_CpuResources{
+										CpuResources: &esspb.CpuResources{
+											CpuMillicores: 100,
+											MemoryBytes:   1024,
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+							},
+							Replicas: 1,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	// Verify custom annotations were merged.
+	if got.Annotations["custom.company.com/release"] != "v1.2.3" {
+		t.Errorf("Annotations[\"custom.company.com/release\"] = %q, want \"v1.2.3\"", got.Annotations["custom.company.com/release"])
+	}
+	if got.Annotations["helm.sh/hook"] != "pre-install" {
+		t.Errorf("Annotations[\"helm.sh/hook\"] = %q, want \"pre-install\"", got.Annotations["helm.sh/hook"])
+	}
+	// Verify reserved author annotation was not overwritten.
+	if got.Annotations[constants.AuthorAnnotation] != "test-author" {
+		t.Errorf("Annotations[%q] = %q, want \"test-author\"", constants.AuthorAnnotation, got.Annotations[constants.AuthorAnnotation])
+	}
+
+	// Verify custom labels were merged.
+	if got.Labels["custom.company.com/team"] != "ml-platform" {
+		t.Errorf("Labels[\"custom.company.com/team\"] = %q, want \"ml-platform\"", got.Labels["custom.company.com/team"])
+	}
+	if got.Labels["env"] != "production" {
+		t.Errorf("Labels[\"env\"] = %q, want \"production\"", got.Labels["env"])
+	}
+	// Verify reserved experiment ID label and queue label were not overwritten.
+	if got.Labels[constants.ExperimentIDLabel] != "123" {
+		t.Errorf("Labels[%q] = %q, want \"123\"", constants.ExperimentIDLabel, got.Labels[constants.ExperimentIDLabel])
+	}
+	if got.Labels[kueueQueueLabel] != testNamespace {
+		t.Errorf("Labels[%q] = %q, want %q", kueueQueueLabel, got.Labels[kueueQueueLabel], testNamespace)
+	}
+
+	// Verify custom top-level annotations and labels were NOT propagated to replicated jobs/pods.
+	if len(got.Spec.ReplicatedJobs) != 1 {
+		t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
+	}
+	jobAnnotations := got.Spec.ReplicatedJobs[0].Template.ObjectMeta.Annotations
+	if _, ok := jobAnnotations["custom.company.com/release"]; ok {
+		t.Errorf("ReplicatedJob unexpectedly received top-level annotation \"custom.company.com/release\"")
+	}
+	if _, ok := jobAnnotations["helm.sh/hook"]; ok {
+		t.Errorf("ReplicatedJob unexpectedly received top-level annotation \"helm.sh/hook\"")
+	}
+
+	jobLabels := got.Spec.ReplicatedJobs[0].Template.ObjectMeta.Labels
+	if _, ok := jobLabels["custom.company.com/team"]; ok {
+		t.Errorf("ReplicatedJob unexpectedly received top-level label \"custom.company.com/team\"")
+	}
+	if _, ok := jobLabels["env"]; ok {
+		t.Errorf("ReplicatedJob unexpectedly received top-level label \"env\"")
 	}
 }

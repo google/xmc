@@ -150,37 +150,37 @@ func TestEnqueueWorkUnitTask(t *testing.T) {
 			}
 
 			if redisTask.Signature == "" {
-				t.Errorf("Signature is empty, want non-empty")
-			} else {
-				verifier, err := securitytest.MustCreateTestVerifier(t)()
-				if err != nil {
-					t.Fatalf("Failed to create JWT verifier: %v", err)
-				}
+				t.Fatalf("Signature is empty, want non-empty")
+			}
 
-				validator, err := jwt.NewValidator(&jwt.ValidatorOpts{ExpectedAudience: &c.actuatorAudience, ExpectedIssuer: &c.invokerSA})
-				if err != nil {
-					t.Fatalf("Failed to create JWT validator: %v", err)
-				}
+			verifier, err := securitytest.MustCreateTestVerifier(t)()
+			if err != nil {
+				t.Fatalf("Failed to create JWT verifier: %v", err)
+			}
 
-				verifiedJWT, err := verifier.VerifyAndDecode(redisTask.Signature, validator)
-				if err != nil {
-					t.Fatalf("Failed to verify or decode token: %v", err)
-				}
+			validator, err := jwt.NewValidator(&jwt.ValidatorOpts{ExpectedAudience: &c.actuatorAudience, ExpectedIssuer: &c.invokerSA})
+			if err != nil {
+				t.Fatalf("Failed to create JWT validator: %v", err)
+			}
 
-				iat, err := verifiedJWT.IssuedAt()
-				if err != nil {
-					t.Fatalf("Iat claim not found")
-				}
+			verifiedJWT, err := verifier.VerifyAndDecode(redisTask.Signature, validator)
+			if err != nil {
+				t.Fatalf("Failed to verify or decode token: %v", err)
+			}
 
-				exp, err := verifiedJWT.ExpiresAt()
-				if err != nil {
-					t.Fatalf("Exp claim not found")
-				}
+			iat, err := verifiedJWT.IssuedAt()
+			if err != nil {
+				t.Fatalf("Iat claim not found")
+			}
 
-				wantTTL := c.signatureTTL
-				if got := exp.Sub(iat); got != wantTTL {
-					t.Errorf("Token expiration mismatch: got %v, want %v", got, wantTTL)
-				}
+			exp, err := verifiedJWT.ExpiresAt()
+			if err != nil {
+				t.Fatalf("Exp claim not found")
+			}
+
+			wantTTL := c.signatureTTL
+			if got := exp.Sub(iat); got != wantTTL {
+				t.Errorf("Token expiration mismatch: got %v, want %v", got, wantTTL)
 			}
 
 			if redisTask.OidcToken != "mock-oidc-token" {
