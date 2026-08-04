@@ -26,6 +26,10 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { Subscription } from 'rxjs';
 
+import {
+  QueueOverview,
+  QueueResourceCapacity,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
 import { QueueJobsTable } from 'xmanager_cloud/ui/app/side_panel/contents/queue_jobs_table/queue_jobs_table';
@@ -71,9 +75,42 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   private readonly resourceService = inject(ResourceService);
 
   private readonly clusterQueuesResponse = toSignal(this.resourceService.getClusterQueues());
-  protected readonly clusterQueues = computed<ClusterQueue[]>(
-    () => this.clusterQueuesResponse()?.clusterQueues ?? [],
-  );
+  protected readonly clusterQueues = computed<ClusterQueue[]>(() => {
+    const rawQueues: QueueOverview[] = this.clusterQueuesResponse()?.queues ?? [];
+    return rawQueues.map((q) => {
+      const name = q.queueName || 'cluster-queue';
+      const rawCapacities: QueueResourceCapacity[] = q.queueCapacity || [];
+      const flavors = rawCapacities.map((cap) => {
+        const resourceType = cap.resourceType || 'resource';
+        const totalCapacity = cap.totalCapacity ?? 0;
+        const freeCapacity = cap.freeCapacity ?? 0;
+        const inUse = Math.max(0, totalCapacity - freeCapacity);
+        return {
+          name: resourceType,
+          resourceName: resourceType,
+          nominalQuota: String(totalCapacity),
+          inUse: String(inUse),
+          reserved: '0',
+          freeCapacity: String(freeCapacity),
+          largestSlot: String(freeCapacity),
+        };
+      });
+
+      return {
+        name,
+        strategy: 'BestEffortFIFO',
+        cohort: '',
+        status: 'Active',
+        admittedWorkloads: 0,
+        reservingWorkloads: 0,
+        pendingWorkloads: 0,
+        pendingJobsCount: 0,
+        admittedJobsCount: 0,
+        localQueues: [],
+        flavors,
+      };
+    });
+  });
   protected readonly isLoading = signal<boolean>(false);
   protected readonly selectedQueue = signal<string>('gpu-cluster-queue');
   protected readonly activeTab = signal<DashboardTab>(TAB_SMART_FINDER);
