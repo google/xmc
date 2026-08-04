@@ -53,11 +53,17 @@ async function run({ github, context, core }) {
     return;
   }
 
-  const candidates = filterEligibleReviewers(rawReviewers, prAuthor);
-  core.info(`Available reviewer candidates (excluding author): ${candidates.join(', ')}`);
+  let absentUsers = [];
+  if (fs.existsSync('ABSENCE.md')) {
+    absentUsers = parseReviewersFromOwners(fs.readFileSync('ABSENCE.md', 'utf8'));
+    core.info(`Parsed absent reviewers from ABSENCE.md: ${absentUsers.join(', ')}`);
+  }
+
+  const candidates = filterEligibleReviewers(rawReviewers, prAuthor, absentUsers);
+  core.info(`Available reviewer candidates (excluding author & absent): ${candidates.join(', ')}`);
 
   if (candidates.length === 0) {
-    core.warning('No eligible reviewers available after excluding PR author.');
+    core.warning('No eligible reviewers available after excluding PR author and absent reviewers.');
     return;
   }
 
@@ -91,14 +97,19 @@ function parseReviewersFromOwners(content) {
 }
 
 /**
- * Pure function: Filters out the PR author from the candidate reviewer list.
+ * Pure function: Filters out the PR author and absent reviewers from the candidate reviewer list.
  * @param {string[]} candidates - Array of candidate usernames.
  * @param {string} prAuthor - Username of the PR author.
+ * @param {string[]} [absentUsers=[]] - Array of absent reviewer usernames.
  * @returns {string[]} Filtered array of eligible reviewers.
  */
-function filterEligibleReviewers(candidates, prAuthor) {
+function filterEligibleReviewers(candidates, prAuthor, absentUsers = []) {
   const authorLower = (prAuthor || '').toLowerCase();
-  return candidates.filter(r => (r || '').toLowerCase() !== authorLower);
+  const absentSet = new Set((absentUsers || []).map(u => (u || '').toLowerCase()));
+  return candidates.filter(r => {
+    const lower = (r || '').toLowerCase();
+    return lower !== authorLower && !absentSet.has(lower);
+  });
 }
 
 /**
