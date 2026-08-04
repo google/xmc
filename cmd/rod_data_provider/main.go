@@ -21,13 +21,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"go/google"
 	gwruntime "golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
+	"golang/go_sync/errgroup/errgroup"
 	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
@@ -48,53 +48,102 @@ func main() {
 
 	cfg := LoadConfig()
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
-	ctx := logging.WithLogger(context.Background(), logger)
+	rootCtx := logging.WithLogger(context.Background(), logger)
 
-	oauthCfg, err := oauth2.LoadConfig()
-	if err != nil {
-		logging.Fatal(ctx, "Failed to load OAuth config", "error", err)
-	}
-	if oauthCfg.GCPProjectID == "" {
-		oauthCfg.GCPProjectID = cfg.ProjectID
-	}
-	authenticator := oauth2.NewAuthenticator(oauthCfg)
+	ctx, stop := signal.NotifyContext(rootCtx, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
+	if err := run(ctx, cfg); err != nil {
+		logging.Fatal(ctx, "ROD data provider failed", "error", err)
+	}
+}
+
+func run(ctx context.Context, cfg *Config) error {
 	kueueCache := cache.NewKueueCache()
 	mgr, err := setupKueueManager(ctx, kueueCache)
 	if err != nil {
 		logging.Warn(ctx, "Kueue manager setup failed or running out-of-cluster", "error", err)
 	}
 
-	// 1. Setup gRPC server
+	lis, grpcServer, err := buildGRPCServer(cfg, kueueCache)
+	if err != nil {
+		return fmt.Errorf("failed to build gRPC server: %w", err)
+	}
+
+	httpServer, err := buildHTTPServer(ctx, cfg, kueueCache, mgr)
+	if err != nil {
+		return fmt.Errorf("failed to build HTTP server: %w", err)
+	}
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	if mgr != nil {
+		g.Go(func() error {
+			logging.Info(ctx, "Starting controller-runtime Manager for KueueCache")
+			if err := mgr.Start(ctx); err != nil {
+				return fmt.Errorf("controller-runtime manager error: %w", err)
+			}
+			return nil
+		})
+	}
+
+	g.Go(func() error {
+		logging.Info(ctx, "ROD Data Provider gRPC starting", "addr", lis.Addr())
+		if err := grpcServer.Serve(lis); err != nil && err != grpc.ErrServerStopped {
+			return fmt.Errorf("gRPC server error: %w", err)
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		logging.Info(ctx, "ROD Data Provider HTTP gateway starting", "addr", httpServer.Addr)
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			return fmt.Errorf("HTTP server error: %w", err)
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		<-ctx.Done()
+		performShutdown(ctx, httpServer, grpcServer)
+		return nil
+	})
+
+	return g.Wait()
+}
+
+func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache) (net.Listener, *grpc.Server, error) {
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
-		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
+		return nil, nil, fmt.Errorf("failed to listen on gRPC port %s: %w", cfg.GRPCPort, err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
 	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache))
 	reflection.Register(grpcServer)
+	return lis, grpcServer, nil
+}
 
-	go func() {
-		logging.Info(ctx, "ROD Data Provider gRPC starting", "addr", lis.Addr())
-		if err := grpcServer.Serve(lis); err != nil {
-			logging.Fatal(ctx, "gRPC server failed", "error", err)
-		}
-	}()
+func buildHTTPServer(ctx context.Context, cfg *Config, kueueCache *cache.KueueCache, mgr ctrl.Manager) (*http.Server, error) {
+	oauthCfg, err := oauth2.LoadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load OAuth config: %w", err)
+	}
+	if oauthCfg.GCPProjectID == "" {
+		oauthCfg.GCPProjectID = cfg.ProjectID
+	}
+	authenticator := oauth2.NewAuthenticator(oauthCfg)
 
-	// 2. Setup gRPC Gateway
 	gwmux := gwruntime.NewServeMux(gwruntime.WithIncomingHeaderMatcher(oauth2.IncomingHeaderMatcher))
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
 	err = spb.RegisterResourceObservabilityServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
 	if err != nil {
-		logging.Fatal(ctx, "Failed to register gateway", "error", err)
+		return nil, fmt.Errorf("failed to register gateway endpoint: %w", err)
 	}
 
-	// 3. Setup HTTP Server mux
 	mux := http.NewServeMux()
 
-	// Probes
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
@@ -111,10 +160,8 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 
-	// Secure private gRPC-Gateway endpoints with Authenticate middleware
 	authenticatedGwmux := authenticator.Authenticate(gwmux)
 
-	// Route gateway endpoints
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			w.WriteHeader(http.StatusOK)
@@ -127,32 +174,35 @@ func main() {
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	handler := authenticator.SecurityMiddlewares(mux)
 
-	httpServer := &http.Server{
+	return &http.Server{
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 3 * time.Second,
-	}
+	}, nil
+}
 
-	go func() {
-		logging.Info(ctx, "ROD Data Provider HTTP gateway starting", "addr", addr)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logging.Fatal(ctx, "HTTP server failed", "error", err)
-		}
-	}()
-
-	// Graceful shutdown
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-
+func performShutdown(ctx context.Context, httpServer *http.Server, grpcServer *grpc.Server) {
 	logging.Info(ctx, "Shutting down ROD data provider service...")
-	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		logging.Info(ctx, "Error shutting down HTTP server", "error", err)
+		logging.Error(ctx, "Error shutting down HTTP server", "error", err)
 	}
-	grpcServer.GracefulStop()
+
+	stopped := make(chan struct{})
+	go func() {
+		grpcServer.GracefulStop()
+		close(stopped)
+	}()
+
+	select {
+	case <-stopped:
+		logging.Info(ctx, "gRPC server stopped gracefully")
+	case <-time.After(5 * time.Second):
+		logging.Warn(ctx, "gRPC graceful shutdown timed out, force stopping...")
+		grpcServer.Stop()
+	}
 
 	logging.Info(ctx, "ROD data provider service stopped")
 }
@@ -186,13 +236,6 @@ func setupKueueManager(ctx context.Context, kueueCache *cache.KueueCache) (ctrl.
 	if err := SetupKueueReconcilers(mgr, mgr.GetClient(), kueueCache); err != nil {
 		return nil, fmt.Errorf("failed to setup Kueue reconcilers: %w", err)
 	}
-
-	go func() {
-		logging.Info(ctx, "Starting controller-runtime Manager for KueueCache")
-		if err := mgr.Start(ctx); err != nil {
-			logging.Error(ctx, "controller-runtime manager error", "error", err)
-		}
-	}()
 
 	return mgr, nil
 }

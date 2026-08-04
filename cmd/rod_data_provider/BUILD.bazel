@@ -73,6 +73,7 @@ compat_go_test(
     name = "server_test",
     srcs = [
         "config_test.go",
+        "queue_matcher_test.go",
         "server_test.go",
     ],
     embed = [":rod_data_provider_lib"],
