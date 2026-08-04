@@ -10,8 +10,8 @@
     "test:screenshot": "playwright test",
     "test:screenshot:update": "playwright test --update-snapshots",
     "lint": "eslint .",
-    "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format": "prettier --write --ignore-path ../../.gitignore .",
+    "format:check": "prettier --check --ignore-path ../../.gitignore ."
   },
   "private": true,
   "dependencies": {

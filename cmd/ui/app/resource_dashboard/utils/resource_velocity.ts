@@ -107,10 +107,7 @@ export function getPendingJobsCount(queue: QueueSecondaryData): number {
 /**
  * Calculate resource velocity string for a cluster queue over a timeframe.
  */
-export function calculateResourceVelocity(
-  queue: QueueSecondaryData,
-  period: string,
-): string {
+export function calculateResourceVelocity(queue: QueueSecondaryData, period: string): string {
   const match = findQueuePredictability(queue, period);
   const vel = match?.resourceVelocity?.velocity ?? 0;
   return `~${formatRate(vel)} GPUs/hr`;
@@ -119,10 +116,7 @@ export function calculateResourceVelocity(
 /**
  * Calculate job velocity string for a cluster queue over a timeframe.
  */
-export function calculateJobVelocity(
-  queue: QueueSecondaryData,
-  period: string,
-): string {
+export function calculateJobVelocity(queue: QueueSecondaryData, period: string): string {
   const match = findQueuePredictability(queue, period);
   const vel = match?.jobVelocity ?? 0;
   return `${formatRate(vel)} jobs/hr`;
@@ -131,9 +125,7 @@ export function calculateJobVelocity(
 /**
  * Calculate pending resource requests display text for a cluster queue.
  */
-export function calculatePendingRequestsDisplay(
-  queue: QueueSecondaryData,
-): string {
+export function calculatePendingRequestsDisplay(queue: QueueSecondaryData): string {
   const predictabilities = queue?.queuePredictability ?? [];
   for (const p of predictabilities) {
     if (
