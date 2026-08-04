@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/k8s_io/client_go/v/v0_23/dynamic/dynamic"
@@ -111,11 +112,11 @@ func NewWithClients(clientset kubernetes.Interface, dynamicClient dynamic.Interf
 	}
 }
 
-func (c *Client) executeWorkUnitAction(ctx context.Context, payload *actuatortaskpb.ActuatorPayload, actionName string, actionFn func() error) error {
+func (c *Client) executeWorkUnitAction(ctx context.Context, payload *actuatortaskpb.ActuatorPayload, actionName string, actionFn func(context.Context) error) error {
 	ctx = logging.WithWorkUnitExecutionName(ctx, payload.GetTarget())
 	ctx = logging.WithOperationName(ctx, payload.GetMetadata().GetOperationName())
 
-	err := actionFn()
+	err := actionFn(ctx)
 
 	if c.storage == nil {
 		logging.Warn(ctx, "Storage client is not initialized, skipping work unit operation update.")
@@ -137,20 +138,25 @@ func (c *Client) executeWorkUnitAction(ctx context.Context, payload *actuatortas
 	return nil
 }
 
-// CreateWorkUnit creates a new WorkUnit in Kubernetes.
-func (c *Client) CreateWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
-	return c.executeWorkUnitAction(ctx, payload, "create", func() error {
+func (c *Client) executePrioritizedAction(ctx context.Context, payload *actuatortaskpb.ActuatorPayload, actionName string, expPriority esspb.Priority, author string, targetFn func(context.Context, *esspb.WorkUnit, string, string, time.Time, Priorities) error) error {
+	return c.executeWorkUnitAction(ctx, payload, actionName, func(ctx context.Context) error {
 		priorities := Priorities{
 			WorkUnitPriority:   payload.GetWorkUnit().GetPriority(),
-			ExperimentPriority: payload.GetAction().GetCreate().GetExperimentPriority(),
+			ExperimentPriority: expPriority,
 		}
-		return c.createJobSet(ctx, payload.GetWorkUnit(), payload.GetTarget(), payload.GetAction().GetCreate().GetAuthor(), payload.GetCreateTime().AsTime(), priorities)
+		return targetFn(ctx, payload.GetWorkUnit(), payload.GetTarget(), author, payload.GetCreateTime().AsTime(), priorities)
 	})
+}
+
+// CreateWorkUnit creates a new WorkUnit in Kubernetes.
+func (c *Client) CreateWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
+	act := payload.GetAction().GetCreate()
+	return c.executePrioritizedAction(ctx, payload, "create", act.GetExperimentPriority(), act.GetAuthor(), c.createJobSet)
 }
 
 // DeleteWorkUnit deletes a WorkUnit in Kubernetes.
 func (c *Client) DeleteWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
-	return c.executeWorkUnitAction(ctx, payload, "delete", func() error {
+	return c.executeWorkUnitAction(ctx, payload, "delete", func(ctx context.Context) error {
 		namespace, err := c.getNamespaceFromWorkUnitWithFallback(ctx, payload.GetWorkUnit(), payload.GetTarget())
 		if err != nil {
 			return fmt.Errorf("failed to get namespace for target %q: %w", payload.GetTarget(), err)
@@ -162,13 +168,8 @@ func (c *Client) DeleteWorkUnit(ctx context.Context, payload *actuatortaskpb.Act
 
 // RestartWorkUnit restarts a WorkUnit in Kubernetes.
 func (c *Client) RestartWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
-	return c.executeWorkUnitAction(ctx, payload, "restart", func() error {
-		priorities := Priorities{
-			WorkUnitPriority:   payload.GetWorkUnit().GetPriority(),
-			ExperimentPriority: payload.GetAction().GetRestart().GetExperimentPriority(),
-		}
-		return c.restartJobSet(ctx, payload.GetWorkUnit(), payload.GetTarget(), payload.GetAction().GetRestart().GetAuthor(), payload.GetCreateTime().AsTime(), priorities)
-	})
+	act := payload.GetAction().GetRestart()
+	return c.executePrioritizedAction(ctx, payload, "restart", act.GetExperimentPriority(), act.GetAuthor(), c.restartJobSet)
 }
 
 // Clientset returns the kubernetes clientset.
