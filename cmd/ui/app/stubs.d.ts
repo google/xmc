@@ -175,3 +175,53 @@ declare module 'xmanager_cloud/health_service/proto/api.jsonpb_decls' {
     [key: string]: any;
   }
 }
+
+declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
+  export interface Resource {
+    resourceType?: string;
+    count?: number;
+  }
+  export interface QueueResourceCapacity {
+    resourceType?: string;
+    totalCapacity?: number;
+    freeCapacity?: number;
+    freeCapacityWithBorrowing?: number;
+  }
+  export interface QueueOverview {
+    queueName?: string;
+    queueCapacity?: QueueResourceCapacity[];
+  }
+  export interface GetFittingQueuesRequest {
+    requirements?: Resource[];
+  }
+  export interface GetFittingQueuesResponse {
+    queues?: QueueOverview[];
+  }
+  export interface BatchGetQueueSecondaryDataResponse {
+    queueData?: QueueSecondaryData[];
+  }
+  export interface QueueSecondaryData {
+    queueName?: string;
+    gpuCounts?: number;
+    metricsTimestamp?: string;
+    velocityMetrics?: Record<string, number>;
+  }
+  export interface QueueJob {
+    position?: string;
+    xid?: string;
+    workUnitId?: string;
+    jobName?: string;
+    user?: string;
+    resources?: string;
+    priority?: string;
+    status?: string;
+    timeInQueue?: string;
+    queueName?: string;
+    [key: string]: any;
+  }
+  export interface QueueJobListResponse {
+    queueName?: string;
+    jobs?: QueueJob[];
+    [key: string]: any;
+  }
+}

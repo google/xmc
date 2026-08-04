@@ -26,8 +26,11 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { Subscription } from 'rxjs';
 
+import {
+  QueueOverview,
+  QueueResourceCapacity,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
-import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
 import { QueueJobsTable } from 'xmanager_cloud/ui/app/side_panel/contents/queue_jobs_table/queue_jobs_table';
 
 import {
@@ -71,8 +74,8 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   private readonly resourceService = inject(ResourceService);
 
   private readonly clusterQueuesResponse = toSignal(this.resourceService.getClusterQueues());
-  protected readonly clusterQueues = computed<ClusterQueue[]>(
-    () => this.clusterQueuesResponse()?.clusterQueues ?? [],
+  protected readonly queues = computed<QueueOverview[]>(
+    () => this.clusterQueuesResponse()?.queues ?? [],
   );
   protected readonly isLoading = signal<boolean>(false);
   protected readonly selectedQueue = signal<string>('gpu-cluster-queue');
@@ -86,20 +89,18 @@ export class ResourceDashboard implements OnInit, OnDestroy {
 
   protected readonly availableResourceTypes = computed<string[]>(() => {
     const types = new Set<string>();
-    for (const q of this.clusterQueues()) {
-      for (const f of q.flavors ?? []) {
-        if (f.resourceName) {
-          types.add(f.resourceName);
-        } else if (f.name) {
-          types.add(f.name);
+    for (const q of this.queues()) {
+      for (const cap of q.queueCapacity ?? []) {
+        if (cap.resourceType) {
+          types.add(cap.resourceType);
         }
       }
     }
     return Array.from(types).sort();
   });
 
-  protected readonly filteredQueues = computed<ClusterQueue[]>(() => {
-    const allQueues = this.clusterQueues();
+  protected readonly filteredQueues = computed<QueueOverview[]>(() => {
+    const allQueues = this.queues();
     if (this.activeTab() !== TAB_SMART_FINDER) {
       return allQueues;
     }
@@ -113,11 +114,11 @@ export class ResourceDashboard implements OnInit, OnDestroy {
       .filter((t) => t !== '');
 
     return allQueues.filter((queue) => {
-      const flavors = queue.flavors ?? [];
-      if (!matchesResourceTypes(flavors, activeFilters)) {
+      const capacities = queue.queueCapacity ?? [];
+      if (!matchesResourceTypes(capacities, activeFilters)) {
         return false;
       }
-      return matchesRequestedAmount(flavors, activeFilters, reqAmount);
+      return matchesRequestedAmount(capacities, activeFilters, reqAmount);
     });
   });
 
@@ -162,28 +163,31 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   }
 }
 
-function matchesResourceTypes(flavors: ClusterQueue['flavors'], activeFilters: string[]): boolean {
+function matchesResourceTypes(
+  capacities: QueueResourceCapacity[] | undefined,
+  activeFilters: string[],
+): boolean {
   if (!activeFilters.length) return true;
-  if (!flavors) return false;
+  if (!capacities) return false;
   return activeFilters.every((filter) =>
-    flavors.some((f) => {
-      const rName = (f.resourceName || f.name || '').toLowerCase();
+    capacities.some((cap) => {
+      const rName = (cap.resourceType || '').toLowerCase();
       return !!rName && (rName === filter || rName.includes(filter) || filter.includes(rName));
     }),
   );
 }
 
 function matchesRequestedAmount(
-  flavors: ClusterQueue['flavors'],
+  capacities: QueueResourceCapacity[] | undefined,
   activeFilters: string[],
   reqAmount?: number | null,
 ): boolean {
   if (!reqAmount || reqAmount <= 0) return true;
-  if (!flavors) return false;
-  const targetFlavors =
+  if (!capacities) return false;
+  const targetCapacities =
     activeFilters.length > 0
-      ? flavors.filter((f) => {
-          const rName = (f.resourceName || f.name || '').toLowerCase();
+      ? capacities.filter((cap) => {
+          const rName = (cap.resourceType || '').toLowerCase();
           return (
             !!rName &&
             activeFilters.some(
@@ -191,10 +195,10 @@ function matchesRequestedAmount(
             )
           );
         })
-      : flavors;
+      : capacities;
 
-  return targetFlavors.some((f) => {
-    const free = parseFloat(f.freeCapacity || '0');
-    return !isNaN(free) && free >= reqAmount;
+  return targetCapacities.some((cap) => {
+    const free = cap.freeCapacity ?? 0;
+    return free >= reqAmount;
   });
 }
