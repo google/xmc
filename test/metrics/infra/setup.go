@@ -192,27 +192,11 @@ func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork) (*cl
 	}
 
 	protoPath := locateMetricsProtoFile()
-	fmt.Printf("[StartClickHouse] locateMetricsProtoFile path: '%s'\n", protoPath)
 	if protoPath != "" {
 		opts = append(opts, testcontainers.WithFiles(
 			testcontainers.ContainerFile{
 				HostFilePath:      protoPath,
 				ContainerFilePath: "/var/lib/clickhouse/format_schemas/metrics.proto",
-				FileMode:          0644,
-			},
-			testcontainers.ContainerFile{
-				HostFilePath:      protoPath,
-				ContainerFilePath: "/var/lib/clickhouse/metrics.proto",
-				FileMode:          0644,
-			},
-			testcontainers.ContainerFile{
-				HostFilePath:      protoPath,
-				ContainerFilePath: "/var/lib/clickhouse/user_files/metrics.proto",
-				FileMode:          0644,
-			},
-			testcontainers.ContainerFile{
-				HostFilePath:      protoPath,
-				ContainerFilePath: "/etc/clickhouse-server/metrics.proto",
 				FileMode:          0644,
 			},
 		))

@@ -16,6 +16,7 @@ package metrics_test
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -68,7 +69,10 @@ func produceProtoMetrics(ctx context.Context, brokers []string, metrics []*metri
 		kgo.SeedBrokers(brokers...),
 		kgo.DefaultProduceTopic(metricsTopic),
 		kgo.Dialer(func(ctx context.Context, network, hostport string) (net.Conn, error) {
-			return dialer.DialContext(ctx, network, brokers[0])
+			if len(brokers) > 0 {
+				return dialer.DialContext(ctx, network, brokers[0])
+			}
+			return dialer.DialContext(ctx, network, hostport)
 		}),
 	)
 	if err != nil {
@@ -94,19 +98,39 @@ func produceProtoMetrics(ctx context.Context, brokers []string, metrics []*metri
 }
 
 func pollRecordCount(ctx context.Context, harness *infra.Harness, query string, expectedMin uint64) (uint64, error) {
-	deadline := time.Now().Add(pollTimeout)
-	for time.Now().Before(deadline) {
-		var count uint64
-		row := harness.ClickHouseConn.QueryRow(ctx, query)
-		if err := row.Scan(&count); err == nil && count >= expectedMin {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	timeout := time.NewTimer(pollTimeout)
+	defer timeout.Stop()
+
+	var lastErr error
+	for {
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-timeout.C:
+			var count uint64
+			row := harness.ClickHouseConn.QueryRow(ctx, query)
+			if err := row.Scan(&count); err != nil {
+				return 0, fmt.Errorf("timeout waiting for records, query error: %w", err)
+			}
+			if lastErr != nil && count < expectedMin {
+				return count, fmt.Errorf("timeout waiting for %d records (got %d), query error: %w", expectedMin, count, lastErr)
+			}
 			return count, nil
+		case <-ticker.C:
+			var count uint64
+			row := harness.ClickHouseConn.QueryRow(ctx, query)
+			if err := row.Scan(&count); err == nil {
+				if count >= expectedMin {
+					return count, nil
+				}
+			} else {
+				lastErr = err
+			}
 		}
-		time.Sleep(500 * time.Millisecond)
 	}
-	var count uint64
-	row := harness.ClickHouseConn.QueryRow(ctx, query)
-	_ = row.Scan(&count)
-	return count, nil
 }
 
 func dumpClickHouseDiagnostics(ctx context.Context, t *testing.T, harness *infra.Harness) {
@@ -191,29 +215,14 @@ func TestClickHousePipelineIngestion(t *testing.T) {
 		t.Fatalf("Failed to produce metric: %v", err)
 	}
 
-	produceCtx, produceCancel := context.WithCancel(ctx)
-	defer produceCancel()
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-produceCtx.Done():
-				return
-			case <-ticker.C:
-				_ = produceProtoMetrics(produceCtx, harness.RedpandaBrokers, []*metricspb.Metric{validMetric})
-			}
-		}
-	}()
-
 	query := "SELECT count() FROM xmc_metrics WHERE xid = 10001 AND metric_name = 'train_loss'"
 	count, err := pollRecordCount(ctx, harness, query, 1)
 	if err != nil {
 		t.Fatalf("Failed to query ClickHouse: %v", err)
 	}
-	if count < 1 {
+	if count != 1 {
 		dumpClickHouseDiagnostics(ctx, t, harness)
-		t.Fatalf("Expected at least 1 ingested record in xmc_metrics, got %d", count)
+		t.Fatalf("Expected exactly 1 ingested record in xmc_metrics, got %d", count)
 	}
 
 	var xid, workUnitID, executionID, step int64
@@ -315,29 +324,14 @@ func TestClickHousePipelineRoutingAndFiltering(t *testing.T) {
 		t.Fatalf("Failed to produce test batch: %v", err)
 	}
 
-	produceCtx2, produceCancel2 := context.WithCancel(ctx)
-	defer produceCancel2()
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-produceCtx2.Done():
-				return
-			case <-ticker.C:
-				_ = produceProtoMetrics(produceCtx2, harness.RedpandaBrokers, testBatch)
-			}
-		}
-	}()
-
 	query := "SELECT count() FROM xmc_metrics WHERE xid IN (20001, 20002, 20003, 20004, 0)"
 	count, err := pollRecordCount(ctx, harness, query, 2)
 	if err != nil {
 		t.Fatalf("Failed to query ClickHouse for routed records: %v", err)
 	}
 
-	if count < 2 {
-		t.Fatalf("Expected at least 2 valid records in xmc_metrics after Materialized View filtering, got %d", count)
+	if count != 2 {
+		t.Fatalf("Expected exactly 2 valid records in xmc_metrics after Materialized View filtering, got %d", count)
 	}
 
 	var validCount uint64
