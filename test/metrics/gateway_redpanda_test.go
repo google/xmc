@@ -149,7 +149,6 @@ func TestGatewayRedpanda_MTLSKeyReloader(t *testing.T) {
 		t.Fatalf("expected initial certificate payload")
 	}
 
-	time.Sleep(10 * time.Millisecond)
 	generateCertKeyPair(t, certPath, keyPath, "v2.xmc.local")
 
 	cert2, err := reloader.GetClientCertificate(nil)
@@ -245,15 +244,24 @@ func TestGatewayRedpanda_BrokerOutage(t *testing.T) {
 		t.Fatalf("failed to unpause Redpanda container %s: %v", containerID, err)
 	}
 
-	time.Sleep(1 * time.Second)
-
-	recResp, err := http.Post(server.URL, "application/json", bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("post-outage produce request failed: %v", err)
+	// Poll until Redpanda recovers TCP connectivity and handler accepts request.
+	var recResp *http.Response
+	recovered := false
+	for i := 0; i < 50; i++ {
+		recResp, err = http.Post(server.URL, "application/json", bytes.NewReader(body))
+		if err == nil && recResp.StatusCode == http.StatusAccepted {
+			_ = recResp.Body.Close()
+			recovered = true
+			break
+		}
+		if recResp != nil {
+			_ = recResp.Body.Close()
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	_ = recResp.Body.Close()
-	if recResp.StatusCode != http.StatusAccepted {
-		t.Errorf("expected recovery HTTP status 202, got %d", recResp.StatusCode)
+
+	if !recovered {
+		t.Fatalf("post-outage produce request failed to recover within deadline, last error: %v", err)
 	}
 }
 
