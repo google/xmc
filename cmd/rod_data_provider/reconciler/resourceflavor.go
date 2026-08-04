@@ -20,6 +20,7 @@ import (
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
+	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
@@ -46,5 +47,6 @@ func (r *ResourceFlavorReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *ResourceFlavorReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&kueuev1beta1.ResourceFlavor{}).
+		WithEventFilter(predicate.ResourceVersionChangedPredicate{}).
 		Complete(r)
 }

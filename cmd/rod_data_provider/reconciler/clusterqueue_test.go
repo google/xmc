@@ -49,8 +49,28 @@ func TestClusterQueueReconciler(t *testing.T) {
 		t.Errorf("expected cq-test to be cached")
 	}
 
+	// Test Update scenario
+	cqUpdate := cq.DeepCopy()
+	cqUpdate.Status.PendingWorkloads = 5
+	if err := client.Update(ctx, cqUpdate); err != nil {
+		t.Fatalf("Client update failed: %v", err)
+	}
+
+	if _, err := rec.Reconcile(ctx, req); err != nil {
+		t.Fatalf("Reconcile update failed: %v", err)
+	}
+
+	cachedUpdated, ok := c.Get("cq-test")
+	if !ok {
+		t.Fatalf("expected cq-test to remain cached after update")
+	}
+	if cachedUpdated.Status.PendingWorkloads != 5 {
+		t.Errorf("expected cached PendingWorkloads = 5, got %d", cachedUpdated.Status.PendingWorkloads)
+	}
+
+	// Test Delete scenario
 	reqNotFound := ctrlreq.Request{NamespacedName: ctrl.ObjectKey{Name: "cq-test"}}
-	client.Delete(ctx, cq)
+	client.Delete(ctx, cqUpdate)
 	if _, err := rec.Reconcile(ctx, reqNotFound); err != nil {
 		t.Fatalf("Reconcile delete failed: %v", err)
 	}
