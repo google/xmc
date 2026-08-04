@@ -127,11 +127,11 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 	xidDBURI := fmt.Sprintf("projects/%s/instances/%s/databases/%s", projectID, instID, xidDatabase)
 	essDBURI := fmt.Sprintf("projects/%s/instances/%s/databases/%s", projectID, instID, essDatabase)
 
-	if err := createDatabase(ctx, emu, xidDatabase, xidDBURI, xidSchema, xidDescriptors, applySchema); err != nil {
+	if err := createDatabase(ctx, emu, xidDatabase, xidDBURI, instURI, xidSchema, xidDescriptors, applySchema); err != nil {
 		t.Fatalf("failed to create XID database: %v", err)
 	}
 
-	if err := createDatabase(ctx, emu, essDatabase, essDBURI, essSchema, essDescriptors, applySchema); err != nil {
+	if err := createDatabase(ctx, emu, essDatabase, essDBURI, instURI, essSchema, essDescriptors, applySchema); err != nil {
 		t.Fatalf("failed to create ESS database: %v", err)
 	}
 
@@ -190,7 +190,7 @@ func createInstanceNamed(ctx context.Context, emu *Emulator, instID string, inst
 	return err
 }
 
-func createDatabase(ctx context.Context, emu *Emulator, databaseID string, databaseURI string, schema string, descriptors []byte, applySchema bool) error {
+func createDatabase(ctx context.Context, emu *Emulator, databaseID string, databaseURI string, instURI string, schema string, descriptors []byte, applySchema bool) error {
 	dba, err := database.NewDatabaseAdminClient(ctx, emu.ClientOptions()...)
 	if err != nil {
 		return err
@@ -200,7 +200,7 @@ func createDatabase(ctx context.Context, emu *Emulator, databaseID string, datab
 	_ = dba.DropDatabase(ctx, &dbadminpb.DropDatabaseRequest{Database: databaseURI})
 
 	op, err := dba.CreateDatabase(ctx, &dbadminpb.CreateDatabaseRequest{
-		Parent:          instanceURI,
+		Parent:          instURI,
 		CreateStatement: "CREATE DATABASE `" + databaseID + "`",
 	})
 	if err != nil {
