@@ -77,3 +77,7 @@ This document defines standards and policy rules for AI agents acting as **Code 
 - **Wait Buffer Policy After PR Creation**: When instructed to create or update a non-draft Pull Request, after creating the PR, agents MUST pause for approximately **2 minutes** to allow GitHub CI status checks and automated GitHub PR review passes to complete. Refer to [XMC Create PR Skill](../skills/xmc_create_pr/SKILL.md#5-ci-wait-buffer-period).
 - **Addressing Review Comments**: When review feedback is received, execute the detailed comment resolution workflow defined in the [Address PR Comment Skill](../skills/xmc_address_pr_comment/SKILL.md) (fetching comment context, generating checklist artifacts, running local tests, confirming contract changes with the user, posting inline thread replies, and verifying 1-to-1 resolution).
 - **Prohibition of Force-Pushing on PR Branches**: NEVER use force-push (`git push --force` or `git push --force-with-lease`) when pushing fix commits or addressing review comments on an active Pull Request branch. Always append incremental commits to the branch so reviewers can easily inspect diffs before and after changes between review passes.
+
+## 8. Staging Hygiene & Incremental Work Preservation
+- **Staging Hygiene**: Ensure temporary commit message drafts (`commit_*_msg.txt`), scratch files, or un-formatted logs are not staged or tracked prior to committing.
+- **Incremental Work Checkpoints**: For multi-step tasks, push incremental WIP commits to a dedicated feature branch to prevent uncommitted work loss on session termination.
