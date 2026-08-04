@@ -545,6 +545,60 @@ func TestConstructJobSet_GroupName(t *testing.T) {
 	})
 }
 
+func TestConstructJobSet_PerJobCustomLabels(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Executable.GetJobset().Jobs[0].Labels = map[string]string{
+			"kueue.x-k8s.io/podset":     "pathways-head",
+			"custom.label/key":          "value",
+			constants.ExperimentIDLabel: "hacked-xid",
+			constants.WorkUnitIDLabel:   "hacked-wid",
+			constants.ExecutionIDLabel:  "hacked-eid",
+			"kueue.x-k8s.io/queue-name": "hacked-queue",
+		}
+	})
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+	if len(jobSet.Spec.ReplicatedJobs) != 1 {
+		t.Fatalf("Expected 1 ReplicatedJob, got %d", len(jobSet.Spec.ReplicatedJobs))
+	}
+	rj := jobSet.Spec.ReplicatedJobs[0]
+
+	// Verify custom labels are applied
+	if got := rj.Template.ObjectMeta.Labels["kueue.x-k8s.io/podset"]; got != "pathways-head" {
+		t.Errorf("JobTemplateSpec.ObjectMeta.Labels[kueue.x-k8s.io/podset] = %q, want %q", got, "pathways-head")
+	}
+	if got := rj.Template.ObjectMeta.Labels["custom.label/key"]; got != "value" {
+		t.Errorf("JobTemplateSpec.ObjectMeta.Labels[custom.label/key] = %q, want %q", got, "value")
+	}
+
+	podLabels := rj.Template.Spec.Template.ObjectMeta.Labels
+	if got := podLabels["kueue.x-k8s.io/podset"]; got != "pathways-head" {
+		t.Errorf("PodTemplateSpec.ObjectMeta.Labels[kueue.x-k8s.io/podset] = %q, want %q", got, "pathways-head")
+	}
+	if got := podLabels["custom.label/key"]; got != "value" {
+		t.Errorf("PodTemplateSpec.ObjectMeta.Labels[custom.label/key] = %q, want %q", got, "value")
+	}
+
+	// Verify system jobLabels take precedence over job.GetLabels()
+	expectedSystemLabels := map[string]string{
+		constants.ExperimentIDLabel: "123",
+		constants.WorkUnitIDLabel:   "456",
+		constants.ExecutionIDLabel:  "1",
+		"kueue.x-k8s.io/queue-name": testNamespace,
+	}
+	for labelKey, wantValue := range expectedSystemLabels {
+		if got := rj.Template.ObjectMeta.Labels[labelKey]; got != wantValue {
+			t.Errorf("JobTemplateSpec system label %s = %q, want %q (system label must take precedence)", labelKey, got, wantValue)
+		}
+		if got := podLabels[labelKey]; got != wantValue {
+			t.Errorf("PodTemplateSpec system label %s = %q, want %q (system label must take precedence)", labelKey, got, wantValue)
+		}
+	}
+}
+
 func TestConstructJobSet_MetricsEnabled(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	client.RuntimeConfig.MetricsEnabled = true
