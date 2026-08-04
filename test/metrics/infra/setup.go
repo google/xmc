@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -90,6 +91,22 @@ func StartRedpanda(ctx context.Context, nw *testcontainers.DockerNetwork) (*redp
 	}
 
 	return c, []string{broker}, nil
+}
+
+// PauseContainer pauses a Redpanda container instance.
+func PauseContainer(ctx context.Context, c *redpanda.Container) error {
+	if c == nil {
+		return errors.New("cannot pause nil container")
+	}
+	return exec.CommandContext(ctx, "docker", "pause", c.GetContainerID()).Run()
+}
+
+// UnpauseContainer unpauses a Redpanda container instance.
+func UnpauseContainer(ctx context.Context, c *redpanda.Container) error {
+	if c == nil {
+		return errors.New("cannot unpause nil container")
+	}
+	return exec.CommandContext(ctx, "docker", "unpause", c.GetContainerID()).Run()
 }
 
 func prepareInitScript(scriptPath string, internalBroker string) (string, func(), error) {

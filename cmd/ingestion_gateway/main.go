@@ -34,6 +34,7 @@ import (
 
 func main() {
 	google.Init()
+	RegisterFlags(flag.CommandLine)
 	flag.Parse()
 
 	cfg, err := LoadConfig()

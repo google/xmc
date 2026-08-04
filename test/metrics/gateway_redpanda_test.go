@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -207,12 +206,11 @@ func TestGatewayRedpanda_BrokerOutage(t *testing.T) {
 		t.Fatalf("expected HTTP status 202, got %d", resp.StatusCode)
 	}
 
-	containerID := rpContainer.GetContainerID()
-	if err := exec.CommandContext(ctx, "docker", "pause", containerID).Run(); err != nil {
-		t.Fatalf("failed to pause Redpanda container %s: %v", containerID, err)
+	if err := infra.PauseContainer(ctx, rpContainer); err != nil {
+		t.Fatalf("failed to pause Redpanda container: %v", err)
 	}
 	defer func() {
-		_ = exec.CommandContext(context.Background(), "docker", "unpause", containerID).Run()
+		_ = infra.UnpauseContainer(context.Background(), rpContainer)
 	}()
 
 	outageCtx, outageCancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -224,8 +222,8 @@ func TestGatewayRedpanda_BrokerOutage(t *testing.T) {
 	}
 	outageReq.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
-	outageResp, err := client.Do(outageReq)
+	httpClient := &http.Client{}
+	outageResp, err := httpClient.Do(outageReq)
 	if err != nil {
 		if !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(err.Error(), "context deadline exceeded") {
 			t.Fatalf("request failed unexpectedly during broker outage: %v", err)
@@ -237,8 +235,8 @@ func TestGatewayRedpanda_BrokerOutage(t *testing.T) {
 		}
 	}
 
-	if err := exec.CommandContext(ctx, "docker", "unpause", containerID).Run(); err != nil {
-		t.Fatalf("failed to unpause Redpanda container %s: %v", containerID, err)
+	if err := infra.UnpauseContainer(ctx, rpContainer); err != nil {
+		t.Fatalf("failed to unpause Redpanda container: %v", err)
 	}
 
 	// Poll until Redpanda recovers TCP connectivity and handler accepts request.
@@ -297,12 +295,7 @@ func TestGatewayRedpanda_MurmurHash2Partitioning(t *testing.T) {
 		RedpandaBrokers: brokers,
 	}
 
-	opts, err := ingestiongateway.BuildProducerOptions(cfg, nil)
-	if err != nil {
-		t.Fatalf("BuildProducerOptions failed: %v", err)
-	}
-
-	producer, err := kgo.NewClient(opts...)
+	producer, err := ingestiongateway.NewKafkaProducer(cfg, nil)
 	if err != nil {
 		t.Fatalf("failed to create partition producer client: %v", err)
 	}
