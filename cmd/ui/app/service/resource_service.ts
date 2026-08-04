@@ -22,6 +22,8 @@ import {
   QueueJobListResponse,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
+import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
+
 /**
  * Angular injectable data service client for fetching Resource Observability Dashboard (ROD)
  * cluster queues and queue jobs.
