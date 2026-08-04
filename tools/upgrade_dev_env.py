@@ -130,7 +130,7 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
 
     try:
         config_dict = tool_load_config(config_file)
-    except ValueError as e:
+    except (FileNotFoundError, ValueError) as e:
         error_exit(str(e))
 
     project_id = config_dict["project_id"]
