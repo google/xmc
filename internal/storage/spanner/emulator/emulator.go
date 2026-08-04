@@ -74,6 +74,7 @@ func Start(ctx context.Context, opts Options) (*Emulator, error) {
 
 type Emulator struct {
 	addr        string
+	InstanceID  string
 	XIDDatabase string
 	ESSDatabase string
 }
@@ -122,6 +123,7 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 	xidDatabase := fmt.Sprintf("test-xid-db-%s", suffix)
 	essDatabase := fmt.Sprintf("test-ess-db-%s", suffix)
 
+	emu.InstanceID = instID
 	emu.XIDDatabase = xidDatabase
 	emu.ESSDatabase = essDatabase
 	xidDBURI := fmt.Sprintf("projects/%s/instances/%s/databases/%s", projectID, instID, xidDatabase)

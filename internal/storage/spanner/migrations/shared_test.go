@@ -26,6 +26,7 @@ type testRunCase struct {
 	name          string
 	migrationsDir string
 	databaseID    string
+	instanceID    string
 	getDB         func(emu *emulator.Emulator) string
 }
 
@@ -34,6 +35,9 @@ func withEmuDB(tc testRunCase, emu *emulator.Emulator) testRunCase {
 		panic(fmt.Sprintf("CRITICAL: testRunCase %q failed to declare a getDB selector callback", tc.name))
 	}
 	tc.databaseID = tc.getDB(emu)
+	if emu != nil && emu.InstanceID != "" {
+		tc.instanceID = emu.InstanceID
+	}
 	return tc
 }
 
@@ -44,9 +48,14 @@ func mustCreateConfig(t *testing.T, tc testRunCase, command string, arg *int) *c
 		t.Fatalf("Failed to create source driver: %v", err)
 	}
 
+	instID := "test-instance"
+	if tc.instanceID != "" {
+		instID = tc.instanceID
+	}
+
 	return &config{
 		projectID:     "test-project",
-		instanceID:    "test-instance",
+		instanceID:    instID,
 		databaseID:    tc.databaseID,
 		migrationsDir: tc.migrationsDir,
 		command:       command,
