@@ -31,7 +31,10 @@ compat_go_library(
         "validation.go",
     ],
     importpath = "xmanager_cloud/cmd/ingestion_gateway",
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//cmd/ingestion_gateway:__pkg__",
+        "//test/metrics:__pkg__",
+    ],
     deps = [
         "//api/protos/metrics:metrics_go_proto",
         "//internal/compat/google",
