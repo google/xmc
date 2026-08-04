@@ -34,9 +34,11 @@ func withEmuDB(tc testRunCase, emu *emulator.Emulator) testRunCase {
 	if tc.getDB == nil {
 		panic(fmt.Sprintf("CRITICAL: testRunCase %q failed to declare a getDB selector callback", tc.name))
 	}
-	tc.databaseID = tc.getDB(emu)
-	if emu != nil && emu.InstanceID != "" {
-		tc.instanceID = emu.InstanceID
+	if emu != nil {
+		tc.databaseID = tc.getDB(emu)
+		if emu.InstanceID != "" {
+			tc.instanceID = emu.InstanceID
+		}
 	}
 	return tc
 }
