@@ -17,7 +17,7 @@ import { MatIconModule } from '@angular/material/icon';
 
 import { HealthStatusResponse } from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
 
-type SystemInfo = NonNullable<HealthStatusResponse['systemInfo']>;
+export type SystemInfo = NonNullable<HealthStatusResponse['systemInfo']>;
 
 /** A component showing system version info and external monitoring links. */
 @Component({

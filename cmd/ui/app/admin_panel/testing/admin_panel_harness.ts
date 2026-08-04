@@ -24,6 +24,7 @@ export class AdminPanelHarness extends ComponentHarness {
   private readonly _healthConfigs = this.locatorForOptional('.config-section pre.raw-json');
 
   private readonly _timestampBadge = this.locatorForOptional('.timestamp-badge');
+  private readonly _errorContainer = this.locatorForOptional('.error-container');
 
   async getHealthStatusText(): Promise<string | null> {
     const el = await this._healthStatus();
@@ -37,6 +38,11 @@ export class AdminPanelHarness extends ComponentHarness {
 
   async getTimestampText(): Promise<string | null> {
     const el = await this._timestampBadge();
+    return el ? el.text() : null;
+  }
+
+  async getErrorText(): Promise<string | null> {
+    const el = await this._errorContainer();
     return el ? el.text() : null;
   }
 

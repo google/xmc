@@ -16,7 +16,7 @@ import 'jasmine';
 
 import { provideHttpClient } from '@angular/common/http';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import { HealthService } from '../service/health_service';
 import { MockHealthService } from '../service/testing/mock_health_service';
@@ -87,5 +87,18 @@ describe('AdminPanelPage Component', () => {
     const systemInfoHarness = await harness.getSystemInfoCard();
     expect(systemInfoHarness).not.toBeNull();
     expect(await systemInfoHarness!.getObservabilityLinkHref()).toBeNull();
+  });
+
+  it('should display error message if health status fails to load', async () => {
+    const healthService = get(HealthService);
+    spyOn(healthService, 'getHealthStatus').and.returnValue(
+      throwError(() => new Error('Mock error')),
+    );
+
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    expect(await harness.getErrorText()).toContain('Failed to load health status');
   });
 });
