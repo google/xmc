@@ -67,7 +67,7 @@ jobs:
           go-version: '1.26.0'
 
       - name: 'Set up Bazel'
-        uses: 'bazelbuild/setup-bazelisk@6ecf4fd8b7d1f9721785f1dd656a689acf9add47' # v3.0.0
+        uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
 
       - name: 'Restore Bazel Cache'
         id: 'cache-bazel-restore'
