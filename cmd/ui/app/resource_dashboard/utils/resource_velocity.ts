@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import {
-  QueueOverview,
   QueuePredictability,
   QueueSecondaryData,
   RangePreset,
@@ -84,19 +83,19 @@ export function mapPeriodToRangePreset(period: string): RangePreset {
  * Find QueuePredictability matching the given timeframe period.
  */
 export function findQueuePredictability(
-  queue: Partial<QueueOverview | QueueSecondaryData>,
+  queue: QueueSecondaryData,
   period: string,
 ): QueuePredictability | undefined {
   const targetRange = mapPeriodToRangePreset(period);
-  const predictabilities = (queue as QueueSecondaryData)?.queuePredictability ?? [];
+  const predictabilities = queue?.queuePredictability ?? [];
   return predictabilities.find((p) => p.velocityRange === targetRange) ?? predictabilities[0];
 }
 
 /**
  * Calculate pending jobs count for a cluster queue.
  */
-export function getPendingJobsCount(queue: Partial<QueueOverview | QueueSecondaryData>): number {
-  const predictabilities = (queue as QueueSecondaryData)?.queuePredictability ?? [];
+export function getPendingJobsCount(queue: QueueSecondaryData): number {
+  const predictabilities = queue?.queuePredictability ?? [];
   for (const p of predictabilities) {
     if (p.pendingJobs !== undefined && p.pendingJobs !== null) {
       return p.pendingJobs;
@@ -109,7 +108,7 @@ export function getPendingJobsCount(queue: Partial<QueueOverview | QueueSecondar
  * Calculate resource velocity string for a cluster queue over a timeframe.
  */
 export function calculateResourceVelocity(
-  queue: Partial<QueueOverview | QueueSecondaryData>,
+  queue: QueueSecondaryData,
   period: string,
 ): string {
   const match = findQueuePredictability(queue, period);
@@ -121,7 +120,7 @@ export function calculateResourceVelocity(
  * Calculate job velocity string for a cluster queue over a timeframe.
  */
 export function calculateJobVelocity(
-  queue: Partial<QueueOverview | QueueSecondaryData>,
+  queue: QueueSecondaryData,
   period: string,
 ): string {
   const match = findQueuePredictability(queue, period);
@@ -133,9 +132,9 @@ export function calculateJobVelocity(
  * Calculate pending resource requests display text for a cluster queue.
  */
 export function calculatePendingRequestsDisplay(
-  queue: Partial<QueueOverview | QueueSecondaryData>,
+  queue: QueueSecondaryData,
 ): string {
-  const predictabilities = (queue as QueueSecondaryData)?.queuePredictability ?? [];
+  const predictabilities = queue?.queuePredictability ?? [];
   for (const p of predictabilities) {
     if (
       p.pendingResourceRequests?.count !== undefined &&
