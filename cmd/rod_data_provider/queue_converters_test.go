@@ -23,6 +23,7 @@ import (
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"google.golang.org/protobuf/testing/protocmp"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
+	spb "xmanager_cloud/api/protos/rod"
 )
 
 func createTestResourceFlavorTyped(name string, nodeLabels map[string]string) *kueuev1beta1.ResourceFlavor {
