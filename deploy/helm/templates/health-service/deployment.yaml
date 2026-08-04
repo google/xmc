@@ -62,6 +62,9 @@ spec:
         - "-tls_key_file="
         env:
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
+        envFrom:
+        - configMapRef:
+            name: health-config
         readinessProbe:
           httpGet:
             path: /readyz
