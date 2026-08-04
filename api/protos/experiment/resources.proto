@@ -37,6 +37,8 @@ message CpuResources {
   int64 cpu_millicores = 1;
   // The amount of memory to use in bytes.
   int64 memory_bytes = 2;
+  // The maximum number of millicores allowed.
+  int64 limit_cpu_millicores = 3;
 }
 
 // GpuResources represents a set of GPU resources.
