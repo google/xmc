@@ -206,6 +206,84 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 			},
 		},
 		{
+			name: "cpu_resources_with_limit",
+			workUnit: &epb.WorkUnit{
+				Executable: &epb.Executable{
+					Type: &epb.Executable_Jobset{
+						Jobset: &epb.JobSetExecutable{
+							Jobs: []*epb.KubernetesJob{
+								{
+									Name: "test-job",
+									Spec: &epb.ExecutableSpec{
+										Resources: &epb.ResourceSet{
+											Resources: &epb.ResourceSet_CpuResources{
+												CpuResources: &epb.CpuResources{
+													CpuMillicores:      1000,
+													MemoryBytes:        2048,
+													LimitCpuMillicores: 2000,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "test-job",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers:   []corev1.Container{{}},
+											NodeSelector: map[string]string{},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantJobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "test-job",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Resources: corev1.ResourceRequirements{
+														Limits: corev1.ResourceList{
+															corev1.ResourceCPU:    resource.MustParse("2000m"),
+															corev1.ResourceMemory: resource.MustParse("2048"),
+														},
+														Requests: corev1.ResourceList{
+															corev1.ResourceCPU:    resource.MustParse("1000m"),
+															corev1.ResourceMemory: resource.MustParse("2048"),
+														},
+													},
+												},
+											},
+											NodeSelector: map[string]string{},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "gpu_resources",
 			workUnit: &epb.WorkUnit{
 				Executable: &epb.Executable{

@@ -142,6 +142,15 @@ func (g *GKE) IsCompatibleWithWorkUnit(workUnit *epb.WorkUnit) (bool, string) {
 	return true, ""
 }
 
+func applyCPUResources(cpuRes *epb.CpuResources, reqs *corev1.ResourceRequirements) {
+	reqs.Requests[corev1.ResourceCPU] = resource.MustParse(fmt.Sprintf("%dm", cpuRes.GetCpuMillicores()))
+	if limitCPU := cpuRes.GetLimitCpuMillicores(); limitCPU > 0 {
+		reqs.Limits[corev1.ResourceCPU] = resource.MustParse(fmt.Sprintf("%dm", limitCPU))
+	}
+	reqs.Limits[corev1.ResourceMemory] = resource.MustParse(fmt.Sprintf("%d", cpuRes.GetMemoryBytes()))
+	reqs.Requests[corev1.ResourceMemory] = resource.MustParse(fmt.Sprintf("%d", cpuRes.GetMemoryBytes()))
+}
+
 // resourceRequirements returns the resource requirements for the given resource set.
 func resourceRequirements(resourceSet *epb.ResourceSet) (corev1.ResourceRequirements, error) {
 	resourceRequirements := corev1.ResourceRequirements{
@@ -150,9 +159,7 @@ func resourceRequirements(resourceSet *epb.ResourceSet) (corev1.ResourceRequirem
 	}
 
 	if cpuRes := resourceSet.GetCpuResources(); cpuRes != nil {
-		resourceRequirements.Requests[corev1.ResourceCPU] = resource.MustParse(fmt.Sprintf("%dm", cpuRes.GetCpuMillicores()))
-		resourceRequirements.Limits[corev1.ResourceMemory] = resource.MustParse(fmt.Sprintf("%d", cpuRes.GetMemoryBytes()))
-		resourceRequirements.Requests[corev1.ResourceMemory] = resource.MustParse(fmt.Sprintf("%d", cpuRes.GetMemoryBytes()))
+		applyCPUResources(cpuRes, &resourceRequirements)
 	} else if gpuRes := resourceSet.GetGpuResources(); gpuRes != nil {
 		resourceRequirements.Limits[nvidiaGPUKey] = resource.MustParse(fmt.Sprintf("%d", gpuRes.GetCount()))
 	} else if tpuRes := resourceSet.GetTpuResources(); tpuRes != nil {
