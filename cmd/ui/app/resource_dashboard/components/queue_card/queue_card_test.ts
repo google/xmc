@@ -19,7 +19,7 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
+import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { QueueCardComponent } from './queue_card';
 import { QueueCardHarness } from './queue_card_harness';
@@ -36,31 +36,13 @@ import { QueueCardHarness } from './queue_card_harness';
   `,
 })
 class TestHostComponent {
-  readonly queue = signal<ClusterQueue>({
-    name: 'gpu-cluster-queue',
-    strategy: 'BestEffortFIFO',
-    cohort: 'gpu-cohort',
-    status: 'Active',
-    statusMessage: 'Can admit new workloads',
-    lastTransitionTime: '2026-07-22T10:00:00Z',
-    admittedWorkloads: 1,
-    reservingWorkloads: 0,
-    pendingWorkloads: 0,
-    pendingJobsCount: 0,
-    admittedJobsCount: 1,
-    dominantResource: 'GPU H100',
-    dominantResourceUnits: 8,
-    requestedResources: '0',
-    localQueues: [{ name: 'gpu-queue', namespace: 'default' }],
-    flavors: [
+  readonly queue = signal<QueueOverview>({
+    queueName: 'gpu-cluster-queue',
+    queueCapacity: [
       {
-        name: 'h100-flavor',
-        resourceName: 'nvidia.com/gpu',
-        nominalQuota: '64',
-        inUse: '8',
-        reserved: '0',
-        freeCapacity: '56',
-        largestSlot: '56 → 64',
+        resourceType: 'nvidia-tesla-h100',
+        totalCapacity: 64,
+        freeCapacity: 56,
       },
     ],
   });

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
+import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 /**
  * Velocity period options for queue resource calculations.
@@ -59,48 +59,28 @@ export function getVelocityHours(period: string): number {
 /**
  * Calculate pending jobs count for a cluster queue.
  */
-export function getPendingJobsCount(queue: Partial<ClusterQueue>): number {
-  return queue.pendingJobsCount ?? queue.pendingWorkloads ?? 0;
+export function getPendingJobsCount(queue: Partial<QueueOverview>): number {
+  return 0;
 }
 
 /**
  * Calculate resource velocity string for a cluster queue over a timeframe.
- * Calculated purely based on past admitted resource throughput over the selected timeframe.
  */
-export function calculateResourceVelocity(queue: Partial<ClusterQueue>, period: string): string {
-  if (queue.resourceVelocity) {
-    return queue.resourceVelocity;
-  }
-  const dom = queue.dominantResource || 'CPU';
-  const isGpu = dom.toLowerCase().includes('gpu') || dom.toLowerCase().includes('nvidia');
-  const unitName = isGpu ? 'GPUs' : 'CPUs';
-
+export function calculateResourceVelocity(queue: Partial<QueueOverview>, period: string): string {
   const hours = getVelocityHours(period);
-  const totalUnits = queue.dominantResourceUnits ?? queue.admittedWorkloads ?? 0;
-  const rate = totalUnits / hours;
-  return `~${formatRate(rate)} ${unitName}/hr`;
+  return `~0 GPUs/hr`;
 }
 
 /**
  * Calculate job velocity string for a cluster queue over a timeframe.
- * Calculated purely based on past admitted job throughput over the selected timeframe.
  */
-export function calculateJobVelocity(queue: Partial<ClusterQueue>, period: string): string {
-  if (queue.jobVelocity) {
-    return queue.jobVelocity;
-  }
-  const hours = getVelocityHours(period);
-  const totalJobs = queue.admittedJobsCount ?? queue.admittedWorkloads ?? 0;
-  const rate = totalJobs / hours;
-  return `${formatRate(rate)} jobs/hr`;
+export function calculateJobVelocity(queue: Partial<QueueOverview>, period: string): string {
+  return `0 jobs/hr`;
 }
 
 /**
  * Calculate pending resource requests display text for a cluster queue.
  */
-export function calculatePendingRequestsDisplay(queue: Partial<ClusterQueue>): string {
-  if (queue.requestedResources && queue.requestedResources !== '0') {
-    return queue.requestedResources;
-  }
+export function calculatePendingRequestsDisplay(queue: Partial<QueueOverview>): string {
   return '0';
 }

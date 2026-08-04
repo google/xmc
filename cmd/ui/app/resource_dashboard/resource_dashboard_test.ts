@@ -21,7 +21,7 @@ import { of } from 'rxjs';
 
 import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
-import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
+import { GetFittingQueuesResponse, QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import {
   bootstrap,
   cleanState,
@@ -44,63 +44,27 @@ class TestHostComponent {}
 describe('ResourceDashboard Container', () => {
   beforeAll(setupObservableMatchers);
 
-  const mockGpuQueue = {
-    name: 'gpu-cluster-queue',
-    strategy: 'BestEffortFIFO',
-    cohort: 'gpu-cohort',
-    status: 'Active',
-    statusMessage: 'Can admit new workloads',
-    lastTransitionTime: '2026-07-22T10:00:00Z',
-    admittedWorkloads: 1,
-    reservingWorkloads: 0,
-    pendingWorkloads: 0,
-    pendingJobsCount: 0,
-    admittedJobsCount: 1,
-    dominantResource: 'GPU H100',
-    dominantResourceUnits: 8,
-    requestedResources: '0',
-    localQueues: [{ name: 'gpu-queue', namespace: 'default' }],
-    flavors: [
+  const mockGpuQueue: QueueOverview = {
+    queueName: 'gpu-cluster-queue',
+    queueCapacity: [
       {
-        name: 'h100-flavor',
-        resourceName: 'nvidia.com/gpu',
-        nominalQuota: '64',
-        inUse: '8',
-        reserved: '0',
-        freeCapacity: '56',
-        largestSlot: '56 → 64',
+        resourceType: 'nvidia-tesla-h100',
+        totalCapacity: 64,
+        freeCapacity: 56,
       },
     ],
-  } as ClusterQueue;
+  };
 
-  const mockCpuQueue = {
-    name: 'cpu-cluster-queue',
-    strategy: 'BestEffortFIFO',
-    cohort: 'cpu-cohort',
-    status: 'Active',
-    statusMessage: 'Can admit new workloads',
-    lastTransitionTime: '2026-07-22T10:00:00Z',
-    admittedWorkloads: 2,
-    reservingWorkloads: 0,
-    pendingWorkloads: 0,
-    pendingJobsCount: 0,
-    admittedJobsCount: 2,
-    dominantResource: 'CPU',
-    dominantResourceUnits: 32,
-    requestedResources: '0',
-    localQueues: [{ name: 'cpu-queue', namespace: 'default' }],
-    flavors: [
+  const mockCpuQueue: QueueOverview = {
+    queueName: 'cpu-cluster-queue',
+    queueCapacity: [
       {
-        name: 'cpu-flavor',
-        resourceName: 'cpu',
-        nominalQuota: '512',
-        inUse: '64',
-        reserved: '0',
-        freeCapacity: '448',
-        largestSlot: '448 → 512',
+        resourceType: 'cpu',
+        totalCapacity: 512,
+        freeCapacity: 448,
       },
     ],
-  } as ClusterQueue;
+  };
 
   cleanState(() => {
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
@@ -108,7 +72,7 @@ describe('ResourceDashboard Container', () => {
       'getQueueJobs',
     ]);
     resourceService.getClusterQueues.and.returnValue(
-      of({ clusterQueues: [mockGpuQueue, mockCpuQueue] }),
+      of({ queues: [mockGpuQueue, mockCpuQueue] } as GetFittingQueuesResponse),
     );
     resourceService.getQueueJobs.and.returnValue(of({ queueName: 'gpu-cluster-queue', jobs: [] }));
 

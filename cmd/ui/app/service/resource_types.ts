@@ -12,50 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/** Reference to a connected LocalQueue. */
-export interface LocalQueueRef {
-  name: string;
-  namespace: string;
-}
-
-/** Primary resource metrics for a queue flavor. */
-export interface ResourceFlavorMetric {
-  name: string;
-  resourceName: string;
-  nominalQuota: string;
-  inUse: string;
-  reserved: string;
-  freeCapacity: string;
-  largestSlot: string;
-}
-
-/** Primary data model for a ClusterQueue. */
-export interface ClusterQueue {
-  name: string;
-  strategy: string;
-  cohort: string;
-  status: string;
-  statusMessage?: string;
-  lastTransitionTime?: string;
-  admittedWorkloads: number;
-  reservingWorkloads: number;
-  pendingWorkloads: number;
-  pendingJobsCount?: number;
-  requestedResources?: string;
-  dominantResource?: string;
-  dominantResourceUnits?: number;
-  admittedJobsCount?: number;
-  resourceVelocity?: string;
-  jobVelocity?: string;
-  localQueues: LocalQueueRef[];
-  flavors: ResourceFlavorMetric[];
-}
-
-/** Response payload for listing ClusterQueues. */
-export interface ClusterQueueListResponse {
-  clusterQueues: ClusterQueue[];
-}
-
 /** Details for a pending or running job in a queue. */
 export interface QueueJobInfo {
   position: string;
