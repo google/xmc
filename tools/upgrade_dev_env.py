@@ -496,6 +496,36 @@ def step_app(config: Config) -> None:
             " has been deployed first."
         )
 
+    log_info("Re-compiling XMC blueprint with latest variables and templates...")
+    run_cmd(
+        [
+            "./cluster-toolkit/gcluster",
+            "create",
+            "deploy/ctk_v2/xmanager-cloud.yaml",
+            "-d",
+            config.config_path,
+            "-o",
+            "ctk-out",
+            "-l",
+            "WARNING",
+            "-w",
+            "--force",
+        ]
+    )
+
+    log_info("Exporting and importing Cluster Toolkit deployment group outputs...")
+    if (ctk_dir / "primary").is_dir():
+        run_cmd(["./cluster-toolkit/gcluster", "export-outputs", str(ctk_dir / "primary")])
+
+    if (ctk_dir / "compute").is_dir():
+        run_cmd(["./cluster-toolkit/gcluster", "import-inputs", str(ctk_dir / "compute")])
+        run_cmd(["./cluster-toolkit/gcluster", "export-outputs", str(ctk_dir / "compute")])
+
+    if (ctk_dir / "kubernetes_prereqs").is_dir():
+        run_cmd(
+            ["./cluster-toolkit/gcluster", "import-inputs", str(ctk_dir / "kubernetes_prereqs")]
+        )
+
     log_info("Running gcluster deploy for group 'xmc_app'...")
     run_cmd(
         [
