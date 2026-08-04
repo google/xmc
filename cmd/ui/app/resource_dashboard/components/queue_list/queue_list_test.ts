@@ -16,7 +16,7 @@ import 'jasmine';
 
 import { Component, signal } from '@angular/core';
 
-import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
+import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import {
   bootstrap,
   cleanState,
@@ -43,42 +43,14 @@ import { QueueListHarness } from './queue_list_harness';
   `,
 })
 class TestHostComponent {
-  readonly queues = signal<ClusterQueue[]>([
+  readonly queues = signal<QueueOverview[]>([
     {
-      name: 'gpu-cluster-queue',
-      strategy: 'BestEffortFIFO',
-      cohort: 'gpu-cohort',
-      status: 'Active',
-      statusMessage: 'Can admit new workloads',
-      lastTransitionTime: '2026-07-22T10:00:00Z',
-      admittedWorkloads: 1,
-      reservingWorkloads: 0,
-      pendingWorkloads: 0,
-      pendingJobsCount: 0,
-      admittedJobsCount: 1,
-      dominantResource: 'GPU H100',
-      dominantResourceUnits: 8,
-      requestedResources: '0',
-      localQueues: [{ name: 'gpu-queue', namespace: 'default' }],
-      flavors: [],
+      queueName: 'gpu-cluster-queue',
+      queueCapacity: [{ resourceType: 'nvidia-tesla-h100', totalCapacity: 64, freeCapacity: 16 }],
     },
     {
-      name: 'cpu-cluster-queue',
-      strategy: 'BestEffortFIFO',
-      cohort: 'cpu-cohort',
-      status: 'Active',
-      statusMessage: 'Can admit new workloads',
-      lastTransitionTime: '2026-07-22T10:00:00Z',
-      admittedWorkloads: 2,
-      reservingWorkloads: 0,
-      pendingWorkloads: 0,
-      pendingJobsCount: 0,
-      admittedJobsCount: 2,
-      dominantResource: 'CPU',
-      dominantResourceUnits: 32,
-      requestedResources: '0',
-      localQueues: [{ name: 'cpu-queue', namespace: 'default' }],
-      flavors: [],
+      queueName: 'cpu-cluster-queue',
+      queueCapacity: [{ resourceType: 'cpu', totalCapacity: 128, freeCapacity: 64 }],
     },
   ]);
   readonly selectedQueue = signal<string>('gpu-cluster-queue');

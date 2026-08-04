@@ -23,7 +23,7 @@ import {
   UserInfoResponse,
 } from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
 
-import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
+import { XMC_API_DOMAIN } from './constants';
 import { FeatureFlagService } from './feature_flag_service';
 
 /** Privilege required to access the admin panel. */
@@ -38,18 +38,15 @@ export class HealthService {
   private readonly featureFlagService = inject(FeatureFlagService);
 
   getHealthStatus(): Observable<HealthStatusResponse> {
-    return this.http.get<HealthStatusResponse>(`${EXPERIMENT_STATE_SERVER_DOMAIN}/health/status`, {
+    return this.http.get<HealthStatusResponse>(`${XMC_API_DOMAIN}/health/status`, {
       withCredentials: true,
     });
   }
 
   getHealthConfigs(): Observable<ListConfigEntriesResponse> {
-    return this.http.get<ListConfigEntriesResponse>(
-      `${EXPERIMENT_STATE_SERVER_DOMAIN}/health/configs`,
-      {
-        withCredentials: true,
-      },
-    );
+    return this.http.get<ListConfigEntriesResponse>(`${XMC_API_DOMAIN}/health/configs`, {
+      withCredentials: true,
+    });
   }
 
   private userInfo$?: Observable<UserInfoResponse>;
@@ -57,7 +54,7 @@ export class HealthService {
   getUserInfo(): Observable<UserInfoResponse> {
     if (!this.userInfo$) {
       this.userInfo$ = this.http
-        .get<UserInfoResponse>(`${EXPERIMENT_STATE_SERVER_DOMAIN}/health/userinfo`, {
+        .get<UserInfoResponse>(`${XMC_API_DOMAIN}/health/userinfo`, {
           withCredentials: true,
         })
         .pipe(
