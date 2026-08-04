@@ -160,6 +160,10 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 	return xidClient, essClient, emu
 }
 
+func createInstance(ctx context.Context, emu *Emulator) error {
+	return createInstanceNamed(ctx, emu, instanceID, instanceURI)
+}
+
 func createInstanceNamed(ctx context.Context, emu *Emulator, instID string, instURI string) error {
 	i, err := instance.NewInstanceAdminClient(ctx, emu.ClientOptions()...)
 	if err != nil {
