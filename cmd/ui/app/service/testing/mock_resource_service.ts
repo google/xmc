@@ -15,7 +15,10 @@
 import { Injectable } from '@angular/core';
 import { Observable, of } from 'rxjs';
 
-import { GetFittingQueuesResponse, QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import {
+  GetFittingQueuesResponse,
+  QueueOverview,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 export const DUMMY_CLUSTER_QUEUES: QueueOverview[] = [
   {

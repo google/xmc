@@ -59,12 +59,7 @@ import { ROD_TERM_TOOLTIPS } from './constants/rod_tooltips';
   templateUrl: './resource_dashboard.ng.html',
   styleUrl: './resource_dashboard.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    SubnavTabsComponent,
-    SmartResourceFinderComponent,
-    QueueListComponent,
-    QueueJobsTable,
-  ],
+  imports: [SubnavTabsComponent, SmartResourceFinderComponent, QueueListComponent, QueueJobsTable],
 })
 export class ResourceDashboard implements OnInit, OnDestroy {
   private readonly autoReloadService = inject(AutoReloadService);

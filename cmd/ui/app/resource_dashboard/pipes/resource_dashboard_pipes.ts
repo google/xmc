@@ -14,7 +14,10 @@
 
 import { Pipe, PipeTransform } from '@angular/core';
 
-import { QueueOverview, QueueResourceCapacity } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import {
+  QueueOverview,
+  QueueResourceCapacity,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 /**
  * Pure Angular pipe to compute free/total capacity display text for a queue resource capacity.

@@ -14,7 +14,10 @@
 
 import 'jasmine';
 
-import { QueueOverview, QueueResourceCapacity } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import {
+  QueueOverview,
+  QueueResourceCapacity,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import {
   FreeTotalDisplayPipe,

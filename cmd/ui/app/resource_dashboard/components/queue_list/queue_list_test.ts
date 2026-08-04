@@ -46,15 +46,11 @@ class TestHostComponent {
   readonly queues = signal<QueueOverview[]>([
     {
       queueName: 'gpu-cluster-queue',
-      queueCapacity: [
-        { resourceType: 'nvidia-tesla-h100', totalCapacity: 64, freeCapacity: 16 },
-      ],
+      queueCapacity: [{ resourceType: 'nvidia-tesla-h100', totalCapacity: 64, freeCapacity: 16 }],
     },
     {
       queueName: 'cpu-cluster-queue',
-      queueCapacity: [
-        { resourceType: 'cpu', totalCapacity: 128, freeCapacity: 64 },
-      ],
+      queueCapacity: [{ resourceType: 'cpu', totalCapacity: 128, freeCapacity: 64 }],
     },
   ]);
   readonly selectedQueue = signal<string>('gpu-cluster-queue');
