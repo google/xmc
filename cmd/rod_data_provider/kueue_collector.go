@@ -26,8 +26,8 @@ import (
 // SetupKueueReconcilers orchestrates ClusterQueue, LocalQueue, and ResourceFlavor reconcilers
 // to collect and sync Kueue entity information into the in-memory cache.
 func SetupKueueReconcilers(mgr ctrl.Manager, client client.Client, cache *cache.KueueCache) error {
-	if cache == nil {
-		return fmt.Errorf("kueue cache is nil")
+	if cache == nil || cache.ClusterQueues == nil || cache.LocalQueues == nil || cache.ResourceFlavors == nil {
+		return fmt.Errorf("kueue cache or its fields are uninitialized")
 	}
 	cqRec := &reconciler.ClusterQueueReconciler{Client: client, Cache: cache.ClusterQueues}
 	if err := cqRec.SetupWithManager(mgr); err != nil {

@@ -33,7 +33,6 @@ import (
 	"golang/grpc/reflection/reflection"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
 	clientgoscheme "golang/k8s_io/client_go/v/v0_23/kubernetes/scheme/scheme"
-	"golang/k8s_io/client_go/v/v0_23/rest/rest"
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
 	metricsserver "golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/metrics/server/server"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
@@ -55,7 +54,10 @@ func main() {
 	g, ctx := errgroup.WithContext(ctx)
 
 	kueueCache := cache.NewKueueCache()
-	mgr := setupKueueManager(ctx, g, kueueCache)
+	mgr, err := setupKueueManager(ctx, g, kueueCache)
+	if err != nil {
+		logging.Fatal(ctx, "Failed to setup Kueue manager", "error", err)
+	}
 
 	lis, grpcServer, err := initGRPCServer(cfg, kueueCache)
 	if err != nil {
@@ -75,21 +77,18 @@ func main() {
 	}
 }
 
-func setupKueueManager(ctx context.Context, g *errgroup.Group, kueueCache *cache.KueueCache) ctrl.Manager {
-	k8sConfig, err := rest.InClusterConfig()
+func setupKueueManager(ctx context.Context, g *errgroup.Group, kueueCache *cache.KueueCache) (ctrl.Manager, error) {
+	k8sConfig, err := ctrl.GetConfig()
 	if err != nil {
-		logging.Warn(ctx, "Failed to get in-cluster config for KueueCache reconciler", "error", err)
-		return nil
+		return nil, fmt.Errorf("failed to get k8s config for KueueCache reconciler: %w", err)
 	}
 
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		logging.Warn(ctx, "Failed to add client-go scheme", "error", err)
-		return nil
+		return nil, fmt.Errorf("failed to add client-go scheme: %w", err)
 	}
 	if err := kueuev1beta1.AddToScheme(scheme); err != nil {
-		logging.Warn(ctx, "Failed to add Kueue v1beta1 scheme", "error", err)
-		return nil
+		return nil, fmt.Errorf("failed to add Kueue v1beta1 scheme: %w", err)
 	}
 
 	metricsServerOptions := metricsserver.Options{
@@ -101,13 +100,11 @@ func setupKueueManager(ctx context.Context, g *errgroup.Group, kueueCache *cache
 		LeaderElection: false,
 	})
 	if err != nil {
-		logging.Warn(ctx, "Failed to create controller-runtime manager", "error", err)
-		return nil
+		return nil, fmt.Errorf("failed to create controller-runtime manager: %w", err)
 	}
 
 	if err := SetupKueueReconcilers(mgr, mgr.GetClient(), kueueCache); err != nil {
-		logging.Warn(ctx, "Failed to setup Kueue reconcilers with manager", "error", err)
-		return nil
+		return nil, fmt.Errorf("failed to setup Kueue reconcilers: %w", err)
 	}
 
 	g.Go(func() error {
@@ -118,7 +115,7 @@ func setupKueueManager(ctx context.Context, g *errgroup.Group, kueueCache *cache
 		return nil
 	})
 
-	return mgr
+	return mgr, nil
 }
 
 func initGRPCServer(cfg *Config, kueueCache *cache.KueueCache) (net.Listener, *grpc.Server, error) {

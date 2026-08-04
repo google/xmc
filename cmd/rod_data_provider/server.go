@@ -40,7 +40,7 @@ func newServer(cfg *Config, cache *cache.KueueCache) *server {
 // GetFittingQueues returns ClusterQueues matching requested resource requirements directly from in-memory KueueCache.
 func (s *server) GetFittingQueues(ctx context.Context, req *spb.GetFittingQueuesRequest) (*spb.GetFittingQueuesResponse, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, status.Error(codes.Canceled, err.Error())
+		return nil, status.FromContextError(err).Err()
 	}
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
