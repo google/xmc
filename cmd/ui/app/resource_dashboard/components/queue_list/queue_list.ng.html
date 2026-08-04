@@ -37,10 +37,10 @@
     <div class="empty-state">No matching cluster queues found.</div>
   } @else {
     <div class="queue-cards-stack">
-      @for (q of queues(); track q.name) {
+      @for (q of queues(); track q.queueName ?? '') {
         <xmc-rod-queue-card
           [queue]="q"
-          [isSelected]="selectedQueue() === q.name"
+          [isSelected]="selectedQueue() === q.queueName"
           (selectQueue)="onQueueSelect($event)"
         />
       }

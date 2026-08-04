@@ -16,7 +16,7 @@ import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, input, model, output } from '@angular/core';
 
 import { QueueCardComponent } from 'xmanager_cloud/ui/app/resource_dashboard/components/queue_card/queue_card';
-import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
+import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 @Component({
   selector: 'xmc-rod-queue-list',
@@ -27,7 +27,7 @@ import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
   imports: [CommonModule, QueueCardComponent],
 })
 export class QueueListComponent {
-  readonly queues = input<ClusterQueue[]>([]);
+  readonly queues = input<QueueOverview[]>([]);
   readonly selectedQueue = input<string>('');
   readonly isLoading = input<boolean>(false);
   readonly selectQueue = output<string>();
