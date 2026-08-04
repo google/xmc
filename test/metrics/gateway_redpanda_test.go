@@ -91,6 +91,16 @@ func createTestMetricRecord(tb testing.TB, xid, workUnitID int64) []byte {
 	return data
 }
 
+// postJSONWithContext executes an HTTP POST request with context cancellation and application/json header.
+func postJSONWithContext(ctx context.Context, url string, body []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return http.DefaultClient.Do(req)
+}
+
 // TestGatewayRedpanda_EndToEndHappyPath validates the complete happy path flow:
 // HTTP POST -> Ingestion Gateway -> Kafka Producer -> Redpanda Broker -> Kafka Consumer.
 func TestGatewayRedpanda_EndToEndHappyPath(t *testing.T) {
@@ -137,7 +147,7 @@ func TestGatewayRedpanda_EndToEndHappyPath(t *testing.T) {
 	workUnitID := int64(67890)
 	body := createTestMetricRecord(t, xid, workUnitID)
 
-	resp, err := http.Post(server.URL, "application/json", bytes.NewReader(body))
+	resp, err := postJSONWithContext(ctx, server.URL, body)
 	if err != nil {
 		t.Fatalf("HTTP POST produce request failed: %v", err)
 	}
@@ -215,7 +225,7 @@ func TestGatewayRedpanda_BrokerOutage(t *testing.T) {
 	defer server.Close()
 
 	body := createTestMetricRecord(t, 100, 200)
-	resp, err := http.Post(server.URL, "application/json", bytes.NewReader(body))
+	resp, err := postJSONWithContext(ctx, server.URL, body)
 	if err != nil {
 		t.Fatalf("initial produce request failed: %v", err)
 	}
@@ -264,7 +274,7 @@ func TestGatewayRedpanda_BrokerOutage(t *testing.T) {
 	recovered := false
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		recResp, err = http.Post(server.URL, "application/json", bytes.NewReader(body))
+		recResp, err = postJSONWithContext(ctx, server.URL, body)
 		if err == nil {
 			lastStatus = recResp.StatusCode
 			if recResp.StatusCode == http.StatusAccepted {
