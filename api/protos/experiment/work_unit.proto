@@ -227,6 +227,11 @@ message KubernetesJob {
 
   // Group name for Kueue podSet grouping. If omitted, Kueue defaults the podSet name to the ReplicatedJob name.
   string group_name = 16;
+
+  // Custom labels to apply to the Kubernetes Job and Pod templates.
+  // Note: Reserved system labels (e.g. Experiment ID, WorkUnit ID, Queue Name)
+  // take precedence and cannot be overridden.
+  map<string, string> labels = 17;
 }
 
 // Represents a volume that can be mounted by containers in a KubernetesJob.
