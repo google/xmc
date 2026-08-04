@@ -94,7 +94,8 @@ CONFIG_VALIDATION_SCHEMAS = {
     "environment": r"^[a-zA-Z0-9_-]+$",
     "region": r"^[a-z0-9-]+$",
     "domain_name": r"^[a-zA-Z0-9.-]+$",
-    "xmc_acr_target": r"^[a-zA-Z0-9./:-]+$",
+    "image_registry": r"^[a-zA-Z0-9./:-]+$",
+    "image_tag": r"^[a-zA-Z0-9_.-]+$",
 }
 
 
@@ -764,7 +765,7 @@ def step_images(config: dict[str, Any], dns_project: str, dns_zone: str) -> None
         dns_zone: Cloud DNS Managed Zone name.
     """
     log_info("Configuring Docker registry authorization for registry...")
-    acr_target = config["xmc_acr_target"]
+    acr_target = config["image_registry"]
     registry_host = acr_target.split("/")[0]
 
     if registry_host.endswith("gcr.io") or registry_host.endswith(".pkg.dev"):
@@ -777,6 +778,7 @@ def step_images(config: dict[str, Any], dns_project: str, dns_zone: str) -> None
     env_vars = {
         "XMC_ENV": config["environment"],
         "XMC_ACR_TARGET": acr_target,
+        "BUILD_TAG": config["image_tag"],
     }
 
     # TODO: Migrate hardcoded image targets to dynamic discovery or configuration flags to operate on flags cleanly.
@@ -789,9 +791,12 @@ def step_images(config: dict[str, Any], dns_project: str, dns_zone: str) -> None
         "//cmd/xid_service:xid_service_image_push",
         "//cmd/health_service:health_service_image_push",
         "//cmd/dashboard_service:dashboard_service_image_push",
-        "//cmd/rod_data_provider:rod_data_provider_image_push",
         "//cmd/ingestion_gateway:ingestion_gateway_image_push",
     ]
+
+    rod_enabled = str(config.get("rod_deployment_enabled", "false")).lower() == "true"
+    if rod_enabled:
+        bazel_targets.append("//cmd/rod_data_provider:rod_data_provider_image_push")
 
     for target in bazel_targets:
         log_info(f"Pushing {target.split(':')[-1]}...")

@@ -432,13 +432,14 @@ func annotateContainerList(containers []corev1.Container, specs []*epb.Executabl
 }
 
 func annotateContainers(replicatedJob *jobsetv1alpha2.ReplicatedJob, job *epb.KubernetesJob) error {
-	specs := []*epb.ExecutableSpec{job.Spec}
-	specs = append(specs, job.Sidecars...)
-	containers, err := annotateContainerList(replicatedJob.Template.Spec.Template.Spec.Containers, specs)
+	containers, err := annotateContainerList(replicatedJob.Template.Spec.Template.Spec.Containers, []*epb.ExecutableSpec{job.Spec})
 	if err != nil {
 		return err
 	}
-	initContainers, err := annotateContainerList(replicatedJob.Template.Spec.Template.Spec.InitContainers, job.InitContainers)
+	initSpecs := make([]*epb.ExecutableSpec, 0, len(job.InitContainers)+len(job.Sidecars))
+	initSpecs = append(initSpecs, job.InitContainers...)
+	initSpecs = append(initSpecs, job.Sidecars...)
+	initContainers, err := annotateContainerList(replicatedJob.Template.Spec.Template.Spec.InitContainers, initSpecs)
 	if err != nil {
 		return err
 	}

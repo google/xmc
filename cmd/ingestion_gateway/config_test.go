@@ -210,3 +210,21 @@ func TestLoadSASLCredentialsFromFile(t *testing.T) {
 		t.Errorf("cfg.SASLPassword = %q, want %q", cfg.SASLPassword, "testpass")
 	}
 }
+
+func TestGetEnvOrDefault(t *testing.T) {
+	t.Setenv("TEST_KEY_1", "env_val_1")
+	t.Setenv("TEST_KEY_2", "env_val_2")
+
+	if got := getEnvOrDefault("custom_flag", "default_flag", "TEST_KEY_1"); got != "custom_flag" {
+		t.Errorf("getEnvOrDefault() = %q, want %q", got, "custom_flag")
+	}
+	if got := getEnvOrDefault("default_flag", "default_flag", "TEST_KEY_1"); got != "env_val_1" {
+		t.Errorf("getEnvOrDefault() = %q, want %q", got, "env_val_1")
+	}
+	if got := getEnvOrDefault("default_flag", "default_flag", "NON_EXISTENT", "TEST_KEY_2"); got != "env_val_2" {
+		t.Errorf("getEnvOrDefault() = %q, want %q", got, "env_val_2")
+	}
+	if got := getEnvOrDefault("default_flag", "default_flag", "NON_EXISTENT"); got != "default_flag" {
+		t.Errorf("getEnvOrDefault() = %q, want %q", got, "default_flag")
+	}
+}

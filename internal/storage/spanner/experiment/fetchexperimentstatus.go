@@ -33,7 +33,7 @@ func (r *Repository) FetchExperimentStatus(ctx context.Context, xid int64) (*ess
 	return r.fetchExperimentStatusTransaction(ctx, xid, r.client.Single())
 }
 
-func (r *Repository) fetchExperimentStatusTransaction(ctx context.Context, xid int64, txn spannerTransaction) (*essmsgpb.ExperimentStatus, error) {
+func (r *Repository) fetchExperimentStatusTransaction(ctx context.Context, xid int64, txn SpannerTransaction) (*essmsgpb.ExperimentStatus, error) {
 	logging.Info(ctx, "Fetch ExperimentStatus row")
 
 	row, err := txn.ReadRow(ctx, experimentschema.ExperimentTableName, spanner.Key{spannerutils.ReverseBits(xid)}, []string{"Status"})

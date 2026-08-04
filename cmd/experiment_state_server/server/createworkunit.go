@@ -97,11 +97,10 @@ func (s *Server) CreateWorkUnit(ctx context.Context, req *apipb.CreateWorkUnitRe
 	if err != nil {
 		logging.Error(ctx, "Failed to save work unit", "error", err)
 
-		// The storage layer's Create() method uses atomic "create if not exists",
-		// so an AlreadyExists error means the client sent a duplicate ID.
+		// TODO(b/517479143): Fix nil pointer dereference: newWorkUnit is nil when storage returns error, so newWorkUnit.GetName() panics.
 		if status.ExtractCanonicalCode(err) == status.AlreadyExists {
 			// If the storage layer returns AlreadyExists, newWorkUnit contains the conflicting work unit.
-			return nil, fmt.Errorf("work unit %s already exists: %w", newWorkUnit.GetName(), status.ErrAlreadyExists)
+			return nil, fmt.Errorf("work unit %s already exists: %w", wu.GetName(), status.ErrAlreadyExists)
 		}
 		return nil, fmt.Errorf("failed to save work unit: %v: %w", err, status.ErrInternal)
 	}

@@ -49,24 +49,5 @@ linters-settings:
     min-complexity: 4
 
 issues:
-  # TODO: Temporarily exclude legacy packages for incremental nestif (min-complexity: 4) adoption.
   exclude-dirs:
-    # TODO: Refactor api/filter for nestif complexity and remove exclude.
-    - api/filter
-  exclude-rules:
-    # TODO: Refactor test files and legacy packages for nestif and remove exclusions incrementally.
-    - path: ".*_test\\.go"
-      linters:
-        - nestif
-    - path: "internal/query_generator/.*"
-      linters:
-        - nestif
-    - path: "internal/storage/spanner/.*"
-      linters:
-        - nestif
-    - path: "internal/validator/.*"
-      linters:
-        - nestif
-    - path: "internal/task_queue/.*"
-      linters:
-        - nestif
+    - cmd/ui/node_modules
