@@ -74,7 +74,8 @@ func TestUpdateExperimentLaunchState_Success(t *testing.T) {
 				t.Errorf("UpdateExperimentLaunchState did not update Status.UpdateTime: got %v, want > %v", updatedExp.GetStatus().GetUpdateTime(), exp.GetStatus().GetUpdateTime())
 			}
 
-			if tc.targetState == essmsgpb.ExperimentStatus_FAILED {
+			switch tc.targetState {
+			case essmsgpb.ExperimentStatus_FAILED:
 				sm := updatedExp.GetStatus().GetStructuredStatusMessage()
 				if sm.GetSeverity() != essmsgpb.StructuredMessage_FATAL {
 					t.Errorf("UpdateExperimentLaunchState(%v, %v) status message severity is %v, want %v", xid, tc.targetState, sm.GetSeverity(), essmsgpb.StructuredMessage_FATAL)
@@ -82,7 +83,7 @@ func TestUpdateExperimentLaunchState_Success(t *testing.T) {
 				if sm.GetUserFacingText() != "Experiment failed to launch." {
 					t.Errorf("UpdateExperimentLaunchState(%v, %v) status message text is %q, want %q", xid, tc.targetState, sm.GetUserFacingText(), "Experiment failed to launch.")
 				}
-			} else if tc.targetState == essmsgpb.ExperimentStatus_COMPLETED {
+			case essmsgpb.ExperimentStatus_COMPLETED:
 				sm := updatedExp.GetStatus().GetStructuredStatusMessage()
 				if sm.GetSeverity() != essmsgpb.StructuredMessage_DEBUG {
 					t.Errorf("UpdateExperimentLaunchState(%v, %v) status message severity is %v, want %v", xid, tc.targetState, sm.GetSeverity(), essmsgpb.StructuredMessage_DEBUG)
