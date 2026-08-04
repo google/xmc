@@ -75,8 +75,14 @@ function shouldAutoApproveAbsencePR({ modifiedFileNames, prAuthor, ownersList })
  * @param {Object} params - Context and tools injected by actions/github-script.
  */
 async function run({ github, context, core }) {
-  const prNumber = context.payload.pull_request.number;
-  const prAuthor = context.payload.pull_request.user.login;
+  const pr = context.payload ? context.payload.pull_request : null;
+  if (!pr) {
+    core.setFailed('This workflow can only be run in the context of a pull request.');
+    return;
+  }
+
+  const prNumber = pr.number;
+  const prAuthor = pr.user ? pr.user.login : '';
 
   const { data: files } = await github.rest.pulls.listFiles({
     owner: context.repo.owner,

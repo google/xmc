@@ -55,7 +55,9 @@ async function run({ github, context, core }) {
 
   let absentUsers = [];
   if (fs.existsSync('ABSENCE.md')) {
-    absentUsers = parseReviewersFromOwners(fs.readFileSync('ABSENCE.md', 'utf8'));
+    absentUsers = parseReviewersFromOwners(fs.readFileSync('ABSENCE.md', 'utf8'))
+      .map(u => u.replace(/^[-*+@\s]+/, '').trim())
+      .filter(Boolean);
     core.info(`Parsed absent reviewers from ABSENCE.md: ${absentUsers.join(', ')}`);
   }
 

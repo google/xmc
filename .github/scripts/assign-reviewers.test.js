@@ -70,6 +70,14 @@ test('filterEligibleReviewers excludes absent reviewers case-insensitively', () 
   assert.deepStrictEqual(result, ['Charlie', 'Eve']);
 });
 
+test('absent reviewers mapping handles markdown formatted lists (- , * , @)', () => {
+  const candidates = ['alice', 'bob', 'charlie', 'dave', 'eve'];
+  const rawAbsent = ['- alice', '* @dave', '+ eve'];
+  const absent = rawAbsent.map(u => u.replace(/^[-*+@\s]+/, '').trim()).filter(Boolean);
+  const result = filterEligibleReviewers(candidates, 'bob', absent);
+  assert.deepStrictEqual(result, ['charlie']);
+});
+
 test('selectRandomReviewers returns up to count elements and preserves candidate pool elements', () => {
   const candidates = ['alice', 'bob', 'charlie', 'dave', 'eve'];
   const selected = selectRandomReviewers(candidates, 1);
