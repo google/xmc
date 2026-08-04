@@ -67,11 +67,11 @@ export class AdminPanelPage {
     const status = this.healthStatus();
     if (!status || !status.healthCheckTime) return '';
     const time = status.healthCheckTime;
-    if (time.seconds) {
-      return new Date(Number(time.seconds) * 1000).toLocaleTimeString();
-    }
     if (typeof time === 'string') {
       return new Date(time).toLocaleTimeString();
+    }
+    if (time.seconds) {
+      return new Date(Number(time.seconds) * 1000).toLocaleTimeString();
     }
     return '';
   });

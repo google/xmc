@@ -38,16 +38,9 @@ export class HealthService {
   private readonly featureFlagService = inject(FeatureFlagService);
 
   getHealthStatus(): Observable<HealthStatusResponse> {
-    return this.http
-      .get<HealthStatusResponse>(`${EXPERIMENT_STATE_SERVER_DOMAIN}/health/status`, {
-        withCredentials: true,
-      })
-      .pipe(
-        catchError((error) => {
-          console.error('Failed to fetch health status', error);
-          throw error;
-        }),
-      );
+    return this.http.get<HealthStatusResponse>(`${EXPERIMENT_STATE_SERVER_DOMAIN}/health/status`, {
+      withCredentials: true,
+    });
   }
 
   getHealthConfigs(): Observable<ListConfigEntriesResponse> {

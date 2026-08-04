@@ -75,7 +75,7 @@
 
     @media (min-width: 768px) {
       border-top: none;
-      border-left: 1px solid #5f6368;
+      border-left: 1px solid var(--xmc-border-color, #dadce0);
       padding-top: 0;
       padding-left: 24px;
     }
