@@ -116,7 +116,7 @@ jobs:
             --test_output=errors \
             --experimental_ui_max_stdouterr_bytes=2097152 \
             --build_tests_only \
-            --local_test_jobs=4 \
+            --local_test_jobs=2 \
             --test_timeout=${TEST_TIMEOUT_SECONDS},300,300,300 \
             -- \
             //... \
