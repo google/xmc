@@ -459,7 +459,7 @@ deployment_groups:
       project_id: $(vars.project_id)
       region: $(vars.region)
       environment: $(vars.environment)
-      image_url: "$(vars.image_registry)/log-monitor-$(vars.environment):$(vars.image_tag)"
+      image_url: $(vars.log_monitor_image)
       service_account_email: $(log_monitor_service_account.service_account_email)
       deletion_protection: $(vars.deletion_protection)
       status_message_history_enabled: $(vars.status_message_history_enabled)

@@ -283,6 +283,8 @@ class TestConfigLoader(unittest.TestCase):
   key5: "value5" # trailing comment with quotes
   # comment line
   key6: value6 # indented key
+  key7: "value7 # with space and hash"
+  key8: 'value8 # with space and hash'
 """
         res = _parse_yaml_vars_line_fallback(yaml_content)
         expected = {
@@ -292,6 +294,8 @@ class TestConfigLoader(unittest.TestCase):
             "key4": "value4",
             "key5": "value5",
             "key6": "value6",
+            "key7": "value7 # with space and hash",
+            "key8": "value8 # with space and hash",
         }
         self.assertEqual(res, expected)
 

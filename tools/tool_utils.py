@@ -177,11 +177,15 @@ def _parse_yaml_vars_line_fallback(content: str) -> dict[str, Any]:
             match = re.match(r"^\s*([a-zA-Z0-9_]+):\s*(.*)$", line)
             if match:
                 key, val = match.group(1), match.group(2).strip()
-                val = val.split(" #")[0].strip()
-                if (val.startswith('"') and val.endswith('"')) or (
-                    val.startswith("'") and val.endswith("'")
+                if (val.startswith('"') and val.count('"') >= 2) or (
+                    val.startswith("'") and val.count("'") >= 2
                 ):
-                    val = val[1:-1]
+                    quote_char = val[0]
+                    end_quote_idx = val.find(quote_char, 1)
+                    if end_quote_idx != -1:
+                        val = val[1:end_quote_idx]
+                else:
+                    val = val.split(" #")[0].strip()
                 vars_dict[key] = val
     return vars_dict
 
@@ -196,7 +200,7 @@ def parse_yaml_vars(config_path: Path) -> dict[str, Any]:
         import yaml  # pylint: disable=g-import-not-at-top
 
         data = yaml.safe_load(content)
-        if isinstance(data, dict) and "vars" in data:
+        if isinstance(data, dict):
             vars_data = data.get("vars") or {}
             return {k: v for k, v in vars_data.items() if isinstance(v, (str, int, float, bool))}
     except Exception:  # pylint: disable=broad-except
@@ -251,15 +255,5 @@ def load_and_validate_config(
         pattern = CONFIG_VALIDATION_SCHEMAS.get(key)
         if pattern and not re.match(pattern, str(val)):
             raise ValueError(f"Field '{key}' value '{val}' is invalid. Must match regex: {pattern}")
-
-    # Preserve other keys from YAML (like namespace, redis_region, etc.)
-    for k, v in yaml_vars.items():
-        if k not in config:
-            config[k] = v
-
-    # Also apply env overrides for keys that might not be in CONFIG_VALIDATION_SCHEMAS but mapped
-    val_ns = os.getenv("K8S_NAMESPACE")
-    if val_ns:
-        config["namespace"] = val_ns
 
     return config
