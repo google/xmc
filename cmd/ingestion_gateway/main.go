@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package main implements the Ingestion Gateway service for XMC Metrics.
-package main
+// Package ingestiongateway implements the Ingestion Gateway service.
+package ingestiongateway
 
 import (
 	"context"
@@ -28,6 +28,7 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"go/google"
+
 	"xmanager_cloud/logging/logging"
 )
 
