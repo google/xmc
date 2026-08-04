@@ -38,7 +38,7 @@ jobs:
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
 
       - name: 'Select and Assign Reviewers'
-        uses: 'actions/github-script@e69ef5462fd43b25fce31a27708eda96b9eda0' # v7.0.0
+        uses: 'actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b' # v7.1.0
         with:
           script: |
             const { run } = require('./.github/scripts/assign-reviewers.js');
