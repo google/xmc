@@ -25,18 +25,21 @@ import (
 	"xmanager_cloud/logging/logging"
 )
 
+// JobSetUIDResult contains result metadata for jobset UID lookups.
+type JobSetUIDResult struct {
+	IsAligned bool
+	UID       types.UID
+}
+
 // getJobsetUIDByTarget checks if the EID in the Jobset object matches the EID for the
-// current target. It returns:
-// - An error if the EID does not match or if there is an error getting the Jobset object.
-// - True and a UID if the EID matches and the Jobset object was found.
-// - True and an empty UID if the Jobset object was not found.
-func (c *Client) getJobsetUIDByTarget(ctx context.Context, target string, namespace string) (bool, types.UID, error) {
+// current target.
+func (c *Client) getJobsetUIDByTarget(ctx context.Context, target string, namespace string) (JobSetUIDResult, error) {
 	ctx = logging.WithWorkUnitExecutionName(ctx, target)
 
 	// Generate the jobset name for the current target.
 	jobSetName := buildJobSetName(target)
 	if jobSetName == "" {
-		return false, "", fmt.Errorf("failed to generate jobset name for target %q", target)
+		return JobSetUIDResult{}, fmt.Errorf("failed to generate jobset name for target %q", target)
 	}
 
 	ctx = logging.WithJobSetName(ctx, jobSetName, nil)
@@ -46,22 +49,22 @@ func (c *Client) getJobsetUIDByTarget(ctx context.Context, target string, namesp
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			logging.Info(ctx, "JobSet not found in namespace for target, assuming it's a new target", "namespace", namespace, "target", target)
-			return true, "", nil
+			return JobSetUIDResult{IsAligned: true, UID: ""}, nil
 		}
 		logging.Warn(ctx, "Failed to get JobSet", "error", err, "namespace", namespace, "target", target)
-		return false, "", fmt.Errorf("failed to get JobSet %q in namespace %q for target %q: %w", jobSetName, namespace, target, err)
+		return JobSetUIDResult{}, fmt.Errorf("failed to get JobSet %q in namespace %q for target %q: %w", jobSetName, namespace, target, err)
 	}
 
 	aligned, err := c.preconditionsValidator.IsExecutionIDAligned(ctx, target, jobSet)
 	if err != nil {
 		logging.Warn(ctx, "Failed during execution ID alignment check", "error", err, "target", target)
-		return false, "", fmt.Errorf("failed during execution ID alignment check for %q: %w", target, err)
+		return JobSetUIDResult{}, fmt.Errorf("failed during execution ID alignment check for %q: %w", target, err)
 	}
 	if !aligned {
-		return false, "", fmt.Errorf("execution ID not aligned for %q", target)
+		return JobSetUIDResult{}, fmt.Errorf("execution ID not aligned for %q", target)
 	}
 
-	return true, jobSet.GetUID(), nil
+	return JobSetUIDResult{IsAligned: true, UID: jobSet.GetUID()}, nil
 }
 
 func (c *Client) getNamespaceFromTarget(ctx context.Context, target string) (string, error) {

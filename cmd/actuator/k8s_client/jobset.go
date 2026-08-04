@@ -135,10 +135,11 @@ func (c *Client) deleteJobSet(ctx context.Context, target, namespace string, ope
 		return false, nil
 	}
 
-	targetMatches, uid, err := c.getJobsetUIDByTarget(ctx, target, namespace)
+	res, err := c.getJobsetUIDByTarget(ctx, target, namespace)
 	if err != nil {
 		return false, fmt.Errorf("getJobsetUIDByTarget failed in deleteJobSet: %w", err)
 	}
+	targetMatches, uid := res.IsAligned, res.UID
 	if !targetMatches {
 		logging.Warn(ctx, "Jobset EID does not match target, skipping deletion")
 		return false, nil
