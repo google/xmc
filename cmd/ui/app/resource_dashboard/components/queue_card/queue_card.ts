@@ -16,13 +16,13 @@ import { ChangeDetectionStrategy, Component, computed, input, output } from '@an
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
+import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
 import {
   FreeTotalDisplayPipe,
   MaxWorkloadDisplayPipe,
   QueueStatusBadgePipe,
 } from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
-import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 @Component({
   selector: 'xmc-rod-queue-card',

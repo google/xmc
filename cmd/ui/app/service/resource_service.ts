@@ -16,9 +16,10 @@ import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable, of } from 'rxjs';
 
-import { GetFittingQueuesResponse, QueueJobListResponse } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
-
-import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
+import {
+  GetFittingQueuesResponse,
+  QueueJobListResponse,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 /**
  * Angular injectable data service client for fetching Resource Observability Dashboard (ROD)

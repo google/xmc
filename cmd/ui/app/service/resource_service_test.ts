@@ -18,8 +18,12 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
+import {
+  GetFittingQueuesResponse,
+  QueueJobListResponse,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
-import { GetFittingQueuesResponse, QueueJobListResponse } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
 import { ResourceService } from './resource_service';
 
@@ -64,9 +68,7 @@ describe('ResourceService', () => {
     });
 
     it('should fallback to default queueName when parameter is omitted', async () => {
-      const response: QueueJobListResponse = await firstValueFrom(
-        state.service.getQueueJobs(),
-      );
+      const response: QueueJobListResponse = await firstValueFrom(state.service.getQueueJobs());
       expect(response.queueName).toBe('gpu-cluster-queue');
     });
   });

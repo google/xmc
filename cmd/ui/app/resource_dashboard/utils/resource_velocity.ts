@@ -12,7 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { RangePreset, QueueOverview, QueuePredictability, QueueSecondaryData } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import {
+  QueueOverview,
+  QueuePredictability,
+  QueueSecondaryData,
+  RangePreset,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 /**
  * Velocity period options for queue resource calculations.
@@ -132,7 +137,10 @@ export function calculatePendingRequestsDisplay(
 ): string {
   const predictabilities = (queue as QueueSecondaryData)?.queuePredictability ?? [];
   for (const p of predictabilities) {
-    if (p.pendingResourceRequests?.count !== undefined && p.pendingResourceRequests?.count !== null) {
+    if (
+      p.pendingResourceRequests?.count !== undefined &&
+      p.pendingResourceRequests?.count !== null
+    ) {
       return formatRate(p.pendingResourceRequests.count);
     }
   }

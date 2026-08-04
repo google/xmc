@@ -19,9 +19,12 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
+import {
+  GetFittingQueuesResponse,
+  QueueOverview,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
-import { GetFittingQueuesResponse, QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import {
   bootstrap,
   cleanState,
