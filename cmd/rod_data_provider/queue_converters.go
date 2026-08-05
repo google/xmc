@@ -21,15 +21,17 @@ import (
 )
 
 func buildResourceFlavorMap(c *cache.KueueCache) map[string]*kueuev1beta1.ResourceFlavor {
-	rfMap := make(map[string]*kueuev1beta1.ResourceFlavor)
 	if c != nil && c.ResourceFlavors != nil {
-		for _, rf := range c.ResourceFlavors.List() {
+		flavors := c.ResourceFlavors.List()
+		rfMap := make(map[string]*kueuev1beta1.ResourceFlavor, len(flavors))
+		for _, rf := range flavors {
 			if rf != nil {
 				rfMap[rf.Name] = rf
 			}
 		}
+		return rfMap
 	}
-	return rfMap
+	return make(map[string]*kueuev1beta1.ResourceFlavor)
 }
 
 func buildQueueOverviews(c *cache.KueueCache, rfMap map[string]*kueuev1beta1.ResourceFlavor) []*spb.QueueOverview {
