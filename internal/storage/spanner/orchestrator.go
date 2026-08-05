@@ -32,6 +32,9 @@ import (
 
 // CreateExperiment creates a new experiment in Spanner using the thin repository and pure domain layer.
 func (s *Storage) CreateExperiment(ctx context.Context, exp *essmsgpb.Experiment) (*essmsgpb.Experiment, error) {
+	if exp == nil {
+		return nil, fmt.Errorf("experiment must not be nil: %w", status.ErrInvalidArgument)
+	}
 	ctx = logging.WithExperimentName(ctx, exp.GetName())
 	logging.Info(ctx, "Write experiment to storage", "experiment", exp)
 
@@ -61,6 +64,9 @@ func (s *Storage) CreateExperiment(ctx context.Context, exp *essmsgpb.Experiment
 
 // CreateWorkUnit creates a new work unit in Spanner using the thin repository and pure domain layer.
 func (s *Storage) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*essmsgpb.WorkUnit, error) {
+	if wu == nil {
+		return nil, fmt.Errorf("work unit must not be nil: %w", status.ErrInvalidArgument)
+	}
 	ctx = logging.WithWorkUnitExecutionName(ctx, wu.GetCurrentWorkUnitExecution().GetName())
 	logging.Info(ctx, "Write work unit to storage", "work_unit", wu)
 
@@ -104,6 +110,7 @@ func (s *Storage) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*e
 		if err != nil {
 			return err
 		}
+		exp = updatedExp
 
 		if err := s.ExperimentRepository.UpdateExperimentStatus(ctx, tx, updatedExp); err != nil {
 			logging.Error(ctx, "failed to create mutation for experiment", "experiment", updatedExp, "error", err)
@@ -131,6 +138,9 @@ func (s *Storage) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*e
 
 // CreateArtifact creates a new artifact in Spanner using the thin repository and pure domain layer.
 func (s *Storage) CreateArtifact(ctx context.Context, artifact *essmsgpb.Artifact) (*essmsgpb.Artifact, error) {
+	if artifact == nil {
+		return nil, fmt.Errorf("artifact must not be nil: %w", status.ErrInvalidArgument)
+	}
 	ctx = logging.WithArtifactName(ctx, artifact.GetName())
 	logging.Info(ctx, "Write artifact to storage", "artifact", artifact)
 
