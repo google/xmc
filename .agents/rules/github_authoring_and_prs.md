@@ -81,3 +81,27 @@ This document defines standards and policy rules for AI agents acting as **Code 
 ## 5. Staging Hygiene & Incremental Work Preservation
 - **Staging Hygiene**: Ensure temporary commit message drafts (`commit_*_msg.txt`), scratch files, or un-formatted logs are not staged or tracked prior to committing.
 - **Incremental Work Checkpoints**: For multi-step tasks, push incremental WIP commits to a dedicated feature branch to prevent uncommitted work loss on session termination.
+
+## 6. GitHub Actions Workflow Security & Zizmor Compliance
+Whenever creating, modifying, or reviewing GitHub Actions workflow files under `.github/workflows/*.{yml,yaml}`:
+
+1. **Pin Action References to Full Commit SHAs (`zizmor/unpinned-uses`)**:
+   - NEVER use mutable version tags or branch names in `uses:` steps (e.g., `actions/checkout@v4`, `actions/github-script@v7`).
+   - ALWAYS pin all remote/third-party action references to exact 40-character commit SHAs (excluding local path references like `uses: ./.github/actions/...`), accompanied by an inline comment displaying the human-readable version tag.
+   - *Example (commit SHAs are illustrative and will vary depending on the action and target version):*
+     ```yaml
+     uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+     uses: 'actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea' # v7.0.1
+     ```
+
+2. **Avoid Insecure Workflow Triggers (`zizmor/pull-request-target`)**:
+   - Prefer standard `pull_request:` triggers over `pull_request_target:` for PR workflows.
+   - `pull_request_target:` runs in the context of the base branch with write permissions and access to repository secrets, which `zizmor` flags as a security finding.
+   - If `pull_request_target:` is strictly required (e.g., for workflows that require write permissions for PRs originating from forks), place an explicit `# zizmor: ignore[pull-request-target]` comment above the trigger block accompanied by an inline comment explaining *why* the trigger is necessary:
+     ```yaml
+     on:
+       # zizmor: ignore[pull-request-target]
+       # Required to grant PR write permissions for auto-approving ABSENCE.md updates on fork PRs.
+       pull_request_target:
+     ```
+

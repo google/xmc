@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"golang/cmp/cmp"
+	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	fieldmaskpb "protobuf/field_mask_go_proto"
 	pb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -49,60 +50,35 @@ func TestMergeWorkUnits(t *testing.T) {
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"priority"}},
-			want: &pb.WorkUnit{
-				Priority: 200,
-				Urls:     []*pb.Url{},
-				Tags:     []string{"current_tag"},
-				Notes:    "Current notes",
-			},
+			want:       proto.Modify(current, func(w *pb.WorkUnit) { w.Priority = 200 }),
 		},
 		{
 			name:       "update urls",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"urls"}},
-			want: &pb.WorkUnit{
-				Priority: 100,
-				Urls:     []*pb.Url{{Url: "http://updated.com"}},
-				Tags:     []string{"current_tag"},
-				Notes:    "Current notes",
-			},
+			want:       proto.Modify(current, func(w *pb.WorkUnit) { w.Urls = updated.Urls }),
 		},
 		{
 			name:       "update tags",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"tags"}},
-			want: &pb.WorkUnit{
-				Priority: 100,
-				Urls:     []*pb.Url{},
-				Tags:     []string{"updated_tag"},
-				Notes:    "Current notes",
-			},
+			want:       proto.Modify(current, func(w *pb.WorkUnit) { w.Tags = updated.Tags }),
 		},
 		{
 			name:       "update notes",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"notes"}},
-			want: &pb.WorkUnit{
-				Priority: 100,
-				Urls:     []*pb.Url{},
-				Tags:     []string{"current_tag"},
-				Notes:    "Updated notes",
-			},
+			want:       proto.Modify(current, func(w *pb.WorkUnit) { w.Notes = updated.Notes }),
 		},
 		{
 			name:       "update multiple fields",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"priority", "notes"}},
-			want: &pb.WorkUnit{
-				Priority: 200,
-				Urls:     []*pb.Url{},
-				Tags:     []string{"current_tag"},
-				Notes:    "Updated notes",
-			},
+			want:       proto.Modify(current, func(w *pb.WorkUnit) { w.Priority = 200; w.Notes = updated.Notes }),
 		},
 		{
 			name:       "nil current",

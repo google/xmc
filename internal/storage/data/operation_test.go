@@ -14,6 +14,7 @@
 package data
 
 import (
+	"golang/protobuf/v2/proto/proto"
 	"testing"
 
 	"golang/cmp/cmp"
@@ -39,6 +40,12 @@ func TestMergeOperations(t *testing.T) {
 		t.Fatalf("Failed to marshal response: %v", err)
 	}
 
+	baseOp := &lropb.Operation{
+		Name:     "experiments/1/workUnits/1/operations/abc",
+		Done:     false,
+		Metadata: metadata1,
+	}
+
 	tests := []struct {
 		name       string
 		current    *lropb.Operation
@@ -48,74 +55,34 @@ func TestMergeOperations(t *testing.T) {
 		wantErr    bool
 	}{
 		{
-			name: "update_done",
-			current: &lropb.Operation{
-				Name:     "experiments/1/workUnits/1/operations/abc",
-				Done:     false,
-				Metadata: metadata1,
-			},
-			updated: &lropb.Operation{
-				Done: true,
-			},
+			name:       "update_done",
+			current:    baseOp,
+			updated:    &lropb.Operation{Done: true},
 			updateMask: &fmpb.FieldMask{Paths: []string{"done"}},
-			want: &lropb.Operation{
-				Name:     "experiments/1/workUnits/1/operations/abc",
-				Done:     true,
-				Metadata: metadata1,
-			},
+			want:       proto.Modify(baseOp, func(o *lropb.Operation) { o.Done = true }),
 		},
 		{
-			name: "update_metadata",
-			current: &lropb.Operation{
-				Name:     "experiments/1/workUnits/1/operations/abc",
-				Done:     false,
-				Metadata: metadata1,
-			},
-			updated: &lropb.Operation{
-				Metadata: metadata2,
-			},
+			name:       "update_metadata",
+			current:    baseOp,
+			updated:    &lropb.Operation{Metadata: metadata2},
 			updateMask: &fmpb.FieldMask{Paths: []string{"metadata"}},
-			want: &lropb.Operation{
-				Name:     "experiments/1/workUnits/1/operations/abc",
-				Done:     false,
-				Metadata: metadata2,
-			},
+			want:       proto.Modify(baseOp, func(o *lropb.Operation) { o.Metadata = metadata2 }),
 		},
 		{
-			name: "update_error",
-			current: &lropb.Operation{
-				Name:     "experiments/1/workUnits/1/operations/abc",
-				Done:     false,
-				Metadata: metadata1,
-			},
-			updated: &lropb.Operation{
-				Result: &lropb.Operation_Error{Error: &statuspb.Status{Code: 1, Message: "error"}},
-			},
+			name:       "update_error",
+			current:    baseOp,
+			updated:    &lropb.Operation{Result: &lropb.Operation_Error{Error: &statuspb.Status{Code: 1, Message: "error"}}},
 			updateMask: &fmpb.FieldMask{Paths: []string{"error"}},
-			want: &lropb.Operation{
-				Name:     "experiments/1/workUnits/1/operations/abc",
-				Done:     false,
-				Metadata: metadata1,
-				Result:   &lropb.Operation_Error{Error: &statuspb.Status{Code: 1, Message: "error"}},
-			},
+			want: proto.Modify(baseOp, func(o *lropb.Operation) {
+				o.Result = &lropb.Operation_Error{Error: &statuspb.Status{Code: 1, Message: "error"}}
+			}),
 		},
 		{
-			name: "update_response",
-			current: &lropb.Operation{
-				Name:     "experiments/1/workUnits/1/operations/abc",
-				Done:     false,
-				Metadata: metadata1,
-			},
-			updated: &lropb.Operation{
-				Result: &lropb.Operation_Response{Response: response},
-			},
+			name:       "update_response",
+			current:    baseOp,
+			updated:    &lropb.Operation{Result: &lropb.Operation_Response{Response: response}},
 			updateMask: &fmpb.FieldMask{Paths: []string{"response"}},
-			want: &lropb.Operation{
-				Name:     "experiments/1/workUnits/1/operations/abc",
-				Done:     false,
-				Metadata: metadata1,
-				Result:   &lropb.Operation_Response{Response: response},
-			},
+			want:       proto.Modify(baseOp, func(o *lropb.Operation) { o.Result = &lropb.Operation_Response{Response: response} }),
 		},
 		{
 			name: "nil_current",
