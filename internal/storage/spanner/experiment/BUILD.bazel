@@ -17,7 +17,6 @@ load("//:compat.bzl", "compat_go_library")
 compat_go_library(
     name = "experiment",
     srcs = [
-        "createexperiment.go",
         "fetchexperiment.go",
         "fetchexperimentstatus.go",
         "listexperiments.go",

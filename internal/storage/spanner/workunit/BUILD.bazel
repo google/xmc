@@ -17,7 +17,6 @@ load("//:compat.bzl", "compat_go_library")
 compat_go_library(
     name = "workunit",
     srcs = [
-        "createworkunit.go",
         "fetchcurrentworkunitexecution.go",
         "fetchnextworkunitid.go",
         "fetchworkunit.go",
@@ -26,6 +25,7 @@ compat_go_library(
         "listworkunits.go",
         "mutations.go",
         "repository.go",
+        "resources.go",
         "restartworkunitexecutions.go",
         "updateworkunit.go",
         "updateworkunitexecutions.go",

@@ -17,7 +17,6 @@ load("//:compat.bzl", "compat_go_library")
 compat_go_library(
     name = "artifact",
     srcs = [
-        "createartifact.go",
         "deleteartifact.go",
         "fetchartifact.go",
         "listartifacts.go",
