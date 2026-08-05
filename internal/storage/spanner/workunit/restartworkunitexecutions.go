@@ -23,6 +23,7 @@ import (
 	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	domainwu "xmanager_cloud/internal/domain/workunit"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/logging/logging"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
@@ -46,77 +47,48 @@ func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester st
 
 		for _, wid := range wids {
 			// 1. Read the WorkUnit row.
-			// TODO(b/517479143): Move execution restart business logic out of the Spanner repository into a domain service layer.
 			wu, err := r.FetchWorkUnitTransaction(ctx, xid, wid, tx)
 			if err != nil {
 				return fmt.Errorf("failed to fetch work unit: %v: %w", err, status.ErrInternal)
 			}
 
-			// 2. Set the execution state to INACTIVE.
-			currentExecution := wu.GetCurrentWorkUnitExecution()
-			currentExecution.State = essmsgpb.WorkUnitExecution_INACTIVE
-			currentExecution.UpdateTime = timestamppb.New(now)
-
-			// 3. Archive the current execution.
-			archiveMutation, err := spannerdata.WorkUnitExecutionProtoToInsertMutation(currentExecution)
+			// 2. Delegate execution state transition calculation to domain/workunit package.
+			result, err := domainwu.RestartExecution(xid, wid, wu.GetCurrentWorkUnitExecution(), requester, now)
 			if err != nil {
-				return fmt.Errorf("failed to create mutation for archived work unit execution: %v: %w", err, status.ErrInternal)
-			}
-			tx.BufferWrite([]*spanner.Mutation{archiveMutation})
-
-			// 4. Get the EID so we can increment it.
-			_, _, eid, err := validator.ValidateWorkUnitExecutionName(currentExecution.GetName())
-			if err != nil {
-				return fmt.Errorf("failed to validate work unit execution name %q: %v: %w", currentExecution.GetName(), err, status.ErrInternal)
-			}
-			if eid == 0 {
-				return fmt.Errorf("invalid eid 0 from work unit execution name %q: %w", currentExecution.GetName(), status.ErrInternal)
+				return err
 			}
 
-			// 4.1. Create a new execution with the given state.
-			newEID := eid + 1
-			newExecution := &essmsgpb.WorkUnitExecution{
-				Name: fmt.Sprintf("experiments/%v/workUnits/%v/executions/%v", xid, wid, newEID),
-				Status: &essmsgpb.WorkUnitStatus{
-					State: essmsgpb.WorkUnitStatus_RESTARTING,
-					SystemMessage: &essmsgpb.StructuredMessage{
-						UserFacingText: fmt.Sprintf("Work unit is being restarted by %s", requester),
-						Severity:       essmsgpb.StructuredMessage_INFO,
-						Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
-						Parent:         fmt.Sprintf("experiments/%v/workUnits/%v", xid, wid),
-					},
-					UpdateTime:      timestamppb.New(now),
-					StateUpdateTime: timestamppb.New(now),
-				},
-				Metadata:   &essmsgpb.WorkUnitExecutionMetadata{},
-				State:      essmsgpb.WorkUnitExecution_ACTIVE,
-				CreateTime: timestamppb.New(now),
-				UpdateTime: timestamppb.New(now),
+			// 3. Thin DB Write: Archive the current execution.
+			if err := r.InsertWorkUnitExecution(ctx, tx, result.ArchivedExecution); err != nil {
+				return err
 			}
-			newExecutions[wid] = newExecution
 
-			// 4.2. Add the new execution to the execution deltas to update the experiment status.
-			executionDeltas = append(executionDeltas, &state.WorkUnitStateDelta{
-				CurrentState:   currentExecution.GetStatus().GetState().Enum(),
-				NewState:       newExecution.GetStatus().GetState().Enum(),
-				CurrentMessage: currentExecution.GetStatus().GetSystemMessage(),
-				NewMessage:     newExecution.GetStatus().GetSystemMessage(),
-			})
+			newExecutions[wid] = result.NewExecution
+			executionDeltas = append(executionDeltas, result.StateDelta)
 
-			statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &wid, &newEID, currentExecution.GetStatus().GetSystemMessage(), newExecution.GetStatus().GetSystemMessage(), tx)
+			statusmessage.SaveStatusMessageHistoryIfChanged(
+				ctx,
+				r.statusMessageHistoryEnabled,
+				xid,
+				&wid,
+				&result.NewEID,
+				result.ArchivedExecution.GetStatus().GetSystemMessage(),
+				result.NewExecution.GetStatus().GetSystemMessage(),
+				tx,
+			)
 
-			// 5. Write the new execution to storage.
-			tx.BufferWrite([]*spanner.Mutation{
-				spannerdata.CurrentWorkUnitExecutionProtoToUpdateMutation(xid, wid, newEID, newExecution),
-			})
+			// 4. Thin DB Write: Update the current execution in WorkUnits table.
+			if err := r.UpdateCurrentWorkUnitExecution(ctx, tx, xid, wid, result.NewEID, result.NewExecution); err != nil {
+				return err
+			}
 		}
 
 		if r.experimentRepo == nil {
 			return fmt.Errorf("experiment repository is not initialized")
 		}
 		var exp *essmsgpb.Experiment
+		// 5. Read the Experiment row.
 		var err error
-		// 6. Read the Experiment row.
 		exp, err = r.experimentRepo.FetchExperimentTransaction(ctx, xid, tx)
 		if err != nil {
 			return fmt.Errorf("failed to fetch experiment: %w", err)
@@ -125,23 +97,19 @@ func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester st
 			return fmt.Errorf("experiment %d not found", xid)
 		}
 
-		// 7. Update the denormalized status fields in the Experiment row.
+		// 6. Update the denormalized status fields in the Experiment row.
 		exp, err = state.DenormalizeWorkUnitStatus(ctx, exp, executionDeltas)
 		if err != nil {
 			return fmt.Errorf("failed to update experiment status: %w", err)
 		}
 
-		// 8. Update the Experiment row.
-		// TODO(b/517479143): Refactor to use r.experimentRepo.UpdateExperimentStatus(ctx, tx, exp) DAO method.
+		// 7. Thin DB Write: Update Experiment status.
 		exp.UpdateTime = timestamppb.New(now)
 		exp.Status.LastChildStatusUpdateTime = timestamppb.New(now)
 		exp.Status.UpdateTime = timestamppb.New(now)
-		expMutation, err := spannerdata.ExperimentProtoToStatusUpdateMutation(exp)
-		if err != nil {
-			logging.Error(ctx, "Failed to create mutation for experiment", "experiment", exp, "error", err)
-			return err
+		if err := r.experimentRepo.UpdateExperimentStatus(ctx, tx, exp); err != nil {
+			return fmt.Errorf("failed to update experiment status: %w", err)
 		}
-		tx.BufferWrite([]*spanner.Mutation{expMutation})
 
 		return nil
 	})
@@ -153,4 +121,39 @@ func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester st
 	logging.Info(ctx, "Work unit execution restarted successfully", "newExecutions", newExecutions)
 
 	return newExecutions, nil
+}
+
+// InsertWorkUnitExecution buffers a mutation to insert an archived WorkUnitExecution in Spanner.
+func (r *Repository) InsertWorkUnitExecution(ctx context.Context, tx *spanner.ReadWriteTransaction, execution *essmsgpb.WorkUnitExecution) error {
+	if execution == nil {
+		return fmt.Errorf("work unit execution must not be nil")
+	}
+	if tx == nil {
+		return fmt.Errorf("transaction must not be nil")
+	}
+	mutation, err := spannerdata.WorkUnitExecutionProtoToInsertMutation(execution)
+	if err != nil {
+		return fmt.Errorf("failed to create mutation for archived work unit execution: %v: %w", err, status.ErrInternal)
+	}
+	if err := tx.BufferWrite([]*spanner.Mutation{mutation}); err != nil {
+		logging.Error(ctx, "failed to buffer write mutation for archived work unit execution", "error", err)
+		return err
+	}
+	return nil
+}
+
+// UpdateCurrentWorkUnitExecution buffers a mutation to update the current WorkUnitExecution in Spanner.
+func (r *Repository) UpdateCurrentWorkUnitExecution(ctx context.Context, tx *spanner.ReadWriteTransaction, xid, wid, eid int64, execution *essmsgpb.WorkUnitExecution) error {
+	if execution == nil {
+		return fmt.Errorf("work unit execution must not be nil")
+	}
+	if tx == nil {
+		return fmt.Errorf("transaction must not be nil")
+	}
+	mutation := spannerdata.CurrentWorkUnitExecutionProtoToUpdateMutation(xid, wid, eid, execution)
+	if err := tx.BufferWrite([]*spanner.Mutation{mutation}); err != nil {
+		logging.Error(ctx, "failed to buffer write mutation for current work unit execution update", "error", err)
+		return err
+	}
+	return nil
 }

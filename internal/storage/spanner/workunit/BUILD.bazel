@@ -63,7 +63,10 @@ compat_go_library(
 
 compat_go_test(
     name = "workunit_unit_test",
-    srcs = ["createworkunit_unit_test.go"],
+    srcs = [
+        "createworkunit_unit_test.go",
+        "restartworkunitexecutions_unit_test.go",
+    ],
     embed = [":workunit"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
