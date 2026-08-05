@@ -207,7 +207,55 @@ func TestCreateWorkUnit_AutoID(t *testing.T) {
 	}
 }
 
+func workUnitWithResource(r *essmsgpb.ResourceSet) *essmsgpb.WorkUnit {
+	return &essmsgpb.WorkUnit{
+		Executable: &essmsgpb.Executable{
+			Type: &essmsgpb.Executable_Jobset{
+				Jobset: &essmsgpb.JobSetExecutable{
+					Jobs: []*essmsgpb.KubernetesJob{
+						{
+							Spec: &essmsgpb.ExecutableSpec{
+								Resources: r,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 func TestGetWorkUnitResources(t *testing.T) {
+	cpuRes := &essmsgpb.ResourceSet{
+		Resources: &essmsgpb.ResourceSet_CpuResources{
+			CpuResources: &essmsgpb.CpuResources{
+				CpuMillicores: 1000,
+				MemoryBytes:   1024,
+			},
+		},
+		EphemeralStorageBytes: 2048,
+	}
+
+	gpuRes := &essmsgpb.ResourceSet{
+		Resources: &essmsgpb.ResourceSet_GpuResources{
+			GpuResources: &essmsgpb.GpuResources{
+				Type:  "nvidia-tesla-v100",
+				Count: 2,
+			},
+		},
+		EphemeralStorageBytes: 2048,
+	}
+
+	tpuRes := &essmsgpb.ResourceSet{
+		Resources: &essmsgpb.ResourceSet_TpuResources{
+			TpuResources: &essmsgpb.TpuResources{
+				Type:     "tpu-v4-pod",
+				Topology: "2x2x2",
+			},
+		},
+		EphemeralStorageBytes: 2048,
+	}
+
 	tests := []struct {
 		name string
 		wu   *essmsgpb.WorkUnit
@@ -220,77 +268,18 @@ func TestGetWorkUnitResources(t *testing.T) {
 		},
 		{
 			name: "cpu_resources",
-			wu: &essmsgpb.WorkUnit{
-				Executable: &essmsgpb.Executable{
-					Type: &essmsgpb.Executable_Jobset{
-						Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Spec: &essmsgpb.ExecutableSpec{
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_CpuResources{
-												CpuResources: &essmsgpb.CpuResources{
-													CpuMillicores: 1000,
-													MemoryBytes:   1024,
-												},
-											},
-											EphemeralStorageBytes: 2048,
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			want: []*essmsgpb.ResourceSet{
-				{
-					Resources: &essmsgpb.ResourceSet_CpuResources{
-						CpuResources: &essmsgpb.CpuResources{
-							CpuMillicores: 1000,
-							MemoryBytes:   1024,
-						},
-					},
-					EphemeralStorageBytes: 2048,
-				},
-			},
+			wu:   workUnitWithResource(cpuRes),
+			want: []*essmsgpb.ResourceSet{cpuRes},
 		},
 		{
 			name: "gpu_resources",
-			wu: &essmsgpb.WorkUnit{
-				Executable: &essmsgpb.Executable{
-					Type: &essmsgpb.Executable_Jobset{
-						Jobset: &essmsgpb.JobSetExecutable{
-							Jobs: []*essmsgpb.KubernetesJob{
-								{
-									Spec: &essmsgpb.ExecutableSpec{
-										Resources: &essmsgpb.ResourceSet{
-											Resources: &essmsgpb.ResourceSet_GpuResources{
-												GpuResources: &essmsgpb.GpuResources{
-													Type:  "nvidia-tesla-v100",
-													Count: 2,
-												},
-											},
-											EphemeralStorageBytes: 2048,
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			want: []*essmsgpb.ResourceSet{
-				{
-					Resources: &essmsgpb.ResourceSet_GpuResources{
-						GpuResources: &essmsgpb.GpuResources{
-							Type:  "nvidia-tesla-v100",
-							Count: 2,
-						},
-					},
-					EphemeralStorageBytes: 2048,
-				},
-			},
+			wu:   workUnitWithResource(gpuRes),
+			want: []*essmsgpb.ResourceSet{gpuRes},
+		},
+		{
+			name: "tpu_resources",
+			wu:   workUnitWithResource(tpuRes),
+			want: []*essmsgpb.ResourceSet{tpuRes},
 		},
 		{
 			name: "tpu_resources",
