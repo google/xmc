@@ -317,6 +317,12 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 		podLabels[k] = v
 	}
 
+	// Create a shallow copy for PodTemplateSpec to prevent sharing the map pointer.
+	podAnnotations := make(map[string]string, len(annotations))
+	for k, v := range annotations {
+		podAnnotations[k] = v
+	}
+
 	var dependsOn []jobsetv1alpha2.DependsOn
 	if depOrder := job.GetDependencyOrder(); depOrder.GetJobName() != "" {
 		dependsOn = append(dependsOn, jobsetv1alpha2.DependsOn{
@@ -353,7 +359,7 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 				Template: corev1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels:      podLabels,
-						Annotations: annotations,
+						Annotations: podAnnotations,
 					},
 					Spec: corev1.PodSpec{
 						ServiceAccountName: job.GetServiceAccount(),
