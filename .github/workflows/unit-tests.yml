@@ -152,6 +152,16 @@ jobs:
               find ~/.cache/bazel-disk -type d -empty -delete || true
             fi
           fi
+          if [ -d ~/.cache/bazel-repo ]; then
+            # Size-based pruning: Keep repository cache under 1GB so tar/compression remains fast.
+            MAX_REPO_SIZE_MB=1000
+            CURRENT_REPO_SIZE_MB=$(du -sm ~/.cache/bazel-repo | cut -f1)
+            if [ "${CURRENT_REPO_SIZE_MB}" -gt "${MAX_REPO_SIZE_MB}" ]; then
+              echo "Bazel repository cache (${CURRENT_REPO_SIZE_MB}MB) exceeds limit (${MAX_REPO_SIZE_MB}MB). Pruning oldest files..."
+              find ~/.cache/bazel-repo -type f -printf '%T@ %p\n' | sort -n | head -n 500 | cut -d' ' -f2- | xargs rm -f || true
+              find ~/.cache/bazel-repo -type d -empty -delete || true
+            fi
+          fi
           bazel clean || true
           df -h
 
