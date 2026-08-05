@@ -21,7 +21,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"golang/grpc/grpc"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"

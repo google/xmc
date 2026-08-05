@@ -54,11 +54,6 @@ func init() {
 	flag.StringVar(&cfg.ProjectID, "project_id", os.Getenv("GOOGLE_CLOUD_PROJECT"), "The GCP project ID.")
 	flag.StringVar(&cfg.TLSCertFile, "tls_cert_file", "", "The TLS certificate file path.")
 	flag.StringVar(&cfg.TLSKeyFile, "tls_key_file", "", "The TLS private key file path.")
-
-	flag.StringVar(&cfg.EssURL, "ess_url", cfg.EssURL, "The URL of the Experiment State Server.")
-	flag.StringVar(&cfg.XidAddr, "xid_addr", cfg.XidAddr, "The address of the XID service.")
-	flag.StringVar(&cfg.ActuatorURL, "actuator_url", cfg.ActuatorURL, "The URL of the Actuator service.")
-	flag.StringVar(&cfg.ReconcilerURL, "reconciler_url", cfg.ReconcilerURL, "The URL of the Reconciler service.")
 }
 
 // LoadConfig loads and returns the configuration.

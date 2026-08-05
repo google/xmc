@@ -18,8 +18,9 @@ import (
 	"context"
 	"log/slog"
 
-	"google.golang.org/protobuf/types/known/timestamppb"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type server struct {
@@ -50,9 +51,9 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 		HealthState: overallHealthy,
 		SystemInfo: &spb.SystemInfo{
 			AppVersion:         "app-version-1.0.0",
-			EssDbSchemaVersion: "6", // Mock values as Spanner check is skipped
+			EssDbSchemaVersion: "6",
 			XidDbSchemaVersion: "1",
-			ObservabilityUrl:   "http://observability-url",
+			ObservabilityUrl:   "http://mock-observability-url",
 			IsSchedulingPaused: false,
 		},
 		Components:      components,

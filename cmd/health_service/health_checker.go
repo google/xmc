@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -30,14 +31,20 @@ import (
 type HealthChecker struct {
 	cfg        *Config
 	httpClient *http.Client
+	xidConn    *grpc.ClientConn
 }
 
 func newHealthChecker(cfg *Config) *HealthChecker {
+	conn, err := grpc.NewClient(cfg.XidAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		slog.Error("failed to create gRPC client for XID", "addr", cfg.XidAddr, "error", err)
+	}
 	return &HealthChecker{
 		cfg: cfg,
 		httpClient: &http.Client{
 			Timeout: 3 * time.Second,
 		},
+		xidConn: conn,
 	}
 }
 
@@ -55,7 +62,7 @@ func (c *HealthChecker) RunChecks(ctx context.Context) []*spb.ComponentHealth {
 	// 2. XID
 	go func() {
 		defer wg.Done()
-		components[1] = c.checkGRPCComponent(ctx, "XID", c.cfg.XidAddr, "xmc.XidService")
+		components[1] = c.checkGRPCComponent(ctx, "XID", c.xidConn, "xmc.XidService")
 	}()
 
 	// 3. Actuator
@@ -138,17 +145,15 @@ func (c *HealthChecker) checkHTTPComponent(ctx context.Context, name string, bas
 	}
 }
 
-func (c *HealthChecker) checkGRPCComponent(ctx context.Context, name string, addr string, serviceName string) *spb.ComponentHealth {
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
+func (c *HealthChecker) checkGRPCComponent(ctx context.Context, name string, conn *grpc.ClientConn, serviceName string) *spb.ComponentHealth {
+	if conn == nil {
 		return &spb.ComponentHealth{
 			Name:         name,
 			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
 			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
-			ErrorMessage: fmt.Sprintf("gRPC dial failed: %v", err),
+			ErrorMessage: "gRPC client connection is nil",
 		}
 	}
-	defer conn.Close()
 
 	client := grpc_health_v1.NewHealthClient(conn)
 	resp, err := client.Check(ctx, &grpc_health_v1.HealthCheckRequest{Service: serviceName})
