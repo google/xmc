@@ -78,44 +78,28 @@ func TestGetWorkUnitResources_CPU(t *testing.T) {
 	}
 }
 
+func newGpuResourceSet(count int64, storage int64) *essmsgpb.ResourceSet {
+	return &essmsgpb.ResourceSet{
+		Resources: &essmsgpb.ResourceSet_GpuResources{
+			GpuResources: &essmsgpb.GpuResources{
+				Type:  "NVIDIA-A100-80GB",
+				Count: count,
+			},
+		},
+		EphemeralStorageBytes: storage,
+	}
+}
+
 func TestMergeResourceSets_GPU(t *testing.T) {
-	setA := []*essmsgpb.ResourceSet{
-		{
-			Resources: &essmsgpb.ResourceSet_GpuResources{
-				GpuResources: &essmsgpb.GpuResources{
-					Type:  "NVIDIA-A100-80GB",
-					Count: 2,
-				},
-			},
-			EphemeralStorageBytes: 100,
-		},
-	}
-	setB := []*essmsgpb.ResourceSet{
-		{
-			Resources: &essmsgpb.ResourceSet_GpuResources{
-				GpuResources: &essmsgpb.GpuResources{
-					Type:  "NVIDIA-A100-80GB",
-					Count: 4,
-				},
-			},
-			EphemeralStorageBytes: 200,
-		},
-	}
+	setA := []*essmsgpb.ResourceSet{newGpuResourceSet(2, 100)}
+	setB := []*essmsgpb.ResourceSet{newGpuResourceSet(4, 200)}
 
 	merged := MergeResourceSets(setA, setB)
 	if len(merged) != 1 {
 		t.Fatalf("MergeResourceSets returned %d sets, want 1", len(merged))
 	}
 
-	want := &essmsgpb.ResourceSet{
-		Resources: &essmsgpb.ResourceSet_GpuResources{
-			GpuResources: &essmsgpb.GpuResources{
-				Type:  "NVIDIA-A100-80GB",
-				Count: 6,
-			},
-		},
-		EphemeralStorageBytes: 300,
-	}
+	want := newGpuResourceSet(6, 300)
 
 	if diff := cmp.Diff(want, merged[0], protocmp.Transform()); diff != "" {
 		t.Errorf("MergeResourceSets() diff (-want +got):\n%s", diff)

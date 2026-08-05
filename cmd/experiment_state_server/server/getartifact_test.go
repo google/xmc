@@ -177,6 +177,15 @@ func TestGetArtifact_DependencyFailures(t *testing.T) {
 func TestEnrichManagedXprof(t *testing.T) {
 	ctx := context.Background()
 
+	baseManagedXprofArtifact := &msgpb.Artifact{
+		Parent: "experiments/1/workUnits/1",
+		Payload: &msgpb.ArtifactPayload{
+			Type: &msgpb.ArtifactPayload_ManagedXprof{
+				ManagedXprof: &msgpb.ManagedXprofArtifact{},
+			},
+		},
+	}
+
 	testCases := []struct {
 		name         string
 		artifact     *msgpb.Artifact
@@ -191,27 +200,13 @@ func TestEnrichManagedXprof(t *testing.T) {
 			wantEnriched: false,
 		},
 		{
-			name: "malformed_parent",
-			artifact: &msgpb.Artifact{
-				Parent: "invalid-parent",
-				Payload: &msgpb.ArtifactPayload{
-					Type: &msgpb.ArtifactPayload_ManagedXprof{
-						ManagedXprof: &msgpb.ManagedXprofArtifact{},
-					},
-				},
-			},
+			name:         "malformed_parent",
+			artifact:     proto.Modify(baseManagedXprofArtifact, func(a *msgpb.Artifact) { a.Parent = "invalid-parent" }),
 			wantEnriched: false,
 		},
 		{
-			name: "storage_error",
-			artifact: &msgpb.Artifact{
-				Parent: "experiments/1/workUnits/1",
-				Payload: &msgpb.ArtifactPayload{
-					Type: &msgpb.ArtifactPayload_ManagedXprof{
-						ManagedXprof: &msgpb.ManagedXprofArtifact{},
-					},
-				},
-			},
+			name:     "storage_error",
+			artifact: proto.Clone(baseManagedXprofArtifact).(*msgpb.Artifact),
 			mockStorage: &storage.MockStorage{
 				FetchCurrentWorkUnitExecutionErr: fmt.Errorf("storage failed"),
 			},
@@ -220,30 +215,16 @@ func TestEnrichManagedXprof(t *testing.T) {
 		{
 			// A NotFound execution is an expected pre-execution state, so enrichment
 			// is skipped without surfacing an error.
-			name: "storage_not_found",
-			artifact: &msgpb.Artifact{
-				Parent: "experiments/1/workUnits/1",
-				Payload: &msgpb.ArtifactPayload{
-					Type: &msgpb.ArtifactPayload_ManagedXprof{
-						ManagedXprof: &msgpb.ManagedXprofArtifact{},
-					},
-				},
-			},
+			name:     "storage_not_found",
+			artifact: proto.Clone(baseManagedXprofArtifact).(*msgpb.Artifact),
 			mockStorage: &storage.MockStorage{
 				FetchCurrentWorkUnitExecutionErr: status.ErrNotFound,
 			},
 			wantEnriched: false,
 		},
 		{
-			name: "success_enrichment",
-			artifact: &msgpb.Artifact{
-				Parent: "experiments/1/workUnits/1",
-				Payload: &msgpb.ArtifactPayload{
-					Type: &msgpb.ArtifactPayload_ManagedXprof{
-						ManagedXprof: &msgpb.ManagedXprofArtifact{},
-					},
-				},
-			},
+			name:     "success_enrichment",
+			artifact: proto.Clone(baseManagedXprofArtifact).(*msgpb.Artifact),
 			mockStorage: &storage.MockStorage{
 				WorkUnitExecution: &msgpb.WorkUnitExecution{
 					Metadata: &msgpb.WorkUnitExecutionMetadata{
@@ -257,15 +238,8 @@ func TestEnrichManagedXprof(t *testing.T) {
 			// An experiment-scoped artifact has no single MLRun (each work unit
 			// execution owns its own), so it must not be enriched even when storage
 			// has an MLRun URL.
-			name: "no_enrichment_experiment_parent",
-			artifact: &msgpb.Artifact{
-				Parent: "experiments/1",
-				Payload: &msgpb.ArtifactPayload{
-					Type: &msgpb.ArtifactPayload_ManagedXprof{
-						ManagedXprof: &msgpb.ManagedXprofArtifact{},
-					},
-				},
-			},
+			name:     "no_enrichment_experiment_parent",
+			artifact: proto.Modify(baseManagedXprofArtifact, func(a *msgpb.Artifact) { a.Parent = "experiments/1" }),
 			mockStorage: &storage.MockStorage{
 				WorkUnitExecution: &msgpb.WorkUnitExecution{
 					Metadata: &msgpb.WorkUnitExecutionMetadata{
