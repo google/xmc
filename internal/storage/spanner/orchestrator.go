@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	"golang/protobuf/v2/proto/proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/domain/artifactdomain"
@@ -38,18 +39,21 @@ func (s *Storage) CreateExperiment(ctx context.Context, exp *essmsgpb.Experiment
 	ctx = logging.WithExperimentName(ctx, exp.GetName())
 	logging.Info(ctx, "Write experiment to storage", "experiment", exp)
 
+	var committedExp *essmsgpb.Experiment
 	xid, err := experimentdomain.PrepareExperimentCreation(ctx, exp, time.Now())
 	if err != nil {
 		return nil, err
 	}
 
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
-		if err := s.ExperimentRepository.InsertExperiment(ctx, tx, exp); err != nil {
-			logging.Error(ctx, "failed to create mutation for experiment", "experiment", exp, "error", err)
+		localExp := proto.Clone(exp).(*essmsgpb.Experiment)
+		if err := s.ExperimentRepository.InsertExperiment(ctx, tx, localExp); err != nil {
+			logging.Error(ctx, "failed to create mutation for experiment", "experiment", localExp, "error", err)
 			return err
 		}
 
-		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, s.ExperimentRepository.StatusMessageHistoryEnabled(), xid, nil, nil, nil, exp.GetStatus().GetStructuredStatusMessage(), tx)
+		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, s.ExperimentRepository.StatusMessageHistoryEnabled(), xid, nil, nil, nil, localExp.GetStatus().GetStructuredStatusMessage(), tx)
+		committedExp = localExp
 		return nil
 	})
 
@@ -58,7 +62,9 @@ func (s *Storage) CreateExperiment(ctx context.Context, exp *essmsgpb.Experiment
 		return nil, err
 	}
 
-	logging.Info(ctx, "Written experiment to storage")
+	exp.Reset()
+	proto.Merge(exp, committedExp)
+	logging.Info(ctx, "Written experiment to storage", "experiment", exp)
 	return exp, nil
 }
 
@@ -70,11 +76,13 @@ func (s *Storage) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*e
 	ctx = logging.WithWorkUnitExecutionName(ctx, wu.GetCurrentWorkUnitExecution().GetName())
 	logging.Info(ctx, "Write work unit to storage", "work_unit", wu)
 
-	exp := &essmsgpb.Experiment{}
+	var committedWU *essmsgpb.WorkUnit
+	var committedExp *essmsgpb.Experiment
 	_, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
 		now := time.Now()
+		localWU := proto.Clone(wu).(*essmsgpb.WorkUnit)
 
-		xid, wid, err := validator.ValidateWorkUnitNameAllowZeroWID(wu.GetName())
+		xid, wid, err := validator.ValidateWorkUnitNameAllowZeroWID(localWU.GetName())
 		if err != nil {
 			return fmt.Errorf("failed to validate work unit name: %w (%v)", status.ErrInvalidArgument, err)
 		}
@@ -87,30 +95,29 @@ func (s *Storage) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*e
 			}
 		}
 
-		if err := workunitdomain.PrepareWorkUnit(ctx, wu, xid, wid, initialEID, now); err != nil {
+		if err := workunitdomain.PrepareWorkUnit(ctx, localWU, xid, wid, initialEID, now); err != nil {
 			return err
 		}
 
-		if err := s.WorkUnitRepository.InsertWorkUnit(ctx, tx, wu); err != nil {
+		if err := s.WorkUnitRepository.InsertWorkUnit(ctx, tx, localWU); err != nil {
 			logging.Error(ctx, "failed to buffer write mutation for create work unit", "error", err)
 			return err
 		}
 
-		exp, err = s.ExperimentRepository.GetExperiment(ctx, tx, xid)
+		localExp, err := s.ExperimentRepository.GetExperiment(ctx, tx, xid)
 		if err != nil {
 			return fmt.Errorf("failed to fetch experiment: %w", err)
 		}
-		if exp == nil {
+		if localExp == nil {
 			return fmt.Errorf("experiment %d not found: %w", xid, status.ErrNotFound)
 		}
 
-		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, s.WorkUnitRepository.StatusMessageHistoryEnabled(), xid, &wid, &initialEID, nil, wu.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage(), tx)
+		statusmessage.SaveStatusMessageHistoryIfChanged(ctx, s.WorkUnitRepository.StatusMessageHistoryEnabled(), xid, &wid, &initialEID, nil, localWU.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage(), tx)
 
-		updatedExp, resourcesChanged, err := experimentdomain.PrepareWorkUnitCreation(ctx, exp, wu, now)
+		updatedExp, resourcesChanged, err := experimentdomain.PrepareWorkUnitCreation(ctx, localExp, localWU, now)
 		if err != nil {
 			return err
 		}
-		exp = updatedExp
 
 		if err := s.ExperimentRepository.UpdateExperimentStatus(ctx, tx, updatedExp); err != nil {
 			logging.Error(ctx, "failed to create mutation for experiment", "experiment", updatedExp, "error", err)
@@ -124,6 +131,8 @@ func (s *Storage) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*e
 			}
 		}
 
+		committedWU = localWU
+		committedExp = updatedExp
 		return nil
 	})
 	if err != nil {
@@ -131,8 +140,11 @@ func (s *Storage) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*e
 		return nil, err
 	}
 
-	logging.Info(ctx, "Written work unit to storage", "work_unit", wu)
-	logging.Info(ctx, "Updated experiment successfully", "experiment", exp)
+	wu.Reset()
+	proto.Merge(wu, committedWU)
+
+	logging.Info(ctx, "Written work unit to storage", "work_unit", committedWU)
+	logging.Info(ctx, "Updated experiment successfully", "experiment", committedExp)
 	return wu, nil
 }
 
@@ -144,21 +156,27 @@ func (s *Storage) CreateArtifact(ctx context.Context, artifact *essmsgpb.Artifac
 	ctx = logging.WithArtifactName(ctx, artifact.GetName())
 	logging.Info(ctx, "Write artifact to storage", "artifact", artifact)
 
+	var committedArtifact *essmsgpb.Artifact
 	if err := artifactdomain.PrepareArtifactCreation(ctx, artifact, time.Now()); err != nil {
 		return nil, err
 	}
 
 	_, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
-		if err := s.ArtifactRepository.InsertArtifact(ctx, tx, artifact); err != nil {
-			logging.Error(ctx, "Failed to create mutation for artifact", "artifact", artifact, "error", err)
+		localArtifact := proto.Clone(artifact).(*essmsgpb.Artifact)
+		if err := s.ArtifactRepository.InsertArtifact(ctx, tx, localArtifact); err != nil {
+			logging.Error(ctx, "Failed to create mutation for artifact", "artifact", localArtifact, "error", err)
 			return err
 		}
+		committedArtifact = localArtifact
 		return nil
 	})
 	if err != nil {
 		logging.Error(ctx, "Failed to create artifact", "error", err)
 		return nil, err
 	}
+
+	artifact.Reset()
+	proto.Merge(artifact, committedArtifact)
 
 	logging.Info(ctx, "Written artifact to storage")
 	return artifact, nil
