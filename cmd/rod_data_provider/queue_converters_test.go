@@ -24,6 +24,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
 func createTestResourceFlavorTyped(name string, nodeLabels map[string]string) *kueuev1beta1.ResourceFlavor {
@@ -268,4 +269,70 @@ func TestBuildQueueOverviewFromClusterQueue_NilAndEmpty(t *testing.T) {
 	if len(overview.QueueCapacity) != 0 {
 		t.Errorf("QueueCapacity count = %d, want 0", len(overview.QueueCapacity))
 	}
+}
+
+func TestBuildResourceFlavorMap(t *testing.T) {
+	t.Run("nil cache returns empty map", func(t *testing.T) {
+		got := buildResourceFlavorMap(nil)
+		if len(got) != 0 {
+			t.Errorf("buildResourceFlavorMap(nil) len = %d, want 0", len(got))
+		}
+	})
+
+	t.Run("uninitialized cache returns empty map", func(t *testing.T) {
+		c := cache.NewKueueCache()
+		got := buildResourceFlavorMap(c)
+		if len(got) != 0 {
+			t.Errorf("buildResourceFlavorMap(empty cache) len = %d, want 0", len(got))
+		}
+	})
+
+	t.Run("populated cache builds map by name", func(t *testing.T) {
+		c := cache.NewKueueCache()
+		rf := createTestResourceFlavorTyped("gpu-flavor", map[string]string{
+			"cloud.google.com/gke-accelerator": "nvidia-h100",
+		})
+		c.ResourceFlavors.Set("gpu-flavor", rf)
+
+		got := buildResourceFlavorMap(c)
+		if len(got) != 1 {
+			t.Fatalf("buildResourceFlavorMap len = %d, want 1", len(got))
+		}
+		if got["gpu-flavor"] != rf {
+			t.Errorf("buildResourceFlavorMap['gpu-flavor'] = %v, want %v", got["gpu-flavor"], rf)
+		}
+	})
+}
+
+func TestBuildQueueOverviews(t *testing.T) {
+	t.Run("nil cache returns nil", func(t *testing.T) {
+		got := buildQueueOverviews(nil, nil)
+		if got != nil {
+			t.Errorf("buildQueueOverviews(nil) = %v, want nil", got)
+		}
+	})
+
+	t.Run("uninitialized cache returns empty slice", func(t *testing.T) {
+		c := cache.NewKueueCache()
+		got := buildQueueOverviews(c, nil)
+		if len(got) != 0 {
+			t.Errorf("buildQueueOverviews(empty cache) len = %d, want 0", len(got))
+		}
+	})
+
+	t.Run("populated cache builds queue overviews", func(t *testing.T) {
+		c := cache.NewKueueCache()
+		cq := &kueuev1beta1.ClusterQueue{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cq"},
+		}
+		c.ClusterQueues.Set("test-cq", cq)
+
+		got := buildQueueOverviews(c, nil)
+		if len(got) != 1 {
+			t.Fatalf("buildQueueOverviews len = %d, want 1", len(got))
+		}
+		if got[0].QueueName != "test-cq" {
+			t.Errorf("QueueName = %q, want 'test-cq'", got[0].QueueName)
+		}
+	})
 }

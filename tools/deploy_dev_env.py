@@ -26,7 +26,7 @@ import sys
 import time
 from typing import Any, NoReturn
 
-from tool_utils import ensure_venv
+from tool_utils import ensure_venv, load_and_validate_config as tool_load_config
 
 # ANSI Color Codes
 RED = "\033[0;31m"
@@ -87,17 +87,6 @@ STEPS = [
     "verify",
 ]
 
-# Config regex patterns
-CONFIG_VALIDATION_SCHEMAS = {
-    "deployment_name": r"^[a-zA-Z0-9_-]+$",
-    "project_id": r"^[a-z0-9:.-]+$",
-    "environment": r"^[a-zA-Z0-9_-]+$",
-    "region": r"^[a-z0-9-]+$",
-    "domain_name": r"^[a-zA-Z0-9.-]+$",
-    "image_registry": r"^[a-zA-Z0-9./:-]+$",
-    "image_tag": r"^[a-zA-Z0-9_.-]+$",
-}
-
 
 def parse_args(args: list[str]) -> argparse.Namespace:
     """Parses command line arguments.
@@ -137,88 +126,8 @@ def parse_args(args: list[str]) -> argparse.Namespace:
     return parsed_args
 
 
-def _load_config(config_path: str) -> dict[str, str]:
-    """Loads the configuration file using a custom parser.
-
-    This avoids a dependency on PyYAML. It handles simple key-value pairs,
-    ignores comments, and correctly handles quoted values that may contain
-    hash characters.
-
-    Args:
-        config_path: Path to the YAML configuration file.
-
-    Returns:
-        A dictionary containing the parsed configuration keys and values.
-    """
-    path = pathlib.Path(config_path)
-    if not path.exists():
-        error_exit(f"Configuration file not found at '{config_path}'.")
-
-    config = {}
-    try:
-        with open(config_path) as f:
-            for line in f:
-                line_stripped = line.strip()
-                if not line_stripped or line_stripped.startswith("#"):
-                    continue
-
-                if ":" not in line:
-                    continue
-
-                parts = line.split(":", 1)
-                k = parts[0].strip()
-                v = parts[1].strip()
-
-                # Handle quoted values
-                if (v.startswith('"') and v.count('"') >= 2) or (
-                    v.startswith("'") and v.count("'") >= 2
-                ):
-                    quote_char = v[0]
-                    end_quote_idx = v.find(quote_char, 1)
-                    if end_quote_idx != -1:
-                        v = v[1:end_quote_idx]
-                else:
-                    # Unquoted value, strip trailing comments
-                    if "#" in v:
-                        v = v.split("#", 1)[0].strip()
-
-                # First match wins (similar to bash grep | head -n 1)
-                if k not in config:
-                    config[k] = v
-    except Exception as e:
-        error_exit(f"Failed to read configuration file: {e}")
-
-    if not config:
-        error_exit("Configuration file is empty or invalid.")
-
-    return config
-
-
-def _validate_config(config: dict[str, str], config_path: str) -> dict[str, str]:
-    """Validates the configuration dict against schemas.
-
-    Args:
-        config: The configuration dictionary to validate.
-        config_path: Path to the configuration file (used for error messages).
-
-    Returns:
-        A dictionary containing only the validated configuration keys.
-    """
-    validated_config: dict[str, str] = {}
-    for key, pattern_str in CONFIG_VALIDATION_SCHEMAS.items():
-        val = config.get(key)
-        if val is None:
-            error_exit(f"Required configuration field '{key}' is missing from '{config_path}'.")
-
-        if not re.match(pattern_str, val):
-            error_exit(f"Field '{key}' value '{val}' is invalid. Must match regex: {pattern_str}")
-        validated_config[key] = val
-
-    return validated_config
-
-
-def load_and_validate_config(config_path: str) -> dict[str, str]:
-    """Loads and validates the configuration file.
+def load_and_validate_config(config_path: str) -> dict[str, Any]:
+    """Loads and validates the configuration file using shared utilities.
 
     Args:
         config_path: Path to the configuration file.
@@ -226,8 +135,10 @@ def load_and_validate_config(config_path: str) -> dict[str, str]:
     Returns:
         A dictionary containing the validated configuration.
     """
-    config = _load_config(config_path)
-    return _validate_config(config, config_path)
+    try:
+        return tool_load_config(config_path)
+    except (FileNotFoundError, ValueError) as e:
+        error_exit(str(e))
 
 
 def run_command(
