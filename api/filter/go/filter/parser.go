@@ -454,6 +454,12 @@ func (p *parser) parsePrimary() (*fpb.Expression, error) {
 	return p.parseRestriction()
 }
 
+func isComparator(k tokenKind) bool {
+	return k == tokEq || k == tokNotEq || k == tokLt || k == tokLtEq ||
+		k == tokGt || k == tokGtEq || k == tokHas ||
+		k == tokRegexMatch || k == tokRegexNotMatch
+}
+
 func (p *parser) parseRestriction() (*fpb.Expression, error) {
 	// A term on the left side
 	left, err := p.parseTerm()
@@ -462,72 +468,100 @@ func (p *parser) parseRestriction() (*fpb.Expression, error) {
 	}
 
 	comp := p.peek().kind
-	if comp == tokEq || comp == tokNotEq || comp == tokLt || comp == tokLtEq ||
-		comp == tokGt || comp == tokGtEq || comp == tokHas ||
-		comp == tokRegexMatch || comp == tokRegexNotMatch {
-		p.advance() // Consume comparator
-		var right *fpb.Expression
-		var err error
-		if (comp == tokRegexMatch || comp == tokRegexNotMatch) && p.peek().kind == tokLParen {
-			right, err = p.parseExpression()
-		} else {
-			right, err = p.parseTerm()
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		if comp == tokRegexMatch || comp == tokRegexNotMatch {
-			if right.WhichExpression() == fpb.Expression_Member_case || right.WhichExpression() == fpb.Expression_Value_case {
-				return nil, fmt.Errorf("regular expression match RHS must be a quoted string literal")
-			}
-		}
-
-		var op fpb.Restriction_Comparator
-		switch comp {
-		case tokEq:
-			op = fpb.Restriction_EQUALS
-		case tokNotEq:
-			op = fpb.Restriction_NOT_EQUALS
-		case tokLt:
-			op = fpb.Restriction_LESS_THAN
-		case tokLtEq:
-			op = fpb.Restriction_LESS_EQUALS
-		case tokGt:
-			op = fpb.Restriction_GREATER_THAN
-		case tokGtEq:
-			op = fpb.Restriction_GREATER_EQUALS
-		case tokHas:
-			op = fpb.Restriction_HAS
-		case tokRegexMatch:
-			if !p.options.GetEnableRegexpMatching() {
-				return nil, fmt.Errorf("regexp matching operator =~ is disabled by options")
-			}
-			op = fpb.Restriction_REGEXP_MATCH
-		case tokRegexNotMatch:
-			if !p.options.GetEnableRegexpMatching() {
-				return nil, fmt.Errorf("regexp matching operator !~ is disabled by options")
-			}
-			op = fpb.Restriction_REGEXP_NOT_MATCH
-		}
-
+	if !isComparator(comp) {
+		// No explicit comparator: parse as global/unary restriction!
 		return &fpb.Expression{
 			Expression: &fpb.Expression_Restriction{
 				Restriction: &fpb.Restriction{
-					Lhs:        left,
-					Comparator: op,
-					Rhs:        right,
+					Comparator: fpb.Restriction_GLOBAL,
+					Rhs:        left,
 				},
 			},
 		}, nil
 	}
 
-	// No explicit comparator: parse as global/unary restriction!
+	p.advance() // Consume comparator
+	var right *fpb.Expression
+	if (comp == tokRegexMatch || comp == tokRegexNotMatch) && p.peek().kind == tokLParen {
+		right, err = p.parseExpression()
+	} else {
+		right, err = p.parseTerm()
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if comp == tokRegexMatch || comp == tokRegexNotMatch {
+		if right.WhichExpression() == fpb.Expression_Member_case || right.WhichExpression() == fpb.Expression_Value_case {
+			return nil, fmt.Errorf("regular expression match RHS must be a quoted string literal")
+		}
+	}
+
+	var op fpb.Restriction_Comparator
+	switch comp {
+	case tokEq:
+		op = fpb.Restriction_EQUALS
+	case tokNotEq:
+		op = fpb.Restriction_NOT_EQUALS
+	case tokLt:
+		op = fpb.Restriction_LESS_THAN
+	case tokLtEq:
+		op = fpb.Restriction_LESS_EQUALS
+	case tokGt:
+		op = fpb.Restriction_GREATER_THAN
+	case tokGtEq:
+		op = fpb.Restriction_GREATER_EQUALS
+	case tokHas:
+		op = fpb.Restriction_HAS
+	case tokRegexMatch:
+		if !p.options.GetEnableRegexpMatching() {
+			return nil, fmt.Errorf("regexp matching operator =~ is disabled by options")
+		}
+		op = fpb.Restriction_REGEXP_MATCH
+	case tokRegexNotMatch:
+		if !p.options.GetEnableRegexpMatching() {
+			return nil, fmt.Errorf("regexp matching operator !~ is disabled by options")
+		}
+		op = fpb.Restriction_REGEXP_NOT_MATCH
+	}
+
 	return &fpb.Expression{
 		Expression: &fpb.Expression_Restriction{
 			Restriction: &fpb.Restriction{
-				Comparator: fpb.Restriction_GLOBAL,
-				Rhs:        left,
+				Lhs:        left,
+				Comparator: op,
+				Rhs:        right,
+			},
+		},
+	}, nil
+}
+
+func (p *parser) parseFunctionCall(funcName string) (*fpb.Expression, error) {
+	p.advance() // consume '('
+	var args []*fpb.Expression
+	if p.peek().kind != tokRParen {
+		for {
+			arg, err := p.parseTerm()
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, arg)
+			if p.match(tokComma) {
+				continue
+			}
+			break
+		}
+	}
+	if !p.match(tokRParen) {
+		return nil, errors.New("missing closing parenthesis in function call")
+	}
+	return &fpb.Expression{
+		Expression: &fpb.Expression_Function{
+			Function: &fpb.Function{
+				Function: &fpb.Expression{
+					Expression: &fpb.Expression_Value{Value: funcName},
+				},
+				Args: args,
 			},
 		},
 	}, nil
@@ -539,34 +573,7 @@ func (p *parser) parseTerm() (*fpb.Expression, error) {
 		p.advance()
 		// Check if it is a function call
 		if p.peek().kind == tokLParen {
-			p.advance() // consume '('
-			var args []*fpb.Expression
-			if p.peek().kind != tokRParen {
-				for {
-					arg, err := p.parseTerm()
-					if err != nil {
-						return nil, err
-					}
-					args = append(args, arg)
-					if p.match(tokComma) {
-						continue
-					}
-					break
-				}
-			}
-			if !p.match(tokRParen) {
-				return nil, errors.New("missing closing parenthesis in function call")
-			}
-			return &fpb.Expression{
-				Expression: &fpb.Expression_Function{
-					Function: &fpb.Function{
-						Function: &fpb.Expression{
-							Expression: &fpb.Expression_Value{Value: tok.value},
-						},
-						Args: args,
-					},
-				},
-			}, nil
+			return p.parseFunctionCall(tok.value)
 		}
 
 		if !strings.Contains(tok.value, ".") {

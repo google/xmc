@@ -24,7 +24,7 @@ import {
 
 import { EXPERIMENT_1 } from '../common/mock_data';
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
-import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
+import { XMC_API_DOMAIN } from './constants';
 import { ExperimentService } from './experiment_service';
 
 describe('ExperimentService Service', () => {
@@ -66,7 +66,7 @@ describe('ExperimentService Service', () => {
       const responsePromise = firstValueFrom(state.service.searchExperiments(request));
 
       const req = state.httpMock.expectOne(
-        `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments?pageSize=10&pageToken=page_1&filter=user:me&orderBy=created%20desc`,
+        `${XMC_API_DOMAIN}/experiments?pageSize=10&pageToken=page_1&filter=user:me&orderBy=created%20desc`,
       );
       expect(req.request.method).toBe('GET');
       expect(req.request.params.get('filter')).toBe('user:me');
@@ -86,7 +86,7 @@ describe('ExperimentService Service', () => {
       const xid = '1';
       const responsePromise = firstValueFrom(state.service.getExperiment(xid));
 
-      const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/${xid}`);
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/experiments/${xid}`);
       expect(req.request.method).toBe('GET');
 
       req.flush(EXPERIMENT_1);

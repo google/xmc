@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 go_library(
     name = "infra",
@@ -41,4 +42,19 @@ go_test(
         "manual",
         "requires-network",
     ],
+)
+
+py_library(
+    name = "infra_py",
+    srcs = ["setup.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "setup_py_test",
+    srcs = ["setup_test.py"],
+    imports = ["../../.."],
+    main = "setup_test.py",
+    deps = [":infra_py"],
 )

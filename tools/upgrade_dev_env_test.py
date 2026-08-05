@@ -58,6 +58,9 @@ class TestLoadConfig(unittest.TestCase):
   region: us-east1
   environment: staging
   namespace: custom-ns
+  domain_name: example.com
+  image_registry: us-docker.pkg.dev/yaml-project/xmc
+  image_tag: latest
 """
         self.config_path.write_text(self.config_content, encoding="utf-8")
 
@@ -297,7 +300,45 @@ class TestStepSubprocesses(unittest.TestCase):
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_app(self.config)
-        mock_run.assert_called_once_with(
+        # Verify gcluster create, export-outputs, import-inputs, and deploy calls are present
+        calls = [call_args[0][0] for call_args in mock_run.call_args_list]
+        self.assertIn(
+            [
+                "./cluster-toolkit/gcluster",
+                "create",
+                "deploy/ctk_v2/xmanager-cloud.yaml",
+                "-d",
+                "deploy/ctk_v2/xmanager-cloud-deployment.yaml",
+                "-o",
+                "ctk-out",
+                "-l",
+                "WARNING",
+                "-w",
+                "--force",
+            ],
+            calls,
+        )
+        self.assertIn(
+            ["./cluster-toolkit/gcluster", "export-outputs", "ctk-out/deploy-456/primary"],
+            calls,
+        )
+        self.assertIn(
+            ["./cluster-toolkit/gcluster", "import-inputs", "ctk-out/deploy-456/compute"],
+            calls,
+        )
+        self.assertIn(
+            ["./cluster-toolkit/gcluster", "export-outputs", "ctk-out/deploy-456/compute"],
+            calls,
+        )
+        self.assertIn(
+            [
+                "./cluster-toolkit/gcluster",
+                "import-inputs",
+                "ctk-out/deploy-456/kubernetes_prereqs",
+            ],
+            calls,
+        )
+        self.assertIn(
             [
                 "./cluster-toolkit/gcluster",
                 "--download-dependencies",
@@ -306,7 +347,8 @@ class TestStepSubprocesses(unittest.TestCase):
                 "--only",
                 "xmc_app",
                 "--auto-approve",
-            ]
+            ],
+            calls,
         )
 
     @mock.patch("tools.upgrade_dev_env.resolve_deployment_name")
