@@ -63,8 +63,14 @@ func VerifyTCPConnectivity(ctx context.Context, addr string) error {
 	return nil
 }
 
+// RedpandaNode encapsulates a Redpanda container instance and its broker addresses.
+type RedpandaNode struct {
+	Container *redpanda.Container
+	Brokers   []string
+}
+
 // StartRedpanda spins up a Redpanda test container and returns the container instance and broker address.
-func StartRedpanda(ctx context.Context, nw *testcontainers.DockerNetwork) (*redpanda.Container, []string, error) {
+func StartRedpanda(ctx context.Context, nw *testcontainers.DockerNetwork) (*RedpandaNode, error) {
 	opts := []testcontainers.ContainerCustomizer{
 		testcontainers.WithCmd("redpanda", "start", "--mode", "dev-container", "--smp", "1", "--memory", "1G", "--reserve-memory", "0M", "--overprovisioned", "--kafka-addr", "PLAINTEXT://0.0.0.0:9092", "--advertise-kafka-addr", "PLAINTEXT://redpanda:9092"),
 	}
@@ -74,26 +80,29 @@ func StartRedpanda(ctx context.Context, nw *testcontainers.DockerNetwork) (*redp
 
 	c, err := redpanda.Run(ctx, defaultRedpandaImage, opts...)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to start redpanda container: %w", err)
+		return nil, fmt.Errorf("failed to start redpanda container: %w", err)
 	}
 
 	broker, err := c.KafkaSeedBroker(ctx)
 	if err != nil {
 		terminateWithTimeout(c)
-		return nil, nil, fmt.Errorf("failed to get redpanda seed broker: %w", err)
+		return nil, fmt.Errorf("failed to get redpanda seed broker: %w", err)
 	}
 
 	if broker == "" {
 		terminateWithTimeout(c)
-		return nil, nil, fmt.Errorf("no redpanda seed broker returned")
+		return nil, fmt.Errorf("no redpanda seed broker returned")
 	}
 
 	if err := VerifyTCPConnectivity(ctx, broker); err != nil {
 		terminateWithTimeout(c)
-		return nil, nil, fmt.Errorf("redpanda TCP verification failed: %w", err)
+		return nil, fmt.Errorf("redpanda TCP verification failed: %w", err)
 	}
 
-	return c, []string{broker}, nil
+	return &RedpandaNode{
+		Container: c,
+		Brokers:   []string{broker},
+	}, nil
 }
 
 // PauseContainer pauses a Redpanda container instance.
@@ -122,10 +131,16 @@ func UnpauseContainer(ctx context.Context, c *redpanda.Container) error {
 	return cli.ContainerUnpause(ctx, c.GetContainerID())
 }
 
-func prepareInitScript(scriptPath string, internalBroker string) (string, func(), error) {
+// InitScript holds the path and cleanup function for a prepared SQL script.
+type InitScript struct {
+	Path    string
+	Cleanup func()
+}
+
+func prepareInitScript(scriptPath string, internalBroker string) (*InitScript, error) {
 	content, err := os.ReadFile(scriptPath)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to read init script %s: %w", scriptPath, err)
+		return nil, fmt.Errorf("failed to read init script %s: %w", scriptPath, err)
 	}
 
 	s := string(content)
@@ -135,25 +150,28 @@ func prepareInitScript(scriptPath string, internalBroker string) (string, func()
 
 	tmpFile, err := os.CreateTemp("", "clickhouse-init-*.sql")
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to create temp init script: %w", err)
+		return nil, fmt.Errorf("failed to create temp init script: %w", err)
 	}
 
 	if _, err := tmpFile.WriteString(s); err != nil {
 		_ = tmpFile.Close()
 		_ = os.Remove(tmpFile.Name())
-		return "", nil, fmt.Errorf("failed to write temp init script: %w", err)
+		return nil, fmt.Errorf("failed to write temp init script: %w", err)
 	}
 	_ = tmpFile.Close()
 
 	if err := os.Chmod(tmpFile.Name(), 0644); err != nil {
 		_ = os.Remove(tmpFile.Name())
-		return "", nil, fmt.Errorf("failed to set permissions on temp init script: %w", err)
+		return nil, fmt.Errorf("failed to set permissions on temp init script: %w", err)
 	}
 
 	cleanup := func() {
 		_ = os.Remove(tmpFile.Name())
 	}
-	return tmpFile.Name(), cleanup, nil
+	return &InitScript{
+		Path:    tmpFile.Name(),
+		Cleanup: cleanup,
+	}, nil
 }
 
 func locateMetricsProtoFile() string {
@@ -183,8 +201,15 @@ func locateMetricsProtoFile() string {
 	return ""
 }
 
+// // ClickHouseNode encapsulates a ClickHouse container instance, driver connection, and native address.
+type ClickHouseNode struct {
+	Container *clickhouse.ClickHouseContainer
+	Conn      driver.Conn
+	Address   string
+}
+
 // StartClickHouse spins up a ClickHouse test container and establishes a native driver connection.
-func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork) (*clickhouse.ClickHouseContainer, driver.Conn, string, error) {
+func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork) (*ClickHouseNode, error) {
 	opts := []testcontainers.ContainerCustomizer{
 		clickhouse.WithUsername("clickhouse"),
 		clickhouse.WithPassword("clickhouse"),
@@ -193,7 +218,7 @@ func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork) (*cl
 
 	protoPath := locateMetricsProtoFile()
 	if protoPath == "" {
-		return nil, nil, "", fmt.Errorf("metrics.proto file not found")
+		return nil, fmt.Errorf("metrics.proto file not found")
 	}
 	opts = append(opts, testcontainers.WithFiles(
 		testcontainers.ContainerFile{
@@ -209,26 +234,26 @@ func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork) (*cl
 
 	c, err := clickhouse.Run(ctx, defaultClickHouseImage, opts...)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("failed to start clickhouse container: %w", err)
+		return nil, fmt.Errorf("failed to start clickhouse container: %w", err)
 	}
 
 	nativePort, err := c.MappedPort(ctx, "9000/tcp")
 	if err != nil {
 		terminateWithTimeout(c)
-		return nil, nil, "", fmt.Errorf("failed to get clickhouse native port: %w", err)
+		return nil, fmt.Errorf("failed to get clickhouse native port: %w", err)
 	}
 
 	host, err := c.Host(ctx)
 	if err != nil {
 		terminateWithTimeout(c)
-		return nil, nil, "", fmt.Errorf("failed to get clickhouse host: %w", err)
+		return nil, fmt.Errorf("failed to get clickhouse host: %w", err)
 	}
 
 	addr := net.JoinHostPort(host, nativePort.Port())
 
 	if err := VerifyTCPConnectivity(ctx, addr); err != nil {
 		terminateWithTimeout(c)
-		return nil, nil, "", fmt.Errorf("clickhouse TCP verification failed: %w", err)
+		return nil, fmt.Errorf("clickhouse TCP verification failed: %w", err)
 	}
 
 	conn, err := clickhousego.Open(&clickhousego.Options{
@@ -242,16 +267,20 @@ func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork) (*cl
 	})
 	if err != nil {
 		terminateWithTimeout(c)
-		return nil, nil, "", fmt.Errorf("failed to open clickhouse connection: %w", err)
+		return nil, fmt.Errorf("failed to open clickhouse connection: %w", err)
 	}
 
 	if err := conn.Ping(ctx); err != nil {
 		_ = conn.Close()
 		terminateWithTimeout(c)
-		return nil, nil, "", fmt.Errorf("clickhouse ping failed: %w", err)
+		return nil, fmt.Errorf("clickhouse ping failed: %w", err)
 	}
 
-	return c, conn, addr, nil
+	return &ClickHouseNode{
+		Container: c,
+		Conn:      conn,
+		Address:   addr,
+	}, nil
 }
 
 func ExecuteSQLScript(ctx context.Context, conn driver.Conn, scriptPath string, internalBroker string) error {
@@ -324,42 +353,41 @@ func StartHarness(ctx context.Context, schemaPath string) (*Harness, error) {
 		return nil, fmt.Errorf("failed creating container network: %w", err)
 	}
 
-	rpContainer, brokers, err := StartRedpanda(ctx, nw)
+	rpNode, err := StartRedpanda(ctx, nw)
 	if err != nil {
 		removeNetworkWithTimeout(nw)
 		return nil, fmt.Errorf("failed starting redpanda: %w", err)
 	}
 
-	if err := createKafkaTopic(ctx, brokers, "xmc-metrics"); err != nil {
-		terminateWithTimeout(rpContainer)
+	if err := createKafkaTopic(ctx, rpNode.Brokers, "xmc-metrics"); err != nil {
+		terminateWithTimeout(rpNode.Container)
 		removeNetworkWithTimeout(nw)
 		return nil, fmt.Errorf("failed to create kafka topic: %w", err)
 	}
 
-	chContainer, conn, chAddr, err := StartClickHouse(ctx, nw)
+	chNode, err := StartClickHouse(ctx, nw)
 	if err != nil {
-		terminateWithTimeout(rpContainer)
+		terminateWithTimeout(rpNode.Container)
 		removeNetworkWithTimeout(nw)
 		return nil, fmt.Errorf("failed starting clickhouse: %w", err)
 	}
 
-	if err := ExecuteSQLScript(ctx, conn, schemaPath, internalRedpandaAddr); err != nil {
-		_ = conn.Close()
-		terminateWithTimeout(chContainer)
-		terminateWithTimeout(rpContainer)
+	if err := ExecuteSQLScript(ctx, chNode.Conn, schemaPath, internalRedpandaAddr); err != nil {
+		_ = chNode.Conn.Close()
+		terminateWithTimeout(chNode.Container)
+		terminateWithTimeout(rpNode.Container)
 		removeNetworkWithTimeout(nw)
 		return nil, fmt.Errorf("failed applying clickhouse schema: %w", err)
 	}
 
 	harness := &Harness{
-		RedpandaContainer:    rpContainer,
-		ClickHouseContainer:  chContainer,
-		ClickHouseConn:       conn,
-		RedpandaBrokers:      brokers,
-		ClickHouseNativeAddr: chAddr,
+		RedpandaContainer:    rpNode.Container,
+		ClickHouseContainer:  chNode.Container,
+		ClickHouseConn:       chNode.Conn,
+		RedpandaBrokers:      rpNode.Brokers,
+		ClickHouseNativeAddr: chNode.Address,
 		network:              nw,
 	}
-
 	return harness, nil
 }
 
