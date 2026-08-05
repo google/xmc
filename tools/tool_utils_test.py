@@ -26,6 +26,7 @@ from unittest.mock import MagicMock, patch
 from tool_utils import (
     HandledError,
     _bootstrap_venv,
+    configure_docker_auth,
     ensure_venv,
     load_and_validate_config,
     parse_yaml_vars,
@@ -366,6 +367,29 @@ class TestConfigLoader(unittest.TestCase):
             "image_tag": "latest",
         }
         self.assertEqual(config, expected)
+
+
+class TestDockerAuthConfig(unittest.TestCase):
+    """Tests for configure_docker_auth helper in tool_utils."""
+
+    @patch("tool_utils.run_command")
+    def test_configure_docker_gcp(self, mock_run):
+        config = {"image_registry": "us-central1-docker.pkg.dev/my-project/xmc"}
+        configure_docker_auth(config)
+        mock_run.assert_called_once_with(
+            ["gcloud", "auth", "configure-docker", "us-central1-docker.pkg.dev", "--quiet"]
+        )
+
+    @patch("tool_utils.run_command")
+    def test_configure_docker_non_gcp(self, mock_run):
+        config = {"image_registry": "docker.io/library/ubuntu"}
+        configure_docker_auth(config)
+        mock_run.assert_not_called()
+
+    def test_configure_docker_missing_registry(self):
+        config = {}
+        with self.assertRaises(ValueError):
+            configure_docker_auth(config)
 
 
 if __name__ == "__main__":
