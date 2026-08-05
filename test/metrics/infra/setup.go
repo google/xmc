@@ -192,15 +192,16 @@ func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork) (*cl
 	}
 
 	protoPath := locateMetricsProtoFile()
-	if protoPath != "" {
-		opts = append(opts, testcontainers.WithFiles(
-			testcontainers.ContainerFile{
-				HostFilePath:      protoPath,
-				ContainerFilePath: "/var/lib/clickhouse/format_schemas/metrics.proto",
-				FileMode:          0644,
-			},
-		))
+	if protoPath == "" {
+		return nil, nil, "", fmt.Errorf("metrics.proto file not found")
 	}
+	opts = append(opts, testcontainers.WithFiles(
+		testcontainers.ContainerFile{
+			HostFilePath:      protoPath,
+			ContainerFilePath: "/var/lib/clickhouse/format_schemas/metrics.proto",
+			FileMode:          0644,
+		},
+	))
 
 	if nw != nil {
 		opts = append(opts, tcnetwork.WithNetwork([]string{"clickhouse"}, nw))
@@ -291,7 +292,16 @@ func ExecuteSQLScript(ctx context.Context, conn driver.Conn, scriptPath string, 
 }
 
 func createKafkaTopic(ctx context.Context, brokers []string, topic string) error {
-	client, err := kgo.NewClient(kgo.SeedBrokers(brokers...))
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	client, err := kgo.NewClient(
+		kgo.SeedBrokers(brokers...),
+		kgo.Dialer(func(ctx context.Context, network, hostport string) (net.Conn, error) {
+			if len(brokers) > 0 {
+				return dialer.DialContext(ctx, network, brokers[0])
+			}
+			return dialer.DialContext(ctx, network, hostport)
+		}),
+	)
 	if err != nil {
 		return err
 	}
@@ -315,7 +325,11 @@ func StartHarness(ctx context.Context, schemaPath string) (*Harness, error) {
 		return nil, fmt.Errorf("failed starting redpanda: %w", err)
 	}
 
-	_ = createKafkaTopic(ctx, brokers, "xmc-metrics")
+	if err := createKafkaTopic(ctx, brokers, "xmc-metrics"); err != nil {
+		terminateWithTimeout(rpContainer)
+		removeNetworkWithTimeout(nw)
+		return nil, fmt.Errorf("failed to create kafka topic: %w", err)
+	}
 
 	chContainer, conn, chAddr, err := StartClickHouse(ctx, nw)
 	if err != nil {

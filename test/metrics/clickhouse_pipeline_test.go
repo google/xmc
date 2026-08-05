@@ -115,8 +115,11 @@ func pollRecordCount(ctx context.Context, harness *infra.Harness, query string, 
 			if err := row.Scan(&count); err != nil {
 				return 0, fmt.Errorf("timeout waiting for records, query error: %w", err)
 			}
-			if lastErr != nil && count < expectedMin {
-				return count, fmt.Errorf("timeout waiting for %d records (got %d), query error: %w", expectedMin, count, lastErr)
+			if count < expectedMin {
+				if lastErr != nil {
+					return count, fmt.Errorf("timeout waiting for %d records (got %d), query error: %w", expectedMin, count, lastErr)
+				}
+				return count, fmt.Errorf("timeout waiting for %d records (got %d)", expectedMin, count)
 			}
 			return count, nil
 		case <-ticker.C:
