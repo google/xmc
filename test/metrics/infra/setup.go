@@ -92,6 +92,32 @@ func StartRedpanda(ctx context.Context, nw *testcontainers.DockerNetwork) (*redp
 	return c, []string{broker}, nil
 }
 
+// PauseContainer pauses a Redpanda container instance.
+func PauseContainer(ctx context.Context, c *redpanda.Container) error {
+	if c == nil {
+		return errors.New("cannot pause nil container")
+	}
+	cli, err := testcontainers.NewDockerClientWithOpts(ctx)
+	if err != nil {
+		return err
+	}
+	defer cli.Close()
+	return cli.ContainerPause(ctx, c.GetContainerID())
+}
+
+// UnpauseContainer unpauses a Redpanda container instance.
+func UnpauseContainer(ctx context.Context, c *redpanda.Container) error {
+	if c == nil {
+		return errors.New("cannot unpause nil container")
+	}
+	cli, err := testcontainers.NewDockerClientWithOpts(ctx)
+	if err != nil {
+		return err
+	}
+	defer cli.Close()
+	return cli.ContainerUnpause(ctx, c.GetContainerID())
+}
+
 func prepareInitScript(scriptPath string, internalBroker string) (string, func(), error) {
 	content, err := os.ReadFile(scriptPath)
 	if err != nil {
