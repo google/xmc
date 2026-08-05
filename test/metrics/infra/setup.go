@@ -131,49 +131,6 @@ func UnpauseContainer(ctx context.Context, c *redpanda.Container) error {
 	return cli.ContainerUnpause(ctx, c.GetContainerID())
 }
 
-// InitScript holds the path and cleanup function for a prepared SQL script.
-type InitScript struct {
-	Path    string
-	Cleanup func()
-}
-
-func prepareInitScript(scriptPath string, internalBroker string) (*InitScript, error) {
-	content, err := os.ReadFile(scriptPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read init script %s: %w", scriptPath, err)
-	}
-
-	s := string(content)
-	s = strings.ReplaceAll(s, "{kafka_broker_list:redpanda-0.redpanda.xmc.svc.cluster.local:9092}", internalBroker)
-	s = strings.ReplaceAll(s, "{kafka_topic_list:xmc-metrics}", "xmc-metrics")
-	s = strings.ReplaceAll(s, "{kafka_group_name:xmc-clickhouse-ingester}", "xmc-clickhouse-ingester")
-
-	tmpFile, err := os.CreateTemp("", "clickhouse-init-*.sql")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp init script: %w", err)
-	}
-
-	if _, err := tmpFile.WriteString(s); err != nil {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpFile.Name())
-		return nil, fmt.Errorf("failed to write temp init script: %w", err)
-	}
-	_ = tmpFile.Close()
-
-	if err := os.Chmod(tmpFile.Name(), 0644); err != nil {
-		_ = os.Remove(tmpFile.Name())
-		return nil, fmt.Errorf("failed to set permissions on temp init script: %w", err)
-	}
-
-	cleanup := func() {
-		_ = os.Remove(tmpFile.Name())
-	}
-	return &InitScript{
-		Path:    tmpFile.Name(),
-		Cleanup: cleanup,
-	}, nil
-}
-
 func locateMetricsProtoFile() string {
 	if srcDir := os.Getenv("TEST_SRCDIR"); srcDir != "" {
 		for _, ws := range []string{os.Getenv("TEST_WORKSPACE"), "_main", "xmanager_cloud"} {
