@@ -2791,39 +2791,13 @@ func TestConstructJobSet_CustomAnnotationsAndLabels(t *testing.T) {
 func TestConstructJobSet_KubernetesJobAnnotationsPropagation(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 
-	workUnit := &esspb.WorkUnit{
-		Name: "workUnit1",
-		Executable: &esspb.Executable{
-			SchedulingConstraints: &esspb.SchedulingConstraints{
-				QueueName: testNamespace,
-			},
-			Type: &esspb.Executable_Jobset{
-				Jobset: &esspb.JobSetExecutable{
-					Jobs: []*esspb.KubernetesJob{
-						{
-							Name: "job1",
-							Annotations: map[string]string{
-								"alpha.jobset.sigs.k8s.io/exclusive-topology": "kubernetes.io/hostname",
-								"custom.job.annotation/key":                   "custom-value",
-							},
-							Spec: &esspb.ExecutableSpec{
-								Resources: &esspb.ResourceSet{
-									Resources: &esspb.ResourceSet_CpuResources{
-										CpuResources: &esspb.CpuResources{
-											CpuMillicores: 100,
-											MemoryBytes:   1024,
-										},
-									},
-								},
-								DockerImage: "foo/bar",
-							},
-							Replicas: 1,
-						},
-					},
-				},
-			},
-		},
-	}
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		job := wu.Executable.GetJobset().Jobs[0]
+		job.Annotations = map[string]string{
+			"alpha.jobset.sigs.k8s.io/exclusive-topology": "kubernetes.io/hostname",
+			"custom.job.annotation/key":                   "custom-value",
+		}
+	})
 
 	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
 	if err != nil {
