@@ -14,6 +14,8 @@
 
 package workunit
 
+// Test cache invalidation on main
+
 import (
 	"context"
 	"fmt"
