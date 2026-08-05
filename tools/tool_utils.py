@@ -303,7 +303,7 @@ def run_command(
 
     proc_env = os.environ.copy()
     if env:
-        proc_env.update(env)
+        proc_env.update({str(k): str(v) for k, v in env.items()})
 
     try:
         return subprocess.run(
@@ -378,7 +378,7 @@ def build_and_push_images(config: dict[str, Any]) -> None:
         ("ingestion_gateway", "//cmd/ingestion_gateway:ingestion_gateway_image_push"),
     ]
 
-    rod_enabled = str(rod_deployment_enabled or "false").lower() == "true"
+    rod_enabled = str(rod_deployment_enabled).lower() == "true"
 
     if rod_enabled:
         targets.append(

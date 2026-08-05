@@ -229,7 +229,6 @@ def run_checks(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
     _check_terraform_version()
     _check_gcp_project_alignment(config["project_id"])
     _check_dns_access(dns_project, dns_zone)
-
     log_success("All pre-flight checks passed.")
 
 
