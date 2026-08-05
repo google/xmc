@@ -44,4 +44,11 @@ export class FeatureFlagService {
   get isAdminPanelEnabled(): boolean {
     return this.isFeatureEnabled('adminPanelEnabled');
   }
+
+  /**
+   * Returns whether the resource dashboard is enabled.
+   */
+  get isResourceDashboardEnabled(): boolean {
+    return this.isFeatureEnabled('resourceDashboardEnabled');
+  }
 }

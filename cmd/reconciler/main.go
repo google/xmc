@@ -95,7 +95,7 @@ func main() {
 
 	cqCache := clusterqueue.NewNameCache()
 
-	mlRunClient := newMLRunCreator(ctx, projectID, cfg.DiagonEnvironment, location)
+	mlRunClient := newMLRunCreator(ctx, projectID, cfg.MldiagnosticsEnvironment, location)
 
 	mgr, batcher, err := buildManager(ctx, cfg, storage, projectID, location, clusterName, cqCache, mlRunClient)
 	if err != nil {

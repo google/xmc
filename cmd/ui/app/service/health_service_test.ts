@@ -25,7 +25,7 @@ import {
 } from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
 
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
-import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
+import { XMC_API_DOMAIN } from './constants';
 import { FeatureFlagService } from './feature_flag_service';
 import { HealthService, PRIVILEGE_ACCESS_ADMIN_PANEL } from './health_service';
 
@@ -70,7 +70,7 @@ describe('HealthService', () => {
 
     it('should make api call correctly', async () => {
       const responsePromise = firstValueFrom(state.service.getHealthStatus());
-      const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/health/status`);
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/health/status`);
 
       req.flush(mockResponse);
       const response = await responsePromise;
@@ -87,7 +87,7 @@ describe('HealthService', () => {
 
     it('should make api call correctly', async () => {
       const responsePromise = firstValueFrom(state.service.getHealthConfigs());
-      const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/health/configs`);
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/health/configs`);
 
       req.flush(mockResponse);
       const response = await responsePromise;
@@ -105,7 +105,7 @@ describe('HealthService', () => {
 
     it('should make api call correctly', async () => {
       const responsePromise = firstValueFrom(state.service.getUserInfo());
-      const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/health/userinfo`);
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/health/userinfo`);
 
       req.flush(mockResponse);
       const response = await responsePromise;
@@ -131,7 +131,7 @@ describe('HealthService', () => {
       };
 
       const responsePromise = firstValueFrom(state.service.isAdminPanelAccessible());
-      const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/health/userinfo`);
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/health/userinfo`);
       req.flush(mockUserInfo);
       const result = await responsePromise;
 
@@ -145,7 +145,7 @@ describe('HealthService', () => {
       };
 
       const responsePromise = firstValueFrom(state.service.isAdminPanelAccessible());
-      const req = state.httpMock.expectOne(`${EXPERIMENT_STATE_SERVER_DOMAIN}/health/userinfo`);
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/health/userinfo`);
       req.flush(mockUserInfo);
       const result = await responsePromise;
 

@@ -83,6 +83,9 @@ spec:
           requests:
             cpu: "10m"
             memory: "64Mi"
+        envFrom:
+        - configMapRef:
+            name: ess-config
         env:
         - name: IAP_EXPECTED_HTTP_AUDIENCE
           value: {{ .Values.experimentStateServer.iap.httpAudience | quote }}
@@ -97,18 +100,7 @@ spec:
         args:
         - "-ess_tls_cert_file="
         - "-ess_tls_key_file="
-        - "-ess_gcp_project_id={{ .Values.projectId }}"
-        - "-ess_xid_service_addr=xid-svc.xmc.svc.cluster.local:50051"
-        - "-ess_spanner_database_name={{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) }}"
-        - "-ess_actuator_url=https://actuator.api.{{ .Values.environment }}.{{ .Values.domainSuffix }}/actuate"
-        - "-ess_endpoint_url=http://api.{{ .Values.environment }}.{{ .Values.domainSuffix }}"
-        - "-ess_quota_project_id={{ .Values.projectId }}"
-        - "-ess_service_account={{ required "gcpServiceAccount is required" .Values.gcpServiceAccount }}"
-        - "-ess_signature_ttl_seconds={{ .Values.taskSignatureTtlSeconds }}"
-        - "-ess_allowed_origins={{ .Values.auth.allowedOrigins }}"
         - "-alsologtostderr"
-        - "-ess_status_message_history_enabled={{ .Values.statusMessageHistoryEnabled }}"
-        - "-redis_addr={{ .Values.redisAddr }}"
         # Flags to disable internalVCSdependencies.
         - "--enforce_kernel_ipv6_support=false"
         - "--enable_streamz_rpc_service=false"

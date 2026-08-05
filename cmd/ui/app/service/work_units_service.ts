@@ -19,7 +19,7 @@ import { Observable } from 'rxjs';
 import * as api from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { WorkUnit } from 'xmanager_cloud/experiment_state_server/proto/work_unit.jsonpb_decls';
 
-import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
+import { XMC_API_DOMAIN } from './constants';
 
 /**
  * Service for fetching work units.
@@ -29,7 +29,7 @@ export class WorkUnitsService {
   private readonly http = inject(HttpClient);
 
   searchWorkUnits(request: api.ListWorkUnitsRequest): Observable<api.ListWorkUnitsResponse> {
-    const url = `${EXPERIMENT_STATE_SERVER_DOMAIN}/${request.parent}/workUnits`;
+    const url = `${XMC_API_DOMAIN}/${request.parent}/workUnits`;
     const { pageSize, pageToken } = request;
 
     let params = new HttpParams();
@@ -43,13 +43,13 @@ export class WorkUnitsService {
   }
 
   getWorkUnit(request: api.GetWorkUnitRequest): Observable<WorkUnit> {
-    const url = `${EXPERIMENT_STATE_SERVER_DOMAIN}/${request.name}`;
+    const url = `${XMC_API_DOMAIN}/${request.name}`;
     return this.http.get<WorkUnit>(url, { withCredentials: true });
   }
 
   stopWorkUnit(name: { xid: string; wid: string }): Observable<Operation> {
     return this.http.post<Operation>(
-      `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/${name.xid}/workUnits/${name.wid}:stop`,
+      `${XMC_API_DOMAIN}/experiments/${name.xid}/workUnits/${name.wid}:stop`,
       {},
       { withCredentials: true },
     );
@@ -57,7 +57,7 @@ export class WorkUnitsService {
 
   restartWorkUnit(name: { xid: string; wid: string }): Observable<Operation> {
     return this.http.post<Operation>(
-      `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/${name.xid}/workUnits/${name.wid}:restart`,
+      `${XMC_API_DOMAIN}/experiments/${name.xid}/workUnits/${name.wid}:restart`,
       {},
       { withCredentials: true },
     );
@@ -68,7 +68,7 @@ export class WorkUnitsService {
    */
   batchStopWorkUnits(xid: string): Observable<Operation> {
     return this.http.post<Operation>(
-      `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/${xid}/workUnits:batchStop`,
+      `${XMC_API_DOMAIN}/experiments/${xid}/workUnits:batchStop`,
       null,
       { withCredentials: true },
     );
@@ -79,7 +79,7 @@ export class WorkUnitsService {
    */
   batchRestartWorkUnits(xid: string): Observable<Operation> {
     return this.http.post<Operation>(
-      `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/${xid}/workUnits:batchRestart`,
+      `${XMC_API_DOMAIN}/experiments/${xid}/workUnits:batchRestart`,
       null,
       { withCredentials: true },
     );

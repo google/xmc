@@ -80,6 +80,9 @@ spec:
           requests:
             cpu: "500m"
             memory: "512Mi"
+        envFrom:
+        - configMapRef:
+            name: xid-config
         env:
         - name: IAP_EXPECTED_ISSUER
           value: {{ .Values.auth.iap.iapIssuer | quote }}
@@ -92,9 +95,6 @@ spec:
         - name: JWT_SECRET_FILE
           value: "/etc/gcp-secrets/jwt-secret"
         args:
-        - "-xid_grpc_port=50051"
-        - "-xid_quota_project_id={{ .Values.projectId }}"
-        - "-xid_spanner_database_name={{ .Values.xidService.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/xids-db-%s" .Values.projectId .Values.environment .Values.environment) }}"
         - "-alsologtostderr"
         # Flags to disable internalVCSdependencies.
         - "--enforce_kernel_ipv6_support=false"
