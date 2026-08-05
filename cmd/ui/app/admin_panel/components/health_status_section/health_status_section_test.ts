@@ -84,33 +84,27 @@ describe('HealthStatusSectionComponent', () => {
         errorMessage: 'Connection lost',
       },
     ];
-
     const host = bootstrap(TestHostComponent);
+
     host.components.set(mockComponents);
     host.overallStatus.set(HealthState.UNHEALTHY);
     await flush();
 
     const harness = await getHarness(HealthStatusSectionHarness);
+    const cards = getDebugEl().queryAll(By.css(GROUP_CARD_SELECTOR));
+    const errorDetails = getDebugEl().query(By.css(ERROR_DETAILS_SELECTOR));
+    const rows = getDebugEl().queryAll(By.css(ITEM_ROW_SELECTOR));
+
     expect(await harness.getTitleText()).toContain('XMC Services Health');
     expect(await harness.getOverallStatusText()).toContain('DEGRADED');
-
-    // Group cards check using getDebugEl()
-    const cards = getDebugEl().queryAll(By.css(GROUP_CARD_SELECTOR));
     expect(cards.length).toBe(2);
-
     expect(cards[0].nativeElement.textContent).toContain('Core XMC Instances');
     expect(cards[1].nativeElement.textContent).toContain('GCP Hosted Services');
-
-    const rows = getDebugEl().queryAll(By.css(ITEM_ROW_SELECTOR));
     expect(rows.length).toBe(2);
-
     expect(rows[0].nativeElement.textContent).toContain('actuator');
     expect(rows[0].nativeElement.textContent).toContain('HEALTHY');
-
     expect(rows[1].nativeElement.textContent).toContain('db-conn');
     expect(rows[1].nativeElement.textContent).toContain('DEGRADED');
-
-    const errorDetails = getDebugEl().query(By.css(ERROR_DETAILS_SELECTOR));
     expect(errorDetails).not.toBeNull();
     expect(errorDetails.nativeElement.textContent).toContain('View Error Details');
   });
@@ -118,8 +112,8 @@ describe('HealthStatusSectionComponent', () => {
   it('should emit refresh event on refresh button click', async () => {
     const host = bootstrap(TestHostComponent);
     await flush();
-
     const harness = await getHarness(HealthStatusSectionHarness);
+
     await harness.clickRefresh();
     await flush();
 

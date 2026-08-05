@@ -19,6 +19,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { of, throwError } from 'rxjs';
 
 import { HealthService } from '../service/health_service';
+import { SnackbarService } from '../service/snackbar_service';
 import { MockHealthService } from '../service/testing/mock_health_service';
 import { bootstrap, cleanState, flush, get, getHarness, setupModule } from '../testing/test';
 import { AdminPanelPage } from './admin_panel';
@@ -110,5 +111,38 @@ describe('AdminPanelPage Component', () => {
 
     const harness = await getHarness(AdminPanelHarness);
     expect(await harness.getErrorText()).toContain('Failed to load health status');
+  });
+
+  it('should display toast and preserve old health status if subsequent refresh fails', async () => {
+    const healthService = get(HealthService);
+    const snackbarService = get(SnackbarService);
+    const openSpy = spyOn(snackbarService, 'open');
+    const firstStatus = {
+      healthState: 'HEALTH_STATE_HEALTHY',
+      systemInfo: {
+        appVersion: 'mock-app-version-1.0.0',
+        essDbSchemaVersion: '6',
+        xidDbSchemaVersion: '1',
+      },
+      components: [],
+      healthCheckTime: { seconds: 1717804800, nanos: 0 },
+    };
+    spyOn(healthService, 'getHealthStatus').and.returnValues(
+      of(firstStatus as any),
+      throwError(() => new Error('Refresh error')),
+    );
+
+    bootstrap(AdminPanelPage);
+    await flush();
+    const harness = await getHarness(AdminPanelHarness);
+    const healthStatusSectionHarness = await harness.getHealthStatusSection();
+    await healthStatusSectionHarness!.clickRefresh();
+    await flush();
+    const preservedSection = await harness.getHealthStatusSection();
+
+    expect(openSpy).toHaveBeenCalledWith('Failed to refresh health status.');
+    expect(await harness.getErrorText()).toBeNull();
+    expect(preservedSection).not.toBeNull();
+    expect(await preservedSection!.getOverallStatusText()).toBe('HEALTHY');
   });
 });

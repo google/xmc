@@ -16,7 +16,7 @@ import { JsonPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { BehaviorSubject, of } from 'rxjs';
-import { catchError, switchMap } from 'rxjs/operators';
+import { catchError, switchMap, tap } from 'rxjs/operators';
 
 import {
   HealthStatusResponse,
@@ -24,6 +24,7 @@ import {
 } from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
 
 import { HealthService } from '../service/health_service';
+import { SnackbarService } from '../service/snackbar_service';
 import { HealthStatusSectionComponent } from './components/health_status_section/health_status_section';
 import { SystemInfoCardComponent } from './components/system_info_card/system_info_card';
 
@@ -40,8 +41,11 @@ import { SystemInfoCardComponent } from './components/system_info_card/system_in
 })
 export class AdminPanelPage {
   private readonly healthService = inject(HealthService);
+  private readonly snackbarService = inject(SnackbarService);
 
   protected readonly healthStatusError = signal<unknown>(null);
+
+  private lastKnownStatus: HealthStatusResponse | null = null;
 
   private readonly refreshTrigger$ = new BehaviorSubject<void>(undefined);
 
@@ -49,11 +53,16 @@ export class AdminPanelPage {
     this.refreshTrigger$.pipe(
       switchMap(() =>
         this.healthService.getHealthStatus().pipe(
+          tap((status) => {
+            this.lastKnownStatus = status;
+            this.healthStatusError.set(null);
+          }),
           catchError((error) => {
             console.error('Failed to fetch health status', error);
-            // TODO: If a subsequent refresh fails after successfully loading the initial
-            // status, we should show a toast notification and keep displaying the last
-            // known state instead of replacing it with the full-page error element.
+            if (this.lastKnownStatus) {
+              this.snackbarService.open('Failed to refresh health status.');
+              return of(this.lastKnownStatus);
+            }
             this.healthStatusError.set(error);
             return of({} as HealthStatusResponse);
           }),

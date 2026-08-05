@@ -29,7 +29,7 @@
     </span>
   </div>
   <div class="group-items-list">
-    @for (item of components(); track item.name) {
+    @for (item of components(); track item.name ?? $index) {
       <div class="item-row">
         <div class="item-info">
           <span
