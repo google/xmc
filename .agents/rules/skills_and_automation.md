@@ -39,10 +39,10 @@ This document provides standards for skill architecture, workflow automation, an
 - **Prohibition on Unrequested Tests**: For read-only inspection, document summaries, rule/skill editing, PR description generation, or retrospective analysis tasks, agents MUST NOT run test suites or execute unrequested tool chains that add unnecessary turn count and token overhead.
 
 
-## 4. Helper Script Maintenance & Deduplication
+## 7. Helper Script Maintenance & Deduplication
 - **Centralized Helper Library**: Maintain common python automation helpers in `tools/` with standard library dependencies to eliminate duplicate code blocks across skills and subagents.
 - **Standard Library Preference**: Prefer Python standard library modules (`os`, `sys`, `json`, `subprocess`, `urllib.request`) over external third-party packages to guarantee zero-dependency execution in all environments.
 
-## 5. Subagent Delegation Policy for Context Preservation
+## 8. Subagent Delegation Policy for Context Preservation
 - **Offload Heavy Traversal & Analysis**: When a task involves reading multiple log files, running heavy test matrices, or performing broad codebase searches, delegate execution to worker subagents (`research-google` or `self`).
 - **Prevent Main Context Bloat**: Do NOT dump raw test logs or intermediate shell command outputs into the primary agent's context window. Have worker subagents summarize key metrics and actionable recommendations in their return messages.
