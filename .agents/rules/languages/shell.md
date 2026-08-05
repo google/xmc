@@ -25,5 +25,5 @@ set -euo pipefail
 
 
 ## 4. Terminal Command Execution & Sandbox Safety
-- **Forbidden Unconstrained Traversals**: NEVER execute unconstrained root searches (`find /`, `find ~`, `grep -r /`) outside the active workspace directory. Bounded searches MUST specify explicit workspace paths or subdirectories (`find .agents/`, `find tools/`).
-- **Avoid Heavy Compound Chaining**: Avoid chaining long compound command chains (`cmd1 && cmd2 && cmd3 && cmd4`) in a single `run_command` invocation, as network or sandbox resets can break terminal pipes (`connection reset by peer`). Split preparation and execution into discrete single commands.
+- **Forbidden Unconstrained Traversals**: NEVER execute unconstrained root searches (`find /`, `find ~`, `grep -r "pattern" /`) outside the active workspace directory. Bounded searches MUST specify explicit workspace paths or subdirectories (`find .agents/`, `find tools/`).
+- **Avoid Heavy Compound Chaining**: Avoid using long compound command chains (`cmd1 && cmd2 && cmd3 && cmd4`) in a single `run_command` invocation, as network or sandbox resets can break terminal pipes (`connection reset by peer`). Split preparation and execution into discrete single commands.
