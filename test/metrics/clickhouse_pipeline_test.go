@@ -17,13 +17,11 @@ package metrics_test
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/protobuf/proto"
 
@@ -64,24 +62,15 @@ func locateSchemaFile(t *testing.T) string {
 }
 
 func produceProtoMetrics(ctx context.Context, brokers []string, metrics []*metricspb.Metric) error {
-	dialer := &net.Dialer{Timeout: 5 * time.Second}
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(brokers...),
 		kgo.DefaultProduceTopic(metricsTopic),
-		kgo.Dialer(func(ctx context.Context, network, hostport string) (net.Conn, error) {
-			if len(brokers) > 0 {
-				return dialer.DialContext(ctx, network, brokers[0])
-			}
-			return dialer.DialContext(ctx, network, hostport)
-		}),
+		infra.KafkaDialer(brokers),
 	)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
-
-	admin := kadm.NewClient(client)
-	_, _ = admin.CreateTopics(ctx, 1, 1, nil, metricsTopic)
 
 	for _, m := range metrics {
 		data, err := proto.Marshal(m)

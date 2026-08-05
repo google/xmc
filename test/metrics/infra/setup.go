@@ -276,6 +276,7 @@ func ExecuteSQLScript(ctx context.Context, conn driver.Conn, scriptPath string, 
 	}
 	cleanScript := strings.Join(cleanLines, "\n")
 
+	// Note: Splitting by ";" is naive and will break if semicolons appear inside string literals or comments.
 	statements := strings.Split(cleanScript, ";")
 	for _, stmt := range statements {
 		cleanStmt := strings.TrimSpace(stmt)
@@ -289,16 +290,22 @@ func ExecuteSQLScript(ctx context.Context, conn driver.Conn, scriptPath string, 
 	return nil
 }
 
-func createKafkaTopic(ctx context.Context, brokers []string, topic string) error {
+// KafkaDialer returns a kgo.Opt that configures a custom dialer to route all traffic to the first broker.
+// This is necessary because Redpanda advertises its internal container address (redpanda:9092) which is unreachable from the host.
+func KafkaDialer(brokers []string) kgo.Opt {
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	return kgo.Dialer(func(ctx context.Context, network, hostport string) (net.Conn, error) {
+		if len(brokers) > 0 {
+			return dialer.DialContext(ctx, network, brokers[0])
+		}
+		return dialer.DialContext(ctx, network, hostport)
+	})
+}
+
+func createKafkaTopic(ctx context.Context, brokers []string, topic string) error {
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(brokers...),
-		kgo.Dialer(func(ctx context.Context, network, hostport string) (net.Conn, error) {
-			if len(brokers) > 0 {
-				return dialer.DialContext(ctx, network, brokers[0])
-			}
-			return dialer.DialContext(ctx, network, hostport)
-		}),
+		KafkaDialer(brokers),
 	)
 	if err != nil {
 		return err
