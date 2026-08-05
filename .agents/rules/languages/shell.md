@@ -23,3 +23,7 @@ set -euo pipefail
 - **Use Standalone Script Files or Safe Channels**: Always write multi-line logic, Python code, or comment payloads containing code/markdown to a dedicated `.py` file using `write_to_file` and execute the script directly (e.g. `python3 script.py`), or pass content safely via stdin (e.g., using single-quoted heredocs) or process-level environment variables (avoiding inline shell assignments like `VAR="..."`).
 
 
+
+## 4. Terminal Command Execution & Sandbox Safety
+- **Forbidden Unconstrained Traversals**: NEVER execute unconstrained root searches (`find /`, `find ~`, `grep -r /`) outside the active workspace directory. Bounded searches MUST specify explicit workspace paths or subdirectories (`find .agents/`, `find tools/`).
+- **Avoid Heavy Compound Chaining**: Avoid chaining long compound command chains (`cmd1 && cmd2 && cmd3 && cmd4`) in a single `run_command` invocation, as network or sandbox resets can break terminal pipes (`connection reset by peer`). Split preparation and execution into discrete single commands.
