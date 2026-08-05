@@ -21,6 +21,7 @@ compat_go_library(
         "deleteartifact.go",
         "fetchartifact.go",
         "listartifacts.go",
+        "mutations.go",
         "repository.go",
         "updateartifact.go",
     ],

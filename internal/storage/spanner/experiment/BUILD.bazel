@@ -21,6 +21,7 @@ compat_go_library(
         "fetchexperiment.go",
         "fetchexperimentstatus.go",
         "listexperiments.go",
+        "mutations.go",
         "repository.go",
         "updateexperiment.go",
         "updateexperimentlaunchstate.go",

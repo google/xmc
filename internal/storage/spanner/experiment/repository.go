@@ -62,3 +62,8 @@ func NewRepository(client *spanner.Client, cfg RepositoryConfig) (*Repository, e
 		statusMessageHistoryEnabled: cfg.StatusMessageHistoryEnabled,
 	}, nil
 }
+
+// StatusMessageHistoryEnabled returns whether status message history tracking is enabled.
+func (r *Repository) StatusMessageHistoryEnabled() bool {
+	return r.statusMessageHistoryEnabled
+}

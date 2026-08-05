@@ -37,6 +37,7 @@ type OperationRepository = operation.Repository
 
 // Storage implements the storage.Storage interface using Google Cloud Spanner.
 type Storage struct {
+	client *spanner.Client
 	*ExperimentRepository
 	*WorkUnitRepository
 	*ArtifactRepository
@@ -96,6 +97,7 @@ func NewStorageWithConfig(client *spanner.Client, cfg StorageConfig) (*Storage, 
 	}
 
 	return &Storage{
+		client:                  client,
 		ExperimentRepository:    expRepo,
 		WorkUnitRepository:      wuRepo,
 		ArtifactRepository:      artifactRepo,
