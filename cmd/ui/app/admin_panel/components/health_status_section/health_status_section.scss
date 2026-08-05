@@ -1,0 +1,184 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+.services-health-card {
+  background-color: #ffffff;
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid var(--xmc-border-color, #dadce0);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    border-bottom: 1px solid #e2e8f0; // slate-200
+    padding-bottom: 16px;
+
+    .card-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #0f172a; // slate-900
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      .health-icon {
+        color: #1a73e8;
+        font-size: 24px;
+        width: 24px;
+        height: 24px;
+      }
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+
+      .refresh-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #334155; // slate-700
+        background-color: #ffffff;
+        border: 1px solid #cbd5e1; // slate-300
+        border-radius: 8px;
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        cursor: pointer;
+        transition: background-color 0.2s ease-in-out;
+
+        &:hover {
+          background-color: #f8fafc; // slate-50
+        }
+
+        .button-icon {
+          font-size: 14px;
+          width: 14px;
+          height: 14px;
+        }
+      }
+
+      .status-badge {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 4px 12px;
+        border-radius: 9999px;
+        border: 1px solid transparent;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+
+        &.status-healthy {
+          background-color: #ecfdf5; // emerald-50
+          color: #047857; // emerald-700
+          border-color: #a7f3d0; // emerald-200
+
+          .status-indicator-dot {
+            background-color: #10b981; // emerald-500
+          }
+        }
+
+        &.status-degraded {
+          background-color: #fff1f2; // rose-50
+          color: #be123c; // rose-700
+          border-color: #fecdd3; // rose-200
+
+          .status-indicator-dot {
+            background-color: #f43f5e; // rose-500
+          }
+        }
+
+        .status-indicator-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 9999px;
+        }
+      }
+    }
+  }
+
+  .tiers-container {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .tier-section {
+    display: flex;
+    flex-direction: column;
+
+    .tier-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #5f6368;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 0 0 12px 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+
+      .tier-icon {
+        font-size: 16px;
+        width: 16px;
+        height: 16px;
+      }
+    }
+  }
+
+  .cards-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+
+    @media (min-width: 768px) {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  .last-checked {
+    font-size: 12px;
+    color: #94a3b8; // slate-400
+    margin-top: 16px;
+    text-align: right;
+  }
+}
+
+// Add animation keyframes for pulse
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.1);
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

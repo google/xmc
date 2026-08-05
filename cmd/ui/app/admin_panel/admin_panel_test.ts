@@ -54,6 +54,16 @@ describe('AdminPanelPage Component', () => {
     expect(await systemInfoHarness!.getXidSchemaText()).toBe('1');
   });
 
+  it('should display services health card', async () => {
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const healthStatusSectionHarness = await harness.getHealthStatusSection();
+    expect(healthStatusSectionHarness).not.toBeNull();
+    expect(await healthStatusSectionHarness!.getOverallStatusText()).toBe('HEALTHY');
+  });
+
   it('should display system observability link if observabilityUrl is present', async () => {
     bootstrap(AdminPanelPage);
     await flush();
