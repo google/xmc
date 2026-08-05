@@ -136,6 +136,26 @@ def prepare_artifact(
     )
 
 
+def prepare_managed_xprof_artifact(
+    *,
+    display_name: str,
+    run_group: str,
+    notes: str = "ManagedXprof Diagon Smoke Test",
+    lifecycle_phase: artifact_pb2.Artifact.LifecyclePhase = artifact_pb2.Artifact.LifecyclePhase.EXECUTION,
+) -> artifact_pb2.Artifact:
+    """Creates an Artifact proto populated with ManagedXprofArtifact payload."""
+    return artifact_pb2.Artifact(
+        notes=notes,
+        lifecycle_phase=lifecycle_phase,
+        payload=artifact_pb2.ArtifactPayload(
+            managed_xprof=artifact_pb2.ManagedXprofArtifact(
+                display_name=display_name,
+                run_group=run_group,
+            )
+        ),
+    )
+
+
 def create_experiment_with_artifacts(
     examples: examples_lib.ExamplesLib,
     *,

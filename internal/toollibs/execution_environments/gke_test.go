@@ -123,29 +123,19 @@ func TestGKEIsCompatibleWithWorkUnit(t *testing.T) {
 
 func TestGKEInjectOnJobSetCreation(t *testing.T) {
 	gke := &GKE{}
-	tests := []struct {
-		name       string
-		workUnit   *epb.WorkUnit
-		jobSet     *jobsetv1alpha2.JobSet
-		wantJobSet *jobsetv1alpha2.JobSet
-	}{
-		{
-			name: "cpu_resources",
-			workUnit: &epb.WorkUnit{
-				Executable: &epb.Executable{
-					Type: &epb.Executable_Jobset{
-						Jobset: &epb.JobSetExecutable{
-							Jobs: []*epb.KubernetesJob{
-								{
-									Name: "test-job",
-									Spec: &epb.ExecutableSpec{
-										Resources: &epb.ResourceSet{
-											Resources: &epb.ResourceSet_CpuResources{
-												CpuResources: &epb.CpuResources{
-													CpuMillicores: 1000,
-													MemoryBytes:   2048,
-												},
-											},
+	baseCPUWorkUnit := &epb.WorkUnit{
+		Executable: &epb.Executable{
+			Type: &epb.Executable_Jobset{
+				Jobset: &epb.JobSetExecutable{
+					Jobs: []*epb.KubernetesJob{
+						{
+							Name: "test-job",
+							Spec: &epb.ExecutableSpec{
+								Resources: &epb.ResourceSet{
+									Resources: &epb.ResourceSet_CpuResources{
+										CpuResources: &epb.CpuResources{
+											CpuMillicores: 1000,
+											MemoryBytes:   2048,
 										},
 									},
 								},
@@ -154,6 +144,18 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 					},
 				},
 			},
+		},
+	}
+
+	tests := []struct {
+		name       string
+		workUnit   *epb.WorkUnit
+		jobSet     *jobsetv1alpha2.JobSet
+		wantJobSet *jobsetv1alpha2.JobSet
+	}{
+		{
+			name:     "cpu_resources",
+			workUnit: baseCPUWorkUnit,
 			jobSet: &jobsetv1alpha2.JobSet{
 				Spec: jobsetv1alpha2.JobSetSpec{
 					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
@@ -186,6 +188,63 @@ func TestGKEInjectOnJobSetCreation(t *testing.T) {
 												{
 													Resources: corev1.ResourceRequirements{
 														Limits: corev1.ResourceList{
+															corev1.ResourceMemory: resource.MustParse("2048"),
+														},
+														Requests: corev1.ResourceList{
+															corev1.ResourceCPU:    resource.MustParse("1000m"),
+															corev1.ResourceMemory: resource.MustParse("2048"),
+														},
+													},
+												},
+											},
+											NodeSelector: map[string]string{},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "cpu_resources_with_limit",
+			workUnit: proto.Modify(baseCPUWorkUnit, func(wu *epb.WorkUnit) {
+				wu.Executable.GetJobset().Jobs[0].Spec.Resources.GetCpuResources().LimitCpuMillicores = 2000
+			}),
+			jobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "test-job",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers:   []corev1.Container{{}},
+											NodeSelector: map[string]string{},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantJobSet: &jobsetv1alpha2.JobSet{
+				Spec: jobsetv1alpha2.JobSetSpec{
+					ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+						{
+							Name: "test-job",
+							Template: batchv1.JobTemplateSpec{
+								Spec: batchv1.JobSpec{
+									Template: corev1.PodTemplateSpec{
+										Spec: corev1.PodSpec{
+											Containers: []corev1.Container{
+												{
+													Resources: corev1.ResourceRequirements{
+														Limits: corev1.ResourceList{
+															corev1.ResourceCPU:    resource.MustParse("2000m"),
 															corev1.ResourceMemory: resource.MustParse("2048"),
 														},
 														Requests: corev1.ResourceList{
@@ -1306,6 +1365,8 @@ func TestInjectOnJobSetCreation_WithSidecars(t *testing.T) {
 								Spec: corev1.PodSpec{
 									Containers: []corev1.Container{
 										{Name: "primary"},
+									},
+									InitContainers: []corev1.Container{
 										{Name: "sidecar"},
 									},
 								},
@@ -1323,14 +1384,18 @@ func TestInjectOnJobSetCreation_WithSidecars(t *testing.T) {
 	}
 
 	containers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers
-	if len(containers) != 2 {
-		t.Fatalf("Expected 2 containers, got %d", len(containers))
+	if len(containers) != 1 {
+		t.Fatalf("Expected 1 primary container, got %d", len(containers))
 	}
 	if containers[0].Resources.Requests[corev1.ResourceCPU] != resource.MustParse("1000m") {
 		t.Errorf("Primary container CPU request mismatch: got %v", containers[0].Resources.Requests[corev1.ResourceCPU])
 	}
-	if containers[1].Resources.Requests[corev1.ResourceCPU] != resource.MustParse("200m") {
-		t.Errorf("Sidecar container CPU request mismatch: got %v", containers[1].Resources.Requests[corev1.ResourceCPU])
+	initContainers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.InitContainers
+	if len(initContainers) != 1 {
+		t.Fatalf("Expected 1 sidecar init container, got %d", len(initContainers))
+	}
+	if initContainers[0].Resources.Requests[corev1.ResourceCPU] != resource.MustParse("200m") {
+		t.Errorf("Sidecar container CPU request mismatch: got %v", initContainers[0].Resources.Requests[corev1.ResourceCPU])
 	}
 }
 
@@ -1403,6 +1468,146 @@ func TestInjectOnJobSetCreation_WithInitContainers(t *testing.T) {
 	}
 	if initContainers[0].Resources.Requests[corev1.ResourceCPU] != resource.MustParse("300m") {
 		t.Errorf("Init container CPU request mismatch: got %v", initContainers[0].Resources.Requests[corev1.ResourceCPU])
+	}
+}
+
+func TestInjectOnJobSetCreation_WithInitContainersAndSidecars(t *testing.T) {
+	g := &GKE{}
+	workUnit := &epb.WorkUnit{
+		Executable: &epb.Executable{
+			Type: &epb.Executable_Jobset{
+				Jobset: &epb.JobSetExecutable{
+					Jobs: []*epb.KubernetesJob{
+						{
+							Name: "job-1",
+							Spec: &epb.ExecutableSpec{
+								Resources: &epb.ResourceSet{
+									Resources: &epb.ResourceSet_CpuResources{
+										CpuResources: &epb.CpuResources{
+											CpuMillicores: 1000,
+											MemoryBytes:   1024,
+										},
+									},
+								},
+							},
+							InitContainers: []*epb.ExecutableSpec{
+								{
+									Resources: &epb.ResourceSet{
+										Resources: &epb.ResourceSet_CpuResources{
+											CpuResources: &epb.CpuResources{
+												CpuMillicores: 300,
+												MemoryBytes:   512,
+											},
+										},
+									},
+								},
+								{
+									Resources: &epb.ResourceSet{
+										Resources: &epb.ResourceSet_CpuResources{
+											CpuResources: &epb.CpuResources{
+												CpuMillicores: 400,
+												MemoryBytes:   1024,
+											},
+										},
+									},
+								},
+							},
+							Sidecars: []*epb.ExecutableSpec{
+								{
+									Resources: &epb.ResourceSet{
+										Resources: &epb.ResourceSet_CpuResources{
+											CpuResources: &epb.CpuResources{
+												CpuMillicores: 200,
+												MemoryBytes:   256,
+											},
+										},
+									},
+								},
+								{
+									Resources: &epb.ResourceSet{
+										Resources: &epb.ResourceSet_CpuResources{
+											CpuResources: &epb.CpuResources{
+												CpuMillicores: 500,
+												MemoryBytes:   2048,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	jobSet := &jobsetv1alpha2.JobSet{
+		Spec: jobsetv1alpha2.JobSetSpec{
+			ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+				{
+					Name: "job-1",
+					Template: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers: []corev1.Container{{Name: "main"}},
+									InitContainers: []corev1.Container{
+										{Name: "init-1"},
+										{Name: "init-2"},
+										{Name: "sidecar-1"},
+										{Name: "sidecar-2"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := g.InjectOnJobSetCreation(context.Background(), workUnit, jobSet)
+	if err != nil {
+		t.Fatalf("InjectOnJobSetCreation() returned error: %v", err)
+	}
+
+	containers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers
+	if len(containers) != 1 {
+		t.Fatalf("Expected 1 primary container, got %d", len(containers))
+	}
+	if containers[0].Resources.Requests[corev1.ResourceCPU] != resource.MustParse("1000m") {
+		t.Errorf("Primary container CPU request mismatch: got %v", containers[0].Resources.Requests[corev1.ResourceCPU])
+	}
+	if containers[0].Resources.Requests[corev1.ResourceMemory] != resource.MustParse("1024") {
+		t.Errorf("Primary container Memory request mismatch: got %v", containers[0].Resources.Requests[corev1.ResourceMemory])
+	}
+
+	initContainers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.InitContainers
+	if len(initContainers) != 4 {
+		t.Fatalf("Expected 4 init containers (2 init + 2 sidecars), got %d", len(initContainers))
+	}
+
+	expected := []struct {
+		name       string
+		wantCPU    string
+		wantMemory string
+	}{
+		{name: "init-1", wantCPU: "300m", wantMemory: "512"},
+		{name: "init-2", wantCPU: "400m", wantMemory: "1024"},
+		{name: "sidecar-1", wantCPU: "200m", wantMemory: "256"},
+		{name: "sidecar-2", wantCPU: "500m", wantMemory: "2048"},
+	}
+
+	for i, tt := range expected {
+		if initContainers[i].Name != tt.name {
+			t.Errorf("Init container %d name mismatch: want %s, got %s", i, tt.name, initContainers[i].Name)
+		}
+		if initContainers[i].Resources.Requests[corev1.ResourceCPU] != resource.MustParse(tt.wantCPU) {
+			t.Errorf("Init container %d (%s) CPU request mismatch: want %s, got %v", i, tt.name, tt.wantCPU, initContainers[i].Resources.Requests[corev1.ResourceCPU])
+		}
+		if initContainers[i].Resources.Requests[corev1.ResourceMemory] != resource.MustParse(tt.wantMemory) {
+			t.Errorf("Init container %d (%s) Memory request mismatch: want %s, got %v", i, tt.name, tt.wantMemory, initContainers[i].Resources.Requests[corev1.ResourceMemory])
+		}
 	}
 }
 
@@ -1803,5 +2008,74 @@ func TestInjectOnJobSetCreation_GPUMultiNode_WithCoordinator(t *testing.T) {
 	}
 	if got.Spec.Coordinator.PodIndex != 2 {
 		t.Errorf("Expected Coordinator.PodIndex to be 2, got %d", got.Spec.Coordinator.PodIndex)
+	}
+}
+
+func TestApplyCPUResources(t *testing.T) {
+	tests := []struct {
+		name         string
+		cpuRes       *epb.CpuResources
+		reqs         *corev1.ResourceRequirements
+		wantErr      bool
+		wantCPU      string
+		wantLimitCPU string
+	}{
+		{
+			name:    "nil inputs",
+			cpuRes:  nil,
+			reqs:    nil,
+			wantErr: false,
+		},
+		{
+			name: "valid request and limit",
+			cpuRes: &epb.CpuResources{
+				CpuMillicores:      1000,
+				LimitCpuMillicores: 2000,
+				MemoryBytes:        1024,
+			},
+			reqs:         &corev1.ResourceRequirements{},
+			wantErr:      false,
+			wantCPU:      "1",
+			wantLimitCPU: "2",
+		},
+		{
+			name: "limit less than request error",
+			cpuRes: &epb.CpuResources{
+				CpuMillicores:      2000,
+				LimitCpuMillicores: 1000,
+				MemoryBytes:        1024,
+			},
+			reqs:    &corev1.ResourceRequirements{},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := applyCPUResources(tc.cpuRes, tc.reqs)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("applyCPUResources() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErr || tc.reqs == nil {
+				return
+			}
+			checkQuantityMatch(t, tc.reqs.Requests, corev1.ResourceCPU, tc.wantCPU)
+			checkQuantityMatch(t, tc.reqs.Limits, corev1.ResourceCPU, tc.wantLimitCPU)
+		})
+	}
+}
+
+func checkQuantityMatch(t *testing.T, list corev1.ResourceList, key corev1.ResourceName, want string) {
+	t.Helper()
+	if want == "" {
+		return
+	}
+	q, ok := list[key]
+	if !ok {
+		t.Errorf("%s missing, want %q", key, want)
+		return
+	}
+	if got := q.String(); got != want {
+		t.Errorf("%s = %q, want %q", key, got, want)
 	}
 }

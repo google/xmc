@@ -25,7 +25,8 @@ import (
 	"xmanager_cloud/storage/spanner/schema/experimentschema"
 )
 
-type spannerTransaction interface {
+// SpannerTransaction defines single-row read and query capabilities within a transaction.
+type SpannerTransaction interface {
 	ReadRow(ctx context.Context, table string, key spanner.Key, columns []string) (*spanner.Row, error)
 	Query(ctx context.Context, stmt spanner.Statement) *spanner.RowIterator
 }

@@ -1,0 +1,86 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+package artifact_test
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"xmanager_cloud/internal/storage/spanner"
+
+	"task/go/status"
+	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/validator/validator"
+)
+
+func TestDeleteArtifact(t *testing.T) {
+	ctx := t.Context()
+	_, essClient := emulator.Setup(ctx, t)
+	storage, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("spanner.NewStorage failed: %v", err)
+	}
+
+	spanner.CreateBlankExperiment(ctx, t, storage, 123)
+
+	art := &essmsgpb.Artifact{
+		Name:   "artifacts/456",
+		Parent: "experiments/123",
+		Url: &essmsgpb.Url{
+			Url: "http://artifact.com",
+		},
+		Tags: []string{"tag1", "tag2"},
+	}
+	createdArt, err := storage.CreateArtifact(ctx, art)
+	if err != nil {
+		t.Fatalf("CreateArtifact failed: %v", err)
+	}
+
+	aid, err := validator.ValidateArtifactName(createdArt.GetName())
+	if err != nil {
+		t.Fatalf("Could not parse AID from name %q: %v", createdArt.GetName(), err)
+	}
+
+	// Verify it exists before deleting.
+	_, err = storage.FetchArtifact(ctx, aid)
+	if err != nil {
+		t.Fatalf("FetchArtifact before delete failed: %v", err)
+	}
+
+	err = storage.DeleteArtifact(ctx, aid)
+	if err != nil {
+		t.Fatalf("DeleteArtifact failed: %v", err)
+	}
+
+	// Verify it is deleted.
+	_, err = storage.FetchArtifact(ctx, aid)
+	if !errors.Is(err, status.ErrNotFound) {
+		t.Errorf("FetchArtifact for deleted AID returned error %v, want %v", err, status.ErrNotFound)
+	}
+}
+
+func TestDeleteArtifact_NotFound(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storage, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("spanner.NewStorage failed: %v", err)
+	}
+
+	err = storage.DeleteArtifact(ctx, 123456789)
+	if !errors.Is(err, status.ErrNotFound) {
+		t.Errorf("DeleteArtifact for non-existent AID returned error %v, want %v", err, status.ErrNotFound)
+	}
+}

@@ -31,25 +31,7 @@ func (r *Repository) InsertExperiment(ctx context.Context, tx *spanner.ReadWrite
 	return tx.BufferWrite([]*spanner.Mutation{mutation})
 }
 
-// UpdateExperimentStatus buffers a Spanner update mutation for the experiment's status within a transaction.
-func (r *Repository) UpdateExperimentStatus(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error {
-	mutation, err := spannerdata.ExperimentProtoToStatusUpdateMutation(exp)
-	if err != nil {
-		return err
-	}
-	return tx.BufferWrite([]*spanner.Mutation{mutation})
-}
-
-// UpdateExperimentResources buffers a Spanner update mutation for the experiment's resources within a transaction.
-func (r *Repository) UpdateExperimentResources(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error {
-	mutation, err := spannerdata.ExperimentProtoToResourcesUpdateMutation(exp)
-	if err != nil {
-		return err
-	}
-	return tx.BufferWrite([]*spanner.Mutation{mutation})
-}
-
 // GetExperiment retrieves a single Experiment from storage by its unique ID within a transaction.
-func (r *Repository) GetExperiment(ctx context.Context, tx spannerTransaction, xid int64) (*essmsgpb.Experiment, error) {
+func (r *Repository) GetExperiment(ctx context.Context, tx SpannerTransaction, xid int64) (*essmsgpb.Experiment, error) {
 	return r.FetchExperimentTransaction(ctx, xid, tx)
 }

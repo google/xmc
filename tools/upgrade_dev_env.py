@@ -26,9 +26,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from tool_utils import ensure_venv
+from tool_utils import ensure_venv, load_and_validate_config as tool_load_config
 
 STEPS = ["check", "migrate", "images", "app", "restart", "verify"]
 DEFAULT_CONFIG = "deploy/ctk_v2/xmanager-cloud-deployment.yaml"
@@ -44,10 +43,12 @@ class Config:
     environment: str
     namespace: str
     registry: str
-    acr_target: str
+    image_registry: str
+    image_tag: str
     gke_cluster: str
     config_path: str
     run_migrations: bool = False
+    rod_deployment_enabled: bool = False
 
 
 def log_info(msg: str) -> None:
@@ -115,68 +116,6 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     return parsed
 
 
-def parse_yaml_vars_line_fallback(content: str) -> dict[str, Any]:
-    """Parses key-value scalar entries under 'vars:' section in YAML content.
-
-    Args:
-      content: Raw YAML text content.
-
-    Returns:
-      Dictionary mapping variable names to scalar string/boolean values.
-    """
-    vars_dict: dict[str, Any] = {}
-    in_vars_section = False
-    for line in content.splitlines():
-        trimmed = line.strip()
-        if not trimmed or trimmed.startswith("#"):
-            continue
-        if line.startswith("vars:"):
-            in_vars_section = True
-            continue
-        if in_vars_section:
-            if line and not line.startswith(" ") and not line.startswith("\t"):
-                break
-            match = re.match(r"^\s*([a-zA-Z0-9_]+):\s*(.*)$", line)
-            if match:
-                key, val = match.group(1), match.group(2).strip()
-                val = val.split(" #")[0].strip()
-                if (val.startswith('"') and val.endswith('"')) or (
-                    val.startswith("'") and val.endswith("'")
-                ):
-                    val = val[1:-1]
-                vars_dict[key] = val
-    return vars_dict
-
-
-def parse_yaml_vars(config_path: Path) -> dict[str, Any]:
-    """Reads YAML vars section using PyYAML or fallback line parsing.
-
-    Args:
-      config_path: Path to the YAML deployment file.
-
-    Returns:
-      Dictionary of variables extracted from the vars block.
-    """
-    if not config_path.is_file():
-        error_exit(
-            f"Configuration file '{config_path}' not found. Please ensure you"
-            " have deployed the environment using Cluster Toolkit."
-        )
-
-    content = config_path.read_text(encoding="utf-8")
-    try:
-        import yaml  # pylint: disable=g-import-not-at-top
-
-        data = yaml.safe_load(content)
-        if isinstance(data, dict) and "vars" in data:
-            vars_data = data.get("vars") or {}
-            return {k: v for k, v in vars_data.items() if isinstance(v, (str, int, float, bool))}
-    except Exception:  # pylint: disable=broad-except
-        pass
-
-    return parse_yaml_vars_line_fallback(content)
-
-
 def load_config(config_file: str, run_migrations: bool = False) -> Config:
     """Loads YAML config file and merges with environment variable overrides.
 
@@ -187,24 +126,28 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
     Returns:
       Populated Config instance.
     """
-    path = Path(config_file)
     log_info(f"Loading configuration from '{config_file}'...")
-    yaml_vars = parse_yaml_vars(path)
 
-    project_id = os.getenv("PROJECT_ID") or str(yaml_vars.get("project_id", ""))
-    deployment_name = os.getenv("XMC_DEPLOYMENT_NAME") or str(yaml_vars.get("deployment_name", ""))
-    region = os.getenv("GCP_REGION") or str(yaml_vars.get("region", "us-central1"))
-    environment = os.getenv("XMANAGER_ENV") or str(yaml_vars.get("environment", "dev"))
-    namespace = os.getenv("K8S_NAMESPACE") or str(yaml_vars.get("namespace", "xmc"))
+    try:
+        config_dict = tool_load_config(config_file)
+    except (FileNotFoundError, ValueError) as e:
+        error_exit(str(e))
 
-    if not project_id:
-        error_exit(f"project_id is missing in vars of '{config_file}'.")
-    if not deployment_name:
-        error_exit(f"deployment_name is missing in vars of '{config_file}'.")
-
-    registry = f"us-docker.pkg.dev/{project_id}/xmc"
-    acr_target = os.getenv("XMC_ACR_TARGET") or registry
+    project_id = config_dict["project_id"]
+    deployment_name = config_dict["deployment_name"]
+    region = config_dict["region"]
+    environment = config_dict["environment"]
+    namespace = config_dict.get("namespace", "xmc")
+    image_registry = config_dict["image_registry"]
+    image_tag = config_dict["image_tag"]
     gke_cluster = f"xmc-{deployment_name}-{environment}"
+    registry = f"us-docker.pkg.dev/{project_id}/xmc"
+
+    rod_raw = config_dict.get("rod_deployment_enabled", False)
+    if isinstance(rod_raw, str):
+        rod_deployment_enabled = rod_raw.lower() == "true"
+    else:
+        rod_deployment_enabled = bool(rod_raw)
 
     return Config(
         project_id=project_id,
@@ -213,10 +156,12 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
         environment=environment,
         namespace=namespace,
         registry=registry,
-        acr_target=acr_target,
+        image_registry=image_registry,
+        image_tag=image_tag,
         gke_cluster=gke_cluster,
         config_path=config_file,
         run_migrations=run_migrations,
+        rod_deployment_enabled=rod_deployment_enabled,
     )
 
 
@@ -268,7 +213,7 @@ def step_check(config: Config) -> None:
     log_info(f"Verifying gcloud target project ({config.project_id})...")
     run_cmd(["gcloud", "config", "set", "project", config.project_id, "--quiet"])
 
-    registry_host = config.acr_target.split("/")[0]
+    registry_host = config.image_registry.split("/")[0]
     if registry_host.endswith("gcr.io") or registry_host.endswith(".pkg.dev"):
         log_info(
             f"Configuring Docker authentication for Google Artifact Registry ({registry_host})..."
@@ -435,11 +380,12 @@ def step_migrate(config: Config) -> None:
 def step_images(config: Config) -> None:
     """Rebuilds and pushes XMC microservice OCI images to Artifact Registry."""
     log_info(
-        f"Rebuilding and pushing latest XMC microservice OCI images to '{config.acr_target}'..."
+        f"Rebuilding and pushing latest XMC microservice OCI images to '{config.image_registry}'..."
     )
     env = {
         "XMC_ENV": config.environment,
-        "XMC_ACR_TARGET": config.acr_target,
+        "XMC_ACR_TARGET": config.image_registry,
+        "BUILD_TAG": config.image_tag,
     }
 
     # TODO: Migrate hardcoded image targets to dynamic discovery or configuration flags to operate on flags cleanly.
@@ -455,9 +401,12 @@ def step_images(config: Config) -> None:
         ("xid_service", "//cmd/xid_service:xid_service_image_push"),
         ("health_service", "//cmd/health_service:health_service_image_push"),
         ("dashboard_service", "//cmd/dashboard_service:dashboard_service_image_push"),
-        ("rod_data_provider", "//cmd/rod_data_provider:rod_data_provider_image_push"),
         ("ingestion_gateway", "//cmd/ingestion_gateway:ingestion_gateway_image_push"),
     ]
+    if config.rod_deployment_enabled:
+        targets.append(
+            ("rod_data_provider", "//cmd/rod_data_provider:rod_data_provider_image_push")
+        )
 
     for name, target in targets:
         log_info(f"Pushing {name} image...")
@@ -475,6 +424,36 @@ def step_app(config: Config) -> None:
         error_exit(
             f"Deployment directory '{ctk_dir}' not found. Ensure the environment"
             " has been deployed first."
+        )
+
+    log_info("Re-compiling XMC blueprint with latest variables and templates...")
+    run_cmd(
+        [
+            "./cluster-toolkit/gcluster",
+            "create",
+            "deploy/ctk_v2/xmanager-cloud.yaml",
+            "-d",
+            config.config_path,
+            "-o",
+            "ctk-out",
+            "-l",
+            "WARNING",
+            "-w",
+            "--force",
+        ]
+    )
+
+    log_info("Exporting and importing Cluster Toolkit deployment group outputs...")
+    if (ctk_dir / "primary").is_dir():
+        run_cmd(["./cluster-toolkit/gcluster", "export-outputs", str(ctk_dir / "primary")])
+
+    if (ctk_dir / "compute").is_dir():
+        run_cmd(["./cluster-toolkit/gcluster", "import-inputs", str(ctk_dir / "compute")])
+        run_cmd(["./cluster-toolkit/gcluster", "export-outputs", str(ctk_dir / "compute")])
+
+    if (ctk_dir / "kubernetes_prereqs").is_dir():
+        run_cmd(
+            ["./cluster-toolkit/gcluster", "import-inputs", str(ctk_dir / "kubernetes_prereqs")]
         )
 
     log_info("Running gcluster deploy for group 'xmc_app'...")
@@ -530,6 +509,8 @@ def step_restart(config: Config) -> None:
         "ui",
         "xid-service",
     ]
+    if config.rod_deployment_enabled:
+        services.append("rod-data-provider")
 
     for service in services:
         resolved_name = resolve_deployment_name(service, config.namespace)
