@@ -64,6 +64,7 @@ func (s *Storage) CreateExperiment(ctx context.Context, exp *essmsgpb.Experiment
 
 	exp.Reset()
 	proto.Merge(exp, committedExp)
+	preserveEmptySlicesExperiment(exp)
 	logging.Info(ctx, "Written experiment to storage", "experiment", exp)
 	return exp, nil
 }
@@ -142,6 +143,7 @@ func (s *Storage) CreateWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) (*e
 
 	wu.Reset()
 	proto.Merge(wu, committedWU)
+	preserveEmptySlicesWorkUnit(wu)
 
 	logging.Info(ctx, "Written work unit to storage", "work_unit", committedWU)
 	logging.Info(ctx, "Updated experiment successfully", "experiment", committedExp)
@@ -177,7 +179,41 @@ func (s *Storage) CreateArtifact(ctx context.Context, artifact *essmsgpb.Artifac
 
 	artifact.Reset()
 	proto.Merge(artifact, committedArtifact)
+	preserveEmptySlicesArtifact(artifact)
 
 	logging.Info(ctx, "Written artifact to storage")
 	return artifact, nil
+}
+
+func preserveEmptySlicesExperiment(exp *essmsgpb.Experiment) {
+	if exp != nil {
+		if exp.GetUrls() == nil {
+			exp.Urls = []*essmsgpb.Url{}
+		}
+		if exp.GetTags() == nil {
+			exp.Tags = []string{}
+		}
+		if exp.GetResources() == nil {
+			exp.Resources = []*essmsgpb.ResourceSet{}
+		}
+	}
+}
+
+func preserveEmptySlicesWorkUnit(wu *essmsgpb.WorkUnit) {
+	if wu != nil {
+		if wu.GetUrls() == nil {
+			wu.Urls = []*essmsgpb.Url{}
+		}
+		if wu.GetTags() == nil {
+			wu.Tags = []string{}
+		}
+	}
+}
+
+func preserveEmptySlicesArtifact(art *essmsgpb.Artifact) {
+	if art != nil {
+		if art.GetTags() == nil {
+			art.Tags = []string{}
+		}
+	}
 }
