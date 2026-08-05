@@ -16,6 +16,7 @@ package artifact
 
 import (
 	"context"
+	"fmt"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -24,6 +25,12 @@ import (
 
 // InsertArtifact buffers a Spanner insert mutation for the artifact within a transaction.
 func (r *Repository) InsertArtifact(ctx context.Context, tx *spanner.ReadWriteTransaction, artifact *essmsgpb.Artifact) error {
+	if artifact == nil {
+		return fmt.Errorf("artifact must not be nil")
+	}
+	if tx == nil {
+		return fmt.Errorf("transaction must not be nil")
+	}
 	mutation, err := spannerdata.ArtifactProtoToInsertMutation(artifact)
 	if err != nil {
 		return err

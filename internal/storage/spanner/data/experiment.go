@@ -101,6 +101,19 @@ func ExperimentProtoToInsertMutation(exp *pb.Experiment) (*spanner.Mutation, err
 		completeTime.Valid = true
 	}
 
+	urls := exp.Urls
+	if urls == nil {
+		urls = []*pb.Url{}
+	}
+	tags := exp.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+	resources := exp.Resources
+	if resources == nil {
+		resources = []*pb.ResourceSet{}
+	}
+
 	return spanner.Insert(
 		experimentschema.ExperimentTableName,
 		experimentschema.ExperimentColumns,
@@ -109,10 +122,10 @@ func ExperimentProtoToInsertMutation(exp *pb.Experiment) (*spanner.Mutation, err
 			exp.Title,               // Title
 			exp.Creator,             // Creator
 			int64(exp.Priority),     // Priority
-			exp.Urls,                // Urls
-			exp.Tags,                // Tags
+			urls,                    // Urls
+			tags,                    // Tags
 			exp.Notes,               // Notes
-			exp.Resources,           // Resources
+			resources,               // Resources
 			exp.Status,              // Status
 			exp.CreateTime.AsTime(), // CreateTime
 			exp.UpdateTime.AsTime(), // UpdateTime
@@ -127,6 +140,14 @@ func ExperimentProtoToUpdateMutation(exp *pb.Experiment) (*spanner.Mutation, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate experiment name %q: %w", exp.GetName(), err)
 	}
+	urls := exp.Urls
+	if urls == nil {
+		urls = []*pb.Url{}
+	}
+	tags := exp.Tags
+	if tags == nil {
+		tags = []string{}
+	}
 	return spanner.Update(
 		experimentschema.ExperimentTableName,
 		experimentschema.ExperimentUpdateColumns,
@@ -134,8 +155,8 @@ func ExperimentProtoToUpdateMutation(exp *pb.Experiment) (*spanner.Mutation, err
 			data.ReverseBits(xid),   // BitReversedXID
 			exp.Title,               // Title
 			int64(exp.Priority),     // Priority
-			exp.Urls,                // Urls
-			exp.Tags,                // Tags
+			urls,                    // Urls
+			tags,                    // Tags
 			exp.Notes,               // Notes
 			exp.UpdateTime.AsTime(), // UpdateTime
 		},
@@ -176,12 +197,16 @@ func ExperimentProtoToResourcesUpdateMutation(exp *pb.Experiment) (*spanner.Muta
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate experiment name %q: %w", exp.GetName(), err)
 	}
+	resources := exp.Resources
+	if resources == nil {
+		resources = []*pb.ResourceSet{}
+	}
 	return spanner.Update(
 		experimentschema.ExperimentTableName,
 		experimentschema.ExperimentResourcesUpdateColumns,
 		[]any{
 			data.ReverseBits(xid),   // BitReversedXID
-			exp.Resources,           // Resources
+			resources,               // Resources
 			exp.UpdateTime.AsTime(), // UpdateTime
 		},
 	), nil

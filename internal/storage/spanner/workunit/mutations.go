@@ -16,6 +16,7 @@ package workunit
 
 import (
 	"context"
+	"fmt"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -24,6 +25,12 @@ import (
 
 // InsertWorkUnit buffers a Spanner insert mutation for the work unit within a transaction.
 func (r *Repository) InsertWorkUnit(ctx context.Context, tx *spanner.ReadWriteTransaction, wu *essmsgpb.WorkUnit) error {
+	if wu == nil {
+		return fmt.Errorf("work unit must not be nil")
+	}
+	if tx == nil {
+		return fmt.Errorf("transaction must not be nil")
+	}
 	mutation, err := spannerdata.WorkUnitProtoToInsertMutation(wu)
 	if err != nil {
 		return err

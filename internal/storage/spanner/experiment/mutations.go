@@ -16,6 +16,7 @@ package experiment
 
 import (
 	"context"
+	"fmt"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -24,6 +25,12 @@ import (
 
 // InsertExperiment buffers a Spanner insert mutation for the experiment within a transaction.
 func (r *Repository) InsertExperiment(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error {
+	if exp == nil {
+		return fmt.Errorf("experiment must not be nil")
+	}
+	if tx == nil {
+		return fmt.Errorf("transaction must not be nil")
+	}
 	mutation, err := spannerdata.ExperimentProtoToInsertMutation(exp)
 	if err != nil {
 		return err

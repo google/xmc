@@ -128,6 +128,19 @@ func ArtifactProtoToInsertMutation(art *pb.Artifact) (*spanner.Mutation, error) 
 	}
 	workUnitID := spanner.NullInt64{Int64: wid, Valid: wid != 0}
 
+	url := ""
+	icon := ""
+	displayName := ""
+	if art.Url != nil {
+		url = art.Url.Url
+		icon = art.Url.Icon
+		displayName = art.Url.DisplayName
+	}
+	tags := art.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+
 	return spanner.Insert(
 		artifactschema.ArtifactTableName,
 		artifactschema.ArtifactColumns,
@@ -135,11 +148,11 @@ func ArtifactProtoToInsertMutation(art *pb.Artifact) (*spanner.Mutation, error) 
 			xid,                               // Xid
 			workUnitID,                        // WorkUnitId
 			aid,                               // ArtifactId
-			art.Url.Url,                       // Url
-			art.Url.Icon,                      // Icon
-			art.Url.DisplayName,               // DisplayName
+			url,                               // Url
+			icon,                              // Icon
+			displayName,                       // DisplayName
 			getPriority(art),                  // Priority
-			art.Tags,                          // Tags
+			tags,                              // Tags
 			art.Notes,                         // Notes
 			art.LifecyclePhase,                // LifecyclePhase
 			art.DataType,                      // DataType
@@ -166,6 +179,19 @@ func ArtifactProtoToUpdateMutation(art *pb.Artifact) (*spanner.Mutation, error) 
 	}
 	workUnitID := spanner.NullInt64{Int64: wid, Valid: wid != 0}
 
+	url := ""
+	icon := ""
+	displayName := ""
+	if art.Url != nil {
+		url = art.Url.Url
+		icon = art.Url.Icon
+		displayName = art.Url.DisplayName
+	}
+	tags := art.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+
 	return spanner.Update(
 		artifactschema.ArtifactTableName,
 		artifactschema.ArtifactUpdateColumns,
@@ -173,11 +199,11 @@ func ArtifactProtoToUpdateMutation(art *pb.Artifact) (*spanner.Mutation, error) 
 			data.ReverseBits(xid),             // BitReversedXid
 			workUnitID,                        // WorkUnitId
 			aid,                               // ArtifactId
-			art.Url.Url,                       // Url
-			art.Url.Icon,                      // Icon
-			art.Url.DisplayName,               // DisplayName
+			url,                               // Url
+			icon,                              // Icon
+			displayName,                       // DisplayName
 			getPriority(art),                  // Priority
-			art.Tags,                          // Tags
+			tags,                              // Tags
 			art.Notes,                         // Notes
 			art.LifecyclePhase,                // LifecyclePhase
 			art.DataType,                      // DataType
