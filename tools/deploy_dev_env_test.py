@@ -19,7 +19,7 @@ import pathlib
 import subprocess
 import sys
 import unittest
-from unittest.mock import ANY, MagicMock, call, mock_open, patch
+from unittest.mock import ANY, MagicMock, call, patch
 
 # Import the module under test
 sys.path.insert(0, str(pathlib.Path(__file__).parent.resolve()))
@@ -87,93 +87,24 @@ image_tag: latest
         with self.assertRaises(SystemExit):
             deploy_dev_env.parse_args(args)
 
-    @patch("pathlib.Path.exists", return_value=True)
-    def test_load_and_validate_config_success(self, mock_exists):
-        mo = mock_open(read_data=self.valid_config_yaml)
-        with patch("builtins.open", mo):
-            config = deploy_dev_env.load_and_validate_config("dummy.yaml")
-            self.assertEqual(config, self.valid_config_dict)
+    @patch("deploy_dev_env.tool_load_config")
+    def test_load_and_validate_config_success(self, mock_tool_load):
+        mock_tool_load.return_value = self.valid_config_dict
+        config = deploy_dev_env.load_and_validate_config("dummy.yaml")
+        self.assertEqual(config, self.valid_config_dict)
+        mock_tool_load.assert_called_once_with("dummy.yaml")
 
-    @patch("pathlib.Path.exists", return_value=True)
-    def test_load_and_validate_config_missing_key(self, mock_exists):
-        invalid_yaml = """
-deployment_name: xmc-dev
-project_id: my-project
-# environment is missing
-region: us-central1
-domain_name: example.com
-image_registry: us-central1-docker.pkg.dev/my-project/xmc
-image_tag: latest
-"""
-        mo = mock_open(read_data=invalid_yaml)
-        with patch("builtins.open", mo), self.assertRaises(SystemExit):
+    @patch("deploy_dev_env.tool_load_config", side_effect=FileNotFoundError("not found"))
+    def test_load_and_validate_config_file_not_found(self, mock_tool_load):
+        with self.assertRaises(SystemExit) as cm:
             deploy_dev_env.load_and_validate_config("dummy.yaml")
+        self.assertEqual(cm.exception.code, 1)
 
-    @patch("pathlib.Path.exists", return_value=True)
-    def test_load_and_validate_config_invalid_value(self, mock_exists):
-        invalid_yaml = """
-deployment_name: xmc-dev! # Invalid character
-project_id: my-project
-environment: dev
-region: us-central1
-domain_name: example.com
-image_registry: us-central1-docker.pkg.dev/my-project/xmc
-image_tag: latest
-"""
-        mo = mock_open(read_data=invalid_yaml)
-        with patch("builtins.open", mo), self.assertRaises(SystemExit):
+    @patch("deploy_dev_env.tool_load_config", side_effect=ValueError("invalid config"))
+    def test_load_and_validate_config_validation_error(self, mock_tool_load):
+        with self.assertRaises(SystemExit) as cm:
             deploy_dev_env.load_and_validate_config("dummy.yaml")
-
-    @patch("pathlib.Path.exists", return_value=True)
-    def test_load_config_success(self, mock_exists):
-        yaml_content = """
-key1: value1
-key2: "value2#with#hash"
-key3: 'value3#with#hash'
-key4: value4 # trailing comment
-key5: "value5" # trailing comment with quotes
-# comment line
-  key6: value6 # indented key
-"""
-        mo = mock_open(read_data=yaml_content)
-        with patch("builtins.open", mo):
-            config = deploy_dev_env._load_config("dummy.yaml")
-            expected = {
-                "key1": "value1",
-                "key2": "value2#with#hash",
-                "key3": "value3#with#hash",
-                "key4": "value4",
-                "key5": "value5",
-                "key6": "value6",
-            }
-            self.assertEqual(config, expected)
-
-    def test_validate_config_success(self):
-        config = {
-            "deployment_name": "xmc-dev",
-            "project_id": "my-project",
-            "environment": "dev",
-            "region": "us-central1",
-            "domain_name": "example.com",
-            "image_registry": "us-central1-docker.pkg.dev/my-project/xmc",
-            "image_tag": "latest",
-            "extra_key": "ignored",
-        }
-        validated = deploy_dev_env._validate_config(config, "dummy.yaml")
-        self.assertEqual(validated, self.valid_config_dict)
-
-    def test_validate_config_missing_key(self):
-        config = {
-            "deployment_name": "xmc-dev",
-            # project_id is missing
-            "environment": "dev",
-            "region": "us-central1",
-            "domain_name": "example.com",
-            "image_registry": "us-central1-docker.pkg.dev/my-project/xmc",
-            "image_tag": "latest",
-        }
-        with self.assertRaises(SystemExit):
-            deploy_dev_env._validate_config(config, "dummy.yaml")
+        self.assertEqual(cm.exception.code, 1)
 
     @patch("shutil.which", return_value=True)
     @patch("pathlib.Path.is_file", return_value=True)
