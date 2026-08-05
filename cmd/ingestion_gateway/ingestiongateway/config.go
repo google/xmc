@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package ingestiongateway
 
 import (
 	"flag"
@@ -43,49 +43,77 @@ type Config struct {
 	ProjectID             string
 }
 
-var (
-	port                  string
-	redpandaBrokersStr    string
-	topicName             string
-	minPartitions         int
-	minReplicas           int
-	saslEnabled           bool
-	saslMechanism         string
-	saslUser              string
-	saslPassword          string
-	saslCredentialsDir    string
-	tlsEnabled            bool
-	tlsCertFile           string
-	tlsKeyFile            string
-	tlsCaFile             string
-	tlsInsecureSkipVerify bool
-	projectID             string
-)
-
-func init() {
-	flag.StringVar(&port, "port", "8080", "The HTTP server port to listen on.")
-	flag.StringVar(&redpandaBrokersStr, "redpanda_brokers", "localhost:9092", "Comma-separated Redpanda broker addresses.")
-	flag.StringVar(&topicName, "topic_name", "xmc-metrics", "The Redpanda metrics topic name.")
-	flag.IntVar(&minPartitions, "min_partitions", 128, "Minimum required partition count for topic topology assertion.")
-	flag.IntVar(&minReplicas, "min_replicas", 3, "Minimum required replica count for topic topology assertion.")
-	flag.BoolVar(&saslEnabled, "sasl_enabled", false, "Whether SASL authentication is enabled.")
-	flag.StringVar(&saslMechanism, "sasl_mechanism", "SCRAM-SHA-256", "SASL mechanism (SCRAM-SHA-256, SCRAM-SHA-512, PLAIN).")
-	flag.StringVar(&saslUser, "sasl_user", "", "SASL username (if omitted, loaded from sasl_credentials_dir/username).")
-	flag.StringVar(&saslPassword, "sasl_password", "", "SASL password (if omitted, loaded from sasl_credentials_dir/password).")
-	flag.StringVar(&saslCredentialsDir, "sasl_credentials_dir", "/etc/kafka/credentials", "Directory containing mounted SASL secret files.")
-	flag.BoolVar(&tlsEnabled, "tls_enabled", false, "Whether TLS/mTLS is enabled for Redpanda connections.")
-	flag.StringVar(&tlsCertFile, "tls_cert_file", "", "Path to TLS client certificate file for mTLS.")
-	flag.StringVar(&tlsKeyFile, "tls_key_file", "", "Path to TLS client private key file for mTLS.")
-	flag.StringVar(&tlsCaFile, "tls_ca_file", "", "Path to TLS CA certificate file for server verification.")
-	flag.BoolVar(&tlsInsecureSkipVerify, "tls_insecure_skip_verify", false, "Skip TLS certificate verification (for testing only).")
-	flag.StringVar(&projectID, "project_id", "", "GCP project ID for logging.")
+// Flags holds the CLI flag value bindings for FlagSet registration.
+type Flags struct {
+	Port                  string
+	RedpandaBrokers       string
+	TopicName             string
+	MinPartitions         int
+	MinReplicas           int
+	SASLEnabled           bool
+	SASLMechanism         string
+	SASLUser              string
+	SASLPassword          string
+	SASLCredentialsDir    string
+	TLSEnabled            bool
+	TLSCertFile           string
+	TLSKeyFile            string
+	TLSCaFile             string
+	TLSInsecureSkipVerify bool
+	ProjectID             string
 }
 
-// LoadConfig creates and validates a Config struct from flags, environment variables, and mounted secrets.
-func LoadConfig() (*Config, error) {
-	effectivePort := getEnvOrDefault(port, "8080", "PORT")
-	effectiveBrokersStr := getEnvOrDefault(redpandaBrokersStr, "localhost:9092", "REDPANDA_BROKERS", "REDPANDA_BROKER")
-	effectiveTopicName := getEnvOrDefault(topicName, "xmc-metrics", "TOPIC_NAME", "REDPANDA_TOPIC")
+// RegisterFlags registers the ingestion gateway CLI flags on the given FlagSet and returns a Flags struct binding.
+func RegisterFlags(fs *flag.FlagSet) *Flags {
+	f := &Flags{}
+	fs.StringVar(&f.Port, "port", "8080", "The HTTP server port to listen on.")
+	fs.StringVar(&f.RedpandaBrokers, "redpanda_brokers", "localhost:9092", "Comma-separated Redpanda broker addresses.")
+	fs.StringVar(&f.TopicName, "topic_name", "xmc-metrics", "The Redpanda metrics topic name.")
+	fs.IntVar(&f.MinPartitions, "min_partitions", 128, "Minimum required partition count for topic topology assertion.")
+	fs.IntVar(&f.MinReplicas, "min_replicas", 3, "Minimum required replica count for topic topology assertion.")
+	fs.BoolVar(&f.SASLEnabled, "sasl_enabled", false, "Whether SASL authentication is enabled.")
+	fs.StringVar(&f.SASLMechanism, "sasl_mechanism", "SCRAM-SHA-256", "SASL mechanism (SCRAM-SHA-256, SCRAM-SHA-512, PLAIN).")
+	fs.StringVar(&f.SASLUser, "sasl_user", "", "SASL username (if omitted, loaded from sasl_credentials_dir/username).")
+	fs.StringVar(&f.SASLPassword, "sasl_password", "", "SASL password (if omitted, loaded from sasl_credentials_dir/password).")
+	fs.StringVar(&f.SASLCredentialsDir, "sasl_credentials_dir", "/etc/kafka/credentials", "Directory containing mounted SASL secret files.")
+	fs.BoolVar(&f.TLSEnabled, "tls_enabled", false, "Whether TLS/mTLS is enabled for Redpanda connections.")
+	fs.StringVar(&f.TLSCertFile, "tls_cert_file", "", "Path to TLS client certificate file for mTLS.")
+	fs.StringVar(&f.TLSKeyFile, "tls_key_file", "", "Path to TLS client private key file for mTLS.")
+	fs.StringVar(&f.TLSCaFile, "tls_ca_file", "", "Path to TLS CA certificate file for server verification.")
+	fs.BoolVar(&f.TLSInsecureSkipVerify, "tls_insecure_skip_verify", false, "Skip TLS certificate verification (for testing only).")
+	fs.StringVar(&f.ProjectID, "project_id", "", "GCP project ID for logging.")
+	return f
+}
+
+// LoadConfig creates and validates a Config struct from optional Flags, environment variables, and mounted secrets.
+func LoadConfig(optionalFlags ...*Flags) (*Config, error) {
+	var f Flags
+	if len(optionalFlags) > 0 && optionalFlags[0] != nil {
+		f = *optionalFlags[0]
+	}
+
+	if f.Port == "" {
+		f.Port = "8080"
+	}
+	if f.RedpandaBrokers == "" {
+		f.RedpandaBrokers = "localhost:9092"
+	}
+	if f.TopicName == "" {
+		f.TopicName = "xmc-metrics"
+	}
+
+	effectivePort := getEnvOrDefault(f.Port, "8080", "PORT")
+	effectiveBrokersStr := getEnvOrDefault(f.RedpandaBrokers, "localhost:9092", "REDPANDA_BROKERS", "REDPANDA_BROKER")
+	effectiveTopicName := getEnvOrDefault(f.TopicName, "xmc-metrics", "TOPIC_NAME", "REDPANDA_TOPIC")
+
+	minParts := f.MinPartitions
+	if minParts == 0 {
+		minParts = 128
+	}
+	minReps := f.MinReplicas
+	if minReps == 0 {
+		minReps = 3
+	}
 
 	brokers := parseBrokers(effectiveBrokersStr)
 
@@ -93,19 +121,19 @@ func LoadConfig() (*Config, error) {
 		Port:                  strings.TrimSpace(effectivePort),
 		RedpandaBrokers:       brokers,
 		TopicName:             strings.TrimSpace(effectiveTopicName),
-		MinPartitions:         minPartitions,
-		MinReplicas:           minReplicas,
-		SASLEnabled:           saslEnabled,
-		SASLMechanism:         strings.ToUpper(strings.TrimSpace(saslMechanism)),
-		SASLUser:              strings.TrimSpace(saslUser),
-		SASLPassword:          strings.TrimSpace(saslPassword),
-		SASLCredentialsDir:    strings.TrimSpace(saslCredentialsDir),
-		TLSEnabled:            tlsEnabled,
-		TLSCertFile:           strings.TrimSpace(tlsCertFile),
-		TLSKeyFile:            strings.TrimSpace(tlsKeyFile),
-		TLSCaFile:             strings.TrimSpace(tlsCaFile),
-		TLSInsecureSkipVerify: tlsInsecureSkipVerify,
-		ProjectID:             strings.TrimSpace(projectID),
+		MinPartitions:         minParts,
+		MinReplicas:           minReps,
+		SASLEnabled:           f.SASLEnabled,
+		SASLMechanism:         strings.ToUpper(strings.TrimSpace(f.SASLMechanism)),
+		SASLUser:              strings.TrimSpace(f.SASLUser),
+		SASLPassword:          strings.TrimSpace(f.SASLPassword),
+		SASLCredentialsDir:    strings.TrimSpace(f.SASLCredentialsDir),
+		TLSEnabled:            f.TLSEnabled,
+		TLSCertFile:           strings.TrimSpace(f.TLSCertFile),
+		TLSKeyFile:            strings.TrimSpace(f.TLSKeyFile),
+		TLSCaFile:             strings.TrimSpace(f.TLSCaFile),
+		TLSInsecureSkipVerify: f.TLSInsecureSkipVerify,
+		ProjectID:             strings.TrimSpace(f.ProjectID),
 	}
 
 	if cfg.SASLEnabled {
