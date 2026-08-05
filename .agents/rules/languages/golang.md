@@ -30,7 +30,11 @@ This document defines coding standards and conventions for Go development across
 ## 6. Go Dependencies / Bazel
 - Always inspect proto package `BUILD.bazel` to verify exact `go_proto_library` target name (typically ending in `_go_proto`) before adding Bazel dependencies.
 
-## 7. Go Map Safety, Mutability & Pointer Isolation
+## 7. Go CLI Entrypoints & Exit Cleanups
+- **Graceful Execution Pattern**: NEVER call `os.Exit()` directly inside `main()` when `defer` statements (e.g. database handles, socket cleanups) are registered. Standardize on the `os.Exit(run())` pattern where `run() int` returns the exit code after all deferred cleanups execute.
+- **Zero-Value Flag Defaults for Environment Fallbacks**: When CLI flags override environment variable fallbacks, set CLI flag defaults to zero-values (`0`, `""`) to accurately distinguish explicit CLI overrides from environment variable defaults.
+
+## 8. Go Map Safety, Mutability & Pointer Isolation
 - **Map Pointer Isolation**: NEVER assign the same map reference to multiple struct fields or nested objects (e.g., `JobTemplateSpec.ObjectMeta.Labels` and `PodTemplateSpec.ObjectMeta.Labels`). Construct a shallow copy for each sub-struct:
   ```go
   podLabels := make(map[string]string, len(labels))
