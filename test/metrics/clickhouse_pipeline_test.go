@@ -87,33 +87,34 @@ func produceProtoMetrics(ctx context.Context, brokers []string, metrics []*metri
 }
 
 func pollRecordCount(ctx context.Context, harness *infra.Harness, query string, expectedMin uint64) (uint64, error) {
+	pollCtx, cancel := context.WithTimeout(ctx, pollTimeout)
+	defer cancel()
+
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
-
-	timeout := time.NewTimer(pollTimeout)
-	defer timeout.Stop()
 
 	var lastErr error
 	for {
 		select {
-		case <-ctx.Done():
-			return 0, ctx.Err()
-		case <-timeout.C:
+		case <-pollCtx.Done():
+			if ctx.Err() != nil {
+				return 0, ctx.Err()
+			}
 			var count uint64
-			row := harness.ClickHouseConn.QueryRow(ctx, query)
-			if err := row.Scan(&count); err != nil {
-				return 0, fmt.Errorf("timeout waiting for records, query error: %w", err)
+			checkCtx, checkCancel := context.WithTimeout(context.Background(), 2*time.Second)
+			row := harness.ClickHouseConn.QueryRow(checkCtx, query)
+			err := row.Scan(&count)
+			checkCancel()
+			if err == nil && count >= expectedMin {
+				return count, nil
 			}
-			if count < expectedMin {
-				if lastErr != nil {
-					return count, fmt.Errorf("timeout waiting for %d records (got %d), query error: %w", expectedMin, count, lastErr)
-				}
-				return count, fmt.Errorf("timeout waiting for %d records (got %d)", expectedMin, count)
+			if lastErr != nil {
+				return count, fmt.Errorf("timeout waiting for %d records (got %d), query error: %w", expectedMin, count, lastErr)
 			}
-			return count, nil
+			return count, fmt.Errorf("timeout waiting for %d records (got %d): %w", expectedMin, count, pollCtx.Err())
 		case <-ticker.C:
 			var count uint64
-			row := harness.ClickHouseConn.QueryRow(ctx, query)
+			row := harness.ClickHouseConn.QueryRow(pollCtx, query)
 			if err := row.Scan(&count); err == nil {
 				if count >= expectedMin {
 					return count, nil
@@ -361,7 +362,13 @@ func TestClickHousePipelineRoutingAndFiltering(t *testing.T) {
 	row = harness.ClickHouseConn.QueryRow(ctx, tsQuery)
 	if err := row.Scan(&badTS); err != nil {
 		t.Errorf("Failed to query bad timestamp record: %v", err)
-	} else if time.Since(badTS) > 5*time.Minute {
-		t.Errorf("Expected timestamp to be sanitized to current time, got %v", badTS)
+	} else {
+		diff := time.Since(badTS)
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff > 5*time.Minute {
+			t.Errorf("Expected timestamp to be sanitized to current time, got %v (diff=%v)", badTS, diff)
+		}
 	}
 }

@@ -305,8 +305,25 @@ func ExecuteSQLScript(ctx context.Context, conn driver.Conn, scriptPath string, 
 	}
 	cleanScript := strings.Join(cleanLines, "\n")
 
-	// Note: Splitting by ";" is naive and will break if semicolons appear inside string literals or comments.
-	statements := strings.Split(cleanScript, ";")
+	var statements []string
+	var current strings.Builder
+	inQuote := false
+	for i := 0; i < len(cleanScript); i++ {
+		char := cleanScript[i]
+		if char == '\'' {
+			inQuote = !inQuote
+		}
+		if char == ';' && !inQuote {
+			statements = append(statements, current.String())
+			current.Reset()
+		} else {
+			current.WriteByte(char)
+		}
+	}
+	if current.Len() > 0 {
+		statements = append(statements, current.String())
+	}
+
 	for _, stmt := range statements {
 		cleanStmt := strings.TrimSpace(stmt)
 		if cleanStmt == "" {
