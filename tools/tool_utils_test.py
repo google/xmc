@@ -23,7 +23,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from tool_utils import HandledError, _bootstrap_venv, ensure_venv, run_tool
+from tool_utils import (
+    HandledError,
+    _bootstrap_venv,
+    ensure_venv,
+    load_and_validate_config,
+    parse_yaml_vars,
+    run_tool,
+)
 
 
 class TestToolUtils(unittest.TestCase):
@@ -230,6 +237,135 @@ class TestToolUtils(unittest.TestCase):
         self.assertEqual(output["error_type"], "unhandled")
         self.assertEqual(output["message"], "unexpected value")
         self.assertIn("traceback", output)
+
+
+class TestConfigLoader(unittest.TestCase):
+    """Test suite for config loader in tool_utils."""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.config_path = Path(self.tmp_dir.name) / "test_config.yaml"
+        self.valid_yaml = """vars:
+  deployment_name: xmc-dev
+  project_id: my-project
+  environment: dev
+  region: us-central1
+  domain_name: example.com
+  image_registry: us-central1-docker.pkg.dev/my-project/xmc
+  image_tag: latest
+"""
+        self.valid_dict = {
+            "deployment_name": "xmc-dev",
+            "project_id": "my-project",
+            "environment": "dev",
+            "region": "us-central1",
+            "domain_name": "example.com",
+            "image_registry": "us-central1-docker.pkg.dev/my-project/xmc",
+            "image_tag": "latest",
+        }
+
+    def tearDown(self):
+        self.tmp_dir.cleanup()
+
+    def test_parse_yaml_vars_success(self):
+        self.config_path.write_text(self.valid_yaml, encoding="utf-8")
+        vars_dict = parse_yaml_vars(self.config_path)
+        self.assertEqual(vars_dict, self.valid_dict)
+
+    def test_parse_yaml_vars_line_fallback(self):
+        from tool_utils import _parse_yaml_vars_line_fallback
+
+        yaml_content = """vars:
+  key1: value1
+  key2: "value2#with#hash"
+  key3: 'value3#with#hash'
+  key4: value4 # trailing comment
+  key5: "value5" # trailing comment with quotes
+  # comment line
+  key6: value6 # indented key
+  key7: "value7 # with space and hash"
+  key8: 'value8 # with space and hash'
+"""
+        res = _parse_yaml_vars_line_fallback(yaml_content)
+        expected = {
+            "key1": "value1",
+            "key2": "value2#with#hash",
+            "key3": "value3#with#hash",
+            "key4": "value4",
+            "key5": "value5",
+            "key6": "value6",
+            "key7": "value7 # with space and hash",
+            "key8": "value8 # with space and hash",
+        }
+        self.assertEqual(res, expected)
+
+    def test_load_and_validate_config_success(self):
+        self.config_path.write_text(self.valid_yaml, encoding="utf-8")
+        config = load_and_validate_config(str(self.config_path))
+        self.assertEqual(config, self.valid_dict)
+
+    def test_load_and_validate_config_missing_required_key(self):
+        invalid_yaml = """vars:
+  deployment_name: xmc-dev
+  project_id: my-project
+  # environment is missing
+  region: us-central1
+  domain_name: example.com
+  image_registry: us-central1-docker.pkg.dev/my-project/xmc
+  image_tag: latest
+"""
+        self.config_path.write_text(invalid_yaml, encoding="utf-8")
+        with self.assertRaises(ValueError) as cm:
+            load_and_validate_config(str(self.config_path))
+        self.assertIn("Required configuration field 'environment' is missing", str(cm.exception))
+
+    def test_load_and_validate_config_invalid_value(self):
+        invalid_yaml = """vars:
+  deployment_name: xmc-dev! # Invalid char
+  project_id: my-project
+  environment: dev
+  region: us-central1
+  domain_name: example.com
+  image_registry: us-central1-docker.pkg.dev/my-project/xmc
+  image_tag: latest
+"""
+        self.config_path.write_text(invalid_yaml, encoding="utf-8")
+        with self.assertRaises(ValueError) as cm:
+            load_and_validate_config(str(self.config_path))
+        self.assertIn("value 'xmc-dev!' is invalid", str(cm.exception))
+
+    @patch.dict(os.environ, {"PROJECT_ID": "env-project", "XMC_DEPLOYMENT_NAME": "env-deploy"})
+    def test_load_and_validate_config_env_overrides(self):
+        self.config_path.write_text(self.valid_yaml, encoding="utf-8")
+        config = load_and_validate_config(str(self.config_path))
+        self.assertEqual(config["project_id"], "env-project")
+        self.assertEqual(config["deployment_name"], "env-deploy")
+        self.assertEqual(config["environment"], "dev")
+
+    def test_load_and_validate_config_with_defaults(self):
+        minimal_yaml = """vars:
+  deployment_name: xmc-dev
+  project_id: my-project
+  domain_name: example.com
+"""
+        self.config_path.write_text(minimal_yaml, encoding="utf-8")
+        defaults = {
+            "region": "us-east1",
+            "environment": "staging",
+            "image_registry": "us-docker.pkg.dev/my-project/xmc",
+            "image_tag": "latest",
+        }
+        config = load_and_validate_config(str(self.config_path), defaults=defaults)
+        expected = {
+            "deployment_name": "xmc-dev",
+            "project_id": "my-project",
+            "domain_name": "example.com",
+            "region": "us-east1",
+            "environment": "staging",
+            "image_registry": "us-docker.pkg.dev/my-project/xmc",
+            "image_tag": "latest",
+        }
+        self.assertEqual(config, expected)
 
 
 if __name__ == "__main__":
