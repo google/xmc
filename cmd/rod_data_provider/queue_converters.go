@@ -17,7 +17,39 @@ package main
 import (
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
+
+func buildResourceFlavorMap(c *cache.KueueCache) map[string]*kueuev1beta1.ResourceFlavor {
+	if c != nil && c.ResourceFlavors != nil {
+		flavors := c.ResourceFlavors.List()
+		rfMap := make(map[string]*kueuev1beta1.ResourceFlavor, len(flavors))
+		for _, rf := range flavors {
+			if rf != nil {
+				rfMap[rf.Name] = rf
+			}
+		}
+		return rfMap
+	}
+	return make(map[string]*kueuev1beta1.ResourceFlavor)
+}
+
+func buildQueueOverviews(c *cache.KueueCache, rfMap map[string]*kueuev1beta1.ResourceFlavor) []*spb.QueueOverview {
+	if c == nil || c.ClusterQueues == nil {
+		return nil
+	}
+	clusterQueues := c.ClusterQueues.List()
+	overviews := make([]*spb.QueueOverview, 0, len(clusterQueues))
+	for _, cq := range clusterQueues {
+		if cq == nil {
+			continue
+		}
+		if overview := buildQueueOverviewFromClusterQueue(cq, rfMap); overview != nil {
+			overviews = append(overviews, overview)
+		}
+	}
+	return overviews
+}
 
 // ResourceQuotaAggregator holds accumulated nominal quotas and borrowing limits for a specific resource type across all flavors.
 type ResourceQuotaAggregator struct {
