@@ -143,6 +143,25 @@ func TestBuildProducerOptions(t *testing.T) {
 	defer client.Close()
 }
 
+func TestBuildProducerOptions_WithMetrics(t *testing.T) {
+	cfg := &Config{
+		RedpandaBrokers: []string{"localhost:9092"},
+		TopicName:       "xmc-metrics",
+	}
+	metrics := NewGatewayMetrics(nil)
+
+	opts, err := BuildProducerOptions(cfg, metrics)
+	if err != nil {
+		t.Fatalf("unexpected error building producer options with metrics: %v", err)
+	}
+
+	client, err := kgo.NewClient(opts...)
+	if err != nil {
+		t.Fatalf("failed to construct kgo.Client with metrics hooks: %v", err)
+	}
+	defer client.Close()
+}
+
 func TestAsyncPublishing_WaitGroupBlocking(t *testing.T) {
 	mp := NewMockProducer()
 	mp.produceDelay = 30 * time.Millisecond

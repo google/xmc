@@ -15,43 +15,24 @@
 import { Injectable } from '@angular/core';
 import { Observable, of } from 'rxjs';
 
-import { ClusterQueue } from '../resource_types';
+import {
+  GetFittingQueuesResponse,
+  QueueOverview,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
-export const DUMMY_CLUSTER_QUEUES: ClusterQueue[] = [
+export const DUMMY_CLUSTER_QUEUES: QueueOverview[] = [
   {
-    name: 'gpu-cluster-queue',
-    strategy: 'BestEffortFIFO',
-    cohort: 'gpu-cohort',
-    status: 'Active',
-    statusMessage: 'Can admit new workloads',
-    lastTransitionTime: '2026-07-22T10:00:00Z',
-    admittedWorkloads: 1,
-    reservingWorkloads: 0,
-    pendingWorkloads: 0,
-    pendingJobsCount: 0,
-    admittedJobsCount: 1,
-    dominantResource: 'GPU H100',
-    dominantResourceUnits: 8,
-    requestedResources: '0',
-    localQueues: [{ name: 'gpu-queue', namespace: 'default' }],
-    flavors: [
+    queueName: 'gpu-cluster-queue',
+    queueCapacity: [
       {
-        name: 'h100-flavor',
-        resourceName: 'nvidia.com/gpu',
-        nominalQuota: '64',
-        inUse: '8',
-        reserved: '0',
-        freeCapacity: '56',
-        largestSlot: '56 → 64',
+        resourceType: 'nvidia.com/gpu',
+        totalCapacity: 64,
+        freeCapacity: 56,
       },
       {
-        name: 'cpu-flavor',
-        resourceName: 'cpu',
-        nominalQuota: '512',
-        inUse: '64',
-        reserved: '0',
-        freeCapacity: '448',
-        largestSlot: '448 → 512',
+        resourceType: 'cpu',
+        totalCapacity: 512,
+        freeCapacity: 448,
       },
     ],
   },
@@ -61,7 +42,7 @@ export const DUMMY_CLUSTER_QUEUES: ClusterQueue[] = [
   providedIn: 'root',
 })
 export class MockResourceService {
-  getClusterQueues(): Observable<ClusterQueue[]> {
-    return of(DUMMY_CLUSTER_QUEUES);
+  getClusterQueues(): Observable<GetFittingQueuesResponse> {
+    return of({ queues: DUMMY_CLUSTER_QUEUES });
   }
 }

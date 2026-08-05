@@ -24,7 +24,7 @@ import (
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
-func blankExperimentProto(xid int64) *essmsgpb.Experiment {
+func BlankExperimentProto(xid int64) *essmsgpb.Experiment {
 	return &essmsgpb.Experiment{
 		Name:    fmt.Sprintf("experiments/%d", xid),
 		Title:   "test-title",
@@ -49,7 +49,7 @@ func blankExperimentProto(xid int64) *essmsgpb.Experiment {
 	}
 }
 
-func createAndStoreExperiment(ctx context.Context, t *testing.T, storage *Storage, exp *essmsgpb.Experiment) *essmsgpb.Experiment {
+func CreateAndStoreExperiment(ctx context.Context, t *testing.T, storage *Storage, exp *essmsgpb.Experiment) *essmsgpb.Experiment {
 	t.Helper()
 	createdExp, err := storage.CreateExperiment(ctx, exp)
 	if err != nil {
@@ -58,20 +58,20 @@ func createAndStoreExperiment(ctx context.Context, t *testing.T, storage *Storag
 	return createdExp
 }
 
-func createBlankExperiment(ctx context.Context, t *testing.T, storage *Storage, xid int64) *essmsgpb.Experiment {
+func CreateBlankExperiment(ctx context.Context, t *testing.T, storage *Storage, xid int64) *essmsgpb.Experiment {
 	t.Helper()
-	exp := blankExperimentProto(xid)
-	return createAndStoreExperiment(ctx, t, storage, exp)
+	exp := BlankExperimentProto(xid)
+	return CreateAndStoreExperiment(ctx, t, storage, exp)
 }
 
-func createBlankExperimentWithLaunchState(ctx context.Context, t *testing.T, storage *Storage, xid int64, launchState essmsgpb.ExperimentStatus_LaunchState) *essmsgpb.Experiment {
+func CreateBlankExperimentWithLaunchState(ctx context.Context, t *testing.T, storage *Storage, xid int64, launchState essmsgpb.ExperimentStatus_LaunchState) *essmsgpb.Experiment {
 	t.Helper()
-	exp := blankExperimentProto(xid)
+	exp := BlankExperimentProto(xid)
 	exp.Status.LaunchState = launchState
-	return createAndStoreExperiment(ctx, t, storage, exp)
+	return CreateAndStoreExperiment(ctx, t, storage, exp)
 }
 
-func blankWorkUnitProto(xid int64, wid int64) *essmsgpb.WorkUnit {
+func BlankWorkUnitProto(xid int64, wid int64) *essmsgpb.WorkUnit {
 	return &essmsgpb.WorkUnit{
 		Name:         fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid),
 		WorkUnitType: essmsgpb.WorkUnit_STANDARD,
@@ -106,7 +106,7 @@ func blankWorkUnitProto(xid int64, wid int64) *essmsgpb.WorkUnit {
 	}
 }
 
-func createAndStoreWorkUnit(ctx context.Context, t *testing.T, storage *Storage, wu *essmsgpb.WorkUnit) *essmsgpb.WorkUnit {
+func CreateAndStoreWorkUnit(ctx context.Context, t *testing.T, storage *Storage, wu *essmsgpb.WorkUnit) *essmsgpb.WorkUnit {
 	t.Helper()
 	createdWu, err := storage.CreateWorkUnit(ctx, wu)
 	if err != nil {
@@ -115,20 +115,20 @@ func createAndStoreWorkUnit(ctx context.Context, t *testing.T, storage *Storage,
 	return createdWu
 }
 
-func createBlankWorkUnit(ctx context.Context, t *testing.T, storage *Storage, xid int64, wid int64) *essmsgpb.WorkUnit {
+func CreateBlankWorkUnit(ctx context.Context, t *testing.T, storage *Storage, xid int64, wid int64) *essmsgpb.WorkUnit {
 	t.Helper()
-	wu := blankWorkUnitProto(xid, wid)
-	return createAndStoreWorkUnit(ctx, t, storage, wu)
+	wu := BlankWorkUnitProto(xid, wid)
+	return CreateAndStoreWorkUnit(ctx, t, storage, wu)
 }
 
-func createBlankWorkUnitWithState(ctx context.Context, t *testing.T, storage *Storage, xid int64, wid int64, state essmsgpb.WorkUnitStatus_WorkUnitState) *essmsgpb.WorkUnit {
+func CreateBlankWorkUnitWithState(ctx context.Context, t *testing.T, storage *Storage, xid int64, wid int64, state essmsgpb.WorkUnitStatus_WorkUnitState) *essmsgpb.WorkUnit {
 	t.Helper()
-	wu := blankWorkUnitProto(xid, wid)
+	wu := BlankWorkUnitProto(xid, wid)
 	wu.CurrentWorkUnitExecution.Status.State = state
-	return createAndStoreWorkUnit(ctx, t, storage, wu)
+	return CreateAndStoreWorkUnit(ctx, t, storage, wu)
 }
 
-func childStateCountInState(t *testing.T, exp *essmsgpb.Experiment, state essmsgpb.WorkUnitStatus_WorkUnitState) int64 {
+func ChildStateCountInState(t *testing.T, exp *essmsgpb.Experiment, state essmsgpb.WorkUnitStatus_WorkUnitState) int64 {
 	t.Helper()
 	for _, count := range exp.Status.ChildStateCounts {
 		if count.State == state {
@@ -138,7 +138,7 @@ func childStateCountInState(t *testing.T, exp *essmsgpb.Experiment, state essmsg
 	return 0
 }
 
-func messageSeverityCountInState(t *testing.T, exp *essmsgpb.Experiment, severity essmsgpb.StructuredMessage_Severity) int64 {
+func MessageSeverityCountInState(t *testing.T, exp *essmsgpb.Experiment, severity essmsgpb.StructuredMessage_Severity) int64 {
 	t.Helper()
 	for _, severityCount := range exp.Status.MessageSeverityCounts {
 		if severityCount.GetSeverity() == severity {
@@ -148,7 +148,7 @@ func messageSeverityCountInState(t *testing.T, exp *essmsgpb.Experiment, severit
 	return 0
 }
 
-func blankArtifactProto(xid, aid int64) *essmsgpb.Artifact {
+func BlankArtifactProto(xid, aid int64) *essmsgpb.Artifact {
 	return &essmsgpb.Artifact{
 		Name:   fmt.Sprintf("artifacts/%d", aid),
 		Parent: fmt.Sprintf("experiments/%d", xid),
@@ -160,7 +160,7 @@ func blankArtifactProto(xid, aid int64) *essmsgpb.Artifact {
 	}
 }
 
-func createAndStoreArtifact(ctx context.Context, t *testing.T, storage *Storage, art *essmsgpb.Artifact) *essmsgpb.Artifact {
+func CreateAndStoreArtifact(ctx context.Context, t *testing.T, storage *Storage, art *essmsgpb.Artifact) *essmsgpb.Artifact {
 	t.Helper()
 	createdArt, err := storage.CreateArtifact(ctx, art)
 	if err != nil {

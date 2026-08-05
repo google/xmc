@@ -37,6 +37,9 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 *   **`gts_key_id`**: GTS External Account Binding key ID.
 *   **`gts_hmac_key`**: GTS External Account Binding HMAC secret.
 
+### Feature Switches
+*   **`enable_metrics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision optional metrics pipeline microservices (Ingestion Gateway and ROD Data Provider).
+
 ---
 
 ## 🏁 Phase 2: How to Deploy

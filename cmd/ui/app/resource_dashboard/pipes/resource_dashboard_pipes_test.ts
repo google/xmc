@@ -14,7 +14,10 @@
 
 import 'jasmine';
 
-import { ClusterQueue, ResourceFlavorMetric } from 'xmanager_cloud/ui/app/service/resource_types';
+import {
+  QueueOverview,
+  QueueResourceCapacity,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import {
   FreeTotalDisplayPipe,
@@ -31,26 +34,22 @@ describe('Resource Dashboard Pipes', () => {
       pipe = new FreeTotalDisplayPipe();
     });
 
-    it('should return "-" when flavor is undefined', () => {
+    it('should return "-" when capacity is undefined', () => {
       expect(pipe.transform(undefined)).toBe('-');
     });
 
     it('should format free and total capacity correctly', () => {
-      const flavor: ResourceFlavorMetric = {
-        name: 'h100',
-        resourceName: 'nvidia.com/gpu',
-        nominalQuota: '64',
-        inUse: '8',
-        reserved: '0',
-        freeCapacity: '56',
-        largestSlot: '56 → 64',
+      const cap: QueueResourceCapacity = {
+        resourceType: 'nvidia-tesla-h100',
+        totalCapacity: 64,
+        freeCapacity: 56,
       };
-      expect(pipe.transform(flavor)).toBe('56 / 64');
+      expect(pipe.transform(cap)).toBe('56 / 64');
     });
 
     it('should handle missing free capacity gracefully', () => {
-      const flavor: Partial<ResourceFlavorMetric> = { nominalQuota: '100' };
-      expect(pipe.transform(flavor as ResourceFlavorMetric)).toBe('0 / 100');
+      const cap: Partial<QueueResourceCapacity> = { totalCapacity: 100 };
+      expect(pipe.transform(cap as QueueResourceCapacity)).toBe('0 / 100');
     });
   });
 
@@ -61,29 +60,17 @@ describe('Resource Dashboard Pipes', () => {
       pipe = new MaxWorkloadDisplayPipe();
     });
 
-    it('should return "-" when flavor is undefined', () => {
+    it('should return "-" when capacity is undefined', () => {
       expect(pipe.transform(undefined)).toBe('-');
     });
 
-    it('should return largestSlot if valid', () => {
-      const flavor: ResourceFlavorMetric = {
-        name: 'h100',
-        resourceName: 'nvidia.com/gpu',
-        nominalQuota: '64',
-        inUse: '8',
-        reserved: '0',
-        freeCapacity: '56',
-        largestSlot: '56 → 64',
+    it('should compute slot from freeCapacity and totalCapacity', () => {
+      const cap: QueueResourceCapacity = {
+        resourceType: 'nvidia-tesla-h100',
+        freeCapacity: 32,
+        totalCapacity: 64,
       };
-      expect(pipe.transform(flavor)).toBe('56 → 64');
-    });
-
-    it('should compute slot from freeCapacity and nominalQuota if largestSlot is missing', () => {
-      const flavor: Partial<ResourceFlavorMetric> = {
-        freeCapacity: '32',
-        nominalQuota: '64',
-      };
-      expect(pipe.transform(flavor as ResourceFlavorMetric)).toBe('32 → 64');
+      expect(pipe.transform(cap)).toBe('32 → 64');
     });
   });
 
@@ -99,36 +86,13 @@ describe('Resource Dashboard Pipes', () => {
       expect(pipe.transform(null)).toBeNull();
     });
 
-    it('should return healthy message when status is Active and no pending workloads', () => {
-      const queue: Partial<ClusterQueue> = {
-        status: 'Active',
-        pendingWorkloads: 0,
+    it('should return healthy message for valid queue', () => {
+      const queue: QueueOverview = {
+        queueName: 'gpu-cluster-queue',
       };
-      expect(pipe.transform(queue as ClusterQueue)).toEqual({
+      expect(pipe.transform(queue)).toEqual({
         text: 'System is healthy. Job will start immediately.',
         isHealthy: true,
-      });
-    });
-
-    it('should return stuck traffic message when pending workloads exist', () => {
-      const queue: Partial<ClusterQueue> = {
-        status: 'Active',
-        pendingWorkloads: 5,
-      };
-      expect(pipe.transform(queue as ClusterQueue)).toEqual({
-        text: 'Traffic stuck. Use another queue if available.',
-        isHealthy: false,
-      });
-    });
-
-    it('should return stuck traffic message when status is not Active', () => {
-      const queue: Partial<ClusterQueue> = {
-        status: 'Inactive',
-        pendingWorkloads: 0,
-      };
-      expect(pipe.transform(queue as ClusterQueue)).toEqual({
-        text: 'Traffic stuck. Use another queue if available.',
-        isHealthy: false,
       });
     });
   });
@@ -145,25 +109,13 @@ describe('Resource Dashboard Pipes', () => {
       expect(pipe.transform(null)).toBeNull();
     });
 
-    it('should return "Resources available" when active and no pending workloads', () => {
-      const queue: Partial<ClusterQueue> = {
-        status: 'Active',
-        pendingWorkloads: 0,
+    it('should return "Resources available" for valid queue', () => {
+      const queue: QueueOverview = {
+        queueName: 'gpu-cluster-queue',
       };
-      expect(pipe.transform(queue as ClusterQueue)).toEqual({
+      expect(pipe.transform(queue)).toEqual({
         label: 'Resources available',
         isHealthy: true,
-      });
-    });
-
-    it('should return "Preemption risk" when queue has pending workloads', () => {
-      const queue: Partial<ClusterQueue> = {
-        status: 'Active',
-        pendingWorkloads: 2,
-      };
-      expect(pipe.transform(queue as ClusterQueue)).toEqual({
-        label: 'Preemption risk',
-        isHealthy: false,
       });
     });
   });
