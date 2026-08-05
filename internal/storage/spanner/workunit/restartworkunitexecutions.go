@@ -23,6 +23,7 @@ import (
 	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	domainwu "xmanager_cloud/internal/domain/workunit"
 	"xmanager_cloud/internal/storage/spanner/statusmessage"
 	"xmanager_cloud/logging/logging"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
@@ -46,68 +47,41 @@ func (r *Repository) RestartWorkUnitExecutions(ctx context.Context, requester st
 
 		for _, wid := range wids {
 			// 1. Read the WorkUnit row.
-			// TODO(b/517479143): Move execution restart business logic out of the Spanner repository into a domain service layer.
 			wu, err := r.FetchWorkUnitTransaction(ctx, xid, wid, tx)
 			if err != nil {
 				return fmt.Errorf("failed to fetch work unit: %v: %w", err, status.ErrInternal)
 			}
 
-			// 2. Set the execution state to INACTIVE.
-			currentExecution := wu.GetCurrentWorkUnitExecution()
-			currentExecution.State = essmsgpb.WorkUnitExecution_INACTIVE
-			currentExecution.UpdateTime = timestamppb.New(now)
+			// 2. Delegate execution state transition calculation to domain/workunit package.
+			result, err := domainwu.RestartExecution(xid, wid, wu.GetCurrentWorkUnitExecution(), requester, now)
+			if err != nil {
+				return err
+			}
 
 			// 3. Archive the current execution.
-			archiveMutation, err := spannerdata.WorkUnitExecutionProtoToInsertMutation(currentExecution)
+			archiveMutation, err := spannerdata.WorkUnitExecutionProtoToInsertMutation(result.ArchivedExecution)
 			if err != nil {
 				return fmt.Errorf("failed to create mutation for archived work unit execution: %v: %w", err, status.ErrInternal)
 			}
 			tx.BufferWrite([]*spanner.Mutation{archiveMutation})
 
-			// 4. Get the EID so we can increment it.
-			_, _, eid, err := validator.ValidateWorkUnitExecutionName(currentExecution.GetName())
-			if err != nil {
-				return fmt.Errorf("failed to validate work unit execution name %q: %v: %w", currentExecution.GetName(), err, status.ErrInternal)
-			}
-			if eid == 0 {
-				return fmt.Errorf("invalid eid 0 from work unit execution name %q: %w", currentExecution.GetName(), status.ErrInternal)
-			}
+			newExecutions[wid] = result.NewExecution
+			executionDeltas = append(executionDeltas, result.StateDelta)
 
-			// 4.1. Create a new execution with the given state.
-			newEID := eid + 1
-			newExecution := &essmsgpb.WorkUnitExecution{
-				Name: fmt.Sprintf("experiments/%v/workUnits/%v/executions/%v", xid, wid, newEID),
-				Status: &essmsgpb.WorkUnitStatus{
-					State: essmsgpb.WorkUnitStatus_RESTARTING,
-					SystemMessage: &essmsgpb.StructuredMessage{
-						UserFacingText: fmt.Sprintf("Work unit is being restarted by %s", requester),
-						Severity:       essmsgpb.StructuredMessage_INFO,
-						Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
-						Parent:         fmt.Sprintf("experiments/%v/workUnits/%v", xid, wid),
-					},
-					UpdateTime:      timestamppb.New(now),
-					StateUpdateTime: timestamppb.New(now),
-				},
-				Metadata:   &essmsgpb.WorkUnitExecutionMetadata{},
-				State:      essmsgpb.WorkUnitExecution_ACTIVE,
-				CreateTime: timestamppb.New(now),
-				UpdateTime: timestamppb.New(now),
-			}
-			newExecutions[wid] = newExecution
+			statusmessage.SaveStatusMessageHistoryIfChanged(
+				ctx,
+				r.statusMessageHistoryEnabled,
+				xid,
+				&wid,
+				&result.NewEID,
+				result.ArchivedExecution.GetStatus().GetSystemMessage(),
+				result.NewExecution.GetStatus().GetSystemMessage(),
+				tx,
+			)
 
-			// 4.2. Add the new execution to the execution deltas to update the experiment status.
-			executionDeltas = append(executionDeltas, &state.WorkUnitStateDelta{
-				CurrentState:   currentExecution.GetStatus().GetState().Enum(),
-				NewState:       newExecution.GetStatus().GetState().Enum(),
-				CurrentMessage: currentExecution.GetStatus().GetSystemMessage(),
-				NewMessage:     newExecution.GetStatus().GetSystemMessage(),
-			})
-
-			statusmessage.SaveStatusMessageHistoryIfChanged(ctx, r.statusMessageHistoryEnabled, xid, &wid, &newEID, currentExecution.GetStatus().GetSystemMessage(), newExecution.GetStatus().GetSystemMessage(), tx)
-
-			// 5. Write the new execution to storage.
+			// 4. Write the new execution to storage.
 			tx.BufferWrite([]*spanner.Mutation{
-				spannerdata.CurrentWorkUnitExecutionProtoToUpdateMutation(xid, wid, newEID, newExecution),
+				spannerdata.CurrentWorkUnitExecutionProtoToUpdateMutation(xid, wid, result.NewEID, result.NewExecution),
 			})
 		}
 
