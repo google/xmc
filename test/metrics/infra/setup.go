@@ -254,18 +254,6 @@ func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork) (*cl
 	return c, conn, addr, nil
 }
 
-func sanitizeSQLStatement(stmt string) string {
-	var cleanLines []string
-	for _, line := range strings.Split(stmt, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "--") {
-			continue
-		}
-		cleanLines = append(cleanLines, line)
-	}
-	return strings.TrimSpace(strings.Join(cleanLines, "\n"))
-}
-
 func ExecuteSQLScript(ctx context.Context, conn driver.Conn, scriptPath string, internalBroker string) error {
 	content, err := os.ReadFile(scriptPath)
 	if err != nil {
@@ -278,9 +266,19 @@ func ExecuteSQLScript(ctx context.Context, conn driver.Conn, scriptPath string, 
 	s = strings.ReplaceAll(s, "{kafka_group_name:xmc-clickhouse-ingester}", "xmc-clickhouse-ingester")
 	s = strings.ReplaceAll(s, "stream_flush_interval_ms", "kafka_flush_interval_ms")
 
-	statements := strings.Split(s, ";")
+	var cleanLines []string
+	for _, line := range strings.Split(s, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "--") {
+			continue
+		}
+		cleanLines = append(cleanLines, line)
+	}
+	cleanScript := strings.Join(cleanLines, "\n")
+
+	statements := strings.Split(cleanScript, ";")
 	for _, stmt := range statements {
-		cleanStmt := sanitizeSQLStatement(stmt)
+		cleanStmt := strings.TrimSpace(stmt)
 		if cleanStmt == "" {
 			continue
 		}

@@ -202,7 +202,7 @@ func TestClickHousePipelineIngestion(t *testing.T) {
 		_ = harness.Teardown(cleanupCtx)
 	}()
 
-	nowMicro := time.Now().UnixNano() / 1000
+	nowMicro := time.Now().UnixMicro()
 	validMetric := &metricspb.Metric{
 		Xid:         10001,
 		WorkUnitId:  1,
@@ -231,15 +231,20 @@ func TestClickHousePipelineIngestion(t *testing.T) {
 	var xid, workUnitID, executionID, step int64
 	var replicaID, metricName string
 	var metricValue float64
-	selectQuery := "SELECT xid, work_unit_id, execution_id, replica_id, metric_name, metric_value, step FROM xmc_metrics WHERE xid = 10001 AND metric_name = 'train_loss' LIMIT 1"
+	var timestamp time.Time
+	selectQuery := "SELECT xid, work_unit_id, execution_id, replica_id, metric_name, metric_value, step, timestamp FROM xmc_metrics WHERE xid = 10001 AND metric_name = 'train_loss' LIMIT 1"
 	row := harness.ClickHouseConn.QueryRow(ctx, selectQuery)
-	if err := row.Scan(&xid, &workUnitID, &executionID, &replicaID, &metricName, &metricValue, &step); err != nil {
+	if err := row.Scan(&xid, &workUnitID, &executionID, &replicaID, &metricName, &metricValue, &step, &timestamp); err != nil {
 		t.Fatalf("Failed to read record fields: %v", err)
 	}
 
 	if xid != 10001 || workUnitID != 1 || executionID != 10 || replicaID != "worker-0" || metricName != "train_loss" || metricValue != 0.1234 || step != 100 {
 		t.Errorf("Ingested metric fields mismatch: got xid=%d, work_unit_id=%d, execution_id=%d, replica_id=%s, metric_name=%s, metric_value=%f, step=%d",
 			xid, workUnitID, executionID, replicaID, metricName, metricValue, step)
+	}
+
+	if timestamp.UnixMicro() != nowMicro {
+		t.Errorf("Ingested timestamp mismatch: got %v (micro=%d), expected %d", timestamp, timestamp.UnixMicro(), nowMicro)
 	}
 }
 
@@ -262,7 +267,7 @@ func TestClickHousePipelineRoutingAndFiltering(t *testing.T) {
 		_ = harness.Teardown(cleanupCtx)
 	}()
 
-	nowMicro := time.Now().UnixNano() / 1000
+	nowMicro := time.Now().UnixMicro()
 
 	validRecord1 := &metricspb.Metric{
 		Xid:         20001,
@@ -314,6 +319,16 @@ func TestClickHousePipelineRoutingAndFiltering(t *testing.T) {
 		Step:        50,
 		Timestamp:   nowMicro,
 	}
+	recordWithBadTimestamp := &metricspb.Metric{
+		Xid:         20005,
+		WorkUnitId:  2,
+		ExecutionId: 20,
+		ReplicaId:   "worker-0",
+		MetricName:  "eval_accuracy",
+		MetricValue: 0.95,
+		Step:        50,
+		Timestamp:   0, // Out of bounds, should be sanitized to current time by MV
+	}
 
 	testBatch := []*metricspb.Metric{
 		validRecord1,
@@ -321,27 +336,28 @@ func TestClickHousePipelineRoutingAndFiltering(t *testing.T) {
 		invalidRecordEmptyMetricName,
 		invalidRecordZeroExecutionID,
 		validRecord2,
+		recordWithBadTimestamp,
 	}
 
 	if err := produceProtoMetrics(ctx, harness.RedpandaBrokers, testBatch); err != nil {
 		t.Fatalf("Failed to produce test batch: %v", err)
 	}
 
-	query := "SELECT count() FROM xmc_metrics WHERE xid IN (20001, 20002, 20003, 20004, 0)"
-	count, err := pollRecordCount(ctx, harness, query, 2)
+	query := "SELECT count() FROM xmc_metrics WHERE xid IN (20001, 20002, 20003, 20004, 20005, 0)"
+	count, err := pollRecordCount(ctx, harness, query, 3)
 	if err != nil {
 		t.Fatalf("Failed to query ClickHouse for routed records: %v", err)
 	}
 
-	if count != 2 {
-		t.Fatalf("Expected exactly 2 valid records in xmc_metrics after Materialized View filtering, got %d", count)
+	if count != 3 {
+		t.Fatalf("Expected exactly 3 valid records in xmc_metrics after Materialized View filtering, got %d", count)
 	}
 
 	var validCount uint64
-	countQuery := "SELECT count() FROM xmc_metrics WHERE xid IN (20001, 20004)"
+	countQuery := "SELECT count() FROM xmc_metrics WHERE xid IN (20001, 20004, 20005)"
 	row := harness.ClickHouseConn.QueryRow(ctx, countQuery)
-	if err := row.Scan(&validCount); err != nil || validCount < 2 {
-		t.Errorf("Expected valid records (xid=20001, 20004) to exist, got count=%d, err=%v", validCount, err)
+	if err := row.Scan(&validCount); err != nil || validCount < 3 {
+		t.Errorf("Expected valid records (xid=20001, 20004, 20005) to exist, got count=%d, err=%v", validCount, err)
 	}
 
 	var invalidCount uint64
@@ -349,5 +365,14 @@ func TestClickHousePipelineRoutingAndFiltering(t *testing.T) {
 	row = harness.ClickHouseConn.QueryRow(ctx, invalidQuery)
 	if err := row.Scan(&invalidCount); err != nil || invalidCount != 0 {
 		t.Errorf("Expected invalid records (xid=0, 20002, 20003) to be filtered out, got count=%d, err=%v", invalidCount, err)
+	}
+
+	var badTS time.Time
+	tsQuery := "SELECT timestamp FROM xmc_metrics WHERE xid = 20005 LIMIT 1"
+	row = harness.ClickHouseConn.QueryRow(ctx, tsQuery)
+	if err := row.Scan(&badTS); err != nil {
+		t.Errorf("Failed to query bad timestamp record: %v", err)
+	} else if time.Since(badTS) > 5*time.Minute {
+		t.Errorf("Expected timestamp to be sanitized to current time, got %v", badTS)
 	}
 }
