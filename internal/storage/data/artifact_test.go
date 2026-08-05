@@ -123,7 +123,7 @@ func TestMergeArtifacts(t *testing.T) {
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"notes", "tags"}},
-			want:       proto.Modify(current, func(x *pb.Artifact) { x.Url = updated.Url; x.Priority = 200; x.Notes = updated.Notes }),
+			want:       proto.Modify(current, func(x *pb.Artifact) { x.Tags = updated.Tags; x.Notes = updated.Notes }),
 		},
 		{
 			name: "update payload",
