@@ -21,6 +21,7 @@ compat_go_library(
     srcs = [
         "config.go",
         "main.go",
+        "metrics_server.go",
     ],
     importpath = "xmanager_cloud/cmd/reconciler",
     visibility = ["//visibility:private"],
@@ -49,6 +50,8 @@ compat_go_library(
         "@io_k8s_sigs_controller_runtime//:go_default_library",
         "@io_k8s_sigs_controller_runtime//pkg/cache",
         "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_client_golang//prometheus/promhttp:go_default_library",
         "@io_k8s_sigs_controller_runtime//pkg/metrics/server",
         "@io_k8s_sigs_jobset//api/jobset/v1alpha2",
         "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
@@ -59,8 +62,14 @@ compat_go_library(
 
 compat_go_test(
     name = "reconciler_test",
-    srcs = ["main_test.go"],
+    srcs = [
+        "main_test.go",
+        "metrics_server_test.go",
+    ],
     embed = [":reconciler_lib"],
+    deps = [
+        "@com_github_prometheus_client_golang//prometheus",
+    ],
 )
 
 go_binary(
