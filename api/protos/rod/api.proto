@@ -17,6 +17,7 @@ syntax = "proto3";
 package cloud.xmanager.v1;
 
 import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
 
 option go_package = "xmanager_cloud/api/protos/rod";
 
@@ -30,6 +31,25 @@ service ResourceObservabilityService {
       get: "/v1/clusterqueues"
     };
   }
+
+  // Get all running and pending jobs for a specific cluster queue.
+  rpc GetRunningAndPendingJobs(GetRunningAndPendingJobsRequest) returns (GetRunningAndPendingJobsResponse) {
+    option (google.api.http) = {
+      get: "/v1/clusterqueues/{queue_name}/jobs"
+    };
+  }
+}
+
+// WorkUnitState represents the execution state of a work unit.
+enum WorkUnitState {
+  WORK_UNIT_STATE_UNSPECIFIED = 0;
+  INITIALIZING = 1;
+  SCHEDULING = 2;
+  STARTING = 3;
+  RUNNING = 4;
+  SUCCEEDED = 5;
+  FAILED = 6;
+  CANCELLED = 7;
 }
 
 // Resource represents requested or available compute resources.
@@ -62,3 +82,35 @@ message GetFittingQueuesRequest {
 message GetFittingQueuesResponse {
   repeated QueueOverview queues = 1;
 }
+
+// GetRunningAndPendingJobsRequest represents query parameters for fetching active jobs of a queue.
+message GetRunningAndPendingJobsRequest {
+  string queue_name = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+  string order_by = 4;
+}
+
+// DashboardJob represents a pending or running job in a cluster queue.
+message DashboardJob {
+  string job_id = 1;
+  string xid = 2;
+  int64 work_unit_id = 3;
+  string user = 4;
+  int64 priority = 5;
+  WorkUnitState status = 6;
+  int64 time_in_queue_seconds = 7;
+  repeated Resource requested_resources = 8;
+  int64 position_in_queue = 9;
+  google.protobuf.Timestamp create_time = 10;
+  repeated string tags = 11;
+}
+
+// GetRunningAndPendingJobsResponse represents the paginated list of running and pending jobs.
+message GetRunningAndPendingJobsResponse {
+  repeated DashboardJob jobs = 1;
+  string next_page_token = 2;
+  int64 total_queue_size = 3;
+}
+
+

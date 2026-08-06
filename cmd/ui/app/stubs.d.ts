@@ -246,6 +246,7 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
     positionInQueue?: number;
     createTime?: any;
     tags?: string[];
+    workUnitId?: string | number;
   }
 
   export interface GetRunningAndPendingJobsRequest {
