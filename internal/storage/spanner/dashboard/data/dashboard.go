@@ -172,3 +172,48 @@ func ChartRowToProto(row *spanner.Row, plots []*dpb.PlotSpec) (*dpb.Chart, error
 		PlotLayout: layout,
 	}, nil
 }
+
+// ChartProtoToUpdateMutations creates Spanner mutations to update a Chart and replace its PlotSpecs.
+func ChartProtoToUpdateMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) {
+	if chart == nil {
+		return nil, fmt.Errorf("chart proto must not be nil")
+	}
+	if chart.Name == "" {
+		return nil, fmt.Errorf("chart name must not be empty")
+	}
+
+	var layoutBytes []byte
+	if chart.PlotLayout != nil {
+		var err error
+		layoutBytes, err = proto.Marshal(chart.PlotLayout)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal plot layout: %w", err)
+		}
+	}
+
+	var mutations []*spanner.Mutation
+	m := spanner.Update(dashboardschema.ChartsTableName, []string{
+		"ChartId", "Title", "PlotLayout", "UpdatedAt",
+	}, []interface{}{
+		chart.Name, chart.Title, layoutBytes, spanner.CommitTimestamp,
+	})
+	mutations = append(mutations, m)
+
+	mDeletePlots := spanner.Delete(dashboardschema.ChartPlotsTableName, spanner.Key{chart.Name}.AsPrefix())
+	mutations = append(mutations, mDeletePlots)
+
+	for _, plot := range chart.Plots {
+		plotSpecBytes, err := proto.Marshal(plot)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal plot spec: %w", err)
+		}
+		mPlot := spanner.InsertOrUpdate(dashboardschema.ChartPlotsTableName, []string{
+			"ChartId", "PlotId", "Title", "PlotType", "PlotSpec",
+		}, []interface{}{
+			chart.Name, plot.PlotId, plot.Title, int64(plot.Type), plotSpecBytes,
+		})
+		mutations = append(mutations, mPlot)
+	}
+
+	return mutations, nil
+}

@@ -1108,17 +1108,14 @@ func TestReconcileImagePullBackOff(t *testing.T) {
 				t.Fatalf("Reconcile() failed: %v", err)
 			}
 
-			if tc.wantRequeue {
-				if res.RequeueAfter <= 0 {
-					t.Errorf("Expected RequeueAfter > 0, got %v", res.RequeueAfter)
-				}
-				if res.RequeueAfter > r.StartupPodErrorCheckTime {
-					t.Errorf("RequeueAfter %v out of expected range, want < %v", res.RequeueAfter, r.StartupPodErrorCheckTime)
-				}
-			} else {
-				if res.RequeueAfter != 0 {
-					t.Errorf("Expected RequeueAfter 0, got %v", res.RequeueAfter)
-				}
+			if tc.wantRequeue && res.RequeueAfter <= 0 {
+				t.Errorf("Expected RequeueAfter > 0, got %v", res.RequeueAfter)
+			}
+			if tc.wantRequeue && res.RequeueAfter > r.StartupPodErrorCheckTime {
+				t.Errorf("RequeueAfter %v out of expected range, want < %v", res.RequeueAfter, r.StartupPodErrorCheckTime)
+			}
+			if !tc.wantRequeue && res.RequeueAfter != 0 {
+				t.Errorf("Expected RequeueAfter 0, got %v", res.RequeueAfter)
 			}
 
 			batcher.UpdatesMu.Lock()
@@ -1685,31 +1682,33 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			}
 			_ = r.ensureMLRunCreated(context.Background(), tc.jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
 
-			if !ok && tc.wantCalls > 0 {
-				t.Fatalf("unexpected non-mock client")
-			}
-			if ok {
-				if mock.createCalls != tc.wantCalls {
-					t.Errorf("createCalls = %d, want %d", mock.createCalls, tc.wantCalls)
-				}
+			if !ok {
 				if tc.wantCalls > 0 {
-					if mock.lastID != tc.wantID {
-						t.Errorf("lastID = %q, want %q", mock.lastID, tc.wantID)
-					}
-					if mock.lastPhase != "ACTIVE" {
-						t.Errorf("lastPhase = %q, want %q", mock.lastPhase, "ACTIVE")
-					}
-					if mock.lastOpts.RunGroup != tc.wantGroup {
-						t.Errorf("RunGroup = %q, want %q", mock.lastOpts.RunGroup, tc.wantGroup)
-					}
-					if gotPath := mock.lastOpts.Artifacts["gcs_path"]; gotPath != tc.wantBucket {
-						t.Errorf("gcs_path artifact = %q, want %q", gotPath, tc.wantBucket)
-					}
-					wantCluster := "projects/test-proj/locations/us-central1/clusters/cluster-a"
-					if mock.lastOpts.WorkloadDetails.Cluster != wantCluster {
-						t.Errorf("WorkloadDetails.Cluster = %q, want %q", mock.lastOpts.WorkloadDetails.Cluster, wantCluster)
-					}
+					t.Fatalf("unexpected non-mock client")
 				}
+				return
+			}
+			if mock.createCalls != tc.wantCalls {
+				t.Errorf("createCalls = %d, want %d", mock.createCalls, tc.wantCalls)
+			}
+			if tc.wantCalls == 0 {
+				return
+			}
+			if mock.lastID != tc.wantID {
+				t.Errorf("lastID = %q, want %q", mock.lastID, tc.wantID)
+			}
+			if mock.lastPhase != "ACTIVE" {
+				t.Errorf("lastPhase = %q, want %q", mock.lastPhase, "ACTIVE")
+			}
+			if mock.lastOpts.RunGroup != tc.wantGroup {
+				t.Errorf("RunGroup = %q, want %q", mock.lastOpts.RunGroup, tc.wantGroup)
+			}
+			if gotPath := mock.lastOpts.Artifacts["gcs_path"]; gotPath != tc.wantBucket {
+				t.Errorf("gcs_path artifact = %q, want %q", gotPath, tc.wantBucket)
+			}
+			wantCluster := "projects/test-proj/locations/us-central1/clusters/cluster-a"
+			if mock.lastOpts.WorkloadDetails.Cluster != wantCluster {
+				t.Errorf("WorkloadDetails.Cluster = %q, want %q", mock.lastOpts.WorkloadDetails.Cluster, wantCluster)
 			}
 		})
 	}

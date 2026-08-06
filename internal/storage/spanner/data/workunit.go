@@ -124,6 +124,15 @@ func WorkUnitProtoToInsertMutation(workUnit *pb.WorkUnit) (*spanner.Mutation, er
 		executionCompleteTime = spanner.NullTime{Time: workUnit.CurrentWorkUnitExecution.GetCompleteTime().AsTime(), Valid: true}
 	}
 
+	urls := workUnit.Urls
+	if urls == nil {
+		urls = []*pb.Url{}
+	}
+	tags := workUnit.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+
 	return spanner.Insert(
 		workunitschema.WorkUnitTableName,
 		workunitschema.WorkUnitColumns,
@@ -132,8 +141,8 @@ func WorkUnitProtoToInsertMutation(workUnit *pb.WorkUnit) (*spanner.Mutation, er
 			wid,                      // WorkUnitId
 			workUnit.WorkUnitType,    // WorkUnitType
 			int64(workUnit.Priority), // Priority
-			workUnit.Urls,            // Urls
-			workUnit.Tags,            // Tags
+			urls,                     // Urls
+			tags,                     // Tags
 			workUnit.Notes,           // Notes
 			workUnit.Executable,      // Executable
 			workUnit.CurrentWorkUnitExecution.CreateTime.AsTime(), // ExecutionCreateTime
@@ -154,6 +163,14 @@ func WorkUnitProtoToUpdateMutation(workUnit *pb.WorkUnit) (*spanner.Mutation, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate work unit name %q: %w", workUnit.GetName(), err)
 	}
+	urls := workUnit.Urls
+	if urls == nil {
+		urls = []*pb.Url{}
+	}
+	tags := workUnit.Tags
+	if tags == nil {
+		tags = []string{}
+	}
 	return spanner.Update(
 		workunitschema.WorkUnitTableName,
 		workunitschema.WorkUnitUpdateColumns,
@@ -161,8 +178,8 @@ func WorkUnitProtoToUpdateMutation(workUnit *pb.WorkUnit) (*spanner.Mutation, er
 			data.ReverseBits(xid),        // BitReversedXID
 			wid,                          // WorkUnitId
 			int64(workUnit.Priority),     // Priority
-			workUnit.Urls,                // Urls
-			workUnit.Tags,                // Tags
+			urls,                         // Urls
+			tags,                         // Tags
 			workUnit.Notes,               // Notes
 			workUnit.UpdateTime.AsTime(), // UpdateTime
 		},

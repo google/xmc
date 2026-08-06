@@ -43,6 +43,9 @@ essDeployment:
 healthServiceDeployment:
   enabled: false
 
+metrics:
+  enabled: false
+
 ingestionGatewayDeployment:
   enabled: false
   hpa:
@@ -67,6 +70,11 @@ ingestionGatewayDeployment:
     limits:
       cpu: "100m"
       memory: "256Mi"
+
+rodDeployment:
+  enabled: false
+  serviceAccountName: "rod-data-provider-service-account"
+  gcpServiceAccount: ""
 
 healthService:
   gcpServiceAccount: ""

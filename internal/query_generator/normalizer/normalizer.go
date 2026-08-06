@@ -88,31 +88,7 @@ func Normalize(input string, schema querytools.TableView) (string, error) {
 			sb.WriteString(token.Raw)
 
 		case tokenIdent, tokenString, tokenNumber:
-			if insideFieldExpr {
-				// Token is a value in a field expression, fix its quoting based on type.
-				val := fixValue(token, activeType)
-				sb.WriteString(val)
-				insideFieldExpr = false
-			} else {
-				// Token is not a value, it could be a field name or free text.
-				var nextIsStructural bool
-				if i+1 < len(tokens) {
-					tType := tokens[i+1].Type
-					nextIsStructural = (tType == tokenOp || tType == tokenLParen)
-				}
-
-				if nextIsStructural {
-					// If the next token is an operator or parenthesis, this token is a field or function name.
-					sb.WriteString(token.Raw)
-				} else {
-					// Otherwise, it is free-floating text and should be quoted as a global search term.
-					if token.Type == tokenIdent {
-						sb.WriteString(fmt.Sprintf("%q", token.Literal))
-					} else {
-						sb.WriteString(token.Raw)
-					}
-				}
-			}
+			insideFieldExpr = handleIdentOrValueToken(token, insideFieldExpr, activeType, i, tokens, &sb)
 		default:
 			sb.WriteString(token.Raw)
 		}
@@ -190,4 +166,33 @@ func findInTable(table querytools.TableView, name string) filtervisitor.PrimType
 
 	// Default to string if the field is not found.
 	return filtervisitor.String
+}
+
+func handleIdentOrValueToken(token Token, insideFieldExpr bool, activeType filtervisitor.PrimType, i int, tokens []Token, sb *strings.Builder) bool {
+	if insideFieldExpr {
+		// Token is a value in a field expression, fix its quoting based on type.
+		val := fixValue(token, activeType)
+		sb.WriteString(val)
+		return false
+	}
+
+	// Token is not a value, it could be a field name or free text.
+	var nextIsStructural bool
+	if i+1 < len(tokens) {
+		tType := tokens[i+1].Type
+		nextIsStructural = (tType == tokenOp || tType == tokenLParen)
+	}
+
+	if nextIsStructural {
+		// If the next token is an operator or parenthesis, this token is a field or function name.
+		sb.WriteString(token.Raw)
+	} else {
+		// Otherwise, it is free-floating text and should be quoted as a global search term.
+		if token.Type == tokenIdent {
+			sb.WriteString(fmt.Sprintf("%q", token.Literal))
+		} else {
+			sb.WriteString(token.Raw)
+		}
+	}
+	return false
 }

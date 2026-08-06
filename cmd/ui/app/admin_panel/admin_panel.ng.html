@@ -12,24 +12,44 @@
  See the License for the specific language governing permissions and
  limitations under the License. -->
 
-<div class="admin-panel-container">
-  <h1>Admin Panel</h1>
-
-  <div class="status-section">
-    <h2>Health Status</h2>
-    @if (healthStatus(); as status) {
-      <pre class="raw-json">{{ status | json }}</pre>
-    } @else {
-      <p>Loading Health Status...</p>
-    }
+@if (isLoading()) {
+  <div class="loading-container">
+    <p>Loading Admin Panel...</p>
   </div>
-
-  <div class="config-section">
-    <h2>Configuration</h2>
-    @if (healthConfigs(); as configs) {
-      <pre class="raw-json">{{ configs | json }}</pre>
-    } @else {
-      <p>Loading Configuration...</p>
-    }
+} @else if (healthStatusError()) {
+  <div class="error-container">
+    <p>Failed to load health status. Please try again later.</p>
   </div>
-</div>
+} @else {
+  <div class="admin-panel-container">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">XMC Admin Panel</h1>
+        <p class="page-subtitle">Consolidated control plane for Platform Admins</p>
+      </div>
+      @if (lastUpdated()) {
+        <div class="timestamp-badge">Last updated: {{ lastUpdated() }}</div>
+      }
+    </div>
+
+    @if (healthStatus()?.systemInfo; as systemInfo) {
+      <xmc-system-info-card [systemInfo]="systemInfo"></xmc-system-info-card>
+    }
+
+    <xmc-health-status-section
+      [components]="healthStatus()?.components ?? []"
+      [overallStatus]="healthStatus()?.healthState ?? 'HEALTH_STATE_UNSPECIFIED'"
+      [lastChecked]="lastUpdated()"
+      (refresh)="onRefresh()"
+    ></xmc-health-status-section>
+
+    <div class="config-section">
+      <h2>Configuration</h2>
+      @if (healthConfigs(); as configs) {
+        <pre class="raw-json">{{ configs | json }}</pre>
+      } @else {
+        <p>Loading Configuration...</p>
+      }
+    </div>
+  </div>
+}

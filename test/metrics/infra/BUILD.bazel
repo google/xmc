@@ -1,0 +1,64 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+go_library(
+    name = "infra",
+    srcs = ["setup.go"],
+    importpath = "xmanager_cloud/test/metrics/infra",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
+        "@com_github_testcontainers_testcontainers_go//:testcontainers-go",
+        "@com_github_testcontainers_testcontainers_go//network",
+        "@com_github_testcontainers_testcontainers_go//wait",
+        "@com_github_testcontainers_testcontainers_go_modules_clickhouse//:clickhouse",
+        "@com_github_testcontainers_testcontainers_go_modules_redpanda//:redpanda",
+        "@com_github_twmb_franz_go//pkg/kgo",
+        "@com_github_twmb_franz_go_pkg_kadm//:kadm",
+    ],
+)
+
+go_test(
+    name = "infra_test",
+    srcs = ["setup_test.go"],
+    data = [
+        "//api/protos/metrics:metrics.proto",
+        "//deploy/clickhouse:schema.sql",
+    ],
+    embed = [":infra"],
+    tags = [
+        "local",
+        "manual",
+        "requires-network",
+    ],
+)
+
+py_library(
+    name = "infra_py",
+    srcs = ["setup.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "setup_py_test",
+    srcs = ["setup_test.py"],
+    imports = ["../../.."],
+    main = "setup_test.py",
+    deps = [":infra_py"],
+)

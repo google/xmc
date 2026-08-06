@@ -58,7 +58,7 @@ function processUser(user: User | null) {
 ## 5. Strict Testing Coverage & PR Granularity
 - **Strict Coverage Requirements**: All feature additions, bug fixes, and code modifications must include comprehensive unit and integration test coverage. Never reduce assertions or mask test failures.
 - **1-to-1 File Test Cohesion**: Every source file containing business, parsing, or data transformation logic (e.g. `validation.go`) MUST have a corresponding dedicated unit test file (e.g. `validation_test.go`) testing its exported functions directly in unit isolation. Relying solely on higher-level integration or HTTP handler tests (`handler_test.go`) to transitively cover helper logic is not permitted.
-- **UI Visual Screenshot Testing**: UI component visual screenshot tests must use direct custom component host tags (`<xmc-*>`), enforce realistic container layout bounds, configure `maxDiffPixelRatio` for cross-platform CI font rendering, and synchronize baseline PNG snapshots (see [TypeScript & Modern Angular Guidelines](languages/typescript_javascript.md#8-playwright-visual-screenshot-testing)).
+- **UI Visual Screenshot Testing**: UI component visual screenshot tests must use direct custom component host tags (`<xmc-*>`), rely on shared test utilities (`test_utils.ts`) for standard viewport sizing and layout formatting, configure `maxDiffPixelRatio` for cross-platform CI font rendering, and synchronize baseline PNG snapshots (see [TypeScript & Modern Angular Guidelines](languages/typescript_javascript.md#8-playwright-visual-screenshot-testing)).
 - **Open-Source Code TODO Standard**: Inline code `TODO` comments in public/OSS source files (under `sdks/` or open packages) MUST NOT include internal Buganizer IDs (e.g. `TODO(b/12345)`). Use generic `TODO:` tags or public GitHub issue numbers (`TODO(#123)`).
 - **Small, Focused PRs**: Keep Pull Requests small, localized, and logically split. Each PR should address a single cohesive task or change step to enable fast, high-quality reviews.
 - **System Contract & API Changes**:
@@ -67,3 +67,26 @@ function processUser(user: User | null) {
 
 ## 6. Post-Implementation Reflection & Meta-Learning
 - **Selective Triggers**: Trigger the [Iterative Reflection Skill](../skills/xmc_iterative_reflection/SKILL.md) only after major implementations, PRs with high comment volume (>3-5 comments), or explicit user request. Do NOT trigger for routine minor edits.
+
+
+## 7. System Attribute Immutability & Precedence
+- **System Key Precedence**: User-supplied custom maps (labels, annotations, environment variables) MUST NEVER overwrite reserved internal system attributes or security identifiers (`xid`, `wid`, `eid`, `queue-name`):
+  ```go
+  if systemMap == nil {
+      systemMap = make(map[string]string)
+  }
+  for k, v := range userMap {
+      if _, exists := systemMap[k]; !exists {
+          systemMap[k] = v
+      }
+  }
+  ```
+
+## 8. Documentation Preservation & Production Manifest Isolation
+- **100% Comment Preservation During Refactoring**: When decomposing monolithic source files into subpackages, preserve ALL existing docstrings, package headers, section dividers (`// ------`), and step-by-step numbered algorithm comments (`// 1. ...`) verbatim inside method bodies.
+- **Production Manifest Isolation**: NEVER modify production deployment manifests (`deploy/`, `helm/`, production SQL DDLs) to work around test container limitations. Dynamically sanitize DDLs in temporary memory buffers.
+- **Library First Policy**: Inspect third-party library documentation for built-in capabilities (e.g. `clickhouse.WithInitScripts()`) prior to implementing custom parsers or state machines.
+
+## 9. Bazel CI Diagnostic Protocol & Zero Task Polling
+- **No Speculative Attribute Changes**: NEVER modify Bazel test parameters (`size`, `timeout`, `tags`) speculatively upon CI test failure. Always inspect complete test logs via `bazel test --test_output=errors //...` to identify exact failure root causes.
+- **Reactive Background Task Handling**: NEVER poll background tasks in a loop using `manage_task action=status`. Rely on system reactive notifications after launching background tasks.

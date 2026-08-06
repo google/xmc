@@ -24,6 +24,7 @@ import (
 	"xmanager_cloud/storage/spanner/utils/spannerutils"
 )
 
+// TODO(b/517479143): Optimize query to ORDER BY WorkUnitId DESC LIMIT 1 to perform a single-row index scan instead of MAX aggregation.
 var nextWorkUnitIDSQL = safesql.New(`
 	SELECT
 		IFNULL(MAX(WorkUnitId), 0)

@@ -357,13 +357,14 @@ func TestWorkloadReconciler_Inadmissible(t *testing.T) {
 				if !slices.Contains(update.UpdateMask.GetPaths(), "status.scheduling_information") {
 					t.Errorf("Expected status.scheduling_information to be in update mask, got %v", update.UpdateMask.GetPaths())
 				}
-			} else {
-				if update.WorkUnitExecution.GetStatus().GetSchedulingInformation() != nil {
-					t.Errorf("Expected scheduling information to be nil, got %v", update.WorkUnitExecution.GetStatus().GetSchedulingInformation())
-				}
-				if slices.Contains(update.UpdateMask.GetPaths(), "status.scheduling_information") {
-					t.Errorf("Expected status.scheduling_information to not be in update mask, got %v", update.UpdateMask.GetPaths())
-				}
+				return
+			}
+
+			if update.WorkUnitExecution.GetStatus().GetSchedulingInformation() != nil {
+				t.Errorf("Expected scheduling information to be nil, got %v", update.WorkUnitExecution.GetStatus().GetSchedulingInformation())
+			}
+			if slices.Contains(update.UpdateMask.GetPaths(), "status.scheduling_information") {
+				t.Errorf("Expected status.scheduling_information to not be in update mask, got %v", update.UpdateMask.GetPaths())
 			}
 		})
 	}
