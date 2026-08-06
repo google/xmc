@@ -134,12 +134,12 @@ describe('QueueJobPositionPipe', () => {
     },
     {
       input: { status: 'SUCCEEDED', positionInQueue: 0 },
-      expected: '0',
+      expected: '-',
       description: 'SUCCEEDED job',
     },
     {
       input: { status: 'COMPLETED', positionInQueue: 0 },
-      expected: '0',
+      expected: '-',
       description: 'COMPLETED job',
     },
     {
@@ -149,7 +149,7 @@ describe('QueueJobPositionPipe', () => {
     },
     {
       input: { status: 'PENDING', positionInQueue: 0 },
-      expected: '0',
+      expected: '-',
       description: 'PENDING job with positionInQueue 0',
     },
     {

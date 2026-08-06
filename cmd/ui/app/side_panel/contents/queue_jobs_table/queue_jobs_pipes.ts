@@ -84,16 +84,9 @@ export class QueueJobPositionPipe implements PipeTransform {
       return NOT_APPLICABLE_RUNNING_DISPLAY;
     }
     const pos = job?.positionInQueue;
-    const num = Number(pos);
-    if (
-      pos === undefined ||
-      pos === null ||
-      (pos as any) === '' ||
-      isNaN(num) ||
-      num < 0
-    ) {
+    if (pos === undefined || pos === null || pos <= 0) {
       return '-';
     }
-    return String(num);
+    return String(pos);
   }
 }
