@@ -111,6 +111,13 @@ func run() error {
 	var servers []*http.Server
 	var listeners []net.Listener
 	var gatewayURLs []string
+	var producers []ingestiongateway.MetricProducer
+
+	defer func() {
+		for _, p := range producers {
+			p.Close()
+		}
+	}()
 
 	// Launch N Ingestion Gateway HTTP server instances on dynamic local ports.
 	// Each instance acts as an independent gateway pod routing metrics batches to Redpanda.
@@ -130,7 +137,7 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("failed to create kafka producer for gateway %d: %w", i, err)
 		}
-		defer producer.Close()
+		producers = append(producers, producer)
 
 		gMetrics := ingestiongateway.NewGatewayMetrics(nil)
 		srvCfg := ingestiongateway.DefaultServerConfig(fmt.Sprintf("%d", listener.Addr().(*net.TCPAddr).Port))

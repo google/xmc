@@ -211,17 +211,17 @@ def run_simulated_training_workers(
                 log_all_replicas=True,
             )
             flusher.start()
-
-            for step in range(steps_per_worker):
-                flusher.log_metric("train_loss", 0.5 - step * 0.005, step)
-                flusher.log_metric("val_accuracy", 0.8 + step * 0.002, step)
-                flusher.log_metric("gpu_utilization", 95.5, step)
-                flusher.log_metric("throughput_sec", 1200.0 + step, step)
-                flusher.log_metric("epoch", float(step // 10), step)
-                time.sleep(0.005)
-
-            flusher.shutdown()
-            client.close()
+            try:
+                for step in range(steps_per_worker):
+                    flusher.log_metric("train_loss", 0.5 - step * 0.005, step)
+                    flusher.log_metric("val_accuracy", 0.8 + step * 0.002, step)
+                    flusher.log_metric("gpu_utilization", 95.5, step)
+                    flusher.log_metric("throughput_sec", 1200.0 + step, step)
+                    flusher.log_metric("epoch", float(step // 10), step)
+                    time.sleep(0.005)
+            finally:
+                flusher.shutdown()
+                client.close()
         except Exception as err:
             exceptions.append(err)
             raise
