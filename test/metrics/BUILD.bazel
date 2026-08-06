@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@rules_python//python:defs.bzl", "py_test")
-load("//:compat.bzl", "compat_go_binary", "compat_go_test")
+load("//:compat.bzl", "compat_go_test")
 
 package(default_visibility = ["//visibility:public"])
 
-compat_go_binary(
+go_binary(
     name = "hermetic_runner",
     srcs = ["hermetic_runner/main.go"],
     data = [

@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 def _compat_gen_srcs(target_name, srcs):
     compat_srcs = []
@@ -160,13 +160,6 @@ def compat_go_library(name, srcs, **kwargs):
 
 def compat_go_test(name, srcs = [], **kwargs):
     go_test(
-        name = name,
-        srcs = _compat_gen_srcs(name, srcs),
-        **kwargs
-    )
-
-def compat_go_binary(name, srcs = [], **kwargs):
-    go_binary(
         name = name,
         srcs = _compat_gen_srcs(name, srcs),
         **kwargs
