@@ -21,6 +21,34 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
     await page.setViewportSize({ width: 1600, height: 900 });
     // Intercept user auth and config API endpoints so authGuard and feature flags succeed
     await setupMockRoutes(page);
+    await page.route('**/clusterqueues', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          queues: [
+            {
+              queueName: 'gpu-cluster-queue',
+              cohortName: 'gpu-cohort',
+              queueCapacity: [
+                {
+                  resourceType: 'nvidia.com/gpu',
+                  totalCapacity: 64,
+                  freeCapacity: 56,
+                  maxWorkloadSize: 64,
+                },
+                {
+                  resourceType: 'cpu',
+                  totalCapacity: 512,
+                  freeCapacity: 448,
+                  maxWorkloadSize: 512,
+                },
+              ],
+            },
+          ],
+        }),
+      });
+    });
     // Navigate to production route /resources
     await page.goto('/resources');
     await page.waitForSelector('xmc-resource-dashboard');
@@ -49,6 +77,9 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
 
     // Verify selected class is applied
     await expect(queueItem).toHaveClass(/selected/);
+
+    const tableComponent = dashboard.locator('xmc-queue-jobs-table');
+    await expect(tableComponent).toBeVisible();
 
     // Capture screenshot with selected queue state
     await expect(dashboard).toHaveScreenshot('resource-dashboard-queue-selected.png');
