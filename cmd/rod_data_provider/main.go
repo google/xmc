@@ -21,11 +21,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"go/google"
+	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	gwruntime "golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/go_sync/errgroup/errgroup"
 	"golang/grpc/credentials/insecure/insecure"
@@ -40,6 +42,8 @@ import (
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 	"xmanager_cloud/cmd/rod_data_provider/reconciler"
+	"xmanager_cloud/internal/storage/spanner/experiment"
+	"xmanager_cloud/internal/storage/spanner/workunit"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
@@ -67,7 +71,9 @@ func run(ctx context.Context, cfg *Config) error {
 		logging.Warn(ctx, "Kueue manager setup failed or running out-of-cluster", "error", err)
 	}
 
-	lis, grpcServer, err := buildGRPCServer(cfg, kueueCache)
+	fetcher := setupWorkUnitFetcher(ctx)
+
+	lis, grpcServer, err := buildGRPCServer(cfg, kueueCache, fetcher)
 	if err != nil {
 		return fmt.Errorf("failed to build gRPC server: %w", err)
 	}
@@ -114,13 +120,13 @@ func run(ctx context.Context, cfg *Config) error {
 	return g.Wait()
 }
 
-func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache) (net.Listener, *grpc.Server, error) {
+func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache, fetcher WorkUnitFetcher) (net.Listener, *grpc.Server, error) {
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to listen on gRPC port %s: %w", cfg.GRPCPort, err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
-	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache))
+	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache, fetcher))
 	reflection.Register(grpcServer)
 	return lis, grpcServer, nil
 }
@@ -139,8 +145,7 @@ func buildHTTPServer(ctx context.Context, cfg *Config, kueueCache *cache.KueueCa
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
-	err = spb.RegisterResourceObservabilityServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
-	if err != nil {
+	if err := spb.RegisterResourceObservabilityServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts); err != nil {
 		return nil, fmt.Errorf("failed to register gateway endpoint: %w", err)
 	}
 
@@ -261,4 +266,24 @@ func SetupKueueReconcilers(mgr ctrl.Manager, client client.Client, cache *cache.
 		return fmt.Errorf("failed to setup ResourceFlavorReconciler: %w", err)
 	}
 	return nil
+}
+
+func setupWorkUnitFetcher(ctx context.Context) WorkUnitFetcher {
+	dbPath := os.Getenv("SPANNER_DATABASE")
+	if dbPath == "" {
+		logging.Warn(ctx, "SPANNER_DATABASE environment variable not set; workUnitStore uninitialized")
+		return nil
+	}
+	spClient, err := spanner.NewClient(ctx, dbPath)
+	if err != nil {
+		logging.Warn(ctx, "Failed to create Spanner client", "error", err)
+		return nil
+	}
+	expRepo, _ := experiment.NewRepository(spClient, experiment.RepositoryConfig{})
+	wuRepo, err := workunit.NewRepository(spClient, expRepo, workunit.RepositoryConfig{})
+	if err != nil {
+		logging.Warn(ctx, "Failed to create workunit repository", "error", err)
+		return nil
+	}
+	return wuRepo
 }

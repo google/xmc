@@ -470,6 +470,7 @@ def step_app(config: Config) -> None:
     )
 
     log_success("Application upgrade initiated.")
+    step_restart(config)
 
 
 def resolve_deployment_name(service: str, namespace: str) -> str | None:

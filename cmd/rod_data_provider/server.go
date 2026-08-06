@@ -23,16 +23,23 @@ import (
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
-type server struct {
-	spb.UnimplementedResourceObservabilityServiceServer
-	cfg   *Config
-	cache *cache.KueueCache
+// WorkUnitFetcher defines storage operations required to fetch active jobs by queue name.
+type WorkUnitFetcher interface {
+	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) ([]*spb.DashboardJob, string, error)
 }
 
-func newServer(cfg *Config, cache *cache.KueueCache) *server {
+type server struct {
+	spb.UnimplementedResourceObservabilityServiceServer
+	cfg           *Config
+	cache         *cache.KueueCache
+	workUnitStore WorkUnitFetcher
+}
+
+func newServer(cfg *Config, cache *cache.KueueCache, fetcher WorkUnitFetcher) *server {
 	return &server{
-		cfg:   cfg,
-		cache: cache,
+		cfg:           cfg,
+		cache:         cache,
+		workUnitStore: fetcher,
 	}
 }
 

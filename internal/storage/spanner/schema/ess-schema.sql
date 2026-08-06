@@ -73,6 +73,7 @@ CREATE PROTO BUNDLE (
   cloud.xmanager.v1.Executable,
   cloud.xmanager.v1.ExecutableStatus,
   cloud.xmanager.v1.SchedulingConstraints,
+  cloud.xmanager.v1.QueueInfo,
   cloud.xmanager.v1.WorkUnit,
   cloud.xmanager.v1.WorkUnit.WorkUnitType,
   cloud.xmanager.v1.WorkUnitStatus,
@@ -243,6 +244,23 @@ CREATE TABLE WorkUnits (
   -- the highest severity messages to propagate up to the experiment.
   ExecutionStatusMessageSeverity cloud.xmanager.v1.StructuredMessage.Severity AS (GREATEST(IFNULL(WorkUnitStatus.system_message.severity, 0), IFNULL(WorkUnitStatus.user_message.severity, 0))) STORED,
 
+  -- Stored virtual columns for ROD active queue queries
+  PositionInQueue INT64 AS (
+    IFNULL(SAFE_CAST(WorkUnitStatus.scheduling_information.auxiliary_info.queue_info.position_in_queue AS INT64), 9223372036854775807)
+  ) STORED,
+
+  IsPendingOrRunningJob BOOL AS (
+    IF(ExecutionState IN ('SCHEDULING', 'STARTING', 'RUNNING', 'INITIALIZING'), TRUE, NULL)
+  ) STORED,
+
+  SortPhase INT64 AS (
+    CASE
+      WHEN ExecutionState IN ('RUNNING', 'STARTING', 'INITIALIZING') THEN 1
+      WHEN ExecutionState IN ('SCHEDULING') THEN 0
+      ELSE -1
+    END
+  ) STORED,
+
   -- The time the work unit was created.
   CreateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
   -- The last time the work unit was updated, including on creation.
@@ -253,6 +271,21 @@ CREATE TABLE WorkUnits (
 
 -- To efficiently find work units assigned to a specific queue.
 CREATE INDEX WorkUnitsByQueueName ON WorkUnits (QueueName);
+
+-- Partial index for active work unit queries by position.
+CREATE INDEX WorkUnitsByQueueAndPosition 
+ON WorkUnits (
+  QueueName, 
+  SortPhase DESC, 
+  PositionInQueue ASC, 
+  CreateTime ASC, 
+  WorkUnitId ASC
+) STORING (
+  Priority, 
+  ExecutionState, 
+  Xid,
+  IsPendingOrRunningJob
+) WHERE IsPendingOrRunningJob IS NOT NULL;
 
 -- Table that holds the list of operations.
 CREATE TABLE Operations (

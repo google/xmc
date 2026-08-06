@@ -58,6 +58,8 @@ spec:
         - containerPort: 50051
           name: grpc-port
         env:
+        - name: SPANNER_DATABASE
+          value: "projects/{{ .Values.projectId }}/instances/{{ .Values.spanner_instance_id | default (printf "xmc-%s" .Values.environment) }}/databases/{{ .Values.spanner_ess_database_id | default (printf "experiment-db-%s" .Values.environment) }}"
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
         readinessProbe:
           httpGet:
