@@ -220,7 +220,7 @@ func TestIsNonRestartingJobSetContractValid(t *testing.T) {
 				},
 			},
 			wantIsValid: false,
-			wantErr:     true,
+			wantErr:     false,
 		},
 		{
 			name: "contract violation (restartPolicy Always on replicatedJob)",
@@ -244,7 +244,7 @@ func TestIsNonRestartingJobSetContractValid(t *testing.T) {
 				},
 			},
 			wantIsValid: false,
-			wantErr:     true,
+			wantErr:     false,
 		},
 	}
 

@@ -90,7 +90,7 @@ func isNonRestartingJobSetContractValid(jobSetUnstructured *unstructured.Unstruc
 		return false, fmt.Errorf("failed to read spec.failurePolicy.maxRestarts: %w", err)
 	}
 	if found && maxRestarts != 0 {
-		return false, fmt.Errorf("contract violation: spec.failurePolicy.maxRestarts must be 0, got %d", maxRestarts)
+		return false, nil
 	}
 
 	replicatedJobs, found, err := unstructured.NestedSlice(jobSetUnstructured.Object, "spec", "replicatedJobs")
@@ -103,9 +103,12 @@ func isNonRestartingJobSetContractValid(jobSetUnstructured *unstructured.Unstruc
 			if !ok {
 				continue
 			}
-			restartPolicy, _, _ := unstructured.NestedString(rjMap, "template", "spec", "template", "spec", "restartPolicy")
-			if restartPolicy != "" && restartPolicy != "Never" {
-				return false, fmt.Errorf("contract violation: replicatedJobs[%d] restartPolicy must be Never, got %s", i, restartPolicy)
+			restartPolicy, _, err := unstructured.NestedString(rjMap, "template", "spec", "template", "spec", "restartPolicy")
+			if err != nil {
+				return false, fmt.Errorf("failed to read replicatedJobs[%d] restartPolicy: %w", i, err)
+			}
+			if restartPolicy != "Never" {
+				return false, nil
 			}
 		}
 	}
