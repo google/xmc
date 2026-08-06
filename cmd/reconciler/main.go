@@ -126,6 +126,12 @@ func main() {
 		logging.Fatal(ctx, "unable to set up ready check", "error", err)
 	}
 
+	// Expose the reconciler's own metrics (registered to the global default
+	// registry via promauto) on a dedicated port for PodMonitoring to scrape;
+	// the manager's own metrics server serves only the controller-runtime
+	// registry.
+	go serveMetrics(ctx, metricsAddr)
+
 	startManager(ctx, mgr)
 }
 
