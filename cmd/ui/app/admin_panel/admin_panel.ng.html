@@ -36,10 +36,12 @@
       <xmc-system-info-card [systemInfo]="systemInfo"></xmc-system-info-card>
     }
 
-    <div class="status-section">
-      <h2>Health Status</h2>
-      <pre class="raw-json">{{ healthStatus() | json }}</pre>
-    </div>
+    <xmc-health-status-section
+      [components]="healthStatus()?.components ?? []"
+      [overallStatus]="healthStatus()?.healthState ?? 'HEALTH_STATE_UNSPECIFIED'"
+      [lastChecked]="lastUpdated()"
+      (refresh)="onRefresh()"
+    ></xmc-health-status-section>
 
     <div class="config-section">
       <h2>Configuration</h2>

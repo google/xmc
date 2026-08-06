@@ -336,6 +336,11 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 		activeDeadlineSeconds = proto.Int64(job.GetActiveDeadlineSeconds())
 	}
 
+	var terminationGracePeriodSeconds *int64
+	if job.TerminationGracePeriodSeconds != nil && *job.TerminationGracePeriodSeconds >= 0 {
+		terminationGracePeriodSeconds = proto.Int64(*job.TerminationGracePeriodSeconds)
+	}
+
 	primaryName := jobsetutil.PrimaryContainerName(job)
 	nodeSelector := copyNodeSelector(job.GetNodeSelector())
 
@@ -362,14 +367,15 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 						Annotations: podAnnotations,
 					},
 					Spec: corev1.PodSpec{
-						ServiceAccountName: job.GetServiceAccount(),
-						PriorityClassName:  job.GetPriorityClassName(),
-						InitContainers:     c.buildInitContainersForJob(job),
-						Containers:         c.buildContainersForJob(job),
-						RestartPolicy:      corev1.RestartPolicyNever,
-						SecurityContext:    defaultPodSecurityContext(),
-						Volumes:            generateVolumesForJob(job),
-						NodeSelector:       nodeSelector,
+						ServiceAccountName:            job.GetServiceAccount(),
+						PriorityClassName:             job.GetPriorityClassName(),
+						InitContainers:                c.buildInitContainersForJob(job),
+						Containers:                    c.buildContainersForJob(job),
+						RestartPolicy:                 corev1.RestartPolicyNever,
+						SecurityContext:               defaultPodSecurityContext(),
+						Volumes:                       generateVolumesForJob(job),
+						NodeSelector:                  nodeSelector,
+						TerminationGracePeriodSeconds: terminationGracePeriodSeconds,
 					},
 				},
 			},

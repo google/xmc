@@ -232,6 +232,10 @@ message KubernetesJob {
   // Note: Reserved system labels (e.g. Experiment ID, WorkUnit ID, Queue Name)
   // take precedence and cannot be overridden.
   map<string, string> labels = 17;
+
+  // Optional termination grace period in seconds for pods created by this KubernetesJob.
+  // Controls how long Kubernetes waits for containers to gracefully shut down before forcefully killing them.
+  optional int64 termination_grace_period_seconds = 19;
 }
 
 // Represents a volume that can be mounted by containers in a KubernetesJob.

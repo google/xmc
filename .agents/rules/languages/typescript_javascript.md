@@ -79,3 +79,13 @@ private static readonly STATUS_CHIP_MAP = new Map<WorkUnitState, ChipStyle>([
 - **Strict Component Element Scoping**: Screenshot tests targeting a specific component MUST capture ONLY that specific component or element crop locator (`locator.first().toHaveScreenshot()`), never the entire page or container dashboard (`xmc-resource-dashboard`). Fallbacks or `if/else` conditionals capturing parent containers instead of the target component are strictly forbidden.
 - **Isolated Test-Level API Mocking**: Perform all network route mocking strictly within Playwright spec files (`await page.route(...)`) while navigating to production routes (`/resources`). Never add temporary test harness routes or mock data in production routing (`app_routes.ts`) or production source files.
 
+
+## 9. Angular Signal Immutability & Modern Template Control Flow
+- **Signal Mutability Safety**: Prefer Angular Signals (`signal()`, `computed()`) for component state management. NEVER mutate signal objects directly; use immutable update functions (`signal.update(fn)` or `signal.set(newVal)`).
+- **Modern Control Flow Syntax**: Use built-in control flow directives (`@if`, `@for`, `@switch`) instead of legacy structural directives (`*ngIf`, `*ngFor`, `*ngSwitch`). Always supply a `track` expression in `@for` loops.
+
+## 10. Declarative Styling Maps
+- **Declarative Style Maps**: NEVER write complex inline ternary expressions for dynamic CSS classes or inline styles in HTML templates. Map dynamic styles cleanly in TypeScript component classes using typed `Record<State, string>` styling maps.
+
+## 11. Frontend Security & Bypass Overrides Guardrails
+- **Sanitization & Security Overrides**: ALWAYS use Angular's `DomSanitizer` or trusted security helpers when rendering dynamic HTML. Any use of `bypassSecurityTrustHtml()`, `bypassSecurityTrustScript()`, or similar bypass methods MUST include an explicit inline security rationale comment explaining why the content source is verified and safe.
