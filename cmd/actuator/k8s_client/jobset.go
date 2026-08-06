@@ -623,7 +623,26 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		return nil, err
 	}
 	ensureCoordinatorIndicesValid(jobSet)
+	if err := validateNonRestartingJobSetContract(jobSet); err != nil {
+		return nil, err
+	}
 	return jobSet, nil
+}
+
+// validateNonRestartingJobSetContract validates that the JobSet complies with the XMC Non-Restarting JobSets contract.
+func validateNonRestartingJobSetContract(jobSet *jobsetv1alpha2.JobSet) error {
+	if jobSet == nil {
+		return nil
+	}
+	if jobSet.Spec.FailurePolicy != nil && jobSet.Spec.FailurePolicy.MaxRestarts != 0 {
+		return fmt.Errorf("contract violation: JobSet MaxRestarts must be 0, got %d", jobSet.Spec.FailurePolicy.MaxRestarts)
+	}
+	for _, rj := range jobSet.Spec.ReplicatedJobs {
+		if rj.Template.Spec.Template.Spec.RestartPolicy != corev1.RestartPolicyNever {
+			return fmt.Errorf("contract violation: replicated job %q pod restartPolicy must be Never, got %s", rj.Name, rj.Template.Spec.Template.Spec.RestartPolicy)
+		}
+	}
+	return nil
 }
 
 // ensureCoordinatorIndicesValid adjusts Coordinator indices if the execution environment collapsed a multi-replica job to a multi-pod job.

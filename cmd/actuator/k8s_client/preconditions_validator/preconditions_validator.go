@@ -71,6 +71,45 @@ func (v *validatorImpl) IsActuationRequestValid(ctx context.Context, target stri
 		return false, nil
 	}
 
+	validContract, err := isNonRestartingJobSetContractValid(jobSetUnstructured)
+	if err != nil {
+		logging.Warn(ctx, "Non-restarting JobSet contract check failed, skipping actuation", "target", target, "jobset-name", jobSetUnstructured.GetName(), "error", err)
+		return false, err
+	}
+	if !validContract {
+		logging.Warn(ctx, "JobSet violates non-restarting contract, skipping actuation", "target", target, "jobset-name", jobSetUnstructured.GetName())
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func isNonRestartingJobSetContractValid(jobSetUnstructured *unstructured.Unstructured) (bool, error) {
+	maxRestarts, found, err := unstructured.NestedInt64(jobSetUnstructured.Object, "spec", "failurePolicy", "maxRestarts")
+	if err != nil {
+		return false, fmt.Errorf("failed to read spec.failurePolicy.maxRestarts: %w", err)
+	}
+	if found && maxRestarts != 0 {
+		return false, fmt.Errorf("contract violation: spec.failurePolicy.maxRestarts must be 0, got %d", maxRestarts)
+	}
+
+	replicatedJobs, found, err := unstructured.NestedSlice(jobSetUnstructured.Object, "spec", "replicatedJobs")
+	if err != nil {
+		return false, fmt.Errorf("failed to read spec.replicatedJobs: %w", err)
+	}
+	if found {
+		for i, rj := range replicatedJobs {
+			rjMap, ok := rj.(map[string]any)
+			if !ok {
+				continue
+			}
+			restartPolicy, _, _ := unstructured.NestedString(rjMap, "template", "spec", "template", "spec", "restartPolicy")
+			if restartPolicy != "" && restartPolicy != "Never" {
+				return false, fmt.Errorf("contract violation: replicatedJobs[%d] restartPolicy must be Never, got %s", i, restartPolicy)
+			}
+		}
+	}
+
 	return true, nil
 }
 
