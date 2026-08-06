@@ -88,7 +88,7 @@ export class QueueJobPositionPipe implements PipeTransform {
     if (
       pos === undefined ||
       pos === null ||
-      pos === '' ||
+      (pos as any) === '' ||
       isNaN(num) ||
       num < 0
     ) {
