@@ -2902,6 +2902,7 @@ func TestConstructJobSet_NativeSidecarInitContainers(t *testing.T) {
 
 	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		job := wu.Executable.GetJobset().Jobs[0]
+		job.Spec.RestartPolicy = proto.String("Always")
 		job.InitContainers = []*esspb.ExecutableSpec{
 			{
 				DockerImage: "gcr.io/foo/regular-init:latest",
@@ -2945,5 +2946,14 @@ func TestConstructJobSet_NativeSidecarInitContainers(t *testing.T) {
 	// 3. Legacy sidecar container (RestartPolicy should be Always)
 	if initContainers[2].RestartPolicy == nil || *initContainers[2].RestartPolicy != corev1.ContainerRestartPolicyAlways {
 		t.Errorf("initContainers[2].RestartPolicy = %v, want Always", initContainers[2].RestartPolicy)
+	}
+
+	// Verify primary container does not have RestartPolicy set
+	primaryContainers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers
+	if len(primaryContainers) != 1 {
+		t.Fatalf("Expected 1 primary container, got %d", len(primaryContainers))
+	}
+	if primaryContainers[0].RestartPolicy != nil {
+		t.Errorf("primaryContainers[0].RestartPolicy = %v, want nil", *primaryContainers[0].RestartPolicy)
 	}
 }
