@@ -22,8 +22,8 @@
     </div>
     <span
       class="group-status-badge"
-      [class.status-healthy]="groupStatusText() === 'HEALTHY'"
-      [class.status-degraded]="groupStatusText() === 'DEGRADED'"
+      [class.status-healthy]="!isDegraded()"
+      [class.status-degraded]="isDegraded()"
     >
       {{ groupStatusText() }}
     </span>
@@ -34,16 +34,16 @@
         <div class="item-info">
           <span
             class="item-indicator-dot"
-            [class.dot-healthy]="item.healthState === 'HEALTH_STATE_HEALTHY'"
-            [class.dot-degraded]="item.healthState === 'HEALTH_STATE_UNHEALTHY'"
+            [class.dot-healthy]="item.healthState === HealthState.HEALTHY"
+            [class.dot-degraded]="item.healthState === HealthState.UNHEALTHY"
           ></span>
           <span class="item-name">{{ item.name }}</span>
         </div>
         <div class="item-status">
           <span
             class="item-status-text"
-            [class.text-healthy]="item.healthState === 'HEALTH_STATE_HEALTHY'"
-            [class.text-degraded]="item.healthState === 'HEALTH_STATE_UNHEALTHY'"
+            [class.text-healthy]="item.healthState === HealthState.HEALTHY"
+            [class.text-degraded]="item.healthState === HealthState.UNHEALTHY"
           >
             {{ mapHealthState(item.healthState) }}
           </span>

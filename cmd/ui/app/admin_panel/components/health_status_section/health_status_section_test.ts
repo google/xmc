@@ -15,14 +15,12 @@
 import 'jasmine';
 
 import { Component, signal } from '@angular/core';
-import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
 import {
   bootstrap,
   cleanState,
   flush,
-  getDebugEl,
   getHarness,
   setupModule,
 } from 'xmanager_cloud/ui/app/testing/test';
@@ -34,10 +32,6 @@ import {
   HealthStatusSectionComponent,
 } from './health_status_section';
 import { HealthStatusSectionHarness } from './testing/health_status_section_harness';
-
-const GROUP_CARD_SELECTOR = '.group-card';
-const ITEM_ROW_SELECTOR = '.item-row';
-const ERROR_DETAILS_SELECTOR = '.item-error-details';
 
 @Component({
   template: `
@@ -89,24 +83,24 @@ describe('HealthStatusSectionComponent', () => {
     host.components.set(mockComponents);
     host.overallStatus.set(HealthState.UNHEALTHY);
     await flush();
-
     const harness = await getHarness(HealthStatusSectionHarness);
-    const cards = getDebugEl().queryAll(By.css(GROUP_CARD_SELECTOR));
-    const errorDetails = getDebugEl().query(By.css(ERROR_DETAILS_SELECTOR));
-    const rows = getDebugEl().queryAll(By.css(ITEM_ROW_SELECTOR));
+    const cards = await harness.getGroupCards();
+    const coreInstancesCardItems = await cards[0].getItemTexts();
+    const dependenciesCardItems = await cards[1].getItemTexts();
 
     expect(await harness.getTitleText()).toContain('XMC Services Health');
     expect(await harness.getOverallStatusText()).toContain('DEGRADED');
     expect(cards.length).toBe(2);
-    expect(cards[0].nativeElement.textContent).toContain('Core XMC Instances');
-    expect(cards[1].nativeElement.textContent).toContain('GCP Hosted Services');
-    expect(rows.length).toBe(2);
-    expect(rows[0].nativeElement.textContent).toContain('actuator');
-    expect(rows[0].nativeElement.textContent).toContain('HEALTHY');
-    expect(rows[1].nativeElement.textContent).toContain('db-conn');
-    expect(rows[1].nativeElement.textContent).toContain('DEGRADED');
-    expect(errorDetails).not.toBeNull();
-    expect(errorDetails.nativeElement.textContent).toContain('View Error Details');
+    expect(await cards[0].getTitleText()).toContain('Core XMC Instances');
+    expect(await cards[1].getTitleText()).toContain('GCP Hosted Services');
+    expect(coreInstancesCardItems.length).toBe(1);
+    expect(coreInstancesCardItems[0]).toContain('actuator');
+    expect(coreInstancesCardItems[0]).toContain('HEALTHY');
+    expect(dependenciesCardItems.length).toBe(1);
+    expect(dependenciesCardItems[0]).toContain('db-conn');
+    expect(dependenciesCardItems[0]).toContain('DEGRADED');
+    expect(await cards[1].hasErrorDetails()).toBeTrue();
+    expect(await cards[1].getErrorDetailsText()).toContain('View Error Details');
   });
 
   it('should emit refresh event on refresh button click', async () => {

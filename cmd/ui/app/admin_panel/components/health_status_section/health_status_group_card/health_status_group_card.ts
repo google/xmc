@@ -32,17 +32,14 @@ export class HealthStatusGroupCardComponent {
   icon = input.required<string>();
   components = input.required<ComponentHealth[]>();
 
+  protected readonly HealthState = HealthState;
+
   protected readonly isDegraded = computed(() => {
-    const comps = this.components();
-    if (comps.length === 0) return false;
-    return comps.some((c) => c.healthState === HealthState.UNHEALTHY);
+    return this.components().some((c) => c.healthState === HealthState.UNHEALTHY);
   });
 
   protected readonly groupStatusText = computed(() => {
-    const comps = this.components();
-    if (comps.length === 0) return 'UNKNOWN';
-    const hasUnhealthy = comps.some((c) => c.healthState === HealthState.UNHEALTHY);
-    return hasUnhealthy ? 'DEGRADED' : 'HEALTHY';
+    return this.isDegraded() ? 'DEGRADED' : 'HEALTHY';
   });
 
   protected mapHealthState(state?: string): string {

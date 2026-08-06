@@ -14,6 +14,8 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 
+import { HealthStatusGroupCardHarness } from '../health_status_group_card/testing/health_status_group_card_harness';
+
 /** Harness for interacting with <xmc-health-status-section> in tests. */
 export class HealthStatusSectionHarness extends ComponentHarness {
   static hostSelector = 'xmc-health-status-section';
@@ -35,5 +37,9 @@ export class HealthStatusSectionHarness extends ComponentHarness {
   async getOverallStatusText(): Promise<string> {
     const badge = await this._overallBadge();
     return badge.text();
+  }
+
+  async getGroupCards(): Promise<HealthStatusGroupCardHarness[]> {
+    return this.locatorForAll(HealthStatusGroupCardHarness)();
   }
 }
