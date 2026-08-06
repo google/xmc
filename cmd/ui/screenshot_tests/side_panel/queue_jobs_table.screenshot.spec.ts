@@ -16,7 +16,7 @@ import { expect, test } from '@playwright/test';
 
 import { mountComponentHarness, setupMockRoutes, setupScreenshotEnvironment } from '../test_utils';
 
-test.use({ viewport: { width: 1600, height: 900 } });
+test.use({ viewport: { width: 2200, height: 900 } });
 
 test.describe('QueueJobsTableComponent - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
@@ -29,7 +29,7 @@ test.describe('QueueJobsTableComponent - Screenshot Tests', () => {
   test('should match baseline screenshot for queue jobs table section', async ({ page }) => {
     await mountComponentHarness(
       page,
-      `<xmc-queue-jobs-table style="display: block; width: 1000px; min-height: 250px;"></xmc-queue-jobs-table>`,
+      `<xmc-queue-jobs-table style="display: block; width: 2000px; min-height: 250px;"></xmc-queue-jobs-table>`,
     );
 
     const tableComponent = page.locator('xmc-queue-jobs-table').first();
