@@ -75,11 +75,11 @@ func (c *Client) createJobSet(ctx context.Context, workUnit *esspb.WorkUnit, tar
 	namespace := getNamespaceFromWorkUnit(workUnit)
 
 	jobSet, err := c.constructJobSet(ctx, workUnit, target, author, namespace, operationTime, priorities)
-	logging.Info(ctx, "Create JobSet", "jobSet", jobSet.GetName())
 	if err != nil {
 		logging.Warn(ctx, "Failed to construct JobSet manifest", "error", err)
 		return fmt.Errorf("failed to construct JobSet manifest: %w", err)
 	}
+	logging.Info(ctx, "Create JobSet", "jobSet", jobSet.GetName())
 
 	ctx = logging.WithJobSetName(ctx, jobSet.GetName(), nil)
 
