@@ -14,6 +14,7 @@
 
 import { Pipe, PipeTransform } from '@angular/core';
 
+import { DashboardJob } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { StatusOption } from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
 
 /** Known job status string constants. */
@@ -33,16 +34,16 @@ export const JOB_STATUS_STRINGS = {
 export const NOT_APPLICABLE_RUNNING_DISPLAY = 'N/A - running';
 
 /**
- * Transforms a raw job status string into a typed StatusOption enum for xmc-status-chip rendering.
+ * Transforms a DashboardJob into a typed StatusOption enum for xmc-status-chip rendering.
  */
 @Pipe({
   name: 'queueJobStatus',
   standalone: true,
 })
 export class QueueJobStatusPipe implements PipeTransform {
-  transform(status?: string): StatusOption {
-    if (!status) return StatusOption.PENDING;
-    const s = String(status).toUpperCase();
+  transform(job?: DashboardJob | null): StatusOption {
+    if (!job?.status) return StatusOption.PENDING;
+    const s = String(job.status).toUpperCase();
     switch (s) {
       case JOB_STATUS_STRINGS.RUNNING:
         return StatusOption.RUNNING;
@@ -67,20 +68,14 @@ export class QueueJobStatusPipe implements PipeTransform {
 }
 
 /**
- * Transforms a queue job object into its display position string ("N/A - running", numerical position, or "-").
+ * Transforms a DashboardJob into its display position string ("N/A - running", numerical position, or "-").
  */
 @Pipe({
   name: 'queueJobPosition',
   standalone: true,
 })
 export class QueueJobPositionPipe implements PipeTransform {
-  transform(
-    job?: {
-      status?: string;
-      positionInQueue?: number | string;
-      position?: number | string;
-    } | null,
-  ): string {
+  transform(job?: DashboardJob | null): string {
     const status = String(job?.status || '').toUpperCase();
     if (
       status === JOB_STATUS_STRINGS.RUNNING ||
@@ -90,7 +85,7 @@ export class QueueJobPositionPipe implements PipeTransform {
     ) {
       return NOT_APPLICABLE_RUNNING_DISPLAY;
     }
-    const pos = job?.positionInQueue ?? job?.position;
+    const pos = job?.positionInQueue;
     if (pos === undefined || pos === null || Number(pos) < 0) {
       return '-';
     }

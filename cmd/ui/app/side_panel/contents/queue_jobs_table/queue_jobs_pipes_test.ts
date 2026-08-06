@@ -14,6 +14,7 @@
 
 import 'jasmine';
 
+import { DashboardJob } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { StatusOption } from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
 
 import { QueueJobPositionPipe, QueueJobStatusPipe } from './queue_jobs_pipes';
@@ -26,72 +27,72 @@ describe('QueueJobStatusPipe', () => {
   });
 
   const testCases: Array<{
-    input?: string;
+    input?: DashboardJob | null;
     expected: StatusOption;
     description: string;
   }> = [
     {
-      input: 'RUNNING',
+      input: { status: 'RUNNING' },
       expected: StatusOption.RUNNING,
       description: 'uppercase RUNNING',
     },
     {
-      input: 'running',
+      input: { status: 'running' },
       expected: StatusOption.RUNNING,
       description: 'lowercase running',
     },
     {
-      input: 'STARTING',
+      input: { status: 'STARTING' },
       expected: StatusOption.STARTING,
       description: 'STARTING',
     },
     {
-      input: 'SCHEDULING',
+      input: { status: 'SCHEDULING' },
       expected: StatusOption.SCHEDULING,
       description: 'SCHEDULING',
     },
     {
-      input: 'INITIALIZING',
+      input: { status: 'INITIALIZING' },
       expected: StatusOption.INITIALIZING,
       description: 'INITIALIZING',
     },
     {
-      input: 'SUCCEEDED',
+      input: { status: 'SUCCEEDED' },
       expected: StatusOption.COMPLETED,
       description: 'SUCCEEDED',
     },
     {
-      input: 'COMPLETED',
+      input: { status: 'COMPLETED' },
       expected: StatusOption.COMPLETED,
       description: 'COMPLETED',
     },
     {
-      input: 'FAILED',
+      input: { status: 'FAILED' },
       expected: StatusOption.FAILED,
       description: 'FAILED',
     },
     {
-      input: 'CANCELLED',
+      input: { status: 'CANCELLED' },
       expected: StatusOption.STOPPED,
       description: 'CANCELLED',
     },
     {
-      input: 'STOPPED',
+      input: { status: 'STOPPED' },
       expected: StatusOption.STOPPED,
       description: 'STOPPED',
     },
     {
       input: undefined,
       expected: StatusOption.PENDING,
-      description: 'undefined status',
+      description: 'undefined job',
     },
     {
-      input: '',
+      input: { status: '' },
       expected: StatusOption.PENDING,
       description: 'empty status string',
     },
     {
-      input: 'UNKNOWN_STATUS',
+      input: { status: 'UNKNOWN_STATUS' },
       expected: StatusOption.PENDING,
       description: 'unknown status',
     },
@@ -112,11 +113,7 @@ describe('QueueJobPositionPipe', () => {
   });
 
   const testCases: Array<{
-    input?: {
-      status?: string;
-      positionInQueue?: number | string | null;
-      position?: number | string | null;
-    } | null;
+    input?: DashboardJob | null;
     expected: string;
     description: string;
   }> = [
@@ -156,9 +153,9 @@ describe('QueueJobPositionPipe', () => {
       description: 'SCHEDULING job with positionInQueue 5',
     },
     {
-      input: { status: 'PENDING', position: 0 },
+      input: { status: 'PENDING', positionInQueue: 0 },
       expected: '0',
-      description: 'PENDING job with position 0',
+      description: 'PENDING job with positionInQueue 0',
     },
     {
       input: { status: 'QUEUED', positionInQueue: 12 },
@@ -171,7 +168,7 @@ describe('QueueJobPositionPipe', () => {
       description: 'negative position',
     },
     {
-      input: { status: 'PENDING', positionInQueue: null },
+      input: { status: 'PENDING', positionInQueue: null as any },
       expected: '-',
       description: 'null position',
     },
