@@ -175,18 +175,22 @@ def run_simulated_training_workers(
     num_workers: int,
     steps_per_worker: int,
     xid: int,
-    work_unit_id: int,
-    execution_id: int,
+    base_work_unit_id: int,
+    base_execution_id: int,
     on_connect: Callable[[str], None],
 ) -> None:
-    """Spawns parallel worker threads simulating ML training workloads emitting metrics."""
+    """Spawns parallel worker threads simulating ML training workloads across WorkUnits and replicas."""
 
     def worker_task(rank: int) -> None:
+        # Simulate realistic multi-WorkUnit multi-replica distributed training jobs
+        worker_wu_id = base_work_unit_id + (rank // 2)
+        worker_exec_id = base_execution_id + (rank % 2)
+        worker_replica_id = str(rank % 2)
         env = {
             "XMC_XID": str(xid),
-            "XMC_WORK_UNIT_ID": str(work_unit_id),
-            "XMC_EXECUTION_ID": str(execution_id),
-            "XMC_REPLICA_ID": str(rank),
+            "XMC_WORK_UNIT_ID": str(worker_wu_id),
+            "XMC_EXECUTION_ID": str(worker_exec_id),
+            "XMC_REPLICA_ID": worker_replica_id,
         }
         client = LoadBalancingRecyclingClient(
             urls=gateway_urls,
@@ -286,8 +290,8 @@ class TestHermeticTelemetryFlow(unittest.TestCase):
             num_workers=num_workers,
             steps_per_worker=steps_per_worker,
             xid=xid,
-            work_unit_id=work_unit_id,
-            execution_id=execution_id,
+            base_work_unit_id=work_unit_id,
+            base_execution_id=execution_id,
             on_connect=record_connection,
         )
 
