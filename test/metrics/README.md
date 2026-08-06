@@ -13,6 +13,6 @@ This document lists all environment variables used by the XMC Python SDK (`xmc`)
 | `XMC_EXECUTION_ID` | Integer / String | **Yes** | *None* | Execution attempt ID (e.g. `1`). Incremented on task restarts; missing value silences metrics. |
 | `XMC_REPLICA_ID` | String | No | `"0"` | Distributed worker replica ID. If omitted, harvested automatically via framework rank heuristics (`RANK`, `JAX_PROCESS_INDEX`, `OMPI_COMM_WORLD_RANK`, or `JOB_COMPLETION_INDEX`). |
 | `XMC_GATEWAY_URL` | String (URL) | No | `"http://localhost:disabled"` | Base URL of the target Ingestion Gateway endpoint (e.g. `http://ingestion-gateway.xmc.svc:8080`). If omitted, metrics collection is disabled. |
-| `XMC_API_KEY` | String | No | *None* | Authentication bearer token passed in `Authorization: Bearer <API_KEY>` HTTP headers. |
+| `XMC_API_KEY` | String | No | *None* | Authentication bearer token passed as `Authorization: Bearer <key>` in HTTP requests. **Not required for hermetic tests** (used in production when Ingestion Gateway is behind an auth proxy; set via `export XMC_API_KEY="..."`). |
 | `XMC_METRICS_DISABLED` | Boolean String | No | `"0"` / `"false"` | Silences all metrics collection when set to a truthy value (`"1"`, `"true"`, `"yes"`). |
 | `XMC_DISABLE_AUTOLOG` | Boolean String | No | `"0"` / `"false"` | Disables framework autologging integration (PyTorch / JAX) when set to `"1"` or `"true"`. |
