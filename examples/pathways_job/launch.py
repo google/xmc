@@ -145,7 +145,7 @@ def main(argv: Sequence[str]) -> None:
                             replicas=2,
                             dependency_order=work_unit_pb2.KubernetesJob.DependencyOrder(
                                 job_name="pathways-head",
-                                job_dependency_state=work_unit_pb2.KubernetesJob.DependencyOrder.JobDependencyState.READY,
+                                job_dependency_state=work_unit_pb2.KubernetesJob.DependencyOrder.READY,
                             ),
                             spec=work_unit_pb2.ExecutableSpec(
                                 name="pathways-worker",
