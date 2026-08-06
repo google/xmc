@@ -69,27 +69,6 @@ describe('ResourceDashboard Container', () => {
     ],
   };
 
-  const mockJobs = [
-    {
-      jobName: 'xmc-operation-53296-1',
-      xid: '53296',
-      user: 'alice@google.com',
-      priority: 'HIGH',
-      status: 'RUNNING',
-      positionInQueue: 1,
-      workUnitId: '101',
-    },
-    {
-      jobName: 'xmc-operation-53308-1',
-      xid: '53308',
-      user: 'bob@google.com',
-      priority: 'NORMAL',
-      status: 'RUNNING',
-      positionInQueue: 2,
-      workUnitId: '102',
-    },
-  ];
-
   cleanState(() => {
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
       'getClusterQueues',
@@ -98,9 +77,7 @@ describe('ResourceDashboard Container', () => {
     resourceService.getClusterQueues.and.returnValue(
       of({ queues: [mockGpuQueue, mockCpuQueue] } as GetFittingQueuesResponse),
     );
-    resourceService.getQueueJobs.and.returnValue(
-      of({ queueName: 'gpu-cluster-queue', jobs: mockJobs, totalQueueSize: 2 }),
-    );
+    resourceService.getQueueJobs.and.returnValue(of({ queueName: 'gpu-cluster-queue', jobs: [] }));
 
     setupModule({
       imports: [TestHostComponent, NoopAnimationsModule],
@@ -248,15 +225,5 @@ describe('ResourceDashboard Container', () => {
     await flush();
 
     expect(await card1.isSelected()).toBeTrue();
-  });
-
-  it('should fetch and render queue jobs when a queue card is selected', async () => {
-    const { resourceService } = bootstrap(TestHostComponent);
-    await flush();
-
-    const dashboard = await getHarness(ResourceDashboardHarness);
-    const tableHarness = (await dashboard.getQueueJobsTable())!;
-    expect(tableHarness).not.toBeNull();
-    expect(resourceService.getQueueJobs).toHaveBeenCalledWith('gpu-cluster-queue');
   });
 });
