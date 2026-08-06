@@ -77,7 +77,11 @@ func TestGetHealthStatus_AllHealthy(t *testing.T) {
 		ActuatorURL:   actuatorServer.URL,
 		ReconcilerURL: reconcilerServer.URL,
 	}
-	s := newServer(cfg)
+	s, err := newServer(cfg)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+	defer s.Close()
 
 	// 4. Run health check
 	resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
@@ -154,7 +158,11 @@ func TestGetHealthStatus_SomeUnhealthy(t *testing.T) {
 		ActuatorURL:   actuatorURL,
 		ReconcilerURL: reconcilerServer.URL,
 	}
-	s := newServer(cfg)
+	s, err := newServer(cfg)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+	defer s.Close()
 
 	resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
 	if err != nil {
@@ -185,8 +193,12 @@ func TestGetHealthStatus_SomeUnhealthy(t *testing.T) {
 }
 
 func TestListConfigEntries(t *testing.T) {
-	cfg := &Config{Port: "8080", GRPCPort: "50051", ProjectID: "test-project"}
-	s := newServer(cfg)
+	cfg := &Config{Port: "8080", GRPCPort: "50051", ProjectID: "test-project", XidAddr: "localhost:50051"}
+	s, err := newServer(cfg)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
 	if err != nil {
@@ -215,5 +227,27 @@ func TestListConfigEntries(t *testing.T) {
 	}
 	if configs["ProjectID"] != cfg.ProjectID {
 		t.Errorf("Expected ProjectID %q, got %q", cfg.ProjectID, configs["ProjectID"])
+	}
+}
+
+func TestGetUserInfo(t *testing.T) {
+	cfg := &Config{Port: "8080", GRPCPort: "50051", ProjectID: "test-project", XidAddr: "localhost:50051"}
+	s, err := newServer(cfg)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+	defer s.Close()
+
+	resp, err := s.GetUserInfo(context.Background(), &spb.GetUserInfoRequest{})
+	if err != nil {
+		t.Fatalf("GetUserInfo failed: %v", err)
+	}
+
+	if resp.UserEmail != "mock-user@google.com" {
+		t.Errorf("Expected UserEmail 'mock-user@google.com', got %q", resp.UserEmail)
+	}
+
+	if len(resp.Privileges) != 1 || resp.Privileges[0] != spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL {
+		t.Errorf("Expected privileges [PRIVILEGE_ACCESS_ADMIN_PANEL], got %v", resp.Privileges)
 	}
 }

@@ -29,11 +29,19 @@ type server struct {
 	checker *HealthChecker
 }
 
-func newServer(cfg *Config) *server {
+func newServer(cfg *Config) (*server, error) {
+	checker, err := newHealthChecker(cfg)
+	if err != nil {
+		return nil, err
+	}
 	return &server{
 		cfg:     cfg,
-		checker: newHealthChecker(cfg),
-	}
+		checker: checker,
+	}, nil
+}
+
+func (s *server) Close() error {
+	return s.checker.Close()
 }
 
 func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRequest) (*spb.HealthStatusResponse, error) {

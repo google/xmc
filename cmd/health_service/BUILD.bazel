@@ -57,6 +57,7 @@ oci_image_for_service(
 compat_go_test(
     name = "server_test",
     srcs = [
+        "health_checker_test.go",
         "server_test.go",
     ],
     embed = [":health_service_lib"],

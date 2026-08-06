@@ -17,15 +17,15 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"sync"
 	"time"
 
+	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
-	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 )
 
 type HealthChecker struct {
@@ -34,10 +34,13 @@ type HealthChecker struct {
 	xidConn    *grpc.ClientConn
 }
 
-func newHealthChecker(cfg *Config) *HealthChecker {
+func newHealthChecker(cfg *Config) (*HealthChecker, error) {
+	if cfg.XidAddr == "" {
+		return nil, fmt.Errorf("xid address is required")
+	}
 	conn, err := grpc.NewClient(cfg.XidAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		slog.Error("failed to create gRPC client for XID", "addr", cfg.XidAddr, "error", err)
+		return nil, fmt.Errorf("failed to create grpc client for xid at %s: %w", cfg.XidAddr, err)
 	}
 	return &HealthChecker{
 		cfg: cfg,
@@ -45,65 +48,99 @@ func newHealthChecker(cfg *Config) *HealthChecker {
 			Timeout: 3 * time.Second,
 		},
 		xidConn: conn,
+	}, nil
+}
+
+func (c *HealthChecker) Close() error {
+	if c.xidConn != nil {
+		return c.xidConn.Close()
 	}
+	return nil
 }
 
 func (c *HealthChecker) RunChecks(ctx context.Context) []*spb.ComponentHealth {
-	components := make([]*spb.ComponentHealth, 7)
+	targets := c.getCheckTargets()
+	components := make([]*spb.ComponentHealth, len(targets))
 	var wg sync.WaitGroup
-	wg.Add(4)
 
-	// 1. ESS
-	go func() {
-		defer wg.Done()
-		components[0] = c.checkHTTPComponent(ctx, "ESS", c.cfg.EssURL, "/readyz")
-	}()
-
-	// 2. XID
-	go func() {
-		defer wg.Done()
-		components[1] = c.checkGRPCComponent(ctx, "XID", c.xidConn, "xmc.XidService")
-	}()
-
-	// 3. Actuator
-	go func() {
-		defer wg.Done()
-		components[2] = c.checkHTTPComponent(ctx, "Actuator", c.cfg.ActuatorURL, "/readyz")
-	}()
-
-	// 4. Reconciler
-	go func() {
-		defer wg.Done()
-		components[3] = c.checkHTTPComponent(ctx, "Reconciler", c.cfg.ReconcilerURL, "/readyz")
-	}()
-
-	// 5. Log Monitor
-	// TODO(b/532846936): Implement actual health checking for Log Monitor Cloud Run service.
-	// For now, we mock it as healthy since Cloud Run ingress is internal-only.
-	components[4] = &spb.ComponentHealth{
-		Name:        "Log Monitor",
-		Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
-		HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
-	}
-
-	// 6. Spanner
-	// TODO(b/532846936): Implement actual Spanner database connectivity checks.
-	components[5] = &spb.ComponentHealth{
-		Name:        "Spanner",
-		Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
-		HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
-	}
-
-	// 7. Redis
-	// TODO(b/532846936): Implement actual Redis cache connectivity check.
-	components[6] = &spb.ComponentHealth{
-		Name:        "Redis",
-		Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
-		HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+	for i, target := range targets {
+		wg.Add(1)
+		go func(idx int, t checkTarget) {
+			defer wg.Done()
+			components[idx] = t.checkFn(ctx)
+		}(i, target)
 	}
 
 	wg.Wait()
 	return components
+}
+
+type checkTarget struct {
+	name    string
+	checkFn func(ctx context.Context) *spb.ComponentHealth
+}
+
+func (c *HealthChecker) getCheckTargets() []checkTarget {
+	return []checkTarget{
+		{
+			name: "ESS",
+			checkFn: func(ctx context.Context) *spb.ComponentHealth {
+				return c.checkHTTPComponent(ctx, "ESS", c.cfg.EssURL, "/readyz")
+			},
+		},
+		{
+			name: "XID",
+			checkFn: func(ctx context.Context) *spb.ComponentHealth {
+				return c.checkGRPCComponent(ctx, "XID", c.xidConn, "xmc.XidService")
+			},
+		},
+		{
+			name: "Actuator",
+			checkFn: func(ctx context.Context) *spb.ComponentHealth {
+				return c.checkHTTPComponent(ctx, "Actuator", c.cfg.ActuatorURL, "/readyz")
+			},
+		},
+		{
+			name: "Reconciler",
+			checkFn: func(ctx context.Context) *spb.ComponentHealth {
+				return c.checkHTTPComponent(ctx, "Reconciler", c.cfg.ReconcilerURL, "/readyz")
+			},
+		},
+		{
+			name: "Log Monitor",
+			checkFn: func(ctx context.Context) *spb.ComponentHealth {
+				// TODO(b/532846936): Implement actual health checking for Log Monitor Cloud Run service.
+				// For now, we mock it as healthy since Cloud Run ingress is internal-only.
+				return &spb.ComponentHealth{
+					Name:        "Log Monitor",
+					Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+				}
+			},
+		},
+		{
+			name: "Spanner",
+			checkFn: func(ctx context.Context) *spb.ComponentHealth {
+				// TODO(b/532846936): Implement actual Spanner database connectivity checks.
+				return &spb.ComponentHealth{
+					Name:        "Spanner",
+					Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+				}
+			},
+		},
+		{
+			name: "Redis",
+			checkFn: func(ctx context.Context) *spb.ComponentHealth {
+				// TODO(b/532846936): Implement actual Redis cache connectivity check.
+				return &spb.ComponentHealth{
+					Name:        "Redis",
+					Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+				}
+			},
+		},
+	}
 }
 
 func (c *HealthChecker) checkHTTPComponent(ctx context.Context, name string, baseURL string, path string) *spb.ComponentHealth {
@@ -124,7 +161,7 @@ func (c *HealthChecker) checkHTTPComponent(ctx context.Context, name string, bas
 			Name:         name,
 			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
 			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
-			ErrorMessage: fmt.Sprintf("HTTP request failed: %v", err),
+			ErrorMessage: fmt.Sprintf("http request failed: %v", err),
 		}
 	}
 	defer resp.Body.Close()
@@ -134,7 +171,7 @@ func (c *HealthChecker) checkHTTPComponent(ctx context.Context, name string, bas
 			Name:         name,
 			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
 			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
-			ErrorMessage: fmt.Sprintf("unexpected HTTP status: %s", resp.Status),
+			ErrorMessage: fmt.Sprintf("unexpected http status: %s", resp.Status),
 		}
 	}
 
@@ -151,7 +188,7 @@ func (c *HealthChecker) checkGRPCComponent(ctx context.Context, name string, con
 			Name:         name,
 			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
 			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
-			ErrorMessage: "gRPC client connection is nil",
+			ErrorMessage: "grpc client connection is nil",
 		}
 	}
 
@@ -162,7 +199,7 @@ func (c *HealthChecker) checkGRPCComponent(ctx context.Context, name string, con
 			Name:         name,
 			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
 			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
-			ErrorMessage: fmt.Sprintf("gRPC Check call failed: %v", err),
+			ErrorMessage: fmt.Sprintf("grpc check call failed: %v", err),
 		}
 	}
 
@@ -171,7 +208,7 @@ func (c *HealthChecker) checkGRPCComponent(ctx context.Context, name string, con
 			Name:         name,
 			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
 			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
-			ErrorMessage: fmt.Sprintf("gRPC service status: %s", resp.Status),
+			ErrorMessage: fmt.Sprintf("grpc service status: %s", resp.Status),
 		}
 	}
 
