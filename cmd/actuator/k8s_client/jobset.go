@@ -337,8 +337,8 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 	}
 
 	var terminationGracePeriodSeconds *int64
-	if job.GetTerminationGracePeriodSeconds() > 0 {
-		terminationGracePeriodSeconds = proto.Int64(job.GetTerminationGracePeriodSeconds())
+	if job.TerminationGracePeriodSeconds != nil && *job.TerminationGracePeriodSeconds >= 0 {
+		terminationGracePeriodSeconds = proto.Int64(*job.TerminationGracePeriodSeconds)
 	}
 
 	primaryName := jobsetutil.PrimaryContainerName(job)

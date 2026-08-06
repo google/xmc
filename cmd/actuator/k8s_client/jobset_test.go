@@ -1193,27 +1193,62 @@ func TestConstructJobSet_ActiveDeadlineSeconds(t *testing.T) {
 }
 
 func TestConstructJobSet_TerminationGracePeriodSeconds(t *testing.T) {
-	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
-		wu.Executable.GetJobset().Jobs[0].TerminationGracePeriodSeconds = 120
-	})
-
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
-	if err != nil {
-		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	tests := []struct {
+		name    string
+		val     *int64
+		wantSet bool
+		wantVal int64
+	}{
+		{
+			name:    "positive grace period",
+			val:     proto.Int64(120),
+			wantSet: true,
+			wantVal: 120,
+		},
+		{
+			name:    "zero grace period",
+			val:     proto.Int64(0),
+			wantSet: true,
+			wantVal: 0,
+		},
+		{
+			name:    "nil grace period",
+			val:     nil,
+			wantSet: false,
+		},
 	}
 
-	if len(got.Spec.ReplicatedJobs) != 1 {
-		t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+			workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+				wu.Executable.GetJobset().Jobs[0].TerminationGracePeriodSeconds = tt.val
+			})
 
-	gotPodSpec := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
-	if gotPodSpec.TerminationGracePeriodSeconds == nil {
-		t.Fatal("Expected TerminationGracePeriodSeconds to be set, but it was nil")
-	}
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+			if err != nil {
+				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+			}
 
-	if *gotPodSpec.TerminationGracePeriodSeconds != 120 {
-		t.Errorf("Expected TerminationGracePeriodSeconds to be 120, got %d", *gotPodSpec.TerminationGracePeriodSeconds)
+			if len(got.Spec.ReplicatedJobs) != 1 {
+				t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
+			}
+
+			gotPodSpec := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
+			if !tt.wantSet {
+				if gotPodSpec.TerminationGracePeriodSeconds != nil {
+					t.Errorf("Expected TerminationGracePeriodSeconds to be nil, got %d", *gotPodSpec.TerminationGracePeriodSeconds)
+				}
+				return
+			}
+
+			if gotPodSpec.TerminationGracePeriodSeconds == nil {
+				t.Fatal("Expected TerminationGracePeriodSeconds to be set, but it was nil")
+			}
+			if *gotPodSpec.TerminationGracePeriodSeconds != tt.wantVal {
+				t.Errorf("Expected TerminationGracePeriodSeconds to be %d, got %d", tt.wantVal, *gotPodSpec.TerminationGracePeriodSeconds)
+			}
+		})
 	}
 }
 
