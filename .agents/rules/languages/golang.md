@@ -24,7 +24,7 @@ This document defines coding standards and conventions for Go development across
 ## 5. Table-Driven Testing
 - **Table-Driven Tests**: Standardize unit test suites using Go table-driven patterns (`tests := []struct{ name string; ... }{...}`).
 - **Subtest Execution**: Execute subtests using `t.Run(tt.name, func(t *testing.T) { ... })` to ensure clear failure reporting and isolated execution.
-- **Baseline Fixtures & Targeted Mutations (`proto.Modify`)**: Follow baseline fixture policies in [Core Engineering Standards](../core_engineering.md#4-high-fidelity-test-doubles--decoupling). In table-driven tests, define a canonical baseline fixture (`baseReq`) and use `proto.Modify` for Protobuf mutations or shallow copies/helpers for Go structs to keep test tables DRY and readable.
+- **Baseline Fixtures & Targeted Mutations (`proto.Modify`)**: Follow baseline fixture policies in [Core Engineering Standards](../core_engineering.md#4-high-fidelity-test-doubles--decoupling). When constructing Protobuf test objects in Go unit tests, check for existing baseline fixtures (e.g., `baseReq`, `baseWorkUnit`) and modify them using `proto.Modify` rather than building raw, verbose struct literals. This keeps test suites DRY, readable, and consistent.
 - **Centralize Common Test Utilities**: Shared test and proto utilities must be centralized in global packages (e.g., `proto.Modify` in `//internal/compat/proto`) per [Core Engineering Standards](../core_engineering.md#4-high-fidelity-test-doubles--decoupling).
 
 ## 6. Go Dependencies / Bazel
