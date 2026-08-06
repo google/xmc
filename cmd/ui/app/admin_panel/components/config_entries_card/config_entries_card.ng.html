@@ -44,11 +44,11 @@
         </tr>
       </thead>
       <tbody>
-        @for (group of filteredGroups(); track group.displayName) {
+        @for (group of filteredGroups(); track group.displayName ?? $index) {
           <tr class="group-header-row">
             <td colspan="2" class="group-header-cell">{{ group.displayName }}</td>
           </tr>
-          @for (config of group.configs; track config.key) {
+          @for (config of group.configs; track config.key ?? $index) {
             <tr class="config-row">
               <td class="cell-key">{{ config.key }}</td>
               <td class="cell-value">{{ config.value }}</td>

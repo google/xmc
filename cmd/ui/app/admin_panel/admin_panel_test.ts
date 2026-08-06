@@ -71,9 +71,8 @@ describe('AdminPanelPage Component', () => {
 
     const harness = await getHarness(AdminPanelHarness);
     const configEntriesCardHarness = await harness.getConfigEntriesCard();
-    const entries = await configEntriesCardHarness!.getConfigEntries();
-
     expect(configEntriesCardHarness).not.toBeNull();
+    const entries = await configEntriesCardHarness!.getConfigEntries();
     expect(await configEntriesCardHarness!.getGroupDisplayNames()).toEqual([
       'Health Service Config',
     ]);

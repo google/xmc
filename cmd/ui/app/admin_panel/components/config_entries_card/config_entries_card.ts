@@ -41,16 +41,26 @@ export class ConfigEntriesCardComponent {
 
   protected readonly searchTerm = signal<string>('');
 
-  protected readonly filteredGroups = computed(() => {
-    const term = this.searchTerm().trim().toLowerCase();
-    const groups = this.configGroups();
+  protected readonly filteredGroups = computed(() =>
+    this.filterConfigGroups(this.configGroups(), this.searchTerm()),
+  );
+
+  protected onSearchInput(event: Event): void {
+    const inputElement = event.target as HTMLInputElement;
+    this.searchTerm.set(inputElement.value);
+  }
+
+  private filterConfigGroups(groups: ConfigGroup[] | undefined, term: string): ConfigGroup[] {
     if (!groups) return [];
-    if (!term) return groups;
+    const searchTerm = term.trim().toLowerCase();
 
     return groups
       .map((group) => {
         const filteredConfigs = (group.configs || []).filter(
-          (c) => c.key?.toLowerCase().includes(term) || c.value?.toLowerCase().includes(term),
+          (c) =>
+            !searchTerm ||
+            c.key?.toLowerCase().includes(searchTerm) ||
+            c.value?.toLowerCase().includes(searchTerm),
         );
         return {
           ...group,
@@ -58,10 +68,5 @@ export class ConfigEntriesCardComponent {
         };
       })
       .filter((group) => group.configs.length > 0);
-  });
-
-  protected onSearchInput(event: Event): void {
-    const inputElement = event.target as HTMLInputElement;
-    this.searchTerm.set(inputElement.value);
   }
 }
