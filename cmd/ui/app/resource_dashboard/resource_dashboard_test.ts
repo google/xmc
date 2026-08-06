@@ -249,4 +249,14 @@ describe('ResourceDashboard Container', () => {
 
     expect(await card1.isSelected()).toBeTrue();
   });
+
+  it('should fetch and render queue jobs when a queue card is selected', async () => {
+    const { resourceService } = bootstrap(TestHostComponent);
+    await flush();
+
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    const tableHarness = (await dashboard.getQueueJobsTable())!;
+    expect(tableHarness).not.toBeNull();
+    expect(resourceService.getQueueJobs).toHaveBeenCalledWith('gpu-cluster-queue');
+  });
 });
