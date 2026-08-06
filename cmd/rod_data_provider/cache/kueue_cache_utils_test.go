@@ -49,8 +49,8 @@ func TestGetLocalQueuesForClusterQueue(t *testing.T) {
 	c.LocalQueues.Set("cpu-queue-1", lq3)
 
 	tpuLocalQueues := c.GetLocalQueuesForClusterQueue("tpu-cluster-queue")
-	if len(tpuLocalQueues) != 2 {
-		t.Fatalf("expected 2 local queues for tpu-cluster-queue, got %d", len(tpuLocalQueues))
+	if len(tpuLocalQueues) != 2 || tpuLocalQueues[0] != "tpu-queue-1" || tpuLocalQueues[1] != "tpu-queue-2" {
+		t.Fatalf("expected ['tpu-queue-1', 'tpu-queue-2'] for tpu-cluster-queue, got %v", tpuLocalQueues)
 	}
 
 	cpuLocalQueues := c.GetLocalQueuesForClusterQueue("cpu-cluster-queue")

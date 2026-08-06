@@ -14,6 +14,10 @@
 
 package cache
 
+import (
+	"sort"
+)
+
 // GetLocalQueuesForClusterQueue returns the names of all LocalQueues connected to the given ClusterQueue.
 func (c *KueueCache) GetLocalQueuesForClusterQueue(clusterQueueName string) []string {
 	if c == nil || c.LocalQueues == nil || clusterQueueName == "" {
@@ -30,5 +34,6 @@ func (c *KueueCache) GetLocalQueuesForClusterQueue(clusterQueueName string) []st
 			matchedNames = append(matchedNames, lq.Name)
 		}
 	}
+	sort.Strings(matchedNames)
 	return matchedNames
 }
