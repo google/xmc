@@ -2897,7 +2897,6 @@ func TestConstructJobSet_KubernetesJobAnnotationsPropagation(t *testing.T) {
 	}
 }
 
-<<<<<<< HEAD
 func TestConstructJobSet_NativeSidecarInitContainers(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 
