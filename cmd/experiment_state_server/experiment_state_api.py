@@ -46,8 +46,8 @@ def get_current_user_email() -> str:
     """Retrieves the email of the current authenticated user.
 
     This function attempts to get the user's email from the credentials,
-    prioritizing service account email, then ID token claims, and finally
-    the OpenID Connect userinfo endpoint.
+    prioritizing environment variables, service account email, ID token claims,
+    and finally the OpenID Connect userinfo endpoint.
 
     Returns:
       The email address of the current user.
@@ -55,6 +55,9 @@ def get_current_user_email() -> str:
     Raises:
       RuntimeError: If the user email cannot be retrieved.
     """
+    if user_email := os.environ.get("USER_EMAIL") or os.environ.get("XMC_USER_EMAIL"):
+        return user_email
+
     try:
         scopes = [
             "openid",

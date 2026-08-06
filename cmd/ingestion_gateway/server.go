@@ -89,6 +89,7 @@ func NewHTTPServer(cfg ServerConfig) *http.Server {
 	mux.HandleFunc("/readyz", healthzHandler)
 	mux.Handle("/metrics", cfg.Metrics.MetricsHandler())
 	mux.HandleFunc("/api/v1/metrics", NewMetricsIngestionHandler(cfg.Producer, cfg.TopicName, cfg.Metrics))
+	mux.HandleFunc("/api/v1/metrics/", NewMetricsIngestionHandler(cfg.Producer, cfg.TopicName, cfg.Metrics))
 
 	var handler http.Handler = mux
 	handler = cfg.Metrics.HTTPMiddleware(handler)
