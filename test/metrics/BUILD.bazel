@@ -36,3 +36,23 @@ compat_go_test(
         "@org_golang_google_protobuf//proto",
     ],
 )
+
+compat_go_test(
+    name = "clickhouse_pipeline_test",
+    srcs = ["clickhouse_pipeline_test.go"],
+    data = [
+        "//api/protos/metrics:metrics.proto",
+        "//deploy/clickhouse:schema.sql",
+    ],
+    tags = [
+        "local",
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        "//api/protos/metrics:metrics_go_proto",
+        "//test/metrics/infra",
+        "@com_github_twmb_franz_go//pkg/kgo",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
