@@ -14,15 +14,6 @@
 
 // Package main provides the hermetic runner entrypoint that provisions local test containers
 // (Redpanda message broker and ClickHouse database) and launches N Go Ingestion Gateway server instances.
-//
-// Architecture & Lifecycle:
-//  1. Spawns Docker containers via testcontainers-go (`infra.StartHarness`) and applies `deploy/clickhouse/schema.sql`.
-//  2. Binds N (default 5) HTTP listener instances on local dynamic ports (`127.0.0.1:0`) to simulate multiple
-//     Ingestion Gateway pod endpoints in a Kubernetes deployment.
-//  3. Connects each Ingestion Gateway instance to Redpanda using franz-go producers.
-//  4. Emits a single JSON payload to stdout containing endpoint URLs (`status: ready`, `gateway_urls`, `clickhouse_http_addr`).
-//  5. Waits for stdin closure (parent process EOF) or OS termination signals (SIGINT/SIGTERM) to perform
-//     graceful HTTP server shutdown and container teardown.
 package main
 
 import (
@@ -50,6 +41,18 @@ type RunnerConfig struct {
 	ClickHouseNativeAddr string   `json:"clickhouse_native_addr"`
 	ClickHouseHTTPAddr   string   `json:"clickhouse_http_addr"`
 	GatewayURLs          []string `json:"gateway_urls"`
+}
+
+type gatewayPool struct {
+	servers     []*http.Server
+	gatewayURLs []string
+	producers   []ingestiongateway.MetricProducer
+}
+
+func (g *gatewayPool) closeProducers() {
+	for _, p := range g.producers {
+		p.Close()
+	}
 }
 
 // locateSchemaFile resolves the absolute path to deploy/clickhouse/schema.sql within Bazel runfiles or workspace.
@@ -94,50 +97,49 @@ func run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Locate ClickHouse schema DDL file to initialize database tables during container startup.
 	schemaPath, err := locateSchemaFile()
 	if err != nil {
 		return fmt.Errorf("failed to locate schema.sql: %w", err)
 	}
 
-	// Spin up Redpanda and ClickHouse Docker containers via testcontainers-go.
 	harness, err := infra.StartHarness(ctx, schemaPath)
 	if err != nil {
 		return fmt.Errorf("failed to start harness: %w", err)
 	}
-	// Defer container teardown to ensure cleanup upon run() exit or shutdown.
 	defer harness.Teardown(context.Background())
 
-	var servers []*http.Server
-	var listeners []net.Listener
-	var gatewayURLs []string
-	var producers []ingestiongateway.MetricProducer
+	pool, err := startGatewayServers(*numGateways, harness.RedpandaBrokers)
+	if err != nil {
+		return err
+	}
+	defer pool.closeProducers()
 
-	defer func() {
-		for _, p := range producers {
-			p.Close()
-		}
-	}()
+	if err := emitReadinessConfig(harness, pool.gatewayURLs); err != nil {
+		return err
+	}
 
-	// Launch N Ingestion Gateway HTTP server instances on dynamic local ports.
-	// Each instance acts as an independent gateway pod routing metrics batches to Redpanda.
-	for i := 0; i < *numGateways; i++ {
+	waitForShutdownSignal()
+	shutdownServers(pool.servers)
+	return nil
+}
+
+func startGatewayServers(numGateways int, brokers []string) (*gatewayPool, error) {
+	pool := &gatewayPool{}
+	for i := 0; i < numGateways; i++ {
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
-			return fmt.Errorf("failed to listen on port for gateway %d: %w", i, err)
+			return nil, fmt.Errorf("failed to listen on port for gateway %d: %w", i, err)
 		}
-		listeners = append(listeners, listener)
 
 		cfg := &ingestiongateway.Config{
-			RedpandaBrokers: harness.RedpandaBrokers,
+			RedpandaBrokers: brokers,
 			TopicName:       "xmc-metrics",
 		}
-		// Create a dedicated franz-go Kafka producer for each gateway server instance.
-		producer, err := ingestiongateway.NewKafkaProducer(cfg, nil, infra.KafkaDialer(harness.RedpandaBrokers))
+		producer, err := ingestiongateway.NewKafkaProducer(cfg, nil, infra.KafkaDialer(brokers))
 		if err != nil {
-			return fmt.Errorf("failed to create kafka producer for gateway %d: %w", i, err)
+			return nil, fmt.Errorf("failed to create kafka producer for gateway %d: %w", i, err)
 		}
-		producers = append(producers, producer)
+		pool.producers = append(pool.producers, producer)
 
 		gMetrics := ingestiongateway.NewGatewayMetrics(nil)
 		srvCfg := ingestiongateway.DefaultServerConfig(fmt.Sprintf("%d", listener.Addr().(*net.TCPAddr).Port))
@@ -146,16 +148,17 @@ func run() error {
 		srvCfg.Producer = producer
 
 		server := ingestiongateway.NewHTTPServer(srvCfg)
-		servers = append(servers, server)
-		gatewayURLs = append(gatewayURLs, fmt.Sprintf("http://%s", listener.Addr().String()))
+		pool.servers = append(pool.servers, server)
+		pool.gatewayURLs = append(pool.gatewayURLs, fmt.Sprintf("http://%s", listener.Addr().String()))
 
-		// Serve HTTP requests asynchronously for this gateway instance.
 		go func(s *http.Server, l net.Listener) {
 			_ = s.Serve(l)
 		}(server, listener)
 	}
+	return pool, nil
+}
 
-	// Format readiness payload containing endpoint details for parent test runners.
+func emitReadinessConfig(harness *infra.Harness, gatewayURLs []string) error {
 	res := RunnerConfig{
 		Status:               "ready",
 		RedpandaBrokers:      harness.RedpandaBrokers,
@@ -168,14 +171,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal response: %w", err)
 	}
-	// Print single readiness JSON line to stdout for parent process parsing.
 	fmt.Println(string(jsonBytes))
+	return nil
+}
 
-	// Listen for OS signals (SIGINT/SIGTERM) to handle graceful shutdown.
+func waitForShutdownSignal() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Listen for stdin closure (EOF) from parent test process to trigger automatic shutdown.
 	doneChan := make(chan struct{})
 	go func() {
 		buf := make([]byte, 1)
@@ -187,12 +190,12 @@ func run() error {
 	case <-sigChan:
 	case <-doneChan:
 	}
+}
 
-	// Perform graceful HTTP server shutdown before tearing down containers.
+func shutdownServers(servers []*http.Server) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	for _, s := range servers {
 		_ = s.Shutdown(shutdownCtx)
 	}
-	return nil
 }

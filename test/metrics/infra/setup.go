@@ -159,11 +159,13 @@ func locateMetricsProtoFile() string {
 	return ""
 }
 
-// // ClickHouseNode encapsulates a ClickHouse container instance, driver connection, and native address.
+// ClickHouseNode encapsulates a ClickHouse container instance, driver connection, and mapped endpoint addresses.
 type ClickHouseNode struct {
-	Container   *clickhouse.ClickHouseContainer
-	Conn        driver.Conn
-	Address     string
+	Container *clickhouse.ClickHouseContainer
+	Conn      driver.Conn
+	// Address is the host:port for ClickHouse's native TCP binary protocol (9000/tcp), used by Go database drivers.
+	Address string
+	// HTTPAddress is the host:port for ClickHouse's REST HTTP protocol (8123/tcp), used by Python/HTTP query clients.
 	HTTPAddress string
 }
 
