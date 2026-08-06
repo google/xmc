@@ -19,7 +19,7 @@ import pathlib
 import subprocess
 import sys
 import unittest
-from unittest.mock import ANY, MagicMock, call, mock_open, patch
+from unittest.mock import ANY, MagicMock, call, patch
 
 # Import the module under test
 sys.path.insert(0, str(pathlib.Path(__file__).parent.resolve()))
@@ -36,7 +36,8 @@ project_id: my-project
 environment: dev
 region: us-central1
 domain_name: example.com
-xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
+image_registry: us-central1-docker.pkg.dev/my-project/xmc
+image_tag: latest
 """
         self.valid_config_dict = {
             "deployment_name": "xmc-dev",
@@ -44,7 +45,8 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
             "environment": "dev",
             "region": "us-central1",
             "domain_name": "example.com",
-            "xmc_acr_target": "us-central1-docker.pkg.dev/my-project/xmc",
+            "image_registry": "us-central1-docker.pkg.dev/my-project/xmc",
+            "image_tag": "latest",
         }
         self.dns_project = "dns-project"
         self.dns_zone = "dns-zone"
@@ -85,89 +87,24 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
         with self.assertRaises(SystemExit):
             deploy_dev_env.parse_args(args)
 
-    @patch("pathlib.Path.exists", return_value=True)
-    def test_load_and_validate_config_success(self, mock_exists):
-        mo = mock_open(read_data=self.valid_config_yaml)
-        with patch("builtins.open", mo):
-            config = deploy_dev_env.load_and_validate_config("dummy.yaml")
-            self.assertEqual(config, self.valid_config_dict)
+    @patch("deploy_dev_env.tool_load_config")
+    def test_load_and_validate_config_success(self, mock_tool_load):
+        mock_tool_load.return_value = self.valid_config_dict
+        config = deploy_dev_env.load_and_validate_config("dummy.yaml")
+        self.assertEqual(config, self.valid_config_dict)
+        mock_tool_load.assert_called_once_with("dummy.yaml")
 
-    @patch("pathlib.Path.exists", return_value=True)
-    def test_load_and_validate_config_missing_key(self, mock_exists):
-        invalid_yaml = """
-deployment_name: xmc-dev
-project_id: my-project
-# environment is missing
-region: us-central1
-domain_name: example.com
-xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
-"""
-        mo = mock_open(read_data=invalid_yaml)
-        with patch("builtins.open", mo), self.assertRaises(SystemExit):
+    @patch("deploy_dev_env.tool_load_config", side_effect=FileNotFoundError("not found"))
+    def test_load_and_validate_config_file_not_found(self, mock_tool_load):
+        with self.assertRaises(SystemExit) as cm:
             deploy_dev_env.load_and_validate_config("dummy.yaml")
+        self.assertEqual(cm.exception.code, 1)
 
-    @patch("pathlib.Path.exists", return_value=True)
-    def test_load_and_validate_config_invalid_value(self, mock_exists):
-        invalid_yaml = """
-deployment_name: xmc-dev! # Invalid character
-project_id: my-project
-environment: dev
-region: us-central1
-domain_name: example.com
-xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
-"""
-        mo = mock_open(read_data=invalid_yaml)
-        with patch("builtins.open", mo), self.assertRaises(SystemExit):
+    @patch("deploy_dev_env.tool_load_config", side_effect=ValueError("invalid config"))
+    def test_load_and_validate_config_validation_error(self, mock_tool_load):
+        with self.assertRaises(SystemExit) as cm:
             deploy_dev_env.load_and_validate_config("dummy.yaml")
-
-    @patch("pathlib.Path.exists", return_value=True)
-    def test_load_config_success(self, mock_exists):
-        yaml_content = """
-key1: value1
-key2: "value2#with#hash"
-key3: 'value3#with#hash'
-key4: value4 # trailing comment
-key5: "value5" # trailing comment with quotes
-# comment line
-  key6: value6 # indented key
-"""
-        mo = mock_open(read_data=yaml_content)
-        with patch("builtins.open", mo):
-            config = deploy_dev_env._load_config("dummy.yaml")
-            expected = {
-                "key1": "value1",
-                "key2": "value2#with#hash",
-                "key3": "value3#with#hash",
-                "key4": "value4",
-                "key5": "value5",
-                "key6": "value6",
-            }
-            self.assertEqual(config, expected)
-
-    def test_validate_config_success(self):
-        config = {
-            "deployment_name": "xmc-dev",
-            "project_id": "my-project",
-            "environment": "dev",
-            "region": "us-central1",
-            "domain_name": "example.com",
-            "xmc_acr_target": "us-central1-docker.pkg.dev/my-project/xmc",
-            "extra_key": "ignored",
-        }
-        validated = deploy_dev_env._validate_config(config, "dummy.yaml")
-        self.assertEqual(validated, self.valid_config_dict)
-
-    def test_validate_config_missing_key(self):
-        config = {
-            "deployment_name": "xmc-dev",
-            # project_id is missing
-            "environment": "dev",
-            "region": "us-central1",
-            "domain_name": "example.com",
-            "xmc_acr_target": "us-central1-docker.pkg.dev/my-project/xmc",
-        }
-        with self.assertRaises(SystemExit):
-            deploy_dev_env._validate_config(config, "dummy.yaml")
+        self.assertEqual(cm.exception.code, 1)
 
     @patch("shutil.which", return_value=True)
     @patch("pathlib.Path.is_file", return_value=True)
@@ -852,31 +789,44 @@ key5: "value5" # trailing comment with quotes
         mock_run.assert_called_once()
         self.assertIn("describe", mock_run.call_args[0][0])
 
-    @patch("deploy_dev_env.run_command")
-    def test_step_images(self, mock_run):
-        auth_res = MagicMock()
+    @patch("tool_utils.run_command")
+    @patch("deploy_dev_env.configure_docker_auth")
+    def test_step_images_default(self, mock_docker_auth, mock_run):
         bazel_res = MagicMock()
 
-        mock_run.side_effect = [auth_res] + [bazel_res] * 10
+        # 9 bazel run calls (9 base targets, rod_data_provider disabled by default)
+        mock_run.side_effect = [bazel_res] * 9
 
-        deploy_dev_env.step_images(self.valid_config_dict, self.dns_project, self.dns_zone)
+        deploy_dev_env.step_images(self.valid_config_dict)
 
-        self.assertEqual(mock_run.call_count, 11)
-        mock_run.assert_any_call(
-            [
-                "gcloud",
-                "auth",
-                "configure-docker",
-                "us-central1-docker.pkg.dev",
-                "--quiet",
-            ]
-        )
+        self.assertEqual(mock_run.call_count, 9)
+        mock_docker_auth.assert_called_once_with(self.valid_config_dict)
         mock_run.assert_any_call(
             ["bazel", "run", "//cmd/actuator:actuator_image_push"],
             env=ANY,
         )
         mock_run.assert_any_call(
-            ["bazel", "run", "//cmd/ingestion_gateway:ingestion_gateway_image_push"],
+            ["bazel", "run", "//cmd/xid_service:xid_service_image_push"],
+            env=ANY,
+        )
+
+    @patch("tool_utils.run_command")
+    @patch("deploy_dev_env.configure_docker_auth")
+    def test_step_images_rod_enabled(self, mock_docker_auth, mock_run):
+        bazel_res = MagicMock()
+
+        # 10 bazel run calls (9 base + rod_data_provider)
+        mock_run.side_effect = [bazel_res] * 10
+
+        config_rod_enabled = dict(self.valid_config_dict)
+        config_rod_enabled["rod_deployment_enabled"] = "true"
+
+        deploy_dev_env.step_images(config_rod_enabled)
+
+        self.assertEqual(mock_run.call_count, 10)
+        mock_docker_auth.assert_called_once_with(config_rod_enabled)
+        mock_run.assert_any_call(
+            ["bazel", "run", "//cmd/rod_data_provider:rod_data_provider_image_push"],
             env=ANY,
         )
 

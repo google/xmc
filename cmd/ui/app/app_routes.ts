@@ -21,6 +21,7 @@ import { ExperimentPage } from './experiment_page/experiment_page';
 import { ExperimentsListPage } from './experiments_list_page/experiments_list_page';
 import { guestGuard } from './guest.guard';
 import { HomePage } from './homepage/home_page';
+import { resourceDashboardGuard } from './resource_dashboard.guard';
 import { ResourceDashboard } from './resource_dashboard/resource_dashboard';
 import { WorkUnitPage } from './work_unit_page/work_unit_page';
 
@@ -42,7 +43,7 @@ export const routes: Routes = [
   {
     path: 'resources',
     component: ResourceDashboard,
-    canActivate: [authGuard],
+    canActivate: [authGuard, resourceDashboardGuard],
   },
   {
     path: 'experiments',

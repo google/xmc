@@ -49,10 +49,10 @@ helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts
 helm repo update
 ```
 
-#### Option B: Mirror Charts to Artifact Registry (For Restricted Networks / Cloudtop LRI)
+#### Option B: Mirror Charts to Artifact Registry (For Restricted Networks)
 
 > [!CAUTION]
-> Cloudtop workstations have Limited Internet (LRI) by default, which may block external Helm repositories (`dial tcp: lookup... no such host`). If you cannot access external Helm repositories, either request temporary unrestricted internet access at [go/internet-exception](http://go/internet-exception) or mirror the chart to Google Cloud Artifact Registry from an internet-enabled workstation.
+> Machines on restricted networks or private cloud environments may block access to external Helm repositories (`dial tcp: lookup... no such host`). If you cannot access external Helm repositories directly, mirror the chart to Google Cloud Artifact Registry from an internet-enabled environment.
 
 To pull and mirror the chart to your project's Artifact Registry:
 

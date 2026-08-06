@@ -21,6 +21,9 @@ on:
       - test # Trigger on push to the 'test' branch
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   deploy-helloworld:
     name: 'Build and Deploy HelloWorld'
@@ -42,28 +45,31 @@ jobs:
       IMAGE: ${{ vars.IMAGE }}
       WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
       SERVICE_ACCOUNT: ${{ vars.SERVICE_ACCOUNT }}
+      COMMIT_SHA: ${{ github.sha }}
 
     steps:
       - name: 'Checkout'
-        uses: 'actions/checkout@v4'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
 
       - id: 'auth'
         name: 'Authenticate to Google Cloud'
-        uses: 'google-github-actions/auth@v2'
+        uses: 'google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935' # v2.1.8
         with:
           token_format: 'access_token'
           workload_identity_provider: '${{ env.WORKLOAD_IDENTITY_PROVIDER }}'
           service_account: '${{ env.SERVICE_ACCOUNT }}' 
 
       - name: 'Docker Auth'
-        uses: 'docker/login-action@v3'
+        uses: 'docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567' # v3.3.0
         with:
           username: 'oauth2accesstoken'
           password: '${{ steps.auth.outputs.access_token }}'
           registry: '${{ env.GAR_LOCATION }}-docker.pkg.dev'
 
       - name: 'Set up GKE credentials'
-        uses: 'google-github-actions/get-gke-credentials@v2'
+        uses: 'google-github-actions/get-gke-credentials@d08c14912d6642ca79ec62782b87462236685240' # v2.3.2
         with:
           cluster_name: '${{ env.GKE_CLUSTER }}'
           location: '${{ env.GKE_LOCATION }}'
@@ -75,20 +81,20 @@ jobs:
 
       - name: 'Build and Push Docker container'
         run: |
-          DOCKER_IMAGE="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}"
+          DOCKER_IMAGE="${GAR_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${COMMIT_SHA}"
           docker build -t "${DOCKER_IMAGE}" .
           docker push "${DOCKER_IMAGE}"
 
       - name: 'Deploy to GKE'
         run: |
-          DOCKER_IMAGE="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}"
+          DOCKER_IMAGE="${GAR_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${COMMIT_SHA}"
 
           # Create a simple Deployment vice on the fly
           cat <<EOF | kubectl apply -f -
           apiVersion: apps/v1
           kind: Deployment
           metadata:
-            name: ${{ env.DEPLOYMENT_NAME }}
+            name: ${DEPLOYMENT_NAME}
           spec:
             replicas: 1
             selector:
@@ -104,5 +110,5 @@ jobs:
                   image: $DOCKER_IMAGE
           EOF
 
-          kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }}
-          kubectl get deployment ${{ env.DEPLOYMENT_NAME }}
+          kubectl rollout status deployment/"${DEPLOYMENT_NAME}"
+          kubectl get deployment "${DEPLOYMENT_NAME}"

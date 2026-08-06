@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -29,7 +28,7 @@ export interface ResourceRequirementQuery {
   templateUrl: './smart_resource_finder.ng.html',
   styleUrl: './smart_resource_finder.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, FormsModule, MatIconModule, MatButtonModule],
+  imports: [FormsModule, MatIconModule, MatButtonModule],
 })
 export class SmartResourceFinderComponent {
   readonly availableResourceTypes = input<string[]>([]);

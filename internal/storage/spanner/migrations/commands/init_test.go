@@ -81,18 +81,19 @@ func TestInit(t *testing.T) {
 				if !strings.Contains(err.Error(), tc.errorContains) {
 					t.Errorf("Init() = %v, want error containing %q", err, tc.errorContains)
 				}
-			} else {
-				if err != nil {
-					t.Fatalf("Init() = %v, want nil", err)
-				}
+				return
+			}
 
-				v, _, err := m.Version()
-				if err != nil {
-					t.Fatalf("Version() = %v, want nil", err)
-				}
-				if int(v) != tc.expectedVersion {
-					t.Errorf("Version() = %d, want %d", v, tc.expectedVersion)
-				}
+			if err != nil {
+				t.Fatalf("Init() = %v, want nil", err)
+			}
+
+			v, _, err := m.Version()
+			if err != nil {
+				t.Fatalf("Version() = %v, want nil", err)
+			}
+			if int(v) != tc.expectedVersion {
+				t.Errorf("Version() = %d, want %d", v, tc.expectedVersion)
 			}
 		})
 	}

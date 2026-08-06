@@ -97,7 +97,7 @@ func main() {
 
 	// Decorate the MLRun client so every control-plane call is measured (RED metrics).
 	mlRunClient := jobset.NewInstrumentedMLRunCreator(
-		newMLRunCreator(ctx, projectID, cfg.DiagonEnvironment, location))
+		newMLRunCreator(ctx, projectID, cfg.MldiagnosticsEnvironment, location))
 
 	mgr, batcher, err := buildManager(ctx, cfg, storage, projectID, location, clusterName, cqCache, mlRunClient)
 	if err != nil {

@@ -232,6 +232,7 @@ func (r *Repository) UpdateWorkUnitExecutions(ctx context.Context, xid int64, up
 				logging.Info(ctx, "Marking experiment as complete", "completeTime", exp.CompleteTime)
 			}
 
+			// TODO(b/517479143): Refactor to use r.experimentRepo.UpdateExperimentStatus(ctx, txn, updatedExp) DAO method.
 			expStatusMutation, err := spannerdata.ExperimentProtoToStatusUpdateMutation(updatedExp)
 			if err != nil {
 				logging.Error(ctx, "Failed to create mutation for experiment status update", "error", err)
@@ -292,21 +293,9 @@ func (r *Repository) findExperimentStatusMessage(ctx context.Context, xid int64,
 	// If the source work unit for the current experiment message is not part of this update batch
 	// (`!isCurrentMsgUpdated`), we can optimize by avoiding a full database query for that message.
 	currentMsg := updatedExp.Status.StructuredStatusMessage
-	isCurrentMsgUpdated := false
-	if currentMsg != nil {
-		resourceType := validator.GetResourceType(currentMsg.Parent)
-
-		// If the current message is a work unit message, check if it's being updated. If it's an
-		// experiment message, it's always being updated, so we don't need to check.
-		if resourceType == validator.WorkUnitResource {
-			_, wid, err := validator.ValidateWorkUnitName(currentMsg.Parent)
-			if err != nil {
-				return nil, fmt.Errorf("failed to validate work unit name from message parent %q: %w", currentMsg.Parent, err)
-			}
-			_, isCurrentMsgUpdated = updatedWUs[wid]
-		} else if resourceType != validator.ExperimentResource {
-			return nil, fmt.Errorf("current message parent %q has invalid resource type %v: %w", currentMsg.Parent, resourceType, status.ErrInternal)
-		}
+	isCurrentMsgUpdated, err := checkIsCurrentMsgUpdated(currentMsg, updatedWUs)
+	if err != nil {
+		return nil, err
 	}
 
 	// Build a map of the current severity counts.
@@ -332,32 +321,11 @@ func (r *Repository) findExperimentStatusMessage(ctx context.Context, xid int64,
 			if hasCurrentMsg {
 				candidates = append(candidates, currentMsg)
 			}
-		} else {
-			// If the current message is being updated, and there are existing messages of this severity,
-			// we need to check the entire database for messages with this severity.
-			if count := severityCounts[sev]; count > 0 {
-				messages, err := r.ListWorkUnitMessagesBySeverity(ctx, xid, sev, txn)
-				if err != nil {
-					return nil, err
-				}
-
-				for _, msg := range messages {
-					if msg == nil {
-						continue
-					}
-					_, wid, err := validator.ValidateWorkUnitName(msg.GetParent())
-					if err != nil {
-						return nil, fmt.Errorf("failed to validate work unit name from message parent %q: %w", msg.GetParent(), err)
-					}
-
-					// If the work unit has been updated, don't include its message in the candidates. We need to
-					// add the updated message to the candidates list below, because they haven't been updated
-					// yet.
-					if _, ok := updatedWUs[wid]; ok {
-						continue
-					}
-					candidates = append(candidates, msg)
-				}
+		} else if count := severityCounts[sev]; count > 0 {
+			var err error
+			candidates, err = r.collectUnmodifiedMessagesForSeverity(ctx, xid, sev, txn, updatedWUs)
+			if err != nil {
+				return nil, err
 			}
 		}
 
@@ -384,4 +352,45 @@ func setParentIfNonNil(msg *essmsgpb.StructuredMessage, parent string) {
 	if msg != nil {
 		msg.Parent = parent
 	}
+}
+
+func checkIsCurrentMsgUpdated(currentMsg *essmsgpb.StructuredMessage, updatedWUs map[int64]*essmsgpb.WorkUnitExecution) (bool, error) {
+	if currentMsg == nil {
+		return false, nil
+	}
+	resourceType := validator.GetResourceType(currentMsg.Parent)
+	if resourceType == validator.WorkUnitResource {
+		_, wid, err := validator.ValidateWorkUnitName(currentMsg.Parent)
+		if err != nil {
+			return false, fmt.Errorf("failed to validate work unit name from message parent %q: %w", currentMsg.Parent, err)
+		}
+		_, isUpdated := updatedWUs[wid]
+		return isUpdated, nil
+	}
+	if resourceType != validator.ExperimentResource {
+		return false, fmt.Errorf("current message parent %q has invalid resource type %v: %w", currentMsg.Parent, resourceType, status.ErrInternal)
+	}
+	return false, nil
+}
+
+func (r *Repository) collectUnmodifiedMessagesForSeverity(ctx context.Context, xid int64, sev essmsgpb.StructuredMessage_Severity, txn spannerTransaction, updatedWUs map[int64]*essmsgpb.WorkUnitExecution) ([]*essmsgpb.StructuredMessage, error) {
+	messages, err := r.ListWorkUnitMessagesBySeverity(ctx, xid, sev, txn)
+	if err != nil {
+		return nil, err
+	}
+	var candidates []*essmsgpb.StructuredMessage
+	for _, msg := range messages {
+		if msg == nil {
+			continue
+		}
+		_, wid, err := validator.ValidateWorkUnitName(msg.GetParent())
+		if err != nil {
+			return nil, fmt.Errorf("failed to validate work unit name from message parent %q: %w", msg.GetParent(), err)
+		}
+		if _, ok := updatedWUs[wid]; ok {
+			continue
+		}
+		candidates = append(candidates, msg)
+	}
+	return candidates, nil
 }

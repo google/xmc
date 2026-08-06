@@ -73,3 +73,84 @@ func TestChartProtoToInsertMutations_Success(t *testing.T) {
 		t.Errorf("Expected 3 mutations (chart + plot spec + artifact chart link), got %d", len(mutations))
 	}
 }
+
+func TestChartProtoToUpdateMutations_Success(t *testing.T) {
+	chart := &dpb.Chart{
+		Name:  "charts/test-chart-update-1",
+		Title: "Updated Chart Title",
+		Plots: []*dpb.PlotSpec{
+			{
+				PlotId: "plot-1",
+				Title:  "Updated Loss",
+				Type:   dpb.PlotType_SCATTER,
+			},
+		},
+		PlotLayout: &dpb.LayoutSpec{
+			Type:    dpb.LayoutSpec_GRID,
+			Columns: 2,
+		},
+	}
+
+	mutations, err := ChartProtoToUpdateMutations(chart)
+	if err != nil {
+		t.Fatalf("ChartProtoToUpdateMutations failed: %v", err)
+	}
+
+	// Expect 3 mutations: 1 Update (Charts) + 1 Delete (ChartPlots prefix) + 1 InsertOrUpdate (ChartPlots)
+	if len(mutations) != 3 {
+		t.Errorf("Expected 3 mutations, got %d", len(mutations))
+	}
+}
+
+func TestChartProtoToUpdateMutations_WithoutLayout(t *testing.T) {
+	chart := &dpb.Chart{
+		Name:  "charts/test-chart-update-no-layout",
+		Title: "No Layout Chart",
+	}
+
+	mutations, err := ChartProtoToUpdateMutations(chart)
+	if err != nil {
+		t.Fatalf("ChartProtoToUpdateMutations without layout failed: %v", err)
+	}
+
+	if len(mutations) != 2 {
+		t.Errorf("Expected 2 mutations (update charts + delete plots prefix), got %d", len(mutations))
+	}
+}
+
+func TestChartProtoToUpdateMutations_Nil(t *testing.T) {
+	if _, err := ChartProtoToUpdateMutations(nil); err == nil {
+		t.Errorf("ChartProtoToUpdateMutations(nil) expected error, got nil")
+	}
+}
+
+func TestChartProtoToUpdateMutations_EmptyName(t *testing.T) {
+	chart := &dpb.Chart{Title: "No Name"}
+	if _, err := ChartProtoToUpdateMutations(chart); err == nil {
+		t.Errorf("ChartProtoToUpdateMutations with empty name expected error, got nil")
+	}
+}
+
+func TestDashboardProtoToInsertMutations_Nil(t *testing.T) {
+	if _, err := DashboardProtoToInsertMutations(nil); err == nil {
+		t.Errorf("DashboardProtoToInsertMutations(nil) expected error, got nil")
+	}
+}
+
+func TestChartProtoToInsertMutations_Nil(t *testing.T) {
+	if _, err := ChartProtoToInsertMutations(nil); err == nil {
+		t.Errorf("ChartProtoToInsertMutations(nil) expected error, got nil")
+	}
+}
+
+func TestDashboardRowToProto_Nil(t *testing.T) {
+	if _, err := DashboardRowToProto(nil, nil); err == nil {
+		t.Errorf("DashboardRowToProto(nil) expected error, got nil")
+	}
+}
+
+func TestChartRowToProto_Nil(t *testing.T) {
+	if _, err := ChartRowToProto(nil, nil); err == nil {
+		t.Errorf("ChartRowToProto(nil) expected error, got nil")
+	}
+}
