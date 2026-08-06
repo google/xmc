@@ -1192,6 +1192,31 @@ func TestConstructJobSet_ActiveDeadlineSeconds(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_TerminationGracePeriodSeconds(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Executable.GetJobset().Jobs[0].TerminationGracePeriodSeconds = 120
+	})
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if len(got.Spec.ReplicatedJobs) != 1 {
+		t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
+	}
+
+	gotPodSpec := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
+	if gotPodSpec.TerminationGracePeriodSeconds == nil {
+		t.Fatal("Expected TerminationGracePeriodSeconds to be set, but it was nil")
+	}
+
+	if *gotPodSpec.TerminationGracePeriodSeconds != 120 {
+		t.Errorf("Expected TerminationGracePeriodSeconds to be 120, got %d", *gotPodSpec.TerminationGracePeriodSeconds)
+	}
+}
+
 func TestConstructJobSet_DependencyOrder(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := &esspb.WorkUnit{
