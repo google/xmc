@@ -81,6 +81,13 @@ func locateSchemaFile() (string, error) {
 
 func main() {
 	google.Init()
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	numGateways := flag.Int("num_gateways", 5, "Number of gateway HTTP server instances to spin up")
 	flag.Parse()
 
@@ -90,17 +97,15 @@ func main() {
 	// Locate ClickHouse schema DDL file to initialize database tables during container startup.
 	schemaPath, err := locateSchemaFile()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to locate schema.sql: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to locate schema.sql: %w", err)
 	}
 
 	// Spin up Redpanda and ClickHouse Docker containers via testcontainers-go.
 	harness, err := infra.StartHarness(ctx, schemaPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to start harness: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to start harness: %w", err)
 	}
-	// Defer container teardown to ensure cleanup upon main() exit or shutdown.
+	// Defer container teardown to ensure cleanup upon run() exit or shutdown.
 	defer harness.Teardown(context.Background())
 
 	var servers []*http.Server
@@ -112,8 +117,7 @@ func main() {
 	for i := 0; i < *numGateways; i++ {
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to listen on port for gateway %d: %v\n", i, err)
-			os.Exit(1)
+			return fmt.Errorf("failed to listen on port for gateway %d: %w", i, err)
 		}
 		listeners = append(listeners, listener)
 
@@ -124,8 +128,7 @@ func main() {
 		// Create a dedicated franz-go Kafka producer for each gateway server instance.
 		producer, err := ingestiongateway.NewKafkaProducer(cfg, nil, infra.KafkaDialer(harness.RedpandaBrokers))
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to create kafka producer for gateway %d: %v\n", i, err)
-			os.Exit(1)
+			return fmt.Errorf("failed to create kafka producer for gateway %d: %w", i, err)
 		}
 		defer producer.Close()
 
@@ -156,8 +159,7 @@ func main() {
 
 	jsonBytes, err := json.Marshal(res)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to marshal response: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to marshal response: %w", err)
 	}
 	// Print single readiness JSON line to stdout for parent process parsing.
 	fmt.Println(string(jsonBytes))
@@ -185,4 +187,5 @@ func main() {
 	for _, s := range servers {
 		_ = s.Shutdown(shutdownCtx)
 	}
+	return nil
 }

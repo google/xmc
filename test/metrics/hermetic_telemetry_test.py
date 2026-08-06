@@ -180,52 +180,60 @@ def run_simulated_training_workers(
     on_connect: Callable[[str], None],
 ) -> None:
     """Spawns parallel worker threads simulating ML training workloads across WorkUnits and replicas."""
+    exceptions: list[Exception] = []
 
     def worker_task(rank: int) -> None:
-        # Simulate realistic multi-WorkUnit multi-replica distributed training jobs
-        worker_wu_id = base_work_unit_id + (rank // 2)
-        worker_exec_id = base_execution_id + (rank % 2)
-        worker_replica_id = str(rank % 2)
-        env = {
-            "XMC_XID": str(xid),
-            "XMC_WORK_UNIT_ID": str(worker_wu_id),
-            "XMC_EXECUTION_ID": str(worker_exec_id),
-            "XMC_REPLICA_ID": worker_replica_id,
-        }
-        client = LoadBalancingRecyclingClient(
-            urls=gateway_urls,
-            on_connect=on_connect,
-            max_requests=1,
-            base_ttl=1.0,
-            jitter=0.2,
-            env=env,
-            log_all_replicas=True,
-        )
-        flusher = MetricsFlusher(
-            client=client,
-            flush_interval=0.5,
-            batch_size=10,
-            env=env,
-            log_all_replicas=True,
-        )
-        flusher.start()
+        try:
+            # Simulate realistic multi-WorkUnit multi-replica distributed training jobs
+            worker_wu_id = base_work_unit_id + (rank // 2)
+            worker_exec_id = base_execution_id + (rank % 2)
+            worker_replica_id = str(rank % 2)
+            env = {
+                "XMC_XID": str(xid),
+                "XMC_WORK_UNIT_ID": str(worker_wu_id),
+                "XMC_EXECUTION_ID": str(worker_exec_id),
+                "XMC_REPLICA_ID": worker_replica_id,
+            }
+            client = LoadBalancingRecyclingClient(
+                urls=gateway_urls,
+                on_connect=on_connect,
+                max_requests=1,
+                base_ttl=1.0,
+                jitter=0.2,
+                env=env,
+                log_all_replicas=True,
+            )
+            flusher = MetricsFlusher(
+                client=client,
+                flush_interval=0.5,
+                batch_size=10,
+                env=env,
+                log_all_replicas=True,
+            )
+            flusher.start()
 
-        for step in range(steps_per_worker):
-            flusher.log_metric("train_loss", 0.5 - step * 0.005, step)
-            flusher.log_metric("val_accuracy", 0.8 + step * 0.002, step)
-            flusher.log_metric("gpu_utilization", 95.5, step)
-            flusher.log_metric("throughput_sec", 1200.0 + step, step)
-            flusher.log_metric("epoch", float(step // 10), step)
-            time.sleep(0.005)
+            for step in range(steps_per_worker):
+                flusher.log_metric("train_loss", 0.5 - step * 0.005, step)
+                flusher.log_metric("val_accuracy", 0.8 + step * 0.002, step)
+                flusher.log_metric("gpu_utilization", 95.5, step)
+                flusher.log_metric("throughput_sec", 1200.0 + step, step)
+                flusher.log_metric("epoch", float(step // 10), step)
+                time.sleep(0.005)
 
-        flusher.shutdown()
-        client.close()
+            flusher.shutdown()
+            client.close()
+        except Exception as err:
+            exceptions.append(err)
+            raise
 
     workers = [threading.Thread(target=worker_task, args=(rank,)) for rank in range(num_workers)]
     for w in workers:
         w.start()
     for w in workers:
         w.join()
+
+    if exceptions:
+        raise exceptions[0]
 
 
 class TestHermeticTelemetryFlow(unittest.TestCase):
@@ -244,15 +252,19 @@ class TestHermeticTelemetryFlow(unittest.TestCase):
             stderr=sys.stderr,
             text=True,
         )
-        assert cls.runner_proc.stdout is not None
-        line = cls.runner_proc.stdout.readline()
-        if not line:
-            cls.runner_proc.kill()
-            raise RuntimeError("hermetic_runner failed to output readiness JSON line")
-        cls.config = json.loads(line)
-        if cls.config.get("status") != "ready":
-            cls.runner_proc.kill()
-            raise RuntimeError(f"hermetic_runner reported non-ready status: {cls.config}")
+        try:
+            assert cls.runner_proc.stdout is not None
+            line = cls.runner_proc.stdout.readline()
+            if not line:
+                raise RuntimeError("hermetic_runner failed to output readiness JSON line")
+            cls.config = json.loads(line)
+            if cls.config.get("status") != "ready":
+                raise RuntimeError(f"hermetic_runner reported non-ready status: {cls.config}")
+        except Exception:
+            if cls.runner_proc and cls.runner_proc.poll() is None:
+                cls.runner_proc.kill()
+                cls.runner_proc.wait()
+            raise
 
     @classmethod
     def tearDownClass(cls) -> None:
