@@ -430,7 +430,12 @@ func (c *Client) buildInitContainersForJob(job *esspb.KubernetesJob) []corev1.Co
 	initContainers := make([]corev1.Container, 0, total)
 	for i, initContainer := range job.GetInitContainers() {
 		name := jobsetutil.InitContainerName(job, initContainer, i)
-		initContainers = append(initContainers, c.buildContainer(name, initContainer))
+		container := c.buildContainer(name, initContainer)
+		if strings.EqualFold(initContainer.GetRestartPolicy(), "Always") {
+			restartPolicyAlways := corev1.ContainerRestartPolicyAlways
+			container.RestartPolicy = &restartPolicyAlways
+		}
+		initContainers = append(initContainers, container)
 	}
 	restartPolicyAlways := corev1.ContainerRestartPolicyAlways
 	for i, sidecar := range job.GetSidecars() {

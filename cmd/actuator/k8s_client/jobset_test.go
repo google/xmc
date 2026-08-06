@@ -2896,3 +2896,64 @@ func TestConstructJobSet_KubernetesJobAnnotationsPropagation(t *testing.T) {
 		t.Errorf("PodTemplateSpec.Annotations shared map pointer with JobTemplateSpec.Annotations")
 	}
 }
+
+func TestConstructJobSet_NativeSidecarInitContainers(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		job := wu.Executable.GetJobset().Jobs[0]
+		job.Spec.RestartPolicy = proto.String("Always")
+		job.InitContainers = []*esspb.ExecutableSpec{
+			{
+				DockerImage: "gcr.io/foo/regular-init:latest",
+			},
+			{
+				DockerImage:   "gcr.io/foo/native-sidecar-init:latest",
+				RestartPolicy: proto.String("Always"),
+			},
+		}
+		job.Sidecars = []*esspb.ExecutableSpec{
+			{
+				DockerImage: "gcr.io/foo/legacy-sidecar:latest",
+			},
+		}
+	})
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if len(got.Spec.ReplicatedJobs) != 1 {
+		t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
+	}
+
+	initContainers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.InitContainers
+	if len(initContainers) != 3 {
+		t.Fatalf("Expected 3 init containers, got %d", len(initContainers))
+	}
+
+	// 1. Regular init container (RestartPolicy should be nil)
+	if initContainers[0].RestartPolicy != nil {
+		t.Errorf("initContainers[0].RestartPolicy = %v, want nil", *initContainers[0].RestartPolicy)
+	}
+
+	// 2. Native sidecar init container with RestartPolicy: Always
+	if initContainers[1].RestartPolicy == nil || *initContainers[1].RestartPolicy != corev1.ContainerRestartPolicyAlways {
+		t.Errorf("initContainers[1].RestartPolicy = %v, want Always", initContainers[1].RestartPolicy)
+	}
+
+	// 3. Legacy sidecar container (RestartPolicy should be Always)
+	if initContainers[2].RestartPolicy == nil || *initContainers[2].RestartPolicy != corev1.ContainerRestartPolicyAlways {
+		t.Errorf("initContainers[2].RestartPolicy = %v, want Always", initContainers[2].RestartPolicy)
+	}
+
+	// Verify primary container does not have RestartPolicy set
+	primaryContainers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers
+	if len(primaryContainers) != 1 {
+		t.Fatalf("Expected 1 primary container, got %d", len(primaryContainers))
+	}
+	if primaryContainers[0].RestartPolicy != nil {
+		t.Errorf("primaryContainers[0].RestartPolicy = %v, want nil", *primaryContainers[0].RestartPolicy)
+	}
+}

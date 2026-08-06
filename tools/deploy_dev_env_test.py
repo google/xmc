@@ -789,26 +789,18 @@ image_tag: latest
         mock_run.assert_called_once()
         self.assertIn("describe", mock_run.call_args[0][0])
 
-    @patch("deploy_dev_env.run_command")
-    def test_step_images_default(self, mock_run):
-        auth_res = MagicMock()
+    @patch("tool_utils.run_command")
+    @patch("deploy_dev_env.configure_docker_auth")
+    def test_step_images_default(self, mock_docker_auth, mock_run):
         bazel_res = MagicMock()
 
-        # 1 auth call + 9 bazel run calls (9 base targets, rod_data_provider disabled by default)
-        mock_run.side_effect = [auth_res] + [bazel_res] * 9
+        # 9 bazel run calls (9 base targets, rod_data_provider disabled by default)
+        mock_run.side_effect = [bazel_res] * 9
 
-        deploy_dev_env.step_images(self.valid_config_dict, self.dns_project, self.dns_zone)
+        deploy_dev_env.step_images(self.valid_config_dict)
 
-        self.assertEqual(mock_run.call_count, 10)
-        mock_run.assert_any_call(
-            [
-                "gcloud",
-                "auth",
-                "configure-docker",
-                "us-central1-docker.pkg.dev",
-                "--quiet",
-            ]
-        )
+        self.assertEqual(mock_run.call_count, 9)
+        mock_docker_auth.assert_called_once_with(self.valid_config_dict)
         mock_run.assert_any_call(
             ["bazel", "run", "//cmd/actuator:actuator_image_push"],
             env=ANY,
@@ -818,20 +810,21 @@ image_tag: latest
             env=ANY,
         )
 
-    @patch("deploy_dev_env.run_command")
-    def test_step_images_rod_enabled(self, mock_run):
-        auth_res = MagicMock()
+    @patch("tool_utils.run_command")
+    @patch("deploy_dev_env.configure_docker_auth")
+    def test_step_images_rod_enabled(self, mock_docker_auth, mock_run):
         bazel_res = MagicMock()
 
-        # 1 auth call + 10 bazel run calls (9 base + rod_data_provider)
-        mock_run.side_effect = [auth_res] + [bazel_res] * 10
+        # 10 bazel run calls (9 base + rod_data_provider)
+        mock_run.side_effect = [bazel_res] * 10
 
         config_rod_enabled = dict(self.valid_config_dict)
         config_rod_enabled["rod_deployment_enabled"] = "true"
 
-        deploy_dev_env.step_images(config_rod_enabled, self.dns_project, self.dns_zone)
+        deploy_dev_env.step_images(config_rod_enabled)
 
-        self.assertEqual(mock_run.call_count, 11)
+        self.assertEqual(mock_run.call_count, 10)
+        mock_docker_auth.assert_called_once_with(config_rod_enabled)
         mock_run.assert_any_call(
             ["bazel", "run", "//cmd/rod_data_provider:rod_data_provider_image_push"],
             env=ANY,

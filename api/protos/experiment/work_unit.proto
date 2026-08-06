@@ -404,6 +404,8 @@ message ExecutableSpec {
   repeated VolumeMount volume_mounts = 9;
   // List of ports exposed from the container.
   repeated ContainerPort ports = 10;
+  // Optional restart policy for init containers (e.g. "Always" to configure Kubernetes native sidecar containers).
+  optional string restart_policy = 12;
 }
 
 // SchedulingConstraints contains the scheduling constraints for the
