@@ -73,12 +73,9 @@ func (v *validatorImpl) IsActuationRequestValid(ctx context.Context, target stri
 
 	validContract, err := isNonRestartingJobSetContractValid(jobSetUnstructured)
 	if err != nil {
-		logging.Warn(ctx, "Non-restarting JobSet contract check failed, skipping actuation", "target", target, "jobset-name", jobSetUnstructured.GetName(), "error", err)
-		return false, err
-	}
-	if !validContract {
-		logging.Warn(ctx, "JobSet violates non-restarting contract, skipping actuation", "target", target, "jobset-name", jobSetUnstructured.GetName())
-		return false, nil
+		logging.Warn(ctx, "Non-restarting JobSet contract check error, proceeding with actuation", "target", target, "jobset-name", jobSetUnstructured.GetName(), "error", err)
+	} else if !validContract {
+		logging.Warn(ctx, "Existing JobSet violates non-restarting contract, proceeding with actuation to clean up or restart", "target", target, "jobset-name", jobSetUnstructured.GetName())
 	}
 
 	return true, nil

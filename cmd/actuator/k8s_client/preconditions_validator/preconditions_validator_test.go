@@ -97,6 +97,27 @@ func TestIsActuationRequestValid(t *testing.T) {
 			operationTime: now,
 			wantIsValid:   true,
 		},
+		{
+			name: "contract violation on existing jobset proceeds with actuation",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"labels": map[string]any{
+							constants.ExecutionIDLabel: "1",
+							constants.LastEditLabel:    strconv.FormatInt(earlier.Unix(), 10),
+						},
+					},
+					"spec": map[string]any{
+						"failurePolicy": map[string]any{
+							"maxRestarts": int64(3),
+						},
+					},
+				},
+			},
+			target:        "experiments/1/workUnits/1/executions/1",
+			operationTime: now,
+			wantIsValid:   true,
+		},
 	}
 
 	for _, tc := range testCases {
