@@ -24,12 +24,13 @@ import shutil
 import subprocess
 import sys
 import time
-from typing import Any, NoReturn
+from typing import NoReturn
 
 from tool_utils import (
     GREEN,
     NC,
     RED,
+    DeploymentConfig,
     build_and_push_images,
     configure_docker_auth,
     ensure_venv,
@@ -107,14 +108,14 @@ def parse_args(args: list[str]) -> argparse.Namespace:
     return parsed_args
 
 
-def load_and_validate_config(config_path: str) -> dict[str, Any]:
+def load_and_validate_config(config_path: str) -> DeploymentConfig:
     """Loads and validates the configuration file using shared utilities.
 
     Args:
         config_path: Path to the configuration file.
 
     Returns:
-        A dictionary containing the validated configuration.
+        An DeploymentConfig object containing the validated configuration.
     """
     try:
         return tool_load_config(config_path)
@@ -216,18 +217,18 @@ def _check_dns_access(dns_project: str, dns_zone: str) -> None:
         )
 
 
-def run_checks(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def run_checks(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
     """Performs pre-flight checks.
 
     Args:
-        config: The loaded configuration dictionary.
+        config: The loaded DeploymentConfig instance.
         dns_project: GCP Project ID hosting the DNS zone.
         dns_zone: Cloud DNS Managed Zone name.
     """
     log_info("Running pre-flight dependency checks...")
     _verify_binaries()
     _check_terraform_version()
-    _check_gcp_project_alignment(config["project_id"])
+    _check_gcp_project_alignment(config.project_id)
     _check_dns_access(dns_project, dns_zone)
     log_success("All pre-flight checks passed.")
 
@@ -351,21 +352,21 @@ def _dns_add_record(subdomain: str, ip: str, dns_project: str, dns_zone: str) ->
     )
 
 
-def apply_dns_records(ip: str, config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def apply_dns_records(ip: str, config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
     """Automates DNS record configuration.
 
     Args:
         ip: The target IP address for the DNS records.
-        config: The loaded configuration dictionary.
+        config: The loaded DeploymentConfig instance.
         dns_project: GCP Project ID hosting the DNS zone.
         dns_zone: Cloud DNS Managed Zone name.
     """
     log_info(f"Verifying Cloud DNS record states in project '{dns_project}', zone '{dns_zone}'...")
 
     # End domains with dot for DNS A-records
-    d_app = f"{config['environment']}.{config['domain_name']}."
-    d_api = f"api.{config['environment']}.{config['domain_name']}."
-    d_grpc = f"grpc.{config['environment']}.{config['domain_name']}."
+    d_app = f"{config.environment}.{config.domain_name}."
+    d_api = f"api.{config.environment}.{config.domain_name}."
+    d_grpc = f"grpc.{config.environment}.{config.domain_name}."
 
     subdomains = [d_app, d_api, d_grpc]
 
@@ -430,11 +431,11 @@ def run_gcluster_deploy(deployment_name: str, group: str) -> None:
 # --- Steps implementation ---
 
 
-def step_check(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def step_check(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
     """Verifies pre-flight checks (noop step for status check).
 
     Args:
-        config: The loaded configuration dictionary.
+        config: The loaded DeploymentConfig instance.
         dns_project: GCP Project ID hosting the DNS zone.
         dns_zone: Cloud DNS Managed Zone name.
     """
@@ -442,7 +443,7 @@ def step_check(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
 
 
 def step_compile(
-    config: dict[str, Any],
+    config: DeploymentConfig,
     dns_project: str,
     dns_zone: str,
     config_path: str,
@@ -450,7 +451,7 @@ def step_compile(
     """Compiles the XMC blueprint using gcluster.
 
     Args:
-        config: The loaded configuration dictionary.
+        config: The loaded DeploymentConfig instance.
         dns_project: GCP Project ID hosting the DNS zone.
         dns_zone: Cloud DNS Managed Zone name.
         config_path: Path to the configuration file.
@@ -474,24 +475,24 @@ def step_compile(
     log_success("Blueprint compiled successfully under 'ctk-out/'.")
 
 
-def step_apis(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def step_apis(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
     """Deploys the APIs group (API enablement).
 
     Args:
-        config: The loaded configuration dictionary.
+        config: The loaded DeploymentConfig instance.
         dns_project: GCP Project ID hosting the DNS zone.
         dns_zone: Cloud DNS Managed Zone name.
     """
     log_info("Deploying apis group (API enablement)...")
-    run_gcluster_deploy(config["deployment_name"], "apis")
+    run_gcluster_deploy(config.deployment_name, "apis")
     log_success("APIs enabled successfully.")
 
 
-def step_primary(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def step_primary(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
     """Deploys the primary group (Network, Databases & certs) and configures DNS.
 
     Args:
-        config: The loaded configuration dictionary.
+        config: The loaded DeploymentConfig instance.
         dns_project: GCP Project ID hosting the DNS zone.
         dns_zone: Cloud DNS Managed Zone name.
 
@@ -499,9 +500,9 @@ def step_primary(config: dict[str, Any], dns_project: str, dns_zone: str) -> Non
         RuntimeError: If Gateway IP extraction fails.
     """
     log_info("Deploying primary group (Network, Databases & certs)...")
-    run_gcluster_deploy(config["deployment_name"], "primary")
+    run_gcluster_deploy(config.deployment_name, "primary")
 
-    gw_ip_name = f"xmc-gateway-static-ip-{config['environment']}"
+    gw_ip_name = f"xmc-gateway-static-ip-{config.environment}"
     log_info(f"Extracting static Gateway IP ({gw_ip_name})...")
     try:
         gateway_ip = run_command(
@@ -512,7 +513,7 @@ def step_primary(config: dict[str, Any], dns_project: str, dns_zone: str) -> Non
                 "describe",
                 gw_ip_name,
                 "--global",
-                f"--project={config['project_id']}",
+                f"--project={config.project_id}",
                 "--format=value(address)",
             ],
             capture_output=True,
@@ -527,31 +528,31 @@ def step_primary(config: dict[str, Any], dns_project: str, dns_zone: str) -> Non
     apply_dns_records(gateway_ip, config, dns_project, dns_zone)
 
 
-def step_compute(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def step_compute(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
     """Deploys the compute group (GKE Cluster and Node pools).
 
     Args:
-        config: The loaded configuration dictionary.
+        config: The loaded DeploymentConfig instance.
         dns_project: GCP Project ID hosting the DNS zone.
         dns_zone: Cloud DNS Managed Zone name.
     """
     log_info("Deploying compute group (GKE Cluster and Node pools)...")
-    run_gcluster_deploy(config["deployment_name"], "compute")
+    run_gcluster_deploy(config.deployment_name, "compute")
     log_success("Compute group (GKE cluster and Node pools) deployed successfully.")
 
 
-def step_gateway_api(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def step_gateway_api(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
     """Enables GKE Gateway API on the cluster if not already enabled.
 
     Args:
-        config: The loaded configuration dictionary.
+        config: The loaded DeploymentConfig instance.
         dns_project: GCP Project ID hosting the DNS zone.
         dns_zone: Cloud DNS Managed Zone name.
 
     Raises:
         RuntimeError: If cluster description fails.
     """
-    cluster_name = f"xmc-{config['deployment_name']}-{config['environment']}"
+    cluster_name = config.gke_cluster
     log_info(f"Checking if GKE Gateway API is enabled on cluster '{cluster_name}'...")
 
     try:
@@ -562,8 +563,8 @@ def step_gateway_api(config: dict[str, Any], dns_project: str, dns_zone: str) ->
                 "clusters",
                 "describe",
                 cluster_name,
-                f"--region={config['region']}",
-                f"--project={config['project_id']}",
+                f"--region={config.region}",
+                f"--project={config.project_id}",
                 "--format=value(gatewayConfig.enabled)",
             ],
             capture_output=True,
@@ -581,8 +582,8 @@ def step_gateway_api(config: dict[str, Any], dns_project: str, dns_zone: str) ->
                 "update",
                 cluster_name,
                 "--gateway-api=standard",
-                f"--region={config['region']}",
-                f"--project={config['project_id']}",
+                f"--region={config.region}",
+                f"--project={config.project_id}",
             ]
         )
         log_success("Gateway API enabled.")
@@ -590,39 +591,39 @@ def step_gateway_api(config: dict[str, Any], dns_project: str, dns_zone: str) ->
         log_info("Gateway API standard channel is already enabled.")
 
 
-def step_prereqs(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def step_prereqs(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
     """Deploys kubernetes_prereqs group (cert-manager, Kueue, Jobset).
 
     Args:
-        config: The loaded configuration dictionary.
+        config: The loaded DeploymentConfig instance.
         dns_project: GCP Project ID hosting the DNS zone.
         dns_zone: Cloud DNS Managed Zone name.
     """
     log_info("Deploying kubernetes_prereqs group (cert-manager, Kueue, Jobset)...")
-    run_gcluster_deploy(config["deployment_name"], "kubernetes_prereqs")
+    run_gcluster_deploy(config.deployment_name, "kubernetes_prereqs")
     log_success("Kubernetes prerequisites (cert-manager, Kueue, Jobset) deployed successfully.")
 
 
-def step_images(config: dict[str, Any]) -> None:
+def step_images(config: DeploymentConfig) -> None:
     """Builds and pushes XMC service images.
 
     Args:
-        config: The loaded configuration dictionary.
+        config: The loaded DeploymentConfig instance.
     """
     configure_docker_auth(config)
     build_and_push_images(config)
 
 
-def step_app(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def step_app(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
     """Deploys xmc_app group (Helm release).
 
     Args:
-        config: The loaded configuration dictionary.
+        config: The loaded DeploymentConfig instance.
         dns_project: GCP Project ID hosting the DNS zone.
         dns_zone: Cloud DNS Managed Zone name.
     """
     log_info("Deploying xmc_app group (Helm release)...")
-    run_gcluster_deploy(config["deployment_name"], "xmc_app")
+    run_gcluster_deploy(config.deployment_name, "xmc_app")
     log_success("XMC application Helm release deployed successfully.")
 
 
@@ -703,15 +704,15 @@ def _wait_for_cert_active(project_id: str, cert_name: str) -> None:
     log_success("Managed Certificate is ACTIVE.")
 
 
-def step_verify(config: dict[str, Any], dns_project: str, dns_zone: str) -> None:
+def step_verify(config: DeploymentConfig, dns_project: str, dns_zone: str) -> None:
     """Verifies the deployed XMC environment.
 
     Args:
-        config: The loaded configuration dictionary.
+        config: The loaded DeploymentConfig instance.
         dns_project: GCP Project ID hosting the DNS zone (unused).
         dns_zone: Cloud DNS Managed Zone name (unused).
     """
-    cluster_name = f"xmc-{config['deployment_name']}-{config['environment']}"
+    cluster_name = config.gke_cluster
     log_info(f"Fetching kubectl credentials for GKE cluster '{cluster_name}'...")
     run_command(
         [
@@ -720,16 +721,16 @@ def step_verify(config: dict[str, Any], dns_project: str, dns_zone: str) -> None
             "clusters",
             "get-credentials",
             cluster_name,
-            f"--region={config['region']}",
-            f"--project={config['project_id']}",
+            f"--region={config.region}",
+            f"--project={config.project_id}",
         ]
     )
 
     log_info("Running verification script...")
     env_vars = {
-        "ENVIRONMENT": config["environment"],
-        "REGION": config["region"],
-        "PROJECT_ID": config["project_id"],
+        "ENVIRONMENT": config.environment,
+        "REGION": config.region,
+        "PROJECT_ID": config.project_id,
     }
     try:
         run_command(
@@ -741,8 +742,8 @@ def step_verify(config: dict[str, Any], dns_project: str, dns_zone: str) -> None
         print("Diagnostic script reported warnings.")
 
     _wait_for_gateway_programmed()
-    cert_name = f"xmc-cert-{config['environment']}"
-    _wait_for_cert_active(config["project_id"], cert_name)
+    cert_name = f"xmc-cert-{config.environment}"
+    _wait_for_cert_active(config.project_id, cert_name)
     log_success("XMC environment deployed and verified.")
 
 
@@ -805,8 +806,8 @@ def main(argv: list[str]) -> None:
     print(f"\n{GREEN}" + "=" * 56 + f"{NC}")
     print(f"{GREEN}Deployment Completed Successfully!{NC}")
     print(f"{GREEN}" + "=" * 56 + f"{NC}")
-    env = config["environment"]
-    dom = config["domain_name"]
+    env = config.environment
+    dom = config.domain_name
     print(f"Final URL: {BOLD}https://{env}.{dom}{NC}")
     print()
     print(f"{BOLD}Post-Deployment Action Required (OAuth Setup):{NC}")
