@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { JsonPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { BehaviorSubject, of } from 'rxjs';
@@ -25,6 +24,7 @@ import {
 
 import { HealthService } from '../service/health_service';
 import { SnackbarService } from '../service/snackbar_service';
+import { ConfigEntriesCardComponent } from './components/config_entries_card/config_entries_card';
 import { HealthStatusSectionComponent } from './components/health_status_section/health_status_section';
 import { SystemInfoCardComponent } from './components/system_info_card/system_info_card';
 
@@ -34,7 +34,7 @@ import { SystemInfoCardComponent } from './components/system_info_card/system_in
 @Component({
   selector: 'xmc-admin-panel',
   standalone: true,
-  imports: [JsonPipe, SystemInfoCardComponent, HealthStatusSectionComponent],
+  imports: [SystemInfoCardComponent, HealthStatusSectionComponent, ConfigEntriesCardComponent],
   templateUrl: './admin_panel.ng.html',
   styleUrl: './admin_panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

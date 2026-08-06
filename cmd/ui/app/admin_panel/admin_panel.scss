@@ -49,23 +49,12 @@
     }
   }
 
-  .status-section,
-  .config-section {
+  .status-section {
     h2 {
       font-size: 18px;
       font-weight: 700;
       color: #202124;
       margin-bottom: 16px;
     }
-  }
-
-  .raw-json {
-    background-color: #f5f5f5;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
-    padding: 16px;
-    overflow-x: auto;
-    font-family: monospace;
-    font-size: 14px;
   }
 }

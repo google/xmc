@@ -14,6 +14,7 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 
+import { ConfigEntriesCardHarness } from '../components/config_entries_card/testing/config_entries_card_harness';
 import { HealthStatusSectionHarness } from '../components/health_status_section/testing/health_status_section_harness';
 import { SystemInfoCardHarness } from '../components/system_info_card/testing/system_info_card_harness';
 
@@ -21,15 +22,8 @@ import { SystemInfoCardHarness } from '../components/system_info_card/testing/sy
 export class AdminPanelHarness extends ComponentHarness {
   static hostSelector = 'xmc-admin-panel, [data-component-selector="xmc-admin-panel"]';
 
-  private readonly _healthConfigs = this.locatorForOptional('.config-section pre.raw-json');
-
   private readonly _timestampBadge = this.locatorForOptional('.timestamp-badge');
   private readonly _errorContainer = this.locatorForOptional('.error-container');
-
-  async getHealthConfigsText(): Promise<string | null> {
-    const el = await this._healthConfigs();
-    return el ? el.text() : null;
-  }
 
   async getTimestampText(): Promise<string | null> {
     const el = await this._timestampBadge();
@@ -47,5 +41,9 @@ export class AdminPanelHarness extends ComponentHarness {
 
   async getHealthStatusSection(): Promise<HealthStatusSectionHarness | null> {
     return this.locatorForOptional(HealthStatusSectionHarness)();
+  }
+
+  async getConfigEntriesCard(): Promise<ConfigEntriesCardHarness | null> {
+    return this.locatorForOptional(ConfigEntriesCardHarness)();
   }
 }
