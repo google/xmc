@@ -37,6 +37,11 @@ describe('QueueJobStatusPipe', () => {
       description: 'uppercase RUNNING',
     },
     {
+      input: { status: 'ACTIVE' },
+      expected: StatusOption.RUNNING,
+      description: 'ACTIVE',
+    },
+    {
       input: { status: 'running' },
       expected: StatusOption.RUNNING,
       description: 'lowercase running',
@@ -171,6 +176,16 @@ describe('QueueJobPositionPipe', () => {
       input: { status: 'PENDING', positionInQueue: null as any },
       expected: '-',
       description: 'null position',
+    },
+    {
+      input: { status: 'PENDING', positionInQueue: 'invalid-string' as any },
+      expected: '-',
+      description: 'non-numeric string position',
+    },
+    {
+      input: { status: 'PENDING', positionInQueue: '' as any },
+      expected: '-',
+      description: 'empty string position',
     },
     {
       input: { status: 'PENDING' },
