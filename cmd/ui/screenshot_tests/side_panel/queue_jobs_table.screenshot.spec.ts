@@ -27,6 +27,13 @@ test.describe('QueueJobsTableComponent - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for queue jobs table section', async ({ page }) => {
+    // Open the side panel to instantiate xmc-queue-jobs-table in the live DOM
+    const queueCard = page.locator('xmc-rod-queue-card').first();
+    if (await queueCard.isVisible()) {
+      await queueCard.click();
+      await page.waitForSelector('xmc-queue-jobs-table');
+    }
+
     await mountComponentHarness(
       page,
       `<xmc-queue-jobs-table style="display: block; width: 600px; min-height: 250px;"></xmc-queue-jobs-table>`,
