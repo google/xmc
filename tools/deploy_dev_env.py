@@ -115,7 +115,7 @@ def load_and_validate_config(config_path: str) -> DeploymentConfig:
         config_path: Path to the configuration file.
 
     Returns:
-        An DeploymentConfig object containing the validated configuration.
+        A DeploymentConfig object containing the validated configuration.
     """
     try:
         return tool_load_config(config_path)

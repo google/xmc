@@ -42,15 +42,6 @@ domain_name: example.com
 image_registry: us-central1-docker.pkg.dev/my-project/xmc
 image_tag: latest
 """
-        self.valid_config_dict = {
-            "deployment_name": "xmc-dev",
-            "project_id": "my-project",
-            "environment": "dev",
-            "region": "us-central1",
-            "domain_name": "example.com",
-            "image_registry": "us-central1-docker.pkg.dev/my-project/xmc",
-            "image_tag": "latest",
-        }
         self.valid_config = DeploymentConfig(
             project_id="my-project",
             deployment_name="xmc-dev",
