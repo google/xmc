@@ -20,7 +20,6 @@ import { StatusOption } from 'xmanager_cloud/ui/app/common/components/status_chi
 /** Known job status string constants. */
 export const JOB_STATUS_STRINGS = {
   RUNNING: 'RUNNING',
-  ACTIVE: 'ACTIVE',
   STARTING: 'STARTING',
   SCHEDULING: 'SCHEDULING',
   INITIALIZING: 'INITIALIZING',
@@ -79,7 +78,6 @@ export class QueueJobPositionPipe implements PipeTransform {
     const status = String(job?.status || '').toUpperCase();
     if (
       status === JOB_STATUS_STRINGS.RUNNING ||
-      status === JOB_STATUS_STRINGS.ACTIVE ||
       status === JOB_STATUS_STRINGS.STARTING ||
       status === JOB_STATUS_STRINGS.INITIALIZING
     ) {

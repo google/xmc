@@ -27,6 +27,13 @@ test.describe('QueueJobsTableComponent - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot for queue jobs table section', async ({ page }) => {
+    await page.evaluate(() => {
+      const pane = document.querySelector('.jobs-side-pane') as HTMLElement;
+      if (pane) pane.style.width = '1000px';
+      const tbl = document.querySelector('xmc-queue-jobs-table') as HTMLElement;
+      if (tbl) tbl.style.width = '1000px';
+    });
+
     await mountComponentHarness(
       page,
       `<xmc-queue-jobs-table style="display: block; width: 1000px; min-height: 250px;"></xmc-queue-jobs-table>`,
