@@ -490,6 +490,11 @@ func (c *Client) buildContainer(containerName string, spec *esspb.ExecutableSpec
 		}
 	}
 	args = append(args, spec.GetArgsList()...)
+	var restartPolicy *corev1.ContainerRestartPolicy
+	if strings.EqualFold(spec.GetRestartPolicy(), "Always") {
+		restartPolicyAlways := corev1.ContainerRestartPolicyAlways
+		restartPolicy = &restartPolicyAlways
+	}
 	return corev1.Container{
 		Name:                     containerName,
 		Image:                    spec.GetDockerImage(),
@@ -502,6 +507,7 @@ func (c *Client) buildContainer(containerName string, spec *esspb.ExecutableSpec
 		Ports:                    ports,
 		SecurityContext:          defaultSecurityContext(),
 		VolumeMounts:             generateVolumeMountsForSpec(spec),
+		RestartPolicy:            restartPolicy,
 	}
 }
 
