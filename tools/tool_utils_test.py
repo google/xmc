@@ -21,11 +21,12 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from tool_utils import (
     HandledError,
     _bootstrap_venv,
+    build_and_push_images,
     configure_docker_auth,
     ensure_venv,
     load_and_validate_config,
@@ -390,6 +391,46 @@ class TestDockerAuthConfig(unittest.TestCase):
         config = {}
         with self.assertRaises(ValueError):
             configure_docker_auth(config)
+
+
+class TestBuildAndPushImages(unittest.TestCase):
+    """Tests for build_and_push_images helper in tool_utils."""
+
+    def setUp(self):
+        self.valid_config = {
+            "image_registry": "us-central1-docker.pkg.dev/my-project/xmc",
+            "environment": "dev",
+            "image_tag": "latest",
+        }
+
+    @patch("tool_utils.run_command")
+    def test_build_and_push_images_default(self, mock_run):
+        build_and_push_images(self.valid_config)
+        self.assertEqual(mock_run.call_count, 9)
+        mock_run.assert_any_call(
+            ["bazel", "run", "//cmd/actuator:actuator_image_push"],
+            env={
+                "XMC_ENV": "dev",
+                "XMC_ACR_TARGET": "us-central1-docker.pkg.dev/my-project/xmc",
+                "BUILD_TAG": "latest",
+            },
+        )
+
+    @patch("tool_utils.run_command")
+    def test_build_and_push_images_rod_enabled(self, mock_run):
+        config = dict(self.valid_config)
+        config["rod_deployment_enabled"] = True
+        build_and_push_images(config)
+        self.assertEqual(mock_run.call_count, 10)
+        mock_run.assert_any_call(
+            ["bazel", "run", "//cmd/rod_data_provider:rod_data_provider_image_push"],
+            env=ANY,
+        )
+
+    def test_build_and_push_images_missing_registry(self):
+        config = {"environment": "dev", "image_tag": "latest"}
+        with self.assertRaises(ValueError):
+            build_and_push_images(config)
 
 
 if __name__ == "__main__":
