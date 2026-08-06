@@ -18,7 +18,7 @@ import { setupMockRoutes, setupScreenshotEnvironment } from '../test_utils';
 
 test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.setViewportSize({ width: 1600, height: 900 });
+    await page.setViewportSize({ width: 2000, height: 900 });
     // Intercept user auth and config API endpoints so authGuard and feature flags succeed
     await setupMockRoutes(page);
     await page.route('**/clusterqueues', async (route) => {
