@@ -70,7 +70,7 @@ describe('QueueJobsTable Component', () => {
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
       'getQueueJobs',
     ]);
-    resourceService.getQueueJobs.and.returnValue(of(TEST_QUEUE_JOBS_RESP));
+    resourceService.getQueueJobs.and.returnValue(of(TEST_QUEUE_JOBS_RESP as any));
 
     setupModule({
       imports: [TestHostComponent, NoopAnimationsModule],
@@ -112,7 +112,7 @@ describe('QueueJobsTable Component', () => {
     expect(await harness.getRowCount()).toBe(2);
 
     const firstRow = await harness.getRowCellsText(0);
-    expect(firstRow.position).toBe('N/A-running');
+    expect(firstRow.position).toBe('N/A - running');
     expect(firstRow.jobName).toContain('xmc-operation-53296-1');
     expect(firstRow.status).toContain('Running');
     expect(firstRow.priority).toContain('Low');
