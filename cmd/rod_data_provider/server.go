@@ -23,7 +23,7 @@ import (
 
 // WorkUnitFetcher defines storage operations required to fetch active jobs by queue name.
 type WorkUnitFetcher interface {
-	FetchActiveWorkUnitsByQueue(ctx context.Context, queueName string, pageSize int32, pageToken string) ([]*essmsgpb.WorkUnit, string, error)
+	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) ([]*essmsgpb.WorkUnit, string, error)
 }
 
 type server struct {

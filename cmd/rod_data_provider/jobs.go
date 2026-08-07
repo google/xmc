@@ -24,159 +24,112 @@ import (
 	"google.golang.org/grpc/status"
 	spb "xmanager_cloud/api/protos/rod"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 )
 
 // GetRunningAndPendingJobs handles fetching active and pending jobs for a cluster queue.
 func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunningAndPendingJobsRequest) (*spb.GetRunningAndPendingJobsResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+
 	if req == nil || req.GetQueueName() == "" {
 		return nil, status.Error(codes.InvalidArgument, "queue_name is required")
 	}
 
-	queueName := req.GetQueueName()
-
 	if s.workUnitStore == nil {
-		// Mock fallback for development environment without live Spanner client
-		return &spb.GetRunningAndPendingJobsResponse{
-			QueueName: queueName,
-			Jobs: []*spb.JobInfo{
-				{
-					Position:    "N/A-running",
-					Xid:         "53296",
-					WorkUnitId:  "1",
-					JobName:     "xmc-operation-53296-1",
-					User:        "example@example.com",
-					Resources:   "GPU: 8, CPU: 32",
-					Priority:    "Low",
-					Status:      "Running",
-					TimeInQueue: "10m ago",
-					QueueName:   queueName,
-				},
-				{
-					Position:    "N/A-running",
-					Xid:         "53308",
-					WorkUnitId:  "1",
-					JobName:     "xmc-operation-53308-1",
-					User:        "example@example.com",
-					Resources:   "GPU: 8, CPU: 32",
-					Priority:    "Low",
-					Status:      "Running",
-					TimeInQueue: "5m ago",
-					QueueName:   queueName,
-				},
-			},
-		}, nil
+		return nil, status.Error(codes.Unavailable, "work unit store is uninitialized")
 	}
 
-	workUnits, nextPageToken, err := s.workUnitStore.FetchActiveWorkUnitsByQueue(ctx, queueName, req.GetPageSize(), req.GetPageToken())
+	clusterQueueName := req.GetQueueName()
+
+	targetQueues := []string{clusterQueueName}
+
+	workUnits, nextPageToken, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, req.GetPageSize(), req.GetPageToken())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to fetch active jobs: %v", err)
+		logging.Error(ctx, "failed to fetch active work units from storage", "cluster_queue_name", clusterQueueName, "target_queues", targetQueues, "error", err)
+		return nil, status.Error(codes.Internal, "failed to fetch active jobs")
 	}
 
-	var jobs []*spb.JobInfo
-	positionCounter := 1
-
+	now := time.Now()
+	var jobs []*spb.DashboardJob
 	for _, wu := range workUnits {
-		if wu == nil {
-			continue
-		}
-		state := getExecutionState(wu)
-
-		posStr := "N/A-running"
-		if state == "INITIALIZING" || state == "SCHEDULING" {
-			posStr = strconv.Itoa(positionCounter)
-			positionCounter++
-		}
-
-		if jobInfo := mapWorkUnitToJobInfo(wu, posStr, queueName); jobInfo != nil {
-			jobs = append(jobs, jobInfo)
+		if job := mapWorkUnitToDashboardJob(wu, now); job != nil {
+			jobs = append(jobs, job)
 		}
 	}
 
 	return &spb.GetRunningAndPendingJobsResponse{
-		QueueName:     queueName,
-		Jobs:          jobs,
-		NextPageToken: nextPageToken,
+		Jobs:           jobs,
+		NextPageToken:  nextPageToken,
+		TotalQueueSize: int64(len(jobs)),
 	}, nil
 }
 
-// getExecutionState extracts execution state string safely from a WorkUnit domain entity.
-func getExecutionState(wu *essmsgpb.WorkUnit) string {
-	if wu == nil || wu.GetCurrentWorkUnitExecution() == nil || wu.GetCurrentWorkUnitExecution().GetStatus() == nil {
-		return ""
-	}
-	return wu.GetCurrentWorkUnitExecution().GetStatus().GetState().String()
-}
-
-// formatPriority formats integer or proto enum priority to a human-readable display string.
-func formatPriority(prio int64) string {
-	switch prio {
-	case int64(essmsgpb.Priority_HIGH):
-		return "High"
-	case int64(essmsgpb.Priority_LOW):
-		return "Low"
-	case int64(essmsgpb.Priority_NORMAL):
-		return "Normal"
-	default:
-		if prio >= 200 {
-			return "High"
-		}
-		if prio <= 50 {
-			return "Low"
-		}
-		return "Normal"
-	}
-}
-
-// formatTimeInQueue calculates human-readable duration string since creation.
-func formatTimeInQueue(t time.Time) string {
-	duration := time.Since(t)
-	if duration < time.Minute {
-		return "just now"
-	}
-	if duration < time.Hour {
-		return fmt.Sprintf("%dm ago", int(duration.Minutes()))
-	}
-	if duration < 24*time.Hour {
-		return fmt.Sprintf("%dh ago", int(duration.Hours()))
-	}
-	return fmt.Sprintf("%dd ago", int(duration.Hours()/24))
-}
-
-// mapWorkUnitToJobInfo transforms an essmsgpb.WorkUnit domain entity into a rod JobInfo presentation DTO.
-func mapWorkUnitToJobInfo(wu *essmsgpb.WorkUnit, positionStr string, queueName string) *spb.JobInfo {
+// mapWorkUnitToDashboardJob transforms an essmsgpb.WorkUnit domain entity into a spb.DashboardJob presentation DTO.
+func mapWorkUnitToDashboardJob(wu *essmsgpb.WorkUnit, now time.Time) *spb.DashboardJob {
 	if wu == nil {
 		return nil
 	}
-	xid, wid, _ := validator.ValidateWorkUnitName(wu.GetName())
-	xidStr := strconv.FormatInt(xid, 10)
-	widStr := strconv.FormatInt(wid, 10)
+	xid, wid, err := validator.ValidateWorkUnitName(wu.GetName())
+	if err != nil {
+		return nil
+	}
 
-	state := getExecutionState(wu)
+	exec := wu.GetCurrentWorkUnitExecution()
+	var state essmsgpb.WorkUnitStatus_WorkUnitState
+	var posInQueue int64 = -1
+	if exec != nil && exec.GetStatus() != nil {
+		state = exec.GetStatus().GetState()
+		if queueInfo := exec.GetStatus().GetSchedulingInformation().GetAuxiliaryInfo().GetQueueInfo(); queueInfo != nil {
+			posInQueue = int64(queueInfo.GetPositionInQueue())
+		}
+	}
 
-	var createTime time.Time
-	var createTimeStr string
+	var timeInQueueSec int64 = 0
 	if wu.GetCreateTime() != nil {
-		createTime = wu.GetCreateTime().AsTime()
-		createTimeStr = createTime.Format(time.RFC3339)
+		t := wu.GetCreateTime().AsTime()
+		diff := int64(now.Sub(t).Seconds())
+		if diff > 0 {
+			timeInQueueSec = diff
+		}
 	}
 
-	timeInQueue := ""
-	if !createTime.IsZero() {
-		timeInQueue = formatTimeInQueue(createTime)
-	}
+	user := wu.GetNotes()
 
-	return &spb.JobInfo{
-		Position:     positionStr,
-		Xid:          xidStr,
-		WorkUnitId:   widStr,
-		JobName:      fmt.Sprintf("xmc-operation-%d-%d", xid, wid),
-		User:         "",
-		Resources:    "CPU: 1",
-		Priority:     formatPriority(int64(wu.GetPriority())),
-		Status:       state,
-		TimeInQueue:  timeInQueue,
-		QueueName:    queueName,
-		CreationTime: createTimeStr,
+	return &spb.DashboardJob{
+		JobId:              fmt.Sprintf("xmc-operation-%d-%d", xid, wid),
+		Xid:                strconv.FormatInt(xid, 10),
+		WorkUnitId:         wid,
+		User:               user,
+		Priority:           int64(wu.GetPriority()),
+		Status:             mapEssStateToRodState(state),
+		TimeInQueueSeconds: timeInQueueSec,
+		PositionInQueue:    posInQueue,
+		CreateTime:         wu.GetCreateTime(),
+		Tags:               wu.GetTags(),
+	}
+}
+
+// mapEssStateToRodState converts essmsgpb.WorkUnitStatus_WorkUnitState to spb.WorkUnitState.
+func mapEssStateToRodState(state essmsgpb.WorkUnitStatus_WorkUnitState) spb.WorkUnitState {
+	switch state {
+	case essmsgpb.WorkUnitStatus_INITIALIZING:
+		return spb.WorkUnitState_INITIALIZING
+	case essmsgpb.WorkUnitStatus_SCHEDULING:
+		return spb.WorkUnitState_SCHEDULING
+	case essmsgpb.WorkUnitStatus_STARTING:
+		return spb.WorkUnitState_STARTING
+	case essmsgpb.WorkUnitStatus_RUNNING:
+		return spb.WorkUnitState_RUNNING
+	case essmsgpb.WorkUnitStatus_COMPLETED:
+		return spb.WorkUnitState_SUCCEEDED
+	case essmsgpb.WorkUnitStatus_FAILED:
+		return spb.WorkUnitState_FAILED
+	case essmsgpb.WorkUnitStatus_STOPPED:
+		return spb.WorkUnitState_CANCELLED
+	default:
+		return spb.WorkUnitState_WORK_UNIT_STATE_UNSPECIFIED
 	}
 }

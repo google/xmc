@@ -241,7 +241,25 @@ CREATE TABLE WorkUnits (
   ExecutionState cloud.xmanager.v1.WorkUnitStatus.WorkUnitState NOT NULL AS (WorkUnitStatus.state) STORED,
   -- The severity of the current work unit structured status message. This is useful to query for
   -- the highest severity messages to propagate up to the experiment.
-  ExecutionStatusMessageSeverity cloud.xmanager.v1.StructuredMessage.Severity AS (GREATEST(IFNULL(WorkUnitStatus.system_message.severity, 0), IFNULL(WorkUnitStatus.user_message.severity, 0))) STORED,
+  -- Stored virtual columns for ROD active queue queries
+  PositionInQueue INT64 AS (
+    IFNULL(SAFE_CAST(WorkUnitStatus.scheduling_information.auxiliary_info.queue_info.position_in_queue AS INT64), 9223372036854775807)
+  ) STORED,
+
+  IsPendingOrRunningJob BOOL AS (
+    IF(ExecutionState IN ('SCHEDULING', 'STARTING', 'RUNNING', 'INITIALIZING'), TRUE, NULL)
+  ) STORED,
+
+  SortPhase INT64 AS (
+    CASE
+      WHEN ExecutionState IN ('RUNNING', 'STARTING', 'INITIALIZING') THEN 1
+      WHEN ExecutionState IN ('SCHEDULING') THEN 0
+      ELSE -1
+    END
+  ) STORED,
+
+  -- Creator of the work unit (denormalized or indexed).
+  Creator STRING(MAX),
 
   -- The time the work unit was created.
   CreateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
@@ -251,10 +269,24 @@ CREATE TABLE WorkUnits (
   INTERLEAVE IN PARENT Experiments
   ON DELETE CASCADE;
 
--- To efficiently find active work units assigned to a specific queue.
-CREATE INDEX WorkUnitsByQueueAndPosition ON WorkUnits (
-  QueueName, CreateTime ASC, WorkUnitId ASC
-) STORING (Priority, ExecutionState, Xid);
+-- To efficiently find work units assigned to a specific queue.
+CREATE INDEX WorkUnitsByQueueName ON WorkUnits (QueueName);
+
+-- Partial index for active work unit queries by position.
+CREATE INDEX WorkUnitsByQueueAndPosition 
+ON WorkUnits (
+  QueueName, 
+  SortPhase DESC, 
+  PositionInQueue ASC, 
+  CreateTime ASC, 
+  WorkUnitId ASC
+) STORING (
+  Priority, 
+  ExecutionState, 
+  Xid,
+  IsPendingOrRunningJob,
+  Creator
+) WHERE IsPendingOrRunningJob IS NOT NULL;
 
 -- Table that holds the list of operations.
 CREATE TABLE Operations (
