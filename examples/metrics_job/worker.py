@@ -34,9 +34,9 @@ def run_training_loop(total_steps: int = 10) -> None:
             f"accuracy: {accuracy:.4f}, lr: {learning_rate:.6f}"
         )
 
-        xmc.log_metric("train/loss", loss, step=step)
-        xmc.log_metric("train/accuracy", accuracy, step=step)
-        xmc.log_metric("train/learning_rate", learning_rate, step=step)
+        xmc.log_metric("manual/loss", loss, step=step)
+        xmc.log_metric("manual/accuracy", accuracy, step=step)
+        xmc.log_metric("manual/learning_rate", learning_rate, step=step)
 
         time.sleep(1.0)
 

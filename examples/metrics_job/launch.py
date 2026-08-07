@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Launch script demonstrating an XMC WorkUnit with XMC Metrics SDK logging."""
+"""Launch script demonstrating XMC WorkUnits with Manual SDK, Keras Autologging, and PyTorch Lightning Autologging."""
 
 import logging
 import os
@@ -36,7 +36,7 @@ snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"comm
 
 
 def main(argv: Sequence[str]) -> None:
-    """Launches metrics logging validation experiment."""
+    """Launches multi-job metrics logging validation experiment."""
     logging.getLogger("dotenv.main").setLevel(logging.ERROR)
     dotenv.load_dotenv()
 
@@ -65,38 +65,58 @@ def main(argv: Sequence[str]) -> None:
         stub = experiment._experiment_state_stub  # pylint: disable=protected-access
         xid = int(experiment.resource_name.split("/")[-1])
 
+        common_env = [
+            work_unit_pb2.EnvVar(name="XMC_GATEWAY_URL", value=gateway_url),
+            work_unit_pb2.EnvVar(name="XMC_XID", value=str(xid)),
+        ]
+
+        common_resources = resources_pb2.ResourceSet(
+            cpu_resources=resources_pb2.CpuResources(
+                cpu_millicores=100,
+                memory_bytes=256 * 1024 * 1024,
+            ),
+        )
+
         work_unit = work_unit_pb2.WorkUnit(
             work_unit_type=work_unit_pb2.WorkUnit.WorkUnitType.STANDARD,
             priority=priority_pb2.Priority.NORMAL,
-            notes="WorkUnit testing XMC Metrics SDK logging to ClickHouse.",
-            tags=["metrics-test", "validation"],
+            notes="WorkUnit testing Manual SDK, Keras Autologging, and PyTorch Lightning Autologging.",
+            tags=["metrics-test", "validation", "autologging"],
             executable=work_unit_pb2.Executable(
                 scheduling_constraints=work_unit_pb2.SchedulingConstraints(queue_name=queue_name),
                 jobset=work_unit_pb2.JobSetExecutable(
                     jobs=[
                         work_unit_pb2.KubernetesJob(
-                            name="metrics-worker",
+                            name="metrics-manual",
                             replicas=1,
                             spec=work_unit_pb2.ExecutableSpec(
-                                name="metrics-worker",
+                                name="metrics-manual",
                                 docker_image=image_path,
                                 command=["python3", "/app/worker.py"],
-                                resources=resources_pb2.ResourceSet(
-                                    cpu_resources=resources_pb2.CpuResources(
-                                        cpu_millicores=100,
-                                        memory_bytes=100 * 1024 * 1024,
-                                    ),
-                                ),
-                                env=[
-                                    work_unit_pb2.EnvVar(
-                                        name="XMC_GATEWAY_URL",
-                                        value=gateway_url,
-                                    ),
-                                    work_unit_pb2.EnvVar(
-                                        name="XMC_XID",
-                                        value=str(xid),
-                                    ),
-                                ],
+                                resources=common_resources,
+                                env=common_env,
+                            ),
+                        ),
+                        work_unit_pb2.KubernetesJob(
+                            name="metrics-keras",
+                            replicas=1,
+                            spec=work_unit_pb2.ExecutableSpec(
+                                name="metrics-keras",
+                                docker_image=image_path,
+                                command=["python3", "/app/worker_keras.py"],
+                                resources=common_resources,
+                                env=common_env,
+                            ),
+                        ),
+                        work_unit_pb2.KubernetesJob(
+                            name="metrics-lightning",
+                            replicas=1,
+                            spec=work_unit_pb2.ExecutableSpec(
+                                name="metrics-lightning",
+                                docker_image=image_path,
+                                command=["python3", "/app/worker_lightning.py"],
+                                resources=common_resources,
+                                env=common_env,
                             ),
                         ),
                     ]
