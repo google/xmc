@@ -41,7 +41,12 @@
     </div>
   } @else {
     <div class="jobs-table-container">
-      <table mat-table [dataSource]="jobs()" aria-labelledby="queue-jobs-title" class="jobs-mat-table">
+      <table
+        mat-table
+        [dataSource]="jobs()"
+        aria-labelledby="queue-jobs-title"
+        class="jobs-mat-table"
+      >
         <!-- Position Column -->
         <ng-container matColumnDef="position">
           <th mat-header-cell *matHeaderCellDef>Position</th>
@@ -58,7 +63,8 @@
               [routerLink]="['/experiments', job.xid || job.jobName]"
               [attr.aria-label]="'View experiment ' + job.jobName"
               class="job-link"
-            >{{ job.jobName }}</a>
+              >{{ job.jobName }}</a
+            >
           </td>
         </ng-container>
 
