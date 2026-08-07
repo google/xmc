@@ -147,9 +147,9 @@ jobs:
             if [ "${CURRENT_SIZE_MB}" -gt "${MAX_SIZE_MB}" ]; then
               if [ -d ~/.cache/bazel-disk/ac ]; then
                 echo "Bazel disk cache (${CURRENT_SIZE_MB}MB) exceeds limit (${MAX_SIZE_MB}MB). Pruning oldest files in ac/..."
-                find ~/.cache/bazel-disk/ac -type f -printf '%T@ %p\n' | sort -n | head -n 1000 | cut -d' ' -f2- | xargs rm -f || true
+                find ~/.cache/bazel-disk/ac -type f -printf '%T@ %p\0' | sort -z -n | head -z -n 1000 | cut -z -d' ' -f2- | xargs -0 -r rm -f || true
               fi
-              find ~/.cache/bazel-disk -type d -empty -delete || true
+              find ~/.cache/bazel-disk -mindepth 1 -type d -empty -delete || true
             fi
           fi
           if [ -d ~/.cache/bazel-repo ]; then
@@ -158,8 +158,8 @@ jobs:
             CURRENT_REPO_SIZE_MB=$(du -sm ~/.cache/bazel-repo | cut -f1)
             if [ "${CURRENT_REPO_SIZE_MB}" -gt "${MAX_REPO_SIZE_MB}" ]; then
               echo "Bazel repository cache (${CURRENT_REPO_SIZE_MB}MB) exceeds limit (${MAX_REPO_SIZE_MB}MB). Pruning oldest files..."
-              find ~/.cache/bazel-repo -type f -printf '%T@ %p\n' | sort -n | head -n 500 | cut -d' ' -f2- | xargs rm -f || true
-              find ~/.cache/bazel-repo -type d -empty -delete || true
+              find ~/.cache/bazel-repo -type f -printf '%T@ %p\0' | sort -z -n | head -z -n 500 | cut -z -d' ' -f2- | xargs -0 -r rm -f || true
+              find ~/.cache/bazel-repo -mindepth 1 -type d -empty -delete || true
             fi
           fi
           bazel clean || true
