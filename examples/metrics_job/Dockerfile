@@ -28,12 +28,13 @@ RUN pip install --no-cache-dir \
     "keras>=3.0.0" \
     /app/sdks/python/xmc
 
-# Copy worker scripts for manual SDK, Keras autologging, and PyTorch Lightning autologging
+# Copy worker scripts for manual SDK, Keras autologging, Keras callback, and PyTorch Lightning autologging
 COPY examples/metrics_job/worker.py /app/worker.py
 COPY examples/metrics_job/worker_keras.py /app/worker_keras.py
+COPY examples/metrics_job/worker_keras_callback.py /app/worker_keras_callback.py
 COPY examples/metrics_job/worker_lightning.py /app/worker_lightning.py
 
-RUN chmod +x /app/worker.py /app/worker_keras.py /app/worker_lightning.py
+RUN chmod +x /app/worker.py /app/worker_keras.py /app/worker_keras_callback.py /app/worker_lightning.py
 
 ENV PYTHONPATH=/app
 

@@ -109,6 +109,17 @@ def main(argv: Sequence[str]) -> None:
                             ),
                         ),
                         work_unit_pb2.KubernetesJob(
+                            name="metrics-keras-cb",
+                            replicas=1,
+                            spec=work_unit_pb2.ExecutableSpec(
+                                name="metrics-keras-cb",
+                                docker_image=image_path,
+                                command=["python3", "/app/worker_keras_callback.py"],
+                                resources=common_resources,
+                                env=common_env,
+                            ),
+                        ),
+                        work_unit_pb2.KubernetesJob(
                             name="metrics-lightning",
                             replicas=1,
                             spec=work_unit_pb2.ExecutableSpec(

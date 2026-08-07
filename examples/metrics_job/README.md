@@ -10,17 +10,20 @@ This directory contains a complete validation example for logging training metri
 2. **[worker_keras.py](./worker_keras.py)**:
    - Python training worker demonstrating **Keras autologging** (`xmc.autolog()`), which automatically intercepts `keras.Model.fit()` and streams batch/epoch metrics.
 
-3. **[worker_lightning.py](./worker_lightning.py)**:
+3. **[worker_keras_callback.py](./worker_keras_callback.py)**:
+   - Python training worker demonstrating **explicit Keras callback** (`XmcKerasCallback(prefix="keras_cb/")`), passed directly to `model.fit()` with a custom metric prefix.
+
+4. **[worker_lightning.py](./worker_lightning.py)**:
    - Python training worker demonstrating **PyTorch Lightning autologging** (`xmc.autolog()`), which automatically intercepts `pl.Trainer.fit()` and streams model metrics (`pl/loss`, `pl/accuracy`).
 
-4. **[Dockerfile](./Dockerfile)**:
-   - Packages `sdks/python/xmc`, PyTorch, PyTorch Lightning, Keras 3, and all three worker scripts into a Python 3.11 container image.
+5. **[Dockerfile](./Dockerfile)**:
+   - Packages `sdks/python/xmc`, PyTorch, PyTorch Lightning, Keras 3, and all four worker scripts into a Python 3.11 container image.
 
-5. **[build_and_push.sh](./build_and_push.sh)**:
+6. **[build_and_push.sh](./build_and_push.sh)**:
    - Builds the Docker image and pushes it to Artifact Registry (`us-docker.pkg.dev/<PROJECT_ID>/xmc/metrics-job:latest`).
 
-6. **[launch.py](./launch.py)**:
-   - XManager CLI launch script that creates an Experiment with a 3-job WorkUnit (`metrics-manual`, `metrics-keras`, `metrics-lightning`).
+7. **[launch.py](./launch.py)**:
+   - XManager CLI launch script that creates an Experiment with a 4-job WorkUnit (`metrics-manual`, `metrics-keras`, `metrics-keras-cb`, `metrics-lightning`).
 
 ---
 
