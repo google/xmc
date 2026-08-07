@@ -82,7 +82,7 @@ message GetRunningAndPendingJobsRequest {
 
 // DashboardJob represents a pending or running job in a cluster queue.
 message DashboardJob {
-  string xid = 1;
+  int64 xid = 1;
   int64 work_unit_id = 2;
   string user = 3;
   int64 priority = 4;

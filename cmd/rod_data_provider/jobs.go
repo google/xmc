@@ -43,7 +43,7 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 func mockDashboardJobs() []*spb.DashboardJob {
 	return []*spb.DashboardJob{
 		{
-			Xid:             "53296",
+			Xid:             53296,
 			WorkUnitId:      1,
 			User:            "example@example.com",
 			Priority:        0,
@@ -51,7 +51,7 @@ func mockDashboardJobs() []*spb.DashboardJob {
 			PositionInQueue: 0,
 		},
 		{
-			Xid:             "53308",
+			Xid:             53308,
 			WorkUnitId:      2,
 			User:            "example-admin@example.com",
 			Priority:        100,

@@ -97,7 +97,7 @@ describe('ResourceService', () => {
         jobs: [
           {
             positionInQueue: 1,
-            xid: '101',
+            xid: 101,
             status: 'RUNNING',
           },
         ],
@@ -114,7 +114,7 @@ describe('ResourceService', () => {
 
       const response = await responsePromise;
       expect(response.jobs?.length).toBe(1);
-      expect(response.jobs?.[0].xid).toBe('101');
+      expect(response.jobs?.[0].xid).toBe(101);
       await flush();
     });
   });
