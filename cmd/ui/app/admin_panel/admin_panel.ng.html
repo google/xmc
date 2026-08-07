@@ -43,13 +43,12 @@
       (refresh)="onRefresh()"
     ></xmc-health-status-section>
 
-    <div class="config-section">
-      <h2>Configuration</h2>
-      @if (healthConfigs(); as configs) {
-        <pre class="raw-json">{{ configs | json }}</pre>
-      } @else {
+    @if (healthConfigs(); as configs) {
+      <xmc-config-entries-card [configGroups]="configs.configGroups"></xmc-config-entries-card>
+    } @else {
+      <div class="loading-container">
         <p>Loading Configuration...</p>
-      }
-    </div>
+      </div>
+    }
   </div>
 }
