@@ -31,3 +31,11 @@ rules:
 - apiGroups: ["visibility.kueue.x-k8s.io"]
   resources: ["clusterqueues", "clusterqueues/pendingworkloads"]
   verbs: ["get", "list", "watch"]
+{{- if .Values.managedXprofGcsBucket }}
+# Allows the actuator to read the managed-xprof-gcs-config ConfigMap when
+# resolving the GCS bucket for Managed XProf MLRun creation.
+- apiGroups: [""]
+  resources: ["configmaps"]
+  resourceNames: ["managed-xprof-gcs-config"]
+  verbs: ["get"]
+{{- end }}
