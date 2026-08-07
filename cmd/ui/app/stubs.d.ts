@@ -263,24 +263,4 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
     nextPageToken?: string;
     totalQueueSize?: number;
   }
-
-  export interface QueueJob {
-    position?: string;
-    xid?: string;
-    workUnitId?: string;
-    jobName?: string;
-    user?: string;
-    resources?: string;
-    priority?: string;
-    status?: string;
-    timeInQueue?: string;
-    queueName?: string;
-    [key: string]: any;
-  }
-
-  export interface QueueJobListResponse {
-    queueName?: string;
-    jobs?: QueueJob[];
-    [key: string]: any;
-  }
 }

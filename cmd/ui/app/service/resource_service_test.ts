@@ -117,5 +117,19 @@ describe('ResourceService', () => {
       expect(response.jobs?.[0].xid).toBe(101);
       await flush();
     });
+
+    it('should handle HTTP error gracefully and return empty jobs response', async () => {
+      const responsePromise: Promise<GetRunningAndPendingJobsResponse> = firstValueFrom(
+        state.service.getQueueJobs('custom-queue'),
+      );
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/clusterqueues/custom-queue/jobs`);
+      req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
+
+      const response = await responsePromise;
+      expect(response.jobs).toEqual([]);
+      expect(response.totalQueueSize).toBe(0);
+      await flush();
+    });
   });
 });
