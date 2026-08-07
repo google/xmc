@@ -107,7 +107,7 @@ describe('QueueJobsTable Component', () => {
     expect(await harness.getRowCount()).toBe(2);
 
     const firstRow = await harness.getRowCellsText(0);
-    expect(firstRow.position).toBe('1');
+    expect(firstRow.position).toBe('N/A - running');
     expect(firstRow.jobName).toContain('Experiment #53296');
     expect(firstRow.status).toContain('Running');
     expect(firstRow.priority).toContain('Low');
@@ -117,7 +117,7 @@ describe('QueueJobsTable Component', () => {
     const secondRow = await harness.getRowCellsText(1);
     expect(secondRow.position).toBe('2');
     expect(secondRow.jobName).toContain('Experiment #53308');
-    expect(secondRow.status).toContain('Pending');
+    expect(secondRow.status).toContain('Scheduling');
     expect(secondRow.priority).toContain('High');
   });
 
