@@ -38,7 +38,7 @@ test('parseRestrictedAuthors returns empty array for empty or comment-only conte
   assert.deepStrictEqual(result, []);
 });
 
-test('run fails workflow if not executed in pull_request event context', async () => {
+test('run fails workflow if not executed in pull_request or merge_group event context', async () => {
   let failedMessage = null;
   const mockCore = {
     info: () => {},
@@ -47,11 +47,53 @@ test('run fails workflow if not executed in pull_request event context', async (
 
   const mockContext = {
     repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'push',
     payload: {},
   };
 
   await run({ github: {}, context: mockContext, core: mockCore });
-  assert.strictEqual(failedMessage, 'This script must be run in the context of a pull request event.');
+  assert.strictEqual(failedMessage, 'This script must be run in the context of a pull_request or merge_group event.');
+});
+
+test('run handles merge_group event context successfully', async () => {
+  let failedMessage = null;
+  let infoLogs = [];
+  const mockCore = {
+    info: (msg) => { infoLogs.push(msg); },
+    setFailed: (msg) => { failedMessage = msg; },
+  };
+
+  const mockGithub = {
+    rest: {
+      repos: {
+        getCommit: async () => ({
+          data: {
+            author: { login: 'Alice' },
+          },
+        }),
+        getContent: async () => ({
+          data: {
+            content: Buffer.from('bob\ncharlie\n', 'utf8').toString('base64'),
+          },
+        }),
+      },
+    },
+  };
+
+  const mockContext = {
+    repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'merge_group',
+    payload: {
+      merge_group: {
+        head_sha: 'abc123456789',
+        base_ref: 'refs/heads/main',
+      },
+    },
+  };
+
+  await run({ github: mockGithub, context: mockContext, core: mockCore });
+  assert.strictEqual(failedMessage, null);
+  assert.ok(infoLogs.some(log => log.includes('Merge block check passed')));
 });
 
 test('run fails workflow when PR author is in FEATURE_REQUEST_AUTHORS', async () => {
@@ -75,6 +117,7 @@ test('run fails workflow when PR author is in FEATURE_REQUEST_AUTHORS', async ()
 
   const mockContext = {
     repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'pull_request',
     payload: {
       pull_request: {
         number: 42,
@@ -111,6 +154,7 @@ test('run passes workflow when PR author is not in FEATURE_REQUEST_AUTHORS', asy
 
   const mockContext = {
     repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'pull_request',
     payload: {
       pull_request: {
         number: 42,
@@ -146,6 +190,7 @@ test('run handles 404 gracefully if FEATURE_REQUEST_AUTHORS does not exist', asy
 
   const mockContext = {
     repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'pull_request',
     payload: {
       pull_request: {
         number: 42,
