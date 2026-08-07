@@ -106,8 +106,8 @@ func TestClickHouseInsertAndSelect(t *testing.T) {
 	}()
 
 	err = harness.ClickHouseConn.Exec(ctx, `
-		INSERT INTO xmc_metrics (xid, work_unit_id, execution_id, replica_id, metric_name, metric_value, step, timestamp)
-		VALUES (1001, 1, 1, '0', 'hello_world_metric', 42.5, 10, now64(6, 'UTC'))
+		INSERT INTO xmc_metrics (xid, work_unit_id, execution_id, job_name, replica_id, metric_name, metric_value, step, timestamp)
+		VALUES (1001, 1, 1, 'worker', '0', 'hello_world_metric', 42.5, 10, now64(6, 'UTC'))
 	`)
 	if err != nil {
 		t.Fatalf("Failed to insert dummy metric record: %v", err)

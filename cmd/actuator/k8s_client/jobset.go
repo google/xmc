@@ -889,6 +889,7 @@ func (c *Client) generateEnvVarsForSpec(spec *esspb.ExecutableSpec) []corev1.Env
 		{constants.XmcEnvVarExecutionID, fmt.Sprintf("metadata.labels['%s']", constants.ExecutionIDLabel)},
 		{constants.XmcEnvVarAuthor, fmt.Sprintf("metadata.annotations['%s']", constants.AuthorAnnotation)},
 		{constants.XmcEnvVarJobIndex, fmt.Sprintf("metadata.labels['%s']", constants.JobSetJobIndexLabel)},
+		{constants.XmcEnvVarJobName, fmt.Sprintf("metadata.labels['%s']", constants.JobSetReplicatedJobNameLabel)},
 	}
 
 	for _, ev := range envVarFieldRefs {

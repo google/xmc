@@ -228,6 +228,7 @@ class TestClientShortCircuit(unittest.TestCase):
             "XMC_XID": "111",
             "XMC_WORK_UNIT_ID": "222",
             "XMC_EXECUTION_ID": "333",
+            "XMC_JOB_NAME": "trainer_job",
             "XMC_REPLICA_ID": "rep-4",
             "XMC_GATEWAY_URL": "https://xmc.googleapis.com",
         }
@@ -235,7 +236,9 @@ class TestClientShortCircuit(unittest.TestCase):
         self.assertEqual(client_env.xid, "111")
         self.assertEqual(client_env.work_unit_id, "222")
         self.assertEqual(client_env.execution_id, "333")
+        self.assertEqual(client_env.job_name, "trainer_job")
         self.assertEqual(client_env.replica_id, "rep-4")
+        self.assertEqual(client_env._headers.get("X-Job-Name"), "trainer_job")
         self.assertFalse(client_env.is_silenced)
 
     def test_client_fail_closed_missing_env(self) -> None:

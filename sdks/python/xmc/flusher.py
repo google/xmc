@@ -128,16 +128,20 @@ class MetricsFlusher:
         )
 
         if isinstance(client, (Client, HTTPClient)):
-            self._xid = client.xid
-            self._work_unit_id = client.work_unit_id
-            self._execution_id = client.execution_id
-            self._replica_id = client.replica_id
-            self._is_silenced = client.is_silenced
+            self._xid = client.xid if isinstance(client.xid, str) else ""
+            self._work_unit_id = client.work_unit_id if isinstance(client.work_unit_id, str) else ""
+            self._execution_id = client.execution_id if isinstance(client.execution_id, str) else ""
+            self._job_name = client.job_name if isinstance(client.job_name, str) else ""
+            self._replica_id = client.replica_id if isinstance(client.replica_id, str) else "0"
+            self._is_silenced = bool(client.is_silenced)
+            if not self._job_name and env and "XMC_JOB_NAME" in env:
+                self._job_name = env.get("XMC_JOB_NAME", "").strip()
         else:
             (
                 self._xid,
                 self._work_unit_id,
                 self._execution_id,
+                self._job_name,
                 self._replica_id,
                 self._is_silenced,
             ) = harvest_client_metadata(
@@ -181,6 +185,11 @@ class MetricsFlusher:
         WHY str return type: Stringified 64-bit integer prevents JavaScript precision loss.
         """
         return self._execution_id
+
+    @property
+    def job_name(self) -> str:
+        """Returns the job name metadata string."""
+        return self._job_name
 
     @property
     def replica_id(self) -> str:
@@ -389,6 +398,7 @@ class MetricsFlusher:
             work_unit_id=self._work_unit_id,
             execution_id=self._execution_id,
             replica_id=self._replica_id,
+            job_name=self._job_name,
         )
         return self._client.send_payload(payload)
 

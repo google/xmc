@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS xmc_metrics
     xid Int64,
     work_unit_id Int64,
     execution_id Int64,
+    job_name String,
     replica_id String,
     metric_name LowCardinality(String),
     metric_value Float64,
@@ -32,7 +33,7 @@ CREATE TABLE IF NOT EXISTS xmc_metrics
 ENGINE = MergeTree()
 PARTITION BY toYYYYMM(timestamp)
 PRIMARY KEY (xid, metric_name, timestamp)
-ORDER BY (xid, metric_name, timestamp, work_unit_id, execution_id, replica_id, step);
+ORDER BY (xid, metric_name, timestamp, work_unit_id, execution_id, job_name, replica_id, step);
 
 -- 2. Virtual Queue Table reading native Protobuf binary records directly from Redpanda / Kafka.
 -- Uses format 'ProtobufSingle' with schema 'metrics.proto:Metric' for single non-length-prefixed proto messages per Kafka record.
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS xmc_metrics_queue
     xid Int64,
     work_unit_id Int64,
     execution_id Int64,
+    job_name String,
     replica_id String,
     metric_name LowCardinality(String),
     metric_value Float64,
@@ -69,6 +71,7 @@ SELECT
     xid,
     work_unit_id,
     execution_id,
+    job_name,
     if(replica_id = '', '0', replica_id) AS replica_id,
     metric_name,
     metric_value,

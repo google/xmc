@@ -66,6 +66,7 @@ def format_metric_batch_payload(
     work_unit_id: str,
     execution_id: str,
     replica_id: str,
+    job_name: str = "",
 ) -> list[dict[str, Any]]:
     """Formats metric tuples into JSON payload list matching XMCMetricsBatch schema.
 
@@ -87,12 +88,14 @@ def format_metric_batch_payload(
         except ValueError:
             return 0
 
+    clean_job_name = job_name if isinstance(job_name, str) else ""
     payload = []
     for name, val, step, ts in items:
         m = Metric(
             xid=_to_int_id(xid),
             work_unit_id=_to_int_id(work_unit_id),
             execution_id=_to_int_id(execution_id),
+            job_name=clean_job_name,
             replica_id=replica_id,
             metric_name=name,
             metric_value=float(val),
@@ -104,6 +107,7 @@ def format_metric_batch_payload(
                 "xid": xid,
                 "work_unit_id": work_unit_id,
                 "execution_id": execution_id,
+                "job_name": m.job_name,
                 "replica_id": m.replica_id,
                 "metric_name": m.metric_name,
                 "metric_value": m.metric_value,

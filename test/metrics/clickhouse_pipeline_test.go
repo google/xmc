@@ -219,18 +219,18 @@ func TestClickHousePipelineIngestion(t *testing.T) {
 	}
 
 	var xid, workUnitID, executionID, step int64
-	var replicaID, metricName string
+	var jobName, replicaID, metricName string
 	var metricValue float64
 	var timestamp time.Time
-	selectQuery := "SELECT xid, work_unit_id, execution_id, replica_id, metric_name, metric_value, step, timestamp FROM xmc_metrics WHERE xid = 10001 AND metric_name = 'train_loss' LIMIT 1"
+	selectQuery := "SELECT xid, work_unit_id, execution_id, job_name, replica_id, metric_name, metric_value, step, timestamp FROM xmc_metrics WHERE xid = 10001 AND metric_name = 'train_loss' LIMIT 1"
 	row := harness.ClickHouseConn.QueryRow(ctx, selectQuery)
-	if err := row.Scan(&xid, &workUnitID, &executionID, &replicaID, &metricName, &metricValue, &step, &timestamp); err != nil {
+	if err := row.Scan(&xid, &workUnitID, &executionID, &jobName, &replicaID, &metricName, &metricValue, &step, &timestamp); err != nil {
 		t.Fatalf("Failed to read record fields: %v", err)
 	}
 
 	if xid != 10001 || workUnitID != 1 || executionID != 10 || replicaID != "worker-0" || metricName != "train_loss" || metricValue != 0.1234 || step != 100 {
-		t.Errorf("Ingested metric fields mismatch: got xid=%d, work_unit_id=%d, execution_id=%d, replica_id=%s, metric_name=%s, metric_value=%f, step=%d",
-			xid, workUnitID, executionID, replicaID, metricName, metricValue, step)
+		t.Errorf("Ingested metric fields mismatch: got xid=%d, work_unit_id=%d, execution_id=%d, job_name=%s, replica_id=%s, metric_name=%s, metric_value=%f, step=%d",
+			xid, workUnitID, executionID, jobName, replicaID, metricName, metricValue, step)
 	}
 
 	if timestamp.UnixMicro() != nowMicro {

@@ -25,12 +25,14 @@ class TestMetricValidation(unittest.TestCase):
             xid=100,
             work_unit_id=1,
             execution_id=2,
+            job_name="worker_job",
             replica_id="0",
             metric_name="eval/accuracy",
             metric_value=0.95,
             step=50,
         )
         metric.validate()
+        self.assertEqual(metric.job_name, "worker_job")
         self.assertTrue(is_valid_metric_name("eval/accuracy"))
 
     def test_lru_caching(self):
@@ -51,9 +53,11 @@ class TestMetricValidation(unittest.TestCase):
             work_unit_id="2002",
             execution_id="3003",
             replica_id="replica-0",
+            job_name="my_job",
         )
         self.assertEqual(len(payload), 2)
         self.assertEqual(payload[0]["xid"], "1001")
+        self.assertEqual(payload[0]["job_name"], "my_job")
         self.assertEqual(payload[0]["metric_name"], "loss")
         self.assertEqual(payload[0]["timestamp"], 100000000)
 

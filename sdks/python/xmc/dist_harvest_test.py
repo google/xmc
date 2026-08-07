@@ -33,12 +33,14 @@ class TestHarvestClientMetadata(unittest.TestCase):
             "XMC_XID": "1111",
             "XMC_WORK_UNIT_ID": "2222",
             "XMC_EXECUTION_ID": "3333",
+            "XMC_JOB_NAME": "train_worker",
             "XMC_REPLICA_ID": "env-replica",
         }
-        xid, wu_id, exec_id, rep_id, is_silenced = harvest_client_metadata(env=env)
+        xid, wu_id, exec_id, job_name, rep_id, is_silenced = harvest_client_metadata(env=env)
         self.assertEqual(xid, "1111")
         self.assertEqual(wu_id, "2222")
         self.assertEqual(exec_id, "3333")
+        self.assertEqual(job_name, "train_worker")
         self.assertEqual(rep_id, "env-replica")
         self.assertFalse(is_silenced)
 
@@ -52,7 +54,9 @@ class TestHarvestClientMetadata(unittest.TestCase):
         ]
         for env in invalid_envs:
             with self.subTest(env=env):
-                xid, wu_id, exec_id, rep_id, is_silenced = harvest_client_metadata(env=env)
+                xid, wu_id, exec_id, job_name, rep_id, is_silenced = harvest_client_metadata(
+                    env=env
+                )
                 self.assertTrue(is_silenced)
 
     def test_replica_fallback_heuristics(self) -> None:
@@ -62,7 +66,7 @@ class TestHarvestClientMetadata(unittest.TestCase):
             "XMC_EXECUTION_ID": "300",
             "RANK": "1",
         }
-        xid, wu_id, exec_id, rep_id, is_silenced = harvest_client_metadata(env=env)
+        xid, wu_id, exec_id, job_name, rep_id, is_silenced = harvest_client_metadata(env=env)
         self.assertEqual(xid, "100")
         self.assertEqual(rep_id, "1")
         self.assertTrue(is_silenced)

@@ -115,10 +115,10 @@ def poll_clickhouse_counts(
     """Polls ClickHouse for deduplicated (argMax) and raw ingested record counts."""
     dedup_query = (
         f"SELECT count() FROM ("
-        f"SELECT xid, work_unit_id, execution_id, replica_id, metric_name, step, "
+        f"SELECT xid, work_unit_id, execution_id, job_name, replica_id, metric_name, step, "
         f"argMax(metric_value, created_at) AS metric_value "
         f"FROM xmc_metrics WHERE xid = {xid} "
-        f"GROUP BY xid, work_unit_id, execution_id, replica_id, metric_name, step)"
+        f"GROUP BY xid, work_unit_id, execution_id, job_name, replica_id, metric_name, step)"
     )
     raw_query = f"SELECT count() FROM xmc_metrics WHERE xid = {xid}"
 

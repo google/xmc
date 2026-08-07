@@ -76,6 +76,7 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string, gMetr
 			publishErr atomic.Pointer[error]
 		)
 		replicaIDHeader := r.Header.Get("X-Replica-ID")
+		jobNameHeader := r.Header.Get("X-Job-Name")
 
 		consumer := func(m *metrics.Metric) error {
 			if err := ctx.Err(); err != nil {
@@ -89,6 +90,10 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string, gMetr
 
 			if m == nil || m.Metric == nil {
 				return fmt.Errorf("received nil metric record")
+			}
+
+			if m.JobName == "" && jobNameHeader != "" {
+				m.JobName = jobNameHeader
 			}
 
 			if m.ReplicaId == "" && replicaIDHeader != "" {
