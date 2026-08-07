@@ -40,6 +40,7 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 		return nil, status.Error(codes.Unavailable, "work unit store is uninitialized")
 	}
 
+	// TODO: Fetch all LocalQueues connected to a given ClusterQueue
 	clusterQueueName := req.GetQueueName()
 
 	targetQueues := []string{clusterQueueName}
