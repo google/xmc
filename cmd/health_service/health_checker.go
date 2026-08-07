@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	health "xmanager_cloud/common/health"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 
 	"google.golang.org/grpc"
@@ -29,12 +30,14 @@ import (
 )
 
 type HealthChecker struct {
-	cfg        *Config
-	httpClient *http.Client
-	xidConn    *grpc.ClientConn
+	cfg             *Config
+	httpClient      *http.Client
+	xidConn         *grpc.ClientConn
+	essHealthClient health.SpannerHealthClient
+	xidHealthClient health.SpannerHealthClient
 }
 
-func newHealthChecker(cfg *Config) (*HealthChecker, error) {
+func newHealthChecker(cfg *Config, essHealth, xidHealth health.SpannerHealthClient) (*HealthChecker, error) {
 	if cfg.XidAddr == "" {
 		return nil, fmt.Errorf("xid address is required")
 	}
@@ -42,27 +45,39 @@ func newHealthChecker(cfg *Config) (*HealthChecker, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create grpc client for xid at %s: %w", cfg.XidAddr, err)
 	}
+
 	return &HealthChecker{
 		cfg: cfg,
 		httpClient: &http.Client{
 			Timeout: 3 * time.Second,
 		},
-		xidConn: conn,
+		xidConn:         conn,
+		essHealthClient: essHealth,
+		xidHealthClient: xidHealth,
 	}, nil
 }
 
 func (c *HealthChecker) Close() error {
 	if c.xidConn != nil {
-		return c.xidConn.Close()
+		if err := c.xidConn.Close(); err != nil {
+			return fmt.Errorf("failed to close xid connection: %w", err)
+		}
 	}
 	return nil
 }
 
-func (c *HealthChecker) RunChecks(ctx context.Context) []*spb.ComponentHealth {
+type RunChecksResult struct {
+	Components []*spb.ComponentHealth
+	EssVersion string
+	XidVersion string
+}
+
+func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 	targets := c.getCheckTargets()
 	components := make([]*spb.ComponentHealth, len(targets))
 	var wg sync.WaitGroup
 
+	// 1. Run generic checks in parallel
 	for i, target := range targets {
 		wg.Add(1)
 		go func(idx int, t checkTarget) {
@@ -71,8 +86,29 @@ func (c *HealthChecker) RunChecks(ctx context.Context) []*spb.ComponentHealth {
 		}(i, target)
 	}
 
+	// 2. Run Spanner checks in parallel
+	var essComp, xidComp *spb.ComponentHealth
+	var essVersion, xidVersion string
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		essComp, essVersion = c.CheckSpannerESS(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		xidComp, xidVersion = c.CheckSpannerXID(ctx)
+	}()
+
 	wg.Wait()
-	return components
+
+	// 3. Append Spanner results to the components list
+	components = append(components, essComp, xidComp)
+
+	return RunChecksResult{
+		Components: components,
+		EssVersion: essVersion,
+		XidVersion: xidVersion,
+	}
 }
 
 type checkTarget struct {
@@ -119,17 +155,6 @@ func (c *HealthChecker) getCheckTargets() []checkTarget {
 			},
 		},
 		{
-			name: "Spanner",
-			checkFn: func(ctx context.Context) *spb.ComponentHealth {
-				// TODO(b/532846936): Implement actual Spanner database connectivity checks.
-				return &spb.ComponentHealth{
-					Name:        "Spanner",
-					Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
-					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
-				}
-			},
-		},
-		{
 			name: "Redis",
 			checkFn: func(ctx context.Context) *spb.ComponentHealth {
 				// TODO(b/532846936): Implement actual Redis cache connectivity check.
@@ -141,6 +166,14 @@ func (c *HealthChecker) getCheckTargets() []checkTarget {
 			},
 		},
 	}
+}
+
+func (c *HealthChecker) CheckSpannerESS(ctx context.Context) (*spb.ComponentHealth, string) {
+	return c.checkSpannerComponent(ctx, "Spanner ESS", c.essHealthClient)
+}
+
+func (c *HealthChecker) CheckSpannerXID(ctx context.Context) (*spb.ComponentHealth, string) {
+	return c.checkSpannerComponent(ctx, "Spanner XID", c.xidHealthClient)
 }
 
 func (c *HealthChecker) checkHTTPComponent(ctx context.Context, name string, baseURL string, path string) *spb.ComponentHealth {
@@ -217,4 +250,36 @@ func (c *HealthChecker) checkGRPCComponent(ctx context.Context, name string, con
 		Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
 		HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
 	}
+}
+
+func (c *HealthChecker) checkSpannerComponent(ctx context.Context, name string, client health.SpannerHealthClient) (*spb.ComponentHealth, string) {
+	if client == nil {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: "spanner client not initialized",
+		}, ""
+	}
+
+	versionVal, dirty, err := client.QuerySchemaVersion(ctx)
+	if err != nil {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: fmt.Sprintf("database check failed: %v", err),
+		}, ""
+	}
+
+	versionStr := fmt.Sprintf("%d", versionVal)
+	if dirty {
+		versionStr += " (dirty)"
+	}
+
+	return &spb.ComponentHealth{
+		Name:        name,
+		Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+		HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+	}, versionStr
 }
