@@ -253,6 +253,7 @@ class TestHTTPClient(unittest.TestCase):
             "XMC_XID": "10",
             "XMC_WORK_UNIT_ID": "20",
             "XMC_EXECUTION_ID": "30",
+            "XMC_JOB_NAME": "my_job",
             "XMC_REPLICA_ID": "replica-net",
         }
         client = HTTPClient(
@@ -262,7 +263,9 @@ class TestHTTPClient(unittest.TestCase):
         self.assertEqual(client.xid, "10")
         self.assertEqual(client.work_unit_id, "20")
         self.assertEqual(client.execution_id, "30")
+        self.assertEqual(client.job_name, "my_job")
         self.assertEqual(client.replica_id, "replica-net")
+        self.assertEqual(client._headers.get("X-Job-Name"), "my_job")
 
 
 if __name__ == "__main__":

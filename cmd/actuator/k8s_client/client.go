@@ -50,6 +50,9 @@ type ActuatorRuntimeConfig struct {
 
 	// Decides whether XMC metrics are enabled.
 	MetricsEnabled bool
+
+	// Decides whether containers can run in privileged mode when requested.
+	AllowPrivilegedContainers bool
 }
 
 // Priorities holds experiment and work unit priorities.
@@ -111,21 +114,16 @@ func NewWithClients(clientset kubernetes.Interface, dynamicClient dynamic.Interf
 	}
 }
 
-// CreateWorkUnit creates a new WorkUnit in Kubernetes.
-func (c *Client) CreateWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
+func (c *Client) executeWorkUnitAction(ctx context.Context, payload *actuatortaskpb.ActuatorPayload, actionName string, actionFn func(context.Context) error) error {
 	ctx = logging.WithWorkUnitExecutionName(ctx, payload.GetTarget())
 	ctx = logging.WithOperationName(ctx, payload.GetMetadata().GetOperationName())
 
-	priorities := Priorities{
-		WorkUnitPriority:   payload.GetWorkUnit().GetPriority(),
-		ExperimentPriority: payload.GetAction().GetCreate().GetExperimentPriority(),
-	}
-	err := c.createJobSet(ctx, payload.GetWorkUnit(), payload.GetTarget(), payload.GetAction().GetCreate().GetAuthor(), payload.GetCreateTime().AsTime(), priorities)
+	err := actionFn(ctx)
 
 	if c.storage == nil {
 		logging.Warn(ctx, "Storage client is not initialized, skipping work unit operation update.")
 		if err != nil {
-			return fmt.Errorf("failed to create JobSet for target %q: %w", payload.GetTarget(), err)
+			return fmt.Errorf("failed to %s JobSet for target %q: %w", actionName, payload.GetTarget(), err)
 		}
 		return nil
 	}
@@ -135,73 +133,47 @@ func (c *Client) CreateWorkUnit(ctx context.Context, payload *actuatortaskpb.Act
 	}
 
 	if err != nil {
-		logging.Warn(ctx, "Failed to create JobSet for target", "target", payload.GetTarget(), "error", err)
-		return fmt.Errorf("failed to create JobSet for target %q: %w", payload.GetTarget(), err)
+		logging.Warn(ctx, fmt.Sprintf("Failed to %s JobSet for target", actionName), "target", payload.GetTarget(), "error", err)
+		return fmt.Errorf("failed to %s JobSet for target %q: %w", actionName, payload.GetTarget(), err)
 	}
 
 	return nil
+}
+
+// CreateWorkUnit creates a new WorkUnit in Kubernetes.
+func (c *Client) CreateWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
+	return c.executeWorkUnitAction(ctx, payload, "create", func(ctx context.Context) error {
+		act := payload.GetAction().GetCreate()
+		priorities := Priorities{
+			WorkUnitPriority:   payload.GetWorkUnit().GetPriority(),
+			ExperimentPriority: act.GetExperimentPriority(),
+		}
+		return c.createJobSet(ctx, payload.GetWorkUnit(), payload.GetTarget(), act.GetAuthor(), payload.GetCreateTime().AsTime(), priorities)
+	})
 }
 
 // DeleteWorkUnit deletes a WorkUnit in Kubernetes.
 func (c *Client) DeleteWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
-	ctx = logging.WithWorkUnitExecutionName(ctx, payload.GetTarget())
-	ctx = logging.WithOperationName(ctx, payload.GetMetadata().GetOperationName())
-
-	namespace, err := c.getNamespaceFromWorkUnitWithFallback(ctx, payload.GetWorkUnit(), payload.GetTarget())
-	if err != nil {
-		return fmt.Errorf("failed to get namespace for target %q: %w", payload.GetTarget(), err)
-	}
-
-	_, err = c.deleteJobSet(ctx, payload.GetTarget(), namespace, payload.GetCreateTime().AsTime())
-
-	if c.storage == nil {
-		logging.Warn(ctx, "Storage client is not initialized, skipping work unit operation update.")
+	return c.executeWorkUnitAction(ctx, payload, "delete", func(ctx context.Context) error {
+		namespace, err := c.getNamespaceFromWorkUnitWithFallback(ctx, payload.GetWorkUnit(), payload.GetTarget())
 		if err != nil {
-			return fmt.Errorf("failed to delete JobSet for target %q: %w", payload.GetTarget(), err)
+			return fmt.Errorf("failed to get namespace for target %q: %w", payload.GetTarget(), err)
 		}
-		return nil
-	}
-
-	if uErr := c.updateOperation(ctx, payload, err); uErr != nil {
-		return uErr
-	}
-
-	if err != nil {
-		logging.Warn(ctx, "Failed to delete JobSet for target", "target", payload.GetTarget(), "error", err)
-		return fmt.Errorf("failed to delete JobSet for target %q: %w", payload.GetTarget(), err)
-	}
-
-	return nil
+		_, err = c.deleteJobSet(ctx, payload.GetTarget(), namespace, payload.GetCreateTime().AsTime())
+		return err
+	})
 }
 
 // RestartWorkUnit restarts a WorkUnit in Kubernetes.
 func (c *Client) RestartWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
-	ctx = logging.WithWorkUnitExecutionName(ctx, payload.GetTarget())
-	ctx = logging.WithOperationName(ctx, payload.GetMetadata().GetOperationName())
-
-	priorities := Priorities{
-		WorkUnitPriority:   payload.GetWorkUnit().GetPriority(),
-		ExperimentPriority: payload.GetAction().GetRestart().GetExperimentPriority(),
-	}
-	err := c.restartJobSet(ctx, payload.GetWorkUnit(), payload.GetTarget(), payload.GetAction().GetRestart().GetAuthor(), payload.GetCreateTime().AsTime(), priorities)
-
-	if c.storage == nil {
-		logging.Warn(ctx, "Storage client is not initialized, skipping work unit operation update.")
-		if err != nil {
-			return fmt.Errorf("failed to restart JobSet for target %q: %w", payload.GetTarget(), err)
+	return c.executeWorkUnitAction(ctx, payload, "restart", func(ctx context.Context) error {
+		act := payload.GetAction().GetRestart()
+		priorities := Priorities{
+			WorkUnitPriority:   payload.GetWorkUnit().GetPriority(),
+			ExperimentPriority: act.GetExperimentPriority(),
 		}
-		return nil
-	}
-
-	if uErr := c.updateOperation(ctx, payload, err); uErr != nil {
-		return uErr
-	}
-
-	if err != nil {
-		logging.Warn(ctx, "Failed to restart JobSet for target", "target", payload.GetTarget(), "error", err)
-		return fmt.Errorf("failed to restart JobSet for target %q: %w", payload.GetTarget(), err)
-	}
-	return nil
+		return c.restartJobSet(ctx, payload.GetWorkUnit(), payload.GetTarget(), act.GetAuthor(), payload.GetCreateTime().AsTime(), priorities)
+	})
 }
 
 // Clientset returns the kubernetes clientset.

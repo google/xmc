@@ -113,11 +113,12 @@ func (lp *LogProcessor) ProcessBatch(ctx context.Context, batch []PubSubMessage)
 			continue
 		}
 
-		xid, update, ok := lp.buildUpdate(ctx, entry)
-		if !ok {
+		logRes := lp.buildUpdate(ctx, entry)
+		if !logRes.OK {
 			msg.Ack()
 			continue
 		}
+		xid, update := logRes.ExperimentID, logRes.Update
 
 		pendingUpdates[xid] = append(pendingUpdates[xid], &pendingUpdate{msg: msg, update: update})
 	}
@@ -182,13 +183,21 @@ func (lp *LogProcessor) processUpdatesForExperiment(ctx context.Context, xid int
 	return wuUpdates, nil
 }
 
-func (lp *LogProcessor) buildUpdate(ctx context.Context, entry LogEntry) (int64, *storage.WorkUnitExecutionUpdate, bool) {
+// ParsedLogUpdate holds structured result data for a parsed log entry update.
+type ParsedLogUpdate struct {
+	ExperimentID int64
+	Update       *storage.WorkUnitExecutionUpdate
+	OK           bool
+}
+
+func (lp *LogProcessor) buildUpdate(ctx context.Context, entry LogEntry) ParsedLogUpdate {
 	jobLabels := mapLogLabels(entry.Labels)
-	xid, wid, eid, err := labels.ParseXMCLabels(jobLabels)
+	xmcLabels, err := labels.ParseXMCLabels(jobLabels)
 	if err != nil {
 		logging.Warn(ctx, "Failed to parse XMC labels from log entry", "err", err, "labels", entry.Labels)
-		return 0, nil, false
+		return ParsedLogUpdate{OK: false}
 	}
+	xid, wid, eid := xmcLabels.XID, xmcLabels.WID, xmcLabels.EID
 
 	message, stackTrace := extractMessageAndStackTrace(entry, lp.logKeyword)
 
@@ -219,7 +228,11 @@ func (lp *LogProcessor) buildUpdate(ctx context.Context, entry LogEntry) (int64,
 			Paths: []string{"status.user_message"},
 		},
 	}
-	return xid, update, true
+	return ParsedLogUpdate{
+		ExperimentID: xid,
+		Update:       update,
+		OK:           true,
+	}
 }
 
 // mapLogLabels maps the labels from the cloud logging format to the labels applied by the actuator.

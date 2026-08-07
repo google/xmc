@@ -23,7 +23,10 @@ from unittest.mock import ANY, MagicMock, call, patch
 
 # Import the module under test
 sys.path.insert(0, str(pathlib.Path(__file__).parent.resolve()))
+from dataclasses import replace
+
 import deploy_dev_env
+from tool_utils import DeploymentConfig
 
 
 class TestDeployDevEnv(unittest.TestCase):
@@ -39,15 +42,15 @@ domain_name: example.com
 image_registry: us-central1-docker.pkg.dev/my-project/xmc
 image_tag: latest
 """
-        self.valid_config_dict = {
-            "deployment_name": "xmc-dev",
-            "project_id": "my-project",
-            "environment": "dev",
-            "region": "us-central1",
-            "domain_name": "example.com",
-            "image_registry": "us-central1-docker.pkg.dev/my-project/xmc",
-            "image_tag": "latest",
-        }
+        self.valid_config = DeploymentConfig(
+            project_id="my-project",
+            deployment_name="xmc-dev",
+            region="us-central1",
+            environment="dev",
+            image_registry="us-central1-docker.pkg.dev/my-project/xmc",
+            image_tag="latest",
+            domain_name="example.com",
+        )
         self.dns_project = "dns-project"
         self.dns_zone = "dns-zone"
 
@@ -89,9 +92,9 @@ image_tag: latest
 
     @patch("deploy_dev_env.tool_load_config")
     def test_load_and_validate_config_success(self, mock_tool_load):
-        mock_tool_load.return_value = self.valid_config_dict
+        mock_tool_load.return_value = self.valid_config
         config = deploy_dev_env.load_and_validate_config("dummy.yaml")
-        self.assertEqual(config, self.valid_config_dict)
+        self.assertEqual(config, self.valid_config)
         mock_tool_load.assert_called_once_with("dummy.yaml")
 
     @patch("deploy_dev_env.tool_load_config", side_effect=FileNotFoundError("not found"))
@@ -127,7 +130,7 @@ image_tag: latest
         ]
 
         # Should not raise any exception/SystemExit
-        deploy_dev_env.run_checks(self.valid_config_dict, self.dns_project, self.dns_zone)
+        deploy_dev_env.run_checks(self.valid_config, self.dns_project, self.dns_zone)
 
         # Verify calls
         mock_which.assert_any_call("terraform")
@@ -148,7 +151,7 @@ image_tag: latest
     @patch("shutil.which", return_value=False)
     def test_run_checks_missing_binary(self, mock_which):
         with self.assertRaises(SystemExit):
-            deploy_dev_env.run_checks(self.valid_config_dict, self.dns_project, self.dns_zone)
+            deploy_dev_env.run_checks(self.valid_config, self.dns_project, self.dns_zone)
 
     @patch("shutil.which", return_value=True)
     @patch("pathlib.Path.is_file", return_value=True)
@@ -160,7 +163,7 @@ image_tag: latest
         mock_run.return_value = tf_version_mock
 
         with self.assertRaises(SystemExit):
-            deploy_dev_env.run_checks(self.valid_config_dict, self.dns_project, self.dns_zone)
+            deploy_dev_env.run_checks(self.valid_config, self.dns_project, self.dns_zone)
 
     @patch("shutil.which", return_value=True)
     @patch("pathlib.Path.is_file", return_value=True)
@@ -175,7 +178,7 @@ image_tag: latest
         mock_run.side_effect = [tf_version_mock, active_project_mock]
 
         with self.assertRaises(SystemExit):
-            deploy_dev_env.run_checks(self.valid_config_dict, self.dns_project, self.dns_zone)
+            deploy_dev_env.run_checks(self.valid_config, self.dns_project, self.dns_zone)
 
     @patch("shutil.which", return_value=True)
     @patch("pathlib.Path.is_file", return_value=True)
@@ -368,7 +371,7 @@ image_tag: latest
         ]
 
         deploy_dev_env.apply_dns_records(
-            "1.2.3.4", self.valid_config_dict, self.dns_project, self.dns_zone
+            "1.2.3.4", self.valid_config, self.dns_project, self.dns_zone
         )
 
         # Verify no 'transaction add' or 'transaction execute' was called
@@ -395,7 +398,7 @@ image_tag: latest
 
         with self.assertRaises(SystemExit):
             deploy_dev_env.apply_dns_records(
-                "1.2.3.4", self.valid_config_dict, self.dns_project, self.dns_zone
+                "1.2.3.4", self.valid_config, self.dns_project, self.dns_zone
             )
 
         # Verify transaction was aborted
@@ -434,7 +437,7 @@ image_tag: latest
         ]
 
         deploy_dev_env.apply_dns_records(
-            "1.2.3.4", self.valid_config_dict, self.dns_project, self.dns_zone
+            "1.2.3.4", self.valid_config, self.dns_project, self.dns_zone
         )
 
         # Verify add calls
@@ -493,7 +496,7 @@ image_tag: latest
         mock_run_checks,
         mock_load_config,
     ):
-        mock_load_config.return_value = self.valid_config_dict
+        mock_load_config.return_value = self.valid_config
 
         # Run with no special step args (should run all)
         deploy_dev_env.main(
@@ -546,7 +549,7 @@ image_tag: latest
         mock_run_checks,
         mock_load_config,
     ):
-        mock_load_config.return_value = self.valid_config_dict
+        mock_load_config.return_value = self.valid_config
 
         # Start from 'primary' (should skip check, compile, images, apis)
         deploy_dev_env.main(
@@ -602,7 +605,7 @@ image_tag: latest
         mock_run_checks,
         mock_load_config,
     ):
-        mock_load_config.return_value = self.valid_config_dict
+        mock_load_config.return_value = self.valid_config
 
         # Run ONLY 'compute'
         deploy_dev_env.main(
@@ -645,7 +648,7 @@ image_tag: latest
         mock_run_checks,
         mock_load_config,
     ):
-        mock_load_config.return_value = self.valid_config_dict
+        mock_load_config.return_value = self.valid_config
         # Simulate failure in step_compile
         mock_compile.side_effect = Exception("Compile failed")
 
@@ -675,7 +678,7 @@ image_tag: latest
     @patch("deploy_dev_env.run_command")
     def test_step_compile(self, mock_run):
         deploy_dev_env.step_compile(
-            self.valid_config_dict,
+            self.valid_config,
             self.dns_project,
             self.dns_zone,
             "my-config.yaml",
@@ -705,7 +708,7 @@ image_tag: latest
 
         mock_run.side_effect = [deploy_res, ip_res]
 
-        deploy_dev_env.step_primary(self.valid_config_dict, self.dns_project, self.dns_zone)
+        deploy_dev_env.step_primary(self.valid_config, self.dns_project, self.dns_zone)
 
         mock_run.assert_has_calls(
             [
@@ -735,7 +738,7 @@ image_tag: latest
             ]
         )
         mock_apply_dns.assert_called_once_with(
-            "10.0.0.1", self.valid_config_dict, self.dns_project, self.dns_zone
+            "10.0.0.1", self.valid_config, self.dns_project, self.dns_zone
         )
 
     @patch("deploy_dev_env.run_command")
@@ -746,7 +749,7 @@ image_tag: latest
 
         mock_run.side_effect = [describe_res, update_res]
 
-        deploy_dev_env.step_gateway_api(self.valid_config_dict, self.dns_project, self.dns_zone)
+        deploy_dev_env.step_gateway_api(self.valid_config, self.dns_project, self.dns_zone)
 
         mock_run.assert_has_calls(
             [
@@ -784,7 +787,7 @@ image_tag: latest
         describe_res.stdout = "true\n"
         mock_run.return_value = describe_res
 
-        deploy_dev_env.step_gateway_api(self.valid_config_dict, self.dns_project, self.dns_zone)
+        deploy_dev_env.step_gateway_api(self.valid_config, self.dns_project, self.dns_zone)
 
         mock_run.assert_called_once()
         self.assertIn("describe", mock_run.call_args[0][0])
@@ -797,10 +800,10 @@ image_tag: latest
         # 9 bazel run calls (9 base targets, rod_data_provider disabled by default)
         mock_run.side_effect = [bazel_res] * 9
 
-        deploy_dev_env.step_images(self.valid_config_dict)
+        deploy_dev_env.step_images(self.valid_config)
 
         self.assertEqual(mock_run.call_count, 9)
-        mock_docker_auth.assert_called_once_with(self.valid_config_dict)
+        mock_docker_auth.assert_called_once_with(self.valid_config)
         mock_run.assert_any_call(
             ["bazel", "run", "//cmd/actuator:actuator_image_push"],
             env=ANY,
@@ -818,8 +821,7 @@ image_tag: latest
         # 10 bazel run calls (9 base + rod_data_provider)
         mock_run.side_effect = [bazel_res] * 10
 
-        config_rod_enabled = dict(self.valid_config_dict)
-        config_rod_enabled["rod_deployment_enabled"] = "true"
+        config_rod_enabled = replace(self.valid_config, rod_deployment_enabled=True)
 
         deploy_dev_env.step_images(config_rod_enabled)
 
@@ -841,7 +843,7 @@ image_tag: latest
 
         mock_run.side_effect = [cred_res, verify_res, wait_res, cert_res]
 
-        deploy_dev_env.step_verify(self.valid_config_dict, self.dns_project, self.dns_zone)
+        deploy_dev_env.step_verify(self.valid_config, self.dns_project, self.dns_zone)
 
         self.assertEqual(mock_run.call_count, 4)
         mock_run.assert_any_call(

@@ -135,15 +135,17 @@ func (c *Client) deleteJobSet(ctx context.Context, target, namespace string, ope
 		return false, nil
 	}
 
-	targetMatches, uid, err := c.getJobsetUIDByTarget(ctx, target, namespace)
+	aligned, err := c.preconditionsValidator.IsExecutionIDAligned(ctx, target, jobSetUnstructured)
 	if err != nil {
-		return false, fmt.Errorf("getJobsetUIDByTarget failed in deleteJobSet: %w", err)
+		logging.Warn(ctx, "Failed during execution ID alignment check", "error", err, "target", target)
+		return false, fmt.Errorf("failed during execution ID alignment check for %q: %w", target, err)
 	}
-	if !targetMatches {
+	if !aligned {
 		logging.Warn(ctx, "Jobset EID does not match target, skipping deletion")
 		return false, nil
 	}
 
+	uid := jobSetUnstructured.GetUID()
 	// Set the UID in the options, so we make sure we ONLY delete the Jobset for the current target
 	// and not any other Jobset that may have been created in the meantime.
 	deleteOptions := metav1.DeleteOptions{
@@ -495,6 +497,12 @@ func (c *Client) buildContainer(containerName string, spec *esspb.ExecutableSpec
 		}
 	}
 	args = append(args, spec.GetArgsList()...)
+	sc := defaultSecurityContext()
+	if c != nil && c.RuntimeConfig.AllowPrivilegedContainers && spec.GetPrivileged() {
+		sc.Privileged = proto.Bool(true)
+		sc.AllowPrivilegeEscalation = proto.Bool(true)
+	}
+
 	return corev1.Container{
 		Name:                     containerName,
 		Image:                    spec.GetDockerImage(),
@@ -505,7 +513,7 @@ func (c *Client) buildContainer(containerName string, spec *esspb.ExecutableSpec
 		Args:                     args,
 		Env:                      envVars,
 		Ports:                    ports,
-		SecurityContext:          defaultSecurityContext(),
+		SecurityContext:          sc,
 		VolumeMounts:             generateVolumeMountsForSpec(spec),
 	}
 }
@@ -887,6 +895,7 @@ func (c *Client) generateEnvVarsForSpec(spec *esspb.ExecutableSpec) []corev1.Env
 		{constants.XmcEnvVarExecutionID, fmt.Sprintf("metadata.labels['%s']", constants.ExecutionIDLabel)},
 		{constants.XmcEnvVarAuthor, fmt.Sprintf("metadata.annotations['%s']", constants.AuthorAnnotation)},
 		{constants.XmcEnvVarJobIndex, fmt.Sprintf("metadata.labels['%s']", constants.JobSetJobIndexLabel)},
+		{constants.XmcEnvVarJobName, fmt.Sprintf("metadata.labels['%s']", constants.JobSetReplicatedJobNameLabel)},
 	}
 
 	for _, ev := range envVarFieldRefs {

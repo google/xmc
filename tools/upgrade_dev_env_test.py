@@ -18,7 +18,6 @@ import os
 import subprocess
 import tempfile
 import unittest
-from dataclasses import asdict
 from pathlib import Path
 from unittest import mock
 
@@ -123,14 +122,12 @@ class TestMigrationHelpers(unittest.TestCase):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="Version: 1\nDirty: true\n", stderr=""
         )
-        config = upgrade_dev_env.Config(
+        config = upgrade_dev_env.UpgradeConfig(
             project_id="p",
             deployment_name="d",
             region="r",
             environment="e",
             namespace="n",
-            registry="reg",
-            gke_cluster="c",
             config_path="cfg",
             image_registry="us-docker.pkg.dev/p/xmc",
             image_tag="latest",
@@ -142,14 +139,12 @@ class TestMigrationHelpers(unittest.TestCase):
     @mock.patch("tools.upgrade_dev_env.get_migration_status")
     def test_step_migrate_exits_code_10_when_pending(self, mock_status):
         mock_status.side_effect = [(1, 2), (1, 1)]
-        config = upgrade_dev_env.Config(
+        config = upgrade_dev_env.UpgradeConfig(
             project_id="p",
             deployment_name="d",
             region="r",
             environment="e",
             namespace="n",
-            registry="reg",
-            gke_cluster="c",
             config_path="cfg",
             image_registry="us-docker.pkg.dev/p/xmc",
             image_tag="latest",
@@ -163,14 +158,12 @@ class TestMigrationHelpers(unittest.TestCase):
     @mock.patch("tools.upgrade_dev_env.get_migration_status")
     def test_step_migrate_runs_when_flag_enabled(self, mock_status, mock_run_mig):
         mock_status.side_effect = [(1, 2), (1, 3)]
-        config = upgrade_dev_env.Config(
+        config = upgrade_dev_env.UpgradeConfig(
             project_id="p",
             deployment_name="d",
             region="r",
             environment="dev",
             namespace="n",
-            registry="reg",
-            gke_cluster="c",
             config_path="cfg",
             image_registry="us-docker.pkg.dev/p/xmc",
             image_tag="latest",
@@ -213,14 +206,12 @@ class TestStepSubprocesses(unittest.TestCase):
     """Tests hermetic subprocess calls per step."""
 
     def setUp(self):
-        self.config = upgrade_dev_env.Config(
+        self.config = upgrade_dev_env.UpgradeConfig(
             project_id="proj-123",
             deployment_name="deploy-456",
             region="us-central1",
             environment="dev",
             namespace="xmc",
-            registry="us-docker.pkg.dev/proj-123/xmc",
-            gke_cluster="xmc-deploy-456-dev",
             config_path="deploy/ctk_v2/xmanager-cloud-deployment.yaml",
             image_registry="us-docker.pkg.dev/proj-123/xmc",
             image_tag="latest",
@@ -250,7 +241,7 @@ class TestStepSubprocesses(unittest.TestCase):
             ),
             calls,
         )
-        mock_docker_auth.assert_called_once_with(asdict(self.config))
+        mock_docker_auth.assert_called_once_with(self.config)
 
     @mock.patch("tool_utils.run_command")
     def test_step_images_default(self, mock_run):
@@ -267,16 +258,14 @@ class TestStepSubprocesses(unittest.TestCase):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
-        config = upgrade_dev_env.Config(
+        config = upgrade_dev_env.UpgradeConfig(
             project_id="proj-123",
             deployment_name="deploy-456",
             region="us-central1",
             environment="dev",
             namespace="xmc",
-            registry="us-docker.pkg.dev/proj-123/xmc",
             image_registry="us-docker.pkg.dev/proj-123/xmc",
             image_tag="latest",
-            gke_cluster="xmc-deploy-456-dev",
             config_path="deploy/ctk_v2/xmanager-cloud-deployment.yaml",
             rod_deployment_enabled=True,
         )
@@ -360,16 +349,14 @@ class TestStepSubprocesses(unittest.TestCase):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
-        config = upgrade_dev_env.Config(
+        config = upgrade_dev_env.UpgradeConfig(
             project_id="proj-123",
             deployment_name="deploy-456",
             region="us-central1",
             environment="dev",
             namespace="xmc",
-            registry="us-docker.pkg.dev/proj-123/xmc",
             image_registry="us-docker.pkg.dev/proj-123/xmc",
             image_tag="latest",
-            gke_cluster="xmc-deploy-456-dev",
             config_path="deploy/ctk_v2/xmanager-cloud-deployment.yaml",
             rod_deployment_enabled=True,
         )
