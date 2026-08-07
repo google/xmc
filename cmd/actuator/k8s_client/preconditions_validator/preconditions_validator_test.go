@@ -88,16 +88,6 @@ func TestIsActuationRequestValid(t *testing.T) {
 			wantIsValid:   true,
 		},
 		{
-			name: "equal timestamps",
-			jobSet: createJobSetWithLabels(map[string]string{
-				constants.ExecutionIDLabel: "1",
-				constants.LastEditLabel:    strconv.FormatInt(now.Unix(), 10),
-			}),
-			target:        "experiments/1/workUnits/1/executions/1",
-			operationTime: now,
-			wantIsValid:   true,
-		},
-		{
 			name: "contract violation on existing jobset proceeds with actuation",
 			jobSet: &unstructured.Unstructured{
 				Object: map[string]any{
@@ -118,6 +108,16 @@ func TestIsActuationRequestValid(t *testing.T) {
 			operationTime: now,
 			wantIsValid:   true,
 		},
+		{
+			name: "equal timestamps",
+			jobSet: createJobSetWithLabels(map[string]string{
+				constants.ExecutionIDLabel: "1",
+				constants.LastEditLabel:    strconv.FormatInt(now.Unix(), 10),
+			}),
+			target:        "experiments/1/workUnits/1/executions/1",
+			operationTime: now,
+			wantIsValid:   true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -129,6 +129,133 @@ func TestIsActuationRequestValid(t *testing.T) {
 
 			if gotIsValid != tc.wantIsValid {
 				t.Errorf("IsActuationRequestValid() = %v, want %v", gotIsValid, tc.wantIsValid)
+			}
+		})
+	}
+}
+
+func TestValidateJobSetManifest(t *testing.T) {
+	validator := New()
+
+	testCases := []struct {
+		name    string
+		jobSet  *unstructured.Unstructured
+		wantErr bool
+	}{
+		{
+			name:    "nil jobset",
+			jobSet:  nil,
+			wantErr: false,
+		},
+		{
+			name: "hostNetwork true with top-level exclusive topology",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"annotations": map[string]any{
+							exclusiveTopologyAnnotation: "cloud.google.com/gke-nodepool",
+						},
+					},
+					"spec": map[string]any{
+						"replicatedJobs": []any{
+							map[string]any{
+								"template": map[string]any{
+									"spec": map[string]any{
+										"template": map[string]any{
+											"spec": map[string]any{
+												"hostNetwork": true,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "hostNetwork true with pod-level exclusive topology",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"spec": map[string]any{
+						"replicatedJobs": []any{
+							map[string]any{
+								"template": map[string]any{
+									"spec": map[string]any{
+										"template": map[string]any{
+											"metadata": map[string]any{
+												"annotations": map[string]any{
+													exclusiveTopologyAnnotation: "cloud.google.com/gke-nodepool",
+												},
+											},
+											"spec": map[string]any{
+												"hostNetwork": true,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "hostNetwork true missing exclusive topology",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"spec": map[string]any{
+						"replicatedJobs": []any{
+							map[string]any{
+								"template": map[string]any{
+									"spec": map[string]any{
+										"template": map[string]any{
+											"spec": map[string]any{
+												"hostNetwork": true,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "hostNetwork false missing exclusive topology",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"spec": map[string]any{
+						"replicatedJobs": []any{
+							map[string]any{
+								"template": map[string]any{
+									"spec": map[string]any{
+										"template": map[string]any{
+											"spec": map[string]any{
+												"hostNetwork": false,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validator.ValidateJobSetManifest(tc.jobSet)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("ValidateJobSetManifest() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}

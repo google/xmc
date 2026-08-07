@@ -91,6 +91,11 @@ func (c *Client) createJobSet(ctx context.Context, workUnit *esspb.WorkUnit, tar
 		return fmt.Errorf("failed to convert JobSet to unstructured: %w", err)
 	}
 
+	if err := c.preconditionsValidator.ValidateJobSetManifest(jobSetUnstructured); err != nil {
+		logging.Warn(ctx, "Failed to validate JobSet manifest", "target", target, "error", err)
+		return fmt.Errorf("failed to validate JobSet manifest for %q: %w", target, err)
+	}
+
 	name := jobSet.GetName()
 
 	if err := c.ensureNamespaceExists(ctx, namespace); err != nil {
@@ -346,6 +351,19 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 	primaryName := jobsetutil.PrimaryContainerName(job)
 	nodeSelector := copyNodeSelector(job.GetNodeSelector())
 
+	var hostNetwork bool
+	var dnsPolicy corev1.DNSPolicy
+	if c != nil && c.RuntimeConfig.AllowHostNetwork && job.GetHostNetwork() {
+		hostNetwork = true
+		if job.GetDnsPolicy() != "" {
+			dnsPolicy = corev1.DNSPolicy(job.GetDnsPolicy())
+		} else {
+			dnsPolicy = corev1.DNSClusterFirstWithHostNet
+		}
+	} else if job.GetDnsPolicy() != "" {
+		dnsPolicy = corev1.DNSPolicy(job.GetDnsPolicy())
+	}
+
 	return jobsetv1alpha2.ReplicatedJob{
 		Name:      job.GetName(),
 		GroupName: job.GetGroupName(),
@@ -371,6 +389,8 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 					Spec: corev1.PodSpec{
 						ServiceAccountName:            job.GetServiceAccount(),
 						PriorityClassName:             job.GetPriorityClassName(),
+						HostNetwork:                   hostNetwork,
+						DNSPolicy:                     dnsPolicy,
 						InitContainers:                c.buildInitContainersForJob(job),
 						Containers:                    c.buildContainersForJob(job),
 						RestartPolicy:                 corev1.RestartPolicyNever,

@@ -381,6 +381,13 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 				return fmt.Errorf("work_unit.executable.jobset.jobs.priority_class_name %q must be a valid DNS subdomain (RFC 1123): %w", pcn, status.ErrInvalidArgument)
 			}
 		}
+		if dp := job.GetDnsPolicy(); dp != "" {
+			switch dp {
+			case "ClusterFirst", "ClusterFirstWithHostNet", "Default", "None":
+			default:
+				return fmt.Errorf("work_unit.executable.jobset.jobs.dns_policy %q must be one of ClusterFirst, ClusterFirstWithHostNet, Default, or None: %w", dp, status.ErrInvalidArgument)
+			}
+		}
 	}
 	if err := validateJobSetCoordinator(wu.GetExecutable().GetJobset().GetCoordinator(), jobMap); err != nil {
 		return err

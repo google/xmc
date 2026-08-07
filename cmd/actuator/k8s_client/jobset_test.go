@@ -3175,3 +3175,82 @@ func TestValidateNonRestartingJobSetContract(t *testing.T) {
 		}
 	})
 }
+
+func TestHostNetworkAndDNSPolicy(t *testing.T) {
+	tests := []struct {
+		name             string
+		allowHostNetwork bool
+		specHostNetwork  *bool
+		specDNSPolicy    *string
+		wantHostNetwork  bool
+		wantDNSPolicy    corev1.DNSPolicy
+	}{
+		{
+			name:             "Flag enabled, host_network true, dns_policy unset -> defaults to ClusterFirstWithHostNet",
+			allowHostNetwork: true,
+			specHostNetwork:  proto.Bool(true),
+			specDNSPolicy:    nil,
+			wantHostNetwork:  true,
+			wantDNSPolicy:    corev1.DNSClusterFirstWithHostNet,
+		},
+		{
+			name:             "Flag enabled, host_network true, dns_policy explicit ClusterFirst",
+			allowHostNetwork: true,
+			specHostNetwork:  proto.Bool(true),
+			specDNSPolicy:    proto.String("ClusterFirst"),
+			wantHostNetwork:  true,
+			wantDNSPolicy:    corev1.DNSClusterFirst,
+		},
+		{
+			name:             "Flag disabled, host_network true -> hostNetwork is false",
+			allowHostNetwork: false,
+			specHostNetwork:  proto.Bool(true),
+			specDNSPolicy:    nil,
+			wantHostNetwork:  false,
+			wantDNSPolicy:    "",
+		},
+		{
+			name:             "Flag disabled, host_network true, dns_policy explicit -> hostNetwork is false, dnsPolicy set",
+			allowHostNetwork: false,
+			specHostNetwork:  proto.Bool(true),
+			specDNSPolicy:    proto.String("ClusterFirst"),
+			wantHostNetwork:  false,
+			wantDNSPolicy:    corev1.DNSClusterFirst,
+		},
+		{
+			name:             "Flag enabled, host_network false -> hostNetwork is false",
+			allowHostNetwork: true,
+			specHostNetwork:  proto.Bool(false),
+			specDNSPolicy:    nil,
+			wantHostNetwork:  false,
+			wantDNSPolicy:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+			client.RuntimeConfig.AllowHostNetwork = tt.allowHostNetwork
+
+			workUnit := proto.Clone(baseCPUWorkUnit).(*esspb.WorkUnit)
+			job := workUnit.GetExecutable().GetJobset().GetJobs()[0]
+			job.HostNetwork = tt.specHostNetwork
+			if tt.specDNSPolicy != nil {
+				job.DnsPolicy = tt.specDNSPolicy
+			}
+
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+			if err != nil {
+				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+			}
+
+			podSpec := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
+			if podSpec.HostNetwork != tt.wantHostNetwork {
+				t.Errorf("podSpec.HostNetwork = %v, want %v", podSpec.HostNetwork, tt.wantHostNetwork)
+			}
+			if podSpec.DNSPolicy != tt.wantDNSPolicy {
+				t.Errorf("podSpec.DNSPolicy = %q, want %q", podSpec.DNSPolicy, tt.wantDNSPolicy)
+			}
+		})
+	}
+}

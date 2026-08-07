@@ -36,6 +36,8 @@ type Validator interface {
 	// IsExecutionIDAligned checks if the execution ID of the jobset is
 	// less than or equal to the execution ID of the target.
 	IsExecutionIDAligned(ctx context.Context, target string, jobSetUnstructured *unstructured.Unstructured) (bool, error)
+	// ValidateJobSetManifest performs creation-time structural validation on the JobSet spec.
+	ValidateJobSetManifest(jobSetUnstructured *unstructured.Unstructured) error
 }
 
 type validatorImpl struct{}
@@ -81,6 +83,11 @@ func (v *validatorImpl) IsActuationRequestValid(ctx context.Context, target stri
 	return true, nil
 }
 
+// ValidateJobSetManifest performs creation-time structural validation on the JobSet spec.
+func (v *validatorImpl) ValidateJobSetManifest(jobSetUnstructured *unstructured.Unstructured) error {
+	return validateHostNetworkExclusiveTopology(jobSetUnstructured)
+}
+
 func isNonRestartingJobSetContractValid(jobSetUnstructured *unstructured.Unstructured) (bool, error) {
 	maxRestarts, found, err := unstructured.NestedInt64(jobSetUnstructured.Object, "spec", "failurePolicy", "maxRestarts")
 	if err != nil {
@@ -109,8 +116,81 @@ func isNonRestartingJobSetContractValid(jobSetUnstructured *unstructured.Unstruc
 			}
 		}
 	}
-
 	return true, nil
+}
+
+const exclusiveTopologyAnnotation = "alpha.jobset.sigs.k8s.io/exclusive-topology"
+
+func validateHostNetworkExclusiveTopology(jobSetUnstructured *unstructured.Unstructured) error {
+	if jobSetUnstructured == nil {
+		return nil
+	}
+
+	spec, ok := jobSetUnstructured.Object["spec"].(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	replicatedJobs, ok := spec["replicatedJobs"].([]any)
+	if !ok {
+		return nil
+	}
+
+	hasJobSetExclusiveTopology := jobSetUnstructured.GetAnnotations()[exclusiveTopologyAnnotation] != ""
+
+	for _, rjAny := range replicatedJobs {
+		rj, ok := rjAny.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		template, ok := rj["template"].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		jobSpec, ok := template["spec"].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		podTemplate, ok := jobSpec["template"].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		podSpec, ok := podTemplate["spec"].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		hostNetwork, _ := podSpec["hostNetwork"].(bool)
+		if !hostNetwork {
+			continue
+		}
+
+		hasRJExclusiveTopology := checkNestedAnnotation(template, exclusiveTopologyAnnotation) ||
+			checkNestedAnnotation(podTemplate, exclusiveTopologyAnnotation)
+
+		if !hasJobSetExclusiveTopology && !hasRJExclusiveTopology {
+			return fmt.Errorf("pods with hostNetwork=true must specify exclusive node placement annotation (%q)", exclusiveTopologyAnnotation)
+		}
+	}
+
+	return nil
+}
+
+func checkNestedAnnotation(obj map[string]any, annotationKey string) bool {
+	meta, ok := obj["metadata"].(map[string]any)
+	if !ok {
+		return false
+	}
+	annots, ok := meta["annotations"].(map[string]any)
+	if !ok {
+		return false
+	}
+	val, ok := annots[annotationKey].(string)
+	return ok && val != ""
 }
 
 // IsExecutionIDAligned checks if the execution ID of the jobset is less than or equal to the execution ID of the target.
