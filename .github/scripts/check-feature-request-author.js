@@ -49,10 +49,18 @@ async function run({ github, context, core }) {
 
       const authorLogins = new Set();
       for (const commit of commits) {
+        if (isSystemExemptCommit(commit)) {
+          core.info(`Commit ${commit.sha?.substring(0, 7)} is an exempt system/bot commit. Skipping restriction check.`);
+          continue;
+        }
+
         const login = commit.author?.login;
         if (!login) {
-          core.info(`Could not resolve GitHub username for commit ${commit.sha?.substring(0, 7)} in merge group. Skipping.`);
-          continue;
+          core.setFailed(
+            `Could not resolve GitHub username for commit ${commit.sha?.substring(0, 7)} in merge group. ` +
+            `All commits must be made by a verified GitHub account to prevent security bypasses.`
+          );
+          return;
         }
         authorLogins.add(login);
       }
@@ -107,6 +115,37 @@ async function run({ github, context, core }) {
 }
 
 /**
+ * Pure function: Determines whether a commit is an auto-generated system or bot commit.
+ * Exempts GitHub web-flow, Merge Queue, and bot accounts from user account enforcement.
+ * @param {Object} commit - Commit object from GitHub API.
+ * @returns {boolean} True if system/bot exempt, false otherwise.
+ */
+function isSystemExemptCommit(commit) {
+  if (!commit) return false;
+  const login = (commit.author?.login || '').toLowerCase();
+  if (login.endsWith('[bot]') || login === 'web-flow' || login === 'actions-user') {
+    return true;
+  }
+
+  const authorEmail = (commit.commit?.author?.email || '').toLowerCase();
+  const committerEmail = (commit.commit?.committer?.email || '').toLowerCase();
+  const authorName = (commit.commit?.author?.name || '').toLowerCase();
+  const committerName = (commit.commit?.committer?.name || '').toLowerCase();
+
+  const isGithubEmail = authorEmail.endsWith('@github.com') ||
+                        authorEmail.endsWith('.noreply.github.com') ||
+                        committerEmail.endsWith('@github.com') ||
+                        committerEmail.endsWith('.noreply.github.com');
+
+  const isGithubName = authorName === 'github' ||
+                       committerName === 'github' ||
+                       authorName === 'github merge queue' ||
+                       committerName === 'github merge queue';
+
+  return isGithubEmail || isGithubName;
+}
+
+/**
  * Pure function: Parses FEATURE_REQUEST_AUTHORS string content into lowercase usernames.
  * Strips comments and trims whitespace.
  * @param {string} content - Raw string content of FEATURE_REQUEST_AUTHORS file.
@@ -122,4 +161,5 @@ function parseRestrictedAuthors(content) {
 module.exports = {
   run,
   parseRestrictedAuthors,
+  isSystemExemptCommit,
 };

@@ -14,7 +14,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseRestrictedAuthors, run } = require('./check-feature-request-author');
+const { parseRestrictedAuthors, isSystemExemptCommit, run } = require('./check-feature-request-author');
 
 test('parseRestrictedAuthors parses list correctly and ignores comments/whitespace', () => {
   const sampleContent = `
@@ -36,6 +36,15 @@ test('parseRestrictedAuthors returns empty array for empty or comment-only conte
 `;
   const result = parseRestrictedAuthors(sampleContent);
   assert.deepStrictEqual(result, []);
+});
+
+test('isSystemExemptCommit correctly identifies system/bot commits', () => {
+  assert.strictEqual(isSystemExemptCommit({ author: { login: 'web-flow' } }), true);
+  assert.strictEqual(isSystemExemptCommit({ author: { login: 'dependabot[bot]' } }), true);
+  assert.strictEqual(isSystemExemptCommit({ commit: { author: { email: 'noreply@github.com' } } }), true);
+  assert.strictEqual(isSystemExemptCommit({ commit: { author: { name: 'GitHub Merge Queue' } } }), true);
+  assert.strictEqual(isSystemExemptCommit({ author: { login: 'Alice' } }), false);
+  assert.strictEqual(isSystemExemptCommit(null), false);
 });
 
 test('run fails workflow if not executed in pull_request or merge_group event context', async () => {
@@ -99,7 +108,7 @@ test('run handles merge_group event context successfully', async () => {
   assert.ok(infoLogs.some(log => log.includes('Merge block check passed')));
 });
 
-test('run skips unresolved GitHub usernames in merge_group context and passes', async () => {
+test('run exempts system/bot commits in merge_group context', async () => {
   let failedMessage = null;
   let infoLogs = [];
   const mockCore = {
@@ -113,7 +122,8 @@ test('run skips unresolved GitHub usernames in merge_group context and passes', 
         compareCommits: async () => ({
           data: {
             commits: [
-              { sha: 'abc123456789', author: null },
+              { sha: 'abc123456789', author: { login: 'web-flow' }, commit: { author: { email: 'noreply@github.com' } } },
+              { sha: 'def987654321', author: { login: 'Alice' } },
             ],
           },
         }),
@@ -140,8 +150,45 @@ test('run skips unresolved GitHub usernames in merge_group context and passes', 
 
   await run({ github: mockGithub, context: mockContext, core: mockCore });
   assert.strictEqual(failedMessage, null);
-  assert.ok(infoLogs.some(log => log.includes('Could not resolve GitHub username for commit abc1234')));
+  assert.ok(infoLogs.some(log => log.includes('is an exempt system/bot commit')));
   assert.ok(infoLogs.some(log => log.includes('Merge block check passed')));
+});
+
+test('run fails closed if unlinked non-bot user commit is present in merge_group context', async () => {
+  let failedMessage = null;
+  const mockCore = {
+    info: () => {},
+    setFailed: (msg) => { failedMessage = msg; },
+  };
+
+  const mockGithub = {
+    rest: {
+      repos: {
+        compareCommits: async () => ({
+          data: {
+            commits: [
+              { sha: 'abc123456789', author: null, commit: { author: { email: 'unlinked@example.com', name: 'User' } } },
+            ],
+          },
+        }),
+      },
+    },
+  };
+
+  const mockContext = {
+    repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'merge_group',
+    payload: {
+      merge_group: {
+        head_sha: 'abc123456789',
+        base_sha: 'base12345678',
+        base_ref: 'refs/heads/main',
+      },
+    },
+  };
+
+  await run({ github: mockGithub, context: mockContext, core: mockCore });
+  assert.ok(failedMessage.includes('Could not resolve GitHub username for commit abc1234 in merge group. All commits must be made by a verified GitHub account'));
 });
 
 test('run fails merge_group if any commit in batch is authored by restricted author', async () => {
