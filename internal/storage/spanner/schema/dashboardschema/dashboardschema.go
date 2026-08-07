@@ -39,6 +39,11 @@ const (
 	PlotSpecTableField         = querytools.TableField("plot_spec")
 	CreatedTableField          = querytools.TableField("created")
 	UpdatedTableField          = querytools.TableField("updated")
+	PlotLayoutTableField       = querytools.TableField("plot_layout")
+	WorkUnitIDTableField       = querytools.TableField("work_unit_id")
+	ArtifactIDTableField       = querytools.TableField("artifact_id")
+	ArtifactChartIDTableField  = querytools.TableField("artifact_chart_id")
+	BitReversedXidTableField   = querytools.TableField("bit_reversed_xid")
 )
 
 var (
@@ -141,6 +146,13 @@ var (
 				Selectable:   true,
 				Indexed:      false,
 			},
+			PlotLayoutTableField: {
+				Name:         PlotLayoutTableField,
+				QueryLiteral: safesql.New("c.PlotLayout"),
+				Type:         filtervisitor.Bytes,
+				Selectable:   true,
+				Indexed:      false,
+			},
 			OwnerTableField: {
 				Name:         OwnerTableField,
 				QueryLiteral: safesql.New("c.Owner"),
@@ -192,7 +204,7 @@ var (
 				QueryLiteral: safesql.New("dc.ChartId"),
 				Type:         filtervisitor.String,
 				Selectable:   true,
-				Indexed:      false,
+				Indexed:      true,
 			},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
@@ -231,6 +243,52 @@ var (
 		},
 	}
 
+	artifactChartsTableView = querytools.TableView{
+		Name:       querytools.TableName(ArtifactChartsTableName),
+		NameClause: safesql.New("ArtifactCharts ac"),
+		Cost:       10,
+		Fields: map[querytools.TableField]querytools.Member{
+			BitReversedXidTableField: {
+				Name:         BitReversedXidTableField,
+				QueryLiteral: safesql.New("ac.BitReversedXid"),
+				Type:         filtervisitor.Integer,
+				Selectable:   true,
+				Indexed:      true,
+			},
+			WorkUnitIDTableField: {
+				Name:         WorkUnitIDTableField,
+				QueryLiteral: safesql.New("ac.WorkUnitId"),
+				Type:         filtervisitor.Integer,
+				Selectable:   true,
+				Indexed:      true,
+			},
+			ArtifactIDTableField: {
+				Name:         ArtifactIDTableField,
+				QueryLiteral: safesql.New("ac.ArtifactId"),
+				Type:         filtervisitor.Integer,
+				Selectable:   true,
+				Indexed:      true,
+			},
+			ArtifactChartIDTableField: {
+				Name:         ArtifactChartIDTableField,
+				QueryLiteral: safesql.New("ac.ArtifactChartId"),
+				Type:         filtervisitor.String,
+				Selectable:   true,
+				Indexed:      true,
+			},
+			ChartIDTableField: {
+				Name:         ChartIDTableField,
+				QueryLiteral: safesql.New("ac.ChartId"),
+				Type:         filtervisitor.String,
+				Selectable:   true,
+				Indexed:      true,
+			},
+		},
+		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
+			{TableField: BitReversedXidTableField, SortOrder: querytools.Asc},
+		},
+	}
+
 	// DashboardTables is the list of TableViews for Dashboard queries.
 	DashboardTables = []querytools.TableView{dashboardsTableView}
 
@@ -242,4 +300,27 @@ var (
 
 	// ChartPlotsTables is the list of TableViews for ChartPlots queries.
 	ChartPlotsTables = []querytools.TableView{chartPlotsTableView}
+
+	// ArtifactChartsTables is the list of TableViews for ArtifactCharts queries.
+	ArtifactChartsTables = []querytools.TableView{artifactChartsTableView}
+
+	// ChartsSelectFields is the list of fields selected for Chart list queries.
+	ChartsSelectFields = []querytools.TableField{
+		ChartIDTableField,
+		TitleTableField,
+		XidTableField,
+		PlotLayoutTableField,
+		OwnerTableField,
+		CreatedTableField,
+		UpdatedTableField,
+	}
+
+	// ChartsOrderByFields is the list of fields valid for ordering Chart queries.
+	ChartsOrderByFields = []querytools.UserOrderedIndex{
+		{TableField: CreatedTableField},
+		{TableField: UpdatedTableField},
+		{TableField: ChartIDTableField},
+		{TableField: TitleTableField},
+		{TableField: XidTableField},
+	}
 )

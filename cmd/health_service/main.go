@@ -66,7 +66,11 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer(grpc.Creds(transportCreds))
-	spb.RegisterHealthServiceServer(grpcServer, newServer(cfg))
+	srv, err := newServer(cfg)
+	if err != nil {
+		logging.Fatal(ctx, "Failed to create server", "error", err)
+	}
+	spb.RegisterHealthServiceServer(grpcServer, srv)
 	reflection.Register(grpcServer)
 
 	go func() {
@@ -146,6 +150,10 @@ func main() {
 		logging.Info(ctx, "Error shutting down HTTP server", "error", err)
 	}
 	grpcServer.GracefulStop()
+
+	if err := srv.Close(); err != nil {
+		logging.Info(ctx, "Error closing server resources", "error", err)
+	}
 
 	logging.Info(ctx, "Health service stopped")
 }

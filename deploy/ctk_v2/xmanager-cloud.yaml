@@ -35,26 +35,29 @@ vars:
   authorized_cidr: 0.0.0.0/0
   deletion_protection: false
   
-  # Image Settings
-  xid_image:          # Required. Container image for xid service
-  actuator_image:     # Required. Container image for actuator
-  ess_image:          # Required. Container image for experiment state server
-  ui_image:           # Required. Container image for UI
-  reconciler_image:   # Required. Container image for reconciler
-  log_monitor_image:  # Required. Container image for log monitor
-  health_service_image: # Required. Container image for health service
-  dashboard_service_image: # Container image for dashboard service
-  rod_image:          # Container image for ROD service
-  ingestion_gateway_image: # Container image for ingestion gateway service
+  # Image Settings (Defaults to dynamic paths, overrideable per-service)
+  image_registry:
+  image_tag: latest
+  xid_image: "$(vars.image_registry)/xid-service-$(vars.environment):$(vars.image_tag)"
+  actuator_image: "$(vars.image_registry)/actuator-$(vars.environment):$(vars.image_tag)"
+  ess_image: "$(vars.image_registry)/experiment-state-server-$(vars.environment):$(vars.image_tag)"
+  reconciler_image: "$(vars.image_registry)/reconciler-$(vars.environment):$(vars.image_tag)"
+  ui_image: "$(vars.image_registry)/ui-$(vars.environment):$(vars.image_tag)"
+  health_service_image: "$(vars.image_registry)/health-service-$(vars.environment):$(vars.image_tag)"
+  dashboard_service_image: "$(vars.image_registry)/dashboard-service-$(vars.environment):$(vars.image_tag)"
+  rod_image: "$(vars.image_registry)/rod-data-provider-$(vars.environment):$(vars.image_tag)"
+  ingestion_gateway_image: "$(vars.image_registry)/ingestion-gateway-$(vars.environment):$(vars.image_tag)"
+  log_monitor_image: "$(vars.image_registry)/log-monitor-$(vars.environment):$(vars.image_tag)"
   
   task_signature_ttl_seconds: 86400
   use_redis_queue: true
   deploy_redis: true
   redis_region:
   status_message_history_enabled: true
+  enable_metrics: false
   health_service_deployment_enabled: false
   dashboard_service_deployment_enabled: false
-  ingestion_gateway_deployment_enabled: false
+  rod_deployment_enabled: false
 
 deployment_groups:
 - group: apis
@@ -242,6 +245,12 @@ deployment_groups:
       service_account_email: $(health_service_gcp_sa.service_account_email)
       k8s_service_account_name: health-service-account
 
+  - id: xmc_wi_binding_rod
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(workload_service_account.service_account_email)
+      k8s_service_account_name: rod-data-provider-service-account
+
   - id: compute_cluster
     source: modules/scheduler/gke-cluster
     use: [network, workload_service_account]
@@ -409,8 +418,14 @@ deployment_groups:
       - name: dashboardServiceDeployment.enabled
         value: $(vars.dashboard_service_deployment_enabled)
         type: auto
+      - name: metrics.enabled
+        value: $(vars.enable_metrics)
+        type: auto
       - name: ingestionGatewayDeployment.enabled
-        value: $(vars.ingestion_gateway_deployment_enabled)
+        value: $(vars.enable_metrics)
+        type: auto
+      - name: rodDeployment.enabled
+        value: $(vars.rod_deployment_enabled)
         type: auto
 
   - id: xmc_sa_annotations

@@ -44,6 +44,22 @@ func TestGetOptions(t *testing.T) {
 		})
 	}
 
+	baseOptions := &clickhouse.Options{
+		Addr: []string{"127.0.0.1:9000"},
+		Auth: clickhouse.Auth{
+			Database: "default",
+			Username: "default",
+			Password: "",
+		},
+		DialTimeout: 5 * time.Second,
+	}
+
+	modifyOptions := func(base *clickhouse.Options, mutator func(opt *clickhouse.Options)) *clickhouse.Options {
+		opt := *base
+		mutator(&opt)
+		return &opt
+	}
+
 	tests := []struct {
 		name    string
 		setup   func(t *testing.T)
@@ -58,15 +74,7 @@ func TestGetOptions(t *testing.T) {
 					setEnv(t, env, "")
 				}
 			},
-			want: &clickhouse.Options{
-				Addr: []string{"127.0.0.1:9000"},
-				Auth: clickhouse.Auth{
-					Database: "default",
-					Username: "default",
-					Password: "",
-				},
-				DialTimeout: 5 * time.Second,
-			},
+			want: baseOptions,
 		},
 		{
 			name: "custom env vars",
@@ -77,15 +85,14 @@ func TestGetOptions(t *testing.T) {
 				setEnv(t, "CLICKHOUSE_USER", "myuser")
 				setEnv(t, "CLICKHOUSE_PASSWORD", "mypassword")
 			},
-			want: &clickhouse.Options{
-				Addr: []string{"clickhouse.example.com:9001"},
-				Auth: clickhouse.Auth{
+			want: modifyOptions(baseOptions, func(opt *clickhouse.Options) {
+				opt.Addr = []string{"clickhouse.example.com:9001"}
+				opt.Auth = clickhouse.Auth{
 					Database: "mydb",
 					Username: "myuser",
 					Password: "mypassword",
-				},
-				DialTimeout: 5 * time.Second,
-			},
+				}
+			}),
 		},
 		{
 			name: "DSN preferred",
@@ -94,14 +101,14 @@ func TestGetOptions(t *testing.T) {
 				// These should be ignored
 				setEnv(t, "CLICKHOUSE_HOST", "ignored")
 			},
-			want: &clickhouse.Options{
-				Addr: []string{"clickhouse.example.com:9001"},
-				Auth: clickhouse.Auth{
+			want: modifyOptions(baseOptions, func(opt *clickhouse.Options) {
+				opt.Addr = []string{"clickhouse.example.com:9001"}
+				opt.Auth = clickhouse.Auth{
 					Database: "mydb",
 					Username: "myuser",
 					Password: "mypassword",
-				},
-			},
+				}
+			}),
 		},
 		{
 			name: "invalid port",

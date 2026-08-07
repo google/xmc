@@ -18,10 +18,12 @@ import argparse
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import traceback
 from pathlib import Path
+from typing import Any
 
 
 def _should_bypass_venv() -> bool:
@@ -131,3 +133,263 @@ def run_tool(parser: argparse.ArgumentParser, main_fn):
         }
         print(json.dumps(output, indent=2), file=sys.stderr)
         sys.exit(2)
+
+
+# Config validation schemas
+CONFIG_VALIDATION_SCHEMAS = {
+    "deployment_name": r"^[a-zA-Z0-9_-]+$",
+    "project_id": r"^[a-z0-9:.-]+$",
+    "environment": r"^[a-zA-Z0-9_-]+$",
+    "region": r"^[a-z0-9-]+$",
+    "domain_name": r"^[a-zA-Z0-9.-]+$",
+    "image_registry": r"^[a-zA-Z0-9./:-]+$",
+    "image_tag": r"^[a-zA-Z0-9_.-]+$",
+}
+
+# Environment variable overrides mapping
+ENV_VAR_MAPPING = {
+    "PROJECT_ID": "project_id",
+    "XMC_DEPLOYMENT_NAME": "deployment_name",
+    "GCP_REGION": "region",
+    "XMANAGER_ENV": "environment",
+    "K8S_NAMESPACE": "namespace",
+    "XMC_ACR_TARGET": "image_registry",  # Alternative, processed first
+    "IMAGE_REGISTRY": "image_registry",  # Primary, processed second (wins)
+    "BUILD_TAG": "image_tag",
+    "XMC_BASE_DOMAIN": "domain_name",
+}
+
+
+def _parse_yaml_vars_line_fallback(content: str) -> dict[str, Any]:
+    """Parses key-value scalar entries under 'vars:' section in YAML content."""
+    vars_dict: dict[str, Any] = {}
+    in_vars_section = False
+    for line in content.splitlines():
+        trimmed = line.strip()
+        if not trimmed or trimmed.startswith("#"):
+            continue
+        if line.startswith("vars:"):
+            in_vars_section = True
+            continue
+        if in_vars_section:
+            if line and not line.startswith(" ") and not line.startswith("\t"):
+                break
+            match = re.match(r"^\s*([a-zA-Z0-9_]+):\s*(.*)$", line)
+            if match:
+                key, val = match.group(1), match.group(2).strip()
+                if (val.startswith('"') and val.count('"') >= 2) or (
+                    val.startswith("'") and val.count("'") >= 2
+                ):
+                    quote_char = val[0]
+                    end_quote_idx = val.find(quote_char, 1)
+                    if end_quote_idx != -1:
+                        val = val[1:end_quote_idx]
+                else:
+                    val = val.split(" #")[0].strip()
+                vars_dict[key] = val
+    return vars_dict
+
+
+def parse_yaml_vars(config_path: Path) -> dict[str, Any]:
+    """Reads YAML vars section using PyYAML or fallback line parsing."""
+    if not config_path.is_file():
+        raise FileNotFoundError(f"Configuration file '{config_path}' not found.")
+
+    content = config_path.read_text(encoding="utf-8")
+    try:
+        import yaml  # pylint: disable=g-import-not-at-top
+
+        data = yaml.safe_load(content)
+        if isinstance(data, dict):
+            vars_data = data.get("vars") or {}
+            return {k: v for k, v in vars_data.items() if isinstance(v, (str, int, float, bool))}
+    except Exception:  # pylint: disable=broad-except
+        pass
+
+    return _parse_yaml_vars_line_fallback(content)
+
+
+def load_and_validate_config(
+    config_file: str,
+    defaults: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Loads YAML config file, merges with env overrides, and validates.
+
+    Args:
+        config_file: Path to the YAML configuration file.
+        defaults: Default values for keys if they are missing.
+
+    Returns:
+        Dictionary of validated configuration.
+
+    Raises:
+        ValueError: If a required key is missing or invalid.
+        FileNotFoundError: If the config file does not exist.
+    """
+    path = Path(config_file)
+    yaml_vars = parse_yaml_vars(path)
+
+    config: dict[str, Any] = {}
+    if defaults:
+        config.update(defaults)
+
+    config.update(yaml_vars)
+
+    for env_var, config_key in ENV_VAR_MAPPING.items():
+        val = os.getenv(env_var)
+        if val:
+            config[config_key] = val
+
+    for key in CONFIG_VALIDATION_SCHEMAS:
+        val = config.get(key)
+        if val is None:
+            raise ValueError(f"Required configuration field '{key}' is missing.")
+
+        pattern = CONFIG_VALIDATION_SCHEMAS.get(key)
+        if pattern and not re.match(pattern, str(val)):
+            raise ValueError(f"Field '{key}' value '{val}' is invalid. Must match regex: {pattern}")
+
+    return config
+
+
+# Color constants for terminal logging
+BLUE = "\033[0;34m"
+GREEN = "\033[0;32m"
+RED = "\033[0;31m"
+NC = "\033[0m"  # No Color
+
+
+def log_info(msg: str) -> None:
+    """Logs informational messages in blue text."""
+    print(f"\n{BLUE}[INFO] {msg}{NC}")
+
+
+def log_success(msg: str) -> None:
+    """Logs success messages in green text."""
+    print(f"\n{GREEN}[SUCCESS] {msg}{NC}")
+
+
+def log_error(msg: str) -> None:
+    """Logs error messages in red text to stderr."""
+    print(f"\n{RED}[ERROR] {msg}{NC}", file=sys.stderr)
+
+
+def run_command(
+    cmd: list[str],
+    env: dict[str, str] | None = None,
+    check: bool = True,
+    capture_output: bool = False,
+    log_on_error: bool = True,
+    log_cmd: bool = True,
+) -> subprocess.CompletedProcess:
+    """Helper to run shell commands with unified logging and error handling.
+
+    Args:
+        cmd: The command to run as a list of strings.
+        env: Optional environment variables to merge with current env.
+        check: Whether to raise CalledProcessError on non-zero exit code.
+        capture_output: Whether to capture stdout/stderr.
+        log_on_error: Whether to log errors on failure.
+        log_cmd: Whether to log the command being executed.
+
+    Returns:
+        A subprocess.CompletedProcess object.
+
+    Raises:
+        subprocess.CalledProcessError: If the command fails and check=True.
+    """
+    if log_cmd:
+        log_info(f"Running: {' '.join(cmd)}")
+
+    proc_env = os.environ.copy()
+    if env:
+        proc_env.update({str(k): str(v) for k, v in env.items()})
+
+    try:
+        return subprocess.run(
+            cmd,
+            env=proc_env,
+            check=check,
+            text=True,
+            capture_output=capture_output,
+        )
+    except subprocess.CalledProcessError:
+        if log_on_error:
+            log_error(f"Command failed: {' '.join(cmd)}")
+        raise
+
+
+def configure_docker_auth(config: dict[str, Any]) -> None:
+    """Configures Docker authentication for Google Artifact Registry if needed.
+
+    Args:
+        config: Configuration dictionary containing 'image_registry'.
+    """
+    image_registry = config.get("image_registry")
+    if not image_registry:
+        raise ValueError("Required configuration field 'image_registry' is missing or empty.")
+
+    log_info("Configuring Docker registry authorization...")
+    registry_host = image_registry.split("/")[0]
+
+    if registry_host.endswith("gcr.io") or registry_host.endswith(".pkg.dev"):
+        run_command(["gcloud", "auth", "configure-docker", registry_host, "--quiet"])
+    else:
+        log_info(f"Non-GCP registry detected ({registry_host}). Skipping gcloud credential helper.")
+
+
+def build_and_push_images(config: dict[str, Any]) -> None:
+    """Rebuilds and pushes XMC microservice OCI images to Artifact Registry.
+
+    Args:
+        config: Configuration dictionary containing environment variables.
+    """
+    image_registry = config.get("image_registry")
+    environment = config.get("environment")
+    image_tag = config.get("image_tag")
+    rod_deployment_enabled = config.get("rod_deployment_enabled")
+
+    if not image_registry:
+        raise ValueError("Required configuration field 'image_registry' is missing or empty.")
+    if not environment:
+        raise ValueError("Required configuration field 'environment' is missing or empty.")
+    if not image_tag:
+        raise ValueError("Required configuration field 'image_tag' is missing or empty.")
+
+    log_info(f"Rebuilding and pushing latest XMC microservice OCI images to '{image_registry}'...")
+    env = {
+        "XMC_ENV": environment,
+        "XMC_ACR_TARGET": image_registry,
+        "BUILD_TAG": image_tag,
+    }
+
+    targets = [
+        ("actuator", "//cmd/actuator:actuator_image_push"),
+        (
+            "experiment_state_server",
+            "//cmd/experiment_state_server:experiment_state_server_image_push",
+        ),
+        ("log_monitor", "//cmd/log_monitor:log_monitor_image_push"),
+        ("reconciler", "//cmd/reconciler:reconciler_image_push"),
+        ("ui", "//cmd/ui:ui_image_push"),
+        ("xid_service", "//cmd/xid_service:xid_service_image_push"),
+        ("health_service", "//cmd/health_service:health_service_image_push"),
+        ("dashboard_service", "//cmd/dashboard_service:dashboard_service_image_push"),
+        ("ingestion_gateway", "//cmd/ingestion_gateway:ingestion_gateway_image_push"),
+    ]
+
+    rod_enabled = str(rod_deployment_enabled).lower() == "true"
+
+    if rod_enabled:
+        targets.append(
+            (
+                "rod_data_provider",
+                "//cmd/rod_data_provider:rod_data_provider_image_push",
+            )
+        )
+
+    for name, target in targets:
+        log_info(f"Pushing {name} image...")
+        run_command(["bazel", "run", target], env=env)
+
+    log_success("All XMC service container images compiled and pushed from current branch state.")

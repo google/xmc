@@ -20,6 +20,9 @@ import (
 	"testing"
 
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
+
+	"xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
 )
 
 type mockTopologyQuerier struct {
@@ -164,7 +167,7 @@ func TestValidateTopicTopology(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateTopicTopology(context.Background(), tt.querier, tt.topicName, tt.minPartitions, tt.minReplicas)
+			err := ingestiongateway.ValidateTopicTopology(context.Background(), tt.querier, tt.topicName, tt.minPartitions, tt.minReplicas)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateTopicTopology() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -172,8 +175,18 @@ func TestValidateTopicTopology(t *testing.T) {
 	}
 }
 
+type stubProducer struct{}
+
+func (s *stubProducer) Produce(ctx context.Context, record *kgo.Record, promise func(*kgo.Record, error)) {
+	if promise != nil {
+		promise(record, nil)
+	}
+}
+
+func (s *stubProducer) Close() {}
+
 func TestStartHTTPServerWithProducer(t *testing.T) {
-	mp := NewMockProducer()
+	mp := &stubProducer{}
 	srv := startHTTPServer(context.Background(), "0", "xmc-metrics", nil, mp)
 	defer srv.Close()
 

@@ -87,6 +87,9 @@ python3 ./tools/upgrade_dev_env.py --only migrate
 ### Step 3: Execute Upgrade
 If no migrations were pending, or if the user approved running migrations:
 
+> [!NOTE]
+> **Feature Flag Awareness**: During the `images` step (building/pushing microservice OCI images) and `restart` step (rolling restarts of Kubernetes deployments), `upgrade_dev_env.py` reads feature flags from the deployment configuration YAML (e.g. `rod_deployment_enabled: false`). If a feature is disabled (e.g., `rod_deployment_enabled: false`), `rod_data_provider` image pushing and `rod-data-provider` deployment restarts are automatically skipped.
+
 *   **Case A: No pending migrations**:
     Run the upgrade starting from the `images` step (skipping migration step):
     ```bash
@@ -97,6 +100,9 @@ If no migrations were pending, or if the user approved running migrations:
     ```bash
     python3 ./tools/upgrade_dev_env.py --start-from migrate --run-migrations
     ```
+
+> [!NOTE]
+> During the `app` step, `upgrade_dev_env.py` automatically re-compiles the Cluster Toolkit blueprint (`gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d ... --force`) and exports outputs across prerequisite groups (`primary`, `compute`) so that all updated feature flags, environment variables, and Helm values are propagated to `ctk-out/` before applying Kubernetes workload updates.
 
 ### Resuming or Running Specific Steps (Advanced / Troubleshooting)
 If the upgrade fails at a specific phase, or if you need to rerun a specific part of the workflow:
