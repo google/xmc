@@ -67,10 +67,11 @@ func run(ctx context.Context, cfg *Config) error {
 		logging.Warn(ctx, "Kueue manager setup failed or running out-of-cluster", "error", err)
 	}
 
-	lis, grpcServer, err := buildGRPCServer(cfg, kueueCache)
+	grpcComp, err := buildGRPCServer(cfg, kueueCache)
 	if err != nil {
 		return fmt.Errorf("failed to build gRPC server: %w", err)
 	}
+	lis, grpcServer := grpcComp.Listener, grpcComp.Server
 
 	httpServer, err := buildHTTPServer(ctx, cfg, kueueCache, mgr)
 	if err != nil {
@@ -114,15 +115,24 @@ func run(ctx context.Context, cfg *Config) error {
 	return g.Wait()
 }
 
-func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache) (net.Listener, *grpc.Server, error) {
+// GRPCServerComponents contains the listener and gRPC server instance.
+type GRPCServerComponents struct {
+	Listener net.Listener
+	Server   *grpc.Server
+}
+
+func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache) (GRPCServerComponents, error) {
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to listen on gRPC port %s: %w", cfg.GRPCPort, err)
+		return GRPCServerComponents{}, fmt.Errorf("failed to listen on gRPC port %s: %w", cfg.GRPCPort, err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
 	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache))
 	reflection.Register(grpcServer)
-	return lis, grpcServer, nil
+	return GRPCServerComponents{
+		Listener: lis,
+		Server:   grpcServer,
+	}, nil
 }
 
 func buildHTTPServer(ctx context.Context, cfg *Config, kueueCache *cache.KueueCache, mgr ctrl.Manager) (*http.Server, error) {

@@ -65,6 +65,23 @@ describe('AdminPanelPage Component', () => {
     expect(await healthStatusSectionHarness!.getOverallStatusText()).toBe('HEALTHY');
   });
 
+  it('should display configuration entries card with correct values', async () => {
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const configEntriesCardHarness = await harness.getConfigEntriesCard();
+    expect(configEntriesCardHarness).not.toBeNull();
+    const entries = await configEntriesCardHarness!.getConfigEntries();
+    expect(await configEntriesCardHarness!.getGroupDisplayNames()).toEqual([
+      'Health Service Config',
+    ]);
+    expect(entries.length).toBe(3);
+    expect(entries[0]).toEqual({ key: 'Port', value: '8080' });
+    expect(entries[1]).toEqual({ key: 'GRPCPort', value: '50051' });
+    expect(entries[2]).toEqual({ key: 'ProjectID', value: 'mock-project' });
+  });
+
   it('should display system observability link if observabilityUrl is present', async () => {
     bootstrap(AdminPanelPage);
     await flush();

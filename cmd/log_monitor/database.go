@@ -23,8 +23,15 @@ import (
 	"xmanager_cloud/storage/storage"
 )
 
-func newStorage(ctx context.Context, config *Config) (stg storage.Storage, sc *spanner.Client, cleanup func(), err error) {
-	sc, err = spanner.NewClientWithConfig(
+// StorageComponents holds initialized Spanner and storage clients along with cleanup callback.
+type StorageComponents struct {
+	Storage storage.Storage
+	Client  *spanner.Client
+	Cleanup func()
+}
+
+func newStorage(ctx context.Context, config *Config) (StorageComponents, error) {
+	sc, err := spanner.NewClientWithConfig(
 		ctx,
 		config.SpannerDatabaseName,
 		spanner.ClientConfig{SessionPoolConfig: spanner.SessionPoolConfig{
@@ -36,14 +43,18 @@ func newStorage(ctx context.Context, config *Config) (stg storage.Storage, sc *s
 		option.WithQuotaProject(config.QuotaProjectID),
 	)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to create spanner client: %w", err)
+		return StorageComponents{}, fmt.Errorf("failed to create spanner client: %w", err)
 	}
 
-	stg, err = ss.NewStorageWithConfig(sc, ss.StorageConfig{StatusMessageHistoryEnabled: config.StatusMessageHistoryEnabled})
+	stg, err := ss.NewStorageWithConfig(sc, ss.StorageConfig{StatusMessageHistoryEnabled: config.StatusMessageHistoryEnabled})
 	if err != nil {
 		sc.Close()
-		return nil, nil, nil, fmt.Errorf("failed to create storage: %w", err)
+		return StorageComponents{}, fmt.Errorf("failed to create storage: %w", err)
 	}
 
-	return stg, sc, func() { sc.Close() }, nil
+	return StorageComponents{
+		Storage: stg,
+		Client:  sc,
+		Cleanup: func() { sc.Close() },
+	}, nil
 }
