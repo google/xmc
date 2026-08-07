@@ -52,16 +52,15 @@ export class ResourceService {
   /**
    * Fetches the list of pending and running jobs for a given queue.
    */
-  getQueueJobs(queueName?: string): Observable<GetRunningAndPendingJobsResponse> {
-    const targetQueueName = queueName ?? 'cpu-cluster-queue';
+  getQueueJobs(queueName: string): Observable<GetRunningAndPendingJobsResponse> {
     return this.http
       .get<GetRunningAndPendingJobsResponse>(
-        `${XMC_API_DOMAIN}/clusterqueues/${encodeURIComponent(targetQueueName)}/jobs`,
+        `${XMC_API_DOMAIN}/clusterqueues/${encodeURIComponent(queueName)}/jobs`,
         { withCredentials: true },
       )
       .pipe(
         catchError((error) => {
-          console.error(`Failed to fetch jobs for queue ${targetQueueName}:`, error);
+          console.error(`Failed to fetch jobs for queue ${queueName}:`, error);
           return of({ jobs: [], totalQueueSize: 0, nextPageToken: '' });
         }),
       );
