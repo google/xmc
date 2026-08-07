@@ -99,10 +99,11 @@ test('run handles merge_group event context successfully', async () => {
   assert.ok(infoLogs.some(log => log.includes('Merge block check passed')));
 });
 
-test('run fails closed if GitHub username cannot be resolved in merge_group context', async () => {
+test('run skips unresolved GitHub usernames in merge_group context and passes', async () => {
   let failedMessage = null;
+  let infoLogs = [];
   const mockCore = {
-    info: () => {},
+    info: (msg) => { infoLogs.push(msg); },
     setFailed: (msg) => { failedMessage = msg; },
   };
 
@@ -114,6 +115,11 @@ test('run fails closed if GitHub username cannot be resolved in merge_group cont
             commits: [
               { sha: 'abc123456789', author: null },
             ],
+          },
+        }),
+        getContent: async () => ({
+          data: {
+            content: Buffer.from('bob\ncharlie\n', 'utf8').toString('base64'),
           },
         }),
       },
@@ -133,7 +139,9 @@ test('run fails closed if GitHub username cannot be resolved in merge_group cont
   };
 
   await run({ github: mockGithub, context: mockContext, core: mockCore });
-  assert.strictEqual(failedMessage, 'Could not resolve GitHub username for commit abc1234 in merge group.');
+  assert.strictEqual(failedMessage, null);
+  assert.ok(infoLogs.some(log => log.includes('Could not resolve GitHub username for commit abc1234')));
+  assert.ok(infoLogs.some(log => log.includes('Merge block check passed')));
 });
 
 test('run fails merge_group if any commit in batch is authored by restricted author', async () => {

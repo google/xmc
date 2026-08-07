@@ -42,20 +42,21 @@ async function run({ github, context, core }) {
       });
 
       const commits = compareRes.data.commits || [];
+      if (commits.length === 0) {
+        core.setFailed(`No commits found in merge group between ${baseSha?.substring(0, 7)} and ${headSha?.substring(0, 7)}.`);
+        return;
+      }
+
       const authorLogins = new Set();
       for (const commit of commits) {
         const login = commit.author?.login;
         if (!login) {
-          core.setFailed(`Could not resolve GitHub username for commit ${commit.sha?.substring(0, 7)} in merge group.`);
-          return;
+          core.info(`Could not resolve GitHub username for commit ${commit.sha?.substring(0, 7)} in merge group. Skipping.`);
+          continue;
         }
         authorLogins.add(login);
       }
       prAuthors = Array.from(authorLogins);
-      if (prAuthors.length === 0) {
-        core.setFailed(`No commits found in merge group between ${baseSha?.substring(0, 7)} and ${headSha?.substring(0, 7)}.`);
-        return;
-      }
     } catch (error) {
       core.setFailed(`Failed to fetch commits for merge group: ${error.message}`);
       return;
