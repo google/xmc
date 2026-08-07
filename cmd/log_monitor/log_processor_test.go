@@ -156,16 +156,16 @@ func TestBuildUpdateWithCustomKeyword(t *testing.T) {
 		Timestamp:   testTimestamp,
 	}
 
-	xid, update, ok := lp.buildUpdate(ctx, entry)
-	if !ok {
+	res := lp.buildUpdate(ctx, entry)
+	if !res.OK {
 		t.Fatal("buildUpdate() failed")
 	}
-	if xid != 100 {
-		t.Errorf("buildUpdate() xid = %v, want 100", xid)
+	if res.ExperimentID != 100 {
+		t.Errorf("buildUpdate() xid = %v, want 100", res.ExperimentID)
 	}
 
 	wantUserFacingText := "custom message"
-	gotUserFacingText := update.WorkUnitExecution.Status.UserMessage.UserFacingText
+	gotUserFacingText := res.Update.WorkUnitExecution.Status.UserMessage.UserFacingText
 	if gotUserFacingText != wantUserFacingText {
 		t.Errorf("buildUpdate() userFacingText = %q, want %q", gotUserFacingText, wantUserFacingText)
 	}
@@ -537,17 +537,17 @@ func TestBuildUpdate(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			xid, update, ok := lp.buildUpdate(ctx, tc.entry)
-			if ok != tc.wantOK {
-				t.Errorf("buildUpdate() ok = %v, want %v", ok, tc.wantOK)
+			res := lp.buildUpdate(ctx, tc.entry)
+			if res.OK != tc.wantOK {
+				t.Errorf("buildUpdate() ok = %v, want %v", res.OK, tc.wantOK)
 			}
-			if !ok {
+			if !res.OK {
 				return
 			}
-			if xid != tc.wantXID {
-				t.Errorf("buildUpdate() xid = %v, want %v", xid, tc.wantXID)
+			if res.ExperimentID != tc.wantXID {
+				t.Errorf("buildUpdate() xid = %v, want %v", res.ExperimentID, tc.wantXID)
 			}
-			if diff := cmp.Diff(tc.wantUpdate, update, protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(tc.wantUpdate, res.Update, protocmp.Transform()); diff != "" {
 				t.Errorf("buildUpdate() mismatch (-want +got):\n%s", diff)
 			}
 		})

@@ -38,21 +38,32 @@ func calculateTotalReplicas(jobSet *v1alpha2.JobSet) int32 {
 	return totalReplicas
 }
 
-func calculateJobTotals(jobSet *v1alpha2.JobSet) (totalSucceeded, totalFailed, totalActive, totalReady, totalReplicas int32) {
+// JobTotals holds aggregate replica statistics across all jobs in a JobSet.
+type JobTotals struct {
+	Succeeded int32
+	Failed    int32
+	Active    int32
+	Ready     int32
+	Replicas  int32
+}
+
+func calculateJobTotals(jobSet *v1alpha2.JobSet) JobTotals {
+	var totals JobTotals
 	for _, rjs := range jobSet.Status.ReplicatedJobsStatus {
-		totalSucceeded += rjs.Succeeded
-		totalFailed += rjs.Failed
-		totalActive += rjs.Active
-		totalReady += rjs.Ready
+		totals.Succeeded += rjs.Succeeded
+		totals.Failed += rjs.Failed
+		totals.Active += rjs.Active
+		totals.Ready += rjs.Ready
 	}
-	totalReplicas = calculateTotalReplicas(jobSet)
-	return
+	totals.Replicas = calculateTotalReplicas(jobSet)
+	return totals
 }
 
 func generateStructuredMessage(ctx context.Context, jobSet *v1alpha2.JobSet, state spb.WorkUnitStatus_WorkUnitState, project, location, clusterName, podErrorMsg, startupWarningMsg string) *spb.StructuredMessage {
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, jobSet.Labels)
 
-	totalSucceeded, totalFailed, totalActive, totalReady, totalReplicas := calculateJobTotals(jobSet)
+	totals := calculateJobTotals(jobSet)
+	totalSucceeded, totalFailed, totalActive, totalReady, totalReplicas := totals.Succeeded, totals.Failed, totals.Active, totals.Ready, totals.Replicas
 	var msg string
 	msgSeverity := spb.StructuredMessage_DEBUG
 	msgSource := spb.StructuredMessage_KUBERNETES
@@ -157,7 +168,8 @@ func ToWorkUnitState(jobSet *v1alpha2.JobSet) spb.WorkUnitStatus_WorkUnitState {
 		return spb.WorkUnitStatus_SCHEDULING
 	}
 
-	totalSucceeded, totalFailed, totalActive, totalReady, _ := calculateJobTotals(jobSet)
+	totals := calculateJobTotals(jobSet)
+	totalSucceeded, totalFailed, totalActive, totalReady := totals.Succeeded, totals.Failed, totals.Active, totals.Ready
 
 	// 3. "Alive" Check (Priority: High)
 	// If any pods are Ready, the WorkUnit is serving/alive. This prevents the "Active=0 vs Ready=1" flicker.
