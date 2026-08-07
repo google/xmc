@@ -18,7 +18,6 @@ import os
 import subprocess
 import tempfile
 import unittest
-from dataclasses import asdict
 from pathlib import Path
 from unittest import mock
 
@@ -118,7 +117,7 @@ class TestMigrationHelpers(unittest.TestCase):
     def test_extract_migration_version_empty(self):
         self.assertEqual(upgrade_dev_env.extract_migration_version([]), 0)
 
-    @mock.patch("tools.upgrade_dev_env.run_command")
+    @mock.patch("tools.upgrade_dev_env.run_cmd")
     def test_get_migration_status_dirty(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="Version: 1\nDirty: true\n", stderr=""
@@ -183,7 +182,7 @@ class TestMigrationHelpers(unittest.TestCase):
 class TestDeploymentResolution(unittest.TestCase):
     """Tests Kubernetes deployment name fallback resolution."""
 
-    @mock.patch("tools.upgrade_dev_env.run_command")
+    @mock.patch("tools.upgrade_dev_env.run_cmd")
     def test_resolve_exact_match(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
@@ -191,7 +190,7 @@ class TestDeploymentResolution(unittest.TestCase):
         res = upgrade_dev_env.resolve_deployment_name("actuator", "xmc")
         self.assertEqual(res, "actuator")
 
-    @mock.patch("tools.upgrade_dev_env.run_command")
+    @mock.patch("tools.upgrade_dev_env.run_cmd")
     def test_resolve_fallback(self, mock_run):
         mock_run.side_effect = [
             subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr=""),
@@ -200,7 +199,7 @@ class TestDeploymentResolution(unittest.TestCase):
         res = upgrade_dev_env.resolve_deployment_name("actuator", "xmc")
         self.assertEqual(res, "actuator-deployment")
 
-    @mock.patch("tools.upgrade_dev_env.run_command")
+    @mock.patch("tools.upgrade_dev_env.run_cmd")
     def test_resolve_none_found(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=1, stdout="", stderr=""
@@ -229,9 +228,8 @@ class TestStepSubprocesses(unittest.TestCase):
     @mock.patch("shutil.which", return_value="/usr/bin/tool")
     @mock.patch.object(Path, "is_file", return_value=True)
     @mock.patch("os.access", return_value=True)
-    @mock.patch("tools.upgrade_dev_env.run_command")
-    @mock.patch("tools.upgrade_dev_env.configure_docker_auth")
-    def test_step_check(self, mock_docker_auth, mock_run, _mock_access, _mock_file, _mock_which):
+    @mock.patch("tools.upgrade_dev_env.run_cmd")
+    def test_step_check(self, mock_run, _mock_access, _mock_file, _mock_which):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -250,9 +248,20 @@ class TestStepSubprocesses(unittest.TestCase):
             ),
             calls,
         )
-        mock_docker_auth.assert_called_once_with(asdict(self.config))
+        self.assertIn(
+            mock.call(
+                [
+                    "gcloud",
+                    "auth",
+                    "configure-docker",
+                    "us-docker.pkg.dev",
+                    "--quiet",
+                ]
+            ),
+            calls,
+        )
 
-    @mock.patch("tool_utils.run_command")
+    @mock.patch("tools.upgrade_dev_env.run_cmd")
     def test_step_images_default(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
@@ -262,7 +271,7 @@ class TestStepSubprocesses(unittest.TestCase):
         self.assertEqual(mock_run.call_count, 9)
 
     @mock.patch.object(Path, "exists", return_value=True)
-    @mock.patch("tool_utils.run_command")
+    @mock.patch("tools.upgrade_dev_env.run_cmd")
     def test_step_images_rod_enabled(self, mock_run, _mock_exists):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
@@ -285,7 +294,7 @@ class TestStepSubprocesses(unittest.TestCase):
         self.assertEqual(mock_run.call_count, 10)
 
     @mock.patch.object(Path, "is_dir", return_value=True)
-    @mock.patch("tools.upgrade_dev_env.run_command")
+    @mock.patch("tools.upgrade_dev_env.run_cmd")
     def test_step_app(self, mock_run, _mock_dir):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
@@ -343,7 +352,7 @@ class TestStepSubprocesses(unittest.TestCase):
         )
 
     @mock.patch("tools.upgrade_dev_env.resolve_deployment_name")
-    @mock.patch("tools.upgrade_dev_env.run_command")
+    @mock.patch("tools.upgrade_dev_env.run_cmd")
     def test_step_restart(self, mock_run, mock_resolve):
         mock_resolve.return_value = "actuator"
         mock_run.return_value = subprocess.CompletedProcess(
@@ -354,7 +363,7 @@ class TestStepSubprocesses(unittest.TestCase):
         self.assertEqual(mock_run.call_count, 8)
 
     @mock.patch("tools.upgrade_dev_env.resolve_deployment_name")
-    @mock.patch("tools.upgrade_dev_env.run_command")
+    @mock.patch("tools.upgrade_dev_env.run_cmd")
     def test_step_restart_rod_enabled(self, mock_run, mock_resolve):
         mock_resolve.return_value = "actuator"
         mock_run.return_value = subprocess.CompletedProcess(
@@ -377,7 +386,7 @@ class TestStepSubprocesses(unittest.TestCase):
         # 8 base services + rod-data-provider (9 total)
         self.assertEqual(mock_run.call_count, 9)
 
-    @mock.patch("tools.upgrade_dev_env.run_command")
+    @mock.patch("tools.upgrade_dev_env.run_cmd")
     def test_step_verify(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
