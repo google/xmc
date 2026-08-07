@@ -72,8 +72,8 @@ def main(argv: Sequence[str]) -> None:
 
         common_resources = resources_pb2.ResourceSet(
             cpu_resources=resources_pb2.CpuResources(
-                cpu_millicores=100,
-                memory_bytes=256 * 1024 * 1024,
+                cpu_millicores=500,
+                memory_bytes=1024 * 1024 * 1024,
             ),
         )
 

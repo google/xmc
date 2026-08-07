@@ -51,17 +51,14 @@ def main() -> None:
     )
     model.compile(optimizer="sgd", loss="mse", metrics=["accuracy"])
 
-    from xmc.integrations.keras import XmcKerasCallback
-
     try:
         print("Starting Keras model.fit() for 5 epochs...")
-        # XmcKerasCallback(prefix="keras/") attaches a prefix to autologged metrics
+        # xmc.autolog() automatically attaches XmcKerasCallback to model.fit()
         model.fit(
             x_train,
             y_train,
             epochs=5,
             batch_size=10,
-            callbacks=[XmcKerasCallback(prefix="keras/")],
             verbose=1,
         )
     finally:
