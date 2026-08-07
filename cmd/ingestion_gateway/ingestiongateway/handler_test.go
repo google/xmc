@@ -32,6 +32,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"google.golang.org/protobuf/proto"
+
+	metrics "xmanager_cloud/api/protos/metrics"
 )
 
 type noopProducer struct{}
@@ -412,6 +415,13 @@ func TestMetricsIngestionHandler_XReplicaIDHeader(t *testing.T) {
 	if len(recs) != 1 {
 		t.Fatalf("expected 1 record produced, got %d", len(recs))
 	}
+	var pm metrics.Metric
+	if err := proto.Unmarshal(recs[0].Value, &pm); err != nil {
+		t.Fatalf("failed to unmarshal produced record value: %v", err)
+	}
+	if pm.ReplicaId != "header-rep-7" {
+		t.Errorf("expected ReplicaId 'header-rep-7', got %q", pm.ReplicaId)
+	}
 }
 
 func TestMetricsIngestionHandler_XJobNameHeader(t *testing.T) {
@@ -434,6 +444,13 @@ func TestMetricsIngestionHandler_XJobNameHeader(t *testing.T) {
 	recs := mp.ProducedRecords()
 	if len(recs) != 1 {
 		t.Fatalf("expected 1 record produced, got %d", len(recs))
+	}
+	var pm metrics.Metric
+	if err := proto.Unmarshal(recs[0].Value, &pm); err != nil {
+		t.Fatalf("failed to unmarshal produced record value: %v", err)
+	}
+	if pm.JobName != "header-job-1" {
+		t.Errorf("expected JobName 'header-job-1', got %q", pm.JobName)
 	}
 }
 

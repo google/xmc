@@ -94,10 +94,16 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string, gMetr
 
 			if m.JobName == "" && jobNameHeader != "" {
 				m.JobName = jobNameHeader
+				if m.Metric != nil {
+					m.Metric.JobName = jobNameHeader
+				}
 			}
 
 			if m.ReplicaId == "" && replicaIDHeader != "" {
 				m.ReplicaId = replicaIDHeader
+				if m.Metric != nil {
+					m.Metric.ReplicaId = replicaIDHeader
+				}
 			}
 
 			valBytes, err := proto.Marshal(m.Metric)

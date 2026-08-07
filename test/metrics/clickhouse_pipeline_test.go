@@ -228,7 +228,7 @@ func TestClickHousePipelineIngestion(t *testing.T) {
 		t.Fatalf("Failed to read record fields: %v", err)
 	}
 
-	if xid != 10001 || workUnitID != 1 || executionID != 10 || replicaID != "worker-0" || metricName != "train_loss" || metricValue != 0.1234 || step != 100 {
+	if xid != 10001 || workUnitID != 1 || executionID != 10 || jobName != "" || replicaID != "worker-0" || metricName != "train_loss" || metricValue != 0.1234 || step != 100 {
 		t.Errorf("Ingested metric fields mismatch: got xid=%d, work_unit_id=%d, execution_id=%d, job_name=%s, replica_id=%s, metric_name=%s, metric_value=%f, step=%d",
 			xid, workUnitID, executionID, jobName, replicaID, metricName, metricValue, step)
 	}
