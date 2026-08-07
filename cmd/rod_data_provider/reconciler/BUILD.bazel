@@ -20,6 +20,7 @@ compat_go_library(
     name = "reconciler",
     srcs = [
         "clusterqueue.go",
+        "helper.go",
         "localqueue.go",
         "resourceflavor.go",
     ],

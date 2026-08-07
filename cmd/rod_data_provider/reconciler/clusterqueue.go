@@ -17,7 +17,6 @@ package reconciler
 import (
 	"context"
 
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
@@ -33,15 +32,9 @@ type ClusterQueueReconciler struct {
 
 func (r *ClusterQueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var cq kueuev1beta1.ClusterQueue
-	if err := r.Get(ctx, req.NamespacedName, &cq); err != nil {
-		if errors.IsNotFound(err) {
-			r.Cache.Delete(req.Name)
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, err
-	}
-	r.Cache.Set(req.Name, cq.DeepCopy())
-	return ctrl.Result{}, nil
+	return reconcileCache(ctx, r.Client, req, &cq, func(o *kueuev1beta1.ClusterQueue) {
+		r.Cache.Set(req.Name, o.DeepCopy())
+	}, r.Cache.Delete)
 }
 
 func (r *ClusterQueueReconciler) SetupWithManager(mgr ctrl.Manager) error {

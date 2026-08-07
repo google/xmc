@@ -17,7 +17,6 @@ package reconciler
 import (
 	"context"
 
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
@@ -33,15 +32,11 @@ type LocalQueueReconciler struct {
 
 func (r *LocalQueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var lq kueuev1beta1.LocalQueue
-	if err := r.Get(ctx, req.NamespacedName, &lq); err != nil {
-		if errors.IsNotFound(err) {
-			r.Cache.Delete(req.NamespacedName.String())
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, err
-	}
-	r.Cache.Set(req.NamespacedName.String(), lq.DeepCopy())
-	return ctrl.Result{}, nil
+	return reconcileCache(ctx, r.Client, req, &lq, func(obj *kueuev1beta1.LocalQueue) {
+		r.Cache.Set(req.NamespacedName.String(), obj.DeepCopy())
+	}, func(name string) {
+		r.Cache.Delete(req.NamespacedName.String())
+	})
 }
 
 func (r *LocalQueueReconciler) SetupWithManager(mgr ctrl.Manager) error {

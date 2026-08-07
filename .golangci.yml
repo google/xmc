@@ -61,14 +61,10 @@ issues:
   exclude-dirs:
     - cmd/ui/node_modules
   exclude-rules:
-    - path: (_test\.go|cmd/actuator/k8s_client/client\.go)
+    - path: (_test\.go|cmd/actuator/k8s_client/client\.go|cmd/rod_data_provider/reconciler)
       linters:
         - dupl
-    # TODO(Phase 4.2): Refactor legacy 3rd party driver interface methods (golang-migrate), AIP-158 pagination & test setup helpers returning 3+ parameters
-    - path: (internal/storage/spanner/migrations|test/metrics|internal/task_queue_redis/validator|cmd/ingestion_gateway|internal/storage/spanner/xid|kueue_sync_test\.go|jobset_test\.go|internal/validator/names\.go|internal/storage/test_utils\.go|health_test\.go|liststatement\.go|utils_test\.go|query_generator\.go|emulator\.go|key_reloader\.go|listexperiments\.go|listcharts\.go|spanner_health\.go|k8sclient_test_utils\.go|updateartifact\.go|updateexperiment\.go|queryfilter\.go|listartifacts\.go|savestatusmessagehistory_test\.go|liststatusmessages\.go|base\.go|batchstopworkunits\.go|listworkunits\.go|updateworkunit\.go|workload/converter\.go|reconciler_test\.go|internal/auth|tools/xmc-diag|internal/storage/data)
+    # Legacy AIP resource validators, data update checkers, auth interface, query generator AST visitors, spanner health & AIP-158 pagination methods returning 3+ parameters
+    - path: (internal/validator/names\.go|internal/storage/data|internal/storage/test_utils\.go|liststatusmessages\.go|listartifacts\.go|listworkunits\.go|listcharts\.go|listexperiments\.go|listxidentries\.go|utils_test\.go|reconciler_test\.go|k8sclient_test_utils\.go|spanner_health\.go|health_test\.go|internal/auth|internal/query_generator|api/filter/go/queryfilterbase|internal/storage/spanner/migrations|internal/security/keyreloader)
       linters:
         - revive
-    # TODO(Phase 4.2): Refactor duplicate helper methods in rod_data_provider & experiment_state_server
-    - path: (cmd/rod_data_provider|cmd/experiment_state_server/server)
-      linters:
-        - dupl
