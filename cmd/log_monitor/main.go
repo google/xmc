@@ -42,11 +42,12 @@ func main() {
 	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
 
-	stg, sc, cleanup, err := newStorage(ctx, cfg)
+	stgComp, err := newStorage(ctx, cfg)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create storage", "error", err)
 	}
-	defer cleanup()
+	defer stgComp.Cleanup()
+	stg := stgComp.Storage
 
 	pubsubClient, err := pubsub.NewClient(ctx, cfg.ProjectID)
 	if err != nil {
@@ -72,7 +73,7 @@ func main() {
 
 	// HTTP server for health checks
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", activeHealthCheck(health.NewSpannerHealthClient(sc), listener))
+	mux.HandleFunc("/healthz", activeHealthCheck(health.NewSpannerHealthClient(stgComp.Client), listener))
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	server := &http.Server{Addr: addr, Handler: mux}

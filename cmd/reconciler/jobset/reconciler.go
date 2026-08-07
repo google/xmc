@@ -127,7 +127,7 @@ type MLRunCreator interface {
 func hasValidXMCLabels(ctx context.Context, jobSet *v1alpha2.JobSet) bool {
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, nil)
 
-	_, _, _, err := labels.ParseXMCLabels(jobSet.Labels)
+	_, err := labels.ParseXMCLabels(jobSet.Labels)
 	if err != nil {
 		if errors.Is(err, labels.ErrMissingXMCLabels) {
 			logging.Warn(ctx, "JobSet is missing XMC labels and will be skipped", "error", err)
@@ -273,7 +273,8 @@ func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v
 
 	logging.Debug(ctx, "JobSet is being deleted, processing finalizer", "namespace", jobSet.Namespace)
 
-	xid, wid, eid, labelsErr := labels.ParseXMCLabels(jobSet.Labels)
+	parsedLabels, labelsErr := labels.ParseXMCLabels(jobSet.Labels)
+	xid, wid, eid := parsedLabels.XID, parsedLabels.WID, parsedLabels.EID
 	ctx = logging.WithWorkUnitExecutionName(ctx, validator.ConstructWorkUnitExecutionName(xid, wid, eid))
 	if labelsErr == nil {
 		update := createStoppedUpdate(wid, eid)
@@ -320,7 +321,8 @@ func (r *Reconciler) handlePatchError(ctx context.Context, jobSet *v1alpha2.JobS
 func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobSet) (ctrl.Result, error) {
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, jobSet.Labels)
 
-	xid, wid, eid, err := labels.ParseXMCLabels(jobSet.Labels)
+	parsedLabels, err := labels.ParseXMCLabels(jobSet.Labels)
+	xid, wid, eid := parsedLabels.XID, parsedLabels.WID, parsedLabels.EID
 	ctx = logging.WithWorkUnitExecutionName(ctx, validator.ConstructWorkUnitExecutionName(xid, wid, eid))
 	if err != nil {
 		logging.Error(ctx, "Failed to parse labels for JobSet", "namespace", jobSet.Namespace, "error", err)
@@ -332,7 +334,8 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	state := ToWorkUnitState(jobSet)
 
 	if state == spb.WorkUnitStatus_STARTING && r.StartupPodErrorCheckEnabled {
-		result, podErrorMsg, startupWarningMsg = r.handleStartupPodChecks(ctx, jobSet)
+		checkRes := r.handleStartupPodChecks(ctx, jobSet)
+		result, podErrorMsg, startupWarningMsg = checkRes.Result, checkRes.PodErrorMsg, checkRes.StartupWarningMsg
 	}
 
 	// The actuator injects the ManagedXprof GCS destination, display name, and run
@@ -346,7 +349,8 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	// rest of the reconcile loop. The histogram is only observed when the MLRun path
 	// is taken, so its _count doubles as the number of reconciles that entered it.
 	mlRunStart := time.Now()
-	displayName, runGroup, gcsPath := getManagedXprofEnvs(jobSet)
+	mxEnvs := getManagedXprofEnvs(jobSet)
+	displayName, runGroup, gcsPath := mxEnvs.DisplayName, mxEnvs.RunGroup, mxEnvs.GCSPath
 	// Only query storage when ManagedXprof is enabled (gcsPath set) but the display
 	// metadata is missing. Standard JobSets leave gcsPath empty and skip MLRun
 	// creation anyway, so the lookup would be wasted work on the hot reconcile path.
@@ -387,11 +391,18 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 // pod stuck Pending does not trigger the reconcile loop indefinitely.
 const unschedulablePodsCheckTime = 5 * time.Minute
 
-func (r *Reconciler) handleStartupPodChecks(ctx context.Context, jobSet *v1alpha2.JobSet) (ctrl.Result, string, string) {
+// StartupPodCheckResult contains the status result and error/warning messages for startup pod checks.
+type StartupPodCheckResult struct {
+	Result            ctrl.Result
+	PodErrorMsg       string
+	StartupWarningMsg string
+}
+
+func (r *Reconciler) handleStartupPodChecks(ctx context.Context, jobSet *v1alpha2.JobSet) StartupPodCheckResult {
 	age := calculateJobsetStartAge(jobSet)
 	if age < r.StartupPodErrorCheckTime {
 		logging.Debug(ctx, "Skipping startup pod error check for JobSet, age is less than StartupPodErrorCheckTime", "age", age)
-		return ctrl.Result{RequeueAfter: r.StartupPodErrorCheckTime - age}, "", ""
+		return StartupPodCheckResult{Result: ctrl.Result{RequeueAfter: r.StartupPodErrorCheckTime - age}}
 	}
 
 	// Fetch the JobSet's pods once and share the list between both checks (avoids
@@ -399,12 +410,12 @@ func (r *Reconciler) handleStartupPodChecks(ctx context.Context, jobSet *v1alpha
 	pods, err := r.listJobSetPods(ctx, jobSet)
 	if err != nil {
 		logging.Error(ctx, "Failed to list pods for startup checks", "namespace", jobSet.Namespace, "error", err)
-		return ctrl.Result{}, "", ""
+		return StartupPodCheckResult{}
 	}
 
 	// A hard error (e.g. ImagePullBackOff) fails the work unit immediately.
 	if podErrorMsg := checkPodsForStartupErrors(ctx, pods); podErrorMsg != "" {
-		return ctrl.Result{}, podErrorMsg, ""
+		return StartupPodCheckResult{PodErrorMsg: podErrorMsg}
 	}
 
 	// No hard error: the pods may simply be unschedulable (exhausted quota, no
@@ -417,7 +428,7 @@ func (r *Reconciler) handleStartupPodChecks(ctx context.Context, jobSet *v1alpha
 	if warningMsg != "" && age < unschedulablePodsCheckTime {
 		result.RequeueAfter = unschedulablePodsCheckTime - age
 	}
-	return result, "", warningMsg
+	return StartupPodCheckResult{Result: result, StartupWarningMsg: warningMsg}
 }
 
 // listJobSetPods returns all pods belonging to the given JobSet.
@@ -789,9 +800,15 @@ func constructDiagnosticsConsoleURL(location, mlRunID, project string) string {
 	return fmt.Sprintf("https://console.cloud.google.com/kubernetes/aiml/run/%s/%s?project=%s", location, mlRunID, project)
 }
 
-// artifactListPageSize bounds each ListArtifacts page while
-// lookupManagedXprofArtifact pages through a work unit's artifacts.
-const artifactListPageSize = 100
+// artifactListPageSize bounds the single ListArtifacts page read by
+// lookupManagedXprofArtifact. At most one ManagedXprof artifact is expected per
+// work unit, so a small page is sufficient.
+const artifactListPageSize = 10
+
+// managedXprofArtifactFilter restricts ListArtifacts to ManagedXprof artifacts
+// server-side (via the payload_type schema filter field), so the reconciler no
+// longer fetches and discards unrelated artifact types while searching.
+const managedXprofArtifactFilter = `payload_type = "managed_xprof"`
 
 // lookupManagedXprofArtifact reads the ManagedXprof artifact attached to the work
 // unit and returns its display name and run group.
@@ -809,26 +826,14 @@ func (r *Reconciler) lookupManagedXprofArtifact(ctx context.Context, xid, wid in
 	}
 	parent := fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid)
 
-	// Page until the first ManagedXprof artifact is found: it may be attached after
-	// the JobSet is created and can sort beyond the first page, so we keep paging
-	// until we find one or exhaust the list.
-	var managed []*spb.ManagedXprofArtifact
-	for pageToken := ""; ; {
-		artifacts, nextToken, err := r.Storage.ListArtifacts(ctx, parent, artifactListPageSize, pageToken, "", "", 0)
-		if err != nil {
-			logging.Warn(ctx, "Failed to list artifacts for WorkUnit", "xid", xid, "wid", wid, "error", err)
-			return "", ""
-		}
-		managed = append(managed, collectManagedXprofArtifacts(artifacts)...)
-		// Stop once we have a match (only the first is used), when the list is
-		// exhausted, or if the cursor fails to advance — the last guards against a
-		// storage impl/mock returning a repeating token, which would loop forever.
-		if len(managed) > 0 || nextToken == "" || nextToken == pageToken {
-			break
-		}
-		pageToken = nextToken
+	// A work unit has at most one ManagedXprof artifact and the server filters by
+	// payload_type, so a single small page suffices; use the first match.
+	artifacts, _, err := r.Storage.ListArtifacts(ctx, parent, artifactListPageSize, "", managedXprofArtifactFilter, "", 0)
+	if err != nil {
+		logging.Warn(ctx, "Failed to list artifacts for WorkUnit", "xid", xid, "wid", wid, "error", err)
+		return "", ""
 	}
-
+	managed := collectManagedXprofArtifacts(artifacts)
 	if len(managed) == 0 {
 		return "", ""
 	}
@@ -840,9 +845,9 @@ func (r *Reconciler) lookupManagedXprofArtifact(ctx context.Context, xid, wid in
 	return managed[0].GetDisplayName(), managed[0].GetRunGroup()
 }
 
-// collectManagedXprofArtifacts returns every ManagedXprof artifact in the list, in
-// order. Extracted as a pure function so artifact selection is independently
-// testable and so the caller can detect (and warn about) unexpected duplicates.
+// collectManagedXprofArtifacts returns every ManagedXprof artifact in the list,
+// in order. Extracted as a pure function so artifact selection is independently
+// testable.
 func collectManagedXprofArtifacts(artifacts []*spb.Artifact) []*spb.ManagedXprofArtifact {
 	var managed []*spb.ManagedXprofArtifact
 	for _, art := range artifacts {
@@ -853,26 +858,34 @@ func collectManagedXprofArtifacts(artifacts []*spb.Artifact) []*spb.ManagedXprof
 	return managed
 }
 
-func getManagedXprofEnvs(jobSet *v1alpha2.JobSet) (displayName, runGroup, gcsPath string) {
+// ManagedXprofEnvs holds environmental configurations for Managed Xprof.
+type ManagedXprofEnvs struct {
+	DisplayName string
+	RunGroup    string
+	GCSPath     string
+}
+
+func getManagedXprofEnvs(jobSet *v1alpha2.JobSet) ManagedXprofEnvs {
+	var envs ManagedXprofEnvs
 	for _, rj := range jobSet.Spec.ReplicatedJobs {
 		for _, c := range rj.Template.Spec.Template.Spec.Containers {
 			for _, env := range c.Env {
 				switch env.Name {
 				case constants.XmcEnvVarManagedXprofDisplayName:
-					displayName = env.Value
+					envs.DisplayName = env.Value
 				case constants.XmcEnvVarManagedXprofRunGroup:
-					runGroup = env.Value
+					envs.RunGroup = env.Value
 				case constants.XmcEnvVarManagedXprofGCSObjectFolder:
-					gcsPath = env.Value
+					envs.GCSPath = env.Value
 				}
 			}
 			// These environment variables are same on all containers, so we can return early.
-			if displayName != "" || runGroup != "" || gcsPath != "" {
-				return
+			if envs.DisplayName != "" || envs.RunGroup != "" || envs.GCSPath != "" {
+				return envs
 			}
 		}
 	}
-	return
+	return envs
 }
 
 // managedXprofMisconfigured reports the one actionable Managed Xprof

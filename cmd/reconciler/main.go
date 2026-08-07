@@ -55,10 +55,11 @@ func main() {
 
 	cfg := Load()
 
-	projectID, location, clusterName, err := getGceMetadata(ctx)
+	gceMeta, err := getGceMetadata(ctx)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to get GCE Metadata", "error", err)
 	}
+	projectID, location, clusterName := gceMeta.ProjectID, gceMeta.Location, gceMeta.ClusterName
 
 	logger := logging.NewGCPLogger(slog.LevelInfo, projectID)
 	ctx = logging.WithLogger(ctx, logger)
@@ -99,10 +100,11 @@ func main() {
 	mlRunClient := jobset.NewInstrumentedMLRunCreator(
 		newMLRunCreator(ctx, projectID, cfg.MldiagnosticsEnvironment, location))
 
-	mgr, batcher, err := buildManager(ctx, cfg, storage, projectID, location, clusterName, cqCache, mlRunClient)
+	mgrComp, err := buildManager(ctx, cfg, storage, projectID, location, clusterName, cqCache, mlRunClient)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to setup manager", "error", err)
 	}
+	mgr, batcher := mgrComp.Manager, mgrComp.Batcher
 
 	kueueSyncReconciler := &kueuesync.Reconciler{
 		Clientset:                        k8sClient.Clientset(),
@@ -135,22 +137,33 @@ func startManager(ctx context.Context, mgr ctrl.Manager) {
 	logging.Info(ctx, "Manager started")
 }
 
-func getGceMetadata(ctx context.Context) (projectID, location, clusterName string, err error) {
+// GceMetadata holds cluster metadata fetched from GCE metadata server.
+type GceMetadata struct {
+	ProjectID   string
+	Location    string
+	ClusterName string
+}
+
+func getGceMetadata(ctx context.Context) (GceMetadata, error) {
 	logging.Debug(ctx, "Fetching GCE Metadata...")
-	projectID, err = metadata.ProjectIDWithContext(ctx)
+	projectID, err := metadata.ProjectIDWithContext(ctx)
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to get Project ID from metadata: %v", err)
+		return GceMetadata{}, fmt.Errorf("failed to get Project ID from metadata: %v", err)
 	}
-	clusterName, err = metadata.InstanceAttributeValueWithContext(ctx, "cluster-name")
+	clusterName, err := metadata.InstanceAttributeValueWithContext(ctx, "cluster-name")
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to get cluster-name from metadata: %v", err)
+		return GceMetadata{}, fmt.Errorf("failed to get cluster-name from metadata: %v", err)
 	}
-	location, err = metadata.InstanceAttributeValueWithContext(ctx, "cluster-location")
+	location, err := metadata.InstanceAttributeValueWithContext(ctx, "cluster-location")
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to get cluster-location from metadata: %v", err)
+		return GceMetadata{}, fmt.Errorf("failed to get cluster-location from metadata: %v", err)
 	}
 	logging.Debug(ctx, "Successfully fetched GCE Metadata", "project_id", projectID, "location", location, "cluster_name", clusterName)
-	return projectID, location, clusterName, nil
+	return GceMetadata{
+		ProjectID:   projectID,
+		Location:    location,
+		ClusterName: clusterName,
+	}, nil
 }
 
 func activeHealthChecker(k8s *k8sclient.Client, spClient health.SpannerHealthClient) func(req *http.Request) error {
@@ -185,7 +198,13 @@ func newMLRunCreator(ctx context.Context, projectID, environment, location strin
 	return client
 }
 
-func buildManager(ctx context.Context, cfg Config, storage storage.Storage, projectID, location, clusterName string, cqCache *clusterqueue.NameCache, mlRunClient jobset.MLRunCreator) (ctrl.Manager, *shared.UpdateBatcher, error) {
+// ReconcilerManagerComponents holds initialized controller-runtime Manager and UpdateBatcher.
+type ReconcilerManagerComponents struct {
+	Manager ctrl.Manager
+	Batcher *shared.UpdateBatcher
+}
+
+func buildManager(ctx context.Context, cfg Config, storage storage.Storage, projectID, location, clusterName string, cqCache *clusterqueue.NameCache, mlRunClient jobset.MLRunCreator) (ReconcilerManagerComponents, error) {
 	scheme := runtime.NewScheme()
 	clientgoscheme.AddToScheme(scheme)
 	v1alpha2.AddToScheme(scheme)
@@ -212,14 +231,14 @@ func buildManager(ctx context.Context, cfg Config, storage storage.Storage, proj
 		}),
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("unable to start manager: %w", err)
+		return ReconcilerManagerComponents{}, fmt.Errorf("unable to start manager: %w", err)
 	}
 
 	if err := mgr.GetFieldIndexer().IndexField(ctx, &v1alpha2.JobSet{}, "metadata.name", func(rawObj runtimeclient.Object) []string {
 		jobset := rawObj.(*v1alpha2.JobSet)
 		return []string{jobset.Name}
 	}); err != nil {
-		return nil, nil, fmt.Errorf("unable to index JobSet metadata.name: %w", err)
+		return ReconcilerManagerComponents{}, fmt.Errorf("unable to index JobSet metadata.name: %w", err)
 	}
 
 	clusterQueueReconciler := &clusterqueue.Reconciler{
@@ -228,7 +247,7 @@ func buildManager(ctx context.Context, cfg Config, storage storage.Storage, proj
 		Cache:  cqCache,
 	}
 	if err := clusterQueueReconciler.SetupWithManager(ctx, mgr); err != nil {
-		return nil, nil, fmt.Errorf("unable to setup clusterqueue controller: %w", err)
+		return ReconcilerManagerComponents{}, fmt.Errorf("unable to setup clusterqueue controller: %w", err)
 	}
 
 	batcher := shared.NewUpdateBatcher(
@@ -255,7 +274,7 @@ func buildManager(ctx context.Context, cfg Config, storage storage.Storage, proj
 	}
 
 	if err := jobsetReconciler.SetupWithManager(ctx, mgr); err != nil {
-		return nil, nil, fmt.Errorf("unable to setup jobset controller: %w", err)
+		return ReconcilerManagerComponents{}, fmt.Errorf("unable to setup jobset controller: %w", err)
 	}
 
 	workloadReconciler := &workload.Reconciler{
@@ -272,8 +291,11 @@ func buildManager(ctx context.Context, cfg Config, storage storage.Storage, proj
 	}
 
 	if err := workloadReconciler.SetupWithManager(ctx, mgr); err != nil {
-		return nil, nil, fmt.Errorf("unable to setup workload controller: %w", err)
+		return ReconcilerManagerComponents{}, fmt.Errorf("unable to setup workload controller: %w", err)
 	}
 
-	return mgr, batcher, nil
+	return ReconcilerManagerComponents{
+		Manager: mgr,
+		Batcher: batcher,
+	}, nil
 }

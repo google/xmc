@@ -30,10 +30,10 @@ func TestPrepareWorkUnitCreation_NilValidation(t *testing.T) {
 	exp := &essmsgpb.Experiment{}
 	wu := &essmsgpb.WorkUnit{}
 
-	if _, _, err := PrepareWorkUnitCreation(ctx, nil, wu, now); err == nil || err.Error() != "experiment must not be nil" {
+	if _, err := PrepareWorkUnitCreation(ctx, nil, wu, now); err == nil || err.Error() != "experiment must not be nil" {
 		t.Errorf("PrepareWorkUnitCreation(nil exp) error = %v, want 'experiment must not be nil'", err)
 	}
-	if _, _, err := PrepareWorkUnitCreation(ctx, exp, nil, now); err == nil || err.Error() != "work unit, current execution, and status must not be nil" {
+	if _, err := PrepareWorkUnitCreation(ctx, exp, nil, now); err == nil || err.Error() != "work unit, current execution, and status must not be nil" {
 		t.Errorf("PrepareWorkUnitCreation(nil wu) error = %v, want 'work unit, current execution, and status must not be nil'", err)
 	}
 }
@@ -61,7 +61,7 @@ func TestPrepareWorkUnitCreation_Immutability(t *testing.T) {
 	}
 	wuClone := proto.Clone(wu).(*essmsgpb.WorkUnit)
 
-	_, _, err := PrepareWorkUnitCreation(ctx, exp, wu, now)
+	_, err := PrepareWorkUnitCreation(ctx, exp, wu, now)
 	if err != nil {
 		t.Fatalf("PrepareWorkUnitCreation failed: %v", err)
 	}
@@ -92,12 +92,12 @@ func TestPrepareWorkUnitCreation_NilStatus(t *testing.T) {
 		},
 	}
 
-	updatedExp, _, err := PrepareWorkUnitCreation(ctx, exp, wu, now)
+	res, err := PrepareWorkUnitCreation(ctx, exp, wu, now)
 	if err != nil {
 		t.Fatalf("PrepareWorkUnitCreation failed: %v", err)
 	}
 
-	if updatedExp.Status == nil {
+	if res.Experiment.Status == nil {
 		t.Errorf("updatedExp.Status is nil, expected initialized status")
 	}
 }
@@ -123,12 +123,12 @@ func TestPrepareWorkUnitCreation_NoResourceChange(t *testing.T) {
 		},
 	}
 
-	_, resourcesChanged, err := PrepareWorkUnitCreation(ctx, exp, wu, now)
+	res, err := PrepareWorkUnitCreation(ctx, exp, wu, now)
 	if err != nil {
 		t.Fatalf("PrepareWorkUnitCreation failed: %v", err)
 	}
 
-	if resourcesChanged {
+	if res.ResourcesChanged {
 		t.Errorf("resourcesChanged = true for work unit with no resources, want false")
 	}
 }
@@ -176,36 +176,36 @@ func TestPrepareWorkUnitCreation_Success(t *testing.T) {
 		},
 	}
 
-	updatedExp, resourcesChanged, err := PrepareWorkUnitCreation(ctx, exp, wu, now)
+	res, err := PrepareWorkUnitCreation(ctx, exp, wu, now)
 	if err != nil {
 		t.Fatalf("PrepareWorkUnitCreation failed: %v", err)
 	}
 
-	if !resourcesChanged {
+	if !res.ResourcesChanged {
 		t.Errorf("resourcesChanged = false, want true")
 	}
 
-	if updatedExp == nil {
+	if res.Experiment == nil {
 		t.Fatalf("PrepareWorkUnitCreation returned nil experiment")
 	}
 
-	if len(updatedExp.Resources) != 1 {
-		t.Errorf("Updated experiment resources count = %d, want 1", len(updatedExp.Resources))
+	if len(res.Experiment.Resources) != 1 {
+		t.Errorf("Updated experiment resources count = %d, want 1", len(res.Experiment.Resources))
 	}
 
 	wantCpu := int64(1000)
-	gotCpu := updatedExp.Resources[0].GetCpuResources().GetCpuMillicores()
+	gotCpu := res.Experiment.Resources[0].GetCpuResources().GetCpuMillicores()
 	if gotCpu != wantCpu {
 		t.Errorf("CpuMillicores = %d, want %d", gotCpu, wantCpu)
 	}
 
-	if updatedExp.UpdateTime.AsTime() != now {
-		t.Errorf("UpdateTime = %v, want %v", updatedExp.UpdateTime.AsTime(), now)
+	if res.Experiment.UpdateTime.AsTime() != now {
+		t.Errorf("UpdateTime = %v, want %v", res.Experiment.UpdateTime.AsTime(), now)
 	}
-	if updatedExp.Status.UpdateTime.AsTime() != now {
-		t.Errorf("Status.UpdateTime = %v, want %v", updatedExp.Status.UpdateTime.AsTime(), now)
+	if res.Experiment.Status.UpdateTime.AsTime() != now {
+		t.Errorf("Status.UpdateTime = %v, want %v", res.Experiment.Status.UpdateTime.AsTime(), now)
 	}
-	if updatedExp.Status.LastChildStatusUpdateTime.AsTime() != now {
-		t.Errorf("Status.LastChildStatusUpdateTime = %v, want %v", updatedExp.Status.LastChildStatusUpdateTime.AsTime(), now)
+	if res.Experiment.Status.LastChildStatusUpdateTime.AsTime() != now {
+		t.Errorf("Status.LastChildStatusUpdateTime = %v, want %v", res.Experiment.Status.LastChildStatusUpdateTime.AsTime(), now)
 	}
 }

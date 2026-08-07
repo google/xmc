@@ -20,13 +20,14 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
+import { QueueJobListResponse } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import { bootstrap, cleanState, flush, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
 import { QueueJobsTable } from './queue_jobs_table';
 import { QueueJobsTableHarness } from './queue_jobs_table_harness';
 
-const TEST_QUEUE_JOBS_RESP = {
+const TEST_QUEUE_JOBS_RESP: QueueJobListResponse = {
   queueName: 'gpu-cluster-queue',
   jobs: [
     {
@@ -112,7 +113,7 @@ describe('QueueJobsTable Component', () => {
     expect(await harness.getRowCount()).toBe(2);
 
     const firstRow = await harness.getRowCellsText(0);
-    expect(firstRow.position).toBe('N/A-running');
+    expect(firstRow.position).toBe('N/A - running');
     expect(firstRow.jobName).toContain('xmc-operation-53296-1');
     expect(firstRow.status).toContain('Running');
     expect(firstRow.priority).toContain('Low');

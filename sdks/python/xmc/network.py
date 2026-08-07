@@ -150,7 +150,7 @@ class HTTPClient:
     def send_payload(self, payload: list[dict[str, Any]]) -> SendResult:
         """Serializes and sends JSON payload list over persistent HTTP connection."""
         body = json.dumps(payload)
-        return self.send(body)
+        return self.send(body, path="/api/v1/metrics")
 
     def _calculate_ttl(self) -> float:
         """Calculates connection TTL with random jitter (base_ttl ± jitter)."""
