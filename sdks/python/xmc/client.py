@@ -176,7 +176,8 @@ class Client:
         if self.disabled:
             return {}
 
-        url = f"{self.base_url}/{path.lstrip('/')}" if path else self.base_url
+        stripped_path = path.lstrip("/")
+        url = f"{self.base_url}/{stripped_path}" if stripped_path else self.base_url
         if params:
             query_string = urllib.parse.urlencode(params, doseq=True)
             url = f"{url}?{query_string}"
