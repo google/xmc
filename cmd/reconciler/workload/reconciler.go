@@ -82,7 +82,7 @@ type Reconciler struct {
 }
 
 func hasValidXMCLabels(ctx context.Context, workload *v1beta1.Workload) bool {
-	_, _, _, err := parseXMCLabelsFromPodSet(ctx, workload)
+	_, err := parseXMCLabelsFromPodSet(ctx, workload)
 	if errors.Is(err, labels.ErrMissingXMCLabels) {
 		logging.Warn(ctx, "Workload is missing XMC labels and will be skipped", "workload", workload.GetName(), "error", err)
 	} else {
@@ -91,10 +91,10 @@ func hasValidXMCLabels(ctx context.Context, workload *v1beta1.Workload) bool {
 	return err == nil
 }
 
-func parseXMCLabelsFromPodSet(ctx context.Context, workload *v1beta1.Workload) (int64, int64, int64, error) {
+func parseXMCLabelsFromPodSet(ctx context.Context, workload *v1beta1.Workload) (labels.XMCLabels, error) {
 	if len(workload.Spec.PodSets) == 0 {
 		logging.Error(ctx, "Workload has no PodSets", "workload", workload.GetName())
-		return 0, 0, 0, fmt.Errorf("Workload has no PodSets")
+		return labels.XMCLabels{}, fmt.Errorf("Workload has no PodSets")
 	}
 
 	return labels.ParseXMCLabels(workload.Spec.PodSets[0].Template.Labels)
@@ -181,11 +181,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		return ctrl.Result{}, err
 	}
 
-	xid, wid, eid, err := parseXMCLabelsFromPodSet(ctx, &workload)
+	parsedLabels, err := parseXMCLabelsFromPodSet(ctx, &workload)
 	if err != nil {
 		logging.Error(ctx, "Failed to parse labels for Workload", "workload", workload.GetName(), "error", err)
 		return ctrl.Result{}, nil
 	}
+	xid, wid, eid := parsedLabels.XID, parsedLabels.WID, parsedLabels.EID
 
 	ctx = logging.WithWorkUnitExecutionName(ctx, validator.ConstructWorkUnitExecutionName(xid, wid, eid))
 

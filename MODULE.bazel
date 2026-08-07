@@ -34,6 +34,16 @@ use_repo(repo_import, "com_github_grpc_ecosystem_grpc_gateway_v2_custom")
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
+go_deps.module(
+    path = "github.com/moby/moby/client",
+    sum = "h1:S+2XegzHQrrvTCvF6s5HFzcrywWQmuVnhOXe2kiWjIw=",
+    version = "v0.4.0",
+)
+go_deps.module(
+    path = "github.com/moby/moby/api",
+    sum = "h1:wiat9QAhnDQjA7wk1kh/TqHz2I1uUA7M7t9SAl/JNXg=",
+    version = "v1.54.2",
+)
 go_deps.gazelle_override(
     build_file_generation = "on",
     directives = [
@@ -52,10 +62,15 @@ use_repo(
     "com_github_google_uuid",
     "com_github_grpc_ecosystem_grpc_gateway_v2",
     "com_github_kylelemons_godebug",
+    "com_github_moby_moby_api",
+    "com_github_moby_moby_client",
     "com_github_prometheus_client_golang",
     "com_github_prometheus_client_model",
     "com_github_redis_go_redis_v9",
     "com_github_rs_cors",
+    "com_github_testcontainers_testcontainers_go",
+    "com_github_testcontainers_testcontainers_go_modules_clickhouse",
+    "com_github_testcontainers_testcontainers_go_modules_redpanda",
     "com_github_tink_crypto_tink_go_v2",
     "com_github_twmb_franz_go",
     "com_github_twmb_franz_go_pkg_kadm",

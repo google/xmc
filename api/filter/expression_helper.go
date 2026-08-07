@@ -82,21 +82,22 @@ type Expression_builder struct {
 
 func (b Expression_builder) Build() *Expression {
 	res := &Expression{}
-	if b.Value != nil {
+	switch {
+	case b.Value != nil:
 		res.Expression = &Expression_Value{Value: *b.Value}
-	} else if b.Conjunction != nil {
+	case b.Conjunction != nil:
 		res.Expression = &Expression_Conjunction{Conjunction: b.Conjunction}
-	} else if b.Disjunction != nil {
+	case b.Disjunction != nil:
 		res.Expression = &Expression_Disjunction{Disjunction: b.Disjunction}
-	} else if b.Negation != nil {
+	case b.Negation != nil:
 		res.Expression = &Expression_Negation{Negation: b.Negation}
-	} else if b.Restriction != nil {
+	case b.Restriction != nil:
 		res.Expression = &Expression_Restriction{Restriction: b.Restriction}
-	} else if b.Function != nil {
+	case b.Function != nil:
 		res.Expression = &Expression_Function{Function: b.Function}
-	} else if b.Phrase != nil {
+	case b.Phrase != nil:
 		res.Expression = &Expression_Phrase{Phrase: b.Phrase}
-	} else if b.Member != nil {
+	case b.Member != nil:
 		res.Expression = &Expression_Member{Member: b.Member}
 	}
 	return res

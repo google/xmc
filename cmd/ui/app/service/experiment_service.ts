@@ -22,7 +22,7 @@ import {
 } from 'xmanager_cloud/experiment_state_server/proto/api.jsonpb_decls';
 import { Experiment } from 'xmanager_cloud/experiment_state_server/proto/experiment.jsonpb_decls';
 
-import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
+import { XMC_API_DOMAIN } from './constants';
 
 /**
  * Service to fetch experiments.
@@ -48,7 +48,7 @@ export class ExperimentService {
 
     const params = new HttpParams({ fromObject: paramsMap });
 
-    return this.http.get<ListExperimentsResponse>(`${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments`, {
+    return this.http.get<ListExperimentsResponse>(`${XMC_API_DOMAIN}/experiments`, {
       params,
       withCredentials: true,
     });
@@ -58,7 +58,7 @@ export class ExperimentService {
    * Fetch an experiment from the experiment state server.
    */
   getExperiment(xid: string): Observable<Experiment> {
-    return this.http.get<Experiment>(`${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/${xid}`, {
+    return this.http.get<Experiment>(`${XMC_API_DOMAIN}/experiments/${xid}`, {
       withCredentials: true,
     });
   }
@@ -77,7 +77,7 @@ export class ExperimentService {
     }
     const params = new HttpParams({ fromObject: paramsMap });
     return this.http.patch<Experiment>(
-      `${EXPERIMENT_STATE_SERVER_DOMAIN}/${request.experiment.name}`,
+      `${XMC_API_DOMAIN}/${request.experiment.name}`,
       request.experiment,
       { params, withCredentials: true },
     );

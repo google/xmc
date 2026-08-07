@@ -93,9 +93,16 @@ const (
 	// JobSetJobIndexLabel is the label set by JobSet for the job index.
 	JobSetJobIndexLabel = "jobset.sigs.k8s.io/job-index"
 
+	// JobSetReplicatedJobNameLabel is the label set by JobSet for the replicated job name.
+	JobSetReplicatedJobNameLabel = "jobset.sigs.k8s.io/replicatedjob-name"
+
 	// XmcEnvVarJobIndex is an environment variable set for all XManager Cloud jobs. It is set to the
 	// job index.
 	XmcEnvVarJobIndex = "XMC_JOB_INDEX"
+
+	// XmcEnvVarJobName is an environment variable set for all XManager Cloud jobs. It is set to the
+	// job name.
+	XmcEnvVarJobName = "XMC_JOB_NAME"
 
 	// XmcEnvVarMetricsEnabled is an environment variable set for all XManager Cloud jobs. It is set to
 	// true if metrics collection is enabled.

@@ -80,18 +80,12 @@ func ValidateCreateXidRequest(in *xidapipb.CreateXidEntryRequest) error {
 		return fmt.Errorf("xid_entry.origin cannot be nil: %w", status.ErrInvalidArgument)
 	}
 	acls := in.GetXidEntry().GetAcls()
-	if in.GetXidEntry().GetParentXid() != "" {
-		_, err := ValidateXIDName(in.GetXidEntry().GetParentXid())
-		if err != nil {
+	if parentXID := in.GetXidEntry().GetParentXid(); parentXID != "" {
+		if _, err := ValidateXIDName(parentXID); err != nil {
 			return fmt.Errorf("xid_entry.parent_xid must be in the format xids/{xid}: %w", err)
 		}
-	} else {
-		if in.GetXidEntry().GetAcls() == nil {
-			return fmt.Errorf("xid_entry.acls cannot be nil: %w", status.ErrInvalidArgument)
-		}
-		if len(acls.GetOwners()) == 0 {
-			return fmt.Errorf("xid_entry.acls.owners cannot be empty for an XID with no parent: %w", status.ErrInvalidArgument)
-		}
+	} else if err := validateRootACLs(acls); err != nil {
+		return err
 	}
 	if acls != nil {
 		if err := validateRoles(acls.GetOwners()); err != nil {
@@ -103,6 +97,16 @@ func ValidateCreateXidRequest(in *xidapipb.CreateXidEntryRequest) error {
 		if err := validateRoles(acls.GetReaders()); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func validateRootACLs(acls *xidmessagespb.XidAcls) error {
+	if acls == nil {
+		return fmt.Errorf("xid_entry.acls cannot be nil: %w", status.ErrInvalidArgument)
+	}
+	if len(acls.GetOwners()) == 0 {
+		return fmt.Errorf("xid_entry.acls.owners cannot be empty for an XID with no parent: %w", status.ErrInvalidArgument)
 	}
 	return nil
 }
@@ -329,19 +333,8 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 		if jobNames[job.Name] {
 			return fmt.Errorf("work_unit.executable.jobset.jobs.name must be unique: %w", status.ErrInvalidArgument)
 		}
-		if dep := job.GetDependencyOrder(); dep != nil {
-			if dep.GetJobName() == "" {
-				return fmt.Errorf("work_unit.executable.jobset.jobs.dependency_order.job_name cannot be empty: %w", status.ErrInvalidArgument)
-			}
-			if dep.GetJobName() == job.Name {
-				return fmt.Errorf("work_unit.executable.jobset.jobs.dependency_order.job_name cannot be the same as the job name: %w", status.ErrInvalidArgument)
-			}
-			if !jobNames[dep.GetJobName()] {
-				return fmt.Errorf("work_unit.executable.jobset.jobs.dependency_order.job_name %q must be defined before the dependent job: %w", dep.GetJobName(), status.ErrInvalidArgument)
-			}
-			if dep.GetJobDependencyState() == essmsgpb.KubernetesJob_DependencyOrder_JOB_DEPENDENCY_STATE_UNSPECIFIED {
-				return fmt.Errorf("work_unit.executable.jobset.jobs.dependency_order.job_dependency_state cannot be unspecified: %w", status.ErrInvalidArgument)
-			}
+		if err := validateJobDependencyOrder(job.GetDependencyOrder(), job.Name, jobNames); err != nil {
+			return err
 		}
 		jobNames[job.Name] = true
 		jobMap[job.Name] = job
@@ -396,6 +389,25 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 		return fmt.Errorf("work_unit.executable.scheduling_constraints.queue_name cannot be empty: %w", status.ErrInvalidArgument)
 	} else if len(queueName) > maxQueueNameLen {
 		return fmt.Errorf("work_unit.executable.scheduling_constraints.queue_name cannot be longer than %d characters: %w", maxQueueNameLen, status.ErrInvalidArgument)
+	}
+	return nil
+}
+
+func validateJobDependencyOrder(dep *essmsgpb.KubernetesJob_DependencyOrder, jobName string, jobNames map[string]bool) error {
+	if dep == nil {
+		return nil
+	}
+	if dep.GetJobName() == "" {
+		return fmt.Errorf("work_unit.executable.jobset.jobs.dependency_order.job_name cannot be empty: %w", status.ErrInvalidArgument)
+	}
+	if dep.GetJobName() == jobName {
+		return fmt.Errorf("work_unit.executable.jobset.jobs.dependency_order.job_name cannot be the same as the job name: %w", status.ErrInvalidArgument)
+	}
+	if !jobNames[dep.GetJobName()] {
+		return fmt.Errorf("work_unit.executable.jobset.jobs.dependency_order.job_name %q must be defined before the dependent job: %w", dep.GetJobName(), status.ErrInvalidArgument)
+	}
+	if dep.GetJobDependencyState() == essmsgpb.KubernetesJob_DependencyOrder_JOB_DEPENDENCY_STATE_UNSPECIFIED {
+		return fmt.Errorf("work_unit.executable.jobset.jobs.dependency_order.job_dependency_state cannot be unspecified: %w", status.ErrInvalidArgument)
 	}
 	return nil
 }

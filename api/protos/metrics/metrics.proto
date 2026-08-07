@@ -24,9 +24,10 @@ message Metric {
   int64 xid = 1;
   int64 work_unit_id = 2;
   int64 execution_id = 3;
-  string replica_id = 4;
-  string metric_name = 5;
-  double metric_value = 6;
-  int64 step = 7;
-  int64 timestamp = 8; // Timestamp in microseconds
+  string job_name = 4;
+  string replica_id = 5;
+  string metric_name = 6;
+  double metric_value = 7;
+  int64 step = 8;
+  int64 timestamp = 9; // Timestamp in microseconds
 }

@@ -360,24 +360,25 @@ func TestStopOperationOnError(t *testing.T) {
 
 			server.stopOperationOnError(ctx, tc.op, tc.err)
 
-			if tc.wantUpdateWorkUnitOperation {
-				if storage.UpdateWorkUnitOperationCalls != 1 {
-					t.Errorf("stopOperationOnError() UpdateWorkUnitOperation calls = %d, want 1", storage.UpdateWorkUnitOperationCalls)
-				}
-				if storage.GotOperationUpdate.Operation.GetDone() != tc.wantDone {
-					t.Errorf("stopOperationOnError() updated operation with done = %v, want %v", storage.GotOperationUpdate.Operation.GetDone(), tc.wantDone)
-				}
-				if status.Code(storage.GotOperationUpdate.Operation.GetError().GetCode()) != tc.wantCode {
-					t.Errorf("stopOperationOnError() updated operation with code = %v, want %v", status.Code(storage.GotOperationUpdate.Operation.GetError().GetCode()), tc.wantCode)
-				}
-				wantMask := &fmpb.FieldMask{Paths: []string{"done", "error"}}
-				if diff := cmp.Diff(wantMask, storage.GotOperationUpdate.UpdateMask, protocmp.Transform()); diff != "" {
-					t.Errorf("stopOperationOnError() updated operation with wrong update mask (-want +got):\n%s", diff)
-				}
-			} else {
+			if !tc.wantUpdateWorkUnitOperation {
 				if storage.UpdateWorkUnitOperationCalls != 0 {
 					t.Errorf("stopOperationOnError() UpdateWorkUnitOperation calls = %d, want 0", storage.UpdateWorkUnitOperationCalls)
 				}
+				return
+			}
+
+			if storage.UpdateWorkUnitOperationCalls != 1 {
+				t.Errorf("stopOperationOnError() UpdateWorkUnitOperation calls = %d, want 1", storage.UpdateWorkUnitOperationCalls)
+			}
+			if storage.GotOperationUpdate.Operation.GetDone() != tc.wantDone {
+				t.Errorf("stopOperationOnError() updated operation with done = %v, want %v", storage.GotOperationUpdate.Operation.GetDone(), tc.wantDone)
+			}
+			if status.Code(storage.GotOperationUpdate.Operation.GetError().GetCode()) != tc.wantCode {
+				t.Errorf("stopOperationOnError() updated operation with code = %v, want %v", status.Code(storage.GotOperationUpdate.Operation.GetError().GetCode()), tc.wantCode)
+			}
+			wantMask := &fmpb.FieldMask{Paths: []string{"done", "error"}}
+			if diff := cmp.Diff(wantMask, storage.GotOperationUpdate.UpdateMask, protocmp.Transform()); diff != "" {
+				t.Errorf("stopOperationOnError() updated operation with wrong update mask (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -440,31 +441,33 @@ func TestPropagateIAPJWT(t *testing.T) {
 			outCtx := propagateIAPJWT(ctx)
 
 			outMD, ok := metadata.FromOutgoingContext(outCtx)
-			if !ok && tc.wantOK {
-				t.Fatal("expected outgoing metadata, but got none")
+			if !ok {
+				if tc.wantOK {
+					t.Fatal("expected outgoing metadata, but got none")
+				}
+				return
 			}
-			if ok {
-				jwtValues := outMD.Get("x-goog-iap-jwt-assertion")
-				if len(jwtValues) > 0 && !tc.wantOK {
-					t.Errorf("expected no jwt in outgoing metadata, got %v", jwtValues)
-				}
-				if len(jwtValues) == 0 && tc.wantOK && tc.wantJWTOut != "" {
-					t.Errorf("expected jwt in outgoing metadata, got none")
-				}
-				if len(jwtValues) > 0 && tc.wantOK && jwtValues[0] != tc.wantJWTOut {
-					t.Errorf("wrong jwt in outgoing metadata, got %q, want %q", jwtValues[0], tc.wantJWTOut)
-				}
 
-				emailValues := outMD.Get("x-goog-user-email")
-				if len(emailValues) > 0 && !tc.wantOK {
-					t.Errorf("expected no email in outgoing metadata, got %v", emailValues)
-				}
-				if len(emailValues) == 0 && tc.wantOK && tc.wantEmailOut != "" {
-					t.Errorf("expected email in outgoing metadata, got none")
-				}
-				if len(emailValues) > 0 && tc.wantOK && emailValues[0] != tc.wantEmailOut {
-					t.Errorf("wrong email in outgoing metadata, got %q, want %q", emailValues[0], tc.wantEmailOut)
-				}
+			jwtValues := outMD.Get("x-goog-iap-jwt-assertion")
+			if len(jwtValues) > 0 && !tc.wantOK {
+				t.Errorf("expected no jwt in outgoing metadata, got %v", jwtValues)
+			}
+			if len(jwtValues) == 0 && tc.wantOK && tc.wantJWTOut != "" {
+				t.Errorf("expected jwt in outgoing metadata, got none")
+			}
+			if len(jwtValues) > 0 && tc.wantOK && jwtValues[0] != tc.wantJWTOut {
+				t.Errorf("wrong jwt in outgoing metadata, got %q, want %q", jwtValues[0], tc.wantJWTOut)
+			}
+
+			emailValues := outMD.Get("x-goog-user-email")
+			if len(emailValues) > 0 && !tc.wantOK {
+				t.Errorf("expected no email in outgoing metadata, got %v", emailValues)
+			}
+			if len(emailValues) == 0 && tc.wantOK && tc.wantEmailOut != "" {
+				t.Errorf("expected email in outgoing metadata, got none")
+			}
+			if len(emailValues) > 0 && tc.wantOK && emailValues[0] != tc.wantEmailOut {
+				t.Errorf("wrong email in outgoing metadata, got %q, want %q", emailValues[0], tc.wantEmailOut)
 			}
 		})
 	}
