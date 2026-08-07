@@ -21,6 +21,7 @@ compat_go_library(
     srcs = [
         "config.go",
         "health_checker.go",
+        "list_configs.go",
         "main.go",
         "server.go",
     ],
@@ -58,6 +59,7 @@ compat_go_test(
     name = "server_test",
     srcs = [
         "health_checker_test.go",
+        "list_configs_test.go",
         "server_test.go",
     ],
     embed = [":health_service_lib"],
