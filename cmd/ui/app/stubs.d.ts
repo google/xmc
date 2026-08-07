@@ -262,7 +262,7 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
   export interface GetRunningAndPendingJobsResponse {
     jobs?: DashboardJob[];
     nextPageToken?: string;
-    totalQueueSize?: number | string;
+    totalQueueSize?: number;
   }
 
   export interface QueueJob {
