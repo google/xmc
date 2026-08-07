@@ -42,7 +42,8 @@ func readConfigDir(dir string) ([]*spb.ConfigInfo, error) {
 		path := filepath.Join(dir, f.Name())
 		content, err := os.ReadFile(path)
 		if err != nil {
-			return nil, err
+			slog.Warn("Failed to read config file", "path", path, "error", err)
+			continue
 		}
 		configs = append(configs, &spb.ConfigInfo{
 			Key:   f.Name(),
@@ -71,7 +72,7 @@ func listConfigs(configDir string) ([]*spb.ConfigGroup, error) {
 		configs, err := readConfigDir(dir)
 		if err != nil {
 			slog.Error("Failed to read config dir", "dir", dir, "error", err)
-			return nil, err
+			continue
 		}
 		if len(configs) > 0 {
 			groups = append(groups, &spb.ConfigGroup{

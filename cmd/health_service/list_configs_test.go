@@ -32,7 +32,7 @@ func TestListConfigs_Success(t *testing.T) {
 		t.Fatalf("failed to write ess config: %v", err)
 	}
 
-	// Mock Health Service config (new requirement)
+	// Mock Health Service config
 	hsDir := filepath.Join(tempDir, "health-service")
 	if err := os.Mkdir(hsDir, 0755); err != nil {
 		t.Fatalf("failed to create hs dir: %v", err)
@@ -128,5 +128,96 @@ func TestListConfigs_MissingDirsSkipped(t *testing.T) {
 
 	if len(groups) != 0 {
 		t.Errorf("Expected 0 config groups for empty directory, got %d", len(groups))
+	}
+}
+
+func TestListConfigs_UnreadableFileIgnored(t *testing.T) {
+	tempDir := t.TempDir()
+
+	essDir := filepath.Join(tempDir, "ess")
+	if err := os.Mkdir(essDir, 0755); err != nil {
+		t.Fatalf("failed to create ess dir: %v", err)
+	}
+
+	// Writable/Readable file
+	if err := os.WriteFile(filepath.Join(essDir, "valid_key"), []byte("val"), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	// Unreadable file (0000 permissions)
+	unreadablePath := filepath.Join(essDir, "unreadable_key")
+	if err := os.WriteFile(unreadablePath, []byte("secret"), 0000); err != nil {
+		t.Fatalf("failed to write unreadable config: %v", err)
+	}
+
+	groups, err := listConfigs(tempDir)
+	if err != nil {
+		t.Fatalf("listConfigs failed: %v", err)
+	}
+
+	if len(groups) != 1 {
+		t.Fatalf("Expected 1 config group, got %d", len(groups))
+	}
+
+	configs := groups[0].Configs
+	// Check if the file is actually unreadable by the current process
+	_, errRead := os.ReadFile(unreadablePath)
+	expectedCount := 1
+	if errRead == nil {
+		// If we can read it (likely running as root), then it won't be skipped.
+		expectedCount = 2
+		t.Log("Warning: 0000 file was readable (likely running as root). Adjusting expectation.")
+	}
+
+	if len(configs) != expectedCount {
+		t.Fatalf("Expected %d configs in group, got %d", expectedCount, len(configs))
+	}
+
+	foundValid := false
+	for _, c := range configs {
+		if c.Key == "valid_key" {
+			foundValid = true
+			if c.Value != "val" {
+				t.Errorf("Expected valid_key value to be 'val', got %q", c.Value)
+			}
+		}
+	}
+	if !foundValid {
+		t.Error("Expected 'valid_key' to be present")
+	}
+}
+
+func TestListConfigs_UnreadableDirIgnored(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Unreadable directory
+	essDir := filepath.Join(tempDir, "ess")
+	if err := os.Mkdir(essDir, 0000); err != nil {
+		t.Fatalf("failed to create ess dir: %v", err)
+	}
+	// Defer chmod to allow cleanup of tempDir
+	defer os.Chmod(essDir, 0755)
+
+	// Readable directory
+	hsDir := filepath.Join(tempDir, "health-service")
+	if err := os.Mkdir(hsDir, 0755); err != nil {
+		t.Fatalf("failed to create hs dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(hsDir, "hs_key"), []byte("hs_val"), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	groups, err := listConfigs(tempDir)
+	if err != nil {
+		t.Fatalf("listConfigs failed: %v", err)
+	}
+
+	// The unreadable directory should be skipped, so only health-service should be returned.
+	if len(groups) != 1 {
+		t.Fatalf("Expected 1 config group, got %d", len(groups))
+	}
+
+	if groups[0].DisplayName != "Health Service Config" {
+		t.Errorf("Expected group to be 'Health Service Config', got %q", groups[0].DisplayName)
 	}
 }
