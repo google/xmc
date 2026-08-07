@@ -264,12 +264,14 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
         mock_client.work_unit_id = "2002"
         mock_client.execution_id = "3003"
         mock_client.replica_id = "replica-5"
+        mock_client.job_name = "my_job_name"
         mock_client.is_silenced = False
 
         env = {
             "XMC_XID": "1001",
             "XMC_WORK_UNIT_ID": "2002",
             "XMC_EXECUTION_ID": "3003",
+            "XMC_JOB_NAME": "my_job_name",
             "XMC_REPLICA_ID": "replica-5",
         }
         flusher = MetricsFlusher(
@@ -282,6 +284,7 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
         self.assertEqual(flusher.xid, "1001")
         self.assertEqual(flusher.work_unit_id, "2002")
         self.assertEqual(flusher.execution_id, "3003")
+        self.assertEqual(flusher.job_name, "my_job_name")
         self.assertEqual(flusher.replica_id, "replica-5")
 
         flusher.log_metric("loss", 0.123, 5, timestamp=100.0)
@@ -294,10 +297,11 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
         self.assertEqual(len(payload), 1)
         metric_dict = payload[0]
 
-        # Verify all 8 required fields DoD per XMCMetricsBatch schema
+        # Verify required fields DoD per XMCMetricsBatch schema
         self.assertEqual(metric_dict["xid"], "1001")
         self.assertEqual(metric_dict["work_unit_id"], "2002")
         self.assertEqual(metric_dict["execution_id"], "3003")
+        self.assertEqual(metric_dict["job_name"], "my_job_name")
         self.assertEqual(metric_dict["replica_id"], "replica-5")
         self.assertEqual(metric_dict["metric_name"], "loss")
         self.assertEqual(metric_dict["metric_value"], 0.123)
@@ -310,6 +314,7 @@ class TestMetricsFlusherFlushing(unittest.TestCase):
             "XMC_XID": "123",
             "XMC_WORK_UNIT_ID": "456",
             "XMC_EXECUTION_ID": "789",
+            "XMC_JOB_NAME": "my_job_name",
             "XMC_REPLICA_ID": "rep-0",
         }
         flusher = MetricsFlusher(

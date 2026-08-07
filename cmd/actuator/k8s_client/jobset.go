@@ -75,11 +75,11 @@ func (c *Client) createJobSet(ctx context.Context, workUnit *esspb.WorkUnit, tar
 	namespace := getNamespaceFromWorkUnit(workUnit)
 
 	jobSet, err := c.constructJobSet(ctx, workUnit, target, author, namespace, operationTime, priorities)
-	logging.Info(ctx, "Create JobSet", "jobSet", jobSet.GetName())
 	if err != nil {
 		logging.Warn(ctx, "Failed to construct JobSet manifest", "error", err)
 		return fmt.Errorf("failed to construct JobSet manifest: %w", err)
 	}
+	logging.Info(ctx, "Create JobSet", "jobSet", jobSet.GetName())
 
 	ctx = logging.WithJobSetName(ctx, jobSet.GetName(), nil)
 
@@ -631,7 +631,26 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		return nil, err
 	}
 	ensureCoordinatorIndicesValid(jobSet)
+	if err := validateNonRestartingJobSetContract(jobSet); err != nil {
+		return nil, err
+	}
 	return jobSet, nil
+}
+
+// validateNonRestartingJobSetContract validates that the JobSet complies with the XMC Non-Restarting JobSets contract.
+func validateNonRestartingJobSetContract(jobSet *jobsetv1alpha2.JobSet) error {
+	if jobSet == nil {
+		return nil
+	}
+	if jobSet.Spec.FailurePolicy != nil && jobSet.Spec.FailurePolicy.MaxRestarts != 0 {
+		return fmt.Errorf("contract violation: JobSet MaxRestarts must be 0, got %d", jobSet.Spec.FailurePolicy.MaxRestarts)
+	}
+	for _, rj := range jobSet.Spec.ReplicatedJobs {
+		if rj.Template.Spec.Template.Spec.RestartPolicy != corev1.RestartPolicyNever {
+			return fmt.Errorf("contract violation: replicated job %q pod restartPolicy must be Never, got %s", rj.Name, rj.Template.Spec.Template.Spec.RestartPolicy)
+		}
+	}
+	return nil
 }
 
 // ensureCoordinatorIndicesValid adjusts Coordinator indices if the execution environment collapsed a multi-replica job to a multi-pod job.
@@ -895,6 +914,7 @@ func (c *Client) generateEnvVarsForSpec(spec *esspb.ExecutableSpec) []corev1.Env
 		{constants.XmcEnvVarExecutionID, fmt.Sprintf("metadata.labels['%s']", constants.ExecutionIDLabel)},
 		{constants.XmcEnvVarAuthor, fmt.Sprintf("metadata.annotations['%s']", constants.AuthorAnnotation)},
 		{constants.XmcEnvVarJobIndex, fmt.Sprintf("metadata.labels['%s']", constants.JobSetJobIndexLabel)},
+		{constants.XmcEnvVarJobName, fmt.Sprintf("metadata.labels['%s']", constants.JobSetReplicatedJobNameLabel)},
 	}
 
 	for _, ev := range envVarFieldRefs {
