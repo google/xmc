@@ -20,14 +20,14 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
-import { GetRunningAndPendingJobsResponse } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import { bootstrap, cleanState, flush, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
 import { QueueJobsTable } from './queue_jobs_table';
 import { QueueJobsTableHarness } from './queue_jobs_table_harness';
 
-const TEST_QUEUE_JOBS_RESP: GetRunningAndPendingJobsResponse = {
+const TEST_QUEUE_JOBS_RESP = {
+  queueName: 'gpu-cluster-queue',
   jobs: [
     {
       position: 'N/A-running',
@@ -54,7 +54,6 @@ const TEST_QUEUE_JOBS_RESP: GetRunningAndPendingJobsResponse = {
       queueName: 'gpu-cluster-queue',
     },
   ],
-  totalQueueSize: 2,
 };
 
 @Component({
