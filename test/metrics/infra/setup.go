@@ -49,6 +49,7 @@ type Harness struct {
 	ClickHouseConn       driver.Conn
 	RedpandaBrokers      []string
 	ClickHouseNativeAddr string
+	ClickHouseHTTPAddr   string
 	network              *testcontainers.DockerNetwork
 }
 
@@ -158,11 +159,14 @@ func locateMetricsProtoFile() string {
 	return ""
 }
 
-// // ClickHouseNode encapsulates a ClickHouse container instance, driver connection, and native address.
+// ClickHouseNode encapsulates a ClickHouse container instance, driver connection, and mapped endpoint addresses.
 type ClickHouseNode struct {
 	Container *clickhouse.ClickHouseContainer
 	Conn      driver.Conn
-	Address   string
+	// Address is the host:port for ClickHouse's native TCP binary protocol (9000/tcp), used by Go database drivers.
+	Address string
+	// HTTPAddress is the host:port for ClickHouse's REST HTTP protocol (8123/tcp), used by Python/HTTP query clients.
+	HTTPAddress string
 }
 
 // StartClickHouse spins up a ClickHouse test container and establishes a native driver connection.
@@ -200,6 +204,12 @@ func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork) (*Cl
 		return nil, fmt.Errorf("failed to get clickhouse native port: %w", err)
 	}
 
+	httpPort, err := c.MappedPort(ctx, "8123/tcp")
+	if err != nil {
+		terminateWithTimeout(c)
+		return nil, fmt.Errorf("failed to get clickhouse http port: %w", err)
+	}
+
 	host, err := c.Host(ctx)
 	if err != nil {
 		terminateWithTimeout(c)
@@ -207,6 +217,7 @@ func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork) (*Cl
 	}
 
 	addr := net.JoinHostPort(host, nativePort.Port())
+	httpAddr := net.JoinHostPort(host, httpPort.Port())
 
 	if err := VerifyTCPConnectivity(ctx, addr); err != nil {
 		terminateWithTimeout(c)
@@ -234,9 +245,10 @@ func StartClickHouse(ctx context.Context, nw *testcontainers.DockerNetwork) (*Cl
 	}
 
 	return &ClickHouseNode{
-		Container: c,
-		Conn:      conn,
-		Address:   addr,
+		Container:   c,
+		Conn:        conn,
+		Address:     addr,
+		HTTPAddress: httpAddr,
 	}, nil
 }
 
@@ -360,6 +372,7 @@ func StartHarness(ctx context.Context, schemaPath string) (*Harness, error) {
 		ClickHouseConn:       chNode.Conn,
 		RedpandaBrokers:      rpNode.Brokers,
 		ClickHouseNativeAddr: chNode.Address,
+		ClickHouseHTTPAddr:   chNode.HTTPAddress,
 		network:              nw,
 	}
 	return harness, nil
