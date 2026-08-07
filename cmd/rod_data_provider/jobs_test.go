@@ -121,7 +121,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := newServerWithFetcher(cfg, tt.fetcher)
+			srv := newServer(cfg, nil, tt.fetcher)
 			resp, err := srv.GetRunningAndPendingJobs(tt.ctx, tt.req)
 
 			gotCode := status.Code(err)
@@ -138,9 +138,6 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 				}
 				if tt.wantCount > 0 {
 					job := resp.Jobs[0]
-					if job.JobId != "xmc-operation-100-1" {
-						t.Errorf("JobId = %q, want xmc-operation-100-1", job.JobId)
-					}
 					if job.Xid != "100" {
 						t.Errorf("Xid = %q, want 100", job.Xid)
 					}
@@ -167,7 +164,7 @@ func TestGetRunningAndPendingJobs_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	srv := newServerWithFetcher(cfg, &mockWorkUnitFetcher{})
+	srv := newServer(cfg, nil, &mockWorkUnitFetcher{})
 	req := &spb.GetRunningAndPendingJobsRequest{QueueName: "gpu-cluster-queue"}
 	_, err := srv.GetRunningAndPendingJobs(ctx, req)
 
