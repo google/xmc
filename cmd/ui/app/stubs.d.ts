@@ -242,7 +242,7 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
     xid?: number;
     workUnitId?: number;
     user?: string;
-    priority?: string;
+    priority?: number;
     status?: WorkUnitState;
     timeInQueueSeconds?: number;
     requestedResources?: Resource[];

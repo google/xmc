@@ -96,15 +96,14 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
     'user',
   ];
 
-  protected getPriorityDisplay(priority?: string): string {
-    if (!priority) return 'Normal';
-    const p = priority.toLowerCase();
-    if (p.startsWith('high')) return 'High';
-    if (p.startsWith('low')) return 'Low';
-    return priority.charAt(0).toUpperCase() + priority.slice(1);
+  protected getPriorityDisplay(priority?: number): string {
+    if (priority === undefined || priority === null) return 'Normal';
+    if (priority > 50) return 'High';
+    if (priority < 0) return 'Low';
+    return 'Normal';
   }
 
-  protected getPriorityBadgeClass(priority?: string): string {
+  protected getPriorityBadgeClass(priority?: number): string {
     const formatted = this.getPriorityDisplay(priority).toLowerCase();
     return `priority-${formatted}`;
   }
