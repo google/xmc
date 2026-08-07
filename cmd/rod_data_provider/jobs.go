@@ -16,8 +16,6 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"strconv"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -99,37 +97,14 @@ func mapWorkUnitToDashboardJob(wu *essmsgpb.WorkUnit, now time.Time) *spb.Dashbo
 	user := wu.GetNotes()
 
 	return &spb.DashboardJob{
-		JobId:              fmt.Sprintf("xmc-operation-%d-%d", xid, wid),
-		Xid:                strconv.FormatInt(xid, 10),
+		Xid:                xid,
 		WorkUnitId:         wid,
 		User:               user,
 		Priority:           int64(wu.GetPriority()),
-		Status:             mapEssStateToRodState(state),
+		Status:             state,
 		TimeInQueueSeconds: timeInQueueSec,
 		PositionInQueue:    posInQueue,
 		CreateTime:         wu.GetCreateTime(),
 		Tags:               wu.GetTags(),
-	}
-}
-
-// mapEssStateToRodState converts essmsgpb.WorkUnitStatus_WorkUnitState to spb.WorkUnitState.
-func mapEssStateToRodState(state essmsgpb.WorkUnitStatus_WorkUnitState) spb.WorkUnitState {
-	switch state {
-	case essmsgpb.WorkUnitStatus_INITIALIZING:
-		return spb.WorkUnitState_INITIALIZING
-	case essmsgpb.WorkUnitStatus_SCHEDULING:
-		return spb.WorkUnitState_SCHEDULING
-	case essmsgpb.WorkUnitStatus_STARTING:
-		return spb.WorkUnitState_STARTING
-	case essmsgpb.WorkUnitStatus_RUNNING:
-		return spb.WorkUnitState_RUNNING
-	case essmsgpb.WorkUnitStatus_COMPLETED:
-		return spb.WorkUnitState_SUCCEEDED
-	case essmsgpb.WorkUnitStatus_FAILED:
-		return spb.WorkUnitState_FAILED
-	case essmsgpb.WorkUnitStatus_STOPPED:
-		return spb.WorkUnitState_CANCELLED
-	default:
-		return spb.WorkUnitState_WORK_UNIT_STATE_UNSPECIFIED
 	}
 }

@@ -138,8 +138,8 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 				}
 				if tt.wantCount > 0 {
 					job := resp.Jobs[0]
-					if job.Xid != "100" {
-						t.Errorf("Xid = %q, want 100", job.Xid)
+					if job.Xid != 100 {
+						t.Errorf("Xid = %d, want 100", job.Xid)
 					}
 					if job.WorkUnitId != 1 {
 						t.Errorf("WorkUnitId = %d, want 1", job.WorkUnitId)
@@ -147,7 +147,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 					if job.User != "test@example.com" {
 						t.Errorf("User = %q, want test@example.com", job.User)
 					}
-					if job.Status != spb.WorkUnitState_SCHEDULING {
+					if job.Status != essmsgpb.WorkUnitStatus_SCHEDULING {
 						t.Errorf("Status = %v, want SCHEDULING", job.Status)
 					}
 					if job.PositionInQueue != 1 {
