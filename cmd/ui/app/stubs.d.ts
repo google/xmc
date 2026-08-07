@@ -241,13 +241,13 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
 
   export interface DashboardJob {
     xid?: string;
-    workUnitId?: number | string;
+    workUnitId?: number;
     user?: string;
-    priority?: number | string;
-    status?: WorkUnitState | string;
-    timeInQueueSeconds?: number | string;
+    priority?: number;
+    status?: WorkUnitState;
+    timeInQueueSeconds?: number;
     requestedResources?: Resource[];
-    positionInQueue?: number | string;
+    positionInQueue?: number;
     createTime?: any;
     tags?: string[];
   }

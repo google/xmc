@@ -70,7 +70,7 @@ describe('QueueJobsTable Component', () => {
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
       'getQueueJobs',
     ]);
-    resourceService.getQueueJobs.and.returnValue(of(TEST_QUEUE_JOBS_RESP));
+    resourceService.getQueueJobs.and.returnValue(of(TEST_QUEUE_JOBS_RESP as any));
 
     setupModule({
       imports: [TestHostComponent, NoopAnimationsModule],
