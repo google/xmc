@@ -36,6 +36,8 @@ type Validator interface {
 	// IsExecutionIDAligned checks if the execution ID of the jobset is
 	// less than or equal to the execution ID of the target.
 	IsExecutionIDAligned(ctx context.Context, target string, jobSetUnstructured *unstructured.Unstructured) (bool, error)
+	// ValidateJobSetManifest performs creation-time structural validation on the JobSet spec.
+	ValidateJobSetManifest(jobSetUnstructured *unstructured.Unstructured) error
 }
 
 type validatorImpl struct{}
@@ -78,12 +80,12 @@ func (v *validatorImpl) IsActuationRequestValid(ctx context.Context, target stri
 		logging.Warn(ctx, "Existing JobSet violates non-restarting contract, proceeding with actuation to clean up or restart", "target", target, "jobset-name", jobSetUnstructured.GetName())
 	}
 
-	if err := validateHostNetworkExclusiveTopology(jobSetUnstructured); err != nil {
-		logging.Warn(ctx, "HostNetwork exclusive topology validation failed, skipping actuation", "target", target, "jobset-name", jobSetUnstructured.GetName(), "error", err)
-		return false, err
-	}
-
 	return true, nil
+}
+
+// ValidateJobSetManifest performs creation-time structural validation on the JobSet spec.
+func (v *validatorImpl) ValidateJobSetManifest(jobSetUnstructured *unstructured.Unstructured) error {
+	return validateHostNetworkExclusiveTopology(jobSetUnstructured)
 }
 
 func isNonRestartingJobSetContractValid(jobSetUnstructured *unstructured.Unstructured) (bool, error) {

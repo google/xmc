@@ -88,16 +88,6 @@ func TestIsActuationRequestValid(t *testing.T) {
 			wantIsValid:   true,
 		},
 		{
-			name: "equal timestamps",
-			jobSet: createJobSetWithLabels(map[string]string{
-				constants.ExecutionIDLabel: "1",
-				constants.LastEditLabel:    strconv.FormatInt(now.Unix(), 10),
-			}),
-			target:        "experiments/1/workUnits/1/executions/1",
-			operationTime: now,
-			wantIsValid:   true,
-		},
-		{
 			name: "contract violation on existing jobset proceeds with actuation",
 			jobSet: &unstructured.Unstructured{
 				Object: map[string]any{
@@ -119,14 +109,49 @@ func TestIsActuationRequestValid(t *testing.T) {
 			wantIsValid:   true,
 		},
 		{
+			name: "equal timestamps",
+			jobSet: createJobSetWithLabels(map[string]string{
+				constants.ExecutionIDLabel: "1",
+				constants.LastEditLabel:    strconv.FormatInt(now.Unix(), 10),
+			}),
+			target:        "experiments/1/workUnits/1/executions/1",
+			operationTime: now,
+			wantIsValid:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotIsValid, err := validator.IsActuationRequestValid(ctx, tc.target, tc.operationTime, tc.jobSet)
+			if err != nil {
+				t.Fatalf("IsActuationRequestValid() returned unexpected error: %v", err)
+			}
+
+			if gotIsValid != tc.wantIsValid {
+				t.Errorf("IsActuationRequestValid() = %v, want %v", gotIsValid, tc.wantIsValid)
+			}
+		})
+	}
+}
+
+func TestValidateJobSetManifest(t *testing.T) {
+	validator := New()
+
+	testCases := []struct {
+		name    string
+		jobSet  *unstructured.Unstructured
+		wantErr bool
+	}{
+		{
+			name:    "nil jobset",
+			jobSet:  nil,
+			wantErr: false,
+		},
+		{
 			name: "hostNetwork true with top-level exclusive topology",
 			jobSet: &unstructured.Unstructured{
 				Object: map[string]any{
 					"metadata": map[string]any{
-						"labels": map[string]any{
-							constants.ExecutionIDLabel: "1",
-							constants.LastEditLabel:    strconv.FormatInt(earlier.Unix(), 10),
-						},
 						"annotations": map[string]any{
 							exclusiveTopologyAnnotation: "cloud.google.com/gke-nodepool",
 						},
@@ -148,20 +173,12 @@ func TestIsActuationRequestValid(t *testing.T) {
 					},
 				},
 			},
-			target:        "experiments/1/workUnits/1/executions/1",
-			operationTime: now,
-			wantIsValid:   true,
+			wantErr: false,
 		},
 		{
 			name: "hostNetwork true with pod-level exclusive topology",
 			jobSet: &unstructured.Unstructured{
 				Object: map[string]any{
-					"metadata": map[string]any{
-						"labels": map[string]any{
-							constants.ExecutionIDLabel: "1",
-							constants.LastEditLabel:    strconv.FormatInt(earlier.Unix(), 10),
-						},
-					},
 					"spec": map[string]any{
 						"replicatedJobs": []any{
 							map[string]any{
@@ -184,20 +201,12 @@ func TestIsActuationRequestValid(t *testing.T) {
 					},
 				},
 			},
-			target:        "experiments/1/workUnits/1/executions/1",
-			operationTime: now,
-			wantIsValid:   true,
+			wantErr: false,
 		},
 		{
 			name: "hostNetwork true missing exclusive topology",
 			jobSet: &unstructured.Unstructured{
 				Object: map[string]any{
-					"metadata": map[string]any{
-						"labels": map[string]any{
-							constants.ExecutionIDLabel: "1",
-							constants.LastEditLabel:    strconv.FormatInt(earlier.Unix(), 10),
-						},
-					},
 					"spec": map[string]any{
 						"replicatedJobs": []any{
 							map[string]any{
@@ -215,20 +224,12 @@ func TestIsActuationRequestValid(t *testing.T) {
 					},
 				},
 			},
-			target:        "experiments/1/workUnits/1/executions/1",
-			operationTime: now,
-			wantIsValid:   false,
+			wantErr: true,
 		},
 		{
 			name: "hostNetwork false missing exclusive topology",
 			jobSet: &unstructured.Unstructured{
 				Object: map[string]any{
-					"metadata": map[string]any{
-						"labels": map[string]any{
-							constants.ExecutionIDLabel: "1",
-							constants.LastEditLabel:    strconv.FormatInt(earlier.Unix(), 10),
-						},
-					},
 					"spec": map[string]any{
 						"replicatedJobs": []any{
 							map[string]any{
@@ -246,21 +247,15 @@ func TestIsActuationRequestValid(t *testing.T) {
 					},
 				},
 			},
-			target:        "experiments/1/workUnits/1/executions/1",
-			operationTime: now,
-			wantIsValid:   true,
+			wantErr: false,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotIsValid, err := validator.IsActuationRequestValid(ctx, tc.target, tc.operationTime, tc.jobSet)
-			if (err != nil) && tc.wantIsValid {
-				t.Fatalf("IsActuationRequestValid() returned unexpected error: %v", err)
-			}
-
-			if gotIsValid != tc.wantIsValid {
-				t.Errorf("IsActuationRequestValid() = %v, want %v", gotIsValid, tc.wantIsValid)
+			err := validator.ValidateJobSetManifest(tc.jobSet)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("ValidateJobSetManifest() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}

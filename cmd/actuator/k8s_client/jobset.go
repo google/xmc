@@ -91,14 +91,9 @@ func (c *Client) createJobSet(ctx context.Context, workUnit *esspb.WorkUnit, tar
 		return fmt.Errorf("failed to convert JobSet to unstructured: %w", err)
 	}
 
-	valid, err := c.preconditionsValidator.IsActuationRequestValid(ctx, target, operationTime, jobSetUnstructured)
-	if err != nil {
-		logging.Warn(ctx, "Failed to validate createJobSet request", "error", err)
-		return fmt.Errorf("failed to validate createJobSet request for %q: %w", target, err)
-	}
-	if !valid {
-		logging.Warn(ctx, "Discarding create request due to invalid preconditions")
-		return fmt.Errorf("discarding create request for %q: preconditions not met", target)
+	if err := c.preconditionsValidator.ValidateJobSetManifest(jobSetUnstructured); err != nil {
+		logging.Warn(ctx, "Failed to validate JobSet manifest", "target", target, "error", err)
+		return fmt.Errorf("failed to validate JobSet manifest for %q: %w", target, err)
 	}
 
 	name := jobSet.GetName()
