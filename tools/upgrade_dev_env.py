@@ -30,6 +30,7 @@ from pathlib import Path
 from tool_utils import (
     NC,
     RED,
+    DeploymentConfig,
     build_and_push_images,
     configure_docker_auth,
     ensure_venv,
@@ -44,22 +45,12 @@ STEPS = ["check", "migrate", "images", "app", "restart", "verify"]
 DEFAULT_CONFIG = "deploy/ctk_v2/xmanager-cloud-deployment.yaml"
 
 
-@dataclass
-class Config:
+@dataclass(kw_only=True)
+class UpgradeConfig(DeploymentConfig):
     """Holds deployment configuration values for XMC upgrade."""
 
-    project_id: str
-    deployment_name: str
-    region: str
-    environment: str
-    namespace: str
-    registry: str
-    image_registry: str
-    image_tag: str
-    gke_cluster: str
     config_path: str
     run_migrations: bool = False
-    rod_deployment_enabled: bool = False
 
 
 def error_exit(msg: str, exit_code: int = 1) -> None:
@@ -117,7 +108,7 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     return parsed
 
 
-def load_config(config_file: str, run_migrations: bool = False) -> Config:
+def load_config(config_file: str, run_migrations: bool = False) -> UpgradeConfig:
     """Loads YAML config file and merges with environment variable overrides.
 
     Args:
@@ -125,48 +116,23 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
       run_migrations: Boolean flag to enable running migrations.
 
     Returns:
-      Populated Config instance.
+      Populated UpgradeConfig instance.
     """
     log_info(f"Loading configuration from '{config_file}'...")
 
     try:
-        config_dict = tool_load_config(config_file)
+        xmc_config = tool_load_config(config_file)
     except (FileNotFoundError, ValueError) as e:
         error_exit(str(e))
 
-    project_id = config_dict["project_id"]
-    deployment_name = config_dict["deployment_name"]
-    region = config_dict["region"]
-    environment = config_dict["environment"]
-    namespace = config_dict.get("namespace", "xmc")
-    image_registry = config_dict["image_registry"]
-    image_tag = config_dict["image_tag"]
-    gke_cluster = f"xmc-{deployment_name}-{environment}"
-    registry = f"us-docker.pkg.dev/{project_id}/xmc"
-
-    rod_raw = config_dict.get("rod_deployment_enabled", False)
-    if isinstance(rod_raw, str):
-        rod_deployment_enabled = rod_raw.lower() == "true"
-    else:
-        rod_deployment_enabled = bool(rod_raw)
-
-    return Config(
-        project_id=project_id,
-        deployment_name=deployment_name,
-        region=region,
-        environment=environment,
-        namespace=namespace,
-        registry=registry,
-        image_registry=image_registry,
-        image_tag=image_tag,
-        gke_cluster=gke_cluster,
+    return UpgradeConfig(
         config_path=config_file,
         run_migrations=run_migrations,
-        rod_deployment_enabled=rod_deployment_enabled,
+        **asdict(xmc_config),
     )
 
 
-def step_check(config: Config) -> None:
+def step_check(config: UpgradeConfig) -> None:
     """Performs pre-flight CLI dependency checks and authenticates to GCP/GKE."""
     log_info("Running pre-flight dependency and authentication checks...")
 
@@ -184,7 +150,7 @@ def step_check(config: Config) -> None:
     log_info(f"Verifying gcloud target project ({config.project_id})...")
     run_command(["gcloud", "config", "set", "project", config.project_id, "--quiet"])
 
-    configure_docker_auth(asdict(config))
+    configure_docker_auth(config)
 
     log_info(
         f"Fetching kubectl credentials for GKE cluster '{config.gke_cluster}' in"
@@ -237,12 +203,12 @@ def extract_migration_version(sql_files: list[Path]) -> int:
 
 
 def get_migration_status(
-    config: Config, migrations_dir: str, spanner_instance: str, db_name: str
+    config: UpgradeConfig, migrations_dir: str, spanner_instance: str, db_name: str
 ) -> tuple[int, int]:
     """Fetches local maximum SQL migration version and current database state.
 
     Args:
-      config: Loaded Config instance.
+      config: Loaded UpgradeConfig instance.
       migrations_dir: Relative migrations directory name ('ess' or 'xid').
       spanner_instance: Target Spanner instance name.
       db_name: Target Spanner database name.
@@ -284,11 +250,13 @@ def get_migration_status(
     return current_version, max_version
 
 
-def run_migration(config: Config, migrations_dir: str, spanner_instance: str, db_name: str) -> None:
+def run_migration(
+    config: UpgradeConfig, migrations_dir: str, spanner_instance: str, db_name: str
+) -> None:
     """Executes database schema migrations via Bazel command.
 
     Args:
-      config: Loaded Config instance.
+      config: Loaded UpgradeConfig instance.
       migrations_dir: Migration directory name ('ess' or 'xid').
       spanner_instance: Target Spanner instance ID.
       db_name: Target Spanner database ID.
@@ -308,7 +276,7 @@ def run_migration(config: Config, migrations_dir: str, spanner_instance: str, db
     run_command(cmd)
 
 
-def step_migrate(config: Config) -> None:
+def step_migrate(config: UpgradeConfig) -> None:
     """Checks and applies pending Spanner database migrations."""
     log_info("Checking for pending database migrations...")
 
@@ -343,12 +311,12 @@ def step_migrate(config: Config) -> None:
         sys.exit(10)
 
 
-def step_images(config: Config) -> None:
+def step_images(config: UpgradeConfig) -> None:
     """Rebuilds and pushes XMC microservice OCI images to Artifact Registry."""
-    build_and_push_images(asdict(config))
+    build_and_push_images(config)
 
 
-def step_app(config: Config) -> None:
+def step_app(config: UpgradeConfig) -> None:
     """Upgrades XMC Kubernetes workloads via Cluster Toolkit gcluster CLI."""
     log_info("Upgrading XMC Kubernetes application workloads using Cluster Toolkit...")
 
@@ -426,7 +394,7 @@ def resolve_deployment_name(service: str, namespace: str) -> str | None:
     return None
 
 
-def step_restart(config: Config) -> None:
+def step_restart(config: UpgradeConfig) -> None:
     """Triggers rolling restarts for all microservices in Kubernetes."""
     log_info(
         "Triggering rolling restart across XMC service deployments to run newly"
@@ -468,7 +436,7 @@ def step_restart(config: Config) -> None:
     log_success("Rolling deployment restarts initiated.")
 
 
-def step_verify(config: Config) -> None:
+def step_verify(config: UpgradeConfig) -> None:
     """Runs the environment health verification script."""
     log_info(
         f"Verifying rollout completion and cluster health in namespace '{config.namespace}'..."
@@ -494,12 +462,12 @@ def step_verify(config: Config) -> None:
     log_success("XMC environment upgrade to current repository branch state verified successfully.")
 
 
-def execute_step(step_name: str, config: Config) -> None:
+def execute_step(step_name: str, config: UpgradeConfig) -> None:
     """Executes a single step by name.
 
     Args:
       step_name: Name of the step to execute.
-      config: Active Config object.
+      config: Active UpgradeConfig object.
     """
     step_map = {
         "check": step_check,
@@ -513,12 +481,12 @@ def execute_step(step_name: str, config: Config) -> None:
     step_fn(config)
 
 
-def run_pipeline(args: argparse.Namespace, config: Config, steps: list[str]) -> None:
+def run_pipeline(args: argparse.Namespace, config: UpgradeConfig, steps: list[str]) -> None:
     """Executes the upgrade pipeline according to --only or --start-from.
 
     Args:
       args: Parsed argparse.Namespace.
-      config: Loaded Config instance.
+      config: Loaded UpgradeConfig instance.
       steps: Ordered list of pipeline step names.
     """
     if args.only:

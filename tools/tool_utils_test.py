@@ -20,10 +20,12 @@ import os
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
 
 from tool_utils import (
+    DeploymentConfig,
     HandledError,
     _bootstrap_venv,
     build_and_push_images,
@@ -265,6 +267,15 @@ class TestConfigLoader(unittest.TestCase):
             "image_registry": "us-central1-docker.pkg.dev/my-project/xmc",
             "image_tag": "latest",
         }
+        self.expected_config = DeploymentConfig(
+            project_id="my-project",
+            deployment_name="xmc-dev",
+            region="us-central1",
+            environment="dev",
+            image_registry="us-central1-docker.pkg.dev/my-project/xmc",
+            image_tag="latest",
+            domain_name="example.com",
+        )
 
     def tearDown(self):
         self.tmp_dir.cleanup()
@@ -304,7 +315,7 @@ class TestConfigLoader(unittest.TestCase):
     def test_load_and_validate_config_success(self):
         self.config_path.write_text(self.valid_yaml, encoding="utf-8")
         config = load_and_validate_config(str(self.config_path))
-        self.assertEqual(config, self.valid_dict)
+        self.assertEqual(config, self.expected_config)
 
     def test_load_and_validate_config_missing_required_key(self):
         invalid_yaml = """vars:
@@ -340,9 +351,9 @@ class TestConfigLoader(unittest.TestCase):
     def test_load_and_validate_config_env_overrides(self):
         self.config_path.write_text(self.valid_yaml, encoding="utf-8")
         config = load_and_validate_config(str(self.config_path))
-        self.assertEqual(config["project_id"], "env-project")
-        self.assertEqual(config["deployment_name"], "env-deploy")
-        self.assertEqual(config["environment"], "dev")
+        self.assertEqual(config.project_id, "env-project")
+        self.assertEqual(config.deployment_name, "env-deploy")
+        self.assertEqual(config.environment, "dev")
 
     def test_load_and_validate_config_with_defaults(self):
         minimal_yaml = """vars:
@@ -358,37 +369,46 @@ class TestConfigLoader(unittest.TestCase):
             "image_tag": "latest",
         }
         config = load_and_validate_config(str(self.config_path), defaults=defaults)
-        expected = {
-            "deployment_name": "xmc-dev",
-            "project_id": "my-project",
-            "domain_name": "example.com",
-            "region": "us-east1",
-            "environment": "staging",
-            "image_registry": "us-docker.pkg.dev/my-project/xmc",
-            "image_tag": "latest",
-        }
+        expected = DeploymentConfig(
+            deployment_name="xmc-dev",
+            project_id="my-project",
+            domain_name="example.com",
+            region="us-east1",
+            environment="staging",
+            image_registry="us-docker.pkg.dev/my-project/xmc",
+            image_tag="latest",
+        )
         self.assertEqual(config, expected)
 
 
 class TestDockerAuthConfig(unittest.TestCase):
     """Tests for configure_docker_auth helper in tool_utils."""
 
+    def setUp(self):
+        self.base_config = DeploymentConfig(
+            project_id="my-project",
+            deployment_name="xmc-dev",
+            region="us-central1",
+            environment="dev",
+            image_registry="us-central1-docker.pkg.dev/my-project/xmc",
+            image_tag="latest",
+        )
+
     @patch("tool_utils.run_command")
     def test_configure_docker_gcp(self, mock_run):
-        config = {"image_registry": "us-central1-docker.pkg.dev/my-project/xmc"}
-        configure_docker_auth(config)
+        configure_docker_auth(self.base_config)
         mock_run.assert_called_once_with(
             ["gcloud", "auth", "configure-docker", "us-central1-docker.pkg.dev", "--quiet"]
         )
 
     @patch("tool_utils.run_command")
     def test_configure_docker_non_gcp(self, mock_run):
-        config = {"image_registry": "docker.io/library/ubuntu"}
+        config = replace(self.base_config, image_registry="docker.io/library/ubuntu")
         configure_docker_auth(config)
         mock_run.assert_not_called()
 
     def test_configure_docker_missing_registry(self):
-        config = {}
+        config = replace(self.base_config, image_registry="")
         with self.assertRaises(ValueError):
             configure_docker_auth(config)
 
@@ -397,11 +417,14 @@ class TestBuildAndPushImages(unittest.TestCase):
     """Tests for build_and_push_images helper in tool_utils."""
 
     def setUp(self):
-        self.valid_config = {
-            "image_registry": "us-central1-docker.pkg.dev/my-project/xmc",
-            "environment": "dev",
-            "image_tag": "latest",
-        }
+        self.valid_config = DeploymentConfig(
+            project_id="my-project",
+            deployment_name="xmc-dev",
+            region="us-central1",
+            environment="dev",
+            image_registry="us-central1-docker.pkg.dev/my-project/xmc",
+            image_tag="latest",
+        )
 
     @patch("tool_utils.run_command")
     def test_build_and_push_images_default(self, mock_run):
@@ -418,8 +441,7 @@ class TestBuildAndPushImages(unittest.TestCase):
 
     @patch("tool_utils.run_command")
     def test_build_and_push_images_rod_enabled(self, mock_run):
-        config = dict(self.valid_config)
-        config["rod_deployment_enabled"] = True
+        config = replace(self.valid_config, rod_deployment_enabled=True)
         build_and_push_images(config)
         self.assertEqual(mock_run.call_count, 10)
         mock_run.assert_any_call(
@@ -428,7 +450,7 @@ class TestBuildAndPushImages(unittest.TestCase):
         )
 
     def test_build_and_push_images_missing_registry(self):
-        config = {"environment": "dev", "image_tag": "latest"}
+        config = replace(self.valid_config, image_registry="")
         with self.assertRaises(ValueError):
             build_and_push_images(config)
 

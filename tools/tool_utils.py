@@ -22,8 +22,34 @@ import re
 import subprocess
 import sys
 import traceback
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+
+@dataclass(kw_only=True)
+class DeploymentConfig:
+    """Base configuration dataclass shared across scripts."""
+
+    project_id: str
+    deployment_name: str
+    region: str
+    environment: str
+    image_registry: str
+    image_tag: str
+    namespace: str = "xmc"
+    domain_name: str | None = None
+    rod_deployment_enabled: bool = False
+
+    @property
+    def gke_cluster(self) -> str:
+        """Returns the GKE cluster name."""
+        return f"xmc-{self.deployment_name}-{self.environment}"
+
+    @property
+    def registry(self) -> str:
+        """Returns the Artifact Registry target repository."""
+        return self.image_registry
 
 
 def _should_bypass_venv() -> bool:
@@ -212,7 +238,7 @@ def parse_yaml_vars(config_path: Path) -> dict[str, Any]:
 def load_and_validate_config(
     config_file: str,
     defaults: dict[str, str] | None = None,
-) -> dict[str, Any]:
+) -> DeploymentConfig:
     """Loads YAML config file, merges with env overrides, and validates.
 
     Args:
@@ -220,7 +246,7 @@ def load_and_validate_config(
         defaults: Default values for keys if they are missing.
 
     Returns:
-        Dictionary of validated configuration.
+        DeploymentConfig of validated configuration.
 
     Raises:
         ValueError: If a required key is missing or invalid.
@@ -249,7 +275,19 @@ def load_and_validate_config(
         if pattern and not re.match(pattern, str(val)):
             raise ValueError(f"Field '{key}' value '{val}' is invalid. Must match regex: {pattern}")
 
-    return config
+    rod_deployment_enabled = str(config.get("rod_deployment_enabled", False)).lower() == "true"
+
+    return DeploymentConfig(
+        project_id=config["project_id"],
+        deployment_name=config["deployment_name"],
+        region=config["region"],
+        environment=config["environment"],
+        image_registry=config["image_registry"],
+        image_tag=config["image_tag"],
+        domain_name=config.get("domain_name"),
+        namespace=config.get("namespace", "xmc"),
+        rod_deployment_enabled=rod_deployment_enabled,
+    )
 
 
 # Color constants for terminal logging
@@ -319,13 +357,13 @@ def run_command(
         raise
 
 
-def configure_docker_auth(config: dict[str, Any]) -> None:
+def configure_docker_auth(config: DeploymentConfig) -> None:
     """Configures Docker authentication for Google Artifact Registry if needed.
 
     Args:
-        config: Configuration dictionary containing 'image_registry'.
+        config: DeploymentConfig containing 'image_registry'.
     """
-    image_registry = config.get("image_registry")
+    image_registry = config.image_registry
     if not image_registry:
         raise ValueError("Required configuration field 'image_registry' is missing or empty.")
 
@@ -338,16 +376,16 @@ def configure_docker_auth(config: dict[str, Any]) -> None:
         log_info(f"Non-GCP registry detected ({registry_host}). Skipping gcloud credential helper.")
 
 
-def build_and_push_images(config: dict[str, Any]) -> None:
+def build_and_push_images(config: DeploymentConfig) -> None:
     """Rebuilds and pushes XMC microservice OCI images to Artifact Registry.
 
     Args:
-        config: Configuration dictionary containing environment variables.
+        config: DeploymentConfig containing environment variables.
     """
-    image_registry = config.get("image_registry")
-    environment = config.get("environment")
-    image_tag = config.get("image_tag")
-    rod_deployment_enabled = config.get("rod_deployment_enabled")
+    image_registry = config.image_registry
+    environment = config.environment
+    image_tag = config.image_tag
+    rod_deployment_enabled = config.rod_deployment_enabled
 
     if not image_registry:
         raise ValueError("Required configuration field 'image_registry' is missing or empty.")
@@ -378,9 +416,7 @@ def build_and_push_images(config: dict[str, Any]) -> None:
         ("ingestion_gateway", "//cmd/ingestion_gateway:ingestion_gateway_image_push"),
     ]
 
-    rod_enabled = str(rod_deployment_enabled).lower() == "true"
-
-    if rod_enabled:
+    if rod_deployment_enabled:
         targets.append(
             (
                 "rod_data_provider",
