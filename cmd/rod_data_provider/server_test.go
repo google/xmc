@@ -68,7 +68,7 @@ func TestGetFittingQueues(t *testing.T) {
 		Port:     "8080",
 		GRPCPort: "50051",
 	}
-	srv := newServer(cfg, c, nil)
+	srv := newServer(cfg, c)
 
 	req := &spb.GetFittingQueuesRequest{
 		Requirements: []*spb.Resource{
@@ -91,7 +91,7 @@ func TestGetFittingQueues(t *testing.T) {
 func TestGetFittingQueues_Errors(t *testing.T) {
 	c := cache.NewKueueCache()
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
-	srv := newServer(cfg, c, nil)
+	srv := newServer(cfg, c)
 
 	canceledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -120,14 +120,14 @@ func TestGetFittingQueues_Errors(t *testing.T) {
 		{
 			name:     "nil cache",
 			ctx:      context.Background(),
-			server:   newServer(cfg, nil, nil),
+			server:   newServer(cfg, nil),
 			req:      &spb.GetFittingQueuesRequest{},
 			wantCode: codes.Unavailable,
 		},
 		{
 			name:     "uninitialized cache cluster queues",
 			ctx:      context.Background(),
-			server:   newServer(cfg, &cache.KueueCache{}, nil),
+			server:   newServer(cfg, &cache.KueueCache{}),
 			req:      &spb.GetFittingQueuesRequest{},
 			wantCode: codes.Unavailable,
 		},
