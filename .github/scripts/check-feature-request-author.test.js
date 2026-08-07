@@ -66,9 +66,11 @@ test('run handles merge_group event context successfully', async () => {
   const mockGithub = {
     rest: {
       repos: {
-        getCommit: async () => ({
+        compareCommits: async () => ({
           data: {
-            author: { login: 'Alice' },
+            commits: [
+              { sha: 'abc123456789', author: { login: 'Alice' } },
+            ],
           },
         }),
         getContent: async () => ({
@@ -86,6 +88,7 @@ test('run handles merge_group event context successfully', async () => {
     payload: {
       merge_group: {
         head_sha: 'abc123456789',
+        base_sha: 'base12345678',
         base_ref: 'refs/heads/main',
       },
     },
@@ -106,10 +109,11 @@ test('run fails closed if GitHub username cannot be resolved in merge_group cont
   const mockGithub = {
     rest: {
       repos: {
-        getCommit: async () => ({
+        compareCommits: async () => ({
           data: {
-            author: null,
-            commit: { author: { name: 'Unlinked User' } },
+            commits: [
+              { sha: 'abc123456789', author: null },
+            ],
           },
         }),
       },
@@ -122,13 +126,57 @@ test('run fails closed if GitHub username cannot be resolved in merge_group cont
     payload: {
       merge_group: {
         head_sha: 'abc123456789',
+        base_sha: 'base12345678',
         base_ref: 'refs/heads/main',
       },
     },
   };
 
   await run({ github: mockGithub, context: mockContext, core: mockCore });
-  assert.strictEqual(failedMessage, 'Could not resolve GitHub username for merge group head SHA abc123456789.');
+  assert.strictEqual(failedMessage, 'Could not resolve GitHub username for commit abc1234 in merge group.');
+});
+
+test('run fails merge_group if any commit in batch is authored by restricted author', async () => {
+  let failedMessage = null;
+  const mockCore = {
+    info: () => {},
+    setFailed: (msg) => { failedMessage = msg; },
+  };
+
+  const mockGithub = {
+    rest: {
+      repos: {
+        compareCommits: async () => ({
+          data: {
+            commits: [
+              { sha: 'sha1', author: { login: 'Alice' } },
+              { sha: 'sha2', author: { login: 'Bob' } },
+            ],
+          },
+        }),
+        getContent: async () => ({
+          data: {
+            content: Buffer.from('bob\ncharlie\n', 'utf8').toString('base64'),
+          },
+        }),
+      },
+    },
+  };
+
+  const mockContext = {
+    repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'merge_group',
+    payload: {
+      merge_group: {
+        head_sha: 'abc123456789',
+        base_sha: 'base12345678',
+        base_ref: 'refs/heads/main',
+      },
+    },
+  };
+
+  await run({ github: mockGithub, context: mockContext, core: mockCore });
+  assert.ok(failedMessage.includes('authored by restricted author(s): [@Bob]'));
 });
 
 test('run fails workflow when PR author is in FEATURE_REQUEST_AUTHORS', async () => {
@@ -163,8 +211,7 @@ test('run fails workflow when PR author is in FEATURE_REQUEST_AUTHORS', async ()
   };
 
   await run({ github: mockGithub, context: mockContext, core: mockCore });
-  assert.ok(failedMessage.includes('permanently blocked from merging'));
-  assert.ok(failedMessage.includes('@Alice'));
+  assert.ok(failedMessage.includes('authored by restricted author(s): [@Alice]'));
 });
 
 test('run passes workflow when PR author is not in FEATURE_REQUEST_AUTHORS', async () => {

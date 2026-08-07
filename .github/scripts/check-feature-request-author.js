@@ -19,32 +19,45 @@
  */
 async function run({ github, context, core }) {
   const { owner, repo } = context.repo;
-  let prAuthor = '';
+  let prAuthors = [];
   let baseRef = '';
   let contextDesc = '';
 
   if (context.payload.pull_request) {
-    prAuthor = context.payload.pull_request.user.login;
+    prAuthors = [context.payload.pull_request.user.login];
     baseRef = context.payload.pull_request.base.ref;
     contextDesc = `PR #${context.payload.pull_request.number}`;
   } else if (context.eventName === 'merge_group' && context.payload.merge_group) {
     baseRef = (context.payload.merge_group.base_ref || 'main').replace(/^refs\/heads\//, '');
     const headSha = context.payload.merge_group.head_sha;
+    const baseSha = context.payload.merge_group.base_sha;
     contextDesc = `Merge Group (commit ${headSha?.substring(0, 7)})`;
 
     try {
-      const commitRes = await github.rest.repos.getCommit({
+      const compareRes = await github.rest.repos.compareCommits({
         owner,
         repo,
-        ref: headSha,
+        base: baseSha,
+        head: headSha,
       });
-      prAuthor = commitRes.data.author?.login || '';
-      if (!prAuthor) {
-        core.setFailed(`Could not resolve GitHub username for merge group head SHA ${headSha}.`);
+
+      const commits = compareRes.data.commits || [];
+      const authorLogins = new Set();
+      for (const commit of commits) {
+        const login = commit.author?.login;
+        if (!login) {
+          core.setFailed(`Could not resolve GitHub username for commit ${commit.sha?.substring(0, 7)} in merge group.`);
+          return;
+        }
+        authorLogins.add(login);
+      }
+      prAuthors = Array.from(authorLogins);
+      if (prAuthors.length === 0) {
+        core.setFailed(`No commits found in merge group between ${baseSha?.substring(0, 7)} and ${headSha?.substring(0, 7)}.`);
         return;
       }
     } catch (error) {
-      core.setFailed(`Failed to fetch commit author for merge group head SHA ${headSha}: ${error.message}`);
+      core.setFailed(`Failed to fetch commits for merge group: ${error.message}`);
       return;
     }
   } else {
@@ -52,7 +65,7 @@ async function run({ github, context, core }) {
     return;
   }
 
-  core.info(`Evaluating ${contextDesc} opened by @${prAuthor} against target branch '${baseRef}'`);
+  core.info(`Evaluating ${contextDesc} authored by [${prAuthors.join(', ')}] against target branch '${baseRef}'`);
 
   let fileContent = '';
   try {
@@ -78,15 +91,17 @@ async function run({ github, context, core }) {
   const restrictedAuthors = parseRestrictedAuthors(fileContent);
   core.info(`Restricted authors on '${baseRef}': [${restrictedAuthors.join(', ')}]`);
 
-  const isRestricted = restrictedAuthors.includes(prAuthor.toLowerCase());
+  const restrictedMatches = prAuthors.filter((author) =>
+    restrictedAuthors.includes(author.toLowerCase())
+  );
 
-  if (isRestricted) {
+  if (restrictedMatches.length > 0) {
     core.setFailed(
-      `${contextDesc} is authored by @${prAuthor}, who is listed in FEATURE_REQUEST_AUTHORS. ` +
-      `This change is treated as a Feature Request and is permanently blocked from merging.`
+      `${contextDesc} contains commit(s) authored by restricted author(s): [${restrictedMatches.map(a => `@${a}`).join(', ')}], ` +
+      `who are listed in FEATURE_REQUEST_AUTHORS. This change is treated as a Feature Request and is permanently blocked from merging.`
     );
   } else {
-    core.info(`@${prAuthor} is not in FEATURE_REQUEST_AUTHORS. Merge block check passed.`);
+    core.info(`No authors in [${prAuthors.join(', ')}] are listed in FEATURE_REQUEST_AUTHORS. Merge block check passed.`);
   }
 }
 
