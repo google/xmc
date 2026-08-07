@@ -243,6 +243,8 @@ message KubernetesJob {
 
   // Optional Kubernetes Pod restart policy for pods in this job ("OnFailure", "Never").
   // Defaults to "Never" if omitted.
+  // Note: "Always" is explicitly forbidden to comply with the XMC Non-Restarting JobSets
+  // contract (in-place pod restarts without coordinator synchronization cause multi-host deadlocks).
   // See: https://github.com/kubernetes/api/blob/a9c6d6c7c5a6a319844d4bd0631fc3b28de3a407/core/v1/types.go#L3891
   optional string restart_policy = 18;
 
