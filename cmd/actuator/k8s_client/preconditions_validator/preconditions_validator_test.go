@@ -118,12 +118,144 @@ func TestIsActuationRequestValid(t *testing.T) {
 			operationTime: now,
 			wantIsValid:   true,
 		},
+		{
+			name: "hostNetwork true with top-level exclusive topology",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"labels": map[string]any{
+							constants.ExecutionIDLabel: "1",
+							constants.LastEditLabel:    strconv.FormatInt(earlier.Unix(), 10),
+						},
+						"annotations": map[string]any{
+							exclusiveTopologyAnnotation: "cloud.google.com/gke-nodepool",
+						},
+					},
+					"spec": map[string]any{
+						"replicatedJobs": []any{
+							map[string]any{
+								"template": map[string]any{
+									"spec": map[string]any{
+										"template": map[string]any{
+											"spec": map[string]any{
+												"hostNetwork": true,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			target:        "experiments/1/workUnits/1/executions/1",
+			operationTime: now,
+			wantIsValid:   true,
+		},
+		{
+			name: "hostNetwork true with pod-level exclusive topology",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"labels": map[string]any{
+							constants.ExecutionIDLabel: "1",
+							constants.LastEditLabel:    strconv.FormatInt(earlier.Unix(), 10),
+						},
+					},
+					"spec": map[string]any{
+						"replicatedJobs": []any{
+							map[string]any{
+								"template": map[string]any{
+									"spec": map[string]any{
+										"template": map[string]any{
+											"metadata": map[string]any{
+												"annotations": map[string]any{
+													exclusiveTopologyAnnotation: "cloud.google.com/gke-nodepool",
+												},
+											},
+											"spec": map[string]any{
+												"hostNetwork": true,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			target:        "experiments/1/workUnits/1/executions/1",
+			operationTime: now,
+			wantIsValid:   true,
+		},
+		{
+			name: "hostNetwork true missing exclusive topology",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"labels": map[string]any{
+							constants.ExecutionIDLabel: "1",
+							constants.LastEditLabel:    strconv.FormatInt(earlier.Unix(), 10),
+						},
+					},
+					"spec": map[string]any{
+						"replicatedJobs": []any{
+							map[string]any{
+								"template": map[string]any{
+									"spec": map[string]any{
+										"template": map[string]any{
+											"spec": map[string]any{
+												"hostNetwork": true,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			target:        "experiments/1/workUnits/1/executions/1",
+			operationTime: now,
+			wantIsValid:   false,
+		},
+		{
+			name: "hostNetwork false missing exclusive topology",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"labels": map[string]any{
+							constants.ExecutionIDLabel: "1",
+							constants.LastEditLabel:    strconv.FormatInt(earlier.Unix(), 10),
+						},
+					},
+					"spec": map[string]any{
+						"replicatedJobs": []any{
+							map[string]any{
+								"template": map[string]any{
+									"spec": map[string]any{
+										"template": map[string]any{
+											"spec": map[string]any{
+												"hostNetwork": false,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			target:        "experiments/1/workUnits/1/executions/1",
+			operationTime: now,
+			wantIsValid:   true,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			gotIsValid, err := validator.IsActuationRequestValid(ctx, tc.target, tc.operationTime, tc.jobSet)
-			if err != nil {
+			if (err != nil) && tc.wantIsValid {
 				t.Fatalf("IsActuationRequestValid() returned unexpected error: %v", err)
 			}
 
