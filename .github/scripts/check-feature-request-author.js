@@ -42,15 +42,24 @@ async function run({ github, context, core }) {
       });
 
       const commits = compareRes.data.commits || [];
+      const totalCommits = compareRes.data.total_commits || 0;
+
       if (commits.length === 0) {
         core.setFailed(`No commits found in merge group between ${baseSha?.substring(0, 7)} and ${headSha?.substring(0, 7)}.`);
+        return;
+      }
+
+      if (totalCommits > commits.length) {
+        core.setFailed(
+          `Merge group contains ${totalCommits} commits, which exceeds the maximum of ${commits.length} commits evaluated in a single API call.`
+        );
         return;
       }
 
       const authorLogins = new Set();
       for (const commit of commits) {
         if (isSystemExemptCommit(commit)) {
-          core.info(`Commit ${commit.sha?.substring(0, 7)} is an exempt system/bot commit. Skipping restriction check.`);
+          core.info(`Commit ${commit.sha?.substring(0, 7)} is an exempt system/bot commit (@${commit.author?.login}). Skipping restriction check.`);
           continue;
         }
 
@@ -116,33 +125,14 @@ async function run({ github, context, core }) {
 
 /**
  * Pure function: Determines whether a commit is an auto-generated system or bot commit.
- * Exempts GitHub web-flow, Merge Queue, and bot accounts from user account enforcement.
+ * Rely strictly on verified GitHub author logins to prevent unverified Git header spoofing.
  * @param {Object} commit - Commit object from GitHub API.
  * @returns {boolean} True if system/bot exempt, false otherwise.
  */
 function isSystemExemptCommit(commit) {
   if (!commit) return false;
   const login = (commit.author?.login || '').toLowerCase();
-  if (login.endsWith('[bot]') || login === 'web-flow' || login === 'actions-user') {
-    return true;
-  }
-
-  const authorEmail = (commit.commit?.author?.email || '').toLowerCase();
-  const committerEmail = (commit.commit?.committer?.email || '').toLowerCase();
-  const authorName = (commit.commit?.author?.name || '').toLowerCase();
-  const committerName = (commit.commit?.committer?.name || '').toLowerCase();
-
-  const isGithubEmail = authorEmail.endsWith('@github.com') ||
-                        authorEmail.endsWith('.noreply.github.com') ||
-                        committerEmail.endsWith('@github.com') ||
-                        committerEmail.endsWith('.noreply.github.com');
-
-  const isGithubName = authorName === 'github' ||
-                       committerName === 'github' ||
-                       authorName === 'github merge queue' ||
-                       committerName === 'github merge queue';
-
-  return isGithubEmail || isGithubName;
+  return login.endsWith('[bot]') || login === 'web-flow' || login === 'actions-user';
 }
 
 /**

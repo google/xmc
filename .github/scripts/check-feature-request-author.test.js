@@ -38,11 +38,10 @@ test('parseRestrictedAuthors returns empty array for empty or comment-only conte
   assert.deepStrictEqual(result, []);
 });
 
-test('isSystemExemptCommit correctly identifies system/bot commits', () => {
+test('isSystemExemptCommit correctly identifies verified system/bot logins', () => {
   assert.strictEqual(isSystemExemptCommit({ author: { login: 'web-flow' } }), true);
   assert.strictEqual(isSystemExemptCommit({ author: { login: 'dependabot[bot]' } }), true);
-  assert.strictEqual(isSystemExemptCommit({ commit: { author: { email: 'noreply@github.com' } } }), true);
-  assert.strictEqual(isSystemExemptCommit({ commit: { author: { name: 'GitHub Merge Queue' } } }), true);
+  assert.strictEqual(isSystemExemptCommit({ author: { login: 'github-merge-queue[bot]' } }), true);
   assert.strictEqual(isSystemExemptCommit({ author: { login: 'Alice' } }), false);
   assert.strictEqual(isSystemExemptCommit(null), false);
 });
@@ -77,6 +76,7 @@ test('run handles merge_group event context successfully', async () => {
       repos: {
         compareCommits: async () => ({
           data: {
+            total_commits: 1,
             commits: [
               { sha: 'abc123456789', author: { login: 'Alice' } },
             ],
@@ -108,7 +108,7 @@ test('run handles merge_group event context successfully', async () => {
   assert.ok(infoLogs.some(log => log.includes('Merge block check passed')));
 });
 
-test('run exempts system/bot commits in merge_group context', async () => {
+test('run exempts verified system/bot logins in merge_group context', async () => {
   let failedMessage = null;
   let infoLogs = [];
   const mockCore = {
@@ -121,8 +121,9 @@ test('run exempts system/bot commits in merge_group context', async () => {
       repos: {
         compareCommits: async () => ({
           data: {
+            total_commits: 2,
             commits: [
-              { sha: 'abc123456789', author: { login: 'web-flow' }, commit: { author: { email: 'noreply@github.com' } } },
+              { sha: 'abc123456789', author: { login: 'web-flow' } },
               { sha: 'def987654321', author: { login: 'Alice' } },
             ],
           },
@@ -154,7 +155,7 @@ test('run exempts system/bot commits in merge_group context', async () => {
   assert.ok(infoLogs.some(log => log.includes('Merge block check passed')));
 });
 
-test('run fails closed if unlinked non-bot user commit is present in merge_group context', async () => {
+test('run fails closed if unlinked user commit is present in merge_group context', async () => {
   let failedMessage = null;
   const mockCore = {
     info: () => {},
@@ -166,6 +167,7 @@ test('run fails closed if unlinked non-bot user commit is present in merge_group
       repos: {
         compareCommits: async () => ({
           data: {
+            total_commits: 1,
             commits: [
               { sha: 'abc123456789', author: null, commit: { author: { email: 'unlinked@example.com', name: 'User' } } },
             ],
@@ -191,6 +193,42 @@ test('run fails closed if unlinked non-bot user commit is present in merge_group
   assert.ok(failedMessage.includes('Could not resolve GitHub username for commit abc1234 in merge group. All commits must be made by a verified GitHub account'));
 });
 
+test('run fails closed if total_commits exceeds returned commits array length in merge_group context', async () => {
+  let failedMessage = null;
+  const mockCore = {
+    info: () => {},
+    setFailed: (msg) => { failedMessage = msg; },
+  };
+
+  const mockGithub = {
+    rest: {
+      repos: {
+        compareCommits: async () => ({
+          data: {
+            total_commits: 260,
+            commits: new Array(250).fill({ sha: 'abc', author: { login: 'Alice' } }),
+          },
+        }),
+      },
+    },
+  };
+
+  const mockContext = {
+    repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'merge_group',
+    payload: {
+      merge_group: {
+        head_sha: 'abc123456789',
+        base_sha: 'base12345678',
+        base_ref: 'refs/heads/main',
+      },
+    },
+  };
+
+  await run({ github: mockGithub, context: mockContext, core: mockCore });
+  assert.strictEqual(failedMessage, 'Merge group contains 260 commits, which exceeds the maximum of 250 commits evaluated in a single API call.');
+});
+
 test('run fails merge_group if any commit in batch is authored by restricted author', async () => {
   let failedMessage = null;
   const mockCore = {
@@ -203,6 +241,7 @@ test('run fails merge_group if any commit in batch is authored by restricted aut
       repos: {
         compareCommits: async () => ({
           data: {
+            total_commits: 2,
             commits: [
               { sha: 'sha1', author: { login: 'Alice' } },
               { sha: 'sha2', author: { login: 'Bob' } },
