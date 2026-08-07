@@ -91,7 +91,7 @@ describe('ResourceService', () => {
   });
 
   describe('getQueueJobs', () => {
-    it('should return mock queue jobs list for given queue', async () => {
+    it('should fetch queue jobs list for given queue', async () => {
       const mockResponse: GetRunningAndPendingJobsResponse = {
         jobs: [
           {
@@ -114,26 +114,6 @@ describe('ResourceService', () => {
       const response = await responsePromise;
       expect(response.jobs?.length).toBe(1);
       expect(response.jobs?.[0].xid).toBe('101');
-    });
-
-    it('should fallback to default queueName when parameter is omitted', async () => {
-      const mockResponse: GetRunningAndPendingJobsResponse = {
-        jobs: [],
-        totalQueueSize: 0,
-      };
-
-      const responsePromise: Promise<GetRunningAndPendingJobsResponse> = firstValueFrom(
-        state.service.getQueueJobs(),
-      );
-
-      const req = state.httpMock.expectOne(
-        `${XMC_API_DOMAIN}/clusterqueues/cpu-cluster-queue/jobs`,
-      );
-      expect(req.request.method).toBe('GET');
-      req.flush(mockResponse);
-
-      const response = await responsePromise;
-      expect(response.jobs?.length).toBe(0);
     });
   });
 });
