@@ -28,6 +28,7 @@ import (
 
 	clickhousego "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	mobyclient "github.com/moby/moby/client"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/clickhouse"
 	"github.com/testcontainers/testcontainers-go/modules/redpanda"
@@ -116,7 +117,8 @@ func PauseContainer(ctx context.Context, c *redpanda.Container) error {
 		return err
 	}
 	defer cli.Close()
-	return cli.ContainerPause(ctx, c.GetContainerID())
+	_, err = cli.ContainerPause(ctx, c.GetContainerID(), mobyclient.ContainerPauseOptions{})
+	return err
 }
 
 // UnpauseContainer unpauses a Redpanda container instance.
@@ -129,7 +131,8 @@ func UnpauseContainer(ctx context.Context, c *redpanda.Container) error {
 		return err
 	}
 	defer cli.Close()
-	return cli.ContainerUnpause(ctx, c.GetContainerID())
+	_, err = cli.ContainerUnpause(ctx, c.GetContainerID(), mobyclient.ContainerUnpauseOptions{})
+	return err
 }
 
 func locateMetricsProtoFile() string {
