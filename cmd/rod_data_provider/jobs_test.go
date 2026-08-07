@@ -20,8 +20,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	spb "xmanager_cloud/api/protos/rod"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -137,21 +139,19 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 					t.Errorf("Jobs count = %d, want %d", len(resp.Jobs), tt.wantCount)
 				}
 				if tt.wantCount > 0 {
-					job := resp.Jobs[0]
-					if job.Xid != 100 {
-						t.Errorf("Xid = %d, want 100", job.Xid)
+					gotJob := resp.Jobs[0]
+					wantJob := &spb.DashboardJob{
+						Xid:                100,
+						WorkUnitId:         1,
+						User:               "test@example.com",
+						Priority:           100,
+						Status:             essmsgpb.WorkUnitStatus_SCHEDULING,
+						PositionInQueue:    1,
+						TimeInQueueSeconds: gotJob.GetTimeInQueueSeconds(),
+						CreateTime:         gotJob.GetCreateTime(),
 					}
-					if job.WorkUnitId != 1 {
-						t.Errorf("WorkUnitId = %d, want 1", job.WorkUnitId)
-					}
-					if job.User != "test@example.com" {
-						t.Errorf("User = %q, want test@example.com", job.User)
-					}
-					if job.Status != essmsgpb.WorkUnitStatus_SCHEDULING {
-						t.Errorf("Status = %v, want SCHEDULING", job.Status)
-					}
-					if job.PositionInQueue != 1 {
-						t.Errorf("PositionInQueue = %d, want 1", job.PositionInQueue)
+					if diff := cmp.Diff(wantJob, gotJob, protocmp.Transform()); diff != "" {
+						t.Errorf("DashboardJob mismatch (-want +got):\n%s", diff)
 					}
 				}
 			}
