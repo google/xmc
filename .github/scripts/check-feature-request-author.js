@@ -17,6 +17,11 @@
  * @param {Object} params - Context and tools injected by actions/github-script.
  */
 async function run({ github, context, core }) {
+  if (!context.payload.pull_request) {
+    core.setFailed('This script must be run in the context of a pull request event.');
+    return;
+  }
+
   const prAuthor = context.payload.pull_request.user.login;
   const baseRef = context.payload.pull_request.base.ref;
   const { owner, repo } = context.repo;
@@ -47,9 +52,7 @@ async function run({ github, context, core }) {
   const restrictedAuthors = parseRestrictedAuthors(fileContent);
   core.info(`Restricted authors on '${baseRef}': [${restrictedAuthors.join(', ')}]`);
 
-  const isRestricted = restrictedAuthors.some(
-    (author) => author.toLowerCase() === prAuthor.toLowerCase()
-  );
+  const isRestricted = restrictedAuthors.includes(prAuthor.toLowerCase());
 
   if (isRestricted) {
     core.setFailed(
@@ -65,12 +68,12 @@ async function run({ github, context, core }) {
  * Pure function: Parses FEATURE_REQUEST_AUTHORS string content into lowercase usernames.
  * Strips comments and trims whitespace.
  * @param {string} content - Raw string content of FEATURE_REQUEST_AUTHORS file.
- * @returns {string[]} Array of restricted author usernames.
+ * @returns {string[]} Array of restricted author usernames in lowercase.
  */
 function parseRestrictedAuthors(content) {
   return (content || '')
     .split(/\r?\n/)
-    .map((line) => line.split('#')[0].trim())
+    .map((line) => line.split('#')[0].trim().toLowerCase())
     .filter(Boolean);
 }
 

@@ -38,6 +38,22 @@ test('parseRestrictedAuthors returns empty array for empty or comment-only conte
   assert.deepStrictEqual(result, []);
 });
 
+test('run fails workflow if not executed in pull_request event context', async () => {
+  let failedMessage = null;
+  const mockCore = {
+    info: () => {},
+    setFailed: (msg) => { failedMessage = msg; },
+  };
+
+  const mockContext = {
+    repo: { owner: 'google', repo: 'xmc' },
+    payload: {},
+  };
+
+  await run({ github: {}, context: mockContext, core: mockCore });
+  assert.strictEqual(failedMessage, 'This script must be run in the context of a pull request event.');
+});
+
 test('run fails workflow when PR author is in FEATURE_REQUEST_AUTHORS', async () => {
   let failedMessage = null;
   const mockCore = {
