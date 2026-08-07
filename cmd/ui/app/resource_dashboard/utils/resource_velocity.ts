@@ -12,31 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Resource } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
-
-export type RangePreset =
-  | 'RANGE_PRESET_UNSPECIFIED'
-  | 'LAST_HOUR'
-  | 'LAST_DAY'
-  | 'LAST_WEEK'
-  | number;
-
-export interface ResourceVelocity {
-  resourceType?: string;
-  velocity?: number;
-}
-
-export interface QueuePredictability {
-  pendingResourceRequests?: Resource;
-  resourceVelocity?: ResourceVelocity;
-  pendingJobs?: number;
-  jobVelocity?: number;
-  velocityRange?: RangePreset;
-}
-
-export interface QueueSecondaryData {
-  queuePredictability?: QueuePredictability[];
-}
+import {
+  QueuePredictability,
+  QueueSecondaryData,
+  RangePreset,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 /**
  * Velocity period options for queue resource calculations.

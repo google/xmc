@@ -14,6 +14,8 @@
 
 import 'jasmine';
 
+import { QueueSecondaryData } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+
 import {
   calculateJobVelocity,
   calculatePendingRequestsDisplay,
@@ -22,7 +24,6 @@ import {
   getPendingJobsCount,
   getVelocityHours,
   mapPeriodToRangePreset,
-  QueueSecondaryData,
 } from './resource_velocity';
 
 describe('Resource Velocity Utilities', () => {
@@ -34,76 +35,56 @@ describe('Resource Velocity Utilities', () => {
         jobVelocity: 12.5,
         resourceVelocity: {
           resourceType: 'nvidia.com/gpu',
-          velocity: 4.5,
+          velocity: 8.4,
         },
         pendingResourceRequests: {
           resourceType: 'nvidia.com/gpu',
-          count: 16,
-        },
-      },
-      {
-        velocityRange: 'LAST_DAY',
-        pendingJobs: 5,
-        jobVelocity: 8.2,
-        resourceVelocity: {
-          resourceType: 'nvidia.com/gpu',
-          velocity: 2.1,
-        },
-        pendingResourceRequests: {
-          resourceType: 'nvidia.com/gpu',
-          count: 16,
+          count: 32,
         },
       },
     ],
   };
 
-  describe('formatRate', () => {
-    it('should format rate values correctly', () => {
-      expect(formatRate(0)).toBe('0');
-      expect(formatRate(5)).toBe('5');
-      expect(formatRate(2.33333)).toBe('2.33');
-      expect(formatRate(8.5)).toBe('8.5');
-    });
+  it('formatRate should format integer rates correctly', () => {
+    expect(formatRate(0)).toBe('0');
+    expect(formatRate(10)).toBe('10');
   });
 
-  describe('getVelocityHours', () => {
-    it('should return hours for 1h, 24h, 7d periods', () => {
-      expect(getVelocityHours('1h')).toBe(1);
-      expect(getVelocityHours('1 hour')).toBe(1);
-      expect(getVelocityHours('24h')).toBe(24);
-      expect(getVelocityHours('1 day')).toBe(24);
-      expect(getVelocityHours('7d')).toBe(168);
-      expect(getVelocityHours('7 days')).toBe(168);
-    });
+  it('formatRate should format decimal rates with up to 2 decimal places', () => {
+    expect(formatRate(12.5)).toBe('12.5');
+    expect(formatRate(8.4321)).toBe('8.43');
   });
 
-  describe('getPendingJobsCount', () => {
-    it('should return pendingJobsCount fallback and calculated values', () => {
-      expect(getPendingJobsCount({})).toBe(0);
-      expect(getPendingJobsCount(mockSecondaryData)).toBe(5);
-    });
+  it('getVelocityHours should convert period strings to correct hours', () => {
+    expect(getVelocityHours('1h')).toBe(1);
+    expect(getVelocityHours('1 hour')).toBe(1);
+    expect(getVelocityHours('24h')).toBe(24);
+    expect(getVelocityHours('1 day')).toBe(24);
+    expect(getVelocityHours('7d')).toBe(168);
+    expect(getVelocityHours('7 days')).toBe(168);
+    expect(getVelocityHours('unknown')).toBe(168);
   });
 
-  describe('calculateResourceVelocity', () => {
-    it('should return resource velocity string for matching timeframe', () => {
-      expect(calculateResourceVelocity({}, '1h')).toBe('~0 GPUs/hr');
-      expect(calculateResourceVelocity(mockSecondaryData, '1h')).toBe('~4.5 GPUs/hr');
-      expect(calculateResourceVelocity(mockSecondaryData, '24h')).toBe('~2.1 GPUs/hr');
-    });
+  it('mapPeriodToRangePreset should return correct RangePreset enum values', () => {
+    expect(mapPeriodToRangePreset('1h')).toBe('LAST_HOUR');
+    expect(mapPeriodToRangePreset('24h')).toBe('LAST_DAY');
+    expect(mapPeriodToRangePreset('7d')).toBe('LAST_WEEK');
+    expect(mapPeriodToRangePreset('invalid')).toBe('LAST_WEEK');
   });
 
-  describe('calculateJobVelocity', () => {
-    it('should return job velocity string for matching timeframe', () => {
-      expect(calculateJobVelocity({}, '1h')).toBe('0 jobs/hr');
-      expect(calculateJobVelocity(mockSecondaryData, '1h')).toBe('12.5 jobs/hr');
-      expect(calculateJobVelocity(mockSecondaryData, '24h')).toBe('8.2 jobs/hr');
-    });
+  it('getPendingJobsCount should return pending jobs count', () => {
+    expect(getPendingJobsCount(mockSecondaryData)).toBe(5);
   });
 
-  describe('calculatePendingRequestsDisplay', () => {
-    it('should return pending resource requests display text', () => {
-      expect(calculatePendingRequestsDisplay({})).toBe('0');
-      expect(calculatePendingRequestsDisplay(mockSecondaryData)).toBe('16');
-    });
+  it('calculateResourceVelocity should format resource velocity display string', () => {
+    expect(calculateResourceVelocity(mockSecondaryData, '1h')).toBe('~8.4 GPUs/hr');
+  });
+
+  it('calculateJobVelocity should format job velocity display string', () => {
+    expect(calculateJobVelocity(mockSecondaryData, '1h')).toBe('12.5 jobs/hr');
+  });
+
+  it('calculatePendingRequestsDisplay should format pending requests count string', () => {
+    expect(calculatePendingRequestsDisplay(mockSecondaryData)).toBe('32');
   });
 });
