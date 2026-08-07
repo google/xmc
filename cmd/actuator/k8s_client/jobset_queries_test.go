@@ -17,33 +17,6 @@ import (
 	"testing"
 )
 
-func TestGetJobsetUIDByTarget(t *testing.T) {
-	ctx, client, _ := setupTestClient( /*createNewNamespaces=*/ true, &alwaysPassingPreconditionsValidator{})
-	target := "experiments/123/workUnits/456/executions/1"
-	createTestJobSet(ctx, t, client, testNamespace, target, nil)
-
-	_, uid, err := client.getJobsetUIDByTarget(ctx, target, testNamespace)
-	if err != nil {
-		t.Fatalf("getJobsetUIDByTarget(%q, %q) returned an unexpected error: %v", target, testNamespace, err)
-	}
-	if uid != "test-uid" {
-		t.Errorf("getJobsetUIDByTarget(%q, %q) returned UID %q, want %q", target, testNamespace, uid, "test-uid")
-	}
-}
-
-func TestGetJobsetUIDByTarget_NotFound(t *testing.T) {
-	ctx, client, _ := setupTestClient( /*createNewNamespaces=*/ true, &alwaysPassingPreconditionsValidator{})
-	target := "experiments/123/workUnits/456/executions/1"
-
-	_, uid, err := client.getJobsetUIDByTarget(ctx, target, testNamespace)
-	if err != nil {
-		t.Fatalf("getJobsetUIDByTarget(%q, %q) returned an unexpected error: %v", target, testNamespace, err)
-	}
-	if uid != "" {
-		t.Errorf("getJobsetUIDByTarget(%q, %q) returned UID %q, want empty", target, testNamespace, uid)
-	}
-}
-
 func TestGetNamespaceFromTarget(t *testing.T) {
 	ctx, client, _ := setupTestClient( /*createNewNamespaces=*/ true, &alwaysPassingPreconditionsValidator{})
 	target := "experiments/123/workUnits/456/executions/1"

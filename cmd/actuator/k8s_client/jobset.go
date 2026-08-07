@@ -135,15 +135,17 @@ func (c *Client) deleteJobSet(ctx context.Context, target, namespace string, ope
 		return false, nil
 	}
 
-	targetMatches, uid, err := c.getJobsetUIDByTarget(ctx, target, namespace)
+	aligned, err := c.preconditionsValidator.IsExecutionIDAligned(ctx, target, jobSetUnstructured)
 	if err != nil {
-		return false, fmt.Errorf("getJobsetUIDByTarget failed in deleteJobSet: %w", err)
+		logging.Warn(ctx, "Failed during execution ID alignment check", "error", err, "target", target)
+		return false, fmt.Errorf("failed during execution ID alignment check for %q: %w", target, err)
 	}
-	if !targetMatches {
+	if !aligned {
 		logging.Warn(ctx, "Jobset EID does not match target, skipping deletion")
 		return false, nil
 	}
 
+	uid := jobSetUnstructured.GetUID()
 	// Set the UID in the options, so we make sure we ONLY delete the Jobset for the current target
 	// and not any other Jobset that may have been created in the meantime.
 	deleteOptions := metav1.DeleteOptions{
@@ -317,6 +319,12 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 		podLabels[k] = v
 	}
 
+	// Create a shallow copy for PodTemplateSpec to prevent sharing the map pointer.
+	podAnnotations := make(map[string]string, len(annotations))
+	for k, v := range annotations {
+		podAnnotations[k] = v
+	}
+
 	var dependsOn []jobsetv1alpha2.DependsOn
 	if depOrder := job.GetDependencyOrder(); depOrder.GetJobName() != "" {
 		dependsOn = append(dependsOn, jobsetv1alpha2.DependsOn{
@@ -328,6 +336,11 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 	var activeDeadlineSeconds *int64
 	if job.GetActiveDeadlineSeconds() > 0 {
 		activeDeadlineSeconds = proto.Int64(job.GetActiveDeadlineSeconds())
+	}
+
+	var terminationGracePeriodSeconds *int64
+	if job.TerminationGracePeriodSeconds != nil && *job.TerminationGracePeriodSeconds >= 0 {
+		terminationGracePeriodSeconds = proto.Int64(*job.TerminationGracePeriodSeconds)
 	}
 
 	primaryName := jobsetutil.PrimaryContainerName(job)
@@ -353,17 +366,18 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 				Template: corev1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels:      podLabels,
-						Annotations: annotations,
+						Annotations: podAnnotations,
 					},
 					Spec: corev1.PodSpec{
-						ServiceAccountName: job.GetServiceAccount(),
-						PriorityClassName:  job.GetPriorityClassName(),
-						InitContainers:     c.buildInitContainersForJob(job),
-						Containers:         c.buildContainersForJob(job),
-						RestartPolicy:      corev1.RestartPolicyNever,
-						SecurityContext:    defaultPodSecurityContext(),
-						Volumes:            generateVolumesForJob(job),
-						NodeSelector:       nodeSelector,
+						ServiceAccountName:            job.GetServiceAccount(),
+						PriorityClassName:             job.GetPriorityClassName(),
+						InitContainers:                c.buildInitContainersForJob(job),
+						Containers:                    c.buildContainersForJob(job),
+						RestartPolicy:                 corev1.RestartPolicyNever,
+						SecurityContext:               defaultPodSecurityContext(),
+						Volumes:                       generateVolumesForJob(job),
+						NodeSelector:                  nodeSelector,
+						TerminationGracePeriodSeconds: terminationGracePeriodSeconds,
 					},
 				},
 			},
@@ -418,7 +432,12 @@ func (c *Client) buildInitContainersForJob(job *esspb.KubernetesJob) []corev1.Co
 	initContainers := make([]corev1.Container, 0, total)
 	for i, initContainer := range job.GetInitContainers() {
 		name := jobsetutil.InitContainerName(job, initContainer, i)
-		initContainers = append(initContainers, c.buildContainer(name, initContainer))
+		container := c.buildContainer(name, initContainer)
+		if strings.EqualFold(initContainer.GetRestartPolicy(), "Always") {
+			restartPolicyAlways := corev1.ContainerRestartPolicyAlways
+			container.RestartPolicy = &restartPolicyAlways
+		}
+		initContainers = append(initContainers, container)
 	}
 	restartPolicyAlways := corev1.ContainerRestartPolicyAlways
 	for i, sidecar := range job.GetSidecars() {

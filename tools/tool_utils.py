@@ -250,3 +250,146 @@ def load_and_validate_config(
             raise ValueError(f"Field '{key}' value '{val}' is invalid. Must match regex: {pattern}")
 
     return config
+
+
+# Color constants for terminal logging
+BLUE = "\033[0;34m"
+GREEN = "\033[0;32m"
+RED = "\033[0;31m"
+NC = "\033[0m"  # No Color
+
+
+def log_info(msg: str) -> None:
+    """Logs informational messages in blue text."""
+    print(f"\n{BLUE}[INFO] {msg}{NC}")
+
+
+def log_success(msg: str) -> None:
+    """Logs success messages in green text."""
+    print(f"\n{GREEN}[SUCCESS] {msg}{NC}")
+
+
+def log_error(msg: str) -> None:
+    """Logs error messages in red text to stderr."""
+    print(f"\n{RED}[ERROR] {msg}{NC}", file=sys.stderr)
+
+
+def run_command(
+    cmd: list[str],
+    env: dict[str, str] | None = None,
+    check: bool = True,
+    capture_output: bool = False,
+    log_on_error: bool = True,
+    log_cmd: bool = True,
+) -> subprocess.CompletedProcess:
+    """Helper to run shell commands with unified logging and error handling.
+
+    Args:
+        cmd: The command to run as a list of strings.
+        env: Optional environment variables to merge with current env.
+        check: Whether to raise CalledProcessError on non-zero exit code.
+        capture_output: Whether to capture stdout/stderr.
+        log_on_error: Whether to log errors on failure.
+        log_cmd: Whether to log the command being executed.
+
+    Returns:
+        A subprocess.CompletedProcess object.
+
+    Raises:
+        subprocess.CalledProcessError: If the command fails and check=True.
+    """
+    if log_cmd:
+        log_info(f"Running: {' '.join(cmd)}")
+
+    proc_env = os.environ.copy()
+    if env:
+        proc_env.update({str(k): str(v) for k, v in env.items()})
+
+    try:
+        return subprocess.run(
+            cmd,
+            env=proc_env,
+            check=check,
+            text=True,
+            capture_output=capture_output,
+        )
+    except subprocess.CalledProcessError:
+        if log_on_error:
+            log_error(f"Command failed: {' '.join(cmd)}")
+        raise
+
+
+def configure_docker_auth(config: dict[str, Any]) -> None:
+    """Configures Docker authentication for Google Artifact Registry if needed.
+
+    Args:
+        config: Configuration dictionary containing 'image_registry'.
+    """
+    image_registry = config.get("image_registry")
+    if not image_registry:
+        raise ValueError("Required configuration field 'image_registry' is missing or empty.")
+
+    log_info("Configuring Docker registry authorization...")
+    registry_host = image_registry.split("/")[0]
+
+    if registry_host.endswith("gcr.io") or registry_host.endswith(".pkg.dev"):
+        run_command(["gcloud", "auth", "configure-docker", registry_host, "--quiet"])
+    else:
+        log_info(f"Non-GCP registry detected ({registry_host}). Skipping gcloud credential helper.")
+
+
+def build_and_push_images(config: dict[str, Any]) -> None:
+    """Rebuilds and pushes XMC microservice OCI images to Artifact Registry.
+
+    Args:
+        config: Configuration dictionary containing environment variables.
+    """
+    image_registry = config.get("image_registry")
+    environment = config.get("environment")
+    image_tag = config.get("image_tag")
+    rod_deployment_enabled = config.get("rod_deployment_enabled")
+
+    if not image_registry:
+        raise ValueError("Required configuration field 'image_registry' is missing or empty.")
+    if not environment:
+        raise ValueError("Required configuration field 'environment' is missing or empty.")
+    if not image_tag:
+        raise ValueError("Required configuration field 'image_tag' is missing or empty.")
+
+    log_info(f"Rebuilding and pushing latest XMC microservice OCI images to '{image_registry}'...")
+    env = {
+        "XMC_ENV": environment,
+        "XMC_ACR_TARGET": image_registry,
+        "BUILD_TAG": image_tag,
+    }
+
+    targets = [
+        ("actuator", "//cmd/actuator:actuator_image_push"),
+        (
+            "experiment_state_server",
+            "//cmd/experiment_state_server:experiment_state_server_image_push",
+        ),
+        ("log_monitor", "//cmd/log_monitor:log_monitor_image_push"),
+        ("reconciler", "//cmd/reconciler:reconciler_image_push"),
+        ("ui", "//cmd/ui:ui_image_push"),
+        ("xid_service", "//cmd/xid_service:xid_service_image_push"),
+        ("health_service", "//cmd/health_service:health_service_image_push"),
+        ("dashboard_service", "//cmd/dashboard_service:dashboard_service_image_push"),
+        ("ingestion_gateway", "//cmd/ingestion_gateway:ingestion_gateway_image_push"),
+    ]
+
+    rod_enabled = str(rod_deployment_enabled).lower() == "true"
+
+    if rod_enabled:
+        targets.append(
+            (
+                "rod_data_provider",
+                "//cmd/rod_data_provider:rod_data_provider_image_push",
+            )
+        )
+
+    for name, target in targets:
+        log_info(f"Pushing {name} image...")
+        run_command(["bazel", "run", target], env=env)
+
+    log_success("All XMC service container images compiled and pushed from current branch state.")

@@ -24,10 +24,21 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from tool_utils import ensure_venv, load_and_validate_config as tool_load_config
+from tool_utils import (
+    NC,
+    RED,
+    build_and_push_images,
+    configure_docker_auth,
+    ensure_venv,
+    load_and_validate_config as tool_load_config,
+    log_error,
+    log_info,
+    log_success,
+    run_command,
+)
 
 STEPS = ["check", "migrate", "images", "app", "restart", "verify"]
 DEFAULT_CONFIG = "deploy/ctk_v2/xmanager-cloud-deployment.yaml"
@@ -51,19 +62,9 @@ class Config:
     rod_deployment_enabled: bool = False
 
 
-def log_info(msg: str) -> None:
-    """Logs informational messages in blue text."""
-    print(f"\n\033[0;34m[INFO] {msg}\033[0m")
-
-
-def log_success(msg: str) -> None:
-    """Logs success messages in green text."""
-    print(f"\n\033[0;32m[SUCCESS] {msg}\033[0m")
-
-
 def error_exit(msg: str, exit_code: int = 1) -> None:
     """Prints an error message to stderr and exits."""
-    print(f"\n\033[0;31mError: {msg}\033[0m", file=sys.stderr)
+    log_error(msg)
     sys.exit(exit_code)
 
 
@@ -165,36 +166,6 @@ def load_config(config_file: str, run_migrations: bool = False) -> Config:
     )
 
 
-def run_cmd(
-    cmd: list[str],
-    env: dict[str, str] | None = None,
-    check: bool = True,
-    capture_output: bool = False,
-) -> subprocess.CompletedProcess:
-    """Executes a command subprocess with optional env and output capturing.
-
-    Args:
-      cmd: List of command line tokens.
-      env: Environment variables dictionary overlay.
-      check: If True, raises CalledProcessError on non-zero exit code.
-      capture_output: If True, captures stdout and stderr as text.
-
-    Returns:
-      CompletedProcess instance.
-    """
-    proc_env = os.environ.copy()
-    if env:
-        proc_env.update(env)
-
-    return subprocess.run(
-        cmd,
-        env=proc_env,
-        check=check,
-        text=True,
-        capture_output=capture_output,
-    )
-
-
 def step_check(config: Config) -> None:
     """Performs pre-flight CLI dependency checks and authenticates to GCP/GKE."""
     log_info("Running pre-flight dependency and authentication checks...")
@@ -211,20 +182,15 @@ def step_check(config: Config) -> None:
         )
 
     log_info(f"Verifying gcloud target project ({config.project_id})...")
-    run_cmd(["gcloud", "config", "set", "project", config.project_id, "--quiet"])
+    run_command(["gcloud", "config", "set", "project", config.project_id, "--quiet"])
 
-    registry_host = config.image_registry.split("/")[0]
-    if registry_host.endswith("gcr.io") or registry_host.endswith(".pkg.dev"):
-        log_info(
-            f"Configuring Docker authentication for Google Artifact Registry ({registry_host})..."
-        )
-        run_cmd(["gcloud", "auth", "configure-docker", registry_host, "--quiet"])
+    configure_docker_auth(asdict(config))
 
     log_info(
         f"Fetching kubectl credentials for GKE cluster '{config.gke_cluster}' in"
         f" region '{config.region}'..."
     )
-    run_cmd(
+    run_command(
         [
             "gcloud",
             "container",
@@ -236,7 +202,7 @@ def step_check(config: Config) -> None:
         ]
     )
 
-    res = run_cmd(
+    res = run_command(
         ["kubectl", "get", "namespace", config.namespace],
         check=False,
         capture_output=True,
@@ -300,7 +266,7 @@ def get_migration_status(
         f"--migrations_dir={migrations_dir}",
         "--command=version",
     ]
-    res = run_cmd(cmd, check=False, capture_output=True)
+    res = run_command(cmd, check=False, capture_output=True)
     output = (res.stdout or "") + (res.stderr or "")
 
     dirty_match = re.search(r"Dirty:\s*(true|false)", output, re.IGNORECASE)
@@ -339,7 +305,7 @@ def run_migration(config: Config, migrations_dir: str, spanner_instance: str, db
         f"--migrations_dir={migrations_dir}",
         "--command=up",
     ]
-    run_cmd(cmd)
+    run_command(cmd)
 
 
 def step_migrate(config: Config) -> None:
@@ -379,40 +345,7 @@ def step_migrate(config: Config) -> None:
 
 def step_images(config: Config) -> None:
     """Rebuilds and pushes XMC microservice OCI images to Artifact Registry."""
-    log_info(
-        f"Rebuilding and pushing latest XMC microservice OCI images to '{config.image_registry}'..."
-    )
-    env = {
-        "XMC_ENV": config.environment,
-        "XMC_ACR_TARGET": config.image_registry,
-        "BUILD_TAG": config.image_tag,
-    }
-
-    # TODO: Migrate hardcoded image targets to dynamic discovery or configuration flags to operate on flags cleanly.
-    targets = [
-        ("actuator", "//cmd/actuator:actuator_image_push"),
-        (
-            "experiment_state_server",
-            "//cmd/experiment_state_server:experiment_state_server_image_push",
-        ),
-        ("log_monitor", "//cmd/log_monitor:log_monitor_image_push"),
-        ("reconciler", "//cmd/reconciler:reconciler_image_push"),
-        ("ui", "//cmd/ui:ui_image_push"),
-        ("xid_service", "//cmd/xid_service:xid_service_image_push"),
-        ("health_service", "//cmd/health_service:health_service_image_push"),
-        ("dashboard_service", "//cmd/dashboard_service:dashboard_service_image_push"),
-        ("ingestion_gateway", "//cmd/ingestion_gateway:ingestion_gateway_image_push"),
-    ]
-    if config.rod_deployment_enabled:
-        targets.append(
-            ("rod_data_provider", "//cmd/rod_data_provider:rod_data_provider_image_push")
-        )
-
-    for name, target in targets:
-        log_info(f"Pushing {name} image...")
-        run_cmd(["bazel", "run", target], env=env)
-
-    log_success("All XMC service container images compiled and pushed from current branch state.")
+    build_and_push_images(asdict(config))
 
 
 def step_app(config: Config) -> None:
@@ -427,7 +360,7 @@ def step_app(config: Config) -> None:
         )
 
     log_info("Re-compiling XMC blueprint with latest variables and templates...")
-    run_cmd(
+    run_command(
         [
             "./cluster-toolkit/gcluster",
             "create",
@@ -445,19 +378,19 @@ def step_app(config: Config) -> None:
 
     log_info("Exporting and importing Cluster Toolkit deployment group outputs...")
     if (ctk_dir / "primary").is_dir():
-        run_cmd(["./cluster-toolkit/gcluster", "export-outputs", str(ctk_dir / "primary")])
+        run_command(["./cluster-toolkit/gcluster", "export-outputs", str(ctk_dir / "primary")])
 
     if (ctk_dir / "compute").is_dir():
-        run_cmd(["./cluster-toolkit/gcluster", "import-inputs", str(ctk_dir / "compute")])
-        run_cmd(["./cluster-toolkit/gcluster", "export-outputs", str(ctk_dir / "compute")])
+        run_command(["./cluster-toolkit/gcluster", "import-inputs", str(ctk_dir / "compute")])
+        run_command(["./cluster-toolkit/gcluster", "export-outputs", str(ctk_dir / "compute")])
 
     if (ctk_dir / "kubernetes_prereqs").is_dir():
-        run_cmd(
+        run_command(
             ["./cluster-toolkit/gcluster", "import-inputs", str(ctk_dir / "kubernetes_prereqs")]
         )
 
     log_info("Running gcluster deploy for group 'xmc_app'...")
-    run_cmd(
+    run_command(
         [
             "./cluster-toolkit/gcluster",
             "--download-dependencies",
@@ -483,7 +416,7 @@ def resolve_deployment_name(service: str, namespace: str) -> str | None:
       Resolved deployment name string or None if not present in cluster.
     """
     for candidate in [service, f"{service}-deployment"]:
-        res = run_cmd(
+        res = run_command(
             ["kubectl", "get", "deployment", candidate, "-n", namespace],
             check=False,
             capture_output=True,
@@ -516,7 +449,7 @@ def step_restart(config: Config) -> None:
         resolved_name = resolve_deployment_name(service, config.namespace)
         if resolved_name:
             log_info(f"Restarting deployment/{resolved_name}...")
-            run_cmd(
+            run_command(
                 [
                     "kubectl",
                     "rollout",
@@ -554,7 +487,7 @@ def step_verify(config: Config) -> None:
     else:
         cmd = ["bash", "./deploy/ctk_v2/verify_xmc.sh"]
 
-    res = run_cmd(cmd, env=env, check=False)
+    res = run_command(cmd, env=env, check=False)
     if res.returncode != 0:
         log_info("Diagnostic script reported warnings.")
 
@@ -592,7 +525,7 @@ def run_pipeline(args: argparse.Namespace, config: Config, steps: list[str]) -> 
         try:
             execute_step(args.only, config)
         except subprocess.CalledProcessError as e:
-            print(f"\n\033[0;31mError executing step '{args.only}': {e}\033[0m")
+            print(f"\n{RED}Error executing step '{args.only}': {e}{NC}")
             print(
                 "Suggested recovery command:\n  python3 tools/upgrade_dev_env.py"
                 f" --config {config.config_path} --start-from {args.only}"
@@ -608,7 +541,7 @@ def run_pipeline(args: argparse.Namespace, config: Config, steps: list[str]) -> 
             try:
                 execute_step(step, config)
             except subprocess.CalledProcessError as e:
-                print(f"\n\033[0;31mError executing step '{step}': {e}\033[0m")
+                print(f"\n{RED}Error executing step '{step}': {e}{NC}")
                 print(
                     "Suggested recovery command:\n  python3 tools/upgrade_dev_env.py"
                     f" --config {config.config_path} --start-from {step}"

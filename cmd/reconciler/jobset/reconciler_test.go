@@ -1577,15 +1577,15 @@ func TestGetManagedXprofEnvs(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			gotDisplayName, gotRunGroup, gotGCSPath := getManagedXprofEnvs(tc.jobSet)
-			if gotDisplayName != tc.wantDisplayName {
-				t.Errorf("getManagedXprofEnvs() gotDisplayName = %q, want %q", gotDisplayName, tc.wantDisplayName)
+			got := getManagedXprofEnvs(tc.jobSet)
+			if got.DisplayName != tc.wantDisplayName {
+				t.Errorf("getManagedXprofEnvs() gotDisplayName = %q, want %q", got.DisplayName, tc.wantDisplayName)
 			}
-			if gotRunGroup != tc.wantRunGroup {
-				t.Errorf("getManagedXprofEnvs() gotRunGroup = %q, want %q", gotRunGroup, tc.wantRunGroup)
+			if got.RunGroup != tc.wantRunGroup {
+				t.Errorf("getManagedXprofEnvs() gotRunGroup = %q, want %q", got.RunGroup, tc.wantRunGroup)
 			}
-			if gotGCSPath != tc.wantGCSPath {
-				t.Errorf("getManagedXprofEnvs() gotGCSPath = %q, want %q", gotGCSPath, tc.wantGCSPath)
+			if got.GCSPath != tc.wantGCSPath {
+				t.Errorf("getManagedXprofEnvs() gotGCSPath = %q, want %q", got.GCSPath, tc.wantGCSPath)
 			}
 		})
 	}

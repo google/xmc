@@ -62,18 +62,26 @@ spec:
         - "-tls_key_file="
         env:
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
+        envFrom:
+        - configMapRef:
+            name: health-config
         readinessProbe:
           httpGet:
             path: /readyz
             port: 8080
           initialDelaySeconds: 5
           periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 1
         livenessProbe:
           httpGet:
             path: /healthz
             port: 8080
           initialDelaySeconds: 10
           periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
         resources:
           requests:
             cpu: "10m"

@@ -27,15 +27,20 @@ import (
 	"xmanager_cloud/storage/state/state"
 )
 
+// WorkUnitCreationResult contains the updated Experiment domain object and mutation metadata.
+type WorkUnitCreationResult struct {
+	Experiment       *essmsgpb.Experiment
+	ResourcesChanged bool
+}
+
 // PrepareWorkUnitCreation calculates the updated Experiment state and resources when a new WorkUnit is created.
 // This is a pure domain function with no side effects and no database coupling.
-// Returns the updated Experiment proto, a boolean indicating if resources changed, and an error if any.
-func PrepareWorkUnitCreation(ctx context.Context, exp *essmsgpb.Experiment, wu *essmsgpb.WorkUnit, now time.Time) (*essmsgpb.Experiment, bool, error) {
+func PrepareWorkUnitCreation(ctx context.Context, exp *essmsgpb.Experiment, wu *essmsgpb.WorkUnit, now time.Time) (WorkUnitCreationResult, error) {
 	if exp == nil {
-		return nil, false, fmt.Errorf("experiment must not be nil")
+		return WorkUnitCreationResult{}, fmt.Errorf("experiment must not be nil")
 	}
 	if wu == nil || wu.GetCurrentWorkUnitExecution() == nil || wu.GetCurrentWorkUnitExecution().GetStatus() == nil {
-		return nil, false, fmt.Errorf("work unit, current execution, and status must not be nil")
+		return WorkUnitCreationResult{}, fmt.Errorf("work unit, current execution, and status must not be nil")
 	}
 
 	clonedExp := proto.Clone(exp).(*essmsgpb.Experiment)
@@ -55,7 +60,7 @@ func PrepareWorkUnitCreation(ctx context.Context, exp *essmsgpb.Experiment, wu *
 
 	updatedExp, err := state.DenormalizeWorkUnitStatus(ctx, clonedExp, deltas)
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to denormalize experiment status: %w", err)
+		return WorkUnitCreationResult{}, fmt.Errorf("failed to denormalize experiment status: %w", err)
 	}
 
 	// 2. Merge resources required by WorkUnit into Experiment
@@ -76,7 +81,10 @@ func PrepareWorkUnitCreation(ctx context.Context, exp *essmsgpb.Experiment, wu *
 		updatedExp.Status.UpdateTime = timestamppb.New(now)
 	}
 
-	return updatedExp, resourcesChanged, nil
+	return WorkUnitCreationResult{
+		Experiment:       updatedExp,
+		ResourcesChanged: resourcesChanged,
+	}, nil
 }
 
 func equalResourceSets(a, b []*essmsgpb.ResourceSet) bool {

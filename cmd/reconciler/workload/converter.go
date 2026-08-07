@@ -30,10 +30,11 @@ import (
 
 // ConvertWorkloadToWorkUnitExecutionUpdate converts a Workload to a WorkUnitExecutionUpdate.
 func ConvertWorkloadToWorkUnitExecutionUpdate(ctx context.Context, workload *v1beta1.Workload, mgmtClusterInfo *spb.ClusterInfo, reader client.Reader) (*storagepkg.WorkUnitExecutionUpdate, error) {
-	_, wid, eid, err := parseXMCLabelsFromPodSet(ctx, workload)
+	parsedLabels, err := parseXMCLabelsFromPodSet(ctx, workload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse XMC labels: %w", err)
 	}
+	wid, eid := parsedLabels.WID, parsedLabels.EID
 
 	metadata := &spb.WorkUnitExecutionMetadata{}
 	maskPaths := []string{

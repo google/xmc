@@ -48,10 +48,11 @@ func main() {
 
 	cfg := Load()
 
-	projectID, _, _, err := getGceMetadata(ctx)
+	gceMeta, err := getGceMetadata(ctx)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to get GCE Metadata", "error", err)
 	}
+	projectID := gceMeta.ProjectID
 
 	logger := logging.NewGCPLogger(slog.LevelInfo, projectID)
 	ctx = logging.WithLogger(ctx, logger)
@@ -141,22 +142,33 @@ func actuatorCleanupWorkerID(ctx context.Context) string {
 	return fmt.Sprintf("%s-%s", constants.ActuatorCleanupWorkerID, hostname)
 }
 
-func getGceMetadata(ctx context.Context) (projectID, location, clusterName string, err error) {
+// GceMetadata holds cluster metadata fetched from GCE metadata server.
+type GceMetadata struct {
+	ProjectID   string
+	Location    string
+	ClusterName string
+}
+
+func getGceMetadata(ctx context.Context) (GceMetadata, error) {
 	logging.Debug(ctx, "Fetching GCE Metadata...")
-	projectID, err = metadata.ProjectIDWithContext(ctx)
+	projectID, err := metadata.ProjectIDWithContext(ctx)
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to get Project ID from metadata: %v", err)
+		return GceMetadata{}, fmt.Errorf("failed to get Project ID from metadata: %v", err)
 	}
-	clusterName, err = metadata.InstanceAttributeValueWithContext(ctx, "cluster-name")
+	clusterName, err := metadata.InstanceAttributeValueWithContext(ctx, "cluster-name")
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to get cluster-name from metadata: %v", err)
+		return GceMetadata{}, fmt.Errorf("failed to get cluster-name from metadata: %v", err)
 	}
-	location, err = metadata.InstanceAttributeValueWithContext(ctx, "cluster-location")
+	location, err := metadata.InstanceAttributeValueWithContext(ctx, "cluster-location")
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to get cluster-location from metadata: %v", err)
+		return GceMetadata{}, fmt.Errorf("failed to get cluster-location from metadata: %v", err)
 	}
 	logging.Debug(ctx, "Successfully fetched GCE Metadata", "project_id", projectID, "location", location, "cluster_name", clusterName)
-	return projectID, location, clusterName, nil
+	return GceMetadata{
+		ProjectID:   projectID,
+		Location:    location,
+		ClusterName: clusterName,
+	}, nil
 }
 
 func activeHealthCheck(k8s *k8sclient.Client, spClient health.SpannerHealthClient, redis redisclient.Consumer) http.HandlerFunc {

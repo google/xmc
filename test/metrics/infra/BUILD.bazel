@@ -23,10 +23,13 @@ go_library(
     deps = [
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
+        "@com_github_moby_moby_client//:client",
         "@com_github_testcontainers_testcontainers_go//:testcontainers-go",
         "@com_github_testcontainers_testcontainers_go//network",
         "@com_github_testcontainers_testcontainers_go_modules_clickhouse//:clickhouse",
         "@com_github_testcontainers_testcontainers_go_modules_redpanda//:redpanda",
+        "@com_github_twmb_franz_go//pkg/kgo",
+        "@com_github_twmb_franz_go_pkg_kadm//:kadm",
     ],
 )
 
@@ -34,6 +37,7 @@ go_test(
     name = "infra_test",
     srcs = ["setup_test.go"],
     data = [
+        "//api/protos/metrics:metrics.proto",
         "//deploy/clickhouse:schema.sql",
     ],
     embed = [":infra"],

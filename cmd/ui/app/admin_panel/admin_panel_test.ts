@@ -19,6 +19,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { of, throwError } from 'rxjs';
 
 import { HealthService } from '../service/health_service';
+import { SnackbarService } from '../service/snackbar_service';
 import { MockHealthService } from '../service/testing/mock_health_service';
 import { bootstrap, cleanState, flush, get, getHarness, setupModule } from '../testing/test';
 import { AdminPanelPage } from './admin_panel';
@@ -52,6 +53,33 @@ describe('AdminPanelPage Component', () => {
     expect(await systemInfoHarness!.getAppVersionText()).toBe('mock-app-version-1.0.0');
     expect(await systemInfoHarness!.getEssSchemaText()).toBe('6');
     expect(await systemInfoHarness!.getXidSchemaText()).toBe('1');
+  });
+
+  it('should display services health card', async () => {
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const healthStatusSectionHarness = await harness.getHealthStatusSection();
+    expect(healthStatusSectionHarness).not.toBeNull();
+    expect(await healthStatusSectionHarness!.getOverallStatusText()).toBe('HEALTHY');
+  });
+
+  it('should display configuration entries card with correct values', async () => {
+    bootstrap(AdminPanelPage);
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    const configEntriesCardHarness = await harness.getConfigEntriesCard();
+    expect(configEntriesCardHarness).not.toBeNull();
+    const entries = await configEntriesCardHarness!.getConfigEntries();
+    expect(await configEntriesCardHarness!.getGroupDisplayNames()).toEqual([
+      'Health Service Config',
+    ]);
+    expect(entries.length).toBe(3);
+    expect(entries[0]).toEqual({ key: 'Port', value: '8080' });
+    expect(entries[1]).toEqual({ key: 'GRPCPort', value: '50051' });
+    expect(entries[2]).toEqual({ key: 'ProjectID', value: 'mock-project' });
   });
 
   it('should display system observability link if observabilityUrl is present', async () => {
@@ -100,5 +128,38 @@ describe('AdminPanelPage Component', () => {
 
     const harness = await getHarness(AdminPanelHarness);
     expect(await harness.getErrorText()).toContain('Failed to load health status');
+  });
+
+  it('should display toast and preserve old health status if subsequent refresh fails', async () => {
+    const healthService = get(HealthService);
+    const snackbarService = get(SnackbarService);
+    const openSpy = spyOn(snackbarService, 'open');
+    const firstStatus = {
+      healthState: 'HEALTH_STATE_HEALTHY',
+      systemInfo: {
+        appVersion: 'mock-app-version-1.0.0',
+        essDbSchemaVersion: '6',
+        xidDbSchemaVersion: '1',
+      },
+      components: [],
+      healthCheckTime: { seconds: 1717804800, nanos: 0 },
+    };
+    spyOn(healthService, 'getHealthStatus').and.returnValues(
+      of(firstStatus as any),
+      throwError(() => new Error('Refresh error')),
+    );
+
+    bootstrap(AdminPanelPage);
+    await flush();
+    const harness = await getHarness(AdminPanelHarness);
+    const healthStatusSectionHarness = await harness.getHealthStatusSection();
+    await healthStatusSectionHarness!.clickRefresh();
+    await flush();
+    const preservedSection = await harness.getHealthStatusSection();
+
+    expect(openSpy).toHaveBeenCalledWith('Failed to refresh health status.');
+    expect(await harness.getErrorText()).toBeNull();
+    expect(preservedSection).not.toBeNull();
+    expect(await preservedSection!.getOverallStatusText()).toBe('HEALTHY');
   });
 });

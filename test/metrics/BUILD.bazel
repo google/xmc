@@ -12,9 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("@rules_python//python:defs.bzl", "py_test")
 load("//:compat.bzl", "compat_go_test")
 
-package(default_visibility = ["//visibility:private"])
+package(default_visibility = ["//visibility:public"])
+
+go_binary(
+    name = "hermetic_runner",
+    srcs = ["hermetic_runner/main.go"],
+    data = [
+        "//api/protos/metrics:metrics.proto",
+        "//deploy/clickhouse:schema.sql",
+    ],
+    deps = [
+        "//cmd/ingestion_gateway/ingestiongateway",
+        "//internal/compat/google",
+        "//test/metrics/infra",
+        "@com_github_twmb_franz_go//pkg/kgo",
+    ],
+)
 
 compat_go_test(
     name = "gateway_redpanda_test",
@@ -34,5 +51,40 @@ compat_go_test(
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
+    ],
+)
+
+compat_go_test(
+    name = "clickhouse_pipeline_test",
+    srcs = ["clickhouse_pipeline_test.go"],
+    data = [
+        "//api/protos/metrics:metrics.proto",
+        "//deploy/clickhouse:schema.sql",
+    ],
+    tags = [
+        "local",
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        "//api/protos/metrics:metrics_go_proto",
+        "//test/metrics/infra",
+        "@com_github_twmb_franz_go//pkg/kgo",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+py_test(
+    name = "hermetic_telemetry_test",
+    srcs = ["hermetic_telemetry_test.py"],
+    data = [":hermetic_runner"],
+    imports = ["../.."],
+    tags = [
+        "local",
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        "//sdks/python/xmc",
     ],
 )

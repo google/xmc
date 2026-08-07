@@ -1192,6 +1192,66 @@ func TestConstructJobSet_ActiveDeadlineSeconds(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_TerminationGracePeriodSeconds(t *testing.T) {
+	tests := []struct {
+		name    string
+		val     *int64
+		wantSet bool
+		wantVal int64
+	}{
+		{
+			name:    "positive grace period",
+			val:     proto.Int64(120),
+			wantSet: true,
+			wantVal: 120,
+		},
+		{
+			name:    "zero grace period",
+			val:     proto.Int64(0),
+			wantSet: true,
+			wantVal: 0,
+		},
+		{
+			name:    "nil grace period",
+			val:     nil,
+			wantSet: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+			workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+				wu.Executable.GetJobset().Jobs[0].TerminationGracePeriodSeconds = tt.val
+			})
+
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+			if err != nil {
+				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+			}
+
+			if len(got.Spec.ReplicatedJobs) != 1 {
+				t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
+			}
+
+			gotPodSpec := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
+			if !tt.wantSet {
+				if gotPodSpec.TerminationGracePeriodSeconds != nil {
+					t.Errorf("Expected TerminationGracePeriodSeconds to be nil, got %d", *gotPodSpec.TerminationGracePeriodSeconds)
+				}
+				return
+			}
+
+			if gotPodSpec.TerminationGracePeriodSeconds == nil {
+				t.Fatal("Expected TerminationGracePeriodSeconds to be set, but it was nil")
+			}
+			if *gotPodSpec.TerminationGracePeriodSeconds != tt.wantVal {
+				t.Errorf("Expected TerminationGracePeriodSeconds to be %d, got %d", tt.wantVal, *gotPodSpec.TerminationGracePeriodSeconds)
+			}
+		})
+	}
+}
+
 func TestConstructJobSet_DependencyOrder(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := &esspb.WorkUnit{
@@ -1323,6 +1383,80 @@ func TestConstructJobSet_DependencyOrder(t *testing.T) {
 	}
 	if got.Spec.ReplicatedJobs[3].DependsOn[0].Status != jobsetv1alpha2.DependencyReady {
 		t.Errorf("Expected job4 to depend on job3 with status READY, got %v", got.Spec.ReplicatedJobs[3].DependsOn[0].Status)
+	}
+}
+
+func TestConstructJobSet_DependencyOrder_PathwaysHeadAndWorker(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnit1",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name: "pathways-head",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_CpuResources{
+										CpuResources: &esspb.CpuResources{
+											CpuMillicores: 100,
+											MemoryBytes:   1024,
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+							},
+							Replicas: 1,
+						},
+						{
+							Name: "worker",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_CpuResources{
+										CpuResources: &esspb.CpuResources{
+											CpuMillicores: 100,
+											MemoryBytes:   1024,
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+							},
+							Replicas: 2,
+							DependencyOrder: &esspb.KubernetesJob_DependencyOrder{
+								JobName:            "pathways-head",
+								JobDependencyState: esspb.KubernetesJob_DependencyOrder_READY,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if len(got.Spec.ReplicatedJobs) != 2 {
+		t.Fatalf("Expected 2 replicated jobs, got %d", len(got.Spec.ReplicatedJobs))
+	}
+
+	// Verify pathways-head has no dependencies
+	if len(got.Spec.ReplicatedJobs[0].DependsOn) != 0 {
+		t.Errorf("Expected pathways-head to have no dependencies, got %v", got.Spec.ReplicatedJobs[0].DependsOn)
+	}
+
+	// Verify worker depends on pathways-head being READY
+	if len(got.Spec.ReplicatedJobs[1].DependsOn) != 1 {
+		t.Fatalf("Expected worker to have 1 dependency, got %d", len(got.Spec.ReplicatedJobs[1].DependsOn))
+	}
+	if got.Spec.ReplicatedJobs[1].DependsOn[0].Name != "pathways-head" {
+		t.Errorf("Expected worker to depend on pathways-head, got %s", got.Spec.ReplicatedJobs[1].DependsOn[0].Name)
+	}
+	if got.Spec.ReplicatedJobs[1].DependsOn[0].Status != jobsetv1alpha2.DependencyReady {
+		t.Errorf("Expected worker to depend on pathways-head with status READY, got %v", got.Spec.ReplicatedJobs[1].DependsOn[0].Status)
 	}
 }
 
@@ -2785,5 +2919,115 @@ func TestConstructJobSet_CustomAnnotationsAndLabels(t *testing.T) {
 	}
 	if _, ok := jobLabels["env"]; ok {
 		t.Errorf("ReplicatedJob unexpectedly received top-level label \"env\"")
+	}
+}
+
+func TestConstructJobSet_KubernetesJobAnnotationsPropagation(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		job := wu.Executable.GetJobset().Jobs[0]
+		job.Annotations = map[string]string{
+			"alpha.jobset.sigs.k8s.io/exclusive-topology": "kubernetes.io/hostname",
+			"custom.job.annotation/key":                   "custom-value",
+		}
+	})
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if len(got.Spec.ReplicatedJobs) != 1 {
+		t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
+	}
+
+	jobTemplateAnnotations := got.Spec.ReplicatedJobs[0].Template.ObjectMeta.Annotations
+	podTemplateAnnotations := got.Spec.ReplicatedJobs[0].Template.Spec.Template.ObjectMeta.Annotations
+
+	wantExclusiveTopology := "kubernetes.io/hostname"
+	wantCustomAnnotation := "custom-value"
+
+	// Verify JobTemplateSpec annotations
+	if gotVal := jobTemplateAnnotations["alpha.jobset.sigs.k8s.io/exclusive-topology"]; gotVal != wantExclusiveTopology {
+		t.Errorf("JobTemplateSpec.Annotations[\"alpha.jobset.sigs.k8s.io/exclusive-topology\"] = %q, want %q", gotVal, wantExclusiveTopology)
+	}
+	if gotVal := jobTemplateAnnotations["custom.job.annotation/key"]; gotVal != wantCustomAnnotation {
+		t.Errorf("JobTemplateSpec.Annotations[\"custom.job.annotation/key\"] = %q, want %q", gotVal, wantCustomAnnotation)
+	}
+
+	// Verify PodTemplateSpec annotations
+	if gotVal := podTemplateAnnotations["alpha.jobset.sigs.k8s.io/exclusive-topology"]; gotVal != wantExclusiveTopology {
+		t.Errorf("PodTemplateSpec.Annotations[\"alpha.jobset.sigs.k8s.io/exclusive-topology\"] = %q, want %q", gotVal, wantExclusiveTopology)
+	}
+	if gotVal := podTemplateAnnotations["custom.job.annotation/key"]; gotVal != wantCustomAnnotation {
+		t.Errorf("PodTemplateSpec.Annotations[\"custom.job.annotation/key\"] = %q, want %q", gotVal, wantCustomAnnotation)
+	}
+
+	// Verify map pointer separation between JobTemplateSpec and PodTemplateSpec annotations
+	jobTemplateAnnotations["test-mutation-key"] = "mutated"
+	if _, ok := podTemplateAnnotations["test-mutation-key"]; ok {
+		t.Errorf("PodTemplateSpec.Annotations shared map pointer with JobTemplateSpec.Annotations")
+	}
+}
+
+func TestConstructJobSet_NativeSidecarInitContainers(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		job := wu.Executable.GetJobset().Jobs[0]
+		job.Spec.RestartPolicy = proto.String("Always")
+		job.InitContainers = []*esspb.ExecutableSpec{
+			{
+				DockerImage: "gcr.io/foo/regular-init:latest",
+			},
+			{
+				DockerImage:   "gcr.io/foo/native-sidecar-init:latest",
+				RestartPolicy: proto.String("Always"),
+			},
+		}
+		job.Sidecars = []*esspb.ExecutableSpec{
+			{
+				DockerImage: "gcr.io/foo/legacy-sidecar:latest",
+			},
+		}
+	})
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if len(got.Spec.ReplicatedJobs) != 1 {
+		t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
+	}
+
+	initContainers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.InitContainers
+	if len(initContainers) != 3 {
+		t.Fatalf("Expected 3 init containers, got %d", len(initContainers))
+	}
+
+	// 1. Regular init container (RestartPolicy should be nil)
+	if initContainers[0].RestartPolicy != nil {
+		t.Errorf("initContainers[0].RestartPolicy = %v, want nil", *initContainers[0].RestartPolicy)
+	}
+
+	// 2. Native sidecar init container with RestartPolicy: Always
+	if initContainers[1].RestartPolicy == nil || *initContainers[1].RestartPolicy != corev1.ContainerRestartPolicyAlways {
+		t.Errorf("initContainers[1].RestartPolicy = %v, want Always", initContainers[1].RestartPolicy)
+	}
+
+	// 3. Legacy sidecar container (RestartPolicy should be Always)
+	if initContainers[2].RestartPolicy == nil || *initContainers[2].RestartPolicy != corev1.ContainerRestartPolicyAlways {
+		t.Errorf("initContainers[2].RestartPolicy = %v, want Always", initContainers[2].RestartPolicy)
+	}
+
+	// Verify primary container does not have RestartPolicy set
+	primaryContainers := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec.Containers
+	if len(primaryContainers) != 1 {
+		t.Fatalf("Expected 1 primary container, got %d", len(primaryContainers))
+	}
+	if primaryContainers[0].RestartPolicy != nil {
+		t.Errorf("primaryContainers[0].RestartPolicy = %v, want nil", *primaryContainers[0].RestartPolicy)
 	}
 }

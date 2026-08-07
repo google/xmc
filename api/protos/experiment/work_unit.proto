@@ -232,6 +232,10 @@ message KubernetesJob {
   // Note: Reserved system labels (e.g. Experiment ID, WorkUnit ID, Queue Name)
   // take precedence and cannot be overridden.
   map<string, string> labels = 17;
+
+  // Optional termination grace period in seconds for pods created by this KubernetesJob.
+  // Controls how long Kubernetes waits for containers to gracefully shut down before forcefully killing them.
+  optional int64 termination_grace_period_seconds = 19;
 }
 
 // Represents a volume that can be mounted by containers in a KubernetesJob.
@@ -400,6 +404,8 @@ message ExecutableSpec {
   repeated VolumeMount volume_mounts = 9;
   // List of ports exposed from the container.
   repeated ContainerPort ports = 10;
+  // Optional restart policy for init containers (e.g. "Always" to configure Kubernetes native sidecar containers).
+  optional string restart_policy = 12;
 }
 
 // SchedulingConstraints contains the scheduling constraints for the
