@@ -16,7 +16,7 @@
 <div class="jobs-in-queue-card">
   <div class="jobs-card-header">
     <div class="title-row">
-      <h3 class="jobs-card-title">Jobs in the queue ({{ totalCount() }})</h3>
+      <h3 id="queue-jobs-title" class="jobs-card-title">Jobs in the queue ({{ totalCount() }})</h3>
     </div>
     <div class="target-queue-name">{{ activeQueueName() }}</div>
     <p class="jobs-card-subtitle">There are {{ totalCount() }} jobs ahead of you.</p>
@@ -32,6 +32,7 @@
         <img
           src="/static/empty_star.svg"
           alt="No jobs in queue illustration"
+          aria-hidden="true"
           width="120"
           height="120"
         />
@@ -40,20 +41,30 @@
     </div>
   } @else {
     <div class="jobs-table-container">
-      <table mat-table [dataSource]="jobs()" class="jobs-mat-table">
+      <table
+        mat-table
+        [dataSource]="jobs()"
+        aria-labelledby="queue-jobs-title"
+        class="jobs-mat-table"
+      >
         <!-- Position Column -->
         <ng-container matColumnDef="position">
           <th mat-header-cell *matHeaderCellDef>Position</th>
-          <td mat-cell *matCellDef="let job" class="position-cell">{{ job.position }}</td>
+          <td mat-cell *matCellDef="let job" class="position-cell">
+            {{ job | queueJobPosition }}
+          </td>
         </ng-container>
 
         <!-- Experiment Name Column -->
         <ng-container matColumnDef="jobName">
           <th mat-header-cell *matHeaderCellDef>Experiment name</th>
           <td mat-cell *matCellDef="let job" class="name-cell">
-            <a [routerLink]="['/experiments', job.xid || job.jobName]" class="job-link">{{
-              job.jobName
-            }}</a>
+            <a
+              [routerLink]="['/experiments', job.xid || job.jobName]"
+              [attr.aria-label]="'View experiment ' + job.jobName"
+              class="job-link"
+              >{{ job.jobName }}</a
+            >
           </td>
         </ng-container>
 
@@ -61,17 +72,7 @@
         <ng-container matColumnDef="status">
           <th mat-header-cell *matHeaderCellDef>Status</th>
           <td mat-cell *matCellDef="let job" class="status-cell">
-            @if (
-              job.status?.toUpperCase() === 'RUNNING' || job.status?.toUpperCase() === 'ACTIVE'
-            ) {
-              <span class="status-indicator running-indicator">
-                <mat-icon class="status-dot-icon running-dot">sync</mat-icon> Running
-              </span>
-            } @else {
-              <span class="status-indicator pending-indicator">
-                <mat-icon class="status-dot-icon pending-dot">more_horiz</mat-icon> Pending
-              </span>
-            }
+            <xmc-status-chip [status]="job | queueJobStatus"></xmc-status-chip>
           </td>
         </ng-container>
 
@@ -107,7 +108,7 @@
           <th mat-header-cell *matHeaderCellDef>Author</th>
           <td mat-cell *matCellDef="let job" class="author-cell">
             <div class="author-avatar-chip">
-              <mat-icon class="avatar-icon">account_circle</mat-icon>
+              <mat-icon class="avatar-icon" aria-hidden="true">account_circle</mat-icon>
               <span class="author-name">{{ job.user }}</span>
             </div>
           </td>
