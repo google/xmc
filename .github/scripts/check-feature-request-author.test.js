@@ -96,6 +96,41 @@ test('run handles merge_group event context successfully', async () => {
   assert.ok(infoLogs.some(log => log.includes('Merge block check passed')));
 });
 
+test('run fails closed if GitHub username cannot be resolved in merge_group context', async () => {
+  let failedMessage = null;
+  const mockCore = {
+    info: () => {},
+    setFailed: (msg) => { failedMessage = msg; },
+  };
+
+  const mockGithub = {
+    rest: {
+      repos: {
+        getCommit: async () => ({
+          data: {
+            author: null,
+            commit: { author: { name: 'Unlinked User' } },
+          },
+        }),
+      },
+    },
+  };
+
+  const mockContext = {
+    repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'merge_group',
+    payload: {
+      merge_group: {
+        head_sha: 'abc123456789',
+        base_ref: 'refs/heads/main',
+      },
+    },
+  };
+
+  await run({ github: mockGithub, context: mockContext, core: mockCore });
+  assert.strictEqual(failedMessage, 'Could not resolve GitHub username for merge group head SHA abc123456789.');
+});
+
 test('run fails workflow when PR author is in FEATURE_REQUEST_AUTHORS', async () => {
   let failedMessage = null;
   const mockCore = {

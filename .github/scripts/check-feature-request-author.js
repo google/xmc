@@ -38,7 +38,11 @@ async function run({ github, context, core }) {
         repo,
         ref: headSha,
       });
-      prAuthor = commitRes.data.author?.login || commitRes.data.commit?.author?.name || '';
+      prAuthor = commitRes.data.author?.login || '';
+      if (!prAuthor) {
+        core.setFailed(`Could not resolve GitHub username for merge group head SHA ${headSha}.`);
+        return;
+      }
     } catch (error) {
       core.setFailed(`Failed to fetch commit author for merge group head SHA ${headSha}: ${error.message}`);
       return;
