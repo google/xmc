@@ -14,7 +14,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseRestrictedAuthors, run } = require('./check-feature-request-author');
+const { parseRestrictedAuthors, isSystemExemptCommit, run } = require('./check-feature-request-author');
 
 test('parseRestrictedAuthors parses list correctly and ignores comments/whitespace', () => {
   const sampleContent = `
@@ -38,7 +38,15 @@ test('parseRestrictedAuthors returns empty array for empty or comment-only conte
   assert.deepStrictEqual(result, []);
 });
 
-test('run fails workflow if not executed in pull_request event context', async () => {
+test('isSystemExemptCommit correctly identifies verified system/bot logins', () => {
+  assert.strictEqual(isSystemExemptCommit({ author: { login: 'web-flow' } }), true);
+  assert.strictEqual(isSystemExemptCommit({ author: { login: 'dependabot[bot]' } }), true);
+  assert.strictEqual(isSystemExemptCommit({ author: { login: 'github-merge-queue[bot]' } }), true);
+  assert.strictEqual(isSystemExemptCommit({ author: { login: 'Alice' } }), false);
+  assert.strictEqual(isSystemExemptCommit(null), false);
+});
+
+test('run fails workflow if not executed in pull_request or merge_group event context', async () => {
   let failedMessage = null;
   const mockCore = {
     info: () => {},
@@ -47,11 +55,222 @@ test('run fails workflow if not executed in pull_request event context', async (
 
   const mockContext = {
     repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'push',
     payload: {},
   };
 
   await run({ github: {}, context: mockContext, core: mockCore });
-  assert.strictEqual(failedMessage, 'This script must be run in the context of a pull request event.');
+  assert.strictEqual(failedMessage, 'This script must be run in the context of a pull_request or merge_group event.');
+});
+
+test('run handles merge_group event context successfully', async () => {
+  let failedMessage = null;
+  let infoLogs = [];
+  const mockCore = {
+    info: (msg) => { infoLogs.push(msg); },
+    setFailed: (msg) => { failedMessage = msg; },
+  };
+
+  const mockGithub = {
+    rest: {
+      repos: {
+        compareCommits: async () => ({
+          data: {
+            total_commits: 1,
+            commits: [
+              { sha: 'abc123456789', author: { login: 'Alice' } },
+            ],
+          },
+        }),
+        getContent: async () => ({
+          data: {
+            content: Buffer.from('bob\ncharlie\n', 'utf8').toString('base64'),
+          },
+        }),
+      },
+    },
+  };
+
+  const mockContext = {
+    repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'merge_group',
+    payload: {
+      merge_group: {
+        head_sha: 'abc123456789',
+        base_sha: 'base12345678',
+        base_ref: 'refs/heads/main',
+      },
+    },
+  };
+
+  await run({ github: mockGithub, context: mockContext, core: mockCore });
+  assert.strictEqual(failedMessage, null);
+  assert.ok(infoLogs.some(log => log.includes('Merge block check passed')));
+});
+
+test('run exempts verified system/bot logins in merge_group context', async () => {
+  let failedMessage = null;
+  let infoLogs = [];
+  const mockCore = {
+    info: (msg) => { infoLogs.push(msg); },
+    setFailed: (msg) => { failedMessage = msg; },
+  };
+
+  const mockGithub = {
+    rest: {
+      repos: {
+        compareCommits: async () => ({
+          data: {
+            total_commits: 2,
+            commits: [
+              { sha: 'abc123456789', author: { login: 'web-flow' } },
+              { sha: 'def987654321', author: { login: 'Alice' } },
+            ],
+          },
+        }),
+        getContent: async () => ({
+          data: {
+            content: Buffer.from('bob\ncharlie\n', 'utf8').toString('base64'),
+          },
+        }),
+      },
+    },
+  };
+
+  const mockContext = {
+    repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'merge_group',
+    payload: {
+      merge_group: {
+        head_sha: 'abc123456789',
+        base_sha: 'base12345678',
+        base_ref: 'refs/heads/main',
+      },
+    },
+  };
+
+  await run({ github: mockGithub, context: mockContext, core: mockCore });
+  assert.strictEqual(failedMessage, null);
+  assert.ok(infoLogs.some(log => log.includes('is an exempt system/bot commit')));
+  assert.ok(infoLogs.some(log => log.includes('Merge block check passed')));
+});
+
+test('run fails closed if unlinked user commit is present in merge_group context', async () => {
+  let failedMessage = null;
+  const mockCore = {
+    info: () => {},
+    setFailed: (msg) => { failedMessage = msg; },
+  };
+
+  const mockGithub = {
+    rest: {
+      repos: {
+        compareCommits: async () => ({
+          data: {
+            total_commits: 1,
+            commits: [
+              { sha: 'abc123456789', author: null, commit: { author: { email: 'unlinked@example.com', name: 'User' } } },
+            ],
+          },
+        }),
+      },
+    },
+  };
+
+  const mockContext = {
+    repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'merge_group',
+    payload: {
+      merge_group: {
+        head_sha: 'abc123456789',
+        base_sha: 'base12345678',
+        base_ref: 'refs/heads/main',
+      },
+    },
+  };
+
+  await run({ github: mockGithub, context: mockContext, core: mockCore });
+  assert.ok(failedMessage.includes('Could not resolve GitHub username for commit abc1234 in merge group. All commits must be made by a verified GitHub account'));
+});
+
+test('run fails closed if total_commits exceeds returned commits array length in merge_group context', async () => {
+  let failedMessage = null;
+  const mockCore = {
+    info: () => {},
+    setFailed: (msg) => { failedMessage = msg; },
+  };
+
+  const mockGithub = {
+    rest: {
+      repos: {
+        compareCommits: async () => ({
+          data: {
+            total_commits: 260,
+            commits: new Array(250).fill({ sha: 'abc', author: { login: 'Alice' } }),
+          },
+        }),
+      },
+    },
+  };
+
+  const mockContext = {
+    repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'merge_group',
+    payload: {
+      merge_group: {
+        head_sha: 'abc123456789',
+        base_sha: 'base12345678',
+        base_ref: 'refs/heads/main',
+      },
+    },
+  };
+
+  await run({ github: mockGithub, context: mockContext, core: mockCore });
+  assert.strictEqual(failedMessage, 'Merge group contains 260 commits, which exceeds the maximum of 250 commits evaluated in a single API call.');
+});
+
+test('run fails merge_group if any commit in batch is authored by restricted author', async () => {
+  let failedMessage = null;
+  const mockCore = {
+    info: () => {},
+    setFailed: (msg) => { failedMessage = msg; },
+  };
+
+  const mockGithub = {
+    rest: {
+      repos: {
+        compareCommits: async () => ({
+          data: {
+            total_commits: 2,
+            commits: [
+              { sha: 'sha1', author: { login: 'Alice' } },
+              { sha: 'sha2', author: { login: 'Bob' } },
+            ],
+          },
+        }),
+        getContent: async () => ({
+          data: {
+            content: Buffer.from('bob\ncharlie\n', 'utf8').toString('base64'),
+          },
+        }),
+      },
+    },
+  };
+
+  const mockContext = {
+    repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'merge_group',
+    payload: {
+      merge_group: {
+        head_sha: 'abc123456789',
+        base_sha: 'base12345678',
+        base_ref: 'refs/heads/main',
+      },
+    },
+  };
+
+  await run({ github: mockGithub, context: mockContext, core: mockCore });
+  assert.ok(failedMessage.includes('authored by restricted author(s): [@Bob]'));
 });
 
 test('run fails workflow when PR author is in FEATURE_REQUEST_AUTHORS', async () => {
@@ -75,6 +294,7 @@ test('run fails workflow when PR author is in FEATURE_REQUEST_AUTHORS', async ()
 
   const mockContext = {
     repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'pull_request',
     payload: {
       pull_request: {
         number: 42,
@@ -85,8 +305,7 @@ test('run fails workflow when PR author is in FEATURE_REQUEST_AUTHORS', async ()
   };
 
   await run({ github: mockGithub, context: mockContext, core: mockCore });
-  assert.ok(failedMessage.includes('permanently blocked from merging'));
-  assert.ok(failedMessage.includes('@Alice'));
+  assert.ok(failedMessage.includes('authored by restricted author(s): [@Alice]'));
 });
 
 test('run passes workflow when PR author is not in FEATURE_REQUEST_AUTHORS', async () => {
@@ -111,6 +330,7 @@ test('run passes workflow when PR author is not in FEATURE_REQUEST_AUTHORS', asy
 
   const mockContext = {
     repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'pull_request',
     payload: {
       pull_request: {
         number: 42,
@@ -146,6 +366,7 @@ test('run handles 404 gracefully if FEATURE_REQUEST_AUTHORS does not exist', asy
 
   const mockContext = {
     repo: { owner: 'google', repo: 'xmc' },
+    eventName: 'pull_request',
     payload: {
       pull_request: {
         number: 42,
