@@ -251,8 +251,10 @@ CREATE TABLE WorkUnits (
   INTERLEAVE IN PARENT Experiments
   ON DELETE CASCADE;
 
--- To efficiently find work units assigned to a specific queue.
-CREATE INDEX WorkUnitsByQueueName ON WorkUnits (QueueName);
+-- To efficiently find active work units assigned to a specific queue.
+CREATE INDEX WorkUnitsByQueueAndPosition ON WorkUnits (
+  QueueName, CreateTime ASC, WorkUnitId ASC
+) STORING (Priority, ExecutionState, Xid);
 
 -- Table that holds the list of operations.
 CREATE TABLE Operations (

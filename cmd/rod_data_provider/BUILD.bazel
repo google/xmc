@@ -32,9 +32,11 @@ compat_go_library(
     importpath = "xmanager_cloud/cmd/rod_data_provider/main",
     visibility = ["//visibility:private"],
     deps = [
+        "//api/protos/experiment:messages_go_proto",
         "//api/protos/rod",
         "//internal/compat/google",
         "//internal/logging",
+        "//internal/validator",
         "//pkg/auth/oauth2",
         "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
         "@io_k8s_apimachinery//pkg/api/resource",
@@ -70,7 +72,9 @@ compat_go_test(
     ],
     embed = [":rod_data_provider_lib"],
     deps = [
+        "//api/protos/experiment:messages_go_proto",
         "//api/protos/rod",
+        "//internal/validator",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],

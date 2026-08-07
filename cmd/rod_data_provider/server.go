@@ -18,11 +18,12 @@ import (
 	"context"
 
 	spb "xmanager_cloud/api/protos/rod"
+	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
 // WorkUnitFetcher defines storage operations required to fetch active jobs by queue name.
 type WorkUnitFetcher interface {
-	FetchActiveWorkUnitsByQueue(ctx context.Context, queueName string, pageSize int32, pageToken string) ([]*spb.JobInfo, string, error)
+	FetchActiveWorkUnitsByQueue(ctx context.Context, queueName string, pageSize int32, pageToken string) ([]*essmsgpb.WorkUnit, string, error)
 }
 
 type server struct {

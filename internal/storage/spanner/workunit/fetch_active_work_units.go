@@ -17,106 +17,72 @@ package workunit
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"google.golang.org/api/iterator"
-	spb "xmanager_cloud/api/protos/rod"
+
+	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
+	ls "xmanager_cloud/query_generator/liststatement"
+	"xmanager_cloud/query_generator/normalizer/normalizer"
+	"xmanager_cloud/storage/spanner/data/spannerdata"
+	"xmanager_cloud/storage/spanner/schema/workunitschema"
 )
 
 // FetchActiveWorkUnitsByQueue queries Spanner for active and pending work units assigned to the given queue.
-func (r *Repository) FetchActiveWorkUnitsByQueue(ctx context.Context, queueName string, pageSize int32, pageToken string) ([]*spb.JobInfo, string, error) {
+func (r *Repository) FetchActiveWorkUnitsByQueue(ctx context.Context, queueName string, pageSize int32, pageToken string) ([]*essmsgpb.WorkUnit, string, error) {
 	if queueName == "" {
 		return nil, "", fmt.Errorf("queueName cannot be empty")
 	}
 
-	stmt := spanner.Statement{
-		SQL: `SELECT wu.Xid, wu.WorkUnitId, wu.QueueName, e.Creator, wu.Priority, wu.ExecutionState, wu.CreateTime
-			FROM WorkUnits wu
-			JOIN Experiments e ON wu.BitReversedXid = e.BitReversedXid
-			WHERE wu.QueueName = @queueName
-			  AND wu.ExecutionState IN ('INITIALIZING', 'SCHEDULING', 'STARTING', 'RUNNING')
-			ORDER BY wu.CreateTime ASC`,
-		Params: map[string]interface{}{
-			"queueName": queueName,
-		},
+	filter := fmt.Sprintf("queue = %q AND state IN (\"INITIALIZING\", \"SCHEDULING\", \"STARTING\", \"RUNNING\")", queueName)
+
+	normalizedFilter, err := normalizer.Normalize(filter, r.workUnitsQueryGen.Tables()[0])
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to normalize filter: %w", err)
 	}
 
-	iter := r.client.Single().Query(ctx, stmt)
-	defer iter.Stop()
+	listParams := ls.ListParams{
+		PageSize:              pageSize,
+		Filter:                normalizedFilter,
+		OrderBy:               "created ASC",
+		QueryGen:              r.workUnitsQueryGen,
+		DefaultSelectFields:   workunitschema.WorkUnitSelectFields,
+		DefaultFullTextFields: workunitschema.WorkUnitFullTextFields,
+		ValidOrderByFields:    workunitschema.WorkUnitOrderByFields,
+	}
 
-	var jobs []*spb.JobInfo
-	positionCounter := 1
+	if err := listParams.DecodePageToken(pageToken); err != nil {
+		return nil, "", fmt.Errorf("invalid page token: %w", err)
+	}
 
-	for {
-		row, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
+	stmt, err := ls.ListStatement(ctx, listParams)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to generate list statement: %w", err)
+	}
+
+	logging.Debug(ctx, "Generated list statement", "stmt", stmt)
+
+	wuIter := r.client.Single().Query(ctx, *stmt)
+	defer wuIter.Stop()
+
+	var workUnits []*essmsgpb.WorkUnit
+	if err := wuIter.Do(func(row *spanner.Row) error {
+		wu, err := spannerdata.WorkUnitRowToProto(row)
 		if err != nil {
-			logging.Error(ctx, "failed to query active work units", "error", err)
-			return nil, "", fmt.Errorf("failed to read active work unit rows: %w", err)
+			logging.Error(ctx, "failed to convert WorkUnit row to WorkUnit", "error", err)
+			return err
 		}
-
-		var xid, wid, priority int64
-		var qName, creator, state string
-		var createTime time.Time
-
-		if err := row.Columns(&xid, &wid, &qName, &creator, &priority, &state, &createTime); err != nil {
-			logging.Error(ctx, "failed to parse work unit row columns", "error", err)
-			return nil, "", fmt.Errorf("failed to parse work unit row columns: %w", err)
-		}
-
-		posStr := "N/A-running"
-		if state == "INITIALIZING" || state == "SCHEDULING" {
-			posStr = strconv.Itoa(positionCounter)
-			positionCounter++
-		}
-
-		jobInfo := &spb.JobInfo{
-			Position:     posStr,
-			Xid:          strconv.FormatInt(xid, 10),
-			WorkUnitId:   strconv.FormatInt(wid, 10),
-			JobName:      fmt.Sprintf("xmc-operation-%d-%d", xid, wid),
-			User:         creator,
-			Resources:    "CPU: 1",
-			Priority:     FormatPriority(priority),
-			Status:       state,
-			TimeInQueue:  FormatTimeInQueue(createTime),
-			QueueName:    qName,
-			CreationTime: createTime.Format(time.RFC3339),
-		}
-		jobs = append(jobs, jobInfo)
+		workUnits = append(workUnits, wu)
+		return nil
+	}); err != nil {
+		logging.Error(ctx, "failed to read WorkUnit rows", "error", err)
+		return nil, "", fmt.Errorf("failed to read WorkUnit rows: %w", err)
 	}
 
-	return jobs, "", nil
-}
+	workUnits, nextPageToken, err := ls.ApplyPagination(workUnits, pageSize, ExtractWorkUnitCursor)
+	if err != nil {
+		return nil, "", err
+	}
 
-// FormatPriority formats integer priority to a human-readable display string.
-func FormatPriority(prio int64) string {
-	switch {
-	case prio >= 200:
-		return "High"
-	case prio <= 50:
-		return "Low"
-	default:
-		return "Normal"
-	}
-}
-
-// FormatTimeInQueue calculates human-readable duration string since creation.
-func FormatTimeInQueue(t time.Time) string {
-	duration := time.Since(t)
-	if duration < time.Minute {
-		return "just now"
-	}
-	if duration < time.Hour {
-		return fmt.Sprintf("%dm ago", int(duration.Minutes()))
-	}
-	if duration < 24*time.Hour {
-		return fmt.Sprintf("%dh ago", int(duration.Hours()))
-	}
-	return fmt.Sprintf("%dd ago", int(duration.Hours()/24))
+	return workUnits, nextPageToken, nil
 }

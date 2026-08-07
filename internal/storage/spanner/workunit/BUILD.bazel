@@ -34,7 +34,6 @@ compat_go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//api/protos/rod",
         "//internal/compat/field_mask",
         "//internal/compat/proto",
         "//internal/compat/safesql",
