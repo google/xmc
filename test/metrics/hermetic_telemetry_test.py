@@ -192,6 +192,7 @@ def run_simulated_training_workers(
                 "XMC_XID": str(xid),
                 "XMC_WORK_UNIT_ID": str(worker_wu_id),
                 "XMC_EXECUTION_ID": str(worker_exec_id),
+                "XMC_JOB_NAME": "simulated_train_job",
                 "XMC_REPLICA_ID": worker_replica_id,
             }
             client = LoadBalancingRecyclingClient(

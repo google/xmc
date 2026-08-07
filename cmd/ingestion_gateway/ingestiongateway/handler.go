@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -75,8 +76,8 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string, gMetr
 			wg         sync.WaitGroup
 			publishErr atomic.Pointer[error]
 		)
-		replicaIDHeader := r.Header.Get("X-Replica-ID")
-		jobNameHeader := r.Header.Get("X-Job-Name")
+		replicaIDHeader := strings.TrimSpace(r.Header.Get("X-Replica-ID"))
+		jobNameHeader := strings.TrimSpace(r.Header.Get("X-Job-Name"))
 
 		consumer := func(m *metrics.Metric) error {
 			if err := ctx.Err(); err != nil {
