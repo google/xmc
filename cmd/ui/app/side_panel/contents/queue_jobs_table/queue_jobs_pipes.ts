@@ -40,29 +40,22 @@ export const NOT_APPLICABLE_RUNNING_DISPLAY = 'N/A - running';
   standalone: true,
 })
 export class QueueJobStatusPipe implements PipeTransform {
+  private static readonly STATUS_MAP = new Map<string, StatusOption>([
+    [JOB_STATUS_STRINGS.RUNNING, StatusOption.RUNNING],
+    [JOB_STATUS_STRINGS.STARTING, StatusOption.STARTING],
+    [JOB_STATUS_STRINGS.SCHEDULING, StatusOption.SCHEDULING],
+    [JOB_STATUS_STRINGS.INITIALIZING, StatusOption.INITIALIZING],
+    [JOB_STATUS_STRINGS.SUCCEEDED, StatusOption.COMPLETED],
+    [JOB_STATUS_STRINGS.COMPLETED, StatusOption.COMPLETED],
+    [JOB_STATUS_STRINGS.FAILED, StatusOption.FAILED],
+    [JOB_STATUS_STRINGS.CANCELLED, StatusOption.STOPPED],
+    [JOB_STATUS_STRINGS.STOPPED, StatusOption.STOPPED],
+  ]);
+
   transform(job?: DashboardJob | null): StatusOption {
     if (!job?.status) return StatusOption.PENDING;
     const s = String(job.status).toUpperCase();
-    switch (s) {
-      case JOB_STATUS_STRINGS.RUNNING:
-        return StatusOption.RUNNING;
-      case JOB_STATUS_STRINGS.STARTING:
-        return StatusOption.STARTING;
-      case JOB_STATUS_STRINGS.SCHEDULING:
-        return StatusOption.SCHEDULING;
-      case JOB_STATUS_STRINGS.INITIALIZING:
-        return StatusOption.INITIALIZING;
-      case JOB_STATUS_STRINGS.SUCCEEDED:
-      case JOB_STATUS_STRINGS.COMPLETED:
-        return StatusOption.COMPLETED;
-      case JOB_STATUS_STRINGS.FAILED:
-        return StatusOption.FAILED;
-      case JOB_STATUS_STRINGS.CANCELLED:
-      case JOB_STATUS_STRINGS.STOPPED:
-        return StatusOption.STOPPED;
-      default:
-        return StatusOption.PENDING;
-    }
+    return QueueJobStatusPipe.STATUS_MAP.get(s) ?? StatusOption.PENDING;
   }
 }
 
