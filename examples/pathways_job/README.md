@@ -12,7 +12,7 @@ In a Pathways RL post-training or distributed execution topology on JAX-on-Pathw
 - **`jax-tpu` (Primary Container)**: Connects to the proxy via `JAX_BACKEND_TARGET=grpc://$(PATHWAYS_HEAD):29000`.
 
 ### 2. `worker` ReplicatedJob (Multi-pod TPU worker slices)
-- **`pathways-worker` (Primary Container on TPU nodes)**: Exposes worker gRPC port **`29005`**, secondary data port **`29006`**, TPU Inter-Chip Interconnect (ICI) port **`8471`**, and health/metrics port **`8080`**.
+- **`pathways-worker` (Primary Container on TPU nodes)**: Exposes worker gRPC port **`29005`**, secondary data port **`29006`**, TPU Inter-Chip Interconnect (ICI) port **`8471`**, and health/metrics port **`8080`**. Uses `dependency_order` to depend on `pathways-head` being `READY` before starting worker pods.
 
 ## Running the Example
 

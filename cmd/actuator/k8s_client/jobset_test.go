@@ -1386,6 +1386,80 @@ func TestConstructJobSet_DependencyOrder(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_DependencyOrder_PathwaysHeadAndWorker(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := &esspb.WorkUnit{
+		Name: "workUnit1",
+		Executable: &esspb.Executable{
+			Type: &esspb.Executable_Jobset{
+				Jobset: &esspb.JobSetExecutable{
+					Jobs: []*esspb.KubernetesJob{
+						{
+							Name: "pathways-head",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_CpuResources{
+										CpuResources: &esspb.CpuResources{
+											CpuMillicores: 100,
+											MemoryBytes:   1024,
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+							},
+							Replicas: 1,
+						},
+						{
+							Name: "worker",
+							Spec: &esspb.ExecutableSpec{
+								Resources: &esspb.ResourceSet{
+									Resources: &esspb.ResourceSet_CpuResources{
+										CpuResources: &esspb.CpuResources{
+											CpuMillicores: 100,
+											MemoryBytes:   1024,
+										},
+									},
+								},
+								DockerImage: "foo/bar",
+							},
+							Replicas: 2,
+							DependencyOrder: &esspb.KubernetesJob_DependencyOrder{
+								JobName:            "pathways-head",
+								JobDependencyState: esspb.KubernetesJob_DependencyOrder_READY,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if len(got.Spec.ReplicatedJobs) != 2 {
+		t.Fatalf("Expected 2 replicated jobs, got %d", len(got.Spec.ReplicatedJobs))
+	}
+
+	// Verify pathways-head has no dependencies
+	if len(got.Spec.ReplicatedJobs[0].DependsOn) != 0 {
+		t.Errorf("Expected pathways-head to have no dependencies, got %v", got.Spec.ReplicatedJobs[0].DependsOn)
+	}
+
+	// Verify worker depends on pathways-head being READY
+	if len(got.Spec.ReplicatedJobs[1].DependsOn) != 1 {
+		t.Fatalf("Expected worker to have 1 dependency, got %d", len(got.Spec.ReplicatedJobs[1].DependsOn))
+	}
+	if got.Spec.ReplicatedJobs[1].DependsOn[0].Name != "pathways-head" {
+		t.Errorf("Expected worker to depend on pathways-head, got %s", got.Spec.ReplicatedJobs[1].DependsOn[0].Name)
+	}
+	if got.Spec.ReplicatedJobs[1].DependsOn[0].Status != jobsetv1alpha2.DependencyReady {
+		t.Errorf("Expected worker to depend on pathways-head with status READY, got %v", got.Spec.ReplicatedJobs[1].DependsOn[0].Status)
+	}
+}
+
 func TestConstructJobSet_NoJobset(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := &esspb.WorkUnit{
