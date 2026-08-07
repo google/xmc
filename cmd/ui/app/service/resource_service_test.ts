@@ -20,7 +20,7 @@ import { firstValueFrom } from 'rxjs';
 
 import {
   GetFittingQueuesResponse,
-  QueueJobListResponse,
+  GetRunningAndPendingJobsResponse,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
@@ -92,17 +92,48 @@ describe('ResourceService', () => {
 
   describe('getQueueJobs', () => {
     it('should return mock queue jobs list for given queue', async () => {
-      const response: QueueJobListResponse = await firstValueFrom(
+      const mockResponse: GetRunningAndPendingJobsResponse = {
+        jobs: [
+          {
+            positionInQueue: 1,
+            xid: '101',
+            status: 'RUNNING',
+          },
+        ],
+        totalQueueSize: 1,
+      };
+
+      const responsePromise: Promise<GetRunningAndPendingJobsResponse> = firstValueFrom(
         state.service.getQueueJobs('custom-queue'),
       );
-      expect(response.jobs.length).toBe(2);
-      expect(response.queueName).toBe('custom-queue');
-      expect(response.jobs[0].queueName).toBe('custom-queue');
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/clusterqueues/custom-queue/jobs`);
+      expect(req.request.method).toBe('GET');
+      req.flush(mockResponse);
+
+      const response = await responsePromise;
+      expect(response.jobs?.length).toBe(1);
+      expect(response.jobs?.[0].xid).toBe('101');
     });
 
     it('should fallback to default queueName when parameter is omitted', async () => {
-      const response: QueueJobListResponse = await firstValueFrom(state.service.getQueueJobs());
-      expect(response.queueName).toBe('gpu-cluster-queue');
+      const mockResponse: GetRunningAndPendingJobsResponse = {
+        jobs: [],
+        totalQueueSize: 0,
+      };
+
+      const responsePromise: Promise<GetRunningAndPendingJobsResponse> = firstValueFrom(
+        state.service.getQueueJobs(),
+      );
+
+      const req = state.httpMock.expectOne(
+        `${XMC_API_DOMAIN}/clusterqueues/cpu-cluster-queue/jobs`,
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush(mockResponse);
+
+      const response = await responsePromise;
+      expect(response.jobs?.length).toBe(0);
     });
   });
 });
