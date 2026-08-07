@@ -178,15 +178,7 @@ declare module 'xmanager_cloud/health_service/proto/api.jsonpb_decls' {
 
 declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
   export type WorkUnitState =
-    | 'WORK_UNIT_STATE_UNSPECIFIED'
-    | 'INITIALIZING'
-    | 'SCHEDULING'
-    | 'STARTING'
-    | 'RUNNING'
-    | 'SUCCEEDED'
-    | 'FAILED'
-    | 'CANCELLED'
-    | number;
+    import('xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls').WorkUnitStatus.WorkUnitState;
 
   export type RangePreset =
     | 'RANGE_PRESET_UNSPECIFIED'
