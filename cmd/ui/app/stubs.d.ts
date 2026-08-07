@@ -251,13 +251,6 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
     tags?: string[];
   }
 
-  export interface DashboardJobMetrics {
-    totalCpuCores?: number;
-    memoryBytes?: number;
-    retryCount?: number;
-    statusMessage?: string;
-  }
-
   export interface GetRunningAndPendingJobsRequest {
     queueName?: string;
     pageSize?: number;
