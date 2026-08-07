@@ -18,6 +18,7 @@ package cloud.xmanager.v1;
 
 import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
+import "third_party/xmanager_cloud/experiment_state_server/proto/status.proto";
 
 option go_package = "xmanager_cloud/api/protos/rod";
 
@@ -38,18 +39,6 @@ service ResourceObservabilityService {
       get: "/v1/clusterqueues/{queue_name}/jobs"
     };
   }
-}
-
-// WorkUnitState represents the execution state of a work unit.
-enum WorkUnitState {
-  WORK_UNIT_STATE_UNSPECIFIED = 0;
-  INITIALIZING = 1;
-  SCHEDULING = 2;
-  STARTING = 3;
-  RUNNING = 4;
-  SUCCEEDED = 5;
-  FAILED = 6;
-  CANCELLED = 7;
 }
 
 // Resource represents requested or available compute resources.
@@ -97,7 +86,7 @@ message DashboardJob {
   int64 work_unit_id = 2;
   string user = 3;
   int64 priority = 4;
-  WorkUnitState status = 5;
+  WorkUnitStatus.WorkUnitState status = 5;
   int64 time_in_queue_seconds = 6;
   repeated Resource requested_resources = 7;
   int64 position_in_queue = 8;
@@ -111,5 +100,3 @@ message GetRunningAndPendingJobsResponse {
   string next_page_token = 2;
   int64 total_queue_size = 3;
 }
-
-

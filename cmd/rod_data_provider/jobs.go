@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	spb "xmanager_cloud/api/protos/rod"
+	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
 // GetRunningAndPendingJobs handles fetching active and pending jobs for a cluster queue.
@@ -46,7 +47,7 @@ func mockDashboardJobs() []*spb.DashboardJob {
 			WorkUnitId:      1,
 			User:            "example@example.com",
 			Priority:        0,
-			Status:          spb.WorkUnitState_RUNNING,
+			Status:          esspb.WorkUnitStatus_RUNNING,
 			PositionInQueue: 0,
 		},
 		{
@@ -54,7 +55,7 @@ func mockDashboardJobs() []*spb.DashboardJob {
 			WorkUnitId:      2,
 			User:            "example-admin@example.com",
 			Priority:        100,
-			Status:          spb.WorkUnitState_SCHEDULING,
+			Status:          esspb.WorkUnitStatus_SCHEDULING,
 			PositionInQueue: 1,
 		},
 	}

@@ -32,6 +32,7 @@ compat_go_library(
     importpath = "xmanager_cloud/cmd/rod_data_provider/main",
     visibility = ["//visibility:private"],
     deps = [
+        "//api/protos/experiment:messages_go_proto",
         "//api/protos/rod",
         "//cmd/rod_data_provider/cache",
         "//cmd/rod_data_provider/reconciler",
