@@ -24,6 +24,7 @@ import (
 
 // GetRunningAndPendingJobs handles fetching active and pending jobs for a cluster queue.
 func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunningAndPendingJobsRequest) (*spb.GetRunningAndPendingJobsResponse, error) {
+	// TODO: replace with actual implementation
 	if err := ctx.Err(); err != nil {
 		return nil, status.FromContextError(err).Err()
 	}
