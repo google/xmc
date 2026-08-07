@@ -43,6 +43,7 @@ function processUser(user: User | null) {
 
 ## 3. Default Immutability & Safe Data Handling
 - **Default Immutability (`const` over `let`)**: Declare variables as `const` by default. Reserve `let` strictly for instances where localized value reassignment is an explicit, unavoidable structural requirement (e.g., loop counters, accumulators).
+- **Domain Model Cleanliness over Transport Serialization**: Frontend view models and ambient TypeScript interfaces (`*.d.ts`) must remain pure, strongly typed domain representations. Do NOT leak wire transport quirks (such as Proto3 `int64` string JSON serialization) into UI interface fields as `number | string` union types. Handle wire normalization at service boundaries.
 - **Constructive Initialization**: Use spread operators (`...`), ternary expressions (`cond ? a : b`), or nullish coalescing (`??`) to construct values rather than imperatively assigning `let` variables across multiple blocks.
 - **Shallow Copies Before Mutation**: Never mutate arrays or state objects directly (especially data returned by signals, observables, or shared states). Always construct a shallow copy (`[...array]`, `{ ...obj }`) prior to sorting, filtering, or modifying properties.
 
