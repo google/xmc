@@ -177,21 +177,20 @@ declare module 'xmanager_cloud/health_service/proto/api.jsonpb_decls' {
 }
 
 declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
-  export type RangePreset =
-    | 'RANGE_PRESET_UNSPECIFIED'
-    | 'LAST_HOUR'
-    | 'LAST_DAY'
-    | 'LAST_WEEK'
+  export type WorkUnitState =
+    | 'WORK_UNIT_STATE_UNSPECIFIED'
+    | 'INITIALIZING'
+    | 'SCHEDULING'
+    | 'STARTING'
+    | 'RUNNING'
+    | 'SUCCEEDED'
+    | 'FAILED'
+    | 'CANCELLED'
     | number;
 
   export interface Resource {
     resourceType?: string;
     count?: number;
-  }
-
-  export interface ResourceVelocity {
-    resourceType?: string;
-    velocity?: number;
   }
 
   export interface QueueResourceCapacity {
@@ -206,53 +205,12 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
     queueCapacity?: QueueResourceCapacity[];
   }
 
-  export interface QueuePredictability {
-    pendingResourceRequests?: Resource;
-    resourceVelocity?: ResourceVelocity;
-    pendingJobs?: number;
-    jobVelocity?: number;
-    velocityRange?: RangePreset;
-  }
-
-  export interface QueueSecondaryData {
-    queuePredictability?: QueuePredictability[];
-  }
-
   export interface GetFittingQueuesRequest {
     requirements?: Resource[];
   }
 
   export interface GetFittingQueuesResponse {
     queues?: QueueOverview[];
-  }
-
-  export interface BatchGetQueueSecondaryDataRequest {
-    queueNames?: string[];
-    range?: RangePreset;
-  }
-
-  export interface BatchGetQueueSecondaryDataResponse {
-    queuePredictability?: Record<string, QueueSecondaryData>;
-  }
-
-  export interface DashboardJob {
-    jobId?: string;
-    xid?: string;
-    workUnitId?: string;
-    jobName?: string;
-    user?: string;
-    priority?: number | string;
-    status?: string;
-    timeInQueueSeconds?: number;
-    requestedResources?: Resource[];
-    positionInQueue?: number;
-    createTime?: any;
-    tags?: string[];
-    position?: string;
-    resources?: string;
-    timeInQueue?: string;
-    queueName?: string;
-    [key: string]: any;
   }
 
   export interface GetRunningAndPendingJobsRequest {
@@ -262,29 +220,27 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
     orderBy?: string;
   }
 
+  export interface DashboardJob {
+    xid?: string;
+    workUnitId?: number | string;
+    user?: string;
+    priority?: number | string;
+    status?: WorkUnitState | string;
+    timeInQueueSeconds?: number | string;
+    requestedResources?: Resource[];
+    positionInQueue?: number | string;
+    createTime?: any;
+    tags?: string[];
+    position?: string;
+    jobName?: string;
+    resources?: string;
+    timeInQueue?: string;
+    queueName?: string;
+  }
+
   export interface GetRunningAndPendingJobsResponse {
     jobs?: DashboardJob[];
     nextPageToken?: string;
-    totalQueueSize?: number;
-  }
-
-  export interface QueueJob {
-    position?: string;
-    xid?: string;
-    workUnitId?: string;
-    jobName?: string;
-    user?: string;
-    resources?: string;
-    priority?: string;
-    status?: string;
-    timeInQueue?: string;
-    queueName?: string;
-    [key: string]: any;
-  }
-
-  export interface QueueJobListResponse {
-    queueName?: string;
-    jobs?: QueueJob[];
-    [key: string]: any;
+    totalQueueSize?: number | string;
   }
 }

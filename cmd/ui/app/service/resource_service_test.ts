@@ -23,7 +23,7 @@ import {
   GetRunningAndPendingJobsResponse,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
-import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
+import { cleanState, flush, get, setupModule, setupObservableMatchers } from '../testing/test';
 import { XMC_API_DOMAIN } from './constants';
 import { ResourceService } from './resource_service';
 
@@ -87,6 +87,7 @@ describe('ResourceService', () => {
 
       const response = await responsePromise;
       expect(response.queues).toEqual([]);
+      await flush();
     });
   });
 
@@ -114,6 +115,7 @@ describe('ResourceService', () => {
       const response = await responsePromise;
       expect(response.jobs?.length).toBe(1);
       expect(response.jobs?.[0].xid).toBe('101');
+      await flush();
     });
   });
 });

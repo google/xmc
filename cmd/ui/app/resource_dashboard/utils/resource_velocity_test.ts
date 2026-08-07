@@ -14,8 +14,6 @@
 
 import 'jasmine';
 
-import { QueueSecondaryData } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
-
 import {
   calculateJobVelocity,
   calculatePendingRequestsDisplay,
@@ -23,6 +21,8 @@ import {
   formatRate,
   getPendingJobsCount,
   getVelocityHours,
+  mapPeriodToRangePreset,
+  QueueSecondaryData,
 } from './resource_velocity';
 
 describe('Resource Velocity Utilities', () => {
