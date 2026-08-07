@@ -127,12 +127,17 @@ class MetricsFlusher:
             max_retries=max_retries,
         )
 
+        def _to_str(val: Any, default: str = "") -> str:
+            if isinstance(val, (str, int)) and not isinstance(val, bool):
+                return str(val).strip()
+            return default
+
         if isinstance(client, (Client, HTTPClient)):
-            self._xid = client.xid if isinstance(client.xid, str) else ""
-            self._work_unit_id = client.work_unit_id if isinstance(client.work_unit_id, str) else ""
-            self._execution_id = client.execution_id if isinstance(client.execution_id, str) else ""
-            self._job_name = client.job_name if isinstance(client.job_name, str) else ""
-            self._replica_id = client.replica_id if isinstance(client.replica_id, str) else "0"
+            self._xid = _to_str(client.xid)
+            self._work_unit_id = _to_str(client.work_unit_id)
+            self._execution_id = _to_str(client.execution_id)
+            self._job_name = _to_str(client.job_name)
+            self._replica_id = _to_str(client.replica_id, default="0")
             self._is_silenced = bool(client.is_silenced)
             if not self._job_name and env and "XMC_JOB_NAME" in env:
                 self._job_name = env.get("XMC_JOB_NAME", "").strip()
