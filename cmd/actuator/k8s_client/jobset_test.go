@@ -410,6 +410,14 @@ func TestConstructJobSet(t *testing.T) {
 														},
 													},
 												},
+												{
+													Name: constants.XmcEnvVarJobName,
+													ValueFrom: &corev1.EnvVarSource{
+														FieldRef: &corev1.ObjectFieldSelector{
+															FieldPath: fmt.Sprintf("metadata.labels['%s']", constants.JobSetReplicatedJobNameLabel),
+														},
+													},
+												},
 											},
 											Resources: corev1.ResourceRequirements{
 												Limits: corev1.ResourceList{
@@ -862,7 +870,8 @@ func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 			env.Name == constants.XmcEnvVarWorkUnitID ||
 			env.Name == constants.XmcEnvVarExecutionID ||
 			env.Name == constants.XmcEnvVarAuthor ||
-			env.Name == constants.XmcEnvVarJobIndex {
+			env.Name == constants.XmcEnvVarJobIndex ||
+			env.Name == constants.XmcEnvVarJobName {
 			continue
 		}
 		gotEnv = append(gotEnv, env)

@@ -32,6 +32,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"google.golang.org/protobuf/proto"
+
+	metrics "xmanager_cloud/api/protos/metrics"
 )
 
 type noopProducer struct{}
@@ -411,6 +414,43 @@ func TestMetricsIngestionHandler_XReplicaIDHeader(t *testing.T) {
 	recs := mp.ProducedRecords()
 	if len(recs) != 1 {
 		t.Fatalf("expected 1 record produced, got %d", len(recs))
+	}
+	var pm metrics.Metric
+	if err := proto.Unmarshal(recs[0].Value, &pm); err != nil {
+		t.Fatalf("failed to unmarshal produced record value: %v", err)
+	}
+	if pm.ReplicaId != "header-rep-7" {
+		t.Errorf("expected ReplicaId 'header-rep-7', got %q", pm.ReplicaId)
+	}
+}
+
+func TestMetricsIngestionHandler_XJobNameHeader(t *testing.T) {
+	mp := NewMockProducer()
+	handler := NewMetricsIngestionHandler(mp, "test-topic", nil)
+
+	// Payload omits "job_name" key
+	payload := `[{"xid": 101, "work_unit_id": 1, "execution_id": 1, "metric_name": "loss", "metric_value": 0.5, "step": 1, "timestamp": 1700000000}]`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/metrics", strings.NewReader(payload))
+	req.Header.Set("X-Job-Name", "header-job-1")
+	w := httptest.NewRecorder()
+
+	handler(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected status 202 Accepted, got %d", resp.StatusCode)
+	}
+
+	recs := mp.ProducedRecords()
+	if len(recs) != 1 {
+		t.Fatalf("expected 1 record produced, got %d", len(recs))
+	}
+	var pm metrics.Metric
+	if err := proto.Unmarshal(recs[0].Value, &pm); err != nil {
+		t.Fatalf("failed to unmarshal produced record value: %v", err)
+	}
+	if pm.JobName != "header-job-1" {
+		t.Errorf("expected JobName 'header-job-1', got %q", pm.JobName)
 	}
 }
 
