@@ -108,6 +108,7 @@ class Client:
             self._xid,
             self._work_unit_id,
             self._execution_id,
+            self._job_name,
             self._replica_id,
             harvest_silenced,
         ) = harvest_client_metadata(
@@ -123,6 +124,8 @@ class Client:
             "Accept": "application/json",
             "User-Agent": "xmc-python-sdk/0.1.0",
         }
+        if self._job_name:
+            self._headers["X-Job-Name"] = self._job_name
         if self.replica_id:
             self._headers["X-Replica-ID"] = self.replica_id
         if self.api_key:
@@ -142,6 +145,11 @@ class Client:
     def execution_id(self) -> str:
         """Returns the execution ID metadata string."""
         return self._execution_id
+
+    @property
+    def job_name(self) -> str:
+        """Returns the job name metadata string."""
+        return self._job_name
 
     @property
     def disabled(self) -> bool:
@@ -176,7 +184,8 @@ class Client:
         if self.disabled:
             return {}
 
-        url = f"{self.base_url}/{path.lstrip('/')}"
+        stripped_path = path.lstrip("/")
+        url = f"{self.base_url}/{stripped_path}" if stripped_path else self.base_url
         if params:
             query_string = urllib.parse.urlencode(params, doseq=True)
             url = f"{url}?{query_string}"

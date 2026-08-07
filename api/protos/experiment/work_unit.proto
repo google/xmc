@@ -225,6 +225,14 @@ message KubernetesJob {
   // Custom volumes available to containers in the pod.
   repeated Volume volumes = 13;
 
+  // Optional flag to request host networking for pods in this job.
+  // Requires backend feature flag to be enabled.
+  optional bool host_network = 14;
+
+  // Optional Kubernetes DNS policy for pods in this job (e.g. "ClusterFirst", "ClusterFirstWithHostNet", "Default").
+  // If host_network is true and dns_policy is unset, defaults to "ClusterFirstWithHostNet".
+  optional string dns_policy = 15;
+
   // Group name for Kueue podSet grouping. If omitted, Kueue defaults the podSet name to the ReplicatedJob name.
   string group_name = 16;
 
@@ -404,6 +412,8 @@ message ExecutableSpec {
   repeated VolumeMount volume_mounts = 9;
   // List of ports exposed from the container.
   repeated ContainerPort ports = 10;
+  // Whether to run the container in privileged mode (requires backend feature flag -allow_privileged_containers).
+  optional bool privileged = 11;
   // Optional restart policy for init containers (e.g. "Always" to configure Kubernetes native sidecar containers).
   optional string restart_policy = 12;
 }

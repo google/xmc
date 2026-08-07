@@ -15,6 +15,7 @@ package k8sclient
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -38,6 +39,9 @@ func (m *alwaysPassingPreconditionsValidator) IsActuationRequestValid(ctx contex
 func (m *alwaysPassingPreconditionsValidator) IsExecutionIDAligned(ctx context.Context, target string, jobSetUnstructured *unstructured.Unstructured) (bool, error) {
 	return true, nil
 }
+func (m *alwaysPassingPreconditionsValidator) ValidateJobSetManifest(jobSetUnstructured *unstructured.Unstructured) error {
+	return nil
+}
 
 type alwaysFailingPreconditionsValidator struct{}
 
@@ -46,6 +50,9 @@ func (m *alwaysFailingPreconditionsValidator) IsActuationRequestValid(ctx contex
 }
 func (m *alwaysFailingPreconditionsValidator) IsExecutionIDAligned(ctx context.Context, target string, jobSetUnstructured *unstructured.Unstructured) (bool, error) {
 	return false, nil
+}
+func (m *alwaysFailingPreconditionsValidator) ValidateJobSetManifest(jobSetUnstructured *unstructured.Unstructured) error {
+	return errors.New("precondition failed")
 }
 
 func setupTestClient(createNewNamespaces bool, validator preconditionsvalidator.Validator) (context.Context, *Client, *dynamicfake.FakeDynamicClient) {

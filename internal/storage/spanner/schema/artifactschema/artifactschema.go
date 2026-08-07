@@ -44,6 +44,12 @@ const (
 	payloadTableField           = querytools.TableField("payload")
 	searchableContentTableField = querytools.TableField("searchable_content")
 
+	// payloadTypeTableField is a filter-only virtual field. It maps the Payload
+	// oneof to a stable type name so callers can filter artifacts by payload type,
+	// e.g. `payload_type = "managed_xprof"`. Extending to a new payload type is a
+	// one-line addition to the CASE expression in the field definition below.
+	payloadTypeTableField = querytools.TableField("payload_type")
+
 	createdTableField = querytools.TableField("created")
 	updatedTableField = querytools.TableField("updated")
 )
@@ -219,6 +225,26 @@ var (
 				QueryLiteral: safesql.New("a.SearchableContent"),
 				Selectable:   false,
 				Indexed:      false,
+			},
+
+			payloadTypeTableField: {
+				Name: payloadTypeTableField,
+				// Maps the Payload oneof to a stable string so artifacts can be
+				// filtered by type, e.g. `payload_type = "managed_xprof"`. Extending
+				// to a new payload type is a one-line CASE addition. Derived and
+				// non-selectable because it is computed, not a stored column.
+				QueryLiteral: safesql.New(
+					"(CASE " +
+						"WHEN a.Payload.managed_xprof IS NOT NULL THEN 'managed_xprof' " +
+						"WHEN a.Payload.code_source IS NOT NULL THEN 'code_source' " +
+						"WHEN a.Payload.text IS NOT NULL THEN 'text' " +
+						"WHEN a.Payload.url IS NOT NULL THEN 'url' " +
+						"WHEN a.Payload.chart IS NOT NULL THEN 'chart' " +
+						"ELSE '' END)"),
+				Type:       filtervisitor.String,
+				Derived:    true,
+				Selectable: false,
+				Indexed:    false,
 			},
 
 			createdTableField: {

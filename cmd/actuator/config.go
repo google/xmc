@@ -59,6 +59,8 @@ var (
 	maxRecentKeys               int
 	statusMessageHistoryEnabled bool
 	metricsEnabled              bool
+	allowPrivilegedContainers   bool
+	allowHostNetwork            bool
 )
 
 // Redis flags.
@@ -77,6 +79,8 @@ func init() {
 	flag.StringVar(&verifyingKeyFile, "verifying_key_file", "/etc/verification-key/tls.crt", "Path to the key for verifying message signatures.")
 	flag.IntVar(&maxRecentKeys, "max_recent_keys", 2, "The maximum number of recent keys to keep for key rotation.")
 	flag.BoolVar(&metricsEnabled, "metrics_enabled", false, "Whether to enable XMC metrics in jobs.")
+	flag.BoolVar(&allowPrivilegedContainers, "allow_privileged_containers", false, "Whether to allow containers to run in privileged mode when requested.")
+	flag.BoolVar(&allowHostNetwork, "allow_host_network", false, "Whether to allow pods to run with host networking when requested.")
 	registerConfigs()
 }
 
@@ -129,6 +133,8 @@ func Load() Config {
 			QuotaProjectID:              quotaProjectID,
 			DefaultExecutionEnvironment: defaultExecutionEnvironment,
 			MetricsEnabled:              metricsEnabled,
+			AllowPrivilegedContainers:   allowPrivilegedContainers,
+			AllowHostNetwork:            allowHostNetwork,
 		},
 		Audience:                    aud,
 		XManagerServiceAccount:      xmanagerServiceAccount,
