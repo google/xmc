@@ -497,6 +497,12 @@ func (c *Client) buildContainer(containerName string, spec *esspb.ExecutableSpec
 		}
 	}
 	args = append(args, spec.GetArgsList()...)
+	sc := defaultSecurityContext()
+	if c.RuntimeConfig.AllowPrivilegedContainers && spec.GetPrivileged() {
+		sc.Privileged = proto.Bool(true)
+		sc.AllowPrivilegeEscalation = proto.Bool(true)
+	}
+
 	return corev1.Container{
 		Name:                     containerName,
 		Image:                    spec.GetDockerImage(),
@@ -507,7 +513,7 @@ func (c *Client) buildContainer(containerName string, spec *esspb.ExecutableSpec
 		Args:                     args,
 		Env:                      envVars,
 		Ports:                    ports,
-		SecurityContext:          defaultSecurityContext(),
+		SecurityContext:          sc,
 		VolumeMounts:             generateVolumeMountsForSpec(spec),
 	}
 }
