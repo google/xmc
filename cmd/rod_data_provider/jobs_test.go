@@ -16,31 +16,84 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	spb "xmanager_cloud/api/protos/rod"
+	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
+
+type mockWorkUnitFetcher struct {
+	workUnits     []*essmsgpb.WorkUnit
+	nextPageToken string
+	err           error
+}
+
+func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) ([]*essmsgpb.WorkUnit, string, error) {
+	if m.err != nil {
+		return nil, "", m.err
+	}
+	return m.workUnits, m.nextPageToken, nil
+}
 
 func TestGetRunningAndPendingJobs(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
+	now := time.Now()
 
 	tests := []struct {
 		name      string
 		ctx       context.Context
 		req       *spb.GetRunningAndPendingJobsRequest
+		fetcher   WorkUnitFetcher
 		wantCode  codes.Code
 		wantCount int
 	}{
 		{
-			name: "Success Returns Mock Jobs",
+			name: "Success With Fetcher",
 			ctx:  context.Background(),
 			req: &spb.GetRunningAndPendingJobsRequest{
 				QueueName: "gpu-cluster-queue",
 			},
+			fetcher: &mockWorkUnitFetcher{
+				workUnits: []*essmsgpb.WorkUnit{
+					{
+						Name:       "experiments/100/workUnits/1",
+						Priority:   essmsgpb.Priority(100),
+						CreateTime: timestamppb.New(now.Add(-10 * time.Minute)),
+						Notes:      "test@example.com",
+						CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+							Status: &essmsgpb.WorkUnitStatus{
+								State: essmsgpb.WorkUnitStatus_SCHEDULING,
+								SchedulingInformation: &essmsgpb.StructuredMessage{
+									AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{
+										Detail: &essmsgpb.AuxiliaryInfo_QueueInfo{
+											QueueInfo: &essmsgpb.QueueInfo{
+												PositionInQueue: 1,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 			wantCode:  codes.OK,
-			wantCount: 2,
+			wantCount: 1,
+		},
+		{
+			name: "Unavailable With Nil Fetcher",
+			ctx:  context.Background(),
+			req: &spb.GetRunningAndPendingJobsRequest{
+				QueueName: "gpu-cluster-queue",
+			},
+			fetcher:   nil,
+			wantCode:  codes.Unavailable,
+			wantCount: 0,
 		},
 		{
 			name: "Missing Queue Name",
@@ -48,14 +101,27 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			req: &spb.GetRunningAndPendingJobsRequest{
 				QueueName: "",
 			},
+			fetcher:   &mockWorkUnitFetcher{},
 			wantCode:  codes.InvalidArgument,
+			wantCount: 0,
+		},
+		{
+			name: "Fetcher Error",
+			ctx:  context.Background(),
+			req: &spb.GetRunningAndPendingJobsRequest{
+				QueueName: "gpu-cluster-queue",
+			},
+			fetcher: &mockWorkUnitFetcher{
+				err: fmt.Errorf("spanner connection failure"),
+			},
+			wantCode:  codes.Internal,
 			wantCount: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := newServer(cfg, nil)
+			srv := newServerWithFetcher(cfg, tt.fetcher)
 			resp, err := srv.GetRunningAndPendingJobs(tt.ctx, tt.req)
 
 			gotCode := status.Code(err)
@@ -70,6 +136,27 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 				if len(resp.Jobs) != tt.wantCount {
 					t.Errorf("Jobs count = %d, want %d", len(resp.Jobs), tt.wantCount)
 				}
+				if tt.wantCount > 0 {
+					job := resp.Jobs[0]
+					if job.JobId != "xmc-operation-100-1" {
+						t.Errorf("JobId = %q, want xmc-operation-100-1", job.JobId)
+					}
+					if job.Xid != "100" {
+						t.Errorf("Xid = %q, want 100", job.Xid)
+					}
+					if job.WorkUnitId != 1 {
+						t.Errorf("WorkUnitId = %d, want 1", job.WorkUnitId)
+					}
+					if job.User != "test@example.com" {
+						t.Errorf("User = %q, want test@example.com", job.User)
+					}
+					if job.Status != spb.WorkUnitState_SCHEDULING {
+						t.Errorf("Status = %v, want SCHEDULING", job.Status)
+					}
+					if job.PositionInQueue != 1 {
+						t.Errorf("PositionInQueue = %d, want 1", job.PositionInQueue)
+					}
+				}
 			}
 		})
 	}
@@ -80,7 +167,7 @@ func TestGetRunningAndPendingJobs_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	srv := newServer(cfg, nil)
+	srv := newServerWithFetcher(cfg, &mockWorkUnitFetcher{})
 	req := &spb.GetRunningAndPendingJobsRequest{QueueName: "gpu-cluster-queue"}
 	_, err := srv.GetRunningAndPendingJobs(ctx, req)
 
