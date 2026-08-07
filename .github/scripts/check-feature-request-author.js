@@ -14,19 +14,41 @@
 
 /**
  * Checks if the PR author is listed in FEATURE_REQUEST_AUTHORS on the target base branch.
+ * Supports both pull_request and merge_group event contexts.
  * @param {Object} params - Context and tools injected by actions/github-script.
  */
 async function run({ github, context, core }) {
-  if (!context.payload.pull_request) {
-    core.setFailed('This script must be run in the context of a pull request event.');
+  const { owner, repo } = context.repo;
+  let prAuthor = '';
+  let baseRef = '';
+  let contextDesc = '';
+
+  if (context.payload.pull_request) {
+    prAuthor = context.payload.pull_request.user.login;
+    baseRef = context.payload.pull_request.base.ref;
+    contextDesc = `PR #${context.payload.pull_request.number}`;
+  } else if (context.eventName === 'merge_group' && context.payload.merge_group) {
+    baseRef = (context.payload.merge_group.base_ref || 'main').replace(/^refs\/heads\//, '');
+    const headSha = context.payload.merge_group.head_sha;
+    contextDesc = `Merge Group (commit ${headSha?.substring(0, 7)})`;
+
+    try {
+      const commitRes = await github.rest.repos.getCommit({
+        owner,
+        repo,
+        ref: headSha,
+      });
+      prAuthor = commitRes.data.author?.login || commitRes.data.commit?.author?.name || '';
+    } catch (error) {
+      core.setFailed(`Failed to fetch commit author for merge group head SHA ${headSha}: ${error.message}`);
+      return;
+    }
+  } else {
+    core.setFailed('This script must be run in the context of a pull_request or merge_group event.');
     return;
   }
 
-  const prAuthor = context.payload.pull_request.user.login;
-  const baseRef = context.payload.pull_request.base.ref;
-  const { owner, repo } = context.repo;
-
-  core.info(`Evaluating PR #${context.payload.pull_request.number} opened by @${prAuthor} against target branch '${baseRef}'`);
+  core.info(`Evaluating ${contextDesc} opened by @${prAuthor} against target branch '${baseRef}'`);
 
   let fileContent = '';
   try {
@@ -56,8 +78,8 @@ async function run({ github, context, core }) {
 
   if (isRestricted) {
     core.setFailed(
-      `PR #${context.payload.pull_request.number} is opened by @${prAuthor}, who is listed in FEATURE_REQUEST_AUTHORS. ` +
-      `This PR is treated as a Feature Request and is permanently blocked from merging.`
+      `${contextDesc} is authored by @${prAuthor}, who is listed in FEATURE_REQUEST_AUTHORS. ` +
+      `This change is treated as a Feature Request and is permanently blocked from merging.`
     );
   } else {
     core.info(`@${prAuthor} is not in FEATURE_REQUEST_AUTHORS. Merge block check passed.`);
