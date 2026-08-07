@@ -785,9 +785,15 @@ func constructDiagnosticsConsoleURL(location, mlRunID, project string) string {
 	return fmt.Sprintf("https://console.cloud.google.com/kubernetes/aiml/run/%s/%s?project=%s", location, mlRunID, project)
 }
 
-// artifactListPageSize bounds each ListArtifacts page while
-// lookupManagedXprofArtifact pages through a work unit's artifacts.
-const artifactListPageSize = 100
+// artifactListPageSize bounds the single ListArtifacts page read by
+// lookupManagedXprofArtifact. At most one ManagedXprof artifact is expected per
+// work unit, so a small page is sufficient.
+const artifactListPageSize = 10
+
+// managedXprofArtifactFilter restricts ListArtifacts to ManagedXprof artifacts
+// server-side (via the payload_type schema filter field), so the reconciler no
+// longer fetches and discards unrelated artifact types while searching.
+const managedXprofArtifactFilter = `payload_type = "managed_xprof"`
 
 // lookupManagedXprofArtifact reads the ManagedXprof artifact attached to the work
 // unit and returns its display name and run group.
@@ -805,26 +811,14 @@ func (r *Reconciler) lookupManagedXprofArtifact(ctx context.Context, xid, wid in
 	}
 	parent := fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid)
 
-	// Page until the first ManagedXprof artifact is found: it may be attached after
-	// the JobSet is created and can sort beyond the first page, so we keep paging
-	// until we find one or exhaust the list.
-	var managed []*spb.ManagedXprofArtifact
-	for pageToken := ""; ; {
-		artifacts, nextToken, err := r.Storage.ListArtifacts(ctx, parent, artifactListPageSize, pageToken, "", "", 0)
-		if err != nil {
-			logging.Warn(ctx, "Failed to list artifacts for WorkUnit", "xid", xid, "wid", wid, "error", err)
-			return "", ""
-		}
-		managed = append(managed, collectManagedXprofArtifacts(artifacts)...)
-		// Stop once we have a match (only the first is used), when the list is
-		// exhausted, or if the cursor fails to advance — the last guards against a
-		// storage impl/mock returning a repeating token, which would loop forever.
-		if len(managed) > 0 || nextToken == "" || nextToken == pageToken {
-			break
-		}
-		pageToken = nextToken
+	// A work unit has at most one ManagedXprof artifact and the server filters by
+	// payload_type, so a single small page suffices; use the first match.
+	artifacts, _, err := r.Storage.ListArtifacts(ctx, parent, artifactListPageSize, "", managedXprofArtifactFilter, "", 0)
+	if err != nil {
+		logging.Warn(ctx, "Failed to list artifacts for WorkUnit", "xid", xid, "wid", wid, "error", err)
+		return "", ""
 	}
-
+	managed := collectManagedXprofArtifacts(artifacts)
 	if len(managed) == 0 {
 		return "", ""
 	}
@@ -836,9 +830,9 @@ func (r *Reconciler) lookupManagedXprofArtifact(ctx context.Context, xid, wid in
 	return managed[0].GetDisplayName(), managed[0].GetRunGroup()
 }
 
-// collectManagedXprofArtifacts returns every ManagedXprof artifact in the list, in
-// order. Extracted as a pure function so artifact selection is independently
-// testable and so the caller can detect (and warn about) unexpected duplicates.
+// collectManagedXprofArtifacts returns every ManagedXprof artifact in the list,
+// in order. Extracted as a pure function so artifact selection is independently
+// testable.
 func collectManagedXprofArtifacts(artifacts []*spb.Artifact) []*spb.ManagedXprofArtifact {
 	var managed []*spb.ManagedXprofArtifact
 	for _, art := range artifacts {

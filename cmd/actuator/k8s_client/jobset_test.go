@@ -1103,6 +1103,72 @@ func TestConstructJobSet_SecurityContext(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_PrivilegedSecurityContext(t *testing.T) {
+	tests := []struct {
+		name                string
+		allowPrivileged     bool
+		specPrivileged      *bool
+		wantPrivileged      bool
+		wantAllowEscalation bool
+	}{
+		{
+			name:                "Flag enabled and spec privileged true",
+			allowPrivileged:     true,
+			specPrivileged:      proto.Bool(true),
+			wantPrivileged:      true,
+			wantAllowEscalation: true,
+		},
+		{
+			name:                "Flag disabled and spec privileged true",
+			allowPrivileged:     false,
+			specPrivileged:      proto.Bool(true),
+			wantPrivileged:      false,
+			wantAllowEscalation: false,
+		},
+		{
+			name:                "Flag enabled and spec privileged false",
+			allowPrivileged:     true,
+			specPrivileged:      proto.Bool(false),
+			wantPrivileged:      false,
+			wantAllowEscalation: false,
+		},
+		{
+			name:                "Flag enabled and spec privileged nil",
+			allowPrivileged:     true,
+			specPrivileged:      nil,
+			wantPrivileged:      false,
+			wantAllowEscalation: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+			client.RuntimeConfig.AllowPrivilegedContainers = tt.allowPrivileged
+
+			workUnit := proto.Clone(baseCPUWorkUnit).(*esspb.WorkUnit)
+			workUnit.GetExecutable().GetJobset().GetJobs()[0].GetSpec().Privileged = tt.specPrivileged
+
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+			if err != nil {
+				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+			}
+
+			podSpec := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
+			containerSC := podSpec.Containers[0].SecurityContext
+			if containerSC == nil {
+				t.Fatal("Expected Container SecurityContext to be set, but it was nil")
+			}
+			if *containerSC.Privileged != tt.wantPrivileged {
+				t.Errorf("Privileged = %v, want %v", *containerSC.Privileged, tt.wantPrivileged)
+			}
+			if *containerSC.AllowPrivilegeEscalation != tt.wantAllowEscalation {
+				t.Errorf("AllowPrivilegeEscalation = %v, want %v", *containerSC.AllowPrivilegeEscalation, tt.wantAllowEscalation)
+			}
+		})
+	}
+}
+
 func TestConstructJobSet_PodFailurePolicy(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := baseCPUWorkUnit
