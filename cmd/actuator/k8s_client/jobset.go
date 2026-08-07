@@ -498,7 +498,7 @@ func (c *Client) buildContainer(containerName string, spec *esspb.ExecutableSpec
 	}
 	args = append(args, spec.GetArgsList()...)
 	sc := defaultSecurityContext()
-	if c.RuntimeConfig.AllowPrivilegedContainers && spec.GetPrivileged() {
+	if c != nil && c.RuntimeConfig.AllowPrivilegedContainers && spec.GetPrivileged() {
 		sc.Privileged = proto.Bool(true)
 		sc.AllowPrivilegeEscalation = proto.Bool(true)
 	}
