@@ -238,14 +238,21 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
   export interface DashboardJob {
     jobId?: string;
     xid?: string;
+    workUnitId?: string;
+    jobName?: string;
     user?: string;
-    priority?: number;
+    priority?: number | string;
     status?: string;
     timeInQueueSeconds?: number;
     requestedResources?: Resource[];
     positionInQueue?: number;
     createTime?: any;
     tags?: string[];
+    position?: string;
+    resources?: string;
+    timeInQueue?: string;
+    queueName?: string;
+    [key: string]: any;
   }
 
   export interface GetRunningAndPendingJobsRequest {

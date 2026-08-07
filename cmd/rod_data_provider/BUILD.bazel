@@ -76,6 +76,7 @@ compat_go_test(
     name = "server_test",
     srcs = [
         "config_test.go",
+        "jobs_test.go",
         "queue_matcher_test.go",
         "server_test.go",
     ],

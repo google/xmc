@@ -27,12 +27,19 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	if err := ctx.Err(); err != nil {
 		return nil, status.FromContextError(err).Err()
 	}
-
 	if req == nil || req.GetQueueName() == "" {
 		return nil, status.Error(codes.InvalidArgument, "queue_name is required")
 	}
 
-	jobs := []*spb.DashboardJob{
+	jobs := mockDashboardJobs()
+	return &spb.GetRunningAndPendingJobsResponse{
+		Jobs:           jobs,
+		TotalQueueSize: int64(len(jobs)),
+	}, nil
+}
+
+func mockDashboardJobs() []*spb.DashboardJob {
+	return []*spb.DashboardJob{
 		{
 			Xid:             "53296",
 			WorkUnitId:      1,
@@ -50,9 +57,4 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 			PositionInQueue: 1,
 		},
 	}
-
-	return &spb.GetRunningAndPendingJobsResponse{
-		Jobs:           jobs,
-		TotalQueueSize: int64(len(jobs)),
-	}, nil
 }

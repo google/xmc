@@ -14,8 +14,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { Observable, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { catchError, Observable, of } from 'rxjs';
 
 import {
   GetFittingQueuesResponse,
