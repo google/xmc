@@ -276,4 +276,31 @@ func TestResourceAccumulator(t *testing.T) {
 			t.Errorf("res[1] = %v %v, want memory 1024.0", res[1].GetResourceType(), res[1].GetCount())
 		}
 	})
+
+	t.Run("addCpu addGpu addTpu helpers", func(t *testing.T) {
+		acc := newResourceAccumulator()
+		acc.addCpu(&essmsgpb.CpuResources{CpuMillicores: 4000, MemoryBytes: 8192})
+		acc.addGpu(&essmsgpb.GpuResources{Type: "", Count: 2})        // default "GPU"
+		acc.addTpu(&essmsgpb.TpuResources{Type: "", Topology: "2x2"}) // default "TPU", count=1
+		acc.addCpu(nil)
+		acc.addGpu(nil)
+		acc.addTpu(nil)
+
+		res := acc.toResources()
+		if len(res) != 4 {
+			t.Fatalf("toResources() len = %d, want 4", len(res))
+		}
+		if res[0].GetResourceType() != "cpu" || res[0].GetCount() != 4.0 {
+			t.Errorf("res[0] = %v %v, want cpu 4.0", res[0].GetResourceType(), res[0].GetCount())
+		}
+		if res[1].GetResourceType() != "memory" || res[1].GetCount() != 8192.0 {
+			t.Errorf("res[1] = %v %v, want memory 8192.0", res[1].GetResourceType(), res[1].GetCount())
+		}
+		if res[2].GetResourceType() != "GPU" || res[2].GetCount() != 2.0 {
+			t.Errorf("res[2] = %v %v, want GPU 2.0", res[2].GetResourceType(), res[2].GetCount())
+		}
+		if res[3].GetResourceType() != "TPU" || res[3].GetCount() != 1.0 {
+			t.Errorf("res[3] = %v %v, want TPU 1.0", res[3].GetResourceType(), res[3].GetCount())
+		}
+	})
 }
