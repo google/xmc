@@ -120,16 +120,28 @@ func ValidateCreateExperimentRequest(in *essapipb.CreateExperimentRequest) error
 		return fmt.Errorf("experiment cannot be nil: %w", status.ErrInvalidArgument)
 	}
 	exp := in.GetExperiment()
-	if exp.GetName() != "" || exp.GetCreator() != "" || exp.GetCreateTime() != nil || exp.GetUpdateTime() != nil || exp.GetStatus() != nil {
-		return fmt.Errorf("experiment name, creator, create_time, update_time, and status must be empty for CreateExperimentRequest: %w", status.ErrInvalidArgument)
+	if exp.GetName() != "" {
+		return fmt.Errorf("experiment.name must be empty for CreateExperimentRequest: %w", status.ErrInvalidArgument)
+	}
+	if exp.GetCreator() != "" {
+		return fmt.Errorf("experiment.creator must be empty for CreateExperimentRequest: %w", status.ErrInvalidArgument)
+	}
+	if strings.TrimSpace(exp.GetTitle()) == "" {
+		return fmt.Errorf("experiment.title must be set and not only contain whitespace: %w", status.ErrInvalidArgument)
+	}
+	if exp.GetCreateTime() != nil {
+		return fmt.Errorf("experiment.create_time must be empty for CreateExperimentRequest: %w", status.ErrInvalidArgument)
+	}
+	if exp.GetUpdateTime() != nil {
+		return fmt.Errorf("experiment.update_time must be empty for CreateExperimentRequest: %w", status.ErrInvalidArgument)
+	}
+	if exp.GetStatus() != nil {
+		return fmt.Errorf("experiment.status must be empty for CreateExperimentRequest: %w", status.ErrInvalidArgument)
 	}
 	return validateExperimentMetadata(exp)
 }
 
 func validateExperimentMetadata(exp *essmsgpb.Experiment) error {
-	if strings.TrimSpace(exp.GetTitle()) == "" {
-		return fmt.Errorf("experiment.title must be set and not only contain whitespace: %w", status.ErrInvalidArgument)
-	}
 	if len(exp.GetTags()) > maxTags {
 		return fmt.Errorf("experiment.tags cannot contain more than %d tags: %w", maxTags, status.ErrInvalidArgument)
 	}
@@ -249,11 +261,26 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 		return fmt.Errorf("work_unit cannot be nil: %w", status.ErrInvalidArgument)
 	}
 	wu := in.GetWorkUnit()
-	if wu.GetName() != "" || wu.GetCreateTime() != nil || wu.GetUpdateTime() != nil || wu.GetCurrentWorkUnitExecution() != nil {
-		return fmt.Errorf("work_unit name, create_time, update_time, and current_work_unit_execution must be empty for CreateWorkUnitRequest: %w", status.ErrInvalidArgument)
+	if wu.GetName() != "" {
+		return fmt.Errorf("work_unit.name must be empty for CreateWorkUnitRequest: %w", status.ErrInvalidArgument)
+	}
+	if wu.GetCreateTime() != nil {
+		return fmt.Errorf("work_unit.create_time must be empty for CreateWorkUnitRequest: %w", status.ErrInvalidArgument)
+	}
+	if wu.GetUpdateTime() != nil {
+		return fmt.Errorf("work_unit.update_time must be empty for CreateWorkUnitRequest: %w", status.ErrInvalidArgument)
+	}
+	if wu.GetCurrentWorkUnitExecution() != nil {
+		return fmt.Errorf("work_unit.current_work_unit_execution must be empty for CreateWorkUnitRequest: %w", status.ErrInvalidArgument)
 	}
 	if err := validateWorkUnitMetadata(wu); err != nil {
 		return err
+	}
+	if wu.GetExecutable() == nil {
+		return fmt.Errorf("work_unit.executable cannot be nil: %w", status.ErrInvalidArgument)
+	}
+	if wu.GetWorkUnitType() == essmsgpb.WorkUnit_WORK_UNIT_TYPE_UNSPECIFIED {
+		return fmt.Errorf("work_unit.work_unit_type cannot be empty: %w", status.ErrInvalidArgument)
 	}
 	return validateJobSetExecutable(wu.GetExecutable())
 }
@@ -278,25 +305,12 @@ func validateWorkUnitMetadata(wu *essmsgpb.WorkUnit) error {
 			return fmt.Errorf("work_unit.urls cannot contain urls longer than %d characters: %w", maxURLLen, status.ErrInvalidArgument)
 		}
 	}
-	if wu.GetWorkUnitType() == essmsgpb.WorkUnit_WORK_UNIT_TYPE_UNSPECIFIED {
-		return fmt.Errorf("work_unit.work_unit_type cannot be empty: %w", status.ErrInvalidArgument)
-	}
 	return nil
 }
 
 func validateJobSetExecutable(exec *essmsgpb.Executable) error {
-	if exec == nil {
-		return fmt.Errorf("work_unit.executable cannot be nil: %w", status.ErrInvalidArgument)
-	}
 	if exec.GetSchedulingConstraints() == nil {
 		return fmt.Errorf("work_unit.executable.scheduling_constraints cannot be nil: %w", status.ErrInvalidArgument)
-	}
-	queueName := exec.GetSchedulingConstraints().GetQueueName()
-	if queueName == "" {
-		return fmt.Errorf("work_unit.executable.scheduling_constraints.queue_name cannot be empty: %w", status.ErrInvalidArgument)
-	}
-	if len(queueName) > maxQueueNameLen {
-		return fmt.Errorf("work_unit.executable.scheduling_constraints.queue_name cannot be longer than %d characters: %w", maxQueueNameLen, status.ErrInvalidArgument)
 	}
 	if exec.GetJobset() == nil {
 		return fmt.Errorf("work_unit.executable.jobset cannot be nil: %w", status.ErrInvalidArgument)
@@ -308,10 +322,21 @@ func validateJobSetExecutable(exec *essmsgpb.Executable) error {
 	if err := validateJobSetSuccessPolicy(jobset.GetSuccessPolicy(), jobset.GetJobs()); err != nil {
 		return err
 	}
-	if len(jobset.Jobs) < 1 || len(jobset.Jobs) > 8 {
-		return fmt.Errorf("work_unit.executable.jobset.jobs must contain between 1 and 8 jobs: %w", status.ErrInvalidArgument)
+	if len(jobset.Jobs) < 1 {
+		return fmt.Errorf("work_unit.executable.jobset.jobs cannot contain less than 1 job: %w", status.ErrInvalidArgument)
 	}
-	return validateJobSetJobs(jobset)
+	if len(jobset.Jobs) > 8 {
+		return fmt.Errorf("work_unit.executable.jobset.jobs cannot contain more than 8 jobs: %w", status.ErrInvalidArgument)
+	}
+	if err := validateJobSetJobs(jobset); err != nil {
+		return err
+	}
+	if queueName := exec.GetSchedulingConstraints().GetQueueName(); queueName == "" {
+		return fmt.Errorf("work_unit.executable.scheduling_constraints.queue_name cannot be empty: %w", status.ErrInvalidArgument)
+	} else if len(queueName) > maxQueueNameLen {
+		return fmt.Errorf("work_unit.executable.scheduling_constraints.queue_name cannot be longer than %d characters: %w", maxQueueNameLen, status.ErrInvalidArgument)
+	}
+	return nil
 }
 
 func validateJobSetJobs(jobset *essmsgpb.JobSetExecutable) error {
