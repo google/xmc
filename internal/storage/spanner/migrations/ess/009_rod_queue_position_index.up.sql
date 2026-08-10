@@ -12,6 +12,8 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
+ALTER TABLE WorkUnits ADD COLUMN Creator STRING(MAX);
+
 ALTER TABLE WorkUnits ADD COLUMN PositionInQueue INT64 AS (
   IFNULL(SAFE_CAST(WorkUnitStatus.scheduling_information.auxiliary_info.queue_info.position_in_queue AS INT64), 9223372036854775807)
 ) STORED;
