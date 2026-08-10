@@ -39,6 +39,23 @@ import (
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 )
 
+type grpcServerDeps struct {
+	grpcServer *grpc.Server
+	listener   net.Listener
+	srv        *server
+	essClient  *spanner.Client
+	xidClient  *spanner.Client
+}
+
+func (d *grpcServerDeps) Close() {
+	if d.essClient != nil {
+		d.essClient.Close()
+	}
+	if d.xidClient != nil {
+		d.xidClient.Close()
+	}
+}
+
 func main() {
 	google.Init()
 	flag.Parse()
@@ -56,17 +73,12 @@ func main() {
 	}
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
 
-	grpcServer, lis, srv, essClient, xidClient := initGRPCServer(ctx, cfg)
-	if essClient != nil {
-		defer essClient.Close()
-	}
-	if xidClient != nil {
-		defer xidClient.Close()
-	}
+	deps := initGRPCServer(ctx, cfg)
+	defer deps.Close()
 
 	go func() {
-		logging.Info(ctx, "Health service gRPC starting", "addr", lis.Addr())
-		if err := grpcServer.Serve(lis); err != nil {
+		logging.Info(ctx, "Health service gRPC starting", "addr", deps.listener.Addr())
+		if err := deps.grpcServer.Serve(deps.listener); err != nil {
 			logging.Fatal(ctx, "gRPC server failed", "error", err)
 		}
 	}()
@@ -99,9 +111,9 @@ func main() {
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logging.Info(ctx, "Error shutting down HTTP server", "error", err)
 	}
-	grpcServer.GracefulStop()
+	deps.grpcServer.GracefulStop()
 
-	if err := srv.Close(); err != nil {
+	if err := deps.srv.Close(); err != nil {
 		logging.Info(ctx, "Error closing server resources", "error", err)
 	}
 
@@ -120,7 +132,7 @@ func initSpannerHealthClient(ctx context.Context, dbPath string, name string) (*
 	return client, health.NewSpannerHealthClient(client)
 }
 
-func initGRPCServer(ctx context.Context, cfg *Config) (*grpc.Server, net.Listener, *server, *spanner.Client, *spanner.Client) {
+func initGRPCServer(ctx context.Context, cfg *Config) *grpcServerDeps {
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
@@ -142,7 +154,14 @@ func initGRPCServer(ctx context.Context, cfg *Config) (*grpc.Server, net.Listene
 	}
 	spb.RegisterHealthServiceServer(grpcServer, srv)
 	reflection.Register(grpcServer)
-	return grpcServer, lis, srv, essClient, xidClient
+
+	return &grpcServerDeps{
+		grpcServer: grpcServer,
+		listener:   lis,
+		srv:        srv,
+		essClient:  essClient,
+		xidClient:  xidClient,
+	}
 }
 
 func initGatewayMux(ctx context.Context, cfg *Config, authenticator *oauth2.Authenticator) http.Handler {
