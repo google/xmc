@@ -46,7 +46,10 @@ func init() {
 	flag.StringVar(&projectID, "project_id", os.Getenv("GOOGLE_CLOUD_PROJECT"), "The GCP project ID.")
 	flag.StringVar(&quotaProjectID, "quota_project_id", os.Getenv("QUOTA_PROJECT_ID"), "The GCP quota project ID.")
 
-	spannerDB := os.Getenv("SPANNER_DATABASE_NAME")
+	spannerDB := os.Getenv("spanner_database_name")
+	if spannerDB == "" {
+		spannerDB = os.Getenv("SPANNER_DATABASE_NAME")
+	}
 	if spannerDB == "" {
 		spannerDB = os.Getenv("SPANNER_DATABASE")
 	}
