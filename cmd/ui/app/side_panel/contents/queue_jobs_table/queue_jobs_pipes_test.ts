@@ -224,13 +224,13 @@ describe('QueueJobResourcesPipe', () => {
 
   it('should transform GPU, TPU, and custom resources correctly', () => {
     const h100Gpu = pipe.transform([{ resourceType: 'H100', count: 4 }]);
-    expect(h100Gpu).toEqual([{ resourceType: ResourceType.GPU, text: 'H100: 4' }]);
+    expect(h100Gpu).toEqual([{ resourceType: ResourceType.GPU, text: '4 x H100' }]);
 
     const tpuV4 = pipe.transform([{ resourceType: 'TPU v4', count: 16 }]);
-    expect(tpuV4).toEqual([{ resourceType: ResourceType.GPU, text: 'TPU v4: 16' }]);
+    expect(tpuV4).toEqual([{ resourceType: ResourceType.GPU, text: '16 x TPU v4' }]);
 
     const k8sGpu = pipe.transform([{ resourceType: 'nvidia.com/gpu', count: 4 }]);
-    expect(k8sGpu).toEqual([{ resourceType: ResourceType.GPU, text: 'nvidia.com/gpu: 4' }]);
+    expect(k8sGpu).toEqual([{ resourceType: ResourceType.GPU, text: '4 x nvidia.com/gpu' }]);
   });
 
   it('should transform multiple resources from an array of Resource objects', () => {
@@ -243,7 +243,7 @@ describe('QueueJobResourcesPipe', () => {
     expect(result).toEqual([
       { resourceType: ResourceType.CPU, text: 'cpu: 3000000' },
       { resourceType: ResourceType.MEMORY, text: 'memory: 3298886726347889' },
-      { resourceType: ResourceType.GPU, text: 'H100: 4' },
+      { resourceType: ResourceType.GPU, text: '4 x H100' },
     ]);
   });
 });

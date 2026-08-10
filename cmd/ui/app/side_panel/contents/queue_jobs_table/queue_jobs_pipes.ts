@@ -96,7 +96,17 @@ function getResourceTypeEnum(typeRaw?: string): ResourceType {
 function formatSingleResource(res: Resource): ResourceChipData {
   const type = (res.resourceType || '').trim();
   const count = res.count ?? 0;
-  const text = type ? `${type}: ${count}` : `${count}`;
+  const lower = type.toLowerCase();
+
+  let text = `${count}`;
+  if (type) {
+    if (lower === 'cpu' || lower === 'memory') {
+      text = `${type}: ${count}`;
+    } else {
+      text = `${count} x ${type}`;
+    }
+  }
+
   return {
     resourceType: getResourceTypeEnum(type),
     text,

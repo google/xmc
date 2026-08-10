@@ -191,7 +191,9 @@ func TestParseTotalChips(t *testing.T) {
 		{"", 1},
 		{"2x2", 4},
 		{"2x2x4", 16},
-		{"4x4", 16},
+		{"2X2X4", 16},
+		{" 2x2x4 ", 16},
+		{"  4X4  ", 16},
 		{"8x8", 64},
 		{"invalid", 1},
 	}

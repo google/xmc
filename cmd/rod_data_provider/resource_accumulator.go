@@ -35,7 +35,7 @@ func extractRequestedResources(wu *essmsgpb.WorkUnit) []*spb.Resource {
 }
 
 func accumulateResourceTotals(resourceSets []*essmsgpb.ResourceSet) (map[string]float64, []string) {
-	totals := make(map[string]float64)
+	totals := make(map[string]float64, len(resourceSets))
 	var order []string
 
 	addResource := func(resType string, count float64) {
@@ -108,7 +108,8 @@ func parseTotalChips(topology string) int64 {
 	if topology == "" {
 		return 1
 	}
-	dims := strings.Split(topology, "x")
+	cleaned := strings.TrimSpace(strings.ToLower(topology))
+	dims := strings.Split(cleaned, "x")
 	totalChips := int64(1)
 	for _, d := range dims {
 		v, err := strconv.ParseInt(d, 10, 64)

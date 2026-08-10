@@ -120,7 +120,7 @@ describe('QueueJobsTable Component', () => {
     expect(firstRow.priority).toContain('-10');
     expect(firstRow.resources).toContain('cpu: 3000000');
     expect(firstRow.resources).toContain('memory: 3298886726347889');
-    expect(firstRow.resources).toContain('H100: 4');
+    expect(firstRow.resources).toContain('4 x H100');
     expect(firstRow.workUnitId).toContain('1');
     expect(firstRow.user).toContain('example@example.com');
 
@@ -129,7 +129,7 @@ describe('QueueJobsTable Component', () => {
     expect(secondRow.jobName).toContain('Experiment #53308');
     expect(secondRow.status).toContain('Scheduling');
     expect(secondRow.priority).toContain('100');
-    expect(secondRow.resources).toContain('TPU v4: 16');
+    expect(secondRow.resources).toContain('16 x TPU v4');
   });
 
   it('should properly construct experiment and work unit router links using harness', async () => {
