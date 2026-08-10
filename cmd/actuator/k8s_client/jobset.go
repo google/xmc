@@ -547,7 +547,7 @@ func buildJobMetadata(job *esspb.KubernetesJob, jobLabels map[string]string, job
 	}
 }
 
-func resolveDNSAndNetwork(c *Client, job *esspb.KubernetesJob) (bool, corev1.DNSPolicy) {
+func resolveDNSAndNetwork(c *Client, job *esspb.KubernetesJob) (hostNetwork bool, dnsPolicy corev1.DNSPolicy) {
 	if c != nil && c.RuntimeConfig.AllowHostNetwork && job.GetHostNetwork() {
 		if job.GetDnsPolicy() != "" {
 			return true, corev1.DNSPolicy(job.GetDnsPolicy())
