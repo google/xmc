@@ -259,9 +259,6 @@ CREATE TABLE WorkUnits (
     END
   ) STORED,
 
-  -- Creator of the work unit (denormalized or indexed).
-  Creator STRING(MAX),
-
   -- The time the work unit was created.
   CreateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
   -- The last time the work unit was updated, including on creation.
@@ -285,8 +282,8 @@ ON WorkUnits (
   Priority, 
   ExecutionState, 
   Xid,
-  IsPendingOrRunningJob,
-  Creator
+  IsPendingOrRunningJob
+  -- TODO(#186): Add Creator to STORING clause when Creator denormalization is implemented.
 ) WHERE IsPendingOrRunningJob IS NOT NULL;
 
 -- Table that holds the list of operations.

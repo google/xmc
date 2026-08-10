@@ -16,4 +16,3 @@ DROP INDEX WorkUnitsByQueueAndPosition;
 ALTER TABLE WorkUnits DROP COLUMN PositionInQueue;
 ALTER TABLE WorkUnits DROP COLUMN IsPendingOrRunningJob;
 ALTER TABLE WorkUnits DROP COLUMN SortPhase;
-ALTER TABLE WorkUnits DROP COLUMN Creator;
