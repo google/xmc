@@ -14,10 +14,16 @@
 
 import 'jasmine';
 
-import { DashboardJob } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { DashboardJob, Resource } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { ResourceType } from 'xmanager_cloud/ui/app/common/components/resource_chip/resource_chip';
+import { ResourceChipData } from 'xmanager_cloud/ui/app/common/components/resource_chip/utils/resource_set_to_resource_chips';
 import { StatusOption } from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
 
-import { QueueJobPositionPipe, QueueJobStatusPipe } from './queue_jobs_pipes';
+import {
+  QueueJobPositionPipe,
+  QueueJobResourcesPipe,
+  QueueJobStatusPipe,
+} from './queue_jobs_pipes';
 
 describe('QueueJobStatusPipe', () => {
   let pipe: QueueJobStatusPipe;
@@ -180,4 +186,88 @@ describe('QueueJobPositionPipe', () => {
       expect(pipe.transform(tc.input)).toBe(tc.expected);
     });
   }
+});
+
+describe('QueueJobResourcesPipe', () => {
+  let pipe: QueueJobResourcesPipe;
+
+  beforeEach(() => {
+    pipe = new QueueJobResourcesPipe();
+  });
+
+  it('should return empty array for null/undefined input', () => {
+    expect(pipe.transform(null)).toEqual([]);
+    expect(pipe.transform(undefined)).toEqual([]);
+  });
+
+  it('should return empty array when requestedResources is empty or missing', () => {
+    expect(pipe.transform({})).toEqual([]);
+    expect(pipe.transform({ requestedResources: [] })).toEqual([]);
+  });
+
+  it('should transform CPU resources correctly', () => {
+    const singleCore = pipe.transform({
+      requestedResources: [{ resourceType: 'cpu', count: 1 }],
+    });
+    expect(singleCore).toEqual([{ resourceType: ResourceType.CPU, text: '1 core' }]);
+
+    const multiCore = pipe.transform({
+      requestedResources: [{ resourceType: 'cpu', count: 3000000 }],
+    });
+    expect(multiCore).toEqual([{ resourceType: ResourceType.CPU, text: '3,000,000 cores' }]);
+  });
+
+  it('should transform Memory resources correctly', () => {
+    const gbMemory = pipe.transform({
+      requestedResources: [{ resourceType: 'memory', count: 17179869184 }],
+    });
+    expect(gbMemory).toEqual([{ resourceType: ResourceType.MEMORY, text: '16 GB' }]);
+
+    const pbMemory = pipe.transform({
+      requestedResources: [{ resourceType: 'memory', count: 3298886726347889 }],
+    });
+    expect(pbMemory).toEqual([{ resourceType: ResourceType.MEMORY, text: '2.93 PB' }]);
+  });
+
+  it('should transform GPU, TPU, and custom resources correctly', () => {
+    const h100Gpu = pipe.transform({
+      requestedResources: [{ resourceType: 'H100', count: 4 }],
+    });
+    expect(h100Gpu).toEqual([{ resourceType: ResourceType.GPU, text: '4 H100' }]);
+
+    const tpuV4 = pipe.transform({
+      requestedResources: [{ resourceType: 'TPU v4', count: 16 }],
+    });
+    expect(tpuV4).toEqual([{ resourceType: ResourceType.GPU, text: '16 TPU v4' }]);
+
+    const k8sGpu = pipe.transform({
+      requestedResources: [{ resourceType: 'nvidia.com/gpu', count: 4 }],
+    });
+    expect(k8sGpu).toEqual([{ resourceType: ResourceType.GPU, text: '4 GPU' }]);
+  });
+
+  it('should transform multiple resources on a DashboardJob or array', () => {
+    const job: DashboardJob = {
+      requestedResources: [
+        { resourceType: 'cpu', count: 3000000 },
+        { resourceType: 'memory', count: 3298886726347889 },
+        { resourceType: 'H100', count: 4 },
+      ],
+    };
+    const result = pipe.transform(job);
+    expect(result).toEqual([
+      { resourceType: ResourceType.CPU, text: '3,000,000 cores' },
+      { resourceType: ResourceType.MEMORY, text: '2.93 PB' },
+      { resourceType: ResourceType.GPU, text: '4 H100' },
+    ]);
+
+    const arrayInput: Resource[] = [
+      { resourceType: 'cpu', count: 1 },
+      { resourceType: 'TPU v4', count: 16 },
+    ];
+    expect(pipe.transform(arrayInput)).toEqual([
+      { resourceType: ResourceType.CPU, text: '1 core' },
+      { resourceType: ResourceType.GPU, text: '16 TPU v4' },
+    ]);
+  });
 });
