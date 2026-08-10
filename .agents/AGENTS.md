@@ -6,7 +6,7 @@ This root guidelines document defines high-level universal engineering principle
 
 ## Universal Architectural Principles
 
-1. **Single Responsibility Principle (SRP)**: Keep all modules, classes, functions, and skills focused on a single responsibility. Decompose complex logic into small pure helpers (aim for a 20–30 line target limit).
+1. **Single Responsibility Principle (SRP) & Explicit Domain Naming**: Keep all modules, classes, functions, and skills focused on a single responsibility. Prohibit generic names (`util`, `helper`, `misc`, `common`) for files, methods, or folders—including compound suffixes/prefixes like `urlutil` or `stringhelper`—as temptation to use generic names signals an SRP violation (see [Core Engineering Standards](rules/core_engineering.md)). Decompose complex logic into small pure functions (aim for a 20–30 line target limit).
 2. **Keep It Simple, Stupid (KISS)**: Enforce linear control flow. Use early return guard clauses at the top of functions and eliminate redundant `else` blocks after returns or exceptions.
 3. **Don't Repeat Yourself (DRY)**: Centralize shared helpers in global packages (e.g., `proto.Modify`), eliminate duplicate code and test fixtures, and extract shared automation playbooks into reusable Python modules or dedicated rule files.
 4. **Context Preservation & Subagent Delegation**: Prevent main context bloat by modularizing rules into purpose-built files and offloading verbose log analysis, heavy test runs, or exploratory searches to worker subagents.
