@@ -45,7 +45,6 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	workUnits, nextPageToken := extractWorkUnitsResult(result)
 	jobs := mapWorkUnitsToDashboardJobs(ctx, workUnits, time.Now())
 
-	// TODO: Set TotalQueueSize to the total count across all pages once pagination is implemented.
 	return &spb.GetRunningAndPendingJobsResponse{
 		Jobs:           jobs,
 		NextPageToken:  nextPageToken,
@@ -103,10 +102,10 @@ func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, now t
 		Priority:           int64(wu.GetPriority()),
 		Status:             extractWorkUnitState(wu),
 		TimeInQueueSeconds: calculateQueueDuration(wu, now),
-		// TODO: Populate RequestedResources field using extractRequestedResources once resource accumulator PR is merged.
-		PositionInQueue: extractQueuePosition(wu),
-		CreateTime:      wu.GetCreateTime(),
-		Tags:            wu.GetTags(),
+		RequestedResources: extractRequestedResources(wu),
+		PositionInQueue:    extractQueuePosition(wu),
+		CreateTime:         wu.GetCreateTime(),
+		Tags:               wu.GetTags(),
 	}
 }
 
@@ -139,4 +138,60 @@ func calculateQueueDuration(wu *essmsgpb.WorkUnit, now time.Time) int64 {
 		return diff
 	}
 	return 0
+}
+
+func extractRequestedResources(wu *essmsgpb.WorkUnit) []*spb.Resource {
+	if wu == nil || wu.GetExecutable() == nil {
+		return nil
+	}
+	jobset := wu.GetExecutable().GetJobset()
+	if jobset == nil {
+		return nil
+	}
+	var resources []*spb.Resource
+	for _, job := range jobset.GetJobs() {
+		if job == nil || job.GetSpec() == nil || job.GetSpec().GetResources() == nil {
+			continue
+		}
+		resSet := job.GetSpec().GetResources()
+		replicas := float64(job.GetReplicas())
+		if replicas == 0 {
+			replicas = 1
+		}
+		if cpu := resSet.GetCpuResources(); cpu != nil {
+			if cpu.GetCpuMillicores() > 0 {
+				resources = append(resources, &spb.Resource{
+					ResourceType: "cpu",
+					Count:        (float64(cpu.GetCpuMillicores()) / 1000.0) * replicas,
+				})
+			}
+			if cpu.GetMemoryBytes() > 0 {
+				resources = append(resources, &spb.Resource{
+					ResourceType: "memory",
+					Count:        float64(cpu.GetMemoryBytes()) * replicas,
+				})
+			}
+		}
+		if gpu := resSet.GetGpuResources(); gpu != nil {
+			resType := gpu.GetType()
+			if resType == "" {
+				resType = "nvidia.com/gpu"
+			}
+			resources = append(resources, &spb.Resource{
+				ResourceType: resType,
+				Count:        float64(gpu.GetCount()) * replicas,
+			})
+		}
+		if tpu := resSet.GetTpuResources(); tpu != nil {
+			resType := tpu.GetType()
+			if resType == "" {
+				resType = "google.com/tpu"
+			}
+			resources = append(resources, &spb.Resource{
+				ResourceType: resType,
+				Count:        1 * replicas,
+			})
+		}
+	}
+	return resources
 }

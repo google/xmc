@@ -195,3 +195,45 @@ func TestGetRunningAndPendingJobs_ContextCancelled(t *testing.T) {
 		t.Errorf("GetRunningAndPendingJobs status code = %v, want %v", status.Code(err), codes.Canceled)
 	}
 }
+
+func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
+	now := time.Now()
+	wu := &essmsgpb.WorkUnit{
+		Name:     "experiments/100/workUnits/1",
+		Priority: essmsgpb.Priority(100),
+		Notes:    "test@example.com",
+		Executable: &essmsgpb.Executable{
+			Type: &essmsgpb.Executable_Jobset{
+				Jobset: &essmsgpb.JobSetExecutable{
+					Jobs: []*essmsgpb.KubernetesJob{
+						{
+							Replicas: 2,
+							Spec: &essmsgpb.ExecutableSpec{
+								Resources: &essmsgpb.ResourceSet{
+									Resources: &essmsgpb.ResourceSet_GpuResources{
+										GpuResources: &essmsgpb.GpuResources{
+											Type:  "nvidia-tesla-h100",
+											Count: 4,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	job := mapWorkUnitToDashboardJob(context.Background(), wu, now)
+	if job == nil {
+		t.Fatalf("mapWorkUnitToDashboardJob returned nil")
+	}
+	if len(job.GetRequestedResources()) != 1 {
+		t.Fatalf("RequestedResources len = %d, want 1", len(job.GetRequestedResources()))
+	}
+	res := job.GetRequestedResources()[0]
+	if res.GetResourceType() != "nvidia-tesla-h100" || res.GetCount() != 8.0 {
+		t.Errorf("RequestedResource = %v %v, want nvidia-tesla-h100 8.0", res.GetResourceType(), res.GetCount())
+	}
+}

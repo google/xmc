@@ -39,16 +39,21 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 // FetchActiveWorkUnitsByQueuesAt queries Spanner using deterministic reference time now.
 // TODO: Implement Spanner query to fetch active work units for given queues.
 func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNames []string, pageSize int32, pageToken string, now time.Time) (*ActiveWorkUnitsResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(queueNames) == 0 {
 		return &ActiveWorkUnitsResult{
 			WorkUnits: []*essmsgpb.WorkUnit{},
 		}, nil
 	}
+	return &ActiveWorkUnitsResult{
+		WorkUnits: buildMockActiveWorkUnits(queueNames[0], now),
+	}, nil
+}
 
-	queueName := queueNames[0]
-
-	// Returns mocked WorkUnits for development and UI prototyping.
-	mockedWorkUnits := []*essmsgpb.WorkUnit{
+func buildMockActiveWorkUnits(queueName string, now time.Time) []*essmsgpb.WorkUnit {
+	return []*essmsgpb.WorkUnit{
 		{
 			Name:       validator.ConstructWorkUnitName(100, 1),
 			Priority:   essmsgpb.Priority(100),
@@ -92,10 +97,6 @@ func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNa
 			},
 		},
 	}
-
-	return &ActiveWorkUnitsResult{
-		WorkUnits: mockedWorkUnits,
-	}, nil
 }
 
 func buildMockExecutable(queueName string, cpuMillicores, memoryBytes int64, gpuType string, gpuCount int64, tpuType, tpuTopology string) *essmsgpb.Executable {
