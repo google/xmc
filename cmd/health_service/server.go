@@ -69,13 +69,24 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 		xidDbSchemaVersionStr = "unknown"
 	}
 
+	appVersionStr := s.cfg.AppVersion
+	if appVersionStr == "" {
+		appVersionStr = "unknown"
+	}
+
+	buildVersionStr := s.cfg.BuildVersion
+	if buildVersionStr == "" {
+		buildVersionStr = "unknown"
+	}
+
 	return &spb.HealthStatusResponse{
 		HealthState: overallHealthy,
 		SystemInfo: &spb.SystemInfo{
-			AppVersion:         "app-version-1.0.0",
+			AppVersion:         appVersionStr,
+			BuildVersion:       buildVersionStr,
 			EssDbSchemaVersion: essDbSchemaVersionStr,
 			XidDbSchemaVersion: xidDbSchemaVersionStr,
-			ObservabilityUrl:   "http://mock-observability-url",
+			ObservabilityUrl:   s.cfg.ObservabilityURL,
 			IsSchedulingPaused: false,
 		},
 		Components:      res.Components,

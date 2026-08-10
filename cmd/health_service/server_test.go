@@ -38,9 +38,12 @@ func (m *mockHealthChecker) Close() error {
 
 func TestGetHealthStatus_AllHealthy(t *testing.T) {
 	cfg := &Config{
-		Port:      "8080",
-		GRPCPort:  "50051",
-		ProjectID: "test-project",
+		Port:             "8080",
+		GRPCPort:         "50051",
+		ProjectID:        "test-project",
+		AppVersion:       "test-version-1.2.3",
+		BuildVersion:     "test-build-version-4.5.6",
+		ObservabilityURL: "http://test-observability-url",
 	}
 	mockResult := RunChecksResult{
 		EssDbSchemaVersion: "6",
@@ -67,6 +70,17 @@ func TestGetHealthStatus_AllHealthy(t *testing.T) {
 
 	if resp.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY {
 		t.Errorf("Expected overall status 'HEALTH_STATE_HEALTHY', got %v", resp.HealthState)
+	}
+
+	if resp.SystemInfo.AppVersion != "test-version-1.2.3" {
+		t.Errorf("Expected AppVersion 'test-version-1.2.3', got %q", resp.SystemInfo.AppVersion)
+	}
+	if resp.SystemInfo.BuildVersion != "test-build-version-4.5.6" {
+		t.Errorf("Expected BuildVersion 'test-build-version-4.5.6', got %q", resp.SystemInfo.BuildVersion)
+	}
+
+	if resp.SystemInfo.ObservabilityUrl != "http://test-observability-url" {
+		t.Errorf("Expected ObservabilityUrl 'http://test-observability-url', got %q", resp.SystemInfo.ObservabilityUrl)
 	}
 
 	if resp.SystemInfo.EssDbSchemaVersion != "6" {
@@ -142,6 +156,12 @@ func TestGetHealthStatus_Unhealthy(t *testing.T) {
 	}
 	if resp.SystemInfo.XidDbSchemaVersion != "unknown" {
 		t.Errorf("Expected XidDbSchemaVersion 'unknown', got %q", resp.SystemInfo.XidDbSchemaVersion)
+	}
+	if resp.SystemInfo.AppVersion != "unknown" {
+		t.Errorf("Expected AppVersion 'unknown', got %q", resp.SystemInfo.AppVersion)
+	}
+	if resp.SystemInfo.BuildVersion != "unknown" {
+		t.Errorf("Expected BuildVersion 'unknown', got %q", resp.SystemInfo.BuildVersion)
 	}
 
 	expectedComponents := map[string]spb.HealthState{

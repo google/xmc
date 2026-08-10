@@ -53,6 +53,9 @@ go_binary(
     embed = [":health_service_lib"],
     pure = "on",
     visibility = ["//visibility:public"],
+    x_defs = {
+        "xmanager_cloud/cmd/health_service/main.buildVersion": "{STABLE_APP_VERSION}",
+    },
 )
 
 oci_image_for_service(

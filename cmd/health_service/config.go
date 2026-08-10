@@ -37,9 +37,21 @@ type Config struct {
 	EssSpannerDatabase     string
 	XidSpannerDatabase     string
 	RedisAddr              string
+	AppVersion             string
+	BuildVersion           string
+	ObservabilityURL       string
 }
 
+var buildVersion string
+
 var cfg Config
+
+func getBuildVersion() string {
+	if buildVersion == "" || buildVersion == "redacted" || buildVersion == "{STABLE_APP_VERSION}" {
+		return "developer-build"
+	}
+	return buildVersion
+}
 
 func init() {
 	// 1. Load configurations from environment variables
@@ -51,6 +63,9 @@ func init() {
 	configutil.StringEnv(&cfg.EssSpannerDatabase, "health_ess_spanner_database_name", "")
 	configutil.StringEnv(&cfg.XidSpannerDatabase, "health_xid_spanner_database_name", "")
 	configutil.StringEnv(&cfg.RedisAddr, "health_redis_addr", "")
+	configutil.StringEnv(&cfg.AppVersion, "health_app_version", "")
+	configutil.StringEnv(&cfg.ObservabilityURL, "health_observability_url", "")
+	cfg.BuildVersion = getBuildVersion()
 
 	defaultPort := os.Getenv("PORT")
 	if defaultPort == "" {

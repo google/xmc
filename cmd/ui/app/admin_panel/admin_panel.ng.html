@@ -50,5 +50,11 @@
         <p>Loading Configuration...</p>
       </div>
     }
+
+    @if (healthStatus()?.systemInfo; as systemInfo) {
+      <footer class="admin-panel-footer">
+        <span>Build Version: {{ systemInfo.buildVersion }}</span>
+      </footer>
+    }
   </div>
 }
