@@ -54,11 +54,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNa
 			Priority:   essmsgpb.Priority(100),
 			CreateTime: timestamppb.New(now.Add(-10 * time.Minute)),
 			Notes:      "test@example.com",
-			Executable: &essmsgpb.Executable{
-				SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-					QueueName: queueName,
-				},
-			},
+			Executable: buildMockExecutable(queueName, 8000, 34359738368, "NVIDIA-H100-80GB", 4, "", ""),
 			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
 				Status: &essmsgpb.WorkUnitStatus{
 					State: essmsgpb.WorkUnitStatus_SCHEDULING,
@@ -79,11 +75,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNa
 			Priority:   essmsgpb.Priority(50),
 			CreateTime: timestamppb.New(now.Add(-5 * time.Minute)),
 			Notes:      "dev@example.com",
-			Executable: &essmsgpb.Executable{
-				SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-					QueueName: queueName,
-				},
-			},
+			Executable: buildMockExecutable(queueName, 16000, 68719476736, "", 0, "v4-16", "2x2x4"),
 			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
 				Status: &essmsgpb.WorkUnitStatus{
 					State: essmsgpb.WorkUnitStatus_RUNNING,
@@ -104,4 +96,62 @@ func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNa
 	return &ActiveWorkUnitsResult{
 		WorkUnits: mockedWorkUnits,
 	}, nil
+}
+
+func buildMockExecutable(queueName string, cpuMillicores, memoryBytes int64, gpuType string, gpuCount int64, tpuType, tpuTopology string) *essmsgpb.Executable {
+	jobs := []*essmsgpb.KubernetesJob{
+		{
+			Replicas: 1,
+			Spec: &essmsgpb.ExecutableSpec{
+				Resources: &essmsgpb.ResourceSet{
+					Resources: &essmsgpb.ResourceSet_CpuResources{
+						CpuResources: &essmsgpb.CpuResources{
+							CpuMillicores: cpuMillicores,
+							MemoryBytes:   memoryBytes,
+						},
+					},
+				},
+			},
+		},
+	}
+	if gpuType != "" || gpuCount > 0 {
+		jobs = append(jobs, &essmsgpb.KubernetesJob{
+			Replicas: 1,
+			Spec: &essmsgpb.ExecutableSpec{
+				Resources: &essmsgpb.ResourceSet{
+					Resources: &essmsgpb.ResourceSet_GpuResources{
+						GpuResources: &essmsgpb.GpuResources{
+							Type:  gpuType,
+							Count: gpuCount,
+						},
+					},
+				},
+			},
+		})
+	}
+	if tpuType != "" || tpuTopology != "" {
+		jobs = append(jobs, &essmsgpb.KubernetesJob{
+			Replicas: 1,
+			Spec: &essmsgpb.ExecutableSpec{
+				Resources: &essmsgpb.ResourceSet{
+					Resources: &essmsgpb.ResourceSet_TpuResources{
+						TpuResources: &essmsgpb.TpuResources{
+							Type:     tpuType,
+							Topology: tpuTopology,
+						},
+					},
+				},
+			},
+		})
+	}
+	return &essmsgpb.Executable{
+		SchedulingConstraints: &essmsgpb.SchedulingConstraints{
+			QueueName: queueName,
+		},
+		Type: &essmsgpb.Executable_Jobset{
+			Jobset: &essmsgpb.JobSetExecutable{
+				Jobs: jobs,
+			},
+		},
+	}
 }
