@@ -36,6 +36,10 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 		return nil, status.Error(codes.InvalidArgument, "queue_name is required")
 	}
 
+	if req.GetPageSize() < 0 {
+		return nil, status.Error(codes.InvalidArgument, "page_size cannot be negative")
+	}
+
 	if s.workUnitStore == nil {
 		return nil, status.Error(codes.Unavailable, "work unit store is uninitialized")
 	}
@@ -43,10 +47,17 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	// TODO: Fetch all LocalQueues connected to a given ClusterQueue
 	var targetQueues []string
 
-	workUnits, nextPageToken, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, req.GetPageSize(), req.GetPageToken())
+	result, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, req.GetPageSize(), req.GetPageToken())
 	if err != nil {
 		logging.Error(ctx, "failed to fetch active work units from storage", "cluster_queue_name", req.GetQueueName(), "target_queues", targetQueues, "error", err)
 		return nil, status.Error(codes.Internal, "failed to fetch active jobs")
+	}
+
+	var workUnits []*essmsgpb.WorkUnit
+	var nextPageToken string
+	if result != nil {
+		workUnits = result.WorkUnits
+		nextPageToken = result.NextPageToken
 	}
 
 	now := time.Now()

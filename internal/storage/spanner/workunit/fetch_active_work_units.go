@@ -24,21 +24,25 @@ import (
 	"xmanager_cloud/validator/validator"
 )
 
+// ActiveWorkUnitsResult encapsulates the result of querying active work units.
+type ActiveWorkUnitsResult struct {
+	WorkUnits     []*essmsgpb.WorkUnit
+	NextPageToken string
+}
+
 // FetchActiveWorkUnitsByQueues queries Spanner for active and pending work units assigned to the given queues.
 // TODO: Implement Spanner query to fetch active work units for given queues.
-//
-//nolint:revive // standard repository pattern returning (results, pageToken, err)
-func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) ([]*essmsgpb.WorkUnit, string, error) {
+func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error) {
 	return r.FetchActiveWorkUnitsByQueuesAt(ctx, queueNames, pageSize, pageToken, time.Now())
 }
 
 // FetchActiveWorkUnitsByQueuesAt queries Spanner using deterministic reference time now.
 // TODO: Implement Spanner query to fetch active work units for given queues.
-//
-//nolint:revive // standard repository pattern returning (results, pageToken, err)
-func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNames []string, pageSize int32, pageToken string, now time.Time) ([]*essmsgpb.WorkUnit, string, error) {
+func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNames []string, pageSize int32, pageToken string, now time.Time) (*ActiveWorkUnitsResult, error) {
 	if len(queueNames) == 0 {
-		return []*essmsgpb.WorkUnit{}, "", nil
+		return &ActiveWorkUnitsResult{
+			WorkUnits: []*essmsgpb.WorkUnit{},
+		}, nil
 	}
 
 	queueName := queueNames[0]
@@ -97,5 +101,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNa
 		},
 	}
 
-	return mockedWorkUnits, "", nil
+	return &ActiveWorkUnitsResult{
+		WorkUnits: mockedWorkUnits,
+	}, nil
 }

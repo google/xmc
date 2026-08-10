@@ -22,22 +22,22 @@ import (
 
 func TestFetchActiveWorkUnitsByQueues_EmptyQueue(t *testing.T) {
 	repo := &Repository{}
-	workUnits, _, err := repo.FetchActiveWorkUnitsByQueues(context.Background(), nil, 10, "")
+	res, err := repo.FetchActiveWorkUnitsByQueues(context.Background(), nil, 10, "")
 	if err != nil {
 		t.Errorf("FetchActiveWorkUnitsByQueues(nil) expected nil error, got %v", err)
 	}
-	if len(workUnits) != 0 {
-		t.Errorf("FetchActiveWorkUnitsByQueues(nil) expected empty workUnits slice, got %d", len(workUnits))
+	if res == nil || len(res.WorkUnits) != 0 {
+		t.Errorf("FetchActiveWorkUnitsByQueues(nil) expected empty workUnits slice, got %v", res)
 	}
 }
 
 func TestFetchActiveWorkUnitsByQueuesAt_EmptyQueuesList(t *testing.T) {
 	repo := &Repository{}
-	workUnits, _, err := repo.FetchActiveWorkUnitsByQueuesAt(context.Background(), []string{}, 10, "", time.Now())
+	res, err := repo.FetchActiveWorkUnitsByQueuesAt(context.Background(), []string{}, 10, "", time.Now())
 	if err != nil {
 		t.Errorf("FetchActiveWorkUnitsByQueuesAt(empty) expected nil error, got %v", err)
 	}
-	if len(workUnits) != 0 {
-		t.Errorf("FetchActiveWorkUnitsByQueuesAt(empty) expected empty workUnits slice, got %d", len(workUnits))
+	if res == nil || len(res.WorkUnits) != 0 {
+		t.Errorf("FetchActiveWorkUnitsByQueuesAt(empty) expected empty workUnits slice, got %v", res)
 	}
 }

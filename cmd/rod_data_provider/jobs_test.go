@@ -27,6 +27,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 	spb "xmanager_cloud/api/protos/rod"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/internal/storage/spanner/workunit"
 )
 
 type mockWorkUnitFetcher struct {
@@ -35,12 +36,14 @@ type mockWorkUnitFetcher struct {
 	err           error
 }
 
-//nolint:revive // mock implementation matching WorkUnitFetcher interface
-func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) ([]*essmsgpb.WorkUnit, string, error) {
+func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*workunit.ActiveWorkUnitsResult, error) {
 	if m.err != nil {
-		return nil, "", m.err
+		return nil, m.err
 	}
-	return m.workUnits, m.nextPageToken, nil
+	return &workunit.ActiveWorkUnitsResult{
+		WorkUnits:     m.workUnits,
+		NextPageToken: m.nextPageToken,
+	}, nil
 }
 
 func TestGetRunningAndPendingJobs(t *testing.T) {
@@ -103,6 +106,17 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			ctx:  context.Background(),
 			req: &spb.GetRunningAndPendingJobsRequest{
 				QueueName: "",
+			},
+			fetcher:   &mockWorkUnitFetcher{},
+			wantCode:  codes.InvalidArgument,
+			wantCount: 0,
+		},
+		{
+			name: "Negative Page Size",
+			ctx:  context.Background(),
+			req: &spb.GetRunningAndPendingJobsRequest{
+				QueueName: "gpu-cluster-queue",
+				PageSize:  -1,
 			},
 			fetcher:   &mockWorkUnitFetcher{},
 			wantCode:  codes.InvalidArgument,
