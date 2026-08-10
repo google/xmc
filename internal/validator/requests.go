@@ -288,9 +288,14 @@ func validateJobSetExecutable(exec *essmsgpb.Executable) error {
 	if exec == nil {
 		return fmt.Errorf("work_unit.executable cannot be nil: %w", status.ErrInvalidArgument)
 	}
-	if queueName := exec.GetSchedulingConstraints().GetQueueName(); queueName == "" {
+	if exec.GetSchedulingConstraints() == nil {
+		return fmt.Errorf("work_unit.executable.scheduling_constraints cannot be nil: %w", status.ErrInvalidArgument)
+	}
+	queueName := exec.GetSchedulingConstraints().GetQueueName()
+	if queueName == "" {
 		return fmt.Errorf("work_unit.executable.scheduling_constraints.queue_name cannot be empty: %w", status.ErrInvalidArgument)
-	} else if len(queueName) > maxQueueNameLen {
+	}
+	if len(queueName) > maxQueueNameLen {
 		return fmt.Errorf("work_unit.executable.scheduling_constraints.queue_name cannot be longer than %d characters: %w", maxQueueNameLen, status.ErrInvalidArgument)
 	}
 	if exec.GetJobset() == nil {
