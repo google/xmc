@@ -23,6 +23,13 @@ import (
 	"xmanager_cloud/internal/domain/workunit"
 )
 
+const (
+	resourceTypeCPU    = "cpu"
+	resourceTypeMemory = "memory"
+	resourceTypeGPU    = "GPU"
+	resourceTypeTPU    = "TPU"
+)
+
 // extractRequestedResources converts domain ResourceSets from workunit.GetWorkUnitResources
 // into presentation DTOs ([]*spb.Resource) required by the ROD API, aggregating identical resource types.
 func extractRequestedResources(wu *essmsgpb.WorkUnit) []*spb.Resource {
@@ -80,17 +87,17 @@ func accumulateResource(rs *essmsgpb.ResourceSet, addResource func(string, float
 
 func accumulateCpuResource(cpu *essmsgpb.CpuResources, addResource func(string, float64)) {
 	if millicores := cpu.GetCpuMillicores(); millicores > 0 {
-		addResource("cpu", float64(millicores)/1000.0)
+		addResource(resourceTypeCPU, float64(millicores)/1000.0)
 	}
 	if memoryBytes := cpu.GetMemoryBytes(); memoryBytes > 0 {
-		addResource("memory", float64(memoryBytes))
+		addResource(resourceTypeMemory, float64(memoryBytes))
 	}
 }
 
 func accumulateGpuResource(gpu *essmsgpb.GpuResources, addResource func(string, float64)) {
 	resType := gpu.GetType()
 	if resType == "" {
-		resType = "GPU"
+		resType = resourceTypeGPU
 	}
 	addResource(resType, float64(gpu.GetCount()))
 }
@@ -98,7 +105,7 @@ func accumulateGpuResource(gpu *essmsgpb.GpuResources, addResource func(string, 
 func accumulateTpuResource(tpu *essmsgpb.TpuResources, addResource func(string, float64)) {
 	resType := tpu.GetType()
 	if resType == "" {
-		resType = "TPU"
+		resType = resourceTypeTPU
 	}
 	chips := parseTotalChips(tpu.GetTopology())
 	addResource(resType, float64(chips))

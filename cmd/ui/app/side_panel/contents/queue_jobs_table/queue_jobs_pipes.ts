@@ -34,6 +34,10 @@ export const JOB_STATUS_STRINGS = {
 
 export const NOT_APPLICABLE_RUNNING_DISPLAY = 'N/A - running';
 
+/** Known resource type string constants. */
+export const RESOURCE_TYPE_CPU = 'cpu';
+export const RESOURCE_TYPE_MEMORY = 'memory';
+
 /**
  * Transforms a DashboardJob into a typed StatusOption enum for xmc-status-chip rendering.
  */
@@ -88,8 +92,8 @@ export class QueueJobPositionPipe implements PipeTransform {
 
 function getResourceTypeEnum(typeRaw?: string): ResourceType {
   const lower = (typeRaw || '').toLowerCase();
-  if (lower === 'cpu') return ResourceType.CPU;
-  if (lower === 'memory') return ResourceType.MEMORY;
+  if (lower === RESOURCE_TYPE_CPU) return ResourceType.CPU;
+  if (lower === RESOURCE_TYPE_MEMORY) return ResourceType.MEMORY;
   return ResourceType.GPU;
 }
 
@@ -100,7 +104,7 @@ function formatSingleResource(res: Resource): ResourceChipData {
 
   let text = `${count}`;
   if (type) {
-    if (lower === 'cpu' || lower === 'memory') {
+    if (lower === RESOURCE_TYPE_CPU || lower === RESOURCE_TYPE_MEMORY) {
       text = `${type}: ${count}`;
     } else {
       text = `${count} x ${type}`;
