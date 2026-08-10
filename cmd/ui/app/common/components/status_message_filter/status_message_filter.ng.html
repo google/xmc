@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 <button
+  type="button"
   mat-icon-button
   aria-label="Filter status messages"
   matTooltip="Filter status messages"
@@ -21,7 +22,7 @@ limitations under the License.
 >
   <mat-icon>filter_list</mat-icon>
 </button>
-<mat-menu class="filter-menu" #filterMenu="matMenu">
+<mat-menu #filterMenu="matMenu" class="filter-menu">
   <div class="filter-menu-title">Display Status Messages</div>
   <mat-card-content class="filter-menu-content">
     <div class="filter-column">

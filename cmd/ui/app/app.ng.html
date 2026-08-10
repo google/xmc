@@ -15,10 +15,10 @@ limitations under the License.
 -->
 @if (user()?.email) {
   <xmc-side-panel>
-    <xmc-header class="header" (menuToggle)="toggleSidenav()"></xmc-header>
+    <xmc-header class="header" (menuToggle)="toggleSidenav()" />
 
     <mat-sidenav-container class="sidenav-container">
-      <mat-sidenav class="sidenav" [(opened)]="isSidenavOpened" mode="side">
+      <mat-sidenav class="sidenav" mode="side" [(opened)]="isSidenavOpened">
         <mat-nav-list>
           <a mat-list-item routerLink="/experiments">
             <div class="menu-item-container">
@@ -44,13 +44,13 @@ limitations under the License.
       </mat-sidenav>
       <mat-sidenav-content>
         <div class="page-container">
-          <router-outlet></router-outlet>
+          <router-outlet />
         </div>
       </mat-sidenav-content>
     </mat-sidenav-container>
   </xmc-side-panel>
 } @else {
   <div class="guest-page-container">
-    <router-outlet></router-outlet>
+    <router-outlet />
   </div>
 }

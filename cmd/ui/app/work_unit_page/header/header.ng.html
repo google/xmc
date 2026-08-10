@@ -29,10 +29,10 @@ limitations under the License.
       <mat-divider [vertical]="true"> </mat-divider>
 
       <div class="priority-and-status-container">
-        <xmc-status-chip class="chip" [status]="getStatusOption(workUnit())"></xmc-status-chip>
+        <xmc-status-chip class="chip" [status]="getStatusOption(workUnit())" />
 
         @if (workUnit().priority) {
-          <xmc-priority-chip class="chip" [priority]="workUnit().priority"></xmc-priority-chip>
+          <xmc-priority-chip class="chip" [priority]="workUnit().priority" />
         }
       </div>
 
@@ -40,23 +40,25 @@ limitations under the License.
 
       <div class="actions-container">
         <button
+          type="button"
           mat-button
           mat-raised-button
           color="primary"
-          (click)="stop()"
           [disabled]="isStopping$ | async"
           [class.shimmer]="isStopping$ | async"
+          (click)="stop()"
         >
           <mat-icon>stop_circle</mat-icon>
           Stop
         </button>
         <button
+          type="button"
           mat-button
           mat-raised-button
           color="primary"
-          (click)="restart()"
           [disabled]="isRestarting$ | async"
           [class.shimmer]="isRestarting$ | async"
+          (click)="restart()"
         >
           <mat-icon>restart_alt</mat-icon>
           Restart
