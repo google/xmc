@@ -23,16 +23,18 @@ import (
 
 // Config holds the configuration for the health service.
 type Config struct {
-	Port          string
-	GRPCPort      string
-	ProjectID     string
-	TLSCertFile   string
-	TLSKeyFile    string
-	EssURL        string
-	XidAddr       string
-	ActuatorURL   string
-	ReconcilerURL string
-	ConfigDir     string
+	Port               string
+	GRPCPort           string
+	ProjectID          string
+	TLSCertFile        string
+	TLSKeyFile         string
+	EssURL             string
+	XidAddr            string
+	ActuatorURL        string
+	ReconcilerURL      string
+	ConfigDir          string
+	EssSpannerDatabase string
+	XidSpannerDatabase string
 }
 
 var cfg Config
@@ -43,6 +45,8 @@ func init() {
 	configutil.StringEnv(&cfg.XidAddr, "health_xid_addr", "xid-svc:50051")
 	configutil.StringEnv(&cfg.ActuatorURL, "health_actuator_url", "http://actuator-service:8080")
 	configutil.StringEnv(&cfg.ReconcilerURL, "health_reconciler_url", "http://reconciler-svc:8080")
+	configutil.StringEnv(&cfg.EssSpannerDatabase, "health_ess_spanner_database_name", "")
+	configutil.StringEnv(&cfg.XidSpannerDatabase, "health_xid_spanner_database_name", "")
 
 	defaultPort := os.Getenv("PORT")
 	if defaultPort == "" {
