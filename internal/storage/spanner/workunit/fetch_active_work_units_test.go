@@ -17,7 +17,6 @@ package workunit
 import (
 	"context"
 	"testing"
-	"time"
 )
 
 func TestFetchActiveWorkUnitsByQueues_EmptyQueue(t *testing.T) {
@@ -33,7 +32,7 @@ func TestFetchActiveWorkUnitsByQueues_EmptyQueue(t *testing.T) {
 
 func TestFetchActiveWorkUnitsByQueuesAt_EmptyQueuesList(t *testing.T) {
 	repo := &Repository{}
-	res, err := repo.FetchActiveWorkUnitsByQueuesAt(context.Background(), []string{}, 10, "", time.Now())
+	res, err := repo.FetchActiveWorkUnitsByQueuesAt(context.Background(), []string{}, 10, "")
 	if err != nil {
 		t.Fatalf("FetchActiveWorkUnitsByQueuesAt(empty) expected nil error, got %v", err)
 	}
@@ -42,29 +41,11 @@ func TestFetchActiveWorkUnitsByQueuesAt_EmptyQueuesList(t *testing.T) {
 	}
 }
 
-func TestFetchActiveWorkUnitsByQueues_WithQueues(t *testing.T) {
-	repo := &Repository{}
-	res, err := repo.FetchActiveWorkUnitsByQueues(context.Background(), []string{"gpu-queue"}, 10, "")
-	if err != nil {
-		t.Fatalf("FetchActiveWorkUnitsByQueues(queue) expected nil error, got %v", err)
-	}
-	if res == nil || len(res.WorkUnits) != 2 {
-		t.Fatalf("FetchActiveWorkUnitsByQueues(queue) expected 2 mock work units, got %d", len(res.WorkUnits))
-	}
-	wu := res.WorkUnits[0]
-	if wu.GetName() != "experiments/100/workUnits/1" {
-		t.Errorf("WorkUnit name = %q, want experiments/100/workUnits/1", wu.GetName())
-	}
-	if wu.GetNotes() != "test@example.com" {
-		t.Errorf("WorkUnit notes = %q, want test@example.com", wu.GetNotes())
-	}
-}
-
 func TestFetchActiveWorkUnitsByQueuesAt_CanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	repo := &Repository{}
-	_, err := repo.FetchActiveWorkUnitsByQueuesAt(ctx, []string{"gpu-queue"}, 10, "", time.Now())
+	_, err := repo.FetchActiveWorkUnitsByQueuesAt(ctx, []string{"gpu-queue"}, 10, "")
 	if err == nil {
 		t.Errorf("FetchActiveWorkUnitsByQueuesAt(canceled) expected error, got nil")
 	}

@@ -86,7 +86,6 @@ func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNa
 		}
 		wu, err := data.WorkUnitRowToProto(row)
 		if err != nil {
-			logging.Error(ctx, "failed to convert WorkUnit row to WorkUnit", "error", err)
 			return fmt.Errorf("failed to convert WorkUnit row to WorkUnit: %w", err)
 		}
 		workUnits = append(workUnits, wu)
