@@ -34,7 +34,7 @@ func (r *LocalQueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	var lq kueuev1beta1.LocalQueue
 	return reconcileCache(ctx, r.Client, req, &lq, func(obj *kueuev1beta1.LocalQueue) {
 		r.Cache.Set(req.NamespacedName.String(), obj.DeepCopy())
-	}, func(name string) {
+	}, func() {
 		r.Cache.Delete(req.NamespacedName.String())
 	})
 }

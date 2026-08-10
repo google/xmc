@@ -34,7 +34,9 @@ func (r *ResourceFlavorReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	var rf kueuev1beta1.ResourceFlavor
 	return reconcileCache(ctx, r.Client, req, &rf, func(o *kueuev1beta1.ResourceFlavor) {
 		r.Cache.Set(req.Name, o.DeepCopy())
-	}, r.Cache.Delete)
+	}, func() {
+		r.Cache.Delete(req.Name)
+	})
 }
 
 func (r *ResourceFlavorReconciler) SetupWithManager(mgr ctrl.Manager) error {

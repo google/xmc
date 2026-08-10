@@ -44,6 +44,7 @@ func (r *Repository) UpdateArtifact(ctx context.Context, update *storage.Artifac
 	var originalArtifact, updatedArtifact *essmsgpb.Artifact
 	var mutated bool
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		mutated = false
 		// 1. Read the existing artifact from storage.
 		var err error
 		originalArtifact, err = r.FetchArtifactTransaction(ctx, update.AID, txn)

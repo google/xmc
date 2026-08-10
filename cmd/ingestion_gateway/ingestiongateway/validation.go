@@ -105,6 +105,9 @@ type RecordProcessResult struct {
 func processNextRecord(dec *json.Decoder, idx int, consumer MetricConsumer) (RecordProcessResult, error) {
 	var raw json.RawMessage
 	if err := dec.Decode(&raw); err != nil {
+		if errors.Is(err, io.EOF) {
+			return RecordProcessResult{}, err
+		}
 		return RecordProcessResult{}, fmt.Errorf("malformed JSON at record index %d: %w", idx, err)
 	}
 

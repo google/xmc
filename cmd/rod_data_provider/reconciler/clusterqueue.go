@@ -34,7 +34,9 @@ func (r *ClusterQueueReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	var cq kueuev1beta1.ClusterQueue
 	return reconcileCache(ctx, r.Client, req, &cq, func(o *kueuev1beta1.ClusterQueue) {
 		r.Cache.Set(req.Name, o.DeepCopy())
-	}, r.Cache.Delete)
+	}, func() {
+		r.Cache.Delete(req.Name)
+	})
 }
 
 func (r *ClusterQueueReconciler) SetupWithManager(mgr ctrl.Manager) error {

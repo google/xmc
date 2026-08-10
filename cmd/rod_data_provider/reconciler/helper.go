@@ -22,10 +22,10 @@ import (
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
 )
 
-func reconcileCache[T client.Object](ctx context.Context, c client.Client, req ctrl.Request, obj T, onFound func(T), onDelete func(string)) (ctrl.Result, error) {
+func reconcileCache[T client.Object](ctx context.Context, c client.Client, req ctrl.Request, obj T, onFound func(T), onDelete func()) (ctrl.Result, error) {
 	if err := c.Get(ctx, req.NamespacedName, obj); err != nil {
 		if errors.IsNotFound(err) {
-			onDelete(req.Name)
+			onDelete()
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
