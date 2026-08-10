@@ -33,8 +33,15 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 		return nil, err
 	}
 
-	// TODO: Fetch all LocalQueues connected to a given ClusterQueue
-	targetQueues := []string{"gpu-queue"}
+	clusterQueueName := req.GetQueueName()
+
+	targetQueues := []string{clusterQueueName}
+	if s.cache != nil {
+		localQueues := s.cache.GetLocalQueuesForClusterQueue(clusterQueueName)
+		if len(localQueues) > 0 {
+			targetQueues = append(targetQueues, localQueues...)
+		}
+	}
 
 	result, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, req.GetPageSize(), req.GetPageToken())
 	if err != nil {
