@@ -54,7 +54,7 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	now := time.Now()
 	var jobs []*spb.DashboardJob
 	for _, wu := range workUnits {
-		if job := mapWorkUnitToDashboardJob(wu, now); job != nil {
+		if job := mapWorkUnitToDashboardJob(ctx, wu, now); job != nil {
 			jobs = append(jobs, job)
 		}
 	}
@@ -67,12 +67,13 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 }
 
 // mapWorkUnitToDashboardJob transforms an essmsgpb.WorkUnit domain entity into a spb.DashboardJob presentation DTO.
-func mapWorkUnitToDashboardJob(wu *essmsgpb.WorkUnit, now time.Time) *spb.DashboardJob {
+func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, now time.Time) *spb.DashboardJob {
 	if wu == nil {
 		return nil
 	}
 	xid, wid, err := validator.ValidateWorkUnitName(wu.GetName())
 	if err != nil {
+		logging.Warn(ctx, "invalid work unit name", "name", wu.GetName(), "error", err)
 		return nil
 	}
 
@@ -87,7 +88,7 @@ func mapWorkUnitToDashboardJob(wu *essmsgpb.WorkUnit, now time.Time) *spb.Dashbo
 	}
 
 	var timeInQueueSec int64 = 0
-	if wu.GetCreateTime() != nil {
+	if wu.GetCreateTime() != nil && wu.GetCreateTime().IsValid() {
 		t := wu.GetCreateTime().AsTime()
 		diff := int64(now.Sub(t).Seconds())
 		if diff > 0 {

@@ -146,6 +146,9 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			}
 
 			gotJob := resp.Jobs[0]
+			if gotJob.GetTimeInQueueSeconds() < 599 || gotJob.GetTimeInQueueSeconds() > 601 {
+				t.Errorf("TimeInQueueSeconds = %d, want ~600", gotJob.GetTimeInQueueSeconds())
+			}
 			wantJob := &spb.DashboardJob{
 				Xid:                100,
 				WorkUnitId:         1,
