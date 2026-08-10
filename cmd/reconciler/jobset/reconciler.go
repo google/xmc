@@ -258,7 +258,7 @@ func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v
 	if labelsErr == nil {
 		update := createStoppedUpdate(wid, eid)
 		updatesSentTotal.WithLabelValues().Inc()
-		r.Batcher.Add(ctx, xid, *update, shared.JobsetSource)
+		r.Batcher.Add(logging.Strip(ctx), xid, *update, shared.JobsetSource)
 		logging.Debug(ctx, "Added STOPPED update to batch for JobSet", "namespace", jobSet.Namespace)
 	} else {
 		logging.Warn(ctx, "JobSet is being deleted with finalizer but has invalid labels", "namespace", jobSet.Namespace, "error", labelsErr)

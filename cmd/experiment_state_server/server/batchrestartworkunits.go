@@ -197,7 +197,7 @@ func (s *Server) authenticateAndAuthorizeBatchRestart(ctx context.Context, req *
 	xid, err := validator.ValidateExperimentName(req.GetParent())
 	if err != nil {
 		logging.Warn(ctx, "Failed to validate experiment name", "name", req.GetParent(), "error", err)
-		return 0, "", fmt.Errorf("failed to validate work unit name: %w (%v)", status.ErrInvalidArgument, err)
+		return 0, "", fmt.Errorf("failed to validate experiment name: %w (%v)", status.ErrInvalidArgument, err)
 	}
 	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
 	if err != nil {
