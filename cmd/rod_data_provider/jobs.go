@@ -166,7 +166,7 @@ func extractRequestedResources(wu *essmsgpb.WorkUnit) []*spb.Resource {
 		if gpu := r.GpuResources; gpu != nil {
 			resType := gpu.GetType()
 			if resType == "" {
-				resType = "nvidia.com/gpu"
+				resType = "GPU"
 			}
 			resources = append(resources, &spb.Resource{
 				ResourceType: resType,
@@ -177,7 +177,7 @@ func extractRequestedResources(wu *essmsgpb.WorkUnit) []*spb.Resource {
 		if tpu := r.TpuResources; tpu != nil {
 			resType := tpu.GetType()
 			if resType == "" {
-				resType = "google.com/tpu"
+				resType = "TPU"
 			}
 			resources = append(resources, &spb.Resource{
 				ResourceType: resType,
