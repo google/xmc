@@ -38,8 +38,10 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	targetQueues := []string{clusterQueueName}
 	if s.cache != nil {
 		localQueues := s.cache.GetLocalQueuesForClusterQueue(clusterQueueName)
-		if len(localQueues) > 0 {
-			targetQueues = append(targetQueues, localQueues...)
+		for _, lqName := range localQueues {
+			if lqName != clusterQueueName {
+				targetQueues = append(targetQueues, lqName)
+			}
 		}
 	}
 
