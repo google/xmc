@@ -57,22 +57,22 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 		}
 	}
 
-	essVersionStr := res.EssVersion
-	if essVersionStr == "" {
-		essVersionStr = "unknown"
+	essDbSchemaVersionStr := res.EssDbSchemaVersion
+	if essDbSchemaVersionStr == "" {
+		essDbSchemaVersionStr = "unknown"
 	}
 
-	xidVersionStr := res.XidVersion
-	if xidVersionStr == "" {
-		xidVersionStr = "unknown"
+	xidDbSchemaVersionStr := res.XidDbSchemaVersion
+	if xidDbSchemaVersionStr == "" {
+		xidDbSchemaVersionStr = "unknown"
 	}
 
 	return &spb.HealthStatusResponse{
 		HealthState: overallHealthy,
 		SystemInfo: &spb.SystemInfo{
 			AppVersion:         "app-version-1.0.0",
-			EssDbSchemaVersion: essVersionStr,
-			XidDbSchemaVersion: xidVersionStr,
+			EssDbSchemaVersion: essDbSchemaVersionStr,
+			XidDbSchemaVersion: xidDbSchemaVersionStr,
 			ObservabilityUrl:   "http://mock-observability-url",
 			IsSchedulingPaused: false,
 		},

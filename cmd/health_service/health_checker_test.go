@@ -257,10 +257,10 @@ func TestRunChecks_SpannerMetadata(t *testing.T) {
 		t.Errorf("expected 8 components, got %d", len(res.Components))
 	}
 
-	if res.EssVersion != "6" {
-		t.Errorf("expected ESS version '6', got %q", res.EssVersion)
+	if res.EssDbSchemaVersion != "6" {
+		t.Errorf("expected ESS version '6', got %q", res.EssDbSchemaVersion)
 	}
-	if res.XidVersion != "1 (dirty)" {
-		t.Errorf("expected XID version '1 (dirty)', got %q", res.XidVersion)
+	if res.XidDbSchemaVersion != "1 (dirty)" {
+		t.Errorf("expected XID version '1 (dirty)', got %q", res.XidDbSchemaVersion)
 	}
 }

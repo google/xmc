@@ -67,9 +67,9 @@ func (c *HealthChecker) Close() error {
 }
 
 type RunChecksResult struct {
-	Components []*spb.ComponentHealth
-	EssVersion string
-	XidVersion string
+	Components         []*spb.ComponentHealth
+	EssDbSchemaVersion string
+	XidDbSchemaVersion string
 }
 
 func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
@@ -105,9 +105,9 @@ func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 	components = append(components, essComp, xidComp)
 
 	return RunChecksResult{
-		Components: components,
-		EssVersion: essVersion,
-		XidVersion: xidVersion,
+		Components:         components,
+		EssDbSchemaVersion: essVersion,
+		XidDbSchemaVersion: xidVersion,
 	}
 }
 
