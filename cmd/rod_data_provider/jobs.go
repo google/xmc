@@ -68,7 +68,7 @@ func validateJobsRequest(ctx context.Context, req *spb.GetRunningAndPendingJobsR
 	return nil
 }
 
-func extractWorkUnitsResult(result *workunit.ActiveWorkUnitsResult) ([]*essmsgpb.WorkUnit, string) {
+func extractWorkUnitsResult(result *workunit.ActiveWorkUnitsResult) (workUnits []*essmsgpb.WorkUnit, nextPageToken string) {
 	if result == nil {
 		return nil, ""
 	}

@@ -159,6 +159,106 @@ func TestExtractRequestedResources(t *testing.T) {
 				{ResourceType: "TPU", Count: 4.0},
 			},
 		},
+		{
+			name: "sidecars and initContainers aggregation",
+			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
+				{
+					Replicas: 1,
+					Spec: &essmsgpb.ExecutableSpec{
+						Resources: &essmsgpb.ResourceSet{
+							Resources: &essmsgpb.ResourceSet_CpuResources{
+								CpuResources: &essmsgpb.CpuResources{CpuMillicores: 2000, MemoryBytes: 4096},
+							},
+						},
+					},
+					InitContainers: []*essmsgpb.ExecutableSpec{
+						{
+							Resources: &essmsgpb.ResourceSet{
+								Resources: &essmsgpb.ResourceSet_CpuResources{
+									CpuResources: &essmsgpb.CpuResources{CpuMillicores: 1000, MemoryBytes: 2048},
+								},
+							},
+						},
+					},
+					Sidecars: []*essmsgpb.ExecutableSpec{
+						{
+							Resources: &essmsgpb.ResourceSet{
+								Resources: &essmsgpb.ResourceSet_GpuResources{
+									GpuResources: &essmsgpb.GpuResources{Type: "nvidia-tesla-t4", Count: 1},
+								},
+							},
+						},
+					},
+				},
+			}),
+			want: []*spb.Resource{
+				{ResourceType: "cpu", Count: 3.0},
+				{ResourceType: "memory", Count: 6144.0},
+				{ResourceType: "nvidia-tesla-t4", Count: 1.0},
+			},
+		},
+		{
+			name: "combined CPU, Memory, GPU, TPU simultaneously",
+			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
+				{
+					Replicas: 1,
+					Spec: &essmsgpb.ExecutableSpec{
+						Resources: &essmsgpb.ResourceSet{
+							Resources: &essmsgpb.ResourceSet_CpuResources{
+								CpuResources: &essmsgpb.CpuResources{CpuMillicores: 8000, MemoryBytes: 16384},
+							},
+						},
+					},
+					Sidecars: []*essmsgpb.ExecutableSpec{
+						{
+							Resources: &essmsgpb.ResourceSet{
+								Resources: &essmsgpb.ResourceSet_GpuResources{
+									GpuResources: &essmsgpb.GpuResources{Type: "nvidia-a100", Count: 4},
+								},
+							},
+						},
+						{
+							Resources: &essmsgpb.ResourceSet{
+								Resources: &essmsgpb.ResourceSet_TpuResources{
+									TpuResources: &essmsgpb.TpuResources{Type: "tpu-v5p", Topology: "2x2x4"},
+								},
+							},
+						},
+					},
+				},
+			}),
+			want: []*spb.Resource{
+				{ResourceType: "cpu", Count: 8.0},
+				{ResourceType: "memory", Count: 16384.0},
+				{ResourceType: "nvidia-a100", Count: 4.0},
+				{ResourceType: "tpu-v5p", Count: 16.0},
+			},
+		},
+		{
+			name: "zero and negative resource amounts ignored",
+			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
+				{
+					Replicas: 1,
+					Spec: &essmsgpb.ExecutableSpec{
+						Resources: &essmsgpb.ResourceSet{
+							Resources: &essmsgpb.ResourceSet_CpuResources{
+								CpuResources: &essmsgpb.CpuResources{CpuMillicores: -1000, MemoryBytes: 0},
+							},
+						},
+					},
+					Sidecars: []*essmsgpb.ExecutableSpec{
+						{
+							Resources: &essmsgpb.ResourceSet{
+								Resources: &essmsgpb.ResourceSet_GpuResources{
+									GpuResources: &essmsgpb.GpuResources{Type: "gpu-zero", Count: 0},
+								},
+							},
+						},
+					},
+				},
+			}),
+			want: []*spb.Resource{},
+		},
 	}
 
 	for _, tt := range tests {
@@ -195,6 +295,8 @@ func TestParseTotalChips(t *testing.T) {
 		{" 2x2x4 ", 16},
 		{"  4X4  ", 16},
 		{"8x8", 64},
+		{"2x2xX", 1},
+		{"2x-2x4", 1},
 		{"invalid", 1},
 	}
 

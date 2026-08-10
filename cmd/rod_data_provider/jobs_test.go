@@ -54,6 +54,26 @@ var (
 				},
 			},
 		},
+		Executable: &essmsgpb.Executable{
+			Type: &essmsgpb.Executable_Jobset{
+				Jobset: &essmsgpb.JobSetExecutable{
+					Jobs: []*essmsgpb.KubernetesJob{
+						{
+							Spec: &essmsgpb.ExecutableSpec{
+								Resources: &essmsgpb.ResourceSet{
+									Resources: &essmsgpb.ResourceSet_CpuResources{
+										CpuResources: &essmsgpb.CpuResources{
+											CpuMillicores: 4000,
+											MemoryBytes:   8192,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 )
 
@@ -174,6 +194,10 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 				Priority:        100,
 				Status:          essmsgpb.WorkUnitStatus_SCHEDULING,
 				PositionInQueue: 1,
+				RequestedResources: []*spb.Resource{
+					{ResourceType: "cpu", Count: 4.0},
+					{ResourceType: "memory", Count: 8192.0},
+				},
 			}
 			if diff := cmp.Diff(wantJob, gotJob, protocmp.Transform(), protocmp.IgnoreFields(&spb.DashboardJob{}, "time_in_queue_seconds", "create_time")); diff != "" {
 				t.Errorf("DashboardJob mismatch (-want +got):\n%s", diff)

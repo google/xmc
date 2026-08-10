@@ -227,7 +227,7 @@ describe('QueueJobResourcesPipe', () => {
     expect(h100Gpu).toEqual([{ resourceType: ResourceType.GPU, text: '4 x H100' }]);
 
     const tpuV4 = pipe.transform([{ resourceType: 'TPU v4', count: 16 }]);
-    expect(tpuV4).toEqual([{ resourceType: ResourceType.GPU, text: '16 x TPU v4' }]);
+    expect(tpuV4).toEqual([{ resourceType: ResourceType.TPU, text: '16 x TPU v4' }]);
 
     const k8sGpu = pipe.transform([{ resourceType: 'nvidia.com/gpu', count: 4 }]);
     expect(k8sGpu).toEqual([{ resourceType: ResourceType.GPU, text: '4 x nvidia.com/gpu' }]);

@@ -90,10 +90,35 @@ export class QueueJobPositionPipe implements PipeTransform {
   }
 }
 
+export const RESOURCE_TYPE_GPU = 'gpu';
+export const RESOURCE_TYPE_TPU = 'tpu';
+
+const GPU_RESOURCE_KEYWORDS = [
+  RESOURCE_TYPE_GPU,
+  'nvidia',
+  'h100',
+  'a100',
+  'v100',
+  'l4',
+  't4',
+  'p100',
+  'k80',
+];
+
+function isGpuResource(lower: string): boolean {
+  return GPU_RESOURCE_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
 function getResourceTypeEnum(typeRaw?: string): ResourceType {
-  const lower = (typeRaw || '').toLowerCase();
+  const lower = (typeRaw || '').trim().toLowerCase();
   if (lower === RESOURCE_TYPE_CPU) return ResourceType.CPU;
   if (lower === RESOURCE_TYPE_MEMORY) return ResourceType.MEMORY;
+  if (lower.includes(RESOURCE_TYPE_TPU)) return ResourceType.TPU;
+  if (isGpuResource(lower)) return ResourceType.GPU;
+
+  if (typeRaw) {
+    console.warn(`Unrecognized resource type: "${typeRaw}"`);
+  }
   return ResourceType.GPU;
 }
 
