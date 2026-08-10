@@ -142,43 +142,48 @@ func calculateQueueDuration(wu *essmsgpb.WorkUnit, now time.Time) int64 {
 
 func extractRequestedResources(wu *essmsgpb.WorkUnit) []*spb.Resource {
 	resSet := extractResourceSet(wu)
-	if resSet == nil {
+	if resSet == nil || resSet.GetResources() == nil {
 		return nil
 	}
 	var resources []*spb.Resource
-	if cpu := resSet.GetCpuResources(); cpu != nil {
-		if cpu.GetCpuMillicores() > 0 {
+	switch r := resSet.GetResources().(type) {
+	case *essmsgpb.ResourceSet_CpuResources:
+		if cpu := r.CpuResources; cpu != nil {
+			if cpu.GetCpuMillicores() > 0 {
+				resources = append(resources, &spb.Resource{
+					ResourceType: "cpu",
+					Count:        float64(cpu.GetCpuMillicores()) / 1000.0,
+				})
+			}
+			if cpu.GetMemoryBytes() > 0 {
+				resources = append(resources, &spb.Resource{
+					ResourceType: "memory",
+					Count:        float64(cpu.GetMemoryBytes()),
+				})
+			}
+		}
+	case *essmsgpb.ResourceSet_GpuResources:
+		if gpu := r.GpuResources; gpu != nil {
+			resType := gpu.GetType()
+			if resType == "" {
+				resType = "nvidia.com/gpu"
+			}
 			resources = append(resources, &spb.Resource{
-				ResourceType: "cpu",
-				Count:        float64(cpu.GetCpuMillicores()) / 1000.0,
+				ResourceType: resType,
+				Count:        float64(gpu.GetCount()),
 			})
 		}
-		if cpu.GetMemoryBytes() > 0 {
+	case *essmsgpb.ResourceSet_TpuResources:
+		if tpu := r.TpuResources; tpu != nil {
+			resType := tpu.GetType()
+			if resType == "" {
+				resType = "google.com/tpu"
+			}
 			resources = append(resources, &spb.Resource{
-				ResourceType: "memory",
-				Count:        float64(cpu.GetMemoryBytes()),
+				ResourceType: resType,
+				Count:        1,
 			})
 		}
-	}
-	if gpu := resSet.GetGpuResources(); gpu != nil {
-		resType := gpu.GetType()
-		if resType == "" {
-			resType = "nvidia.com/gpu"
-		}
-		resources = append(resources, &spb.Resource{
-			ResourceType: resType,
-			Count:        float64(gpu.GetCount()),
-		})
-	}
-	if tpu := resSet.GetTpuResources(); tpu != nil {
-		resType := tpu.GetType()
-		if resType == "" {
-			resType = "google.com/tpu"
-		}
-		resources = append(resources, &spb.Resource{
-			ResourceType: resType,
-			Count:        1,
-		})
 	}
 	return resources
 }
