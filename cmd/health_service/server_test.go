@@ -19,6 +19,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -193,7 +195,24 @@ func TestGetHealthStatus_SomeUnhealthy(t *testing.T) {
 }
 
 func TestListConfigEntries(t *testing.T) {
-	cfg := &Config{Port: "8080", GRPCPort: "50051", ProjectID: "test-project", XidAddr: "localhost:50051"}
+	tempDir := t.TempDir()
+
+	// Mock one directory to verify integration
+	essDir := filepath.Join(tempDir, "ess")
+	if err := os.Mkdir(essDir, 0755); err != nil {
+		t.Fatalf("failed to create ess dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(essDir, "ess_key"), []byte("ess_val"), 0644); err != nil {
+		t.Fatalf("failed to write ess config: %v", err)
+	}
+
+	cfg := &Config{
+		Port:      "8080",
+		GRPCPort:  "50051",
+		ProjectID: "test-project",
+		XidAddr:   "localhost:50051",
+		ConfigDir: tempDir,
+	}
 	s, err := newServer(cfg)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
@@ -205,28 +224,20 @@ func TestListConfigEntries(t *testing.T) {
 		t.Fatalf("ListConfigEntries failed: %v", err)
 	}
 
+	// We expect 1 group (ESS)
 	if len(resp.ConfigGroups) != 1 {
 		t.Fatalf("Expected 1 config group, got %d", len(resp.ConfigGroups))
 	}
 
 	group := resp.ConfigGroups[0]
-	if group.DisplayName != "Health Service Config" {
-		t.Errorf("Expected group display name 'Health Service Config', got %q", group.DisplayName)
+	if group.DisplayName != "Experiment State Server Config" {
+		t.Errorf("Expected group display name 'Experiment State Server Config', got %q", group.DisplayName)
 	}
-
-	configs := make(map[string]string)
-	for _, c := range group.Configs {
-		configs[c.Key] = c.Value
+	if len(group.Configs) != 1 {
+		t.Fatalf("Expected 1 config in group, got %d", len(group.Configs))
 	}
-
-	if configs["Port"] != cfg.Port {
-		t.Errorf("Expected Port %q, got %q", cfg.Port, configs["Port"])
-	}
-	if configs["GRPCPort"] != cfg.GRPCPort {
-		t.Errorf("Expected GRPCPort %q, got %q", cfg.GRPCPort, configs["GRPCPort"])
-	}
-	if configs["ProjectID"] != cfg.ProjectID {
-		t.Errorf("Expected ProjectID %q, got %q", cfg.ProjectID, configs["ProjectID"])
+	if group.Configs[0].Key != "ess_key" || group.Configs[0].Value != "ess_val" {
+		t.Errorf("Unexpected config: got key=%q, val=%q", group.Configs[0].Key, group.Configs[0].Value)
 	}
 }
 
