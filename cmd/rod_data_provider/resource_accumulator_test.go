@@ -70,65 +70,16 @@ func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 		t.Fatalf("RequestedResources len = %d, want 1", len(job.GetRequestedResources()))
 	}
 	res := job.GetRequestedResources()[0]
-	if res.GetResourceType() != "nvidia-tesla-h100" || res.GetCount() != 6.0 {
-		t.Errorf("RequestedResource = %v %v, want nvidia-tesla-h100 6.0", res.GetResourceType(), res.GetCount())
+	if res.GetResourceType() != "nvidia-tesla-h100" || res.GetCount() != 10.0 {
+		t.Errorf("RequestedResource = %v %v, want nvidia-tesla-h100 10.0", res.GetResourceType(), res.GetCount())
 	}
 }
 
-func TestResourceAccumulator(t *testing.T) {
-	t.Run("nil safety", func(t *testing.T) {
-		var nilAcc *resourceAccumulator
-		nilAcc.add("cpu", 10)
-		if nilAcc.toResources() != nil {
-			t.Errorf("toResources() on nil accumulator = %v, want nil", nilAcc.toResources())
-		}
-	})
-
-	t.Run("aggregation and order", func(t *testing.T) {
-		acc := newResourceAccumulator()
-		acc.add("cpu", 2.5)
-		acc.add("memory", 1024)
-		acc.add("cpu", 1.5)
-		acc.add("gpu", 0)  // ignore zero count
-		acc.add("", 5.0)   // ignore empty resType
-		acc.add("gpu", -1) // ignore negative count
-
-		res := acc.toResources()
-		if len(res) != 2 {
-			t.Fatalf("toResources() len = %d, want 2", len(res))
-		}
-		if res[0].GetResourceType() != "cpu" || res[0].GetCount() != 4.0 {
-			t.Errorf("res[0] = %v %v, want cpu 4.0", res[0].GetResourceType(), res[0].GetCount())
-		}
-		if res[1].GetResourceType() != "memory" || res[1].GetCount() != 1024.0 {
-			t.Errorf("res[1] = %v %v, want memory 1024.0", res[1].GetResourceType(), res[1].GetCount())
-		}
-	})
-
-	t.Run("addCpu addGpu addTpu helpers", func(t *testing.T) {
-		acc := newResourceAccumulator()
-		acc.addCpu(&essmsgpb.CpuResources{CpuMillicores: 4000, MemoryBytes: 8192})
-		acc.addGpu(&essmsgpb.GpuResources{Type: "", Count: 2})        // default "GPU"
-		acc.addTpu(&essmsgpb.TpuResources{Type: "", Topology: "2x2"}) // default "TPU", count=1
-		acc.addCpu(nil)
-		acc.addGpu(nil)
-		acc.addTpu(nil)
-
-		res := acc.toResources()
-		if len(res) != 4 {
-			t.Fatalf("toResources() len = %d, want 4", len(res))
-		}
-		if res[0].GetResourceType() != "cpu" || res[0].GetCount() != 4.0 {
-			t.Errorf("res[0] = %v %v, want cpu 4.0", res[0].GetResourceType(), res[0].GetCount())
-		}
-		if res[1].GetResourceType() != "memory" || res[1].GetCount() != 8192.0 {
-			t.Errorf("res[1] = %v %v, want memory 8192.0", res[1].GetResourceType(), res[1].GetCount())
-		}
-		if res[2].GetResourceType() != "GPU" || res[2].GetCount() != 2.0 {
-			t.Errorf("res[2] = %v %v, want GPU 2.0", res[2].GetResourceType(), res[2].GetCount())
-		}
-		if res[3].GetResourceType() != "TPU" || res[3].GetCount() != 1.0 {
-			t.Errorf("res[3] = %v %v, want TPU 1.0", res[3].GetResourceType(), res[3].GetCount())
-		}
-	})
+func TestExtractRequestedResources_NilAndEmpty(t *testing.T) {
+	if extractRequestedResources(nil) != nil {
+		t.Errorf("extractRequestedResources(nil) = %v, want nil", extractRequestedResources(nil))
+	}
+	if extractRequestedResources(&essmsgpb.WorkUnit{}) != nil {
+		t.Errorf("extractRequestedResources(empty) = %v, want nil", extractRequestedResources(&essmsgpb.WorkUnit{}))
+	}
 }

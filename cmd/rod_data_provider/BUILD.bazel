@@ -39,6 +39,7 @@ compat_go_library(
         "//cmd/rod_data_provider/reconciler",
         "//internal/compat/google",
         "//internal/configutil",
+        "//internal/domain/workunit",
         "//internal/logging",
         "//internal/storage/spanner/workunit",
         "//internal/validator",
