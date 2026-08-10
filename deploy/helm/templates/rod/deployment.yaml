@@ -59,6 +59,8 @@ spec:
           name: grpc-port
         env:
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
+        args:
+        - "-spanner_database_name={{ .Values.experimentStateServer.spannerDatabaseName }}"
         readinessProbe:
           httpGet:
             path: /readyz

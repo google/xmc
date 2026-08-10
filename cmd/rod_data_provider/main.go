@@ -122,6 +122,7 @@ func run(ctx context.Context, cfg *Config) error {
 }
 
 func initWorkUnitStore(ctx context.Context, cfg *Config) (WorkUnitFetcher, error) {
+	// TODO: Replace mock WorkUnit storage with real Spanner repository initialization once Spanner query implementation is merged.
 	logging.Info(ctx, "Using mock WorkUnit storage for PR 404")
 	return &workunit.Repository{}, nil
 }
