@@ -164,17 +164,18 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			if gotJob.GetTimeInQueueSeconds() < 599 || gotJob.GetTimeInQueueSeconds() > 601 {
 				t.Errorf("TimeInQueueSeconds = %d, want ~600", gotJob.GetTimeInQueueSeconds())
 			}
-			wantJob := &spb.DashboardJob{
-				Xid:                100,
-				WorkUnitId:         1,
-				User:               "test@example.com",
-				Priority:           100,
-				Status:             essmsgpb.WorkUnitStatus_SCHEDULING,
-				PositionInQueue:    1,
-				TimeInQueueSeconds: gotJob.GetTimeInQueueSeconds(),
-				CreateTime:         gotJob.GetCreateTime(),
+			if gotJob.GetCreateTime() == nil {
+				t.Errorf("CreateTime is nil, want non-nil timestamp")
 			}
-			if diff := cmp.Diff(wantJob, gotJob, protocmp.Transform()); diff != "" {
+			wantJob := &spb.DashboardJob{
+				Xid:             100,
+				WorkUnitId:      1,
+				User:            "test@example.com",
+				Priority:        100,
+				Status:          essmsgpb.WorkUnitStatus_SCHEDULING,
+				PositionInQueue: 1,
+			}
+			if diff := cmp.Diff(wantJob, gotJob, protocmp.Transform(), protocmp.IgnoreFields(&spb.DashboardJob{}, "time_in_queue_seconds", "create_time")); diff != "" {
 				t.Errorf("DashboardJob mismatch (-want +got):\n%s", diff)
 			}
 		})
