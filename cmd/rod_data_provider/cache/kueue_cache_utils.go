@@ -24,13 +24,15 @@ func (c *KueueCache) GetLocalQueuesForClusterQueue(clusterQueueName string) []st
 		return nil
 	}
 
+	seen := make(map[string]bool)
 	var matchedNames []string
 	localQueues := c.LocalQueues.List()
 	for _, lq := range localQueues {
 		if lq == nil {
 			continue
 		}
-		if string(lq.Spec.ClusterQueue) == clusterQueueName {
+		if string(lq.Spec.ClusterQueue) == clusterQueueName && !seen[lq.Name] {
+			seen[lq.Name] = true
 			matchedNames = append(matchedNames, lq.Name)
 		}
 	}
