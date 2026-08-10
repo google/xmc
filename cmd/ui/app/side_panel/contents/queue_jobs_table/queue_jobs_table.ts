@@ -21,6 +21,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterModule } from '@angular/router';
 import { catchError, map, of, switchMap, tap } from 'rxjs';
 
+import { ResourceChip } from 'xmanager_cloud/ui/app/common/components/resource_chip/resource_chip';
 import { StatusChip } from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import {
@@ -28,7 +29,11 @@ import {
   BaseSidePanelData,
 } from 'xmanager_cloud/ui/app/side_panel/base_side_panel';
 
-import { QueueJobPositionPipe, QueueJobStatusPipe } from './queue_jobs_pipes';
+import {
+  QueueJobPositionPipe,
+  QueueJobResourcesPipe,
+  QueueJobStatusPipe,
+} from './queue_jobs_pipes';
 
 /** Payload data required to open the queue jobs inspection panel. */
 export class QueueJobsTableData implements BaseSidePanelData {
@@ -51,8 +56,10 @@ export class QueueJobsTableData implements BaseSidePanelData {
     MatButtonModule,
     MatTooltipModule,
     StatusChip,
+    ResourceChip,
     QueueJobStatusPipe,
     QueueJobPositionPipe,
+    QueueJobResourcesPipe,
   ],
 })
 export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> {
@@ -92,6 +99,7 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
     'jobName',
     'status',
     'priority',
+    'resources',
     'workUnitId',
     'user',
   ];

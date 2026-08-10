@@ -54,6 +54,26 @@ var (
 				},
 			},
 		},
+		Executable: &essmsgpb.Executable{
+			Type: &essmsgpb.Executable_Jobset{
+				Jobset: &essmsgpb.JobSetExecutable{
+					Jobs: []*essmsgpb.KubernetesJob{
+						{
+							Spec: &essmsgpb.ExecutableSpec{
+								Resources: &essmsgpb.ResourceSet{
+									Resources: &essmsgpb.ResourceSet_CpuResources{
+										CpuResources: &essmsgpb.CpuResources{
+											CpuMillicores: 4000,
+											MemoryBytes:   8192,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 )
 
@@ -174,6 +194,10 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 				Priority:        100,
 				Status:          essmsgpb.WorkUnitStatus_SCHEDULING,
 				PositionInQueue: 1,
+				RequestedResources: []*spb.Resource{
+					{ResourceType: "cpu", Count: 4.0},
+					{ResourceType: "memory", Count: 8192.0},
+				},
 			}
 			if diff := cmp.Diff(wantJob, gotJob, protocmp.Transform(), protocmp.IgnoreFields(&spb.DashboardJob{}, "time_in_queue_seconds", "create_time")); diff != "" {
 				t.Errorf("DashboardJob mismatch (-want +got):\n%s", diff)
@@ -193,5 +217,57 @@ func TestGetRunningAndPendingJobs_ContextCancelled(t *testing.T) {
 
 	if status.Code(err) != codes.Canceled {
 		t.Errorf("GetRunningAndPendingJobs status code = %v, want %v", status.Code(err), codes.Canceled)
+	}
+}
+
+func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
+	now := time.Now()
+	wu := proto.Modify(baseWorkUnit, func(w *essmsgpb.WorkUnit) {
+		w.Executable = &essmsgpb.Executable{
+			Type: &essmsgpb.Executable_Jobset{
+				Jobset: &essmsgpb.JobSetExecutable{
+					Jobs: []*essmsgpb.KubernetesJob{
+						{
+							Replicas: 2,
+							Spec: &essmsgpb.ExecutableSpec{
+								Resources: &essmsgpb.ResourceSet{
+									Resources: &essmsgpb.ResourceSet_GpuResources{
+										GpuResources: &essmsgpb.GpuResources{
+											Type:  "nvidia-tesla-h100",
+											Count: 4,
+										},
+									},
+								},
+							},
+						},
+						{
+							Replicas: 1,
+							Spec: &essmsgpb.ExecutableSpec{
+								Resources: &essmsgpb.ResourceSet{
+									Resources: &essmsgpb.ResourceSet_GpuResources{
+										GpuResources: &essmsgpb.GpuResources{
+											Type:  "nvidia-tesla-h100",
+											Count: 2,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+	})
+
+	job := mapWorkUnitToDashboardJob(context.Background(), wu, now)
+	if job == nil {
+		t.Fatalf("mapWorkUnitToDashboardJob returned nil")
+	}
+	if len(job.GetRequestedResources()) != 1 {
+		t.Fatalf("RequestedResources len = %d, want 1", len(job.GetRequestedResources()))
+	}
+	res := job.GetRequestedResources()[0]
+	if res.GetResourceType() != "nvidia-tesla-h100" || res.GetCount() != 10.0 {
+		t.Errorf("RequestedResource = %v %v, want nvidia-tesla-h100 10.0", res.GetResourceType(), res.GetCount())
 	}
 }
