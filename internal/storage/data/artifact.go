@@ -76,41 +76,48 @@ func MergeArtifacts(current, updated *pb.Artifact, updateMask *fieldmaskpb.Field
 
 	merged := proto.Clone(current).(*pb.Artifact)
 	for _, path := range updateMask.GetPaths() {
-		switch path {
-		case "acls":
-			merged.Acls = updated.Acls
-		case "url":
-			if updated.Url == nil {
-				return nil, fmt.Errorf("url field cannot be nil: %w", status.ErrInvalidArgument)
-			}
-			merged.Url = updated.Url
-			merged.Priority = updated.Url.Priority
-		case "priority":
-			merged.Priority = updated.Priority
-			if merged.Url == nil {
-				merged.Url = &pb.Url{}
-			}
-			merged.Url.Priority = updated.Priority
-		case "tags":
-			if updated.Tags == nil {
-				return nil, fmt.Errorf("tags field cannot be nil: %w", status.ErrInvalidArgument)
-			}
-			merged.Tags = updated.Tags
-		case "notes":
-			merged.Notes = updated.Notes
-		case "lifecycle_phase":
-			merged.LifecyclePhase = updated.LifecyclePhase
-		case "data_type":
-			merged.DataType = updated.DataType
-		case "mime_type":
-			merged.MimeType = updated.MimeType
-		case "additional_info":
-			merged.AdditionalInfo = updated.AdditionalInfo
-		case "payload":
-			merged.Payload = updated.Payload
-		default:
-			return nil, fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+		if err := mergeArtifactField(merged, updated, path); err != nil {
+			return nil, err
 		}
 	}
 	return merged, nil
+}
+
+func mergeArtifactField(merged, updated *pb.Artifact, path string) error {
+	switch path {
+	case "acls":
+		merged.Acls = updated.Acls
+	case "url":
+		if updated.Url == nil {
+			return fmt.Errorf("url field cannot be nil: %w", status.ErrInvalidArgument)
+		}
+		merged.Url = updated.Url
+		merged.Priority = updated.Url.Priority
+	case "priority":
+		merged.Priority = updated.Priority
+		if merged.Url == nil {
+			merged.Url = &pb.Url{}
+		}
+		merged.Url.Priority = updated.Priority
+	case "tags":
+		if updated.Tags == nil {
+			return fmt.Errorf("tags field cannot be nil: %w", status.ErrInvalidArgument)
+		}
+		merged.Tags = updated.Tags
+	case "notes":
+		merged.Notes = updated.Notes
+	case "lifecycle_phase":
+		merged.LifecyclePhase = updated.LifecyclePhase
+	case "data_type":
+		merged.DataType = updated.DataType
+	case "mime_type":
+		merged.MimeType = updated.MimeType
+	case "additional_info":
+		merged.AdditionalInfo = updated.AdditionalInfo
+	case "payload":
+		merged.Payload = updated.Payload
+	default:
+		return fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+	}
+	return nil
 }
