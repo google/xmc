@@ -40,10 +40,15 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 		return nil, status.Error(codes.Unavailable, "work unit store is uninitialized")
 	}
 
-	// TODO: Fetch all LocalQueues connected to a given ClusterQueue
 	clusterQueueName := req.GetQueueName()
 
 	targetQueues := []string{clusterQueueName}
+	if s.cache != nil {
+		localQueues := s.cache.GetLocalQueuesForClusterQueue(clusterQueueName)
+		if len(localQueues) > 0 {
+			targetQueues = append(targetQueues, localQueues...)
+		}
+	}
 
 	workUnits, nextPageToken, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, req.GetPageSize(), req.GetPageToken())
 	if err != nil {
