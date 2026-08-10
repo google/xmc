@@ -46,6 +46,9 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 
 	// TODO: Fetch all LocalQueues connected to a given ClusterQueue
 	var targetQueues []string
+	if len(targetQueues) == 0 {
+		targetQueues = []string{req.GetQueueName()}
+	}
 
 	result, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, req.GetPageSize(), req.GetPageToken())
 	if err != nil {
