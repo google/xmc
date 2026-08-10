@@ -266,6 +266,8 @@ func TestRunChecks_SpannerMetadata(t *testing.T) {
 	}
 }
 
+var _ RedisPingClient = (*mockRedisClient)(nil)
+
 type mockRedisClient struct {
 	err error
 }

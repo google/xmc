@@ -86,7 +86,9 @@ func main() {
 		publisher := redisclient.NewPublisher(redisCfg, "")
 		redisPingClient = publisher
 		defer func() {
-			if err := publisher.Close(context.Background()); err != nil {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := publisher.Close(cleanupCtx); err != nil {
 				logging.Error(ctx, "Failed to close redis client", "error", err)
 			}
 		}()
