@@ -16,16 +16,19 @@ package workunit
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
-	"google.golang.org/protobuf/types/known/timestamppb"
+	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/storage/spanner/data/spannerdata"
+	"xmanager_cloud/storage/spanner/schema/workunitschema"
 )
 
 // FetchActiveWorkUnitsByQueues queries Spanner for active and pending work units assigned to the given queues.
-// TODO: Implement Spanner query to fetch active work units for given queues.
 //
 //nolint:revive // standard repository pattern returning (results, pageToken, err)
 func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) ([]*essmsgpb.WorkUnit, string, error) {
@@ -33,7 +36,6 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 }
 
 // FetchActiveWorkUnitsByQueuesAt queries Spanner using deterministic reference time now.
-// TODO: Implement Spanner query to fetch active work units for given queues.
 //
 //nolint:revive // standard repository pattern returning (results, pageToken, err)
 func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNames []string, pageSize int32, pageToken string, now time.Time) ([]*essmsgpb.WorkUnit, string, error) {
@@ -41,61 +43,36 @@ func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNa
 		return []*essmsgpb.WorkUnit{}, "", nil
 	}
 
-	queueName := queueNames[0]
+	// TODO(#186): Implement cursor-based pagination using page tokens when job list volume increases.
+	sql := `SELECT ` + strings.Join(workunitschema.WorkUnitColumns, ", ") + `
+	FROM WorkUnits wu
+	WHERE wu.QueueName IN UNNEST(@queueNames)
+	  AND wu.IsPendingOrRunningJob IS NOT NULL
+	ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC`
 
-	// Returns mocked WorkUnits for development and UI prototyping.
-	mockedWorkUnits := []*essmsgpb.WorkUnit{
-		{
-			Name:       validator.ConstructWorkUnitName(100, 1),
-			Priority:   essmsgpb.Priority(100),
-			CreateTime: timestamppb.New(now.Add(-10 * time.Minute)),
-			Notes:      "test@example.com",
-			Executable: &essmsgpb.Executable{
-				SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-					QueueName: queueName,
-				},
-			},
-			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
-				Status: &essmsgpb.WorkUnitStatus{
-					State: essmsgpb.WorkUnitStatus_SCHEDULING,
-					SchedulingInformation: &essmsgpb.StructuredMessage{
-						AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{
-							Detail: &essmsgpb.AuxiliaryInfo_QueueInfo{
-								QueueInfo: &essmsgpb.QueueInfo{
-									PositionInQueue: 1,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			Name:       validator.ConstructWorkUnitName(100, 2),
-			Priority:   essmsgpb.Priority(50),
-			CreateTime: timestamppb.New(now.Add(-5 * time.Minute)),
-			Notes:      "dev@example.com",
-			Executable: &essmsgpb.Executable{
-				SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-					QueueName: queueName,
-				},
-			},
-			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
-				Status: &essmsgpb.WorkUnitStatus{
-					State: essmsgpb.WorkUnitStatus_RUNNING,
-					SchedulingInformation: &essmsgpb.StructuredMessage{
-						AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{
-							Detail: &essmsgpb.AuxiliaryInfo_QueueInfo{
-								QueueInfo: &essmsgpb.QueueInfo{
-									PositionInQueue: -1,
-								},
-							},
-						},
-					},
-				},
-			},
+	stmt := spanner.Statement{
+		SQL: sql,
+		Params: map[string]interface{}{
+			"queueNames": queueNames,
 		},
 	}
 
-	return mockedWorkUnits, "", nil
+	iter := r.client.Single().Query(ctx, stmt)
+	defer iter.Stop()
+
+	var workUnits []*essmsgpb.WorkUnit
+	if err := iter.Do(func(row *spanner.Row) error {
+		wu, err := spannerdata.WorkUnitRowToProto(row)
+		if err != nil {
+			logging.Error(ctx, "failed to convert WorkUnit row to WorkUnit", "error", err)
+			return err
+		}
+		workUnits = append(workUnits, wu)
+		return nil
+	}); err != nil {
+		logging.Error(ctx, "failed to read WorkUnit rows", "error", err)
+		return nil, "", fmt.Errorf("failed to read WorkUnit rows: %w", err)
+	}
+
+	return workUnits, "", nil
 }
