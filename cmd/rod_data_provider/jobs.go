@@ -141,60 +141,67 @@ func calculateQueueDuration(wu *essmsgpb.WorkUnit, now time.Time) int64 {
 }
 
 func extractRequestedResources(wu *essmsgpb.WorkUnit) []*spb.Resource {
-	resSet := extractResourceSet(wu)
-	if resSet == nil || resSet.GetResources() == nil {
-		return nil
-	}
-	var resources []*spb.Resource
-	switch r := resSet.GetResources().(type) {
-	case *essmsgpb.ResourceSet_CpuResources:
-		if cpu := r.CpuResources; cpu != nil {
-			if cpu.GetCpuMillicores() > 0 {
-				resources = append(resources, &spb.Resource{
-					ResourceType: "cpu",
-					Count:        float64(cpu.GetCpuMillicores()) / 1000.0,
-				})
-			}
-			if cpu.GetMemoryBytes() > 0 {
-				resources = append(resources, &spb.Resource{
-					ResourceType: "memory",
-					Count:        float64(cpu.GetMemoryBytes()),
-				})
-			}
-		}
-	case *essmsgpb.ResourceSet_GpuResources:
-		if gpu := r.GpuResources; gpu != nil {
-			resType := gpu.GetType()
-			if resType == "" {
-				resType = "GPU"
-			}
-			resources = append(resources, &spb.Resource{
-				ResourceType: resType,
-				Count:        float64(gpu.GetCount()),
-			})
-		}
-	case *essmsgpb.ResourceSet_TpuResources:
-		if tpu := r.TpuResources; tpu != nil {
-			resType := tpu.GetType()
-			if resType == "" {
-				resType = "TPU"
-			}
-			resources = append(resources, &spb.Resource{
-				ResourceType: resType,
-				Count:        1,
-			})
-		}
-	}
-	return resources
-}
-
-func extractResourceSet(wu *essmsgpb.WorkUnit) *essmsgpb.ResourceSet {
 	if wu == nil || wu.GetExecutable() == nil || wu.GetExecutable().GetJobset() == nil {
 		return nil
 	}
 	jobs := wu.GetExecutable().GetJobset().GetJobs()
-	if len(jobs) == 0 || jobs[0] == nil || jobs[0].GetSpec() == nil {
+	if len(jobs) == 0 {
 		return nil
 	}
-	return jobs[0].GetSpec().GetResources()
+
+	totals := make(map[string]float64)
+	var order []string
+
+	addResource := func(resType string, count float64) {
+		if count <= 0 {
+			return
+		}
+		if _, exists := totals[resType]; !exists {
+			order = append(order, resType)
+		}
+		totals[resType] += count
+	}
+
+	for _, job := range jobs {
+		if job == nil || job.GetSpec() == nil || job.GetSpec().GetResources() == nil {
+			continue
+		}
+		resSet := job.GetSpec().GetResources()
+		switch r := resSet.GetResources().(type) {
+		case *essmsgpb.ResourceSet_CpuResources:
+			if cpu := r.CpuResources; cpu != nil {
+				if cpu.GetCpuMillicores() > 0 {
+					addResource("cpu", float64(cpu.GetCpuMillicores())/1000.0)
+				}
+				if cpu.GetMemoryBytes() > 0 {
+					addResource("memory", float64(cpu.GetMemoryBytes()))
+				}
+			}
+		case *essmsgpb.ResourceSet_GpuResources:
+			if gpu := r.GpuResources; gpu != nil {
+				resType := gpu.GetType()
+				if resType == "" {
+					resType = "GPU"
+				}
+				addResource(resType, float64(gpu.GetCount()))
+			}
+		case *essmsgpb.ResourceSet_TpuResources:
+			if tpu := r.TpuResources; tpu != nil {
+				resType := tpu.GetType()
+				if resType == "" {
+					resType = "TPU"
+				}
+				addResource(resType, 1)
+			}
+		}
+	}
+
+	var resources []*spb.Resource
+	for _, resType := range order {
+		resources = append(resources, &spb.Resource{
+			ResourceType: resType,
+			Count:        totals[resType],
+		})
+	}
+	return resources
 }

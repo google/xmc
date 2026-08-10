@@ -219,6 +219,19 @@ func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 								},
 							},
 						},
+						{
+							Replicas: 1,
+							Spec: &essmsgpb.ExecutableSpec{
+								Resources: &essmsgpb.ResourceSet{
+									Resources: &essmsgpb.ResourceSet_GpuResources{
+										GpuResources: &essmsgpb.GpuResources{
+											Type:  "nvidia-tesla-h100",
+											Count: 2,
+										},
+									},
+								},
+							},
+						},
 					},
 				},
 			},
@@ -233,7 +246,7 @@ func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 		t.Fatalf("RequestedResources len = %d, want 1", len(job.GetRequestedResources()))
 	}
 	res := job.GetRequestedResources()[0]
-	if res.GetResourceType() != "nvidia-tesla-h100" || res.GetCount() != 4.0 {
-		t.Errorf("RequestedResource = %v %v, want nvidia-tesla-h100 4.0", res.GetResourceType(), res.GetCount())
+	if res.GetResourceType() != "nvidia-tesla-h100" || res.GetCount() != 6.0 {
+		t.Errorf("RequestedResource = %v %v, want nvidia-tesla-h100 6.0", res.GetResourceType(), res.GetCount())
 	}
 }
