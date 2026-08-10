@@ -20,7 +20,6 @@ compat_go_library(
     name = "cache",
     srcs = [
         "kueue_cache.go",
-        "kueue_cache_utils.go",
         "resource_cache.go",
     ],
     importpath = "xmanager_cloud/cmd/rod_data_provider/cache",
@@ -35,7 +34,6 @@ compat_go_test(
     name = "cache_test",
     srcs = [
         "kueue_cache_test.go",
-        "kueue_cache_utils_test.go",
         "resource_cache_test.go",
     ],
     embed = [":cache"],

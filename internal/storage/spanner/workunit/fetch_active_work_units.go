@@ -20,18 +20,18 @@ import (
 	"strings"
 
 	"cloud.google.com/go/spanner"
-	"github.com/google/go-safesql"
+	"googlesql/safesql/go/safesql"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/schema"
 	"xmanager_cloud/logging/logging"
+	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
+	workunitschema "xmanager_cloud/storage/spanner/schema/workunitschema"
 )
 
 const defaultPageSize = int64(100)
 
-var fetchActiveWorkUnitsByQueuesSQL = safesql.MustCompile(
-	`SELECT ` + strings.Join(schema.WorkUnitColumns, ", ") + `
+var fetchActiveWorkUnitsByQueuesSQL = safesql.New(
+	`SELECT ` + strings.Join(workunitschema.WorkUnitColumns, ", ") + `
 	FROM WorkUnits wu
 	WHERE wu.QueueName IN UNNEST(@queueNames)
 	  AND wu.IsPendingOrRunningJob IS NOT NULL
@@ -54,6 +54,14 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+
+	if r == nil || r.client == nil {
+		logging.Warn(ctx, "WorkUnit storage client is uninitialized, returning empty active work units")
+		return &ActiveWorkUnitsResult{
+			WorkUnits:     []*essmsgpb.WorkUnit{},
+			NextPageToken: "",
+		}, nil
 	}
 
 	if len(queueNames) == 0 {
@@ -84,7 +92,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNa
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		wu, err := data.WorkUnitRowToProto(row)
+		wu, err := spannerdata.WorkUnitRowToProto(row)
 		if err != nil {
 			return fmt.Errorf("failed to convert WorkUnit row to WorkUnit: %w", err)
 		}
