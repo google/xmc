@@ -16,143 +16,88 @@ package workunit
 
 import (
 	"context"
-	"time"
+	"fmt"
+	"strings"
 
-	"google.golang.org/protobuf/types/known/timestamppb"
+	"cloud.google.com/go/spanner"
+	"github.com/google/go-safesql"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
-	"xmanager_cloud/validator/validator"
+	"xmanager_cloud/internal/storage/spanner/data"
+	"xmanager_cloud/internal/storage/spanner/schema"
+	"xmanager_cloud/logging/logging"
 )
 
-// ActiveWorkUnitsResult encapsulates the result of querying active work units.
+const defaultPageSize = int64(100)
+
+var fetchActiveWorkUnitsByQueuesSQL = safesql.MustCompile(
+	`SELECT ` + strings.Join(schema.WorkUnitColumns, ", ") + `
+	FROM WorkUnits wu
+	WHERE wu.QueueName IN UNNEST(@queueNames)
+	  AND wu.IsPendingOrRunningJob IS NOT NULL
+	ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC
+	LIMIT @pageSize`,
+).String()
+
+// ActiveWorkUnitsResult holds the result of querying active work units.
 type ActiveWorkUnitsResult struct {
 	WorkUnits     []*essmsgpb.WorkUnit
 	NextPageToken string
 }
 
 // FetchActiveWorkUnitsByQueues queries Spanner for active and pending work units assigned to the given queues.
-// TODO: Implement Spanner query to fetch active work units for given queues.
 func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error) {
-	return r.FetchActiveWorkUnitsByQueuesAt(ctx, queueNames, pageSize, pageToken, time.Now())
+	return r.FetchActiveWorkUnitsByQueuesAt(ctx, queueNames, pageSize, pageToken)
 }
 
-// FetchActiveWorkUnitsByQueuesAt queries Spanner using deterministic reference time now.
-// TODO: Implement Spanner query to fetch active work units for given queues.
-func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNames []string, pageSize int32, pageToken string, now time.Time) (*ActiveWorkUnitsResult, error) {
+// FetchActiveWorkUnitsByQueuesAt queries Spanner for active work units assigned to the given queues.
+func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+
 	if len(queueNames) == 0 {
 		return &ActiveWorkUnitsResult{
-			WorkUnits: []*essmsgpb.WorkUnit{},
+			WorkUnits:     []*essmsgpb.WorkUnit{},
+			NextPageToken: "",
 		}, nil
 	}
+
+	pageSizeVal := int64(pageSize)
+	if pageSizeVal <= 0 {
+		pageSizeVal = defaultPageSize
+	}
+
+	stmt := spanner.Statement{
+		SQL: fetchActiveWorkUnitsByQueuesSQL,
+		Params: map[string]interface{}{
+			"queueNames": queueNames,
+			"pageSize":   pageSizeVal,
+		},
+	}
+
+	iter := r.client.Single().Query(ctx, stmt)
+	defer iter.Stop()
+
+	var workUnits []*essmsgpb.WorkUnit
+	if err := iter.Do(func(row *spanner.Row) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		wu, err := data.WorkUnitRowToProto(row)
+		if err != nil {
+			logging.Error(ctx, "failed to convert WorkUnit row to WorkUnit", "error", err)
+			return fmt.Errorf("failed to convert WorkUnit row to WorkUnit: %w", err)
+		}
+		workUnits = append(workUnits, wu)
+		return nil
+	}); err != nil {
+		logging.Error(ctx, "failed to read WorkUnit rows", "error", err)
+		return nil, fmt.Errorf("failed to read WorkUnit rows: %w", err)
+	}
+
 	return &ActiveWorkUnitsResult{
-		WorkUnits: buildMockActiveWorkUnits(queueNames[0], now),
+		WorkUnits:     workUnits,
+		NextPageToken: "",
 	}, nil
-}
-
-func buildMockActiveWorkUnits(queueName string, now time.Time) []*essmsgpb.WorkUnit {
-	return []*essmsgpb.WorkUnit{
-		{
-			Name:       validator.ConstructWorkUnitName(100, 1),
-			Priority:   essmsgpb.Priority(100),
-			CreateTime: timestamppb.New(now.Add(-10 * time.Minute)),
-			Notes:      "test@example.com",
-			Executable: buildMockExecutable(queueName, 8000, 34359738368, "NVIDIA-H100-80GB", 4, "", ""),
-			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
-				Status: &essmsgpb.WorkUnitStatus{
-					State: essmsgpb.WorkUnitStatus_SCHEDULING,
-					SchedulingInformation: &essmsgpb.StructuredMessage{
-						AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{
-							Detail: &essmsgpb.AuxiliaryInfo_QueueInfo{
-								QueueInfo: &essmsgpb.QueueInfo{
-									PositionInQueue: 1,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			Name:       validator.ConstructWorkUnitName(100, 2),
-			Priority:   essmsgpb.Priority(50),
-			CreateTime: timestamppb.New(now.Add(-5 * time.Minute)),
-			Notes:      "dev@example.com",
-			Executable: buildMockExecutable(queueName, 16000, 68719476736, "", 0, "v4-16", "2x2x4"),
-			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
-				Status: &essmsgpb.WorkUnitStatus{
-					State: essmsgpb.WorkUnitStatus_RUNNING,
-					SchedulingInformation: &essmsgpb.StructuredMessage{
-						AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{
-							Detail: &essmsgpb.AuxiliaryInfo_QueueInfo{
-								QueueInfo: &essmsgpb.QueueInfo{
-									PositionInQueue: -1,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-}
-
-func buildMockExecutable(queueName string, cpuMillicores, memoryBytes int64, gpuType string, gpuCount int64, tpuType, tpuTopology string) *essmsgpb.Executable {
-	jobs := []*essmsgpb.KubernetesJob{
-		{
-			Replicas: 1,
-			Spec: &essmsgpb.ExecutableSpec{
-				Resources: &essmsgpb.ResourceSet{
-					Resources: &essmsgpb.ResourceSet_CpuResources{
-						CpuResources: &essmsgpb.CpuResources{
-							CpuMillicores: cpuMillicores,
-							MemoryBytes:   memoryBytes,
-						},
-					},
-				},
-			},
-		},
-	}
-	if gpuType != "" || gpuCount > 0 {
-		jobs = append(jobs, &essmsgpb.KubernetesJob{
-			Replicas: 1,
-			Spec: &essmsgpb.ExecutableSpec{
-				Resources: &essmsgpb.ResourceSet{
-					Resources: &essmsgpb.ResourceSet_GpuResources{
-						GpuResources: &essmsgpb.GpuResources{
-							Type:  gpuType,
-							Count: gpuCount,
-						},
-					},
-				},
-			},
-		})
-	}
-	if tpuType != "" || tpuTopology != "" {
-		jobs = append(jobs, &essmsgpb.KubernetesJob{
-			Replicas: 1,
-			Spec: &essmsgpb.ExecutableSpec{
-				Resources: &essmsgpb.ResourceSet{
-					Resources: &essmsgpb.ResourceSet_TpuResources{
-						TpuResources: &essmsgpb.TpuResources{
-							Type:     tpuType,
-							Topology: tpuTopology,
-						},
-					},
-				},
-			},
-		})
-	}
-	return &essmsgpb.Executable{
-		SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-			QueueName: queueName,
-		},
-		Type: &essmsgpb.Executable_Jobset{
-			Jobset: &essmsgpb.JobSetExecutable{
-				Jobs: jobs,
-			},
-		},
-	}
 }
