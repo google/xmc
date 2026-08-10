@@ -25,7 +25,6 @@ import (
 	"syscall"
 	"time"
 
-	"cloud.google.com/go/spanner"
 	"go/google"
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/grpc/grpc"
@@ -34,25 +33,36 @@ import (
 	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/task_queue_redis/redisclient"
+
+	"cloud.google.com/go/spanner"
 
 	gwpb "xmanager_cloud/health_service/proto/api_go_grpc_gateway_proto"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 )
 
 type grpcServerDeps struct {
-	grpcServer *grpc.Server
-	listener   net.Listener
-	srv        *server
-	essClient  *spanner.Client
-	xidClient  *spanner.Client
+	grpcServer  *grpc.Server
+	listener    net.Listener
+	srv         *server
+	essClient   *spanner.Client
+	xidClient   *spanner.Client
+	redisClient *redisclient.PublisherClient
 }
 
-func (d *grpcServerDeps) Close() {
+func (d *grpcServerDeps) Close(ctx context.Context) {
 	if d.essClient != nil {
 		d.essClient.Close()
 	}
 	if d.xidClient != nil {
 		d.xidClient.Close()
+	}
+	if d.redisClient != nil {
+		cleanupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := d.redisClient.Close(cleanupCtx); err != nil {
+			logging.Error(ctx, "Failed to close redis client", "error", err)
+		}
 	}
 }
 
@@ -74,7 +84,7 @@ func main() {
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
 
 	deps := initGRPCServer(ctx, cfg)
-	defer deps.Close()
+	defer deps.Close(ctx)
 
 	go func() {
 		logging.Info(ctx, "Health service gRPC starting", "addr", deps.listener.Addr())
@@ -148,7 +158,15 @@ func initGRPCServer(ctx context.Context, cfg *Config) *grpcServerDeps {
 	essClient, essHealth := initSpannerHealthClient(ctx, cfg.EssSpannerDatabase, "ESS")
 	xidClient, xidHealth := initSpannerHealthClient(ctx, cfg.XidSpannerDatabase, "XID")
 
-	srv, err := newServer(cfg, essHealth, xidHealth)
+	var redisPingClient RedisPingClient
+	var publisher *redisclient.PublisherClient
+	if cfg.RedisAddr != "" {
+		redisCfg := redisclient.Config{Addr: cfg.RedisAddr}
+		publisher = redisclient.NewPublisher(redisCfg, "")
+		redisPingClient = publisher
+	}
+
+	srv, err := newServer(cfg, essHealth, xidHealth, redisPingClient)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create server", "error", err)
 	}
@@ -156,11 +174,12 @@ func initGRPCServer(ctx context.Context, cfg *Config) *grpcServerDeps {
 	reflection.Register(grpcServer)
 
 	return &grpcServerDeps{
-		grpcServer: grpcServer,
-		listener:   lis,
-		srv:        srv,
-		essClient:  essClient,
-		xidClient:  xidClient,
+		grpcServer:  grpcServer,
+		listener:    lis,
+		srv:         srv,
+		essClient:   essClient,
+		xidClient:   xidClient,
+		redisClient: publisher,
 	}
 }
 

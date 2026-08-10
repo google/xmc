@@ -35,6 +35,7 @@ type Config struct {
 	ConfigDir          string
 	EssSpannerDatabase string
 	XidSpannerDatabase string
+	RedisAddr          string
 }
 
 var cfg Config
@@ -47,6 +48,7 @@ func init() {
 	configutil.StringEnv(&cfg.ReconcilerURL, "health_reconciler_url", "http://reconciler-svc:8080")
 	configutil.StringEnv(&cfg.EssSpannerDatabase, "health_ess_spanner_database_name", "")
 	configutil.StringEnv(&cfg.XidSpannerDatabase, "health_xid_spanner_database_name", "")
+	configutil.StringEnv(&cfg.RedisAddr, "health_redis_addr", "")
 
 	defaultPort := os.Getenv("PORT")
 	if defaultPort == "" {

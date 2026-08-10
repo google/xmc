@@ -34,6 +34,7 @@ compat_go_library(
         "//internal/configutil",
         "//internal/logging",
         "//internal/security/tlsutil",
+        "//internal/task_queue_redis/redisclient",
         "//pkg/auth/oauth2",
         "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
         "@com_google_cloud_go_spanner//:spanner",
