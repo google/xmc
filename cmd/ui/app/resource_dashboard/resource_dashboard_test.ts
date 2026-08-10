@@ -77,7 +77,7 @@ describe('ResourceDashboard Container', () => {
     resourceService.getClusterQueues.and.returnValue(
       of({ queues: [mockGpuQueue, mockCpuQueue] } as GetFittingQueuesResponse),
     );
-    resourceService.getQueueJobs.and.returnValue(of({ queueName: 'gpu-cluster-queue', jobs: [] }));
+    resourceService.getQueueJobs.and.returnValue(of({ jobs: [], totalQueueSize: 0 }));
 
     setupModule({
       imports: [TestHostComponent, NoopAnimationsModule],

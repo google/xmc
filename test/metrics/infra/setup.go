@@ -263,6 +263,7 @@ func ExecuteSQLScript(ctx context.Context, conn driver.Conn, scriptPath string, 
 
 	s := string(content)
 	s = strings.ReplaceAll(s, "{kafka_broker_list:redpanda-0.redpanda.xmc.svc.cluster.local:9092}", internalBroker)
+	s = strings.ReplaceAll(s, "'redpanda-0.redpanda.xmc.svc.cluster.local:9092'", fmt.Sprintf("'%s'", internalBroker))
 	s = strings.ReplaceAll(s, "{kafka_topic_list:xmc-metrics}", "xmc-metrics")
 	s = strings.ReplaceAll(s, "{kafka_group_name:xmc-clickhouse-ingester}", "xmc-clickhouse-ingester")
 	s = strings.ReplaceAll(s, "stream_flush_interval_ms", "kafka_flush_interval_ms")

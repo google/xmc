@@ -67,11 +67,12 @@ func (s *Server) UpdateWorkUnit(ctx context.Context, req *apipb.UpdateWorkUnitRe
 		WorkUnit:   req.GetWorkUnit(),
 		UpdateMask: req.GetUpdateMask(),
 	}
-	originalWu, returnedWu, err := s.storage.UpdateWorkUnit(ctx, update)
+	res, err := s.storage.UpdateWorkUnit(ctx, update)
 	if err != nil {
 		logging.Error(ctx, "Failed to update work unit", "error", err)
 		return nil, fmt.Errorf("failed to update work unit %s: %w (%v)", name, status.ErrInternal, err)
 	}
+	originalWu, returnedWu := res.Original, res.Updated
 
 	// 5. Check if we need to enqueue a task to update the work unit execution.
 	updateAction, err := s.shouldEnqueueWorkUnitTask(ctx, xid, originalWu, returnedWu)

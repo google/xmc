@@ -100,7 +100,8 @@ func TestUp(t *testing.T) {
 
 			dbStub.CurrentVersion = tc.initialVersion
 
-			_, dataClient, emu := xmcemulator.SetupEmpty(ctx, t)
+			clients := xmcemulator.SetupEmpty(ctx, t)
+			dataClient, emu := clients.ESSClient, clients.Emulator
 			if !tc.emptyDatabase {
 				updateDDL(t, dataClient, emu, []string{"CREATE TABLE NonEmptyTable (ID INT64) PRIMARY KEY (ID)"})
 			}

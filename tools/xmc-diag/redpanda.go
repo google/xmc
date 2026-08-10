@@ -29,10 +29,13 @@ type RealRedpandaQuerier struct {
 	client *kadm.Client
 }
 
-func (r *RealRedpandaQuerier) Ping(ctx context.Context) (int, time.Duration, error) {
+func (r *RealRedpandaQuerier) Ping(ctx context.Context) (RedpandaPingResult, error) {
 	start := time.Now()
 	brokers, err := r.client.ListBrokers(ctx)
-	return len(brokers), time.Since(start), err
+	return RedpandaPingResult{
+		BrokerCount: len(brokers),
+		Latency:     time.Since(start),
+	}, err
 }
 
 func (r *RealRedpandaQuerier) ListTopics(ctx context.Context, topics ...string) (kadm.TopicDetails, error) {
@@ -119,7 +122,7 @@ func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, connErr error, 
 	var pingLatStr string
 	var brokerCount int
 	if !skipSmoke {
-		bCount, lat, err := querier.Ping(ctx)
+		pingRes, err := querier.Ping(ctx)
 		if err != nil {
 			return RedpandaReport{
 				Status: StatusFailed,
@@ -127,8 +130,8 @@ func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, connErr error, 
 				Error:  fmt.Sprintf("ping failed: %v", err),
 			}
 		}
-		brokerCount = bCount
-		pingLatStr = lat.String()
+		brokerCount = pingRes.BrokerCount
+		pingLatStr = pingRes.Latency.String()
 	}
 
 	topics, err := querier.ListTopics(ctx, topic)

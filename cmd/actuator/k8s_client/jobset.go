@@ -75,11 +75,11 @@ func (c *Client) createJobSet(ctx context.Context, workUnit *esspb.WorkUnit, tar
 	namespace := getNamespaceFromWorkUnit(workUnit)
 
 	jobSet, err := c.constructJobSet(ctx, workUnit, target, author, namespace, operationTime, priorities)
-	logging.Info(ctx, "Create JobSet", "jobSet", jobSet.GetName())
 	if err != nil {
 		logging.Warn(ctx, "Failed to construct JobSet manifest", "error", err)
 		return fmt.Errorf("failed to construct JobSet manifest: %w", err)
 	}
+	logging.Info(ctx, "Create JobSet", "jobSet", jobSet.GetName())
 
 	ctx = logging.WithJobSetName(ctx, jobSet.GetName(), nil)
 
@@ -89,6 +89,11 @@ func (c *Client) createJobSet(ctx context.Context, workUnit *esspb.WorkUnit, tar
 	if err != nil {
 		logging.Warn(ctx, "Failed to convert JobSet to unstructured", "error", err)
 		return fmt.Errorf("failed to convert JobSet to unstructured: %w", err)
+	}
+
+	if err := c.preconditionsValidator.ValidateJobSetManifest(jobSetUnstructured); err != nil {
+		logging.Warn(ctx, "Failed to validate JobSet manifest", "target", target, "error", err)
+		return fmt.Errorf("failed to validate JobSet manifest for %q: %w", target, err)
 	}
 
 	name := jobSet.GetName()
@@ -346,6 +351,24 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 	primaryName := jobsetutil.PrimaryContainerName(job)
 	nodeSelector := copyNodeSelector(job.GetNodeSelector())
 
+	var hostNetwork bool
+	var dnsPolicy corev1.DNSPolicy
+	if c != nil && c.RuntimeConfig.AllowHostNetwork && job.GetHostNetwork() {
+		hostNetwork = true
+		if job.GetDnsPolicy() != "" {
+			dnsPolicy = corev1.DNSPolicy(job.GetDnsPolicy())
+		} else {
+			dnsPolicy = corev1.DNSClusterFirstWithHostNet
+		}
+	} else if job.GetDnsPolicy() != "" {
+		dnsPolicy = corev1.DNSPolicy(job.GetDnsPolicy())
+	}
+
+	restartPolicy := corev1.RestartPolicyNever
+	if job.GetRestartPolicy() != "" {
+		restartPolicy = corev1.RestartPolicy(job.GetRestartPolicy())
+	}
+
 	return jobsetv1alpha2.ReplicatedJob{
 		Name:      job.GetName(),
 		GroupName: job.GetGroupName(),
@@ -371,9 +394,11 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 					Spec: corev1.PodSpec{
 						ServiceAccountName:            job.GetServiceAccount(),
 						PriorityClassName:             job.GetPriorityClassName(),
+						HostNetwork:                   hostNetwork,
+						DNSPolicy:                     dnsPolicy,
 						InitContainers:                c.buildInitContainersForJob(job),
 						Containers:                    c.buildContainersForJob(job),
-						RestartPolicy:                 corev1.RestartPolicyNever,
+						RestartPolicy:                 restartPolicy,
 						SecurityContext:               defaultPodSecurityContext(),
 						Volumes:                       generateVolumesForJob(job),
 						NodeSelector:                  nodeSelector,
@@ -631,7 +656,27 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		return nil, err
 	}
 	ensureCoordinatorIndicesValid(jobSet)
+	if err := validateNonRestartingJobSetContract(jobSet); err != nil {
+		return nil, err
+	}
 	return jobSet, nil
+}
+
+// validateNonRestartingJobSetContract validates that the JobSet complies with the XMC Non-Restarting JobSets contract.
+func validateNonRestartingJobSetContract(jobSet *jobsetv1alpha2.JobSet) error {
+	if jobSet == nil {
+		return nil
+	}
+	if jobSet.Spec.FailurePolicy != nil && jobSet.Spec.FailurePolicy.MaxRestarts != 0 {
+		return fmt.Errorf("contract violation: JobSet MaxRestarts must be 0, got %d", jobSet.Spec.FailurePolicy.MaxRestarts)
+	}
+	for _, rj := range jobSet.Spec.ReplicatedJobs {
+		rp := rj.Template.Spec.Template.Spec.RestartPolicy
+		if rp != corev1.RestartPolicyNever && rp != corev1.RestartPolicyOnFailure {
+			return fmt.Errorf("contract violation: replicated job %q pod restartPolicy must be Never or OnFailure, got %s", rj.Name, rp)
+		}
+	}
+	return nil
 }
 
 // ensureCoordinatorIndicesValid adjusts Coordinator indices if the execution environment collapsed a multi-replica job to a multi-pod job.
@@ -895,6 +940,7 @@ func (c *Client) generateEnvVarsForSpec(spec *esspb.ExecutableSpec) []corev1.Env
 		{constants.XmcEnvVarExecutionID, fmt.Sprintf("metadata.labels['%s']", constants.ExecutionIDLabel)},
 		{constants.XmcEnvVarAuthor, fmt.Sprintf("metadata.annotations['%s']", constants.AuthorAnnotation)},
 		{constants.XmcEnvVarJobIndex, fmt.Sprintf("metadata.labels['%s']", constants.JobSetJobIndexLabel)},
+		{constants.XmcEnvVarJobName, fmt.Sprintf("metadata.labels['%s']", constants.JobSetReplicatedJobNameLabel)},
 	}
 
 	for _, ev := range envVarFieldRefs {
