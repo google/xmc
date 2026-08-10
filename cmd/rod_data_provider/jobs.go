@@ -140,6 +140,52 @@ func calculateQueueDuration(wu *essmsgpb.WorkUnit, now time.Time) int64 {
 	return 0
 }
 
+func extractRequestedResourcesFromSpec(spec *essmsgpb.ExecutableSpec, replicas float64) []*spb.Resource {
+	if spec == nil || spec.GetResources() == nil {
+		return nil
+	}
+	resSet := spec.GetResources()
+	if replicas <= 0 {
+		replicas = 1
+	}
+	var resources []*spb.Resource
+	if cpu := resSet.GetCpuResources(); cpu != nil {
+		if cpu.GetCpuMillicores() > 0 {
+			resources = append(resources, &spb.Resource{
+				ResourceType: "cpu",
+				Count:        (float64(cpu.GetCpuMillicores()) / 1000.0) * replicas,
+			})
+		}
+		if cpu.GetMemoryBytes() > 0 {
+			resources = append(resources, &spb.Resource{
+				ResourceType: "memory",
+				Count:        float64(cpu.GetMemoryBytes()) * replicas,
+			})
+		}
+	}
+	if gpu := resSet.GetGpuResources(); gpu != nil {
+		resType := gpu.GetType()
+		if resType == "" {
+			resType = "nvidia.com/gpu"
+		}
+		resources = append(resources, &spb.Resource{
+			ResourceType: resType,
+			Count:        float64(gpu.GetCount()) * replicas,
+		})
+	}
+	if tpu := resSet.GetTpuResources(); tpu != nil {
+		resType := tpu.GetType()
+		if resType == "" {
+			resType = "google.com/tpu"
+		}
+		resources = append(resources, &spb.Resource{
+			ResourceType: resType,
+			Count:        1 * replicas,
+		})
+	}
+	return resources
+}
+
 func extractRequestedResources(wu *essmsgpb.WorkUnit) []*spb.Resource {
 	if wu == nil || wu.GetExecutable() == nil {
 		return nil
@@ -150,48 +196,10 @@ func extractRequestedResources(wu *essmsgpb.WorkUnit) []*spb.Resource {
 	}
 	var resources []*spb.Resource
 	for _, job := range jobset.GetJobs() {
-		if job == nil || job.GetSpec() == nil || job.GetSpec().GetResources() == nil {
+		if job == nil {
 			continue
 		}
-		resSet := job.GetSpec().GetResources()
-		replicas := float64(job.GetReplicas())
-		if replicas == 0 {
-			replicas = 1
-		}
-		if cpu := resSet.GetCpuResources(); cpu != nil {
-			if cpu.GetCpuMillicores() > 0 {
-				resources = append(resources, &spb.Resource{
-					ResourceType: "cpu",
-					Count:        (float64(cpu.GetCpuMillicores()) / 1000.0) * replicas,
-				})
-			}
-			if cpu.GetMemoryBytes() > 0 {
-				resources = append(resources, &spb.Resource{
-					ResourceType: "memory",
-					Count:        float64(cpu.GetMemoryBytes()) * replicas,
-				})
-			}
-		}
-		if gpu := resSet.GetGpuResources(); gpu != nil {
-			resType := gpu.GetType()
-			if resType == "" {
-				resType = "nvidia.com/gpu"
-			}
-			resources = append(resources, &spb.Resource{
-				ResourceType: resType,
-				Count:        float64(gpu.GetCount()) * replicas,
-			})
-		}
-		if tpu := resSet.GetTpuResources(); tpu != nil {
-			resType := tpu.GetType()
-			if resType == "" {
-				resType = "google.com/tpu"
-			}
-			resources = append(resources, &spb.Resource{
-				ResourceType: resType,
-				Count:        1 * replicas,
-			})
-		}
+		resources = append(resources, extractRequestedResourcesFromSpec(job.GetSpec(), float64(job.GetReplicas()))...)
 	}
 	return resources
 }
