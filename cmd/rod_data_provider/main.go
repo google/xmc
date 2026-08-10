@@ -40,6 +40,7 @@ import (
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 	"xmanager_cloud/cmd/rod_data_provider/reconciler"
+	"xmanager_cloud/internal/storage/spanner/workunit"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
@@ -127,7 +128,8 @@ func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache) (GRPCServerCompo
 		return GRPCServerComponents{}, fmt.Errorf("failed to listen on gRPC port %s: %w", cfg.GRPCPort, err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
-	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache, nil))
+	workUnitStore := &workunit.Repository{}
+	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache, workUnitStore))
 	reflection.Register(grpcServer)
 	return GRPCServerComponents{
 		Listener: lis,
