@@ -89,7 +89,7 @@
           <th mat-header-cell *matHeaderCellDef>Resources</th>
           <td mat-cell *matCellDef="let job" class="resources-cell">
             <div class="resource-chips-container">
-              @for (chip of job | queueJobResources; track $index) {
+              @for (chip of job.requestedResources | queueJobResources; track $index) {
                 <xmc-resource-chip [resourceType]="chip.resourceType" [text]="chip.text" />
               }
             </div>

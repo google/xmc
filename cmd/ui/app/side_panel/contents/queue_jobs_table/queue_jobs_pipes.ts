@@ -104,23 +104,14 @@ function formatSingleResource(res: Resource): ResourceChipData {
 }
 
 /**
- * Transforms a DashboardJob or array of Resource objects into an array of ResourceChipData.
+ * Transforms an array of Resource objects into an array of ResourceChipData.
  */
 @Pipe({
   name: 'queueJobResources',
   standalone: true,
 })
 export class QueueJobResourcesPipe implements PipeTransform {
-  transform(jobOrResources?: DashboardJob | Resource[] | null): ResourceChipData[] {
-    if (!jobOrResources) return [];
-
-    let resources: Resource[] | undefined;
-    if (Array.isArray(jobOrResources)) {
-      resources = jobOrResources;
-    } else if (typeof jobOrResources === 'object' && 'requestedResources' in jobOrResources) {
-      resources = jobOrResources.requestedResources;
-    }
-
+  transform(resources?: Resource[] | null): ResourceChipData[] {
     if (!resources || !Array.isArray(resources) || resources.length === 0) {
       return [];
     }
