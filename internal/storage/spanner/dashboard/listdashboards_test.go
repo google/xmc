@@ -212,11 +212,11 @@ func TestExtractDashboardCursor(t *testing.T) {
 		if cursor["dashboard_id"] != "dashboards/d1" {
 			t.Errorf("dashboard_id = %v, want 'dashboards/d1'", cursor["dashboard_id"])
 		}
-		if cursor["title"] != "" {
-			t.Errorf("title = %v, want ''", cursor["title"])
+		if _, ok := cursor["title"]; ok {
+			t.Errorf("title should not be present in cursor")
 		}
-		if cursor["owner"] != "" {
-			t.Errorf("owner = %v, want ''", cursor["owner"])
+		if _, ok := cursor["owner"]; ok {
+			t.Errorf("owner should not be present in cursor")
 		}
 		if cursor["created"] != (time.Time{}) {
 			t.Errorf("created = %v, want zero time", cursor["created"])
@@ -242,11 +242,11 @@ func TestExtractDashboardCursor(t *testing.T) {
 		if cursor["dashboard_id"] != "dashboards/d2" {
 			t.Errorf("dashboard_id = %v, want 'dashboards/d2'", cursor["dashboard_id"])
 		}
-		if cursor["title"] != "My Dashboard" {
-			t.Errorf("title = %v, want 'My Dashboard'", cursor["title"])
+		if _, ok := cursor["title"]; ok {
+			t.Errorf("title should not be present in cursor")
 		}
-		if cursor["owner"] != "user@example.com" {
-			t.Errorf("owner = %v, want 'user@example.com'", cursor["owner"])
+		if _, ok := cursor["owner"]; ok {
+			t.Errorf("owner should not be present in cursor")
 		}
 		if cursor["created"] != now.UTC() {
 			t.Errorf("created = %v, want %v", cursor["created"], now.UTC())

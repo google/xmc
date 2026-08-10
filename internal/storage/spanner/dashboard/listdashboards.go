@@ -102,8 +102,6 @@ func ExtractDashboardCursor(dash *dpb.Dashboard) (map[string]any, error) {
 
 	cursor := map[string]any{
 		"dashboard_id": dash.GetName(),
-		"title":        dash.GetTitle(),
-		"owner":        dash.GetOwner(),
 	}
 
 	if dash.GetCreateTime() != nil {
