@@ -45,7 +45,12 @@ func init() {
 	flag.StringVar(&grpcPort, "grpc_port", "50051", "The gRPC server port to listen on.")
 	flag.StringVar(&projectID, "project_id", os.Getenv("GOOGLE_CLOUD_PROJECT"), "The GCP project ID.")
 	flag.StringVar(&quotaProjectID, "quota_project_id", os.Getenv("QUOTA_PROJECT_ID"), "The GCP quota project ID.")
-	flag.StringVar(&spannerDatabaseName, "spanner_database_name", os.Getenv("SPANNER_DATABASE_NAME"), "The Spanner database name.")
+
+	spannerDB := os.Getenv("SPANNER_DATABASE_NAME")
+	if spannerDB == "" {
+		spannerDB = os.Getenv("SPANNER_DATABASE")
+	}
+	flag.StringVar(&spannerDatabaseName, "spanner_database_name", spannerDB, "The Spanner database name.")
 }
 
 // LoadConfig loads and returns service configuration.
