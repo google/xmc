@@ -37,7 +37,7 @@ func TestResourceFlavorReconciler(t *testing.T) {
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rf).Build()
 	c := cache.NewResourceCache[*kueuev1beta1.ResourceFlavor]()
 
-	rec := &ResourceFlavorReconciler{Client: client, Cache: c}
+	rec := NewResourceFlavorReconciler(client, c)
 	ctx := context.Background()
 
 	req := ctrlreq.Request{NamespacedName: ctrl.ObjectKey{Name: "rf-test"}}

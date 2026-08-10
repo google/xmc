@@ -37,7 +37,7 @@ func TestClusterQueueReconciler(t *testing.T) {
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cq).Build()
 	c := cache.NewResourceCache[*kueuev1beta1.ClusterQueue]()
 
-	rec := &ClusterQueueReconciler{Client: client, Cache: c}
+	rec := NewClusterQueueReconciler(client, c)
 	ctx := context.Background()
 
 	req := ctrlreq.Request{NamespacedName: ctrl.ObjectKey{Name: "cq-test"}}

@@ -61,7 +61,7 @@ issues:
   exclude-dirs:
     - cmd/ui/node_modules
   exclude-rules:
-    - path: (_test\.go|cmd/actuator/k8s_client/client\.go|cmd/rod_data_provider/reconciler)
+    - path: (_test\.go|cmd/actuator/k8s_client/client\.go)
       linters:
         - dupl
     # Functions returning 4+ parameters (e.g. hierarchical resource ID parsers, data update checkers, and query generators)

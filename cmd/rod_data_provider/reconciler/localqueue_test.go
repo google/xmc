@@ -37,7 +37,7 @@ func TestLocalQueueReconciler(t *testing.T) {
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(lq).Build()
 	c := cache.NewResourceCache[*kueuev1beta1.LocalQueue]()
 
-	rec := &LocalQueueReconciler{Client: client, Cache: c}
+	rec := NewLocalQueueReconciler(client, c)
 	ctx := context.Background()
 
 	req := ctrlreq.Request{NamespacedName: ctrl.ObjectKey{Name: "lq-test", Namespace: "default"}}
