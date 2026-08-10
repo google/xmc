@@ -24,67 +24,77 @@ import (
 )
 
 // extractRequestedResources converts domain ResourceSets from workunit.GetWorkUnitResources
-// into presentation DTOs ([]*spb.Resource) required by the ROD API.
+// into presentation DTOs ([]*spb.Resource) required by the ROD API, aggregating identical resource types.
 func extractRequestedResources(wu *essmsgpb.WorkUnit) []*spb.Resource {
 	resourceSets := workunit.GetWorkUnitResources(wu)
 	if len(resourceSets) == 0 {
 		return nil
 	}
 
-	var resources []*spb.Resource
+	totals := make(map[string]float64)
+	var order []string
+
+	addResource := func(resType string, count float64) {
+		if count <= 0 {
+			return
+		}
+		if _, exists := totals[resType]; !exists {
+			order = append(order, resType)
+		}
+		totals[resType] += count
+	}
+
 	for _, rs := range resourceSets {
-		if rs == nil {
-			continue
-		}
-		if cpu := rs.GetCpuResources(); cpu != nil {
-			resources = append(resources, extractCpuResources(cpu)...)
-		} else if gpu := rs.GetGpuResources(); gpu != nil {
-			resources = append(resources, extractGpuResource(gpu))
-		} else if tpu := rs.GetTpuResources(); tpu != nil {
-			resources = append(resources, extractTpuResource(tpu))
-		}
+		accumulateResource(rs, addResource)
+	}
+
+	resources := make([]*spb.Resource, 0, len(order))
+	for _, resType := range order {
+		resources = append(resources, &spb.Resource{
+			ResourceType: resType,
+			Count:        totals[resType],
+		})
 	}
 	return resources
 }
 
-func extractCpuResources(cpu *essmsgpb.CpuResources) []*spb.Resource {
-	var res []*spb.Resource
-	if millicores := cpu.GetCpuMillicores(); millicores > 0 {
-		res = append(res, &spb.Resource{
-			ResourceType: "cpu",
-			Count:        float64(millicores) / 1000.0,
-		})
+func accumulateResource(rs *essmsgpb.ResourceSet, addResource func(string, float64)) {
+	if rs == nil {
+		return
 	}
-	if memoryBytes := cpu.GetMemoryBytes(); memoryBytes > 0 {
-		res = append(res, &spb.Resource{
-			ResourceType: "memory",
-			Count:        float64(memoryBytes),
-		})
+	if cpu := rs.GetCpuResources(); cpu != nil {
+		accumulateCpuResource(cpu, addResource)
+	} else if gpu := rs.GetGpuResources(); gpu != nil {
+		accumulateGpuResource(gpu, addResource)
+	} else if tpu := rs.GetTpuResources(); tpu != nil {
+		accumulateTpuResource(tpu, addResource)
 	}
-	return res
 }
 
-func extractGpuResource(gpu *essmsgpb.GpuResources) *spb.Resource {
+func accumulateCpuResource(cpu *essmsgpb.CpuResources, addResource func(string, float64)) {
+	if millicores := cpu.GetCpuMillicores(); millicores > 0 {
+		addResource("cpu", float64(millicores)/1000.0)
+	}
+	if memoryBytes := cpu.GetMemoryBytes(); memoryBytes > 0 {
+		addResource("memory", float64(memoryBytes))
+	}
+}
+
+func accumulateGpuResource(gpu *essmsgpb.GpuResources, addResource func(string, float64)) {
 	resType := gpu.GetType()
 	if resType == "" {
 		resType = "GPU"
 	}
-	return &spb.Resource{
-		ResourceType: resType,
-		Count:        float64(gpu.GetCount()),
-	}
+	addResource(resType, float64(gpu.GetCount()))
 }
 
-func extractTpuResource(tpu *essmsgpb.TpuResources) *spb.Resource {
+func accumulateTpuResource(tpu *essmsgpb.TpuResources, addResource func(string, float64)) {
 	resType := tpu.GetType()
 	if resType == "" {
 		resType = "TPU"
 	}
 	chips := parseTotalChips(tpu.GetTopology())
-	return &spb.Resource{
-		ResourceType: resType,
-		Count:        float64(chips),
-	}
+	addResource(resType, float64(chips))
 }
 
 func parseTotalChips(topology string) int64 {

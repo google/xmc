@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"golang/protobuf/v2/proto/proto"
+	spb "xmanager_cloud/api/protos/rod"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
@@ -66,12 +67,63 @@ func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 	if job == nil {
 		t.Fatalf("mapWorkUnitToDashboardJob returned nil")
 	}
-	if len(job.GetRequestedResources()) != 1 {
-		t.Fatalf("RequestedResources len = %d, want 1", len(job.GetRequestedResources()))
+	var gpuRes *spb.Resource
+	for _, r := range job.GetRequestedResources() {
+		if r.GetResourceType() == "nvidia-tesla-h100" {
+			gpuRes = r
+			break
+		}
 	}
-	res := job.GetRequestedResources()[0]
-	if res.GetResourceType() != "nvidia-tesla-h100" || res.GetCount() != 10.0 {
-		t.Errorf("RequestedResource = %v %v, want nvidia-tesla-h100 10.0", res.GetResourceType(), res.GetCount())
+	if gpuRes == nil {
+		t.Fatalf("nvidia-tesla-h100 resource not found in %v", job.GetRequestedResources())
+	}
+	if gpuRes.GetCount() != 10.0 {
+		t.Errorf("nvidia-tesla-h100 count = %v, want 10.0", gpuRes.GetCount())
+	}
+}
+
+func TestMapWorkUnitToDashboardJob_TPURequestedResources(t *testing.T) {
+	now := time.Now()
+	wu := proto.Modify(baseWorkUnit, func(w *essmsgpb.WorkUnit) {
+		w.Executable = &essmsgpb.Executable{
+			Type: &essmsgpb.Executable_Jobset{
+				Jobset: &essmsgpb.JobSetExecutable{
+					Jobs: []*essmsgpb.KubernetesJob{
+						{
+							Replicas: 2,
+							Spec: &essmsgpb.ExecutableSpec{
+								Resources: &essmsgpb.ResourceSet{
+									Resources: &essmsgpb.ResourceSet_TpuResources{
+										TpuResources: &essmsgpb.TpuResources{
+											Type:     "tpu-v4-podslice",
+											Topology: "2x2x4",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+	})
+
+	job := mapWorkUnitToDashboardJob(context.Background(), wu, now)
+	if job == nil {
+		t.Fatalf("mapWorkUnitToDashboardJob returned nil")
+	}
+	var tpuRes *spb.Resource
+	for _, r := range job.GetRequestedResources() {
+		if r.GetResourceType() == "tpu-v4-podslice" {
+			tpuRes = r
+			break
+		}
+	}
+	if tpuRes == nil {
+		t.Fatalf("tpu-v4-podslice resource not found in %v", job.GetRequestedResources())
+	}
+	if tpuRes.GetCount() != 32.0 {
+		t.Errorf("tpu-v4-podslice count = %v, want 32.0", tpuRes.GetCount())
 	}
 }
 
