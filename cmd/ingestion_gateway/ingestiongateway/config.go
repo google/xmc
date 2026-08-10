@@ -222,25 +222,38 @@ func (c *Config) Validate() error {
 	if c.MinReplicas <= 0 {
 		return fmt.Errorf("min_replicas must be > 0")
 	}
-	if c.SASLEnabled {
-		mech := strings.ToUpper(strings.TrimSpace(c.SASLMechanism))
-		switch mech {
-		case "SCRAM-SHA-256", "SCRAM-SHA-512", "PLAIN":
-			// Supported SASL mechanisms
-		default:
-			return fmt.Errorf("unsupported sasl_mechanism %q: must be one of SCRAM-SHA-256, SCRAM-SHA-512, PLAIN", c.SASLMechanism)
-		}
-		if c.SASLUser == "" {
-			return fmt.Errorf("sasl_user is required when sasl_enabled is true")
-		}
-		if c.SASLPassword == "" {
-			return fmt.Errorf("sasl_password is required when sasl_enabled is true")
-		}
+	if err := c.validateSASL(); err != nil {
+		return err
 	}
-	if c.TLSEnabled {
-		if (c.TLSCertFile != "" && c.TLSKeyFile == "") || (c.TLSCertFile == "" && c.TLSKeyFile != "") {
-			return fmt.Errorf("tls_cert_file and tls_key_file must both be provided for mTLS")
-		}
+	return c.validateTLS()
+}
+
+func (c *Config) validateSASL() error {
+	if !c.SASLEnabled {
+		return nil
+	}
+	mech := strings.ToUpper(strings.TrimSpace(c.SASLMechanism))
+	switch mech {
+	case "SCRAM-SHA-256", "SCRAM-SHA-512", "PLAIN":
+		// Supported SASL mechanisms
+	default:
+		return fmt.Errorf("unsupported sasl_mechanism %q: must be one of SCRAM-SHA-256, SCRAM-SHA-512, PLAIN", c.SASLMechanism)
+	}
+	if c.SASLUser == "" {
+		return fmt.Errorf("sasl_user is required when sasl_enabled is true")
+	}
+	if c.SASLPassword == "" {
+		return fmt.Errorf("sasl_password is required when sasl_enabled is true")
+	}
+	return nil
+}
+
+func (c *Config) validateTLS() error {
+	if !c.TLSEnabled {
+		return nil
+	}
+	if (c.TLSCertFile != "" && c.TLSKeyFile == "") || (c.TLSCertFile == "" && c.TLSKeyFile != "") {
+		return fmt.Errorf("tls_cert_file and tls_key_file must both be provided for mTLS")
 	}
 	return nil
 }
