@@ -96,6 +96,11 @@ spec:
         - "-tls_cert_file="
         - "-tls_key_file="
         env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
         envFrom:
         - configMapRef:
