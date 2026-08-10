@@ -18,6 +18,7 @@ compat_go_library(
     name = "jobset",
     srcs = [
         "converter.go",
+        "mlrun_metrics.go",
         "reconciler.go",
     ],
     importpath = "xmanager_cloud/cmd/reconciler/jobset",
@@ -59,6 +60,7 @@ compat_go_test(
     name = "jobset_test",
     srcs = [
         "converter_test.go",
+        "mlrun_metrics_test.go",
         "reconciler_test.go",
     ],
     embed = [":jobset"],
