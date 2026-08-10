@@ -127,7 +127,7 @@ func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache) (GRPCServerCompo
 		return GRPCServerComponents{}, fmt.Errorf("failed to listen on gRPC port %s: %w", cfg.GRPCPort, err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
-	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache))
+	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache, nil))
 	reflection.Register(grpcServer)
 	return GRPCServerComponents{
 		Listener: lis,
