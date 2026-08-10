@@ -64,8 +64,10 @@ issues:
     - path: (_test\.go|cmd/actuator/k8s_client/client\.go)
       linters:
         - dupl
-    # Functions returning 4+ parameters (e.g. hierarchical resource ID parsers, data update checkers, and query generators)
-    - path: (internal/validator/names\.go|internal/storage/data|internal/query_generator)
+    # Functions returning 4+ parameters:
+    # 1. internal/validator/names.go: Parses hierarchical resource names into 3 IDs + error (xid, wid, eid/msgID/oid, err).
+    # 2. internal/query_generator: Spanner query generator returning (*spanner.Statement, map[TableField]int, Unnester, error).
+    - path: (internal/validator/names\.go|internal/query_generator)
       linters:
         - revive
 
