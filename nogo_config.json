@@ -1,0 +1,33 @@
+{
+  "_base": {
+    "exclude_files": {
+      "external/": "external tools don't pass vet"
+    }
+  },
+  "asmdecl": {},
+  "assign": {},
+  "atomic": {},
+  "bools": {},
+  "buildtag": {},
+  "cgocall": {},
+  "copylocks": {},
+  "directive": {},
+  "errorsas": {},
+  "httpresponse": {},
+  "loopclosure": {},
+  "lostcancel": {},
+  "nilfunc": {},
+  "nilness": {},
+  "printf": {},
+  "shadow": {},
+  "shift": {},
+  "stdmethods": {},
+  "stringintconv": {},
+  "structtag": {},
+  "testinggoroutine": {},
+  "tests": {},
+  "timeformat": {},
+  "unreachable": {},
+  "unsafeptr": {},
+  "unusedresult": {}
+}

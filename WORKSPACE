@@ -52,7 +52,10 @@ load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies")
 
 go_rules_dependencies()
 
-go_register_toolchains(version = "1.26.0")
+go_register_toolchains(
+    nogo = "//:xmc_nogo",
+    version = "1.26.0",
+)
 
 gazelle_dependencies()
 
