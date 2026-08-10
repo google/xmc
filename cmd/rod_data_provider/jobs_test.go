@@ -250,3 +250,34 @@ func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 		t.Errorf("RequestedResource = %v %v, want nvidia-tesla-h100 6.0", res.GetResourceType(), res.GetCount())
 	}
 }
+
+func TestResourceAccumulator(t *testing.T) {
+	t.Run("nil safety", func(t *testing.T) {
+		var nilAcc *resourceAccumulator
+		nilAcc.add("cpu", 10)
+		if nilAcc.toResources() != nil {
+			t.Errorf("toResources() on nil accumulator = %v, want nil", nilAcc.toResources())
+		}
+	})
+
+	t.Run("aggregation and order", func(t *testing.T) {
+		acc := newResourceAccumulator()
+		acc.add("cpu", 2.5)
+		acc.add("memory", 1024)
+		acc.add("cpu", 1.5)
+		acc.add("gpu", 0)  // ignore zero count
+		acc.add("", 5.0)   // ignore empty resType
+		acc.add("gpu", -1) // ignore negative count
+
+		res := acc.toResources()
+		if len(res) != 2 {
+			t.Fatalf("toResources() len = %d, want 2", len(res))
+		}
+		if res[0].GetResourceType() != "cpu" || res[0].GetCount() != 4.0 {
+			t.Errorf("res[0] = %v %v, want cpu 4.0", res[0].GetResourceType(), res[0].GetCount())
+		}
+		if res[1].GetResourceType() != "memory" || res[1].GetCount() != 1024.0 {
+			t.Errorf("res[1] = %v %v, want memory 1024.0", res[1].GetResourceType(), res[1].GetCount())
+		}
+	})
+}

@@ -140,68 +140,82 @@ func calculateQueueDuration(wu *essmsgpb.WorkUnit, now time.Time) int64 {
 	return 0
 }
 
+type resourceAccumulator struct {
+	totals map[string]float64
+	order  []string
+}
+
+func newResourceAccumulator() *resourceAccumulator {
+	return &resourceAccumulator{
+		totals: make(map[string]float64),
+	}
+}
+
+func (a *resourceAccumulator) add(resType string, count float64) {
+	if a == nil || count <= 0 || resType == "" {
+		return
+	}
+	if _, exists := a.totals[resType]; !exists {
+		a.order = append(a.order, resType)
+	}
+	a.totals[resType] += count
+}
+
+func (a *resourceAccumulator) toResources() []*spb.Resource {
+	if a == nil || len(a.order) == 0 {
+		return nil
+	}
+	resources := make([]*spb.Resource, 0, len(a.order))
+	for _, resType := range a.order {
+		resources = append(resources, &spb.Resource{
+			ResourceType: resType,
+			Count:        a.totals[resType],
+		})
+	}
+	return resources
+}
+
 func extractRequestedResources(wu *essmsgpb.WorkUnit) []*spb.Resource {
 	if wu == nil || wu.GetExecutable() == nil || wu.GetExecutable().GetJobset() == nil {
 		return nil
 	}
-	jobs := wu.GetExecutable().GetJobset().GetJobs()
-	if len(jobs) == 0 {
-		return nil
+	acc := newResourceAccumulator()
+	for _, job := range wu.GetExecutable().GetJobset().GetJobs() {
+		accumulateJobResources(acc, job)
 	}
+	return acc.toResources()
+}
 
-	totals := make(map[string]float64)
-	var order []string
-
-	addResource := func(resType string, count float64) {
-		if count <= 0 {
-			return
-		}
-		if _, exists := totals[resType]; !exists {
-			order = append(order, resType)
-		}
-		totals[resType] += count
+func accumulateJobResources(acc *resourceAccumulator, job *essmsgpb.KubernetesJob) {
+	if acc == nil || job == nil || job.GetSpec() == nil || job.GetSpec().GetResources() == nil {
+		return
 	}
-
-	for _, job := range jobs {
-		if job == nil || job.GetSpec() == nil || job.GetSpec().GetResources() == nil {
-			continue
-		}
-		resSet := job.GetSpec().GetResources()
-		switch r := resSet.GetResources().(type) {
-		case *essmsgpb.ResourceSet_CpuResources:
-			if cpu := r.CpuResources; cpu != nil {
-				if cpu.GetCpuMillicores() > 0 {
-					addResource("cpu", float64(cpu.GetCpuMillicores())/1000.0)
-				}
-				if cpu.GetMemoryBytes() > 0 {
-					addResource("memory", float64(cpu.GetMemoryBytes()))
-				}
+	resSet := job.GetSpec().GetResources()
+	switch r := resSet.GetResources().(type) {
+	case *essmsgpb.ResourceSet_CpuResources:
+		if cpu := r.CpuResources; cpu != nil {
+			if cpu.GetCpuMillicores() > 0 {
+				acc.add("cpu", float64(cpu.GetCpuMillicores())/1000.0)
 			}
-		case *essmsgpb.ResourceSet_GpuResources:
-			if gpu := r.GpuResources; gpu != nil {
-				resType := gpu.GetType()
-				if resType == "" {
-					resType = "GPU"
-				}
-				addResource(resType, float64(gpu.GetCount()))
-			}
-		case *essmsgpb.ResourceSet_TpuResources:
-			if tpu := r.TpuResources; tpu != nil {
-				resType := tpu.GetType()
-				if resType == "" {
-					resType = "TPU"
-				}
-				addResource(resType, 1)
+			if cpu.GetMemoryBytes() > 0 {
+				acc.add("memory", float64(cpu.GetMemoryBytes()))
 			}
 		}
+	case *essmsgpb.ResourceSet_GpuResources:
+		if gpu := r.GpuResources; gpu != nil {
+			resType := gpu.GetType()
+			if resType == "" {
+				resType = "GPU"
+			}
+			acc.add(resType, float64(gpu.GetCount()))
+		}
+	case *essmsgpb.ResourceSet_TpuResources:
+		if tpu := r.TpuResources; tpu != nil {
+			resType := tpu.GetType()
+			if resType == "" {
+				resType = "TPU"
+			}
+			acc.add(resType, 1)
+		}
 	}
-
-	var resources []*spb.Resource
-	for _, resType := range order {
-		resources = append(resources, &spb.Resource{
-			ResourceType: resType,
-			Count:        totals[resType],
-		})
-	}
-	return resources
 }
