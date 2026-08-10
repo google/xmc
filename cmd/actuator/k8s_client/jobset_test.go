@@ -1349,6 +1349,53 @@ func TestConstructJobSet_TerminationGracePeriodSeconds(t *testing.T) {
 	}
 }
 
+func TestConstructJobSet_RestartPolicy(t *testing.T) {
+	tests := []struct {
+		name       string
+		val        *string
+		wantPolicy corev1.RestartPolicy
+	}{
+		{
+			name:       "default when unset",
+			val:        nil,
+			wantPolicy: corev1.RestartPolicyNever,
+		},
+		{
+			name:       "explicit Never",
+			val:        proto.String("Never"),
+			wantPolicy: corev1.RestartPolicyNever,
+		},
+		{
+			name:       "explicit OnFailure",
+			val:        proto.String("OnFailure"),
+			wantPolicy: corev1.RestartPolicyOnFailure,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+			workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+				wu.Executable.GetJobset().Jobs[0].RestartPolicy = tt.val
+			})
+
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+			if err != nil {
+				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+			}
+
+			if len(got.Spec.ReplicatedJobs) != 1 {
+				t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
+			}
+
+			gotPodSpec := got.Spec.ReplicatedJobs[0].Template.Spec.Template.Spec
+			if gotPodSpec.RestartPolicy != tt.wantPolicy {
+				t.Errorf("Expected RestartPolicy to be %q, got %q", tt.wantPolicy, gotPodSpec.RestartPolicy)
+			}
+		})
+	}
+}
+
 func TestConstructJobSet_DependencyOrder(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := &esspb.WorkUnit{
@@ -3174,7 +3221,34 @@ func TestValidateNonRestartingJobSetContract(t *testing.T) {
 		}
 	})
 
-	t.Run("Contract violation: Pod RestartPolicy != Never", func(t *testing.T) {
+	t.Run("Contract violation: Pod RestartPolicy Always", func(t *testing.T) {
+		js := &jobsetv1alpha2.JobSet{
+			Spec: jobsetv1alpha2.JobSetSpec{
+				FailurePolicy: &jobsetv1alpha2.FailurePolicy{
+					MaxRestarts: 0,
+				},
+				ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+					{
+						Name: "job1",
+						Template: batchv1.JobTemplateSpec{
+							Spec: batchv1.JobSpec{
+								Template: corev1.PodTemplateSpec{
+									Spec: corev1.PodSpec{
+										RestartPolicy: corev1.RestartPolicyAlways,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		if err := validateNonRestartingJobSetContract(js); err == nil {
+			t.Errorf("validateNonRestartingJobSetContract() expected error for RestartPolicyAlways, got nil")
+		}
+	})
+
+	t.Run("Valid Pod RestartPolicy OnFailure", func(t *testing.T) {
 		js := &jobsetv1alpha2.JobSet{
 			Spec: jobsetv1alpha2.JobSetSpec{
 				FailurePolicy: &jobsetv1alpha2.FailurePolicy{
@@ -3196,8 +3270,8 @@ func TestValidateNonRestartingJobSetContract(t *testing.T) {
 				},
 			},
 		}
-		if err := validateNonRestartingJobSetContract(js); err == nil {
-			t.Errorf("validateNonRestartingJobSetContract() expected error for RestartPolicyOnFailure, got nil")
+		if err := validateNonRestartingJobSetContract(js); err != nil {
+			t.Errorf("validateNonRestartingJobSetContract() unexpected error for RestartPolicyOnFailure: %v", err)
 		}
 	})
 }
