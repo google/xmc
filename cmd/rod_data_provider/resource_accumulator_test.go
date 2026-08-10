@@ -83,3 +83,25 @@ func TestExtractRequestedResources_NilAndEmpty(t *testing.T) {
 		t.Errorf("extractRequestedResources(empty) = %v, want nil", extractRequestedResources(&essmsgpb.WorkUnit{}))
 	}
 }
+
+func TestParseTotalChips(t *testing.T) {
+	tests := []struct {
+		topology string
+		want     int64
+	}{
+		{"", 1},
+		{"2x2", 4},
+		{"2x2x4", 16},
+		{"4x4", 16},
+		{"8x8", 64},
+		{"invalid", 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.topology, func(t *testing.T) {
+			if got := parseTotalChips(tt.topology); got != tt.want {
+				t.Errorf("parseTotalChips(%q) = %d, want %d", tt.topology, got, tt.want)
+			}
+		})
+	}
+}

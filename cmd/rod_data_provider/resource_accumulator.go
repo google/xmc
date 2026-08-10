@@ -15,6 +15,9 @@
 package main
 
 import (
+	"strconv"
+	"strings"
+
 	spb "xmanager_cloud/api/protos/rod"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/domain/workunit"
@@ -77,8 +80,25 @@ func extractTpuResource(tpu *essmsgpb.TpuResources) *spb.Resource {
 	if resType == "" {
 		resType = "TPU"
 	}
+	chips := parseTotalChips(tpu.GetTopology())
 	return &spb.Resource{
 		ResourceType: resType,
-		Count:        1.0,
+		Count:        float64(chips),
 	}
+}
+
+func parseTotalChips(topology string) int64 {
+	if topology == "" {
+		return 1
+	}
+	dims := strings.Split(topology, "x")
+	totalChips := int64(1)
+	for _, d := range dims {
+		v, err := strconv.ParseInt(d, 10, 64)
+		if err != nil || v <= 0 {
+			return 1
+		}
+		totalChips *= v
+	}
+	return totalChips
 }
