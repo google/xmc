@@ -36,9 +36,9 @@ func TestNewHealthChecker_Success(t *testing.T) {
 	cfg := &Config{
 		XidAddr: "localhost:50051",
 	}
-	checker, err := newHealthChecker(HealthCheckerParams{Config: cfg})
+	checker, err := NewHealthChecker(HealthCheckerParams{Config: cfg})
 	if err != nil {
-		t.Fatalf("newHealthChecker failed: %v", err)
+		t.Fatalf("NewHealthChecker failed: %v", err)
 	}
 	if checker == nil {
 		t.Fatal("expected non-nil checker")
@@ -50,7 +50,7 @@ func TestNewHealthChecker_EmptyAddr(t *testing.T) {
 	cfg := &Config{
 		XidAddr: "",
 	}
-	_, err := newHealthChecker(HealthCheckerParams{Config: cfg})
+	_, err := NewHealthChecker(HealthCheckerParams{Config: cfg})
 	if err == nil {
 		t.Fatal("expected error with empty XidAddr")
 	}
@@ -64,7 +64,7 @@ func TestCheckHTTPComponent_Healthy(t *testing.T) {
 	}))
 	defer server.Close()
 
-	checker, _ := newHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: "localhost:50051"}})
+	checker, _ := NewHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: "localhost:50051"}})
 	defer checker.Close()
 
 	res := checker.checkHTTPComponent(context.Background(), "ESS", server.URL, "/readyz")
@@ -79,7 +79,7 @@ func TestCheckHTTPComponent_UnhealthyStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	checker, _ := newHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: "localhost:50051"}})
+	checker, _ := NewHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: "localhost:50051"}})
 	defer checker.Close()
 
 	res := checker.checkHTTPComponent(context.Background(), "ESS", server.URL, "/readyz")
@@ -98,7 +98,7 @@ func TestCheckHTTPComponent_Timeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	checker, _ := newHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: "localhost:50051"}})
+	checker, _ := NewHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: "localhost:50051"}})
 	// Shorten timeout for test
 	checker.httpClient.Timeout = 10 * time.Millisecond
 	defer checker.Close()
@@ -123,7 +123,7 @@ func TestCheckGRPCComponent_Healthy(t *testing.T) {
 	}()
 	defer grpcServer.Stop()
 
-	checker, _ := newHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: lis.Addr().String()}})
+	checker, _ := NewHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: lis.Addr().String()}})
 	defer checker.Close()
 
 	res := checker.checkGRPCComponent(context.Background(), "XID", checker.xidConn, "xmc.XidService")
@@ -146,7 +146,7 @@ func TestCheckGRPCComponent_NotServing(t *testing.T) {
 	}()
 	defer grpcServer.Stop()
 
-	checker, _ := newHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: lis.Addr().String()}})
+	checker, _ := NewHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: lis.Addr().String()}})
 	defer checker.Close()
 
 	res := checker.checkGRPCComponent(context.Background(), "XID", checker.xidConn, "xmc.XidService")
@@ -159,7 +159,7 @@ func TestCheckGRPCComponent_NotServing(t *testing.T) {
 }
 
 func TestCheckGRPCComponent_NilConnection(t *testing.T) {
-	checker, _ := newHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: "localhost:50051"}})
+	checker, _ := NewHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: "localhost:50051"}})
 	checker.Close()
 
 	res := checker.checkGRPCComponent(context.Background(), "XID", nil, "xmc.XidService")
@@ -456,4 +456,18 @@ func TestRunChecks_LogMonitorMissingConfig(t *testing.T) {
 	if lmComp.ErrorMessage != expectedErr {
 		t.Errorf("expected error message %q, got %q", expectedErr, lmComp.ErrorMessage)
 	}
+}
+
+func newMockCloudRunServer(t *testing.T, state, reason, message string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{
+			"terminalCondition": {
+				"state": "%s",
+				"reason": "%s",
+				"message": "%s"
+			}
+		}`, state, reason, message)
+	}))
 }

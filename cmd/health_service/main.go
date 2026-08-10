@@ -173,10 +173,18 @@ func initGRPCServer(ctx context.Context, cfg *Config) *grpcServerDeps {
 		logging.Fatal(ctx, "Failed to create cloud run client", "error", err)
 	}
 
-	srv, err := newServer(cfg, essHealth, xidHealth, redisPingClient, cloudRunService)
+	checker, err := NewHealthChecker(HealthCheckerParams{
+		Config:          cfg,
+		EssHealthClient: essHealth,
+		XidHealthClient: xidHealth,
+		RedisClient:     redisPingClient,
+		CloudRunService: cloudRunService,
+	})
 	if err != nil {
-		logging.Fatal(ctx, "Failed to create server", "error", err)
+		logging.Fatal(ctx, "Failed to create health checker", "error", err)
 	}
+
+	srv := newServer(cfg, checker)
 	spb.RegisterHealthServiceServer(grpcServer, srv)
 	reflection.Register(grpcServer)
 

@@ -52,7 +52,7 @@ type HealthChecker struct {
 	cloudRunService *run.Service
 }
 
-func newHealthChecker(params HealthCheckerParams) (*HealthChecker, error) {
+func NewHealthChecker(params HealthCheckerParams) (*HealthChecker, error) {
 	if params.Config == nil {
 		return nil, fmt.Errorf("config is required")
 	}
