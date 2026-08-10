@@ -41,13 +41,11 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	}
 
 	// TODO: Fetch all LocalQueues connected to a given ClusterQueue
-	clusterQueueName := req.GetQueueName()
-
-	targetQueues := []string{clusterQueueName}
+	var targetQueues []string
 
 	workUnits, nextPageToken, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, req.GetPageSize(), req.GetPageToken())
 	if err != nil {
-		logging.Error(ctx, "failed to fetch active work units from storage", "cluster_queue_name", clusterQueueName, "target_queues", targetQueues, "error", err)
+		logging.Error(ctx, "failed to fetch active work units from storage", "cluster_queue_name", req.GetQueueName(), "target_queues", targetQueues, "error", err)
 		return nil, status.Error(codes.Internal, "failed to fetch active jobs")
 	}
 
