@@ -14,12 +14,11 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { Observable, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { catchError, Observable, of } from 'rxjs';
 
 import {
   GetFittingQueuesResponse,
-  QueueJobListResponse,
+  GetRunningAndPendingJobsResponse,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { XMC_API_DOMAIN } from './constants';
@@ -53,37 +52,17 @@ export class ResourceService {
   /**
    * Fetches the list of pending and running jobs for a given queue.
    */
-  getQueueJobs(queueName?: string): Observable<QueueJobListResponse> {
-    // TODO(#186): Switch to real backend endpoint when rod-data-provider is deployed.
-    const targetQueueName = queueName ?? 'gpu-cluster-queue';
-    return of({
-      queueName: targetQueueName,
-      jobs: [
-        {
-          position: 'N/A-running',
-          xid: '53296',
-          workUnitId: '1',
-          jobName: 'xmc-operation-53296-1',
-          user: 'example@example.com',
-          resources: 'GPU: 8, CPU: 32',
-          priority: 'Low',
-          status: 'Running',
-          timeInQueue: '10m ago',
-          queueName: targetQueueName,
-        },
-        {
-          position: 'N/A-running',
-          xid: '53308',
-          workUnitId: '1',
-          jobName: 'xmc-operation-53308-1',
-          user: 'example@example.com',
-          resources: 'GPU: 8, CPU: 32',
-          priority: 'Low',
-          status: 'Running',
-          timeInQueue: '5m ago',
-          queueName: targetQueueName,
-        },
-      ],
-    });
+  getQueueJobs(queueName: string): Observable<GetRunningAndPendingJobsResponse> {
+    return this.http
+      .get<GetRunningAndPendingJobsResponse>(
+        `${XMC_API_DOMAIN}/clusterqueues/${encodeURIComponent(queueName)}/jobs`,
+        { withCredentials: true },
+      )
+      .pipe(
+        catchError((error) => {
+          console.error(`Failed to fetch jobs for queue ${queueName}:`, error);
+          return of({ jobs: [], totalQueueSize: 0, nextPageToken: '' });
+        }),
+      );
   }
 }

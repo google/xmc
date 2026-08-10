@@ -20,10 +20,10 @@ import { firstValueFrom } from 'rxjs';
 
 import {
   GetFittingQueuesResponse,
-  QueueJobListResponse,
+  GetRunningAndPendingJobsResponse,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
-import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
+import { cleanState, flush, get, setupModule, setupObservableMatchers } from '../testing/test';
 import { XMC_API_DOMAIN } from './constants';
 import { ResourceService } from './resource_service';
 
@@ -87,22 +87,49 @@ describe('ResourceService', () => {
 
       const response = await responsePromise;
       expect(response.queues).toEqual([]);
+      await flush();
     });
   });
 
   describe('getQueueJobs', () => {
-    it('should return mock queue jobs list for given queue', async () => {
-      const response: QueueJobListResponse = await firstValueFrom(
+    it('should fetch queue jobs list for given queue', async () => {
+      const mockResponse: GetRunningAndPendingJobsResponse = {
+        jobs: [
+          {
+            positionInQueue: 1,
+            xid: 101,
+            status: 'RUNNING',
+          },
+        ],
+        totalQueueSize: 1,
+      };
+
+      const responsePromise: Promise<GetRunningAndPendingJobsResponse> = firstValueFrom(
         state.service.getQueueJobs('custom-queue'),
       );
-      expect(response.jobs.length).toBe(2);
-      expect(response.queueName).toBe('custom-queue');
-      expect(response.jobs[0].queueName).toBe('custom-queue');
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/clusterqueues/custom-queue/jobs`);
+      expect(req.request.method).toBe('GET');
+      req.flush(mockResponse);
+
+      const response = await responsePromise;
+      expect(response.jobs?.length).toBe(1);
+      expect(response.jobs?.[0].xid).toBe(101);
+      await flush();
     });
 
-    it('should fallback to default queueName when parameter is omitted', async () => {
-      const response: QueueJobListResponse = await firstValueFrom(state.service.getQueueJobs());
-      expect(response.queueName).toBe('gpu-cluster-queue');
+    it('should handle HTTP error gracefully and return empty jobs response', async () => {
+      const responsePromise: Promise<GetRunningAndPendingJobsResponse> = firstValueFrom(
+        state.service.getQueueJobs('custom-queue'),
+      );
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/clusterqueues/custom-queue/jobs`);
+      req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
+
+      const response = await responsePromise;
+      expect(response.jobs).toEqual([]);
+      expect(response.totalQueueSize).toBe(0);
+      await flush();
     });
   });
 });

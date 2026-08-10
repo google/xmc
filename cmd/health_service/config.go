@@ -32,6 +32,7 @@ type Config struct {
 	XidAddr       string
 	ActuatorURL   string
 	ReconcilerURL string
+	ConfigDir     string
 }
 
 var cfg Config
@@ -54,6 +55,7 @@ func init() {
 	flag.StringVar(&cfg.ProjectID, "project_id", os.Getenv("GOOGLE_CLOUD_PROJECT"), "The GCP project ID.")
 	flag.StringVar(&cfg.TLSCertFile, "tls_cert_file", "", "The TLS certificate file path.")
 	flag.StringVar(&cfg.TLSKeyFile, "tls_key_file", "", "The TLS private key file path.")
+	flag.StringVar(&cfg.ConfigDir, "config_dir", "/config", "The directory where ConfigMaps are mounted.")
 }
 
 // LoadConfig loads and returns the configuration.
