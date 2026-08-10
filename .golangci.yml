@@ -55,7 +55,7 @@ linters-settings:
   revive:
     rules:
       - name: function-result-limit
-        arguments: [2]
+        arguments: [3]
 
 issues:
   exclude-dirs:
@@ -64,7 +64,8 @@ issues:
     - path: (_test\.go|cmd/actuator/k8s_client/client\.go|cmd/rod_data_provider/reconciler)
       linters:
         - dupl
-    # Legacy AIP resource validators, data update checkers, auth interface, query generator AST visitors, spanner health & AIP-158 pagination methods returning 3+ parameters
-    - path: (internal/validator/names\.go|internal/storage/data|internal/storage/test_utils\.go|liststatusmessages\.go|listartifacts\.go|listworkunits\.go|listcharts\.go|listexperiments\.go|listxidentries\.go|utils_test\.go|reconciler_test\.go|k8sclient_test_utils\.go|spanner_health\.go|health_test\.go|internal/auth|internal/query_generator|api/filter/go/queryfilterbase|internal/storage/spanner/migrations|internal/security/keyreloader)
+    # Functions returning 4+ parameters (e.g. hierarchical resource ID parsers, data update checkers, and query generators)
+    - path: (internal/validator/names\.go|internal/storage/data|internal/query_generator)
       linters:
         - revive
+
