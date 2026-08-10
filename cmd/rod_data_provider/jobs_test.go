@@ -198,11 +198,8 @@ func TestGetRunningAndPendingJobs_ContextCancelled(t *testing.T) {
 
 func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 	now := time.Now()
-	wu := &essmsgpb.WorkUnit{
-		Name:     "experiments/100/workUnits/1",
-		Priority: essmsgpb.Priority(100),
-		Notes:    "test@example.com",
-		Executable: &essmsgpb.Executable{
+	wu := proto.Modify(baseWorkUnit, func(w *essmsgpb.WorkUnit) {
+		w.Executable = &essmsgpb.Executable{
 			Type: &essmsgpb.Executable_Jobset{
 				Jobset: &essmsgpb.JobSetExecutable{
 					Jobs: []*essmsgpb.KubernetesJob{
@@ -235,8 +232,8 @@ func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 					},
 				},
 			},
-		},
-	}
+		}
+	})
 
 	job := mapWorkUnitToDashboardJob(context.Background(), wu, now)
 	if job == nil {
