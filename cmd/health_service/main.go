@@ -42,19 +42,27 @@ import (
 )
 
 type grpcServerDeps struct {
-	grpcServer *grpc.Server
-	listener   net.Listener
-	srv        *server
-	essClient  *spanner.Client
-	xidClient  *spanner.Client
+	grpcServer  *grpc.Server
+	listener    net.Listener
+	srv         *server
+	essClient   *spanner.Client
+	xidClient   *spanner.Client
+	redisClient *redisclient.PublisherClient
 }
 
-func (d *grpcServerDeps) Close() {
+func (d *grpcServerDeps) Close(ctx context.Context) {
 	if d.essClient != nil {
 		d.essClient.Close()
 	}
 	if d.xidClient != nil {
 		d.xidClient.Close()
+	}
+	if d.redisClient != nil {
+		cleanupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := d.redisClient.Close(cleanupCtx); err != nil {
+			logging.Error(ctx, "Failed to close redis client", "error", err)
+		}
 	}
 }
 
@@ -76,7 +84,7 @@ func main() {
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
 
 	deps := initGRPCServer(ctx, cfg)
-	defer deps.Close()
+	defer deps.Close(ctx)
 
 	go func() {
 		logging.Info(ctx, "Health service gRPC starting", "addr", deps.listener.Addr())
@@ -151,17 +159,11 @@ func initGRPCServer(ctx context.Context, cfg *Config) *grpcServerDeps {
 	xidClient, xidHealth := initSpannerHealthClient(ctx, cfg.XidSpannerDatabase, "XID")
 
 	var redisPingClient RedisPingClient
+	var publisher *redisclient.PublisherClient
 	if cfg.RedisAddr != "" {
 		redisCfg := redisclient.Config{Addr: cfg.RedisAddr}
-		publisher := redisclient.NewPublisher(redisCfg, "")
+		publisher = redisclient.NewPublisher(redisCfg, "")
 		redisPingClient = publisher
-		defer func() {
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := publisher.Close(cleanupCtx); err != nil {
-				logging.Error(ctx, "Failed to close redis client", "error", err)
-			}
-		}()
 	}
 
 	srv, err := newServer(cfg, essHealth, xidHealth, redisPingClient)
@@ -172,11 +174,12 @@ func initGRPCServer(ctx context.Context, cfg *Config) *grpcServerDeps {
 	reflection.Register(grpcServer)
 
 	return &grpcServerDeps{
-		grpcServer: grpcServer,
-		listener:   lis,
-		srv:        srv,
-		essClient:  essClient,
-		xidClient:  xidClient,
+		grpcServer:  grpcServer,
+		listener:    lis,
+		srv:         srv,
+		essClient:   essClient,
+		xidClient:   xidClient,
+		redisClient: publisher,
 	}
 }
 
