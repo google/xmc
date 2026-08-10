@@ -157,55 +157,12 @@ func jobSetPredicate(ctx context.Context) predicate.Predicate {
 		},
 
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldJobSet, ok := e.ObjectOld.(*v1alpha2.JobSet)
-			if !ok {
+			oldJobSet, okOld := e.ObjectOld.(*v1alpha2.JobSet)
+			newJobSet, okNew := e.ObjectNew.(*v1alpha2.JobSet)
+			if !okOld || !okNew {
 				return true
 			}
-			newJobSet, ok := e.ObjectNew.(*v1alpha2.JobSet)
-			if !ok {
-				return true
-			}
-
-			if oldJobSet.GetResourceVersion() == newJobSet.GetResourceVersion() {
-				return false
-			}
-
-			generationSame := oldJobSet.Generation == newJobSet.Generation
-			labelsSame := oldJobSet.Labels[constants.WorkUnitIDLabel] == newJobSet.Labels[constants.WorkUnitIDLabel] &&
-				oldJobSet.Labels[constants.ExperimentIDLabel] == newJobSet.Labels[constants.ExperimentIDLabel]
-			statusSame := isJobSetStatusEqual(&oldJobSet.Status, &newJobSet.Status)
-			deletionSame := (oldJobSet.GetDeletionTimestamp() == nil) == (newJobSet.GetDeletionTimestamp() == nil)
-
-			oldSus := oldJobSet.Spec.Suspend != nil && *oldJobSet.Spec.Suspend
-			newSus := newJobSet.Spec.Suspend != nil && *newJobSet.Spec.Suspend
-			specSame := generationSame && oldSus == newSus && calculateTotalReplicas(oldJobSet) == calculateTotalReplicas(newJobSet)
-
-			if specSame && labelsSame && statusSame && deletionSame {
-				return false
-			}
-
-			ctx := logging.Strip(ctx)
-			newManaged := hasValidXMCLabels(ctx, newJobSet)
-			oldManaged := hasValidXMCLabels(ctx, oldJobSet)
-
-			// Both must be managed to trigger on updates (unless it's a creation/deletion which is handled elsewhere).
-			// If it wasn't managed before, we don't want to trigger on status updates.
-			// If it's not managed now, we don't care.
-			if !newManaged || !oldManaged {
-				return false
-			}
-
-			// Trigger on the start of deletion.
-			if oldJobSet.GetDeletionTimestamp() == nil && newJobSet.GetDeletionTimestamp() != nil {
-				return true
-			}
-
-			// If already deleting, do not trigger on subsequent updates.
-			if newJobSet.GetDeletionTimestamp() != nil {
-				return false
-			}
-
-			return true
+			return shouldProcessJobSetUpdate(ctx, oldJobSet, newJobSet)
 		},
 
 		GenericFunc: func(e event.GenericEvent) bool {
@@ -220,6 +177,37 @@ func jobSetPredicate(ctx context.Context) predicate.Predicate {
 			return hasValidXMCLabels(ctx, jobSet)
 		},
 	}
+}
+
+func shouldProcessJobSetUpdate(ctx context.Context, oldJobSet, newJobSet *v1alpha2.JobSet) bool {
+	if oldJobSet.GetResourceVersion() == newJobSet.GetResourceVersion() {
+		return false
+	}
+
+	generationSame := oldJobSet.Generation == newJobSet.Generation
+	labelsSame := oldJobSet.Labels[constants.WorkUnitIDLabel] == newJobSet.Labels[constants.WorkUnitIDLabel] &&
+		oldJobSet.Labels[constants.ExperimentIDLabel] == newJobSet.Labels[constants.ExperimentIDLabel]
+	statusSame := isJobSetStatusEqual(&oldJobSet.Status, &newJobSet.Status)
+	deletionSame := (oldJobSet.GetDeletionTimestamp() == nil) == (newJobSet.GetDeletionTimestamp() == nil)
+
+	oldSus := oldJobSet.Spec.Suspend != nil && *oldJobSet.Spec.Suspend
+	newSus := newJobSet.Spec.Suspend != nil && *newJobSet.Spec.Suspend
+	specSame := generationSame && oldSus == newSus && calculateTotalReplicas(oldJobSet) == calculateTotalReplicas(newJobSet)
+
+	if specSame && labelsSame && statusSame && deletionSame {
+		return false
+	}
+
+	ctx = logging.Strip(ctx)
+	if !hasValidXMCLabels(ctx, newJobSet) || !hasValidXMCLabels(ctx, oldJobSet) {
+		return false
+	}
+
+	if oldJobSet.GetDeletionTimestamp() == nil && newJobSet.GetDeletionTimestamp() != nil {
+		return true
+	}
+
+	return newJobSet.GetDeletionTimestamp() == nil
 }
 
 // Reconcile fetches the JobSet and logs its name and a summary of its ReplicatedJobsStatus.
@@ -279,7 +267,7 @@ func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v
 	if labelsErr == nil {
 		update := createStoppedUpdate(wid, eid)
 		updatesSentTotal.WithLabelValues().Inc()
-		r.Batcher.Add(ctx, xid, *update, shared.JobsetSource)
+		r.Batcher.Add(logging.Strip(ctx), xid, *update, shared.JobsetSource)
 		logging.Debug(ctx, "Added STOPPED update to batch for JobSet", "namespace", jobSet.Namespace)
 	} else {
 		logging.Warn(ctx, "JobSet is being deleted with finalizer but has invalid labels", "namespace", jobSet.Namespace, "error", labelsErr)
@@ -581,27 +569,38 @@ func isJobSetStatusEqual(old, new *v1alpha2.JobSetStatus) bool {
 	if old.Restarts != new.Restarts {
 		return false
 	}
-	if len(old.Conditions) != len(new.Conditions) {
+	if !isJobSetConditionsEqual(old.Conditions, new.Conditions) {
 		return false
 	}
-	for i := range old.Conditions {
-		if old.Conditions[i].Type != new.Conditions[i].Type ||
-			old.Conditions[i].Status != new.Conditions[i].Status ||
-			old.Conditions[i].Reason != new.Conditions[i].Reason ||
-			old.Conditions[i].Message != new.Conditions[i].Message {
+	return isReplicatedJobsStatusEqual(old.ReplicatedJobsStatus, new.ReplicatedJobsStatus)
+}
+
+func isJobSetConditionsEqual(old, new []metav1.Condition) bool {
+	if len(old) != len(new) {
+		return false
+	}
+	for i := range old {
+		if old[i].Type != new[i].Type ||
+			old[i].Status != new[i].Status ||
+			old[i].Reason != new[i].Reason ||
+			old[i].Message != new[i].Message {
 			return false
 		}
 	}
-	if len(old.ReplicatedJobsStatus) != len(new.ReplicatedJobsStatus) {
+	return true
+}
+
+func isReplicatedJobsStatusEqual(old, new []v1alpha2.ReplicatedJobStatus) bool {
+	if len(old) != len(new) {
 		return false
 	}
-	for i := range old.ReplicatedJobsStatus {
-		if old.ReplicatedJobsStatus[i].Name != new.ReplicatedJobsStatus[i].Name ||
-			old.ReplicatedJobsStatus[i].Ready != new.ReplicatedJobsStatus[i].Ready ||
-			old.ReplicatedJobsStatus[i].Succeeded != new.ReplicatedJobsStatus[i].Succeeded ||
-			old.ReplicatedJobsStatus[i].Failed != new.ReplicatedJobsStatus[i].Failed ||
-			old.ReplicatedJobsStatus[i].Active != new.ReplicatedJobsStatus[i].Active ||
-			old.ReplicatedJobsStatus[i].Suspended != new.ReplicatedJobsStatus[i].Suspended {
+	for i := range old {
+		if old[i].Name != new[i].Name ||
+			old[i].Ready != new[i].Ready ||
+			old[i].Succeeded != new[i].Succeeded ||
+			old[i].Failed != new[i].Failed ||
+			old[i].Active != new[i].Active ||
+			old[i].Suspended != new[i].Suspended {
 			return false
 		}
 	}

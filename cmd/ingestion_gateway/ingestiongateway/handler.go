@@ -80,54 +80,8 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string, gMetr
 		jobNameHeader := strings.TrimSpace(r.Header.Get("X-Job-Name"))
 
 		consumer := func(m *metrics.Metric) error {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-
-			// Early-abort optimization: stop decoding if a previous async write failed.
-			if errPtr := publishErr.Load(); errPtr != nil {
-				return *errPtr
-			}
-
-			if m == nil || m.Metric == nil {
-				return fmt.Errorf("received nil metric record")
-			}
-
-			if m.JobName == "" && jobNameHeader != "" {
-				m.JobName = jobNameHeader
-				if m.Metric != nil {
-					m.Metric.JobName = jobNameHeader
-				}
-			}
-
-			if m.ReplicaId == "" && replicaIDHeader != "" {
-				m.ReplicaId = replicaIDHeader
-				if m.Metric != nil {
-					m.Metric.ReplicaId = replicaIDHeader
-				}
-			}
-
-			valBytes, err := proto.Marshal(m.Metric)
-			if err != nil {
-				return fmt.Errorf("failed to marshal metric proto: %w", err)
-			}
-
-			record := &kgo.Record{
-				Topic: topicName,
-				Key:   FormatCompositeKey(m.Xid, m.WorkUnitId),
-				Value: valBytes,
-			}
-
-			wg.Add(1)
-			producer.Produce(ctx, record, func(r *kgo.Record, err error) {
-				defer wg.Done()
-				if err != nil {
-					errCopy := fmt.Errorf("async produce error: %w", err)
-					publishErr.CompareAndSwap(nil, &errCopy)
-				}
-			})
-
-			return nil
+			enrichMetricHeaderDefaults(m, jobNameHeader, replicaIDHeader)
+			return publishMetricRecord(ctx, m, topicName, producer, &wg, &publishErr)
 		}
 
 		res := DecodeAndValidateMetrics(r.Body, consumer)
@@ -135,41 +89,7 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string, gMetr
 		// Wait for all in-flight async writes to complete before responding.
 		wg.Wait()
 
-		// If request context was canceled or timed out, log and respond with an appropriate error status
-		// to prevent returning a misleading 200 OK to clients if the connection is still open (e.g., during server shutdown or timeouts).
-		if ctx.Err() != nil {
-			logging.Info(ctx, "Metrics ingestion request canceled or timed out", "error", ctx.Err().Error())
-			statusCode := http.StatusServiceUnavailable
-			errType := "service_unavailable"
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				statusCode = http.StatusGatewayTimeout
-				errType = "gateway_timeout"
-			}
-			if gMetrics != nil {
-				gMetrics.RecordDroppedPayload(errType)
-			}
-			writeJSONResponse(w, r, statusCode, ServiceUnavailableErrorPayload{
-				Error:   errType,
-				Message: ctx.Err().Error(),
-			})
-			return
-		}
-
-		// If any async publish failed, evaluate error type before responding.
-		if errPtr := publishErr.Load(); errPtr != nil {
-			handlePublishError(ctx, w, r, gMetrics, *errPtr)
-			return
-		}
-
-		if res.Err != nil {
-			logging.Warn(ctx, "Metrics ingestion request failed with decoding error", "error", res.Err.Error())
-			if gMetrics != nil {
-				gMetrics.RecordDroppedPayload("decode_error")
-			}
-			writeJSONResponse(w, r, http.StatusBadRequest, BadRequestErrorPayload{
-				Error:   "bad_request",
-				Message: res.Err.Error(),
-			})
+		if handleContextOrDecodeError(ctx, w, r, gMetrics, &publishErr, res) {
 			return
 		}
 
@@ -191,6 +111,92 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string, gMetr
 			"count":  res.ValidCount,
 		})
 	}
+}
+
+func enrichMetricHeaderDefaults(m *metrics.Metric, jobNameHeader, replicaIDHeader string) {
+	if m == nil || m.Metric == nil {
+		return
+	}
+	if m.JobName == "" && jobNameHeader != "" {
+		m.JobName = jobNameHeader
+		m.Metric.JobName = jobNameHeader
+	}
+	if m.ReplicaId == "" && replicaIDHeader != "" {
+		m.ReplicaId = replicaIDHeader
+		m.Metric.ReplicaId = replicaIDHeader
+	}
+}
+
+func publishMetricRecord(ctx context.Context, m *metrics.Metric, topicName string, producer MetricProducer, wg *sync.WaitGroup, publishErr *atomic.Pointer[error]) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if errPtr := publishErr.Load(); errPtr != nil {
+		return *errPtr
+	}
+	if m == nil || m.Metric == nil {
+		return fmt.Errorf("received nil metric record")
+	}
+
+	valBytes, err := proto.Marshal(m.Metric)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metric proto: %w", err)
+	}
+
+	record := &kgo.Record{
+		Topic: topicName,
+		Key:   FormatCompositeKey(m.Xid, m.WorkUnitId),
+		Value: valBytes,
+	}
+
+	wg.Add(1)
+	producer.Produce(ctx, record, func(r *kgo.Record, err error) {
+		defer wg.Done()
+		if err != nil {
+			errCopy := fmt.Errorf("async produce error: %w", err)
+			publishErr.CompareAndSwap(nil, &errCopy)
+		}
+	})
+
+	return nil
+}
+
+func handleContextOrDecodeError(ctx context.Context, w http.ResponseWriter, r *http.Request, gMetrics *GatewayMetrics, publishErr *atomic.Pointer[error], res StreamDecodeResult) bool {
+	if ctx.Err() != nil {
+		logging.Info(ctx, "Metrics ingestion request canceled or timed out", "error", ctx.Err().Error())
+		statusCode := http.StatusServiceUnavailable
+		errType := "service_unavailable"
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			statusCode = http.StatusGatewayTimeout
+			errType = "gateway_timeout"
+		}
+		if gMetrics != nil {
+			gMetrics.RecordDroppedPayload(errType)
+		}
+		writeJSONResponse(w, r, statusCode, ServiceUnavailableErrorPayload{
+			Error:   errType,
+			Message: ctx.Err().Error(),
+		})
+		return true
+	}
+
+	if errPtr := publishErr.Load(); errPtr != nil {
+		handlePublishError(ctx, w, r, gMetrics, *errPtr)
+		return true
+	}
+
+	if res.Err != nil {
+		logging.Warn(ctx, "Metrics ingestion request failed with decoding error", "error", res.Err.Error())
+		if gMetrics != nil {
+			gMetrics.RecordDroppedPayload("decode_error")
+		}
+		writeJSONResponse(w, r, http.StatusBadRequest, BadRequestErrorPayload{
+			Error:   "bad_request",
+			Message: res.Err.Error(),
+		})
+		return true
+	}
+	return false
 }
 
 func writeJSONResponse(w http.ResponseWriter, r *http.Request, statusCode int, payload any) {
