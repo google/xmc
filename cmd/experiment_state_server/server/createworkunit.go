@@ -34,9 +34,17 @@ func (s *Server) CreateWorkUnit(ctx context.Context, req *apipb.CreateWorkUnitRe
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Create work unit", "request", req)
 
-	// 1-3. Authenticate, validate request payload, and authorize caller.
-	xid, email, err := s.authenticateAndAuthorizeWorkUnitCreation(ctx, req)
+	// 1. Authenticate the user.
+	logging.Debug(ctx, "Extracting user identity from context")
+	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
+		return nil, err
+	}
+
+	// 2. Validate the request payload.
+	xid, err := validateCreateWorkUnitRequest(req)
+	if err != nil {
+		logging.Warn(ctx, "CreateWorkUnit validation failed", "error", err)
 		return nil, err
 	}
 	ctx = logging.WithExperimentName(ctx, req.GetParent())
@@ -47,6 +55,11 @@ func (s *Server) CreateWorkUnit(ctx context.Context, req *apipb.CreateWorkUnitRe
 
 	executionEnv, err := s.checkExecutionEnvCompatibility(ctx, req.GetWorkUnit())
 	if err != nil {
+		return nil, err
+	}
+
+	// 3. Authorize the caller to create work units for this experiment.
+	if err := s.authorizeCreateWorkUnit(ctx, xid, email); err != nil {
 		return nil, err
 	}
 
@@ -153,28 +166,25 @@ func (s *Server) checkExecutionEnvCompatibility(ctx context.Context, wu *msgpb.W
 	return executionEnv, nil
 }
 
-func (s *Server) authenticateAndAuthorizeWorkUnitCreation(ctx context.Context, req *apipb.CreateWorkUnitRequest) (int64, string, error) {
-	logging.Debug(ctx, "Extracting user identity from context")
-	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
-	if err != nil {
-		return 0, "", err
-	}
+func validateCreateWorkUnitRequest(req *apipb.CreateWorkUnitRequest) (int64, error) {
 	xid, err := validator.ValidateExperimentName(req.GetParent())
 	if err != nil {
-		logging.Warn(ctx, "Failed to validate experiment name", "error", err)
-		return 0, "", fmt.Errorf("failed to validate experiment name: %w (%v)", status.ErrInvalidArgument, err)
+		return 0, fmt.Errorf("failed to validate experiment name: %w (%v)", status.ErrInvalidArgument, err)
 	}
 	if err := validator.ValidateCreateWorkUnitRequest(req); err != nil {
-		logging.Warn(ctx, "CreateWorkUnit validation failed", "error", err)
-		return 0, "", fmt.Errorf("CreateWorkUnit validation failed: %w", err)
+		return 0, fmt.Errorf("CreateWorkUnit validation failed: %w", err)
 	}
+	return xid, nil
+}
+
+func (s *Server) authorizeCreateWorkUnit(ctx context.Context, xid int64, email string) error {
 	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
 	if err != nil {
-		return 0, "", err
+		return err
 	}
 	if !authorized {
 		logging.Warn(ctx, "User not authorized to create work units for XID", "user", email)
-		return 0, "", fmt.Errorf("user %s is not authorized to create work units for XID %d: %w", email, xid, status.ErrPermissionDenied)
+		return fmt.Errorf("user %s is not authorized to create work units for XID %d: %w", email, xid, status.ErrPermissionDenied)
 	}
-	return xid, email, nil
+	return nil
 }
