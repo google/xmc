@@ -37,6 +37,8 @@ linters:
     # Phase 4: Function result limit & duplication detection
     - dupl
     - revive
+    # Phase 5: Cyclomatic complexity enforcement
+    - gocyclo
 
 linters-settings:
   gofmt:
@@ -50,6 +52,8 @@ linters-settings:
       - labelled
   nestif:
     min-complexity: 4
+  gocyclo:
+    min-complexity: 15
   dupl:
     threshold: 100
   revive:
@@ -64,4 +68,11 @@ issues:
     - path: (_test\.go|cmd/actuator/k8s_client/client\.go)
       linters:
         - dupl
+    - path: _test\.go
+      linters:
+        - gocyclo
+    # TODO(Phase 5): Refactor legacy query filter ASTs, Spanner row decoders, request validators, and ESS handlers exceeding cyclomatic complexity 15
+    - path: (api/filter/go|internal/query_generator|internal/storage/spanner|internal/storage/data/workunitexecutions\.go|internal/validator/requests\.go|cmd/actuator/k8s_client/jobset\.go|cmd/reconciler/jobset|cmd/ingestion_gateway/ingestiongateway/handler\.go|cmd/experiment_state_server)
+      linters:
+        - gocyclo
 
