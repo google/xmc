@@ -302,7 +302,9 @@ func (c *HealthChecker) checkRedis(ctx context.Context) *spb.ComponentHealth {
 			ErrorMessage: "redis client not initialized",
 		}
 	}
-	if err := c.redisClient.Ping(ctx); err != nil {
+	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := c.redisClient.Ping(pingCtx); err != nil {
 		return &spb.ComponentHealth{
 			Name:         "Redis",
 			Type:         spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,

@@ -80,18 +80,19 @@ func main() {
 		defer xidClient.Close()
 	}
 
-	var redisClient *redisclient.PublisherClient
+	var redisPingClient RedisPingClient
 	if cfg.RedisAddr != "" {
 		redisCfg := redisclient.Config{Addr: cfg.RedisAddr}
-		redisClient = redisclient.NewPublisher(redisCfg, "")
+		publisher := redisclient.NewPublisher(redisCfg, "")
+		redisPingClient = publisher
 		defer func() {
-			if err := redisClient.Close(context.Background()); err != nil {
+			if err := publisher.Close(context.Background()); err != nil {
 				logging.Error(ctx, "Failed to close redis client", "error", err)
 			}
 		}()
 	}
 
-	srv, err := newServer(cfg, essHealth, xidHealth, redisClient)
+	srv, err := newServer(cfg, essHealth, xidHealth, redisPingClient)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create server", "error", err)
 	}
