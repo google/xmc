@@ -364,6 +364,11 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 		dnsPolicy = corev1.DNSPolicy(job.GetDnsPolicy())
 	}
 
+	restartPolicy := corev1.RestartPolicyNever
+	if job.GetRestartPolicy() != "" {
+		restartPolicy = corev1.RestartPolicy(job.GetRestartPolicy())
+	}
+
 	return jobsetv1alpha2.ReplicatedJob{
 		Name:      job.GetName(),
 		GroupName: job.GetGroupName(),
@@ -393,7 +398,7 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 						DNSPolicy:                     dnsPolicy,
 						InitContainers:                c.buildInitContainersForJob(job),
 						Containers:                    c.buildContainersForJob(job),
-						RestartPolicy:                 corev1.RestartPolicyNever,
+						RestartPolicy:                 restartPolicy,
 						SecurityContext:               defaultPodSecurityContext(),
 						Volumes:                       generateVolumesForJob(job),
 						NodeSelector:                  nodeSelector,
@@ -666,8 +671,9 @@ func validateNonRestartingJobSetContract(jobSet *jobsetv1alpha2.JobSet) error {
 		return fmt.Errorf("contract violation: JobSet MaxRestarts must be 0, got %d", jobSet.Spec.FailurePolicy.MaxRestarts)
 	}
 	for _, rj := range jobSet.Spec.ReplicatedJobs {
-		if rj.Template.Spec.Template.Spec.RestartPolicy != corev1.RestartPolicyNever {
-			return fmt.Errorf("contract violation: replicated job %q pod restartPolicy must be Never, got %s", rj.Name, rj.Template.Spec.Template.Spec.RestartPolicy)
+		rp := rj.Template.Spec.Template.Spec.RestartPolicy
+		if rp != corev1.RestartPolicyNever && rp != corev1.RestartPolicyOnFailure {
+			return fmt.Errorf("contract violation: replicated job %q pod restartPolicy must be Never or OnFailure, got %s", rj.Name, rp)
 		}
 	}
 	return nil
