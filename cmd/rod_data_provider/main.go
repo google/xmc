@@ -26,10 +26,8 @@ import (
 	"time"
 
 	"go/google"
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	gwruntime "golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/go_sync/errgroup/errgroup"
-	"golang/google_api/option/option"
 	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
@@ -124,43 +122,8 @@ func run(ctx context.Context, cfg *Config) error {
 }
 
 func initWorkUnitStore(ctx context.Context, cfg *Config) (WorkUnitFetcher, error) {
-	if cfg.SpannerDatabaseName == "" {
-		logging.Warn(ctx, "Spanner database name is empty; WorkUnit storage disabled")
-		return nil, nil
-	}
-
-	logging.Info(ctx, "Initializing Spanner client for WorkUnit storage", "db", cfg.SpannerDatabaseName)
-	sessionPoolConfig := spanner.SessionPoolConfig{
-		TrackSessionHandles: true,
-		InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
-			ActionOnInactiveTransaction: spanner.Warn,
-		},
-	}
-	var opts []option.ClientOption
-	if cfg.QuotaProjectID != "" {
-		opts = append(opts, option.WithQuotaProject(cfg.QuotaProjectID))
-	}
-	spannerClient, err := spanner.NewClientWithConfig(
-		ctx,
-		cfg.SpannerDatabaseName,
-		spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
-		opts...,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Spanner client: %w", err)
-	}
-	go func() {
-		<-ctx.Done()
-		spannerClient.Close()
-	}()
-
-	repo, err := workunit.NewRepository(spannerClient, nil, workunit.RepositoryConfig{})
-	if err != nil {
-		spannerClient.Close()
-		return nil, fmt.Errorf("failed to create WorkUnit repository: %w", err)
-	}
-
-	return repo, nil
+	logging.Info(ctx, "Using mock WorkUnit storage for PR 404")
+	return &workunit.Repository{}, nil
 }
 
 // GRPCServerComponents contains the listener and gRPC server instance.
