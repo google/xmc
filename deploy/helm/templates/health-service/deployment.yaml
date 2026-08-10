@@ -54,6 +54,7 @@ spec:
         - name: health-config-volume
           configMap:
             name: health-config
+            optional: true
       containers:
       - name: health-service
         image: {{ .Values.health_service_custom_image | quote }}

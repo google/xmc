@@ -15,209 +15,151 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
+	"context"
+	"io"
+	"io/fs"
 	"testing"
+	"testing/fstest"
+
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/testing/protocmp"
+	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 )
 
-func TestListConfigs_Success(t *testing.T) {
-	tempDir := t.TempDir()
+func TestListConfigs(t *testing.T) {
+	tests := []struct {
+		name    string
+		fsys    fs.FS
+		want    []*spb.ConfigGroup
+		wantErr bool
+	}{
+		{
+			name: "Success",
+			fsys: fstest.MapFS{
+				"ess/ess_key":           &fstest.MapFile{Data: []byte("ess_val")},
+				"health-service/hs_key": &fstest.MapFile{Data: []byte("hs_val")},
+			},
+			want: []*spb.ConfigGroup{
+				{
+					DisplayName: "Experiment State Server Config",
+					Configs: []*spb.ConfigInfo{
+						{Key: "ess_key", Value: "ess_val"},
+					},
+				},
+				{
+					DisplayName: "Health Service Config",
+					Configs: []*spb.ConfigInfo{
+						{Key: "hs_key", Value: "hs_val"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "HiddenFilesAndDirsIgnored",
+			fsys: fstest.MapFS{
+				"ess/valid_key":   &fstest.MapFile{Data: []byte("val")},
+				"ess/.hidden_key": &fstest.MapFile{Data: []byte("val")},
+				"ess/subdir/":     &fstest.MapFile{Mode: fs.ModeDir},
+			},
+			want: []*spb.ConfigGroup{
+				{
+					DisplayName: "Experiment State Server Config",
+					Configs: []*spb.ConfigInfo{
+						{Key: "valid_key", Value: "val"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "MissingDirsSkipped",
+			fsys:    fstest.MapFS{},
+			want:    nil,
+			wantErr: false,
+		},
+		{
+			name: "UnreadableFileIgnored",
+			fsys: errorFileFS{
+				FS: fstest.MapFS{
+					"ess/valid_key":      &fstest.MapFile{Data: []byte("val")},
+					"ess/unreadable_key": &fstest.MapFile{Data: []byte("secret")},
+				},
+				failFile: "ess/unreadable_key",
+				err:      fs.ErrPermission,
+			},
+			want: []*spb.ConfigGroup{
+				{
+					DisplayName: "Experiment State Server Config",
+					Configs: []*spb.ConfigInfo{
+						{Key: "valid_key", Value: "val"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "UnreadableDirFails",
+			fsys:    errorFS{readDirErr: fs.ErrPermission},
+			want:    nil,
+			wantErr: true,
+		},
+	}
 
-	// Mock ESS config
-	essDir := filepath.Join(tempDir, "ess")
-	if err := os.Mkdir(essDir, 0755); err != nil {
-		t.Fatalf("failed to create ess dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(essDir, "ess_key"), []byte("ess_val"), 0644); err != nil {
-		t.Fatalf("failed to write ess config: %v", err)
-	}
-
-	// Mock Health Service config
-	hsDir := filepath.Join(tempDir, "health-service")
-	if err := os.Mkdir(hsDir, 0755); err != nil {
-		t.Fatalf("failed to create hs dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(hsDir, "hs_key"), []byte("hs_val"), 0644); err != nil {
-		t.Fatalf("failed to write hs config: %v", err)
-	}
-
-	groups, err := listConfigs(tempDir)
-	if err != nil {
-		t.Fatalf("listConfigs failed: %v", err)
-	}
-
-	if len(groups) != 2 {
-		t.Fatalf("Expected 2 config groups, got %d", len(groups))
-	}
-
-	expected := map[string]map[string]string{
-		"Experiment State Server Config": {"ess_key": "ess_val"},
-		"Health Service Config":          {"hs_key": "hs_val"},
-	}
-
-	for _, g := range groups {
-		expConfigs, ok := expected[g.DisplayName]
-		if !ok {
-			t.Errorf("Unexpected group: %q", g.DisplayName)
-			continue
-		}
-		if len(g.Configs) != len(expConfigs) {
-			t.Errorf("Group %q: expected %d configs, got %d", g.DisplayName, len(expConfigs), len(g.Configs))
-			continue
-		}
-		for _, c := range g.Configs {
-			val, ok := expConfigs[c.Key]
-			if !ok {
-				t.Errorf("Group %q: unexpected config key: %q", g.DisplayName, c.Key)
-				continue
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := listConfigs(context.Background(), tc.fsys)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("listConfigs() error = %v, wantErr = %v", err, tc.wantErr)
 			}
-			if c.Value != val {
-				t.Errorf("Group %q, key %q: expected value %q, got %q", g.DisplayName, c.Key, val, c.Value)
+			if tc.wantErr {
+				return
 			}
-		}
-	}
-}
-
-func TestListConfigs_HiddenFilesAndDirsIgnored(t *testing.T) {
-	tempDir := t.TempDir()
-
-	essDir := filepath.Join(tempDir, "ess")
-	if err := os.Mkdir(essDir, 0755); err != nil {
-		t.Fatalf("failed to create ess dir: %v", err)
-	}
-	// Normal file
-	if err := os.WriteFile(filepath.Join(essDir, "valid_key"), []byte("val"), 0644); err != nil {
-		t.Fatalf("failed to write config: %v", err)
-	}
-	// Hidden file
-	if err := os.WriteFile(filepath.Join(essDir, ".hidden_key"), []byte("val"), 0644); err != nil {
-		t.Fatalf("failed to write config: %v", err)
-	}
-	// Subdirectory
-	if err := os.Mkdir(filepath.Join(essDir, "subdir"), 0755); err != nil {
-		t.Fatalf("failed to create subdir: %v", err)
-	}
-
-	groups, err := listConfigs(tempDir)
-	if err != nil {
-		t.Fatalf("listConfigs failed: %v", err)
-	}
-
-	if len(groups) != 1 {
-		t.Fatalf("Expected 1 config group, got %d", len(groups))
-	}
-
-	configs := groups[0].Configs
-	if len(configs) != 1 {
-		t.Fatalf("Expected 1 config in group, got %d", len(configs))
-	}
-
-	if configs[0].Key != "valid_key" {
-		t.Errorf("Expected only 'valid_key' to be returned, got %q", configs[0].Key)
-	}
-}
-
-func TestListConfigs_MissingDirsSkipped(t *testing.T) {
-	tempDir := t.TempDir()
-	// No subdirectories created
-
-	groups, err := listConfigs(tempDir)
-	if err != nil {
-		t.Fatalf("listConfigs failed: %v", err)
-	}
-
-	if len(groups) != 0 {
-		t.Errorf("Expected 0 config groups for empty directory, got %d", len(groups))
-	}
-}
-
-func TestListConfigs_UnreadableFileIgnored(t *testing.T) {
-	tempDir := t.TempDir()
-
-	essDir := filepath.Join(tempDir, "ess")
-	if err := os.Mkdir(essDir, 0755); err != nil {
-		t.Fatalf("failed to create ess dir: %v", err)
-	}
-
-	// Writable/Readable file
-	if err := os.WriteFile(filepath.Join(essDir, "valid_key"), []byte("val"), 0644); err != nil {
-		t.Fatalf("failed to write config: %v", err)
-	}
-
-	// Unreadable file (0000 permissions)
-	unreadablePath := filepath.Join(essDir, "unreadable_key")
-	if err := os.WriteFile(unreadablePath, []byte("secret"), 0000); err != nil {
-		t.Fatalf("failed to write unreadable config: %v", err)
-	}
-
-	groups, err := listConfigs(tempDir)
-	if err != nil {
-		t.Fatalf("listConfigs failed: %v", err)
-	}
-
-	if len(groups) != 1 {
-		t.Fatalf("Expected 1 config group, got %d", len(groups))
-	}
-
-	configs := groups[0].Configs
-	// Check if the file is actually unreadable by the current process
-	_, errRead := os.ReadFile(unreadablePath)
-	expectedCount := 1
-	if errRead == nil {
-		// If we can read it (likely running as root), then it won't be skipped.
-		expectedCount = 2
-		t.Log("Warning: 0000 file was readable (likely running as root). Adjusting expectation.")
-	}
-
-	if len(configs) != expectedCount {
-		t.Fatalf("Expected %d configs in group, got %d", expectedCount, len(configs))
-	}
-
-	foundValid := false
-	for _, c := range configs {
-		if c.Key == "valid_key" {
-			foundValid = true
-			if c.Value != "val" {
-				t.Errorf("Expected valid_key value to be 'val', got %q", c.Value)
+			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("listConfigs() mismatch (-want +got):\n%s", diff)
 			}
-		}
-	}
-	if !foundValid {
-		t.Error("Expected 'valid_key' to be present")
+		})
 	}
 }
 
-func TestListConfigs_UnreadableDirIgnored(t *testing.T) {
-	tempDir := t.TempDir()
+// errorFS implements fs.FS to return directory errors deterministically.
+type errorFS struct {
+	readDirErr error
+}
 
-	// Unreadable directory
-	essDir := filepath.Join(tempDir, "ess")
-	if err := os.Mkdir(essDir, 0000); err != nil {
-		t.Fatalf("failed to create ess dir: %v", err)
-	}
-	// Defer chmod to allow cleanup of tempDir
-	defer os.Chmod(essDir, 0755)
+func (e errorFS) Open(name string) (fs.File, error) {
+	return nil, fs.ErrNotExist
+}
 
-	// Readable directory
-	hsDir := filepath.Join(tempDir, "health-service")
-	if err := os.Mkdir(hsDir, 0755); err != nil {
-		t.Fatalf("failed to create hs dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(hsDir, "hs_key"), []byte("hs_val"), 0644); err != nil {
-		t.Fatalf("failed to write config: %v", err)
-	}
+func (e errorFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	return nil, e.readDirErr
+}
 
-	groups, err := listConfigs(tempDir)
+// errorFileFS wraps a filesystem and injects read errors for a specific file.
+type errorFileFS struct {
+	fs.FS
+	failFile string
+	err      error
+}
+
+func (e errorFileFS) Open(name string) (fs.File, error) {
+	if name == e.failFile {
+		return nil, e.err
+	}
+	return e.FS.Open(name)
+}
+
+func (e errorFileFS) ReadFile(name string) ([]byte, error) {
+	if name == e.failFile {
+		return nil, e.err
+	}
+	if readFileFS, ok := e.FS.(fs.ReadFileFS); ok {
+		return readFileFS.ReadFile(name)
+	}
+	f, err := e.Open(name)
 	if err != nil {
-		t.Fatalf("listConfigs failed: %v", err)
+		return nil, err
 	}
-
-	// The unreadable directory should be skipped, so only health-service should be returned.
-	if len(groups) != 1 {
-		t.Fatalf("Expected 1 config group, got %d", len(groups))
-	}
-
-	if groups[0].DisplayName != "Health Service Config" {
-		t.Errorf("Expected group to be 'Health Service Config', got %q", groups[0].DisplayName)
-	}
+	defer f.Close()
+	return io.ReadAll(f)
 }

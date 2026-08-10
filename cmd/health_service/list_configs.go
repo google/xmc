@@ -15,23 +15,23 @@
 package main
 
 import (
-	"log/slog"
-	"os"
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
 	"path/filepath"
 	"strings"
 
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+	"xmanager_cloud/logging/logging"
 )
 
-// readConfigDir reads all files in the given directory and returns ConfigInfo slice.
+// readConfigDir reads all files in the given directory from fsys and returns ConfigInfo slice.
 // It ignores directories and files starting with ".".
-func readConfigDir(dir string) ([]*spb.ConfigInfo, error) {
-	files, err := os.ReadDir(dir)
+func readConfigDir(ctx context.Context, fsys fs.FS, dir string) ([]*spb.ConfigInfo, error) {
+	files, err := fs.ReadDir(fsys, dir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil // Return nil if directory doesn't exist (optional volume)
-		}
-		return nil, err
+		return nil, fmt.Errorf("failed to read config directory %s: %w", dir, err)
 	}
 
 	var configs []*spb.ConfigInfo
@@ -40,9 +40,9 @@ func readConfigDir(dir string) ([]*spb.ConfigInfo, error) {
 			continue
 		}
 		path := filepath.Join(dir, f.Name())
-		content, err := os.ReadFile(path)
+		content, err := fs.ReadFile(fsys, path)
 		if err != nil {
-			slog.Warn("Failed to read config file", "path", path, "error", err)
+			logging.Warn(ctx, "Failed to read config file", "path", path, "error", err)
 			continue
 		}
 		configs = append(configs, &spb.ConfigInfo{
@@ -53,8 +53,8 @@ func readConfigDir(dir string) ([]*spb.ConfigInfo, error) {
 	return configs, nil
 }
 
-// listConfigs reads configurations from the mounted ConfigMap directories.
-func listConfigs(configDir string) ([]*spb.ConfigGroup, error) {
+// listConfigs reads configurations from the mounted ConfigMap directories in fsys.
+func listConfigs(ctx context.Context, fsys fs.FS) ([]*spb.ConfigGroup, error) {
 	components := []struct {
 		name        string
 		displayName string
@@ -68,11 +68,13 @@ func listConfigs(configDir string) ([]*spb.ConfigGroup, error) {
 
 	var groups []*spb.ConfigGroup
 	for _, c := range components {
-		dir := filepath.Join(configDir, c.name)
-		configs, err := readConfigDir(dir)
+		configs, err := readConfigDir(ctx, fsys, c.name)
 		if err != nil {
-			slog.Error("Failed to read config dir", "dir", dir, "error", err)
-			continue
+			if errors.Is(err, fs.ErrNotExist) {
+				logging.Debug(ctx, "Config directory not found, skipping optional component", "dir", c.name)
+				continue
+			}
+			return nil, err
 		}
 		if len(configs) > 0 {
 			groups = append(groups, &spb.ConfigGroup{

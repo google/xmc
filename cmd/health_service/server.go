@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"os"
 
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 
@@ -70,7 +71,7 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 }
 
 func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntriesRequest) (*spb.ListConfigEntriesResponse, error) {
-	groups, err := listConfigs(s.cfg.ConfigDir)
+	groups, err := listConfigs(ctx, os.DirFS(s.cfg.ConfigDir))
 	if err != nil {
 		return nil, err
 	}

@@ -64,7 +64,9 @@ compat_go_test(
     ],
     embed = [":health_service_lib"],
     deps = [
+        "@com_github_google_go_cmp//cmp:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//health:go_default_library",
+        "@org_golang_google_protobuf//testing/protocmp:go_default_library",
     ],
 )
