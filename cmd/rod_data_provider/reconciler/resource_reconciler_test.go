@@ -79,3 +79,67 @@ func TestClusterQueueReconciler(t *testing.T) {
 		t.Errorf("expected cq-test to be deleted from cache")
 	}
 }
+
+func TestLocalQueueReconciler(t *testing.T) {
+	scheme := runtime.NewScheme()
+	kueuev1beta1.AddToScheme(scheme)
+
+	lq := &kueuev1beta1.LocalQueue{
+		ObjectMeta: metav1.ObjectMeta{Name: "lq-test", Namespace: "default"},
+	}
+	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(lq).Build()
+	c := cache.NewResourceCache[*kueuev1beta1.LocalQueue]()
+
+	rec := NewLocalQueueReconciler(client, c)
+	ctx := context.Background()
+
+	req := ctrlreq.Request{NamespacedName: ctrl.ObjectKey{Name: "lq-test", Namespace: "default"}}
+	if _, err := rec.Reconcile(ctx, req); err != nil {
+		t.Fatalf("Reconcile failed: %v", err)
+	}
+
+	if _, ok := c.Get("default/lq-test"); !ok {
+		t.Errorf("expected default/lq-test to be cached")
+	}
+
+	client.Delete(ctx, lq)
+	if _, err := rec.Reconcile(ctx, req); err != nil {
+		t.Fatalf("Reconcile delete failed: %v", err)
+	}
+
+	if _, ok := c.Get("default/lq-test"); ok {
+		t.Errorf("expected default/lq-test to be deleted from cache")
+	}
+}
+
+func TestResourceFlavorReconciler(t *testing.T) {
+	scheme := runtime.NewScheme()
+	kueuev1beta1.AddToScheme(scheme)
+
+	rf := &kueuev1beta1.ResourceFlavor{
+		ObjectMeta: metav1.ObjectMeta{Name: "rf-test"},
+	}
+	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rf).Build()
+	c := cache.NewResourceCache[*kueuev1beta1.ResourceFlavor]()
+
+	rec := NewResourceFlavorReconciler(client, c)
+	ctx := context.Background()
+
+	req := ctrlreq.Request{NamespacedName: ctrl.ObjectKey{Name: "rf-test"}}
+	if _, err := rec.Reconcile(ctx, req); err != nil {
+		t.Fatalf("Reconcile failed: %v", err)
+	}
+
+	if _, ok := c.Get("rf-test"); !ok {
+		t.Errorf("expected rf-test to be cached")
+	}
+
+	client.Delete(ctx, rf)
+	if _, err := rec.Reconcile(ctx, req); err != nil {
+		t.Fatalf("Reconcile delete failed: %v", err)
+	}
+
+	if _, ok := c.Get("rf-test"); ok {
+		t.Errorf("expected rf-test to be deleted from cache")
+	}
+}

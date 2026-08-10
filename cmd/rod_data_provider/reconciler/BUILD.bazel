@@ -19,7 +19,7 @@ package(default_visibility = ["//visibility:public"])
 compat_go_library(
     name = "reconciler",
     srcs = [
-        "helper.go",
+        "resource_reconciler.go",
     ],
     importpath = "xmanager_cloud/cmd/rod_data_provider/reconciler",
     visibility = ["//visibility:public"],
@@ -36,9 +36,7 @@ compat_go_library(
 compat_go_test(
     name = "reconciler_test",
     srcs = [
-        "clusterqueue_test.go",
-        "localqueue_test.go",
-        "resourceflavor_test.go",
+        "resource_reconciler_test.go",
     ],
     embed = [":reconciler"],
     deps = [
