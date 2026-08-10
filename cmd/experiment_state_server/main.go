@@ -84,9 +84,10 @@ func main() {
 	spannerClient := initSpannerClient(ctx, &cfg)
 	defer spannerClient.Close()
 
-	// 3. Initialize services
+	// 3. Initialize Cloud Identity, Storage, Auth, and XID services.
 	storage, auth, xidClient := initServices(ctx, &cfg, oauthCfg, spannerClient)
 
+	// 4. Initialize TLS credentials.
 	transportCreds, err := tlsutil.NewServerCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
 		logging.Fatal(ctx, "failed to configure server credentials", "error", err)
@@ -96,11 +97,11 @@ func main() {
 		grpc.Creds(transportCreds),
 	}
 
-	// 6. Initialize Task Queue client.
+	// 5. Initialize Task Queue client.
 	taskQueueClient := initTaskQueueClient(ctx, &cfg)
 	defer taskQueueClient.Close()
 
-	// 7. Set up the gRPC server.
+	// 6. Set up the gRPC server.
 	experimentStateServer := server.New(storage, &cfg, auth, xidClient, taskQueueClient)
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
@@ -127,7 +128,7 @@ func main() {
 		}
 	}()
 
-	// 8. Initialize the gRPC gateway mux.
+	// 7. Initialize the gRPC gateway mux.
 	httpTransportCreds, err := tlsutil.NewClientCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
 		logging.Fatal(ctx, "failed to configure client credentials", "error", err)
@@ -142,7 +143,7 @@ func main() {
 		logging.Fatal(ctx, "failed to register gateway", "error", err)
 	}
 
-	// 9. Create a master HTTP mux for the gRPC gateway + health checks.
+	// 8. Create a master HTTP mux for the gRPC gateway + health checks.
 	httpMux := http.NewServeMux()
 
 	// Load dynamic OAuth2 Authentication configurations
@@ -204,10 +205,10 @@ func main() {
 		authenticatedGwmux.ServeHTTP(w, r)
 	})
 
-	// 10. Apply security middlewares
+	// 9. Apply security middlewares
 	handler := oauthAuth.SecurityMiddlewares(httpMux)
 
-	// 11. Start the HTTP server.
+	// 10. Start the HTTP server.
 	gwServer := &http.Server{
 		Addr:    ":" + cfg.HTTPPort,
 		Handler: handler,
@@ -219,7 +220,7 @@ func main() {
 		}
 	}()
 
-	// 12. Gracefully shut down the server when a signal is received.
+	// 11. Gracefully shut down the server when a signal is received.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit // Block until a signal is received
