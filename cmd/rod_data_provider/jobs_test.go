@@ -233,7 +233,7 @@ func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 		t.Fatalf("RequestedResources len = %d, want 1", len(job.GetRequestedResources()))
 	}
 	res := job.GetRequestedResources()[0]
-	if res.GetResourceType() != "nvidia-tesla-h100" || res.GetCount() != 8.0 {
-		t.Errorf("RequestedResource = %v %v, want nvidia-tesla-h100 8.0", res.GetResourceType(), res.GetCount())
+	if res.GetResourceType() != "nvidia-tesla-h100" || res.GetCount() != 4.0 {
+		t.Errorf("RequestedResource = %v %v, want nvidia-tesla-h100 4.0", res.GetResourceType(), res.GetCount())
 	}
 }

@@ -140,26 +140,23 @@ func calculateQueueDuration(wu *essmsgpb.WorkUnit, now time.Time) int64 {
 	return 0
 }
 
-func extractRequestedResourcesFromSpec(spec *essmsgpb.ExecutableSpec, replicas float64) []*spb.Resource {
-	if spec == nil || spec.GetResources() == nil {
+func extractRequestedResources(wu *essmsgpb.WorkUnit) []*spb.Resource {
+	resSet := extractResourceSet(wu)
+	if resSet == nil {
 		return nil
-	}
-	resSet := spec.GetResources()
-	if replicas <= 0 {
-		replicas = 1
 	}
 	var resources []*spb.Resource
 	if cpu := resSet.GetCpuResources(); cpu != nil {
 		if cpu.GetCpuMillicores() > 0 {
 			resources = append(resources, &spb.Resource{
 				ResourceType: "cpu",
-				Count:        (float64(cpu.GetCpuMillicores()) / 1000.0) * replicas,
+				Count:        float64(cpu.GetCpuMillicores()) / 1000.0,
 			})
 		}
 		if cpu.GetMemoryBytes() > 0 {
 			resources = append(resources, &spb.Resource{
 				ResourceType: "memory",
-				Count:        float64(cpu.GetMemoryBytes()) * replicas,
+				Count:        float64(cpu.GetMemoryBytes()),
 			})
 		}
 	}
@@ -170,7 +167,7 @@ func extractRequestedResourcesFromSpec(spec *essmsgpb.ExecutableSpec, replicas f
 		}
 		resources = append(resources, &spb.Resource{
 			ResourceType: resType,
-			Count:        float64(gpu.GetCount()) * replicas,
+			Count:        float64(gpu.GetCount()),
 		})
 	}
 	if tpu := resSet.GetTpuResources(); tpu != nil {
@@ -180,26 +177,19 @@ func extractRequestedResourcesFromSpec(spec *essmsgpb.ExecutableSpec, replicas f
 		}
 		resources = append(resources, &spb.Resource{
 			ResourceType: resType,
-			Count:        1 * replicas,
+			Count:        1,
 		})
 	}
 	return resources
 }
 
-func extractRequestedResources(wu *essmsgpb.WorkUnit) []*spb.Resource {
-	if wu == nil || wu.GetExecutable() == nil {
+func extractResourceSet(wu *essmsgpb.WorkUnit) *essmsgpb.ResourceSet {
+	if wu == nil || wu.GetExecutable() == nil || wu.GetExecutable().GetJobset() == nil {
 		return nil
 	}
-	jobset := wu.GetExecutable().GetJobset()
-	if jobset == nil {
+	jobs := wu.GetExecutable().GetJobset().GetJobs()
+	if len(jobs) == 0 || jobs[0] == nil || jobs[0].GetSpec() == nil {
 		return nil
 	}
-	var resources []*spb.Resource
-	for _, job := range jobset.GetJobs() {
-		if job == nil {
-			continue
-		}
-		resources = append(resources, extractRequestedResourcesFromSpec(job.GetSpec(), float64(job.GetReplicas()))...)
-	}
-	return resources
+	return jobs[0].GetSpec().GetResources()
 }
