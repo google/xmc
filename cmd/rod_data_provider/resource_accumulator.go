@@ -30,7 +30,11 @@ func extractRequestedResources(wu *essmsgpb.WorkUnit) []*spb.Resource {
 	if len(resourceSets) == 0 {
 		return nil
 	}
+	totals, order := accumulateResourceTotals(resourceSets)
+	return buildResourceDTOs(totals, order)
+}
 
+func accumulateResourceTotals(resourceSets []*essmsgpb.ResourceSet) (map[string]float64, []string) {
 	totals := make(map[string]float64)
 	var order []string
 
@@ -47,7 +51,10 @@ func extractRequestedResources(wu *essmsgpb.WorkUnit) []*spb.Resource {
 	for _, rs := range resourceSets {
 		accumulateResource(rs, addResource)
 	}
+	return totals, order
+}
 
+func buildResourceDTOs(totals map[string]float64, order []string) []*spb.Resource {
 	resources := make([]*spb.Resource, 0, len(order))
 	for _, resType := range order {
 		resources = append(resources, &spb.Resource{

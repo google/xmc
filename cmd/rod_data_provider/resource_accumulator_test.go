@@ -15,124 +15,171 @@
 package main
 
 import (
-	"context"
 	"testing"
-	"time"
 
-	"golang/protobuf/v2/proto/proto"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/testing/protocmp"
+
 	spb "xmanager_cloud/api/protos/rod"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 )
 
-func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
-	now := time.Now()
-	wu := proto.Modify(baseWorkUnit, func(w *essmsgpb.WorkUnit) {
-		w.Executable = &essmsgpb.Executable{
-			Type: &essmsgpb.Executable_Jobset{
-				Jobset: &essmsgpb.JobSetExecutable{
-					Jobs: []*essmsgpb.KubernetesJob{
-						{
-							Replicas: 2,
-							Spec: &essmsgpb.ExecutableSpec{
-								Resources: &essmsgpb.ResourceSet{
-									Resources: &essmsgpb.ResourceSet_GpuResources{
-										GpuResources: &essmsgpb.GpuResources{
-											Type:  "nvidia-tesla-h100",
-											Count: 4,
-										},
-									},
-								},
-							},
-						},
-						{
-							Replicas: 1,
-							Spec: &essmsgpb.ExecutableSpec{
-								Resources: &essmsgpb.ResourceSet{
-									Resources: &essmsgpb.ResourceSet_GpuResources{
-										GpuResources: &essmsgpb.GpuResources{
-											Type:  "nvidia-tesla-h100",
-											Count: 2,
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		}
-	})
-
-	job := mapWorkUnitToDashboardJob(context.Background(), wu, now)
-	if job == nil {
-		t.Fatalf("mapWorkUnitToDashboardJob returned nil")
-	}
-	var gpuRes *spb.Resource
-	for _, r := range job.GetRequestedResources() {
-		if r.GetResourceType() == "nvidia-tesla-h100" {
-			gpuRes = r
-			break
-		}
-	}
-	if gpuRes == nil {
-		t.Fatalf("nvidia-tesla-h100 resource not found in %v", job.GetRequestedResources())
-	}
-	if gpuRes.GetCount() != 10.0 {
-		t.Errorf("nvidia-tesla-h100 count = %v, want 10.0", gpuRes.GetCount())
-	}
-}
-
-func TestMapWorkUnitToDashboardJob_TPURequestedResources(t *testing.T) {
-	now := time.Now()
-	wu := proto.Modify(baseWorkUnit, func(w *essmsgpb.WorkUnit) {
-		w.Executable = &essmsgpb.Executable{
-			Type: &essmsgpb.Executable_Jobset{
-				Jobset: &essmsgpb.JobSetExecutable{
-					Jobs: []*essmsgpb.KubernetesJob{
-						{
-							Replicas: 2,
-							Spec: &essmsgpb.ExecutableSpec{
-								Resources: &essmsgpb.ResourceSet{
-									Resources: &essmsgpb.ResourceSet_TpuResources{
-										TpuResources: &essmsgpb.TpuResources{
-											Type:     "tpu-v4-podslice",
-											Topology: "2x2x4",
-										},
-									},
+func TestExtractRequestedResources(t *testing.T) {
+	tests := []struct {
+		name string
+		wu   *essmsgpb.WorkUnit
+		want []*spb.Resource
+	}{
+		{
+			name: "nil workunit",
+			wu:   nil,
+			want: nil,
+		},
+		{
+			name: "empty workunit",
+			wu:   &essmsgpb.WorkUnit{},
+			want: nil,
+		},
+		{
+			name: "cpu and memory aggregation",
+			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
+				{
+					Replicas: 2,
+					Spec: &essmsgpb.ExecutableSpec{
+						Resources: &essmsgpb.ResourceSet{
+							Resources: &essmsgpb.ResourceSet_CpuResources{
+								CpuResources: &essmsgpb.CpuResources{
+									CpuMillicores: 4000,
+									MemoryBytes:   8192,
 								},
 							},
 						},
 					},
 				},
+			}),
+			want: []*spb.Resource{
+				{ResourceType: "cpu", Count: 8.0},
+				{ResourceType: "memory", Count: 16384.0},
 			},
-		}
-	})
+		},
+		{
+			name: "explicit GPU type and count",
+			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
+				{
+					Replicas: 2,
+					Spec: &essmsgpb.ExecutableSpec{
+						Resources: &essmsgpb.ResourceSet{
+							Resources: &essmsgpb.ResourceSet_GpuResources{
+								GpuResources: &essmsgpb.GpuResources{
+									Type:  "nvidia-tesla-h100",
+									Count: 4,
+								},
+							},
+						},
+					},
+				},
+				{
+					Replicas: 1,
+					Spec: &essmsgpb.ExecutableSpec{
+						Resources: &essmsgpb.ResourceSet{
+							Resources: &essmsgpb.ResourceSet_GpuResources{
+								GpuResources: &essmsgpb.GpuResources{
+									Type:  "nvidia-tesla-h100",
+									Count: 2,
+								},
+							},
+						},
+					},
+				},
+			}),
+			want: []*spb.Resource{
+				{ResourceType: "nvidia-tesla-h100", Count: 10.0},
+			},
+		},
+		{
+			name: "default GPU fallback",
+			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
+				{
+					Replicas: 1,
+					Spec: &essmsgpb.ExecutableSpec{
+						Resources: &essmsgpb.ResourceSet{
+							Resources: &essmsgpb.ResourceSet_GpuResources{
+								GpuResources: &essmsgpb.GpuResources{
+									Type:  "",
+									Count: 2,
+								},
+							},
+						},
+					},
+				},
+			}),
+			want: []*spb.Resource{
+				{ResourceType: "GPU", Count: 2.0},
+			},
+		},
+		{
+			name: "tpu topology chip calculation",
+			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
+				{
+					Replicas: 2,
+					Spec: &essmsgpb.ExecutableSpec{
+						Resources: &essmsgpb.ResourceSet{
+							Resources: &essmsgpb.ResourceSet_TpuResources{
+								TpuResources: &essmsgpb.TpuResources{
+									Type:     "tpu-v4-podslice",
+									Topology: "2x2x4",
+								},
+							},
+						},
+					},
+				},
+			}),
+			want: []*spb.Resource{
+				{ResourceType: "tpu-v4-podslice", Count: 32.0},
+			},
+		},
+		{
+			name: "default TPU fallback",
+			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
+				{
+					Replicas: 1,
+					Spec: &essmsgpb.ExecutableSpec{
+						Resources: &essmsgpb.ResourceSet{
+							Resources: &essmsgpb.ResourceSet_TpuResources{
+								TpuResources: &essmsgpb.TpuResources{
+									Type:     "",
+									Topology: "2x2",
+								},
+							},
+						},
+					},
+				},
+			}),
+			want: []*spb.Resource{
+				{ResourceType: "TPU", Count: 4.0},
+			},
+		},
+	}
 
-	job := mapWorkUnitToDashboardJob(context.Background(), wu, now)
-	if job == nil {
-		t.Fatalf("mapWorkUnitToDashboardJob returned nil")
-	}
-	var tpuRes *spb.Resource
-	for _, r := range job.GetRequestedResources() {
-		if r.GetResourceType() == "tpu-v4-podslice" {
-			tpuRes = r
-			break
-		}
-	}
-	if tpuRes == nil {
-		t.Fatalf("tpu-v4-podslice resource not found in %v", job.GetRequestedResources())
-	}
-	if tpuRes.GetCount() != 32.0 {
-		t.Errorf("tpu-v4-podslice count = %v, want 32.0", tpuRes.GetCount())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractRequestedResources(tt.wu)
+			if diff := cmp.Diff(tt.want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("extractRequestedResources() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
-func TestExtractRequestedResources_NilAndEmpty(t *testing.T) {
-	if extractRequestedResources(nil) != nil {
-		t.Errorf("extractRequestedResources(nil) = %v, want nil", extractRequestedResources(nil))
-	}
-	if extractRequestedResources(&essmsgpb.WorkUnit{}) != nil {
-		t.Errorf("extractRequestedResources(empty) = %v, want nil", extractRequestedResources(&essmsgpb.WorkUnit{}))
+func buildWorkUnitWithJobSet(jobs []*essmsgpb.KubernetesJob) *essmsgpb.WorkUnit {
+	return &essmsgpb.WorkUnit{
+		Executable: &essmsgpb.Executable{
+			Type: &essmsgpb.Executable_Jobset{
+				Jobset: &essmsgpb.JobSetExecutable{
+					Jobs: jobs,
+				},
+			},
+		},
 	}
 }
 
