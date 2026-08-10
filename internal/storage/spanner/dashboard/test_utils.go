@@ -30,7 +30,8 @@ func setupDashboardRepository(ctx context.Context, t *testing.T) *Repository {
 
 func setupDashboardRepositoryWithParent(ctx context.Context, t *testing.T, xid, wid int64) *Repository {
 	t.Helper()
-	_, essClient, _ := emulator.SetupWithEmulator(ctx, t)
+	clients := emulator.SetupWithEmulator(ctx, t)
+	essClient := clients.ESSClient
 
 	seedParent(ctx, t, essClient, xid, wid)
 

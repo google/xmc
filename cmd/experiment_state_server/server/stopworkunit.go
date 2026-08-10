@@ -70,24 +70,11 @@ func (s *Server) StopWorkUnit(ctx context.Context, req *apipb.StopWorkUnitReques
 	}
 
 	// 5. Enqueue the stop request for the work unit.
-	operation, execUpdate, err := s.enqueueWorkUnitStop(ctx, workUnit, email)
+	res, err := s.enqueueWorkUnitStop(ctx, workUnit, email)
 	if err != nil {
-		logging.Error(ctx, "Failed to enqueue stop request for work unit", "error", err)
-		_, _, eid, err := validator.ValidateWorkUnitExecutionName(workUnit.GetCurrentWorkUnitExecution().GetName())
-		if err != nil {
-			logging.Error(ctx, "Failed to validate work unit execution name", "error", err)
-			return nil, fmt.Errorf("failed to validate work unit execution name: %w (%v)", status.ErrInternal, err)
-		}
-
-		if statusMsgErr := s.updateWorkUnitExecutionStatusMessage(ctx, xid, wid, eid, &msgpb.StructuredMessage{
-			UserFacingText: "Failed to stop work unit. Please try again.",
-			Severity:       msgpb.StructuredMessage_ERROR,
-			Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,
-		}, false); statusMsgErr != nil {
-			logging.Error(ctx, "Failed to update work unit execution status message after failed stop attempt", "error", statusMsgErr)
-		}
-		return nil, err
+		return nil, s.handleEnqueueActionError(ctx, "stop", workUnit, xid, wid, msgpb.StructuredMessage_ERROR, err)
 	}
+	operation, execUpdate := res.Operation, res.ExecutionUpdate
 
 	// 6. Update the work unit execution status to STOPPING.
 	_, err = s.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{execUpdate})

@@ -85,9 +85,15 @@ type ClickHouseQuerier interface {
 	MeasureLatency(ctx context.Context) (time.Duration, error)
 }
 
+// RedpandaPingResult contains the broker count and latency for a ping.
+type RedpandaPingResult struct {
+	BrokerCount int
+	Latency     time.Duration
+}
+
 // RedpandaQuerier abstracts Redpanda/Kafka queries for testing.
 type RedpandaQuerier interface {
-	Ping(ctx context.Context) (int, time.Duration, error)
+	Ping(ctx context.Context) (RedpandaPingResult, error)
 	ListTopics(ctx context.Context, topics ...string) (kadm.TopicDetails, error)
 	ListEndOffsets(ctx context.Context, topics ...string) (kadm.ListedOffsets, error)
 	FetchOffsets(ctx context.Context, group string) (kadm.OffsetResponses, error)

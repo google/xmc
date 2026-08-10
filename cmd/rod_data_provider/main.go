@@ -258,15 +258,15 @@ func SetupKueueReconcilers(mgr ctrl.Manager, client client.Client, cache *cache.
 	if cache == nil || cache.ClusterQueues == nil || cache.LocalQueues == nil || cache.ResourceFlavors == nil {
 		return fmt.Errorf("kueue cache or its fields are uninitialized")
 	}
-	cqRec := &reconciler.ClusterQueueReconciler{Client: client, Cache: cache.ClusterQueues}
+	cqRec := reconciler.NewClusterQueueReconciler(client, cache.ClusterQueues)
 	if err := cqRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup ClusterQueueReconciler: %w", err)
 	}
-	lqRec := &reconciler.LocalQueueReconciler{Client: client, Cache: cache.LocalQueues}
+	lqRec := reconciler.NewLocalQueueReconciler(client, cache.LocalQueues)
 	if err := lqRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup LocalQueueReconciler: %w", err)
 	}
-	rfRec := &reconciler.ResourceFlavorReconciler{Client: client, Cache: cache.ResourceFlavors}
+	rfRec := reconciler.NewResourceFlavorReconciler(client, cache.ResourceFlavors)
 	if err := rfRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup ResourceFlavorReconciler: %w", err)
 	}

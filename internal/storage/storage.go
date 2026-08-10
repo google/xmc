@@ -114,10 +114,16 @@ type ExperimentStore interface {
 	// UpdateExperiment updates an experiment with the given update mask. It returns both the
 	// original and updated experiments, so that the caller can choose whether to perform
 	// additional actions based on the original experiment state.
-	UpdateExperiment(ctx context.Context, update *ExperimentUpdate) (*essmsgpb.Experiment, *essmsgpb.Experiment, error)
+	UpdateExperiment(ctx context.Context, update *ExperimentUpdate) (UpdatedExperiments, error)
 
 	// UpdateExperimentLaunchState updates the launch state of an experiment.
 	UpdateExperimentLaunchState(ctx context.Context, xid int64, launchState essmsgpb.ExperimentStatus_LaunchState) (*essmsgpb.Experiment, error)
+}
+
+// UpdatedExperiments contains the original and updated experiment protos.
+type UpdatedExperiments struct {
+	Original *essmsgpb.Experiment
+	Updated  *essmsgpb.Experiment
 }
 
 // -----------------------
@@ -140,7 +146,7 @@ type WorkUnitStore interface {
 	// UpdateWorkUnit updates a work unit with the given update mask. It returns both the
 	// original and updated work units, so that the caller can choose whether to perform
 	// additional actions based on the original work unit state.
-	UpdateWorkUnit(ctx context.Context, update *WorkUnitUpdate) (*essmsgpb.WorkUnit, *essmsgpb.WorkUnit, error)
+	UpdateWorkUnit(ctx context.Context, update *WorkUnitUpdate) (UpdatedWorkUnits, error)
 
 	// -----------------------
 	// WorkUnitExecution Methods
@@ -160,6 +166,12 @@ type WorkUnitStore interface {
 	// RestartWorkUnitExecutions archives the active work unit execution for a given work unit,
 	// and generates a new current work unit execution in the given state.
 	RestartWorkUnitExecutions(ctx context.Context, requester string, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnitExecution, error)
+}
+
+// UpdatedWorkUnits contains the original and updated work unit protos.
+type UpdatedWorkUnits struct {
+	Original *essmsgpb.WorkUnit
+	Updated  *essmsgpb.WorkUnit
 }
 
 // -----------------------
@@ -192,10 +204,16 @@ type ArtifactStore interface {
 	ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.Artifact, string, error)
 
 	// UpdateArtifact updates an artifact with the given update mask.
-	UpdateArtifact(ctx context.Context, update *ArtifactUpdate) (originalArtifact *essmsgpb.Artifact, updatedArtifact *essmsgpb.Artifact, err error)
+	UpdateArtifact(ctx context.Context, update *ArtifactUpdate) (UpdatedArtifacts, error)
 
 	// DeleteArtifact deletes an artifact by its unique ID.
 	DeleteArtifact(ctx context.Context, aid int64) error
+}
+
+// UpdatedArtifacts contains the original and updated artifact protos.
+type UpdatedArtifacts struct {
+	Original *essmsgpb.Artifact
+	Updated  *essmsgpb.Artifact
 }
 
 // -----------------------

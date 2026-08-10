@@ -123,12 +123,12 @@ func BuildProducerOptions(cfg *Config, gMetrics *GatewayMetrics) ([]kgo.Opt, err
 	}
 
 	if cfg.TLSEnabled {
-		tlsConfig, _, err := BuildTLSConfig(cfg)
+		tlsComp, err := BuildTLSConfig(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build TLS config: %w", err)
 		}
-		if tlsConfig != nil {
-			opts = append(opts, kgo.DialTLSConfig(tlsConfig))
+		if tlsComp.TLSConfig != nil {
+			opts = append(opts, kgo.DialTLSConfig(tlsComp.TLSConfig))
 		}
 	}
 

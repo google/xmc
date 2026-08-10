@@ -27,7 +27,8 @@ import (
 )
 
 func TestSaveStatusMessageHistoryIfChanged_Disabled(t *testing.T) {
-	ctx, _, essClient := setupTest(t, false)
+	fix := setupTest(t, false)
+	ctx, essClient := fix.ctx, fix.essClient
 
 	currentMsg := &essmsgpb.StructuredMessage{UserFacingText: "old"}
 	newMsg := &essmsgpb.StructuredMessage{UserFacingText: "new"}
@@ -41,7 +42,8 @@ func TestSaveStatusMessageHistoryIfChanged_Disabled(t *testing.T) {
 }
 
 func TestSaveStatusMessageHistoryIfChanged_NilNewMessage(t *testing.T) {
-	ctx, _, essClient := setupTest(t, true)
+	fix := setupTest(t, true)
+	ctx, essClient := fix.ctx, fix.essClient
 
 	currentMsg := &essmsgpb.StructuredMessage{UserFacingText: "old"}
 
@@ -54,7 +56,8 @@ func TestSaveStatusMessageHistoryIfChanged_NilNewMessage(t *testing.T) {
 }
 
 func TestSaveStatusMessageHistoryIfChanged_EqualMessages(t *testing.T) {
-	ctx, _, essClient := setupTest(t, true)
+	fix := setupTest(t, true)
+	ctx, essClient := fix.ctx, fix.essClient
 
 	currentMsg := &essmsgpb.StructuredMessage{UserFacingText: "same"}
 	newMsg := &essmsgpb.StructuredMessage{UserFacingText: "same"}
@@ -68,7 +71,8 @@ func TestSaveStatusMessageHistoryIfChanged_EqualMessages(t *testing.T) {
 }
 
 func TestSaveStatusMessageHistoryIfChanged_Success(t *testing.T) {
-	ctx, storage, essClient := setupTest(t, true)
+	fix := setupTest(t, true)
+	ctx, storage, essClient := fix.ctx, fix.storage, fix.essClient
 
 	const xid int64 = 123
 	spanner.CreateBlankExperiment(ctx, t, storage, xid)
@@ -102,7 +106,8 @@ func TestSaveStatusMessageHistoryIfChanged_Success(t *testing.T) {
 }
 
 func TestSaveStatusMessageHistoryIfChanged_EqualMessagesDifferentTimestamp(t *testing.T) {
-	ctx, _, essClient := setupTest(t, true)
+	fix := setupTest(t, true)
+	ctx, essClient := fix.ctx, fix.essClient
 
 	currentMsg := &essmsgpb.StructuredMessage{
 		UserFacingText: "same",
@@ -121,7 +126,13 @@ func TestSaveStatusMessageHistoryIfChanged_EqualMessagesDifferentTimestamp(t *te
 	}
 }
 
-func setupTest(t *testing.T, historyEnabled bool) (context.Context, *spanner.Storage, *cloudspanner.Client) {
+type testFixture struct {
+	ctx       context.Context
+	storage   *spanner.Storage
+	essClient *cloudspanner.Client
+}
+
+func setupTest(t *testing.T, historyEnabled bool) testFixture {
 	t.Helper()
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
@@ -129,7 +140,11 @@ func setupTest(t *testing.T, historyEnabled bool) (context.Context, *spanner.Sto
 	if err != nil {
 		t.Fatalf("NewStorageWithConfig() err = %v, want nil", err)
 	}
-	return ctx, storage, essClient
+	return testFixture{
+		ctx:       ctx,
+		storage:   storage,
+		essClient: essClient,
+	}
 }
 
 func listStatusMessagesForTest(ctx context.Context, t *testing.T, essClient *cloudspanner.Client, xid int64) []string {

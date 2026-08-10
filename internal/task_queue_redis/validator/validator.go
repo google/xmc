@@ -46,9 +46,15 @@ const (
 	readBatchSize           = 1
 )
 
+type StreamStats struct {
+	PendingCount int
+	StreamLength int64
+	DLQLength    int64
+}
+
 type testCase struct {
 	name              string
-	testFunc          func(context.Context, *redisclient.ConsumerClient, redisclient.Publisher) (int, int64, int64, error)
+	testFunc          func(context.Context, *redisclient.ConsumerClient, redisclient.Publisher) (StreamStats, error)
 	expectedPending   int
 	expectedStreamLen int64
 	expectedDlqLen    int64
@@ -93,7 +99,7 @@ func main() {
 			continue
 		}
 
-		pending, streamLen, dlqLen, err := tc.testFunc(ctx, consumer, publisher)
+		stats, err := tc.testFunc(ctx, consumer, publisher)
 		if err != nil {
 			log.ErrorContextf(ctx, "--- FAIL: %s returned error: %v ---", tc.name, err)
 			allPassed = false
@@ -102,16 +108,16 @@ func main() {
 
 		success := true
 		log.InfoContextf(ctx, "Validating tests results for %s", tc.name)
-		if pending != tc.expectedPending {
-			log.ErrorContextf(ctx, "Failure: expected %d pending messages, got %d", tc.expectedPending, pending)
+		if stats.PendingCount != tc.expectedPending {
+			log.ErrorContextf(ctx, "Failure: expected %d pending messages, got %d", tc.expectedPending, stats.PendingCount)
 			success = false
 		}
-		if streamLen != tc.expectedStreamLen {
-			log.ErrorContextf(ctx, "Failure: expected %d stream len, got %d", tc.expectedStreamLen, streamLen)
+		if stats.StreamLength != tc.expectedStreamLen {
+			log.ErrorContextf(ctx, "Failure: expected %d stream len, got %d", tc.expectedStreamLen, stats.StreamLength)
 			success = false
 		}
-		if dlqLen != tc.expectedDlqLen {
-			log.ErrorContextf(ctx, "Failure: expected %d DLQ stream len, got %d", tc.expectedDlqLen, dlqLen)
+		if stats.DLQLength != tc.expectedDlqLen {
+			log.ErrorContextf(ctx, "Failure: expected %d DLQ stream len, got %d", tc.expectedDlqLen, stats.DLQLength)
 			success = false
 		}
 
@@ -162,7 +168,7 @@ func runWorkerInBackground(ctx context.Context, workerID string, workerFunc func
 	return workerHandle{cancel, wg}
 }
 
-func testSuccess(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (int, int64, int64, error) {
+func testSuccess(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
 	log.InfoContextf(ctx, "Testing successful message processing...")
 	// Setup: Mock function to succeed.
 	consumer.SetTaskHandler(func(ctx context.Context, workerID, data string) redisclient.TaskResult {
@@ -192,10 +198,10 @@ func testSuccess(ctx context.Context, consumer *redisclient.ConsumerClient, publ
 	cleanupHandle.cancel()
 	workerHandle.wg.Wait()
 	cleanupHandle.wg.Wait()
-	return pending, streamLen, dlqLen, nil
+	return StreamStats{PendingCount: pending, StreamLength: streamLen, DLQLength: dlqLen}, nil
 }
 
-func testPending(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (int, int64, int64, error) {
+func testPending(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
 	log.InfoContextf(ctx, "Testing pending message count during processing...")
 	consumer.ProcessTimeout = 10 * time.Second
 	consumer.AbandonedMessageTimeout = 10 * time.Second
@@ -224,10 +230,10 @@ func testPending(ctx context.Context, consumer *redisclient.ConsumerClient, publ
 	cleanupHandle.cancel()
 	workerHandle.wg.Wait()
 	cleanupHandle.wg.Wait()
-	return pending, streamLen, dlqLen, nil
+	return StreamStats{PendingCount: pending, StreamLength: streamLen, DLQLength: dlqLen}, nil
 }
 
-func testRetryAndMoveToDLQ(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (int, int64, int64, error) {
+func testRetryAndMoveToDLQ(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
 	log.InfoContextf(ctx, "Testing message retry on function error if retryable...")
 	// Setup: Mock function to fail.
 	consumer.SetTaskHandler(func(ctx context.Context, workerID, data string) redisclient.TaskResult {
@@ -303,13 +309,14 @@ func testRetryAndMoveToDLQ(ctx context.Context, consumer *redisclient.ConsumerCl
 	workerHandle.wg.Wait()
 	cleanupHandle.wg.Wait()
 
+	stats := StreamStats{PendingCount: pending, StreamLength: streamLen, DLQLength: dlqLen}
 	if len(validationErrors) > 0 {
-		return pending, streamLen, dlqLen, fmt.Errorf("validation failed: %v", validationErrors)
+		return stats, fmt.Errorf("validation failed: %v", validationErrors)
 	}
-	return pending, streamLen, dlqLen, nil
+	return stats, nil
 }
 
-func testCleanup(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (int, int64, int64, error) {
+func testCleanup(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
 	log.InfoContextf(ctx, "Testing cleanup of abandoned messages...")
 	// Setup: Mock function to fail, so we can see it gets re-processed and retried.
 	consumer.SetTaskHandler(func(ctx context.Context, workerID, data string) redisclient.TaskResult {
@@ -327,7 +334,7 @@ func testCleanup(ctx context.Context, consumer *redisclient.ConsumerClient, publ
 	}).Result()
 	if err != nil {
 		log.ErrorContextf(ctx, "XReadGroup for abandoner failed: %v", err)
-		return -1, 0, 0, fmt.Errorf("XReadGroup for abandoner failed: %v", err)
+		return StreamStats{PendingCount: -1}, fmt.Errorf("XReadGroup for abandoner failed: %v", err)
 	}
 
 	log.InfoContextf(ctx, "Message abandoned, starting worker and cleanup worker...")
@@ -353,10 +360,10 @@ func testCleanup(ctx context.Context, consumer *redisclient.ConsumerClient, publ
 	cleanupHandle.cancel()
 	workerHandle.wg.Wait()
 	cleanupHandle.wg.Wait()
-	return pending, streamLen, dlqLen, nil
+	return StreamStats{PendingCount: pending, StreamLength: streamLen, DLQLength: dlqLen}, nil
 }
 
-func testLoadBalancing(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (int, int64, int64, error) {
+func testLoadBalancing(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
 	messageCount := 15
 	log.InfoContextf(ctx, "Testing load balancing with 3 workers and %d messages...", messageCount)
 	var mu sync.Mutex
@@ -417,14 +424,15 @@ func testLoadBalancing(ctx context.Context, consumer *redisclient.ConsumerClient
 	}
 	mu.Unlock()
 
+	stats := StreamStats{PendingCount: pending, StreamLength: streamLen, DLQLength: dlqLen}
 	if len(validationErrors) > 0 {
-		return pending, streamLen, dlqLen, fmt.Errorf("validation failed: %v", validationErrors)
+		return stats, fmt.Errorf("validation failed: %v", validationErrors)
 	}
 
-	return pending, streamLen, dlqLen, nil
+	return stats, nil
 }
 
-func testTimeout(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (int, int64, int64, error) {
+func testTimeout(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
 	log.InfoContextf(ctx, "Testing message timeout...")
 	// Setup: Mock function to timeout.
 	consumer.SetTaskHandler(func(ctx context.Context, workerID, data string) redisclient.TaskResult {
@@ -456,10 +464,10 @@ func testTimeout(ctx context.Context, consumer *redisclient.ConsumerClient, publ
 	cleanupHandle.cancel()
 	workerHandle.wg.Wait()
 	cleanupHandle.wg.Wait()
-	return pending, streamLen, dlqLen, nil
+	return StreamStats{PendingCount: pending, StreamLength: streamLen, DLQLength: dlqLen}, nil
 }
 
-func testBatchRead(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (int, int64, int64, error) {
+func testBatchRead(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
 	log.InfoContextf(ctx, "Testing batching with batchSize=10...")
 	numberOfMessages := 5
 	consumer.ReadBatchSize = 10
@@ -535,9 +543,10 @@ func testBatchRead(ctx context.Context, consumer *redisclient.ConsumerClient, pu
 	w3.wg.Wait()
 	cleanupHandle.wg.Wait()
 
+	stats := StreamStats{PendingCount: pending, StreamLength: streamLen, DLQLength: dlqLen}
 	if len(validationErrors) > 0 {
-		return pending, streamLen, dlqLen, fmt.Errorf("validation failed: %v", validationErrors)
+		return stats, fmt.Errorf("validation failed: %v", validationErrors)
 	}
 
-	return pending, streamLen, dlqLen, nil
+	return stats, nil
 }
