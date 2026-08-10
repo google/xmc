@@ -148,55 +148,12 @@ func jobSetPredicate(ctx context.Context) predicate.Predicate {
 		},
 
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldJobSet, ok := e.ObjectOld.(*v1alpha2.JobSet)
-			if !ok {
+			oldJobSet, okOld := e.ObjectOld.(*v1alpha2.JobSet)
+			newJobSet, okNew := e.ObjectNew.(*v1alpha2.JobSet)
+			if !okOld || !okNew {
 				return true
 			}
-			newJobSet, ok := e.ObjectNew.(*v1alpha2.JobSet)
-			if !ok {
-				return true
-			}
-
-			if oldJobSet.GetResourceVersion() == newJobSet.GetResourceVersion() {
-				return false
-			}
-
-			generationSame := oldJobSet.Generation == newJobSet.Generation
-			labelsSame := oldJobSet.Labels[constants.WorkUnitIDLabel] == newJobSet.Labels[constants.WorkUnitIDLabel] &&
-				oldJobSet.Labels[constants.ExperimentIDLabel] == newJobSet.Labels[constants.ExperimentIDLabel]
-			statusSame := isJobSetStatusEqual(&oldJobSet.Status, &newJobSet.Status)
-			deletionSame := (oldJobSet.GetDeletionTimestamp() == nil) == (newJobSet.GetDeletionTimestamp() == nil)
-
-			oldSus := oldJobSet.Spec.Suspend != nil && *oldJobSet.Spec.Suspend
-			newSus := newJobSet.Spec.Suspend != nil && *newJobSet.Spec.Suspend
-			specSame := generationSame && oldSus == newSus && calculateTotalReplicas(oldJobSet) == calculateTotalReplicas(newJobSet)
-
-			if specSame && labelsSame && statusSame && deletionSame {
-				return false
-			}
-
-			ctx := logging.Strip(ctx)
-			newManaged := hasValidXMCLabels(ctx, newJobSet)
-			oldManaged := hasValidXMCLabels(ctx, oldJobSet)
-
-			// Both must be managed to trigger on updates (unless it's a creation/deletion which is handled elsewhere).
-			// If it wasn't managed before, we don't want to trigger on status updates.
-			// If it's not managed now, we don't care.
-			if !newManaged || !oldManaged {
-				return false
-			}
-
-			// Trigger on the start of deletion.
-			if oldJobSet.GetDeletionTimestamp() == nil && newJobSet.GetDeletionTimestamp() != nil {
-				return true
-			}
-
-			// If already deleting, do not trigger on subsequent updates.
-			if newJobSet.GetDeletionTimestamp() != nil {
-				return false
-			}
-
-			return true
+			return shouldProcessJobSetUpdate(ctx, oldJobSet, newJobSet)
 		},
 
 		GenericFunc: func(e event.GenericEvent) bool {
@@ -211,6 +168,37 @@ func jobSetPredicate(ctx context.Context) predicate.Predicate {
 			return hasValidXMCLabels(ctx, jobSet)
 		},
 	}
+}
+
+func shouldProcessJobSetUpdate(ctx context.Context, oldJobSet, newJobSet *v1alpha2.JobSet) bool {
+	if oldJobSet.GetResourceVersion() == newJobSet.GetResourceVersion() {
+		return false
+	}
+
+	generationSame := oldJobSet.Generation == newJobSet.Generation
+	labelsSame := oldJobSet.Labels[constants.WorkUnitIDLabel] == newJobSet.Labels[constants.WorkUnitIDLabel] &&
+		oldJobSet.Labels[constants.ExperimentIDLabel] == newJobSet.Labels[constants.ExperimentIDLabel]
+	statusSame := isJobSetStatusEqual(&oldJobSet.Status, &newJobSet.Status)
+	deletionSame := (oldJobSet.GetDeletionTimestamp() == nil) == (newJobSet.GetDeletionTimestamp() == nil)
+
+	oldSus := oldJobSet.Spec.Suspend != nil && *oldJobSet.Spec.Suspend
+	newSus := newJobSet.Spec.Suspend != nil && *newJobSet.Spec.Suspend
+	specSame := generationSame && oldSus == newSus && calculateTotalReplicas(oldJobSet) == calculateTotalReplicas(newJobSet)
+
+	if specSame && labelsSame && statusSame && deletionSame {
+		return false
+	}
+
+	ctx = logging.Strip(ctx)
+	if !hasValidXMCLabels(ctx, newJobSet) || !hasValidXMCLabels(ctx, oldJobSet) {
+		return false
+	}
+
+	if oldJobSet.GetDeletionTimestamp() == nil && newJobSet.GetDeletionTimestamp() != nil {
+		return true
+	}
+
+	return newJobSet.GetDeletionTimestamp() == nil
 }
 
 // Reconcile fetches the JobSet and logs its name and a summary of its ReplicatedJobsStatus.

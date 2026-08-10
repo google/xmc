@@ -35,30 +35,12 @@ func (s *Server) BatchRestartWorkUnits(ctx context.Context, req *apipb.BatchRest
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Batch restart work units", "request", req)
 
-	// 1. Authenticate the user.
-	logging.Debug(ctx, "Extracting user identity from context")
-	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	// 1-3. Authenticate, validate request payload, and authorize caller.
+	xid, email, err := s.authenticateAndAuthorizeBatchRestart(ctx, req)
 	if err != nil {
 		return nil, err
-	}
-
-	// 2. Validate the request payload.
-	xid, err := validator.ValidateExperimentName(req.GetParent())
-	if err != nil {
-		logging.Warn(ctx, "Failed to validate experiment name", "name", req.GetParent(), "error", err)
-		return nil, fmt.Errorf("failed to validate work unit name: %w (%v)", status.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithExperimentName(ctx, req.GetParent())
-
-	// 3. Authorize the caller to restart work units for this experiment.
-	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
-	if err != nil {
-		return nil, err
-	}
-	if !authorized {
-		logging.Error(ctx, "User not authorized to restart work units", "user", email)
-		return nil, fmt.Errorf("user %s is not authorized to restart work units for XID %d: %w", email, xid, status.ErrPermissionDenied)
-	}
 
 	// 4. Get the list of work units to restart.
 	workUnits, _, err := s.storage.ListWorkUnits(ctx, req.GetParent(), math.MaxInt32, "", req.GetFilter(), "", 0)
@@ -73,17 +55,7 @@ func (s *Server) BatchRestartWorkUnits(ctx context.Context, req *apipb.BatchRest
 	}
 
 	// 5. Get a list of all of the work unit IDs that need to be restarted.
-	var multiErr error
-	var wids []int64
-	for _, workUnit := range workUnits {
-		_, wid, err := validator.ValidateWorkUnitName(workUnit.GetName())
-		if err != nil {
-			logging.Warn(ctx, "Failed to parse work unit name", "work_unit_name", workUnit.GetName(), "error", err)
-			multiErr = errors.Join(multiErr, fmt.Errorf("failed to parse work unit name: %w (%v)", status.ErrInvalidArgument, err))
-			continue
-		}
-		wids = append(wids, wid)
-	}
+	wids, multiErr := extractWorkUnitIDs(ctx, workUnits)
 
 	// 6. Restart all of the work unit executions in a single transaction.
 	restartedExecutions, err := s.storage.RestartWorkUnitExecutions(ctx, email, xid, wids)
@@ -199,4 +171,41 @@ func (s *Server) enqueueWorkUnitRestart(ctx context.Context, oldExecutionName st
 	// 3. Return the successful response.
 	logging.Info(ctx, "Added restart request for work unit to the queue", "operation", operation.GetName())
 	return operation, nil
+}
+
+func extractWorkUnitIDs(ctx context.Context, workUnits []*msgpb.WorkUnit) ([]int64, error) {
+	var multiErr error
+	var wids []int64
+	for _, workUnit := range workUnits {
+		_, wid, err := validator.ValidateWorkUnitName(workUnit.GetName())
+		if err != nil {
+			logging.Warn(ctx, "Failed to parse work unit name", "work_unit_name", workUnit.GetName(), "error", err)
+			multiErr = errors.Join(multiErr, fmt.Errorf("failed to parse work unit name: %w (%v)", status.ErrInvalidArgument, err))
+			continue
+		}
+		wids = append(wids, wid)
+	}
+	return wids, multiErr
+}
+
+func (s *Server) authenticateAndAuthorizeBatchRestart(ctx context.Context, req *apipb.BatchRestartWorkUnitsRequest) (int64, string, error) {
+	logging.Debug(ctx, "Extracting user identity from context")
+	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	if err != nil {
+		return 0, "", err
+	}
+	xid, err := validator.ValidateExperimentName(req.GetParent())
+	if err != nil {
+		logging.Warn(ctx, "Failed to validate experiment name", "name", req.GetParent(), "error", err)
+		return 0, "", fmt.Errorf("failed to validate work unit name: %w (%v)", status.ErrInvalidArgument, err)
+	}
+	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
+	if err != nil {
+		return 0, "", err
+	}
+	if !authorized {
+		logging.Error(ctx, "User not authorized to restart work units", "user", email)
+		return 0, "", fmt.Errorf("user %s is not authorized to restart work units for XID %d: %w", email, xid, status.ErrPermissionDenied)
+	}
+	return xid, email, nil
 }

@@ -298,37 +298,8 @@ func jobSetToUnstructured(jobSet *jobsetv1alpha2.JobSet) (*unstructured.Unstruct
 func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLabels map[string]string, jobAnnotations map[string]string) jobsetv1alpha2.ReplicatedJob {
 	retryLimit := job.GetRetryLimit()
 
-	// Merge job annotations with default annotations.
-	annotations := make(map[string]string)
-	for k, v := range jobAnnotations {
-		annotations[k] = v
-	}
-	for k, v := range job.GetAnnotations() {
-		annotations[k] = v
-	}
-
-	// Merge custom job labels with base job labels, preventing overrides of system labels.
-	labels := make(map[string]string, len(jobLabels)+len(job.GetLabels()))
-	for k, v := range jobLabels {
-		labels[k] = v
-	}
-	for k, v := range job.GetLabels() {
-		if _, exists := labels[k]; !exists {
-			labels[k] = v
-		}
-	}
-
-	// Create a shallow copy for PodTemplateSpec to prevent sharing the map pointer.
-	podLabels := make(map[string]string, len(labels))
-	for k, v := range labels {
-		podLabels[k] = v
-	}
-
-	// Create a shallow copy for PodTemplateSpec to prevent sharing the map pointer.
-	podAnnotations := make(map[string]string, len(annotations))
-	for k, v := range annotations {
-		podAnnotations[k] = v
-	}
+	jobMeta := buildJobMetadata(job, jobLabels, jobAnnotations)
+	labels, annotations, podLabels, podAnnotations := jobMeta.labels, jobMeta.annotations, jobMeta.podLabels, jobMeta.podAnnotations
 
 	var dependsOn []jobsetv1alpha2.DependsOn
 	if depOrder := job.GetDependencyOrder(); depOrder.GetJobName() != "" {
@@ -351,18 +322,7 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 	primaryName := jobsetutil.PrimaryContainerName(job)
 	nodeSelector := copyNodeSelector(job.GetNodeSelector())
 
-	var hostNetwork bool
-	var dnsPolicy corev1.DNSPolicy
-	if c != nil && c.RuntimeConfig.AllowHostNetwork && job.GetHostNetwork() {
-		hostNetwork = true
-		if job.GetDnsPolicy() != "" {
-			dnsPolicy = corev1.DNSPolicy(job.GetDnsPolicy())
-		} else {
-			dnsPolicy = corev1.DNSClusterFirstWithHostNet
-		}
-	} else if job.GetDnsPolicy() != "" {
-		dnsPolicy = corev1.DNSPolicy(job.GetDnsPolicy())
-	}
+	hostNetwork, dnsPolicy := resolveDNSAndNetwork(c, job)
 
 	restartPolicy := corev1.RestartPolicyNever
 	if job.GetRestartPolicy() != "" {
@@ -543,16 +503,71 @@ func (c *Client) buildContainer(containerName string, spec *esspb.ExecutableSpec
 	}
 }
 
-// constructJobSet builds the complete JobSet manifest as a Go map suitable for the dynamic client.
-func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, target string, author string, namespace string, operationTime time.Time, priorities Priorities) (*jobsetv1alpha2.JobSet, error) {
-	xidInt, widInt, eidInt, err := validator.ValidateWorkUnitExecutionName(target)
-	if err != nil {
-		return nil, err
-	}
-	xid := strconv.FormatInt(xidInt, 10)
-	wid := strconv.FormatInt(widInt, 10)
-	eid := strconv.FormatInt(eidInt, 10)
+type jobMetadata struct {
+	labels         map[string]string
+	annotations    map[string]string
+	podLabels      map[string]string
+	podAnnotations map[string]string
+}
 
+func buildJobMetadata(job *esspb.KubernetesJob, jobLabels map[string]string, jobAnnotations map[string]string) jobMetadata {
+	annotations := make(map[string]string)
+	for k, v := range jobAnnotations {
+		annotations[k] = v
+	}
+	for k, v := range job.GetAnnotations() {
+		annotations[k] = v
+	}
+
+	labels := make(map[string]string, len(jobLabels)+len(job.GetLabels()))
+	for k, v := range jobLabels {
+		labels[k] = v
+	}
+	for k, v := range job.GetLabels() {
+		if _, exists := labels[k]; !exists {
+			labels[k] = v
+		}
+	}
+
+	podLabels := make(map[string]string, len(labels))
+	for k, v := range labels {
+		podLabels[k] = v
+	}
+
+	podAnnotations := make(map[string]string, len(annotations))
+	for k, v := range annotations {
+		podAnnotations[k] = v
+	}
+
+	return jobMetadata{
+		labels:         labels,
+		annotations:    annotations,
+		podLabels:      podLabels,
+		podAnnotations: podAnnotations,
+	}
+}
+
+func resolveDNSAndNetwork(c *Client, job *esspb.KubernetesJob) (bool, corev1.DNSPolicy) {
+	if c != nil && c.RuntimeConfig.AllowHostNetwork && job.GetHostNetwork() {
+		if job.GetDnsPolicy() != "" {
+			return true, corev1.DNSPolicy(job.GetDnsPolicy())
+		}
+		return true, corev1.DNSClusterFirstWithHostNet
+	}
+	if job.GetDnsPolicy() != "" {
+		return false, corev1.DNSPolicy(job.GetDnsPolicy())
+	}
+	return false, ""
+}
+
+type jobSetLabelsAndAnnotations struct {
+	jobLabels          map[string]string
+	jobSetLabels       map[string]string
+	jobSetAnnotations  map[string]string
+	defaultAnnotations map[string]string
+}
+
+func buildJobSetLabelsAndAnnotations(workUnit *esspb.WorkUnit, xid, wid, eid, author, namespace string, operationTime time.Time, priorities Priorities) jobSetLabelsAndAnnotations {
 	jobLabels := map[string]string{
 		kueueQueueLabel:             namespace,
 		constants.ExperimentIDLabel: xid,
@@ -594,6 +609,26 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 			}
 		}
 	}
+	return jobSetLabelsAndAnnotations{
+		jobLabels:          jobLabels,
+		jobSetLabels:       jobSetLabels,
+		jobSetAnnotations:  jobSetAnnotations,
+		defaultAnnotations: defaultAnnotations,
+	}
+}
+
+// constructJobSet builds the complete JobSet manifest as a Go map suitable for the dynamic client.
+func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, target string, author string, namespace string, operationTime time.Time, priorities Priorities) (*jobsetv1alpha2.JobSet, error) {
+	xidInt, widInt, eidInt, err := validator.ValidateWorkUnitExecutionName(target)
+	if err != nil {
+		return nil, err
+	}
+	xid := strconv.FormatInt(xidInt, 10)
+	wid := strconv.FormatInt(widInt, 10)
+	eid := strconv.FormatInt(eidInt, 10)
+
+	meta := buildJobSetLabelsAndAnnotations(workUnit, xid, wid, eid, author, namespace, operationTime, priorities)
+	jobLabels, jobSetLabels, jobSetAnnotations, defaultAnnotations := meta.jobLabels, meta.jobSetLabels, meta.jobSetAnnotations, meta.defaultAnnotations
 
 	// Inject the managed-xprof GCS destination whenever the cluster configures a
 	// managed-xprof GCS bucket. This is intentionally decoupled from the ManagedXprof
