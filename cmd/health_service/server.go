@@ -22,6 +22,7 @@ import (
 	health "xmanager_cloud/common/health"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 
+	run "google.golang.org/api/run/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -31,12 +32,13 @@ type server struct {
 	checker *HealthChecker
 }
 
-func newServer(cfg *Config, essHealth, xidHealth health.SpannerHealthClient, redisClient RedisPingClient) (*server, error) {
+func newServer(cfg *Config, essHealth, xidHealth health.SpannerHealthClient, redisClient RedisPingClient, cloudRunService *run.Service) (*server, error) {
 	checker, err := newHealthChecker(HealthCheckerParams{
 		Config:          cfg,
 		EssHealthClient: essHealth,
 		XidHealthClient: xidHealth,
 		RedisClient:     redisClient,
+		CloudRunService: cloudRunService,
 	})
 	if err != nil {
 		return nil, err

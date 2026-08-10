@@ -78,6 +78,7 @@ rodDeployment:
 
 healthService:
   gcpServiceAccount: ""
+  logMonitorResourceName: ""
 
 dashboardServiceDeployment:
   enabled: false

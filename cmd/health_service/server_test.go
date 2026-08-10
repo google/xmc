@@ -24,11 +24,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
-
+	"google.golang.org/api/option"
+	run "google.golang.org/api/run/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 )
 
 func TestGetHealthStatus_AllHealthy(t *testing.T) {
@@ -71,19 +72,31 @@ func TestGetHealthStatus_AllHealthy(t *testing.T) {
 	}()
 	defer grpcServer.Stop()
 
+	runServer := newMockCloudRunServer(t, "CONDITION_SUCCEEDED", "", "")
+	defer runServer.Close()
+	cloudRunService, err := run.NewService(context.Background(),
+		option.WithHTTPClient(runServer.Client()),
+		option.WithEndpoint(runServer.URL),
+		option.WithoutAuthentication(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create run service: %v", err)
+	}
+
 	// 3. Configure and create server
 	cfg := &Config{
-		Port:          "8080",
-		GRPCPort:      "50051",
-		ProjectID:     "test-project",
-		EssURL:        essServer.URL,
-		XidAddr:       lis.Addr().String(),
-		ActuatorURL:   actuatorServer.URL,
-		ReconcilerURL: reconcilerServer.URL,
+		Port:                   "8080",
+		GRPCPort:               "50051",
+		ProjectID:              "test-project",
+		EssURL:                 essServer.URL,
+		XidAddr:                lis.Addr().String(),
+		ActuatorURL:            actuatorServer.URL,
+		ReconcilerURL:          reconcilerServer.URL,
+		LogMonitorResourceName: "projects/test-project/locations/us-central1/services/log-monitor",
 	}
 	mockEss := &mockSpannerHealthClient{version: 6, dirty: false}
 	mockXid := &mockSpannerHealthClient{version: 1, dirty: false}
-	s, err := newServer(cfg, mockEss, mockXid, &mockRedisClient{})
+	s, err := newServer(cfg, mockEss, mockXid, &mockRedisClient{}, cloudRunService)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -163,16 +176,28 @@ func TestGetHealthStatus_SomeUnhealthy(t *testing.T) {
 	}()
 	defer grpcServer.Stop()
 
-	cfg := &Config{
-		Port:          "8080",
-		GRPCPort:      "50051",
-		ProjectID:     "test-project",
-		EssURL:        essServer.URL,
-		XidAddr:       lis.Addr().String(),
-		ActuatorURL:   actuatorURL,
-		ReconcilerURL: reconcilerServer.URL,
+	runServer := newMockCloudRunServer(t, "CONDITION_SUCCEEDED", "", "")
+	defer runServer.Close()
+	cloudRunService, err := run.NewService(context.Background(),
+		option.WithHTTPClient(runServer.Client()),
+		option.WithEndpoint(runServer.URL),
+		option.WithoutAuthentication(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create run service: %v", err)
 	}
-	s, err := newServer(cfg, nil, nil, &mockRedisClient{})
+
+	cfg := &Config{
+		Port:                   "8080",
+		GRPCPort:               "50051",
+		ProjectID:              "test-project",
+		EssURL:                 essServer.URL,
+		XidAddr:                lis.Addr().String(),
+		ActuatorURL:            actuatorURL,
+		ReconcilerURL:          reconcilerServer.URL,
+		LogMonitorResourceName: "projects/test-project/locations/us-central1/services/log-monitor",
+	}
+	s, err := newServer(cfg, nil, nil, &mockRedisClient{}, cloudRunService)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -233,7 +258,7 @@ func TestListConfigEntries(t *testing.T) {
 		XidAddr:   "localhost:50051",
 		ConfigDir: tempDir,
 	}
-	s, err := newServer(cfg, nil, nil, nil)
+	s, err := newServer(cfg, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -263,7 +288,7 @@ func TestListConfigEntries(t *testing.T) {
 
 func TestGetUserInfo(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051", ProjectID: "test-project", XidAddr: "localhost:50051"}
-	s, err := newServer(cfg, nil, nil, nil)
+	s, err := newServer(cfg, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -284,17 +309,29 @@ func TestGetUserInfo(t *testing.T) {
 }
 
 func TestGetHealthStatus_RedisUnhealthy(t *testing.T) {
+	runServer := newMockCloudRunServer(t, "CONDITION_SUCCEEDED", "", "")
+	defer runServer.Close()
+	cloudRunService, err := run.NewService(context.Background(),
+		option.WithHTTPClient(runServer.Client()),
+		option.WithEndpoint(runServer.URL),
+		option.WithoutAuthentication(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create run service: %v", err)
+	}
+
 	cfg := &Config{
-		Port:          "8080",
-		GRPCPort:      "50051",
-		ProjectID:     "test-project",
-		EssURL:        "http://invalid",
-		XidAddr:       "invalid:50051",
-		ActuatorURL:   "http://invalid",
-		ReconcilerURL: "http://invalid",
+		Port:                   "8080",
+		GRPCPort:               "50051",
+		ProjectID:              "test-project",
+		EssURL:                 "http://invalid",
+		XidAddr:                "invalid:50051",
+		ActuatorURL:            "http://invalid",
+		ReconcilerURL:          "http://invalid",
+		LogMonitorResourceName: "projects/test-project/locations/us-central1/services/log-monitor",
 	}
 	mockRedis := &mockRedisClient{err: fmt.Errorf("connection refused")}
-	s, err := newServer(cfg, nil, nil, mockRedis)
+	s, err := newServer(cfg, nil, nil, mockRedis, cloudRunService)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -325,5 +362,76 @@ func TestGetHealthStatus_RedisUnhealthy(t *testing.T) {
 	}
 	if redisComp.ErrorMessage != "redis ping failed: connection refused" {
 		t.Errorf("Expected error message 'redis ping failed: connection refused', got %q", redisComp.ErrorMessage)
+	}
+}
+
+func newMockCloudRunServer(t *testing.T, state, reason, message string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{
+			"terminalCondition": {
+				"state": "%s",
+				"reason": "%s",
+				"message": "%s"
+			}
+		}`, state, reason, message)
+	}))
+}
+
+func TestGetHealthStatus_LogMonitorUnhealthy(t *testing.T) {
+	runServer := newMockCloudRunServer(t, "CONDITION_FAILED", "UNHEALTHY", "test error")
+	defer runServer.Close()
+	cloudRunService, err := run.NewService(context.Background(),
+		option.WithHTTPClient(runServer.Client()),
+		option.WithEndpoint(runServer.URL),
+		option.WithoutAuthentication(),
+	)
+	if err != nil {
+		t.Fatalf("failed to create run service: %v", err)
+	}
+
+	cfg := &Config{
+		Port:                   "8080",
+		GRPCPort:               "50051",
+		ProjectID:              "test-project",
+		EssURL:                 "http://invalid",
+		XidAddr:                "invalid:50051",
+		ActuatorURL:            "http://invalid",
+		ReconcilerURL:          "http://invalid",
+		LogMonitorResourceName: "projects/test-project/locations/us-central1/services/log-monitor",
+	}
+	s, err := newServer(cfg, nil, nil, &mockRedisClient{}, cloudRunService)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+	defer s.Close()
+
+	resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
+	if err != nil {
+		t.Fatalf("GetHealthStatus failed: %v", err)
+	}
+
+	if resp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
+		t.Errorf("Expected overall status 'HEALTH_STATE_UNHEALTHY', got %v", resp.HealthState)
+	}
+
+	var lmComp *spb.ComponentHealth
+	for _, c := range resp.Components {
+		if c.Name == "Log Monitor" {
+			lmComp = c
+			break
+		}
+	}
+	if lmComp == nil {
+		t.Fatal("Log Monitor component not found in response")
+	}
+
+	if lmComp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
+		t.Errorf("Expected Log Monitor component status 'HEALTH_STATE_UNHEALTHY', got %v", lmComp.HealthState)
+	}
+	expectedError := "service not ready: CONDITION_FAILED (reason: UNHEALTHY, message: test error)"
+	if lmComp.ErrorMessage != expectedError {
+		t.Errorf("Expected error message %q, got %q", expectedError, lmComp.ErrorMessage)
 	}
 }

@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/api/option"
+	run "google.golang.org/api/run/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -239,10 +241,11 @@ func TestCheckSpannerComponent(t *testing.T) {
 func TestRunChecks_SpannerMetadata(t *testing.T) {
 	checker := &HealthChecker{
 		cfg: &Config{
-			EssURL:        "http://invalid",
-			XidAddr:       "invalid:50051",
-			ActuatorURL:   "http://invalid",
-			ReconcilerURL: "http://invalid",
+			EssURL:                 "http://invalid",
+			XidAddr:                "invalid:50051",
+			ActuatorURL:            "http://invalid",
+			ReconcilerURL:          "http://invalid",
+			LogMonitorResourceName: "projects/test-project/locations/us-central1/services/log-monitor",
 		},
 		httpClient: &http.Client{
 			Timeout: 10 * time.Millisecond,
@@ -305,6 +308,7 @@ func TestCheckRedis(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			checker := &HealthChecker{
+				cfg:         &Config{},
 				redisClient: tt.client,
 			}
 
@@ -330,5 +334,126 @@ func TestCheckRedis(t *testing.T) {
 				t.Errorf("unexpected error: %q", res.ErrorMessage)
 			}
 		})
+	}
+}
+
+func TestCheckCloudRunComponent(t *testing.T) {
+	tests := []struct {
+		name          string
+		mockState     string
+		mockReason    string
+		mockMessage   string
+		nilClient     bool
+		serviceName   string
+		expectedState spb.HealthState
+		expectedErr   string
+	}{
+		{
+			name:          "Healthy",
+			mockState:     "CONDITION_SUCCEEDED",
+			serviceName:   "projects/test-project/locations/us-central1/services/log-monitor",
+			expectedState: spb.HealthState_HEALTH_STATE_HEALTHY,
+		},
+		{
+			name:          "Unhealthy",
+			mockState:     "CONDITION_FAILED",
+			mockReason:    "UNHEALTHY",
+			mockMessage:   "test error",
+			serviceName:   "projects/test-project/locations/us-central1/services/log-monitor",
+			expectedState: spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			expectedErr:   "service not ready: CONDITION_FAILED (reason: UNHEALTHY, message: test error)",
+		},
+		{
+			name:          "Nil Client",
+			nilClient:     true,
+			serviceName:   "projects/test-project/locations/us-central1/services/log-monitor",
+			expectedState: spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			expectedErr:   "cloud run client not initialized",
+		},
+		{
+			name:          "Missing Service Name",
+			serviceName:   "",
+			expectedState: spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			expectedErr:   "log monitor resource name is not configured",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cloudRunService *run.Service
+			if !tt.nilClient && tt.serviceName != "" {
+				server := newMockCloudRunServer(t, tt.mockState, tt.mockReason, tt.mockMessage)
+				defer server.Close()
+
+				var err error
+				cloudRunService, err = run.NewService(context.Background(),
+					option.WithHTTPClient(server.Client()),
+					option.WithEndpoint(server.URL),
+					option.WithoutAuthentication(),
+				)
+				if err != nil {
+					t.Fatalf("failed to create run service: %v", err)
+				}
+			}
+
+			checker := &HealthChecker{
+				cloudRunService: cloudRunService,
+			}
+
+			res := checker.checkCloudRunComponent(context.Background(), "Log Monitor", tt.serviceName)
+			if res.HealthState != tt.expectedState {
+				t.Errorf("expected state %v, got %v", tt.expectedState, res.HealthState)
+			}
+			if res.ErrorMessage != tt.expectedErr {
+				t.Errorf("expected error %q, got %q", tt.expectedErr, res.ErrorMessage)
+			}
+		})
+	}
+}
+
+func TestRunChecks_LogMonitorMissingConfig(t *testing.T) {
+	checker := &HealthChecker{
+		cfg: &Config{
+			EssURL:                 "http://invalid",
+			XidAddr:                "invalid:50051",
+			ActuatorURL:            "http://invalid",
+			ReconcilerURL:          "http://invalid",
+			LogMonitorResourceName: "", // Empty to trigger config error
+		},
+		httpClient: &http.Client{
+			Timeout: 10 * time.Millisecond,
+		},
+		essHealthClient: &mockSpannerHealthClient{version: 6, dirty: false},
+		xidHealthClient: &mockSpannerHealthClient{version: 1, dirty: false},
+		redisClient:     &mockRedisClient{},
+	}
+
+	res := checker.RunChecks(context.Background())
+
+	// Expect 8 components (including Log Monitor)
+	if len(res.Components) != 8 {
+		t.Errorf("expected 8 components, got %d", len(res.Components))
+	}
+
+	// Verify Log Monitor is in the list and reports unhealthy with config error
+	var lmComp *spb.ComponentHealth
+	for _, comp := range res.Components {
+		if comp.Name == "Log Monitor" {
+			lmComp = comp
+			break
+		}
+	}
+
+	if lmComp == nil {
+		t.Fatal("Log Monitor component not found in results")
+	}
+
+	if lmComp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
+		t.Errorf("expected Log Monitor to be unhealthy, got %v", lmComp.HealthState)
+	}
+
+	expectedErr := "log monitor resource name is not configured"
+	if lmComp.ErrorMessage != expectedErr {
+		t.Errorf("expected error message %q, got %q", expectedErr, lmComp.ErrorMessage)
 	}
 }
