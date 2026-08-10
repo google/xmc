@@ -128,6 +128,8 @@ func ValidateWorkUnitName(name string) (int64, int64, error) {
 // ValidateWorkUnitExecutionName checks if a given work unit execution name is valid.
 // It ensures that the name is in the correct format and that the XID, WID, and EID are valid.
 // Valid work unit execution names are in the format "experiments/{xid}/workUnits/{wid}/executions/{eid}".
+//
+//nolint:revive // Why: Parses 3-level hierarchical AIP resource path into (xid, wid, eid, err) without introducing artificial tuple structs.
 func ValidateWorkUnitExecutionName(name string) (int64, int64, int64, error) {
 	ids, err := validateResourceName(name, []string{"experiments", "workUnits", "executions"}, "experiments/{xid}/workUnits/{wid}/executions/{eid}", false)
 	if err != nil {
@@ -141,6 +143,8 @@ func ValidateWorkUnitExecutionName(name string) (int64, int64, int64, error) {
 // It returns the integer XID, WID (or 0 if not present), and MessageID if it is valid.
 // Valid status message names are in the format "experiments/{xid}/statusMessages/{message_id}"
 // or "experiments/{xid}/workUnits/{wid}/statusMessages/{message_id}".
+//
+//nolint:revive // Why: Parses 3-level hierarchical AIP resource path into (xid, wid, msgID, err) without introducing artificial tuple structs.
 func ValidateStatusMessageName(name string) (int64, int64, int64, error) {
 	// Try work unit pattern first (longer)
 	ids, err := validateResourceName(name, []string{"experiments", "workUnits", "statusMessages"}, "experiments/{xid}/workUnits/{wid}/statusMessages/{message_id}", false)
@@ -189,6 +193,8 @@ func ValidateStatusMessageParent(parent string) (int64, int64, error) {
 // It ensures that the name is in the correct format and that the XID and WID are valid.
 // It returns the integer XID, WID, and the operation UUID string if the name is valid.
 // Valid operation names are in the format "experiments/{xid}/workUnits/{wid}/operations/{uuid}".
+//
+//nolint:revive // Why: Parses 3-level hierarchical AIP resource path into (xid, wid, oidUUID, err) without introducing artificial tuple structs.
 func ValidateOperationName(name string) (int64, int64, string, error) {
 	const format = "experiments/{xid}/workUnits/{wid}/operations/{uuid}"
 	const separator = "/operations/"
