@@ -76,11 +76,12 @@ func (s *Server) UpdateExperiment(ctx context.Context, req *apipb.UpdateExperime
 		Experiment: req.GetExperiment(),
 		UpdateMask: req.GetUpdateMask(),
 	}
-	_, returnedExp, err := s.storage.UpdateExperiment(ctx, update)
+	res, err := s.storage.UpdateExperiment(ctx, update)
 	if err != nil {
 		logging.Error(ctx, "Failed to update experiment", "error", err)
 		return nil, fmt.Errorf("failed to update experiment %s: %w (%v)", name, status.ErrInternal, err)
 	}
+	returnedExp := res.Updated
 
 	// 5. Check if the XID entry needs to be updated.
 	xidEntryForUpdate, updateMask, err := data.ExperimentRequiresXIDUpdate(req.GetExperiment(), req.GetUpdateMask())

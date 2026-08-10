@@ -52,10 +52,11 @@ func TestUpdateWorkUnit(t *testing.T) {
 		},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"priority", "notes", "tags", "urls"}},
 	}
-	originalWu, updatedWu, err := s.UpdateWorkUnit(ctx, update)
+	res, err := s.UpdateWorkUnit(ctx, update)
 	if err != nil {
 		t.Fatalf("UpdateWorkUnit failed: %v", err)
 	}
+	originalWu, updatedWu := res.Original, res.Updated
 
 	// 3. Verify the update.
 	if diff := cmp.Diff(createdWu, originalWu, protocmp.Transform()); diff != "" {
@@ -101,7 +102,7 @@ func TestUpdateWorkUnit_ImmutableField(t *testing.T) {
 		},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"work_unit_type"}},
 	}
-	_, _, err := s.UpdateWorkUnit(ctx, update)
+	_, err := s.UpdateWorkUnit(ctx, update)
 	if !errors.Is(err, status.ErrInvalidArgument) {
 		t.Errorf("UpdateWorkUnit with immutable field returned error %v, want %v", err, status.ErrInvalidArgument)
 	}
@@ -120,7 +121,7 @@ func TestUpdateWorkUnit_NotFound(t *testing.T) {
 		},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"notes"}},
 	}
-	_, _, err := s.UpdateWorkUnit(ctx, update)
+	_, err := s.UpdateWorkUnit(ctx, update)
 	if !errors.Is(err, status.ErrNotFound) {
 		t.Errorf("UpdateWorkUnit for non-existent XID returned error %v, want %v", err, status.ErrNotFound)
 	}
@@ -142,7 +143,7 @@ func TestUpdateWorkUnit_EmptyMask(t *testing.T) {
 		WorkUnit:   &essmsgpb.WorkUnit{},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{}},
 	}
-	_, _, err := s.UpdateWorkUnit(ctx, update)
+	_, err := s.UpdateWorkUnit(ctx, update)
 	if !errors.Is(err, status.ErrInvalidArgument) {
 		t.Errorf("UpdateWorkUnit with empty mask returned error %v, want %v", err, status.ErrInvalidArgument)
 	}

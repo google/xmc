@@ -53,10 +53,11 @@ func TestUpdateExperiment(t *testing.T) {
 		},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"title", "notes", "tags", "urls"}},
 	}
-	originalExp, updatedExp, err := s.UpdateExperiment(ctx, update)
+	res, err := s.UpdateExperiment(ctx, update)
 	if err != nil {
 		t.Fatalf("UpdateExperiment failed: %v", err)
 	}
+	originalExp, updatedExp := res.Original, res.Updated
 
 	// 3. Verify the update.
 	if diff := cmp.Diff(createdExp, originalExp, protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.Experiment{}, "acls")); diff != "" {
@@ -108,7 +109,7 @@ func TestUpdateExperiment_ImmutableField(t *testing.T) {
 		},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"creator"}},
 	}
-	_, _, err = s.UpdateExperiment(ctx, update)
+	_, err = s.UpdateExperiment(ctx, update)
 	if !errors.Is(err, status.ErrInvalidArgument) {
 		t.Errorf("UpdateExperiment with immutable field returned error %v, want %v", err, status.ErrInvalidArgument)
 	}
@@ -126,7 +127,7 @@ func TestUpdateExperiment_NotFound(t *testing.T) {
 		},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"title"}},
 	}
-	_, _, err := s.UpdateExperiment(ctx, update)
+	_, err := s.UpdateExperiment(ctx, update)
 	if !errors.Is(err, status.ErrNotFound) {
 		t.Errorf("UpdateExperiment for non-existent XID returned error %v, want %v", err, status.ErrNotFound)
 	}
@@ -149,7 +150,7 @@ func TestUpdateExperiment_EmptyMask(t *testing.T) {
 		Experiment: &essmsgpb.Experiment{},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{}},
 	}
-	_, _, err = s.UpdateExperiment(ctx, update)
+	_, err = s.UpdateExperiment(ctx, update)
 	if !errors.Is(err, status.ErrInvalidArgument) {
 		t.Errorf("UpdateExperiment with empty mask returned error %v, want %v", err, status.ErrInvalidArgument)
 	}

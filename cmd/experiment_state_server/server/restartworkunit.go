@@ -89,21 +89,7 @@ func (s *Server) RestartWorkUnit(ctx context.Context, req *apipb.RestartWorkUnit
 	// 7. Enqueue the restart request for the work unit.
 	operation, err := s.enqueueWorkUnitRestart(ctx, oldExecutionName, workUnit, email, experiment.GetPriority())
 	if err != nil {
-		logging.Error(ctx, "Failed to enqueue restart request for work unit", "error", err)
-		_, _, eid, err := validator.ValidateWorkUnitExecutionName(workUnit.GetCurrentWorkUnitExecution().GetName())
-		if err != nil {
-			logging.Error(ctx, "Failed to validate work unit execution name", "error", err)
-			return nil, fmt.Errorf("failed to validate work unit execution name: %w (%v)", status.ErrInternal, err)
-		}
-
-		if statusMsgErr := s.updateWorkUnitExecutionStatusMessage(ctx, xid, wid, eid, &msgpb.StructuredMessage{
-			UserFacingText: "Failed to restart work unit. Please try again.",
-			Severity:       msgpb.StructuredMessage_FATAL,
-			Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,
-		}, false); statusMsgErr != nil {
-			logging.Error(ctx, "Failed to update work unit execution status message after failed restart attempt", "error", statusMsgErr)
-		}
-		return nil, err
+		return nil, s.handleEnqueueActionError(ctx, "restart", workUnit, xid, wid, msgpb.StructuredMessage_FATAL, err)
 	}
 
 	// 8. Return the successful response.

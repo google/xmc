@@ -180,11 +180,11 @@ func generateClientCert(t *testing.T, dir string, caTemplate *x509.Certificate, 
 
 func TestBuildTLSConfig_Disabled(t *testing.T) {
 	cfg := &Config{TLSEnabled: false}
-	tlsCfg, reloader, err := BuildTLSConfig(cfg)
+	comp, err := BuildTLSConfig(cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if tlsCfg != nil || reloader != nil {
+	if comp.TLSConfig != nil || comp.Reloader != nil {
 		t.Fatalf("expected nil tlsCfg and reloader when TLSEnabled is false")
 	}
 }
@@ -199,10 +199,11 @@ func TestBuildTLSConfig_BasicTLS(t *testing.T) {
 		TLSInsecureSkipVerify: true,
 	}
 
-	tlsCfg, reloader, err := BuildTLSConfig(cfg)
+	comp, err := BuildTLSConfig(cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	tlsCfg, reloader := comp.TLSConfig, comp.Reloader
 	if tlsCfg == nil {
 		t.Fatalf("expected non-nil tls.Config")
 	}
@@ -228,10 +229,11 @@ func TestBuildTLSConfig_mTLS(t *testing.T) {
 		TLSKeyFile:  certs.clientKeyFile,
 	}
 
-	tlsCfg, reloader, err := BuildTLSConfig(cfg)
+	comp, err := BuildTLSConfig(cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	tlsCfg, reloader := comp.TLSConfig, comp.Reloader
 	if tlsCfg == nil || reloader == nil {
 		t.Fatalf("expected non-nil tlsCfg and reloader")
 	}
@@ -253,7 +255,7 @@ func TestBuildTLSConfig_InvalidFiles(t *testing.T) {
 		TLSEnabled: true,
 		TLSCaFile:  "/nonexistent/ca.crt",
 	}
-	_, _, err := BuildTLSConfig(cfg)
+	_, err := BuildTLSConfig(cfg)
 	if err == nil {
 		t.Fatalf("expected error for nonexistent CA file")
 	}
@@ -263,7 +265,7 @@ func TestBuildTLSConfig_InvalidFiles(t *testing.T) {
 		TLSCertFile: "/nonexistent/client.crt",
 		TLSKeyFile:  "/nonexistent/client.key",
 	}
-	_, _, err = BuildTLSConfig(cfg)
+	_, err = BuildTLSConfig(cfg)
 	if err == nil {
 		t.Fatalf("expected error for nonexistent client cert/key files")
 	}
@@ -365,10 +367,11 @@ func TestDynamicCertReloading_mTLSHandshake(t *testing.T) {
 		TLSInsecureSkipVerify: true,
 	}
 
-	clientTLSConfig, _, err := BuildTLSConfig(clientCfg)
+	clientComp, err := BuildTLSConfig(clientCfg)
 	if err != nil {
 		t.Fatalf("failed to build client TLS config: %v", err)
 	}
+	clientTLSConfig := clientComp.TLSConfig
 
 	// 1. Perform initial mTLS handshake
 	conn1, err := tls.Dial("tcp", listener.Addr().String(), clientTLSConfig)
