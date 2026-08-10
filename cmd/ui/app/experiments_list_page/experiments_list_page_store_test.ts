@@ -98,7 +98,7 @@ describe('ExperimentsListPageStore', () => {
       state.store.setFilter(newFilter);
 
       const newState: ExperimentsListPageState = state.store.selectSignal(
-        (state: ExperimentsListPageState) => state,
+        (s: ExperimentsListPageState) => s,
       )();
       expect(newState).toEqual({
         ...INITIAL_STATE,
@@ -128,7 +128,7 @@ describe('ExperimentsListPageStore', () => {
       state.store.setOrderBy(newOrderBy);
 
       const newState: ExperimentsListPageState = state.store.selectSignal(
-        (state: ExperimentsListPageState) => state,
+        (s: ExperimentsListPageState) => s,
       )();
       expect(newState).toEqual({
         ...INITIAL_STATE,
@@ -168,7 +168,7 @@ describe('ExperimentsListPageStore', () => {
       state.store.goToNextPage();
 
       const newState: ExperimentsListPageState = state.store.selectSignal(
-        (state: ExperimentsListPageState) => state,
+        (s: ExperimentsListPageState) => s,
       )();
       expect(newState).toEqual({
         ...INITIAL_STATE,
@@ -199,7 +199,7 @@ describe('ExperimentsListPageStore', () => {
       state.store.goToNextPage();
 
       const newState: ExperimentsListPageState = state.store.selectSignal(
-        (state: ExperimentsListPageState) => state,
+        (s: ExperimentsListPageState) => s,
       )();
       expect(newState).toEqual(initialState);
     });
@@ -222,7 +222,7 @@ describe('ExperimentsListPageStore', () => {
       state.store.goToPreviousPage();
 
       const newState: ExperimentsListPageState = state.store.selectSignal(
-        (state: ExperimentsListPageState) => state,
+        (s: ExperimentsListPageState) => s,
       )();
       expect(newState).toEqual({
         ...INITIAL_STATE,
@@ -241,9 +241,7 @@ describe('ExperimentsListPageStore', () => {
       state.store.setState(INITIAL_STATE);
       state.store.goToPreviousPage();
 
-      expect(state.store.selectSignal((state: ExperimentsListPageState) => state)()).toEqual(
-        INITIAL_STATE,
-      );
+      expect(state.store.selectSignal((s: ExperimentsListPageState) => s)()).toEqual(INITIAL_STATE);
     });
   });
 
@@ -277,7 +275,7 @@ describe('ExperimentsListPageStore', () => {
       });
 
       const newState: ExperimentsListPageState = state.store.selectSignal(
-        (state: ExperimentsListPageState) => state,
+        (s: ExperimentsListPageState) => s,
       )();
       expect(newState).toEqual({
         ...INITIAL_STATE,
