@@ -25,10 +25,12 @@ import (
 	"syscall"
 	"time"
 
+	"cloud.google.com/go/spanner"
 	"go/google"
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
+	health "xmanager_cloud/common/health"
 	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
@@ -66,7 +68,18 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer(grpc.Creds(transportCreds))
-	srv, err := newServer(cfg)
+	// Initialize Spanner clients
+	essClient, essHealth := initSpannerHealthClient(ctx, cfg.EssSpannerDatabase, "ESS")
+	if essClient != nil {
+		defer essClient.Close()
+	}
+
+	xidClient, xidHealth := initSpannerHealthClient(ctx, cfg.XidSpannerDatabase, "XID")
+	if xidClient != nil {
+		defer xidClient.Close()
+	}
+
+	srv, err := newServer(cfg, essHealth, xidHealth)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create server", "error", err)
 	}
@@ -156,4 +169,16 @@ func main() {
 	}
 
 	logging.Info(ctx, "Health service stopped")
+}
+
+func initSpannerHealthClient(ctx context.Context, dbPath string, name string) (*spanner.Client, health.SpannerHealthClient) {
+	if dbPath == "" {
+		return nil, nil
+	}
+	client, err := spanner.NewClient(ctx, dbPath)
+	if err != nil {
+		logging.Warn(ctx, fmt.Sprintf("Failed to initialize %s Spanner client", name), "database", dbPath, "error", err)
+		return nil, nil
+	}
+	return client, health.NewSpannerHealthClient(client)
 }

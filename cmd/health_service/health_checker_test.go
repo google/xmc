@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	commonhealth "xmanager_cloud/common/health"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 )
 
@@ -32,7 +34,7 @@ func TestNewHealthChecker_Success(t *testing.T) {
 	cfg := &Config{
 		XidAddr: "localhost:50051",
 	}
-	checker, err := newHealthChecker(cfg)
+	checker, err := newHealthChecker(cfg, nil, nil)
 	if err != nil {
 		t.Fatalf("newHealthChecker failed: %v", err)
 	}
@@ -46,7 +48,7 @@ func TestNewHealthChecker_EmptyAddr(t *testing.T) {
 	cfg := &Config{
 		XidAddr: "",
 	}
-	_, err := newHealthChecker(cfg)
+	_, err := newHealthChecker(cfg, nil, nil)
 	if err == nil {
 		t.Fatal("expected error with empty XidAddr")
 	}
@@ -60,7 +62,7 @@ func TestCheckHTTPComponent_Healthy(t *testing.T) {
 	}))
 	defer server.Close()
 
-	checker, _ := newHealthChecker(&Config{XidAddr: "localhost:50051"})
+	checker, _ := newHealthChecker(&Config{XidAddr: "localhost:50051"}, nil, nil)
 	defer checker.Close()
 
 	res := checker.checkHTTPComponent(context.Background(), "ESS", server.URL, "/readyz")
@@ -75,7 +77,7 @@ func TestCheckHTTPComponent_UnhealthyStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	checker, _ := newHealthChecker(&Config{XidAddr: "localhost:50051"})
+	checker, _ := newHealthChecker(&Config{XidAddr: "localhost:50051"}, nil, nil)
 	defer checker.Close()
 
 	res := checker.checkHTTPComponent(context.Background(), "ESS", server.URL, "/readyz")
@@ -94,7 +96,7 @@ func TestCheckHTTPComponent_Timeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	checker, _ := newHealthChecker(&Config{XidAddr: "localhost:50051"})
+	checker, _ := newHealthChecker(&Config{XidAddr: "localhost:50051"}, nil, nil)
 	// Shorten timeout for test
 	checker.httpClient.Timeout = 10 * time.Millisecond
 	defer checker.Close()
@@ -119,7 +121,7 @@ func TestCheckGRPCComponent_Healthy(t *testing.T) {
 	}()
 	defer grpcServer.Stop()
 
-	checker, _ := newHealthChecker(&Config{XidAddr: lis.Addr().String()})
+	checker, _ := newHealthChecker(&Config{XidAddr: lis.Addr().String()}, nil, nil)
 	defer checker.Close()
 
 	res := checker.checkGRPCComponent(context.Background(), "XID", checker.xidConn, "xmc.XidService")
@@ -142,7 +144,7 @@ func TestCheckGRPCComponent_NotServing(t *testing.T) {
 	}()
 	defer grpcServer.Stop()
 
-	checker, _ := newHealthChecker(&Config{XidAddr: lis.Addr().String()})
+	checker, _ := newHealthChecker(&Config{XidAddr: lis.Addr().String()}, nil, nil)
 	defer checker.Close()
 
 	res := checker.checkGRPCComponent(context.Background(), "XID", checker.xidConn, "xmc.XidService")
@@ -155,7 +157,7 @@ func TestCheckGRPCComponent_NotServing(t *testing.T) {
 }
 
 func TestCheckGRPCComponent_NilConnection(t *testing.T) {
-	checker, _ := newHealthChecker(&Config{XidAddr: "localhost:50051"})
+	checker, _ := newHealthChecker(&Config{XidAddr: "localhost:50051"}, nil, nil)
 	checker.Close()
 
 	res := checker.checkGRPCComponent(context.Background(), "XID", nil, "xmc.XidService")
@@ -164,5 +166,101 @@ func TestCheckGRPCComponent_NilConnection(t *testing.T) {
 	}
 	if res.ErrorMessage != "grpc client connection is nil" {
 		t.Errorf("expected 'grpc client connection is nil', got %q", res.ErrorMessage)
+	}
+}
+
+type mockSpannerHealthClient struct {
+	version int64
+	dirty   bool
+	err     error
+}
+
+//nolint:revive // mock implementing interface with 3 returns
+func (m *mockSpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64, bool, error) {
+	return m.version, m.dirty, m.err
+}
+
+func TestCheckSpannerComponent(t *testing.T) {
+	tests := []struct {
+		name          string
+		client        commonhealth.SpannerHealthClient
+		expectedState spb.HealthState
+		expectedVers  string
+		expectErr     bool
+	}{
+		{
+			name:          "Success",
+			client:        &mockSpannerHealthClient{version: 42, dirty: false},
+			expectedState: spb.HealthState_HEALTH_STATE_HEALTHY,
+			expectedVers:  "42",
+		},
+		{
+			name:          "Dirty",
+			client:        &mockSpannerHealthClient{version: 42, dirty: true},
+			expectedState: spb.HealthState_HEALTH_STATE_HEALTHY,
+			expectedVers:  "42 (dirty)",
+		},
+		{
+			name:          "Error",
+			client:        &mockSpannerHealthClient{err: fmt.Errorf("connection failed")},
+			expectedState: spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			expectErr:     true,
+		},
+		{
+			name:          "Nil Client",
+			client:        nil,
+			expectedState: spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			expectedVers:  "",
+			expectErr:     true,
+		},
+	}
+
+	checker := &HealthChecker{}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			comp, version := checker.checkSpannerComponent(context.Background(), "Spanner ESS", tt.client)
+			if comp.HealthState != tt.expectedState {
+				t.Errorf("expected state %v, got %v", tt.expectedState, comp.HealthState)
+			}
+			if version != tt.expectedVers {
+				t.Errorf("expected version %q, got %q", tt.expectedVers, version)
+			}
+			if tt.expectErr && comp.ErrorMessage == "" {
+				t.Error("expected non-empty error message, got empty")
+			}
+			if !tt.expectErr && comp.ErrorMessage != "" {
+				t.Errorf("unexpected error message: %q", comp.ErrorMessage)
+			}
+		})
+	}
+}
+
+func TestRunChecks_SpannerMetadata(t *testing.T) {
+	checker := &HealthChecker{
+		cfg: &Config{
+			EssURL:        "http://invalid",
+			XidAddr:       "invalid:50051",
+			ActuatorURL:   "http://invalid",
+			ReconcilerURL: "http://invalid",
+		},
+		httpClient: &http.Client{
+			Timeout: 10 * time.Millisecond,
+		},
+		essHealthClient: &mockSpannerHealthClient{version: 6, dirty: false},
+		xidHealthClient: &mockSpannerHealthClient{version: 1, dirty: true},
+	}
+
+	res := checker.RunChecks(context.Background())
+
+	if len(res.Components) != 8 {
+		t.Errorf("expected 8 components, got %d", len(res.Components))
+	}
+
+	if res.EssDbSchemaVersion != "6" {
+		t.Errorf("expected ESS version '6', got %q", res.EssDbSchemaVersion)
+	}
+	if res.XidDbSchemaVersion != "1 (dirty)" {
+		t.Errorf("expected XID version '1 (dirty)', got %q", res.XidDbSchemaVersion)
 	}
 }
