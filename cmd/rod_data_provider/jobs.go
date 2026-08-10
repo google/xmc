@@ -33,8 +33,17 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 		return nil, err
 	}
 
-	// TODO: Fetch all LocalQueues connected to a given ClusterQueue
-	targetQueues := []string{"gpu-queue"}
+	clusterQueueName := req.GetQueueName()
+
+	targetQueues := []string{clusterQueueName}
+	if s.cache != nil {
+		localQueues := s.cache.GetLocalQueuesForClusterQueue(clusterQueueName)
+		for _, lqName := range localQueues {
+			if lqName != clusterQueueName {
+				targetQueues = append(targetQueues, lqName)
+			}
+		}
+	}
 
 	result, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, req.GetPageSize(), req.GetPageToken())
 	if err != nil {
@@ -45,7 +54,6 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	workUnits, nextPageToken := extractWorkUnitsResult(result)
 	jobs := mapWorkUnitsToDashboardJobs(ctx, workUnits, time.Now())
 
-	// TODO: Set TotalQueueSize to the total count across all pages once pagination is implemented.
 	return &spb.GetRunningAndPendingJobsResponse{
 		Jobs:           jobs,
 		NextPageToken:  nextPageToken,
@@ -69,7 +77,7 @@ func validateJobsRequest(ctx context.Context, req *spb.GetRunningAndPendingJobsR
 	return nil
 }
 
-func extractWorkUnitsResult(result *workunit.ActiveWorkUnitsResult) ([]*essmsgpb.WorkUnit, string) {
+func extractWorkUnitsResult(result *workunit.ActiveWorkUnitsResult) (workUnits []*essmsgpb.WorkUnit, nextPageToken string) {
 	if result == nil {
 		return nil, ""
 	}
@@ -103,10 +111,10 @@ func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, now t
 		Priority:           int64(wu.GetPriority()),
 		Status:             extractWorkUnitState(wu),
 		TimeInQueueSeconds: calculateQueueDuration(wu, now),
-		// TODO: Populate RequestedResources field using extractRequestedResources once resource accumulator PR is merged.
-		PositionInQueue: extractQueuePosition(wu),
-		CreateTime:      wu.GetCreateTime(),
-		Tags:            wu.GetTags(),
+		RequestedResources: extractRequestedResources(wu),
+		PositionInQueue:    extractQueuePosition(wu),
+		CreateTime:         wu.GetCreateTime(),
+		Tags:               wu.GetTags(),
 	}
 }
 

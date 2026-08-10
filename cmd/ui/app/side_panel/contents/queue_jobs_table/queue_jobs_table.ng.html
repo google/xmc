@@ -84,6 +84,18 @@
           </td>
         </ng-container>
 
+        <!-- Resources Column -->
+        <ng-container matColumnDef="resources">
+          <th mat-header-cell *matHeaderCellDef>Resources</th>
+          <td mat-cell *matCellDef="let job" class="resources-cell">
+            <div class="resource-chips-container">
+              @for (chip of job.requestedResources | queueJobResources; track $index) {
+                <xmc-resource-chip [resourceType]="chip.resourceType" [text]="chip.text" />
+              }
+            </div>
+          </td>
+        </ng-container>
+
         <!-- Work / Aux Unit Column -->
         <ng-container matColumnDef="workUnitId">
           <th mat-header-cell *matHeaderCellDef>Work / Aux Unit</th>

@@ -55,6 +55,17 @@ func validateVolumeSource(v *essmsgpb.Volume, prefix string) error {
 		return fmt.Errorf("%s must have a source specified: %w", prefix, status.ErrInvalidArgument)
 	}
 	switch s := v.Source.(type) {
+	case *essmsgpb.Volume_PersistentVolumeClaim, *essmsgpb.Volume_Gcs, *essmsgpb.Volume_HostPath, *essmsgpb.Volume_Nfs:
+		return validateStorageVolume(s, prefix)
+	case *essmsgpb.Volume_EmptyDir, *essmsgpb.Volume_Secret, *essmsgpb.Volume_ConfigMap:
+		return validateConfigVolume(s, prefix)
+	default:
+		return fmt.Errorf("%s has unsupported volume source type %T: %w", prefix, s, status.ErrInvalidArgument)
+	}
+}
+
+func validateStorageVolume(source any, prefix string) error {
+	switch s := source.(type) {
 	case *essmsgpb.Volume_PersistentVolumeClaim:
 		pvc := s.PersistentVolumeClaim
 		if pvc.GetClaimName() == "" {
@@ -77,6 +88,22 @@ func validateVolumeSource(v *essmsgpb.Volume, prefix string) error {
 			return fmt.Errorf("%s.host_path.path %q must be an absolute path: %w", prefix, hp.GetPath(), status.ErrInvalidArgument)
 		}
 		return nil
+	case *essmsgpb.Volume_Nfs:
+		nfs := s.Nfs
+		if nfs.GetServer() == "" {
+			return fmt.Errorf("%s.nfs.server cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		}
+		if nfs.GetPath() == "" {
+			return fmt.Errorf("%s.nfs.path cannot be empty: %w", prefix, status.ErrInvalidArgument)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%s has unsupported volume source type %T: %w", prefix, s, status.ErrInvalidArgument)
+	}
+}
+
+func validateConfigVolume(source any, prefix string) error {
+	switch s := source.(type) {
 	case *essmsgpb.Volume_EmptyDir:
 		ed := s.EmptyDir
 		if ed.GetSizeLimitBytes() < 0 {
@@ -93,15 +120,6 @@ func validateVolumeSource(v *essmsgpb.Volume, prefix string) error {
 		cm := s.ConfigMap
 		if cm.GetName() == "" {
 			return fmt.Errorf("%s.config_map.name cannot be empty: %w", prefix, status.ErrInvalidArgument)
-		}
-		return nil
-	case *essmsgpb.Volume_Nfs:
-		nfs := s.Nfs
-		if nfs.GetServer() == "" {
-			return fmt.Errorf("%s.nfs.server cannot be empty: %w", prefix, status.ErrInvalidArgument)
-		}
-		if nfs.GetPath() == "" {
-			return fmt.Errorf("%s.nfs.path cannot be empty: %w", prefix, status.ErrInvalidArgument)
 		}
 		return nil
 	default:
