@@ -29,7 +29,7 @@ spec:
       labels:
         app: rod-data-provider
     spec:
-      serviceAccountName: default
+      serviceAccountName: {{ .Values.rodDeployment.serviceAccountName }}
       securityContext:
         seccompProfile:
           type: RuntimeDefault

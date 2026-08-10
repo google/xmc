@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//	http://www.apache.org/licenses/LICENSE-2.0
+//      http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,68 +16,67 @@ package main
 
 import (
 	"context"
+	"log/slog"
+	"os"
+
+	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
-	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 )
 
 type server struct {
 	spb.UnimplementedHealthServiceServer
-	cfg *Config
+	cfg     *Config
+	checker *HealthChecker
 }
 
-func newServer(cfg *Config) *server {
-	return &server{cfg: cfg}
+func newServer(cfg *Config) (*server, error) {
+	checker, err := newHealthChecker(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &server{
+		cfg:     cfg,
+		checker: checker,
+	}, nil
+}
+
+func (s *server) Close() error {
+	return s.checker.Close()
 }
 
 func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRequest) (*spb.HealthStatusResponse, error) {
+	components := s.checker.RunChecks(ctx)
+
+	overallHealthy := spb.HealthState_HEALTH_STATE_HEALTHY
+	for _, c := range components {
+		if c.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY {
+			overallHealthy = spb.HealthState_HEALTH_STATE_UNHEALTHY
+			slog.Warn("Component unhealthy", "name", c.Name, "error", c.ErrorMessage)
+		}
+	}
+
 	return &spb.HealthStatusResponse{
-		HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+		HealthState: overallHealthy,
 		SystemInfo: &spb.SystemInfo{
-			AppVersion:         "mock-app-version-1.0.0",
+			AppVersion:         "app-version-1.0.0",
 			EssDbSchemaVersion: "6",
 			XidDbSchemaVersion: "1",
 			ObservabilityUrl:   "http://mock-observability-url",
 			IsSchedulingPaused: false,
 		},
-		Components: []*spb.ComponentHealth{
-			{
-				Name:        "ESS",
-				Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
-				HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
-			},
-			{
-				Name:        "XID",
-				Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
-				HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
-			},
-			{
-				Name:        "Spanner",
-				Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
-				HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
-			},
-			{
-				Name:        "Redis",
-				Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
-				HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
-			},
-		},
+		Components:      components,
 		HealthCheckTime: timestamppb.Now(),
 	}, nil
 }
 
 func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntriesRequest) (*spb.ListConfigEntriesResponse, error) {
+	groups, err := listConfigs(ctx, os.DirFS(s.cfg.ConfigDir))
+	if err != nil {
+		return nil, err
+	}
 	return &spb.ListConfigEntriesResponse{
-		ConfigGroups: []*spb.ConfigGroup{
-			{
-				DisplayName: "Health Service Config",
-				Configs: []*spb.ConfigInfo{
-					{Key: "Port", Value: s.cfg.Port},
-					{Key: "GRPCPort", Value: s.cfg.GRPCPort},
-					{Key: "ProjectID", Value: s.cfg.ProjectID},
-				},
-			},
-		},
+		ConfigGroups: groups,
 	}, nil
 }
 

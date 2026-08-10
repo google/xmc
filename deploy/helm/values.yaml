@@ -43,6 +43,9 @@ essDeployment:
 healthServiceDeployment:
   enabled: false
 
+metrics:
+  enabled: false
+
 ingestionGatewayDeployment:
   enabled: false
   hpa:
@@ -70,6 +73,8 @@ ingestionGatewayDeployment:
 
 rodDeployment:
   enabled: false
+  serviceAccountName: "rod-data-provider-service-account"
+  gcpServiceAccount: ""
 
 healthService:
   gcpServiceAccount: ""

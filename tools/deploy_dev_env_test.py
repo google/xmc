@@ -19,11 +19,14 @@ import pathlib
 import subprocess
 import sys
 import unittest
-from unittest.mock import ANY, MagicMock, call, mock_open, patch
+from unittest.mock import ANY, MagicMock, call, patch
 
 # Import the module under test
 sys.path.insert(0, str(pathlib.Path(__file__).parent.resolve()))
+from dataclasses import replace
+
 import deploy_dev_env
+from tool_utils import DeploymentConfig
 
 
 class TestDeployDevEnv(unittest.TestCase):
@@ -36,16 +39,18 @@ project_id: my-project
 environment: dev
 region: us-central1
 domain_name: example.com
-xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
+image_registry: us-central1-docker.pkg.dev/my-project/xmc
+image_tag: latest
 """
-        self.valid_config_dict = {
-            "deployment_name": "xmc-dev",
-            "project_id": "my-project",
-            "environment": "dev",
-            "region": "us-central1",
-            "domain_name": "example.com",
-            "xmc_acr_target": "us-central1-docker.pkg.dev/my-project/xmc",
-        }
+        self.valid_config = DeploymentConfig(
+            project_id="my-project",
+            deployment_name="xmc-dev",
+            region="us-central1",
+            environment="dev",
+            image_registry="us-central1-docker.pkg.dev/my-project/xmc",
+            image_tag="latest",
+            domain_name="example.com",
+        )
         self.dns_project = "dns-project"
         self.dns_zone = "dns-zone"
 
@@ -85,89 +90,24 @@ xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
         with self.assertRaises(SystemExit):
             deploy_dev_env.parse_args(args)
 
-    @patch("pathlib.Path.exists", return_value=True)
-    def test_load_and_validate_config_success(self, mock_exists):
-        mo = mock_open(read_data=self.valid_config_yaml)
-        with patch("builtins.open", mo):
-            config = deploy_dev_env.load_and_validate_config("dummy.yaml")
-            self.assertEqual(config, self.valid_config_dict)
+    @patch("deploy_dev_env.tool_load_config")
+    def test_load_and_validate_config_success(self, mock_tool_load):
+        mock_tool_load.return_value = self.valid_config
+        config = deploy_dev_env.load_and_validate_config("dummy.yaml")
+        self.assertEqual(config, self.valid_config)
+        mock_tool_load.assert_called_once_with("dummy.yaml")
 
-    @patch("pathlib.Path.exists", return_value=True)
-    def test_load_and_validate_config_missing_key(self, mock_exists):
-        invalid_yaml = """
-deployment_name: xmc-dev
-project_id: my-project
-# environment is missing
-region: us-central1
-domain_name: example.com
-xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
-"""
-        mo = mock_open(read_data=invalid_yaml)
-        with patch("builtins.open", mo), self.assertRaises(SystemExit):
+    @patch("deploy_dev_env.tool_load_config", side_effect=FileNotFoundError("not found"))
+    def test_load_and_validate_config_file_not_found(self, mock_tool_load):
+        with self.assertRaises(SystemExit) as cm:
             deploy_dev_env.load_and_validate_config("dummy.yaml")
+        self.assertEqual(cm.exception.code, 1)
 
-    @patch("pathlib.Path.exists", return_value=True)
-    def test_load_and_validate_config_invalid_value(self, mock_exists):
-        invalid_yaml = """
-deployment_name: xmc-dev! # Invalid character
-project_id: my-project
-environment: dev
-region: us-central1
-domain_name: example.com
-xmc_acr_target: us-central1-docker.pkg.dev/my-project/xmc
-"""
-        mo = mock_open(read_data=invalid_yaml)
-        with patch("builtins.open", mo), self.assertRaises(SystemExit):
+    @patch("deploy_dev_env.tool_load_config", side_effect=ValueError("invalid config"))
+    def test_load_and_validate_config_validation_error(self, mock_tool_load):
+        with self.assertRaises(SystemExit) as cm:
             deploy_dev_env.load_and_validate_config("dummy.yaml")
-
-    @patch("pathlib.Path.exists", return_value=True)
-    def test_load_config_success(self, mock_exists):
-        yaml_content = """
-key1: value1
-key2: "value2#with#hash"
-key3: 'value3#with#hash'
-key4: value4 # trailing comment
-key5: "value5" # trailing comment with quotes
-# comment line
-  key6: value6 # indented key
-"""
-        mo = mock_open(read_data=yaml_content)
-        with patch("builtins.open", mo):
-            config = deploy_dev_env._load_config("dummy.yaml")
-            expected = {
-                "key1": "value1",
-                "key2": "value2#with#hash",
-                "key3": "value3#with#hash",
-                "key4": "value4",
-                "key5": "value5",
-                "key6": "value6",
-            }
-            self.assertEqual(config, expected)
-
-    def test_validate_config_success(self):
-        config = {
-            "deployment_name": "xmc-dev",
-            "project_id": "my-project",
-            "environment": "dev",
-            "region": "us-central1",
-            "domain_name": "example.com",
-            "xmc_acr_target": "us-central1-docker.pkg.dev/my-project/xmc",
-            "extra_key": "ignored",
-        }
-        validated = deploy_dev_env._validate_config(config, "dummy.yaml")
-        self.assertEqual(validated, self.valid_config_dict)
-
-    def test_validate_config_missing_key(self):
-        config = {
-            "deployment_name": "xmc-dev",
-            # project_id is missing
-            "environment": "dev",
-            "region": "us-central1",
-            "domain_name": "example.com",
-            "xmc_acr_target": "us-central1-docker.pkg.dev/my-project/xmc",
-        }
-        with self.assertRaises(SystemExit):
-            deploy_dev_env._validate_config(config, "dummy.yaml")
+        self.assertEqual(cm.exception.code, 1)
 
     @patch("shutil.which", return_value=True)
     @patch("pathlib.Path.is_file", return_value=True)
@@ -190,7 +130,7 @@ key5: "value5" # trailing comment with quotes
         ]
 
         # Should not raise any exception/SystemExit
-        deploy_dev_env.run_checks(self.valid_config_dict, self.dns_project, self.dns_zone)
+        deploy_dev_env.run_checks(self.valid_config, self.dns_project, self.dns_zone)
 
         # Verify calls
         mock_which.assert_any_call("terraform")
@@ -211,7 +151,7 @@ key5: "value5" # trailing comment with quotes
     @patch("shutil.which", return_value=False)
     def test_run_checks_missing_binary(self, mock_which):
         with self.assertRaises(SystemExit):
-            deploy_dev_env.run_checks(self.valid_config_dict, self.dns_project, self.dns_zone)
+            deploy_dev_env.run_checks(self.valid_config, self.dns_project, self.dns_zone)
 
     @patch("shutil.which", return_value=True)
     @patch("pathlib.Path.is_file", return_value=True)
@@ -223,7 +163,7 @@ key5: "value5" # trailing comment with quotes
         mock_run.return_value = tf_version_mock
 
         with self.assertRaises(SystemExit):
-            deploy_dev_env.run_checks(self.valid_config_dict, self.dns_project, self.dns_zone)
+            deploy_dev_env.run_checks(self.valid_config, self.dns_project, self.dns_zone)
 
     @patch("shutil.which", return_value=True)
     @patch("pathlib.Path.is_file", return_value=True)
@@ -238,7 +178,7 @@ key5: "value5" # trailing comment with quotes
         mock_run.side_effect = [tf_version_mock, active_project_mock]
 
         with self.assertRaises(SystemExit):
-            deploy_dev_env.run_checks(self.valid_config_dict, self.dns_project, self.dns_zone)
+            deploy_dev_env.run_checks(self.valid_config, self.dns_project, self.dns_zone)
 
     @patch("shutil.which", return_value=True)
     @patch("pathlib.Path.is_file", return_value=True)
@@ -431,7 +371,7 @@ key5: "value5" # trailing comment with quotes
         ]
 
         deploy_dev_env.apply_dns_records(
-            "1.2.3.4", self.valid_config_dict, self.dns_project, self.dns_zone
+            "1.2.3.4", self.valid_config, self.dns_project, self.dns_zone
         )
 
         # Verify no 'transaction add' or 'transaction execute' was called
@@ -458,7 +398,7 @@ key5: "value5" # trailing comment with quotes
 
         with self.assertRaises(SystemExit):
             deploy_dev_env.apply_dns_records(
-                "1.2.3.4", self.valid_config_dict, self.dns_project, self.dns_zone
+                "1.2.3.4", self.valid_config, self.dns_project, self.dns_zone
             )
 
         # Verify transaction was aborted
@@ -497,7 +437,7 @@ key5: "value5" # trailing comment with quotes
         ]
 
         deploy_dev_env.apply_dns_records(
-            "1.2.3.4", self.valid_config_dict, self.dns_project, self.dns_zone
+            "1.2.3.4", self.valid_config, self.dns_project, self.dns_zone
         )
 
         # Verify add calls
@@ -556,7 +496,7 @@ key5: "value5" # trailing comment with quotes
         mock_run_checks,
         mock_load_config,
     ):
-        mock_load_config.return_value = self.valid_config_dict
+        mock_load_config.return_value = self.valid_config
 
         # Run with no special step args (should run all)
         deploy_dev_env.main(
@@ -609,7 +549,7 @@ key5: "value5" # trailing comment with quotes
         mock_run_checks,
         mock_load_config,
     ):
-        mock_load_config.return_value = self.valid_config_dict
+        mock_load_config.return_value = self.valid_config
 
         # Start from 'primary' (should skip check, compile, images, apis)
         deploy_dev_env.main(
@@ -665,7 +605,7 @@ key5: "value5" # trailing comment with quotes
         mock_run_checks,
         mock_load_config,
     ):
-        mock_load_config.return_value = self.valid_config_dict
+        mock_load_config.return_value = self.valid_config
 
         # Run ONLY 'compute'
         deploy_dev_env.main(
@@ -708,7 +648,7 @@ key5: "value5" # trailing comment with quotes
         mock_run_checks,
         mock_load_config,
     ):
-        mock_load_config.return_value = self.valid_config_dict
+        mock_load_config.return_value = self.valid_config
         # Simulate failure in step_compile
         mock_compile.side_effect = Exception("Compile failed")
 
@@ -738,7 +678,7 @@ key5: "value5" # trailing comment with quotes
     @patch("deploy_dev_env.run_command")
     def test_step_compile(self, mock_run):
         deploy_dev_env.step_compile(
-            self.valid_config_dict,
+            self.valid_config,
             self.dns_project,
             self.dns_zone,
             "my-config.yaml",
@@ -768,7 +708,7 @@ key5: "value5" # trailing comment with quotes
 
         mock_run.side_effect = [deploy_res, ip_res]
 
-        deploy_dev_env.step_primary(self.valid_config_dict, self.dns_project, self.dns_zone)
+        deploy_dev_env.step_primary(self.valid_config, self.dns_project, self.dns_zone)
 
         mock_run.assert_has_calls(
             [
@@ -798,7 +738,7 @@ key5: "value5" # trailing comment with quotes
             ]
         )
         mock_apply_dns.assert_called_once_with(
-            "10.0.0.1", self.valid_config_dict, self.dns_project, self.dns_zone
+            "10.0.0.1", self.valid_config, self.dns_project, self.dns_zone
         )
 
     @patch("deploy_dev_env.run_command")
@@ -809,7 +749,7 @@ key5: "value5" # trailing comment with quotes
 
         mock_run.side_effect = [describe_res, update_res]
 
-        deploy_dev_env.step_gateway_api(self.valid_config_dict, self.dns_project, self.dns_zone)
+        deploy_dev_env.step_gateway_api(self.valid_config, self.dns_project, self.dns_zone)
 
         mock_run.assert_has_calls(
             [
@@ -847,31 +787,23 @@ key5: "value5" # trailing comment with quotes
         describe_res.stdout = "true\n"
         mock_run.return_value = describe_res
 
-        deploy_dev_env.step_gateway_api(self.valid_config_dict, self.dns_project, self.dns_zone)
+        deploy_dev_env.step_gateway_api(self.valid_config, self.dns_project, self.dns_zone)
 
         mock_run.assert_called_once()
         self.assertIn("describe", mock_run.call_args[0][0])
 
-    @patch("deploy_dev_env.run_command")
-    def test_step_images_default(self, mock_run):
-        auth_res = MagicMock()
+    @patch("tool_utils.run_command")
+    @patch("deploy_dev_env.configure_docker_auth")
+    def test_step_images_default(self, mock_docker_auth, mock_run):
         bazel_res = MagicMock()
 
-        # 1 auth call + 9 bazel run calls (9 base targets, rod_data_provider disabled by default)
-        mock_run.side_effect = [auth_res] + [bazel_res] * 9
+        # 9 bazel run calls (9 base targets, rod_data_provider disabled by default)
+        mock_run.side_effect = [bazel_res] * 9
 
-        deploy_dev_env.step_images(self.valid_config_dict, self.dns_project, self.dns_zone)
+        deploy_dev_env.step_images(self.valid_config)
 
-        self.assertEqual(mock_run.call_count, 10)
-        mock_run.assert_any_call(
-            [
-                "gcloud",
-                "auth",
-                "configure-docker",
-                "us-central1-docker.pkg.dev",
-                "--quiet",
-            ]
-        )
+        self.assertEqual(mock_run.call_count, 9)
+        mock_docker_auth.assert_called_once_with(self.valid_config)
         mock_run.assert_any_call(
             ["bazel", "run", "//cmd/actuator:actuator_image_push"],
             env=ANY,
@@ -881,20 +813,20 @@ key5: "value5" # trailing comment with quotes
             env=ANY,
         )
 
-    @patch("deploy_dev_env.run_command")
-    def test_step_images_rod_enabled(self, mock_run):
-        auth_res = MagicMock()
+    @patch("tool_utils.run_command")
+    @patch("deploy_dev_env.configure_docker_auth")
+    def test_step_images_rod_enabled(self, mock_docker_auth, mock_run):
         bazel_res = MagicMock()
 
-        # 1 auth call + 10 bazel run calls (9 base + rod_data_provider)
-        mock_run.side_effect = [auth_res] + [bazel_res] * 10
+        # 10 bazel run calls (9 base + rod_data_provider)
+        mock_run.side_effect = [bazel_res] * 10
 
-        config_rod_enabled = dict(self.valid_config_dict)
-        config_rod_enabled["rod_deployment_enabled"] = "true"
+        config_rod_enabled = replace(self.valid_config, rod_deployment_enabled=True)
 
-        deploy_dev_env.step_images(config_rod_enabled, self.dns_project, self.dns_zone)
+        deploy_dev_env.step_images(config_rod_enabled)
 
-        self.assertEqual(mock_run.call_count, 11)
+        self.assertEqual(mock_run.call_count, 10)
+        mock_docker_auth.assert_called_once_with(config_rod_enabled)
         mock_run.assert_any_call(
             ["bazel", "run", "//cmd/rod_data_provider:rod_data_provider_image_push"],
             env=ANY,
@@ -911,7 +843,7 @@ key5: "value5" # trailing comment with quotes
 
         mock_run.side_effect = [cred_res, verify_res, wait_res, cert_res]
 
-        deploy_dev_env.step_verify(self.valid_config_dict, self.dns_project, self.dns_zone)
+        deploy_dev_env.step_verify(self.valid_config, self.dns_project, self.dns_zone)
 
         self.assertEqual(mock_run.call_count, 4)
         mock_run.assert_any_call(

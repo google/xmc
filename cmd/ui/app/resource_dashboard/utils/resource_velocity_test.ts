@@ -14,6 +14,8 @@
 
 import 'jasmine';
 
+import { QueueSecondaryData } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+
 import {
   calculateJobVelocity,
   calculatePendingRequestsDisplay,
@@ -24,6 +26,37 @@ import {
 } from './resource_velocity';
 
 describe('Resource Velocity Utilities', () => {
+  const mockSecondaryData: QueueSecondaryData = {
+    queuePredictability: [
+      {
+        velocityRange: 'LAST_HOUR',
+        pendingJobs: 5,
+        jobVelocity: 12.5,
+        resourceVelocity: {
+          resourceType: 'nvidia.com/gpu',
+          velocity: 4.5,
+        },
+        pendingResourceRequests: {
+          resourceType: 'nvidia.com/gpu',
+          count: 16,
+        },
+      },
+      {
+        velocityRange: 'LAST_DAY',
+        pendingJobs: 5,
+        jobVelocity: 8.2,
+        resourceVelocity: {
+          resourceType: 'nvidia.com/gpu',
+          velocity: 2.1,
+        },
+        pendingResourceRequests: {
+          resourceType: 'nvidia.com/gpu',
+          count: 16,
+        },
+      },
+    ],
+  };
+
   describe('formatRate', () => {
     it('should format rate values correctly', () => {
       expect(formatRate(0)).toBe('0');
@@ -45,49 +78,32 @@ describe('Resource Velocity Utilities', () => {
   });
 
   describe('getPendingJobsCount', () => {
-    it('should return pendingJobsCount or pendingWorkloads', () => {
-      expect(getPendingJobsCount({ pendingJobsCount: 5 })).toBe(5);
-      expect(getPendingJobsCount({ pendingWorkloads: 3 })).toBe(3);
+    it('should return pendingJobsCount fallback and calculated values', () => {
       expect(getPendingJobsCount({})).toBe(0);
+      expect(getPendingJobsCount(mockSecondaryData)).toBe(5);
     });
   });
 
   describe('calculateResourceVelocity', () => {
-    it('should return custom resource velocity if present', () => {
-      expect(calculateResourceVelocity({ resourceVelocity: '~16 GPUs/hr' }, '1h')).toBe(
-        '~16 GPUs/hr',
-      );
-    });
-
-    it('should calculate rate for GPU dominant resource regardless of pending jobs', () => {
-      expect(
-        calculateResourceVelocity(
-          {
-            dominantResource: 'nvidia.com/gpu',
-            dominantResourceUnits: 8,
-            pendingWorkloads: 5,
-          },
-          '1h',
-        ),
-      ).toBe('~8 GPUs/hr');
+    it('should return resource velocity string for matching timeframe', () => {
+      expect(calculateResourceVelocity({}, '1h')).toBe('~0 GPUs/hr');
+      expect(calculateResourceVelocity(mockSecondaryData, '1h')).toBe('~4.5 GPUs/hr');
+      expect(calculateResourceVelocity(mockSecondaryData, '24h')).toBe('~2.1 GPUs/hr');
     });
   });
 
   describe('calculateJobVelocity', () => {
-    it('should return custom job velocity if present', () => {
-      expect(calculateJobVelocity({ jobVelocity: '4 jobs/hr' }, '1h')).toBe('4 jobs/hr');
+    it('should return job velocity string for matching timeframe', () => {
+      expect(calculateJobVelocity({}, '1h')).toBe('0 jobs/hr');
+      expect(calculateJobVelocity(mockSecondaryData, '1h')).toBe('12.5 jobs/hr');
+      expect(calculateJobVelocity(mockSecondaryData, '24h')).toBe('8.2 jobs/hr');
     });
   });
 
   describe('calculatePendingRequestsDisplay', () => {
-    it('should return requested resources if present', () => {
-      expect(calculatePendingRequestsDisplay({ requestedResources: '16 GPUs' })).toBe('16 GPUs');
-    });
-
-    it('should return 0 when requested resources is not present or 0', () => {
+    it('should return pending resource requests display text', () => {
       expect(calculatePendingRequestsDisplay({})).toBe('0');
-      expect(calculatePendingRequestsDisplay({ requestedResources: '0' })).toBe('0');
-      expect(calculatePendingRequestsDisplay({ pendingJobsCount: 2 })).toBe('0');
+      expect(calculatePendingRequestsDisplay(mockSecondaryData)).toBe('16');
     });
   });
 });

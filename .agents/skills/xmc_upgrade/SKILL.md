@@ -10,6 +10,14 @@ This skill guides the agent through upgrading an existing deployed XManager on C
 > [!IMPORTANT]
 > All execution steps in this skill MUST strictly adhere to the policy rules defined in [Skills & Automation Guidelines](../../rules/skills_and_automation.md) and [Core Engineering Standards](../../rules/core_engineering.md).
 
+> [!CAUTION]
+> **Exclusive Execution Tool Policy**:
+> Environment upgrades MUST be performed EXCLUSIVELY using `python3 ./tools/upgrade_dev_env.py`.
+> Agents MUST NOT run manual `helm upgrade`, `kubectl apply`, `kubectl set image`, or `gcluster deploy` commands for upgrades. If the user does not specify a specific upgrade step, run the entire upgrade script (or run step-by-step using `--only <step>` or `--start-from <step>` depending on the prompt). If a step fails or is interrupted, troubleshoot script inputs or resume using `python3 ./tools/upgrade_dev_env.py --start-from <step>` or `--only <step>`.
+
+> [!CAUTION]
+> **Authentication Integrity Policy**: Under no circumstances should `upgrade_dev_env.py` be invoked with `auth.mockAuth="true"` or `auth.disableAuthentication="true"` unless the user explicitly requests and confirms mock authentication. Always maintain the production OAuth/IAP authentication pipeline configured in `deploy/ctk_v2/xmanager-cloud-deployment.yaml`.
+
 ```mermaid
 graph TD
     Start[Start Upgrade] --> CheckEnv["Check configuration YAML"]
@@ -100,6 +108,9 @@ If no migrations were pending, or if the user approved running migrations:
     ```bash
     python3 ./tools/upgrade_dev_env.py --start-from migrate --run-migrations
     ```
+
+> [!NOTE]
+> During the `app` step, `upgrade_dev_env.py` automatically re-compiles the Cluster Toolkit blueprint (`gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d ... --force`) and exports outputs across prerequisite groups (`primary`, `compute`) so that all updated feature flags, environment variables, and Helm values are propagated to `ctk-out/` before applying Kubernetes workload updates.
 
 ### Resuming or Running Specific Steps (Advanced / Troubleshooting)
 If the upgrade fails at a specific phase, or if you need to rerun a specific part of the workflow:

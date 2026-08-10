@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"go/flag"
+	"xmanager_cloud/internal/configutil"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/logging/logging"
@@ -58,6 +59,8 @@ var (
 	maxRecentKeys               int
 	statusMessageHistoryEnabled bool
 	metricsEnabled              bool
+	allowPrivilegedContainers   bool
+	allowHostNetwork            bool
 )
 
 // Redis flags.
@@ -70,26 +73,30 @@ var (
 )
 
 func init() {
-	flag.StringVar(&port, "port", "8080", "The HTTP server port to listen on.")
+	// Register actual CLI flags.
 	flag.BoolVar(&createNewNamespaces, "create_new_namespaces", true, "Whether a new namespace can be created when creating new Work Units.")
-	flag.StringVar(&spannerDatabaseName, "spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db", "The name of the Spanner database.")
-	flag.StringVar(&quotaProjectID, "quota_project_id", "xmc-test-project-1", "The ID of the quota project to use.")
-	flag.StringVar(&xmanagerServiceAccount, "xmanager_service_account", "", "The service account to use for OIDC authentication.")
-	flag.StringVar(&audience, "audience", "", "The audience to use for OIDC authentication. If empty, it defaults to https://actuator.xmanager.svc.cluster.local:<port>.")
 	flag.StringVar(&defaultExecutionEnvironment, "default_execution_environment", "gke", "The execution environment to use if not specified in the request.")
 	flag.StringVar(&verifyingKeyFile, "verifying_key_file", "/etc/verification-key/tls.crt", "Path to the key for verifying message signatures.")
 	flag.IntVar(&maxRecentKeys, "max_recent_keys", 2, "The maximum number of recent keys to keep for key rotation.")
-	flag.BoolVar(&statusMessageHistoryEnabled, "status_message_history_enabled", true, "Whether to enable status message history.")
 	flag.BoolVar(&metricsEnabled, "metrics_enabled", false, "Whether to enable XMC metrics in jobs.")
-	initRedisFlags()
+	flag.BoolVar(&allowPrivilegedContainers, "allow_privileged_containers", false, "Whether to allow containers to run in privileged mode when requested.")
+	flag.BoolVar(&allowHostNetwork, "allow_host_network", false, "Whether to allow pods to run with host networking when requested.")
+	registerConfigs()
 }
 
-func initRedisFlags() {
-	flag.StringVar(&redisAddr, "redis_addr", "", "The address of the Redis instance.")
-	flag.IntVar(&redisMaxRetries, "redis_max_retries", constants.RedisMaxRetries, "The maximum number of retries for a Redis task.")
-	flag.DurationVar(&redisProcessTimeout, "redis_process_timeout", constants.RedisProcessTimeout, "The timeout for processing a Redis task.")
-	flag.DurationVar(&redisAbandonedMessageTimeout, "redis_abandoned_message_timeout", constants.RedisAbandonedMessageTimeout, "The timeout for abandoned Redis messages.")
-	flag.Int64Var(&redisReadBatchSize, "redis_read_batch_size", constants.RedisReadBatchSize, "The batch size for reading Redis messages.")
+// registerConfigs loads ConfigMap managed values using configutil.
+func registerConfigs() {
+	configutil.StringEnv(&port, "port", "8080")
+	configutil.StringEnv(&spannerDatabaseName, "spanner_database_name", "projects/xmc-test-project-1/instances/xmc/databases/experiment-db")
+	configutil.StringEnv(&quotaProjectID, "quota_project_id", "xmc-test-project-1")
+	configutil.StringEnv(&xmanagerServiceAccount, "xmanager_service_account", "")
+	configutil.StringEnv(&audience, "audience", "")
+	configutil.BoolEnv(&statusMessageHistoryEnabled, "status_message_history_enabled", true)
+	configutil.StringEnv(&redisAddr, "redis_addr", "")
+	configutil.IntEnv(&redisMaxRetries, "redis_max_retries", constants.RedisMaxRetries)
+	configutil.DurationEnv(&redisProcessTimeout, "redis_process_timeout", constants.RedisProcessTimeout)
+	configutil.DurationEnv(&redisAbandonedMessageTimeout, "redis_abandoned_message_timeout", constants.RedisAbandonedMessageTimeout)
+	configutil.Int64Env(&redisReadBatchSize, "redis_read_batch_size", constants.RedisReadBatchSize)
 }
 
 func validate() error {
@@ -105,6 +112,7 @@ func validate() error {
 	return nil
 }
 
+// Load returns a Config struct populated with the values from ConfigMaps and parsed flags.
 func Load() Config {
 	ctx := context.Background()
 	if err := validate(); err != nil {
@@ -125,6 +133,8 @@ func Load() Config {
 			QuotaProjectID:              quotaProjectID,
 			DefaultExecutionEnvironment: defaultExecutionEnvironment,
 			MetricsEnabled:              metricsEnabled,
+			AllowPrivilegedContainers:   allowPrivilegedContainers,
+			AllowHostNetwork:            allowHostNetwork,
 		},
 		Audience:                    aud,
 		XManagerServiceAccount:      xmanagerServiceAccount,

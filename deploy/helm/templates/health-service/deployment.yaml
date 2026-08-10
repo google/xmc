@@ -35,6 +35,26 @@ spec:
           type: RuntimeDefault
       volumes:
         {{- include "xmanager-cloud.gcpSecretsVolume" . | nindent 8 }}
+        - name: ess-config-volume
+          configMap:
+            name: ess-config
+            optional: true
+        - name: actuator-config-volume
+          configMap:
+            name: actuator-config
+            optional: true
+        - name: reconciler-config-volume
+          configMap:
+            name: reconciler-config
+            optional: true
+        - name: xid-config-volume
+          configMap:
+            name: xid-config
+            optional: true
+        - name: health-config-volume
+          configMap:
+            name: health-config
+            optional: true
       containers:
       - name: health-service
         image: {{ .Values.health_service_custom_image | quote }}
@@ -52,6 +72,21 @@ spec:
           - name: gcp-secrets-volume
             mountPath: /etc/gcp-secrets
             readOnly: true
+          - name: ess-config-volume
+            mountPath: /config/ess
+            readOnly: true
+          - name: actuator-config-volume
+            mountPath: /config/actuator
+            readOnly: true
+          - name: reconciler-config-volume
+            mountPath: /config/reconciler
+            readOnly: true
+          - name: xid-config-volume
+            mountPath: /config/xid
+            readOnly: true
+          - name: health-config-volume
+            mountPath: /config/health-service
+            readOnly: true
         ports:
         - containerPort: 8080
           name: http-port
@@ -62,18 +97,26 @@ spec:
         - "-tls_key_file="
         env:
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
+        envFrom:
+        - configMapRef:
+            name: health-config
         readinessProbe:
           httpGet:
             path: /readyz
             port: 8080
           initialDelaySeconds: 5
           periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 1
         livenessProbe:
           httpGet:
             path: /healthz
             port: 8080
           initialDelaySeconds: 10
           periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
         resources:
           requests:
             cpu: "10m"

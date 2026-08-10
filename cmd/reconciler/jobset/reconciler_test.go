@@ -55,17 +55,16 @@ type mockStorageUpdater struct {
 	fetchErr  error
 	fetchRes  *spb.WorkUnitExecution
 
-	// listArtifactsPages returns one page per call, in order; every page except
-	// the last reports a non-empty nextToken so tests can exercise multi-page
-	// pagination. listArtifactsErr, when set, is returned on the first call.
-	listArtifactsPages [][]*spb.Artifact
+	// listArtifacts is returned by ListArtifacts. The reconciler reads a single
+	// page, so no pagination is modeled. listArtifactsErr, when set, is returned
+	// instead.
+	listArtifacts      []*spb.Artifact
 	listArtifactsErr   error
 	listArtifactsCalls int
 
-	// listArtifactsStuckToken, when set, makes ListArtifacts always return the same
-	// non-advancing cursor (and no artifacts) to exercise the loop's repeating-token
-	// guard.
-	listArtifactsStuckToken bool
+	// gotFilters records the filter argument passed to each ListArtifacts call so
+	// tests can assert the reconciler applies the server-side ManagedXprof filter.
+	gotFilters []string
 }
 
 func (m *mockStorageUpdater) FetchCurrentWorkUnitExecution(ctx context.Context, xid, wid int64) (*spb.WorkUnitExecution, error) {
@@ -73,26 +72,12 @@ func (m *mockStorageUpdater) FetchCurrentWorkUnitExecution(ctx context.Context, 
 }
 
 func (m *mockStorageUpdater) ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Artifact, string, error) {
+	m.gotFilters = append(m.gotFilters, filter)
+	m.listArtifactsCalls++
 	if m.listArtifactsErr != nil {
 		return nil, "", m.listArtifactsErr
 	}
-	idx := m.listArtifactsCalls
-	m.listArtifactsCalls++
-	if m.listArtifactsStuckToken {
-		// Fail fast rather than hang the suite if the loop guard ever regresses.
-		if m.listArtifactsCalls > 100 {
-			return nil, "", errors.New("repeating-token loop guard failed")
-		}
-		return nil, "stuck", nil
-	}
-	if idx >= len(m.listArtifactsPages) {
-		return nil, "", nil
-	}
-	nextToken := ""
-	if idx < len(m.listArtifactsPages)-1 {
-		nextToken = fmt.Sprintf("page-%d", idx+1)
-	}
-	return m.listArtifactsPages[idx], nextToken, nil
+	return m.listArtifacts, "", nil
 }
 
 func (m *mockStorageUpdater) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*spb.WorkUnitExecution, error) {
@@ -1123,17 +1108,14 @@ func TestReconcileImagePullBackOff(t *testing.T) {
 				t.Fatalf("Reconcile() failed: %v", err)
 			}
 
-			if tc.wantRequeue {
-				if res.RequeueAfter <= 0 {
-					t.Errorf("Expected RequeueAfter > 0, got %v", res.RequeueAfter)
-				}
-				if res.RequeueAfter > r.StartupPodErrorCheckTime {
-					t.Errorf("RequeueAfter %v out of expected range, want < %v", res.RequeueAfter, r.StartupPodErrorCheckTime)
-				}
-			} else {
-				if res.RequeueAfter != 0 {
-					t.Errorf("Expected RequeueAfter 0, got %v", res.RequeueAfter)
-				}
+			if tc.wantRequeue && res.RequeueAfter <= 0 {
+				t.Errorf("Expected RequeueAfter > 0, got %v", res.RequeueAfter)
+			}
+			if tc.wantRequeue && res.RequeueAfter > r.StartupPodErrorCheckTime {
+				t.Errorf("RequeueAfter %v out of expected range, want < %v", res.RequeueAfter, r.StartupPodErrorCheckTime)
+			}
+			if !tc.wantRequeue && res.RequeueAfter != 0 {
+				t.Errorf("Expected RequeueAfter 0, got %v", res.RequeueAfter)
 			}
 
 			batcher.UpdatesMu.Lock()
@@ -1580,15 +1562,15 @@ func TestGetManagedXprofEnvs(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			gotDisplayName, gotRunGroup, gotGCSPath := getManagedXprofEnvs(tc.jobSet)
-			if gotDisplayName != tc.wantDisplayName {
-				t.Errorf("getManagedXprofEnvs() gotDisplayName = %q, want %q", gotDisplayName, tc.wantDisplayName)
+			got := getManagedXprofEnvs(tc.jobSet)
+			if got.DisplayName != tc.wantDisplayName {
+				t.Errorf("getManagedXprofEnvs() gotDisplayName = %q, want %q", got.DisplayName, tc.wantDisplayName)
 			}
-			if gotRunGroup != tc.wantRunGroup {
-				t.Errorf("getManagedXprofEnvs() gotRunGroup = %q, want %q", gotRunGroup, tc.wantRunGroup)
+			if got.RunGroup != tc.wantRunGroup {
+				t.Errorf("getManagedXprofEnvs() gotRunGroup = %q, want %q", got.RunGroup, tc.wantRunGroup)
 			}
-			if gotGCSPath != tc.wantGCSPath {
-				t.Errorf("getManagedXprofEnvs() gotGCSPath = %q, want %q", gotGCSPath, tc.wantGCSPath)
+			if got.GCSPath != tc.wantGCSPath {
+				t.Errorf("getManagedXprofEnvs() gotGCSPath = %q, want %q", got.GCSPath, tc.wantGCSPath)
 			}
 		})
 	}
@@ -1700,31 +1682,33 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			}
 			_ = r.ensureMLRunCreated(context.Background(), tc.jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
 
-			if !ok && tc.wantCalls > 0 {
-				t.Fatalf("unexpected non-mock client")
-			}
-			if ok {
-				if mock.createCalls != tc.wantCalls {
-					t.Errorf("createCalls = %d, want %d", mock.createCalls, tc.wantCalls)
-				}
+			if !ok {
 				if tc.wantCalls > 0 {
-					if mock.lastID != tc.wantID {
-						t.Errorf("lastID = %q, want %q", mock.lastID, tc.wantID)
-					}
-					if mock.lastPhase != "ACTIVE" {
-						t.Errorf("lastPhase = %q, want %q", mock.lastPhase, "ACTIVE")
-					}
-					if mock.lastOpts.RunGroup != tc.wantGroup {
-						t.Errorf("RunGroup = %q, want %q", mock.lastOpts.RunGroup, tc.wantGroup)
-					}
-					if gotPath := mock.lastOpts.Artifacts["gcs_path"]; gotPath != tc.wantBucket {
-						t.Errorf("gcs_path artifact = %q, want %q", gotPath, tc.wantBucket)
-					}
-					wantCluster := "projects/test-proj/locations/us-central1/clusters/cluster-a"
-					if mock.lastOpts.WorkloadDetails.Cluster != wantCluster {
-						t.Errorf("WorkloadDetails.Cluster = %q, want %q", mock.lastOpts.WorkloadDetails.Cluster, wantCluster)
-					}
+					t.Fatalf("unexpected non-mock client")
 				}
+				return
+			}
+			if mock.createCalls != tc.wantCalls {
+				t.Errorf("createCalls = %d, want %d", mock.createCalls, tc.wantCalls)
+			}
+			if tc.wantCalls == 0 {
+				return
+			}
+			if mock.lastID != tc.wantID {
+				t.Errorf("lastID = %q, want %q", mock.lastID, tc.wantID)
+			}
+			if mock.lastPhase != "ACTIVE" {
+				t.Errorf("lastPhase = %q, want %q", mock.lastPhase, "ACTIVE")
+			}
+			if mock.lastOpts.RunGroup != tc.wantGroup {
+				t.Errorf("RunGroup = %q, want %q", mock.lastOpts.RunGroup, tc.wantGroup)
+			}
+			if gotPath := mock.lastOpts.Artifacts["gcs_path"]; gotPath != tc.wantBucket {
+				t.Errorf("gcs_path artifact = %q, want %q", gotPath, tc.wantBucket)
+			}
+			wantCluster := "projects/test-proj/locations/us-central1/clusters/cluster-a"
+			if mock.lastOpts.WorkloadDetails.Cluster != wantCluster {
+				t.Errorf("WorkloadDetails.Cluster = %q, want %q", mock.lastOpts.WorkloadDetails.Cluster, wantCluster)
 			}
 		})
 	}
@@ -1981,8 +1965,8 @@ func TestLookupManagedXprofArtifact(t *testing.T) {
 		storage      ReconcilerStorage
 		wantDisplay  string
 		wantRunGroup string
-		// wantCalls, when > 0, asserts the number of ListArtifacts calls, verifying
-		// early termination (stop once found) and the repeating-cursor loop guard.
+		// wantCalls, when > 0, asserts the number of ListArtifacts calls; the
+		// reconciler reads a single page, so no pagination occurs.
 		wantCalls int
 	}{
 		{name: "nil storage", storage: nil},
@@ -1990,38 +1974,17 @@ func TestLookupManagedXprofArtifact(t *testing.T) {
 		{name: "no artifact", storage: &mockStorageUpdater{}},
 		{
 			name:         "artifact present",
-			storage:      &mockStorageUpdater{listArtifactsPages: [][]*spb.Artifact{{managedXprofArtifact("disp", "grp")}}},
+			storage:      &mockStorageUpdater{listArtifacts: []*spb.Artifact{managedXprofArtifact("disp", "grp")}},
 			wantDisplay:  "disp",
 			wantRunGroup: "grp",
+			// A single ListArtifacts call is expected: the reconciler no longer pages.
+			wantCalls: 1,
 		},
 		{
 			name:         "multiple artifacts uses first",
-			storage:      &mockStorageUpdater{listArtifactsPages: [][]*spb.Artifact{{managedXprofArtifact("d1", "g1"), managedXprofArtifact("d2", "g2")}}},
+			storage:      &mockStorageUpdater{listArtifacts: []*spb.Artifact{managedXprofArtifact("d1", "g1"), managedXprofArtifact("d2", "g2")}},
 			wantDisplay:  "d1",
 			wantRunGroup: "g1",
-		},
-		{
-			name:         "paginates across pages",
-			storage:      &mockStorageUpdater{listArtifactsPages: [][]*spb.Artifact{{}, {managedXprofArtifact("paged", "grp")}}},
-			wantDisplay:  "paged",
-			wantRunGroup: "grp",
-		},
-		{
-			// A match on the first page must short-circuit paging: only the first
-			// artifact is used, so paging further is wasted work on the hot path.
-			name:         "stops paging once found",
-			storage:      &mockStorageUpdater{listArtifactsPages: [][]*spb.Artifact{{managedXprofArtifact("first", "g1")}, {managedXprofArtifact("second", "g2")}}},
-			wantDisplay:  "first",
-			wantRunGroup: "g1",
-			wantCalls:    1,
-		},
-		{
-			// A non-advancing cursor must not loop forever; the guard breaks when
-			// nextToken == pageToken. The first call advances "" -> "stuck", the
-			// second sees "stuck" == "stuck" and stops.
-			name:      "repeating cursor terminates",
-			storage:   &mockStorageUpdater{listArtifactsStuckToken: true},
-			wantCalls: 2,
 		},
 	}
 	for _, tc := range tests {
@@ -2038,6 +2001,14 @@ func TestLookupManagedXprofArtifact(t *testing.T) {
 				}
 				if m.listArtifactsCalls != tc.wantCalls {
 					t.Errorf("ListArtifacts called %d times, want %d", m.listArtifactsCalls, tc.wantCalls)
+				}
+			}
+			// Every ListArtifacts call must carry the server-side ManagedXprof filter.
+			if m, ok := tc.storage.(*mockStorageUpdater); ok {
+				for _, f := range m.gotFilters {
+					if f != managedXprofArtifactFilter {
+						t.Errorf("ListArtifacts filter = %q, want %q", f, managedXprofArtifactFilter)
+					}
 				}
 			}
 		})

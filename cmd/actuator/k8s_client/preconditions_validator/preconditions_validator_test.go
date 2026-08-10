@@ -88,6 +88,27 @@ func TestIsActuationRequestValid(t *testing.T) {
 			wantIsValid:   true,
 		},
 		{
+			name: "contract violation on existing jobset proceeds with actuation",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"labels": map[string]any{
+							constants.ExecutionIDLabel: "1",
+							constants.LastEditLabel:    strconv.FormatInt(earlier.Unix(), 10),
+						},
+					},
+					"spec": map[string]any{
+						"failurePolicy": map[string]any{
+							"maxRestarts": int64(3),
+						},
+					},
+				},
+			},
+			target:        "experiments/1/workUnits/1/executions/1",
+			operationTime: now,
+			wantIsValid:   true,
+		},
+		{
 			name: "equal timestamps",
 			jobSet: createJobSetWithLabels(map[string]string{
 				constants.ExecutionIDLabel: "1",
@@ -108,6 +129,133 @@ func TestIsActuationRequestValid(t *testing.T) {
 
 			if gotIsValid != tc.wantIsValid {
 				t.Errorf("IsActuationRequestValid() = %v, want %v", gotIsValid, tc.wantIsValid)
+			}
+		})
+	}
+}
+
+func TestValidateJobSetManifest(t *testing.T) {
+	validator := New()
+
+	testCases := []struct {
+		name    string
+		jobSet  *unstructured.Unstructured
+		wantErr bool
+	}{
+		{
+			name:    "nil jobset",
+			jobSet:  nil,
+			wantErr: false,
+		},
+		{
+			name: "hostNetwork true with top-level exclusive topology",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"metadata": map[string]any{
+						"annotations": map[string]any{
+							exclusiveTopologyAnnotation: "cloud.google.com/gke-nodepool",
+						},
+					},
+					"spec": map[string]any{
+						"replicatedJobs": []any{
+							map[string]any{
+								"template": map[string]any{
+									"spec": map[string]any{
+										"template": map[string]any{
+											"spec": map[string]any{
+												"hostNetwork": true,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "hostNetwork true with pod-level exclusive topology",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"spec": map[string]any{
+						"replicatedJobs": []any{
+							map[string]any{
+								"template": map[string]any{
+									"spec": map[string]any{
+										"template": map[string]any{
+											"metadata": map[string]any{
+												"annotations": map[string]any{
+													exclusiveTopologyAnnotation: "cloud.google.com/gke-nodepool",
+												},
+											},
+											"spec": map[string]any{
+												"hostNetwork": true,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "hostNetwork true missing exclusive topology",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"spec": map[string]any{
+						"replicatedJobs": []any{
+							map[string]any{
+								"template": map[string]any{
+									"spec": map[string]any{
+										"template": map[string]any{
+											"spec": map[string]any{
+												"hostNetwork": true,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "hostNetwork false missing exclusive topology",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"spec": map[string]any{
+						"replicatedJobs": []any{
+							map[string]any{
+								"template": map[string]any{
+									"spec": map[string]any{
+										"template": map[string]any{
+											"spec": map[string]any{
+												"hostNetwork": false,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validator.ValidateJobSetManifest(tc.jobSet)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("ValidateJobSetManifest() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}
@@ -169,6 +317,93 @@ func TestIsExecutionIDAligned(t *testing.T) {
 			}
 			if gotIsAligned != tc.wantIsAligned {
 				t.Errorf("IsExecutionIDAligned() = %v, want %v", gotIsAligned, tc.wantIsAligned)
+			}
+		})
+	}
+}
+
+func TestIsNonRestartingJobSetContractValid(t *testing.T) {
+	testCases := []struct {
+		name        string
+		jobSet      *unstructured.Unstructured
+		wantIsValid bool
+		wantErr     bool
+	}{
+		{
+			name: "valid contract (maxRestarts 0, restartPolicy Never)",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"spec": map[string]any{
+						"failurePolicy": map[string]any{
+							"maxRestarts": int64(0),
+						},
+						"replicatedJobs": []any{
+							map[string]any{
+								"template": map[string]any{
+									"spec": map[string]any{
+										"template": map[string]any{
+											"spec": map[string]any{
+												"restartPolicy": "Never",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantIsValid: true,
+			wantErr:     false,
+		},
+		{
+			name: "contract violation (maxRestarts > 0)",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"spec": map[string]any{
+						"failurePolicy": map[string]any{
+							"maxRestarts": int64(3),
+						},
+					},
+				},
+			},
+			wantIsValid: false,
+			wantErr:     false,
+		},
+		{
+			name: "contract violation (restartPolicy Always on replicatedJob)",
+			jobSet: &unstructured.Unstructured{
+				Object: map[string]any{
+					"spec": map[string]any{
+						"replicatedJobs": []any{
+							map[string]any{
+								"template": map[string]any{
+									"spec": map[string]any{
+										"template": map[string]any{
+											"spec": map[string]any{
+												"restartPolicy": "Always",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantIsValid: false,
+			wantErr:     false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotValid, err := isNonRestartingJobSetContractValid(tc.jobSet)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("isNonRestartingJobSetContractValid() returned error %v, wantErr: %v", err, tc.wantErr)
+			}
+			if gotValid != tc.wantIsValid {
+				t.Errorf("isNonRestartingJobSetContractValid() = %v, want %v", gotValid, tc.wantIsValid)
 			}
 		})
 	}
