@@ -13,8 +13,18 @@
 # limitations under the License.
 
 load("@bazel_gazelle//:def.bzl", "gazelle")
+load("@io_bazel_rules_go//go:def.bzl", "nogo")
 
 # gazelle:prefix xmanager_cloud
+
+nogo(
+    name = "xmc_nogo",
+    config = "nogo_config.json",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@io_bazel_rules_go//go/tools/builders:nogo_srcs",
+    ],
+)
 
 # Core legacy target mapping directives
 # gazelle:resolve go protobuf/timestamp_go_proto @org_golang_google_protobuf//types/known/timestamppb
