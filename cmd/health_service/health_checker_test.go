@@ -34,7 +34,7 @@ func TestNewHealthChecker_Success(t *testing.T) {
 	cfg := &Config{
 		XidAddr: "localhost:50051",
 	}
-	checker, err := newHealthChecker(cfg, nil, nil)
+	checker, err := newHealthChecker(HealthCheckerParams{Config: cfg})
 	if err != nil {
 		t.Fatalf("newHealthChecker failed: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestNewHealthChecker_EmptyAddr(t *testing.T) {
 	cfg := &Config{
 		XidAddr: "",
 	}
-	_, err := newHealthChecker(cfg, nil, nil)
+	_, err := newHealthChecker(HealthCheckerParams{Config: cfg})
 	if err == nil {
 		t.Fatal("expected error with empty XidAddr")
 	}
@@ -62,7 +62,7 @@ func TestCheckHTTPComponent_Healthy(t *testing.T) {
 	}))
 	defer server.Close()
 
-	checker, _ := newHealthChecker(&Config{XidAddr: "localhost:50051"}, nil, nil)
+	checker, _ := newHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: "localhost:50051"}})
 	defer checker.Close()
 
 	res := checker.checkHTTPComponent(context.Background(), "ESS", server.URL, "/readyz")
@@ -77,7 +77,7 @@ func TestCheckHTTPComponent_UnhealthyStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	checker, _ := newHealthChecker(&Config{XidAddr: "localhost:50051"}, nil, nil)
+	checker, _ := newHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: "localhost:50051"}})
 	defer checker.Close()
 
 	res := checker.checkHTTPComponent(context.Background(), "ESS", server.URL, "/readyz")
@@ -96,7 +96,7 @@ func TestCheckHTTPComponent_Timeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	checker, _ := newHealthChecker(&Config{XidAddr: "localhost:50051"}, nil, nil)
+	checker, _ := newHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: "localhost:50051"}})
 	// Shorten timeout for test
 	checker.httpClient.Timeout = 10 * time.Millisecond
 	defer checker.Close()
@@ -121,7 +121,7 @@ func TestCheckGRPCComponent_Healthy(t *testing.T) {
 	}()
 	defer grpcServer.Stop()
 
-	checker, _ := newHealthChecker(&Config{XidAddr: lis.Addr().String()}, nil, nil)
+	checker, _ := newHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: lis.Addr().String()}})
 	defer checker.Close()
 
 	res := checker.checkGRPCComponent(context.Background(), "XID", checker.xidConn, "xmc.XidService")
@@ -144,7 +144,7 @@ func TestCheckGRPCComponent_NotServing(t *testing.T) {
 	}()
 	defer grpcServer.Stop()
 
-	checker, _ := newHealthChecker(&Config{XidAddr: lis.Addr().String()}, nil, nil)
+	checker, _ := newHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: lis.Addr().String()}})
 	defer checker.Close()
 
 	res := checker.checkGRPCComponent(context.Background(), "XID", checker.xidConn, "xmc.XidService")
@@ -157,7 +157,7 @@ func TestCheckGRPCComponent_NotServing(t *testing.T) {
 }
 
 func TestCheckGRPCComponent_NilConnection(t *testing.T) {
-	checker, _ := newHealthChecker(&Config{XidAddr: "localhost:50051"}, nil, nil)
+	checker, _ := newHealthChecker(HealthCheckerParams{Config: &Config{XidAddr: "localhost:50051"}})
 	checker.Close()
 
 	res := checker.checkGRPCComponent(context.Background(), "XID", nil, "xmc.XidService")
@@ -249,6 +249,7 @@ func TestRunChecks_SpannerMetadata(t *testing.T) {
 		},
 		essHealthClient: &mockSpannerHealthClient{version: 6, dirty: false},
 		xidHealthClient: &mockSpannerHealthClient{version: 1, dirty: true},
+		redisClient:     &mockRedisClient{},
 	}
 
 	res := checker.RunChecks(context.Background())
@@ -262,5 +263,70 @@ func TestRunChecks_SpannerMetadata(t *testing.T) {
 	}
 	if res.XidDbSchemaVersion != "1 (dirty)" {
 		t.Errorf("expected XID version '1 (dirty)', got %q", res.XidDbSchemaVersion)
+	}
+}
+
+type mockRedisClient struct {
+	err error
+}
+
+func (m *mockRedisClient) Ping(ctx context.Context) error {
+	return m.err
+}
+
+func TestCheckRedis(t *testing.T) {
+	tests := []struct {
+		name          string
+		client        RedisPingClient
+		expectedState spb.HealthState
+		expectedErr   string
+	}{
+		{
+			name:          "Healthy",
+			client:        &mockRedisClient{},
+			expectedState: spb.HealthState_HEALTH_STATE_HEALTHY,
+		},
+		{
+			name:          "Unhealthy",
+			client:        &mockRedisClient{err: fmt.Errorf("connection refused")},
+			expectedState: spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			expectedErr:   "redis ping failed: connection refused",
+		},
+		{
+			name:          "Nil Client",
+			client:        nil,
+			expectedState: spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			expectedErr:   "redis client not initialized",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checker := &HealthChecker{
+				redisClient: tt.client,
+			}
+
+			var redisTarget checkTarget
+			for _, target := range checker.getCheckTargets() {
+				if target.name == "Redis" {
+					redisTarget = target
+					break
+				}
+			}
+			if redisTarget.name == "" {
+				t.Fatal("Redis target not found")
+			}
+
+			res := redisTarget.checkFn(context.Background())
+			if res.HealthState != tt.expectedState {
+				t.Errorf("expected state %v, got %v", tt.expectedState, res.HealthState)
+			}
+			if tt.expectedErr != "" && res.ErrorMessage != tt.expectedErr {
+				t.Errorf("expected error %q, got %q", tt.expectedErr, res.ErrorMessage)
+			}
+			if tt.expectedErr == "" && res.ErrorMessage != "" {
+				t.Errorf("unexpected error: %q", res.ErrorMessage)
+			}
+		})
 	}
 }

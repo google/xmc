@@ -29,31 +29,47 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
+type RedisPingClient interface {
+	Ping(ctx context.Context) error
+}
+
+type HealthCheckerParams struct {
+	Config          *Config
+	EssHealthClient health.SpannerHealthClient
+	XidHealthClient health.SpannerHealthClient
+	RedisClient     RedisPingClient
+}
+
 type HealthChecker struct {
 	cfg             *Config
 	httpClient      *http.Client
 	xidConn         *grpc.ClientConn
 	essHealthClient health.SpannerHealthClient
 	xidHealthClient health.SpannerHealthClient
+	redisClient     RedisPingClient
 }
 
-func newHealthChecker(cfg *Config, essHealth, xidHealth health.SpannerHealthClient) (*HealthChecker, error) {
-	if cfg.XidAddr == "" {
+func newHealthChecker(params HealthCheckerParams) (*HealthChecker, error) {
+	if params.Config == nil {
+		return nil, fmt.Errorf("config is required")
+	}
+	if params.Config.XidAddr == "" {
 		return nil, fmt.Errorf("xid address is required")
 	}
-	conn, err := grpc.NewClient(cfg.XidAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(params.Config.XidAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create grpc client for xid at %s: %w", cfg.XidAddr, err)
+		return nil, fmt.Errorf("failed to create grpc client for xid at %s: %w", params.Config.XidAddr, err)
 	}
 
 	return &HealthChecker{
-		cfg: cfg,
+		cfg: params.Config,
 		httpClient: &http.Client{
 			Timeout: 3 * time.Second,
 		},
 		xidConn:         conn,
-		essHealthClient: essHealth,
-		xidHealthClient: xidHealth,
+		essHealthClient: params.EssHealthClient,
+		xidHealthClient: params.XidHealthClient,
+		redisClient:     params.RedisClient,
 	}, nil
 }
 
@@ -155,15 +171,8 @@ func (c *HealthChecker) getCheckTargets() []checkTarget {
 			},
 		},
 		{
-			name: "Redis",
-			checkFn: func(ctx context.Context) *spb.ComponentHealth {
-				// TODO(b/532846936): Implement actual Redis cache connectivity check.
-				return &spb.ComponentHealth{
-					Name:        "Redis",
-					Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
-					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
-				}
-			},
+			name:    "Redis",
+			checkFn: c.checkRedis,
 		},
 	}
 }
@@ -282,4 +291,28 @@ func (c *HealthChecker) checkSpannerComponent(ctx context.Context, name string, 
 		Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
 		HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
 	}, versionStr
+}
+
+func (c *HealthChecker) checkRedis(ctx context.Context) *spb.ComponentHealth {
+	if c.redisClient == nil {
+		return &spb.ComponentHealth{
+			Name:         "Redis",
+			Type:         spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: "redis client not initialized",
+		}
+	}
+	if err := c.redisClient.Ping(ctx); err != nil {
+		return &spb.ComponentHealth{
+			Name:         "Redis",
+			Type:         spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: fmt.Sprintf("redis ping failed: %v", err),
+		}
+	}
+	return &spb.ComponentHealth{
+		Name:        "Redis",
+		Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+		HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+	}
 }

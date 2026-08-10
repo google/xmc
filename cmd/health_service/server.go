@@ -31,8 +31,13 @@ type server struct {
 	checker *HealthChecker
 }
 
-func newServer(cfg *Config, essHealth, xidHealth health.SpannerHealthClient) (*server, error) {
-	checker, err := newHealthChecker(cfg, essHealth, xidHealth)
+func newServer(cfg *Config, essHealth, xidHealth health.SpannerHealthClient, redisClient RedisPingClient) (*server, error) {
+	checker, err := newHealthChecker(HealthCheckerParams{
+		Config:          cfg,
+		EssHealthClient: essHealth,
+		XidHealthClient: xidHealth,
+		RedisClient:     redisClient,
+	})
 	if err != nil {
 		return nil, err
 	}

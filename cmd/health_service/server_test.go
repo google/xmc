@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -82,7 +83,7 @@ func TestGetHealthStatus_AllHealthy(t *testing.T) {
 	}
 	mockEss := &mockSpannerHealthClient{version: 6, dirty: false}
 	mockXid := &mockSpannerHealthClient{version: 1, dirty: false}
-	s, err := newServer(cfg, mockEss, mockXid)
+	s, err := newServer(cfg, mockEss, mockXid, &mockRedisClient{})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -171,7 +172,7 @@ func TestGetHealthStatus_SomeUnhealthy(t *testing.T) {
 		ActuatorURL:   actuatorURL,
 		ReconcilerURL: reconcilerServer.URL,
 	}
-	s, err := newServer(cfg, nil, nil)
+	s, err := newServer(cfg, nil, nil, &mockRedisClient{})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -232,7 +233,7 @@ func TestListConfigEntries(t *testing.T) {
 		XidAddr:   "localhost:50051",
 		ConfigDir: tempDir,
 	}
-	s, err := newServer(cfg, nil, nil)
+	s, err := newServer(cfg, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -262,7 +263,7 @@ func TestListConfigEntries(t *testing.T) {
 
 func TestGetUserInfo(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051", ProjectID: "test-project", XidAddr: "localhost:50051"}
-	s, err := newServer(cfg, nil, nil)
+	s, err := newServer(cfg, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -279,5 +280,50 @@ func TestGetUserInfo(t *testing.T) {
 
 	if len(resp.Privileges) != 1 || resp.Privileges[0] != spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL {
 		t.Errorf("Expected privileges [PRIVILEGE_ACCESS_ADMIN_PANEL], got %v", resp.Privileges)
+	}
+}
+
+func TestGetHealthStatus_RedisUnhealthy(t *testing.T) {
+	cfg := &Config{
+		Port:          "8080",
+		GRPCPort:      "50051",
+		ProjectID:     "test-project",
+		EssURL:        "http://invalid",
+		XidAddr:       "invalid:50051",
+		ActuatorURL:   "http://invalid",
+		ReconcilerURL: "http://invalid",
+	}
+	mockRedis := &mockRedisClient{err: fmt.Errorf("connection refused")}
+	s, err := newServer(cfg, nil, nil, mockRedis)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+	defer s.Close()
+
+	resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
+	if err != nil {
+		t.Fatalf("GetHealthStatus failed: %v", err)
+	}
+
+	if resp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
+		t.Errorf("Expected overall status 'HEALTH_STATE_UNHEALTHY', got %v", resp.HealthState)
+	}
+
+	var redisComp *spb.ComponentHealth
+	for _, c := range resp.Components {
+		if c.Name == "Redis" {
+			redisComp = c
+			break
+		}
+	}
+	if redisComp == nil {
+		t.Fatal("Redis component not found in response")
+	}
+
+	if redisComp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
+		t.Errorf("Expected Redis component status 'HEALTH_STATE_UNHEALTHY', got %v", redisComp.HealthState)
+	}
+	if redisComp.ErrorMessage != "redis ping failed: connection refused" {
+		t.Errorf("Expected error message 'redis ping failed: connection refused', got %q", redisComp.ErrorMessage)
 	}
 }

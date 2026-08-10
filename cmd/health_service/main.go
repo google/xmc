@@ -34,6 +34,7 @@ import (
 	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/task_queue_redis/redisclient"
 
 	gwpb "xmanager_cloud/health_service/proto/api_go_grpc_gateway_proto"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
@@ -79,7 +80,18 @@ func main() {
 		defer xidClient.Close()
 	}
 
-	srv, err := newServer(cfg, essHealth, xidHealth)
+	var redisClient *redisclient.PublisherClient
+	if cfg.RedisAddr != "" {
+		redisCfg := redisclient.Config{Addr: cfg.RedisAddr}
+		redisClient = redisclient.NewPublisher(redisCfg, "")
+		defer func() {
+			if err := redisClient.Close(context.Background()); err != nil {
+				logging.Error(ctx, "Failed to close redis client", "error", err)
+			}
+		}()
+	}
+
+	srv, err := newServer(cfg, essHealth, xidHealth, redisClient)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create server", "error", err)
 	}
