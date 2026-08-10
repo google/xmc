@@ -38,6 +38,7 @@ compat_go_test(
     ],
     embed = [":cache"],
     deps = [
+        "@com_github_google_go_cmp//cmp",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
     ],

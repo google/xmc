@@ -36,7 +36,7 @@ func NewKueueCache() *KueueCache {
 	}
 }
 
-// GetLocalQueuesForClusterQueue returns the names of all LocalQueues connected to the given ClusterQueue.
+// GetLocalQueuesForClusterQueue returns the sorted names of all LocalQueues connected to the given ClusterQueue.
 func (c *KueueCache) GetLocalQueuesForClusterQueue(clusterQueueName string) []string {
 	if c == nil || c.LocalQueues == nil || clusterQueueName == "" {
 		return nil
