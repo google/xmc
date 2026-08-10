@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"golang/protobuf/v2/proto/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -28,6 +29,32 @@ import (
 	spb "xmanager_cloud/api/protos/rod"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/workunit"
+)
+
+var (
+	baseReq = &spb.GetRunningAndPendingJobsRequest{
+		QueueName: "gpu-cluster-queue",
+	}
+
+	baseWorkUnit = &essmsgpb.WorkUnit{
+		Name:     "experiments/100/workUnits/1",
+		Priority: essmsgpb.Priority(100),
+		Notes:    "test@example.com",
+		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+			Status: &essmsgpb.WorkUnitStatus{
+				State: essmsgpb.WorkUnitStatus_SCHEDULING,
+				SchedulingInformation: &essmsgpb.StructuredMessage{
+					AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{
+						Detail: &essmsgpb.AuxiliaryInfo_QueueInfo{
+							QueueInfo: &essmsgpb.QueueInfo{
+								PositionInQueue: 1,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 )
 
 type mockWorkUnitFetcher struct {
@@ -61,42 +88,21 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 		{
 			name: "Success With Fetcher",
 			ctx:  context.Background(),
-			req: &spb.GetRunningAndPendingJobsRequest{
-				QueueName: "gpu-cluster-queue",
-			},
+			req:  baseReq,
 			fetcher: &mockWorkUnitFetcher{
 				workUnits: []*essmsgpb.WorkUnit{
-					{
-						Name:       "experiments/100/workUnits/1",
-						Priority:   essmsgpb.Priority(100),
-						CreateTime: timestamppb.New(now.Add(-10 * time.Minute)),
-						Notes:      "test@example.com",
-						CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
-							Status: &essmsgpb.WorkUnitStatus{
-								State: essmsgpb.WorkUnitStatus_SCHEDULING,
-								SchedulingInformation: &essmsgpb.StructuredMessage{
-									AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{
-										Detail: &essmsgpb.AuxiliaryInfo_QueueInfo{
-											QueueInfo: &essmsgpb.QueueInfo{
-												PositionInQueue: 1,
-											},
-										},
-									},
-								},
-							},
-						},
-					},
+					proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
+						wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
+					}),
 				},
 			},
 			wantCode:  codes.OK,
 			wantCount: 1,
 		},
 		{
-			name: "Unavailable With Nil Fetcher",
-			ctx:  context.Background(),
-			req: &spb.GetRunningAndPendingJobsRequest{
-				QueueName: "gpu-cluster-queue",
-			},
+			name:      "Unavailable With Nil Fetcher",
+			ctx:       context.Background(),
+			req:       baseReq,
 			fetcher:   nil,
 			wantCode:  codes.Unavailable,
 			wantCount: 0,
@@ -104,9 +110,9 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 		{
 			name: "Missing Queue Name",
 			ctx:  context.Background(),
-			req: &spb.GetRunningAndPendingJobsRequest{
-				QueueName: "",
-			},
+			req: proto.Modify(baseReq, func(r *spb.GetRunningAndPendingJobsRequest) {
+				r.QueueName = ""
+			}),
 			fetcher:   &mockWorkUnitFetcher{},
 			wantCode:  codes.InvalidArgument,
 			wantCount: 0,
@@ -114,23 +120,18 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 		{
 			name: "Negative Page Size",
 			ctx:  context.Background(),
-			req: &spb.GetRunningAndPendingJobsRequest{
-				QueueName: "gpu-cluster-queue",
-				PageSize:  -1,
-			},
+			req: proto.Modify(baseReq, func(r *spb.GetRunningAndPendingJobsRequest) {
+				r.PageSize = -1
+			}),
 			fetcher:   &mockWorkUnitFetcher{},
 			wantCode:  codes.InvalidArgument,
 			wantCount: 0,
 		},
 		{
-			name: "Fetcher Error",
-			ctx:  context.Background(),
-			req: &spb.GetRunningAndPendingJobsRequest{
-				QueueName: "gpu-cluster-queue",
-			},
-			fetcher: &mockWorkUnitFetcher{
-				err: fmt.Errorf("spanner connection failure"),
-			},
+			name:      "Fetcher Error",
+			ctx:       context.Background(),
+			req:       baseReq,
+			fetcher:   &mockWorkUnitFetcher{err: fmt.Errorf("spanner connection failure")},
 			wantCode:  codes.Internal,
 			wantCount: 0,
 		},
@@ -186,10 +187,93 @@ func TestGetRunningAndPendingJobs_ContextCancelled(t *testing.T) {
 	cancel()
 
 	srv := newServer(cfg, nil, &mockWorkUnitFetcher{})
-	req := &spb.GetRunningAndPendingJobsRequest{QueueName: "gpu-cluster-queue"}
+	req := baseReq
 	_, err := srv.GetRunningAndPendingJobs(ctx, req)
 
 	if status.Code(err) != codes.Canceled {
 		t.Errorf("GetRunningAndPendingJobs status code = %v, want %v", status.Code(err), codes.Canceled)
 	}
+}
+
+func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
+	now := time.Now()
+	wu := proto.Modify(baseWorkUnit, func(w *essmsgpb.WorkUnit) {
+		w.Executable = &essmsgpb.Executable{
+			Type: &essmsgpb.Executable_Jobset{
+				Jobset: &essmsgpb.JobSetExecutable{
+					Jobs: []*essmsgpb.KubernetesJob{
+						{
+							Replicas: 2,
+							Spec: &essmsgpb.ExecutableSpec{
+								Resources: &essmsgpb.ResourceSet{
+									Resources: &essmsgpb.ResourceSet_GpuResources{
+										GpuResources: &essmsgpb.GpuResources{
+											Type:  "nvidia-tesla-h100",
+											Count: 4,
+										},
+									},
+								},
+							},
+						},
+						{
+							Replicas: 1,
+							Spec: &essmsgpb.ExecutableSpec{
+								Resources: &essmsgpb.ResourceSet{
+									Resources: &essmsgpb.ResourceSet_GpuResources{
+										GpuResources: &essmsgpb.GpuResources{
+											Type:  "nvidia-tesla-h100",
+											Count: 2,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+	})
+
+	job := mapWorkUnitToDashboardJob(context.Background(), wu, now)
+	if job == nil {
+		t.Fatalf("mapWorkUnitToDashboardJob returned nil")
+	}
+	if len(job.GetRequestedResources()) != 1 {
+		t.Fatalf("RequestedResources len = %d, want 1", len(job.GetRequestedResources()))
+	}
+	res := job.GetRequestedResources()[0]
+	if res.GetResourceType() != "nvidia-tesla-h100" || res.GetCount() != 6.0 {
+		t.Errorf("RequestedResource = %v %v, want nvidia-tesla-h100 6.0", res.GetResourceType(), res.GetCount())
+	}
+}
+
+func TestResourceAccumulator(t *testing.T) {
+	t.Run("nil safety", func(t *testing.T) {
+		var nilAcc *resourceAccumulator
+		nilAcc.add("cpu", 10)
+		if nilAcc.toResources() != nil {
+			t.Errorf("toResources() on nil accumulator = %v, want nil", nilAcc.toResources())
+		}
+	})
+
+	t.Run("aggregation and order", func(t *testing.T) {
+		acc := newResourceAccumulator()
+		acc.add("cpu", 2.5)
+		acc.add("memory", 1024)
+		acc.add("cpu", 1.5)
+		acc.add("gpu", 0)  // ignore zero count
+		acc.add("", 5.0)   // ignore empty resType
+		acc.add("gpu", -1) // ignore negative count
+
+		res := acc.toResources()
+		if len(res) != 2 {
+			t.Fatalf("toResources() len = %d, want 2", len(res))
+		}
+		if res[0].GetResourceType() != "cpu" || res[0].GetCount() != 4.0 {
+			t.Errorf("res[0] = %v %v, want cpu 4.0", res[0].GetResourceType(), res[0].GetCount())
+		}
+		if res[1].GetResourceType() != "memory" || res[1].GetCount() != 1024.0 {
+			t.Errorf("res[1] = %v %v, want memory 1024.0", res[1].GetResourceType(), res[1].GetCount())
+		}
+	})
 }
