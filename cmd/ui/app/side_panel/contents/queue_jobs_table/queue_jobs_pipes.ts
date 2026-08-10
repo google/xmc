@@ -86,51 +86,21 @@ export class QueueJobPositionPipe implements PipeTransform {
   }
 }
 
-function formatMemoryBytes(bytes: number): string {
-  if (!bytes || bytes <= 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB'];
-  const calculatedIndex = Math.floor(Math.log(bytes) / Math.log(k));
-  const i = Math.max(0, Math.min(calculatedIndex, sizes.length - 1));
-  const val = bytes / Math.pow(k, i);
-  const formattedVal = Number.isInteger(val)
-    ? val.toString()
-    : parseFloat(val.toFixed(2)).toString();
-  return `${formattedVal} ${sizes[i]}`;
-}
-
-function formatAcceleratorType(typeRaw: string, count: number): ResourceChipData {
-  let displayType = typeRaw;
-  if (displayType.includes('/')) {
-    displayType = displayType.split('/').pop() ?? displayType;
-  }
-  const lower = displayType.toLowerCase();
-  if (lower === 'gpu') {
-    displayType = 'GPU';
-  } else if (lower === 'tpu') {
-    displayType = 'TPU';
-  }
-
-  const text = displayType ? `${count} ${displayType}` : `${count}`;
-  return { resourceType: ResourceType.GPU, text };
+function getResourceTypeEnum(typeRaw?: string): ResourceType {
+  const lower = (typeRaw || '').toLowerCase();
+  if (lower === 'cpu') return ResourceType.CPU;
+  if (lower === 'memory') return ResourceType.MEMORY;
+  return ResourceType.GPU;
 }
 
 function formatSingleResource(res: Resource): ResourceChipData {
-  const typeRaw = (res.resourceType || '').trim();
-  const typeLower = typeRaw.toLowerCase();
+  const type = (res.resourceType || '').trim();
   const count = res.count ?? 0;
-
-  if (typeLower === 'cpu') {
-    const formattedCount = count.toLocaleString('en-US');
-    const text = count === 1 ? `${formattedCount} core` : `${formattedCount} cores`;
-    return { resourceType: ResourceType.CPU, text };
-  }
-
-  if (typeLower === 'memory') {
-    return { resourceType: ResourceType.MEMORY, text: formatMemoryBytes(count) };
-  }
-
-  return formatAcceleratorType(typeRaw, count);
+  const text = type ? `${type}: ${count}` : `${count}`;
+  return {
+    resourceType: getResourceTypeEnum(type),
+    text,
+  };
 }
 
 /**

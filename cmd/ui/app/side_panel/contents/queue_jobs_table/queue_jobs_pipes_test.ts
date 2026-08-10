@@ -209,41 +209,41 @@ describe('QueueJobResourcesPipe', () => {
     const singleCore = pipe.transform({
       requestedResources: [{ resourceType: 'cpu', count: 1 }],
     });
-    expect(singleCore).toEqual([{ resourceType: ResourceType.CPU, text: '1 core' }]);
+    expect(singleCore).toEqual([{ resourceType: ResourceType.CPU, text: 'cpu: 1' }]);
 
     const multiCore = pipe.transform({
       requestedResources: [{ resourceType: 'cpu', count: 3000000 }],
     });
-    expect(multiCore).toEqual([{ resourceType: ResourceType.CPU, text: '3,000,000 cores' }]);
+    expect(multiCore).toEqual([{ resourceType: ResourceType.CPU, text: 'cpu: 3000000' }]);
   });
 
   it('should transform Memory resources correctly', () => {
     const gbMemory = pipe.transform({
       requestedResources: [{ resourceType: 'memory', count: 17179869184 }],
     });
-    expect(gbMemory).toEqual([{ resourceType: ResourceType.MEMORY, text: '16 GB' }]);
+    expect(gbMemory).toEqual([{ resourceType: ResourceType.MEMORY, text: 'memory: 17179869184' }]);
 
     const pbMemory = pipe.transform({
       requestedResources: [{ resourceType: 'memory', count: 3298886726347889 }],
     });
-    expect(pbMemory).toEqual([{ resourceType: ResourceType.MEMORY, text: '2.93 PB' }]);
+    expect(pbMemory).toEqual([{ resourceType: ResourceType.MEMORY, text: 'memory: 3298886726347889' }]);
   });
 
   it('should transform GPU, TPU, and custom resources correctly', () => {
     const h100Gpu = pipe.transform({
       requestedResources: [{ resourceType: 'H100', count: 4 }],
     });
-    expect(h100Gpu).toEqual([{ resourceType: ResourceType.GPU, text: '4 H100' }]);
+    expect(h100Gpu).toEqual([{ resourceType: ResourceType.GPU, text: 'H100: 4' }]);
 
     const tpuV4 = pipe.transform({
       requestedResources: [{ resourceType: 'TPU v4', count: 16 }],
     });
-    expect(tpuV4).toEqual([{ resourceType: ResourceType.GPU, text: '16 TPU v4' }]);
+    expect(tpuV4).toEqual([{ resourceType: ResourceType.GPU, text: 'TPU v4: 16' }]);
 
     const k8sGpu = pipe.transform({
       requestedResources: [{ resourceType: 'nvidia.com/gpu', count: 4 }],
     });
-    expect(k8sGpu).toEqual([{ resourceType: ResourceType.GPU, text: '4 GPU' }]);
+    expect(k8sGpu).toEqual([{ resourceType: ResourceType.GPU, text: 'nvidia.com/gpu: 4' }]);
   });
 
   it('should transform multiple resources on a DashboardJob or array', () => {
@@ -256,9 +256,9 @@ describe('QueueJobResourcesPipe', () => {
     };
     const result = pipe.transform(job);
     expect(result).toEqual([
-      { resourceType: ResourceType.CPU, text: '3,000,000 cores' },
-      { resourceType: ResourceType.MEMORY, text: '2.93 PB' },
-      { resourceType: ResourceType.GPU, text: '4 H100' },
+      { resourceType: ResourceType.CPU, text: 'cpu: 3000000' },
+      { resourceType: ResourceType.MEMORY, text: 'memory: 3298886726347889' },
+      { resourceType: ResourceType.GPU, text: 'H100: 4' },
     ]);
 
     const arrayInput: Resource[] = [
@@ -266,8 +266,8 @@ describe('QueueJobResourcesPipe', () => {
       { resourceType: 'TPU v4', count: 16 },
     ];
     expect(pipe.transform(arrayInput)).toEqual([
-      { resourceType: ResourceType.CPU, text: '1 core' },
-      { resourceType: ResourceType.GPU, text: '16 TPU v4' },
+      { resourceType: ResourceType.CPU, text: 'cpu: 1' },
+      { resourceType: ResourceType.GPU, text: 'TPU v4: 16' },
     ]);
   });
 });
