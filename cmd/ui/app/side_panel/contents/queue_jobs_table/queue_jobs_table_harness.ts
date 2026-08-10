@@ -22,6 +22,7 @@ export class QueueJobsTableRowHarness extends ComponentHarness {
   private readonly nameCell = this.locatorForOptional('.name-cell');
   private readonly statusCell = this.locatorForOptional('.status-cell');
   private readonly priorityCell = this.locatorForOptional('.priority-cell');
+  private readonly resourcesCell = this.locatorForOptional('.resources-cell');
   private readonly workunitCell = this.locatorForOptional('.workunit-cell');
   private readonly authorCell = this.locatorForOptional('.author-cell');
   private readonly jobLink = this.locatorForOptional('.job-link');
@@ -32,6 +33,7 @@ export class QueueJobsTableRowHarness extends ComponentHarness {
     jobName: string;
     status: string;
     priority: string;
+    resources: string;
     workUnitId: string;
     user: string;
   }> {
@@ -39,6 +41,7 @@ export class QueueJobsTableRowHarness extends ComponentHarness {
     const name = await this.nameCell();
     const status = await this.statusCell();
     const priority = await this.priorityCell();
+    const res = await this.resourcesCell();
     const workunit = await this.workunitCell();
     const author = await this.authorCell();
 
@@ -47,6 +50,7 @@ export class QueueJobsTableRowHarness extends ComponentHarness {
       jobName: name ? await name.text() : '',
       status: status ? await status.text() : '',
       priority: priority ? await priority.text() : '',
+      resources: res ? await res.text() : '',
       workUnitId: workunit ? await workunit.text() : '',
       user: author ? await author.text() : '',
     };
@@ -89,6 +93,7 @@ export class QueueJobsTableHarness extends ComponentHarness {
     jobName: string;
     status: string;
     priority: string;
+    resources: string;
     workUnitId: string;
     user: string;
   }> {

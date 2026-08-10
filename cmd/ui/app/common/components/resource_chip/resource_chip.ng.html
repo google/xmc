@@ -14,8 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 <mat-chip
-  [class.grey]="resourceType() === ResourceType.CPU || resourceType() === ResourceType.MEMORY"
-  [class.green]="resourceType() === ResourceType.GPU"
+  [class.grey]="
+    resourceType() === ResourceType.CPU ||
+    resourceType() === ResourceType.MEMORY ||
+    resourceType() === ResourceType.UNKNOWN
+  "
+  [class.green]="resourceType() === ResourceType.GPU || resourceType() === ResourceType.TPU"
 >
   {{ text() }}
 </mat-chip>
