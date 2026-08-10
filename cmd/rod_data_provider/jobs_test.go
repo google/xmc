@@ -35,6 +35,7 @@ type mockWorkUnitFetcher struct {
 	err           error
 }
 
+//nolint:revive // mock implementation matching WorkUnitFetcher interface
 func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) ([]*essmsgpb.WorkUnit, string, error) {
 	if m.err != nil {
 		return nil, "", m.err
@@ -131,29 +132,32 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 				t.Fatalf("GetRunningAndPendingJobs code = %v, want %v (err: %v)", gotCode, tt.wantCode, err)
 			}
 
-			if tt.wantCode == codes.OK {
-				if resp == nil {
-					t.Fatalf("Expected non-nil response")
-				}
-				if len(resp.Jobs) != tt.wantCount {
-					t.Errorf("Jobs count = %d, want %d", len(resp.Jobs), tt.wantCount)
-				}
-				if tt.wantCount > 0 {
-					gotJob := resp.Jobs[0]
-					wantJob := &spb.DashboardJob{
-						Xid:                100,
-						WorkUnitId:         1,
-						User:               "test@example.com",
-						Priority:           100,
-						Status:             essmsgpb.WorkUnitStatus_SCHEDULING,
-						PositionInQueue:    1,
-						TimeInQueueSeconds: gotJob.GetTimeInQueueSeconds(),
-						CreateTime:         gotJob.GetCreateTime(),
-					}
-					if diff := cmp.Diff(wantJob, gotJob, protocmp.Transform()); diff != "" {
-						t.Errorf("DashboardJob mismatch (-want +got):\n%s", diff)
-					}
-				}
+			if tt.wantCode != codes.OK {
+				return
+			}
+			if resp == nil {
+				t.Fatalf("Expected non-nil response")
+			}
+			if len(resp.Jobs) != tt.wantCount {
+				t.Errorf("Jobs count = %d, want %d", len(resp.Jobs), tt.wantCount)
+			}
+			if tt.wantCount == 0 {
+				return
+			}
+
+			gotJob := resp.Jobs[0]
+			wantJob := &spb.DashboardJob{
+				Xid:                100,
+				WorkUnitId:         1,
+				User:               "test@example.com",
+				Priority:           100,
+				Status:             essmsgpb.WorkUnitStatus_SCHEDULING,
+				PositionInQueue:    1,
+				TimeInQueueSeconds: gotJob.GetTimeInQueueSeconds(),
+				CreateTime:         gotJob.GetCreateTime(),
+			}
+			if diff := cmp.Diff(wantJob, gotJob, protocmp.Transform()); diff != "" {
+				t.Errorf("DashboardJob mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

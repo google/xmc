@@ -29,11 +29,15 @@ import (
 )
 
 // FetchActiveWorkUnitsByQueues queries Spanner for active and pending work units assigned to the given queues.
+//
+//nolint:revive // standard repository pattern returning (results, pageToken, err)
 func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) ([]*essmsgpb.WorkUnit, string, error) {
 	return r.FetchActiveWorkUnitsByQueuesAt(ctx, queueNames, pageSize, pageToken, time.Now())
 }
 
 // FetchActiveWorkUnitsByQueuesAt queries Spanner using deterministic reference time now.
+//
+//nolint:revive // standard repository pattern returning (results, pageToken, err)
 func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNames []string, pageSize int32, pageToken string, now time.Time) ([]*essmsgpb.WorkUnit, string, error) {
 	if len(queueNames) == 0 {
 		return []*essmsgpb.WorkUnit{}, "", nil
