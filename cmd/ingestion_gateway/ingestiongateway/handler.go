@@ -80,7 +80,8 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string, gMetr
 		jobNameHeader := strings.TrimSpace(r.Header.Get("X-Job-Name"))
 
 		consumer := func(m *metrics.Metric) error {
-			return enrichAndPublishMetric(ctx, m, topicName, jobNameHeader, replicaIDHeader, producer, &wg, &publishErr)
+			enrichMetricHeaderDefaults(m, jobNameHeader, replicaIDHeader)
+			return publishMetricRecord(ctx, m, topicName, producer, &wg, &publishErr)
 		}
 
 		res := DecodeAndValidateMetrics(r.Body, consumer)
@@ -112,7 +113,21 @@ func NewMetricsIngestionHandler(producer MetricProducer, topicName string, gMetr
 	}
 }
 
-func enrichAndPublishMetric(ctx context.Context, m *metrics.Metric, topicName, jobNameHeader, replicaIDHeader string, producer MetricProducer, wg *sync.WaitGroup, publishErr *atomic.Pointer[error]) error {
+func enrichMetricHeaderDefaults(m *metrics.Metric, jobNameHeader, replicaIDHeader string) {
+	if m == nil || m.Metric == nil {
+		return
+	}
+	if m.JobName == "" && jobNameHeader != "" {
+		m.JobName = jobNameHeader
+		m.Metric.JobName = jobNameHeader
+	}
+	if m.ReplicaId == "" && replicaIDHeader != "" {
+		m.ReplicaId = replicaIDHeader
+		m.Metric.ReplicaId = replicaIDHeader
+	}
+}
+
+func publishMetricRecord(ctx context.Context, m *metrics.Metric, topicName string, producer MetricProducer, wg *sync.WaitGroup, publishErr *atomic.Pointer[error]) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -121,16 +136,6 @@ func enrichAndPublishMetric(ctx context.Context, m *metrics.Metric, topicName, j
 	}
 	if m == nil || m.Metric == nil {
 		return fmt.Errorf("received nil metric record")
-	}
-
-	if m.JobName == "" && jobNameHeader != "" {
-		m.JobName = jobNameHeader
-		m.Metric.JobName = jobNameHeader
-	}
-
-	if m.ReplicaId == "" && replicaIDHeader != "" {
-		m.ReplicaId = replicaIDHeader
-		m.Metric.ReplicaId = replicaIDHeader
 	}
 
 	valBytes, err := proto.Marshal(m.Metric)
