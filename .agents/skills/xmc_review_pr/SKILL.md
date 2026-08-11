@@ -78,12 +78,14 @@ Before launching deep code analysis or subagent review panels, the agent must in
 Once the user provides initial directional guidance (or confirms to proceed), the Main Orchestrator dynamically spawns specialized worker subagents (`invoke_subagent`) tailored to the modified file types.
 
 #### Tailored Panel Generation
-Spawn 2–3 targeted domain expert subagents matching touched file extensions per the **File Extension Routing Matrix** in `AGENTS.md`:
-* **Go Codebase Specialist**: Enforces [Go Guidelines](../../rules/languages/golang.md) and [Core Engineering Standards](../../rules/core_engineering.md) (SRP, KISS, linear control flow, lowercase error wrapping `%w`, table-driven testing with `proto.Modify`).
-* **Python Automation & Scripts Specialist**: Enforces [Python Guidelines](../../rules/languages/python.md) (PEP 8, standard library preference, explicit typing, docstrings).
-* **TypeScript & Angular UI Specialist**: Enforces [TypeScript & Modern Angular Guidelines](../../rules/languages/typescript_javascript.md) (Angular signals, state immutability, DI polymorphism).
-* **Infrastructure & Schema Specialist**: Enforces Terraform, Helm, and protobuf contract guidelines.
-* **PR Description & Task Reference Reconciliation Specialist**: Mandatory check that reconciles the actual git diff against what the PR title and description claim to do, and verifies fulfillment of referenced Buganizer bugs (`b/12345`) or design specifications.
+The Main Orchestrator must critically analyze the PR contents, modified file types, architecture impact, and user feedback from Phase 1 to **dynamically formulate a tailored review panel of subagents**. Do NOT use a hardcoded list of subagents for every PR—rather, synthesize roles that fit the specific pull request. 
+
+- **Mandatory Subagent**: The review panel MUST always include a dedicated **`PR Description & Task Reference Reconciliation Specialist`**, tasked with evaluating whether the actual git diff matches what the PR title and description claim to do, and verifying that referenced Buganizer tasks (`b/XXXXX`), issue links, or design specs are fulfilled.
+- **Dynamic Domain Subagents (Synthesized by Agent)**: Based on the touched file extensions (referencing the **File Extension Routing Matrix** in `AGENTS.md`), system components, and security implications, the agent should dynamically craft 1–3 specialized subagent roles with tightly scoped prompts. Examples include (but are not limited to):
+  * *Example (Go Backend)*: `Go Concurrency & Interface Safety Reviewer` checking `context.Context` propagation, mutex boundaries, and test double fidelity (`proto.Modify`).
+  * *Example (Python Tooling)*: `Python CLI & Shell Injection Security Reviewer` auditing standard library preferences, error handling, and argument escaping.
+  * *Example (UI Frontend)*: `Modern Angular Signal & Immutability Reviewer` verifying declarative template patterns and state immutability.
+  * *Example (Infrastructure / API)*: `Protobuf & Helm Backward-Compatibility Reviewer` verifying breaking schema or deployment changes.
 
 #### Strict Directives for Subagent Prompting
 All expert subagents invoked during Phase 2 MUST receive the following mandatory guidelines:
