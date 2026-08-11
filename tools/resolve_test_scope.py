@@ -22,7 +22,9 @@ specific affected backend test targets.
 """
 
 import argparse
+import json
 import subprocess
+import sys
 from pathlib import Path
 
 CORE_INFRA_FILES: set[str] = {
@@ -130,8 +132,6 @@ def get_git_modified_files(base_ref: str | None = None, head_ref: str = "HEAD") 
                 files.append(path)
         return files
     except Exception as e:
-        import sys
-
         print(f"Critical: Failed to determine modified files from git: {e}", file=sys.stderr)
         raise
 
@@ -247,7 +247,7 @@ def resolve_test_scope(
     }
 
 
-def write_github_output(github_output_path: str, result: dict[str, object]):
+def write_github_output(github_output_path: str, result: dict[str, object]) -> None:
     """Formats key-value outputs to $GITHUB_OUTPUT file for GitHub Actions."""
     path = Path(github_output_path)
     with path.open("a", encoding="utf-8") as f:
@@ -258,7 +258,7 @@ def write_github_output(github_output_path: str, result: dict[str, object]):
         f.write(f"reason={result['reason']}\n")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--files", nargs="*", help="Optional explicit list of modified file paths.")
     parser.add_argument("--base", help="Git diff base reference.")
@@ -291,8 +291,6 @@ def main():
         write_github_output(args.github_output, result)
 
     # Output human-readable JSON summary to stdout
-    import json
-
     print(json.dumps(result, indent=2))
 
 

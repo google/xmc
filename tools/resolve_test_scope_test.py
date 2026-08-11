@@ -23,6 +23,7 @@ from unittest.mock import patch
 
 from resolve_test_scope import (
     classify_modified_files,
+    discover_bazel_rdeps_targets,
     get_git_modified_files,
     is_non_code_file,
     resolve_test_scope,
@@ -142,6 +143,23 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertIn("pkg/auth/oauth2/handlers.go", files)
         self.assertIn("new/path.go", files)
         self.assertNotIn("old/path.go -> new/path.go", files)
+
+    @patch("subprocess.run")
+    def test_discover_bazel_rdeps_targets_parsing_and_filtering(self, mock_run):
+        mock_run.return_value = unittest.mock.Mock(
+            returncode=0,
+            stdout="//pkg/auth/oauth2:oauth2_test\n//cmd/xid_service/server:server_test\n//cmd/ui:server_test\n",
+        )
+        targets = discover_bazel_rdeps_targets(["pkg/auth/oauth2/handlers.go"])
+        self.assertIn("//pkg/auth/oauth2:oauth2_test", targets)
+        self.assertIn("//cmd/xid_service/server:server_test", targets)
+        self.assertNotIn("//cmd/ui:server_test", targets)
+
+    @patch("subprocess.run")
+    def test_discover_bazel_rdeps_targets_exception_safety(self, mock_run):
+        mock_run.side_effect = Exception("Bazel timeout")
+        targets = discover_bazel_rdeps_targets(["pkg/auth/oauth2/handlers.go"])
+        self.assertEqual(targets, [])
 
     def test_write_github_output(self):
         with tempfile.NamedTemporaryFile("w+", delete=False) as tmp:
