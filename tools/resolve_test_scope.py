@@ -146,7 +146,7 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
         if f.endswith(".go") and not f.startswith("cmd/ui/"):
             pkg_dir = Path(f).parent.as_posix()
             if pkg_dir and pkg_dir != ".":
-                changed_pkgs.add(f"//{pkg_dir}")
+                changed_pkgs.add(f"//{pkg_dir}:all")
 
     if not changed_pkgs:
         return []
@@ -156,15 +156,15 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
 
     try:
         res = subprocess.run(
-            ["bazel", "query", query_expr],
+            ["bazel", "query", "--keep_going", query_expr],
             capture_output=True,
             text=True,
             check=False,
             timeout=30,
             cwd=cwd,
         )
-        if res.returncode == 0:
-            targets = [t.strip() for t in res.stdout.splitlines() if t.strip()]
+        if res.stdout.strip():
+            targets = [t.strip() for t in res.stdout.splitlines() if t.strip().startswith("//")]
             # Filter out any accidental ui targets if present
             return [t for t in targets if not t.startswith("//cmd/ui")]
     except Exception:
