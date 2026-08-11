@@ -12,9 +12,8 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
-ALTER TABLE WorkUnits ADD COLUMN PositionInQueue INT64 AS (
-  IFNULL(SAFE_CAST(WorkUnitStatus.scheduling_information.auxiliary_info.queue_info.position_in_queue AS INT64), 9223372036854775807)
-) STORED;
+-- PositionInQueue represents the work unit's position in the queue for ROD sorting.
+ALTER TABLE WorkUnits ADD COLUMN PositionInQueue INT64;
 
 ALTER TABLE WorkUnits ADD COLUMN IsPendingOrRunningJob BOOL AS (
   IF(ExecutionState IN ('SCHEDULING', 'STARTING', 'RUNNING', 'INITIALIZING'), TRUE, NULL)

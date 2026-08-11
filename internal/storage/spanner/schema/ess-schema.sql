@@ -242,21 +242,19 @@ CREATE TABLE WorkUnits (
   -- The severity of the current work unit structured status message. This is useful to query for
   -- the highest severity messages to propagate up to the experiment.
   ExecutionStatusMessageSeverity cloud.xmanager.v1.StructuredMessage.Severity AS (GREATEST(IFNULL(WorkUnitStatus.system_message.severity, 0), IFNULL(WorkUnitStatus.user_message.severity, 0))) STORED,
-  -- Stored virtual columns for ROD active queue queries
-  PositionInQueue INT64 AS (
-    IFNULL(SAFE_CAST(WorkUnitStatus.scheduling_information.auxiliary_info.queue_info.position_in_queue AS INT64), 9223372036854775807)
-  ) STORED,
+  -- PositionInQueue represents the work unit's position in the queue for ROD sorting.
+  PositionInQueue INT64,
 
   IsPendingOrRunningJob BOOL AS (
     IF(ExecutionState IN ('SCHEDULING', 'STARTING', 'RUNNING', 'INITIALIZING'), TRUE, NULL)
   ) STORED,
 
   SortPhase INT64 AS (
-    CASE
-      WHEN ExecutionState IN ('RUNNING', 'STARTING', 'INITIALIZING') THEN 1
-      WHEN ExecutionState IN ('SCHEDULING') THEN 0
-      ELSE -1
-    END
+  CASE
+    WHEN ExecutionState IN ('RUNNING', 'STARTING', 'INITIALIZING') THEN 1
+    WHEN ExecutionState IN ('SCHEDULING') THEN 0
+    ELSE -1
+  END
   ) STORED,
 
   -- The time the work unit was created.
