@@ -43,12 +43,8 @@ NON_CODE_PREFIXES: tuple[str, ...] = (
 )
 
 NON_CODE_FILES: set[str] = {
-    "README.md",
-    "INSTALL.md",
-    "CONTRIBUTING.md",
     "LICENSE",
     "OWNERS",
-    "ABSENCE.md",
     ".gitignore",
     ".tflint.hcl",
     ".golangci.yml",
