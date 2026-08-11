@@ -52,10 +52,6 @@ func WorkUnitRowToProto(row *spanner.Row) (*pb.WorkUnit, error) {
 	if err := row.ColumnByName("Notes", &workUnit.Notes); err != nil {
 		return nil, fmt.Errorf("failed to read column Notes: %w", err)
 	}
-	var creator spanner.NullString
-	if err := row.ColumnByName("Creator", &creator); err == nil && creator.Valid && workUnit.Notes == "" {
-		workUnit.Notes = creator.StringVal
-	}
 	if err := row.ColumnByName("Tags", &workUnit.Tags); err != nil {
 		return nil, fmt.Errorf("failed to read column Tags: %w", err)
 	}
