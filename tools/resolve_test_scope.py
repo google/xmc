@@ -128,10 +128,16 @@ def get_git_modified_files(base_ref: str | None = None, head_ref: str = "HEAD") 
         files = []
         for line in status_res.stdout.splitlines():
             if len(line) > 3:
-                files.append(line[3:].strip())
+                path = line[3:].strip()
+                if " -> " in path:
+                    path = path.split(" -> ", 1)[1]
+                files.append(path)
         return files
-    except Exception:
-        return []
+    except Exception as e:
+        import sys
+
+        print(f"Critical: Failed to determine modified files from git: {e}", file=sys.stderr)
+        raise
 
 
 def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> list[str]:
@@ -139,16 +145,6 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
 
     Returns empty list if Bazel is unavailable or query fails.
     """
-    go_packages: set[str] = set()
-    for f in files:
-        if f.endswith(".go") and not f.startswith("cmd/ui/"):
-            pkg_dir = Path(f).parent.as_posix()
-            if pkg_dir == "." or not pkg_dir:
-                go_packages.add("//...")
-            else:
-                go_packages.add(f"//... -//{pkg_dir}/...")
-
-    # More accurately: build set of packages for modified files
     changed_pkgs: set[str] = set()
     for f in files:
         if f.endswith(".go") and not f.startswith("cmd/ui/"):

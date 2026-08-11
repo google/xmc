@@ -23,6 +23,7 @@ from unittest.mock import patch
 
 from resolve_test_scope import (
     classify_modified_files,
+    get_git_modified_files,
     is_non_code_file,
     resolve_test_scope,
     write_github_output,
@@ -127,6 +128,20 @@ class TestResolveTestScope(unittest.TestCase):
             scope["bazel_targets"],
             "//pkg/auth/oauth2:oauth2_test //cmd/xid_service/server:server_test",
         )
+
+    @patch("subprocess.run")
+    def test_get_git_modified_files_porcelain_renamed(self, mock_run):
+        mock_diff = unittest.mock.Mock(returncode=1)
+        mock_status = unittest.mock.Mock(
+            returncode=0,
+            stdout="M  pkg/auth/oauth2/handlers.go\nR  old/path.go -> new/path.go\n",
+        )
+        mock_run.side_effect = [mock_diff, mock_status]
+
+        files = get_git_modified_files(base_ref="origin/main")
+        self.assertIn("pkg/auth/oauth2/handlers.go", files)
+        self.assertIn("new/path.go", files)
+        self.assertNotIn("old/path.go -> new/path.go", files)
 
     def test_write_github_output(self):
         with tempfile.NamedTemporaryFile("w+", delete=False) as tmp:
