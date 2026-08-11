@@ -33,7 +33,7 @@ def parse_checklist_approved_items(
     # Case 1: Initial review checklist table rows:
     # | Item | Status | File Path | Line | Rule Reference | Proposed Inline Comment |
     table_pattern = re.compile(
-        r"\|\s*([^\s|]+)\s*\|\s*(Approved|Confirmed)\s*\|\s*`?([^`|]+)`?\s*\|\s*(\d+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|",
+        r"\|\s*([^\s|]+)\s*\|\s*(Approved|Confirmed)\s*\|\s*`?([^`|]+)`?\s*\|\s*`?(\d+)`?\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|",
         re.IGNORECASE,
     )
     for match in table_pattern.finditer(content):

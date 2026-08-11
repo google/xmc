@@ -42,7 +42,7 @@ def resolve_output_path(output_arg: str, conv_id: str, default_filename: str) ->
         base_dir = Path(
             os.environ.get(
                 "JETSKI_ARTIFACT_DIR",
-                f"/usr/local/google/home/vluk/.gemini/jetski/brain/{conv_id}",
+                str(Path.home() / ".gemini" / "jetski" / "brain" / conv_id),
             )
         )
         base_dir.mkdir(parents=True, exist_ok=True)
@@ -88,9 +88,9 @@ def format_initial_audit_markdown(
 
     title = pr.get("title", "")
     body = pr.get("body", "") or "No description provided."
-    head_sha = pr.get("head", {}).get("sha", "unknown")
-    base_branch = pr.get("base", {}).get("ref", "main")
-    head_branch = pr.get("head", {}).get("ref", "unknown")
+    head_sha = (pr.get("head") or {}).get("sha", "unknown")
+    base_branch = (pr.get("base") or {}).get("ref", "main")
+    head_branch = (pr.get("head") or {}).get("ref", "unknown")
     task_refs = extract_task_references(body)
 
     task_ref_section = (
@@ -111,7 +111,7 @@ def format_initial_audit_markdown(
             cid = c.get("id")
             path = c.get("path")
             line = c.get("line") or c.get("original_line")
-            user = c.get("user", {}).get("login", "unknown")
+            user = (c.get("user") or {}).get("login", "unknown")
             c_body = (c.get("body", "") or "").replace("\n", " ")
             if len(c_body) > 80:
                 c_body = c_body[:77] + "..."
@@ -178,7 +178,7 @@ def format_rereview_audit_markdown(
     pr = data["pr_info"]
     comments = data["comments"]
     title = pr.get("title", "")
-    head_sha = pr.get("head", {}).get("sha", "unknown")
+    head_sha = (pr.get("head") or {}).get("sha", "unknown")
 
     # Group comment threads
     root_comments = [c for c in comments if not c.get("in_reply_to_id")]
@@ -193,13 +193,13 @@ def format_rereview_audit_markdown(
         cid = root.get("id")
         path = root.get("path")
         line = root.get("line") or root.get("original_line")
-        root_author = root.get("user", {}).get("login", "unknown")
+        root_author = (root.get("user") or {}).get("login", "unknown")
         root_text = root.get("body", "")
 
         thread_replies = replies_by_root.get(cid, [])
         latest_reply = thread_replies[-1] if thread_replies else None
         latest_author = (
-            latest_reply.get("user", {}).get("login", "none") if latest_reply else "none"
+            (latest_reply.get("user") or {}).get("login", "none") if latest_reply else "none"
         )
         latest_text = latest_reply.get("body", "") if latest_reply else "None"
 
