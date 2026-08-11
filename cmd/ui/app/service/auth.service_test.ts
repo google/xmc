@@ -49,7 +49,7 @@ describe('AuthService', () => {
       allowedDomains: ['example.com'],
     };
 
-    state.service.getUser().subscribe((user) => {
+    state.service.getUser().subscribe((user: UserResponse | null) => {
       expect(user).toEqual(mockUser);
     });
 
@@ -58,7 +58,7 @@ describe('AuthService', () => {
     expect(req.request.withCredentials).toBeTrue();
     req.flush(mockUser);
 
-    state.service.getUser().subscribe((user) => {
+    state.service.getUser().subscribe((user: UserResponse | null) => {
       expect(user).toEqual(mockUser);
     });
 
@@ -66,7 +66,7 @@ describe('AuthService', () => {
   });
 
   it('should catch error and return null on failed HTTP request', () => {
-    state.service.getUser().subscribe((user) => {
+    state.service.getUser().subscribe((user: UserResponse | null) => {
       expect(user).toBeNull();
     });
 
