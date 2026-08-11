@@ -44,6 +44,19 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 	// 2.1. Fill in any null values in the request payload.
 	artifact := validator.FillArtifactNullValues(req.GetArtifact())
 
+	// 2.2. Validate ChartArtifact payload.
+	if chartArtifact := artifact.GetPayload().GetChart(); chartArtifact != nil {
+		if _, _, err := validator.ValidateWorkUnitName(req.GetParent()); err != nil {
+			logging.Warn(ctx, "ChartArtifact requires a Work Unit parent", "parent", req.GetParent(), "error", err)
+			return nil, fmt.Errorf("ChartArtifact requires a Work Unit parent: %w (%v)", status.ErrInvalidArgument, err)
+		}
+		if chartArtifact.GetStatus() != msgpb.ChartArtifact_STATUS_UNSPECIFIED || chartArtifact.GetChart() != nil || chartArtifact.GetErrorMessage() != "" {
+			logging.Warn(ctx, "ChartArtifact client-supplied status, chart, or error_message values are not allowed")
+			return nil, fmt.Errorf("ChartArtifact client-supplied status, chart, or error_message values are not allowed: %w", status.ErrInvalidArgument)
+		}
+		chartArtifact.Status = msgpb.ChartArtifact_PROVISIONING
+	}
+
 	// 3. Get the parent experiment or work unit.
 	parentXID, _, err := validator.ValidateArtifactParent(req.GetParent())
 	if err != nil {
