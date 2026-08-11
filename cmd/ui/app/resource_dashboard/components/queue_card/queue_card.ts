@@ -32,7 +32,6 @@ import {
   MaxWorkloadDisplayPipe,
   QueueStatusBadgePipe,
 } from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
-
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 
 @Component({
