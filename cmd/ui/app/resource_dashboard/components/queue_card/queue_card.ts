@@ -72,7 +72,7 @@ export class QueueCardComponent {
   protected onCopyFlag(event: MouseEvent): void {
     event.stopPropagation();
     const queueName = this.queue()?.queueName ?? '';
-    const flagText = `--xm_queue=${queueName}`;
+    const flagText = `--queue=${queueName}`;
 
     if (this.clipboard.copy(flagText)) {
       this.isCopied.set(true);
