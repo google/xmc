@@ -35,6 +35,8 @@ import (
 	"xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/task_queue_redis/redisclient"
 
+	run "google.golang.org/api/run/v2"
+
 	"cloud.google.com/go/spanner"
 
 	gwpb "xmanager_cloud/health_service/proto/api_go_grpc_gateway_proto"
@@ -166,10 +168,23 @@ func initGRPCServer(ctx context.Context, cfg *Config) *grpcServerDeps {
 		redisPingClient = publisher
 	}
 
-	srv, err := newServer(cfg, essHealth, xidHealth, redisPingClient)
+	cloudRunService, err := run.NewService(ctx)
 	if err != nil {
-		logging.Fatal(ctx, "Failed to create server", "error", err)
+		logging.Warn(ctx, "Failed to create cloud run client, Cloud Run checks will report UNSPECIFIED", "error", err)
 	}
+
+	checker, err := NewHealthChecker(HealthCheckerParams{
+		Config:          cfg,
+		EssHealthClient: essHealth,
+		XidHealthClient: xidHealth,
+		RedisClient:     redisPingClient,
+		CloudRunService: cloudRunService,
+	})
+	if err != nil {
+		logging.Fatal(ctx, "Failed to create health checker", "error", err)
+	}
+
+	srv := newServer(cfg, checker)
 	spb.RegisterHealthServiceServer(grpcServer, srv)
 	reflection.Register(grpcServer)
 
