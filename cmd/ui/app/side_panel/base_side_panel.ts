@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { InputSignal } from '@angular/core';
+import { Signal } from '@angular/core';
 
 /**
  * Data for opening a side panel.
@@ -26,5 +26,5 @@ export type BaseSidePanelData = object;
  * All side panel content components must implement this interface.
  */
 export interface BaseSidePanelContent<T extends BaseSidePanelData> {
-  data: InputSignal<T>;
+  data: Signal<T | undefined>;
 }
