@@ -39,12 +39,15 @@ def resolve_output_path(output_arg: str, conv_id: str, default_filename: str) ->
     if output_arg:
         return Path(output_arg)
     if conv_id:
-        base_dir = Path(
-            os.environ.get(
-                "ARTIFACT_DIR",
-                str(Path.home() / ".gemini" / "brain" / conv_id),
-            )
-        )
+        env_dir = os.environ.get("ARTIFACT_DIR") or os.environ.get("JETSKI_ARTIFACT_DIR")
+        if env_dir:
+            base_dir = Path(env_dir)
+        else:
+            default_brain = Path.home() / ".gemini" / "jetski" / "brain" / conv_id
+            if default_brain.parent.exists():
+                base_dir = default_brain
+            else:
+                base_dir = Path.cwd() / ".review_artifacts" / conv_id
         base_dir.mkdir(parents=True, exist_ok=True)
         return base_dir / default_filename
     return Path(default_filename)

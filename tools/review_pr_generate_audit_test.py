@@ -55,6 +55,11 @@ class TestReviewPRGenerateAudit(unittest.TestCase):
                 p = resolve_output_path("", "test-conv-123", "audit.md")
                 self.assertEqual(p, Path(tmpdir) / "audit.md")
 
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.dict(os.environ, {"JETSKI_ARTIFACT_DIR": tmpdir}):
+                p = resolve_output_path("", "test-conv-123", "audit.md")
+                self.assertEqual(p, Path(tmpdir) / "audit.md")
+
     def test_format_initial_audit_markdown(self):
         data = {
             "pr_info": {
