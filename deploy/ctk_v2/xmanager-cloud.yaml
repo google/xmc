@@ -447,10 +447,6 @@ deployment_groups:
           namespace: $(vars.namespace)
           gcp_service_account_email: $(workload_service_account.service_account_email)
           tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
-        rod-data-provider-service-account:
-          namespace: $(vars.namespace)
-          gcp_service_account_email: $(workload_service_account.service_account_email)
-          tf_dependency_anchor: $(xmc_app_helm.release_completion_id)
 
   - id: log_monitor
     source: ./deploy/terraform/modules/log_monitor
