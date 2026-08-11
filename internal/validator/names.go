@@ -37,7 +37,7 @@ func validateStringID(ID string) (int64, error) {
 // It ensures that the name is in the correct format and that the XID is valid.
 // It returns the integer XID and WID if it is valid.
 // Valid work unit names are in the format "experiments/{xid}/workUnits/{wid}".
-func ValidateWorkUnitNameAllowZeroWID(name string) (int64, int64, error) {
+func ValidateWorkUnitNameAllowZeroWID(name string) (xid int64, wid int64, err error) {
 	ids, err := validateResourceName(name, []string{"experiments", "workUnits"}, "experiments/{xid}/workUnits/{wid}", true)
 	if err != nil {
 		return 0, 0, err
@@ -117,7 +117,7 @@ func ValidateExperimentName(name string) (int64, error) {
 // It ensures that the name is in the correct format and that the XID and WID are valid.
 // It returns the integer XID and WID if it is valid.
 // Valid work unit names are in the format "experiments/{xid}/workUnits/{wid}".
-func ValidateWorkUnitName(name string) (int64, int64, error) {
+func ValidateWorkUnitName(name string) (xid int64, wid int64, err error) {
 	ids, err := validateResourceName(name, []string{"experiments", "workUnits"}, "experiments/{xid}/workUnits/{wid}", false)
 	if err != nil {
 		return 0, 0, err
@@ -128,7 +128,9 @@ func ValidateWorkUnitName(name string) (int64, int64, error) {
 // ValidateWorkUnitExecutionName checks if a given work unit execution name is valid.
 // It ensures that the name is in the correct format and that the XID, WID, and EID are valid.
 // Valid work unit execution names are in the format "experiments/{xid}/workUnits/{wid}/executions/{eid}".
-func ValidateWorkUnitExecutionName(name string) (int64, int64, int64, error) {
+//
+//nolint:revive // Why: Parses 3-level hierarchical AIP resource path into (xid, wid, eid, err) without introducing artificial tuple structs.
+func ValidateWorkUnitExecutionName(name string) (xid int64, wid int64, eid int64, err error) {
 	ids, err := validateResourceName(name, []string{"experiments", "workUnits", "executions"}, "experiments/{xid}/workUnits/{wid}/executions/{eid}", false)
 	if err != nil {
 		return 0, 0, 0, err
@@ -141,7 +143,9 @@ func ValidateWorkUnitExecutionName(name string) (int64, int64, int64, error) {
 // It returns the integer XID, WID (or 0 if not present), and MessageID if it is valid.
 // Valid status message names are in the format "experiments/{xid}/statusMessages/{message_id}"
 // or "experiments/{xid}/workUnits/{wid}/statusMessages/{message_id}".
-func ValidateStatusMessageName(name string) (int64, int64, int64, error) {
+//
+//nolint:revive // Why: Parses 3-level hierarchical AIP resource path into (xid, wid, messageID, err) without introducing artificial tuple structs.
+func ValidateStatusMessageName(name string) (xid int64, wid int64, messageID int64, err error) {
 	// Try work unit pattern first (longer)
 	ids, err := validateResourceName(name, []string{"experiments", "workUnits", "statusMessages"}, "experiments/{xid}/workUnits/{wid}/statusMessages/{message_id}", false)
 	if err == nil {
@@ -173,7 +177,7 @@ func ValidateArtifactName(name string) (int64, error) {
 // It ensures that the parent is in the correct format and that the XID and WID are valid.
 // It returns the integer XID and WID if it is valid.
 // Valid artifact parents are in the format "experiments/{xid}" or "experiments/{xid}/workUnits/{wid}".
-func ValidateArtifactParent(parent string) (int64, int64, error) {
+func ValidateArtifactParent(parent string) (xid int64, wid int64, err error) {
 	return validateExperimentOrWorkUnitParent(parent)
 }
 
@@ -181,7 +185,7 @@ func ValidateArtifactParent(parent string) (int64, int64, error) {
 // It ensures that the parent is in the correct format and that the XID and WID are valid.
 // It returns the integer XID and WID if it is valid.
 // Valid status message parents are in the format "experiments/{xid}" or "experiments/{xid}/workUnits/{wid}".
-func ValidateStatusMessageParent(parent string) (int64, int64, error) {
+func ValidateStatusMessageParent(parent string) (xid int64, wid int64, err error) {
 	return validateExperimentOrWorkUnitParent(parent)
 }
 
@@ -189,7 +193,9 @@ func ValidateStatusMessageParent(parent string) (int64, int64, error) {
 // It ensures that the name is in the correct format and that the XID and WID are valid.
 // It returns the integer XID, WID, and the operation UUID string if the name is valid.
 // Valid operation names are in the format "experiments/{xid}/workUnits/{wid}/operations/{uuid}".
-func ValidateOperationName(name string) (int64, int64, string, error) {
+//
+//nolint:revive // Why: Parses 3-level hierarchical AIP resource path into (xid, wid, oidUUID, err) without introducing artificial tuple structs.
+func ValidateOperationName(name string) (xid int64, wid int64, oidUUID string, err error) {
 	const format = "experiments/{xid}/workUnits/{wid}/operations/{uuid}"
 	const separator = "/operations/"
 	index := strings.LastIndex(name, separator)
@@ -200,7 +206,7 @@ func ValidateOperationName(name string) (int64, int64, string, error) {
 	workUnitName := name[:index]
 	uuid := name[index+len(separator):]
 
-	xid, wid, err := ValidateWorkUnitName(workUnitName)
+	xid, wid, err = ValidateWorkUnitName(workUnitName)
 	if err != nil {
 		return 0, 0, "", err
 	}

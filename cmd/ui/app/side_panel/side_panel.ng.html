@@ -21,11 +21,11 @@ limitations under the License.
     [opened]="(isPanelOpen$ | async) || false"
     (closed)="closeSidePanel()"
   >
-    <ng-container #sidePanelContents></ng-container>
+    <ng-container #sidePanelContents />
   </mat-sidenav>
 
   <!-- This is the main content area, not the contents of the side nav. -->
   <mat-sidenav-content class="sidenav-main-content">
-    <ng-content></ng-content>
+    <ng-content />
   </mat-sidenav-content>
 </mat-sidenav-container>

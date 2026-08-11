@@ -46,18 +46,13 @@ func (s *Server) BatchRestartWorkUnits(ctx context.Context, req *apipb.BatchRest
 	xid, err := validator.ValidateExperimentName(req.GetParent())
 	if err != nil {
 		logging.Warn(ctx, "Failed to validate experiment name", "name", req.GetParent(), "error", err)
-		return nil, fmt.Errorf("failed to validate work unit name: %w (%v)", status.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("failed to validate experiment name: %w (%v)", status.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithExperimentName(ctx, req.GetParent())
 
 	// 3. Authorize the caller to restart work units for this experiment.
-	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
-	if err != nil {
+	if err := s.authorizeBatchRestart(ctx, xid, email); err != nil {
 		return nil, err
-	}
-	if !authorized {
-		logging.Error(ctx, "User not authorized to restart work units", "user", email)
-		return nil, fmt.Errorf("user %s is not authorized to restart work units for XID %d: %w", email, xid, status.ErrPermissionDenied)
 	}
 
 	// 4. Get the list of work units to restart.
@@ -73,17 +68,7 @@ func (s *Server) BatchRestartWorkUnits(ctx context.Context, req *apipb.BatchRest
 	}
 
 	// 5. Get a list of all of the work unit IDs that need to be restarted.
-	var multiErr error
-	var wids []int64
-	for _, workUnit := range workUnits {
-		_, wid, err := validator.ValidateWorkUnitName(workUnit.GetName())
-		if err != nil {
-			logging.Warn(ctx, "Failed to parse work unit name", "work_unit_name", workUnit.GetName(), "error", err)
-			multiErr = errors.Join(multiErr, fmt.Errorf("failed to parse work unit name: %w (%v)", status.ErrInvalidArgument, err))
-			continue
-		}
-		wids = append(wids, wid)
-	}
+	wids, multiErr := extractWorkUnitIDs(ctx, workUnits)
 
 	// 6. Restart all of the work unit executions in a single transaction.
 	restartedExecutions, err := s.storage.RestartWorkUnitExecutions(ctx, email, xid, wids)
@@ -102,49 +87,12 @@ func (s *Server) BatchRestartWorkUnits(ctx context.Context, req *apipb.BatchRest
 	// 8. Enqueue a task and operation for each work unit.
 	var successfulOperations []*lropb.Operation
 	for _, workUnit := range workUnits {
-		_, wid, err := validator.ValidateWorkUnitName(workUnit.GetName())
+		op, err := s.processWorkUnitRestartItem(ctx, workUnit, restartedExecutions, email, experiment.GetPriority(), xid)
 		if err != nil {
-			logging.Warn(ctx, "Failed to parse work unit name", "work_unit_name", workUnit.GetName(), "error", err)
-			multiErr = errors.Join(multiErr, fmt.Errorf("failed to parse work unit name: %w (%v)", status.ErrInvalidArgument, err))
+			multiErr = errors.Join(multiErr, err)
 			continue
 		}
-		ctx := logging.WithWorkUnitName(ctx, workUnit.GetName())
-
-		// 8.1. Get the execution that was restarted for this work unit. If there is none, then we fail
-		// for this work unit and continue processing the others.
-		_, ok := restartedExecutions[wid]
-		if !ok {
-			logging.Error(ctx, "No execution was restarted for work unit", "work_unit_name", workUnit.GetName())
-			multiErr = errors.Join(multiErr, fmt.Errorf("no execution was restarted for work unit %s: %w", workUnit.GetName(), status.ErrInternal))
-			continue
-		}
-
-		// 8.2. Patch the work unit with the restarted execution.
-		oldExecutionName := workUnit.GetCurrentWorkUnitExecution().GetName()
-		workUnit.CurrentWorkUnitExecution = restartedExecutions[wid]
-
-		// 8.3. Enqueue a task and operation for this work unit.
-		operation, enqueueErr := s.enqueueWorkUnitRestart(ctx, oldExecutionName, workUnit, email, experiment.GetPriority())
-		if enqueueErr != nil {
-			logging.Error(ctx, "Failed to enqueue restart request for work unit", "error", enqueueErr)
-			_, _, eid, err := validator.ValidateWorkUnitExecutionName(workUnit.GetCurrentWorkUnitExecution().GetName())
-			if err != nil {
-				logging.Error(ctx, "Failed to validate work unit execution name", "error", err)
-				multiErr = errors.Join(multiErr, fmt.Errorf("failed to validate work unit execution name: %w (%v)", status.ErrInternal, err))
-				continue
-			}
-
-			if statusMsgErr := s.updateWorkUnitExecutionStatusMessage(ctx, xid, wid, eid, &msgpb.StructuredMessage{
-				UserFacingText: "Failed to restart work unit. Please try again.",
-				Severity:       msgpb.StructuredMessage_FATAL,
-				Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,
-			}, false); statusMsgErr != nil {
-				logging.Error(ctx, "Failed to update work unit execution status message after failed restart attempt", "error", statusMsgErr)
-			}
-			multiErr = errors.Join(multiErr, enqueueErr)
-			continue
-		}
-		successfulOperations = append(successfulOperations, operation)
+		successfulOperations = append(successfulOperations, op)
 	}
 
 	// 9. If there were any errors, return them.
@@ -160,6 +108,44 @@ func (s *Server) BatchRestartWorkUnits(ctx context.Context, req *apipb.BatchRest
 	// for experiment-level operations.
 	logging.Info(ctx, "Batch restarted work units", "operations", successfulOperations)
 	return successfulOperations[len(successfulOperations)-1], nil
+}
+
+func (s *Server) processWorkUnitRestartItem(ctx context.Context, workUnit *msgpb.WorkUnit, restartedExecutions map[int64]*msgpb.WorkUnitExecution, email string, priority msgpb.Priority, xid int64) (*lropb.Operation, error) {
+	_, wid, err := validator.ValidateWorkUnitName(workUnit.GetName())
+	if err != nil {
+		logging.Warn(ctx, "Failed to parse work unit name", "work_unit_name", workUnit.GetName(), "error", err)
+		return nil, fmt.Errorf("failed to parse work unit name: %w (%v)", status.ErrInvalidArgument, err)
+	}
+	ctx = logging.WithWorkUnitName(ctx, workUnit.GetName())
+
+	_, ok := restartedExecutions[wid]
+	if !ok {
+		logging.Error(ctx, "No execution was restarted for work unit", "work_unit_name", workUnit.GetName())
+		return nil, fmt.Errorf("no execution was restarted for work unit %s: %w", workUnit.GetName(), status.ErrInternal)
+	}
+
+	oldExecutionName := workUnit.GetCurrentWorkUnitExecution().GetName()
+	workUnit.CurrentWorkUnitExecution = restartedExecutions[wid]
+
+	operation, enqueueErr := s.enqueueWorkUnitRestart(ctx, oldExecutionName, workUnit, email, priority)
+	if enqueueErr != nil {
+		logging.Error(ctx, "Failed to enqueue restart request for work unit", "error", enqueueErr)
+		_, _, eid, err := validator.ValidateWorkUnitExecutionName(workUnit.GetCurrentWorkUnitExecution().GetName())
+		if err != nil {
+			logging.Error(ctx, "Failed to validate work unit execution name", "error", err)
+			return nil, fmt.Errorf("failed to validate work unit execution name: %w (%v)", status.ErrInternal, err)
+		}
+
+		if statusMsgErr := s.updateWorkUnitExecutionStatusMessage(ctx, xid, wid, eid, &msgpb.StructuredMessage{
+			UserFacingText: "Failed to restart work unit. Please try again.",
+			Severity:       msgpb.StructuredMessage_FATAL,
+			Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,
+		}, false); statusMsgErr != nil {
+			logging.Error(ctx, "Failed to update work unit execution status message after failed restart attempt", "error", statusMsgErr)
+		}
+		return nil, enqueueErr
+	}
+	return operation, nil
 }
 
 // enqueueWorkUnitRestart handles the restarting process for a single work unit.
@@ -199,4 +185,31 @@ func (s *Server) enqueueWorkUnitRestart(ctx context.Context, oldExecutionName st
 	// 3. Return the successful response.
 	logging.Info(ctx, "Added restart request for work unit to the queue", "operation", operation.GetName())
 	return operation, nil
+}
+
+func extractWorkUnitIDs(ctx context.Context, workUnits []*msgpb.WorkUnit) ([]int64, error) {
+	var multiErr error
+	var wids []int64
+	for _, workUnit := range workUnits {
+		_, wid, err := validator.ValidateWorkUnitName(workUnit.GetName())
+		if err != nil {
+			logging.Warn(ctx, "Failed to parse work unit name", "work_unit_name", workUnit.GetName(), "error", err)
+			multiErr = errors.Join(multiErr, fmt.Errorf("failed to parse work unit name: %w (%v)", status.ErrInvalidArgument, err))
+			continue
+		}
+		wids = append(wids, wid)
+	}
+	return wids, multiErr
+}
+
+func (s *Server) authorizeBatchRestart(ctx context.Context, xid int64, email string) error {
+	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
+	if err != nil {
+		return err
+	}
+	if !authorized {
+		logging.Error(ctx, "User not authorized to restart work units", "user", email)
+		return fmt.Errorf("user %s is not authorized to restart work units for XID %d: %w", email, xid, status.ErrPermissionDenied)
+	}
+	return nil
 }

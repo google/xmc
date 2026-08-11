@@ -35,7 +35,8 @@ func TestCheckSpanner(t *testing.T) {
 	})
 
 	t.Run("healthy client returns no error", func(t *testing.T) {
-		xidClient, _, _ := emulator.SetupWithEmulator(ctx, t)
+		clients := emulator.SetupWithEmulator(ctx, t)
+		xidClient := clients.XIDClient
 		// xidClient is automatically closed by Cleanup in emulator.SetupWithEmulator
 
 		if err := CheckSpanner(ctx, xidClient); err != nil {
@@ -45,7 +46,8 @@ func TestCheckSpanner(t *testing.T) {
 
 	t.Run("closed client returns error", func(t *testing.T) {
 		// We need a real client to close it.
-		xidClient, _, _ := emulator.SetupWithEmulator(ctx, t)
+		clients := emulator.SetupWithEmulator(ctx, t)
+		xidClient := clients.XIDClient
 		xidClient.Close()
 
 		if err := CheckSpanner(ctx, xidClient); err == nil {

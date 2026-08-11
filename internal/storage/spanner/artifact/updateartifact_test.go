@@ -56,10 +56,11 @@ func TestUpdateArtifact(t *testing.T) {
 		},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"notes", "tags", "url"}},
 	}
-	originalArt, updatedArt, err := s.UpdateArtifact(ctx, update)
+	res, err := s.UpdateArtifact(ctx, update)
 	if err != nil {
 		t.Fatalf("UpdateArtifact failed: %v", err)
 	}
+	originalArt, updatedArt := res.Original, res.Updated
 
 	// 3. Verify the update.
 	if diff := cmp.Diff(createdArt, originalArt, protocmp.Transform()); diff != "" {
@@ -109,7 +110,7 @@ func TestUpdateArtifact_ImmutableField(t *testing.T) {
 		},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"name"}},
 	}
-	_, _, err := s.UpdateArtifact(ctx, update)
+	_, err := s.UpdateArtifact(ctx, update)
 	if !errors.Is(err, status.ErrInvalidArgument) {
 		t.Errorf("UpdateArtifact with immutable field returned error %v, want %v", err, status.ErrInvalidArgument)
 	}
@@ -127,7 +128,7 @@ func TestUpdateArtifact_NotFound(t *testing.T) {
 		},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"notes"}},
 	}
-	_, _, err := s.UpdateArtifact(ctx, update)
+	_, err := s.UpdateArtifact(ctx, update)
 	if !errors.Is(err, status.ErrNotFound) {
 		t.Errorf("UpdateArtifact for non-existent AID returned error %v, want %v", err, status.ErrNotFound)
 	}
@@ -149,7 +150,7 @@ func TestUpdateArtifact_EmptyMask(t *testing.T) {
 		Artifact:   &essmsgpb.Artifact{},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{}},
 	}
-	_, _, err := s.UpdateArtifact(ctx, update)
+	_, err := s.UpdateArtifact(ctx, update)
 	if !errors.Is(err, status.ErrInvalidArgument) {
 		t.Errorf("UpdateArtifact with empty mask returned error %v, want %v", err, status.ErrInvalidArgument)
 	}

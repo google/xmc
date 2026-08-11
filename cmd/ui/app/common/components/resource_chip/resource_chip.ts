@@ -19,6 +19,8 @@ export enum ResourceType {
   CPU = 'CPU',
   MEMORY = 'MEMORY',
   GPU = 'GPU',
+  TPU = 'TPU',
+  UNKNOWN = 'UNKNOWN',
 }
 
 /** The resource chip component. */
