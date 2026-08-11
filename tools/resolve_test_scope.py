@@ -33,8 +33,6 @@ CORE_INFRA_FILES: set[str] = {
     "WORKSPACE",
     "MODULE.bazel",
     "BUILD.bazel",
-    ".github/workflows/unit-tests.yml",
-    "tools/resolve_test_scope.py",
 }
 
 NON_CODE_PREFIXES: tuple[str, ...] = (
