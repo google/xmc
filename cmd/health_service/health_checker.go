@@ -336,13 +336,25 @@ func (c *HealthChecker) checkCloudRunComponent(ctx context.Context, name string,
 		}
 	}
 
-	resp, err := c.cloudRunService.Projects.Locations.Services.Get(serviceName).Context(ctx).Do()
+	apiCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	resp, err := c.cloudRunService.Projects.Locations.Services.Get(serviceName).Context(apiCtx).Do()
 	if err != nil {
 		return &spb.ComponentHealth{
 			Name:         name,
 			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
 			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
 			ErrorMessage: fmt.Sprintf("failed to get service: %v", err),
+		}
+	}
+
+	if resp == nil {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: "received empty response from cloud run API",
 		}
 	}
 
