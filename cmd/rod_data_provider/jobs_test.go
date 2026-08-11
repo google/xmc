@@ -190,7 +190,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			wantJob := &spb.DashboardJob{
 				Xid:             100,
 				WorkUnitId:      1,
-				User:            "test@example.com",
+				User:            "",
 				Priority:        100,
 				Status:          essmsgpb.WorkUnitStatus_SCHEDULING,
 				PositionInQueue: 1,
