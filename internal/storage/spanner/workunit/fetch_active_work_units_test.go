@@ -19,34 +19,86 @@ import (
 	"testing"
 )
 
-func TestFetchActiveWorkUnitsByQueues_EmptyQueue(t *testing.T) {
-	repo := &Repository{}
-	res, err := repo.FetchActiveWorkUnitsByQueues(context.Background(), nil, 10, "")
-	if err != nil {
-		t.Fatalf("FetchActiveWorkUnitsByQueues(nil) expected nil error, got %v", err)
-	}
-	if res == nil || len(res.WorkUnits) != 0 {
-		t.Fatalf("FetchActiveWorkUnitsByQueues(nil) expected empty workUnits slice, got %v", res)
-	}
-}
-
-func TestFetchActiveWorkUnitsByQueuesAt_EmptyQueuesList(t *testing.T) {
-	repo := &Repository{}
-	res, err := repo.FetchActiveWorkUnitsByQueuesAt(context.Background(), []string{}, 10, "")
-	if err != nil {
-		t.Fatalf("FetchActiveWorkUnitsByQueuesAt(empty) expected nil error, got %v", err)
-	}
-	if res == nil || len(res.WorkUnits) != 0 {
-		t.Fatalf("FetchActiveWorkUnitsByQueuesAt(empty) expected empty workUnits slice, got %v", res)
-	}
-}
-
-func TestFetchActiveWorkUnitsByQueuesAt_CanceledContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+func TestFetchActiveWorkUnitsByQueues(t *testing.T) {
+	canceledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	repo := &Repository{}
-	_, err := repo.FetchActiveWorkUnitsByQueuesAt(ctx, []string{"gpu-queue"}, 10, "")
-	if err == nil {
-		t.Errorf("FetchActiveWorkUnitsByQueuesAt(canceled) expected error, got nil")
+
+	tests := []struct {
+		name       string
+		ctx        context.Context
+		repo       *Repository
+		queueNames []string
+		pageSize   int32
+		pageToken  string
+		wantErr    bool
+		wantCount  int
+	}{
+		{
+			name:       "nil queue names with uninitialized client",
+			ctx:        context.Background(),
+			repo:       &Repository{},
+			queueNames: nil,
+			pageSize:   10,
+			pageToken:  "",
+			wantErr:    false,
+			wantCount:  0,
+		},
+		{
+			name:       "empty queue names with uninitialized client",
+			ctx:        context.Background(),
+			repo:       &Repository{},
+			queueNames: []string{},
+			pageSize:   10,
+			pageToken:  "",
+			wantErr:    false,
+			wantCount:  0,
+		},
+		{
+			name:       "non-empty queue names with nil client guard",
+			ctx:        context.Background(),
+			repo:       &Repository{client: nil},
+			queueNames: []string{"gpu-queue"},
+			pageSize:   10,
+			pageToken:  "",
+			wantErr:    false,
+			wantCount:  0,
+		},
+		{
+			name:       "nil repository guard",
+			ctx:        context.Background(),
+			repo:       nil,
+			queueNames: []string{"gpu-queue"},
+			pageSize:   10,
+			pageToken:  "",
+			wantErr:    false,
+			wantCount:  0,
+		},
+		{
+			name:       "canceled context error",
+			ctx:        canceledCtx,
+			repo:       &Repository{},
+			queueNames: []string{"gpu-queue"},
+			pageSize:   10,
+			pageToken:  "",
+			wantErr:    true,
+			wantCount:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := tt.repo.FetchActiveWorkUnitsByQueuesAt(tt.ctx, tt.queueNames, tt.pageSize, tt.pageToken)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("FetchActiveWorkUnitsByQueuesAt() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr {
+				if res == nil {
+					t.Fatalf("FetchActiveWorkUnitsByQueuesAt() expected non-nil result")
+				}
+				if len(res.WorkUnits) != tt.wantCount {
+					t.Errorf("FetchActiveWorkUnitsByQueuesAt() workUnits count = %d, want %d", len(res.WorkUnits), tt.wantCount)
+				}
+			}
+		})
 	}
 }
