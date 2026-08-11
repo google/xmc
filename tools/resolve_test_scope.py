@@ -278,12 +278,16 @@ def main() -> None:
     else:
         modified_files = get_git_modified_files(base_ref=args.base, head_ref=args.head)
 
+    print(f"DEBUG modified_files: {modified_files}", file=sys.stderr)
+
     result = resolve_test_scope(
         files=modified_files,
         event_name=args.event,
         ref=args.ref,
         use_rdeps=not args.disable_rdeps,
     )
+
+    print(f"DEBUG result: {result}", file=sys.stderr)
 
     if args.github_output:
         write_github_output(args.github_output, result)
