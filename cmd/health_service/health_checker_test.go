@@ -374,7 +374,7 @@ func TestCheckCloudRunComponent(t *testing.T) {
 		{
 			name:          "Missing Service Name",
 			serviceName:   "",
-			expectedState: spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			expectedState: spb.HealthState_HEALTH_STATE_UNSPECIFIED,
 			expectedErr:   "log monitor resource name is not configured",
 		},
 	}
@@ -449,8 +449,8 @@ func TestRunChecks_LogMonitorMissingConfig(t *testing.T) {
 		t.Fatal("Log Monitor component not found in results")
 	}
 
-	if lmComp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
-		t.Errorf("expected Log Monitor to be unhealthy, got %v", lmComp.HealthState)
+	if lmComp.HealthState != spb.HealthState_HEALTH_STATE_UNSPECIFIED {
+		t.Errorf("expected Log Monitor to be unspecified, got %v", lmComp.HealthState)
 	}
 
 	expectedErr := "log monitor resource name is not configured"
