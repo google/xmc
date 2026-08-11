@@ -27,6 +27,7 @@ CREATE PROTO BUNDLE (
   cloud.xmanager.v1.StructuredMessage.Source,
   cloud.xmanager.v1.StructuredMessage.Severity,
   cloud.xmanager.v1.AuxiliaryInfo,
+  cloud.xmanager.v1.QueueInfo,
 
   -- Protos used in Artifacts
   cloud.xmanager.v1.Artifact,
@@ -242,8 +243,17 @@ CREATE TABLE WorkUnits (
   -- The severity of the current work unit structured status message. This is useful to query for
   -- the highest severity messages to propagate up to the experiment.
   ExecutionStatusMessageSeverity cloud.xmanager.v1.StructuredMessage.Severity AS (GREATEST(IFNULL(WorkUnitStatus.system_message.severity, 0), IFNULL(WorkUnitStatus.user_message.severity, 0))) STORED,
-  -- PositionInQueue represents the work unit's position in the queue for ROD sorting.
-  PositionInQueue INT64 NOT NULL DEFAULT (9223372036854775807),
+  PositionInQueue INT64 AS (
+  IFNULL(
+    SAFE_CAST(
+      JSON_VALUE(
+        CAST(WorkUnitStatus AS STRING),
+        '$.scheduling_information.auxiliary_info.queue_info.position_in_queue'
+      ) AS INT64
+    ),
+    9223372036854775807
+  )
+  ) STORED,
 
   IsPendingOrRunningJob BOOL AS (
     IF(ExecutionState IN ('SCHEDULING', 'STARTING', 'RUNNING', 'INITIALIZING'), TRUE, NULL)

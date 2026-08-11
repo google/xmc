@@ -16,3 +16,7 @@ DROP INDEX WorkUnitsByQueueAndPosition;
 ALTER TABLE WorkUnits DROP COLUMN PositionInQueue;
 ALTER TABLE WorkUnits DROP COLUMN IsPendingOrRunningJob;
 ALTER TABLE WorkUnits DROP COLUMN SortPhase;
+
+ALTER PROTO BUNDLE DELETE (
+  cloud.xmanager.v1.QueueInfo
+);

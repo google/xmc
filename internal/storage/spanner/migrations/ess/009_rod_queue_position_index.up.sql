@@ -12,8 +12,21 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
--- PositionInQueue represents the work unit's position in the queue for ROD sorting.
-ALTER TABLE WorkUnits ADD COLUMN PositionInQueue INT64 NOT NULL DEFAULT (9223372036854775807);
+ALTER PROTO BUNDLE INSERT (
+  cloud.xmanager.v1.QueueInfo
+);
+
+ALTER TABLE WorkUnits ADD COLUMN PositionInQueue INT64 AS (
+  IFNULL(
+    SAFE_CAST(
+      JSON_VALUE(
+        CAST(WorkUnitStatus AS STRING),
+        '$.scheduling_information.auxiliary_info.queue_info.position_in_queue'
+      ) AS INT64
+    ),
+    9223372036854775807
+  )
+) STORED;
 
 ALTER TABLE WorkUnits ADD COLUMN IsPendingOrRunningJob BOOL AS (
   IF(ExecutionState IN ('SCHEDULING', 'STARTING', 'RUNNING', 'INITIALIZING'), TRUE, NULL)
