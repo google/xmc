@@ -331,7 +331,7 @@ func (c *HealthChecker) checkCloudRunComponent(ctx context.Context, name string,
 		return &spb.ComponentHealth{
 			Name:         name,
 			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
-			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNSPECIFIED,
 			ErrorMessage: "cloud run client not initialized",
 		}
 	}

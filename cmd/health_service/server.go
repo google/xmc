@@ -29,6 +29,8 @@ type healthChecker interface {
 	Close() error
 }
 
+var _ spb.HealthServiceServer = (*server)(nil)
+
 type server struct {
 	spb.UnimplementedHealthServiceServer
 	cfg     *Config

@@ -170,7 +170,7 @@ func initGRPCServer(ctx context.Context, cfg *Config) *grpcServerDeps {
 
 	cloudRunService, err := run.NewService(ctx)
 	if err != nil {
-		logging.Fatal(ctx, "Failed to create cloud run client", "error", err)
+		logging.Warn(ctx, "Failed to create cloud run client, Cloud Run checks will report UNSPECIFIED", "error", err)
 	}
 
 	checker, err := NewHealthChecker(HealthCheckerParams{

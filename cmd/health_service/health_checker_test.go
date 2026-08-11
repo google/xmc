@@ -23,13 +23,14 @@ import (
 	"testing"
 	"time"
 
+	commonhealth "xmanager_cloud/common/health"
+	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+
 	"google.golang.org/api/option"
 	run "google.golang.org/api/run/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
-	commonhealth "xmanager_cloud/common/health"
-	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 )
 
 func TestNewHealthChecker_Success(t *testing.T) {
@@ -367,7 +368,7 @@ func TestCheckCloudRunComponent(t *testing.T) {
 			name:          "Nil Client",
 			nilClient:     true,
 			serviceName:   "projects/test-project/locations/us-central1/services/log-monitor",
-			expectedState: spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			expectedState: spb.HealthState_HEALTH_STATE_UNSPECIFIED,
 			expectedErr:   "cloud run client not initialized",
 		},
 		{
@@ -470,4 +471,138 @@ func newMockCloudRunServer(t *testing.T, state, reason, message string) *httptes
 			}
 		}`, state, reason, message)
 	}))
+}
+
+func TestRunChecks(t *testing.T) {
+	tests := []struct {
+		name            string
+		httpStatus      int
+		grpcStatus      grpc_health_v1.HealthCheckResponse_ServingStatus
+		crState         string
+		crReason        string
+		crMessage       string
+		essSpannerErr   error
+		essSpannerDirty bool
+		xidSpannerErr   error
+		xidSpannerDirty bool
+		redisErr        error
+		expectedStates  map[string]spb.HealthState
+		expectedEssVer  string
+		expectedXidVer  string
+	}{
+		{
+			name:       "AllHealthy",
+			httpStatus: http.StatusOK,
+			grpcStatus: grpc_health_v1.HealthCheckResponse_SERVING,
+			crState:    "CONDITION_SUCCEEDED",
+			expectedStates: map[string]spb.HealthState{
+				"ESS":         spb.HealthState_HEALTH_STATE_HEALTHY,
+				"XID":         spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Actuator":    spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Reconciler":  spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Log Monitor": spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Spanner ESS": spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Spanner XID": spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
+			},
+			expectedEssVer: "5",
+			expectedXidVer: "10",
+		},
+		{
+			name:          "AllUnhealthy",
+			httpStatus:    http.StatusInternalServerError,
+			grpcStatus:    grpc_health_v1.HealthCheckResponse_NOT_SERVING,
+			crState:       "CONDITION_FAILED",
+			crReason:      "UNHEALTHY",
+			crMessage:     "test error",
+			essSpannerErr: fmt.Errorf("spanner error"),
+			xidSpannerErr: fmt.Errorf("spanner error"),
+			redisErr:      fmt.Errorf("redis failed"),
+			expectedStates: map[string]spb.HealthState{
+				"ESS":         spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"XID":         spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"Actuator":    spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"Reconciler":  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"Log Monitor": spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"Spanner ESS": spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"Spanner XID": spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"Redis":       spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			},
+			expectedEssVer: "",
+			expectedXidVer: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// 1. Mock HTTP server
+			httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.httpStatus)
+			}))
+			defer httpServer.Close()
+
+			// 2. Mock gRPC server
+			lis, err := net.Listen("tcp", "localhost:0")
+			if err != nil {
+				t.Fatalf("failed to listen: %v", err)
+			}
+			grpcServer := grpc.NewServer()
+			healthServer := health.NewServer()
+			healthServer.SetServingStatus("xmc.XidService", tc.grpcStatus)
+			grpc_health_v1.RegisterHealthServer(grpcServer, healthServer)
+			go grpcServer.Serve(lis)
+			defer grpcServer.Stop()
+
+			// 3. Mock Cloud Run API server
+			runServer := newMockCloudRunServer(t, tc.crState, tc.crReason, tc.crMessage)
+			defer runServer.Close()
+			cloudRunService, err := run.NewService(context.Background(),
+				option.WithHTTPClient(runServer.Client()),
+				option.WithEndpoint(runServer.URL),
+				option.WithoutAuthentication(),
+			)
+			if err != nil {
+				t.Fatalf("failed to create run service: %v", err)
+			}
+
+			// 4. Construct checker using NewHealthChecker
+			checker, err := NewHealthChecker(HealthCheckerParams{
+				Config: &Config{
+					EssURL:                 httpServer.URL,
+					XidAddr:                lis.Addr().String(),
+					ActuatorURL:            httpServer.URL,
+					ReconcilerURL:          httpServer.URL,
+					LogMonitorResourceName: "projects/test-project/locations/us-central1/services/log-monitor",
+				},
+				EssHealthClient: &mockSpannerHealthClient{version: 5, dirty: tc.essSpannerDirty, err: tc.essSpannerErr},
+				XidHealthClient: &mockSpannerHealthClient{version: 10, dirty: tc.xidSpannerDirty, err: tc.xidSpannerErr},
+				RedisClient:     &mockRedisClient{err: tc.redisErr},
+				CloudRunService: cloudRunService,
+			})
+			if err != nil {
+				t.Fatalf("failed to create health checker: %v", err)
+			}
+			defer checker.Close()
+
+			res := checker.RunChecks(context.Background())
+
+			if len(res.Components) != 8 {
+				t.Fatalf("expected 8 components, got %d", len(res.Components))
+			}
+
+			for _, comp := range res.Components {
+				expected := tc.expectedStates[comp.Name]
+				if comp.HealthState != expected {
+					t.Errorf("expected component %q to be %v, got %v (error: %q)", comp.Name, expected, comp.HealthState, comp.ErrorMessage)
+				}
+			}
+
+			if res.EssDbSchemaVersion != tc.expectedEssVer {
+				t.Errorf("expected ESS version %q, got %q", tc.expectedEssVer, res.EssDbSchemaVersion)
+			}
+			if res.XidDbSchemaVersion != tc.expectedXidVer {
+				t.Errorf("expected XID version %q, got %q", tc.expectedXidVer, res.XidDbSchemaVersion)
+			}
+		})
+	}
 }
