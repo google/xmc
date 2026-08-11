@@ -67,7 +67,6 @@ var WorkUnitColumns = []string{
 	"ExecutionId",
 	"ExecutionMetadata",
 	"WorkUnitStatus",
-	"PositionInQueue",
 	"CreateTime",
 	"UpdateTime",
 }
