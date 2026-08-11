@@ -52,7 +52,7 @@ def parse_checklist_approved_items(
 
     # Case 2: Re-review thread blocks with Recommended Action [RESPOND] or [RESOLVE]
     thread_pattern = re.compile(
-        r"###\s+Thread ID\s+`(\d+)`\s+\(`([^`]+)`:L(\d+)\).*?Recommended Action[^`:]*[:`]*\s*`?\[(RESOLVE|RESPOND)[^`\]]*\]`?",
+        r"###\s+Thread ID\s+`(\d+)`\s+\(`([^`]+)`:L(\d+)\)(?:(?!###|---).)*?Recommended Action[^`:]*[:`]*\s*`?\[(RESOLVE|RESPOND)[^`\]]*\]`?",
         re.DOTALL,
     )
     for match in thread_pattern.finditer(content):
@@ -140,8 +140,18 @@ def verify_review_comments_posted(args: argparse.Namespace) -> dict[str, Any]:
                         f"Recommended response on Thread ID `{thread_id}` has not been posted"
                     )
             elif item["action"] == "RESOLVE":
-                # Marked for resolve; count as verified check
-                verified_count += 1
+                # For RESOLVE actions, check if thread is marked resolved in checklist artifact or has resolution reply
+                thread_header = f"### Thread ID `{thread_id}`"
+                is_checked = (
+                    "- **Audit Verification Status**: `- [x]"
+                    in content[content.find(thread_header) :]
+                    if thread_header in content
+                    else False
+                )
+                has_reply = any(lc.get("in_reply_to_id") == thread_id for lc in live_comments)
+                if is_checked or has_reply:
+                    # Verified resolve action; count as completed check
+                    verified_count += 1
 
     # Update checklist file marking approved items as verified/posted
     updated_content = content

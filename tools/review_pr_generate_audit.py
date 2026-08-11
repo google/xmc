@@ -50,6 +50,25 @@ def resolve_output_path(output_arg: str, conv_id: str, default_filename: str) ->
     return Path(default_filename)
 
 
+def _fetch_paginated_data(endpoint: str) -> list[Any]:
+    """Fetch all pages from a paginated GitHub API endpoint (per_page=100)."""
+    results: list[Any] = []
+    page = 1
+    while True:
+        sep = "&" if "?" in endpoint else "?"
+        page_data = call_github_api(
+            f"{endpoint}{sep}page={page}&per_page=100",
+            user_agent="XMC-PR-Review-Agent",
+        )
+        if not page_data or not isinstance(page_data, list):
+            break
+        results.extend(page_data)
+        if len(page_data) < 100:
+            break
+        page += 1
+    return results
+
+
 def fetch_pr_audit_data(owner: str, repo: str, pr_number: int) -> dict[str, Any]:
     """Fetch PR details, files, and existing review comments from GitHub API."""
     try:
@@ -57,14 +76,8 @@ def fetch_pr_audit_data(owner: str, repo: str, pr_number: int) -> dict[str, Any]
             f"/repos/{owner}/{repo}/pulls/{pr_number}",
             user_agent="XMC-PR-Review-Agent",
         )
-        files = call_github_api(
-            f"/repos/{owner}/{repo}/pulls/{pr_number}/files",
-            user_agent="XMC-PR-Review-Agent",
-        )
-        comments = call_github_api(
-            f"/repos/{owner}/{repo}/pulls/{pr_number}/comments",
-            user_agent="XMC-PR-Review-Agent",
-        )
+        files = _fetch_paginated_data(f"/repos/{owner}/{repo}/pulls/{pr_number}/files")
+        comments = _fetch_paginated_data(f"/repos/{owner}/{repo}/pulls/{pr_number}/comments")
     except (GithubAuthError, GithubAPIError) as e:
         raise HandledError(
             f"Failed to fetch PR details for {owner}/{repo}#{pr_number}: {e}",
@@ -73,8 +86,8 @@ def fetch_pr_audit_data(owner: str, repo: str, pr_number: int) -> dict[str, Any]
 
     return {
         "pr_info": pr_info,
-        "files": files if isinstance(files, list) else [],
-        "comments": comments if isinstance(comments, list) else [],
+        "files": files,
+        "comments": comments,
     }
 
 
