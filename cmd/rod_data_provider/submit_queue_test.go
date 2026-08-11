@@ -64,21 +64,38 @@ func TestGetSubmitQueue_Success(t *testing.T) {
 			wantQueue: "lq-tpu-idle",
 		},
 		{
-			name:        "tie breaker selects alphabetically first local queue",
+			name:        "tie breaker selects alphabetically first local queue using namespaced key",
 			clusterName: "cpu-cluster-queue",
 			localQueues: []*kueuev1beta1.LocalQueue{
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "lq-cpu-z", Namespace: "team-a"},
+					ObjectMeta: metav1.ObjectMeta{Name: "shared-name", Namespace: "team-z"},
 					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "cpu-cluster-queue"},
 					Status:     kueuev1beta1.LocalQueueStatus{PendingWorkloads: 2, AdmittedWorkloads: 1},
 				},
 				{
-					ObjectMeta: metav1.ObjectMeta{Name: "lq-cpu-a", Namespace: "team-b"},
+					ObjectMeta: metav1.ObjectMeta{Name: "shared-name", Namespace: "team-a"},
 					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "cpu-cluster-queue"},
 					Status:     kueuev1beta1.LocalQueueStatus{PendingWorkloads: 2, AdmittedWorkloads: 1},
 				},
 			},
-			wantQueue: "lq-cpu-a",
+			wantQueue: "shared-name",
+		},
+		{
+			name:        "integer overflow guard with large workload counts",
+			clusterName: "high-throughput-cq",
+			localQueues: []*kueuev1beta1.LocalQueue{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-overflow-1", Namespace: "default"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "high-throughput-cq"},
+					Status:     kueuev1beta1.LocalQueueStatus{PendingWorkloads: 2147483647, AdmittedWorkloads: 100},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-overflow-2", Namespace: "default"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "high-throughput-cq"},
+					Status:     kueuev1beta1.LocalQueueStatus{PendingWorkloads: 100, AdmittedWorkloads: 100},
+				},
+			},
+			wantQueue: "lq-overflow-2",
 		},
 	}
 

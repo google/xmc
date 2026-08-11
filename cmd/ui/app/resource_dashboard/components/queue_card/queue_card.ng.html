@@ -44,6 +44,9 @@
       type="button"
       class="copy-flag-btn"
       matTooltip="Copy --xm_queue flag to clipboard"
+      [attr.aria-label]="
+        isCopied() ? 'Copied --xm_queue flag to clipboard' : 'Copy --xm_queue flag to clipboard'
+      "
       (click)="onCopyFlag($event)"
     >
       <mat-icon class="copy-icon">{{ isCopied() ? 'check' : 'content_copy' }}</mat-icon>

@@ -12,7 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import { Clipboard } from '@angular/cdk/clipboard';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
@@ -43,6 +52,8 @@ export class QueueCardComponent {
   readonly isSelected = input<boolean>(false);
   readonly selectQueue = output<string>();
 
+  private readonly clipboard = inject(Clipboard);
+
   protected readonly termTooltips = ROD_TERM_TOOLTIPS;
   protected readonly capacities = computed(() => this.queue()?.queueCapacity ?? []);
 
@@ -63,12 +74,11 @@ export class QueueCardComponent {
     const queueName = this.queue()?.queueName ?? '';
     const flagText = `--xm_queue=${queueName}`;
 
-    if (navigator?.clipboard?.writeText) {
-      void navigator.clipboard.writeText(flagText);
+    if (this.clipboard.copy(flagText)) {
+      this.isCopied.set(true);
+      setTimeout(() => {
+        this.isCopied.set(false);
+      }, 2000);
     }
-    this.isCopied.set(true);
-    setTimeout(() => {
-      this.isCopied.set(false);
-    }, 2000);
   }
 }

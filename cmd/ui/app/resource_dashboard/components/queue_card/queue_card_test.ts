@@ -14,6 +14,7 @@
 
 import 'jasmine';
 
+import { Clipboard } from '@angular/cdk/clipboard';
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
@@ -97,12 +98,13 @@ describe('QueueCardComponent', () => {
   it('should render copy flag button and copy --xm_queue flag on click', async () => {
     expect(await harness.getCopyFlagButtonText()).toContain('Copy flag');
 
-    spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+    const clipboard = TestBed.inject(Clipboard);
+    spyOn(clipboard, 'copy').and.returnValue(true);
 
     await harness.clickCopyFlagButton();
     fixture.detectChanges();
 
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('--xm_queue=gpu-cluster-queue');
+    expect(clipboard.copy).toHaveBeenCalledWith('--xm_queue=gpu-cluster-queue');
     expect(await harness.getCopyFlagButtonText()).toContain('Copied');
   });
 });

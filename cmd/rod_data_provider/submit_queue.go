@@ -56,14 +56,14 @@ func validateSubmitQueueRequest(ctx context.Context, req *spb.GetSubmitQueueRequ
 func selectSubmitQueue(c *cache.KueueCache, clusterQueueName string) (string, error) {
 	localQueues := c.LocalQueues.List()
 	var bestLQ *kueuev1beta1.LocalQueue
-	var minScheduledJobs int32 = -1
+	var minScheduledJobs int64 = -1
 
 	for _, lq := range localQueues {
 		if lq == nil || string(lq.Spec.ClusterQueue) != clusterQueueName {
 			continue
 		}
-		scheduledJobs := lq.Status.PendingWorkloads + lq.Status.AdmittedWorkloads
-		if bestLQ == nil || scheduledJobs < minScheduledJobs || (scheduledJobs == minScheduledJobs && lq.Name < bestLQ.Name) {
+		scheduledJobs := int64(lq.Status.PendingWorkloads) + int64(lq.Status.AdmittedWorkloads)
+		if bestLQ == nil || scheduledJobs < minScheduledJobs || (scheduledJobs == minScheduledJobs && queueKey(lq) < queueKey(bestLQ)) {
 			bestLQ = lq
 			minScheduledJobs = scheduledJobs
 		}
@@ -74,4 +74,14 @@ func selectSubmitQueue(c *cache.KueueCache, clusterQueueName string) (string, er
 	}
 
 	return bestLQ.Name, nil
+}
+
+func queueKey(lq *kueuev1beta1.LocalQueue) string {
+	if lq == nil {
+		return ""
+	}
+	if lq.Namespace == "" {
+		return lq.Name
+	}
+	return lq.Namespace + "/" + lq.Name
 }
