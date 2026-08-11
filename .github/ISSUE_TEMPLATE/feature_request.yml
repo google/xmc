@@ -1,0 +1,73 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: "Feature Request / Proposal"
+description: "Suggest an idea, enhancement, or new feature for XMC."
+title: "[Feature]: "
+labels: ["kind/feature", "status/triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for proposing a feature or architectural enhancement for XMC!
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: "Target Component"
+      description: "Which area does this feature enhancement target?"
+      options:
+        - "Core API Server / Controller"
+        - "CLI & Client SDK"
+        - "GKE Gateway & Ingress"
+        - "Cluster Toolkit Blueprint & Helm Modules"
+        - "JobSet / Workload Scheduling & Accelerators"
+        - "Database / Cloud Spanner / Redis"
+        - "Web UI / Frontend"
+        - "Documentation / Developer Tooling"
+        - "Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem Statement / Motivation"
+      description: "Is your feature request related to a problem or limitation? (e.g. 'I am unable to orchestrate multi-slice TPU v5e workloads...')"
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: "Proposed Solution"
+      description: "Describe the feature, API change, or behavior you would like to see implemented."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives Considered"
+      description: "Describe any alternative approaches or workarounds you have evaluated."
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: "Additional Context"
+      description: "Add any mockups, architecture diagrams, or reference links."
+    validations:
+      required: false
