@@ -16,16 +16,16 @@ limitations under the License.
 <div class="container">
   <div class="header">
     <h3>Edit Experiment</h3>
-    <xmc-xid-badge [xid]="data().xid"></xmc-xid-badge>
+    <xmc-xid-badge [xid]="data().xid" />
   </div>
 
   @if (isLoading()) {
     <div class="loading-container">
-      <mat-progress-spinner mode="indeterminate" diameter="24"></mat-progress-spinner>
+      <mat-progress-spinner mode="indeterminate" diameter="24" />
       <div>Loading experiment...</div>
     </div>
   } @else {
-    <form [formGroup]="editExperimentFormGroup()" class="form">
+    <form class="form" [formGroup]="editExperimentFormGroup()" (ngSubmit)="updateExperiment()">
       <mat-form-field appearance="outline">
         <mat-label>Name</mat-label>
         <input matInput formControlName="name" placeholder="Enter a name for this experiment" />
@@ -74,12 +74,11 @@ limitations under the License.
           Cancel
         </button>
         <button
-          [disabled]="!editExperimentFormGroup().valid"
           mat-flat-button
           data-testid="save-button"
           color="primary"
           type="submit"
-          (click)="updateExperiment()"
+          [disabled]="!editExperimentFormGroup().valid"
         >
           Save
         </button>

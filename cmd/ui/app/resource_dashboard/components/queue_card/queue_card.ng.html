@@ -15,14 +15,14 @@
 -->
 <div
   class="queue-card"
+  tabindex="0"
+  role="button"
   [class.selected]="isSelected()"
   [class.selected-healthy]="isSelected() && isQueueHealthy()"
   [class.selected-risk]="isSelected() && !isQueueHealthy()"
   (click)="onCardClick()"
   (keydown.enter)="onCardClick()"
   (keydown.space)="$event.preventDefault(); onCardClick()"
-  tabindex="0"
-  role="button"
 >
   <div class="card-top-bar">
     <div class="queue-name-group">
