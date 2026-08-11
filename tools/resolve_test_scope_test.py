@@ -161,6 +161,21 @@ class TestResolveTestScope(unittest.TestCase):
         targets = discover_bazel_rdeps_targets(["pkg/auth/oauth2/handlers.go"])
         self.assertEqual(targets, [])
 
+    @patch("subprocess.run")
+    def test_get_git_modified_files_strips_quotes(self, mock_run):
+        mock_diff = unittest.mock.Mock(
+            returncode=0,
+            stdout='"pkg/auth/with space.go"\n"cmd/ui/test file.ts"\n',
+        )
+        mock_run.return_value = mock_diff
+        files = get_git_modified_files(base_ref="origin/main")
+        self.assertEqual(files, ["pkg/auth/with space.go", "cmd/ui/test file.ts"])
+
+    def test_txt_fixture_not_non_code(self):
+        self.assertFalse(is_non_code_file("pkg/auth/testdata/expected_output.txt"))
+        scope = resolve_test_scope(["pkg/auth/testdata/expected_output.txt"], use_rdeps=False)
+        self.assertTrue(scope["run_backend"])
+
     def test_write_github_output(self):
         with tempfile.NamedTemporaryFile("w+", delete=False) as tmp:
             tmp_path = tmp.name

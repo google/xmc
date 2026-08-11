@@ -57,7 +57,7 @@ NON_CODE_FILES: set[str] = {
 def is_non_code_file(path_str: str) -> bool:
     """Returns True if the file path is a pure documentation, legal, or deployment artifact."""
     p = Path(path_str)
-    if p.name in NON_CODE_FILES or p.suffix in {".md", ".txt"}:
+    if p.name in NON_CODE_FILES or p.suffix == ".md":
         return True
     return any(path_str.startswith(prefix) for prefix in NON_CODE_PREFIXES)
 
@@ -113,7 +113,7 @@ def get_git_modified_files(base_ref: str | None = None, head_ref: str = "HEAD") 
 
         result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=15)
         if result.returncode == 0:
-            return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+            return [line.strip().strip('"') for line in result.stdout.splitlines() if line.strip()]
 
         # Fallback to status for untracked/dirty files
         status_res = subprocess.run(
@@ -129,7 +129,7 @@ def get_git_modified_files(base_ref: str | None = None, head_ref: str = "HEAD") 
                 path = line[3:].strip()
                 if " -> " in path:
                     path = path.split(" -> ", 1)[1]
-                files.append(path)
+                files.append(path.strip('"'))
         return files
     except Exception as e:
         print(f"Critical: Failed to determine modified files from git: {e}", file=sys.stderr)
