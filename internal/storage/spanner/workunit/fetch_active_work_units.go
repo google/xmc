@@ -24,6 +24,9 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
+	"xmanager_cloud/storage/spanner/schema/workunitschema"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
+	"xmanager_cloud/validator/validator"
 )
 
 const (
@@ -31,8 +34,8 @@ const (
 	maxPageSize     = int32(1000)
 )
 
-var fetchActiveWorkUnitsByQueuesSQL = safesql.New(
-	`SELECT Xid, WorkUnitId, WorkUnitType, Priority, Urls, Tags, Notes, Executable, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionId, ExecutionMetadata, WorkUnitStatus, QueueName, ExecutionState, ExecutionStatusMessageSeverity, CreateTime, UpdateTime
+var fetchActiveWorkUnitPKsSQL = safesql.New(
+	`SELECT BitReversedXid, WorkUnitId
 	FROM WorkUnits wu
 	WHERE wu.QueueName IN UNNEST(@queueNames)
 	  AND wu.IsPendingOrRunningJob IS NOT NULL
@@ -44,6 +47,100 @@ var fetchActiveWorkUnitsByQueuesSQL = safesql.New(
 type ActiveWorkUnitsResult struct {
 	WorkUnits     []*essmsgpb.WorkUnit
 	NextPageToken string
+}
+
+type workUnitPK struct {
+	BitReversedXid int64
+	WorkUnitId     int64
+}
+
+func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, pageSize int32) ([]workUnitPK, []spanner.KeySet, error) {
+	stmt := spanner.Statement{
+		SQL: fetchActiveWorkUnitPKsSQL.String(),
+		Params: map[string]interface{}{
+			"queueNames": queueNames,
+			"pageSize":   int64(pageSize),
+		},
+	}
+
+	iter := txn.Query(ctx, stmt)
+	defer iter.Stop()
+
+	var orderedPKs []workUnitPK
+	var keys []spanner.Key
+	if err := iter.Do(func(row *spanner.Row) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var bitReversedXid, workUnitId int64
+		if err := row.ColumnByName("BitReversedXid", &bitReversedXid); err != nil {
+			return fmt.Errorf("failed to read column BitReversedXid: %w", err)
+		}
+		if err := row.ColumnByName("WorkUnitId", &workUnitId); err != nil {
+			return fmt.Errorf("failed to read column WorkUnitId: %w", err)
+		}
+		pk := workUnitPK{
+			BitReversedXid: bitReversedXid,
+			WorkUnitId:     workUnitId,
+		}
+		orderedPKs = append(orderedPKs, pk)
+		keys = append(keys, spanner.Key{bitReversedXid, workUnitId})
+		return nil
+	}); err != nil {
+		return nil, nil, fmt.Errorf("failed to query active work unit primary keys: %w", err)
+	}
+
+	if len(orderedPKs) == 0 {
+		return nil, nil, nil
+	}
+
+	keySets := make([]spanner.KeySet, len(keys))
+	for i, k := range keys {
+		keySets[i] = k
+	}
+	keySetList := []spanner.KeySet{spanner.KeySets(keySets...)}
+	return orderedPKs, keySetList, nil
+}
+
+func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, keySetList []spanner.KeySet, orderedPKs []workUnitPK) ([]*essmsgpb.WorkUnit, error) {
+	workUnitMap := make(map[workUnitPK]*essmsgpb.WorkUnit)
+	for _, keySet := range keySetList {
+		iter := txn.Read(ctx, workunitschema.WorkUnitTableName, keySet, workunitschema.WorkUnitColumns)
+		err := iter.Do(func(row *spanner.Row) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			wu, err := spannerdata.WorkUnitRowToProto(row)
+			if err != nil {
+				return fmt.Errorf("failed to convert WorkUnit row to proto: %w", err)
+			}
+			xid, wid, err := validator.ValidateWorkUnitName(wu.GetName())
+			if err != nil {
+				return fmt.Errorf("failed to validate WorkUnit name %q: %w", wu.GetName(), err)
+			}
+			pk := workUnitPK{
+				BitReversedXid: spannerutils.ReverseBits(xid),
+				WorkUnitId:     wid,
+			}
+			workUnitMap[pk] = wu
+			return nil
+		})
+		iter.Stop()
+		if err != nil {
+			return nil, fmt.Errorf("failed to batch read WorkUnit rows: %w", err)
+		}
+	}
+
+	workUnits := make([]*essmsgpb.WorkUnit, 0, len(orderedPKs))
+	for _, pk := range orderedPKs {
+		wu, ok := workUnitMap[pk]
+		if !ok {
+			return nil, fmt.Errorf("work unit with PK (BitReversedXid: %d, WorkUnitId: %d) missing from batch read result", pk.BitReversedXid, pk.WorkUnitId)
+		}
+		workUnits = append(workUnits, wu)
+	}
+
+	return workUnits, nil
 }
 
 // FetchActiveWorkUnitsByQueues queries Spanner for active and pending work units assigned to the given queues.
@@ -70,31 +167,26 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 		pageSizeVal = maxPageSize
 	}
 
-	stmt := spanner.Statement{
-		SQL: fetchActiveWorkUnitsByQueuesSQL.String(),
-		Params: map[string]interface{}{
-			"queueNames": queueNames,
-			"pageSize":   int64(pageSizeVal),
-		},
+	txn := r.client.ReadOnlyTransaction()
+	defer txn.Close()
+
+	orderedPKs, keySetList, err := fetchActiveWorkUnitPKs(ctx, txn, queueNames, pageSizeVal)
+	if err != nil {
+		logging.Error(ctx, "failed to fetch active work unit primary keys", "error", err)
+		return nil, err
 	}
 
-	iter := r.client.Single().Query(ctx, stmt)
-	defer iter.Stop()
+	if len(orderedPKs) == 0 {
+		return &ActiveWorkUnitsResult{
+			WorkUnits:     []*essmsgpb.WorkUnit{},
+			NextPageToken: "",
+		}, nil
+	}
 
-	var workUnits []*essmsgpb.WorkUnit
-	if err := iter.Do(func(row *spanner.Row) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		wu, err := spannerdata.WorkUnitRowToProto(row)
-		if err != nil {
-			return fmt.Errorf("failed to convert WorkUnit row to WorkUnit: %w", err)
-		}
-		workUnits = append(workUnits, wu)
-		return nil
-	}); err != nil {
-		logging.Error(ctx, "failed to read WorkUnit rows", "error", err)
-		return nil, fmt.Errorf("failed to read WorkUnit rows: %w", err)
+	workUnits, err := batchReadWorkUnits(ctx, txn, keySetList, orderedPKs)
+	if err != nil {
+		logging.Error(ctx, "failed to batch read work units", "error", err)
+		return nil, err
 	}
 
 	return &ActiveWorkUnitsResult{

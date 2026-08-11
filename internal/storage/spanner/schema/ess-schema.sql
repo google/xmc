@@ -290,11 +290,6 @@ ON WorkUnits (
   PositionInQueue ASC, 
   CreateTime ASC, 
   WorkUnitId ASC
-) STORING (
-  Priority, 
-  ExecutionState, 
-  Xid
-  -- TODO(#186): Add Creator to STORING clause when Creator denormalization is implemented.
 ) WHERE IsPendingOrRunningJob IS NOT NULL;
 
 -- Table that holds the list of operations.
