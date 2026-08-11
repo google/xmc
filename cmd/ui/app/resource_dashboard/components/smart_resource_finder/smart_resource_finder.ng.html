@@ -23,9 +23,9 @@
       type="number"
       min="1"
       class="query-input-box"
+      placeholder="e.g. 64"
       [ngModel]="amount()"
       (ngModelChange)="amount.set($event)"
-      placeholder="e.g. 64"
     />
   </div>
 
@@ -34,8 +34,8 @@
       <label class="query-label" [for]="'resource-type-select-' + $index">Resource type *</label>
       <div class="select-with-remove-box">
         <select
-          [id]="'resource-type-select-' + $index"
           class="query-select-box"
+          [id]="'resource-type-select-' + $index"
           [ngModel]="typeVal"
           (ngModelChange)="updateResourceType($index, $event)"
         >
@@ -49,8 +49,8 @@
             type="button"
             mat-icon-button
             class="remove-resource-btn"
-            (click)="removeResourceTypeFilter($index)"
             aria-label="Remove resource filter"
+            (click)="removeResourceTypeFilter($index)"
           >
             <mat-icon class="remove-icon">close</mat-icon>
           </button>

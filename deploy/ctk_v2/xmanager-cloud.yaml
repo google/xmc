@@ -365,6 +365,8 @@ deployment_groups:
         value: $(vars.health_service_image)
       - name: healthService.gcpServiceAccount
         value: $(health_service_gcp_sa.service_account_email)
+      - name: healthService.logMonitorResourceName
+        value: "projects/$(vars.project_id)/locations/$(vars.region)/services/xmc-log-monitor-$(vars.environment)"
       - name: dashboard_service_custom_image
         value: $(vars.dashboard_service_image)
       - name: dashboardService.gcpServiceAccount
