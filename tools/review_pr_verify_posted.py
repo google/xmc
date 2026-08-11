@@ -140,18 +140,24 @@ def verify_review_comments_posted(args: argparse.Namespace) -> dict[str, Any]:
                         f"Recommended response on Thread ID `{thread_id}` has not been posted"
                     )
             elif item["action"] == "RESOLVE":
-                # For RESOLVE actions, check if thread is marked resolved in checklist artifact or has resolution reply
+                is_checked = False
                 thread_header = f"### Thread ID `{thread_id}`"
-                is_checked = (
-                    "- **Audit Verification Status**: `- [x]"
-                    in content[content.find(thread_header) :]
-                    if thread_header in content
-                    else False
-                )
+                if thread_header in content:
+                    start_idx = content.find(thread_header)
+                    next_thread_idx = content.find("### Thread ID", start_idx + len(thread_header))
+                    thread_block = (
+                        content[start_idx:next_thread_idx]
+                        if next_thread_idx != -1
+                        else content[start_idx:]
+                    )
+                    is_checked = "- **Audit Verification Status**: `- [x]" in thread_block
                 has_reply = any(lc.get("in_reply_to_id") == thread_id for lc in live_comments)
                 if is_checked or has_reply:
-                    # Verified resolve action; count as completed check
                     verified_count += 1
+                else:
+                    unposted.append(
+                        f"RESOLVE action on Thread ID `{thread_id}` has not been verified (neither marked [x] nor has a reply)"
+                    )
 
     # Update checklist file marking approved items as verified/posted
     updated_content = content

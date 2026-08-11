@@ -111,6 +111,37 @@ class TestReviewPRVerifyPosted(unittest.TestCase):
         with self.assertRaises(HandledError):
             verify_review_comments_posted(args)
 
+    @patch("review_pr_verify_posted.call_github_api")
+    def test_verify_review_comments_posted_unverified_resolve(self, mock_api):
+        content = """
+### Thread ID `201` (`pkg/test.go`:L10)
+- **Audit Verification Status**: `- [ ] Pending Analysis`
+- **Recommended Action**: `[RESOLVE]`
+
+### Thread ID `202` (`pkg/test2.go`:L20)
+- **Audit Verification Status**: `- [x] Verified Fixed`
+- **Recommended Action**: `[RESOLVE]`
+"""
+        with tempfile.NamedTemporaryFile("w+", delete=False) as f:
+            f.write(content)
+            f_path = f.name
+
+        mock_api.return_value = []  # No replies posted
+
+        args = MagicMock()
+        args.owner = "google"
+        args.repo = "xmc"
+        args.pr_number = 10
+        args.checklist_file = f_path
+
+        with self.assertRaises(HandledError) as ctx:
+            verify_review_comments_posted(args)
+
+        self.assertIn(
+            "RESOLVE action on Thread ID `201` has not been verified",
+            str(ctx.exception.instruction),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
