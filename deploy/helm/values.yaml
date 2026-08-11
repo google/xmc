@@ -80,7 +80,6 @@ healthService:
   gcpServiceAccount: ""
   logMonitorResourceName: "projects/YOUR_GCP_PROJECT_ID/locations/YOUR_GCP_REGION/services/xmc-log-monitor-YOUR_ENVIRONMENT_NAME"
   observabilityUrl: ""
-  appVersion: ""
 
 dashboardServiceDeployment:
   enabled: false

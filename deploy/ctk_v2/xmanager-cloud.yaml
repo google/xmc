@@ -352,6 +352,8 @@ deployment_groups:
         value: $(vars.environment)
       - name: domainSuffix
         value: $(vars.domain_name)
+      - name: imageTag
+        value: $(vars.image_tag)
       - name: xid_custom_image
         value: $(vars.xid_image)
       - name: actuator_custom_image
@@ -366,8 +368,6 @@ deployment_groups:
         value: $(vars.health_service_image)
       - name: healthService.observabilityUrl
         value: $(vars.admin_panel_observability_url)
-      - name: healthService.appVersion
-        value: $(vars.image_tag)
       - name: healthService.gcpServiceAccount
         value: $(health_service_gcp_sa.service_account_email)
       - name: healthService.logMonitorResourceName
