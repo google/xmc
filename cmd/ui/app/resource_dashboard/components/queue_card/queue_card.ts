@@ -33,6 +33,8 @@ import {
   QueueStatusBadgePipe,
 } from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
 
+import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
+
 @Component({
   selector: 'xmc-rod-queue-card',
   standalone: true,
@@ -53,6 +55,7 @@ export class QueueCardComponent {
   readonly selectQueue = output<string>();
 
   private readonly clipboard = inject(Clipboard);
+  private readonly resourceService = inject(ResourceService);
 
   protected readonly termTooltips = ROD_TERM_TOOLTIPS;
   protected readonly capacities = computed(() => this.queue()?.queueCapacity ?? []);
@@ -71,14 +74,19 @@ export class QueueCardComponent {
 
   protected onCopyFlag(event: MouseEvent): void {
     event.stopPropagation();
-    const queueName = this.queue()?.queueName ?? '';
-    const flagText = `--queue=${queueName}`;
+    const clusterQueueName = this.queue()?.queueName ?? '';
+    if (!clusterQueueName) return;
 
-    if (this.clipboard.copy(flagText)) {
-      this.isCopied.set(true);
-      setTimeout(() => {
-        this.isCopied.set(false);
-      }, 2000);
-    }
+    this.resourceService.getSubmitQueue(clusterQueueName).subscribe((resp) => {
+      const targetQueue = resp?.submitQueue || clusterQueueName;
+      const flagText = `--queue=${targetQueue}`;
+
+      if (this.clipboard.copy(flagText)) {
+        this.isCopied.set(true);
+        setTimeout(() => {
+          this.isCopied.set(false);
+        }, 2000);
+      }
+    });
   }
 }

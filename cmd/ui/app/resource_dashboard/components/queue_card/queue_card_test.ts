@@ -20,7 +20,10 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
+import { of } from 'rxjs';
+
 import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 
 import { QueueCardComponent } from './queue_card';
 import { QueueCardHarness } from './queue_card_harness';
@@ -56,10 +59,15 @@ describe('QueueCardComponent', () => {
   let fixture: ComponentFixture<TestHostComponent>;
   let hostInstance: TestHostComponent;
   let harness: QueueCardHarness;
+  let resourceServiceSpy: jasmine.SpyObj<ResourceService>;
 
   beforeEach(async () => {
+    resourceServiceSpy = jasmine.createSpyObj('ResourceService', ['getSubmitQueue']);
+    resourceServiceSpy.getSubmitQueue.and.returnValue(of({ submitQueue: 'lq-gpu-1' }));
+
     await TestBed.configureTestingModule({
       imports: [TestHostComponent, NoopAnimationsModule],
+      providers: [{ provide: ResourceService, useValue: resourceServiceSpy }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(TestHostComponent);
@@ -95,7 +103,7 @@ describe('QueueCardComponent', () => {
     expect(hostInstance.selectedQueueName()).toBe('gpu-cluster-queue');
   });
 
-  it('should render copy flag button and copy --queue flag on click', async () => {
+  it('should render copy flag button and copy --queue flag with submit queue on click', async () => {
     expect(await harness.getCopyFlagButtonText()).toContain('Copy flag');
 
     const clipboard = TestBed.inject(Clipboard);
@@ -104,7 +112,8 @@ describe('QueueCardComponent', () => {
     await harness.clickCopyFlagButton();
     fixture.detectChanges();
 
-    expect(clipboard.copy).toHaveBeenCalledWith('--queue=gpu-cluster-queue');
+    expect(resourceServiceSpy.getSubmitQueue).toHaveBeenCalledWith('gpu-cluster-queue');
+    expect(clipboard.copy).toHaveBeenCalledWith('--queue=lq-gpu-1');
     expect(await harness.getCopyFlagButtonText()).toContain('Copied');
   });
 });

@@ -19,6 +19,7 @@ import { catchError, Observable, of } from 'rxjs';
 import {
   GetFittingQueuesResponse,
   GetRunningAndPendingJobsResponse,
+  GetSubmitQueueResponse,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { XMC_API_DOMAIN } from './constants';
@@ -62,6 +63,23 @@ export class ResourceService {
         catchError((error) => {
           console.error(`Failed to fetch jobs for queue ${queueName}:`, error);
           return of({ jobs: [], totalQueueSize: 0, nextPageToken: '' });
+        }),
+      );
+  }
+
+  /**
+   * Fetches the target submission queue (LocalQueue) for a given cluster queue.
+   */
+  getSubmitQueue(queueName: string): Observable<GetSubmitQueueResponse> {
+    return this.http
+      .get<GetSubmitQueueResponse>(
+        `${XMC_API_DOMAIN}/clusterqueues/${encodeURIComponent(queueName)}/submitqueue`,
+        { withCredentials: true },
+      )
+      .pipe(
+        catchError((error) => {
+          console.error(`Failed to fetch submit queue for ${queueName}:`, error);
+          return of({ submitQueue: queueName });
         }),
       );
   }
