@@ -243,6 +243,10 @@ CREATE TABLE WorkUnits (
   -- The severity of the current work unit structured status message. This is useful to query for
   -- the highest severity messages to propagate up to the experiment.
   ExecutionStatusMessageSeverity cloud.xmanager.v1.StructuredMessage.Severity AS (GREATEST(IFNULL(WorkUnitStatus.system_message.severity, 0), IFNULL(WorkUnitStatus.user_message.severity, 0))) STORED,
+  -- PositionInQueue represents the work unit's position in the queue for ROD sorting.
+  -- JSON_VALUE(CAST(WorkUnitStatus AS STRING), ...) is used to safely extract position_in_queue
+  -- without triggering C++ pointer assertion crashes in Spanner Emulator (evaluated_column.cc:122)
+  -- when scheduling_information or auxiliary_info is unpopulated.
   PositionInQueue INT64 AS (
   IFNULL(
     SAFE_CAST(

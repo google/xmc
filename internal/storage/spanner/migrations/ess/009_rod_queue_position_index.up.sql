@@ -16,6 +16,10 @@ ALTER PROTO BUNDLE INSERT (
   cloud.xmanager.v1.QueueInfo
 );
 
+-- PositionInQueue represents the work unit's position in the queue for ROD sorting.
+-- JSON_VALUE(CAST(WorkUnitStatus AS STRING), ...) is used to safely extract position_in_queue
+-- without triggering C++ pointer assertion crashes in Spanner Emulator (evaluated_column.cc:122)
+-- when scheduling_information or auxiliary_info is unpopulated.
 ALTER TABLE WorkUnits ADD COLUMN PositionInQueue INT64 AS (
   IFNULL(
     SAFE_CAST(
