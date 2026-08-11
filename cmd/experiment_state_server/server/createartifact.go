@@ -46,17 +46,13 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 
 	// 2.2. Validate ChartArtifact payload.
 	if chartArtifact := artifact.GetPayload().GetChart(); chartArtifact != nil {
-		if len(chartArtifact.GetMetricNames()) == 0 {
-			logging.Warn(ctx, "ChartArtifact requires non-empty metric_names")
-			return nil, fmt.Errorf("ChartArtifact requires non-empty metric_names: %w", status.ErrInvalidArgument)
-		}
 		if _, _, err := validator.ValidateWorkUnitName(req.GetParent()); err != nil {
 			logging.Warn(ctx, "ChartArtifact requires a Work Unit parent", "parent", req.GetParent(), "error", err)
 			return nil, fmt.Errorf("ChartArtifact requires a Work Unit parent: %w (%v)", status.ErrInvalidArgument, err)
 		}
-		if chartArtifact.GetStatus() != msgpb.ChartArtifact_STATUS_UNSPECIFIED || chartArtifact.GetChart() != nil {
-			logging.Warn(ctx, "ChartArtifact client-supplied status or chart values are not allowed")
-			return nil, fmt.Errorf("ChartArtifact client-supplied status or chart values are not allowed: %w", status.ErrInvalidArgument)
+		if chartArtifact.GetStatus() != msgpb.ChartArtifact_STATUS_UNSPECIFIED || chartArtifact.GetChart() != nil || chartArtifact.GetErrorMessage() != "" {
+			logging.Warn(ctx, "ChartArtifact client-supplied status, chart, or error_message values are not allowed")
+			return nil, fmt.Errorf("ChartArtifact client-supplied status, chart, or error_message values are not allowed: %w", status.ErrInvalidArgument)
 		}
 		chartArtifact.Status = msgpb.ChartArtifact_PROVISIONING
 	}
