@@ -194,7 +194,7 @@ For every open discussion thread, apply critical engineering evaluation:
 
 Present all thread verification findings inside `<appDataDir>/brain/<conv_id>/pr_rereview_audit_report.md` with explicit action proposals:
 
-```markdown
+````markdown
 ### Thread ID `101` (`pkg/auth/handler.go`:L152)
 - **Original Reviewer**: *Avoid nested if-else*
 - **Author Reply**: *"Applied early guard returns in commit abc1234"*
@@ -212,7 +212,7 @@ Present all thread verification findings inside `<appDataDir>/brain/<conv_id>/pr
   ```markdown
   While a nil mock avoids compile errors, `GatewayMetrics` recording silently drops metric counters during unit tests (see `core_engineering.md#4`). Please inject `NewTestMetricsRecorder()` so test assertions can verify telemetry recording.
   ```
-```
+````
 
 #### Asynchronous User Markdown Iteration Loop
 Because the re-review analysis is saved as a markdown document in `<appDataDir>/brain/<conv_id>/pr_rereview_audit_report.md`, **you can edit this file directly in your workspace**—changing proposed actions from `[RESPOND]` to `[RESOLVE]` or tuning counter-reply text—so the agent iterates asynchronously without losing thread state.
