@@ -53,6 +53,22 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      - name: 'Set up Bazel'
+        uses: 'bazel-contrib/setup-bazel@v0.9.0'
+        with:
+          bazelrc: |
+            build --disk_cache=~/.cache/bazel-disk
+            build --repository_cache=~/.cache/bazel-repo
+            build --show_progress_rate_limit=5
+
+      - name: 'Restore Bazel Disk Cache'
+        uses: 'actions/cache@v4'
+        with:
+          path: '~/.cache/bazel-disk'
+          key: 'bazel-disk-${{ runner.os }}-${{ hashFiles("go.sum") }}'
+          restore-keys: |
+            bazel-disk-${{ runner.os }}-
+
       - name: 'Resolve Test Scope'
         id: 'scope'
         env:

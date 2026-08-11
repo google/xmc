@@ -144,7 +144,8 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
         return []
 
     pkg_set_expr = " ".join(sorted(changed_pkgs))
-    query_expr = f"kind('.*_test', rdeps(//..., set({pkg_set_expr})))"
+    backend_universe = "//cmd/... + //internal/... + //sdks/... + //test/... + //tools/..."
+    query_expr = f"kind('.*_test', rdeps({backend_universe}, set({pkg_set_expr})))"
 
     try:
         res = subprocess.run(
@@ -152,11 +153,11 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
             capture_output=True,
             text=True,
             check=False,
-            timeout=30,
+            timeout=90,
             cwd=cwd,
         )
         print(f"DEBUG rdeps returncode: {res.returncode}", file=sys.stderr)
-        if res.stderr:
+        if isinstance(res.stderr, str) and res.stderr:
             print(f"DEBUG rdeps stderr (first 500 chars): {res.stderr[:500]}", file=sys.stderr)
         if res.stdout.strip():
             targets = [t.strip() for t in res.stdout.splitlines() if t.strip().startswith("//")]
