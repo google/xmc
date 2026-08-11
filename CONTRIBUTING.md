@@ -34,8 +34,8 @@ We use GitHub Issues to track bugs, production incidents, feature requests, and 
 2. **Provide full environment context**: Specify your XMC version / commit SHA, GKE/Kubernetes version, deployment topology (Blueprint v1 vs v2), and accelerator hardware (TPU/GPU models).
 3. **Capture diagnostic logs**: Include relevant logs from the XMC controller, gateway ingress, and workload pods:
    ```bash
-   # Controller logs
-   kubectl logs -n xmc -l app.kubernetes.io/name=xmc-controller -c manager --tail=200
+   # Controller / Actuator logs
+   kubectl logs -n xmc -l app=actuator --tail=200
 
    # Workload JobSet status
    kubectl describe jobset <jobset-name> -n <namespace>
