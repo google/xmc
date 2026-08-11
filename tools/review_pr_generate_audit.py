@@ -26,12 +26,12 @@ from tool_utils import HandledError, run_tool
 
 
 def extract_task_references(description: str) -> list[str]:
-    """Extract Buganizer (b/12345) and issue references from description."""
+    """Extract task and issue references from description."""
     if not description:
         return []
-    bugs = re.findall(r"\bb/\d+\b", description, re.IGNORECASE)
+    tasks = re.findall(r"\b(?:task|issue|bug)\s*#?\d+\b", description, re.IGNORECASE)
     issues = re.findall(r"https?://github\.com/[^/\s]+/[^/\s]+/(?:issues|pull)/\d+", description)
-    return sorted(set(bugs + issues))
+    return sorted(set(tasks + issues))
 
 
 def resolve_output_path(output_arg: str, conv_id: str, default_filename: str) -> Path:
@@ -41,8 +41,8 @@ def resolve_output_path(output_arg: str, conv_id: str, default_filename: str) ->
     if conv_id:
         base_dir = Path(
             os.environ.get(
-                "JETSKI_ARTIFACT_DIR",
-                str(Path.home() / ".gemini" / "jetski" / "brain" / conv_id),
+                "ARTIFACT_DIR",
+                str(Path.home() / ".gemini" / "brain" / conv_id),
             )
         )
         base_dir.mkdir(parents=True, exist_ok=True)

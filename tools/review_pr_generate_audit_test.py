@@ -35,10 +35,10 @@ class TestReviewPRGenerateAudit(unittest.TestCase):
     """Test suite for review_pr_generate_audit tool."""
 
     def test_extract_task_references(self):
-        desc = "Fixes bug b/123456 and b/7890. Also references https://github.com/google/xmc/issues/42."
+        desc = "Fixes task #123456 and bug #7890. Also references https://github.com/google/xmc/issues/42."
         refs = extract_task_references(desc)
-        self.assertIn("b/123456", refs)
-        self.assertIn("b/7890", refs)
+        self.assertIn("task #123456", refs)
+        self.assertIn("bug #7890", refs)
         self.assertIn("https://github.com/google/xmc/issues/42", refs)
 
     def test_extract_task_references_empty(self):
@@ -51,7 +51,7 @@ class TestReviewPRGenerateAudit(unittest.TestCase):
 
     def test_resolve_output_path_conv_id(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.dict(os.environ, {"JETSKI_ARTIFACT_DIR": tmpdir}):
+            with patch.dict(os.environ, {"ARTIFACT_DIR": tmpdir}):
                 p = resolve_output_path("", "test-conv-123", "audit.md")
                 self.assertEqual(p, Path(tmpdir) / "audit.md")
 
@@ -59,7 +59,7 @@ class TestReviewPRGenerateAudit(unittest.TestCase):
         data = {
             "pr_info": {
                 "title": "feat: add oauth handling",
-                "body": "Fixes b/999. Implements new flow.",
+                "body": "Fixes task #999. Implements new flow.",
                 "head": {"sha": "abc1234", "ref": "feat/oauth"},
                 "base": {"ref": "main"},
             },
@@ -76,7 +76,7 @@ class TestReviewPRGenerateAudit(unittest.TestCase):
         }
         md = format_initial_audit_markdown("google", "xmc", 42, data)
         self.assertIn("# PR Review Audit Checklist & Direction Plan", md)
-        self.assertIn("b/999", md)
+        self.assertIn("task #999", md)
         self.assertIn("pkg/auth/handler.go", md)
         self.assertIn("Comment ID `101`", md)
 

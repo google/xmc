@@ -56,7 +56,7 @@ Before launching deep code analysis or subagent review panels, the agent must in
    ```bash
    python3 tools/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode initial --conv-id <conversation_id>
    ```
-   *This fetches PR details, diff file touchpoints, extracts Buganizer (`b/12345`) or issue references from the description, indexes existing inline comments for deduplication, and creates `pr_review_audit_checklist.md` inside `<appDataDir>/brain/<conv_id>/`.*
+   *This fetches PR details, diff file touchpoints, extracts task or issue references (#123, issue links) from the description, indexes existing inline comments for deduplication, and creates `pr_review_audit_checklist.md` inside `<appDataDir>/brain/<conv_id>/`.*
 
 2. **Present Scoping Summary & Open Direction Window**:
    Display PR metadata, touched package matrix, task references, and ask the user for guidance **before launching subagent reviews**:
@@ -80,7 +80,7 @@ Once the user provides initial directional guidance (or confirms to proceed), th
 #### Tailored Panel Generation
 The Main Orchestrator must critically analyze the PR contents, modified file types, architecture impact, and user feedback from Phase 1 to **dynamically formulate a tailored review panel of subagents**. Do NOT use a hardcoded list of subagents for every PR—rather, synthesize roles that fit the specific pull request. 
 
-- **Mandatory Subagent**: The review panel MUST always include a dedicated **`PR Description & Task Reference Reconciliation Specialist`**, tasked with evaluating whether the actual git diff matches what the PR title and description claim to do, and verifying that referenced Buganizer tasks (`b/XXXXX`), issue links, or design specs are fulfilled.
+- **Mandatory Subagent**: The review panel MUST always include a dedicated **`PR Description & Task Reference Reconciliation Specialist`**, tasked with evaluating whether the actual git diff matches what the PR title and description claim to do, and verifying that referenced task references, issue links, or design specs are fulfilled.
 - **Dynamic Domain Subagents (Synthesized by Agent)**: Subagents must NOT concentrate solely on line-by-line code mechanics. When main dependency pillars, workload orchestrators, or scheduling subsystems are touched, the agent should dynamically craft specialized domain expert subagent roles (1–3 roles with tightly scoped prompts). Examples include (but are not limited to):
   * *Example (Scheduling & Workload Dependency Pillar)*: `Kueue Expert / Subsystem Specialist` auditing `ClusterQueue`, `LocalQueue`, Workunit resource reservation, quota enforcement, preemptor interaction, and Kueue CRD updates whenever scheduling or workload actuation is touched.
   * *Example (Kubernetes Infrastructure Pillar)*: `Kubernetes (K8s) Expert Specialist` evaluating controller-runtime reconciler loops, informer cache synchronization, RBAC ClusterRole permissions, pod disruption budgets, and GKE lifecycle behavior whenever K8s resources, CRDs, or Helm charts are touched.
