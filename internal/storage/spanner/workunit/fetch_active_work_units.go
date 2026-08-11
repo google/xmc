@@ -17,7 +17,6 @@ package workunit
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"cloud.google.com/go/spanner"
 	"googlesql/safesql/go/safesql"
@@ -25,13 +24,12 @@ import (
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
-	workunitschema "xmanager_cloud/storage/spanner/schema/workunitschema"
 )
 
 const defaultPageSize = int64(100)
 
 var fetchActiveWorkUnitsByQueuesSQL = safesql.New(
-	`SELECT ` + strings.Join(workunitschema.WorkUnitColumns, ", ") + `
+	`SELECT *
 	FROM WorkUnits wu
 	WHERE wu.QueueName IN UNNEST(@queueNames)
 	  AND wu.IsPendingOrRunningJob IS NOT NULL
