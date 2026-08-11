@@ -93,4 +93,16 @@ describe('QueueCardComponent', () => {
 
     expect(hostInstance.selectedQueueName()).toBe('gpu-cluster-queue');
   });
+
+  it('should render copy flag button and copy --xm_queue flag on click', async () => {
+    expect(await harness.getCopyFlagButtonText()).toContain('Copy flag');
+
+    spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+
+    await harness.clickCopyFlagButton();
+    fixture.detectChanges();
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('--xm_queue=gpu-cluster-queue');
+    expect(await harness.getCopyFlagButtonText()).toContain('Copied');
+  });
 });

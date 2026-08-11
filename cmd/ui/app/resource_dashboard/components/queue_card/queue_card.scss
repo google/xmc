@@ -86,7 +86,38 @@
   }
 }
 
-// TODO: Restore copy-flag-btn styles once flag functionality and formatting are finalized.
+.copy-flag-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #ffffff;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1a73e8;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  outline: none;
+
+  &:hover {
+    background-color: #f8f9fa;
+    border-color: #1a73e8;
+  }
+
+  &:focus-visible {
+    border-color: #1a73e8;
+    box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+  }
+
+  .copy-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    color: #1a73e8;
+  }
+}
 
 /* 2-Column Grid Inside Queue Card */
 .card-grid-body {

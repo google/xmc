@@ -40,7 +40,15 @@
         </span>
       }
     </div>
-    <!-- TODO: Restore copy flag action button once design and requirements are finalized -->
+    <button
+      type="button"
+      class="copy-flag-btn"
+      matTooltip="Copy --xm_queue flag to clipboard"
+      (click)="onCopyFlag($event)"
+    >
+      <mat-icon class="copy-icon">{{ isCopied() ? 'check' : 'content_copy' }}</mat-icon>
+      <span>{{ isCopied() ? 'Copied' : 'Copy flag' }}</span>
+    </button>
   </div>
 
   <div class="card-grid-body">

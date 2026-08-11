@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
@@ -43,17 +43,32 @@ export class QueueCardComponent {
   readonly isSelected = input<boolean>(false);
   readonly selectQueue = output<string>();
 
-  // TODO: Restore copyFlag functionality and isCopied signal once flag formatting and requirements are finalized.
   protected readonly termTooltips = ROD_TERM_TOOLTIPS;
   protected readonly capacities = computed(() => this.queue()?.queueCapacity ?? []);
 
   // TODO: Restore actual health check logic once queue status/pending workloads are available in backend API.
   protected readonly isQueueHealthy = computed(() => true);
 
+  protected readonly isCopied = signal<boolean>(false);
+
   protected onCardClick(): void {
     const name = this.queue().queueName;
     if (name) {
       this.selectQueue.emit(name);
     }
+  }
+
+  protected onCopyFlag(event: MouseEvent): void {
+    event.stopPropagation();
+    const queueName = this.queue()?.queueName ?? '';
+    const flagText = `--xm_queue=${queueName}`;
+
+    if (navigator?.clipboard?.writeText) {
+      void navigator.clipboard.writeText(flagText);
+    }
+    this.isCopied.set(true);
+    setTimeout(() => {
+      this.isCopied.set(false);
+    }, 2000);
   }
 }
