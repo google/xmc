@@ -232,6 +232,36 @@ func TestChartsEqual_NilElements(t *testing.T) {
 			b:    []*dpb.Chart{chartB},
 			want: false,
 		},
+		{
+			name: "reordered chart names",
+			a:    []*dpb.Chart{chartA, chartB},
+			b:    []*dpb.Chart{chartB, chartA},
+			want: true,
+		},
+		{
+			name: "reordered chart names with duplicates",
+			a:    []*dpb.Chart{chartA, chartA, chartB},
+			b:    []*dpb.Chart{chartB, chartA, chartA},
+			want: true,
+		},
+		{
+			name: "mismatched duplicate counts",
+			a:    []*dpb.Chart{chartA, chartA, chartB},
+			b:    []*dpb.Chart{chartA, chartB, chartB},
+			want: false,
+		},
+		{
+			name: "reordered with nil element",
+			a:    []*dpb.Chart{nil, chartA},
+			b:    []*dpb.Chart{chartA, nil},
+			want: true,
+		},
+		{
+			name: "mismatched nil counts same length",
+			a:    []*dpb.Chart{nil, chartA},
+			b:    []*dpb.Chart{chartA, chartB},
+			want: false,
+		},
 	}
 
 	for _, tc := range tests {
@@ -240,5 +270,45 @@ func TestChartsEqual_NilElements(t *testing.T) {
 				t.Errorf("chartsEqual() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestUpdateDashboard_ReorderedCharts(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	chart1 := blankChartProto("charts/test-chart-reorder-1", 100, 1)
+	if err := repo.CreateChart(ctx, chart1); err != nil {
+		t.Fatalf("CreateChart 1 failed: %v", err)
+	}
+	chart2 := blankChartProto("charts/test-chart-reorder-2", 100, 1)
+	if err := repo.CreateChart(ctx, chart2); err != nil {
+		t.Fatalf("CreateChart 2 failed: %v", err)
+	}
+
+	dash := blankDashboardProto("dashboards/test-update-reorder-1")
+	dash.Charts = []*dpb.Chart{{Name: "charts/test-chart-reorder-1"}, {Name: "charts/test-chart-reorder-2"}}
+	if err := repo.CreateDashboard(ctx, dash); err != nil {
+		t.Fatalf("CreateDashboard failed: %v", err)
+	}
+
+	// Update with reordered charts (reverse order)
+	update := blankDashboardProto("dashboards/test-update-reorder-1")
+	update.Charts = []*dpb.Chart{{Name: "charts/test-chart-reorder-2"}, {Name: "charts/test-chart-reorder-1"}}
+
+	got, err := repo.UpdateDashboard(ctx, update, nil)
+	if err != nil {
+		t.Fatalf("UpdateDashboard with reordered charts failed: %v", err)
+	}
+	if len(got.GetCharts()) != 2 || got.GetCharts()[0].GetName() != "charts/test-chart-reorder-1" || got.GetCharts()[1].GetName() != "charts/test-chart-reorder-2" {
+		t.Errorf("got Charts %v, want canonically sorted [charts/test-chart-reorder-1, charts/test-chart-reorder-2]", got.GetCharts())
+	}
+
+	fetched, err := repo.GetDashboard(ctx, "dashboards/test-update-reorder-1")
+	if err != nil {
+		t.Fatalf("GetDashboard failed: %v", err)
+	}
+	if len(fetched.GetCharts()) != 2 || fetched.GetCharts()[0].GetName() != "charts/test-chart-reorder-1" || fetched.GetCharts()[1].GetName() != "charts/test-chart-reorder-2" {
+		t.Fatalf("fetched Charts mismatch: got %v, want sorted charts", fetched.GetCharts())
 	}
 }

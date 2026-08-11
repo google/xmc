@@ -116,19 +116,35 @@ func fetchDashboardChartsInTransaction(ctx context.Context, txn *spanner.ReadWri
 	return charts, nil
 }
 
-// chartsEqual checks if two slices of charts have identical names, with defensive nil element checks.
+// chartsEqual checks if two slices of charts contain identical chart names regardless of order using an O(N) frequency map.
 func chartsEqual(a, b []*dpb.Chart) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for i := range a {
-		if a[i] == nil && b[i] == nil {
+	counts := make(map[string]int, len(a))
+	nilA, nilB := 0, 0
+	for _, c := range a {
+		if c == nil {
+			nilA++
 			continue
 		}
-		if a[i] == nil || b[i] == nil {
+		counts[c.GetName()]++
+	}
+	for _, c := range b {
+		if c == nil {
+			nilB++
+			continue
+		}
+		counts[c.GetName()]--
+		if counts[c.GetName()] < 0 {
 			return false
 		}
-		if a[i].GetName() != b[i].GetName() {
+	}
+	if nilA != nilB {
+		return false
+	}
+	for _, count := range counts {
+		if count != 0 {
 			return false
 		}
 	}

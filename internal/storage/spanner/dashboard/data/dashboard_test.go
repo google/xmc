@@ -303,3 +303,113 @@ func TestDashboardProtoToUpdateMutations_NilChart(t *testing.T) {
 		t.Errorf("DashboardProtoToUpdateMutations with nil chart succeeded, want error")
 	}
 }
+
+func TestSortCharts(t *testing.T) {
+	chart1 := &dpb.Chart{Name: "charts/c1"}
+	chart2 := &dpb.Chart{Name: "charts/c2"}
+	chart3 := &dpb.Chart{Name: "charts/c3"}
+
+	tests := []struct {
+		name     string
+		input    []*dpb.Chart
+		wantLen  int
+		wantName []string
+	}{
+		{
+			name:     "nil slice",
+			input:    nil,
+			wantLen:  0,
+			wantName: nil,
+		},
+		{
+			name:     "empty slice",
+			input:    []*dpb.Chart{},
+			wantLen:  0,
+			wantName: []string{},
+		},
+		{
+			name:     "single element",
+			input:    []*dpb.Chart{chart1},
+			wantLen:  1,
+			wantName: []string{"charts/c1"},
+		},
+		{
+			name:     "already sorted",
+			input:    []*dpb.Chart{chart1, chart2, chart3},
+			wantLen:  3,
+			wantName: []string{"charts/c1", "charts/c2", "charts/c3"},
+		},
+		{
+			name:     "reverse sorted",
+			input:    []*dpb.Chart{chart3, chart2, chart1},
+			wantLen:  3,
+			wantName: []string{"charts/c1", "charts/c2", "charts/c3"},
+		},
+		{
+			name:     "with nil element",
+			input:    []*dpb.Chart{chart2, nil, chart1},
+			wantLen:  3,
+			wantName: []string{"", "charts/c1", "charts/c2"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := SortCharts(tc.input)
+			if len(got) != tc.wantLen {
+				t.Fatalf("SortCharts() len = %d, want %d", len(got), tc.wantLen)
+			}
+			for i, want := range tc.wantName {
+				if got[i] == nil {
+					if want != "" {
+						t.Errorf("got[%d] = nil, want %q", i, want)
+					}
+					continue
+				}
+				if got[i].GetName() != want {
+					t.Errorf("got[%d] Name = %q, want %q", i, got[i].GetName(), want)
+				}
+			}
+		})
+	}
+}
+
+func TestSortCharts_Immutability(t *testing.T) {
+	chart1 := &dpb.Chart{Name: "charts/c1"}
+	chart2 := &dpb.Chart{Name: "charts/c2"}
+	input := []*dpb.Chart{chart2, chart1}
+
+	got := SortCharts(input)
+	if got[0].GetName() != "charts/c1" || got[1].GetName() != "charts/c2" {
+		t.Errorf("SortCharts() did not sort properly: got %v", got)
+	}
+	if input[0].GetName() != "charts/c2" || input[1].GetName() != "charts/c1" {
+		t.Errorf("SortCharts() mutated original input slice: got %v", input)
+	}
+}
+
+func TestMergeDashboards_SortsCharts(t *testing.T) {
+	current := &dpb.Dashboard{
+		Name:   "dashboards/d1",
+		Title:  "Title",
+		Charts: []*dpb.Chart{{Name: "charts/c1"}},
+	}
+	updated := &dpb.Dashboard{
+		Name:   "dashboards/d1",
+		Title:  "Title",
+		Charts: []*dpb.Chart{{Name: "charts/c3"}, {Name: "charts/c1"}, {Name: "charts/c2"}},
+	}
+
+	merged, err := MergeDashboards(current, updated, nil)
+	if err != nil {
+		t.Fatalf("MergeDashboards failed: %v", err)
+	}
+
+	charts := merged.GetCharts()
+	if len(charts) != 3 {
+		t.Fatalf("merged.Charts len = %d, want 3", len(charts))
+	}
+	if charts[0].GetName() != "charts/c1" || charts[1].GetName() != "charts/c2" || charts[2].GetName() != "charts/c3" {
+		t.Errorf("merged.Charts not canonically sorted: got %v", charts)
+	}
+}

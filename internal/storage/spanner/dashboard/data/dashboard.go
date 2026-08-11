@@ -16,7 +16,9 @@
 package data
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"time"
 
 	"cloud.google.com/go/spanner"
@@ -28,6 +30,27 @@ import (
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
 )
+
+// SortCharts returns a new slice with charts sorted alphabetically by Name.
+func SortCharts(charts []*dpb.Chart) []*dpb.Chart {
+	if len(charts) <= 1 {
+		return slices.Clone(charts)
+	}
+	sorted := slices.Clone(charts)
+	slices.SortFunc(sorted, func(a, b *dpb.Chart) int {
+		if a == nil && b == nil {
+			return 0
+		}
+		if a == nil {
+			return -1
+		}
+		if b == nil {
+			return 1
+		}
+		return cmp.Compare(a.GetName(), b.GetName())
+	})
+	return sorted
+}
 
 // MergeDashboards merges an updated Dashboard proto message into a current Dashboard proto message based on an update mask.
 func MergeDashboards(current, updated *dpb.Dashboard, updateMask *fieldmaskpb.FieldMask) (*dpb.Dashboard, error) {
@@ -43,7 +66,7 @@ func MergeDashboards(current, updated *dpb.Dashboard, updateMask *fieldmaskpb.Fi
 		merged.Title = updated.GetTitle()
 		merged.Description = updated.GetDescription()
 		merged.ChartLayout = updated.GetChartLayout()
-		merged.Charts = updated.GetCharts()
+		merged.Charts = SortCharts(updated.GetCharts())
 		return merged, nil
 	}
 
@@ -56,7 +79,7 @@ func MergeDashboards(current, updated *dpb.Dashboard, updateMask *fieldmaskpb.Fi
 		case "chart_layout", "chartLayout":
 			merged.ChartLayout = updated.GetChartLayout()
 		case "charts":
-			merged.Charts = updated.GetCharts()
+			merged.Charts = SortCharts(updated.GetCharts())
 		default:
 			return nil, fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
 		}
@@ -178,7 +201,7 @@ func DashboardRowToProto(row *spanner.Row, charts []*dpb.Chart) (*dpb.Dashboard,
 		Title:       title,
 		Description: desc,
 		Owner:       owner,
-		Charts:      charts,
+		Charts:      SortCharts(charts),
 		ChartLayout: layout,
 		CreateTime:  timestamppb.New(createdAt),
 		UpdateTime:  timestamppb.New(updatedAt),
