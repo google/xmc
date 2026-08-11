@@ -155,12 +155,16 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
             timeout=30,
             cwd=cwd,
         )
+        print(f"DEBUG rdeps returncode: {res.returncode}", file=sys.stderr)
+        if res.stderr:
+            print(f"DEBUG rdeps stderr (first 500 chars): {res.stderr[:500]}", file=sys.stderr)
         if res.stdout.strip():
             targets = [t.strip() for t in res.stdout.splitlines() if t.strip().startswith("//")]
+            print(f"DEBUG rdeps targets found: {len(targets)}", file=sys.stderr)
             # Filter out any accidental ui targets if present
             return [t for t in targets if not t.startswith("//cmd/ui")]
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"DEBUG rdeps exception: {type(e).__name__}: {e}", file=sys.stderr)
 
     return []
 
