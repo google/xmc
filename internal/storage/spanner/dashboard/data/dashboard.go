@@ -66,7 +66,7 @@ func MergeDashboards(current, updated *dpb.Dashboard, updateMask *fieldmaskpb.Fi
 		merged.Title = updated.GetTitle()
 		merged.Description = updated.GetDescription()
 		merged.ChartLayout = updated.GetChartLayout()
-		merged.Charts = SortCharts(updated.GetCharts())
+		merged.Charts = updated.GetCharts()
 		return merged, nil
 	}
 
@@ -79,7 +79,7 @@ func MergeDashboards(current, updated *dpb.Dashboard, updateMask *fieldmaskpb.Fi
 		case "chart_layout", "chartLayout":
 			merged.ChartLayout = updated.GetChartLayout()
 		case "charts":
-			merged.Charts = SortCharts(updated.GetCharts())
+			merged.Charts = updated.GetCharts()
 		default:
 			return nil, fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
 		}

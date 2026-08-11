@@ -52,6 +52,8 @@ func (r *Repository) UpdateDashboard(ctx context.Context, dashboard *dpb.Dashboa
 		if err != nil {
 			return err
 		}
+		// Sort charts canonically by Name to ensure consistent ordering with Spanner storage reads and accurate proto.Equal no-op detection.
+		merged.Charts = data.SortCharts(merged.GetCharts())
 
 		updatedDashboard = merged
 		if proto.Equal(existing, merged) {

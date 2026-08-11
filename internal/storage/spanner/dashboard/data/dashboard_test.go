@@ -388,7 +388,7 @@ func TestSortCharts_Immutability(t *testing.T) {
 	}
 }
 
-func TestMergeDashboards_SortsCharts(t *testing.T) {
+func TestMergeDashboards_PreservesChartsOrder(t *testing.T) {
 	current := &dpb.Dashboard{
 		Name:   "dashboards/d1",
 		Title:  "Title",
@@ -409,7 +409,7 @@ func TestMergeDashboards_SortsCharts(t *testing.T) {
 	if len(charts) != 3 {
 		t.Fatalf("merged.Charts len = %d, want 3", len(charts))
 	}
-	if charts[0].GetName() != "charts/c1" || charts[1].GetName() != "charts/c2" || charts[2].GetName() != "charts/c3" {
-		t.Errorf("merged.Charts not canonically sorted: got %v", charts)
+	if charts[0].GetName() != "charts/c3" || charts[1].GetName() != "charts/c1" || charts[2].GetName() != "charts/c2" {
+		t.Errorf("merged.Charts order not preserved: got %v", charts)
 	}
 }
