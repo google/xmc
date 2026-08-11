@@ -15,6 +15,8 @@
 package cache
 
 import (
+	"sort"
+
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 )
 
@@ -32,4 +34,26 @@ func NewKueueCache() *KueueCache {
 		LocalQueues:     NewResourceCache[*kueuev1beta1.LocalQueue](),
 		ResourceFlavors: NewResourceCache[*kueuev1beta1.ResourceFlavor](),
 	}
+}
+
+// GetLocalQueuesForClusterQueue returns the sorted names of all LocalQueues connected to the given ClusterQueue.
+func (c *KueueCache) GetLocalQueuesForClusterQueue(clusterQueueName string) []string {
+	if c == nil || c.LocalQueues == nil || clusterQueueName == "" {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var matchedNames []string
+	localQueues := c.LocalQueues.List()
+	for _, lq := range localQueues {
+		if lq == nil {
+			continue
+		}
+		if string(lq.Spec.ClusterQueue) == clusterQueueName && !seen[lq.Name] {
+			seen[lq.Name] = true
+			matchedNames = append(matchedNames, lq.Name)
+		}
+	}
+	sort.Strings(matchedNames)
+	return matchedNames
 }

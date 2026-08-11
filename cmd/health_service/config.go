@@ -23,15 +23,19 @@ import (
 
 // Config holds the configuration for the health service.
 type Config struct {
-	Port          string
-	GRPCPort      string
-	ProjectID     string
-	TLSCertFile   string
-	TLSKeyFile    string
-	EssURL        string
-	XidAddr       string
-	ActuatorURL   string
-	ReconcilerURL string
+	Port               string
+	GRPCPort           string
+	ProjectID          string
+	TLSCertFile        string
+	TLSKeyFile         string
+	EssURL             string
+	XidAddr            string
+	ActuatorURL        string
+	ReconcilerURL      string
+	ConfigDir          string
+	EssSpannerDatabase string
+	XidSpannerDatabase string
+	RedisAddr          string
 }
 
 var cfg Config
@@ -42,6 +46,9 @@ func init() {
 	configutil.StringEnv(&cfg.XidAddr, "health_xid_addr", "xid-svc:50051")
 	configutil.StringEnv(&cfg.ActuatorURL, "health_actuator_url", "http://actuator-service:8080")
 	configutil.StringEnv(&cfg.ReconcilerURL, "health_reconciler_url", "http://reconciler-svc:8080")
+	configutil.StringEnv(&cfg.EssSpannerDatabase, "health_ess_spanner_database_name", "")
+	configutil.StringEnv(&cfg.XidSpannerDatabase, "health_xid_spanner_database_name", "")
+	configutil.StringEnv(&cfg.RedisAddr, "health_redis_addr", "")
 
 	defaultPort := os.Getenv("PORT")
 	if defaultPort == "" {
@@ -54,6 +61,7 @@ func init() {
 	flag.StringVar(&cfg.ProjectID, "project_id", os.Getenv("GOOGLE_CLOUD_PROJECT"), "The GCP project ID.")
 	flag.StringVar(&cfg.TLSCertFile, "tls_cert_file", "", "The TLS certificate file path.")
 	flag.StringVar(&cfg.TLSKeyFile, "tls_key_file", "", "The TLS private key file path.")
+	flag.StringVar(&cfg.ConfigDir, "config_dir", "/config", "The directory where ConfigMaps are mounted.")
 }
 
 // LoadConfig loads and returns the configuration.

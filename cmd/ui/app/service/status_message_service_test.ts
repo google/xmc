@@ -13,7 +13,7 @@
 // limitations under the License.
 import 'jasmine';
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpRequest, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
@@ -76,7 +76,7 @@ describe('StatusMessageService', () => {
         }),
       );
 
-      const req = state.httpMock.expectOne((req) =>
+      const req = state.httpMock.expectOne((req: HttpRequest<unknown>) =>
         req.url.includes('/experiments/1/statusMessages'),
       );
       expect(req.request.params.get('pageSize')).toBe('10');

@@ -142,14 +142,14 @@ func (s *MockStorage) ListArtifacts(ctx context.Context, parent string, pageSize
 }
 
 // UpdateArtifact mocks artifact updating.
-func (s *MockStorage) UpdateArtifact(ctx context.Context, update *ArtifactUpdate) (*essmsgpb.Artifact, *essmsgpb.Artifact, error) {
+func (s *MockStorage) UpdateArtifact(ctx context.Context, update *ArtifactUpdate) (UpdatedArtifacts, error) {
 	if s.UpdateArtifactErr != nil {
-		return nil, nil, s.UpdateArtifactErr
+		return UpdatedArtifacts{}, s.UpdateArtifactErr
 	}
 	if s.Artifact != nil {
-		return s.Artifact, s.Artifact, nil
+		return UpdatedArtifacts{Original: s.Artifact, Updated: s.Artifact}, nil
 	}
-	return update.Artifact, update.Artifact, nil
+	return UpdatedArtifacts{Original: update.Artifact, Updated: update.Artifact}, nil
 }
 
 // DeleteArtifact mocks artifact deletion.
@@ -215,28 +215,28 @@ func (s *MockStorage) ListExperiments(ctx context.Context, pageSize int32, pageT
 }
 
 // UpdateExperiment mocks updating an experiment.
-func (s *MockStorage) UpdateExperiment(ctx context.Context, update *ExperimentUpdate) (*essmsgpb.Experiment, *essmsgpb.Experiment, error) {
+func (s *MockStorage) UpdateExperiment(ctx context.Context, update *ExperimentUpdate) (UpdatedExperiments, error) {
 	if s.UpdateExperimentErr != nil {
-		return nil, nil, s.UpdateExperimentErr
+		return UpdatedExperiments{}, s.UpdateExperimentErr
 	}
 	if s.Experiment != nil {
-		return s.Experiment, s.Experiment, nil
+		return UpdatedExperiments{Original: s.Experiment, Updated: s.Experiment}, nil
 	}
-	return update.Experiment, update.Experiment, nil
+	return UpdatedExperiments{Original: update.Experiment, Updated: update.Experiment}, nil
 }
 
 // UpdateWorkUnit mocks updating a work unit.
-func (s *MockStorage) UpdateWorkUnit(ctx context.Context, update *WorkUnitUpdate) (*essmsgpb.WorkUnit, *essmsgpb.WorkUnit, error) {
+func (s *MockStorage) UpdateWorkUnit(ctx context.Context, update *WorkUnitUpdate) (UpdatedWorkUnits, error) {
 	if s.UpdateWorkUnitErr != nil {
-		return nil, nil, s.UpdateWorkUnitErr
+		return UpdatedWorkUnits{}, s.UpdateWorkUnitErr
 	}
 	if s.UpdateWorkUnitRespOriginal != nil && s.UpdateWorkUnitRespReturned != nil {
-		return s.UpdateWorkUnitRespOriginal, s.UpdateWorkUnitRespReturned, nil
+		return UpdatedWorkUnits{Original: s.UpdateWorkUnitRespOriginal, Updated: s.UpdateWorkUnitRespReturned}, nil
 	}
 	if s.WorkUnit != nil {
-		return s.WorkUnit, s.WorkUnit, nil
+		return UpdatedWorkUnits{Original: s.WorkUnit, Updated: s.WorkUnit}, nil
 	}
-	return update.WorkUnit, update.WorkUnit, nil
+	return UpdatedWorkUnits{Original: update.WorkUnit, Updated: update.WorkUnit}, nil
 }
 
 // UpdateWorkUnitOperation mocks updating a work unit operation.

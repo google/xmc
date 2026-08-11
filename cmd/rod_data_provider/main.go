@@ -40,6 +40,7 @@ import (
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 	"xmanager_cloud/cmd/rod_data_provider/reconciler"
+	"xmanager_cloud/internal/storage/spanner/workunit"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
@@ -67,7 +68,12 @@ func run(ctx context.Context, cfg *Config) error {
 		logging.Warn(ctx, "Kueue manager setup failed or running out-of-cluster", "error", err)
 	}
 
-	grpcComp, err := buildGRPCServer(cfg, kueueCache)
+	workUnitStore, err := initWorkUnitStore(ctx, cfg)
+	if err != nil {
+		return err
+	}
+
+	grpcComp, err := buildGRPCServer(cfg, kueueCache, workUnitStore)
 	if err != nil {
 		return fmt.Errorf("failed to build gRPC server: %w", err)
 	}
@@ -115,19 +121,25 @@ func run(ctx context.Context, cfg *Config) error {
 	return g.Wait()
 }
 
+func initWorkUnitStore(ctx context.Context, cfg *Config) (WorkUnitFetcher, error) {
+	// TODO: Replace mock WorkUnit storage with real Spanner repository initialization once Spanner query implementation is merged.
+	logging.Info(ctx, "Using mock WorkUnit storage for PR 404")
+	return &workunit.Repository{}, nil
+}
+
 // GRPCServerComponents contains the listener and gRPC server instance.
 type GRPCServerComponents struct {
 	Listener net.Listener
 	Server   *grpc.Server
 }
 
-func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache) (GRPCServerComponents, error) {
+func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache, workUnitStore WorkUnitFetcher) (GRPCServerComponents, error) {
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		return GRPCServerComponents{}, fmt.Errorf("failed to listen on gRPC port %s: %w", cfg.GRPCPort, err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
-	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache))
+	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache, workUnitStore))
 	reflection.Register(grpcServer)
 	return GRPCServerComponents{
 		Listener: lis,
@@ -258,15 +270,15 @@ func SetupKueueReconcilers(mgr ctrl.Manager, client client.Client, cache *cache.
 	if cache == nil || cache.ClusterQueues == nil || cache.LocalQueues == nil || cache.ResourceFlavors == nil {
 		return fmt.Errorf("kueue cache or its fields are uninitialized")
 	}
-	cqRec := &reconciler.ClusterQueueReconciler{Client: client, Cache: cache.ClusterQueues}
+	cqRec := reconciler.NewClusterQueueReconciler(client, cache.ClusterQueues)
 	if err := cqRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup ClusterQueueReconciler: %w", err)
 	}
-	lqRec := &reconciler.LocalQueueReconciler{Client: client, Cache: cache.LocalQueues}
+	lqRec := reconciler.NewLocalQueueReconciler(client, cache.LocalQueues)
 	if err := lqRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup LocalQueueReconciler: %w", err)
 	}
-	rfRec := &reconciler.ResourceFlavorReconciler{Client: client, Cache: cache.ResourceFlavors}
+	rfRec := reconciler.NewResourceFlavorReconciler(client, cache.ResourceFlavors)
 	if err := rfRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup ResourceFlavorReconciler: %w", err)
 	}

@@ -68,7 +68,7 @@ func TestGetFittingQueues(t *testing.T) {
 		Port:     "8080",
 		GRPCPort: "50051",
 	}
-	srv := newServer(cfg, c)
+	srv := newServer(cfg, c, nil)
 
 	req := &spb.GetFittingQueuesRequest{
 		Requirements: []*spb.Resource{
@@ -91,7 +91,7 @@ func TestGetFittingQueues(t *testing.T) {
 func TestGetFittingQueues_Errors(t *testing.T) {
 	c := cache.NewKueueCache()
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
-	srv := newServer(cfg, c)
+	srv := newServer(cfg, c, nil)
 
 	canceledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -120,14 +120,14 @@ func TestGetFittingQueues_Errors(t *testing.T) {
 		{
 			name:     "nil cache",
 			ctx:      context.Background(),
-			server:   newServer(cfg, nil),
+			server:   newServer(cfg, nil, nil),
 			req:      &spb.GetFittingQueuesRequest{},
 			wantCode: codes.Unavailable,
 		},
 		{
 			name:     "uninitialized cache cluster queues",
 			ctx:      context.Background(),
-			server:   newServer(cfg, &cache.KueueCache{}),
+			server:   newServer(cfg, &cache.KueueCache{}, nil),
 			req:      &spb.GetFittingQueuesRequest{},
 			wantCode: codes.Unavailable,
 		},
@@ -147,5 +147,13 @@ func TestGetFittingQueues_Errors(t *testing.T) {
 				t.Errorf("expected code %v, got %v", tt.wantCode, st.Code())
 			}
 		})
+	}
+}
+
+func TestServerInitialization(t *testing.T) {
+	cfg := &Config{Port: "8080", GRPCPort: "50051"}
+	srv := newServer(cfg, nil, nil)
+	if srv.cfg != cfg {
+		t.Errorf("srv.cfg = %v, want %v", srv.cfg, cfg)
 	}
 }

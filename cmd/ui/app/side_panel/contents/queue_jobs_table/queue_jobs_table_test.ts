@@ -20,41 +20,41 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
-import { QueueJobListResponse } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { GetRunningAndPendingJobsResponse } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import { bootstrap, cleanState, flush, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
 import { QueueJobsTable } from './queue_jobs_table';
 import { QueueJobsTableHarness } from './queue_jobs_table_harness';
 
-const TEST_QUEUE_JOBS_RESP: QueueJobListResponse = {
-  queueName: 'gpu-cluster-queue',
+const TEST_QUEUE_JOBS_RESP: GetRunningAndPendingJobsResponse = {
   jobs: [
     {
-      position: 'N/A-running',
-      xid: '53296',
-      workUnitId: '1',
-      jobName: 'xmc-operation-53296-1',
+      positionInQueue: 1,
+      xid: 53296,
+      workUnitId: 1,
       user: 'example@example.com',
-      resources: 'GPU: 8, CPU: 32',
-      priority: 'Low',
-      status: 'Running',
-      timeInQueue: '10m ago',
-      queueName: 'gpu-cluster-queue',
+      priority: -10,
+      status: 'RUNNING',
+      timeInQueueSeconds: 600,
+      requestedResources: [
+        { resourceType: 'cpu', count: 3000000 },
+        { resourceType: 'memory', count: 3298886726347889 },
+        { resourceType: 'H100', count: 4 },
+      ],
     },
     {
-      position: 'N/A-running',
-      xid: '53308',
-      workUnitId: '2',
-      jobName: 'xmc-operation-53308-1',
+      positionInQueue: 2,
+      xid: 53308,
+      workUnitId: 2,
       user: 'example-admin@example.com',
-      resources: 'GPU: 8, CPU: 32',
-      priority: 'High',
-      status: 'Pending',
-      timeInQueue: '5m ago',
-      queueName: 'gpu-cluster-queue',
+      priority: 100,
+      status: 'SCHEDULING',
+      timeInQueueSeconds: 300,
+      requestedResources: [{ resourceType: 'TPU v4', count: 16 }],
     },
   ],
+  totalQueueSize: 2,
 };
 
 @Component({
@@ -101,6 +101,7 @@ describe('QueueJobsTable Component', () => {
     expect(headerCells).toContain('Experiment name');
     expect(headerCells).toContain('Status');
     expect(headerCells).toContain('Priority');
+    expect(headerCells).toContain('Resources');
     expect(headerCells).toContain('Work / Aux Unit');
     expect(headerCells).toContain('Author');
   });
@@ -114,16 +115,21 @@ describe('QueueJobsTable Component', () => {
 
     const firstRow = await harness.getRowCellsText(0);
     expect(firstRow.position).toBe('N/A - running');
-    expect(firstRow.jobName).toContain('xmc-operation-53296-1');
+    expect(firstRow.jobName).toContain('Experiment #53296');
     expect(firstRow.status).toContain('Running');
-    expect(firstRow.priority).toContain('Low');
+    expect(firstRow.priority).toContain('-10');
+    expect(firstRow.resources).toContain('cpu: 3000000');
+    expect(firstRow.resources).toContain('memory: 3298886726347889');
+    expect(firstRow.resources).toContain('4 x H100');
     expect(firstRow.workUnitId).toContain('1');
     expect(firstRow.user).toContain('example@example.com');
 
     const secondRow = await harness.getRowCellsText(1);
-    expect(secondRow.jobName).toContain('xmc-operation-53308-1');
-    expect(secondRow.status).toContain('Pending');
-    expect(secondRow.priority).toContain('High');
+    expect(secondRow.position).toBe('2');
+    expect(secondRow.jobName).toContain('Experiment #53308');
+    expect(secondRow.status).toContain('Scheduling');
+    expect(secondRow.priority).toContain('100');
+    expect(secondRow.resources).toContain('16 x TPU v4');
   });
 
   it('should properly construct experiment and work unit router links using harness', async () => {

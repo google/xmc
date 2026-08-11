@@ -1447,6 +1447,31 @@ func TestValidateCreateWorkUnitRequest_SuccessPolicy(t *testing.T) {
 	}
 }
 
+func TestValidateCreateWorkUnitRequest_DNSPolicy(t *testing.T) {
+	tests := []struct {
+		name      string
+		dnsPolicy string
+		wantErr   error
+	}{
+		{"valid_cluster_first", "ClusterFirst", nil},
+		{"valid_cluster_first_with_host_net", "ClusterFirstWithHostNet", nil},
+		{"valid_default", "Default", nil},
+		{"valid_none", "None", nil},
+		{"invalid_dns_policy", "InvalidPolicy", status.ErrInvalidArgument},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := proto.Modify(baseWorkUnitReqWithSuccessPolicy, func(req *essapipb.CreateWorkUnitRequest) {
+				req.GetWorkUnit().GetExecutable().GetJobset().GetJobs()[0].DnsPolicy = proto.String(tc.dnsPolicy)
+			})
+			err := ValidateCreateWorkUnitRequest(req)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateCreateWorkUnitRequest() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateCreateArtifactRequest(t *testing.T) {
 	validReq := &essapipb.CreateArtifactRequest{
 		Parent: "experiments/123",

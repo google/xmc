@@ -14,7 +14,9 @@
 
 import { Pipe, PipeTransform } from '@angular/core';
 
-import { DashboardJob } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { DashboardJob, Resource } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { ResourceType } from 'xmanager_cloud/ui/app/common/components/resource_chip/resource_chip';
+import { ResourceChipData } from 'xmanager_cloud/ui/app/common/components/resource_chip/utils/resource_set_to_resource_chips';
 import { StatusOption } from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
 
 /** Known job status string constants. */
@@ -31,6 +33,10 @@ export const JOB_STATUS_STRINGS = {
 } as const;
 
 export const NOT_APPLICABLE_RUNNING_DISPLAY = 'N/A - running';
+
+/** Known resource type string constants. */
+export const RESOURCE_TYPE_CPU = 'cpu';
+export const RESOURCE_TYPE_MEMORY = 'memory';
 
 /**
  * Transforms a DashboardJob into a typed StatusOption enum for xmc-status-chip rendering.
@@ -81,5 +87,76 @@ export class QueueJobPositionPipe implements PipeTransform {
       return '-';
     }
     return String(pos);
+  }
+}
+
+export const RESOURCE_TYPE_GPU = 'gpu';
+export const RESOURCE_TYPE_TPU = 'tpu';
+
+const GPU_RESOURCE_KEYWORDS = [
+  RESOURCE_TYPE_GPU,
+  'nvidia',
+  'h100',
+  'a100',
+  'v100',
+  'l4',
+  't4',
+  'p100',
+  'k80',
+];
+
+function isGpuResource(lower: string): boolean {
+  return GPU_RESOURCE_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+function getResourceTypeEnum(typeRaw?: string): ResourceType {
+  const lower = (typeRaw || '').trim().toLowerCase();
+  if (lower === RESOURCE_TYPE_CPU) return ResourceType.CPU;
+  if (lower === RESOURCE_TYPE_MEMORY) return ResourceType.MEMORY;
+  if (lower.includes(RESOURCE_TYPE_TPU)) return ResourceType.TPU;
+  if (isGpuResource(lower)) return ResourceType.GPU;
+
+  if (typeRaw) {
+    console.warn(`Unrecognized resource type: "${typeRaw}"`);
+  }
+  return ResourceType.GPU;
+}
+
+function formatSingleResource(res: Resource): ResourceChipData {
+  const type = (res.resourceType || '').trim();
+  const count = res.count ?? 0;
+  const lower = type.toLowerCase();
+
+  let text = `${count}`;
+  if (type) {
+    if (lower === RESOURCE_TYPE_CPU || lower === RESOURCE_TYPE_MEMORY) {
+      text = `${type}: ${count}`;
+    } else {
+      text = `${count} x ${type}`;
+    }
+  }
+
+  return {
+    resourceType: getResourceTypeEnum(type),
+    text,
+  };
+}
+
+/**
+ * Transforms an array of Resource objects into an array of ResourceChipData.
+ */
+@Pipe({
+  name: 'queueJobResources',
+  standalone: true,
+})
+export class QueueJobResourcesPipe implements PipeTransform {
+  transform(resources?: Resource[] | null): ResourceChipData[] {
+    if (!resources || !Array.isArray(resources) || resources.length === 0) {
+      return [];
+    }
+
+    return resources
+      .filter((res): res is Resource => Boolean(res))
+      .map((res) => formatSingleResource(res));
   }
 }

@@ -13,7 +13,7 @@
 // limitations under the License.
 import 'jasmine';
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpRequest, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
@@ -77,7 +77,9 @@ describe('WorkUnitsService', () => {
         }),
       );
 
-      const req = state.httpMock.expectOne((req) => req.url.includes('/experiments/1/workUnits'));
+      const req = state.httpMock.expectOne((req: HttpRequest<unknown>) =>
+        req.url.includes('/experiments/1/workUnits'),
+      );
       expect(req.request.params.get('pageSize')).toBe('10');
       expect(req.request.params.get('pageToken')).toBe('prev_token');
       req.flush({});
