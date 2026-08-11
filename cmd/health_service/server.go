@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"os"
 
+	health "xmanager_cloud/common/health"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -30,8 +31,13 @@ type server struct {
 	checker *HealthChecker
 }
 
-func newServer(cfg *Config) (*server, error) {
-	checker, err := newHealthChecker(cfg)
+func newServer(cfg *Config, essHealth, xidHealth health.SpannerHealthClient, redisClient RedisPingClient) (*server, error) {
+	checker, err := newHealthChecker(HealthCheckerParams{
+		Config:          cfg,
+		EssHealthClient: essHealth,
+		XidHealthClient: xidHealth,
+		RedisClient:     redisClient,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -46,26 +52,36 @@ func (s *server) Close() error {
 }
 
 func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRequest) (*spb.HealthStatusResponse, error) {
-	components := s.checker.RunChecks(ctx)
+	res := s.checker.RunChecks(ctx)
 
 	overallHealthy := spb.HealthState_HEALTH_STATE_HEALTHY
-	for _, c := range components {
+	for _, c := range res.Components {
 		if c.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY {
 			overallHealthy = spb.HealthState_HEALTH_STATE_UNHEALTHY
 			slog.Warn("Component unhealthy", "name", c.Name, "error", c.ErrorMessage)
 		}
 	}
 
+	essDbSchemaVersionStr := res.EssDbSchemaVersion
+	if essDbSchemaVersionStr == "" {
+		essDbSchemaVersionStr = "unknown"
+	}
+
+	xidDbSchemaVersionStr := res.XidDbSchemaVersion
+	if xidDbSchemaVersionStr == "" {
+		xidDbSchemaVersionStr = "unknown"
+	}
+
 	return &spb.HealthStatusResponse{
 		HealthState: overallHealthy,
 		SystemInfo: &spb.SystemInfo{
 			AppVersion:         "app-version-1.0.0",
-			EssDbSchemaVersion: "6",
-			XidDbSchemaVersion: "1",
+			EssDbSchemaVersion: essDbSchemaVersionStr,
+			XidDbSchemaVersion: xidDbSchemaVersionStr,
 			ObservabilityUrl:   "http://mock-observability-url",
 			IsSchedulingPaused: false,
 		},
-		Components:      components,
+		Components:      res.Components,
 		HealthCheckTime: timestamppb.Now(),
 	}, nil
 }

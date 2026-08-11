@@ -138,6 +138,10 @@ func ValidateCreateExperimentRequest(in *essapipb.CreateExperimentRequest) error
 	if exp.GetStatus() != nil {
 		return fmt.Errorf("experiment.status must be empty for CreateExperimentRequest: %w", status.ErrInvalidArgument)
 	}
+	return validateExperimentMetadata(exp)
+}
+
+func validateExperimentMetadata(exp *essmsgpb.Experiment) error {
 	if len(exp.GetTags()) > maxTags {
 		return fmt.Errorf("experiment.tags cannot contain more than %d tags: %w", maxTags, status.ErrInvalidArgument)
 	}
@@ -250,8 +254,7 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 	if in == nil {
 		return fmt.Errorf("request cannot be nil: %w", status.ErrInvalidArgument)
 	}
-	_, err := ValidateExperimentName(in.GetParent())
-	if err != nil {
+	if _, err := ValidateExperimentName(in.GetParent()); err != nil {
 		return fmt.Errorf("parent must be in the format experiments/{xid}: %w", err)
 	}
 	if in.GetWorkUnit() == nil {
@@ -270,6 +273,19 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 	if wu.GetCurrentWorkUnitExecution() != nil {
 		return fmt.Errorf("work_unit.current_work_unit_execution must be empty for CreateWorkUnitRequest: %w", status.ErrInvalidArgument)
 	}
+	if err := validateWorkUnitMetadata(wu); err != nil {
+		return err
+	}
+	if wu.GetExecutable() == nil {
+		return fmt.Errorf("work_unit.executable cannot be nil: %w", status.ErrInvalidArgument)
+	}
+	if wu.GetWorkUnitType() == essmsgpb.WorkUnit_WORK_UNIT_TYPE_UNSPECIFIED {
+		return fmt.Errorf("work_unit.work_unit_type cannot be empty: %w", status.ErrInvalidArgument)
+	}
+	return validateJobSetExecutable(wu.GetExecutable())
+}
+
+func validateWorkUnitMetadata(wu *essmsgpb.WorkUnit) error {
 	if len(wu.GetTags()) > maxTags {
 		return fmt.Errorf("work_unit.tags cannot contain more than %d tags: %w", maxTags, status.ErrInvalidArgument)
 	}
@@ -289,113 +305,123 @@ func ValidateCreateWorkUnitRequest(in *essapipb.CreateWorkUnitRequest) error {
 			return fmt.Errorf("work_unit.urls cannot contain urls longer than %d characters: %w", maxURLLen, status.ErrInvalidArgument)
 		}
 	}
-	if wu.GetExecutable() == nil {
-		return fmt.Errorf("work_unit.executable cannot be nil: %w", status.ErrInvalidArgument)
-	}
-	if wu.GetWorkUnitType() == essmsgpb.WorkUnit_WORK_UNIT_TYPE_UNSPECIFIED {
-		return fmt.Errorf("work_unit.work_unit_type cannot be empty: %w", status.ErrInvalidArgument)
-	}
-	if wu.GetExecutable().GetSchedulingConstraints() == nil {
+	return nil
+}
+
+func validateJobSetExecutable(exec *essmsgpb.Executable) error {
+	if exec.GetSchedulingConstraints() == nil {
 		return fmt.Errorf("work_unit.executable.scheduling_constraints cannot be nil: %w", status.ErrInvalidArgument)
 	}
-	if wu.GetExecutable().GetJobset() == nil {
+	if exec.GetJobset() == nil {
 		return fmt.Errorf("work_unit.executable.jobset cannot be nil: %w", status.ErrInvalidArgument)
 	}
-	if err := validateJobSetNetwork(wu.GetExecutable().GetJobset().GetNetwork()); err != nil {
+	jobset := exec.GetJobset()
+	if err := validateJobSetNetwork(jobset.GetNetwork()); err != nil {
 		return err
 	}
-	if err := validateJobSetSuccessPolicy(wu.GetExecutable().GetJobset().GetSuccessPolicy(), wu.GetExecutable().GetJobset().GetJobs()); err != nil {
+	if err := validateJobSetSuccessPolicy(jobset.GetSuccessPolicy(), jobset.GetJobs()); err != nil {
 		return err
 	}
-	// This is a limitation of Kueue; see
-	// https://github.com/kubernetes-sigs/kueue/blob/bacde9cdbc87bef550bb559c5b81c8c7d001c58a/apis/kueue/v1beta1/workload_types.go#L42
-	if len(wu.GetExecutable().GetJobset().Jobs) < 1 {
+	if len(jobset.Jobs) < 1 {
 		return fmt.Errorf("work_unit.executable.jobset.jobs cannot contain less than 1 job: %w", status.ErrInvalidArgument)
 	}
-	if len(wu.GetExecutable().GetJobset().Jobs) > 8 {
+	if len(jobset.Jobs) > 8 {
 		return fmt.Errorf("work_unit.executable.jobset.jobs cannot contain more than 8 jobs: %w", status.ErrInvalidArgument)
 	}
+	if err := validateJobSetJobs(jobset); err != nil {
+		return err
+	}
+	if queueName := exec.GetSchedulingConstraints().GetQueueName(); queueName == "" {
+		return fmt.Errorf("work_unit.executable.scheduling_constraints.queue_name cannot be empty: %w", status.ErrInvalidArgument)
+	} else if len(queueName) > maxQueueNameLen {
+		return fmt.Errorf("work_unit.executable.scheduling_constraints.queue_name cannot be longer than %d characters: %w", maxQueueNameLen, status.ErrInvalidArgument)
+	}
+	return nil
+}
+
+func validateJobSetJobs(jobset *essmsgpb.JobSetExecutable) error {
 	jobNames := make(map[string]bool)
 	jobMap := make(map[string]*essmsgpb.KubernetesJob)
-	for _, job := range wu.GetExecutable().GetJobset().Jobs {
-		if job.GetReplicas() < 1 {
-			return fmt.Errorf("work_unit.executable.jobset.jobs.replicas must be greater than 0: %w", status.ErrInvalidArgument)
-		}
-		if job.Spec == nil {
-			return fmt.Errorf("work_unit.executable.jobset.jobs.spec cannot be nil: %w", status.ErrInvalidArgument)
-		}
-		if job.Name == "" {
-			return fmt.Errorf("work_unit.executable.jobset.jobs.name cannot be empty: %w", status.ErrInvalidArgument)
-		}
-		if err := validateDNSLabel(job.Name, "work_unit.executable.jobset.jobs.name"); err != nil {
-			return err
-		}
-		if jobNames[job.Name] {
-			return fmt.Errorf("work_unit.executable.jobset.jobs.name must be unique: %w", status.ErrInvalidArgument)
-		}
-		if err := validateJobDependencyOrder(job.GetDependencyOrder(), job.Name, jobNames); err != nil {
+	for _, job := range jobset.Jobs {
+		if err := validateJobSpecAndMetadata(job, jobNames); err != nil {
 			return err
 		}
 		jobNames[job.Name] = true
 		jobMap[job.Name] = job
-
-		validVols, err := validateJobVolumes(job.GetVolumes(), "work_unit.executable.jobset.jobs.volumes")
-		if err != nil {
-			return err
-		}
-		if err := validateExecutableSpec(job.Spec, "work_unit.executable.jobset.jobs.spec", validVols); err != nil {
-			return err
-		}
-		for i, sidecar := range job.GetSidecars() {
-			prefix := fmt.Sprintf("work_unit.executable.jobset.jobs.sidecars[%d]", i)
-			if err := validateExecutableSpec(sidecar, prefix, validVols); err != nil {
-				return err
-			}
-		}
-		for i, initContainer := range job.GetInitContainers() {
-			prefix := fmt.Sprintf("work_unit.executable.jobset.jobs.init_containers[%d]", i)
-			if err := validateExecutableSpec(initContainer, prefix, validVols); err != nil {
-				return err
-			}
-		}
-		if err := validateContainerNamesUnique(job); err != nil {
-			return err
-		}
-		if err := validateNodeSelector(job); err != nil {
-			return err
-		}
-
-		if sa := job.GetServiceAccount(); sa != "" {
-			if len(sa) > 253 {
-				return fmt.Errorf("work_unit.executable.jobset.jobs.service_account cannot be longer than 253 characters: %w", status.ErrInvalidArgument)
-			}
-			if !dnsSubdomainRegex.MatchString(sa) {
-				return fmt.Errorf("work_unit.executable.jobset.jobs.service_account %q must be a valid DNS subdomain (RFC 1123): %w", sa, status.ErrInvalidArgument)
-			}
-		}
-		if pcn := job.GetPriorityClassName(); pcn != "" {
-			if len(pcn) > 253 {
-				return fmt.Errorf("work_unit.executable.jobset.jobs.priority_class_name cannot be longer than 253 characters: %w", status.ErrInvalidArgument)
-			}
-			if !dnsSubdomainRegex.MatchString(pcn) {
-				return fmt.Errorf("work_unit.executable.jobset.jobs.priority_class_name %q must be a valid DNS subdomain (RFC 1123): %w", pcn, status.ErrInvalidArgument)
-			}
-		}
-		if dp := job.GetDnsPolicy(); dp != "" {
-			switch dp {
-			case "ClusterFirst", "ClusterFirstWithHostNet", "Default", "None":
-			default:
-				return fmt.Errorf("work_unit.executable.jobset.jobs.dns_policy %q must be one of ClusterFirst, ClusterFirstWithHostNet, Default, or None: %w", dp, status.ErrInvalidArgument)
-			}
-		}
 	}
-	if err := validateJobSetCoordinator(wu.GetExecutable().GetJobset().GetCoordinator(), jobMap); err != nil {
+	return validateJobSetCoordinator(jobset.GetCoordinator(), jobMap)
+}
+
+func validateJobSpecAndMetadata(job *essmsgpb.KubernetesJob, jobNames map[string]bool) error {
+	if job.GetReplicas() < 1 {
+		return fmt.Errorf("work_unit.executable.jobset.jobs.replicas must be greater than 0: %w", status.ErrInvalidArgument)
+	}
+	if job.Spec == nil {
+		return fmt.Errorf("work_unit.executable.jobset.jobs.spec cannot be nil: %w", status.ErrInvalidArgument)
+	}
+	if job.Name == "" {
+		return fmt.Errorf("work_unit.executable.jobset.jobs.name cannot be empty: %w", status.ErrInvalidArgument)
+	}
+	if err := validateDNSLabel(job.Name, "work_unit.executable.jobset.jobs.name"); err != nil {
 		return err
 	}
-	if queueName := wu.GetExecutable().GetSchedulingConstraints().GetQueueName(); queueName == "" {
-		return fmt.Errorf("work_unit.executable.scheduling_constraints.queue_name cannot be empty: %w", status.ErrInvalidArgument)
-	} else if len(queueName) > maxQueueNameLen {
-		return fmt.Errorf("work_unit.executable.scheduling_constraints.queue_name cannot be longer than %d characters: %w", maxQueueNameLen, status.ErrInvalidArgument)
+	if jobNames[job.Name] {
+		return fmt.Errorf("work_unit.executable.jobset.jobs.name must be unique: %w", status.ErrInvalidArgument)
+	}
+	if err := validateJobDependencyOrder(job.GetDependencyOrder(), job.Name, jobNames); err != nil {
+		return err
+	}
+	validVols, err := validateJobVolumes(job.GetVolumes(), "work_unit.executable.jobset.jobs.volumes")
+	if err != nil {
+		return err
+	}
+	if err := validateExecutableSpec(job.Spec, "work_unit.executable.jobset.jobs.spec", validVols); err != nil {
+		return err
+	}
+	for i, sidecar := range job.GetSidecars() {
+		prefix := fmt.Sprintf("work_unit.executable.jobset.jobs.sidecars[%d]", i)
+		if err := validateExecutableSpec(sidecar, prefix, validVols); err != nil {
+			return err
+		}
+	}
+	for i, initContainer := range job.GetInitContainers() {
+		prefix := fmt.Sprintf("work_unit.executable.jobset.jobs.init_containers[%d]", i)
+		if err := validateExecutableSpec(initContainer, prefix, validVols); err != nil {
+			return err
+		}
+	}
+	if err := validateContainerNamesUnique(job); err != nil {
+		return err
+	}
+	if err := validateNodeSelector(job); err != nil {
+		return err
+	}
+	return validateJobSecurityAndDNS(job)
+}
+
+func validateJobSecurityAndDNS(job *essmsgpb.KubernetesJob) error {
+	if sa := job.GetServiceAccount(); sa != "" {
+		if len(sa) > 253 {
+			return fmt.Errorf("work_unit.executable.jobset.jobs.service_account cannot be longer than 253 characters: %w", status.ErrInvalidArgument)
+		}
+		if !dnsSubdomainRegex.MatchString(sa) {
+			return fmt.Errorf("work_unit.executable.jobset.jobs.service_account %q must be a valid DNS subdomain (RFC 1123): %w", sa, status.ErrInvalidArgument)
+		}
+	}
+	if pcn := job.GetPriorityClassName(); pcn != "" {
+		if len(pcn) > 253 {
+			return fmt.Errorf("work_unit.executable.jobset.jobs.priority_class_name cannot be longer than 253 characters: %w", status.ErrInvalidArgument)
+		}
+		if !dnsSubdomainRegex.MatchString(pcn) {
+			return fmt.Errorf("work_unit.executable.jobset.jobs.priority_class_name %q must be a valid DNS subdomain (RFC 1123): %w", pcn, status.ErrInvalidArgument)
+		}
+	}
+	if dp := job.GetDnsPolicy(); dp != "" {
+		switch dp {
+		case "ClusterFirst", "ClusterFirstWithHostNet", "Default", "None":
+		default:
+			return fmt.Errorf("work_unit.executable.jobset.jobs.dns_policy %q must be one of ClusterFirst, ClusterFirstWithHostNet, Default, or None: %w", dp, status.ErrInvalidArgument)
+		}
 	}
 	return nil
 }
@@ -435,21 +461,13 @@ func ValidateCreateArtifactRequest(in *essapipb.CreateArtifactRequest) error {
 	}
 
 	art := in.GetArtifact()
-	if art.GetName() != "" {
-		return fmt.Errorf("artifact.name must be empty for CreateArtifactRequest: %w", status.ErrInvalidArgument)
+	if art.GetName() != "" || art.GetParent() != "" || art.GetCreateTime() != nil || art.GetUpdateTime() != nil {
+		return fmt.Errorf("artifact name, parent, create_time, and update_time must be empty for CreateArtifactRequest: %w", status.ErrInvalidArgument)
 	}
-	if art.GetParent() != "" {
-		return fmt.Errorf("artifact.parent must be empty for CreateArtifactRequest: %w", status.ErrInvalidArgument)
-	}
-	if art.GetCreateTime() != nil {
-		return fmt.Errorf("artifact.create_time must be empty for CreateArtifactRequest: %w", status.ErrInvalidArgument)
-	}
-	if art.GetUpdateTime() != nil {
-		return fmt.Errorf("artifact.update_time must be empty for CreateArtifactRequest: %w", status.ErrInvalidArgument)
-	}
-	// Every artifact must carry a URL at creation, except ManagedXprof artifacts:
-	// those have no URL until the ESS read path enriches them with the resolved
-	// MLRun link, so requiring one here would reject them.
+	return validateArtifactMetadata(art)
+}
+
+func validateArtifactMetadata(art *essmsgpb.Artifact) error {
 	if !isManagedXprofArtifact(art) && art.GetUrl().GetUrl() == "" {
 		return fmt.Errorf("artifact.url.url must be set: %w", status.ErrInvalidArgument)
 	}
@@ -477,7 +495,6 @@ func ValidateCreateArtifactRequest(in *essapipb.CreateArtifactRequest) error {
 			return err
 		}
 	}
-
 	return nil
 }
 

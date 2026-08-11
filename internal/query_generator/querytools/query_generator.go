@@ -554,7 +554,9 @@ func addSortDirectionToOrderedFieldsAndIndices(t TableView) (TableView, error) {
 // It returns the query, a map of TableField to index so that the caller can
 // build the page token, an Unnester that can patch up any repeated fields that
 // were selected, and any error that occurred.
-func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []safesql.TrustedSQLString, baseFilterExp *fpb.Expression, userFilterExp *fpb.Expression, userOrderBy []UserOrderedIndex, pageSize, offset int, ptFields map[TableField]any, preamble *safesql.TrustedSQLString) (*spanner.Statement, map[TableField]int, Unnester, error) {
+//
+//nolint:revive // Why: Spanner AST query generator returning (*spanner.Statement, map[TableField]int, Unnester, error).
+func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []safesql.TrustedSQLString, baseFilterExp *fpb.Expression, userFilterExp *fpb.Expression, userOrderBy []UserOrderedIndex, pageSize, offset int, ptFields map[TableField]any, preamble *safesql.TrustedSQLString) (stmt *spanner.Statement, selectFieldIndexes map[TableField]int, u Unnester, err error) {
 	// Captures the names referenced in userFilterExp and the fields that
 	// we're mapping them to.
 	userFilters := map[string]TableField{}

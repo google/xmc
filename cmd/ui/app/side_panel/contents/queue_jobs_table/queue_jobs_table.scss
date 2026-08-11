@@ -102,6 +102,17 @@
   color: #f9ab00;
 }
 
+.resources-cell {
+  vertical-align: middle;
+}
+
+.resource-chips-container {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .jobs-empty-state {
   text-align: center;
   padding: 40px 0;

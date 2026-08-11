@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -23,10 +24,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
-	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 )
 
 func TestGetHealthStatus_AllHealthy(t *testing.T) {
@@ -79,7 +81,9 @@ func TestGetHealthStatus_AllHealthy(t *testing.T) {
 		ActuatorURL:   actuatorServer.URL,
 		ReconcilerURL: reconcilerServer.URL,
 	}
-	s, err := newServer(cfg)
+	mockEss := &mockSpannerHealthClient{version: 6, dirty: false}
+	mockXid := &mockSpannerHealthClient{version: 1, dirty: false}
+	s, err := newServer(cfg, mockEss, mockXid, &mockRedisClient{})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -96,18 +100,26 @@ func TestGetHealthStatus_AllHealthy(t *testing.T) {
 		t.Errorf("Expected overall status 'HEALTH_STATE_HEALTHY', got %v", resp.HealthState)
 	}
 
+	if resp.SystemInfo.EssDbSchemaVersion != "6" {
+		t.Errorf("Expected EssDbSchemaVersion '6', got %q", resp.SystemInfo.EssDbSchemaVersion)
+	}
+	if resp.SystemInfo.XidDbSchemaVersion != "1" {
+		t.Errorf("Expected XidDbSchemaVersion '1', got %q", resp.SystemInfo.XidDbSchemaVersion)
+	}
+
 	expectedComponents := map[string]spb.HealthState{
 		"ESS":         spb.HealthState_HEALTH_STATE_HEALTHY,
 		"XID":         spb.HealthState_HEALTH_STATE_HEALTHY,
 		"Actuator":    spb.HealthState_HEALTH_STATE_HEALTHY,
 		"Reconciler":  spb.HealthState_HEALTH_STATE_HEALTHY,
 		"Log Monitor": spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Spanner":     spb.HealthState_HEALTH_STATE_HEALTHY,
+		"Spanner ESS": spb.HealthState_HEALTH_STATE_HEALTHY,
+		"Spanner XID": spb.HealthState_HEALTH_STATE_HEALTHY,
 		"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
 	}
 
-	if len(resp.Components) != 7 {
-		t.Fatalf("Expected 7 components, got %d", len(resp.Components))
+	if len(resp.Components) != 8 {
+		t.Fatalf("Expected 8 components, got %d", len(resp.Components))
 	}
 
 	for _, c := range resp.Components {
@@ -160,7 +172,7 @@ func TestGetHealthStatus_SomeUnhealthy(t *testing.T) {
 		ActuatorURL:   actuatorURL,
 		ReconcilerURL: reconcilerServer.URL,
 	}
-	s, err := newServer(cfg)
+	s, err := newServer(cfg, nil, nil, &mockRedisClient{})
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -176,13 +188,21 @@ func TestGetHealthStatus_SomeUnhealthy(t *testing.T) {
 		t.Errorf("Expected overall status 'HEALTH_STATE_UNHEALTHY', got %v", resp.HealthState)
 	}
 
+	if resp.SystemInfo.EssDbSchemaVersion != "unknown" {
+		t.Errorf("Expected EssDbSchemaVersion 'unknown', got %q", resp.SystemInfo.EssDbSchemaVersion)
+	}
+	if resp.SystemInfo.XidDbSchemaVersion != "unknown" {
+		t.Errorf("Expected XidDbSchemaVersion 'unknown', got %q", resp.SystemInfo.XidDbSchemaVersion)
+	}
+
 	expectedComponents := map[string]spb.HealthState{
 		"ESS":         spb.HealthState_HEALTH_STATE_UNHEALTHY,
 		"XID":         spb.HealthState_HEALTH_STATE_UNHEALTHY,
 		"Actuator":    spb.HealthState_HEALTH_STATE_UNHEALTHY,
 		"Reconciler":  spb.HealthState_HEALTH_STATE_HEALTHY,
 		"Log Monitor": spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Spanner":     spb.HealthState_HEALTH_STATE_HEALTHY,
+		"Spanner ESS": spb.HealthState_HEALTH_STATE_UNHEALTHY,
+		"Spanner XID": spb.HealthState_HEALTH_STATE_UNHEALTHY,
 		"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
 	}
 
@@ -213,7 +233,7 @@ func TestListConfigEntries(t *testing.T) {
 		XidAddr:   "localhost:50051",
 		ConfigDir: tempDir,
 	}
-	s, err := newServer(cfg)
+	s, err := newServer(cfg, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -243,7 +263,7 @@ func TestListConfigEntries(t *testing.T) {
 
 func TestGetUserInfo(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051", ProjectID: "test-project", XidAddr: "localhost:50051"}
-	s, err := newServer(cfg)
+	s, err := newServer(cfg, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -260,5 +280,50 @@ func TestGetUserInfo(t *testing.T) {
 
 	if len(resp.Privileges) != 1 || resp.Privileges[0] != spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL {
 		t.Errorf("Expected privileges [PRIVILEGE_ACCESS_ADMIN_PANEL], got %v", resp.Privileges)
+	}
+}
+
+func TestGetHealthStatus_RedisUnhealthy(t *testing.T) {
+	cfg := &Config{
+		Port:          "8080",
+		GRPCPort:      "50051",
+		ProjectID:     "test-project",
+		EssURL:        "http://invalid",
+		XidAddr:       "invalid:50051",
+		ActuatorURL:   "http://invalid",
+		ReconcilerURL: "http://invalid",
+	}
+	mockRedis := &mockRedisClient{err: fmt.Errorf("connection refused")}
+	s, err := newServer(cfg, nil, nil, mockRedis)
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+	defer s.Close()
+
+	resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
+	if err != nil {
+		t.Fatalf("GetHealthStatus failed: %v", err)
+	}
+
+	if resp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
+		t.Errorf("Expected overall status 'HEALTH_STATE_UNHEALTHY', got %v", resp.HealthState)
+	}
+
+	var redisComp *spb.ComponentHealth
+	for _, c := range resp.Components {
+		if c.Name == "Redis" {
+			redisComp = c
+			break
+		}
+	}
+	if redisComp == nil {
+		t.Fatal("Redis component not found in response")
+	}
+
+	if redisComp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
+		t.Errorf("Expected Redis component status 'HEALTH_STATE_UNHEALTHY', got %v", redisComp.HealthState)
+	}
+	if redisComp.ErrorMessage != "redis ping failed: connection refused" {
+		t.Errorf("Expected error message 'redis ping failed: connection refused', got %q", redisComp.ErrorMessage)
 	}
 }

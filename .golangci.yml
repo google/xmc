@@ -37,6 +37,8 @@ linters:
     # Phase 4: Function result limit & duplication detection
     - dupl
     - revive
+    # Phase 5: Cyclomatic complexity enforcement
+    - gocyclo
 
 linters-settings:
   gofmt:
@@ -50,12 +52,14 @@ linters-settings:
       - labelled
   nestif:
     min-complexity: 4
+  gocyclo:
+    min-complexity: 15
   dupl:
     threshold: 100
   revive:
     rules:
       - name: function-result-limit
-        arguments: [2]
+        arguments: [3]
 
 issues:
   exclude-dirs:
@@ -64,11 +68,11 @@ issues:
     - path: (_test\.go|cmd/actuator/k8s_client/client\.go)
       linters:
         - dupl
-    # TODO(Phase 4.2): Refactor legacy 3rd party driver interface methods (golang-migrate), AIP-158 pagination & test setup helpers returning 3+ parameters
-    - path: (internal/storage/spanner/migrations|test/metrics|internal/task_queue_redis/validator|cmd/ingestion_gateway|internal/storage/spanner/xid|kueue_sync_test\.go|jobset_test\.go|internal/validator/names\.go|internal/storage/test_utils\.go|health_test\.go|liststatement\.go|utils_test\.go|query_generator\.go|emulator\.go|key_reloader\.go|listexperiments\.go|listcharts\.go|spanner_health\.go|k8sclient_test_utils\.go|updateartifact\.go|updateexperiment\.go|queryfilter\.go|listartifacts\.go|savestatusmessagehistory_test\.go|liststatusmessages\.go|base\.go|batchstopworkunits\.go|listworkunits\.go|updateworkunit\.go|workload/converter\.go|reconciler_test\.go|internal/auth|tools/xmc-diag|internal/storage/data)
+    - path: _test\.go
       linters:
-        - revive
-    # TODO(Phase 4.2): Refactor duplicate helper methods in rod_data_provider & experiment_state_server
-    - path: (cmd/rod_data_provider|cmd/experiment_state_server/server)
+        - gocyclo
+    # TODO(Phase 5): Refactor legacy query filter ASTs and Spanner row decoders exceeding cyclomatic complexity 15
+    - path: (api/filter/go|internal/query_generator|internal/storage/spanner)
       linters:
-        - dupl
+        - gocyclo
+

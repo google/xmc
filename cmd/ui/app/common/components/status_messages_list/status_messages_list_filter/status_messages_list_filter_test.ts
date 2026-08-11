@@ -36,7 +36,7 @@ describe('StatusMessagesListFilter', () => {
   it('should emit severityFilterChange when severity changes', async () => {
     const component = bootstrap(StatusMessagesListFilter);
     let emitted: readonly string[] | undefined;
-    component.severityFilterChange.subscribe((val) => {
+    component.severityFilterChange.subscribe((val: readonly string[]) => {
       emitted = val;
     });
 
@@ -50,7 +50,7 @@ describe('StatusMessagesListFilter', () => {
   it('should emit sourceFilterChange when source changes', async () => {
     const component = bootstrap(StatusMessagesListFilter);
     let emitted: readonly string[] | undefined;
-    component.sourceFilterChange.subscribe((val) => {
+    component.sourceFilterChange.subscribe((val: readonly string[]) => {
       emitted = val;
     });
 
@@ -64,7 +64,7 @@ describe('StatusMessagesListFilter', () => {
   it('should emit sortOrderChange when sort order changes', async () => {
     const component = bootstrap(StatusMessagesListFilter);
     let emitted: string | undefined;
-    component.sortOrderChange.subscribe((val) => {
+    component.sortOrderChange.subscribe((val: string) => {
       emitted = val;
     });
 

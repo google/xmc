@@ -170,6 +170,25 @@ func (s *Server) updateWorkUnitExecutionStatusMessage(ctx context.Context, xid i
 	return err
 }
 
+func (s *Server) handleEnqueueActionError(ctx context.Context, action string, workUnit *msgpb.WorkUnit, xid, wid int64, severity msgpb.StructuredMessage_Severity, err error) error {
+	logging.Error(ctx, fmt.Sprintf("Failed to enqueue %s request for work unit", action), "error", err)
+	_, _, eid, valErr := validator.ValidateWorkUnitExecutionName(workUnit.GetCurrentWorkUnitExecution().GetName())
+	if valErr != nil {
+		logging.Error(ctx, "Failed to validate work unit execution name", "error", valErr)
+		return fmt.Errorf("failed to validate work unit execution name: %w (%v)", statusutils.ErrInternal, valErr)
+	}
+
+	userFacingText := fmt.Sprintf("Failed to %s work unit. Please try again.", action)
+	if statusMsgErr := s.updateWorkUnitExecutionStatusMessage(ctx, xid, wid, eid, &msgpb.StructuredMessage{
+		UserFacingText: userFacingText,
+		Severity:       severity,
+		Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,
+	}, false); statusMsgErr != nil {
+		logging.Error(ctx, fmt.Sprintf("Failed to update work unit execution status message after failed %s attempt", action), "error", statusMsgErr)
+	}
+	return fmt.Errorf("failed to enqueue %s request for work unit %s: %w (%v)", action, workUnit.GetName(), statusutils.ErrInternal, err)
+}
+
 func newExperimentStatus(name string) *msgpb.ExperimentStatus {
 	return &msgpb.ExperimentStatus{
 		ActiveState:      msgpb.ExperimentStatus_ACTIVE,

@@ -44,12 +44,12 @@ func ConvertWorkloadToWorkUnitExecutionUpdate(ctx context.Context, workload *v1b
 		"metadata.node_selectors",
 	}
 
-	executingCluster, multiKueueClusterName, err := getMultiKueueClusterInfo(ctx, workload, mgmtClusterInfo, reader)
+	clusterRes, err := getMultiKueueClusterInfo(ctx, workload, mgmtClusterInfo, reader)
 	if err != nil {
 		return nil, err
 	}
-	metadata.ExecutingCluster = executingCluster
-	metadata.MultiKueueClusterName = multiKueueClusterName
+	metadata.ExecutingCluster = clusterRes.ClusterInfo
+	metadata.MultiKueueClusterName = clusterRes.ClusterName
 
 	resourceFlavor := getResourceFlavorInfo(workload)
 	metadata.ResourceFlavor = resourceFlavor
@@ -71,17 +71,23 @@ func ConvertWorkloadToWorkUnitExecutionUpdate(ctx context.Context, workload *v1b
 	}, nil
 }
 
+// MultiKueueClusterResult contains the ClusterInfo and MultiKueueCluster name.
+type MultiKueueClusterResult struct {
+	ClusterInfo *spb.ClusterInfo
+	ClusterName string
+}
+
 // getMultiKueueClusterInfo retrieves the ClusterInfo and MultiKueueCluster name associated with the Workload.
 // If the Workload's status has a ClusterName, it fetches the corresponding MultiKueueCluster
 // and extracts the ClusterInfo from its labels. Otherwise, it returns the provided mgmtClusterInfo.
-func getMultiKueueClusterInfo(ctx context.Context, workload *v1beta1.Workload, mgmtClusterInfo *spb.ClusterInfo, reader client.Reader) (*spb.ClusterInfo, string, error) {
+func getMultiKueueClusterInfo(ctx context.Context, workload *v1beta1.Workload, mgmtClusterInfo *spb.ClusterInfo, reader client.Reader) (MultiKueueClusterResult, error) {
 	if workload.Status.ClusterName == nil || *workload.Status.ClusterName == "" {
-		return mgmtClusterInfo, "", nil
+		return MultiKueueClusterResult{ClusterInfo: mgmtClusterInfo, ClusterName: ""}, nil
 	}
 	clusterName := *workload.Status.ClusterName
 	var mc v1beta1.MultiKueueCluster
 	if err := reader.Get(logging.Strip(ctx), types.NamespacedName{Name: clusterName}, &mc); err != nil {
-		return nil, "", fmt.Errorf("failed to get MultiKueueCluster %s: %w", clusterName, err)
+		return MultiKueueClusterResult{}, fmt.Errorf("failed to get MultiKueueCluster %s: %w", clusterName, err)
 	}
 
 	var clusterInfo *spb.ClusterInfo
@@ -92,7 +98,10 @@ func getMultiKueueClusterInfo(ctx context.Context, workload *v1beta1.Workload, m
 			ClusterName: mc.Labels["xmc.google.com/cluster-name"],
 		}
 	}
-	return clusterInfo, clusterName, nil
+	return MultiKueueClusterResult{
+		ClusterInfo: clusterInfo,
+		ClusterName: clusterName,
+	}, nil
 }
 
 // getResourceFlavorInfo retrieves the ResourceFlavor name from the Workload's admission status.

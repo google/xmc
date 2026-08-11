@@ -71,7 +71,14 @@ func createTestWorkUnit(namespace string) *esspb.WorkUnit {
 	}
 }
 
-func setupSkipTest(t *testing.T, target string) (*Client, *dynamicfake.FakeDynamicClient, string, time.Time) {
+type skipTestFixture struct {
+	client           *Client
+	dynamicClient    *dynamicfake.FakeDynamicClient
+	jobSetName       string
+	earlierTimestamp time.Time
+}
+
+func setupSkipTest(t *testing.T, target string) skipTestFixture {
 	t.Helper()
 	ctx, client, dynamicClient := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	jobSetName := buildJobSetName(target)
@@ -79,15 +86,30 @@ func setupSkipTest(t *testing.T, target string) (*Client, *dynamicfake.FakeDynam
 	laterTimestamp := earlierTimestamp.Add(time.Minute)
 	labels := map[string]string{constants.LastEditLabel: strconv.FormatInt(laterTimestamp.Unix(), 10)}
 	createTestJobSet(ctx, t, client, testNamespace, target, labels)
-	return client, dynamicClient, jobSetName, earlierTimestamp
+	return skipTestFixture{
+		client:           client,
+		dynamicClient:    dynamicClient,
+		jobSetName:       jobSetName,
+		earlierTimestamp: earlierTimestamp,
+	}
 }
 
-func setupPopulateTest(t *testing.T, target string) (*Client, *dynamicfake.FakeDynamicClient, time.Time) {
+type populateTestFixture struct {
+	client        *Client
+	dynamicClient *dynamicfake.FakeDynamicClient
+	timestamp     time.Time
+}
+
+func setupPopulateTest(t *testing.T, target string) populateTestFixture {
 	t.Helper()
 	ctx, client, dynamicClient := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	labels := map[string]string{constants.LastEditLabel: strconv.FormatInt(testTime.Unix(), 10)}
 	createTestJobSet(ctx, t, client, testNamespace, target, labels)
-	return client, dynamicClient, testTime
+	return populateTestFixture{
+		client:        client,
+		dynamicClient: dynamicClient,
+		timestamp:     testTime,
+	}
 }
 
 func createTestWorkload(t *testing.T, dynamicClient *dynamicfake.FakeDynamicClient, namespace, name string) {
@@ -1848,7 +1870,8 @@ func TestRestartJobSet_RecreationFails(t *testing.T) {
 
 func TestRestartJobSet_PopulatesLastEdit(t *testing.T) {
 	target := "experiments/111/workUnits/555/executions/1"
-	client, _, now := setupPopulateTest(t, target)
+	fix := setupPopulateTest(t, target)
+	client, now := fix.client, fix.timestamp
 	ctx := t.Context()
 	namespace := testNamespace
 	newTarget := "experiments/111/workUnits/555/executions/2"
@@ -1873,7 +1896,8 @@ func TestRestartJobSet_PopulatesLastEdit(t *testing.T) {
 
 func TestRestartJobSet_PopulatesPriority(t *testing.T) {
 	target := "experiments/111/workUnits/555/executions/1"
-	client, _, now := setupPopulateTest(t, target)
+	fix := setupPopulateTest(t, target)
+	client, now := fix.client, fix.timestamp
 	ctx := t.Context()
 	namespace := testNamespace
 	newTarget := "experiments/111/workUnits/555/executions/2"
@@ -1964,7 +1988,8 @@ func TestRestartJobSet_whenValidatorRejectsTheRequest_ShouldDiscard(t *testing.T
 
 func TestRestartJobSet_NamespaceFallback(t *testing.T) {
 	target := "experiments/111/workUnits/555/executions/1"
-	client, dynamicClient, now := setupPopulateTest(t, target)
+	fix := setupPopulateTest(t, target)
+	client, dynamicClient, now := fix.client, fix.dynamicClient, fix.timestamp
 	ctx := t.Context()
 
 	newTarget := "experiments/111/workUnits/555/executions/2"
@@ -1987,7 +2012,8 @@ func TestRestartJobSet_NamespaceFallback(t *testing.T) {
 
 func TestUpdateJobSetPriority(t *testing.T) {
 	target := "experiments/111/workUnits/222/executions/1"
-	client, _, _ := setupPopulateTest(t, target)
+	fix := setupPopulateTest(t, target)
+	client := fix.client
 	ctx := t.Context()
 	jobSetName := buildJobSetName(target)
 

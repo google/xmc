@@ -59,8 +59,11 @@ type MockRedpandaQuerier struct {
 	offsetErr    error
 }
 
-func (m *MockRedpandaQuerier) Ping(ctx context.Context) (int, time.Duration, error) {
-	return m.brokerCount, m.pingLat, m.pingErr
+func (m *MockRedpandaQuerier) Ping(ctx context.Context) (RedpandaPingResult, error) {
+	return RedpandaPingResult{
+		BrokerCount: m.brokerCount,
+		Latency:     m.pingLat,
+	}, m.pingErr
 }
 
 func (m *MockRedpandaQuerier) ListTopics(ctx context.Context, topics ...string) (kadm.TopicDetails, error) {
