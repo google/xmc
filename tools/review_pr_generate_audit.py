@@ -119,19 +119,33 @@ def format_initial_audit_markdown(
 
     # Summarize existing inline comments to prevent duplication
     if comments:
-        existing_threads = []
+        open_threads = []
+        resolved_threads = []
         for c in comments:
             cid = c.get("id")
             path = c.get("path")
             line = c.get("line") or c.get("original_line")
             user = (c.get("user") or {}).get("login", "unknown")
+            is_res = bool(c.get("is_resolved") or c.get("resolved"))
             c_body = (c.get("body", "") or "").replace("\n", " ")
             if len(c_body) > 80:
                 c_body = c_body[:77] + "..."
-            existing_threads.append(
-                f"- **Comment ID `{cid}`** | File: `{path}` | Line: `{line}` | Author: `{user}` | Text: *{c_body}*"
+            entry = f"- **Comment ID `{cid}`** | File: `{path}` | Line: `{line}` | Author: `{user}` | Text: *{c_body}*"
+            if is_res:
+                resolved_threads.append(entry)
+            else:
+                open_threads.append(entry)
+
+        existing_lines = []
+        if open_threads:
+            existing_lines.append("**Open Review Threads (Active Context):**")
+            existing_lines.extend(open_threads)
+        if resolved_threads:
+            existing_lines.append(
+                "\n**Already Resolved Threads on GitHub UI (CLOSED - Do Not Re-Open):**"
             )
-        existing_section = "\n".join(existing_threads)
+            existing_lines.extend(resolved_threads)
+        existing_section = "\n".join(existing_lines)
     else:
         existing_section = "- No existing inline review comments found on this PR."
 
@@ -208,6 +222,7 @@ def format_rereview_audit_markdown(
         line = root.get("line") or root.get("original_line")
         root_author = (root.get("user") or {}).get("login", "unknown")
         root_text = root.get("body", "")
+        is_resolved = bool(root.get("is_resolved") or root.get("resolved"))
 
         thread_replies = replies_by_root.get(cid, [])
         latest_reply = thread_replies[-1] if thread_replies else None
@@ -216,16 +231,25 @@ def format_rereview_audit_markdown(
         )
         latest_text = latest_reply.get("body", "") if latest_reply else "None"
 
+        if is_resolved:
+            status_line = (
+                "- **Audit Verification Status**: `- [x] Already Resolved on GitHub UI (Bucket 1)`"
+            )
+            action_line = "- **Recommended Action**: `[SKIPPED / ALREADY RESOLVED]`"
+        else:
+            status_line = "- **Audit Verification Status**: `- [ ] Pending Analysis`"
+            action_line = "- **Recommended Action**: `[RESOLVE]` or `[RESPOND]`"
+
         thread_blocks.append(
             f"""### Thread ID `{cid}` (`{path}`:L{line})
 - **Original Reviewer (`{root_author}`)**:
   > {root_text}
 - **Latest Reply (`{latest_author}`)**:
   > {latest_text}
-- **Audit Verification Status**: `- [ ] Pending Analysis`
-- **Recommended Action**: `[RESOLVE]` or `[RESPOND]`
+{status_line}
+{action_line}
 - **Proposed Counter-Reply / Rationale**:
-  *Leave blank if recommending [RESOLVE], or specify proposed comment below:*
+  *Leave blank if recommending [RESOLVE] or if already resolved on GitHub, or specify proposed comment below:*
 
   ```markdown
   Addressed verification check for line {line}.

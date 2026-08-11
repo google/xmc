@@ -95,7 +95,9 @@ All expert subagents invoked during Phase 2 MUST receive the following mandatory
 2. **"No Findings" is a Passable and Respected Result**: Expressly instruct subagents:
    > *"Returning 'No actionable findings — code cleanly complies with project rules and guidelines' is a valid, high-value engineering conclusion. Do NOT manufacture artificial issues or exaggerate minor stylistic choices just to return findings."*
 3. **PR Description & Requirement Audit**: Verify whether code modifications actually achieve what the author stated in the PR title, description, and referenced task definitions.
-4. **Strict Inline Deduplication**: Inspect the supplied existing comment index (`comments`) and **never generate duplicate inline comments** for problems already raised on the PR.
+4. **Strict Inline Deduplication & Already-Resolved Thread Governance**:
+   - Inspect the supplied existing comment index (`comments`) and **never generate duplicate inline comments** for problems already raised on the PR.
+   - **Already Resolved Threads on GitHub UI (`[RESOLVED ON GITHUB]`)**: Treat threads marked resolved on GitHub as closed engineering decisions. Do NOT re-open or propose duplicate inline comments unless a new commit explicitly regressed that exact file line.
 
 ---
 
@@ -174,21 +176,23 @@ python3 tools/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode re-r
 
 ### Phase 2: Evaluate Author Claims, Pushback & Substantial Deltas
 
-For every open discussion thread, apply critical engineering evaluation:
+For every discussion thread indexed in the audit report, apply critical engineering evaluation across **4 governance buckets**:
 
-1. **Author indicates "Applied / Fixed"**:
-   * Inspect the latest diff delta (`git diff`) at that line and file path.
-   * **Verification**: Verify whether the fix was *actually applied cleanly and correctly* or if it introduced edge-case regressions.
-   * **Outcome Classification**:
-     * *Verified Fixed*: Propose Recommended Action: `[RESOLVE]` with justification.
-     * *Claimed Fixed but Flawed/Incomplete*: Propose Recommended Action: `[RESPOND: <proposed concrete follow-up diff recommendation>]`.
-2. **Author Pushes Back / Disagrees**:
-   * Evaluate the author's argument against [Core Engineering Standards](../../rules/core_engineering.md) and security principles.
-   * **Outcome Classification**:
+1. **Bucket 1: Already Resolved on GitHub UI (`is_resolved == True`)**:
+   - **Policy**: **Respect & Skip.** Human reviewer explicitly clicked "Resolve conversation" on GitHub. List in `pr_rereview_audit_report.md` as `[ALREADY RESOLVED ON GITHUB]` requiring **zero action**.
+2. **Bucket 2: Author Claims "Applied / Fixed" on Open Thread**:
+   - Inspect the latest diff delta (`git diff`) at that line and file path.
+   - **Verification**: Verify whether the fix was *actually applied cleanly and correctly* or if it introduced edge-case regressions.
+   - **Outcome Classification**:
+     * *Verified Fixed*: Mark `<Audit Verification Status: - [x] Verified Fixed>` and propose Recommended Action: `[RESOLVE]` with justification.
+     * *Claimed Fixed but Flawed/Incomplete*: Mark `<Audit Verification Status: - [ ] Flawed Fix>` and propose Recommended Action: `[RESPOND: <proposed concrete follow-up diff recommendation>]`.
+3. **Bucket 3: Author Pushes Back / Disagrees on Open Thread**:
+   - Evaluate the author's argument against [Core Engineering Standards](../../rules/core_engineering.md) and security principles.
+   - **Outcome Classification**:
      * *Pushback is Valid*: Propose Recommended Action: `[RESOLVE]` acknowledging the author's design trade-off.
      * *Pushback is Invalid / Missing Context*: Propose Recommended Action: `[RESPOND: <technical rationale & reference to rules>]`.
-3. **Substantial Code Delta Pushed**:
-   * If the author refactored major modules or added new code to address comments, spawn a dedicated delta review subagent on the newly modified code.
+4. **Bucket 4: Substantial Code Delta Pushed**:
+   - If the author refactored major modules or added new code to address comments, spawn a dedicated delta review subagent on the newly modified code.
 
 ### Phase 3: Structured Markdown Iteration Report (`pr_rereview_audit_report.md`)
 
