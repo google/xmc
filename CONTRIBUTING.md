@@ -35,7 +35,7 @@ We use GitHub Issues to track bugs, production incidents, feature requests, and 
 3. **Capture diagnostic logs**: Include relevant logs from the XMC controller, gateway ingress, and workload pods:
    ```bash
    # Controller logs
-   kubectl logs -n xmc -l app.kubernetes.io/name=xmc-controller --tail=200
+   kubectl logs -n xmc -l app.kubernetes.io/name=xmc-controller -c manager --tail=200
 
    # Workload JobSet status
    kubectl describe jobset <jobset-name> -n <namespace>
