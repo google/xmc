@@ -293,8 +293,7 @@ ON WorkUnits (
 ) STORING (
   Priority, 
   ExecutionState, 
-  Xid,
-  IsPendingOrRunningJob
+  Xid
   -- TODO(#186): Add Creator to STORING clause when Creator denormalization is implemented.
 ) WHERE IsPendingOrRunningJob IS NOT NULL;
 

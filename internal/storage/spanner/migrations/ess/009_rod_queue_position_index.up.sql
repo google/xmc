@@ -20,6 +20,7 @@ ALTER PROTO BUNDLE INSERT (
 -- JSON_VALUE(CAST(WorkUnitStatus AS STRING), ...) is used to safely extract position_in_queue
 -- without triggering C++ pointer assertion crashes in Spanner Emulator (evaluated_column.cc:122)
 -- when scheduling_information or auxiliary_info is unpopulated.
+-- Sentinel fallback: max INT64 (2^63 - 1) ensures unpositioned jobs sort last in ascending queue order.
 ALTER TABLE WorkUnits ADD COLUMN PositionInQueue INT64 AS (
   IFNULL(
     SAFE_CAST(
@@ -36,6 +37,10 @@ ALTER TABLE WorkUnits ADD COLUMN IsPendingOrRunningJob BOOL AS (
   IF(ExecutionState IN ('SCHEDULING', 'STARTING', 'RUNNING', 'INITIALIZING'), TRUE, NULL)
 ) STORED;
 
+-- SortPhase execution ordering tier:
+--   1: Active execution states (RUNNING, STARTING, INITIALIZING) -> Highest priority
+--   0: Waiting for allocation (SCHEDULING)
+--  -1: Terminal / inactive execution states -> Lowest priority
 ALTER TABLE WorkUnits ADD COLUMN SortPhase INT64 AS (
   CASE
     WHEN ExecutionState IN ('RUNNING', 'STARTING', 'INITIALIZING') THEN 1
@@ -54,7 +59,6 @@ ON WorkUnits (
 ) STORING (
   Priority, 
   ExecutionState, 
-  Xid,
-  IsPendingOrRunningJob
+  Xid
   -- TODO(#186): Add Creator to STORING clause when Creator denormalization is implemented.
 ) WHERE IsPendingOrRunningJob IS NOT NULL;

@@ -71,6 +71,8 @@ compat_go_test(
     embed = [":workunit"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
+        "//internal/storage/spanner",
+        "//internal/storage/spanner/emulator",
     ],
 )
 

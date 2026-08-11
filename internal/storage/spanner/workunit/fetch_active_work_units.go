@@ -26,16 +26,19 @@ import (
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 )
 
-const defaultPageSize = int64(100)
+const (
+	defaultPageSize = int32(100)
+	maxPageSize     = int32(1000)
+)
 
 var fetchActiveWorkUnitsByQueuesSQL = safesql.New(
-	`SELECT *
+	`SELECT Xid, WorkUnitId, WorkUnitType, Priority, Urls, Tags, Notes, Executable, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionId, ExecutionMetadata, WorkUnitStatus, QueueName, ExecutionState, ExecutionStatusMessageSeverity, CreateTime, UpdateTime
 	FROM WorkUnits wu
 	WHERE wu.QueueName IN UNNEST(@queueNames)
 	  AND wu.IsPendingOrRunningJob IS NOT NULL
 	ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC
 	LIMIT @pageSize`,
-).String()
+)
 
 // ActiveWorkUnitsResult holds the result of querying active work units.
 type ActiveWorkUnitsResult struct {
@@ -45,21 +48,12 @@ type ActiveWorkUnitsResult struct {
 
 // FetchActiveWorkUnitsByQueues queries Spanner for active and pending work units assigned to the given queues.
 func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error) {
-	return r.FetchActiveWorkUnitsByQueuesAt(ctx, queueNames, pageSize, pageToken)
-}
-
-// FetchActiveWorkUnitsByQueuesAt queries Spanner for active work units assigned to the given queues.
-func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
 	if r == nil || r.client == nil {
-		logging.Warn(ctx, "WorkUnit storage client is uninitialized, returning empty active work units")
-		return &ActiveWorkUnitsResult{
-			WorkUnits:     []*essmsgpb.WorkUnit{},
-			NextPageToken: "",
-		}, nil
+		return nil, fmt.Errorf("spanner storage client is uninitialized")
 	}
 
 	if len(queueNames) == 0 {
@@ -69,16 +63,18 @@ func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNa
 		}, nil
 	}
 
-	pageSizeVal := int64(pageSize)
+	pageSizeVal := pageSize
 	if pageSizeVal <= 0 {
 		pageSizeVal = defaultPageSize
+	} else if pageSizeVal > maxPageSize {
+		pageSizeVal = maxPageSize
 	}
 
 	stmt := spanner.Statement{
-		SQL: fetchActiveWorkUnitsByQueuesSQL,
+		SQL: fetchActiveWorkUnitsByQueuesSQL.String(),
 		Params: map[string]interface{}{
 			"queueNames": queueNames,
-			"pageSize":   pageSizeVal,
+			"pageSize":   int64(pageSizeVal),
 		},
 	}
 

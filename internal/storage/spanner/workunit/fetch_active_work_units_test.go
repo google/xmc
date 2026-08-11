@@ -12,93 +12,70 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package workunit
+package workunit_test
 
 import (
 	"context"
 	"testing"
+
+	"xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/storage/spanner/emulator/emulator"
 )
 
-func TestFetchActiveWorkUnitsByQueues(t *testing.T) {
+func TestFetchActiveWorkUnitsByQueues_Uninitialized(t *testing.T) {
 	canceledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	tests := []struct {
-		name       string
-		ctx        context.Context
-		repo       *Repository
-		queueNames []string
-		pageSize   int32
-		pageToken  string
-		wantErr    bool
-		wantCount  int
-	}{
-		{
-			name:       "nil queue names with uninitialized client",
-			ctx:        context.Background(),
-			repo:       &Repository{},
-			queueNames: nil,
-			pageSize:   10,
-			pageToken:  "",
-			wantErr:    false,
-			wantCount:  0,
-		},
-		{
-			name:       "empty queue names with uninitialized client",
-			ctx:        context.Background(),
-			repo:       &Repository{},
-			queueNames: []string{},
-			pageSize:   10,
-			pageToken:  "",
-			wantErr:    false,
-			wantCount:  0,
-		},
-		{
-			name:       "non-empty queue names with nil client guard",
-			ctx:        context.Background(),
-			repo:       &Repository{client: nil},
-			queueNames: []string{"gpu-queue"},
-			pageSize:   10,
-			pageToken:  "",
-			wantErr:    false,
-			wantCount:  0,
-		},
-		{
-			name:       "nil repository guard",
-			ctx:        context.Background(),
-			repo:       nil,
-			queueNames: []string{"gpu-queue"},
-			pageSize:   10,
-			pageToken:  "",
-			wantErr:    false,
-			wantCount:  0,
-		},
-		{
-			name:       "canceled context error",
-			ctx:        canceledCtx,
-			repo:       &Repository{},
-			queueNames: []string{"gpu-queue"},
-			pageSize:   10,
-			pageToken:  "",
-			wantErr:    true,
-			wantCount:  0,
-		},
+	t.Run("canceled context error", func(t *testing.T) {
+		repo := &spanner.Storage{}
+		_, err := repo.FetchActiveWorkUnitsByQueues(canceledCtx, []string{"gpu-queue"}, 10, "")
+		if err == nil {
+			t.Fatalf("FetchActiveWorkUnitsByQueues() expected error for canceled context, got nil")
+		}
+	})
+
+	t.Run("nil client guard returns error", func(t *testing.T) {
+		repo := &spanner.Storage{}
+		_, err := repo.FetchActiveWorkUnitsByQueues(context.Background(), []string{"gpu-queue"}, 10, "")
+		if err == nil {
+			t.Fatalf("FetchActiveWorkUnitsByQueues() expected error for nil spanner client, got nil")
+		}
+	})
+
+	t.Run("empty queue names returns empty result", func(t *testing.T) {
+		ctx := context.Background()
+		_, essClient := emulator.Setup(ctx, t)
+		storage, err := spanner.NewStorage(essClient)
+		if err != nil {
+			t.Fatalf("spanner.NewStorage failed: %v", err)
+		}
+		res, err := storage.FetchActiveWorkUnitsByQueues(ctx, []string{}, 10, "")
+		if err != nil {
+			t.Fatalf("FetchActiveWorkUnitsByQueues() unexpected error: %v", err)
+		}
+		if len(res.WorkUnits) != 0 {
+			t.Errorf("FetchActiveWorkUnitsByQueues() count = %d, want 0", len(res.WorkUnits))
+		}
+	})
+}
+
+func TestFetchActiveWorkUnitsByQueues_EmulatorIntegration(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storage, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("spanner.NewStorage failed: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			res, err := tt.repo.FetchActiveWorkUnitsByQueuesAt(tt.ctx, tt.queueNames, tt.pageSize, tt.pageToken)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("FetchActiveWorkUnitsByQueuesAt() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if !tt.wantErr {
-				if res == nil {
-					t.Fatalf("FetchActiveWorkUnitsByQueuesAt() expected non-nil result")
-				}
-				if len(res.WorkUnits) != tt.wantCount {
-					t.Errorf("FetchActiveWorkUnitsByQueuesAt() workUnits count = %d, want %d", len(res.WorkUnits), tt.wantCount)
-				}
-			}
-		})
+	xid := int64(100)
+	_ = spanner.CreateBlankExperiment(ctx, t, storage, xid)
+	_ = spanner.CreateBlankWorkUnit(ctx, t, storage, xid, int64(1))
+
+	res, err := storage.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 10, "")
+	if err != nil {
+		t.Fatalf("FetchActiveWorkUnitsByQueues failed: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("FetchActiveWorkUnitsByQueues returned nil result")
 	}
 }
