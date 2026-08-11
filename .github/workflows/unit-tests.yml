@@ -282,4 +282,12 @@ jobs:
             exit 1
           fi
 
-          echo "All required unit test suites passed or were safely skipped."
+          if [ "${BACKEND_RESULT}" == "skipped" ] && [ "${UI_RESULT}" == "skipped" ]; then
+            echo "NOTICE: No code-related changes were found in this PR; unit test execution was safely skipped."
+          elif [ "${BACKEND_RESULT}" == "skipped" ]; then
+            echo "NOTICE: No backend code changes found; backend Go unit tests safely skipped."
+          elif [ "${UI_RESULT}" == "skipped" ]; then
+            echo "NOTICE: No UI code changes found; Angular UI unit tests safely skipped."
+          else
+            echo "All required unit test suites passed successfully."
+          fi
