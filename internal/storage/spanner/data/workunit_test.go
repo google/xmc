@@ -115,6 +115,7 @@ func TestWorkUnitProtoToInsertMutation(t *testing.T) {
 			eid,
 			wu.CurrentWorkUnitExecution.Metadata,
 			wu.CurrentWorkUnitExecution.Status,
+			int64(9223372036854775807),
 			wu.CreateTime.AsTime(),
 			wu.UpdateTime.AsTime(),
 		},

@@ -243,7 +243,7 @@ CREATE TABLE WorkUnits (
   -- the highest severity messages to propagate up to the experiment.
   ExecutionStatusMessageSeverity cloud.xmanager.v1.StructuredMessage.Severity AS (GREATEST(IFNULL(WorkUnitStatus.system_message.severity, 0), IFNULL(WorkUnitStatus.user_message.severity, 0))) STORED,
   -- PositionInQueue represents the work unit's position in the queue for ROD sorting.
-  PositionInQueue INT64,
+  PositionInQueue INT64 NOT NULL DEFAULT (9223372036854775807),
 
   IsPendingOrRunningJob BOOL AS (
     IF(ExecutionState IN ('SCHEDULING', 'STARTING', 'RUNNING', 'INITIALIZING'), TRUE, NULL)

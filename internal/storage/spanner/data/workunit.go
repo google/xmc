@@ -133,6 +133,11 @@ func WorkUnitProtoToInsertMutation(workUnit *pb.WorkUnit) (*spanner.Mutation, er
 		tags = []string{}
 	}
 
+	var positionInQueue int64 = 9223372036854775807
+	if queueInfo := workUnit.GetCurrentWorkUnitExecution().GetStatus().GetSchedulingInformation().GetAuxiliaryInfo().GetQueueInfo(); queueInfo != nil {
+		positionInQueue = int64(queueInfo.GetPositionInQueue())
+	}
+
 	return spanner.Insert(
 		workunitschema.WorkUnitTableName,
 		workunitschema.WorkUnitColumns,
@@ -151,6 +156,7 @@ func WorkUnitProtoToInsertMutation(workUnit *pb.WorkUnit) (*spanner.Mutation, er
 			eid,                   // ExecutionId
 			workUnit.CurrentWorkUnitExecution.Metadata, // ExecutionMetadata
 			workUnit.CurrentWorkUnitExecution.Status,   // WorkUnitStatus
+			positionInQueue,                            // PositionInQueue
 			workUnit.CreateTime.AsTime(),               // CreateTime
 			workUnit.UpdateTime.AsTime(),               // UpdateTime
 		},
