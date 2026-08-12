@@ -71,3 +71,12 @@ body:
       description: "Add any mockups, architecture diagrams, or reference links."
     validations:
       required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: "Pre-submission Checklist"
+      options:
+        - label: "I have searched existing issues to verify this feature has not already been requested."
+          required: true
+
