@@ -40,6 +40,7 @@
       [components]="healthStatus()?.components ?? []"
       [overallStatus]="healthStatus()?.healthState ?? 'HEALTH_STATE_UNSPECIFIED'"
       [lastChecked]="lastUpdated()"
+      [loading]="isRefreshing()"
       (refresh)="onRefresh()"
     />
 

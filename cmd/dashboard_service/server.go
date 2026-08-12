@@ -16,20 +16,31 @@ package main
 
 import (
 	"context"
+	"fmt"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	mpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	"xmanager_cloud/internal/dashboard/dataengine"
+	"xmanager_cloud/internal/storage/spanner/dashboard"
 )
 
 type server struct {
 	spb.UnimplementedDashboardServiceServer
-	cfg *Config
+	cfg        *Config
+	repo       *dashboard.Repository
+	dataEngine *dataengine.DataEngine
 }
 
-func newServer(cfg *Config) *server {
-	return &server{cfg: cfg}
+func newServer(cfg *Config, repo *dashboard.Repository, de *dataengine.DataEngine) *server {
+	return &server{
+		cfg:        cfg,
+		repo:       repo,
+		dataEngine: de,
+	}
 }
 
 func (s *server) CreateDashboard(ctx context.Context, req *spb.CreateDashboardRequest) (*mpb.Dashboard, error) {
@@ -67,7 +78,20 @@ func (s *server) GetChart(ctx context.Context, req *spb.GetChartRequest) (*mpb.C
 }
 
 func (s *server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest) (*mpb.ChartData, error) {
-	return &mpb.ChartData{}, nil
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request must not be nil")
+	}
+	if s.dataEngine == nil {
+		return nil, status.Error(codes.FailedPrecondition, "data engine is not configured")
+	}
+	if s.repo == nil {
+		return nil, status.Error(codes.FailedPrecondition, "chart repository is not configured")
+	}
+	chart, err := s.repo.GetChart(ctx, req.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chart %q: %w", req.GetName(), err)
+	}
+	return s.dataEngine.FetchChartData(ctx, chart, req)
 }
 
 func (s *server) ListCharts(ctx context.Context, req *spb.ListChartsRequest) (*spb.ListChartsResponse, error) {
