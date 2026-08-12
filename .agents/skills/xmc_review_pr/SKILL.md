@@ -42,7 +42,8 @@ When invoking helper CLI scripts under `tools/` (`review_pr_generate_audit.py`, 
 2. **Inspect parameters via `--help`**: Run tools with `--help` to inspect parameter schemas and usage flags.
 3. **Parse Structured JSON Output**: Tools output structured JSON with exit code 0 for success, 1 for handled errors, and 2 for unhandled errors.
 4. **Store Artifacts strictly inside Conversation Directory (`--conv-id`)**: All generated markdown audit checklists and reports must default to the conversation artifact directory (`<appDataDir>/brain/<conv_id>/`) rather than the workspace root to prevent accidental git repository commits.
-5. **Arbitrary Long Comment File Safety (`-f` / `--message-file`)**: Always write proposed inline review comments containing markdown diff blocks or detailed explanations to a file and pass `-f message_file.md` to prevent bash escaping errors or length truncation.
+5. **Virtual Environment & Execution Safety**: Per [Python Guidelines](../../rules/languages/python.md#4-virtual-environments--execution-safety), invoke tools via `./tools/venv/bin/python3` when the local virtual environment is active. Note that all `review_pr_*.py` tools rely **strictly on standard library modules (`argparse`, `pathlib`, `json`, `re`, `subprocess`, `urllib`) + `gh` CLI**, so they execute deterministically in any Python environment.
+6. **Arbitrary Long Comment File Safety (`-f` / `--message-file`)**: Always write proposed inline review comments containing markdown diff blocks or detailed explanations to a file and pass `-f message_file.md` to prevent bash escaping errors or length truncation.
 
 ---
 
@@ -54,9 +55,9 @@ Before launching deep code analysis or subagent review panels, the agent must in
 
 1. **Run Initial Audit Script**:
    ```bash
-   python3 tools/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode initial --conv-id <conversation_id>
+   tools/venv/bin/python3 tools/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode initial --conv-id <conversation_id>
    ```
-   *This fetches PR details, diff file touchpoints, extracts task or issue references (#123, issue links) from the description, indexes existing inline comments for deduplication, and creates `pr_review_audit_checklist.md` inside `<appDataDir>/brain/<conv_id>/`.*
+   *This fetches PR details, diff file touchpoints, extracts task or issue references (#123, issue links) from the description, indexes existing inline comments for deduplication, initializes the **Core 8-Pillar Baseline Audit Matrix (with explicit N/A resolution)**, and creates `pr_review_audit_checklist.md` inside `<appDataDir>/brain/<conv_id>/`.*
 
 2. **Present Scoping Summary & Open Direction Window**:
    Display PR metadata, touched package matrix, task references, and ask the user for guidance **before launching subagent reviews**:
@@ -77,17 +78,28 @@ Before launching deep code analysis or subagent review panels, the agent must in
 
 Once the user provides initial directional guidance (or confirms to proceed), the Main Orchestrator dynamically spawns specialized worker subagents (`invoke_subagent`) tailored to the modified file types.
 
-#### Tailored Panel Generation
-The Main Orchestrator must critically analyze the PR contents, modified file types, architecture impact, and user feedback from Phase 1 to **dynamically formulate a tailored review panel of subagents**. Do NOT use a hardcoded list of subagents for every PR—rather, synthesize roles that fit the specific pull request. 
+#### Hybrid Baseline Rubric + Dynamic Specialist Role Architecture
+To eliminate **stochastic omission variance** (where dynamic subagents might forget core engineering principles) while retaining deep subsystem expertise, every PR code review enforces a **Hybrid Evaluation Architecture**:
 
-- **Mandatory Subagent**: The review panel MUST always include a dedicated **`PR Description & Task Reference Reconciliation Specialist`**, tasked with evaluating whether the actual git diff matches what the PR title and description claim to do, and verifying that referenced task references, issue links, or design specs are fulfilled.
-- **Dynamic Domain Subagents (Synthesized by Agent)**: Subagents must NOT concentrate solely on line-by-line code mechanics. When main dependency pillars, workload orchestrators, or scheduling subsystems are touched, the agent should dynamically craft specialized domain expert subagent roles (1–3 roles with tightly scoped prompts). Examples include (but are not limited to):
-  * *Example (Scheduling & Workload Dependency Pillar)*: `Kueue Expert / Subsystem Specialist` auditing `ClusterQueue`, `LocalQueue`, Workunit resource reservation, quota enforcement, preemptor interaction, and Kueue CRD updates whenever scheduling or workload actuation is touched.
-  * *Example (Kubernetes Infrastructure Pillar)*: `Kubernetes (K8s) Expert Specialist` evaluating controller-runtime reconciler loops, informer cache synchronization, RBAC ClusterRole permissions, pod disruption budgets, and GKE lifecycle behavior whenever K8s resources, CRDs, or Helm charts are touched.
-  * *Example (Go Backend)*: `Go Concurrency & Interface Safety Reviewer` checking `context.Context` propagation, mutex boundaries, and test double fidelity (`proto.Modify`).
-  * *Example (Python Tooling)*: `Python CLI & Shell Injection Security Reviewer` auditing standard library preferences, error handling, and argument escaping.
-  * *Example (UI Frontend)*: `Modern Angular Signal & Immutability Reviewer` verifying declarative template patterns and state immutability.
-  * *Example (Infrastructure / API)*: `Protobuf & Helm Backward-Compatibility Reviewer` verifying breaking schema or deployment changes.
+1. **Deterministic Core 8-Pillar Baseline Audit Matrix (`with explicit N/A resolution`)**: Every PR review artifact (`pr_review_audit_checklist.md`) incorporates a deterministic inspection rubric covering:
+   - **Pillar 1: Linear Control Flow & Guard Clauses** (`core_engineering.md#2-kiss`)
+   - **Pillar 2: Single Responsibility Principle & Target Complexity Limit** (`core_engineering.md#1-srp`)
+   - **Pillar 3: Defensive Input Validation & Boundary Checks** (`core_engineering.md`)
+   - **Pillar 4: Concurrency & `context.Context` Propagation Safety** (`golang.md` / `python.md`)
+   - **Pillar 5: Test Double Fidelity & Deterministic Test Execution** (`core_engineering.md#4`)
+   - **Pillar 6: Backward Compatibility & Contract Protection** (`core_engineering.md`)
+   - **Pillar 7: Dependency Graph & Build System Boundaries** (`core_engineering.md`)
+   - **Pillar 8: Documentation & Contract Alignment** (`core_engineering.md#5`)
+   *Crucially, every pillar MUST be evaluated as either an `ACTIONABLE FINDING`, `COMPLIANT / PASS`, or `- [ ] N/A — Subsystem / pattern not touched by PR` with brief rationale, ensuring zero silent omissions.*
+
+2. **Mandatory Subagent**: The review panel MUST always include a dedicated **`PR Description & Task Reference Reconciliation Specialist`**, tasked with evaluating whether the actual git diff matches what the PR title and description claim to do, and verifying that referenced task references, issue links, or design specs are fulfilled.
+3. **Dynamic Domain Subagents (Synthesized by Agent)**: Subagents must NOT concentrate solely on line-by-line code mechanics. When main dependency pillars, workload orchestrators, or scheduling subsystems are touched, the agent should dynamically craft specialized domain expert subagent roles (1–3 roles with tightly scoped prompts). Examples include (but are not limited to):
+   * *Example (Scheduling & Workload Dependency Pillar)*: `Kueue Expert / Subsystem Specialist` auditing `ClusterQueue`, `LocalQueue`, Workunit resource reservation, quota enforcement, preemptor interaction, and Kueue CRD updates whenever scheduling or workload actuation is touched.
+   * *Example (Kubernetes Infrastructure Pillar)*: `Kubernetes (K8s) Expert Specialist` evaluating controller-runtime reconciler loops, informer cache synchronization, RBAC ClusterRole permissions, pod disruption budgets, and GKE lifecycle behavior whenever K8s resources, CRDs, or Helm charts are touched.
+   * *Example (Go Backend)*: `Go Concurrency & Interface Safety Reviewer` checking `context.Context` propagation, mutex boundaries, and test double fidelity (`proto.Modify`).
+   * *Example (Python Tooling)*: `Python CLI & Shell Injection Security Reviewer` auditing standard library preferences, error handling, and argument escaping.
+   * *Example (UI Frontend)*: `Modern Angular Signal & Immutability Reviewer` verifying declarative template patterns and state immutability.
+   * *Example (Infrastructure / API)*: `Protobuf & Helm Backward-Compatibility Reviewer` verifying breaking schema or deployment changes.
 
 #### Strict Directives for Subagent Prompting
 All expert subagents invoked during Phase 2 MUST receive the following mandatory guidelines:

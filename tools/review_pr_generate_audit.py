@@ -192,6 +192,28 @@ def format_initial_audit_markdown(
 
 ---
 
+## Core 8-Pillar Baseline Audit Matrix (Deterministic Check)
+*Every PR review MUST evaluate all 8 core engineering pillars. Pillars that do not apply to this PR MUST be explicitly marked as `N/A` with a brief justification to prevent stochastic omission:*
+
+- [ ] **Pillar 1: Linear Control Flow & Guard Clauses** (`core_engineering.md#2-kiss`)
+  *Evaluation*: `[Pending / Pass / Actionable / N/A]` — *Notes*: Evaluate early return guards and zero redundant else blocks.
+- [ ] **Pillar 2: Single Responsibility Principle & Target Complexity Limit** (`core_engineering.md#1-srp`)
+  *Evaluation*: `[Pending / Pass / Actionable / N/A]` — *Notes*: Check function scope and 20-30 line target limits.
+- [ ] **Pillar 3: Defensive Input Validation & Boundary Checks** (`core_engineering.md`)
+  *Evaluation*: `[Pending / Pass / Actionable / N/A]` — *Notes*: Verify nil guards, empty slices, and range upper-bounds.
+- [ ] **Pillar 4: Concurrency & `context.Context` Propagation Safety** (`golang.md` / `python.md`)
+  *Evaluation*: `[Pending / Pass / Actionable / N/A]` — *Notes*: Check context cancellation, mutex boundaries, and race safety.
+- [ ] **Pillar 5: Test Double Fidelity & Deterministic Test Execution** (`core_engineering.md#4`)
+  *Evaluation*: `[Pending / Pass / Actionable / N/A]` — *Notes*: Verify high-fidelity test doubles; prevent silent mock failures.
+- [ ] **Pillar 6: Backward Compatibility & Contract Protection** (`core_engineering.md`)
+  *Evaluation*: `[Pending / Pass / Actionable / N/A]` — *Notes*: Check Protobuf schema, Helm, Spanner DDL, and gRPC stability.
+- [ ] **Pillar 7: Dependency Graph & Build System Boundaries** (`core_engineering.md`)
+  *Evaluation*: `[Pending / Pass / Actionable / N/A]` — *Notes*: Verify Bazel target dependencies (`BUILD.bazel`) and import graphs.
+- [ ] **Pillar 8: Documentation & Contract Alignment** (`core_engineering.md#5`)
+  *Evaluation*: `[Pending / Pass / Actionable / N/A]` — *Notes*: Ensure README.md, inline comments, and markdown docs stay in sync.
+
+---
+
 ## Proposed Inline Review Comments (Confirmation Checklist)
 *Populate proposed inline comments below during Phase 3 review synthesis. All proposed items require explicit user confirmation prior to posting:*
 
