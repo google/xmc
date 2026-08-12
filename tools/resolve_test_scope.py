@@ -27,7 +27,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-CORE_INFRA_FILES: set[str] = set()
+CORE_INFRA_FILES: set[str] = {
+    "go.mod",
+    "go.sum",
+    "WORKSPACE",
+    "MODULE.bazel",
+    "BUILD.bazel",
+}
 
 NON_CODE_PREFIXES: tuple[str, ...] = (
     "docs/",
