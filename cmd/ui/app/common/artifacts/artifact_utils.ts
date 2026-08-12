@@ -62,9 +62,7 @@ export function toTypedArtifact(artifact: Artifact): TypedArtifact {
   return { type: PayloadType.UNKNOWN, artifact };
 }
 
-function getManagedXprofProps(
-  typed: ManagedXprofTypedArtifact,
-): Omit<ArtifactDisplayProperties, 'typeName'> {
+function getManagedXprofProps(typed: ManagedXprofTypedArtifact): ArtifactDisplayProperties {
   return {
     typeName: 'Managed Xprof',
     icon: 'query_stats',
@@ -73,9 +71,7 @@ function getManagedXprofProps(
   };
 }
 
-function getCodeSourceProps(
-  typed: CodeSourceTypedArtifact,
-): Omit<ArtifactDisplayProperties, 'typeName'> {
+function getCodeSourceProps(typed: CodeSourceTypedArtifact): ArtifactDisplayProperties {
   return {
     typeName: 'Code Source',
     icon: 'code',
