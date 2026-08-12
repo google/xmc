@@ -27,10 +27,8 @@ export interface ResourceRequirementQuery {
   requirements: ResourceRequirementRow[];
 }
 
-let nextRowId = 0;
-
 function createRow(amount = 1, resourceType = ''): ResourceRequirementRow {
-  return { id: `row-${++nextRowId}`, amount, resourceType };
+  return { id: crypto.randomUUID(), amount, resourceType };
 }
 
 @Component({
