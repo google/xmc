@@ -34,7 +34,7 @@ spec:
       containers:
       - name: actuator
         image: {{ .Values.actuator_custom_image | quote }}
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false

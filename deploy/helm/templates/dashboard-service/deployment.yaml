@@ -38,7 +38,7 @@ spec:
       containers:
       - name: dashboard-service
         image: {{ .Values.dashboard_service_custom_image | quote }}
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false

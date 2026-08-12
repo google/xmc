@@ -34,7 +34,7 @@ spec:
       containers:
       - name: reconciler
         image: {{ .Values.reconciler_custom_image | quote }}
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false

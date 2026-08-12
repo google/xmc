@@ -34,7 +34,7 @@ spec:
       containers:
       - name: xmc-ui
         image: {{ .Values.ui.image | quote }}
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
           name: http

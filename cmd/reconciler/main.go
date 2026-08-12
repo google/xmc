@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 
 	"go/google"
 	"golang/cloud_google_com/go/compute/metadata/v/v0/metadata"
@@ -146,17 +147,31 @@ type GceMetadata struct {
 
 func getGceMetadata(ctx context.Context) (GceMetadata, error) {
 	logging.Debug(ctx, "Fetching GCE Metadata...")
-	projectID, err := metadata.ProjectIDWithContext(ctx)
-	if err != nil {
-		return GceMetadata{}, fmt.Errorf("failed to get Project ID from metadata: %v", err)
+	projectID := os.Getenv("XMC_PROJECT_ID")
+	if projectID == "" {
+		pid, err := metadata.ProjectIDWithContext(ctx)
+		if err != nil {
+			return GceMetadata{}, fmt.Errorf("failed to get Project ID from metadata: %v", err)
+		}
+		projectID = pid
 	}
-	clusterName, err := metadata.InstanceAttributeValueWithContext(ctx, "cluster-name")
-	if err != nil {
-		return GceMetadata{}, fmt.Errorf("failed to get cluster-name from metadata: %v", err)
+
+	clusterName := os.Getenv("XMC_CLUSTER_NAME")
+	if clusterName == "" {
+		cname, err := metadata.InstanceAttributeValueWithContext(ctx, "cluster-name")
+		if err != nil {
+			return GceMetadata{}, fmt.Errorf("failed to get cluster-name from metadata: %v", err)
+		}
+		clusterName = cname
 	}
-	location, err := metadata.InstanceAttributeValueWithContext(ctx, "cluster-location")
-	if err != nil {
-		return GceMetadata{}, fmt.Errorf("failed to get cluster-location from metadata: %v", err)
+
+	location := os.Getenv("XMC_CLUSTER_LOCATION")
+	if location == "" {
+		loc, err := metadata.InstanceAttributeValueWithContext(ctx, "cluster-location")
+		if err != nil {
+			return GceMetadata{}, fmt.Errorf("failed to get cluster-location from metadata: %v", err)
+		}
+		location = loc
 	}
 	logging.Debug(ctx, "Successfully fetched GCE Metadata", "project_id", projectID, "location", location, "cluster_name", clusterName)
 	return GceMetadata{

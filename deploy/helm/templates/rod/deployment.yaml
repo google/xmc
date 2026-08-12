@@ -38,7 +38,7 @@ spec:
       containers:
       - name: rod-data-provider
         image: {{ .Values.rod_custom_image | quote }}
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false

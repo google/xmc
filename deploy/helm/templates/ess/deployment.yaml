@@ -45,7 +45,7 @@ spec:
       containers:
       - name: experiment-state-server
         image: {{ .Values.ess_custom_image | quote }}
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false

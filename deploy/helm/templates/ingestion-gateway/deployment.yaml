@@ -53,7 +53,7 @@ spec:
       containers:
       - name: ingestion-gateway
         image: {{ .Values.ingestion_gateway_custom_image | quote }}
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false
