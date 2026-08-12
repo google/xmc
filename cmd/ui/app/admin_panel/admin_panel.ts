@@ -47,18 +47,23 @@ export class AdminPanelPage {
 
   private lastKnownStatus: HealthStatusResponse | null = null;
 
-  private readonly refreshTrigger$ = new BehaviorSubject<void>(undefined);
+  protected readonly isRefreshing = signal<boolean>(false);
+
+  private readonly refreshTrigger$ = new BehaviorSubject<boolean>(false);
 
   protected readonly healthStatus = toSignal(
     this.refreshTrigger$.pipe(
-      switchMap(() =>
-        this.healthService.getHealthStatus().pipe(
+      tap(() => this.isRefreshing.set(true)),
+      switchMap((forceRefresh) =>
+        this.healthService.getHealthStatus(forceRefresh).pipe(
           tap((status) => {
             this.lastKnownStatus = status;
             this.healthStatusError.set(null);
+            this.isRefreshing.set(false);
           }),
           catchError((error) => {
             console.error('Failed to fetch health status', error);
+            this.isRefreshing.set(false);
             if (this.lastKnownStatus) {
               this.snackbarService.open('Failed to refresh health status.');
               return of(this.lastKnownStatus);
@@ -96,6 +101,6 @@ export class AdminPanelPage {
   });
 
   protected onRefresh(): void {
-    this.refreshTrigger$.next();
+    this.refreshTrigger$.next(true);
   }
 }

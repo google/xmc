@@ -34,6 +34,16 @@ export class HealthStatusSectionHarness extends ComponentHarness {
     return btn.click();
   }
 
+  async isRefreshDisabled(): Promise<boolean> {
+    const btn = await this._refreshBtn();
+    return btn.getProperty<boolean>('disabled');
+  }
+
+  async getRefreshButtonText(): Promise<string> {
+    const btn = await this._refreshBtn();
+    return btn.text();
+  }
+
   async getOverallStatusText(): Promise<string> {
     const badge = await this._overallBadge();
     return badge.text();

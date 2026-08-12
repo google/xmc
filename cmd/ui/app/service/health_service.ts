@@ -37,10 +37,14 @@ export class HealthService {
   private readonly http = inject(HttpClient);
   private readonly featureFlagService = inject(FeatureFlagService);
 
-  getHealthStatus(): Observable<HealthStatusResponse> {
-    return this.http.get<HealthStatusResponse>(`${XMC_API_DOMAIN}/health/status`, {
+  getHealthStatus(forceRefresh = false): Observable<HealthStatusResponse> {
+    const options: { withCredentials: boolean; params?: { [key: string]: string } } = {
       withCredentials: true,
-    });
+    };
+    if (forceRefresh) {
+      options.params = { 'force_refresh': 'true' };
+    }
+    return this.http.get<HealthStatusResponse>(`${XMC_API_DOMAIN}/health/status`, options);
   }
 
   getHealthConfigs(): Observable<ListConfigEntriesResponse> {

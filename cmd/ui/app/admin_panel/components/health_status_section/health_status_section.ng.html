@@ -22,15 +22,11 @@
       XMC Services Health
     </h2>
     <div class="header-actions">
-      <button type="button" class="refresh-button" (click)="onRefresh()">
-        <mat-icon class="button-icon">refresh</mat-icon>
-        Refresh
+      <button type="button" class="refresh-button" (click)="onRefresh()" [disabled]="loading()">
+        <mat-icon class="button-icon" [class.animate-spin]="loading()">refresh</mat-icon>
+        {{ loading() ? 'Refreshing...' : 'Refresh' }}
       </button>
-      <span
-        class="status-badge"
-        [class.status-healthy]="isHealthy()"
-        [class.status-degraded]="!isHealthy()"
-      >
+      <span class="status-badge" [class.status-healthy]="isHealthy()" [class.status-degraded]="!isHealthy()">
         <span class="status-indicator-dot" [class.animate-pulse]="isHealthy()"></span>
         {{ mapHealthState(overallStatus()) }}
       </span>
@@ -40,52 +36,41 @@
   <div class="tiers-container">
     <!-- Tier 1: Core Operations -->
     @if (coreComponents().length > 0) {
-      <div class="tier-section">
-        <h3 class="tier-title">
-          <mat-icon class="tier-icon">dns</mat-icon>
-          Core Operations
-        </h3>
-        <div class="cards-grid">
-          <xmc-health-status-group-card
-            title="Core XMC Instances"
-            icon="widgets"
-            [components]="coreComponents()"
-          />
-        </div>
+    <div class="tier-section">
+      <h3 class="tier-title">
+        <mat-icon class="tier-icon">dns</mat-icon>
+        Core Operations
+      </h3>
+      <div class="cards-grid">
+        <xmc-health-status-group-card title="Core XMC Instances" icon="widgets" [components]="coreComponents()" />
       </div>
+    </div>
     }
 
     <!-- Tier 2: Dependencies & Integrations -->
     @if (gcpComponents().length > 0 || customComponents().length > 0) {
-      <div class="tier-section">
-        <h3 class="tier-title">
-          <mat-icon class="tier-icon">cloud</mat-icon>
-          Dependencies & Integrations
-        </h3>
-        <div class="cards-grid">
-          <!-- GCP Hosted Services Card -->
-          @if (gcpComponents().length > 0) {
-            <xmc-health-status-group-card
-              title="GCP Hosted Services"
-              icon="cloud"
-              [components]="gcpComponents()"
-            />
-          }
+    <div class="tier-section">
+      <h3 class="tier-title">
+        <mat-icon class="tier-icon">cloud</mat-icon>
+        Dependencies & Integrations
+      </h3>
+      <div class="cards-grid">
+        <!-- GCP Hosted Services Card -->
+        @if (gcpComponents().length > 0) {
+        <xmc-health-status-group-card title="GCP Hosted Services" icon="cloud" [components]="gcpComponents()" />
+        }
 
-          <!-- Custom Configured Components Card -->
-          @if (customComponents().length > 0) {
-            <xmc-health-status-group-card
-              title="Custom Configured Components"
-              icon="extension"
-              [components]="customComponents()"
-            />
-          }
-        </div>
+        <!-- Custom Configured Components Card -->
+        @if (customComponents().length > 0) {
+        <xmc-health-status-group-card title="Custom Configured Components" icon="extension"
+          [components]="customComponents()" />
+        }
       </div>
+    </div>
     }
   </div>
 
   @if (lastChecked()) {
-    <div class="last-checked">Last checked: {{ lastChecked() }}</div>
+  <div class="last-checked">Last checked: {{ lastChecked() }}</div>
   }
 </div>
