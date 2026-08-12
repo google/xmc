@@ -22,7 +22,7 @@
       XMC Services Health
     </h2>
     <div class="header-actions">
-      <button (click)="onRefresh()" class="refresh-button">
+      <button type="button" class="refresh-button" (click)="onRefresh()">
         <mat-icon class="button-icon">refresh</mat-icon>
         Refresh
       </button>
@@ -50,7 +50,7 @@
             title="Core XMC Instances"
             icon="widgets"
             [components]="coreComponents()"
-          ></xmc-health-status-group-card>
+          />
         </div>
       </div>
     }
@@ -69,7 +69,7 @@
               title="GCP Hosted Services"
               icon="cloud"
               [components]="gcpComponents()"
-            ></xmc-health-status-group-card>
+            />
           }
 
           <!-- Custom Configured Components Card -->
@@ -78,7 +78,7 @@
               title="Custom Configured Components"
               icon="extension"
               [components]="customComponents()"
-            ></xmc-health-status-group-card>
+            />
           }
         </div>
       </div>

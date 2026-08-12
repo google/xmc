@@ -16,11 +16,11 @@ limitations under the License.
 @if (showFilterToggle) {
   <div class="filter-toggle">
     <mat-button-toggle-group
-      [ngModel]="artifactFilter | async"
-      (ngModelChange)="onFilterChange($event)"
       multiple
       aria-label="Filter artifacts"
+      [ngModel]="artifactFilter | async"
       [class.empty-filter]="(artifactFilter | async)?.length === 0"
+      (ngModelChange)="onFilterChange($event)"
     >
       <mat-button-toggle [value]="ArtifactFilter.EXPERIMENT">Experiment</mat-button-toggle>
       <mat-button-toggle [value]="ArtifactFilter.WORK_UNIT">Work Units</mat-button-toggle>

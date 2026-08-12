@@ -37,15 +37,16 @@ import (
 // UpdateWorkUnit updates a work unit with the given update mask. It returns both the original and
 // updated work units in that order, so that the caller can choose whether to perform additional
 // actions based on the original work unit state.
-func (r *Repository) UpdateWorkUnit(ctx context.Context, update *storage.WorkUnitUpdate) (originalWorkUnit *essmsgpb.WorkUnit, updatedWorkUnit *essmsgpb.WorkUnit, err error) {
+func (r *Repository) UpdateWorkUnit(ctx context.Context, update *storage.WorkUnitUpdate) (storage.UpdatedWorkUnits, error) {
 	if update == nil {
-		return nil, nil, fmt.Errorf("update must not be nil")
+		return storage.UpdatedWorkUnits{}, fmt.Errorf("update must not be nil")
 	}
 	ctx = logging.WithWorkUnitName(ctx, validator.ConstructWorkUnitName(update.XID, update.WID))
 	logging.Info(ctx, "UpdateWorkUnit", "update", update.WorkUnit)
 
+	var originalWorkUnit, updatedWorkUnit *essmsgpb.WorkUnit
 	var mutated bool
-	_, err = r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		mutated = false
 
 		// 1. Read the existing WorkUnit from storage.
@@ -81,7 +82,7 @@ func (r *Repository) UpdateWorkUnit(ctx context.Context, update *storage.WorkUni
 		return txn.BufferWrite([]*spanner.Mutation{mutation})
 	})
 	if err != nil {
-		return nil, nil, err
+		return storage.UpdatedWorkUnits{}, err
 	}
 
 	if mutated {
@@ -91,5 +92,8 @@ func (r *Repository) UpdateWorkUnit(ctx context.Context, update *storage.WorkUni
 		logging.Info(ctx, "WorkUnit not updated; no changes detected", "updatedWorkUnit", updatedWorkUnit)
 	}
 
-	return originalWorkUnit, updatedWorkUnit, nil
+	return storage.UpdatedWorkUnits{
+		Original: originalWorkUnit,
+		Updated:  updatedWorkUnit,
+	}, nil
 }

@@ -481,3 +481,76 @@ func TestPropagateIAPJWT_NoIncomingMetadata(t *testing.T) {
 		t.Errorf("expected no outgoing metadata, but got some")
 	}
 }
+
+func TestHandleEnqueueActionError(t *testing.T) {
+	ctx := context.Background()
+	cfg := &config.Config{}
+	authorizer := createTestAuthorizer(ctx, t)
+	enqueueErr := errors.New("queue unreachable")
+
+	testCases := []struct {
+		name                        string
+		workUnit                    *essmsgpb.WorkUnit
+		updateWorkUnitExecutionsErr error
+		wantErr                     bool
+		wantValErr                  bool
+	}{
+		{
+			name: "invalid_execution_name",
+			workUnit: &essmsgpb.WorkUnit{
+				Name: "experiments/123/workUnits/456",
+				CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+					Name: "invalid-name",
+				},
+			},
+			wantErr:    true,
+			wantValErr: true,
+		},
+		{
+			name: "valid_execution_name_success",
+			workUnit: &essmsgpb.WorkUnit{
+				Name: "experiments/123/workUnits/456",
+				CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+					Name: "experiments/123/workUnits/456/executions/1",
+				},
+			},
+			wantErr:    true,
+			wantValErr: false,
+		},
+		{
+			name: "valid_execution_name_status_update_error",
+			workUnit: &essmsgpb.WorkUnit{
+				Name: "experiments/123/workUnits/456",
+				CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+					Name: "experiments/123/workUnits/456/executions/1",
+				},
+			},
+			updateWorkUnitExecutionsErr: errors.New("db error"),
+			wantErr:                     true,
+			wantValErr:                  false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockStore := &storage.MockStorage{
+				UpdateWorkUnitExecutionsErr: tc.updateWorkUnitExecutionsErr,
+			}
+			server := New(mockStore, cfg, authorizer, &mockXidClient{}, nil)
+
+			err := server.handleEnqueueActionError(ctx, "stop", tc.workUnit, 123, 456, essmsgpb.StructuredMessage_ERROR, enqueueErr)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("handleEnqueueActionError() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantValErr {
+				if !errors.Is(err, status.ErrInternal) {
+					t.Errorf("handleEnqueueActionError() error = %v, want status.ErrInternal", err)
+				}
+			} else {
+				if !errors.Is(err, status.ErrInternal) {
+					t.Errorf("handleEnqueueActionError() error = %v, want status.ErrInternal", err)
+				}
+			}
+		})
+	}
+}

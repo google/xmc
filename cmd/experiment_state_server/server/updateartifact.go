@@ -94,11 +94,12 @@ func (s *Server) UpdateArtifact(ctx context.Context, req *apipb.UpdateArtifactRe
 		Artifact:   req.GetArtifact(),
 		UpdateMask: req.GetUpdateMask(),
 	}
-	_, returnedArtifact, err := s.storage.UpdateArtifact(ctx, update)
+	res, err := s.storage.UpdateArtifact(ctx, update)
 	if err != nil {
 		logging.Error(ctx, "Failed to update artifact", "error", err)
 		return nil, fmt.Errorf("failed to update artifact %s: %w (%v)", name, status.ErrInternal, err)
 	}
+	returnedArtifact := res.Updated
 
 	// 7. Update the XID entry in the XID service if required.
 	if updateMask.GetPaths() != nil {

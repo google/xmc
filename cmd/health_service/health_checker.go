@@ -21,48 +21,83 @@ import (
 	"sync"
 	"time"
 
+	health "xmanager_cloud/common/health"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 
+	run "google.golang.org/api/run/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
-type HealthChecker struct {
-	cfg        *Config
-	httpClient *http.Client
-	xidConn    *grpc.ClientConn
+type RedisPingClient interface {
+	Ping(ctx context.Context) error
 }
 
-func newHealthChecker(cfg *Config) (*HealthChecker, error) {
-	if cfg.XidAddr == "" {
+type HealthCheckerParams struct {
+	Config          *Config
+	EssHealthClient health.SpannerHealthClient
+	XidHealthClient health.SpannerHealthClient
+	RedisClient     RedisPingClient
+	CloudRunService *run.Service
+}
+
+type HealthChecker struct {
+	cfg             *Config
+	httpClient      *http.Client
+	xidConn         *grpc.ClientConn
+	essHealthClient health.SpannerHealthClient
+	xidHealthClient health.SpannerHealthClient
+	redisClient     RedisPingClient
+	cloudRunService *run.Service
+}
+
+func NewHealthChecker(params HealthCheckerParams) (*HealthChecker, error) {
+	if params.Config == nil {
+		return nil, fmt.Errorf("config is required")
+	}
+	if params.Config.XidAddr == "" {
 		return nil, fmt.Errorf("xid address is required")
 	}
-	conn, err := grpc.NewClient(cfg.XidAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(params.Config.XidAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create grpc client for xid at %s: %w", cfg.XidAddr, err)
+		return nil, fmt.Errorf("failed to create grpc client for xid at %s: %w", params.Config.XidAddr, err)
 	}
+
 	return &HealthChecker{
-		cfg: cfg,
+		cfg: params.Config,
 		httpClient: &http.Client{
 			Timeout: 3 * time.Second,
 		},
-		xidConn: conn,
+		xidConn:         conn,
+		essHealthClient: params.EssHealthClient,
+		xidHealthClient: params.XidHealthClient,
+		redisClient:     params.RedisClient,
+		cloudRunService: params.CloudRunService,
 	}, nil
 }
 
 func (c *HealthChecker) Close() error {
 	if c.xidConn != nil {
-		return c.xidConn.Close()
+		if err := c.xidConn.Close(); err != nil {
+			return fmt.Errorf("failed to close xid connection: %w", err)
+		}
 	}
 	return nil
 }
 
-func (c *HealthChecker) RunChecks(ctx context.Context) []*spb.ComponentHealth {
+type RunChecksResult struct {
+	Components         []*spb.ComponentHealth
+	EssDbSchemaVersion string
+	XidDbSchemaVersion string
+}
+
+func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 	targets := c.getCheckTargets()
 	components := make([]*spb.ComponentHealth, len(targets))
 	var wg sync.WaitGroup
 
+	// 1. Run generic checks in parallel
 	for i, target := range targets {
 		wg.Add(1)
 		go func(idx int, t checkTarget) {
@@ -71,8 +106,29 @@ func (c *HealthChecker) RunChecks(ctx context.Context) []*spb.ComponentHealth {
 		}(i, target)
 	}
 
+	// 2. Run Spanner checks in parallel
+	var essComp, xidComp *spb.ComponentHealth
+	var essVersion, xidVersion string
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		essComp, essVersion = c.CheckSpannerESS(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		xidComp, xidVersion = c.CheckSpannerXID(ctx)
+	}()
+
 	wg.Wait()
-	return components
+
+	// 3. Append Spanner results to the components list
+	components = append(components, essComp, xidComp)
+
+	return RunChecksResult{
+		Components:         components,
+		EssDbSchemaVersion: essVersion,
+		XidDbSchemaVersion: xidVersion,
+	}
 }
 
 type checkTarget struct {
@@ -109,38 +165,22 @@ func (c *HealthChecker) getCheckTargets() []checkTarget {
 		{
 			name: "Log Monitor",
 			checkFn: func(ctx context.Context) *spb.ComponentHealth {
-				// TODO(b/532846936): Implement actual health checking for Log Monitor Cloud Run service.
-				// For now, we mock it as healthy since Cloud Run ingress is internal-only.
-				return &spb.ComponentHealth{
-					Name:        "Log Monitor",
-					Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
-					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
-				}
+				return c.checkCloudRunComponent(ctx, "Log Monitor", c.cfg.LogMonitorResourceName)
 			},
 		},
 		{
-			name: "Spanner",
-			checkFn: func(ctx context.Context) *spb.ComponentHealth {
-				// TODO(b/532846936): Implement actual Spanner database connectivity checks.
-				return &spb.ComponentHealth{
-					Name:        "Spanner",
-					Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
-					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
-				}
-			},
-		},
-		{
-			name: "Redis",
-			checkFn: func(ctx context.Context) *spb.ComponentHealth {
-				// TODO(b/532846936): Implement actual Redis cache connectivity check.
-				return &spb.ComponentHealth{
-					Name:        "Redis",
-					Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
-					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
-				}
-			},
+			name:    "Redis",
+			checkFn: c.checkRedis,
 		},
 	}
+}
+
+func (c *HealthChecker) CheckSpannerESS(ctx context.Context) (*spb.ComponentHealth, string) {
+	return c.checkSpannerComponent(ctx, "Spanner ESS", c.essHealthClient)
+}
+
+func (c *HealthChecker) CheckSpannerXID(ctx context.Context) (*spb.ComponentHealth, string) {
+	return c.checkSpannerComponent(ctx, "Spanner XID", c.xidHealthClient)
 }
 
 func (c *HealthChecker) checkHTTPComponent(ctx context.Context, name string, baseURL string, path string) *spb.ComponentHealth {
@@ -209,6 +249,130 @@ func (c *HealthChecker) checkGRPCComponent(ctx context.Context, name string, con
 			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
 			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
 			ErrorMessage: fmt.Sprintf("grpc service status: %s", resp.Status),
+		}
+	}
+
+	return &spb.ComponentHealth{
+		Name:        name,
+		Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+		HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+	}
+}
+
+func (c *HealthChecker) checkSpannerComponent(ctx context.Context, name string, client health.SpannerHealthClient) (*spb.ComponentHealth, string) {
+	if client == nil {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: "spanner client not initialized",
+		}, ""
+	}
+
+	versionVal, dirty, err := client.QuerySchemaVersion(ctx)
+	if err != nil {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: fmt.Sprintf("database check failed: %v", err),
+		}, ""
+	}
+
+	versionStr := fmt.Sprintf("%d", versionVal)
+	if dirty {
+		versionStr += " (dirty)"
+	}
+
+	return &spb.ComponentHealth{
+		Name:        name,
+		Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+		HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+	}, versionStr
+}
+
+func (c *HealthChecker) checkRedis(ctx context.Context) *spb.ComponentHealth {
+	if c.redisClient == nil {
+		return &spb.ComponentHealth{
+			Name:         "Redis",
+			Type:         spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: "redis client not initialized",
+		}
+	}
+	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := c.redisClient.Ping(pingCtx); err != nil {
+		return &spb.ComponentHealth{
+			Name:         "Redis",
+			Type:         spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: fmt.Sprintf("redis ping failed: %v", err),
+		}
+	}
+	return &spb.ComponentHealth{
+		Name:        "Redis",
+		Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+		HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+	}
+}
+
+func (c *HealthChecker) checkCloudRunComponent(ctx context.Context, name string, serviceName string) *spb.ComponentHealth {
+	if serviceName == "" {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNSPECIFIED,
+			ErrorMessage: "log monitor resource name is not configured",
+		}
+	}
+
+	if c.cloudRunService == nil {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNSPECIFIED,
+			ErrorMessage: "cloud run client not initialized",
+		}
+	}
+
+	apiCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	resp, err := c.cloudRunService.Projects.Locations.Services.Get(serviceName).Context(apiCtx).Do()
+	if err != nil {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: fmt.Sprintf("failed to get service: %v", err),
+		}
+	}
+
+	if resp == nil {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: "received empty response from cloud run API",
+		}
+	}
+
+	if resp.TerminalCondition == nil {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: "terminal condition is missing",
+		}
+	}
+
+	if resp.TerminalCondition.State != "CONDITION_SUCCEEDED" {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: fmt.Sprintf("service not ready: %s (reason: %s, message: %s)", resp.TerminalCondition.State, resp.TerminalCondition.Reason, resp.TerminalCondition.Message),
 		}
 	}
 

@@ -22,6 +22,7 @@ export class QueueCardHarness extends ComponentHarness {
   private readonly queueNameElement = this.locatorFor('.queue-name');
   private readonly statusBadgeElement = this.locatorForOptional('.status-badge');
   private readonly tableRows = this.locatorForAll('.table-row');
+  private readonly copyFlagButtonElement = this.locatorForOptional('.copy-flag-btn');
 
   /** Gets the queue name title text. */
   async getQueueName(): Promise<string> {
@@ -60,6 +61,21 @@ export class QueueCardHarness extends ComponentHarness {
       throw new Error(`No flavor row found at index ${index}`);
     }
     return rows[index].text();
+  }
+
+  /** Clicks the copy flag button. */
+  async clickCopyFlagButton(): Promise<void> {
+    const btn = await this.copyFlagButtonElement();
+    if (!btn) {
+      throw new Error('Copy flag button not found');
+    }
+    await btn.click();
+  }
+
+  /** Gets the copy flag button text. */
+  async getCopyFlagButtonText(): Promise<string | null> {
+    const btn = await this.copyFlagButtonElement();
+    return btn ? btn.text() : null;
   }
 
   /** Clicks the queue card element. */

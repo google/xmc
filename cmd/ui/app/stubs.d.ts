@@ -177,6 +177,9 @@ declare module 'xmanager_cloud/health_service/proto/api.jsonpb_decls' {
 }
 
 declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
+  export type WorkUnitState =
+    import('xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls').WorkUnitStatus.WorkUnitState;
+
   export type RangePreset =
     | 'RANGE_PRESET_UNSPECIFIED'
     | 'LAST_HOUR'
@@ -236,11 +239,11 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
   }
 
   export interface DashboardJob {
-    jobId?: string;
-    xid?: string;
+    xid?: number;
+    workUnitId?: number;
     user?: string;
     priority?: number;
-    status?: string;
+    status?: WorkUnitState;
     timeInQueueSeconds?: number;
     requestedResources?: Resource[];
     positionInQueue?: number;
@@ -261,23 +264,11 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
     totalQueueSize?: number;
   }
 
-  export interface QueueJob {
-    position?: string;
-    xid?: string;
-    workUnitId?: string;
-    jobName?: string;
-    user?: string;
-    resources?: string;
-    priority?: string;
-    status?: string;
-    timeInQueue?: string;
+  export interface GetSubmitQueueRequest {
     queueName?: string;
-    [key: string]: any;
   }
 
-  export interface QueueJobListResponse {
-    queueName?: string;
-    jobs?: QueueJob[];
-    [key: string]: any;
+  export interface GetSubmitQueueResponse {
+    submitQueue?: string;
   }
 }

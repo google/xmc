@@ -97,7 +97,9 @@ describe('ExperimentsListPageStore', () => {
       const newFilter = 'user:me';
       state.store.setFilter(newFilter);
 
-      const newState: ExperimentsListPageState = state.store.selectSignal((state) => state)();
+      const newState: ExperimentsListPageState = state.store.selectSignal(
+        (s: ExperimentsListPageState) => s,
+      )();
       expect(newState).toEqual({
         ...INITIAL_STATE,
         filter: newFilter,
@@ -125,7 +127,9 @@ describe('ExperimentsListPageStore', () => {
       const newOrderBy = 'xid asc';
       state.store.setOrderBy(newOrderBy);
 
-      const newState: ExperimentsListPageState = state.store.selectSignal((state) => state)();
+      const newState: ExperimentsListPageState = state.store.selectSignal(
+        (s: ExperimentsListPageState) => s,
+      )();
       expect(newState).toEqual({
         ...INITIAL_STATE,
         orderBy: newOrderBy,
@@ -163,7 +167,9 @@ describe('ExperimentsListPageStore', () => {
 
       state.store.goToNextPage();
 
-      const newState: ExperimentsListPageState = state.store.selectSignal((state) => state)();
+      const newState: ExperimentsListPageState = state.store.selectSignal(
+        (s: ExperimentsListPageState) => s,
+      )();
       expect(newState).toEqual({
         ...INITIAL_STATE,
         pagination: {
@@ -192,7 +198,9 @@ describe('ExperimentsListPageStore', () => {
 
       state.store.goToNextPage();
 
-      const newState: ExperimentsListPageState = state.store.selectSignal((state) => state)();
+      const newState: ExperimentsListPageState = state.store.selectSignal(
+        (s: ExperimentsListPageState) => s,
+      )();
       expect(newState).toEqual(initialState);
     });
   });
@@ -213,7 +221,9 @@ describe('ExperimentsListPageStore', () => {
 
       state.store.goToPreviousPage();
 
-      const newState: ExperimentsListPageState = state.store.selectSignal((state) => state)();
+      const newState: ExperimentsListPageState = state.store.selectSignal(
+        (s: ExperimentsListPageState) => s,
+      )();
       expect(newState).toEqual({
         ...INITIAL_STATE,
         pagination: {
@@ -231,7 +241,7 @@ describe('ExperimentsListPageStore', () => {
       state.store.setState(INITIAL_STATE);
       state.store.goToPreviousPage();
 
-      expect(state.store.selectSignal((state) => state)()).toEqual(INITIAL_STATE);
+      expect(state.store.selectSignal((s: ExperimentsListPageState) => s)()).toEqual(INITIAL_STATE);
     });
   });
 
@@ -264,7 +274,9 @@ describe('ExperimentsListPageStore', () => {
         orderBy: 'created desc',
       });
 
-      const newState: ExperimentsListPageState = state.store.selectSignal((state) => state)();
+      const newState: ExperimentsListPageState = state.store.selectSignal(
+        (s: ExperimentsListPageState) => s,
+      )();
       expect(newState).toEqual({
         ...INITIAL_STATE,
         filter,

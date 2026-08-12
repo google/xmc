@@ -53,6 +53,9 @@ type ActuatorRuntimeConfig struct {
 
 	// Decides whether containers can run in privileged mode when requested.
 	AllowPrivilegedContainers bool
+
+	// Decides whether pods can run with host networking when requested.
+	AllowHostNetwork bool
 }
 
 // Priorities holds experiment and work unit priorities.

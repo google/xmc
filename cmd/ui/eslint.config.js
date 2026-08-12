@@ -17,6 +17,8 @@
 import tseslint from 'typescript-eslint';
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
 import angular from '@angular-eslint/eslint-plugin';
+import angularTemplate from '@angular-eslint/eslint-plugin-template';
+import angularTemplateParser from '@angular-eslint/template-parser';
 
 import eslintConfigPrettier from 'eslint-config-prettier';
 
@@ -141,6 +143,30 @@ export default tseslint.config(
             'Identifiers starting with "Mock" or "mock" are not allowed in production files. Move mock classes and data to dedicated testing/mock files, and only reference them in app_config.ts for DI provisioning.',
         },
       ],
+    },
+  },
+  {
+    files: ['**/*.html'],
+    ignores: ['index.html'],
+    languageOptions: {
+      parser: angularTemplateParser,
+    },
+    plugins: {
+      '@angular-eslint/template': angularTemplate,
+    },
+    rules: {
+      '@angular-eslint/template/prefer-control-flow': 'error',
+      '@angular-eslint/template/banana-in-box': 'error',
+      '@angular-eslint/template/button-has-type': 'error',
+      '@angular-eslint/template/no-negated-async': 'error',
+      '@angular-eslint/template/attributes-order': 'error',
+      '@angular-eslint/template/prefer-self-closing-tags': 'error',
+      '@angular-eslint/template/no-duplicate-attributes': 'error',
+      '@angular-eslint/template/eqeqeq': 'error',
+      '@angular-eslint/template/prefer-at-empty': 'error',
+      '@angular-eslint/template/no-empty-control-flow': 'error',
+      '@angular-eslint/template/alt-text': 'error',
+      '@angular-eslint/template/valid-aria': 'error',
     },
   },
   eslintConfigPrettier,

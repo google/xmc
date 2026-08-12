@@ -183,7 +183,13 @@ func (c *fakeClientset) CoreV1() corev1.CoreV1Interface {
 	return c.fakeCoreV1
 }
 
-func setupKueueTestClientWithFakeRestClient(t *testing.T, restClient rest.Interface) (context.Context, *Reconciler, *shared.UpdateBatcher) {
+type KueueTestFixture struct {
+	Ctx           context.Context
+	Reconciler    *Reconciler
+	UpdateBatcher *shared.UpdateBatcher
+}
+
+func setupKueueTestClientWithFakeRestClient(t *testing.T, restClient rest.Interface) KueueTestFixture {
 	t.Helper()
 	ctx := context.Background()
 	fcs := kubernetesfake.NewSimpleClientset()
@@ -205,7 +211,11 @@ func setupKueueTestClientWithFakeRestClient(t *testing.T, restClient rest.Interf
 		KueueSyncTickDuration:            1 * time.Minute,
 		MaxConcurrentKueueSyncReconciles: 100,
 	}
-	return ctx, reconciler, updateBatcher
+	return KueueTestFixture{
+		Ctx:           ctx,
+		Reconciler:    reconciler,
+		UpdateBatcher: updateBatcher,
+	}
 }
 
 func createFakeRestClient(t *testing.T, workloadsJSON []byte) *fakerest.RESTClient {
@@ -245,9 +255,9 @@ func TestFetchPendingWorkloadsFromQueue(t *testing.T) {
 	}
 
 	fakeRestClient := createFakeRestClient(t, workloadsJSON)
-	ctx, reconciler, _ := setupKueueTestClientWithFakeRestClient(t, fakeRestClient)
+	fixture := setupKueueTestClientWithFakeRestClient(t, fakeRestClient)
 
-	got, err := reconciler.fetchPendingWorkloadsFromQueue(ctx, ClusterQueue1)
+	got, err := fixture.Reconciler.fetchPendingWorkloadsFromQueue(fixture.Ctx, ClusterQueue1)
 	if err != nil {
 		t.Fatalf("FetchPendingWorkloadsFromQueue() returned unexpected error: %v", err)
 	}
@@ -263,7 +273,8 @@ func TestUpdateWorkUnitNotesAboutPosition(t *testing.T) {
 	}
 
 	fakeRestClient := createFakeRestClient(t, workloadsJSON)
-	ctx, reconciler, updateBatcher := setupKueueTestClientWithFakeRestClient(t, fakeRestClient)
+	fixture := setupKueueTestClientWithFakeRestClient(t, fakeRestClient)
+	ctx, reconciler, updateBatcher := fixture.Ctx, fixture.Reconciler, fixture.UpdateBatcher
 	cqCache := clusterqueue.NewNameCache()
 	cqCache.Add(ClusterQueue1)
 	reconciler.CQCache = cqCache

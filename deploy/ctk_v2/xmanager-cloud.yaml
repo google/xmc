@@ -56,6 +56,7 @@ vars:
   status_message_history_enabled: true
   enable_metrics: false
   health_service_deployment_enabled: false
+  admin_panel_observability_url: "" # External dashboard URL displayed on the admin panel to redirect to custom monitoring tool
   dashboard_service_deployment_enabled: false
   rod_deployment_enabled: false
 
@@ -351,6 +352,8 @@ deployment_groups:
         value: $(vars.environment)
       - name: domainSuffix
         value: $(vars.domain_name)
+      - name: imageTag
+        value: $(vars.image_tag)
       - name: xid_custom_image
         value: $(vars.xid_image)
       - name: actuator_custom_image
@@ -363,8 +366,12 @@ deployment_groups:
         value: $(vars.ui_image)
       - name: health_service_custom_image
         value: $(vars.health_service_image)
+      - name: healthService.observabilityUrl
+        value: $(vars.admin_panel_observability_url)
       - name: healthService.gcpServiceAccount
         value: $(health_service_gcp_sa.service_account_email)
+      - name: healthService.logMonitorResourceName
+        value: "projects/$(vars.project_id)/locations/$(vars.region)/services/xmc-log-monitor-$(vars.environment)"
       - name: dashboard_service_custom_image
         value: $(vars.dashboard_service_image)
       - name: dashboardService.gcpServiceAccount

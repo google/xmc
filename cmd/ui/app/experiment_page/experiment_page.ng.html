@@ -25,7 +25,7 @@ limitations under the License.
     @if (shouldShowExperimentPage) {
       <div class="experiment-title-container">
         <div class="xid-and-title">
-          <xmc-xid-badge [xid]="xid"></xmc-xid-badge>
+          <xmc-xid-badge [xid]="xid" />
           <h1 class="experiment-title">{{ experiment.title }}</h1>
         </div>
 
@@ -34,44 +34,45 @@ limitations under the License.
         <div class="priority-and-status-container">
           <xmc-priority-chip [priority]="experiment.priority" />
 
-          <xmc-status-chip [status]="getStatusChip(experiment)"></xmc-status-chip>
+          <xmc-status-chip [status]="getStatusChip(experiment)" />
           <div class="work-units-status-bar-container">
-            <xmc-work-units-status-bar
-              [stateCounts]="experiment?.status?.childStateCounts ?? []"
-            ></xmc-work-units-status-bar>
+            <xmc-work-units-status-bar [stateCounts]="experiment?.status?.childStateCounts ?? []" />
           </div>
         </div>
 
         <mat-divider [vertical]="true"> </mat-divider>
         <div class="actions-container">
           <button
+            type="button"
             mat-button
             mat-raised-button
-            (click)="editExperiment(xid)"
             [disabled]="isEditing$ | async"
             [class.shimmer]="isEditing$ | async"
+            (click)="editExperiment(xid)"
           >
             <mat-icon>edit</mat-icon>
             Edit Experiment
           </button>
           @if (isExperimentStoppable(experiment)) {
             <button
+              type="button"
               mat-button
               mat-raised-button
-              (click)="stopExperiment()"
               [disabled]="isStopping$ | async"
               [class.shimmer]="isStopping$ | async"
+              (click)="stopExperiment()"
             >
               <mat-icon>stop_circle</mat-icon>
               Stop Experiment
             </button>
           }
           <button
+            type="button"
             mat-button
             mat-raised-button
-            (click)="restartExperiment()"
             [disabled]="isRestarting$ | async"
             [class.shimmer]="isRestarting$ | async"
+            (click)="restartExperiment()"
           >
             <mat-icon>restart_alt</mat-icon>
             Restart Experiment
@@ -133,7 +134,7 @@ limitations under the License.
 
   @let structuredStatusMessage = experiment.status?.structuredStatusMessage;
   @if (structuredStatusMessage?.userFacingText) {
-    <xmc-status-message [message]="structuredStatusMessage!"></xmc-status-message>
+    <xmc-status-message [message]="structuredStatusMessage!" />
   }
 
   <mat-card class="experiment-tabs-section">
@@ -146,7 +147,7 @@ limitations under the License.
       </mat-tab>
       @if (isStatusMessageHistoryEnabled) {
         <mat-tab label="Status History">
-          <xmc-status-messages-list [parentName]="'experiments/' + xid"></xmc-status-messages-list>
+          <xmc-status-messages-list [parentName]="'experiments/' + xid" />
         </mat-tab>
       }
     </mat-tab-group>

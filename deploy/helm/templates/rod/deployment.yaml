@@ -57,6 +57,9 @@ spec:
           name: http-port
         - containerPort: 50051
           name: grpc-port
+        envFrom:
+        - configMapRef:
+            name: rod-data-provider-config
         env:
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
         readinessProbe:

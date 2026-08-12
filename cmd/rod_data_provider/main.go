@@ -25,6 +25,9 @@ import (
 	"syscall"
 	"time"
 
+	"cloud.google.com/go/spanner"
+	"google.golang.org/api/option"
+
 	"go/google"
 	gwruntime "golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/go_sync/errgroup/errgroup"
@@ -40,6 +43,7 @@ import (
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 	"xmanager_cloud/cmd/rod_data_provider/reconciler"
+	"xmanager_cloud/internal/storage/spanner/workunit"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
@@ -67,7 +71,12 @@ func run(ctx context.Context, cfg *Config) error {
 		logging.Warn(ctx, "Kueue manager setup failed or running out-of-cluster", "error", err)
 	}
 
-	grpcComp, err := buildGRPCServer(cfg, kueueCache)
+	workUnitStore, err := initWorkUnitStore(ctx, cfg)
+	if err != nil {
+		return err
+	}
+
+	grpcComp, err := buildGRPCServer(cfg, kueueCache, workUnitStore)
 	if err != nil {
 		return fmt.Errorf("failed to build gRPC server: %w", err)
 	}
@@ -115,19 +124,36 @@ func run(ctx context.Context, cfg *Config) error {
 	return g.Wait()
 }
 
+func initWorkUnitStore(ctx context.Context, cfg *Config) (WorkUnitFetcher, error) {
+	if cfg.SpannerDatabaseName == "" {
+		logging.Warn(ctx, "OPERATIONAL WARNING: Spanner database name not configured. Active WorkUnit queue queries will fail until database connection is configured.", "database", cfg.SpannerDatabaseName)
+		return &workunit.Repository{}, nil
+	}
+	logging.Info(ctx, "Initializing Spanner WorkUnit storage", "database", cfg.SpannerDatabaseName)
+	var opts []option.ClientOption
+	if cfg.QuotaProjectID != "" {
+		opts = append(opts, option.WithQuotaProject(cfg.QuotaProjectID))
+	}
+	spannerClient, err := spanner.NewClient(ctx, cfg.SpannerDatabaseName, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create spanner client for WorkUnit storage: %w", err)
+	}
+	return workunit.NewRepository(spannerClient, nil, workunit.RepositoryConfig{})
+}
+
 // GRPCServerComponents contains the listener and gRPC server instance.
 type GRPCServerComponents struct {
 	Listener net.Listener
 	Server   *grpc.Server
 }
 
-func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache) (GRPCServerComponents, error) {
+func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache, workUnitStore WorkUnitFetcher) (GRPCServerComponents, error) {
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		return GRPCServerComponents{}, fmt.Errorf("failed to listen on gRPC port %s: %w", cfg.GRPCPort, err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
-	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache))
+	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache, workUnitStore))
 	reflection.Register(grpcServer)
 	return GRPCServerComponents{
 		Listener: lis,
@@ -258,15 +284,15 @@ func SetupKueueReconcilers(mgr ctrl.Manager, client client.Client, cache *cache.
 	if cache == nil || cache.ClusterQueues == nil || cache.LocalQueues == nil || cache.ResourceFlavors == nil {
 		return fmt.Errorf("kueue cache or its fields are uninitialized")
 	}
-	cqRec := &reconciler.ClusterQueueReconciler{Client: client, Cache: cache.ClusterQueues}
+	cqRec := reconciler.NewClusterQueueReconciler(client, cache.ClusterQueues)
 	if err := cqRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup ClusterQueueReconciler: %w", err)
 	}
-	lqRec := &reconciler.LocalQueueReconciler{Client: client, Cache: cache.LocalQueues}
+	lqRec := reconciler.NewLocalQueueReconciler(client, cache.LocalQueues)
 	if err := lqRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup LocalQueueReconciler: %w", err)
 	}
-	rfRec := &reconciler.ResourceFlavorReconciler{Client: client, Cache: cache.ResourceFlavors}
+	rfRec := reconciler.NewResourceFlavorReconciler(client, cache.ResourceFlavors)
 	if err := rfRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup ResourceFlavorReconciler: %w", err)
 	}

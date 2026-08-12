@@ -96,10 +96,13 @@ func skipWhitespace(r *bufio.Reader) error {
 	}
 }
 
-func processNextRecord(dec *json.Decoder, idx int, consumer MetricConsumer) (bool, *FailedRecord, error) {
+func processNextRecord(dec *json.Decoder, idx int, consumer MetricConsumer) (*FailedRecord, error) {
 	var raw json.RawMessage
 	if err := dec.Decode(&raw); err != nil {
-		return false, nil, fmt.Errorf("malformed JSON at record index %d: %w", idx, err)
+		if errors.Is(err, io.EOF) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("malformed JSON at record index %d: %w", idx, err)
 	}
 
 	var pbMetric pb.Metric
@@ -107,12 +110,12 @@ func processNextRecord(dec *json.Decoder, idx int, consumer MetricConsumer) (boo
 		DiscardUnknown: true,
 	}
 	if err := unmarshalOpts.Unmarshal(raw, &pbMetric); err != nil {
-		return false, nil, fmt.Errorf("malformed JSON at record index %d: %w", idx, err)
+		return nil, fmt.Errorf("malformed JSON at record index %d: %w", idx, err)
 	}
 
 	m := &metrics.Metric{Metric: &pbMetric}
 	if valErr := m.IsValid(); valErr != nil {
-		return false, &FailedRecord{
+		return &FailedRecord{
 			Index:      idx,
 			MetricName: m.MetricName,
 			Reason:     valErr.Error(),
@@ -121,10 +124,10 @@ func processNextRecord(dec *json.Decoder, idx int, consumer MetricConsumer) (boo
 
 	if consumer != nil {
 		if err := consumer(m); err != nil {
-			return false, nil, err
+			return nil, err
 		}
 	}
-	return true, nil, nil
+	return nil, nil
 }
 
 func buildStreamDecodeResult(validCount int, failed []FailedRecord) StreamDecodeResult {
@@ -151,13 +154,13 @@ func decodeJSONArray(dec *json.Decoder, consumer MetricConsumer) StreamDecodeRes
 	idx := 0
 
 	for dec.More() {
-		valid, failedRec, err := processNextRecord(dec, idx, consumer)
+		failedRec, err := processNextRecord(dec, idx, consumer)
 		if err != nil {
 			return StreamDecodeResult{Err: err}
 		}
 		if failedRec != nil {
 			failed = append(failed, *failedRec)
-		} else if valid {
+		} else {
 			validCount++
 		}
 		idx++
@@ -179,7 +182,7 @@ func decodeJSONSequence(dec *json.Decoder, consumer MetricConsumer) StreamDecode
 	idx := 0
 
 	for {
-		valid, failedRec, err := processNextRecord(dec, idx, consumer)
+		failedRec, err := processNextRecord(dec, idx, consumer)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
@@ -188,7 +191,7 @@ func decodeJSONSequence(dec *json.Decoder, consumer MetricConsumer) StreamDecode
 		}
 		if failedRec != nil {
 			failed = append(failed, *failedRec)
-		} else if valid {
+		} else {
 			validCount++
 		}
 		idx++

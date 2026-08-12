@@ -17,27 +17,31 @@ package main
 import (
 	"context"
 	"log/slog"
+	"os"
 
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+type healthChecker interface {
+	RunChecks(ctx context.Context) RunChecksResult
+	Close() error
+}
+
+var _ spb.HealthServiceServer = (*server)(nil)
+
 type server struct {
 	spb.UnimplementedHealthServiceServer
 	cfg     *Config
-	checker *HealthChecker
+	checker healthChecker
 }
 
-func newServer(cfg *Config) (*server, error) {
-	checker, err := newHealthChecker(cfg)
-	if err != nil {
-		return nil, err
-	}
+func newServer(cfg *Config, checker healthChecker) *server {
 	return &server{
 		cfg:     cfg,
 		checker: checker,
-	}, nil
+	}
 }
 
 func (s *server) Close() error {
@@ -45,42 +49,58 @@ func (s *server) Close() error {
 }
 
 func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRequest) (*spb.HealthStatusResponse, error) {
-	components := s.checker.RunChecks(ctx)
+	res := s.checker.RunChecks(ctx)
 
 	overallHealthy := spb.HealthState_HEALTH_STATE_HEALTHY
-	for _, c := range components {
+	for _, c := range res.Components {
 		if c.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY {
 			overallHealthy = spb.HealthState_HEALTH_STATE_UNHEALTHY
 			slog.Warn("Component unhealthy", "name", c.Name, "error", c.ErrorMessage)
 		}
 	}
 
+	essDbSchemaVersionStr := res.EssDbSchemaVersion
+	if essDbSchemaVersionStr == "" {
+		essDbSchemaVersionStr = "unknown"
+	}
+
+	xidDbSchemaVersionStr := res.XidDbSchemaVersion
+	if xidDbSchemaVersionStr == "" {
+		xidDbSchemaVersionStr = "unknown"
+	}
+
+	appVersionStr := s.cfg.AppVersion
+	if appVersionStr == "" {
+		appVersionStr = "unknown"
+	}
+
+	buildVersionStr := s.cfg.BuildVersion
+	if buildVersionStr == "" {
+		buildVersionStr = "unknown"
+	}
+
 	return &spb.HealthStatusResponse{
 		HealthState: overallHealthy,
 		SystemInfo: &spb.SystemInfo{
-			AppVersion:         "app-version-1.0.0",
-			EssDbSchemaVersion: "6",
-			XidDbSchemaVersion: "1",
-			ObservabilityUrl:   "http://mock-observability-url",
+			AppVersion:         appVersionStr,
+			BuildVersion:       buildVersionStr,
+			EssDbSchemaVersion: essDbSchemaVersionStr,
+			XidDbSchemaVersion: xidDbSchemaVersionStr,
+			ObservabilityUrl:   s.cfg.ObservabilityURL,
 			IsSchedulingPaused: false,
 		},
-		Components:      components,
+		Components:      res.Components,
 		HealthCheckTime: timestamppb.Now(),
 	}, nil
 }
 
 func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntriesRequest) (*spb.ListConfigEntriesResponse, error) {
+	groups, err := listConfigs(ctx, os.DirFS(s.cfg.ConfigDir))
+	if err != nil {
+		return nil, err
+	}
 	return &spb.ListConfigEntriesResponse{
-		ConfigGroups: []*spb.ConfigGroup{
-			{
-				DisplayName: "Health Service Config",
-				Configs: []*spb.ConfigInfo{
-					{Key: "Port", Value: s.cfg.Port},
-					{Key: "GRPCPort", Value: s.cfg.GRPCPort},
-					{Key: "ProjectID", Value: s.cfg.ProjectID},
-				},
-			},
-		},
+		ConfigGroups: groups,
 	}, nil
 }
 

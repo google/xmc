@@ -23,10 +23,16 @@ import (
 	"xmanager_cloud/internal/security/keyreloader"
 )
 
+// TLSComponents contains the built tls.Config and keyreloader.
+type TLSComponents struct {
+	TLSConfig *tls.Config
+	Reloader  *keyreloader.KeyPairReloader
+}
+
 // BuildTLSConfig builds a crypto/tls.Config from Config, integrating keyreloader for client mTLS hot-reloading.
-func BuildTLSConfig(cfg *Config) (*tls.Config, *keyreloader.KeyPairReloader, error) {
+func BuildTLSConfig(cfg *Config) (TLSComponents, error) {
 	if !cfg.TLSEnabled {
-		return nil, nil, nil
+		return TLSComponents{}, nil
 	}
 
 	tlsConfig := &tls.Config{
@@ -37,11 +43,11 @@ func BuildTLSConfig(cfg *Config) (*tls.Config, *keyreloader.KeyPairReloader, err
 	if cfg.TLSCaFile != "" {
 		caCert, err := os.ReadFile(cfg.TLSCaFile)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read CA certificate file %s: %w", cfg.TLSCaFile, err)
+			return TLSComponents{}, fmt.Errorf("failed to read CA certificate file %s: %w", cfg.TLSCaFile, err)
 		}
 		caCertPool := x509.NewCertPool()
 		if !caCertPool.AppendCertsFromPEM(caCert) {
-			return nil, nil, fmt.Errorf("failed to parse CA certificate from %s", cfg.TLSCaFile)
+			return TLSComponents{}, fmt.Errorf("failed to parse CA certificate from %s", cfg.TLSCaFile)
 		}
 		tlsConfig.RootCAs = caCertPool
 	}
@@ -51,10 +57,13 @@ func BuildTLSConfig(cfg *Config) (*tls.Config, *keyreloader.KeyPairReloader, err
 		var err error
 		reloader, err = keyreloader.NewKeyPairReloader(cfg.TLSCertFile, cfg.TLSKeyFile)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to initialize keyreloader: %w", err)
+			return TLSComponents{}, fmt.Errorf("failed to initialize keyreloader: %w", err)
 		}
 		tlsConfig.GetClientCertificate = reloader.GetClientCertificate
 	}
 
-	return tlsConfig, reloader, nil
+	return TLSComponents{
+		TLSConfig: tlsConfig,
+		Reloader:  reloader,
+	}, nil
 }
