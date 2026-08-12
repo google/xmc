@@ -149,11 +149,19 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
 
     try:
         res = subprocess.run(
-            ["bazel", "query", "--keep_going", query_expr],
+            [
+                "bazel",
+                "query",
+                "--fetch=false",
+                "--tool_deps",
+                "--noimplicit_deps",
+                "--keep_going",
+                query_expr,
+            ],
             capture_output=True,
             text=True,
             check=False,
-            timeout=90,
+            timeout=30,
             cwd=cwd,
         )
         print(f"DEBUG rdeps returncode: {res.returncode}", file=sys.stderr)
