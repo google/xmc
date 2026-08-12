@@ -17,9 +17,9 @@ import { inject, Injectable } from '@angular/core';
 import { catchError, Observable, of } from 'rxjs';
 
 import {
-  ListClusterQueuesResponse,
   GetRunningAndPendingJobsResponse,
   GetSubmitQueueResponse,
+  ListClusterQueuesResponse,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { XMC_API_DOMAIN } from './constants';

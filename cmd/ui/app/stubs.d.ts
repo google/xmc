@@ -221,6 +221,7 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
     queuePredictability?: QueuePredictability[];
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   export interface ListClusterQueuesRequest {}
 
   export interface ListClusterQueuesResponse {

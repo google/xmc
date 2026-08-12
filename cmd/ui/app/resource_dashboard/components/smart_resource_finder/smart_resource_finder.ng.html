@@ -21,11 +21,11 @@
       <div class="query-input-group">
         <label class="query-label" [for]="'amount-input-' + row.id">Amount *</label>
         <input
-          [id]="'amount-input-' + row.id"
           type="number"
           min="1"
           class="query-input-box query-amount-input"
           placeholder="e.g. 1"
+          [id]="'amount-input-' + row.id"
           [ngModel]="row.amount"
           (ngModelChange)="updateRowAmount($index, $event)"
         />
