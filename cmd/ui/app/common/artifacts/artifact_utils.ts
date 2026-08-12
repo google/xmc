@@ -49,6 +49,12 @@ export function toTypedArtifact(artifact: Artifact): TypedArtifact {
 /**
  * Returns UI display properties (icon, url, type name, display name)
  * for the given typed artifact.
+ *
+ * Note: `complexity` and `max-lines-per-function` lint rules are disabled here.
+ * Abstracting this discrete mapping logic into lookup maps or separate smaller
+ * functions would force the usage of non-specific types (like `any` or `Record<string, unknown>`),
+ * permanently destroying TypeScript's ability to strictly infer and validate
+ * the underlying payload structures via discriminated unions on the `switch` statement.
  */
 // eslint-disable-next-line complexity, max-lines-per-function
 export function getArtifactDisplayProperties(
