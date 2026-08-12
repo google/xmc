@@ -89,6 +89,11 @@ class TestReviewPRVerifyPosted(unittest.TestCase):
         updated = Path(f_path).read_text(encoding="utf-8")
         self.assertIn("Posted", updated)
 
+        # Re-running verification on the updated file with 'Posted' status should succeed idempotently
+        res2 = verify_review_comments_posted(args)
+        self.assertEqual(res2["status"], "success")
+        self.assertEqual(res2["posted_items"], 1)
+
     @patch("review_pr_verify_posted.call_github_api")
     def test_verify_review_comments_posted_missing_raises_handled_error(self, mock_api):
         content = """

@@ -94,6 +94,61 @@ def fetch_pr_audit_data(owner: str, repo: str, pr_number: int) -> dict[str, Any]
     }
 
 
+def _get_resolved_thread_ids(
+    owner: str, repo: str, pr_number: int, comments: list[dict[str, Any]]
+) -> set[int]:
+    """Retrieve set of resolved review thread comment IDs via GraphQL API or telemetry tag check."""
+    resolved_ids: set[int] = set()
+    query = """
+    query($owner: String!, $repo: String!, $pr_number: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $pr_number) {
+          reviewThreads(first: 100) {
+            nodes {
+              isResolved
+              comments(first: 1) {
+                nodes {
+                  databaseId
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    try:
+        res = call_github_api(
+            "/graphql",
+            method="POST",
+            payload={
+                "query": query,
+                "variables": {"owner": owner, "repo": repo, "pr_number": pr_number},
+            },
+        )
+        threads = (
+            (res.get("data") or {})
+            .get("repository", {})
+            .get("pullRequest", {})
+            .get("reviewThreads", {})
+            .get("nodes", [])
+        )
+        for thread in threads:
+            if thread.get("isResolved"):
+                comment_nodes = (thread.get("comments") or {}).get("nodes", [])
+                if comment_nodes and comment_nodes[0].get("databaseId"):
+                    resolved_ids.add(int(comment_nodes[0]["databaseId"]))
+    except Exception:
+        pass
+
+    for c in comments:
+        cid = c.get("id")
+        if cid and bool(c.get("is_resolved") or c.get("resolved")):
+            resolved_ids.add(int(cid))
+
+    return resolved_ids
+
+
 def format_initial_audit_markdown(
     owner: str, repo: str, pr_number: int, data: dict[str, Any]
 ) -> str:
@@ -120,6 +175,8 @@ def format_initial_audit_markdown(
         for f in files
     )
 
+    resolved_thread_ids = _get_resolved_thread_ids(owner, repo, pr_number, comments)
+
     # Summarize existing inline comments to prevent duplication
     if comments:
         open_threads = []
@@ -129,7 +186,7 @@ def format_initial_audit_markdown(
             path = c.get("path")
             line = c.get("line") or c.get("original_line")
             user = (c.get("user") or {}).get("login", "unknown")
-            is_res = bool(c.get("is_resolved") or c.get("resolved"))
+            is_res = int(cid) in resolved_thread_ids if cid else False
             c_body = (c.get("body", "") or "").replace("\n", " ")
             if len(c_body) > 80:
                 c_body = c_body[:77] + "..."
@@ -240,6 +297,8 @@ def format_rereview_audit_markdown(
         if reply_to:
             replies_by_root.setdefault(reply_to, []).append(c)
 
+    resolved_thread_ids = _get_resolved_thread_ids(owner, repo, pr_number, comments)
+
     thread_blocks = []
     for root in root_comments:
         cid = root.get("id")
@@ -247,7 +306,9 @@ def format_rereview_audit_markdown(
         line = root.get("line") or root.get("original_line")
         root_author = (root.get("user") or {}).get("login", "unknown")
         root_text = root.get("body", "")
-        is_resolved = bool(root.get("is_resolved") or root.get("resolved"))
+        is_resolved = (int(cid) in resolved_thread_ids if cid else False) or bool(
+            root.get("is_resolved") or root.get("resolved")
+        )
 
         thread_replies = replies_by_root.get(cid, [])
         latest_reply = thread_replies[-1] if thread_replies else None
