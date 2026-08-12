@@ -22,7 +22,14 @@ export interface ArtifactDisplayProperties {
   displayName: string;
 }
 
-/** Converts a raw Artifact to a TypedArtifact directly */
+/**
+ * Converts a raw Artifact to a TypedArtifact directly.
+ *
+ * Note: The `complexity` lint rule is disabled here because TypeScript requires
+ * explicit type narrowing (via repetitive `in` operator checks) to properly
+ * discriminate the union fields mapped from an unguaranteed JSON payload.
+ * Extracting this into nested validations hides the type narrows from the parent context.
+ */
 // eslint-disable-next-line complexity
 export function toTypedArtifact(artifact: Artifact): TypedArtifact {
   const payload = artifact.payload;
