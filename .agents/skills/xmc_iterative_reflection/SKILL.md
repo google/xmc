@@ -45,7 +45,7 @@ Evaluate session logs (`transcript.jsonl`) across four key dimensions:
 ### Missing Transcript Fallback Protocol
 If `transcript.jsonl` for a conversation ID is unindexed or missing from local disk:
 1. **Audit Git History**: Run `git log --all --grep="<CONV_ID>" --stat -p` to inspect committed changes, review comments, and PR metadata.
-2. **Audit Workspace Worktrees & Reflog**: Inspect worktree paths under `~/.gemini/jetski/worktrees/xmc/` and check `git reflog --all`.
+2. **Audit Workspace Worktrees & Reflog**: Inspect active agent worktree locations (`git worktree list`) and check `git reflog --all`.
 3. **Execute Helper Inspection**: Run `python3 tools/inspect_session.py --conv_id <CONV_ID>` to parse available git metadata and task logs cleanly without unconstrained filesystem traversals.
 
 ### Pillar 1: Tooling & Automation Gaps (Helper Scripts)
