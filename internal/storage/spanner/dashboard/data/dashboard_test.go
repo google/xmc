@@ -260,6 +260,69 @@ func TestDashboardRowToProto_Nil(t *testing.T) {
 	}
 }
 
+func TestDashboardRowToProto_Success(t *testing.T) {
+	layout := &dpb.LayoutSpec{
+		Type:    dpb.LayoutSpec_GRID,
+		Columns: 3,
+	}
+	layoutBytes, err := proto.Marshal(layout)
+	if err != nil {
+		t.Fatalf("proto.Marshal(layout) failed: %v", err)
+	}
+
+	charts := []*dpb.Chart{
+		{Name: "charts/c2"},
+		{Name: "charts/c1"},
+	}
+
+	now := time.Now().UTC()
+	row, err := spanner.NewRow(
+		[]string{"CreatedAt", "DashboardId", "UpdatedAt", "Description", "Owner", "Title", "ChartLayout", "ExtraIgnoredCol"},
+		[]interface{}{now, "dashboards/d1", now, "Test Desc", "owner@example.com", "Test Title", layoutBytes, "extra_value"},
+	)
+	if err != nil {
+		t.Fatalf("spanner.NewRow failed: %v", err)
+	}
+
+	dash, err := DashboardRowToProto(row, charts)
+	if err != nil {
+		t.Fatalf("DashboardRowToProto failed: %v", err)
+	}
+
+	if dash.GetName() != "dashboards/d1" {
+		t.Errorf("dash.Name: got %q, want 'dashboards/d1'", dash.GetName())
+	}
+	if dash.GetTitle() != "Test Title" {
+		t.Errorf("dash.Title: got %q, want 'Test Title'", dash.GetTitle())
+	}
+	if dash.GetDescription() != "Test Desc" {
+		t.Errorf("dash.Description: got %q, want 'Test Desc'", dash.GetDescription())
+	}
+	if dash.GetOwner() != "owner@example.com" {
+		t.Errorf("dash.Owner: got %q, want 'owner@example.com'", dash.GetOwner())
+	}
+	if len(dash.GetCharts()) != 2 || dash.GetCharts()[0].GetName() != "charts/c1" {
+		t.Errorf("dash.Charts: got %v, want canonically sorted charts", dash.GetCharts())
+	}
+	if dash.GetChartLayout() == nil || dash.GetChartLayout().GetColumns() != 3 {
+		t.Errorf("dash.ChartLayout: got %v, want columns=3", dash.GetChartLayout())
+	}
+}
+
+func TestDashboardRowToProto_MissingRequiredColumn(t *testing.T) {
+	row, err := spanner.NewRow(
+		[]string{"Title", "Description"},
+		[]interface{}{"Test Title", "Test Desc"},
+	)
+	if err != nil {
+		t.Fatalf("spanner.NewRow failed: %v", err)
+	}
+
+	if _, err := DashboardRowToProto(row, nil); err == nil {
+		t.Errorf("DashboardRowToProto with missing DashboardId expected error, got nil")
+	}
+}
+
 func TestChartRowToProto_Nil(t *testing.T) {
 	if _, err := ChartRowToProto(nil, nil); err == nil {
 		t.Errorf("ChartRowToProto(nil) expected error, got nil")
@@ -282,8 +345,8 @@ func TestChartRowToProto_Success(t *testing.T) {
 
 	now := time.Now().UTC()
 	row, err := spanner.NewRow(
-		[]string{"CreatedAt", "ChartId", "UpdatedAt", "Owner", "Title", "Xid", "PlotLayout"},
-		[]interface{}{now, "charts/c1", now, "owner@example.com", "Test Title", int64(100), layoutBytes},
+		[]string{"CreatedAt", "ChartId", "UpdatedAt", "Owner", "Title", "Xid", "PlotLayout", "ExtraCol"},
+		[]interface{}{now, "charts/c1", now, "owner@example.com", "Test Title", int64(100), layoutBytes, 12345},
 	)
 	if err != nil {
 		t.Fatalf("spanner.NewRow failed: %v", err)
@@ -311,17 +374,31 @@ func TestChartRowToProto_Success(t *testing.T) {
 	}
 }
 
-func TestChartRowToProto_MissingColumn(t *testing.T) {
+func TestChartRowToProto_MissingRequiredColumn(t *testing.T) {
 	row, err := spanner.NewRow(
-		[]string{"ChartId", "Title"},
-		[]interface{}{"charts/c1", "Test Title"},
+		[]string{"Title", "Owner"},
+		[]interface{}{"Test Title", "owner@example.com"},
 	)
 	if err != nil {
 		t.Fatalf("spanner.NewRow failed: %v", err)
 	}
 
 	if _, err := ChartRowToProto(row, nil); err == nil {
-		t.Errorf("ChartRowToProto with missing columns expected error, got nil")
+		t.Errorf("ChartRowToProto with missing ChartId expected error, got nil")
+	}
+}
+
+func TestChartRowToProto_TypeMismatch(t *testing.T) {
+	row, err := spanner.NewRow(
+		[]string{"ChartId", "Xid"},
+		[]interface{}{"charts/c1", "not-an-int64"},
+	)
+	if err != nil {
+		t.Fatalf("spanner.NewRow failed: %v", err)
+	}
+
+	if _, err := ChartRowToProto(row, nil); err == nil {
+		t.Errorf("ChartRowToProto with invalid Xid type expected error, got nil")
 	}
 }
 
