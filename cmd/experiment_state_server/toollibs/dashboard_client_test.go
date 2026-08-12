@@ -45,13 +45,13 @@ func TestDashboardToolClient_CreateChart(t *testing.T) {
 	tests := []struct {
 		name      string
 		req       *pb.CreateChartRequest
-		setupMock func() *mockDashboardServiceClient
+		setupMock func(t *testing.T) *mockDashboardServiceClient
 		wantErr   bool
 	}{
 		{
 			name: "success",
 			req:  &pb.CreateChartRequest{Parent: "dashboards/123"},
-			setupMock: func() *mockDashboardServiceClient {
+			setupMock: func(t *testing.T) *mockDashboardServiceClient {
 				return &mockDashboardServiceClient{
 					createChartFunc: func(ctx context.Context, in *pb.CreateChartRequest, opts ...grpc.CallOption) (*apipb.Chart, error) {
 						if in.Parent != "dashboards/123" {
@@ -66,7 +66,7 @@ func TestDashboardToolClient_CreateChart(t *testing.T) {
 		{
 			name: "rpc_error",
 			req:  &pb.CreateChartRequest{Parent: "dashboards/123"},
-			setupMock: func() *mockDashboardServiceClient {
+			setupMock: func(t *testing.T) *mockDashboardServiceClient {
 				return &mockDashboardServiceClient{
 					createChartFunc: func(ctx context.Context, in *pb.CreateChartRequest, opts ...grpc.CallOption) (*apipb.Chart, error) {
 						return nil, errors.New("rpc failed")
@@ -79,7 +79,7 @@ func TestDashboardToolClient_CreateChart(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockClient := tt.setupMock()
+			mockClient := tt.setupMock(t)
 			client := NewDashboardToolClient(mockClient)
 
 			resp, err := client.CreateChart(context.Background(), tt.req)

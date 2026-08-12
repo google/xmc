@@ -16,6 +16,7 @@ package toollibs
 
 import (
 	"context"
+	"errors"
 
 	"google.golang.org/grpc"
 
@@ -37,5 +38,11 @@ func NewDashboardToolClient(client pb.DashboardServiceClient) *DashboardToolClie
 
 // CreateChart issues a CreateChart RPC to the xmc-dashboard-service.
 func (c *DashboardToolClient) CreateChart(ctx context.Context, req *pb.CreateChartRequest, opts ...grpc.CallOption) (*apipb.Chart, error) {
+	if c == nil || c.client == nil {
+		return nil, errors.New("client is not initialized")
+	}
+	if req == nil {
+		return nil, errors.New("request cannot be nil")
+	}
 	return c.client.CreateChart(ctx, req, opts...)
 }
