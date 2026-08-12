@@ -19,32 +19,29 @@ import (
 	"log/slog"
 	"os"
 
-	health "xmanager_cloud/common/health"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+type healthChecker interface {
+	RunChecks(ctx context.Context) RunChecksResult
+	Close() error
+}
+
+var _ spb.HealthServiceServer = (*server)(nil)
+
 type server struct {
 	spb.UnimplementedHealthServiceServer
 	cfg     *Config
-	checker *HealthChecker
+	checker healthChecker
 }
 
-func newServer(cfg *Config, essHealth, xidHealth health.SpannerHealthClient, redisClient RedisPingClient) (*server, error) {
-	checker, err := newHealthChecker(HealthCheckerParams{
-		Config:          cfg,
-		EssHealthClient: essHealth,
-		XidHealthClient: xidHealth,
-		RedisClient:     redisClient,
-	})
-	if err != nil {
-		return nil, err
-	}
+func newServer(cfg *Config, checker healthChecker) *server {
 	return &server{
 		cfg:     cfg,
 		checker: checker,
-	}, nil
+	}
 }
 
 func (s *server) Close() error {

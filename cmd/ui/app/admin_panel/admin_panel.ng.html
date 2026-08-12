@@ -33,7 +33,7 @@
     </div>
 
     @if (healthStatus()?.systemInfo; as systemInfo) {
-      <xmc-system-info-card [systemInfo]="systemInfo"></xmc-system-info-card>
+      <xmc-system-info-card [systemInfo]="systemInfo" />
     }
 
     <xmc-health-status-section
@@ -41,10 +41,10 @@
       [overallStatus]="healthStatus()?.healthState ?? 'HEALTH_STATE_UNSPECIFIED'"
       [lastChecked]="lastUpdated()"
       (refresh)="onRefresh()"
-    ></xmc-health-status-section>
+    />
 
     @if (healthConfigs(); as configs) {
-      <xmc-config-entries-card [configGroups]="configs.configGroups"></xmc-config-entries-card>
+      <xmc-config-entries-card [configGroups]="configs.configGroups" />
     } @else {
       <div class="loading-container">
         <p>Loading Configuration...</p>

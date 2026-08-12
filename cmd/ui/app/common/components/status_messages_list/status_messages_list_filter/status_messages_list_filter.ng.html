@@ -19,9 +19,9 @@ limitations under the License.
       <mat-label>Severity</mat-label>
       <mat-select
         multiple
+        data-testid="severity-select"
         [value]="severityFilter()"
         (selectionChange)="severityFilterChange.emit($event.value)"
-        data-testid="severity-select"
       >
         <mat-select-trigger>{{ selectedSeveritiesLabel() }}</mat-select-trigger>
         @for (opt of severityOptions; track opt.value) {
@@ -34,9 +34,9 @@ limitations under the License.
       <mat-label>Source</mat-label>
       <mat-select
         multiple
+        data-testid="source-select"
         [value]="sourceFilter()"
         (selectionChange)="sourceFilterChange.emit($event.value)"
-        data-testid="source-select"
       >
         <mat-select-trigger>{{ selectedSourcesLabel() }}</mat-select-trigger>
         @for (opt of sourceOptions; track opt.value) {
@@ -48,9 +48,9 @@ limitations under the License.
     <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
       <mat-label>Time Range</mat-label>
       <mat-select
+        data-testid="time-preset-select"
         [value]="timeFilter().preset"
         (selectionChange)="onPresetChange($event.value)"
-        data-testid="time-preset-select"
       >
         @for (opt of timeOptions; track opt.value) {
           <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
@@ -61,20 +61,21 @@ limitations under the License.
     <mat-form-field appearance="outline" subscriptSizing="dynamic" class="filter-field">
       <mat-label>Order</mat-label>
       <mat-select
+        data-testid="sort-order-select"
         [value]="sortOrder()"
         (selectionChange)="sortOrderChange.emit($event.value)"
-        data-testid="sort-order-select"
       >
         <mat-option value="DESC">Newest First</mat-option>
         <mat-option value="ASC">Oldest First</mat-option>
       </mat-select>
     </mat-form-field>
     <button
+      type="button"
       mat-icon-button
       matTooltip="Refresh status messages"
       class="refresh-button"
-      (click)="refresh.emit()"
       aria-label="Refresh status messages"
+      (click)="refresh.emit()"
     >
       <mat-icon>refresh</mat-icon>
     </button>
@@ -88,13 +89,13 @@ limitations under the License.
           id="custom-date-start"
           matInput
           placeholder="MM/DD/YYYY"
+          aria-label="Start date"
           [matDatepicker]="startPicker"
           [ngModel]="customStartDate()"
           (ngModelChange)="onCustomStartChange($event)"
-          aria-label="Start date"
         />
-        <mat-datepicker #startPicker></mat-datepicker>
-        <mat-datepicker-toggle matSuffix [for]="startPicker"></mat-datepicker-toggle>
+        <mat-datepicker #startPicker />
+        <mat-datepicker-toggle matSuffix [for]="startPicker" />
       </mat-form-field>
 
       <mat-form-field appearance="outline" subscriptSizing="dynamic" class="custom-time-field">
@@ -102,9 +103,9 @@ limitations under the License.
           id="custom-time-start"
           type="time"
           matInput
+          aria-label="Start time"
           [ngModel]="customStartTime()"
           (ngModelChange)="onCustomStartTimeChange($event)"
-          aria-label="Start time"
         />
         <mat-icon matSuffix>access_time</mat-icon>
       </mat-form-field>
@@ -115,13 +116,13 @@ limitations under the License.
           id="custom-date-end"
           matInput
           placeholder="MM/DD/YYYY"
+          aria-label="End date"
           [matDatepicker]="endPicker"
           [ngModel]="customEndDate()"
           (ngModelChange)="onCustomEndChange($event)"
-          aria-label="End date"
         />
-        <mat-datepicker #endPicker></mat-datepicker>
-        <mat-datepicker-toggle matSuffix [for]="endPicker"></mat-datepicker-toggle>
+        <mat-datepicker #endPicker />
+        <mat-datepicker-toggle matSuffix [for]="endPicker" />
       </mat-form-field>
 
       <mat-form-field appearance="outline" subscriptSizing="dynamic" class="custom-time-field">
@@ -129,9 +130,9 @@ limitations under the License.
           id="custom-time-end"
           type="time"
           matInput
+          aria-label="End time"
           [ngModel]="customEndTime()"
           (ngModelChange)="onCustomEndTimeChange($event)"
-          aria-label="End time"
         />
         <mat-icon matSuffix>access_time</mat-icon>
       </mat-form-field>

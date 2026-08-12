@@ -3,3 +3,6 @@
 # Cross-compilation platform shortcuts
 build:linux_amd64 --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64
 build:linux_arm64 --platforms=@io_bazel_rules_go//go/toolchain:linux_arm64
+
+# Require explicit __init__.py files in Python targets (future rules_python 3.0 default)
+build --@rules_python//python/config_settings:incompatible_default_to_explicit_init_py=true

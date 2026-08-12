@@ -37,6 +37,7 @@ const (
 	XidTableField              = querytools.TableField("xid")
 	PlotIDTableField           = querytools.TableField("plot_id")
 	PlotSpecTableField         = querytools.TableField("plot_spec")
+	ChartLayoutTableField      = querytools.TableField("chart_layout")
 	CreatedTableField          = querytools.TableField("created")
 	UpdatedTableField          = querytools.TableField("updated")
 	PlotLayoutTableField       = querytools.TableField("plot_layout")
@@ -97,6 +98,12 @@ var (
 				Name:         OwnerTableField,
 				QueryLiteral: safesql.New("d.Owner"),
 				Type:         filtervisitor.String,
+				Selectable:   true,
+				Indexed:      false,
+			},
+			ChartLayoutTableField: {
+				Name:         ChartLayoutTableField,
+				QueryLiteral: safesql.New("d.ChartLayout"),
 				Selectable:   true,
 				Indexed:      false,
 			},
@@ -291,6 +298,26 @@ var (
 
 	// DashboardTables is the list of TableViews for Dashboard queries.
 	DashboardTables = []querytools.TableView{dashboardsTableView}
+
+	// DashboardsSelectFields is the list of fields selected for Dashboard queries.
+	DashboardsSelectFields = []querytools.TableField{
+		DashboardIDTableField,
+		TitleTableField,
+		DescriptionTableField,
+		OwnerTableField,
+		ChartLayoutTableField,
+		CreatedTableField,
+		UpdatedTableField,
+	}
+
+	// DashboardsOrderByFields is the list of fields that can be used for ordering Dashboard queries.
+	DashboardsOrderByFields = []querytools.UserOrderedIndex{
+		{TableField: CreatedTableField},
+		{TableField: UpdatedTableField},
+		{TableField: DashboardIDTableField},
+		{TableField: TitleTableField},
+		{TableField: OwnerTableField},
+	}
 
 	// ChartTables is the list of TableViews for Chart queries.
 	ChartTables = []querytools.TableView{chartsTableView}
