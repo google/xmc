@@ -263,4 +263,12 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
     nextPageToken?: string;
     totalQueueSize?: number;
   }
+
+  export interface GetSubmitQueueRequest {
+    queueName?: string;
+  }
+
+  export interface GetSubmitQueueResponse {
+    submitQueue?: string;
+  }
 }

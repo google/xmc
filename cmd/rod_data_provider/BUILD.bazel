@@ -29,6 +29,7 @@ compat_go_library(
         "queue_matcher.go",
         "resource_accumulator.go",
         "server.go",
+        "submit_queue.go",
     ],
     importpath = "xmanager_cloud/cmd/rod_data_provider/main",
     visibility = ["//visibility:private"],
@@ -85,6 +86,7 @@ compat_go_test(
         "queue_matcher_test.go",
         "resource_accumulator_test.go",
         "server_test.go",
+        "submit_queue_test.go",
     ],
     embed = [":rod_data_provider_lib"],
     deps = [
