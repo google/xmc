@@ -15,7 +15,7 @@
 name: "Incident Report / Critical Outage"
 description: "Report a critical production outage, cluster deadlock, or severe scheduling failure."
 title: "[Incident]: "
-labels: ["kind/incident", "priority/critical", "status/triage"]
+labels: ["kind/incident", "status/triage"]
 body:
   - type: markdown
     attributes:
