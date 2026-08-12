@@ -138,6 +138,24 @@ export default tseslint.config(
         'error',
         {
           selector:
+            'Decorator[expression.callee.name="Input"], Decorator[expression.name="Input"]',
+          message:
+            'Use signal primitives `input()` instead of `@Input`.',
+        },
+        {
+          selector:
+            'Decorator[expression.callee.name="Output"], Decorator[expression.name="Output"]',
+          message:
+            'Use signal primitives `output()` instead of `@Output`.',
+        },
+        {
+          selector:
+            'Decorator[expression.callee.name="ViewChild"], Decorator[expression.name="ViewChild"]',
+          message:
+            'Use signal primitives `viewChild()` instead of `@ViewChild`.',
+        },
+        {
+          selector:
             'Identifier[name=/^(Mock[A-Z]|mock[A-Z]|mock$)/]:not(MemberExpression > .property):not(ObjectExpression > Property > .key):not(MethodDefinition > .key):not(PropertyDefinition > .key):not(TSPropertySignature > .key):not(TSMethodSignature > .key)',
           message:
             'Identifiers starting with "Mock" or "mock" are not allowed in production files. Move mock classes and data to dedicated testing/mock files, and only reference them in app_config.ts for DI provisioning.',
