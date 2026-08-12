@@ -18,22 +18,97 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type mockHealthChecker struct {
-	result RunChecksResult
-	err    error
+	result    RunChecksResult
+	err       error
+	callCount int64
+	delay     time.Duration
 }
 
 func (m *mockHealthChecker) RunChecks(ctx context.Context) RunChecksResult {
+	atomic.AddInt64(&m.callCount, 1)
+	if m.delay > 0 {
+		time.Sleep(m.delay)
+	}
 	return m.result
 }
 
 func (m *mockHealthChecker) Close() error {
 	return m.err
+}
+
+type testFixture struct {
+	checker *mockHealthChecker
+	server  *server
+	t       *testing.T
+}
+
+func newTestFixture(t *testing.T, cacheTTL time.Duration, maxRequests int, window time.Duration) *testFixture {
+	cfg := &Config{
+		CacheTTL:                cacheTTL,
+		ForceRefreshMaxRequests: maxRequests,
+		ForceRefreshWindow:      window,
+	}
+	mockResult := RunChecksResult{
+		Components: []*spb.ComponentHealth{
+			{Name: "ESS", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+			{Name: "XID", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+			{Name: "Log Monitor", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+		},
+	}
+	checker := &mockHealthChecker{result: mockResult}
+	s := newServer(cfg, checker)
+	return &testFixture{
+		checker: checker,
+		server:  s,
+		t:       t,
+	}
+}
+
+func (f *testFixture) close() {
+	f.server.Close()
+}
+
+func (f *testFixture) assertCallCount(expected int) {
+	f.t.Helper()
+	if actual := int(atomic.LoadInt64(&f.checker.callCount)); actual != expected {
+		f.t.Errorf("expected call count %d, got %d", expected, actual)
+	}
+}
+
+func (f *testFixture) assertCall(ctx context.Context, req *spb.GetHealthStatusRequest, expectedCalls int) *spb.HealthStatusResponse {
+	f.t.Helper()
+	resp, err := f.server.GetHealthStatus(ctx, req)
+	if err != nil {
+		f.t.Fatalf("call failed: %v", err)
+	}
+	f.assertCallCount(expectedCalls)
+	return resp
+}
+
+func (f *testFixture) assertRateLimited(ctx context.Context, req *spb.GetHealthStatusRequest, expectedCalls int) {
+	f.t.Helper()
+	_, err := f.server.GetHealthStatus(ctx, req)
+	if err == nil {
+		f.t.Fatal("expected rate limit error, got nil")
+	}
+	st, ok := status.FromError(err)
+	if !ok || st.Code() != codes.ResourceExhausted {
+		f.t.Errorf("expected ResourceExhausted error, got %v", err)
+	}
+	f.assertCallCount(expectedCalls)
 }
 
 func TestGetHealthStatus_AllHealthy(t *testing.T) {
@@ -264,4 +339,81 @@ func TestGetUserInfo(t *testing.T) {
 	if len(resp.Privileges) != 1 || resp.Privileges[0] != spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL {
 		t.Errorf("Expected privileges [PRIVILEGE_ACCESS_ADMIN_PANEL], got %v", resp.Privileges)
 	}
+}
+
+func TestGetHealthStatus_CachingAndRateLimiting(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		// Use production-like values (15s cache, 5 requests per 5s rate limit)
+		tf := newTestFixture(t, 15*time.Second, 5, 5*time.Second)
+		defer tf.close()
+
+		ctx := context.Background()
+
+		// 1. First call - Cache Miss
+		resp1 := tf.assertCall(ctx, &spb.GetHealthStatusRequest{}, 1)
+
+		// 2. Second call immediately - Cache Hit
+		resp2 := tf.assertCall(ctx, &spb.GetHealthStatusRequest{}, 1)
+		if resp1.HealthCheckTime.AsTime() != resp2.HealthCheckTime.AsTime() {
+			t.Error("expected cached response to have the same health check time")
+		}
+
+		// 3. Sleep past TTL (15s) to expire cache
+		time.Sleep(16 * time.Second)
+
+		// 4. Third call - Cache Miss
+		tf.assertCall(ctx, &spb.GetHealthStatusRequest{}, 2)
+
+		// 5. Force refresh calls - allowed up to 5 times (limit is 5)
+		tf.assertCall(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 3)
+		tf.assertCall(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 4)
+		tf.assertCall(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 5)
+		tf.assertCall(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 6)
+		tf.assertCall(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 7)
+
+		// 6. 6th Force refresh immediately - Rate Limited
+		tf.assertRateLimited(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 7)
+
+		// 7. Sleep past rate limit window (5s) to reset rate limit
+		time.Sleep(6 * time.Second)
+
+		// 8. Force refresh succeeds again
+		tf.assertCall(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 8)
+	})
+}
+
+func TestGetHealthStatus_RateLimitingBypassed(t *testing.T) {
+	tf := newTestFixture(t, 15*time.Second, 0, 0)
+	defer tf.close()
+
+	ctx := context.Background()
+
+	// 10 force refresh requests immediately should all succeed without rate limit
+	for i := 1; i <= 10; i++ {
+		tf.assertCall(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, i)
+	}
+}
+
+func TestGetHealthStatus_Singleflight(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tf := newTestFixture(t, 15*time.Second, 5, 5*time.Second)
+		defer tf.close()
+
+		// Simulate a slow backend check (1 second)
+		tf.checker.delay = 1 * time.Second
+
+		// Launch 10 concurrent requests
+		var wg sync.WaitGroup
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, _ = tf.server.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
+			}()
+		}
+		wg.Wait()
+
+		// Verify only 1 backend call was made (others collapsed via singleflight)
+		tf.assertCallCount(1)
+	})
 }

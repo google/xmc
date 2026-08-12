@@ -18,9 +18,15 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"sync"
+	"time"
 
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 
+	"golang.org/x/sync/singleflight"
+	"golang.org/x/time/rate"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -35,12 +41,26 @@ type server struct {
 	spb.UnimplementedHealthServiceServer
 	cfg     *Config
 	checker healthChecker
+
+	// Caching
+	cacheMu      sync.RWMutex
+	cachedStatus *spb.HealthStatusResponse
+	cacheExpires time.Time
+
+	// Rate limiting & Singleflight
+	forceRefreshLimiter *rate.Limiter
+	sfGroup             singleflight.Group
 }
 
 func newServer(cfg *Config, checker healthChecker) *server {
+	var limiter *rate.Limiter
+	if cfg.ForceRefreshMaxRequests > 0 && cfg.ForceRefreshWindow > 0 {
+		limiter = rate.NewLimiter(rate.Limit(float64(cfg.ForceRefreshMaxRequests)/cfg.ForceRefreshWindow.Seconds()), cfg.ForceRefreshMaxRequests)
+	}
 	return &server{
-		cfg:     cfg,
-		checker: checker,
+		cfg:                 cfg,
+		checker:             checker,
+		forceRefreshLimiter: limiter,
 	}
 }
 
@@ -49,6 +69,45 @@ func (s *server) Close() error {
 }
 
 func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRequest) (*spb.HealthStatusResponse, error) {
+	if req.GetForceRefresh() {
+		if s.forceRefreshLimiter != nil && !s.forceRefreshLimiter.Allow() {
+			return nil, status.Error(codes.ResourceExhausted, "rate limit exceeded for force refresh")
+		}
+		return s.runChecksSingleflight(ctx)
+	}
+
+	// Try cache
+	s.cacheMu.RLock()
+	cached := s.cachedStatus
+	expires := s.cacheExpires
+	s.cacheMu.RUnlock()
+
+	if cached != nil && time.Now().Before(expires) {
+		return cached, nil
+	}
+
+	return s.runChecksSingleflight(ctx)
+}
+
+func (s *server) runChecksSingleflight(ctx context.Context) (*spb.HealthStatusResponse, error) {
+	ch := s.sfGroup.DoChan("health_status", func() (interface{}, error) {
+		detachedCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		resp := s.calculateHealthStatus(detachedCtx)
+		s.updateCache(resp)
+		return resp, nil
+	})
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case res := <-ch:
+		return res.Val.(*spb.HealthStatusResponse), nil
+	}
+}
+
+func (s *server) calculateHealthStatus(ctx context.Context) *spb.HealthStatusResponse {
+	checkStartTime := time.Now()
 	res := s.checker.RunChecks(ctx)
 
 	overallHealthy := spb.HealthState_HEALTH_STATE_HEALTHY
@@ -90,8 +149,22 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 			IsSchedulingPaused: false,
 		},
 		Components:      res.Components,
-		HealthCheckTime: timestamppb.Now(),
-	}, nil
+		HealthCheckTime: timestamppb.New(checkStartTime),
+	}
+}
+
+func (s *server) updateCache(resp *spb.HealthStatusResponse) {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+
+	checkStartTime := resp.GetHealthCheckTime().AsTime()
+
+	if s.cachedStatus != nil && checkStartTime.Before(s.cachedStatus.GetHealthCheckTime().AsTime()) {
+		return
+	}
+
+	s.cachedStatus = resp
+	s.cacheExpires = checkStartTime.Add(s.cfg.CacheTTL)
 }
 
 func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntriesRequest) (*spb.ListConfigEntriesResponse, error) {

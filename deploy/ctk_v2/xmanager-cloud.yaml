@@ -59,6 +59,9 @@ vars:
   admin_panel_observability_url: "" # External dashboard URL displayed on the admin panel to redirect to custom monitoring tool
   dashboard_service_deployment_enabled: false
   rod_deployment_enabled: false
+  health_status_cache_ttl: 15s
+  health_status_force_refresh_max_requests: 5
+  health_status_force_refresh_window: 5s
 
 deployment_groups:
 - group: apis
@@ -372,6 +375,13 @@ deployment_groups:
         value: $(health_service_gcp_sa.service_account_email)
       - name: healthService.logMonitorResourceName
         value: "projects/$(vars.project_id)/locations/$(vars.region)/services/xmc-log-monitor-$(vars.environment)"
+      - name: healthService.cacheTTL
+        value: $(vars.health_status_cache_ttl)
+      - name: healthService.forceRefreshMaxRequests
+        value: $(vars.health_status_force_refresh_max_requests)
+        type: auto
+      - name: healthService.forceRefreshWindow
+        value: $(vars.health_status_force_refresh_window)
       - name: dashboard_service_custom_image
         value: $(vars.dashboard_service_image)
       - name: dashboardService.gcpServiceAccount
