@@ -84,4 +84,4 @@ body:
         - label: "I have verified that all sensitive auth tokens, keys, and private infrastructure secrets have been sanitized."
           required: true
         - label: "I have gathered logs from both controller pods and the relevant GKE workloads."
-          required: true
+          required: false
