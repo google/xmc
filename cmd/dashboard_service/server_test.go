@@ -42,7 +42,7 @@ func TestCreateDashboard(t *testing.T) {
 		},
 	}
 
-	s := newServer(LoadConfig())
+	s := newServer(LoadConfig(), nil, nil)
 	ctx := context.Background()
 
 	for _, tt := range tests {
@@ -71,7 +71,7 @@ func TestGetDashboard(t *testing.T) {
 		},
 	}
 
-	s := newServer(LoadConfig())
+	s := newServer(LoadConfig(), nil, nil)
 	ctx := context.Background()
 
 	for _, tt := range tests {
@@ -88,7 +88,7 @@ func TestGetDashboard(t *testing.T) {
 }
 
 func TestListDashboards(t *testing.T) {
-	s := newServer(LoadConfig())
+	s := newServer(LoadConfig(), nil, nil)
 	ctx := context.Background()
 
 	resp, err := s.ListDashboards(ctx, &spb.ListDashboardsRequest{})
@@ -115,7 +115,7 @@ func TestUpdateDashboard(t *testing.T) {
 		},
 	}
 
-	s := newServer(LoadConfig())
+	s := newServer(LoadConfig(), nil, nil)
 	ctx := context.Background()
 
 	for _, tt := range tests {
@@ -132,7 +132,7 @@ func TestUpdateDashboard(t *testing.T) {
 }
 
 func TestDeleteDashboard(t *testing.T) {
-	s := newServer(LoadConfig())
+	s := newServer(LoadConfig(), nil, nil)
 	ctx := context.Background()
 
 	_, err := s.DeleteDashboard(ctx, &spb.DeleteDashboardRequest{Name: "dashboards/123"})
@@ -156,7 +156,7 @@ func TestCreateChart(t *testing.T) {
 		},
 	}
 
-	s := newServer(LoadConfig())
+	s := newServer(LoadConfig(), nil, nil)
 	ctx := context.Background()
 
 	for _, tt := range tests {
@@ -185,7 +185,7 @@ func TestGetChart(t *testing.T) {
 		},
 	}
 
-	s := newServer(LoadConfig())
+	s := newServer(LoadConfig(), nil, nil)
 	ctx := context.Background()
 
 	for _, tt := range tests {
@@ -202,7 +202,7 @@ func TestGetChart(t *testing.T) {
 }
 
 func TestGetChartData(t *testing.T) {
-	s := newServer(LoadConfig())
+	s := newServer(LoadConfig(), nil, nil)
 	ctx := context.Background()
 
 	resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
@@ -215,7 +215,7 @@ func TestGetChartData(t *testing.T) {
 }
 
 func TestListCharts(t *testing.T) {
-	s := newServer(LoadConfig())
+	s := newServer(LoadConfig(), nil, nil)
 	ctx := context.Background()
 
 	resp, err := s.ListCharts(ctx, &spb.ListChartsRequest{Parent: "dashboards/123"})
@@ -242,7 +242,7 @@ func TestUpdateChart(t *testing.T) {
 		},
 	}
 
-	s := newServer(LoadConfig())
+	s := newServer(LoadConfig(), nil, nil)
 	ctx := context.Background()
 
 	for _, tt := range tests {
@@ -259,7 +259,7 @@ func TestUpdateChart(t *testing.T) {
 }
 
 func TestDeleteChart(t *testing.T) {
-	s := newServer(LoadConfig())
+	s := newServer(LoadConfig(), nil, nil)
 	ctx := context.Background()
 
 	_, err := s.DeleteChart(ctx, &spb.DeleteChartRequest{Name: "dashboards/123/charts/456"})

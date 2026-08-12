@@ -16,20 +16,29 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	mpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	"xmanager_cloud/internal/dashboard/dataengine"
+	"xmanager_cloud/internal/storage/spanner/dashboard"
 )
 
 type server struct {
 	spb.UnimplementedDashboardServiceServer
-	cfg *Config
+	cfg        *Config
+	repo       *dashboard.Repository
+	dataEngine *dataengine.DataEngine
 }
 
-func newServer(cfg *Config) *server {
-	return &server{cfg: cfg}
+func newServer(cfg *Config, repo *dashboard.Repository, de *dataengine.DataEngine) *server {
+	return &server{
+		cfg:        cfg,
+		repo:       repo,
+		dataEngine: de,
+	}
 }
 
 func (s *server) CreateDashboard(ctx context.Context, req *spb.CreateDashboardRequest) (*mpb.Dashboard, error) {
@@ -67,7 +76,22 @@ func (s *server) GetChart(ctx context.Context, req *spb.GetChartRequest) (*mpb.C
 }
 
 func (s *server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest) (*mpb.ChartData, error) {
-	return &mpb.ChartData{}, nil
+	if s.dataEngine == nil {
+		return &mpb.ChartData{Name: req.GetName()}, nil
+	}
+	var chart *mpb.Chart
+	if s.repo != nil {
+		var err error
+		chart, err = s.repo.GetChart(ctx, req.GetName())
+		if err != nil {
+			return nil, fmt.Errorf("failed to get chart %q: %w", req.GetName(), err)
+		}
+	} else {
+		chart = &mpb.Chart{
+			Name: req.GetName(),
+		}
+	}
+	return s.dataEngine.FetchChartData(ctx, chart, req)
 }
 
 func (s *server) ListCharts(ctx context.Context, req *spb.ListChartsRequest) (*spb.ListChartsResponse, error) {

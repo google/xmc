@@ -107,11 +107,11 @@ message PlotSpec {
 message DataSpec {
   message DataRange {
     oneof start {
-      int64 start_iteration = 1;
+      int64 start_step = 1;
       google.protobuf.Timestamp start_time = 2;
     }
     oneof end {
-      int64 end_iteration = 3;
+      int64 end_step = 3;
       google.protobuf.Timestamp end_time = 4;
     }
   }
@@ -220,12 +220,12 @@ message ChartData {
     double min_value = 3;
     double max_value = 4;
     double mean_value = 5;
-    int64 latest_iteration = 6;
+    int64 latest_step = 6;
     google.protobuf.Timestamp latest_timestamp = 7;
   }
 
   message SeriesPoint {
-    int64 iteration = 1;
+    int64 step = 1;
     google.protobuf.Timestamp timestamp = 2;
     double avg_value = 3;
     double min_value = 4;

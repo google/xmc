@@ -31,8 +31,10 @@ import (
 	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
+	"xmanager_cloud/internal/dashboard/dataengine"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/pkg/clickhouse"
 
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 )
@@ -83,13 +85,24 @@ func main() {
 	}
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
 
+	clickhouseConn, err := clickhouse.Connect(ctx)
+	var de *dataengine.DataEngine
+	if err != nil {
+		logging.Info(ctx, "ClickHouse connection not available at startup, initializing without data engine", "error", err)
+	} else {
+		de, err = dataengine.New(clickhouseConn)
+		if err != nil {
+			logging.Info(ctx, "Failed to initialize DataEngine", "error", err)
+		}
+	}
+
 	// 1. Setup gRPC server
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
-	spb.RegisterDashboardServiceServer(grpcServer, newServer(cfg))
+	spb.RegisterDashboardServiceServer(grpcServer, newServer(cfg, nil, de))
 	reflection.Register(grpcServer)
 
 	go func() {
