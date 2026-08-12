@@ -49,6 +49,24 @@ func main() {
 		GoldenDir:      *goldenDir,
 	}
 
+	printHeader(opts)
+
+	ctx := context.Background()
+	results, err := dataenginetest.Run(ctx, opts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "FATAL: Test runner execution failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	passedCount, failedCount := printResults(results, opts.UpdateGolden)
+	printSummary(len(results), passedCount, failedCount)
+
+	if failedCount > 0 {
+		os.Exit(1)
+	}
+}
+
+func printHeader(opts *dataenginetest.HarnessOptions) {
 	fmt.Println("===============================================================")
 	fmt.Println("       XMC DataEngine & Grammar of Graphics E2E Runner        ")
 	fmt.Println("===============================================================")
@@ -60,42 +78,43 @@ func main() {
 		fmt.Printf("Filter:       %s\n", opts.TestCaseFilter)
 	}
 	fmt.Println("---------------------------------------------------------------")
+}
 
-	ctx := context.Background()
-	results, err := dataenginetest.Run(ctx, opts)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: Test runner execution failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	passedCount := 0
-	failedCount := 0
-
+func printResults(results []*dataenginetest.TestResult, updateGolden bool) (int, int) {
+	passed := 0
+	failed := 0
 	for _, res := range results {
 		if res.Passed {
-			passedCount++
-			if opts.UpdateGolden {
-				fmt.Printf("[UPDATED] %-30s (%v)\n", res.TestCaseID, res.Duration)
-			} else {
-				fmt.Printf("[PASS]    %-30s (%v) - %s\n", res.TestCaseID, res.Duration, res.Description)
-			}
-		} else {
-			failedCount++
-			fmt.Printf("[FAIL]    %-30s (%v) - %s\n", res.TestCaseID, res.Duration, res.Description)
-			if res.Error != nil {
-				fmt.Printf("          Error: %v\n", res.Error)
-			}
-			if res.Diff != "" {
-				fmt.Printf("          Diff (-want +got):\n%s\n", res.Diff)
-			}
+			passed++
+			printPassedResult(res, updateGolden)
+			continue
 		}
+		failed++
+		printFailedResult(res)
 	}
+	return passed, failed
+}
 
+func printPassedResult(res *dataenginetest.TestResult, updateGolden bool) {
+	if updateGolden {
+		fmt.Printf("[UPDATED] %-30s (%v)\n", res.TestCaseID, res.Duration)
+		return
+	}
+	fmt.Printf("[PASS]    %-30s (%v) - %s\n", res.TestCaseID, res.Duration, res.Description)
+}
+
+func printFailedResult(res *dataenginetest.TestResult) {
+	fmt.Printf("[FAIL]    %-30s (%v) - %s\n", res.TestCaseID, res.Duration, res.Description)
+	if res.Error != nil {
+		fmt.Printf("          Error: %v\n", res.Error)
+	}
+	if res.Diff != "" {
+		fmt.Printf("          Diff (-want +got):\n%s\n", res.Diff)
+	}
+}
+
+func printSummary(total, passed, failed int) {
 	fmt.Println("---------------------------------------------------------------")
-	fmt.Printf("Summary: %d total, %d passed, %d failed\n", len(results), passedCount, failedCount)
+	fmt.Printf("Summary: %d total, %d passed, %d failed\n", total, passed, failed)
 	fmt.Println("===============================================================")
-
-	if failedCount > 0 {
-		os.Exit(1)
-	}
 }

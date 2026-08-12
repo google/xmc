@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"time"
 
+	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/internal/dashboard/dataengine"
 	"xmanager_cloud/pkg/clickhouse"
 )
@@ -103,78 +104,8 @@ func Run(ctx context.Context, opts *HarnessOptions) ([]*TestResult, error) {
 		if opts.TestCaseFilter != "" && tc.ID != opts.TestCaseFilter {
 			continue
 		}
-
-		start := time.Now()
-		actualData, err := engine.FetchChartData(ctx, tc.Chart, tc.Request)
-		duration := time.Since(start)
-
-		if err != nil {
-			results = append(results, &TestResult{
-				TestCaseID:  tc.ID,
-				Description: tc.Description,
-				Duration:    duration,
-				Passed:      false,
-				Error:       fmt.Errorf("FetchChartData failed: %w", err),
-			})
-			continue
-		}
-
-		goldenRelPath := filepath.Join(opts.GoldenDir, tc.GoldenFile)
-
-		if opts.UpdateGolden {
-			// Find absolute or writable path to save golden file
-			resolvedDir, err := FindFile(opts.GoldenDir)
-			targetFile := goldenRelPath
-			if err == nil {
-				targetFile = filepath.Join(resolvedDir, tc.GoldenFile)
-			}
-			if err := SaveGolden(targetFile, actualData); err != nil {
-				results = append(results, &TestResult{
-					TestCaseID:  tc.ID,
-					Description: tc.Description,
-					Duration:    duration,
-					Passed:      false,
-					Error:       fmt.Errorf("failed to save golden file: %w", err),
-				})
-				continue
-			}
-			results = append(results, &TestResult{
-				TestCaseID:  tc.ID,
-				Description: tc.Description,
-				Duration:    duration,
-				Passed:      true,
-			})
-			continue
-		}
-
-		diff, err := CompareChartData(actualData, goldenRelPath)
-		if err != nil {
-			results = append(results, &TestResult{
-				TestCaseID:  tc.ID,
-				Description: tc.Description,
-				Duration:    duration,
-				Passed:      false,
-				Error:       err,
-			})
-			continue
-		}
-
-		if diff != "" {
-			results = append(results, &TestResult{
-				TestCaseID:  tc.ID,
-				Description: tc.Description,
-				Duration:    duration,
-				Passed:      false,
-				Diff:        diff,
-			})
-		} else {
-			results = append(results, &TestResult{
-				TestCaseID:  tc.ID,
-				Description: tc.Description,
-				Duration:    duration,
-				Passed:      true,
-			})
-		}
+		res := executeTestCase(ctx, engine, tc, opts)
+		results = append(results, res)
 	}
 
 	if opts.CleanData {
@@ -184,4 +115,81 @@ func Run(ctx context.Context, opts *HarnessOptions) ([]*TestResult, error) {
 	}
 
 	return results, nil
+}
+
+func executeTestCase(ctx context.Context, engine *dataengine.DataEngine, tc *TestCase, opts *HarnessOptions) *TestResult {
+	start := time.Now()
+	actualData, err := engine.FetchChartData(ctx, tc.Chart, tc.Request)
+	duration := time.Since(start)
+
+	if err != nil {
+		return &TestResult{
+			TestCaseID:  tc.ID,
+			Description: tc.Description,
+			Duration:    duration,
+			Passed:      false,
+			Error:       fmt.Errorf("FetchChartData failed: %w", err),
+		}
+	}
+
+	goldenRelPath := filepath.Join(opts.GoldenDir, tc.GoldenFile)
+	if opts.UpdateGolden {
+		return handleGoldenUpdate(tc, goldenRelPath, opts.GoldenDir, actualData, duration)
+	}
+	return handleGoldenCompare(tc, goldenRelPath, actualData, duration)
+}
+
+func handleGoldenUpdate(tc *TestCase, goldenRelPath, goldenDir string, actualData *dpb.ChartData, duration time.Duration) *TestResult {
+	resolvedDir, err := FindFile(goldenDir)
+	targetFile := goldenRelPath
+	if err == nil {
+		targetFile = filepath.Join(resolvedDir, tc.GoldenFile)
+	}
+
+	if err := SaveGolden(targetFile, actualData); err != nil {
+		return &TestResult{
+			TestCaseID:  tc.ID,
+			Description: tc.Description,
+			Duration:    duration,
+			Passed:      false,
+			Error:       fmt.Errorf("failed to save golden file: %w", err),
+		}
+	}
+
+	return &TestResult{
+		TestCaseID:  tc.ID,
+		Description: tc.Description,
+		Duration:    duration,
+		Passed:      true,
+	}
+}
+
+func handleGoldenCompare(tc *TestCase, goldenRelPath string, actualData *dpb.ChartData, duration time.Duration) *TestResult {
+	diff, err := CompareChartData(actualData, goldenRelPath)
+	if err != nil {
+		return &TestResult{
+			TestCaseID:  tc.ID,
+			Description: tc.Description,
+			Duration:    duration,
+			Passed:      false,
+			Error:       err,
+		}
+	}
+
+	if diff != "" {
+		return &TestResult{
+			TestCaseID:  tc.ID,
+			Description: tc.Description,
+			Duration:    duration,
+			Passed:      false,
+			Diff:        diff,
+		}
+	}
+
+	return &TestResult{
+		TestCaseID:  tc.ID,
+		Description: tc.Description,
+		Duration:    duration,
+		Passed:      true,
+	}
 }
