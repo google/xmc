@@ -156,7 +156,7 @@ class TestResolveTestScope(unittest.TestCase):
     @patch("subprocess.run")
     def test_discover_bazel_rdeps_targets_exception_safety(self, mock_run):
         mock_run.side_effect = Exception("Bazel timeout")
-        targets = discover_bazel_rdeps_targets(["pkg/auth/oauth2/handlers.go"])
+        targets = discover_bazel_rdeps_targets(["nonexistent/path/foo.go"])
         self.assertEqual(targets, [])
 
     @patch("subprocess.run")

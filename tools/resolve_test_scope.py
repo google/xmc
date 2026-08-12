@@ -128,6 +128,44 @@ def get_git_modified_files(base_ref: str | None = None, head_ref: str = "HEAD") 
         raise
 
 
+def _discover_static_rdeps_targets(files: list[str], cwd: Path | None = None) -> list[str]:
+    """Fallback static parser for reverse dependency test targets from BUILD.bazel files."""
+    import os
+    import re
+
+    base_dir = cwd if cwd else Path.cwd()
+    changed_dirs: set[str] = set()
+    for f in files:
+        if (f.endswith(".go") or f.endswith(".py")) and not f.startswith("cmd/ui/"):
+            p_dir = Path(f).parent.as_posix()
+            if p_dir and p_dir != ".":
+                changed_dirs.add(p_dir)
+
+    if not changed_dirs:
+        return []
+
+    test_targets: set[str] = set()
+    for root, _, filenames in os.walk(base_dir):
+        if "BUILD.bazel" in filenames:
+            rel_root = Path(root).relative_to(base_dir).as_posix()
+            if rel_root.startswith("cmd/ui") or "node_modules" in rel_root:
+                continue
+            build_path = Path(root) / "BUILD.bazel"
+            try:
+                content = build_path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+
+            for match in re.finditer(r'(go_test|py_test)\s*\(\s*name\s*=\s*"([^"]+)"', content):
+                target_name = match.group(2)
+                pkg_path = "" if rel_root == "." else rel_root
+                target_label = f"//{pkg_path}:{target_name}" if pkg_path else f"//:{target_name}"
+                for cd in changed_dirs:
+                    if pkg_path == cd or cd.startswith(pkg_path) or pkg_path.startswith(cd):
+                        test_targets.add(target_label)
+    return sorted(test_targets)
+
+
 def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> list[str]:
     """Runs Bazel query to discover unit test targets that transitively depend on changed Go packages.
 
@@ -164,18 +202,14 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
             timeout=30,
             cwd=cwd,
         )
-        print(f"DEBUG rdeps returncode: {res.returncode}", file=sys.stderr)
-        if isinstance(res.stderr, str) and res.stderr:
-            print(f"DEBUG rdeps stderr (first 500 chars): {res.stderr[:500]}", file=sys.stderr)
         if res.stdout.strip():
             targets = [t.strip() for t in res.stdout.splitlines() if t.strip().startswith("//")]
-            print(f"DEBUG rdeps targets found: {len(targets)}", file=sys.stderr)
             # Filter out any accidental ui targets if present
             return [t for t in targets if not t.startswith("//cmd/ui")]
-    except Exception as e:
-        print(f"DEBUG rdeps exception: {type(e).__name__}: {e}", file=sys.stderr)
+    except Exception:
+        pass
 
-    return []
+    return _discover_static_rdeps_targets(files, cwd=cwd)
 
 
 def resolve_test_scope(
