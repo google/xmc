@@ -25,6 +25,9 @@ import (
 	"syscall"
 	"time"
 
+	"cloud.google.com/go/spanner"
+	"google.golang.org/api/option"
+
 	"go/google"
 	gwruntime "golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/go_sync/errgroup/errgroup"
@@ -122,9 +125,20 @@ func run(ctx context.Context, cfg *Config) error {
 }
 
 func initWorkUnitStore(ctx context.Context, cfg *Config) (WorkUnitFetcher, error) {
-	// TODO: Replace mock WorkUnit storage with real Spanner repository initialization once Spanner query implementation is merged.
-	logging.Info(ctx, "Using mock WorkUnit storage for PR 404")
-	return &workunit.Repository{}, nil
+	if cfg.SpannerDatabaseName == "" {
+		logging.Warn(ctx, "OPERATIONAL WARNING: Spanner database name not configured. Active WorkUnit queue queries will fail until database connection is configured.", "database", cfg.SpannerDatabaseName)
+		return &workunit.Repository{}, nil
+	}
+	logging.Info(ctx, "Initializing Spanner WorkUnit storage", "database", cfg.SpannerDatabaseName)
+	var opts []option.ClientOption
+	if cfg.QuotaProjectID != "" {
+		opts = append(opts, option.WithQuotaProject(cfg.QuotaProjectID))
+	}
+	spannerClient, err := spanner.NewClient(ctx, cfg.SpannerDatabaseName, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create spanner client for WorkUnit storage: %w", err)
+	}
+	return workunit.NewRepository(spannerClient, nil, workunit.RepositoryConfig{})
 }
 
 // GRPCServerComponents contains the listener and gRPC server instance.

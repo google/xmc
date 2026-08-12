@@ -16,143 +16,181 @@ package workunit
 
 import (
 	"context"
-	"time"
+	"fmt"
 
-	"google.golang.org/protobuf/types/known/timestamppb"
+	"cloud.google.com/go/spanner"
+	"googlesql/safesql/go/safesql"
 
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/logging/logging"
+	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
+	"xmanager_cloud/storage/spanner/schema/workunitschema"
+	"xmanager_cloud/storage/spanner/utils/spannerutils"
 	"xmanager_cloud/validator/validator"
 )
 
-// ActiveWorkUnitsResult encapsulates the result of querying active work units.
+const (
+	defaultPageSize = int32(100)
+	maxPageSize     = int32(1000)
+)
+
+var fetchActiveWorkUnitPKsSQL = safesql.New(
+	`SELECT BitReversedXid, WorkUnitId
+	FROM WorkUnits wu
+	WHERE wu.QueueName IN UNNEST(@queueNames)
+	  AND wu.IsPendingOrRunningJob IS NOT NULL
+	ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC
+	LIMIT @pageSize`,
+)
+
+// ActiveWorkUnitsResult holds the result of querying active work units.
 type ActiveWorkUnitsResult struct {
 	WorkUnits     []*essmsgpb.WorkUnit
 	NextPageToken string
 }
 
-// FetchActiveWorkUnitsByQueues queries Spanner for active and pending work units assigned to the given queues.
-// TODO: Implement Spanner query to fetch active work units for given queues.
-func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error) {
-	return r.FetchActiveWorkUnitsByQueuesAt(ctx, queueNames, pageSize, pageToken, time.Now())
+type workUnitPK struct {
+	BitReversedXid int64
+	WorkUnitId     int64
 }
 
-// FetchActiveWorkUnitsByQueuesAt queries Spanner using deterministic reference time now.
-// TODO: Implement Spanner query to fetch active work units for given queues.
-func (r *Repository) FetchActiveWorkUnitsByQueuesAt(ctx context.Context, queueNames []string, pageSize int32, pageToken string, now time.Time) (*ActiveWorkUnitsResult, error) {
+func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, pageSize int32) ([]workUnitPK, []spanner.KeySet, error) {
+	stmt := spanner.Statement{
+		SQL: fetchActiveWorkUnitPKsSQL.String(),
+		Params: map[string]interface{}{
+			"queueNames": queueNames,
+			"pageSize":   int64(pageSize),
+		},
+	}
+
+	iter := txn.Query(ctx, stmt)
+	defer iter.Stop()
+
+	var orderedPKs []workUnitPK
+	var keys []spanner.Key
+	if err := iter.Do(func(row *spanner.Row) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var bitReversedXid, workUnitId int64
+		if err := row.ColumnByName("BitReversedXid", &bitReversedXid); err != nil {
+			return fmt.Errorf("failed to read column BitReversedXid: %w", err)
+		}
+		if err := row.ColumnByName("WorkUnitId", &workUnitId); err != nil {
+			return fmt.Errorf("failed to read column WorkUnitId: %w", err)
+		}
+		pk := workUnitPK{
+			BitReversedXid: bitReversedXid,
+			WorkUnitId:     workUnitId,
+		}
+		orderedPKs = append(orderedPKs, pk)
+		keys = append(keys, spanner.Key{bitReversedXid, workUnitId})
+		return nil
+	}); err != nil {
+		return nil, nil, fmt.Errorf("failed to query active work unit primary keys: %w", err)
+	}
+
+	if len(orderedPKs) == 0 {
+		return nil, nil, nil
+	}
+
+	keySets := make([]spanner.KeySet, len(keys))
+	for i, k := range keys {
+		keySets[i] = k
+	}
+	keySetList := []spanner.KeySet{spanner.KeySets(keySets...)}
+	return orderedPKs, keySetList, nil
+}
+
+func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, keySetList []spanner.KeySet, orderedPKs []workUnitPK) ([]*essmsgpb.WorkUnit, error) {
+	workUnitMap := make(map[workUnitPK]*essmsgpb.WorkUnit)
+	for _, keySet := range keySetList {
+		iter := txn.Read(ctx, workunitschema.WorkUnitTableName, keySet, workunitschema.WorkUnitColumns)
+		err := iter.Do(func(row *spanner.Row) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			wu, err := spannerdata.WorkUnitRowToProto(row)
+			if err != nil {
+				return fmt.Errorf("failed to convert WorkUnit row to proto: %w", err)
+			}
+			xid, wid, err := validator.ValidateWorkUnitName(wu.GetName())
+			if err != nil {
+				return fmt.Errorf("failed to validate WorkUnit name %q: %w", wu.GetName(), err)
+			}
+			pk := workUnitPK{
+				BitReversedXid: spannerutils.ReverseBits(xid),
+				WorkUnitId:     wid,
+			}
+			workUnitMap[pk] = wu
+			return nil
+		})
+		iter.Stop()
+		if err != nil {
+			return nil, fmt.Errorf("failed to batch read WorkUnit rows: %w", err)
+		}
+	}
+
+	workUnits := make([]*essmsgpb.WorkUnit, 0, len(orderedPKs))
+	for _, pk := range orderedPKs {
+		wu, ok := workUnitMap[pk]
+		if !ok {
+			return nil, fmt.Errorf("work unit with PK (BitReversedXid: %d, WorkUnitId: %d) missing from batch read result", pk.BitReversedXid, pk.WorkUnitId)
+		}
+		workUnits = append(workUnits, wu)
+	}
+
+	return workUnits, nil
+}
+
+// FetchActiveWorkUnitsByQueues queries Spanner for active and pending work units assigned to the given queues.
+func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+
+	if r == nil || r.client == nil {
+		return nil, fmt.Errorf("spanner storage client is uninitialized")
+	}
+
 	if len(queueNames) == 0 {
 		return &ActiveWorkUnitsResult{
-			WorkUnits: []*essmsgpb.WorkUnit{},
+			WorkUnits:     []*essmsgpb.WorkUnit{},
+			NextPageToken: "",
 		}, nil
 	}
+
+	pageSizeVal := pageSize
+	if pageSizeVal <= 0 {
+		pageSizeVal = defaultPageSize
+	} else if pageSizeVal > maxPageSize {
+		pageSizeVal = maxPageSize
+	}
+
+	txn := r.client.ReadOnlyTransaction()
+	defer txn.Close()
+
+	orderedPKs, keySetList, err := fetchActiveWorkUnitPKs(ctx, txn, queueNames, pageSizeVal)
+	if err != nil {
+		logging.Error(ctx, "failed to fetch active work unit primary keys", "error", err)
+		return nil, err
+	}
+
+	if len(orderedPKs) == 0 {
+		return &ActiveWorkUnitsResult{
+			WorkUnits:     []*essmsgpb.WorkUnit{},
+			NextPageToken: "",
+		}, nil
+	}
+
+	workUnits, err := batchReadWorkUnits(ctx, txn, keySetList, orderedPKs)
+	if err != nil {
+		logging.Error(ctx, "failed to batch read work units", "error", err)
+		return nil, err
+	}
+
 	return &ActiveWorkUnitsResult{
-		WorkUnits: buildMockActiveWorkUnits(queueNames[0], now),
+		WorkUnits:     workUnits,
+		NextPageToken: "",
 	}, nil
-}
-
-func buildMockActiveWorkUnits(queueName string, now time.Time) []*essmsgpb.WorkUnit {
-	return []*essmsgpb.WorkUnit{
-		{
-			Name:       validator.ConstructWorkUnitName(100, 1),
-			Priority:   essmsgpb.Priority(100),
-			CreateTime: timestamppb.New(now.Add(-10 * time.Minute)),
-			Notes:      "test@example.com",
-			Executable: buildMockExecutable(queueName, 8000, 34359738368, "NVIDIA-H100-80GB", 4, "", ""),
-			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
-				Status: &essmsgpb.WorkUnitStatus{
-					State: essmsgpb.WorkUnitStatus_SCHEDULING,
-					SchedulingInformation: &essmsgpb.StructuredMessage{
-						AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{
-							Detail: &essmsgpb.AuxiliaryInfo_QueueInfo{
-								QueueInfo: &essmsgpb.QueueInfo{
-									PositionInQueue: 1,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			Name:       validator.ConstructWorkUnitName(100, 2),
-			Priority:   essmsgpb.Priority(50),
-			CreateTime: timestamppb.New(now.Add(-5 * time.Minute)),
-			Notes:      "dev@example.com",
-			Executable: buildMockExecutable(queueName, 16000, 68719476736, "", 0, "v4-16", "2x2x4"),
-			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
-				Status: &essmsgpb.WorkUnitStatus{
-					State: essmsgpb.WorkUnitStatus_RUNNING,
-					SchedulingInformation: &essmsgpb.StructuredMessage{
-						AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{
-							Detail: &essmsgpb.AuxiliaryInfo_QueueInfo{
-								QueueInfo: &essmsgpb.QueueInfo{
-									PositionInQueue: -1,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-}
-
-func buildMockExecutable(queueName string, cpuMillicores, memoryBytes int64, gpuType string, gpuCount int64, tpuType, tpuTopology string) *essmsgpb.Executable {
-	jobs := []*essmsgpb.KubernetesJob{
-		{
-			Replicas: 1,
-			Spec: &essmsgpb.ExecutableSpec{
-				Resources: &essmsgpb.ResourceSet{
-					Resources: &essmsgpb.ResourceSet_CpuResources{
-						CpuResources: &essmsgpb.CpuResources{
-							CpuMillicores: cpuMillicores,
-							MemoryBytes:   memoryBytes,
-						},
-					},
-				},
-			},
-		},
-	}
-	if gpuType != "" || gpuCount > 0 {
-		jobs = append(jobs, &essmsgpb.KubernetesJob{
-			Replicas: 1,
-			Spec: &essmsgpb.ExecutableSpec{
-				Resources: &essmsgpb.ResourceSet{
-					Resources: &essmsgpb.ResourceSet_GpuResources{
-						GpuResources: &essmsgpb.GpuResources{
-							Type:  gpuType,
-							Count: gpuCount,
-						},
-					},
-				},
-			},
-		})
-	}
-	if tpuType != "" || tpuTopology != "" {
-		jobs = append(jobs, &essmsgpb.KubernetesJob{
-			Replicas: 1,
-			Spec: &essmsgpb.ExecutableSpec{
-				Resources: &essmsgpb.ResourceSet{
-					Resources: &essmsgpb.ResourceSet_TpuResources{
-						TpuResources: &essmsgpb.TpuResources{
-							Type:     tpuType,
-							Topology: tpuTopology,
-						},
-					},
-				},
-			},
-		})
-	}
-	return &essmsgpb.Executable{
-		SchedulingConstraints: &essmsgpb.SchedulingConstraints{
-			QueueName: queueName,
-		},
-		Type: &essmsgpb.Executable_Jobset{
-			Jobset: &essmsgpb.JobSetExecutable{
-				Jobs: jobs,
-			},
-		},
-	}
 }
