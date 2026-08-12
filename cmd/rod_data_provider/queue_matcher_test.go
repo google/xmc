@@ -54,18 +54,18 @@ func TestFilterFittingQueues(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		req       *spb.GetFittingQueuesRequest
+		req       *spb.GetQueuesRequest
 		wantCount int
 		wantQueue string
 	}{
 		{
 			name:      "All Queues Without Filter",
-			req:       &spb.GetFittingQueuesRequest{},
+			req:       &spb.GetQueuesRequest{},
 			wantCount: 2,
 		},
 		{
 			name: "Filter By Resource Requirement",
-			req: &spb.GetFittingQueuesRequest{
+			req: &spb.GetQueuesRequest{
 				Requirements: []*spb.Resource{
 					{ResourceType: "nvidia.com/gpu", Count: 2},
 				},
@@ -75,7 +75,7 @@ func TestFilterFittingQueues(t *testing.T) {
 		},
 		{
 			name: "Filter Out When Resource Requirement Exceeds Free Capacity",
-			req: &spb.GetFittingQueuesRequest{
+			req: &spb.GetQueuesRequest{
 				Requirements: []*spb.Resource{
 					{ResourceType: "nvidia.com/gpu", Count: 10},
 				},
@@ -84,7 +84,7 @@ func TestFilterFittingQueues(t *testing.T) {
 		},
 		{
 			name: "Case-Insensitive Resource Type Matching",
-			req: &spb.GetFittingQueuesRequest{
+			req: &spb.GetQueuesRequest{
 				Requirements: []*spb.Resource{
 					{ResourceType: "CPU", Count: 12},
 				},
@@ -94,7 +94,7 @@ func TestFilterFittingQueues(t *testing.T) {
 		},
 		{
 			name: "Multi-Resource Filter Requirement Satisfies Both GPU and CPU",
-			req: &spb.GetFittingQueuesRequest{
+			req: &spb.GetQueuesRequest{
 				Requirements: []*spb.Resource{
 					{ResourceType: "nvidia.com/gpu", Count: 4},
 					{ResourceType: "cpu", Count: 16},
@@ -105,7 +105,7 @@ func TestFilterFittingQueues(t *testing.T) {
 		},
 		{
 			name: "Multi-Resource Filter Requirement Fails When One Resource Exceeds Capacity",
-			req: &spb.GetFittingQueuesRequest{
+			req: &spb.GetQueuesRequest{
 				Requirements: []*spb.Resource{
 					{ResourceType: "nvidia.com/gpu", Count: 4},
 					{ResourceType: "cpu", Count: 32},
@@ -163,7 +163,7 @@ func TestFilterFittingQueues_NilAndEmpty(t *testing.T) {
 			},
 		},
 	}
-	reqWithNil := &spb.GetFittingQueuesRequest{
+	reqWithNil := &spb.GetQueuesRequest{
 		Requirements: []*spb.Resource{
 			nil,
 			{ResourceType: "cpu", Count: 2},

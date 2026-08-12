@@ -20,7 +20,7 @@ import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
 import {
-  GetFittingQueuesResponse,
+  GetQueuesResponse,
   QueueOverview,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
@@ -53,7 +53,7 @@ describe('ResourceDashboard Container', () => {
       {
         resourceType: 'nvidia.com/gpu',
         totalCapacity: 64,
-        freeCapacity: 56,
+        freeCapacity: 64,
       },
     ],
   };
@@ -75,7 +75,7 @@ describe('ResourceDashboard Container', () => {
       'getQueueJobs',
     ]);
     resourceService.getClusterQueues.and.returnValue(
-      of({ queues: [mockGpuQueue, mockCpuQueue] } as GetFittingQueuesResponse),
+      of({ queues: [mockGpuQueue, mockCpuQueue] } as GetQueuesResponse),
     );
     resourceService.getQueueJobs.and.returnValue(of({ jobs: [], totalQueueSize: 0 }));
 
@@ -102,13 +102,15 @@ describe('ResourceDashboard Container', () => {
     await flush();
 
     const dashboard = await getHarness(ResourceDashboardHarness);
+    const finderHarness = (await dashboard.getSmartResourceFinder())!;
+    await finderHarness.setAmountValue('50');
+    await flush();
+
     const queueListHarness = (await dashboard.getQueueList())!;
     expect(await queueListHarness.getQueueCardCount()).toBe(2);
     expect(await (await queueListHarness.getQueueCard(0)).getQueueName()).toBe('gpu-cluster-queue');
 
-    const finderHarness = (await dashboard.getSmartResourceFinder())!;
     expect(await finderHarness.getResourceTypeSelectCount()).toBe(1);
-
     expect(await dashboard.getQueueJobsTable()).not.toBeNull();
   });
 
@@ -130,10 +132,11 @@ describe('ResourceDashboard Container', () => {
     const queueListHarness = (await dashboard.getQueueList())!;
     const finderHarness = (await dashboard.getSmartResourceFinder())!;
 
+    await finderHarness.setAmountValue('50');
+    await flush();
     expect(await queueListHarness.getQueueCardCount()).toBe(2);
 
     await finderHarness.selectResourceType(0, 'cpu');
-    await finderHarness.clickFindButton();
     await flush();
 
     expect(await queueListHarness.getQueueCardCount()).toBe(1);
@@ -148,10 +151,11 @@ describe('ResourceDashboard Container', () => {
     const queueListHarness = (await dashboard.getQueueList())!;
     const finderHarness = (await dashboard.getSmartResourceFinder())!;
 
+    await finderHarness.setAmountValue('50');
+    await flush();
     expect(await queueListHarness.getQueueCardCount()).toBe(2);
 
     await finderHarness.setAmountValue('100');
-    await finderHarness.clickFindButton();
     await flush();
 
     expect(await queueListHarness.getQueueCardCount()).toBe(1);
@@ -168,14 +172,12 @@ describe('ResourceDashboard Container', () => {
 
     await finderHarness.setAmountValue('32');
     await finderHarness.selectResourceType(0, 'nvidia.com/gpu');
-    await finderHarness.clickFindButton();
     await flush();
 
     expect(await queueListHarness.getQueueCardCount()).toBe(1);
     expect(await (await queueListHarness.getQueueCard(0)).getQueueName()).toBe('gpu-cluster-queue');
 
     await finderHarness.setAmountValue('100');
-    await finderHarness.clickFindButton();
     await flush();
 
     expect(await queueListHarness.getQueueCardCount()).toBe(0);

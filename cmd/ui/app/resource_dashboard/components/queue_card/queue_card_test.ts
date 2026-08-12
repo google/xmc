@@ -34,6 +34,7 @@ import { QueueCardHarness } from './queue_card_harness';
     <xmc-rod-queue-card
       [queue]="queue()"
       [isSelected]="isSelected()"
+      [activeResourceFilters]="activeResourceFilters()"
       (selectQueue)="selectedQueueName.set($event)"
     />
   `,
@@ -51,6 +52,7 @@ class TestHostComponent {
   });
 
   readonly isSelected = signal<boolean>(false);
+  readonly activeResourceFilters = signal<string[]>([]);
   readonly selectedQueueName = signal<string>('');
 }
 
@@ -87,6 +89,23 @@ describe('QueueCardComponent', () => {
     const rowText = await harness.getFlavorRowText(0);
     expect(rowText).toContain('nvidia.com/gpu');
     expect(rowText).toContain('56 / 64');
+  });
+
+  it('should filter flavor capacity sub-cards when activeResourceFilters are set', async () => {
+    hostInstance.queue.set({
+      queueName: 'multi-res-queue',
+      queueCapacity: [
+        { resourceType: 'nvidia.com/gpu', totalCapacity: 64, freeCapacity: 56 },
+        { resourceType: 'cpu', totalCapacity: 512, freeCapacity: 448 },
+      ],
+    });
+    fixture.detectChanges();
+    expect(await harness.getFlavorRowCount()).toBe(2);
+
+    hostInstance.activeResourceFilters.set(['cpu']);
+    fixture.detectChanges();
+    expect(await harness.getFlavorRowCount()).toBe(1);
+    expect(await harness.getFlavorRowText(0)).toContain('cpu');
   });
 
   it('should update selected state and emit queue selection output on click', async () => {

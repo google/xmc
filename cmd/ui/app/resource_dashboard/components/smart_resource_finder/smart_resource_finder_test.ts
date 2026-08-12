@@ -58,35 +58,30 @@ describe('SmartResourceFinderComponent', () => {
     harness = await loader.getHarness(SmartResourceFinderHarness);
   });
 
-  it('should initialize with default amount and single empty resource type filter', async () => {
+  it('should initialize with default amount and single empty resource type filter and emit initial query', async () => {
     expect(await harness.getAmountValue()).toBe('64');
     expect(await harness.getResourceTypeSelectCount()).toBe(1);
     expect(await harness.getRemoveButtonCount()).toBe(0);
+    expect(hostInstance.lastQuery()).toEqual({
+      requirements: [{ amount: 64, resourceType: '' }],
+    });
   });
 
-  it('should emit search query with default values when find button is clicked', async () => {
-    expect(hostInstance.lastQuery()).toBeNull();
-
-    await harness.clickFindButton();
-    fixture.detectChanges();
-
-    expect(hostInstance.lastQuery()).toEqual({ amount: 64, resourceTypes: [] });
-  });
-
-  it('should add a new resource type dropdown when + Add resource type is clicked', async () => {
+  it('should add a new row when + Add resource type is clicked and emit live query', async () => {
     await harness.clickAddButton();
     fixture.detectChanges();
 
     expect(await harness.getResourceTypeSelectCount()).toBe(2);
     expect(await harness.getRemoveButtonCount()).toBe(2);
-
-    await harness.clickAddButton();
-    fixture.detectChanges();
-
-    expect(await harness.getResourceTypeSelectCount()).toBe(3);
+    expect(hostInstance.lastQuery()).toEqual({
+      requirements: [
+        { amount: 64, resourceType: '' },
+        { amount: 64, resourceType: '' },
+      ],
+    });
   });
 
-  it('should remove a specific resource type dropdown by index', async () => {
+  it('should remove a specific resource filter row by index and emit live query', async () => {
     await harness.clickAddButton(); // index 1
     await harness.clickAddButton(); // index 2
     fixture.detectChanges();
@@ -101,74 +96,36 @@ describe('SmartResourceFinderComponent', () => {
     fixture.detectChanges();
 
     expect(await harness.getResourceTypeSelectCount()).toBe(2);
-
-    await harness.clickFindButton();
-    fixture.detectChanges();
-
     expect(hostInstance.lastQuery()).toEqual({
-      amount: 64,
-      resourceTypes: ['nvidia.com/gpu', 'tpu'],
+      requirements: [
+        { amount: 64, resourceType: 'nvidia.com/gpu' },
+        { amount: 64, resourceType: 'tpu' },
+      ],
     });
   });
 
-  it('should filter out empty unselected dropdowns when emitting query', async () => {
-    await harness.clickAddButton(); // index 1
-    fixture.detectChanges();
-
-    // Leave index 0 empty (''), select 'cpu' for index 1
-    await harness.selectResourceType(1, 'cpu');
-    fixture.detectChanges();
-
-    await harness.clickFindButton();
-    fixture.detectChanges();
-
-    expect(hostInstance.lastQuery()).toEqual({
-      amount: 64,
-      resourceTypes: ['cpu'],
-    });
-  });
-
-  it('should update resource type filter selection and emit in query output', async () => {
+  it('should update resource type filter selection live', async () => {
     await harness.selectResourceType(0, 'nvidia.com/gpu');
     fixture.detectChanges();
 
-    await harness.clickFindButton();
-    fixture.detectChanges();
-
-    expect(hostInstance.lastQuery()).toEqual({ amount: 64, resourceTypes: ['nvidia.com/gpu'] });
+    expect(hostInstance.lastQuery()).toEqual({
+      requirements: [{ amount: 64, resourceType: 'nvidia.com/gpu' }],
+    });
   });
 
-  it('should update amount input and handle input changes', async () => {
+  it('should update amount input live', async () => {
     await harness.setAmountValue('128');
     fixture.detectChanges();
 
-    await harness.clickFindButton();
-    fixture.detectChanges();
-
-    expect(hostInstance.lastQuery()).toEqual({ amount: 128, resourceTypes: [] });
+    expect(hostInstance.lastQuery()).toEqual({
+      requirements: [{ amount: 128, resourceType: '' }],
+    });
   });
 
-  it('should not emit query output when amount is zero or negative', async () => {
+  it('should exclude row when amount is zero or negative', async () => {
     await harness.setAmountValue('0');
     fixture.detectChanges();
 
-    await harness.clickFindButton();
-    fixture.detectChanges();
-
-    expect(hostInstance.lastQuery()).toBeNull();
-  });
-
-  it('should deduplicate resource types when multiple dropdowns select the same type', async () => {
-    await harness.clickAddButton();
-    fixture.detectChanges();
-
-    await harness.selectResourceType(0, 'nvidia.com/gpu');
-    await harness.selectResourceType(1, 'nvidia.com/gpu');
-    fixture.detectChanges();
-
-    await harness.clickFindButton();
-    fixture.detectChanges();
-
-    expect(hostInstance.lastQuery()).toEqual({ amount: 64, resourceTypes: ['nvidia.com/gpu'] });
+    expect(hostInstance.lastQuery()).toEqual({ requirements: [] });
   });
 });

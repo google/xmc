@@ -21,7 +21,7 @@ import (
 )
 
 // filterFittingQueues filters queue overviews based on requested resource requirements.
-func filterFittingQueues(queues []*spb.QueueOverview, req *spb.GetFittingQueuesRequest) []*spb.QueueOverview {
+func filterFittingQueues(queues []*spb.QueueOverview, req *spb.GetQueuesRequest) []*spb.QueueOverview {
 	if req == nil || len(req.Requirements) == 0 {
 		return append([]*spb.QueueOverview(nil), queues...)
 	}

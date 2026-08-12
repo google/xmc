@@ -44,8 +44,8 @@ func newServer(cfg *Config, cache *cache.KueueCache, fetcher WorkUnitFetcher) *s
 	}
 }
 
-// GetFittingQueues returns ClusterQueues matching requested resource requirements directly from in-memory KueueCache.
-func (s *server) GetFittingQueues(ctx context.Context, req *spb.GetFittingQueuesRequest) (*spb.GetFittingQueuesResponse, error) {
+// GetQueues returns ClusterQueues matching requested resource requirements directly from in-memory KueueCache.
+func (s *server) GetQueues(ctx context.Context, req *spb.GetQueuesRequest) (*spb.GetQueuesResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, status.FromContextError(err).Err()
 	}
@@ -60,7 +60,7 @@ func (s *server) GetFittingQueues(ctx context.Context, req *spb.GetFittingQueues
 	overviews := buildQueueOverviews(s.cache, rfMap)
 	fittingQueues := filterFittingQueues(overviews, req)
 
-	return &spb.GetFittingQueuesResponse{
+	return &spb.GetQueuesResponse{
 		Queues: fittingQueues,
 	}, nil
 }

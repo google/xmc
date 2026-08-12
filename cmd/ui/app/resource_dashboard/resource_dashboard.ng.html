@@ -26,6 +26,7 @@
           [queues]="filteredQueues()"
           [selectedQueue]="selectedQueue()"
           [isLoading]="isLoading()"
+          [activeResourceFilters]="activeResourceFilters()"
           [(velocityPeriod)]="velocityPeriod"
           (selectQueue)="onQueueSelect($event)"
         />

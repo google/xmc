@@ -12,14 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, OnInit, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 
-export interface ResourceRequirementQuery {
+export interface ResourceRequirementRow {
   amount: number;
-  resourceTypes: string[];
+  resourceType: string;
+}
+
+export interface ResourceRequirementQuery {
+  requirements: ResourceRequirementRow[];
 }
 
 @Component({
@@ -30,41 +34,52 @@ export interface ResourceRequirementQuery {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, MatIconModule, MatButtonModule],
 })
-export class SmartResourceFinderComponent {
+export class SmartResourceFinderComponent implements OnInit {
   readonly availableResourceTypes = input<string[]>([]);
   readonly findMatchingQueues = output<ResourceRequirementQuery>();
 
-  protected readonly amount = signal<number>(64);
-  protected readonly selectedResourceTypes = signal<string[]>(['']);
+  protected readonly rows = signal<ResourceRequirementRow[]>([{ amount: 64, resourceType: '' }]);
 
-  protected addResourceTypeFilter() {
-    this.selectedResourceTypes.update((types) => [...types, '']);
+  ngOnInit() {
+    this.emitQuery();
   }
 
-  protected removeResourceTypeFilter(index: number) {
-    if (this.selectedResourceTypes().length <= 1) return;
-    this.selectedResourceTypes.update((types) => types.filter((_, i) => i !== index));
+  protected addRow() {
+    this.rows.update((r) => [...r, { amount: 64, resourceType: '' }]);
+    this.emitQuery();
   }
 
-  protected updateResourceType(index: number, val: string) {
-    this.selectedResourceTypes.update((types) => {
-      const copy = [...types];
-      copy[index] = val;
+  protected removeRow(index: number) {
+    if (this.rows().length <= 1) return;
+    this.rows.update((r) => r.filter((_, i) => i !== index));
+    this.emitQuery();
+  }
+
+  protected updateRowAmount(index: number, val: number | null | undefined) {
+    const amountNum = typeof val === 'number' ? val : Number(val);
+    this.rows.update((r) => {
+      const copy = [...r];
+      copy[index] = { ...copy[index], amount: amountNum };
       return copy;
     });
+    this.emitQuery();
   }
 
-  protected onFindMatchingQueues() {
-    const amountVal = this.amount();
-    if (amountVal === null || amountVal === undefined || isNaN(amountVal) || amountVal <= 0) {
-      return;
-    }
-    const uniqueTypes = Array.from(
-      new Set(this.selectedResourceTypes().filter((t) => t.trim() !== '')),
+  protected updateRowResourceType(index: number, val: string) {
+    this.rows.update((r) => {
+      const copy = [...r];
+      copy[index] = { ...copy[index], resourceType: val };
+      return copy;
+    });
+    this.emitQuery();
+  }
+
+  private emitQuery() {
+    const validRows = this.rows().filter(
+      (row) => row.amount != null && !isNaN(row.amount) && row.amount > 0,
     );
     this.findMatchingQueues.emit({
-      amount: amountVal,
-      resourceTypes: uniqueTypes,
+      requirements: validRows,
     });
   }
 }
