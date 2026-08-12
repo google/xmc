@@ -23,6 +23,7 @@ export interface ArtifactDisplayProperties {
 }
 
 /** Converts a raw Artifact to a TypedArtifact directly */
+// eslint-disable-next-line complexity
 export function toTypedArtifact(artifact: Artifact): TypedArtifact {
   const payload = artifact.payload;
   if (payload) {
@@ -49,6 +50,7 @@ export function toTypedArtifact(artifact: Artifact): TypedArtifact {
  * Returns UI display properties (icon, url, type name, display name)
  * for the given typed artifact.
  */
+// eslint-disable-next-line complexity, max-lines-per-function
 export function getArtifactDisplayProperties(
   typedArtifact: TypedArtifact,
 ): ArtifactDisplayProperties {

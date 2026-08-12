@@ -13,6 +13,7 @@
 // limitations under the License.
 import { AsyncPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, input, OnInit } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatIconModule } from '@angular/material/icon';
@@ -71,6 +72,19 @@ export class ArtifactsList implements OnInit {
     this.initializeArtifactStreams();
   }
 
+  private createPhaseStream(
+    artifacts$: Observable<readonly Artifact[]>,
+    phaseLabel: 'INPUT' | 'EXECUTION' | 'OUTPUT',
+    phaseCheck: (p?: string) => boolean,
+  ): Observable<readonly ArtifactListItem[]> {
+    return combineLatest([artifacts$, toObservable(this.groupingThreshold)]).pipe(
+      map(([artifacts, threshold]) => {
+        const typed = artifacts.filter((a) => phaseCheck(a.lifecyclePhase)).map(toTypedArtifact);
+        return groupAndSortArtifacts(typed, phaseLabel, threshold);
+      }),
+    );
+  }
+
   private initializeArtifactStreams() {
     this.artifactsResponse$ = this.artifactService
       .listArtifacts({
@@ -89,27 +103,20 @@ export class ArtifactsList implements OnInit {
       map(([token, artifacts]) => !!token && artifacts.length > 0),
     );
 
-    this.inputArtifacts$ = filteredArtifacts$.pipe(
-      map((artifacts) => {
-        const typed = artifacts.filter((a) => a.lifecyclePhase === 'INPUT').map(toTypedArtifact);
-        return groupAndSortArtifacts(typed, 'INPUT', this.groupingThreshold());
-      }),
+    this.inputArtifacts$ = this.createPhaseStream(
+      filteredArtifacts$,
+      'INPUT',
+      (p) => p === 'INPUT',
     );
-    this.executionArtifacts$ = filteredArtifacts$.pipe(
-      map((artifacts) => {
-        const typed = artifacts
-          .filter((a) => a.lifecyclePhase === 'EXECUTION')
-          .map(toTypedArtifact);
-        return groupAndSortArtifacts(typed, 'EXECUTION', this.groupingThreshold());
-      }),
+    this.executionArtifacts$ = this.createPhaseStream(
+      filteredArtifacts$,
+      'EXECUTION',
+      (p) => p === 'EXECUTION',
     );
-    this.outputArtifacts$ = filteredArtifacts$.pipe(
-      map((artifacts) => {
-        const typed = artifacts
-          .filter((a) => a.lifecyclePhase === 'OUTPUT' || !a.lifecyclePhase)
-          .map(toTypedArtifact);
-        return groupAndSortArtifacts(typed, 'OUTPUT', this.groupingThreshold());
-      }),
+    this.outputArtifacts$ = this.createPhaseStream(
+      filteredArtifacts$,
+      'OUTPUT',
+      (p) => p === 'OUTPUT' || !p,
     );
   }
 

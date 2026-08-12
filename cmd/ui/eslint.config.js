@@ -70,22 +70,48 @@ export default tseslint.config(
           ],
         },
       ],
-      'max-lines-per-function': ['warn', { max: 35, skipComments: true }],
-      complexity: ['warn', { max: 10, variant: 'modified' }],
+      'max-lines-per-function': ['error', { max: 35, skipComments: true }],
+      complexity: ['error', { max: 10, variant: 'modified' }],
       'max-depth': ['error', 3],
+
+      '@typescript-eslint/no-explicit-any': 'error',
 
       '@angular-eslint/directive-selector': 'off',
       '@angular-eslint/component-selector': 'off',
       '@angular-eslint/no-output-on-prefix': 'error',
       '@angular-eslint/no-input-rename': 'error',
       '@angular-eslint/no-output-rename': 'error',
+      '@angular-eslint/no-inputs-metadata-property': 'error',
+      '@angular-eslint/no-outputs-metadata-property': 'error',
       '@angular-eslint/use-lifecycle-interface': 'error',
       '@angular-eslint/use-pipe-transform-interface': 'error',
       '@angular-eslint/prefer-standalone': 'error',
+
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            'Decorator[expression.callee.name="Input"], Decorator[expression.name="Input"]',
+          message:
+            'Use signal primitives `input()` instead of `@Input`.',
+        },
+        {
+          selector:
+            'Decorator[expression.callee.name="Output"], Decorator[expression.name="Output"]',
+          message:
+            'Use signal primitives `output()` instead of `@Output`.',
+        },
+        {
+          selector:
+            'Decorator[expression.callee.name="ViewChild"], Decorator[expression.name="ViewChild"]',
+          message:
+            'Use signal primitives `viewChild()` instead of `@ViewChild`.',
+        },
+      ],
     },
   },
   {
-    files: ['**/*_test.ts', '**/*.d.ts', '**/testing/**', '**/stubs/**', '**/mock_*.ts'],
+    files: ['**/*_test.ts', '**/*.spec.ts', '**/*.d.ts', '**/testing/**', '**/stubs/**', '**/mock_*.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
@@ -98,6 +124,7 @@ export default tseslint.config(
     files: ['**/*.ts'],
     ignores: [
       '**/*_test.ts',
+      '**/*.spec.ts',
       '**/*.d.ts',
       '**/testing/**',
       '**/stubs/**',
