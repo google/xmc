@@ -266,8 +266,26 @@ func ChartRowToProto(row *spanner.Row, plots []*dpb.PlotSpec) (*dpb.Chart, error
 		layoutBytes        []byte
 		createdAt, updated time.Time
 	)
-	if err := row.Columns(&id, &title, &xid, &layoutBytes, &owner, &createdAt, &updated); err != nil {
-		return nil, fmt.Errorf("failed to read chart columns: %w", err)
+	if err := row.Column(0, &id); err != nil {
+		return nil, fmt.Errorf("failed to read ChartId: %w", err)
+	}
+	if err := row.Column(1, &title); err != nil {
+		return nil, fmt.Errorf("failed to read Title: %w", err)
+	}
+	if err := row.Column(2, &xid); err != nil {
+		return nil, fmt.Errorf("failed to read Xid: %w", err)
+	}
+	if err := row.Column(3, &layoutBytes); err != nil {
+		return nil, fmt.Errorf("failed to read PlotLayout: %w", err)
+	}
+	if err := row.Column(4, &owner); err != nil {
+		return nil, fmt.Errorf("failed to read Owner: %w", err)
+	}
+	if err := row.Column(5, &createdAt); err != nil {
+		return nil, fmt.Errorf("failed to read CreatedAt: %w", err)
+	}
+	if err := row.Column(6, &updated); err != nil {
+		return nil, fmt.Errorf("failed to read UpdatedAt: %w", err)
 	}
 
 	var layout *dpb.LayoutSpec
@@ -287,12 +305,12 @@ func ChartRowToProto(row *spanner.Row, plots []*dpb.PlotSpec) (*dpb.Chart, error
 	}, nil
 }
 
-// ChartProtoToUpdateMutations creates Spanner mutations to update a Chart and replace its PlotSpecs.
-func ChartProtoToUpdateMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) {
+// ChartProtoToUpdateMutation creates a Spanner mutation to update a Chart.
+func ChartProtoToUpdateMutation(chart *dpb.Chart) (*spanner.Mutation, error) {
 	if chart == nil {
 		return nil, fmt.Errorf("chart proto must not be nil")
 	}
-	if chart.Name == "" {
+	if chart.GetName() == "" {
 		return nil, fmt.Errorf("chart name must not be empty")
 	}
 
@@ -305,18 +323,25 @@ func ChartProtoToUpdateMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) 
 		}
 	}
 
-	var mutations []*spanner.Mutation
-	m := spanner.Update(dashboardschema.ChartsTableName, []string{
+	return spanner.Update(dashboardschema.ChartsTableName, []string{
 		"ChartId", "Title", "PlotLayout", "UpdatedAt",
 	}, []interface{}{
-		chart.Name, chart.Title, layoutBytes, spanner.CommitTimestamp,
-	})
-	mutations = append(mutations, m)
+		chart.GetName(), chart.GetTitle(), layoutBytes, spanner.CommitTimestamp,
+	}), nil
+}
 
-	mDeletePlots := spanner.Delete(dashboardschema.ChartPlotsTableName, spanner.Key{chart.Name}.AsPrefix())
-	mutations = append(mutations, mDeletePlots)
+// ChartPlotsToDeleteMutation creates a Spanner mutation to delete all plot specifications for a Chart.
+func ChartPlotsToDeleteMutation(chartID string) *spanner.Mutation {
+	return spanner.Delete(dashboardschema.ChartPlotsTableName, spanner.Key{chartID}.AsPrefix())
+}
 
-	for _, plot := range chart.Plots {
+// PlotSpecsToInsertMutations creates Spanner mutations to insert or update plot specifications for a Chart.
+func PlotSpecsToInsertMutations(chartID string, plots []*dpb.PlotSpec) ([]*spanner.Mutation, error) {
+	var mutations []*spanner.Mutation
+	for _, plot := range plots {
+		if plot == nil {
+			continue
+		}
 		plotSpecBytes, err := proto.Marshal(plot)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal plot spec: %w", err)
@@ -324,10 +349,67 @@ func ChartProtoToUpdateMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) 
 		mPlot := spanner.InsertOrUpdate(dashboardschema.ChartPlotsTableName, []string{
 			"ChartId", "PlotId", "Title", "PlotType", "PlotSpec",
 		}, []interface{}{
-			chart.Name, plot.PlotId, plot.Title, int64(plot.Type), plotSpecBytes,
+			chartID, plot.GetPlotId(), plot.GetTitle(), int64(plot.GetType()), plotSpecBytes,
 		})
 		mutations = append(mutations, mPlot)
 	}
-
 	return mutations, nil
+}
+
+// ChartProtoToUpdateMutations creates Spanner mutations to update a Chart and replace its PlotSpecs.
+func ChartProtoToUpdateMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) {
+	updateMut, err := ChartProtoToUpdateMutation(chart)
+	if err != nil {
+		return nil, err
+	}
+	deleteMut := ChartPlotsToDeleteMutation(chart.GetName())
+	insertMuts, err := PlotSpecsToInsertMutations(chart.GetName(), chart.GetPlots())
+	if err != nil {
+		return nil, err
+	}
+	return append([]*spanner.Mutation{updateMut, deleteMut}, insertMuts...), nil
+}
+
+// ArtifactChartRowToDeleteMutation converts an ArtifactCharts Spanner row into a delete mutation.
+func ArtifactChartRowToDeleteMutation(row *spanner.Row) (*spanner.Mutation, error) {
+	if row == nil {
+		return nil, fmt.Errorf("spanner row must not be nil")
+	}
+	var (
+		bitReversedXid  int64
+		workUnitId      spanner.NullInt64
+		artifactId      int64
+		artifactChartId string
+	)
+	if err := row.Column(0, &bitReversedXid); err != nil {
+		return nil, fmt.Errorf("failed to parse BitReversedXid: %w", err)
+	}
+	if err := row.Column(1, &workUnitId); err != nil {
+		return nil, fmt.Errorf("failed to parse WorkUnitId: %w", err)
+	}
+	if err := row.Column(2, &artifactId); err != nil {
+		return nil, fmt.Errorf("failed to parse ArtifactId: %w", err)
+	}
+	if err := row.Column(3, &artifactChartId); err != nil {
+		return nil, fmt.Errorf("failed to parse ArtifactChartId: %w", err)
+	}
+
+	pk := spanner.Key{bitReversedXid, workUnitId, artifactId, artifactChartId}
+	return spanner.Delete(dashboardschema.ArtifactChartsTableName, pk), nil
+}
+
+// DashboardChartRowToDeleteMutation converts a DashboardCharts Spanner row into a delete mutation.
+func DashboardChartRowToDeleteMutation(row *spanner.Row) (*spanner.Mutation, error) {
+	if row == nil {
+		return nil, fmt.Errorf("spanner row must not be nil")
+	}
+	var dashboardId, dashboardChartId string
+	if err := row.Column(0, &dashboardId); err != nil {
+		return nil, fmt.Errorf("failed to parse DashboardId: %w", err)
+	}
+	if err := row.Column(1, &dashboardChartId); err != nil {
+		return nil, fmt.Errorf("failed to parse DashboardChartId: %w", err)
+	}
+	pk := spanner.Key{dashboardId, dashboardChartId}
+	return spanner.Delete(dashboardschema.DashboardChartsTableName, pk), nil
 }

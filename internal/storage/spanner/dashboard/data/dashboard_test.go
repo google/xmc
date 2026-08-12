@@ -144,6 +144,77 @@ func TestChartProtoToInsertMutations_Nil(t *testing.T) {
 	}
 }
 
+func TestChartProtoToUpdateMutation_Success(t *testing.T) {
+	chart := &dpb.Chart{
+		Name:  "charts/test-chart-update-single",
+		Title: "Updated Single Chart Title",
+		PlotLayout: &dpb.LayoutSpec{
+			Type:    dpb.LayoutSpec_GRID,
+			Columns: 2,
+		},
+	}
+
+	mut, err := ChartProtoToUpdateMutation(chart)
+	if err != nil {
+		t.Fatalf("ChartProtoToUpdateMutation failed: %v", err)
+	}
+	if mut == nil {
+		t.Fatalf("ChartProtoToUpdateMutation returned nil mutation")
+	}
+}
+
+func TestChartProtoToUpdateMutation_NilOrEmpty(t *testing.T) {
+	if _, err := ChartProtoToUpdateMutation(nil); err == nil {
+		t.Errorf("ChartProtoToUpdateMutation(nil) expected error, got nil")
+	}
+	if _, err := ChartProtoToUpdateMutation(&dpb.Chart{}); err == nil {
+		t.Errorf("ChartProtoToUpdateMutation(empty name) expected error, got nil")
+	}
+}
+
+func TestChartPlotsToDeleteMutation(t *testing.T) {
+	mut := ChartPlotsToDeleteMutation("charts/test-chart-delete-plots")
+	if mut == nil {
+		t.Fatalf("ChartPlotsToDeleteMutation returned nil mutation")
+	}
+}
+
+func TestPlotSpecsToInsertMutations_Success(t *testing.T) {
+	plots := []*dpb.PlotSpec{
+		{
+			PlotId: "plot-1",
+			Title:  "Plot 1",
+			Type:   dpb.PlotType_BAR,
+		},
+		nil, // Ensure nil plot is safely skipped
+		{
+			PlotId: "plot-2",
+			Title:  "Plot 2",
+			Type:   dpb.PlotType_SCATTER,
+		},
+	}
+
+	mutations, err := PlotSpecsToInsertMutations("charts/test-chart-plots", plots)
+	if err != nil {
+		t.Fatalf("PlotSpecsToInsertMutations failed: %v", err)
+	}
+	if len(mutations) != 2 {
+		t.Errorf("Expected 2 mutations for 2 non-nil plots, got %d", len(mutations))
+	}
+}
+
+func TestArtifactChartRowToDeleteMutation_Nil(t *testing.T) {
+	if _, err := ArtifactChartRowToDeleteMutation(nil); err == nil {
+		t.Errorf("ArtifactChartRowToDeleteMutation(nil) expected error, got nil")
+	}
+}
+
+func TestDashboardChartRowToDeleteMutation_Nil(t *testing.T) {
+	if _, err := DashboardChartRowToDeleteMutation(nil); err == nil {
+		t.Errorf("DashboardChartRowToDeleteMutation(nil) expected error, got nil")
+	}
+}
+
 func TestDashboardRowToProto_Nil(t *testing.T) {
 	if _, err := DashboardRowToProto(nil, nil); err == nil {
 		t.Errorf("DashboardRowToProto(nil) expected error, got nil")

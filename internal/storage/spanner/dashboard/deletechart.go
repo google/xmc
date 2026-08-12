@@ -23,6 +23,7 @@ import (
 
 	fepb "api/filter/filter_expression_go_proto"
 	aipfilter "api/filter/go/filter"
+	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/query_generator/querytools"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
@@ -101,27 +102,11 @@ func (r *Repository) deleteArtifactChartReferences(ctx context.Context, tx *span
 		if err != nil {
 			return nil, fmt.Errorf("failed to read artifact chart rows: %w", err)
 		}
-		var (
-			bitReversedXid  int64
-			workUnitId      spanner.NullInt64
-			artifactId      int64
-			artifactChartId string
-		)
-		if err := row.Column(0, &bitReversedXid); err != nil {
-			return nil, fmt.Errorf("failed to parse BitReversedXid: %w", err)
+		mut, err := data.ArtifactChartRowToDeleteMutation(row)
+		if err != nil {
+			return nil, err
 		}
-		if err := row.Column(1, &workUnitId); err != nil {
-			return nil, fmt.Errorf("failed to parse WorkUnitId: %w", err)
-		}
-		if err := row.Column(2, &artifactId); err != nil {
-			return nil, fmt.Errorf("failed to parse ArtifactId: %w", err)
-		}
-		if err := row.Column(3, &artifactChartId); err != nil {
-			return nil, fmt.Errorf("failed to parse ArtifactChartId: %w", err)
-		}
-
-		pk := spanner.Key{bitReversedXid, workUnitId, artifactId, artifactChartId}
-		muts = append(muts, spanner.Delete(dashboardschema.ArtifactChartsTableName, pk))
+		muts = append(muts, mut)
 	}
 	return muts, nil
 }
@@ -159,15 +144,11 @@ func (r *Repository) deleteDashboardChartReferences(ctx context.Context, tx *spa
 		if err != nil {
 			return nil, fmt.Errorf("failed to read dashboard chart rows: %w", err)
 		}
-		var dashboardId, dashboardChartId string
-		if err := row.Column(0, &dashboardId); err != nil {
-			return nil, fmt.Errorf("failed to parse DashboardId: %w", err)
+		mut, err := data.DashboardChartRowToDeleteMutation(row)
+		if err != nil {
+			return nil, err
 		}
-		if err := row.Column(1, &dashboardChartId); err != nil {
-			return nil, fmt.Errorf("failed to parse DashboardChartId: %w", err)
-		}
-		pk := spanner.Key{dashboardId, dashboardChartId}
-		muts = append(muts, spanner.Delete(dashboardschema.DashboardChartsTableName, pk))
+		muts = append(muts, mut)
 	}
 	return muts, nil
 }
