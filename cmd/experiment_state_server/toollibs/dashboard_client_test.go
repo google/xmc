@@ -84,10 +84,13 @@ func TestDashboardToolClient_CreateChart(t *testing.T) {
 
 			resp, err := client.CreateChart(context.Background(), tt.req)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("expected error %v, got %v", tt.wantErr, err)
+				t.Fatalf("expected error %v, got %v", tt.wantErr, err)
+			}
+			if err != nil {
+				return
 			}
 
-			if !tt.wantErr && resp != expectedChart {
+			if resp != expectedChart {
 				t.Errorf("expected chart %v, got %v", expectedChart, resp)
 			}
 		})
