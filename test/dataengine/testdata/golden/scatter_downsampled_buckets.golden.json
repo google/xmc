@@ -1,0 +1,374 @@
+{
+  "name": "experiments/9001/charts/scatter_downsampled",
+  "xid": "9001",
+  "wid": "1",
+  "plots_data": [
+    {
+      "plot_id": "downsampled_plot",
+      "type": "SCATTER",
+      "scatter_series": {
+        "metric_name": "downsample_metric",
+        "work_unit_id": "1",
+        "xid": "9001",
+        "points": [
+          {
+            "timestamp": "2026-08-11T10:01:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "100",
+            "timestamp": "2026-08-11T10:03:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "200",
+            "timestamp": "2026-08-11T10:04:55Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "300",
+            "timestamp": "2026-08-11T10:06:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "400",
+            "timestamp": "2026-08-11T10:08:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "500",
+            "timestamp": "2026-08-11T10:09:55Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "600",
+            "timestamp": "2026-08-11T10:11:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "700",
+            "timestamp": "2026-08-11T10:13:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "800",
+            "timestamp": "2026-08-11T10:14:55Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "900",
+            "timestamp": "2026-08-11T10:16:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "1000",
+            "timestamp": "2026-08-11T10:18:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "1100",
+            "timestamp": "2026-08-11T10:19:55Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "1200",
+            "timestamp": "2026-08-11T10:21:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "1300",
+            "timestamp": "2026-08-11T10:23:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "1400",
+            "timestamp": "2026-08-11T10:24:55Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "1500",
+            "timestamp": "2026-08-11T10:26:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "1600",
+            "timestamp": "2026-08-11T10:28:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "1700",
+            "timestamp": "2026-08-11T10:29:55Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "1800",
+            "timestamp": "2026-08-11T10:31:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "1900",
+            "timestamp": "2026-08-11T10:33:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "2000",
+            "timestamp": "2026-08-11T10:34:55Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "2100",
+            "timestamp": "2026-08-11T10:36:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "2200",
+            "timestamp": "2026-08-11T10:38:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "2300",
+            "timestamp": "2026-08-11T10:39:55Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "2400",
+            "timestamp": "2026-08-11T10:41:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "2500",
+            "timestamp": "2026-08-11T10:43:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "2600",
+            "timestamp": "2026-08-11T10:44:55Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "2700",
+            "timestamp": "2026-08-11T10:46:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "2800",
+            "timestamp": "2026-08-11T10:48:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "2900",
+            "timestamp": "2026-08-11T10:49:55Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "3000",
+            "timestamp": "2026-08-11T10:51:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "3100",
+            "timestamp": "2026-08-11T10:53:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "3200",
+            "timestamp": "2026-08-11T10:54:55Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "3300",
+            "timestamp": "2026-08-11T10:56:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "3400",
+            "timestamp": "2026-08-11T10:58:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "3500",
+            "timestamp": "2026-08-11T10:59:55Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "3600",
+            "timestamp": "2026-08-11T11:01:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "3700",
+            "timestamp": "2026-08-11T11:03:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "3800",
+            "timestamp": "2026-08-11T11:04:55Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "3900",
+            "timestamp": "2026-08-11T11:06:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "4000",
+            "timestamp": "2026-08-11T11:08:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "4100",
+            "timestamp": "2026-08-11T11:09:55Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "4200",
+            "timestamp": "2026-08-11T11:11:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "4300",
+            "timestamp": "2026-08-11T11:13:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "4400",
+            "timestamp": "2026-08-11T11:14:55Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "4500",
+            "timestamp": "2026-08-11T11:16:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "4600",
+            "timestamp": "2026-08-11T11:18:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "4700",
+            "timestamp": "2026-08-11T11:19:55Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "4800",
+            "timestamp": "2026-08-11T11:21:35Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "4900",
+            "timestamp": "2026-08-11T11:23:15Z",
+            "avg_value": 12.25,
+            "min_value": 10,
+            "max_value": 14.5
+          },
+          {
+            "step": "5000",
+            "timestamp": "2026-08-11T11:23:20Z",
+            "avg_value": 10,
+            "min_value": 10,
+            "max_value": 10
+          }
+        ]
+      }
+    }
+  ]
+}
