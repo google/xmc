@@ -62,7 +62,7 @@ export function toTypedArtifact(artifact: Artifact): TypedArtifact {
   return { type: PayloadType.UNKNOWN, artifact };
 }
 
-function getManagedXprofProps(typed: ManagedXprofTypedArtifact): ArtifactDisplayProperties {
+function getManagedXprofProperties(typed: ManagedXprofTypedArtifact): ArtifactDisplayProperties {
   return {
     typeName: 'Managed Xprof',
     icon: 'query_stats',
@@ -71,7 +71,7 @@ function getManagedXprofProps(typed: ManagedXprofTypedArtifact): ArtifactDisplay
   };
 }
 
-function getCodeSourceProps(typed: CodeSourceTypedArtifact): ArtifactDisplayProperties {
+function getCodeSourceProperties(typed: CodeSourceTypedArtifact): ArtifactDisplayProperties {
   return {
     typeName: 'Code Source',
     icon: 'code',
@@ -80,7 +80,7 @@ function getCodeSourceProps(typed: CodeSourceTypedArtifact): ArtifactDisplayProp
   };
 }
 
-function getTextProps(typed: TextTypedArtifact): ArtifactDisplayProperties {
+function getTextProperties(typed: TextTypedArtifact): ArtifactDisplayProperties {
   return {
     typeName: 'Text',
     icon: 'description',
@@ -89,7 +89,7 @@ function getTextProps(typed: TextTypedArtifact): ArtifactDisplayProperties {
   };
 }
 
-function getUrlProps(typed: UrlTypedArtifact): ArtifactDisplayProperties {
+function getUrlProperties(typed: UrlTypedArtifact): ArtifactDisplayProperties {
   return {
     typeName: 'URL',
     icon: typed.payload.icon || 'link',
@@ -98,7 +98,7 @@ function getUrlProps(typed: UrlTypedArtifact): ArtifactDisplayProperties {
   };
 }
 
-function getChartProps(typed: ChartTypedArtifact): ArtifactDisplayProperties {
+function getChartProperties(typed: ChartTypedArtifact): ArtifactDisplayProperties {
   return {
     typeName: 'Chart',
     icon: 'bar_chart',
@@ -116,15 +116,15 @@ export function getArtifactDisplayProperties(
 ): ArtifactDisplayProperties {
   switch (typedArtifact.type) {
     case PayloadType.MANAGED_XPROF:
-      return getManagedXprofProps(typedArtifact);
+      return getManagedXprofProperties(typedArtifact);
     case PayloadType.CODE_SOURCE:
-      return getCodeSourceProps(typedArtifact);
+      return getCodeSourceProperties(typedArtifact);
     case PayloadType.TEXT:
-      return getTextProps(typedArtifact);
+      return getTextProperties(typedArtifact);
     case PayloadType.URL:
-      return getUrlProps(typedArtifact);
+      return getUrlProperties(typedArtifact);
     case PayloadType.CHART:
-      return getChartProps(typedArtifact);
+      return getChartProperties(typedArtifact);
     case PayloadType.UNKNOWN:
     default:
       return { typeName: 'Unknown', icon: 'link', url: '', displayName: '' };
