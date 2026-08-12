@@ -70,9 +70,7 @@ message QueueOverview {
 }
 
 // GetQueuesRequest represents parameters for retrieving ClusterQueues.
-message GetQueuesRequest {
-  repeated Resource requirements = 1;
-}
+message GetQueuesRequest {}
 
 // GetQueuesResponse contains the list of ClusterQueues.
 message GetQueuesResponse {

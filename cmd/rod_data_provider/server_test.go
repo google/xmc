@@ -70,11 +70,7 @@ func TestGetQueues(t *testing.T) {
 	}
 	srv := newServer(cfg, c, nil)
 
-	req := &spb.GetQueuesRequest{
-		Requirements: []*spb.Resource{
-			{ResourceType: "nvidia-tesla-h100", Count: 4},
-		},
-	}
+	req := &spb.GetQueuesRequest{}
 	resp, err := srv.GetQueues(ctx, req)
 	if err != nil {
 		t.Fatalf("GetQueues failed: %v", err)

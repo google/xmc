@@ -20,18 +20,9 @@ import (
 	spb "xmanager_cloud/api/protos/rod"
 )
 
-// filterFittingQueues filters queue overviews based on requested resource requirements.
-func filterFittingQueues(queues []*spb.QueueOverview, req *spb.GetQueuesRequest) []*spb.QueueOverview {
-	if req == nil || len(req.Requirements) == 0 {
-		return append([]*spb.QueueOverview(nil), queues...)
-	}
-	var filtered []*spb.QueueOverview
-	for _, q := range queues {
-		if satisfiesRequirements(q, req.Requirements) {
-			filtered = append(filtered, q)
-		}
-	}
-	return filtered
+// filterFittingQueues returns queue overviews directly as filtering is handled on the UI.
+func filterFittingQueues(queues []*spb.QueueOverview, _ *spb.GetQueuesRequest) []*spb.QueueOverview {
+	return append([]*spb.QueueOverview(nil), queues...)
 }
 
 // satisfiesRequirements checks if a QueueOverview satisfies all requested resource requirements.
