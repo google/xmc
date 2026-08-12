@@ -151,6 +151,12 @@ func TestRequireAdminRoleMiddleware(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
+			name:           "unauthenticated request to userinfo is 401",
+			path:           "/v1/health/userinfo",
+			token:          "",
+			expectedStatus: http.StatusUnauthorized,
+		},
+		{
 			name:           "viewer request to userinfo is 200",
 			path:           "/v1/health/userinfo",
 			token:          generateToken("mock-sa-user@mycompany.com"),

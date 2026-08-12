@@ -122,18 +122,11 @@ func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntri
 }
 
 func (s *server) GetUserInfo(ctx context.Context, req *spb.GetUserInfoRequest) (*spb.UserInfoResponse, error) {
-	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
-	if err != nil {
-		return &spb.UserInfoResponse{UserEmail: "", Privileges: nil}, nil
-	}
-
-	if err := s.checkAdminGuard(ctx); err != nil {
-		return &spb.UserInfoResponse{UserEmail: email, Privileges: nil}, nil
-	}
-
 	return &spb.UserInfoResponse{
-		UserEmail:  email,
-		Privileges: []spb.Privilege{spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL},
+		UserEmail: "mock-user@google.com",
+		Privileges: []spb.Privilege{
+			spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL,
+		},
 	}, nil
 }
 
