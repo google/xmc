@@ -33,15 +33,17 @@ type ResourceCache[T any] struct {
 
 // buildSortedList returns a slice of values from the map sorted deterministically by key name.
 func buildSortedList[T any](m map[string]T) []T {
-	keys := make([]string, 0, len(m))
+	keys := make([]string, len(m))
+	i := 0
 	for k := range m {
-		keys = append(keys, k)
+		keys[i] = k
+		i++
 	}
 	sort.Strings(keys)
 
-	list := make([]T, 0, len(m))
-	for _, k := range keys {
-		list = append(list, m[k])
+	list := make([]T, len(keys))
+	for i, k := range keys {
+		list[i] = m[k]
 	}
 	return list
 }
