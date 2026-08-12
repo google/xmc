@@ -29,6 +29,7 @@ compat_go_library(
         "//api/protos/dashboard:api_go_proto",
         "//cmd/dashboard_service/server",
         "//internal/auth",
+        "//internal/common/health",
         "//internal/compat/google",
         "//internal/dashboard/dataengine",
         "//internal/logging",
@@ -41,6 +42,8 @@ compat_go_library(
         "@org_golang_google_api//option",
         "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_grpc//credentials/insecure:go_default_library",
+        "@org_golang_google_grpc//health:go_default_library",
+        "@org_golang_google_grpc//health/grpc_health_v1:go_default_library",
         "@org_golang_google_grpc//reflection:go_default_library",
     ],
 )
@@ -64,10 +67,12 @@ compat_go_test(
 )
 
 compat_go_test(
-    name = "server_test",
-    srcs = ["server_test.go"],
+    name = "main_test",
+    srcs = ["main_test.go"],
     embed = [":dashboard_service_lib"],
     deps = [
         "//pkg/auth/oauth2",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
+        "@org_golang_google_grpc//metadata:go_default_library",
     ],
 )

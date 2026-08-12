@@ -31,11 +31,15 @@ import (
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
+	"golang/grpc/health/health"
 	"golang/grpc/reflection/reflection"
 	"google.golang.org/api/cloudidentity/v1beta1"
 	"google.golang.org/api/option"
+	healthgrpc "grpc_proto/health_go_grpc"
+	healthpb "grpc_proto/health_go_proto"
 
 	"xmanager_cloud/cmd/dashboard_service/server"
+	commonhealth "xmanager_cloud/common/health"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/dashboard/dataengine"
@@ -45,7 +49,7 @@ import (
 	"xmanager_cloud/pkg/clickhouse"
 )
 
-func setupHTTPHandler(authenticator *oauth2.Authenticator, gwmux http.Handler) http.Handler {
+func setupHTTPHandler(authenticator *oauth2.Authenticator, gwmux http.Handler, readinessCheck func(context.Context) error) http.Handler {
 	mux := http.NewServeMux()
 
 	// Probes
@@ -54,6 +58,13 @@ func setupHTTPHandler(authenticator *oauth2.Authenticator, gwmux http.Handler) h
 		w.Write([]byte("OK"))
 	})
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if readinessCheck != nil {
+			if err := readinessCheck(r.Context()); err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				w.Write([]byte(fmt.Sprintf("Service unavailable: %v", err)))
+				return
+			}
+		}
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
@@ -103,6 +114,7 @@ func main() {
 	}
 
 	var repo server.DashboardRepository
+	var sc *spanner.Client
 	if spannerDatabaseName != "" {
 		sessionPoolConfig := spanner.SessionPoolConfig{
 			TrackSessionHandles: true,
@@ -110,7 +122,8 @@ func main() {
 				ActionOnInactiveTransaction: spanner.Warn,
 			},
 		}
-		sc, err := spanner.NewClientWithConfig(
+		var err error
+		sc, err = spanner.NewClientWithConfig(
 			ctx,
 			spannerDatabaseName,
 			spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
@@ -156,6 +169,11 @@ func main() {
 	spb.RegisterDashboardServiceServer(grpcServer, server.NewServer(cfg, repo, authorizer, de))
 	reflection.Register(grpcServer)
 
+	healthServer := health.NewServer()
+	healthgrpc.RegisterHealthServer(grpcServer, healthServer)
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus("xmc.DashboardService", healthpb.HealthCheckResponse_SERVING)
+
 	errChan := make(chan error, 2)
 
 	go func() {
@@ -165,8 +183,8 @@ func main() {
 		}
 	}()
 
-	// 2. Setup gRPC Gateway
-	gwmux := runtime.NewServeMux()
+	// 2. Setup gRPC Gateway with header forwarding for auth
+	gwmux := runtime.NewServeMux(runtime.WithIncomingHeaderMatcher(oauth2.IncomingHeaderMatcher))
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
@@ -175,8 +193,17 @@ func main() {
 		logging.Fatal(ctx, "Failed to register gateway", "error", err)
 	}
 
-	// 3. Setup HTTP Server
-	handler := setupHTTPHandler(authenticator, gwmux)
+	// 3. Setup HTTP Server with active readiness probe
+	var readinessCheck func(context.Context) error
+	if sc != nil {
+		readinessCheck = func(ctx context.Context) error {
+			checkCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+			return commonhealth.CheckSpanner(checkCtx, sc)
+		}
+	}
+
+	handler := setupHTTPHandler(authenticator, gwmux, readinessCheck)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	httpServer := &http.Server{
@@ -209,7 +236,20 @@ func main() {
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logging.Info(ctx, "Error shutting down HTTP server", "error", err)
 	}
-	grpcServer.GracefulStop()
+
+	stopped := make(chan struct{})
+	go func() {
+		grpcServer.GracefulStop()
+		close(stopped)
+	}()
+
+	select {
+	case <-stopped:
+		logging.Info(ctx, "gRPC server stopped gracefully")
+	case <-time.After(5 * time.Second):
+		logging.Warn(ctx, "gRPC graceful shutdown timed out, force stopping...")
+		grpcServer.Stop()
+	}
 
 	logging.Info(ctx, "Dashboard service stopped")
 }
