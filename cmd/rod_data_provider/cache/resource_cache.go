@@ -15,6 +15,7 @@
 package cache
 
 import (
+	"sort"
 	"sync"
 	"sync/atomic"
 )
@@ -28,6 +29,21 @@ type ResourceCache[T any] struct {
 	mu           sync.Mutex
 	mapSnapshot  atomic.Pointer[map[string]T]
 	listSnapshot atomic.Pointer[[]T]
+}
+
+// buildSortedList returns a slice of values from the map sorted deterministically by key name.
+func buildSortedList[T any](m map[string]T) []T {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	list := make([]T, 0, len(m))
+	for _, k := range keys {
+		list = append(list, m[k])
+	}
+	return list
 }
 
 // NewResourceCache initializes a new empty ResourceCache for type T.
@@ -57,10 +73,7 @@ func (c *ResourceCache[T]) Set(key string, val T) {
 	}
 	newMap[key] = val
 
-	newList := make([]T, 0, len(newMap))
-	for _, item := range newMap {
-		newList = append(newList, item)
-	}
+	newList := buildSortedList(newMap)
 
 	c.mapSnapshot.Store(&newMap)
 	c.listSnapshot.Store(&newList)
@@ -86,10 +99,7 @@ func (c *ResourceCache[T]) Delete(key string) {
 		}
 	}
 
-	newList := make([]T, 0, len(newMap))
-	for _, item := range newMap {
-		newList = append(newList, item)
-	}
+	newList := buildSortedList(newMap)
 
 	c.mapSnapshot.Store(&newMap)
 	c.listSnapshot.Store(&newList)
