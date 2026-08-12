@@ -1,0 +1,20 @@
+{
+  "name": "experiments/9001/charts/summary_single",
+  "xid": "9001",
+  "wid": "1",
+  "plots_data": [
+    {
+      "plot_id": "kpi_loss",
+      "type": "SUMMARY_BOX",
+      "summary_data": {
+        "metric_name": "train/loss",
+        "latest_value": 0.1631,
+        "min_value": 0.1631,
+        "max_value": 2,
+        "mean_value": 0.7398803921568627,
+        "latest_step": "500",
+        "latest_timestamp": "2026-08-11T11:23:20Z"
+      }
+    }
+  ]
+}
