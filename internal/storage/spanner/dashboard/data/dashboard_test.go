@@ -16,7 +16,10 @@ package data
 
 import (
 	"testing"
+	"time"
 
+	"cloud.google.com/go/spanner"
+	"google.golang.org/protobuf/proto"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 )
@@ -144,15 +147,258 @@ func TestChartProtoToInsertMutations_Nil(t *testing.T) {
 	}
 }
 
+func TestChartProtoToUpdateMutation_Success(t *testing.T) {
+	chart := &dpb.Chart{
+		Name:  "charts/test-chart-update-single",
+		Title: "Updated Single Chart Title",
+		PlotLayout: &dpb.LayoutSpec{
+			Type:    dpb.LayoutSpec_GRID,
+			Columns: 2,
+		},
+	}
+
+	mut, err := ChartProtoToUpdateMutation(chart)
+	if err != nil {
+		t.Fatalf("ChartProtoToUpdateMutation failed: %v", err)
+	}
+	if mut == nil {
+		t.Fatalf("ChartProtoToUpdateMutation returned nil mutation")
+	}
+}
+
+func TestChartProtoToUpdateMutation_NilOrEmpty(t *testing.T) {
+	if _, err := ChartProtoToUpdateMutation(nil); err == nil {
+		t.Errorf("ChartProtoToUpdateMutation(nil) expected error, got nil")
+	}
+	if _, err := ChartProtoToUpdateMutation(&dpb.Chart{}); err == nil {
+		t.Errorf("ChartProtoToUpdateMutation(empty name) expected error, got nil")
+	}
+}
+
+func TestChartPlotsToDeleteMutation(t *testing.T) {
+	mut := ChartPlotsToDeleteMutation("charts/test-chart-delete-plots")
+	if mut == nil {
+		t.Fatalf("ChartPlotsToDeleteMutation returned nil mutation")
+	}
+}
+
+func TestPlotSpecsToInsertMutations_Success(t *testing.T) {
+	plots := []*dpb.PlotSpec{
+		{
+			PlotId: "plot-1",
+			Title:  "Plot 1",
+			Type:   dpb.PlotType_BAR,
+		},
+		nil, // Ensure nil plot is safely skipped
+		{
+			PlotId: "plot-2",
+			Title:  "Plot 2",
+			Type:   dpb.PlotType_SCATTER,
+		},
+	}
+
+	mutations, err := PlotSpecsToInsertMutations("charts/test-chart-plots", plots)
+	if err != nil {
+		t.Fatalf("PlotSpecsToInsertMutations failed: %v", err)
+	}
+	if len(mutations) != 2 {
+		t.Errorf("Expected 2 mutations for 2 non-nil plots, got %d", len(mutations))
+	}
+}
+
+func TestArtifactChartRowToDeleteMutation_Nil(t *testing.T) {
+	if _, err := ArtifactChartRowToDeleteMutation(nil); err == nil {
+		t.Errorf("ArtifactChartRowToDeleteMutation(nil) expected error, got nil")
+	}
+}
+
+func TestArtifactChartRowToDeleteMutation_Success(t *testing.T) {
+	row, err := spanner.NewRow(
+		[]string{"ArtifactChartId", "ArtifactId", "WorkUnitId", "BitReversedXid"},
+		[]interface{}{"art-chart-1", int64(10), spanner.NullInt64{Int64: 2, Valid: true}, int64(999)},
+	)
+	if err != nil {
+		t.Fatalf("spanner.NewRow failed: %v", err)
+	}
+
+	mut, err := ArtifactChartRowToDeleteMutation(row)
+	if err != nil {
+		t.Fatalf("ArtifactChartRowToDeleteMutation failed: %v", err)
+	}
+	if mut == nil {
+		t.Fatalf("ArtifactChartRowToDeleteMutation returned nil mutation")
+	}
+}
+
+func TestDashboardChartRowToDeleteMutation_Nil(t *testing.T) {
+	if _, err := DashboardChartRowToDeleteMutation(nil); err == nil {
+		t.Errorf("DashboardChartRowToDeleteMutation(nil) expected error, got nil")
+	}
+}
+
+func TestDashboardChartRowToDeleteMutation_Success(t *testing.T) {
+	row, err := spanner.NewRow(
+		[]string{"DashboardChartId", "DashboardId"},
+		[]interface{}{"dash-chart-1", "dashboards/d1"},
+	)
+	if err != nil {
+		t.Fatalf("spanner.NewRow failed: %v", err)
+	}
+
+	mut, err := DashboardChartRowToDeleteMutation(row)
+	if err != nil {
+		t.Fatalf("DashboardChartRowToDeleteMutation failed: %v", err)
+	}
+	if mut == nil {
+		t.Fatalf("DashboardChartRowToDeleteMutation returned nil mutation")
+	}
+}
+
 func TestDashboardRowToProto_Nil(t *testing.T) {
 	if _, err := DashboardRowToProto(nil, nil); err == nil {
 		t.Errorf("DashboardRowToProto(nil) expected error, got nil")
 	}
 }
 
+func TestDashboardRowToProto_Success(t *testing.T) {
+	layout := &dpb.LayoutSpec{
+		Type:    dpb.LayoutSpec_GRID,
+		Columns: 3,
+	}
+	layoutBytes, err := proto.Marshal(layout)
+	if err != nil {
+		t.Fatalf("proto.Marshal(layout) failed: %v", err)
+	}
+
+	charts := []*dpb.Chart{
+		{Name: "charts/c2"},
+		{Name: "charts/c1"},
+	}
+
+	now := time.Now().UTC()
+	row, err := spanner.NewRow(
+		[]string{"CreatedAt", "DashboardId", "UpdatedAt", "Description", "Owner", "Title", "ChartLayout", "ExtraIgnoredCol"},
+		[]interface{}{now, "dashboards/d1", now, "Test Desc", "owner@example.com", "Test Title", layoutBytes, "extra_value"},
+	)
+	if err != nil {
+		t.Fatalf("spanner.NewRow failed: %v", err)
+	}
+
+	dash, err := DashboardRowToProto(row, charts)
+	if err != nil {
+		t.Fatalf("DashboardRowToProto failed: %v", err)
+	}
+
+	if dash.GetName() != "dashboards/d1" {
+		t.Errorf("dash.Name: got %q, want 'dashboards/d1'", dash.GetName())
+	}
+	if dash.GetTitle() != "Test Title" {
+		t.Errorf("dash.Title: got %q, want 'Test Title'", dash.GetTitle())
+	}
+	if dash.GetDescription() != "Test Desc" {
+		t.Errorf("dash.Description: got %q, want 'Test Desc'", dash.GetDescription())
+	}
+	if dash.GetOwner() != "owner@example.com" {
+		t.Errorf("dash.Owner: got %q, want 'owner@example.com'", dash.GetOwner())
+	}
+	if len(dash.GetCharts()) != 2 || dash.GetCharts()[0].GetName() != "charts/c1" {
+		t.Errorf("dash.Charts: got %v, want canonically sorted charts", dash.GetCharts())
+	}
+	if dash.GetChartLayout() == nil || dash.GetChartLayout().GetColumns() != 3 {
+		t.Errorf("dash.ChartLayout: got %v, want columns=3", dash.GetChartLayout())
+	}
+}
+
+func TestDashboardRowToProto_MissingRequiredColumn(t *testing.T) {
+	row, err := spanner.NewRow(
+		[]string{"Title", "Description"},
+		[]interface{}{"Test Title", "Test Desc"},
+	)
+	if err != nil {
+		t.Fatalf("spanner.NewRow failed: %v", err)
+	}
+
+	if _, err := DashboardRowToProto(row, nil); err == nil {
+		t.Errorf("DashboardRowToProto with missing DashboardId expected error, got nil")
+	}
+}
+
 func TestChartRowToProto_Nil(t *testing.T) {
 	if _, err := ChartRowToProto(nil, nil); err == nil {
 		t.Errorf("ChartRowToProto(nil) expected error, got nil")
+	}
+}
+
+func TestChartRowToProto_Success(t *testing.T) {
+	layout := &dpb.LayoutSpec{
+		Type:    dpb.LayoutSpec_GRID,
+		Columns: 2,
+	}
+	layoutBytes, err := proto.Marshal(layout)
+	if err != nil {
+		t.Fatalf("proto.Marshal(layout) failed: %v", err)
+	}
+
+	plots := []*dpb.PlotSpec{
+		{PlotId: "plot-1", Title: "Loss"},
+	}
+
+	now := time.Now().UTC()
+	row, err := spanner.NewRow(
+		[]string{"CreatedAt", "ChartId", "UpdatedAt", "Owner", "Title", "Xid", "PlotLayout", "ExtraCol"},
+		[]interface{}{now, "charts/c1", now, "owner@example.com", "Test Title", int64(100), layoutBytes, 12345},
+	)
+	if err != nil {
+		t.Fatalf("spanner.NewRow failed: %v", err)
+	}
+
+	chart, err := ChartRowToProto(row, plots)
+	if err != nil {
+		t.Fatalf("ChartRowToProto failed: %v", err)
+	}
+
+	if chart.GetName() != "charts/c1" {
+		t.Errorf("chart.Name: got %q, want 'charts/c1'", chart.GetName())
+	}
+	if chart.GetTitle() != "Test Title" {
+		t.Errorf("chart.Title: got %q, want 'Test Title'", chart.GetTitle())
+	}
+	if chart.GetXid() != 100 {
+		t.Errorf("chart.Xid: got %d, want 100", chart.GetXid())
+	}
+	if len(chart.GetPlots()) != 1 || chart.GetPlots()[0].GetPlotId() != "plot-1" {
+		t.Errorf("chart.Plots: got %v, want 1 plot with ID 'plot-1'", chart.GetPlots())
+	}
+	if chart.GetPlotLayout() == nil || chart.GetPlotLayout().GetColumns() != 2 {
+		t.Errorf("chart.PlotLayout: got %v, want columns=2", chart.GetPlotLayout())
+	}
+}
+
+func TestChartRowToProto_MissingRequiredColumn(t *testing.T) {
+	row, err := spanner.NewRow(
+		[]string{"Title", "Owner"},
+		[]interface{}{"Test Title", "owner@example.com"},
+	)
+	if err != nil {
+		t.Fatalf("spanner.NewRow failed: %v", err)
+	}
+
+	if _, err := ChartRowToProto(row, nil); err == nil {
+		t.Errorf("ChartRowToProto with missing ChartId expected error, got nil")
+	}
+}
+
+func TestChartRowToProto_TypeMismatch(t *testing.T) {
+	row, err := spanner.NewRow(
+		[]string{"ChartId", "Xid"},
+		[]interface{}{"charts/c1", "not-an-int64"},
+	)
+	if err != nil {
+		t.Fatalf("spanner.NewRow failed: %v", err)
+	}
+
+	if _, err := ChartRowToProto(row, nil); err == nil {
+		t.Errorf("ChartRowToProto with invalid Xid type expected error, got nil")
 	}
 }
 

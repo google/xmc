@@ -40,27 +40,27 @@ func NewRepository(client *spanner.Client) (*Repository, error) {
 		return nil, fmt.Errorf("spanner client must not be nil")
 	}
 
-	dashboardsQueryGen, err := querytools.NewQueryGenerator(dashboardschema.DashboardTables, nil, nil, nil)
+	dashboardsQueryGen, err := querytools.NewQueryGenerator(dashboardschema.DashboardTables, nil, nil, nil, querytools.DeduplicateSelects(true))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dashboards query generator: %w", err)
 	}
 
-	chartsQueryGen, err := querytools.NewQueryGenerator(dashboardschema.ChartTables, nil, nil, nil)
+	chartsQueryGen, err := querytools.NewQueryGenerator(dashboardschema.ChartTables, nil, nil, nil, querytools.DeduplicateSelects(true))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create charts query generator: %w", err)
 	}
 
-	dashboardChartsQueryGen, err := querytools.NewQueryGenerator(dashboardschema.DashboardChartsTables, nil, nil, nil)
+	dashboardChartsQueryGen, err := querytools.NewQueryGenerator(dashboardschema.DashboardChartsTables, nil, nil, nil, querytools.DeduplicateSelects(true))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dashboard charts query generator: %w", err)
 	}
 
-	chartPlotsQueryGen, err := querytools.NewQueryGenerator(dashboardschema.ChartPlotsTables, nil, nil, nil)
+	chartPlotsQueryGen, err := querytools.NewQueryGenerator(dashboardschema.ChartPlotsTables, nil, nil, nil, querytools.DeduplicateSelects(true))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chart plots query generator: %w", err)
 	}
 
-	artifactChartsQueryGen, err := querytools.NewQueryGenerator(dashboardschema.ArtifactChartsTables, nil, nil, nil)
+	artifactChartsQueryGen, err := querytools.NewQueryGenerator(dashboardschema.ArtifactChartsTables, nil, nil, nil, querytools.DeduplicateSelects(true))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create artifact charts query generator: %w", err)
 	}

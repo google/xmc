@@ -173,38 +173,69 @@ func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateCharts bool
 	return mutations, nil
 }
 
+type dashboardRow struct {
+	ID          string    `spanner:"DashboardId"`
+	Title       string    `spanner:"Title"`
+	Description string    `spanner:"Description"`
+	Owner       string    `spanner:"Owner"`
+	ChartLayout []byte    `spanner:"ChartLayout"`
+	CreatedAt   time.Time `spanner:"CreatedAt"`
+	UpdatedAt   time.Time `spanner:"UpdatedAt"`
+}
+
+type chartRow struct {
+	ID         string    `spanner:"ChartId"`
+	Title      string    `spanner:"Title"`
+	Xid        int64     `spanner:"Xid"`
+	PlotLayout []byte    `spanner:"PlotLayout"`
+	Owner      string    `spanner:"Owner"`
+	CreatedAt  time.Time `spanner:"CreatedAt"`
+	UpdatedAt  time.Time `spanner:"UpdatedAt"`
+}
+
+type artifactChartRow struct {
+	BitReversedXid  int64             `spanner:"BitReversedXid"`
+	WorkUnitId      spanner.NullInt64 `spanner:"WorkUnitId"`
+	ArtifactId      int64             `spanner:"ArtifactId"`
+	ArtifactChartId string            `spanner:"ArtifactChartId"`
+}
+
+type dashboardChartRow struct {
+	DashboardId      string `spanner:"DashboardId"`
+	DashboardChartId string `spanner:"DashboardChartId"`
+}
+
 // DashboardRowToProto converts a Spanner Row into a Dashboard protobuf message.
 func DashboardRowToProto(row *spanner.Row, charts []*dpb.Chart) (*dpb.Dashboard, error) {
 	if row == nil {
 		return nil, fmt.Errorf("spanner row must not be nil")
 	}
 
-	var (
-		id, title, desc, owner string
-		layoutBytes            []byte
-		createdAt, updatedAt   time.Time
-	)
-	if err := row.Columns(&id, &title, &desc, &owner, &layoutBytes, &createdAt, &updatedAt); err != nil {
-		return nil, fmt.Errorf("failed to read dashboard columns: %w", err)
+	var data dashboardRow
+	if err := row.ToStructLenient(&data); err != nil {
+		return nil, fmt.Errorf("failed to decode dashboard row: %w", err)
+	}
+	if data.ID == "" {
+		return nil, fmt.Errorf("dashboard row missing DashboardId")
 	}
 
 	var layout *dpb.LayoutSpec
-	if len(layoutBytes) > 0 {
+	if len(data.ChartLayout) > 0 {
 		layout = &dpb.LayoutSpec{}
-		if err := proto.Unmarshal(layoutBytes, layout); err != nil {
+		if err := proto.Unmarshal(data.ChartLayout, layout); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal dashboard layout: %w", err)
 		}
 	}
 
 	return &dpb.Dashboard{
-		Name:        id,
-		Title:       title,
-		Description: desc,
-		Owner:       owner,
+		Name:        data.ID,
+		Title:       data.Title,
+		Description: data.Description,
+		Owner:       data.Owner,
 		Charts:      SortCharts(charts),
 		ChartLayout: layout,
-		CreateTime:  timestamppb.New(createdAt),
-		UpdateTime:  timestamppb.New(updatedAt),
+		CreateTime:  timestamppb.New(data.CreatedAt),
+		UpdateTime:  timestamppb.New(data.UpdatedAt),
 	}, nil
 }
 
@@ -260,39 +291,37 @@ func ChartRowToProto(row *spanner.Row, plots []*dpb.PlotSpec) (*dpb.Chart, error
 		return nil, fmt.Errorf("spanner row must not be nil")
 	}
 
-	var (
-		id, title, owner   string
-		xid                int64
-		layoutBytes        []byte
-		createdAt, updated time.Time
-	)
-	if err := row.Columns(&id, &title, &xid, &layoutBytes, &owner, &createdAt, &updated); err != nil {
-		return nil, fmt.Errorf("failed to read chart columns: %w", err)
+	var data chartRow
+	if err := row.ToStructLenient(&data); err != nil {
+		return nil, fmt.Errorf("failed to decode chart row: %w", err)
+	}
+	if data.ID == "" {
+		return nil, fmt.Errorf("chart row missing ChartId")
 	}
 
 	var layout *dpb.LayoutSpec
-	if len(layoutBytes) > 0 {
+	if len(data.PlotLayout) > 0 {
 		layout = &dpb.LayoutSpec{}
-		if err := proto.Unmarshal(layoutBytes, layout); err != nil {
+		if err := proto.Unmarshal(data.PlotLayout, layout); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal chart layout: %w", err)
 		}
 	}
 
 	return &dpb.Chart{
-		Name:       id,
-		Title:      title,
-		Xid:        xid,
+		Name:       data.ID,
+		Title:      data.Title,
+		Xid:        data.Xid,
 		Plots:      plots,
 		PlotLayout: layout,
 	}, nil
 }
 
-// ChartProtoToUpdateMutations creates Spanner mutations to update a Chart and replace its PlotSpecs.
-func ChartProtoToUpdateMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) {
+// ChartProtoToUpdateMutation creates a Spanner mutation to update a Chart.
+func ChartProtoToUpdateMutation(chart *dpb.Chart) (*spanner.Mutation, error) {
 	if chart == nil {
 		return nil, fmt.Errorf("chart proto must not be nil")
 	}
-	if chart.Name == "" {
+	if chart.GetName() == "" {
 		return nil, fmt.Errorf("chart name must not be empty")
 	}
 
@@ -305,18 +334,25 @@ func ChartProtoToUpdateMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) 
 		}
 	}
 
-	var mutations []*spanner.Mutation
-	m := spanner.Update(dashboardschema.ChartsTableName, []string{
+	return spanner.Update(dashboardschema.ChartsTableName, []string{
 		"ChartId", "Title", "PlotLayout", "UpdatedAt",
 	}, []interface{}{
-		chart.Name, chart.Title, layoutBytes, spanner.CommitTimestamp,
-	})
-	mutations = append(mutations, m)
+		chart.GetName(), chart.GetTitle(), layoutBytes, spanner.CommitTimestamp,
+	}), nil
+}
 
-	mDeletePlots := spanner.Delete(dashboardschema.ChartPlotsTableName, spanner.Key{chart.Name}.AsPrefix())
-	mutations = append(mutations, mDeletePlots)
+// ChartPlotsToDeleteMutation creates a Spanner mutation to delete all plot specifications for a Chart.
+func ChartPlotsToDeleteMutation(chartID string) *spanner.Mutation {
+	return spanner.Delete(dashboardschema.ChartPlotsTableName, spanner.Key{chartID}.AsPrefix())
+}
 
-	for _, plot := range chart.Plots {
+// PlotSpecsToInsertMutations creates Spanner mutations to insert or update plot specifications for a Chart.
+func PlotSpecsToInsertMutations(chartID string, plots []*dpb.PlotSpec) ([]*spanner.Mutation, error) {
+	var mutations []*spanner.Mutation
+	for _, plot := range plots {
+		if plot == nil {
+			continue
+		}
 		plotSpecBytes, err := proto.Marshal(plot)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal plot spec: %w", err)
@@ -324,10 +360,56 @@ func ChartProtoToUpdateMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) 
 		mPlot := spanner.InsertOrUpdate(dashboardschema.ChartPlotsTableName, []string{
 			"ChartId", "PlotId", "Title", "PlotType", "PlotSpec",
 		}, []interface{}{
-			chart.Name, plot.PlotId, plot.Title, int64(plot.Type), plotSpecBytes,
+			chartID, plot.GetPlotId(), plot.GetTitle(), int64(plot.GetType()), plotSpecBytes,
 		})
 		mutations = append(mutations, mPlot)
 	}
-
 	return mutations, nil
+}
+
+// ChartProtoToUpdateMutations creates Spanner mutations to update a Chart and replace its PlotSpecs.
+func ChartProtoToUpdateMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) {
+	updateMut, err := ChartProtoToUpdateMutation(chart)
+	if err != nil {
+		return nil, err
+	}
+	deleteMut := ChartPlotsToDeleteMutation(chart.GetName())
+	insertMuts, err := PlotSpecsToInsertMutations(chart.GetName(), chart.GetPlots())
+	if err != nil {
+		return nil, err
+	}
+	return append([]*spanner.Mutation{updateMut, deleteMut}, insertMuts...), nil
+}
+
+// ArtifactChartRowToDeleteMutation converts an ArtifactCharts Spanner row into a delete mutation.
+func ArtifactChartRowToDeleteMutation(row *spanner.Row) (*spanner.Mutation, error) {
+	if row == nil {
+		return nil, fmt.Errorf("spanner row must not be nil")
+	}
+	var data artifactChartRow
+	if err := row.ToStructLenient(&data); err != nil {
+		return nil, fmt.Errorf("failed to decode artifact chart row: %w", err)
+	}
+	if data.ArtifactChartId == "" {
+		return nil, fmt.Errorf("artifact chart row missing ArtifactChartId")
+	}
+
+	pk := spanner.Key{data.BitReversedXid, data.WorkUnitId, data.ArtifactId, data.ArtifactChartId}
+	return spanner.Delete(dashboardschema.ArtifactChartsTableName, pk), nil
+}
+
+// DashboardChartRowToDeleteMutation converts a DashboardCharts Spanner row into a delete mutation.
+func DashboardChartRowToDeleteMutation(row *spanner.Row) (*spanner.Mutation, error) {
+	if row == nil {
+		return nil, fmt.Errorf("spanner row must not be nil")
+	}
+	var data dashboardChartRow
+	if err := row.ToStructLenient(&data); err != nil {
+		return nil, fmt.Errorf("failed to decode dashboard chart row: %w", err)
+	}
+	if data.DashboardId == "" || data.DashboardChartId == "" {
+		return nil, fmt.Errorf("dashboard chart row missing primary key columns")
+	}
+	pk := spanner.Key{data.DashboardId, data.DashboardChartId}
+	return spanner.Delete(dashboardschema.DashboardChartsTableName, pk), nil
 }
