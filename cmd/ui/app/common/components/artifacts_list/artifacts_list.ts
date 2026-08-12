@@ -52,6 +52,7 @@ enum ArtifactFilter {
 export class ArtifactsList implements OnInit {
   readonly parentName = input.required<string>();
   readonly groupingThreshold = input<number>(3);
+  private readonly groupingThreshold$ = toObservable(this.groupingThreshold);
 
   private readonly artifactService = inject(ArtifactService);
 
@@ -77,7 +78,7 @@ export class ArtifactsList implements OnInit {
     phaseLabel: 'INPUT' | 'EXECUTION' | 'OUTPUT',
     phaseCheck: (p?: string) => boolean,
   ): Observable<readonly ArtifactListItem[]> {
-    return combineLatest([artifacts$, toObservable(this.groupingThreshold)]).pipe(
+    return combineLatest([artifacts$, this.groupingThreshold$]).pipe(
       map(([artifacts, threshold]) => {
         const typed = artifacts.filter((a) => phaseCheck(a.lifecyclePhase)).map(toTypedArtifact);
         return groupAndSortArtifacts(typed, phaseLabel, threshold);
