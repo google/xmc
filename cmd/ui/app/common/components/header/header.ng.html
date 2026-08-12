@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 <mat-toolbar>
-  <button mat-icon-button aria-label="Open menu" (click)="toggleSidenav()">
+  <button type="button" mat-icon-button aria-label="Open menu" (click)="toggleSidenav()">
     <mat-icon>menu</mat-icon>
   </button>
   <a class="side-sections" [routerLink]="['/']">
@@ -23,20 +23,21 @@ limitations under the License.
       <div class="app-name">XManager</div>
     </div>
   </a>
-  <mat-form-field appearance="outline" #searchBar class="search-textbox">
+  <mat-form-field #searchBar appearance="outline" class="search-textbox">
     <mat-icon matPrefix> search </mat-icon>
 
     <input
       matInput
-      [formControl]="userInput"
       data-testid="search-input-field"
       autocomplete="off"
-      [placeholder]="'Search for experiments'"
       type="text"
+      [formControl]="userInput"
+      [placeholder]="'Search for experiments'"
       (keyup.enter)="searchExperiments()"
     />
 
     <button
+      type="button"
       matSuffix
       mat-icon-button
       [attr.aria-label]="'Information on the search syntax'"
@@ -48,7 +49,7 @@ limitations under the License.
   <div class="side-sections"></div>
 </mat-toolbar>
 
-<mat-menu class="search-syntax-menu" #menu="matMenu" xPosition="before">
+<mat-menu #menu="matMenu" class="search-syntax-menu" xPosition="before">
   <h3>Search Syntax</h3>
   <div>
     <p><strong>Full-Text Search:</strong></p>

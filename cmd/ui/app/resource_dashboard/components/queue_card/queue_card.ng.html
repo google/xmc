@@ -15,14 +15,14 @@
 -->
 <div
   class="queue-card"
+  tabindex="0"
+  role="button"
   [class.selected]="isSelected()"
   [class.selected-healthy]="isSelected() && isQueueHealthy()"
   [class.selected-risk]="isSelected() && !isQueueHealthy()"
   (click)="onCardClick()"
   (keydown.enter)="onCardClick()"
   (keydown.space)="$event.preventDefault(); onCardClick()"
-  tabindex="0"
-  role="button"
 >
   <div class="card-top-bar">
     <div class="queue-name-group">
@@ -40,7 +40,18 @@
         </span>
       }
     </div>
-    <!-- TODO: Restore copy flag action button once design and requirements are finalized -->
+    <button
+      type="button"
+      class="copy-flag-btn"
+      matTooltip="Copy --queue flag to clipboard"
+      [attr.aria-label]="
+        isCopied() ? 'Copied --queue flag to clipboard' : 'Copy --queue flag to clipboard'
+      "
+      (click)="onCopyFlag($event)"
+    >
+      <mat-icon class="copy-icon">{{ isCopied() ? 'check' : 'content_copy' }}</mat-icon>
+      <span>{{ isCopied() ? 'Copied' : 'Copy flag' }}</span>
+    </button>
   </div>
 
   <div class="card-grid-body">

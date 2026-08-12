@@ -19,32 +19,29 @@ import (
 	"log/slog"
 	"os"
 
-	health "xmanager_cloud/common/health"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+type healthChecker interface {
+	RunChecks(ctx context.Context) RunChecksResult
+	Close() error
+}
+
+var _ spb.HealthServiceServer = (*server)(nil)
+
 type server struct {
 	spb.UnimplementedHealthServiceServer
 	cfg     *Config
-	checker *HealthChecker
+	checker healthChecker
 }
 
-func newServer(cfg *Config, essHealth, xidHealth health.SpannerHealthClient, redisClient RedisPingClient) (*server, error) {
-	checker, err := newHealthChecker(HealthCheckerParams{
-		Config:          cfg,
-		EssHealthClient: essHealth,
-		XidHealthClient: xidHealth,
-		RedisClient:     redisClient,
-	})
-	if err != nil {
-		return nil, err
-	}
+func newServer(cfg *Config, checker healthChecker) *server {
 	return &server{
 		cfg:     cfg,
 		checker: checker,
-	}, nil
+	}
 }
 
 func (s *server) Close() error {
@@ -72,13 +69,24 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 		xidDbSchemaVersionStr = "unknown"
 	}
 
+	appVersionStr := s.cfg.AppVersion
+	if appVersionStr == "" {
+		appVersionStr = "unknown"
+	}
+
+	buildVersionStr := s.cfg.BuildVersion
+	if buildVersionStr == "" {
+		buildVersionStr = "unknown"
+	}
+
 	return &spb.HealthStatusResponse{
 		HealthState: overallHealthy,
 		SystemInfo: &spb.SystemInfo{
-			AppVersion:         "app-version-1.0.0",
+			AppVersion:         appVersionStr,
+			BuildVersion:       buildVersionStr,
 			EssDbSchemaVersion: essDbSchemaVersionStr,
 			XidDbSchemaVersion: xidDbSchemaVersionStr,
-			ObservabilityUrl:   "http://mock-observability-url",
+			ObservabilityUrl:   s.cfg.ObservabilityURL,
 			IsSchedulingPaused: false,
 		},
 		Components:      res.Components,

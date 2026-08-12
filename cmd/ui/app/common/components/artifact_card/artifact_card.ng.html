@@ -14,9 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 <mat-card class="artifact-card">
-  <ng-container [ngTemplateOutlet]="cardMainContent"></ng-container>
+  <ng-container [ngTemplateOutlet]="cardMainContent" />
   @if (isNoteLong() || tags().length || hasPayloadContent()) {
-    <ng-container [ngTemplateOutlet]="cardAdditionalContent"></ng-container>
+    <ng-container [ngTemplateOutlet]="cardAdditionalContent" />
   }
 </mat-card>
 
@@ -24,9 +24,10 @@ limitations under the License.
   <div class="card-main-content">
     @if (displayProperties().url) {
       <a
-        [href]="displayProperties().url | safeUrl"
         target="_blank"
+        rel="noreferrer"
         style="text-decoration: none; color: inherit"
+        [href]="displayProperties().url | safeUrl"
       >
         <mat-icon>{{ displayProperties().icon }}</mat-icon>
       </a>
@@ -37,9 +38,10 @@ limitations under the License.
       <div class="artifact-title">
         @if (displayProperties().url) {
           <a
-            [href]="displayProperties().url | safeUrl"
             target="_blank"
+            rel="noreferrer"
             style="text-decoration: none; color: inherit"
+            [href]="displayProperties().url | safeUrl"
           >
             {{ displayProperties().displayName }}
           </a>
@@ -69,7 +71,7 @@ limitations under the License.
 </ng-template>
 
 <ng-template #cardAdditionalContent>
-  <mat-divider></mat-divider>
+  <mat-divider />
   <div class="card-lower-content">
     @if (isNoteLong()) {
       <div class="long-notes-section">{{ notes() }}</div>
@@ -77,7 +79,7 @@ limitations under the License.
     @if (tags().length) {
       <div class="tags-section">
         @for (tag of tags(); track tag) {
-          <xmc-tag [text]="tag"></xmc-tag>
+          <xmc-tag [text]="tag" />
         }
       </div>
     }
@@ -88,31 +90,31 @@ limitations under the License.
         <ng-container
           [ngTemplateOutlet]="codeSourceTemplate"
           [ngTemplateOutletContext]="{ codeSource: art.payload }"
-        ></ng-container>
+        />
       }
       @case (PayloadType.TEXT) {
         <ng-container
           [ngTemplateOutlet]="textTemplate"
           [ngTemplateOutletContext]="{ text: art.payload }"
-        ></ng-container>
+        />
       }
       @case (PayloadType.MANAGED_XPROF) {
         <ng-container
           [ngTemplateOutlet]="managedXprofTemplate"
           [ngTemplateOutletContext]="{ managedXprof: art.payload }"
-        ></ng-container>
+        />
       }
       @case (PayloadType.URL) {
         <ng-container
           [ngTemplateOutlet]="urlTemplate"
           [ngTemplateOutletContext]="{ url: art.payload }"
-        ></ng-container>
+        />
       }
       @case (PayloadType.CHART) {
         <ng-container
           [ngTemplateOutlet]="chartTemplate"
           [ngTemplateOutletContext]="{ chartArt: art.payload }"
-        ></ng-container>
+        />
       }
     }
   </div>
@@ -130,13 +132,13 @@ limitations under the License.
           <ng-container
             [ngTemplateOutlet]="numberedLinesBody"
             [ngTemplateOutletContext]="{ text: codeSource.codeBlock }"
-          ></ng-container>
+          />
         </mat-expansion-panel>
       } @else {
         <ng-container
           [ngTemplateOutlet]="numberedLinesBody"
           [ngTemplateOutletContext]="{ text: codeSource.codeBlock }"
-        ></ng-container>
+        />
       }
     </div>
   }
@@ -180,7 +182,12 @@ limitations under the License.
 <ng-template #urlTemplate let-url="url">
   <div class="payload-detail-section">
     <div class="payload-detail-text">
-      <a [href]="url.url | safeUrl" target="_blank" style="text-decoration: none; color: inherit">
+      <a
+        target="_blank"
+        rel="noreferrer"
+        style="text-decoration: none; color: inherit"
+        [href]="url.url | safeUrl"
+      >
         {{ url.displayName || url.url }}
       </a>
     </div>
@@ -204,13 +211,13 @@ limitations under the License.
           <ng-container
             [ngTemplateOutlet]="numberedLinesBody"
             [ngTemplateOutletContext]="{ text: chartJson }"
-          ></ng-container>
+          />
         </mat-expansion-panel>
       } @else {
         <ng-container
           [ngTemplateOutlet]="numberedLinesBody"
           [ngTemplateOutletContext]="{ text: chartJson }"
-        ></ng-container>
+        />
       }
     }
   </div>

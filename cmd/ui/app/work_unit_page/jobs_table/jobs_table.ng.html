@@ -16,7 +16,7 @@ limitations under the License.
 <mat-card class="card">
   @if (dataSource && dataSource.data.length > 0) {
     <div class="container">
-      <table mat-table [dataSource]="dataSource" class="table">
+      <table mat-table class="table" [dataSource]="dataSource">
         <!-- Name Column -->
         <ng-container matColumnDef="name">
           <th mat-header-cell *matHeaderCellDef>Name</th>
@@ -39,10 +39,10 @@ limitations under the License.
       </table>
 
       <mat-paginator
-        [pageSizeOptions]="[5, 10, 20]"
         showFirstLastButtons
         aria-label="Select page of jobs"
-      ></mat-paginator>
+        [pageSizeOptions]="[5, 10, 20]"
+      />
     </div>
   } @else {
     <div class="no-jobs-message">No jobs to display.</div>

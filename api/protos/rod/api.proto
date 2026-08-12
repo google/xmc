@@ -39,6 +39,13 @@ service ResourceObservabilityService {
       get: "/v1/clusterqueues/{queue_name}/jobs"
     };
   }
+
+  // Get the target submission queue for a specific cluster queue.
+  rpc GetSubmitQueue(GetSubmitQueueRequest) returns (GetSubmitQueueResponse) {
+    option (google.api.http) = {
+      get: "/v1/clusterqueues/{queue_name}/submitqueue"
+    };
+  }
 }
 
 // Resource represents requested or available compute resources.
@@ -100,3 +107,14 @@ message GetRunningAndPendingJobsResponse {
   string next_page_token = 2;
   int64 total_queue_size = 3;
 }
+
+// GetSubmitQueueRequest represents query parameters for fetching the target submission queue.
+message GetSubmitQueueRequest {
+  string queue_name = 1;
+}
+
+// GetSubmitQueueResponse contains the target submit queue name.
+message GetSubmitQueueResponse {
+  string submit_queue = 1;
+}
+

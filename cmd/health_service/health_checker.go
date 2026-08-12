@@ -24,6 +24,7 @@ import (
 	health "xmanager_cloud/common/health"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 
+	run "google.golang.org/api/run/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -38,6 +39,7 @@ type HealthCheckerParams struct {
 	EssHealthClient health.SpannerHealthClient
 	XidHealthClient health.SpannerHealthClient
 	RedisClient     RedisPingClient
+	CloudRunService *run.Service
 }
 
 type HealthChecker struct {
@@ -47,9 +49,10 @@ type HealthChecker struct {
 	essHealthClient health.SpannerHealthClient
 	xidHealthClient health.SpannerHealthClient
 	redisClient     RedisPingClient
+	cloudRunService *run.Service
 }
 
-func newHealthChecker(params HealthCheckerParams) (*HealthChecker, error) {
+func NewHealthChecker(params HealthCheckerParams) (*HealthChecker, error) {
 	if params.Config == nil {
 		return nil, fmt.Errorf("config is required")
 	}
@@ -70,6 +73,7 @@ func newHealthChecker(params HealthCheckerParams) (*HealthChecker, error) {
 		essHealthClient: params.EssHealthClient,
 		xidHealthClient: params.XidHealthClient,
 		redisClient:     params.RedisClient,
+		cloudRunService: params.CloudRunService,
 	}, nil
 }
 
@@ -161,13 +165,7 @@ func (c *HealthChecker) getCheckTargets() []checkTarget {
 		{
 			name: "Log Monitor",
 			checkFn: func(ctx context.Context) *spb.ComponentHealth {
-				// TODO(b/532846936): Implement actual health checking for Log Monitor Cloud Run service.
-				// For now, we mock it as healthy since Cloud Run ingress is internal-only.
-				return &spb.ComponentHealth{
-					Name:        "Log Monitor",
-					Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
-					HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
-				}
+				return c.checkCloudRunComponent(ctx, "Log Monitor", c.cfg.LogMonitorResourceName)
 			},
 		},
 		{
@@ -315,6 +313,72 @@ func (c *HealthChecker) checkRedis(ctx context.Context) *spb.ComponentHealth {
 	return &spb.ComponentHealth{
 		Name:        "Redis",
 		Type:        spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
+		HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
+	}
+}
+
+func (c *HealthChecker) checkCloudRunComponent(ctx context.Context, name string, serviceName string) *spb.ComponentHealth {
+	if serviceName == "" {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNSPECIFIED,
+			ErrorMessage: "log monitor resource name is not configured",
+		}
+	}
+
+	if c.cloudRunService == nil {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNSPECIFIED,
+			ErrorMessage: "cloud run client not initialized",
+		}
+	}
+
+	apiCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	resp, err := c.cloudRunService.Projects.Locations.Services.Get(serviceName).Context(apiCtx).Do()
+	if err != nil {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: fmt.Sprintf("failed to get service: %v", err),
+		}
+	}
+
+	if resp == nil {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: "received empty response from cloud run API",
+		}
+	}
+
+	if resp.TerminalCondition == nil {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: "terminal condition is missing",
+		}
+	}
+
+	if resp.TerminalCondition.State != "CONDITION_SUCCEEDED" {
+		return &spb.ComponentHealth{
+			Name:         name,
+			Type:         spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
+			HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			ErrorMessage: fmt.Sprintf("service not ready: %s (reason: %s, message: %s)", resp.TerminalCondition.State, resp.TerminalCondition.Reason, resp.TerminalCondition.Message),
+		}
+	}
+
+	return &spb.ComponentHealth{
+		Name:        name,
+		Type:        spb.ComponentType_COMPONENT_TYPE_CORE_SERVICE,
 		HealthState: spb.HealthState_HEALTH_STATE_HEALTHY,
 	}
 }

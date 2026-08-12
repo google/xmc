@@ -16,15 +16,76 @@
 package data
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"time"
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/protobuf/proto"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 
+	"task/go/status"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
 )
+
+// SortCharts returns a new slice with charts sorted alphabetically by Name.
+func SortCharts(charts []*dpb.Chart) []*dpb.Chart {
+	if len(charts) <= 1 {
+		return slices.Clone(charts)
+	}
+	sorted := slices.Clone(charts)
+	slices.SortFunc(sorted, func(a, b *dpb.Chart) int {
+		if a == nil && b == nil {
+			return 0
+		}
+		if a == nil {
+			return -1
+		}
+		if b == nil {
+			return 1
+		}
+		return cmp.Compare(a.GetName(), b.GetName())
+	})
+	return sorted
+}
+
+// MergeDashboards merges an updated Dashboard proto message into a current Dashboard proto message based on an update mask.
+func MergeDashboards(current, updated *dpb.Dashboard, updateMask *fieldmaskpb.FieldMask) (*dpb.Dashboard, error) {
+	if current == nil {
+		return nil, fmt.Errorf("current dashboard is nil: %w", status.ErrInvalidArgument)
+	}
+	if updated == nil {
+		return nil, fmt.Errorf("updated dashboard is nil: %w", status.ErrInvalidArgument)
+	}
+
+	merged := proto.Clone(current).(*dpb.Dashboard)
+	if updateMask == nil || len(updateMask.GetPaths()) == 0 {
+		merged.Title = updated.GetTitle()
+		merged.Description = updated.GetDescription()
+		merged.ChartLayout = updated.GetChartLayout()
+		merged.Charts = updated.GetCharts()
+		return merged, nil
+	}
+
+	for _, path := range updateMask.GetPaths() {
+		switch path {
+		case "title":
+			merged.Title = updated.GetTitle()
+		case "description":
+			merged.Description = updated.GetDescription()
+		case "chart_layout", "chartLayout":
+			merged.ChartLayout = updated.GetChartLayout()
+		case "charts":
+			merged.Charts = updated.GetCharts()
+		default:
+			return nil, fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+		}
+	}
+	return merged, nil
+}
 
 // DashboardProtoToInsertMutations creates Spanner mutations to insert a Dashboard and its child DashboardCharts.
 func DashboardProtoToInsertMutations(dashboard *dpb.Dashboard) ([]*spanner.Mutation, error) {
@@ -49,13 +110,64 @@ func DashboardProtoToInsertMutations(dashboard *dpb.Dashboard) ([]*spanner.Mutat
 	})
 	mutations = append(mutations, m)
 
-	for _, chart := range dashboard.Charts {
+	for _, chart := range dashboard.GetCharts() {
+		if chart == nil {
+			return nil, fmt.Errorf("chart in dashboard charts list must not be nil: %w", status.ErrInvalidArgument)
+		}
 		mChart := spanner.InsertOrUpdate(dashboardschema.DashboardChartsTableName, []string{
 			"DashboardId", "DashboardChartId", "ChartId", "GridPosition", "CreatedAt",
 		}, []interface{}{
-			dashboard.Name, chart.Name, chart.Name, nil, spanner.CommitTimestamp,
+			dashboard.GetName(), chart.GetName(), chart.GetName(), nil, spanner.CommitTimestamp,
 		})
 		mutations = append(mutations, mChart)
+	}
+
+	return mutations, nil
+}
+
+// DashboardProtoToUpdateMutations creates Spanner mutations to update a Dashboard and optionally its child DashboardCharts.
+func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateCharts bool) ([]*spanner.Mutation, error) {
+	if dashboard == nil {
+		return nil, fmt.Errorf("dashboard proto must not be nil: %w", status.ErrInvalidArgument)
+	}
+	if dashboard.GetName() == "" {
+		return nil, fmt.Errorf("dashboard name must not be empty: %w", status.ErrInvalidArgument)
+	}
+
+	var layoutBytes []byte
+	if dashboard.ChartLayout != nil {
+		var err error
+		layoutBytes, err = proto.Marshal(dashboard.ChartLayout)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal chart layout: %w", err)
+		}
+	}
+
+	var mutations []*spanner.Mutation
+	m := spanner.UpdateMap(dashboardschema.DashboardsTableName, map[string]interface{}{
+		"DashboardId": dashboard.GetName(),
+		"Title":       dashboard.GetTitle(),
+		"Description": dashboard.GetDescription(),
+		"ChartLayout": layoutBytes,
+		"UpdatedAt":   spanner.CommitTimestamp,
+	})
+	mutations = append(mutations, m)
+
+	if updateCharts {
+		mDel := spanner.Delete(dashboardschema.DashboardChartsTableName, spanner.Key{dashboard.GetName()}.AsPrefix())
+		mutations = append(mutations, mDel)
+
+		for _, chart := range dashboard.GetCharts() {
+			if chart == nil {
+				return nil, fmt.Errorf("chart in dashboard charts list must not be nil: %w", status.ErrInvalidArgument)
+			}
+			mChart := spanner.InsertOrUpdate(dashboardschema.DashboardChartsTableName, []string{
+				"DashboardId", "DashboardChartId", "ChartId", "GridPosition", "CreatedAt",
+			}, []interface{}{
+				dashboard.GetName(), chart.GetName(), chart.GetName(), nil, spanner.CommitTimestamp,
+			})
+			mutations = append(mutations, mChart)
+		}
 	}
 
 	return mutations, nil
@@ -89,8 +201,10 @@ func DashboardRowToProto(row *spanner.Row, charts []*dpb.Chart) (*dpb.Dashboard,
 		Title:       title,
 		Description: desc,
 		Owner:       owner,
-		Charts:      charts,
+		Charts:      SortCharts(charts),
 		ChartLayout: layout,
+		CreateTime:  timestamppb.New(createdAt),
+		UpdateTime:  timestamppb.New(updatedAt),
 	}, nil
 }
 

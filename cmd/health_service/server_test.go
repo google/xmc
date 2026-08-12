@@ -16,88 +16,71 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
-	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
+type mockHealthChecker struct {
+	result RunChecksResult
+	err    error
+}
+
+func (m *mockHealthChecker) RunChecks(ctx context.Context) RunChecksResult {
+	return m.result
+}
+
+func (m *mockHealthChecker) Close() error {
+	return m.err
+}
+
 func TestGetHealthStatus_AllHealthy(t *testing.T) {
-	// 1. Setup mock HTTP servers
-	essServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/readyz" {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
-		}
-	}))
-	defer essServer.Close()
-
-	actuatorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/readyz" {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
-		}
-	}))
-	defer actuatorServer.Close()
-
-	reconcilerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/readyz" {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
-		}
-	}))
-	defer reconcilerServer.Close()
-
-	// 2. Setup mock gRPC health server
-	lis, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		t.Fatalf("failed to listen for gRPC server: %v", err)
-	}
-	grpcServer := grpc.NewServer()
-	healthServer := health.NewServer()
-	healthServer.SetServingStatus("xmc.XidService", grpc_health_v1.HealthCheckResponse_SERVING)
-	grpc_health_v1.RegisterHealthServer(grpcServer, healthServer)
-	go func() {
-		_ = grpcServer.Serve(lis)
-	}()
-	defer grpcServer.Stop()
-
-	// 3. Configure and create server
 	cfg := &Config{
-		Port:          "8080",
-		GRPCPort:      "50051",
-		ProjectID:     "test-project",
-		EssURL:        essServer.URL,
-		XidAddr:       lis.Addr().String(),
-		ActuatorURL:   actuatorServer.URL,
-		ReconcilerURL: reconcilerServer.URL,
+		Port:             "8080",
+		GRPCPort:         "50051",
+		ProjectID:        "test-project",
+		AppVersion:       "test-version-1.2.3",
+		BuildVersion:     "test-build-version-4.5.6",
+		ObservabilityURL: "http://test-observability-url",
 	}
-	mockEss := &mockSpannerHealthClient{version: 6, dirty: false}
-	mockXid := &mockSpannerHealthClient{version: 1, dirty: false}
-	s, err := newServer(cfg, mockEss, mockXid, &mockRedisClient{})
-	if err != nil {
-		t.Fatalf("failed to create server: %v", err)
+	mockResult := RunChecksResult{
+		EssDbSchemaVersion: "6",
+		XidDbSchemaVersion: "1",
+		Components: []*spb.ComponentHealth{
+			{Name: "ESS", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+			{Name: "XID", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+			{Name: "Actuator", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+			{Name: "Reconciler", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+			{Name: "Log Monitor", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+			{Name: "Spanner ESS", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+			{Name: "Spanner XID", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+			{Name: "Redis", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+		},
 	}
+	checker := &mockHealthChecker{result: mockResult}
+	s := newServer(cfg, checker)
 	defer s.Close()
 
-	// 4. Run health check
 	resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
 	if err != nil {
 		t.Fatalf("GetHealthStatus failed: %v", err)
 	}
 
-	// 5. Verify results
 	if resp.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY {
 		t.Errorf("Expected overall status 'HEALTH_STATE_HEALTHY', got %v", resp.HealthState)
+	}
+
+	if resp.SystemInfo.AppVersion != "test-version-1.2.3" {
+		t.Errorf("Expected AppVersion 'test-version-1.2.3', got %q", resp.SystemInfo.AppVersion)
+	}
+	if resp.SystemInfo.BuildVersion != "test-build-version-4.5.6" {
+		t.Errorf("Expected BuildVersion 'test-build-version-4.5.6', got %q", resp.SystemInfo.BuildVersion)
+	}
+
+	if resp.SystemInfo.ObservabilityUrl != "http://test-observability-url" {
+		t.Errorf("Expected ObservabilityUrl 'http://test-observability-url', got %q", resp.SystemInfo.ObservabilityUrl)
 	}
 
 	if resp.SystemInfo.EssDbSchemaVersion != "6" {
@@ -134,48 +117,28 @@ func TestGetHealthStatus_AllHealthy(t *testing.T) {
 	}
 }
 
-func TestGetHealthStatus_SomeUnhealthy(t *testing.T) {
-	// ESS returns 500 Unhealthy
-	essServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer essServer.Close()
-
-	// Actuator is completely unreachable (mock invalid URL)
-	actuatorURL := "http://localhost:9999" // Assuming nothing runs on port 9999
-
-	reconcilerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer reconcilerServer.Close()
-
-	// XID serving status is NOT_SERVING
-	lis, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		t.Fatalf("failed to listen for gRPC server: %v", err)
-	}
-	grpcServer := grpc.NewServer()
-	healthServer := health.NewServer()
-	healthServer.SetServingStatus("xmc.XidService", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
-	grpc_health_v1.RegisterHealthServer(grpcServer, healthServer)
-	go func() {
-		_ = grpcServer.Serve(lis)
-	}()
-	defer grpcServer.Stop()
-
+func TestGetHealthStatus_Unhealthy(t *testing.T) {
 	cfg := &Config{
-		Port:          "8080",
-		GRPCPort:      "50051",
-		ProjectID:     "test-project",
-		EssURL:        essServer.URL,
-		XidAddr:       lis.Addr().String(),
-		ActuatorURL:   actuatorURL,
-		ReconcilerURL: reconcilerServer.URL,
+		Port:      "8080",
+		GRPCPort:  "50051",
+		ProjectID: "test-project",
 	}
-	s, err := newServer(cfg, nil, nil, &mockRedisClient{})
-	if err != nil {
-		t.Fatalf("failed to create server: %v", err)
+	mockResult := RunChecksResult{
+		EssDbSchemaVersion: "", // triggers "unknown" in server.go
+		XidDbSchemaVersion: "", // triggers "unknown" in server.go
+		Components: []*spb.ComponentHealth{
+			{Name: "ESS", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "500 Internal Server Error"},
+			{Name: "XID", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "NOT_SERVING"},
+			{Name: "Actuator", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "connection refused"},
+			{Name: "Reconciler", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+			{Name: "Log Monitor", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+			{Name: "Spanner ESS", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "spanner client not initialized"},
+			{Name: "Spanner XID", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "spanner client not initialized"},
+			{Name: "Redis", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+		},
 	}
+	checker := &mockHealthChecker{result: mockResult}
+	s := newServer(cfg, checker)
 	defer s.Close()
 
 	resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
@@ -193,6 +156,12 @@ func TestGetHealthStatus_SomeUnhealthy(t *testing.T) {
 	}
 	if resp.SystemInfo.XidDbSchemaVersion != "unknown" {
 		t.Errorf("Expected XidDbSchemaVersion 'unknown', got %q", resp.SystemInfo.XidDbSchemaVersion)
+	}
+	if resp.SystemInfo.AppVersion != "unknown" {
+		t.Errorf("Expected AppVersion 'unknown', got %q", resp.SystemInfo.AppVersion)
+	}
+	if resp.SystemInfo.BuildVersion != "unknown" {
+		t.Errorf("Expected BuildVersion 'unknown', got %q", resp.SystemInfo.BuildVersion)
 	}
 
 	expectedComponents := map[string]spb.HealthState{
@@ -233,10 +202,17 @@ func TestListConfigEntries(t *testing.T) {
 		XidAddr:   "localhost:50051",
 		ConfigDir: tempDir,
 	}
-	s, err := newServer(cfg, nil, nil, nil)
+	checker, err := NewHealthChecker(HealthCheckerParams{
+		Config:          cfg,
+		EssHealthClient: nil,
+		XidHealthClient: nil,
+		RedisClient:     nil,
+		CloudRunService: nil,
+	})
 	if err != nil {
-		t.Fatalf("failed to create server: %v", err)
+		t.Fatalf("failed to create health checker: %v", err)
 	}
+	s := newServer(cfg, checker)
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -263,10 +239,17 @@ func TestListConfigEntries(t *testing.T) {
 
 func TestGetUserInfo(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051", ProjectID: "test-project", XidAddr: "localhost:50051"}
-	s, err := newServer(cfg, nil, nil, nil)
+	checker, err := NewHealthChecker(HealthCheckerParams{
+		Config:          cfg,
+		EssHealthClient: nil,
+		XidHealthClient: nil,
+		RedisClient:     nil,
+		CloudRunService: nil,
+	})
 	if err != nil {
-		t.Fatalf("failed to create server: %v", err)
+		t.Fatalf("failed to create health checker: %v", err)
 	}
+	s := newServer(cfg, checker)
 	defer s.Close()
 
 	resp, err := s.GetUserInfo(context.Background(), &spb.GetUserInfoRequest{})
@@ -280,50 +263,5 @@ func TestGetUserInfo(t *testing.T) {
 
 	if len(resp.Privileges) != 1 || resp.Privileges[0] != spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL {
 		t.Errorf("Expected privileges [PRIVILEGE_ACCESS_ADMIN_PANEL], got %v", resp.Privileges)
-	}
-}
-
-func TestGetHealthStatus_RedisUnhealthy(t *testing.T) {
-	cfg := &Config{
-		Port:          "8080",
-		GRPCPort:      "50051",
-		ProjectID:     "test-project",
-		EssURL:        "http://invalid",
-		XidAddr:       "invalid:50051",
-		ActuatorURL:   "http://invalid",
-		ReconcilerURL: "http://invalid",
-	}
-	mockRedis := &mockRedisClient{err: fmt.Errorf("connection refused")}
-	s, err := newServer(cfg, nil, nil, mockRedis)
-	if err != nil {
-		t.Fatalf("failed to create server: %v", err)
-	}
-	defer s.Close()
-
-	resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
-	if err != nil {
-		t.Fatalf("GetHealthStatus failed: %v", err)
-	}
-
-	if resp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
-		t.Errorf("Expected overall status 'HEALTH_STATE_UNHEALTHY', got %v", resp.HealthState)
-	}
-
-	var redisComp *spb.ComponentHealth
-	for _, c := range resp.Components {
-		if c.Name == "Redis" {
-			redisComp = c
-			break
-		}
-	}
-	if redisComp == nil {
-		t.Fatal("Redis component not found in response")
-	}
-
-	if redisComp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
-		t.Errorf("Expected Redis component status 'HEALTH_STATE_UNHEALTHY', got %v", redisComp.HealthState)
-	}
-	if redisComp.ErrorMessage != "redis ping failed: connection refused" {
-		t.Errorf("Expected error message 'redis ping failed: connection refused', got %q", redisComp.ErrorMessage)
 	}
 }

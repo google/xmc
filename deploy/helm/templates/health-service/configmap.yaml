@@ -23,7 +23,10 @@ data:
   health_xid_addr: "xid-svc:50051"
   health_actuator_url: "http://actuator-service:8080"
   health_reconciler_url: "http://reconciler-svc:8080"
+  health_log_monitor_resource_name: {{ .Values.healthService.logMonitorResourceName | quote }}
   health_ess_spanner_database_name: {{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}
   health_xid_spanner_database_name: {{ .Values.xidService.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/xids-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}
   health_redis_addr: {{ .Values.redisAddr | quote }}
+  health_observability_url: {{ .Values.healthService.observabilityUrl | quote }}
+  health_app_version: {{ .Values.imageTag | quote }}
 {{- end }}
