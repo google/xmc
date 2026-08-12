@@ -13,7 +13,16 @@
 // limitations under the License.
 import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 
-import { ArtifactListItem, PayloadType, TypedArtifact } from './interfaces';
+import {
+  ArtifactListItem,
+  ChartTypedArtifact,
+  CodeSourceTypedArtifact,
+  ManagedXprofTypedArtifact,
+  PayloadType,
+  TextTypedArtifact,
+  TypedArtifact,
+  UrlTypedArtifact,
+} from './interfaces';
 
 export interface ArtifactDisplayProperties {
   typeName: string;
@@ -22,7 +31,15 @@ export interface ArtifactDisplayProperties {
   displayName: string;
 }
 
-/** Converts a raw Artifact to a TypedArtifact directly */
+/**
+ * Converts a raw Artifact to a TypedArtifact directly.
+ *
+ * Note: The `complexity` lint rule is disabled here because TypeScript requires
+ * explicit type narrowing (via repetitive `in` operator checks) to properly
+ * discriminate the union fields mapped from an unguaranteed JSON payload.
+ * Extracting this into nested validations hides the type narrows from the parent context.
+ */
+// eslint-disable-next-line complexity
 export function toTypedArtifact(artifact: Artifact): TypedArtifact {
   const payload = artifact.payload;
   if (payload) {
@@ -45,6 +62,51 @@ export function toTypedArtifact(artifact: Artifact): TypedArtifact {
   return { type: PayloadType.UNKNOWN, artifact };
 }
 
+function getManagedXprofProperties(typed: ManagedXprofTypedArtifact): ArtifactDisplayProperties {
+  return {
+    typeName: 'Managed Xprof',
+    icon: 'query_stats',
+    url: typed.payload.xprof?.xprofUrl ?? '',
+    displayName: typed.payload.displayName || '',
+  };
+}
+
+function getCodeSourceProperties(typed: CodeSourceTypedArtifact): ArtifactDisplayProperties {
+  return {
+    typeName: 'Code Source',
+    icon: 'code',
+    url: typed.payload.codeUrl ?? '',
+    displayName: typed.payload.title || '',
+  };
+}
+
+function getTextProperties(typed: TextTypedArtifact): ArtifactDisplayProperties {
+  return {
+    typeName: 'Text',
+    icon: 'description',
+    url: '',
+    displayName: typed.payload.title || '',
+  };
+}
+
+function getUrlProperties(typed: UrlTypedArtifact): ArtifactDisplayProperties {
+  return {
+    typeName: 'URL',
+    icon: typed.payload.icon || 'link',
+    url: typed.payload.url ?? '',
+    displayName: typed.payload.displayName || typed.payload.url || '',
+  };
+}
+
+function getChartProperties(typed: ChartTypedArtifact): ArtifactDisplayProperties {
+  return {
+    typeName: 'Chart',
+    icon: 'bar_chart',
+    url: '',
+    displayName: typed.payload.title || 'Dashboard Chart',
+  };
+}
+
 /**
  * Returns UI display properties (icon, url, type name, display name)
  * for the given typed artifact.
@@ -54,48 +116,18 @@ export function getArtifactDisplayProperties(
 ): ArtifactDisplayProperties {
   switch (typedArtifact.type) {
     case PayloadType.MANAGED_XPROF:
-      return {
-        typeName: 'Managed Xprof',
-        icon: 'query_stats',
-        url: typedArtifact.payload.xprof?.xprofUrl ?? '',
-        displayName: typedArtifact.payload.displayName || '',
-      };
+      return getManagedXprofProperties(typedArtifact);
     case PayloadType.CODE_SOURCE:
-      return {
-        typeName: 'Code Source',
-        icon: 'code',
-        url: typedArtifact.payload.codeUrl ?? '',
-        displayName: typedArtifact.payload.title || '',
-      };
+      return getCodeSourceProperties(typedArtifact);
     case PayloadType.TEXT:
-      return {
-        typeName: 'Text',
-        icon: 'description',
-        url: '',
-        displayName: typedArtifact.payload.title || '',
-      };
+      return getTextProperties(typedArtifact);
     case PayloadType.URL:
-      return {
-        typeName: 'URL',
-        icon: typedArtifact.payload.icon || 'link',
-        url: typedArtifact.payload.url ?? '',
-        displayName: typedArtifact.payload.displayName || typedArtifact.payload.url || '',
-      };
+      return getUrlProperties(typedArtifact);
     case PayloadType.CHART:
-      return {
-        typeName: 'Chart',
-        icon: 'bar_chart',
-        url: '',
-        displayName: typedArtifact.payload.title || 'Dashboard Chart',
-      };
+      return getChartProperties(typedArtifact);
     case PayloadType.UNKNOWN:
     default:
-      return {
-        typeName: 'Unknown',
-        icon: 'link',
-        url: '',
-        displayName: '',
-      };
+      return { typeName: 'Unknown', icon: 'link', url: '', displayName: '' };
   }
 }
 
