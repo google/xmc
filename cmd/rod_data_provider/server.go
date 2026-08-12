@@ -58,9 +58,8 @@ func (s *server) GetQueues(ctx context.Context, req *spb.GetQueuesRequest) (*spb
 
 	rfMap := buildResourceFlavorMap(s.cache)
 	overviews := buildQueueOverviews(s.cache, rfMap)
-	fittingQueues := filterFittingQueues(overviews, req)
 
 	return &spb.GetQueuesResponse{
-		Queues: fittingQueues,
+		Queues: overviews,
 	}, nil
 }
