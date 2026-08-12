@@ -121,7 +121,7 @@ describe('ResourceDashboard Container', () => {
     const dashboard = await getHarness(ResourceDashboardHarness);
     const finderHarness = (await dashboard.getSmartResourceFinder())!;
     const options = await finderHarness.getResourceTypeOptions();
-    expect(options).toEqual(['All resource types (Default - empty)', 'cpu', 'nvidia.com/gpu']);
+    expect(options).toEqual(['-', 'cpu', 'nvidia.com/gpu']);
   });
 
   it('should filter queue list by resource type selection in the picker', async () => {

@@ -40,7 +40,7 @@
             [ngModel]="row.resourceType"
             (ngModelChange)="updateRowResourceType($index, $event)"
           >
-            <option value="">All resource types (Default - empty)</option>
+            <option value="">-</option>
             @for (resType of availableResourceTypes(); track resType) {
               <option [value]="resType">{{ resType }}</option>
             }
