@@ -34,8 +34,8 @@
   "devDependencies": {
     "@angular-devkit/build-angular": "^22.0.2",
     "@angular-eslint/eslint-plugin": "^22.0.0",
-    "@angular-eslint/eslint-plugin-template": "^22.0.0",
-    "@angular-eslint/template-parser": "^22.0.0",
+    "@angular-eslint/eslint-plugin-template": "^22.1.0",
+    "@angular-eslint/template-parser": "^22.1.0",
     "@angular/cli": "^22.0.2",
     "@angular/compiler-cli": "^22.0.2",
     "@playwright/test": "^1.61.1",
@@ -65,6 +65,7 @@
     "postcss": "8.5.25",
     "vite": "7.3.6",
     "@hono/node-server": "2.0.12",
-    "webpack-dev-server": "5.2.6"
+    "webpack-dev-server": "5.2.6",
+    "less": "^4.8.1"
   }
 }

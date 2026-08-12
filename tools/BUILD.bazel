@@ -212,12 +212,18 @@ py_library(
 )
 
 py_library(
-    name = "run_affected_tests_lib",
-    srcs = ["run_affected_tests.py"],
+    name = "resolve_test_scope_lib",
+    srcs = ["resolve_test_scope.py"],
     imports = ["."],
     visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "resolve_test_scope_test",
+    srcs = ["resolve_test_scope_test.py"],
+    imports = ["."],
     deps = [
-        ":tool_utils",
+        ":resolve_test_scope_lib",
     ],
 )
 
@@ -240,22 +246,6 @@ py_test(
         ":generate_review_checklist_lib",
         ":github_utils_lib",
         ":tool_utils",
-    ],
-)
-
-py_library(
-    name = "discover_test_matrix_lib",
-    srcs = ["discover_test_matrix.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-)
-
-py_test(
-    name = "discover_test_matrix_test",
-    srcs = ["discover_test_matrix_test.py"],
-    imports = ["."],
-    deps = [
-        ":discover_test_matrix_lib",
     ],
 )
 
@@ -315,6 +305,72 @@ py_test(
     imports = ["."],
     deps = [
         ":teardown_benchmark_lib",
+        ":tool_utils",
+    ],
+)
+
+py_library(
+    name = "review_pr_generate_audit_lib",
+    srcs = ["review_pr_generate_audit.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+)
+
+py_test(
+    name = "review_pr_generate_audit_test",
+    srcs = ["review_pr_generate_audit_test.py"],
+    imports = ["."],
+    deps = [
+        ":github_utils_lib",
+        ":review_pr_generate_audit_lib",
+        ":tool_utils",
+    ],
+)
+
+py_library(
+    name = "review_pr_post_inline_comment_lib",
+    srcs = ["review_pr_post_inline_comment.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+)
+
+py_test(
+    name = "review_pr_post_inline_comment_test",
+    srcs = ["review_pr_post_inline_comment_test.py"],
+    imports = ["."],
+    deps = [
+        ":github_utils_lib",
+        ":review_pr_post_inline_comment_lib",
+        ":tool_utils",
+    ],
+)
+
+py_library(
+    name = "review_pr_verify_posted_lib",
+    srcs = ["review_pr_verify_posted.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":github_utils_lib",
+        ":tool_utils",
+    ],
+)
+
+py_test(
+    name = "review_pr_verify_posted_test",
+    srcs = ["review_pr_verify_posted_test.py"],
+    imports = ["."],
+    deps = [
+        ":github_utils_lib",
+        ":review_pr_verify_posted_lib",
         ":tool_utils",
     ],
 )

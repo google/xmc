@@ -54,6 +54,7 @@ export class HealthStatusSectionComponent {
   components = input.required<ComponentHealth[]>();
   overallStatus = input<string>(HealthState.UNSPECIFIED);
   lastChecked = input<string>('');
+  loading = input<boolean>(false);
   refresh = output<void>();
 
   // Computed properties to group components

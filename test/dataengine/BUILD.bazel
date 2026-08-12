@@ -1,0 +1,83 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
+
+compat_go_library(
+    name = "dataengine_harness",
+    srcs = [
+        "comparator.go",
+        "env.go",
+        "harness.go",
+        "seeder.go",
+    ],
+    data = glob(["testdata/**"]),
+    importpath = "xmanager_cloud/test/dataengine",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/protos/dashboard:api_go_proto",
+        "//api/protos/dashboard:service_go_proto",
+        "//internal/dashboard/dataengine",
+        "//pkg/clickhouse",
+        "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
+        "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//testing/protocmp",
+    ],
+)
+
+compat_go_library(
+    name = "runner_lib",
+    srcs = ["runner/main.go"],
+    importpath = "xmanager_cloud/test/dataengine/runner",
+    visibility = ["//visibility:private"],
+    deps = [
+        ":dataengine_harness",
+    ],
+)
+
+go_binary(
+    name = "test_dataengine",
+    data = glob(["testdata/**"]),
+    embed = [":runner_lib"],
+    visibility = ["//visibility:public"],
+)
+
+compat_go_test(
+    name = "comparator_test",
+    srcs = ["comparator_test.go"],
+    data = glob(["testdata/**"]),
+    embed = [":dataengine_harness"],
+    deps = [
+        "//api/protos/dashboard:api_go_proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+compat_go_test(
+    name = "env_test",
+    srcs = ["env_test.go"],
+    embed = [":dataengine_harness"],
+)
+
+compat_go_test(
+    name = "dataengine_e2e_test",
+    srcs = ["dataengine_e2e_test.go"],
+    data = glob(["testdata/**"]),
+    deps = [
+        ":dataengine_harness",
+        "//pkg/clickhouse",
+    ],
+)

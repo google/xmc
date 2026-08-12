@@ -22,9 +22,9 @@
       XMC Services Health
     </h2>
     <div class="header-actions">
-      <button type="button" class="refresh-button" (click)="onRefresh()">
-        <mat-icon class="button-icon">refresh</mat-icon>
-        Refresh
+      <button type="button" class="refresh-button" [disabled]="loading()" (click)="onRefresh()">
+        <mat-icon class="button-icon" [class.animate-spin]="loading()">refresh</mat-icon>
+        {{ loading() ? 'Refreshing...' : 'Refresh' }}
       </button>
       <span
         class="status-badge"
