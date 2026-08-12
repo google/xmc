@@ -13,7 +13,16 @@
 // limitations under the License.
 import { Artifact } from 'xmanager_cloud/experiment_state_server/proto/artifact.jsonpb_decls';
 
-import { ArtifactListItem, PayloadType, TypedArtifact } from './interfaces';
+import {
+  ArtifactListItem,
+  ChartTypedArtifact,
+  CodeSourceTypedArtifact,
+  ManagedXprofTypedArtifact,
+  PayloadType,
+  TextTypedArtifact,
+  TypedArtifact,
+  UrlTypedArtifact,
+} from './interfaces';
 
 export interface ArtifactDisplayProperties {
   typeName: string;
@@ -53,64 +62,71 @@ export function toTypedArtifact(artifact: Artifact): TypedArtifact {
   return { type: PayloadType.UNKNOWN, artifact };
 }
 
+function getManagedXprofProps(
+  typed: ManagedXprofTypedArtifact,
+): Omit<ArtifactDisplayProperties, 'typeName'> {
+  return {
+    icon: 'query_stats',
+    url: typed.payload.xprof?.xprofUrl ?? '',
+    displayName: typed.payload.displayName || '',
+  };
+}
+
+function getCodeSourceProps(
+  typed: CodeSourceTypedArtifact,
+): Omit<ArtifactDisplayProperties, 'typeName'> {
+  return {
+    icon: 'code',
+    url: typed.payload.codeUrl ?? '',
+    displayName: typed.payload.title || '',
+  };
+}
+
+function getTextProps(typed: TextTypedArtifact): Omit<ArtifactDisplayProperties, 'typeName'> {
+  return {
+    icon: 'description',
+    url: '',
+    displayName: typed.payload.title || '',
+  };
+}
+
+function getUrlProps(typed: UrlTypedArtifact): Omit<ArtifactDisplayProperties, 'typeName'> {
+  return {
+    icon: typed.payload.icon || 'link',
+    url: typed.payload.url ?? '',
+    displayName: typed.payload.displayName || typed.payload.url || '',
+  };
+}
+
+function getChartProps(typed: ChartTypedArtifact): Omit<ArtifactDisplayProperties, 'typeName'> {
+  return {
+    icon: 'bar_chart',
+    url: '',
+    displayName: typed.payload.title || 'Dashboard Chart',
+  };
+}
+
 /**
  * Returns UI display properties (icon, url, type name, display name)
  * for the given typed artifact.
- *
- * Note: `complexity` and `max-lines-per-function` lint rules are disabled here.
- * Abstracting this discrete mapping logic into lookup maps or separate smaller
- * functions would force the usage of non-specific types (like `any` or `Record<string, unknown>`),
- * permanently destroying TypeScript's ability to strictly infer and validate
- * the underlying payload structures via discriminated unions on the `switch` statement.
  */
-// eslint-disable-next-line complexity, max-lines-per-function
 export function getArtifactDisplayProperties(
   typedArtifact: TypedArtifact,
 ): ArtifactDisplayProperties {
   switch (typedArtifact.type) {
     case PayloadType.MANAGED_XPROF:
-      return {
-        typeName: 'Managed Xprof',
-        icon: 'query_stats',
-        url: typedArtifact.payload.xprof?.xprofUrl ?? '',
-        displayName: typedArtifact.payload.displayName || '',
-      };
+      return { typeName: 'Managed Xprof', ...getManagedXprofProps(typedArtifact) };
     case PayloadType.CODE_SOURCE:
-      return {
-        typeName: 'Code Source',
-        icon: 'code',
-        url: typedArtifact.payload.codeUrl ?? '',
-        displayName: typedArtifact.payload.title || '',
-      };
+      return { typeName: 'Code Source', ...getCodeSourceProps(typedArtifact) };
     case PayloadType.TEXT:
-      return {
-        typeName: 'Text',
-        icon: 'description',
-        url: '',
-        displayName: typedArtifact.payload.title || '',
-      };
+      return { typeName: 'Text', ...getTextProps(typedArtifact) };
     case PayloadType.URL:
-      return {
-        typeName: 'URL',
-        icon: typedArtifact.payload.icon || 'link',
-        url: typedArtifact.payload.url ?? '',
-        displayName: typedArtifact.payload.displayName || typedArtifact.payload.url || '',
-      };
+      return { typeName: 'URL', ...getUrlProps(typedArtifact) };
     case PayloadType.CHART:
-      return {
-        typeName: 'Chart',
-        icon: 'bar_chart',
-        url: '',
-        displayName: typedArtifact.payload.title || 'Dashboard Chart',
-      };
+      return { typeName: 'Chart', ...getChartProps(typedArtifact) };
     case PayloadType.UNKNOWN:
     default:
-      return {
-        typeName: 'Unknown',
-        icon: 'link',
-        url: '',
-        displayName: '',
-      };
+      return { typeName: 'Unknown', icon: 'link', url: '', displayName: '' };
   }
 }
 
