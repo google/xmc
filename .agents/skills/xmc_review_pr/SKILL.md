@@ -105,31 +105,48 @@ All expert subagents invoked during Phase 2 MUST receive the following mandatory
 
 After subagents complete their reviews, the Main Orchestrator synthesizes findings, filters out duplicate/trivial comments, and formats the Interactive Audit Checklist inside `<appDataDir>/brain/<conv_id>/pr_review_audit_checklist.md`.
 
+Crucially, the Main Orchestrator MUST partition every finding into **two distinct scope categories** based on git diff patch boundaries:
+1. **Group A: Inline PR Diff Patch Items (`Patch-In-Scope`)**: Target lines that were actually modified or added in the PR diff patch. These can be posted directly as inline GitHub diff comments (`review_pr_post_inline_comment.py`).
+2. **Group B: Out-of-Diff Scope Observations (`Unchanged-Line-Out-of-Scope`)**: Target unchanged surrounding lines in modified files outside the PR diff patch. Because GitHub's inline comment API rejects non-diff lines with 422 errors, these **cannot be posted as inline review comments**.
+
 Each proposed item in `pr_review_audit_checklist.md` must specify:
 * **Item ID** (`#1`, `#2`, ...)
+* **Scope Classification**: `[Group A: Inline Patch]` vs `[Group B: Out-of-Diff Scope]`
 * **Status**: `Draft` (default until user confirms)
-* **File Path & Line Number** (strictly inline diff locations)
+* **File Path & Line Number** (with patch vs unchanged line status clearly flagged)
 * **Rule Reference** (canonical path, e.g., `core_engineering.md#1-single-responsibility-principle` or `pr_review_guidelines.md#1-code-review--inspection-guidelines`)
 * **Priority**: `Blocker` / `Actionable Optimization` / `Clarity Question` / `Nit`
 * **Proposed Inline Comment Text** (with concrete git diff block suggestions where applicable)
 
 ---
 
-### Phase 4: Mandatory Explicit Confirmation Gate (Zero Unconfirmed Posting)
+### Phase 4: Mandatory Explicit Confirmation Gate (Zero Unconfirmed or Misleading Posting)
 
 > [!WARNING]
-> **Strict Anti-Jumping Guardrail**: The agent MUST NEVER execute inline comment posting scripts (`review_pr_post_inline_comment.py`) without explicit, affirmative user confirmation in the current conversation turn.
+> **Strict Anti-Jumping & No-Omission Guardrail**: The agent MUST NEVER execute inline comment posting scripts without explicit user confirmation, and MUST NEVER ask an ambiguous question that claims to post `#1 through #8` when items outside the PR diff patch cannot be posted inline.
 
-The agent presents the complete proposal table to the user in chat:
-> *"I have synthesized our review findings into `pr_review_audit_checklist.md` inside your session folder.*
+When asking for Phase 4 confirmation, the agent MUST present both tables separately and ask an **explicit partitioned question**:
+
+> *"I have synthesized our review findings into `pr_review_audit_checklist.md` inside your session folder, partitioned by GitHub PR patch scope:*
 > 
-> | Item | Priority | File & Line | Rule Reference | Summary of Proposed Inline Comment |
-> | :--- | :--- | :--- | :--- | :--- |
-> | `#1` | Actionable | `pkg/auth/handler.go`:L152 | `core_engineering.md` | Avoid nested if-else with early guard returns |
-> | `#2` | Blocker | `cmd/xid_service/main.go`:L88 | `core_engineering.md` | Test constructor bypasses nil double |
+> *### **Group A: Postable Inline PR Diff Patch Comments (Postable Inline)** (4 items)*
+> *| Item | Priority | File & Line | Rule Reference | Summary of Proposed Inline Comment |*
+> *| :--- | :--- | :--- | :--- | :--- |*
+> *| `#1` | Actionable | `pkg/auth/handler.go`:L152 (Patch Line) | `core_engineering.md` | Avoid nested if-else with early guard returns |*
+> *| `#2` | Blocker | `cmd/xid_service/main.go`:L88 (Patch Line) | `core_engineering.md` | Test constructor bypasses nil double |*
 > 
-> *None of these comments have been posted yet. You can approve all, drop items, or edit proposed text.*
-> *Shall I proceed with posting approved inline review comments to PR #<pr_number>? (Y/n / modify #X)"*
+> *### **Group B: Out-of-Diff Scope Observations (Unchanged Lines in Touched Files)** (4 items)*
+> *| Item | Priority | File & Line | Rule Reference | Architectural Observation Summary |*
+> *| :--- | :--- | :--- | :--- | :--- |*
+> *| `#5` | Nit | `pkg/auth/handler.go`:L210 (Unchanged Line) | `core_engineering.md` | Legacy struct field name inconsistency |*
+> *| `#6` | Actionable | `cmd/xid_service/main.go`:L12 (Unchanged Line) | `core_engineering.md` | Dead helper constant outside modified PR diff |*
+> 
+> *> [!IMPORTANT]*
+> *> **Posting Scope Clarification**: GitHub's inline review API only supports posting inline comments on changed patch lines (Group A). Group B items cannot be posted inline; by default, they are recorded and tracked exclusively in our session checklist artifact so they do not clutter the PR.*
+> 
+> *Please confirm:*
+> *1. **Shall I proceed with posting Group A inline PR comments (#1 through #4) on GitHub?** (`Y`/`n` / modify `#X`)*
+> *2. **Do you want to include any critical Group B out-of-diff items (#5 through #8) as an overall PR summary comment?** (Default is **No** — omit from PR and keep strictly in session checklist artifact unless you explicitly specify critical items to include)*"
 
 ---
 
