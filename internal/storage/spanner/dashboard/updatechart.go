@@ -18,8 +18,6 @@ import (
 	"context"
 	"fmt"
 
-	"cloud.google.com/go/spanner"
-
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/logging/logging"
@@ -36,21 +34,11 @@ func (r *Repository) UpdateChart(ctx context.Context, chart *dpb.Chart) error {
 
 	logging.Info(ctx, "Update chart in storage", "name", chart.GetName())
 
-	updateMut, err := data.ChartProtoToUpdateMutation(chart)
+	mutations, err := data.ChartProtoToUpdateMutations(chart)
 	if err != nil {
-		logging.Error(ctx, "Failed to generate chart update mutation", "error", err)
+		logging.Error(ctx, "Failed to generate update chart mutations", "error", err)
 		return err
 	}
-
-	deletePlotsMut := data.ChartPlotsToDeleteMutation(chart.GetName())
-
-	insertPlotsMuts, err := data.PlotSpecsToInsertMutations(chart.GetName(), chart.GetPlots())
-	if err != nil {
-		logging.Error(ctx, "Failed to generate plot spec mutations", "error", err)
-		return err
-	}
-
-	mutations := append([]*spanner.Mutation{updateMut, deletePlotsMut}, insertPlotsMuts...)
 
 	if _, err := r.client.Apply(ctx, mutations); err != nil {
 		logging.Error(ctx, "Failed to apply update chart mutations", "error", err)

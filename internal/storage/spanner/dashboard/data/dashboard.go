@@ -266,25 +266,25 @@ func ChartRowToProto(row *spanner.Row, plots []*dpb.PlotSpec) (*dpb.Chart, error
 		layoutBytes        []byte
 		createdAt, updated time.Time
 	)
-	if err := row.Column(0, &id); err != nil {
+	if err := row.ColumnByName("ChartId", &id); err != nil {
 		return nil, fmt.Errorf("failed to read ChartId: %w", err)
 	}
-	if err := row.Column(1, &title); err != nil {
+	if err := row.ColumnByName("Title", &title); err != nil {
 		return nil, fmt.Errorf("failed to read Title: %w", err)
 	}
-	if err := row.Column(2, &xid); err != nil {
+	if err := row.ColumnByName("Xid", &xid); err != nil {
 		return nil, fmt.Errorf("failed to read Xid: %w", err)
 	}
-	if err := row.Column(3, &layoutBytes); err != nil {
+	if err := row.ColumnByName("PlotLayout", &layoutBytes); err != nil {
 		return nil, fmt.Errorf("failed to read PlotLayout: %w", err)
 	}
-	if err := row.Column(4, &owner); err != nil {
+	if err := row.ColumnByName("Owner", &owner); err != nil {
 		return nil, fmt.Errorf("failed to read Owner: %w", err)
 	}
-	if err := row.Column(5, &createdAt); err != nil {
+	if err := row.ColumnByName("CreatedAt", &createdAt); err != nil {
 		return nil, fmt.Errorf("failed to read CreatedAt: %w", err)
 	}
-	if err := row.Column(6, &updated); err != nil {
+	if err := row.ColumnByName("UpdatedAt", &updated); err != nil {
 		return nil, fmt.Errorf("failed to read UpdatedAt: %w", err)
 	}
 
@@ -381,16 +381,16 @@ func ArtifactChartRowToDeleteMutation(row *spanner.Row) (*spanner.Mutation, erro
 		artifactId      int64
 		artifactChartId string
 	)
-	if err := row.Column(0, &bitReversedXid); err != nil {
+	if err := row.ColumnByName("BitReversedXid", &bitReversedXid); err != nil {
 		return nil, fmt.Errorf("failed to parse BitReversedXid: %w", err)
 	}
-	if err := row.Column(1, &workUnitId); err != nil {
+	if err := row.ColumnByName("WorkUnitId", &workUnitId); err != nil {
 		return nil, fmt.Errorf("failed to parse WorkUnitId: %w", err)
 	}
-	if err := row.Column(2, &artifactId); err != nil {
+	if err := row.ColumnByName("ArtifactId", &artifactId); err != nil {
 		return nil, fmt.Errorf("failed to parse ArtifactId: %w", err)
 	}
-	if err := row.Column(3, &artifactChartId); err != nil {
+	if err := row.ColumnByName("ArtifactChartId", &artifactChartId); err != nil {
 		return nil, fmt.Errorf("failed to parse ArtifactChartId: %w", err)
 	}
 
@@ -404,10 +404,10 @@ func DashboardChartRowToDeleteMutation(row *spanner.Row) (*spanner.Mutation, err
 		return nil, fmt.Errorf("spanner row must not be nil")
 	}
 	var dashboardId, dashboardChartId string
-	if err := row.Column(0, &dashboardId); err != nil {
+	if err := row.ColumnByName("DashboardId", &dashboardId); err != nil {
 		return nil, fmt.Errorf("failed to parse DashboardId: %w", err)
 	}
-	if err := row.Column(1, &dashboardChartId); err != nil {
+	if err := row.ColumnByName("DashboardChartId", &dashboardChartId); err != nil {
 		return nil, fmt.Errorf("failed to parse DashboardChartId: %w", err)
 	}
 	pk := spanner.Key{dashboardId, dashboardChartId}
