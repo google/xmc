@@ -360,24 +360,25 @@ func TestStopOperationOnError(t *testing.T) {
 
 			server.stopOperationOnError(ctx, tc.op, tc.err)
 
-			if tc.wantUpdateWorkUnitOperation {
-				if storage.UpdateWorkUnitOperationCalls != 1 {
-					t.Errorf("stopOperationOnError() UpdateWorkUnitOperation calls = %d, want 1", storage.UpdateWorkUnitOperationCalls)
-				}
-				if storage.GotOperationUpdate.Operation.GetDone() != tc.wantDone {
-					t.Errorf("stopOperationOnError() updated operation with done = %v, want %v", storage.GotOperationUpdate.Operation.GetDone(), tc.wantDone)
-				}
-				if status.Code(storage.GotOperationUpdate.Operation.GetError().GetCode()) != tc.wantCode {
-					t.Errorf("stopOperationOnError() updated operation with code = %v, want %v", status.Code(storage.GotOperationUpdate.Operation.GetError().GetCode()), tc.wantCode)
-				}
-				wantMask := &fmpb.FieldMask{Paths: []string{"done", "error"}}
-				if diff := cmp.Diff(wantMask, storage.GotOperationUpdate.UpdateMask, protocmp.Transform()); diff != "" {
-					t.Errorf("stopOperationOnError() updated operation with wrong update mask (-want +got):\n%s", diff)
-				}
-			} else {
+			if !tc.wantUpdateWorkUnitOperation {
 				if storage.UpdateWorkUnitOperationCalls != 0 {
 					t.Errorf("stopOperationOnError() UpdateWorkUnitOperation calls = %d, want 0", storage.UpdateWorkUnitOperationCalls)
 				}
+				return
+			}
+
+			if storage.UpdateWorkUnitOperationCalls != 1 {
+				t.Errorf("stopOperationOnError() UpdateWorkUnitOperation calls = %d, want 1", storage.UpdateWorkUnitOperationCalls)
+			}
+			if storage.GotOperationUpdate.Operation.GetDone() != tc.wantDone {
+				t.Errorf("stopOperationOnError() updated operation with done = %v, want %v", storage.GotOperationUpdate.Operation.GetDone(), tc.wantDone)
+			}
+			if status.Code(storage.GotOperationUpdate.Operation.GetError().GetCode()) != tc.wantCode {
+				t.Errorf("stopOperationOnError() updated operation with code = %v, want %v", status.Code(storage.GotOperationUpdate.Operation.GetError().GetCode()), tc.wantCode)
+			}
+			wantMask := &fmpb.FieldMask{Paths: []string{"done", "error"}}
+			if diff := cmp.Diff(wantMask, storage.GotOperationUpdate.UpdateMask, protocmp.Transform()); diff != "" {
+				t.Errorf("stopOperationOnError() updated operation with wrong update mask (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -440,31 +441,33 @@ func TestPropagateIAPJWT(t *testing.T) {
 			outCtx := propagateIAPJWT(ctx)
 
 			outMD, ok := metadata.FromOutgoingContext(outCtx)
-			if !ok && tc.wantOK {
-				t.Fatal("expected outgoing metadata, but got none")
+			if !ok {
+				if tc.wantOK {
+					t.Fatal("expected outgoing metadata, but got none")
+				}
+				return
 			}
-			if ok {
-				jwtValues := outMD.Get("x-goog-iap-jwt-assertion")
-				if len(jwtValues) > 0 && !tc.wantOK {
-					t.Errorf("expected no jwt in outgoing metadata, got %v", jwtValues)
-				}
-				if len(jwtValues) == 0 && tc.wantOK && tc.wantJWTOut != "" {
-					t.Errorf("expected jwt in outgoing metadata, got none")
-				}
-				if len(jwtValues) > 0 && tc.wantOK && jwtValues[0] != tc.wantJWTOut {
-					t.Errorf("wrong jwt in outgoing metadata, got %q, want %q", jwtValues[0], tc.wantJWTOut)
-				}
 
-				emailValues := outMD.Get("x-goog-user-email")
-				if len(emailValues) > 0 && !tc.wantOK {
-					t.Errorf("expected no email in outgoing metadata, got %v", emailValues)
-				}
-				if len(emailValues) == 0 && tc.wantOK && tc.wantEmailOut != "" {
-					t.Errorf("expected email in outgoing metadata, got none")
-				}
-				if len(emailValues) > 0 && tc.wantOK && emailValues[0] != tc.wantEmailOut {
-					t.Errorf("wrong email in outgoing metadata, got %q, want %q", emailValues[0], tc.wantEmailOut)
-				}
+			jwtValues := outMD.Get("x-goog-iap-jwt-assertion")
+			if len(jwtValues) > 0 && !tc.wantOK {
+				t.Errorf("expected no jwt in outgoing metadata, got %v", jwtValues)
+			}
+			if len(jwtValues) == 0 && tc.wantOK && tc.wantJWTOut != "" {
+				t.Errorf("expected jwt in outgoing metadata, got none")
+			}
+			if len(jwtValues) > 0 && tc.wantOK && jwtValues[0] != tc.wantJWTOut {
+				t.Errorf("wrong jwt in outgoing metadata, got %q, want %q", jwtValues[0], tc.wantJWTOut)
+			}
+
+			emailValues := outMD.Get("x-goog-user-email")
+			if len(emailValues) > 0 && !tc.wantOK {
+				t.Errorf("expected no email in outgoing metadata, got %v", emailValues)
+			}
+			if len(emailValues) == 0 && tc.wantOK && tc.wantEmailOut != "" {
+				t.Errorf("expected email in outgoing metadata, got none")
+			}
+			if len(emailValues) > 0 && tc.wantOK && emailValues[0] != tc.wantEmailOut {
+				t.Errorf("wrong email in outgoing metadata, got %q, want %q", emailValues[0], tc.wantEmailOut)
 			}
 		})
 	}
@@ -476,5 +479,78 @@ func TestPropagateIAPJWT_NoIncomingMetadata(t *testing.T) {
 	_, ok := metadata.FromOutgoingContext(outCtx)
 	if ok {
 		t.Errorf("expected no outgoing metadata, but got some")
+	}
+}
+
+func TestHandleEnqueueActionError(t *testing.T) {
+	ctx := context.Background()
+	cfg := &config.Config{}
+	authorizer := createTestAuthorizer(ctx, t)
+	enqueueErr := errors.New("queue unreachable")
+
+	testCases := []struct {
+		name                        string
+		workUnit                    *essmsgpb.WorkUnit
+		updateWorkUnitExecutionsErr error
+		wantErr                     bool
+		wantValErr                  bool
+	}{
+		{
+			name: "invalid_execution_name",
+			workUnit: &essmsgpb.WorkUnit{
+				Name: "experiments/123/workUnits/456",
+				CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+					Name: "invalid-name",
+				},
+			},
+			wantErr:    true,
+			wantValErr: true,
+		},
+		{
+			name: "valid_execution_name_success",
+			workUnit: &essmsgpb.WorkUnit{
+				Name: "experiments/123/workUnits/456",
+				CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+					Name: "experiments/123/workUnits/456/executions/1",
+				},
+			},
+			wantErr:    true,
+			wantValErr: false,
+		},
+		{
+			name: "valid_execution_name_status_update_error",
+			workUnit: &essmsgpb.WorkUnit{
+				Name: "experiments/123/workUnits/456",
+				CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+					Name: "experiments/123/workUnits/456/executions/1",
+				},
+			},
+			updateWorkUnitExecutionsErr: errors.New("db error"),
+			wantErr:                     true,
+			wantValErr:                  false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockStore := &storage.MockStorage{
+				UpdateWorkUnitExecutionsErr: tc.updateWorkUnitExecutionsErr,
+			}
+			server := New(mockStore, cfg, authorizer, &mockXidClient{}, nil)
+
+			err := server.handleEnqueueActionError(ctx, "stop", tc.workUnit, 123, 456, essmsgpb.StructuredMessage_ERROR, enqueueErr)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("handleEnqueueActionError() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantValErr {
+				if !errors.Is(err, status.ErrInternal) {
+					t.Errorf("handleEnqueueActionError() error = %v, want status.ErrInternal", err)
+				}
+			} else {
+				if !errors.Is(err, status.ErrInternal) {
+					t.Errorf("handleEnqueueActionError() error = %v, want status.ErrInternal", err)
+				}
+			}
+		})
 	}
 }

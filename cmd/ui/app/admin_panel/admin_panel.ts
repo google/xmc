@@ -12,13 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { JsonPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { BehaviorSubject, of } from 'rxjs';
+import { catchError, finalize, switchMap, tap } from 'rxjs/operators';
+
+import {
+  HealthStatusResponse,
+  ListConfigEntriesResponse,
+} from 'xmanager_cloud/health_service/proto/api.jsonpb_decls';
 
 import { HealthService } from '../service/health_service';
+import { SnackbarService } from '../service/snackbar_service';
+import { ConfigEntriesCardComponent } from './components/config_entries_card/config_entries_card';
+import { HealthStatusSectionComponent } from './components/health_status_section/health_status_section';
+import { SystemInfoCardComponent } from './components/system_info_card/system_info_card';
 
 /**
  * Mock Admin Panel component for XMC.
@@ -26,20 +34,44 @@ import { HealthService } from '../service/health_service';
 @Component({
   selector: 'xmc-admin-panel',
   standalone: true,
-  imports: [JsonPipe],
+  imports: [SystemInfoCardComponent, HealthStatusSectionComponent, ConfigEntriesCardComponent],
   templateUrl: './admin_panel.ng.html',
   styleUrl: './admin_panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AdminPanelPage {
   private readonly healthService = inject(HealthService);
+  private readonly snackbarService = inject(SnackbarService);
+
+  protected readonly healthStatusError = signal<unknown>(null);
+
+  private lastKnownStatus: HealthStatusResponse | null = null;
+
+  protected readonly isRefreshing = signal<boolean>(false);
+
+  private readonly refreshTrigger$ = new BehaviorSubject<boolean>(false);
 
   protected readonly healthStatus = toSignal(
-    this.healthService.getHealthStatus().pipe(
-      catchError((error) => {
-        console.error('Failed to fetch health status', error);
-        return of({ error: 'Failed to fetch health status' });
-      }),
+    this.refreshTrigger$.pipe(
+      tap(() => this.isRefreshing.set(true)),
+      switchMap((forceRefresh) =>
+        this.healthService.getHealthStatus(forceRefresh).pipe(
+          tap((status) => {
+            this.lastKnownStatus = status;
+            this.healthStatusError.set(null);
+          }),
+          catchError((error) => {
+            console.error('Failed to fetch health status', error);
+            if (this.lastKnownStatus) {
+              this.snackbarService.open('Failed to refresh health status.');
+              return of(this.lastKnownStatus);
+            }
+            this.healthStatusError.set(error);
+            return of({} as HealthStatusResponse);
+          }),
+          finalize(() => this.isRefreshing.set(false)),
+        ),
+      ),
     ),
   );
 
@@ -47,8 +79,27 @@ export class AdminPanelPage {
     this.healthService.getHealthConfigs().pipe(
       catchError((error) => {
         console.error('Failed to fetch health configs', error);
-        return of({ error: 'Failed to fetch health configs' });
+        return of({} as ListConfigEntriesResponse);
       }),
     ),
   );
+
+  protected readonly isLoading = computed(() => this.healthStatus() === undefined);
+
+  protected readonly lastUpdated = computed(() => {
+    const status = this.healthStatus();
+    if (!status || !status.healthCheckTime) return '';
+    const time = status.healthCheckTime;
+    if (typeof time === 'string') {
+      return new Date(time).toLocaleTimeString();
+    }
+    if (time.seconds) {
+      return new Date(Number(time.seconds) * 1000).toLocaleTimeString();
+    }
+    return '';
+  });
+
+  protected onRefresh(): void {
+    this.refreshTrigger$.next(true);
+  }
 }

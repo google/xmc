@@ -351,10 +351,10 @@ func TestCalculateJobTotals(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotSucceeded, gotFailed, gotActive, gotReady, gotTotalReplicas := calculateJobTotals(tc.jobSet)
-			if gotSucceeded != tc.wantSucceeded || gotFailed != tc.wantFailed || gotActive != tc.wantActive || gotReady != tc.wantReady || gotTotalReplicas != tc.wantTotalReplicas {
+			got := calculateJobTotals(tc.jobSet)
+			if got.Succeeded != tc.wantSucceeded || got.Failed != tc.wantFailed || got.Active != tc.wantActive || got.Ready != tc.wantReady || got.Replicas != tc.wantTotalReplicas {
 				t.Errorf("calculateJobTotals() = (%d, %d, %d, %d, %d), want (%d, %d, %d, %d, %d)",
-					gotSucceeded, gotFailed, gotActive, gotReady, gotTotalReplicas,
+					got.Succeeded, got.Failed, got.Active, got.Ready, got.Replicas,
 					tc.wantSucceeded, tc.wantFailed, tc.wantActive, tc.wantReady, tc.wantTotalReplicas)
 			}
 		})

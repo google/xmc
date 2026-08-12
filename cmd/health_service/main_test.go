@@ -55,8 +55,10 @@ func TestRequireAdminRoleMiddleware(t *testing.T) {
 	}
 	defer lis.Close()
 
+	checker := &mockHealthChecker{}
+	cfg := &Config{ConfigDir: t.TempDir()}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
-	spb.RegisterHealthServiceServer(grpcServer, newServer(&Config{}, authenticator, &mockAuthorizer{}))
+	spb.RegisterHealthServiceServer(grpcServer, newServer(cfg, checker, authenticator, &mockAuthorizer{}))
 	go func() {
 		_ = grpcServer.Serve(lis)
 	}()

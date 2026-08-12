@@ -13,7 +13,7 @@
 // limitations under the License.
 import 'jasmine';
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpRequest, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
@@ -25,7 +25,7 @@ import {
   setupObservableMatchers,
 } from 'xmanager_cloud/ui/app/testing/test';
 
-import { EXPERIMENT_STATE_SERVER_DOMAIN } from './constants';
+import { XMC_API_DOMAIN } from './constants';
 import { WorkUnitsService } from './work_units_service';
 
 describe('WorkUnitsService', () => {
@@ -60,9 +60,7 @@ describe('WorkUnitsService', () => {
         state.service.searchWorkUnits({ parent: 'experiments/1' }),
       );
 
-      const req = state.httpMock.expectOne(
-        `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/workUnits`,
-      );
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/experiments/1/workUnits`);
       expect(req.request.method).toBe('GET');
       req.flush(mockResponse);
 
@@ -79,7 +77,9 @@ describe('WorkUnitsService', () => {
         }),
       );
 
-      const req = state.httpMock.expectOne((req) => req.url.includes('/experiments/1/workUnits'));
+      const req = state.httpMock.expectOne((req: HttpRequest<unknown>) =>
+        req.url.includes('/experiments/1/workUnits'),
+      );
       expect(req.request.params.get('pageSize')).toBe('10');
       expect(req.request.params.get('pageToken')).toBe('prev_token');
       req.flush({});
@@ -92,9 +92,7 @@ describe('WorkUnitsService', () => {
         state.service.getWorkUnit({ name: 'experiments/1/workUnits/1' }),
       );
 
-      const req = state.httpMock.expectOne(
-        `${EXPERIMENT_STATE_SERVER_DOMAIN}/experiments/1/workUnits/1`,
-      );
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/experiments/1/workUnits/1`);
       expect(req.request.method).toBe('GET');
       req.flush(WORK_UNIT_1);
 

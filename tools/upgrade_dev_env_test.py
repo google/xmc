@@ -58,6 +58,9 @@ class TestLoadConfig(unittest.TestCase):
   region: us-east1
   environment: staging
   namespace: custom-ns
+  domain_name: example.com
+  image_registry: us-docker.pkg.dev/yaml-project/xmc
+  image_tag: latest
 """
         self.config_path.write_text(self.config_content, encoding="utf-8")
 
@@ -114,21 +117,20 @@ class TestMigrationHelpers(unittest.TestCase):
     def test_extract_migration_version_empty(self):
         self.assertEqual(upgrade_dev_env.extract_migration_version([]), 0)
 
-    @mock.patch("tools.upgrade_dev_env.run_cmd")
+    @mock.patch("tools.upgrade_dev_env.run_command")
     def test_get_migration_status_dirty(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="Version: 1\nDirty: true\n", stderr=""
         )
-        config = upgrade_dev_env.Config(
+        config = upgrade_dev_env.UpgradeConfig(
             project_id="p",
             deployment_name="d",
             region="r",
             environment="e",
             namespace="n",
-            registry="reg",
-            acr_target="tar",
-            gke_cluster="c",
             config_path="cfg",
+            image_registry="us-docker.pkg.dev/p/xmc",
+            image_tag="latest",
         )
         with self.assertRaises(SystemExit) as cm:
             upgrade_dev_env.get_migration_status(config, "ess", "inst", "db")
@@ -137,16 +139,15 @@ class TestMigrationHelpers(unittest.TestCase):
     @mock.patch("tools.upgrade_dev_env.get_migration_status")
     def test_step_migrate_exits_code_10_when_pending(self, mock_status):
         mock_status.side_effect = [(1, 2), (1, 1)]
-        config = upgrade_dev_env.Config(
+        config = upgrade_dev_env.UpgradeConfig(
             project_id="p",
             deployment_name="d",
             region="r",
             environment="e",
             namespace="n",
-            registry="reg",
-            acr_target="tar",
-            gke_cluster="c",
             config_path="cfg",
+            image_registry="us-docker.pkg.dev/p/xmc",
+            image_tag="latest",
             run_migrations=False,
         )
         with self.assertRaises(SystemExit) as cm:
@@ -157,16 +158,15 @@ class TestMigrationHelpers(unittest.TestCase):
     @mock.patch("tools.upgrade_dev_env.get_migration_status")
     def test_step_migrate_runs_when_flag_enabled(self, mock_status, mock_run_mig):
         mock_status.side_effect = [(1, 2), (1, 3)]
-        config = upgrade_dev_env.Config(
+        config = upgrade_dev_env.UpgradeConfig(
             project_id="p",
             deployment_name="d",
             region="r",
             environment="dev",
             namespace="n",
-            registry="reg",
-            acr_target="tar",
-            gke_cluster="c",
             config_path="cfg",
+            image_registry="us-docker.pkg.dev/p/xmc",
+            image_tag="latest",
             run_migrations=True,
         )
         upgrade_dev_env.step_migrate(config)
@@ -176,7 +176,7 @@ class TestMigrationHelpers(unittest.TestCase):
 class TestDeploymentResolution(unittest.TestCase):
     """Tests Kubernetes deployment name fallback resolution."""
 
-    @mock.patch("tools.upgrade_dev_env.run_cmd")
+    @mock.patch("tools.upgrade_dev_env.run_command")
     def test_resolve_exact_match(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
@@ -184,7 +184,7 @@ class TestDeploymentResolution(unittest.TestCase):
         res = upgrade_dev_env.resolve_deployment_name("actuator", "xmc")
         self.assertEqual(res, "actuator")
 
-    @mock.patch("tools.upgrade_dev_env.run_cmd")
+    @mock.patch("tools.upgrade_dev_env.run_command")
     def test_resolve_fallback(self, mock_run):
         mock_run.side_effect = [
             subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr=""),
@@ -193,7 +193,7 @@ class TestDeploymentResolution(unittest.TestCase):
         res = upgrade_dev_env.resolve_deployment_name("actuator", "xmc")
         self.assertEqual(res, "actuator-deployment")
 
-    @mock.patch("tools.upgrade_dev_env.run_cmd")
+    @mock.patch("tools.upgrade_dev_env.run_command")
     def test_resolve_none_found(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=1, stdout="", stderr=""
@@ -206,23 +206,23 @@ class TestStepSubprocesses(unittest.TestCase):
     """Tests hermetic subprocess calls per step."""
 
     def setUp(self):
-        self.config = upgrade_dev_env.Config(
+        self.config = upgrade_dev_env.UpgradeConfig(
             project_id="proj-123",
             deployment_name="deploy-456",
             region="us-central1",
             environment="dev",
             namespace="xmc",
-            registry="us-docker.pkg.dev/proj-123/xmc",
-            acr_target="us-docker.pkg.dev/proj-123/xmc",
-            gke_cluster="xmc-deploy-456-dev",
             config_path="deploy/ctk_v2/xmanager-cloud-deployment.yaml",
+            image_registry="us-docker.pkg.dev/proj-123/xmc",
+            image_tag="latest",
         )
 
     @mock.patch("shutil.which", return_value="/usr/bin/tool")
     @mock.patch.object(Path, "is_file", return_value=True)
     @mock.patch("os.access", return_value=True)
-    @mock.patch("tools.upgrade_dev_env.run_cmd")
-    def test_step_check(self, mock_run, _mock_access, _mock_file, _mock_which):
+    @mock.patch("tools.upgrade_dev_env.run_command")
+    @mock.patch("tools.upgrade_dev_env.configure_docker_auth")
+    def test_step_check(self, mock_docker_auth, mock_run, _mock_access, _mock_file, _mock_which):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -241,35 +241,84 @@ class TestStepSubprocesses(unittest.TestCase):
             ),
             calls,
         )
-        self.assertIn(
-            mock.call(
-                [
-                    "gcloud",
-                    "auth",
-                    "configure-docker",
-                    "us-docker.pkg.dev",
-                    "--quiet",
-                ]
-            ),
-            calls,
-        )
+        mock_docker_auth.assert_called_once_with(self.config)
 
-    @mock.patch("tools.upgrade_dev_env.run_cmd")
-    def test_step_images(self, mock_run):
+    @mock.patch("tool_utils.run_command")
+    def test_step_images_default(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_images(self.config)
+        # Default config has rod_deployment_enabled=False (9 base targets)
         self.assertEqual(mock_run.call_count, 9)
 
+    @mock.patch.object(Path, "exists", return_value=True)
+    @mock.patch("tool_utils.run_command")
+    def test_step_images_rod_enabled(self, mock_run, _mock_exists):
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        config = upgrade_dev_env.UpgradeConfig(
+            project_id="proj-123",
+            deployment_name="deploy-456",
+            region="us-central1",
+            environment="dev",
+            namespace="xmc",
+            image_registry="us-docker.pkg.dev/proj-123/xmc",
+            image_tag="latest",
+            config_path="deploy/ctk_v2/xmanager-cloud-deployment.yaml",
+            rod_deployment_enabled=True,
+        )
+        upgrade_dev_env.step_images(config)
+        # Should push 10 targets when rod is enabled (9 base + rod_data_provider)
+        self.assertEqual(mock_run.call_count, 10)
+
     @mock.patch.object(Path, "is_dir", return_value=True)
-    @mock.patch("tools.upgrade_dev_env.run_cmd")
+    @mock.patch("tools.upgrade_dev_env.run_command")
     def test_step_app(self, mock_run, _mock_dir):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_app(self.config)
-        mock_run.assert_called_once_with(
+        # Verify gcluster create, export-outputs, import-inputs, and deploy calls are present
+        calls = [call_args[0][0] for call_args in mock_run.call_args_list]
+        self.assertIn(
+            [
+                "./cluster-toolkit/gcluster",
+                "create",
+                "deploy/ctk_v2/xmanager-cloud.yaml",
+                "-d",
+                "deploy/ctk_v2/xmanager-cloud-deployment.yaml",
+                "-o",
+                "ctk-out",
+                "-l",
+                "WARNING",
+                "-w",
+                "--force",
+            ],
+            calls,
+        )
+        self.assertIn(
+            ["./cluster-toolkit/gcluster", "export-outputs", "ctk-out/deploy-456/primary"],
+            calls,
+        )
+        self.assertIn(
+            ["./cluster-toolkit/gcluster", "import-inputs", "ctk-out/deploy-456/compute"],
+            calls,
+        )
+        self.assertIn(
+            ["./cluster-toolkit/gcluster", "export-outputs", "ctk-out/deploy-456/compute"],
+            calls,
+        )
+        self.assertIn(
+            [
+                "./cluster-toolkit/gcluster",
+                "import-inputs",
+                "ctk-out/deploy-456/kubernetes_prereqs",
+            ],
+            calls,
+        )
+        self.assertIn(
             [
                 "./cluster-toolkit/gcluster",
                 "--download-dependencies",
@@ -278,20 +327,44 @@ class TestStepSubprocesses(unittest.TestCase):
                 "--only",
                 "xmc_app",
                 "--auto-approve",
-            ]
+            ],
+            calls,
         )
 
     @mock.patch("tools.upgrade_dev_env.resolve_deployment_name")
-    @mock.patch("tools.upgrade_dev_env.run_cmd")
+    @mock.patch("tools.upgrade_dev_env.run_command")
     def test_step_restart(self, mock_run, mock_resolve):
         mock_resolve.return_value = "actuator"
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_restart(self.config)
-        self.assertEqual(mock_run.call_count, 7)
+        # Default config has rod_deployment_enabled=False (8 base services)
+        self.assertEqual(mock_run.call_count, 8)
 
-    @mock.patch("tools.upgrade_dev_env.run_cmd")
+    @mock.patch("tools.upgrade_dev_env.resolve_deployment_name")
+    @mock.patch("tools.upgrade_dev_env.run_command")
+    def test_step_restart_rod_enabled(self, mock_run, mock_resolve):
+        mock_resolve.return_value = "actuator"
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        config = upgrade_dev_env.UpgradeConfig(
+            project_id="proj-123",
+            deployment_name="deploy-456",
+            region="us-central1",
+            environment="dev",
+            namespace="xmc",
+            image_registry="us-docker.pkg.dev/proj-123/xmc",
+            image_tag="latest",
+            config_path="deploy/ctk_v2/xmanager-cloud-deployment.yaml",
+            rod_deployment_enabled=True,
+        )
+        upgrade_dev_env.step_restart(config)
+        # 8 base services + rod-data-provider (9 total)
+        self.assertEqual(mock_run.call_count, 9)
+
+    @mock.patch("tools.upgrade_dev_env.run_command")
     def test_step_verify(self, mock_run):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""

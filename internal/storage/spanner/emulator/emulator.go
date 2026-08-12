@@ -87,20 +87,27 @@ func (e *Emulator) ClientOptions() []option.ClientOption {
 
 func (e *Emulator) Stop() {}
 
-func Setup(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client) {
-	xidClient, essClient, _ := SetupWithEmulator(ctx, t)
-	return xidClient, essClient
+// EmulatorClients contains the initialized Spanner clients and Emulator instance.
+type EmulatorClients struct {
+	XIDClient *spanner.Client
+	ESSClient *spanner.Client
+	Emulator  *Emulator
 }
 
-func SetupWithEmulator(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client, *Emulator) {
+func Setup(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client) {
+	c := SetupWithEmulator(ctx, t)
+	return c.XIDClient, c.ESSClient
+}
+
+func SetupWithEmulator(ctx context.Context, t *testing.T) EmulatorClients {
 	return setup(ctx, t, true)
 }
 
-func SetupEmpty(ctx context.Context, t *testing.T) (*spanner.Client, *spanner.Client, *Emulator) {
+func SetupEmpty(ctx context.Context, t *testing.T) EmulatorClients {
 	return setup(ctx, t, false)
 }
 
-func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client, *spanner.Client, *Emulator) {
+func setup(ctx context.Context, t *testing.T, applySchema bool) EmulatorClients {
 	t.Helper()
 
 	addr := os.Getenv("SPANNER_EMULATOR_HOST")
@@ -155,7 +162,11 @@ func setup(ctx context.Context, t *testing.T, applySchema bool) (*spanner.Client
 		_ = dba.DropDatabase(cleanupCtx, &dbadminpb.DropDatabaseRequest{Database: essDBURI})
 	})
 
-	return xidClient, essClient, emu
+	return EmulatorClients{
+		XIDClient: xidClient,
+		ESSClient: essClient,
+		Emulator:  emu,
+	}
 }
 
 func createInstance(ctx context.Context, emu *Emulator) error {

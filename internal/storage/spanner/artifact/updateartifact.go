@@ -34,15 +34,17 @@ import (
 
 // UpdateArtifact updates an artifact with the given update mask. We return both the original and updated artifacts,
 // so that the caller can choose whether to perform additional actions based on the original artifact state.
-func (r *Repository) UpdateArtifact(ctx context.Context, update *storage.ArtifactUpdate) (originalArtifact *essmsgpb.Artifact, updatedArtifact *essmsgpb.Artifact, err error) {
+func (r *Repository) UpdateArtifact(ctx context.Context, update *storage.ArtifactUpdate) (storage.UpdatedArtifacts, error) {
 	if update == nil {
-		return nil, nil, fmt.Errorf("update must not be nil")
+		return storage.UpdatedArtifacts{}, fmt.Errorf("update must not be nil")
 	}
 	ctx = logging.WithArtifactName(ctx, validator.ConstructArtifactName(update.AID))
 	logging.Info(ctx, "Update artifact in storage", "update", update.Artifact)
 
+	var originalArtifact, updatedArtifact *essmsgpb.Artifact
 	var mutated bool
-	_, err = r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		mutated = false
 		// 1. Read the existing artifact from storage.
 		var err error
 		originalArtifact, err = r.FetchArtifactTransaction(ctx, update.AID, txn)
@@ -76,7 +78,7 @@ func (r *Repository) UpdateArtifact(ctx context.Context, update *storage.Artifac
 		return txn.BufferWrite([]*spanner.Mutation{mutation})
 	})
 	if err != nil {
-		return nil, nil, err
+		return storage.UpdatedArtifacts{}, err
 	}
 
 	if mutated {
@@ -86,5 +88,8 @@ func (r *Repository) UpdateArtifact(ctx context.Context, update *storage.Artifac
 		logging.Debug(ctx, "Artifact not updated; no changes detected", "updatedArtifact", updatedArtifact)
 	}
 
-	return originalArtifact, updatedArtifact, nil
+	return storage.UpdatedArtifacts{
+		Original: originalArtifact,
+		Updated:  updatedArtifact,
+	}, nil
 }

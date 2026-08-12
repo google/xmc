@@ -26,10 +26,17 @@ import (
 // ErrMissingXMCLabels is returned when an object is missing required XMC labels.
 var ErrMissingXMCLabels = errors.New("object is missing required labels")
 
+// XMCLabels holds parsed XManager Cloud resource identification labels.
+type XMCLabels struct {
+	XID int64
+	WID int64
+	EID int64
+}
+
 // ParseXMCLabels parses XMC labels from a map.
-func ParseXMCLabels(labels map[string]string) (xid int64, wid int64, eid int64, err error) {
+func ParseXMCLabels(labels map[string]string) (XMCLabels, error) {
 	if labels == nil {
-		return 0, 0, 0, ErrMissingXMCLabels
+		return XMCLabels{}, ErrMissingXMCLabels
 	}
 
 	xidStr := labels[constants.ExperimentIDLabel]
@@ -41,23 +48,23 @@ func ParseXMCLabels(labels map[string]string) (xid int64, wid int64, eid int64, 
 	hasEID := eidStr != ""
 
 	if !hasXID || !hasWID || !hasEID {
-		return 0, 0, 0, ErrMissingXMCLabels
+		return XMCLabels{}, ErrMissingXMCLabels
 	}
 
-	xid, err = strconv.ParseInt(xidStr, 10, 64)
+	xid, err := strconv.ParseInt(xidStr, 10, 64)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("invalid %s label value %q: %w", constants.ExperimentIDLabel, xidStr, err)
+		return XMCLabels{}, fmt.Errorf("invalid %s label value %q: %w", constants.ExperimentIDLabel, xidStr, err)
 	}
 
-	wid, err = strconv.ParseInt(widStr, 10, 64)
+	wid, err := strconv.ParseInt(widStr, 10, 64)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("invalid %s label value %q: %w", constants.WorkUnitIDLabel, widStr, err)
+		return XMCLabels{}, fmt.Errorf("invalid %s label value %q: %w", constants.WorkUnitIDLabel, widStr, err)
 	}
 
-	eid, err = strconv.ParseInt(eidStr, 10, 64)
+	eid, err := strconv.ParseInt(eidStr, 10, 64)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("invalid %s label value %q: %w", constants.ExecutionIDLabel, eidStr, err)
+		return XMCLabels{}, fmt.Errorf("invalid %s label value %q: %w", constants.ExecutionIDLabel, eidStr, err)
 	}
 
-	return xid, wid, eid, nil
+	return XMCLabels{XID: xid, WID: wid, EID: eid}, nil
 }

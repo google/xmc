@@ -12,10 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Injectable } from '@angular/core';
-import { Observable, of } from 'rxjs';
+import { HttpClient } from '@angular/common/http';
+import { inject, Injectable } from '@angular/core';
+import { catchError, Observable, of } from 'rxjs';
 
-import { ClusterQueueListResponse, QueueJobListResponse } from './resource_types';
+import {
+  GetFittingQueuesResponse,
+  GetRunningAndPendingJobsResponse,
+  GetSubmitQueueResponse,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+
+import { XMC_API_DOMAIN } from './constants';
 
 /**
  * Angular injectable data service client for fetching Resource Observability Dashboard (ROD)
@@ -25,79 +32,55 @@ import { ClusterQueueListResponse, QueueJobListResponse } from './resource_types
   providedIn: 'root',
 })
 export class ResourceService {
+  private readonly http = inject(HttpClient);
+
   /**
-   * Fetches the list of cluster queues.
+   * Fetches the list of cluster queues strictly matching the GetFittingQueuesResponse proto shape.
    */
-  getClusterQueues(): Observable<ClusterQueueListResponse> {
-    // TODO(#186): Switch to real backend endpoint when rod-data-provider is deployed.
-    return of({
-      clusterQueues: [
-        {
-          name: 'gpu-cluster-queue',
-          strategy: 'BestEffortFIFO',
-          cohort: 'research-cohort',
-          status: 'Active',
-          admittedWorkloads: 12,
-          reservingWorkloads: 2,
-          pendingWorkloads: 5,
-          pendingJobsCount: 5,
-          admittedJobsCount: 12,
-          localQueues: [
-            {
-              name: 'gpu-local-queue',
-              namespace: 'default',
-            },
-          ],
-          flavors: [
-            {
-              name: 'nvidia-h100',
-              resourceName: 'gpu',
-              nominalQuota: '64',
-              inUse: '48',
-              reserved: '8',
-              freeCapacity: '8',
-              largestSlot: '8',
-            },
-          ],
-        },
-      ],
-    });
+  getClusterQueues(): Observable<GetFittingQueuesResponse> {
+    return this.http
+      .get<GetFittingQueuesResponse>(`${XMC_API_DOMAIN}/clusterqueues`, {
+        withCredentials: true,
+      })
+      .pipe(
+        catchError((error) => {
+          console.error('Failed to fetch cluster queues:', error);
+          return of({ queues: [] });
+        }),
+      );
   }
 
   /**
    * Fetches the list of pending and running jobs for a given queue.
    */
-  getQueueJobs(queueName?: string): Observable<QueueJobListResponse> {
-    // TODO(#186): Switch to real backend endpoint when rod-data-provider is deployed.
-    const targetQueueName = queueName ?? 'gpu-cluster-queue';
-    return of({
-      queueName: targetQueueName,
-      jobs: [
-        {
-          position: 'N/A-running',
-          xid: '53296',
-          workUnitId: '1',
-          jobName: 'xmc-operation-53296-1',
-          user: 'example@example.com',
-          resources: 'GPU: 8, CPU: 32',
-          priority: 'Low',
-          status: 'Running',
-          timeInQueue: '10m ago',
-          queueName: targetQueueName,
-        },
-        {
-          position: 'N/A-running',
-          xid: '53308',
-          workUnitId: '1',
-          jobName: 'xmc-operation-53308-1',
-          user: 'example@example.com',
-          resources: 'GPU: 8, CPU: 32',
-          priority: 'Low',
-          status: 'Running',
-          timeInQueue: '5m ago',
-          queueName: targetQueueName,
-        },
-      ],
-    });
+  getQueueJobs(queueName: string): Observable<GetRunningAndPendingJobsResponse> {
+    return this.http
+      .get<GetRunningAndPendingJobsResponse>(
+        `${XMC_API_DOMAIN}/clusterqueues/${encodeURIComponent(queueName)}/jobs`,
+        { withCredentials: true },
+      )
+      .pipe(
+        catchError((error) => {
+          console.error(`Failed to fetch jobs for queue ${queueName}:`, error);
+          return of({ jobs: [], totalQueueSize: 0, nextPageToken: '' });
+        }),
+      );
+  }
+
+  /**
+   * Fetches the target submission queue (LocalQueue) for a given cluster queue.
+   */
+  getSubmitQueue(queueName: string): Observable<GetSubmitQueueResponse> {
+    return this.http
+      .get<GetSubmitQueueResponse>(
+        `${XMC_API_DOMAIN}/clusterqueues/${encodeURIComponent(queueName)}/submitqueue`,
+        { withCredentials: true },
+      )
+      .pipe(
+        catchError((error) => {
+          console.error(`Failed to fetch submit queue for ${queueName}:`, error);
+          return of({ submitQueue: queueName });
+        }),
+      );
   }
 }

@@ -20,49 +20,9 @@ import (
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/unstructured/unstructured"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/types/types"
 	esspb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
 )
-
-// getJobsetUIDByTarget checks if the EID in the Jobset object matches the EID for the
-// current target. It returns:
-// - An error if the EID does not match or if there is an error getting the Jobset object.
-// - True and a UID if the EID matches and the Jobset object was found.
-// - True and an empty UID if the Jobset object was not found.
-func (c *Client) getJobsetUIDByTarget(ctx context.Context, target string, namespace string) (bool, types.UID, error) {
-	ctx = logging.WithWorkUnitExecutionName(ctx, target)
-
-	// Generate the jobset name for the current target.
-	jobSetName := buildJobSetName(target)
-	if jobSetName == "" {
-		return false, "", fmt.Errorf("failed to generate jobset name for target %q", target)
-	}
-
-	ctx = logging.WithJobSetName(ctx, jobSetName, nil)
-
-	// Get the Jobset object so we can check if it's the correct execution ID.
-	jobSet, err := c.dynamicClient.Resource(JobSetGVR).Namespace(namespace).Get(ctx, jobSetName, metav1.GetOptions{})
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			logging.Info(ctx, "JobSet not found in namespace for target, assuming it's a new target", "namespace", namespace, "target", target)
-			return true, "", nil
-		}
-		logging.Warn(ctx, "Failed to get JobSet", "error", err, "namespace", namespace, "target", target)
-		return false, "", fmt.Errorf("failed to get JobSet %q in namespace %q for target %q: %w", jobSetName, namespace, target, err)
-	}
-
-	aligned, err := c.preconditionsValidator.IsExecutionIDAligned(ctx, target, jobSet)
-	if err != nil {
-		logging.Warn(ctx, "Failed during execution ID alignment check", "error", err, "target", target)
-		return false, "", fmt.Errorf("failed during execution ID alignment check for %q: %w", target, err)
-	}
-	if !aligned {
-		return false, "", fmt.Errorf("execution ID not aligned for %q", target)
-	}
-
-	return true, jobSet.GetUID(), nil
-}
 
 func (c *Client) getNamespaceFromTarget(ctx context.Context, target string) (string, error) {
 	ctx = logging.WithWorkUnitExecutionName(ctx, target)

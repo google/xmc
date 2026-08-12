@@ -81,50 +81,13 @@ func main() {
 	}
 
 	// 2. Initialize dependencies
-	sessionPoolConfig := spanner.SessionPoolConfig{
-		TrackSessionHandles: true,
-		InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
-			ActionOnInactiveTransaction: spanner.Warn,
-		},
-	}
-	spannerClient, err := spanner.NewClientWithConfig(
-		ctx,
-		cfg.SpannerDatabaseName,
-		spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
-		option.WithQuotaProject(cfg.QuotaProjectID),
-	)
-	if err != nil {
-		logging.Fatal(ctx, "failed to create spanner client", "error", err)
-	}
+	spannerClient := initSpannerClient(ctx, &cfg)
 	defer spannerClient.Close()
 
-	// 3. Initialize Cloud Identity service.
-	idService, err := cloudidentity.NewService(ctx)
-	if err != nil {
-		logging.Fatal(ctx, "failed to create cloud identity service", "error", err)
-	}
+	// 3. Initialize Cloud Identity, Storage, Auth, and XID services.
+	storage, auth, xidClient := initServices(ctx, &cfg, oauthCfg, spannerClient)
 
-	// 3. Inject dependencies into the server
-	storage, err := ss.NewStorageWithConfig(spannerClient, ss.StorageConfig{StatusMessageHistoryEnabled: cfg.StatusMessageHistoryEnabled})
-	if err != nil {
-		logging.Fatal(ctx, "failed to create storage", "error", err)
-	}
-
-	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}, cfg.IAPIssuer, false, []byte(oauthCfg.JWTSecret))
-	if err != nil {
-		logging.Fatal(ctx, "failed to create authorizer", "error", err)
-	}
-
-	// 4. Initialize XID service client.
-	logging.Info(ctx, "Connecting to XID service", "addr", cfg.XidServiceAddr)
-	conn, err := grpc.NewClient(cfg.XidServiceAddr, []grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	}...)
-	if err != nil {
-		logging.Fatal(ctx, "failed to create gRPC client for XID service", "error", err)
-	}
-	xidClient := xidgrpcpb.NewXidServiceClient(conn)
-
+	// 4. Initialize TLS credentials.
 	transportCreds, err := tlsutil.NewServerCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
 		logging.Fatal(ctx, "failed to configure server credentials", "error", err)
@@ -134,20 +97,11 @@ func main() {
 		grpc.Creds(transportCreds),
 	}
 
-	keyReloader, err := keyreloader.NewSignerReloader(cfg.SigningKeyFile)
-	if err != nil {
-		logging.Fatal(ctx, "failed to load signing key", "error", err)
-	}
-	signer := keyReloader.Signer
-
-	// 6. Initialize Task Queue client.
-	taskQueueClient, err := tq.New(ctx, cfg.ProjectID, cfg.InvokerSA, cfg.ActuatorURL, cfg.ActuatorAudience, signer, cfg.SignatureTTLSeconds, cfg.RedisAddr)
-	if err != nil {
-		logging.Fatal(ctx, "failed to create task queue client", "error", err)
-	}
+	// 5. Initialize Task Queue client.
+	taskQueueClient := initTaskQueueClient(ctx, &cfg)
 	defer taskQueueClient.Close()
 
-	// 7. Set up the gRPC server.
+	// 6. Set up the gRPC server.
 	experimentStateServer := server.New(storage, &cfg, auth, xidClient, taskQueueClient)
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
@@ -174,7 +128,7 @@ func main() {
 		}
 	}()
 
-	// 8. Initialize the gRPC gateway mux.
+	// 7. Initialize the gRPC gateway mux.
 	httpTransportCreds, err := tlsutil.NewClientCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
 		logging.Fatal(ctx, "failed to configure client credentials", "error", err)
@@ -189,7 +143,7 @@ func main() {
 		logging.Fatal(ctx, "failed to register gateway", "error", err)
 	}
 
-	// 9. Create a master HTTP mux for the gRPC gateway + health checks.
+	// 8. Create a master HTTP mux for the gRPC gateway + health checks.
 	httpMux := http.NewServeMux()
 
 	// Load dynamic OAuth2 Authentication configurations
@@ -251,10 +205,10 @@ func main() {
 		authenticatedGwmux.ServeHTTP(w, r)
 	})
 
-	// 10. Apply security middlewares
+	// 9. Apply security middlewares
 	handler := oauthAuth.SecurityMiddlewares(httpMux)
 
-	// 11. Start the HTTP server.
+	// 10. Start the HTTP server.
 	gwServer := &http.Server{
 		Addr:    ":" + cfg.HTTPPort,
 		Handler: handler,
@@ -266,7 +220,7 @@ func main() {
 		}
 	}()
 
-	// 12. Gracefully shut down the server when a signal is received.
+	// 11. Gracefully shut down the server when a signal is received.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit // Block until a signal is received
@@ -274,4 +228,61 @@ func main() {
 	logging.Info(ctx, "Shutting down gRPC server")
 	s.GracefulStop()
 	logging.Info(ctx, "Server gracefully stopped")
+}
+
+func initSpannerClient(ctx context.Context, cfg *config.Config) *spanner.Client {
+	sessionPoolConfig := spanner.SessionPoolConfig{
+		TrackSessionHandles: true,
+		InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
+			ActionOnInactiveTransaction: spanner.Warn,
+		},
+	}
+	client, err := spanner.NewClientWithConfig(
+		ctx,
+		cfg.SpannerDatabaseName,
+		spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
+		option.WithQuotaProject(cfg.QuotaProjectID),
+	)
+	if err != nil {
+		logging.Fatal(ctx, "failed to create spanner client", "error", err)
+	}
+	return client
+}
+
+func initServices(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, spannerClient *spanner.Client) (*ss.Storage, *authz.Authorizer, xidgrpcpb.XidServiceClient) {
+	idService, err := cloudidentity.NewService(ctx)
+	if err != nil {
+		logging.Fatal(ctx, "failed to create cloud identity service", "error", err)
+	}
+
+	storage, err := ss.NewStorageWithConfig(spannerClient, ss.StorageConfig{StatusMessageHistoryEnabled: cfg.StatusMessageHistoryEnabled})
+	if err != nil {
+		logging.Fatal(ctx, "failed to create storage", "error", err)
+	}
+
+	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}, cfg.IAPIssuer, false, []byte(oauthCfg.JWTSecret))
+	if err != nil {
+		logging.Fatal(ctx, "failed to create authorizer", "error", err)
+	}
+
+	logging.Info(ctx, "Connecting to XID service", "addr", cfg.XidServiceAddr)
+	conn, err := grpc.NewClient(cfg.XidServiceAddr, []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}...)
+	if err != nil {
+		logging.Fatal(ctx, "failed to create gRPC client for XID service", "error", err)
+	}
+	return storage, auth, xidgrpcpb.NewXidServiceClient(conn)
+}
+
+func initTaskQueueClient(ctx context.Context, cfg *config.Config) *tq.Client {
+	keyReloader, err := keyreloader.NewSignerReloader(cfg.SigningKeyFile)
+	if err != nil {
+		logging.Fatal(ctx, "failed to load signing key", "error", err)
+	}
+	taskQueueClient, err := tq.New(ctx, cfg.ProjectID, cfg.InvokerSA, cfg.ActuatorURL, cfg.ActuatorAudience, keyReloader.Signer, cfg.SignatureTTLSeconds, cfg.RedisAddr)
+	if err != nil {
+		logging.Fatal(ctx, "failed to create task queue client", "error", err)
+	}
+	return taskQueueClient
 }

@@ -38,24 +38,53 @@ func calculateTotalReplicas(jobSet *v1alpha2.JobSet) int32 {
 	return totalReplicas
 }
 
-func calculateJobTotals(jobSet *v1alpha2.JobSet) (totalSucceeded, totalFailed, totalActive, totalReady, totalReplicas int32) {
+// JobTotals holds aggregate replica statistics across all jobs in a JobSet.
+type JobTotals struct {
+	Succeeded int32
+	Failed    int32
+	Active    int32
+	Ready     int32
+	Replicas  int32
+}
+
+func calculateJobTotals(jobSet *v1alpha2.JobSet) JobTotals {
+	var totals JobTotals
 	for _, rjs := range jobSet.Status.ReplicatedJobsStatus {
-		totalSucceeded += rjs.Succeeded
-		totalFailed += rjs.Failed
-		totalActive += rjs.Active
-		totalReady += rjs.Ready
+		totals.Succeeded += rjs.Succeeded
+		totals.Failed += rjs.Failed
+		totals.Active += rjs.Active
+		totals.Ready += rjs.Ready
 	}
-	totalReplicas = calculateTotalReplicas(jobSet)
-	return
+	totals.Replicas = calculateTotalReplicas(jobSet)
+	return totals
 }
 
 func generateStructuredMessage(ctx context.Context, jobSet *v1alpha2.JobSet, state spb.WorkUnitStatus_WorkUnitState, project, location, clusterName, podErrorMsg, startupWarningMsg string) *spb.StructuredMessage {
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, jobSet.Labels)
 
-	totalSucceeded, totalFailed, totalActive, totalReady, totalReplicas := calculateJobTotals(jobSet)
+	totals := calculateJobTotals(jobSet)
+	msg, msgSeverity, msgSource := buildStructuredMessageContent(jobSet, totals, state, podErrorMsg, startupWarningMsg)
+	debugLink := buildDebugLink(ctx, jobSet, state, project, location, clusterName)
+
+	logging.Debug(ctx, fmt.Sprintf("Structured status message: %q, debugLink: %q", msg, debugLink), "structuredMessage", msg, "debugLink", debugLink)
+
+	return &spb.StructuredMessage{
+		UserFacingText: msg,
+		UserFacingUrl: &spb.Url{
+			Url: debugLink,
+		},
+		Severity:   msgSeverity,
+		Source:     msgSource,
+		CreateTime: timestamppb.New(time.Now()),
+	}
+}
+
+func buildStructuredMessageContent(jobSet *v1alpha2.JobSet, totals JobTotals, state spb.WorkUnitStatus_WorkUnitState, podErrorMsg, startupWarningMsg string) (string, spb.StructuredMessage_Severity, spb.StructuredMessage_Source) {
+	totalSucceeded, totalFailed, totalActive, totalReplicas := totals.Succeeded, totals.Failed, totals.Active, totals.Replicas
 	var msg string
 	msgSeverity := spb.StructuredMessage_DEBUG
 	msgSource := spb.StructuredMessage_KUBERNETES
+
 	switch state {
 	case spb.WorkUnitStatus_FAILED:
 		msg = "Work unit failed."
@@ -70,24 +99,8 @@ func generateStructuredMessage(ctx context.Context, jobSet *v1alpha2.JobSet, sta
 		if condition := jobsetutil.FindConditionWithType(jobSet, v1alpha2.JobSetCompleted); condition != nil && condition.Message != "" {
 			msg = fmt.Sprintf("Work unit completed successfully with message: %s", condition.Message)
 		}
-	case spb.WorkUnitStatus_RUNNING:
-		if totalReady == totalActive {
-			msg = fmt.Sprintf("Work unit is running. %d/%d job(s) active and ready.", totalActive, totalReplicas)
-		} else {
-			msg = fmt.Sprintf("Work unit is running. %d/%d job(s) active, %d ready.", totalActive, totalReplicas, totalReady)
-		}
-	case spb.WorkUnitStatus_STARTING:
-		// In the STARTING state, totalActive > totalReady, meaning some jobs are active but not yet ready.
-		// We show the number of active jobs out of total replicas, and separately, how many are ready.
-		msg = fmt.Sprintf("Work unit is starting. %d/%d job(s) active, %d ready.", totalActive, totalReplicas, totalReady)
-		// If the scheduler has reported the pods as unschedulable past the startup-check
-		// window, surface that as a warning instead of reporting indefinite startup
-		// progress. The work unit stays in STARTING (not FAILED), so a delayed-but-successful
-		// start - e.g. a node still being provisioned - recovers without being flagged as failed.
-		if startupWarningMsg != "" {
-			msg = startupWarningMsg
-			msgSeverity = spb.StructuredMessage_WARNING
-		}
+	case spb.WorkUnitStatus_RUNNING, spb.WorkUnitStatus_STARTING:
+		msg, msgSeverity = buildRunningOrStartingMessage(totals, state, startupWarningMsg)
 	case spb.WorkUnitStatus_PARTIALLY_FAILED:
 		msg = fmt.Sprintf("Work unit is partially failed. %d failed, %d active, %d succeeded out of %d job(s).", totalFailed, totalActive, totalSucceeded, totalReplicas)
 		msgSeverity = spb.StructuredMessage_WARNING
@@ -104,38 +117,40 @@ func generateStructuredMessage(ctx context.Context, jobSet *v1alpha2.JobSet, sta
 	default:
 		msg = fmt.Sprintf("Work unit state: %s", state.String())
 	}
+	return msg, msgSeverity, msgSource
+}
 
-	var debugLink string
-	if state == spb.WorkUnitStatus_FAILED || state == spb.WorkUnitStatus_PARTIALLY_FAILED {
-		if project != "" && location != "" && clusterName != "" {
-			debugLink = fmt.Sprintf(
-				"https://console.cloud.google.com/kubernetes/aiml/jobset/%s/GKE_CLUSTER/%s/%s/%s/%s/overview?project=%s",
-				url.PathEscape(project),
-				url.PathEscape(location),
-				url.PathEscape(clusterName),
-				url.PathEscape(jobSet.Namespace),
-				url.PathEscape(jobSet.Name),
-				url.QueryEscape(project),
-			)
-		} else {
-			logging.Warn(ctx, "Cannot build debug link for JobSet", "namespace", jobSet.Namespace, "jobSet", jobSet.Name, "project", project, "location", location, "clusterName", clusterName)
+func buildRunningOrStartingMessage(totals JobTotals, state spb.WorkUnitStatus_WorkUnitState, startupWarningMsg string) (string, spb.StructuredMessage_Severity) {
+	if state == spb.WorkUnitStatus_RUNNING {
+		if totals.Ready == totals.Active {
+			return fmt.Sprintf("Work unit is running. %d/%d job(s) active and ready.", totals.Active, totals.Replicas), spb.StructuredMessage_DEBUG
 		}
+		return fmt.Sprintf("Work unit is running. %d/%d job(s) active, %d ready.", totals.Active, totals.Replicas, totals.Ready), spb.StructuredMessage_DEBUG
 	}
-
-	// We intentionally log the structured message and debug link so that the logs are clear.
-	logging.Debug(ctx, fmt.Sprintf("Structured status message: %q, debugLink: %q", msg, debugLink), "structuredMessage", msg, "debugLink", debugLink)
-
-	return &spb.StructuredMessage{
-		UserFacingText: msg,
-		UserFacingUrl: &spb.Url{
-			Url: debugLink,
-		},
-		Severity: msgSeverity,
-		Source:   msgSource,
-		// This create time is required for the status message to be correctly propagated. The storage
-		// layer will reject the update if it's older than the current update time, or zero.
-		CreateTime: timestamppb.New(time.Now()),
+	msg := fmt.Sprintf("Work unit is starting. %d/%d job(s) active, %d ready.", totals.Active, totals.Replicas, totals.Ready)
+	if startupWarningMsg != "" {
+		return startupWarningMsg, spb.StructuredMessage_WARNING
 	}
+	return msg, spb.StructuredMessage_DEBUG
+}
+
+func buildDebugLink(ctx context.Context, jobSet *v1alpha2.JobSet, state spb.WorkUnitStatus_WorkUnitState, project, location, clusterName string) string {
+	if state != spb.WorkUnitStatus_FAILED && state != spb.WorkUnitStatus_PARTIALLY_FAILED {
+		return ""
+	}
+	if project == "" || location == "" || clusterName == "" {
+		logging.Warn(ctx, "Cannot build debug link for JobSet", "namespace", jobSet.Namespace, "jobSet", jobSet.Name, "project", project, "location", location, "clusterName", clusterName)
+		return ""
+	}
+	return fmt.Sprintf(
+		"https://console.cloud.google.com/kubernetes/aiml/jobset/%s/GKE_CLUSTER/%s/%s/%s/%s/overview?project=%s",
+		url.PathEscape(project),
+		url.PathEscape(location),
+		url.PathEscape(clusterName),
+		url.PathEscape(jobSet.Namespace),
+		url.PathEscape(jobSet.Name),
+		url.QueryEscape(project),
+	)
 }
 
 // ToWorkUnitState converts a JobSet status to a WorkUnitState enum value.
@@ -157,7 +172,8 @@ func ToWorkUnitState(jobSet *v1alpha2.JobSet) spb.WorkUnitStatus_WorkUnitState {
 		return spb.WorkUnitStatus_SCHEDULING
 	}
 
-	totalSucceeded, totalFailed, totalActive, totalReady, _ := calculateJobTotals(jobSet)
+	totals := calculateJobTotals(jobSet)
+	totalSucceeded, totalFailed, totalActive, totalReady := totals.Succeeded, totals.Failed, totals.Active, totals.Ready
 
 	// 3. "Alive" Check (Priority: High)
 	// If any pods are Ready, the WorkUnit is serving/alive. This prevents the "Active=0 vs Ready=1" flicker.

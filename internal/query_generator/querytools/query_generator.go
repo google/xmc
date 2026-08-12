@@ -169,19 +169,8 @@ func MemberMap(q *spanner.Statement, members map[string]Member) queryfilter.Memb
 // PhraseMap takes a map of type kinds to a map of original string and new strings. It is used to rewrite restriction expressions where the literal passed by the user needs to be rewritten.
 func PhraseMap(rewrites map[string]map[string]string) queryfilter.RestrictionTranslate {
 	return func(r *fpb.Restriction) *fpb.Restriction {
-		field := ""
-		phrase := ""
-		if r.GetLhs().GetValue() != "" && r.GetRhs().GetPhrase() != nil {
-			field = r.GetLhs().GetValue()
-			if len(r.GetRhs().GetPhrase().GetValues()) > 0 {
-				phrase = r.GetRhs().GetPhrase().GetValues()[0]
-			}
-		} else if r.GetRhs().GetValue() != "" && r.GetLhs().GetPhrase() != nil {
-			field = r.GetRhs().GetValue()
-			if len(r.GetLhs().GetPhrase().GetValues()) > 0 {
-				phrase = r.GetLhs().GetPhrase().GetValues()[0]
-			}
-		} else {
+		field, phrase, ok := extractFieldAndPhrase(r)
+		if !ok {
 			return r
 		}
 
@@ -203,6 +192,26 @@ func PhraseMap(rewrites map[string]map[string]string) queryfilter.RestrictionTra
 		}
 		return out
 	}
+}
+
+func extractFieldAndPhrase(r *fpb.Restriction) (string, string, bool) {
+	if r.GetLhs().GetValue() != "" && r.GetRhs().GetPhrase() != nil {
+		field := r.GetLhs().GetValue()
+		phrase := ""
+		if values := r.GetRhs().GetPhrase().GetValues(); len(values) > 0 {
+			phrase = values[0]
+		}
+		return field, phrase, true
+	}
+	if r.GetRhs().GetValue() != "" && r.GetLhs().GetPhrase() != nil {
+		field := r.GetRhs().GetValue()
+		phrase := ""
+		if values := r.GetLhs().GetPhrase().GetValues(); len(values) > 0 {
+			phrase = values[0]
+		}
+		return field, phrase, true
+	}
+	return "", "", false
 }
 
 func fetchMember(name []string, members map[string]Member) (Member, error) {
@@ -545,7 +554,9 @@ func addSortDirectionToOrderedFieldsAndIndices(t TableView) (TableView, error) {
 // It returns the query, a map of TableField to index so that the caller can
 // build the page token, an Unnester that can patch up any repeated fields that
 // were selected, and any error that occurred.
-func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []safesql.TrustedSQLString, baseFilterExp *fpb.Expression, userFilterExp *fpb.Expression, userOrderBy []UserOrderedIndex, pageSize, offset int, ptFields map[TableField]any, preamble *safesql.TrustedSQLString) (*spanner.Statement, map[TableField]int, Unnester, error) {
+//
+//nolint:revive // Why: Spanner AST query generator returning (*spanner.Statement, map[TableField]int, Unnester, error).
+func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []safesql.TrustedSQLString, baseFilterExp *fpb.Expression, userFilterExp *fpb.Expression, userOrderBy []UserOrderedIndex, pageSize, offset int, ptFields map[TableField]any, preamble *safesql.TrustedSQLString) (stmt *spanner.Statement, selectFieldIndexes map[TableField]int, u Unnester, err error) {
 	// Captures the names referenced in userFilterExp and the fields that
 	// we're mapping them to.
 	userFilters := map[string]TableField{}
@@ -563,47 +574,8 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	// what Members it accesses. We use a "dummy query" here to recycle the
 	// logic in qfcs.Spanner that walks the expression and calls us
 	// back on Members.
-	if !emptyExpression(userFilterExp) {
-		dummyQuery := spanner.NewStatement("")
-
-		qf := queryfilter.Spanner{
-			MemberFunc: func(name []string) (safesql.TrustedSQLString, filtervisitor.PrimType, error) {
-				n := strings.Join(name, ".")
-				m, ok := q.members[n]
-				// Members without an explicit Name can't be used in user filters.
-				if !ok || m.Name == "" {
-					return safesql.New(""), filtervisitor.Invalid, status.Errorf(status.InvalidArgument, "unsupported field name in query: %q", n)
-				}
-				userFilters[n] = m.Name
-				return safesql.New(""), m.Type, nil
-			},
-			FunctionFunc:      FunctionMap(q.functions),
-			Q:                 &dummyQuery,
-			TextSearchColumns: fullTextFields,
-			FilterBaseOptions: []queryfilter.FilterBaseOption{queryfilter.WithFullTextSearchEnabled},
-		}
-
-		err := qf.AppendFilters(userFilterExp)
-		if err != nil {
-			return nil, nil, nil, status.Errorf(status.InvalidArgument, "error processing filters: %v", err)
-		}
-
-		// Walk over userFilterExp again to look for members that are used in equality statements.
-		ev := equalityvisitor.EqualityVisitor{
-			MemberFunc: func(name []string, followsEq bool) (filtervisitor.PrimType, error) {
-				if !followsEq {
-					return filtervisitor.Invalid, nil
-				}
-				n := strings.Join(name, ".")
-				a, ok := q.members[n]
-				if !ok {
-					return filtervisitor.Invalid, status.Errorf(status.InvalidArgument, "name %q not found", n)
-				}
-				equalityFilters[a.Name] = true
-				return a.Type, nil
-			},
-		}
-		filtervisitor.Visit(&ev, userFilterExp)
+	if err := q.scoutUserFilterMembers(userFilterExp, fullTextFields, userFilters, equalityFilters); err != nil {
+		return nil, nil, nil, err
 	}
 
 	// Add all of the base filter fields as equality filters. The base filters are assumed to be fixed
@@ -618,47 +590,12 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	for _, t := range q.tables {
 		ct := &candidateTable{t: t}
 
-		// Determine if this candidate table satisfies a user order by (if present).
-		if len(userOrderBy) > 0 {
-			allSortsFound := true
-			for _, uob := range userOrderBy {
-				m, ok := t.Fields[uob.TableField]
-				if !ok {
-					allSortsFound = false
-					break
-				}
-				// Derived fields cannot be in the ORDER BY clause if the optimizeOrderBy flag is set.
-				if m.Derived && q.optimizeOrderBy {
-					return nil, nil, nil, status.Errorf(status.InvalidArgument, "derived field %q cannot be used for ordering", uob.TableField)
-				}
-			}
-			if !allSortsFound {
-				continue
-			}
-
-			// For optimizing the order by clause, we also need to check that the user defined sort fields
-			// match:
-			// - The sort order of the indexed fields.
-			if q.optimizeOrderBy {
-				// User order bys should be added to the beginning of the ORDER BY clause. We need to filter
-				// all tables that don't have the user sort ordering in the order specified at the start of
-				// the OrderedIndexWithSortDirection index.
-				sortOrderFound := true
-				if len(userOrderBy) > len(t.OrderedIndicesWithSortDirection) {
-					sortOrderFound = false
-				} else {
-					for i, oi := range userOrderBy {
-						if (oi.TableField != t.OrderedIndicesWithSortDirection[i].TableField) || (oi.SortOrder != t.OrderedIndicesWithSortDirection[i].SortOrder) {
-							sortOrderFound = false
-							break
-						}
-					}
-				}
-
-				if !sortOrderFound {
-					continue
-				}
-			}
+		valid, err := checkCandidateTableOrderBy(t, userOrderBy, q.optimizeOrderBy)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !valid {
+			continue
 		}
 
 		// If there are no base filters, this table is a candidate.
@@ -796,24 +733,10 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 			}
 		}
 		if !found {
-			// Can we add a joinTable that has the field?
-			log.V(1).Infof("Join field %q is not available in any existing joins, see if it's available in any of the prospective joins %v", sf, relationshipTableNames(fromTable.Relationships))
-			for _, jt := range fromTable.Relationships {
-				m, ok := jt.T.Fields[sf]
-				if ok && m.Selectable {
-					joins = append(joins, jt)
-					log.V(1).Infof("Join field %q is selectable from join table %q", sf, jt.T.Name)
-					if sfs[sf] {
-						log.V(1).Infof("Join field %q is in select fields, adding it to select members", sf)
-						selectMembers = append(selectMembers, m)
-					}
-					found = true
-					break
-				}
-			}
-			if !found {
-				// We still don't have a table from where we can get this field.
-				return nil, nil, nil, status.Errorf(status.FailedPrecondition, "unable to find a table to select %q from", sf)
+			var err error
+			found, err = resolveJoinFieldFromRelationships(sf, sfs, fromTable, &joins, &selectMembers)
+			if err != nil {
+				return nil, nil, nil, err
 			}
 		}
 	}
@@ -922,27 +845,19 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 			return nil, nil, nil, status.Errorf(status.Internal, "%s", fmt.Sprintf("unable to find field %v in table %v", t, fromTable))
 		}
 
-		if q.options.deduplicateSelects {
-			index, ok := selectedMembers[f.QueryLiteral]
-			if !ok {
-				if selectIdx > 0 {
-					query.SQL = query.SQL + ", "
-				}
-				query.SQL = query.SQL + f.QueryLiteral.String()
-				tfToIdx[t.TableField] = selectIdx
-				selectedMembers[f.QueryLiteral] = selectIdx
-				selectIdx++
-			} else {
-				tfToIdx[t.TableField] = index
-			}
-		} else {
-			if selectIdx > 0 {
-				query.SQL = query.SQL + ", "
-			}
-			query.SQL = query.SQL + f.QueryLiteral.String()
-			tfToIdx[t.TableField] = selectIdx
-			selectIdx++
+		if index, ok := selectedMembers[f.QueryLiteral]; q.options.deduplicateSelects && ok {
+			tfToIdx[t.TableField] = index
+			continue
 		}
+		if selectIdx > 0 {
+			query.SQL = query.SQL + ", "
+		}
+		query.SQL = query.SQL + f.QueryLiteral.String()
+		tfToIdx[t.TableField] = selectIdx
+		if q.options.deduplicateSelects {
+			selectedMembers[f.QueryLiteral] = selectIdx
+		}
+		selectIdx++
 	}
 
 	// Add FROM.
@@ -1025,28 +940,7 @@ func (q *queryGen) GenerateQuery(selectFields []TableField, fullTextFields []saf
 	}
 
 	if needGroupBy {
-		groupFields := map[safesql.TrustedSQLString]bool{}
-		query.SQL = query.SQL + " GROUP BY "
-		needsComma := false
-		for _, m := range selectMembers {
-			if !m.OmitFromGroupBy {
-				if needsComma {
-					query.SQL = query.SQL + ", "
-				}
-				query.SQL = query.SQL + m.QueryLiteral.String()
-				groupFields[m.QueryLiteral] = true
-				needsComma = true
-			}
-		}
-
-		// Things that are ordered by must also be grouped by.
-		for _, ob := range orderByFields {
-			ql := fromTable.Fields[ob.TableField].QueryLiteral
-			_, ok := groupFields[ql]
-			if !ok {
-				query.SQL = query.SQL + ", " + ql.String()
-			}
-		}
+		appendGroupByClause(query, selectMembers, orderByFields, fromTable)
 	}
 
 	if len(orderByFields) > 0 {
@@ -1261,4 +1155,121 @@ func pageTokenNames(ptFields map[TableField]any) []TableField {
 // emptyExpression returns a bool indicating if the Expression is nil or completely empty.
 func emptyExpression(exp *fpb.Expression) bool {
 	return exp.GetExpression() == nil
+}
+
+func checkCandidateTableOrderBy(t TableView, userOrderBy []UserOrderedIndex, optimizeOrderBy bool) (bool, error) {
+	if len(userOrderBy) == 0 {
+		return true, nil
+	}
+	for _, uob := range userOrderBy {
+		m, ok := t.Fields[uob.TableField]
+		if !ok {
+			return false, nil
+		}
+		if m.Derived && optimizeOrderBy {
+			return false, status.Errorf(status.InvalidArgument, "derived field %q cannot be used for ordering", uob.TableField)
+		}
+	}
+	if !optimizeOrderBy {
+		return true, nil
+	}
+	if len(userOrderBy) > len(t.OrderedIndicesWithSortDirection) {
+		return false, nil
+	}
+	for i, oi := range userOrderBy {
+		if oi.TableField != t.OrderedIndicesWithSortDirection[i].TableField || oi.SortOrder != t.OrderedIndicesWithSortDirection[i].SortOrder {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func resolveJoinFieldFromRelationships(sf TableField, sfs map[TableField]bool, fromTable TableView, joins *[]Join, selectMembers *[]Member) (bool, error) {
+	log.V(1).Infof("Join field %q is not available in any existing joins, see if it's available in any of the prospective joins %v", sf, relationshipTableNames(fromTable.Relationships))
+	for _, jt := range fromTable.Relationships {
+		m, ok := jt.T.Fields[sf]
+		if ok && m.Selectable {
+			*joins = append(*joins, jt)
+			log.V(1).Infof("Join field %q is selectable from join table %q", sf, jt.T.Name)
+			if sfs[sf] {
+				log.V(1).Infof("Join field %q is in select fields, adding it to select members", sf)
+				*selectMembers = append(*selectMembers, m)
+			}
+			return true, nil
+		}
+	}
+	return false, status.Errorf(status.FailedPrecondition, "unable to find a table to select %q from", sf)
+}
+
+func appendGroupByClause(query *spanner.Statement, selectMembers []Member, orderByFields []UserOrderedIndex, fromTable TableView) {
+	groupFields := map[safesql.TrustedSQLString]bool{}
+	query.SQL = query.SQL + " GROUP BY "
+	needsComma := false
+	for _, m := range selectMembers {
+		if !m.OmitFromGroupBy {
+			if needsComma {
+				query.SQL = query.SQL + ", "
+			}
+			query.SQL = query.SQL + m.QueryLiteral.String()
+			groupFields[m.QueryLiteral] = true
+			needsComma = true
+		}
+	}
+
+	for _, ob := range orderByFields {
+		ql := fromTable.Fields[ob.TableField].QueryLiteral
+		if !groupFields[ql] {
+			if needsComma {
+				query.SQL = query.SQL + ", "
+			}
+			query.SQL = query.SQL + ql.String()
+			groupFields[ql] = true
+			needsComma = true
+		}
+	}
+}
+
+func (q *queryGen) scoutUserFilterMembers(userFilterExp *fpb.Expression, fullTextFields []safesql.TrustedSQLString, userFilters map[string]TableField, equalityFilters map[TableField]bool) error {
+	if emptyExpression(userFilterExp) {
+		return nil
+	}
+	dummyQuery := spanner.NewStatement("")
+
+	qf := queryfilter.Spanner{
+		MemberFunc: func(name []string) (safesql.TrustedSQLString, filtervisitor.PrimType, error) {
+			n := strings.Join(name, ".")
+			m, ok := q.members[n]
+			if !ok || m.Name == "" {
+				return safesql.New(""), filtervisitor.Invalid, status.Errorf(status.InvalidArgument, "unsupported field name in query: %q", n)
+			}
+			userFilters[n] = m.Name
+			return safesql.New(""), m.Type, nil
+		},
+		FunctionFunc:      FunctionMap(q.functions),
+		Q:                 &dummyQuery,
+		TextSearchColumns: fullTextFields,
+		FilterBaseOptions: []queryfilter.FilterBaseOption{queryfilter.WithFullTextSearchEnabled},
+	}
+
+	err := qf.AppendFilters(userFilterExp)
+	if err != nil {
+		return status.Errorf(status.InvalidArgument, "error processing filters: %v", err)
+	}
+
+	ev := equalityvisitor.EqualityVisitor{
+		MemberFunc: func(name []string, followsEq bool) (filtervisitor.PrimType, error) {
+			if !followsEq {
+				return filtervisitor.Invalid, nil
+			}
+			n := strings.Join(name, ".")
+			a, ok := q.members[n]
+			if !ok {
+				return filtervisitor.Invalid, status.Errorf(status.InvalidArgument, "name %q not found", n)
+			}
+			equalityFilters[a.Name] = true
+			return a.Type, nil
+		},
+	}
+	filtervisitor.Visit(&ev, userFilterExp)
+	return nil
 }

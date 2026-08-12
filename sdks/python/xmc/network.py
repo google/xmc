@@ -91,6 +91,7 @@ class HTTPClient:
             self._xid,
             self._work_unit_id,
             self._execution_id,
+            self._job_name,
             self._replica_id,
             self.is_silenced,
         ) = harvest_client_metadata(
@@ -103,6 +104,8 @@ class HTTPClient:
             "Content-Type": "application/json",
             "User-Agent": "xmc-python-network/0.1.0",
         }
+        if self._job_name:
+            self._headers["X-Job-Name"] = self._job_name
         if self._replica_id:
             self._headers["X-Replica-ID"] = self._replica_id
         if default_headers:
@@ -140,6 +143,11 @@ class HTTPClient:
         return self._execution_id
 
     @property
+    def job_name(self) -> str:
+        """Returns the job name metadata string."""
+        return self._job_name
+
+    @property
     def replica_id(self) -> str:
         """Returns the replica/rank ID metadata string.
 
@@ -150,7 +158,7 @@ class HTTPClient:
     def send_payload(self, payload: list[dict[str, Any]]) -> SendResult:
         """Serializes and sends JSON payload list over persistent HTTP connection."""
         body = json.dumps(payload)
-        return self.send(body)
+        return self.send(body, path="/api/v1/metrics")
 
     def _calculate_ttl(self) -> float:
         """Calculates connection TTL with random jitter (base_ttl ± jitter)."""

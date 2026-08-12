@@ -34,6 +34,11 @@ linters:
     # Phase 3: Code formatting & complexity checks
     - whitespace
     - nestif
+    # Phase 4: Function result limit & duplication detection
+    - dupl
+    - revive
+    # Phase 5: Cyclomatic complexity enforcement
+    - gocyclo
 
 linters-settings:
   gofmt:
@@ -47,26 +52,27 @@ linters-settings:
       - labelled
   nestif:
     min-complexity: 4
+  gocyclo:
+    min-complexity: 15
+  dupl:
+    threshold: 100
+  revive:
+    rules:
+      - name: function-result-limit
+        arguments: [3]
 
 issues:
-  # TODO: Temporarily exclude legacy packages for incremental nestif (min-complexity: 4) adoption.
   exclude-dirs:
-    # TODO: Refactor api/filter for nestif complexity and remove exclude.
-    - api/filter
+    - cmd/ui/node_modules
   exclude-rules:
-    # TODO: Refactor test files and legacy packages for nestif and remove exclusions incrementally.
-    - path: ".*_test\\.go"
+    - path: (_test\.go|cmd/actuator/k8s_client/client\.go)
       linters:
-        - nestif
-    - path: "internal/query_generator/.*"
+        - dupl
+    - path: _test\.go
       linters:
-        - nestif
-    - path: "internal/storage/spanner/.*"
+        - gocyclo
+    # TODO(Phase 5): Refactor legacy query filter ASTs and Spanner row decoders exceeding cyclomatic complexity 15
+    - path: (api/filter/go|internal/query_generator|internal/storage/spanner)
       linters:
-        - nestif
-    - path: "internal/validator/.*"
-      linters:
-        - nestif
-    - path: "internal/task_queue/.*"
-      linters:
-        - nestif
+        - gocyclo
+

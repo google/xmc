@@ -1,0 +1,45 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+compat_go_library(
+    name = "cache",
+    srcs = [
+        "kueue_cache.go",
+        "resource_cache.go",
+    ],
+    importpath = "xmanager_cloud/cmd/rod_data_provider/cache",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//internal/compat/google",
+        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
+    ],
+)
+
+compat_go_test(
+    name = "cache_test",
+    srcs = [
+        "kueue_cache_test.go",
+        "resource_cache_test.go",
+    ],
+    embed = [":cache"],
+    deps = [
+        "@com_github_google_go_cmp//cmp",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
+    ],
+)

@@ -37,15 +37,14 @@ import (
 // UpdateExperiment updates an experiment with the given update mask. We return both the original
 // and updated experiments, so that the caller can choose whether to perform additional actions
 // based on the original experiment state.
-func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.ExperimentUpdate) (*essmsgpb.Experiment, *essmsgpb.Experiment, error) {
+func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.ExperimentUpdate) (storage.UpdatedExperiments, error) {
 	if update == nil {
-		return nil, nil, fmt.Errorf("update must not be nil")
+		return storage.UpdatedExperiments{}, fmt.Errorf("update must not be nil")
 	}
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(update.XID))
 	logging.Info(ctx, "Update experiment in storage", "update", update.Experiment)
 
-	var originalExperiment *essmsgpb.Experiment
-	var updatedExperiment *essmsgpb.Experiment
+	var originalExperiment, updatedExperiment *essmsgpb.Experiment
 	var mutated bool
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		mutated = false
@@ -87,7 +86,7 @@ func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.Exper
 	})
 
 	if err != nil {
-		return nil, nil, err
+		return storage.UpdatedExperiments{}, err
 	}
 
 	if mutated {
@@ -97,5 +96,40 @@ func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.Exper
 		logging.Debug(ctx, "Experiment not updated; no changes detected", "updatedExperiment", updatedExperiment)
 	}
 
-	return originalExperiment, updatedExperiment, nil
+	return storage.UpdatedExperiments{
+		Original: originalExperiment,
+		Updated:  updatedExperiment,
+	}, nil
+}
+
+// UpdateExperimentStatus buffers a mutation to update an Experiment's status in Spanner.
+func (r *Repository) UpdateExperimentStatus(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error {
+	if exp == nil {
+		return fmt.Errorf("experiment must not be nil")
+	}
+	if tx == nil {
+		return fmt.Errorf("transaction must not be nil")
+	}
+	expMutation, err := spannerdata.ExperimentProtoToStatusUpdateMutation(exp)
+	if err != nil {
+		logging.Error(ctx, "failed to create status mutation for experiment", "experiment", exp, "error", err)
+		return err
+	}
+	return tx.BufferWrite([]*spanner.Mutation{expMutation})
+}
+
+// UpdateExperimentResources buffers a mutation to update an Experiment's resources in Spanner.
+func (r *Repository) UpdateExperimentResources(ctx context.Context, tx *spanner.ReadWriteTransaction, exp *essmsgpb.Experiment) error {
+	if exp == nil {
+		return fmt.Errorf("experiment must not be nil")
+	}
+	if tx == nil {
+		return fmt.Errorf("transaction must not be nil")
+	}
+	expResourcesMutation, err := spannerdata.ExperimentProtoToResourcesUpdateMutation(exp)
+	if err != nil {
+		logging.Error(ctx, "failed to create resources mutation for experiment", "experiment", exp, "error", err)
+		return err
+	}
+	return tx.BufferWrite([]*spanner.Mutation{expResourcesMutation})
 }

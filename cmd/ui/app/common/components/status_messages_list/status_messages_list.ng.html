@@ -45,13 +45,13 @@ limitations under the License.
         <div class="timeline-container">
           @for (msg of messages(); track $index) {
             <div class="timeline-item">
-              <div class="timeline-badge" [class]="msg.severity?.toLowerCase() || 'info'"></div>
+              <div [class]="'timeline-badge ' + (msg.severity?.toLowerCase() || 'info')"></div>
               <div class="timeline-content">
                 <xmc-status-message
                   [message]="msg"
                   [ignoreFilters]="true"
                   [showWorkUnitId]="showWorkUnitId()"
-                ></xmc-status-message>
+                />
               </div>
             </div>
           }
@@ -59,9 +59,9 @@ limitations under the License.
 
         @if (nextPageToken()) {
           <div class="load-more-container">
-            <button type="button" mat-stroked-button (click)="loadMore()" [disabled]="isLoading()">
+            <button type="button" mat-stroked-button [disabled]="isLoading()" (click)="loadMore()">
               @if (isLoading()) {
-                <mat-spinner diameter="20"></mat-spinner>
+                <mat-spinner diameter="20" />
               } @else {
                 Load More
               }

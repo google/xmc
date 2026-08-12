@@ -9,6 +9,10 @@ This document outlines foundational architectural, structural, and clean code gu
 - **YAGNI & No Unused Parameters**: Adhere strictly to YAGNI (*You Aren't Gonna Need It*). Do NOT accept unused parameters, dead fields, or speculative arguments in function signatures or class constructors. Only declare parameters that are actively read, validated, or processed within the function body (excluding mandatory protocol/runtime interface overrides such as context manager `__exit__`).
 - **Function Limit Target**: Aim to keep functions and methods within a highly readable **20–30 line target cap**. Decompose monolithic methods into localized, pure helper functions.
 - **Decompose Complex Logic**: Separate business logic, state mutation, and structural data transformations from framework hooks, lifecycle orchestrations, or shell command invocations.
+- **Prohibit Generic Dumping-Ground Names & Suffixes/Prefixes (`util`, `utils`, `helper`, `helpers`, `utility`, `utilities`, `misc`, `common`, `tools`, `shared`)**:
+  - **No Generic Names, Folders, or Suffixes**: Never name files, methods, functions, classes, interfaces, packages, or parent directories using generic terms or compound suffixes/prefixes (e.g., `util`, `utils`, `urlutil`, `timeutil`, `emailutil`, `helper`, `helpers`, `stringhelper`, `utility`, `utilities`, `misc`, `common`, `tools`, `shared`). Catch-all names and generic suffixes obscure domain intent and turn modules into dumping grounds for unrelated code.
+  - **SRP Violation Warning**: Reaching for generic terms or suffixes like `util`, `utils`, `helper`, or `timeutil` is a strong signal of a Single Responsibility Principle (SRP) violation—it indicates that the code lacks a clear, cohesive domain scope. Never group unrelated capabilities under a generic directory (e.g. `pkg/util/`) or apply generic suffixes (`urlutil`).
+  - **Explicit Domain Naming & Decomposition**: Always use direct domain-oriented names that describe the underlying concept or action without generic filler words. Separate distinct capabilities into clean, dedicated domain packages/modules (e.g., `pkg/url/parser.go`, `pkg/time/formatter.go`, `pkg/email/validator.go` or `url_parser.go`, `date_formatter.py`, `email_validator.go`).
 
 ## 2. Linear Execution & Control Flow (KISS)
 - **Linear Indentation**: Keep control flow strictly linear to eliminate unnecessary nesting and simplify reasoning.
@@ -43,6 +47,7 @@ function processUser(user: User | null) {
 
 ## 3. Default Immutability & Safe Data Handling
 - **Default Immutability (`const` over `let`)**: Declare variables as `const` by default. Reserve `let` strictly for instances where localized value reassignment is an explicit, unavoidable structural requirement (e.g., loop counters, accumulators).
+- **Domain Model Cleanliness over Transport Serialization**: Frontend view models and ambient TypeScript interfaces (*.d.ts) must remain pure, strongly typed domain representations. Do NOT leak wire transport quirks (such as Proto3 int64 string JSON serialization) into UI interface fields as number | string union types. Handle wire normalization at service boundaries (e.g., converting serialized string representations of 64-bit integers to bigint or number).
 - **Constructive Initialization**: Use spread operators (`...`), ternary expressions (`cond ? a : b`), or nullish coalescing (`??`) to construct values rather than imperatively assigning `let` variables across multiple blocks.
 - **Shallow Copies Before Mutation**: Never mutate arrays or state objects directly (especially data returned by signals, observables, or shared states). Always construct a shallow copy (`[...array]`, `{ ...obj }`) prior to sorting, filtering, or modifying properties.
 
@@ -51,14 +56,14 @@ function processUser(user: User | null) {
 - **Parametric Order Matching**: For HTTP or service query mocks (e.g., `HttpParams` or query parameter verification), ensure parameter maps serialize and compare in the exact order expected by matching criteria.
 - **No Hallucinated Identifiers**: Use valid, consistent mock identifiers in unit test suites (matching base fixture schemas such as `experiments/1` rather than arbitrary unlinked IDs like `123`).
 - **Eradicate Production Mock Branches**: Never embed static mock datasets or conditional mock execution branches (`if (useMock)`) inside production application code or service layers. Decouple mocks using Dependency Injection (DI) factory providers.
-- **Centralize Shared Utilities & Helpers**: Never copy-paste or redefine identical helper functions, mock mutators, or test utilities locally across multiple packages. Centralize reusable utilities in global/shared packages (e.g., `internal/compat/*` or shared test libraries) to maintain DRY across the repository.
+- **Centralize Reusable Domain Packages & Test Fixtures**: Never copy-paste or redefine identical functions, mock mutators, or test fixtures locally across multiple packages. Centralize reusable logic in domain-specific packages (e.g., `internal/compat/proto` or dedicated test libraries) rather than generic `utils` packages to maintain DRY across the repository.
 - **Baseline Test Fixtures & Targeted Mutations**: In unit tests with repetitive data payloads, avoid copy-pasting monolithic structures. Define a canonical baseline fixture and use mutation helpers (such as `proto.Modify` for Protobuf messages or shallow copies/local helpers for standard structs) to express each test case as a concise delta from the base.
 - **No Silent Null-Bypassing in Test Helpers**: Test helper functions and constructor fixtures (such as `newTestHandler()`) MUST NOT silently pass `nil` or `null` for newly introduced dependencies unless a test case explicitly tests `nil`/`null`-safety. When new capabilities or metrics are added to a component, test helpers should provide fully initialized instances or configurable fixtures so that test cases validate the side effects (metrics, events, logs) of the new feature.
 
 ## 5. Strict Testing Coverage & PR Granularity
 - **Strict Coverage Requirements**: All feature additions, bug fixes, and code modifications must include comprehensive unit and integration test coverage. Never reduce assertions or mask test failures.
 - **1-to-1 File Test Cohesion**: Every source file containing business, parsing, or data transformation logic (e.g. `validation.go`) MUST have a corresponding dedicated unit test file (e.g. `validation_test.go`) testing its exported functions directly in unit isolation. Relying solely on higher-level integration or HTTP handler tests (`handler_test.go`) to transitively cover helper logic is not permitted.
-- **UI Visual Screenshot Testing**: UI component visual screenshot tests must use direct custom component host tags (`<xmc-*>`), enforce realistic container layout bounds, configure `maxDiffPixelRatio` for cross-platform CI font rendering, and synchronize baseline PNG snapshots (see [TypeScript & Modern Angular Guidelines](languages/typescript_javascript.md#8-playwright-visual-screenshot-testing)).
+- **UI Visual Screenshot Testing**: UI component visual screenshot tests must use direct custom component host tags (`<xmc-*>`), rely on shared test utilities (`test_utils.ts`) for standard viewport sizing and layout formatting, configure `maxDiffPixelRatio` for cross-platform CI font rendering, and synchronize baseline PNG snapshots (see [TypeScript & Modern Angular Guidelines](languages/typescript_javascript.md#8-playwright-visual-screenshot-testing)).
 - **Open-Source Code TODO Standard**: Inline code `TODO` comments in public/OSS source files (under `sdks/` or open packages) MUST NOT include internal Buganizer IDs (e.g. `TODO(b/12345)`). Use generic `TODO:` tags or public GitHub issue numbers (`TODO(#123)`).
 - **Small, Focused PRs**: Keep Pull Requests small, localized, and logically split. Each PR should address a single cohesive task or change step to enable fast, high-quality reviews.
 - **System Contract & API Changes**:
@@ -67,3 +72,26 @@ function processUser(user: User | null) {
 
 ## 6. Post-Implementation Reflection & Meta-Learning
 - **Selective Triggers**: Trigger the [Iterative Reflection Skill](../skills/xmc_iterative_reflection/SKILL.md) only after major implementations, PRs with high comment volume (>3-5 comments), or explicit user request. Do NOT trigger for routine minor edits.
+
+
+## 7. System Attribute Immutability & Precedence
+- **System Key Precedence**: User-supplied custom maps (labels, annotations, environment variables) MUST NEVER overwrite reserved internal system attributes or security identifiers (`xid`, `wid`, `eid`, `queue-name`):
+  ```go
+  if systemMap == nil {
+      systemMap = make(map[string]string)
+  }
+  for k, v := range userMap {
+      if _, exists := systemMap[k]; !exists {
+          systemMap[k] = v
+      }
+  }
+  ```
+
+## 8. Documentation Preservation & Production Manifest Isolation
+- **100% Comment Preservation During Refactoring**: When decomposing monolithic source files into subpackages, preserve ALL existing docstrings, package headers, section dividers (`// ------`), and step-by-step numbered algorithm comments (`// 1. ...`) verbatim inside method bodies.
+- **Production Manifest Isolation**: NEVER modify production deployment manifests (`deploy/`, `helm/`, production SQL DDLs) to work around test container limitations. Dynamically sanitize DDLs in temporary memory buffers.
+- **Library First Policy**: Inspect third-party library documentation for built-in capabilities (e.g. `clickhouse.WithInitScripts()`) prior to implementing custom parsers or state machines.
+
+## 9. Bazel CI Diagnostic Protocol & Zero Task Polling
+- **No Speculative Attribute Changes**: NEVER modify Bazel test parameters (`size`, `timeout`, `tags`) speculatively upon CI test failure. Always inspect complete test logs via `bazel test --test_output=errors //...` to identify exact failure root causes.
+- **Reactive Background Task Handling**: NEVER poll background tasks in a loop using `manage_task action=status`. Rely on system reactive notifications after launching background tasks.

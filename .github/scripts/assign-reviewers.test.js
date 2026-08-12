@@ -56,6 +56,28 @@ test('filterEligibleReviewers excludes the PR author case-insensitively', () => 
   assert.deepStrictEqual(result, ['Alice', 'Charlie']);
 });
 
+test('filterEligibleReviewers excludes absent reviewers', () => {
+  const candidates = ['alice', 'bob', 'charlie', 'dave', 'eve'];
+  const absent = ['alice', 'dave'];
+  const result = filterEligibleReviewers(candidates, 'bob', absent);
+  assert.deepStrictEqual(result, ['charlie', 'eve']);
+});
+
+test('filterEligibleReviewers excludes absent reviewers case-insensitively', () => {
+  const candidates = ['Alice', 'Bob', 'Charlie', 'Dave', 'Eve'];
+  const absent = ['alice', 'DAVE'];
+  const result = filterEligibleReviewers(candidates, 'bob', absent);
+  assert.deepStrictEqual(result, ['Charlie', 'Eve']);
+});
+
+test('absent reviewers mapping handles markdown formatted lists (- , * , @)', () => {
+  const candidates = ['alice', 'bob', 'charlie', 'dave', 'eve'];
+  const rawAbsent = ['- alice', '* @dave', '+ eve'];
+  const absent = rawAbsent.map(u => u.replace(/^[-*+@\s]+/, '').trim()).filter(Boolean);
+  const result = filterEligibleReviewers(candidates, 'bob', absent);
+  assert.deepStrictEqual(result, ['charlie']);
+});
+
 test('selectRandomReviewers returns up to count elements and preserves candidate pool elements', () => {
   const candidates = ['alice', 'bob', 'charlie', 'dave', 'eve'];
   const selected = selectRandomReviewers(candidates, 1);

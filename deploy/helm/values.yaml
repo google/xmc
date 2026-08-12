@@ -30,6 +30,7 @@ actuator_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/actuator-dev:l
 reconciler_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/reconciler-dev:latest"
 ess_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/experiment-state-server-dev:latest"
 health_service_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/health-service-dev:latest"
+dashboard_service_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/dashboard-service-dev:latest"
 rod_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/rod-dev:latest"
 ingestion_gateway_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/ingestion-gateway-dev:latest"
 
@@ -42,13 +43,51 @@ essDeployment:
 healthServiceDeployment:
   enabled: false
 
+metrics:
+  enabled: false
+
 ingestionGatewayDeployment:
   enabled: false
+  hpa:
+    minReplicas: 3
+    maxReplicas: 10
+  redpandaBrokers: "redpanda-0.redpanda.xmc.svc.cluster.local:9092"
+  topicName: "xmc-metrics"
+  minPartitions: 128
+  minReplicas: 3
+  sasl:
+    enabled: false
+    mechanism: "SCRAM-SHA-256"
+    secretName: ""
+  tls:
+    enabled: false
+    secretName: ""
+  serviceAccountName: "default"
+  resources:
+    requests:
+      cpu: "10m"
+      memory: "64Mi"
+    limits:
+      cpu: "100m"
+      memory: "256Mi"
+
+rodDeployment:
+  enabled: false
+  serviceAccountName: "rod-data-provider-service-account"
+  gcpServiceAccount: ""
 
 healthService:
   gcpServiceAccount: ""
   iap:
     httpAudience: "placeholder-health-http-audience"
+  logMonitorResourceName: "projects/YOUR_GCP_PROJECT_ID/locations/YOUR_GCP_REGION/services/xmc-log-monitor-YOUR_ENVIRONMENT_NAME"
+  observabilityUrl: ""
+
+dashboardServiceDeployment:
+  enabled: false
+
+dashboardService:
+  gcpServiceAccount: ""
 
 detectInadmissibleWorkUnits: true
 startupPodErrorCheckEnabled: true

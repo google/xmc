@@ -175,3 +175,100 @@ declare module 'xmanager_cloud/health_service/proto/api.jsonpb_decls' {
     [key: string]: any;
   }
 }
+
+declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
+  export type WorkUnitState =
+    import('xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls').WorkUnitStatus.WorkUnitState;
+
+  export type RangePreset =
+    | 'RANGE_PRESET_UNSPECIFIED'
+    | 'LAST_HOUR'
+    | 'LAST_DAY'
+    | 'LAST_WEEK'
+    | number;
+
+  export interface Resource {
+    resourceType?: string;
+    count?: number;
+  }
+
+  export interface ResourceVelocity {
+    resourceType?: string;
+    velocity?: number;
+  }
+
+  export interface QueueResourceCapacity {
+    resourceType?: string;
+    totalCapacity?: number;
+    freeCapacity?: number;
+    freeCapacityWithBorrowing?: number;
+  }
+
+  export interface QueueOverview {
+    queueName?: string;
+    queueCapacity?: QueueResourceCapacity[];
+  }
+
+  export interface QueuePredictability {
+    pendingResourceRequests?: Resource;
+    resourceVelocity?: ResourceVelocity;
+    pendingJobs?: number;
+    jobVelocity?: number;
+    velocityRange?: RangePreset;
+  }
+
+  export interface QueueSecondaryData {
+    queuePredictability?: QueuePredictability[];
+  }
+
+  export interface GetFittingQueuesRequest {
+    requirements?: Resource[];
+  }
+
+  export interface GetFittingQueuesResponse {
+    queues?: QueueOverview[];
+  }
+
+  export interface BatchGetQueueSecondaryDataRequest {
+    queueNames?: string[];
+    range?: RangePreset;
+  }
+
+  export interface BatchGetQueueSecondaryDataResponse {
+    queuePredictability?: Record<string, QueueSecondaryData>;
+  }
+
+  export interface DashboardJob {
+    xid?: number;
+    workUnitId?: number;
+    user?: string;
+    priority?: number;
+    status?: WorkUnitState;
+    timeInQueueSeconds?: number;
+    requestedResources?: Resource[];
+    positionInQueue?: number;
+    createTime?: any;
+    tags?: string[];
+  }
+
+  export interface GetRunningAndPendingJobsRequest {
+    queueName?: string;
+    pageSize?: number;
+    pageToken?: string;
+    orderBy?: string;
+  }
+
+  export interface GetRunningAndPendingJobsResponse {
+    jobs?: DashboardJob[];
+    nextPageToken?: string;
+    totalQueueSize?: number;
+  }
+
+  export interface GetSubmitQueueRequest {
+    queueName?: string;
+  }
+
+  export interface GetSubmitQueueResponse {
+    submitQueue?: string;
+  }
+}

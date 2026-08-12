@@ -27,10 +27,7 @@ limitations under the License.
             queueInfo.positionInQueue &&
             queueInfo.totalWorkloadsInQueue > 0
           ) {
-            <mat-progress-bar
-              mode="determinate"
-              [value]="getQueueProgress(queueInfo)"
-            ></mat-progress-bar>
+            <mat-progress-bar mode="determinate" [value]="getQueueProgress(queueInfo)" />
           }
         </div>
       }
@@ -44,6 +41,7 @@ limitations under the License.
           </div>
           @if (showMoreButton()) {
             <button
+              type="button"
               mat-button
               class="stack-trace-button"
               color="primary"
@@ -57,7 +55,7 @@ limitations under the License.
       }
       @if (urlsForWidget().length > 0) {
         @for (url of urlsForWidget(); track url.processedUrl) {
-          <a [href]="url.processedUrl" target="_blank">{{ url.displayName }}</a>
+          <a target="_blank" rel="noreferrer" [href]="url.processedUrl">{{ url.displayName }}</a>
         }
       }
       <div class="metadata">

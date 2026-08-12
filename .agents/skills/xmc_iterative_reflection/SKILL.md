@@ -42,6 +42,12 @@ Run this skill **only** when one of the following conditions is met:
 
 Evaluate session logs (`transcript.jsonl`) across four key dimensions:
 
+### Missing Transcript Fallback Protocol
+If `transcript.jsonl` for a conversation ID is unindexed or missing from local disk:
+1. **Audit Git History**: Run `git log --all --grep="<CONV_ID>" --stat -p` to inspect committed changes, review comments, and PR metadata.
+2. **Audit Workspace Worktrees & Reflog**: Inspect worktree paths under `~/.gemini/jetski/worktrees/xmc/` and check `git reflog --all`.
+3. **Execute Helper Inspection**: Run `python3 tools/inspect_session.py --conv_id <CONV_ID>` to parse available git metadata and task logs cleanly without unconstrained filesystem traversals.
+
 ### Pillar 1: Tooling & Automation Gaps (Helper Scripts)
 - **Signal**: Did the agent write complex shell logic, custom python one-liners, or manual regex filtering directly inside commands or chat responses?
 - **Action**: Identify opportunities to extract procedural logic into testable Python scripts in `tools/` (per [skills_and_automation.md](../../rules/skills_and_automation.md#1-extracting-complex-logic-to-executable-python-scripts)).

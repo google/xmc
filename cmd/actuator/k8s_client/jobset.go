@@ -75,11 +75,11 @@ func (c *Client) createJobSet(ctx context.Context, workUnit *esspb.WorkUnit, tar
 	namespace := getNamespaceFromWorkUnit(workUnit)
 
 	jobSet, err := c.constructJobSet(ctx, workUnit, target, author, namespace, operationTime, priorities)
-	logging.Info(ctx, "Create JobSet", "jobSet", jobSet.GetName())
 	if err != nil {
 		logging.Warn(ctx, "Failed to construct JobSet manifest", "error", err)
 		return fmt.Errorf("failed to construct JobSet manifest: %w", err)
 	}
+	logging.Info(ctx, "Create JobSet", "jobSet", jobSet.GetName())
 
 	ctx = logging.WithJobSetName(ctx, jobSet.GetName(), nil)
 
@@ -89,6 +89,11 @@ func (c *Client) createJobSet(ctx context.Context, workUnit *esspb.WorkUnit, tar
 	if err != nil {
 		logging.Warn(ctx, "Failed to convert JobSet to unstructured", "error", err)
 		return fmt.Errorf("failed to convert JobSet to unstructured: %w", err)
+	}
+
+	if err := c.preconditionsValidator.ValidateJobSetManifest(jobSetUnstructured); err != nil {
+		logging.Warn(ctx, "Failed to validate JobSet manifest", "target", target, "error", err)
+		return fmt.Errorf("failed to validate JobSet manifest for %q: %w", target, err)
 	}
 
 	name := jobSet.GetName()
@@ -135,15 +140,17 @@ func (c *Client) deleteJobSet(ctx context.Context, target, namespace string, ope
 		return false, nil
 	}
 
-	targetMatches, uid, err := c.getJobsetUIDByTarget(ctx, target, namespace)
+	aligned, err := c.preconditionsValidator.IsExecutionIDAligned(ctx, target, jobSetUnstructured)
 	if err != nil {
-		return false, fmt.Errorf("getJobsetUIDByTarget failed in deleteJobSet: %w", err)
+		logging.Warn(ctx, "Failed during execution ID alignment check", "error", err, "target", target)
+		return false, fmt.Errorf("failed during execution ID alignment check for %q: %w", target, err)
 	}
-	if !targetMatches {
+	if !aligned {
 		logging.Warn(ctx, "Jobset EID does not match target, skipping deletion")
 		return false, nil
 	}
 
+	uid := jobSetUnstructured.GetUID()
 	// Set the UID in the options, so we make sure we ONLY delete the Jobset for the current target
 	// and not any other Jobset that may have been created in the meantime.
 	deleteOptions := metav1.DeleteOptions{
@@ -291,14 +298,8 @@ func jobSetToUnstructured(jobSet *jobsetv1alpha2.JobSet) (*unstructured.Unstruct
 func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLabels map[string]string, jobAnnotations map[string]string) jobsetv1alpha2.ReplicatedJob {
 	retryLimit := job.GetRetryLimit()
 
-	// Merge job annotations with default annotations.
-	annotations := make(map[string]string)
-	for k, v := range jobAnnotations {
-		annotations[k] = v
-	}
-	for k, v := range job.GetAnnotations() {
-		annotations[k] = v
-	}
+	jobMeta := buildJobMetadata(job, jobLabels, jobAnnotations)
+	labels, annotations, podLabels, podAnnotations := jobMeta.labels, jobMeta.annotations, jobMeta.podLabels, jobMeta.podAnnotations
 
 	var dependsOn []jobsetv1alpha2.DependsOn
 	if depOrder := job.GetDependencyOrder(); depOrder.GetJobName() != "" {
@@ -313,16 +314,29 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 		activeDeadlineSeconds = proto.Int64(job.GetActiveDeadlineSeconds())
 	}
 
+	var terminationGracePeriodSeconds *int64
+	if job.TerminationGracePeriodSeconds != nil && *job.TerminationGracePeriodSeconds >= 0 {
+		terminationGracePeriodSeconds = proto.Int64(*job.TerminationGracePeriodSeconds)
+	}
+
 	primaryName := jobsetutil.PrimaryContainerName(job)
 	nodeSelector := copyNodeSelector(job.GetNodeSelector())
 
+	hostNetwork, dnsPolicy := resolveDNSAndNetwork(c, job)
+
+	restartPolicy := corev1.RestartPolicyNever
+	if job.GetRestartPolicy() != "" {
+		restartPolicy = corev1.RestartPolicy(job.GetRestartPolicy())
+	}
+
 	return jobsetv1alpha2.ReplicatedJob{
 		Name:      job.GetName(),
+		GroupName: job.GetGroupName(),
 		Replicas:  job.GetReplicas(),
 		DependsOn: dependsOn,
 		Template: batchv1.JobTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels:      jobLabels,
+				Labels:      labels,
 				Annotations: annotations,
 			},
 			Spec: batchv1.JobSpec{
@@ -334,18 +348,21 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 				ActiveDeadlineSeconds:   activeDeadlineSeconds,
 				Template: corev1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{
-						Labels:      jobLabels,
-						Annotations: annotations,
+						Labels:      podLabels,
+						Annotations: podAnnotations,
 					},
 					Spec: corev1.PodSpec{
-						ServiceAccountName: job.GetServiceAccount(),
-						PriorityClassName:  job.GetPriorityClassName(),
-						InitContainers:     c.buildInitContainersForJob(job),
-						Containers:         c.buildContainersForJob(job),
-						RestartPolicy:      corev1.RestartPolicyNever,
-						SecurityContext:    defaultPodSecurityContext(),
-						Volumes:            generateVolumesForJob(job),
-						NodeSelector:       nodeSelector,
+						ServiceAccountName:            job.GetServiceAccount(),
+						PriorityClassName:             job.GetPriorityClassName(),
+						HostNetwork:                   hostNetwork,
+						DNSPolicy:                     dnsPolicy,
+						InitContainers:                c.buildInitContainersForJob(job),
+						Containers:                    c.buildContainersForJob(job),
+						RestartPolicy:                 restartPolicy,
+						SecurityContext:               defaultPodSecurityContext(),
+						Volumes:                       generateVolumesForJob(job),
+						NodeSelector:                  nodeSelector,
+						TerminationGracePeriodSeconds: terminationGracePeriodSeconds,
 					},
 				},
 			},
@@ -361,7 +378,13 @@ func injectManagedXprofGCSEnvVars(rj *jobsetv1alpha2.ReplicatedJob, xprofBucketU
 	if xprofBucketURL == "" && xprofObjectPath == "" {
 		return
 	}
-	containers := rj.Template.Spec.Template.Spec.Containers
+	injectManagedXprofGCSEnvVarsToContainers(rj.Template.Spec.Template.Spec.Containers, xprofBucketURL, xprofObjectPath)
+	injectManagedXprofGCSEnvVarsToContainers(rj.Template.Spec.Template.Spec.InitContainers, xprofBucketURL, xprofObjectPath)
+}
+
+// injectManagedXprofGCSEnvVarsToContainers appends the managed-xprof GCS destination
+// env vars to each container in the provided slice in place.
+func injectManagedXprofGCSEnvVarsToContainers(containers []corev1.Container, xprofBucketURL, xprofObjectPath string) {
 	for i := range containers {
 		// Index into the slice so appends write back to the JobSet in place.
 		container := &containers[i]
@@ -387,24 +410,35 @@ func copyNodeSelector(source map[string]string) map[string]string {
 }
 
 func (c *Client) buildInitContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
-	var initContainers []corev1.Container
+	total := len(job.GetInitContainers()) + len(job.GetSidecars())
+	if total == 0 {
+		return nil
+	}
+	initContainers := make([]corev1.Container, 0, total)
 	for i, initContainer := range job.GetInitContainers() {
 		name := jobsetutil.InitContainerName(job, initContainer, i)
-		initContainers = append(initContainers, c.buildContainer(name, initContainer))
+		container := c.buildContainer(name, initContainer)
+		if strings.EqualFold(initContainer.GetRestartPolicy(), "Always") {
+			restartPolicyAlways := corev1.ContainerRestartPolicyAlways
+			container.RestartPolicy = &restartPolicyAlways
+		}
+		initContainers = append(initContainers, container)
+	}
+	restartPolicyAlways := corev1.ContainerRestartPolicyAlways
+	for i, sidecar := range job.GetSidecars() {
+		name := jobsetutil.SidecarContainerName(job, sidecar, i)
+		container := c.buildContainer(name, sidecar)
+		container.RestartPolicy = &restartPolicyAlways
+		initContainers = append(initContainers, container)
 	}
 	return initContainers
 }
 
 func (c *Client) buildContainersForJob(job *esspb.KubernetesJob) []corev1.Container {
 	primaryName := jobsetutil.PrimaryContainerName(job)
-	containers := []corev1.Container{
+	return []corev1.Container{
 		c.buildContainer(primaryName, job.GetSpec()),
 	}
-	for i, sidecar := range job.GetSidecars() {
-		sidecarName := jobsetutil.SidecarContainerName(job, sidecar, i)
-		containers = append(containers, c.buildContainer(sidecarName, sidecar))
-	}
-	return containers
 }
 
 func buildContainerPorts(spec *esspb.ExecutableSpec) []corev1.ContainerPort {
@@ -448,6 +482,12 @@ func (c *Client) buildContainer(containerName string, spec *esspb.ExecutableSpec
 		}
 	}
 	args = append(args, spec.GetArgsList()...)
+	sc := defaultSecurityContext()
+	if c != nil && c.RuntimeConfig.AllowPrivilegedContainers && spec.GetPrivileged() {
+		sc.Privileged = proto.Bool(true)
+		sc.AllowPrivilegeEscalation = proto.Bool(true)
+	}
+
 	return corev1.Container{
 		Name:                     containerName,
 		Image:                    spec.GetDockerImage(),
@@ -458,21 +498,76 @@ func (c *Client) buildContainer(containerName string, spec *esspb.ExecutableSpec
 		Args:                     args,
 		Env:                      envVars,
 		Ports:                    ports,
-		SecurityContext:          defaultSecurityContext(),
+		SecurityContext:          sc,
 		VolumeMounts:             generateVolumeMountsForSpec(spec),
 	}
 }
 
-// constructJobSet builds the complete JobSet manifest as a Go map suitable for the dynamic client.
-func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, target string, author string, namespace string, operationTime time.Time, priorities Priorities) (*jobsetv1alpha2.JobSet, error) {
-	xidInt, widInt, eidInt, err := validator.ValidateWorkUnitExecutionName(target)
-	if err != nil {
-		return nil, err
-	}
-	xid := strconv.FormatInt(xidInt, 10)
-	wid := strconv.FormatInt(widInt, 10)
-	eid := strconv.FormatInt(eidInt, 10)
+type jobMetadata struct {
+	labels         map[string]string
+	annotations    map[string]string
+	podLabels      map[string]string
+	podAnnotations map[string]string
+}
 
+func buildJobMetadata(job *esspb.KubernetesJob, jobLabels map[string]string, jobAnnotations map[string]string) jobMetadata {
+	annotations := make(map[string]string)
+	for k, v := range jobAnnotations {
+		annotations[k] = v
+	}
+	for k, v := range job.GetAnnotations() {
+		annotations[k] = v
+	}
+
+	labels := make(map[string]string, len(jobLabels)+len(job.GetLabels()))
+	for k, v := range jobLabels {
+		labels[k] = v
+	}
+	for k, v := range job.GetLabels() {
+		if _, exists := labels[k]; !exists {
+			labels[k] = v
+		}
+	}
+
+	podLabels := make(map[string]string, len(labels))
+	for k, v := range labels {
+		podLabels[k] = v
+	}
+
+	podAnnotations := make(map[string]string, len(annotations))
+	for k, v := range annotations {
+		podAnnotations[k] = v
+	}
+
+	return jobMetadata{
+		labels:         labels,
+		annotations:    annotations,
+		podLabels:      podLabels,
+		podAnnotations: podAnnotations,
+	}
+}
+
+func resolveDNSAndNetwork(c *Client, job *esspb.KubernetesJob) (hostNetwork bool, dnsPolicy corev1.DNSPolicy) {
+	if c != nil && c.RuntimeConfig.AllowHostNetwork && job.GetHostNetwork() {
+		if job.GetDnsPolicy() != "" {
+			return true, corev1.DNSPolicy(job.GetDnsPolicy())
+		}
+		return true, corev1.DNSClusterFirstWithHostNet
+	}
+	if job.GetDnsPolicy() != "" {
+		return false, corev1.DNSPolicy(job.GetDnsPolicy())
+	}
+	return false, ""
+}
+
+type jobSetLabelsAndAnnotations struct {
+	jobLabels          map[string]string
+	jobSetLabels       map[string]string
+	jobSetAnnotations  map[string]string
+	defaultAnnotations map[string]string
+}
+
+func buildJobSetLabelsAndAnnotations(workUnit *esspb.WorkUnit, xid, wid, eid, author, namespace string, operationTime time.Time, priorities Priorities) jobSetLabelsAndAnnotations {
 	jobLabels := map[string]string{
 		kueueQueueLabel:             namespace,
 		constants.ExperimentIDLabel: xid,
@@ -492,10 +587,48 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 	}
 	jobSetLabels[kueuePriorityClassLabel] = getPriorityClassName(priorities)
 
-	jobSetAnnotations := map[string]string{
+	defaultAnnotations := map[string]string{
 		constants.AuthorAnnotation:                author,
 		constants.AutoscalerSafeToEvictAnnotation: "false",
 	}
+
+	jobSetAnnotations := make(map[string]string, len(defaultAnnotations))
+	for k, v := range defaultAnnotations {
+		jobSetAnnotations[k] = v
+	}
+
+	if jobset := workUnit.GetExecutable().GetJobset(); jobset != nil {
+		for k, v := range jobset.GetAnnotations() {
+			if _, exists := jobSetAnnotations[k]; !exists {
+				jobSetAnnotations[k] = v
+			}
+		}
+		for k, v := range jobset.GetLabels() {
+			if _, exists := jobSetLabels[k]; !exists {
+				jobSetLabels[k] = v
+			}
+		}
+	}
+	return jobSetLabelsAndAnnotations{
+		jobLabels:          jobLabels,
+		jobSetLabels:       jobSetLabels,
+		jobSetAnnotations:  jobSetAnnotations,
+		defaultAnnotations: defaultAnnotations,
+	}
+}
+
+// constructJobSet builds the complete JobSet manifest as a Go map suitable for the dynamic client.
+func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, target string, author string, namespace string, operationTime time.Time, priorities Priorities) (*jobsetv1alpha2.JobSet, error) {
+	xidInt, widInt, eidInt, err := validator.ValidateWorkUnitExecutionName(target)
+	if err != nil {
+		return nil, err
+	}
+	xid := strconv.FormatInt(xidInt, 10)
+	wid := strconv.FormatInt(widInt, 10)
+	eid := strconv.FormatInt(eidInt, 10)
+
+	meta := buildJobSetLabelsAndAnnotations(workUnit, xid, wid, eid, author, namespace, operationTime, priorities)
+	jobLabels, jobSetLabels, jobSetAnnotations, defaultAnnotations := meta.jobLabels, meta.jobSetLabels, meta.jobSetAnnotations, meta.defaultAnnotations
 
 	// Inject the managed-xprof GCS destination whenever the cluster configures a
 	// managed-xprof GCS bucket. This is intentionally decoupled from the ManagedXprof
@@ -513,7 +646,7 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 	var replicatedJobs []jobsetv1alpha2.ReplicatedJob
 	if workUnit.GetExecutable().GetJobset() != nil {
 		for _, job := range workUnit.GetExecutable().GetJobset().GetJobs() {
-			rj := c.k8sJobToReplicatedJob(ctx, job, jobLabels, jobSetAnnotations)
+			rj := c.k8sJobToReplicatedJob(ctx, job, jobLabels, defaultAnnotations)
 			injectManagedXprofGCSEnvVars(&rj, xprofBucketURL, xprofObjectPath)
 			replicatedJobs = append(replicatedJobs, rj)
 		}
@@ -558,7 +691,27 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 		return nil, err
 	}
 	ensureCoordinatorIndicesValid(jobSet)
+	if err := validateNonRestartingJobSetContract(jobSet); err != nil {
+		return nil, err
+	}
 	return jobSet, nil
+}
+
+// validateNonRestartingJobSetContract validates that the JobSet complies with the XMC Non-Restarting JobSets contract.
+func validateNonRestartingJobSetContract(jobSet *jobsetv1alpha2.JobSet) error {
+	if jobSet == nil {
+		return nil
+	}
+	if jobSet.Spec.FailurePolicy != nil && jobSet.Spec.FailurePolicy.MaxRestarts != 0 {
+		return fmt.Errorf("contract violation: JobSet MaxRestarts must be 0, got %d", jobSet.Spec.FailurePolicy.MaxRestarts)
+	}
+	for _, rj := range jobSet.Spec.ReplicatedJobs {
+		rp := rj.Template.Spec.Template.Spec.RestartPolicy
+		if rp != corev1.RestartPolicyNever && rp != corev1.RestartPolicyOnFailure {
+			return fmt.Errorf("contract violation: replicated job %q pod restartPolicy must be Never or OnFailure, got %s", rj.Name, rp)
+		}
+	}
+	return nil
 }
 
 // ensureCoordinatorIndicesValid adjusts Coordinator indices if the execution environment collapsed a multi-replica job to a multi-pod job.
@@ -822,6 +975,7 @@ func (c *Client) generateEnvVarsForSpec(spec *esspb.ExecutableSpec) []corev1.Env
 		{constants.XmcEnvVarExecutionID, fmt.Sprintf("metadata.labels['%s']", constants.ExecutionIDLabel)},
 		{constants.XmcEnvVarAuthor, fmt.Sprintf("metadata.annotations['%s']", constants.AuthorAnnotation)},
 		{constants.XmcEnvVarJobIndex, fmt.Sprintf("metadata.labels['%s']", constants.JobSetJobIndexLabel)},
+		{constants.XmcEnvVarJobName, fmt.Sprintf("metadata.labels['%s']", constants.JobSetReplicatedJobNameLabel)},
 	}
 
 	for _, ev := range envVarFieldRefs {

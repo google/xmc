@@ -167,13 +167,13 @@ func (r *Reconciler) updateWorkUnitNotesAboutPosition(ctx context.Context) {
 						return
 					}
 
-					workUnitUpdate, experimentID, err := r.createWorkUnitExecutionUpdate(ctx, jobSet, info)
+					posUpdate, err := r.createWorkUnitExecutionUpdate(ctx, jobSet, info)
 					if err != nil {
 						logging.Warn(ctx, "Failed to create WorkUnitExecutionUpdate", "jobset", jobSet.GetName(), "error", err)
 						return
 					}
 
-					r.UpdateBatcher.Add(ctx, experimentID, *workUnitUpdate, shared.KueueSyncSource)
+					r.UpdateBatcher.Add(ctx, posUpdate.ExperimentID, *posUpdate.Update, shared.KueueSyncSource)
 				}(wpi)
 			}
 		}(cqName)
@@ -182,11 +182,18 @@ func (r *Reconciler) updateWorkUnitNotesAboutPosition(ctx context.Context) {
 	workloadWaitGroup.Wait()
 }
 
-func (r *Reconciler) createWorkUnitExecutionUpdate(ctx context.Context, jobSet *v1alpha2.JobSet, info WorkloadPositionInfo) (*storage.WorkUnitExecutionUpdate, int64, error) {
-	experimentID, workUnitID, executionID, err := labels.ParseXMCLabels(jobSet.GetLabels())
+// WorkUnitPositionUpdate holds the update payload and parent experiment ID for queue position updates.
+type WorkUnitPositionUpdate struct {
+	Update       *storage.WorkUnitExecutionUpdate
+	ExperimentID int64
+}
+
+func (r *Reconciler) createWorkUnitExecutionUpdate(ctx context.Context, jobSet *v1alpha2.JobSet, info WorkloadPositionInfo) (WorkUnitPositionUpdate, error) {
+	parsedLabels, err := labels.ParseXMCLabels(jobSet.GetLabels())
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to get update information from JobSet %s: %w", jobSet.GetName(), err)
+		return WorkUnitPositionUpdate{}, fmt.Errorf("failed to get update information from JobSet %s: %w", jobSet.GetName(), err)
 	}
+	experimentID, workUnitID, executionID := parsedLabels.XID, parsedLabels.WID, parsedLabels.EID
 
 	message := fmt.Sprintf("Work unit is #%d in queue. There are %d workloads in the queue total.", info.PositionInQueue, info.TotalWorkloadsInQueue)
 	workUnitUpdate := &storage.WorkUnitExecutionUpdate{
@@ -214,7 +221,10 @@ func (r *Reconciler) createWorkUnitExecutionUpdate(ctx context.Context, jobSet *
 			},
 		},
 	}
-	return workUnitUpdate, experimentID, nil
+	return WorkUnitPositionUpdate{
+		Update:       workUnitUpdate,
+		ExperimentID: experimentID,
+	}, nil
 }
 
 func (r *Reconciler) fetchJobSetByName(ctx context.Context, name string, namespace string) (*v1alpha2.JobSet, error) {

@@ -34,25 +34,10 @@ import (
 func (r *Repository) ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.Artifact, string, error) {
 	logging.Info(ctx, "List artifacts", "pageSize", pageSize, "pageToken", pageToken, "filter", filter, "orderBy", orderBy, "staleness", staleness)
 
-	// 1. Ensure the results are filtered to the artifact's parent if present.
-	if parent != "" {
-		xid, wid, err := validator.ValidateArtifactParent(parent)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to validate artifact parent name: %w", err)
-		}
-		ctx = logging.WithArtifactParent(ctx, parent)
-
-		// 1.1. Generate the filter for the parent.
-		bitReversedXid := spannerutils.ReverseBits(xid)
-		parentFilter := fmt.Sprintf("bit_reversed_xid = %d", bitReversedXid)
-		if wid != 0 {
-			parentFilter = fmt.Sprintf("%s AND work_unit_id = %d", parentFilter, wid)
-		}
-		if filter == "" {
-			filter = parentFilter
-		} else {
-			filter = fmt.Sprintf("%s AND (%s)", parentFilter, filter)
-		}
+	var err error
+	filter, ctx, err = buildParentFilter(ctx, parent, filter)
+	if err != nil {
+		return nil, "", err
 	}
 
 	normalizedFilter, err := normalizer.Normalize(filter, r.artifactsQueryGen.Tables()[0])
@@ -153,4 +138,25 @@ func ExtractArtifactCursor(artifact *essmsgpb.Artifact) (map[string]any, error) 
 	cursor["priority"] = priority
 
 	return cursor, nil
+}
+
+func buildParentFilter(ctx context.Context, parent, filter string) (string, context.Context, error) {
+	if parent == "" {
+		return filter, ctx, nil
+	}
+	xid, wid, err := validator.ValidateArtifactParent(parent)
+	if err != nil {
+		return "", ctx, fmt.Errorf("failed to validate artifact parent name: %w", err)
+	}
+	ctx = logging.WithArtifactParent(ctx, parent)
+
+	bitReversedXid := spannerutils.ReverseBits(xid)
+	parentFilter := fmt.Sprintf("bit_reversed_xid = %d", bitReversedXid)
+	if wid != 0 {
+		parentFilter = fmt.Sprintf("%s AND work_unit_id = %d", parentFilter, wid)
+	}
+	if filter == "" {
+		return parentFilter, ctx, nil
+	}
+	return fmt.Sprintf("%s AND (%s)", parentFilter, filter), ctx, nil
 }

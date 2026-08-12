@@ -16,6 +16,7 @@ package data
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"golang/protobuf/v2/proto/proto"
 	fmpb "protobuf/field_mask_go_proto"
@@ -43,67 +44,8 @@ func MergeWorkUnitExecution(ctx context.Context, currentExecution *pb.WorkUnitEx
 
 	newExecution := proto.Clone(currentExecution).(*pb.WorkUnitExecution)
 	for _, path := range mask.GetPaths() {
-		switch path {
-		case "metadata":
-			newExecution.Metadata = updatedExecution.Metadata
-		case "metadata.management_cluster":
-			newExecution.Metadata.ManagementCluster = updatedExecution.Metadata.ManagementCluster
-		case "metadata.management_cluster.project":
-			newExecution.Metadata.ManagementCluster.Project = updatedExecution.Metadata.ManagementCluster.Project
-		case "metadata.management_cluster.location":
-			newExecution.Metadata.ManagementCluster.Location = updatedExecution.Metadata.ManagementCluster.Location
-		case "metadata.management_cluster.cluster_name":
-			newExecution.Metadata.ManagementCluster.ClusterName = updatedExecution.Metadata.ManagementCluster.ClusterName
-		case "metadata.executing_cluster":
-			newExecution.Metadata.ExecutingCluster = updatedExecution.Metadata.ExecutingCluster
-		case "metadata.executing_cluster.project":
-			newExecution.Metadata.ExecutingCluster.Project = updatedExecution.Metadata.ExecutingCluster.Project
-		case "metadata.executing_cluster.location":
-			newExecution.Metadata.ExecutingCluster.Location = updatedExecution.Metadata.ExecutingCluster.Location
-		case "metadata.executing_cluster.cluster_name":
-			newExecution.Metadata.ExecutingCluster.ClusterName = updatedExecution.Metadata.ExecutingCluster.ClusterName
-		case "metadata.type":
-			newExecution.Metadata.Type = updatedExecution.Metadata.Type
-		case "metadata.resource_name":
-			newExecution.Metadata.ResourceName = updatedExecution.Metadata.ResourceName
-		case "metadata.namespace":
-			newExecution.Metadata.Namespace = updatedExecution.Metadata.Namespace
-		case "metadata.service_account":
-			newExecution.Metadata.ServiceAccount = updatedExecution.Metadata.ServiceAccount
-		case "metadata.node_selectors":
-			newExecution.Metadata.NodeSelectors = updatedExecution.Metadata.NodeSelectors
-		case "metadata.resource_flavor":
-			newExecution.Metadata.ResourceFlavor = updatedExecution.Metadata.ResourceFlavor
-		case "metadata.multi_kueue_cluster_name":
-			newExecution.Metadata.MultiKueueClusterName = updatedExecution.Metadata.MultiKueueClusterName
-		case "metadata.mlrun_url":
-			// Use proto getters so a nil updatedExecution.Metadata is handled
-			// safely and an explicit reset (clearing mlrun_url) still applies.
-			if newExecution.Metadata == nil {
-				newExecution.Metadata = &pb.WorkUnitExecutionMetadata{}
-			}
-			newExecution.Metadata.MlrunUrl = updatedExecution.GetMetadata().GetMlrunUrl()
-		case "status":
-			newExecution.Status = updatedExecution.Status
-		case "status.state":
-			if updatedExecution.Status.StateUpdateTime == nil {
-				return nil, fmt.Errorf("StateUpdateTime must be set when updating state: %w", status.ErrInvalidArgument)
-			}
-			newExecution.Status.State = updatedExecution.Status.State
-
-			// This is a special case, because we want the time the caller thinks the state was updated,
-			// not the time this API received the update.
-			newExecution.Status.StateUpdateTime = updatedExecution.Status.StateUpdateTime
-		case "status.system_message":
-			newExecution.Status.SystemMessage = updatedExecution.Status.SystemMessage
-		case "status.scheduling_information":
-			newExecution.Status.SchedulingInformation = updatedExecution.Status.SchedulingInformation
-		case "status.user_message":
-			newExecution.Status.UserMessage = updatedExecution.Status.UserMessage
-		case "status.detailed_status":
-			newExecution.Status.DetailedStatus = updatedExecution.Status.DetailedStatus
-		default:
-			return nil, fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+		if err := mergeWorkUnitExecutionPath(newExecution, updatedExecution, path); err != nil {
+			return nil, err
 		}
 	}
 
@@ -171,4 +113,103 @@ func resolveStatusMessage(ctx context.Context, currentMsg, newMsg *pb.Structured
 		return currentMsg
 	}
 	return newMsg
+}
+
+func mergeWorkUnitExecutionPath(newExecution, updatedExecution *pb.WorkUnitExecution, path string) error {
+	if strings.HasPrefix(path, "metadata") {
+		return mergeWorkUnitExecutionMetadataPath(newExecution, updatedExecution, path)
+	}
+	if strings.HasPrefix(path, "status") {
+		return mergeWorkUnitExecutionStatusPath(newExecution, updatedExecution, path)
+	}
+	return fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+}
+
+func mergeWorkUnitExecutionMetadataPath(newExecution, updatedExecution *pb.WorkUnitExecution, path string) error {
+	if path != "metadata" && newExecution.Metadata == nil {
+		newExecution.Metadata = &pb.WorkUnitExecutionMetadata{}
+	}
+	if strings.HasPrefix(path, "metadata.management_cluster") || strings.HasPrefix(path, "metadata.executing_cluster") {
+		return mergeWorkUnitExecutionClusterPath(newExecution, updatedExecution, path)
+	}
+	switch path {
+	case "metadata":
+		newExecution.Metadata = updatedExecution.Metadata
+	case "metadata.type":
+		newExecution.Metadata.Type = updatedExecution.GetMetadata().GetType()
+	case "metadata.resource_name":
+		newExecution.Metadata.ResourceName = updatedExecution.GetMetadata().GetResourceName()
+	case "metadata.namespace":
+		newExecution.Metadata.Namespace = updatedExecution.GetMetadata().GetNamespace()
+	case "metadata.service_account":
+		newExecution.Metadata.ServiceAccount = updatedExecution.GetMetadata().GetServiceAccount()
+	case "metadata.node_selectors":
+		newExecution.Metadata.NodeSelectors = updatedExecution.GetMetadata().GetNodeSelectors()
+	case "metadata.resource_flavor":
+		newExecution.Metadata.ResourceFlavor = updatedExecution.GetMetadata().GetResourceFlavor()
+	case "metadata.multi_kueue_cluster_name":
+		newExecution.Metadata.MultiKueueClusterName = updatedExecution.GetMetadata().GetMultiKueueClusterName()
+	case "metadata.mlrun_url":
+		newExecution.Metadata.MlrunUrl = updatedExecution.GetMetadata().GetMlrunUrl()
+	default:
+		return fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+	}
+	return nil
+}
+
+func mergeWorkUnitExecutionClusterPath(newExecution, updatedExecution *pb.WorkUnitExecution, path string) error {
+	if strings.HasPrefix(path, "metadata.management_cluster.") && newExecution.Metadata.ManagementCluster == nil {
+		newExecution.Metadata.ManagementCluster = &pb.ClusterInfo{}
+	}
+	if strings.HasPrefix(path, "metadata.executing_cluster.") && newExecution.Metadata.ExecutingCluster == nil {
+		newExecution.Metadata.ExecutingCluster = &pb.ClusterInfo{}
+	}
+	switch path {
+	case "metadata.management_cluster":
+		newExecution.Metadata.ManagementCluster = updatedExecution.GetMetadata().GetManagementCluster()
+	case "metadata.management_cluster.project":
+		newExecution.Metadata.ManagementCluster.Project = updatedExecution.GetMetadata().GetManagementCluster().GetProject()
+	case "metadata.management_cluster.location":
+		newExecution.Metadata.ManagementCluster.Location = updatedExecution.GetMetadata().GetManagementCluster().GetLocation()
+	case "metadata.management_cluster.cluster_name":
+		newExecution.Metadata.ManagementCluster.ClusterName = updatedExecution.GetMetadata().GetManagementCluster().GetClusterName()
+	case "metadata.executing_cluster":
+		newExecution.Metadata.ExecutingCluster = updatedExecution.GetMetadata().GetExecutingCluster()
+	case "metadata.executing_cluster.project":
+		newExecution.Metadata.ExecutingCluster.Project = updatedExecution.GetMetadata().GetExecutingCluster().GetProject()
+	case "metadata.executing_cluster.location":
+		newExecution.Metadata.ExecutingCluster.Location = updatedExecution.GetMetadata().GetExecutingCluster().GetLocation()
+	case "metadata.executing_cluster.cluster_name":
+		newExecution.Metadata.ExecutingCluster.ClusterName = updatedExecution.GetMetadata().GetExecutingCluster().GetClusterName()
+	default:
+		return fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+	}
+	return nil
+}
+
+func mergeWorkUnitExecutionStatusPath(newExecution, updatedExecution *pb.WorkUnitExecution, path string) error {
+	if path != "status" && newExecution.Status == nil {
+		newExecution.Status = &pb.WorkUnitStatus{}
+	}
+	switch path {
+	case "status":
+		newExecution.Status = updatedExecution.Status
+	case "status.state":
+		if updatedExecution.GetStatus().GetStateUpdateTime() == nil {
+			return fmt.Errorf("StateUpdateTime must be set when updating state: %w", status.ErrInvalidArgument)
+		}
+		newExecution.Status.State = updatedExecution.GetStatus().GetState()
+		newExecution.Status.StateUpdateTime = updatedExecution.GetStatus().GetStateUpdateTime()
+	case "status.system_message":
+		newExecution.Status.SystemMessage = updatedExecution.GetStatus().GetSystemMessage()
+	case "status.scheduling_information":
+		newExecution.Status.SchedulingInformation = updatedExecution.GetStatus().GetSchedulingInformation()
+	case "status.user_message":
+		newExecution.Status.UserMessage = updatedExecution.GetStatus().GetUserMessage()
+	case "status.detailed_status":
+		newExecution.Status.DetailedStatus = updatedExecution.GetStatus().GetDetailedStatus()
+	default:
+		return fmt.Errorf("field %q is not updateable: %w", path, status.ErrInvalidArgument)
+	}
+	return nil
 }

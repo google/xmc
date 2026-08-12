@@ -1,0 +1,158 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: "Bug Report"
+description: "Report an unexpected error, crash, or broken behavior in XMC."
+title: "[Bug]: "
+labels: ["kind/bug", "status/triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue! Please provide as much technical detail as possible.
+        **Important:** Do NOT include sensitive data (API keys, service account credentials, auth tokens, or private GCP project numbers) in your report.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: "Component"
+      description: "Which part of XMC is affected?"
+      options:
+        - "Core API Server / Controller"
+        - "CLI & Client SDK"
+        - "GKE Gateway & Traffic Ingress"
+        - "Cluster Toolkit Blueprint v2 Deployment"
+        - "Database / Cloud Spanner / Redis"
+        - "JobSet / Workload Scheduling"
+        - "Web UI / Frontend"
+        - "Documentation / Build Tools"
+        - "Other"
+    validations:
+      required: true
+
+  - type: input
+    id: xmc-version
+    attributes:
+      label: "XMC Version / Git Commit"
+      description: "What version or git commit SHA of XMC are you running?"
+      placeholder: "e.g., v0.2.0 or commit abc1234"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment-topology
+    attributes:
+      label: "Deployment Topology"
+      description: "How is your XMC instance deployed?"
+      options:
+        - "Cluster Toolkit Blueprint v2 (Unified GKE + Gateway API)"
+        - "Cluster Toolkit Blueprint v1 (GKE + Cloud Run + IAP)"
+        - "Custom GKE / Helm Deployment"
+        - "Local Kind / Minikube"
+        - "Client CLI / SDK Only"
+        - "Other"
+    validations:
+      required: true
+
+  - type: input
+    id: infra-env
+    attributes:
+      label: "Infrastructure & Kubernetes Version"
+      description: "Kubernetes/GKE version, GCP region, machine type, or local environment details."
+      placeholder: "e.g., GKE 1.30.2-gke.1584000, us-central1-a, c2-standard-16"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: accelerator
+    attributes:
+      label: "Accelerator Hardware (if applicable)"
+      description: "Are you running workloads on specialized accelerators?"
+      options:
+        - "None / CPU Only"
+        - "TPU v5p"
+        - "TPU v5e"
+        - "TPU v4"
+        - "GPU NVIDIA H100 (80GB)"
+        - "GPU NVIDIA A100 (40GB/80GB)"
+        - "GPU NVIDIA L4"
+        - "Other"
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "Bug Description"
+      description: "A clear and concise description of what the bug is."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: "Steps to Reproduce"
+      description: "Step-by-step instructions to reproduce the issue."
+      placeholder: |
+        1. Deploy XMC blueprint v2 with `...`
+        2. Run client command `xmc job submit --config ...`
+        3. Observe error during workload reconciliation
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: "Expected Behavior"
+      description: "What did you expect to happen?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: "Actual Behavior"
+      description: "What actually happened?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Relevant Logs and Stack Traces"
+      description: "Paste relevant output from `kubectl logs`, controller logs, or CLI outputs."
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: configuration
+    attributes:
+      label: "Configuration / YAML Manifest (Sanitized)"
+      description: "Paste relevant sanitized YAML manifests, Helm values, or blueprint configuration."
+      render: yaml
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: "Pre-submission Checklist"
+      options:
+        - label: "I have searched existing issues to verify this is not a duplicate."
+          required: true
+        - label: "I have stripped all passwords, tokens, API keys, and sensitive GCP credentials from logs and manifests."
+          required: true
+        - label: "I have confirmed the problem reproduces on the latest commit or release."
+          required: false

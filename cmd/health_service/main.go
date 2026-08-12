@@ -31,13 +31,44 @@ import (
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
 	authz "xmanager_cloud/auth/auth"
+	health "xmanager_cloud/common/health"
 	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/task_queue_redis/redisclient"
+
+	run "google.golang.org/api/run/v2"
+
+	"cloud.google.com/go/spanner"
 
 	gwpb "xmanager_cloud/health_service/proto/api_go_grpc_gateway_proto"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 )
+
+type grpcServerDeps struct {
+	grpcServer  *grpc.Server
+	listener    net.Listener
+	srv         *server
+	essClient   *spanner.Client
+	xidClient   *spanner.Client
+	redisClient *redisclient.PublisherClient
+}
+
+func (d *grpcServerDeps) Close(ctx context.Context) {
+	if d.essClient != nil {
+		d.essClient.Close()
+	}
+	if d.xidClient != nil {
+		d.xidClient.Close()
+	}
+	if d.redisClient != nil {
+		cleanupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := d.redisClient.Close(cleanupCtx); err != nil {
+			logging.Error(ctx, "Failed to close redis client", "error", err)
+		}
+	}
+}
 
 func main() {
 	google.Init()
@@ -78,71 +109,18 @@ func main() {
 		logging.Fatal(ctx, "Failed to create authorizer", "error", err)
 	}
 
-	// 1. Setup gRPC server
-	lis, err := net.Listen("tcp", "127.0.0.1:"+cfg.GRPCPort)
-	if err != nil {
-		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
-	}
-
-	transportCreds, err := tlsutil.NewServerCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
-	if err != nil {
-		logging.Fatal(ctx, "Failed to create server credentials", "error", err)
-	}
-
-	grpcServer := grpc.NewServer(grpc.Creds(transportCreds))
-	spb.RegisterHealthServiceServer(grpcServer, newServer(cfg, authenticator, auth))
-	reflection.Register(grpcServer)
+	deps := initGRPCServer(ctx, cfg, authenticator, auth)
+	defer deps.Close(ctx)
 
 	go func() {
-		logging.Info(ctx, "Health service gRPC starting", "addr", lis.Addr())
-		if err := grpcServer.Serve(lis); err != nil {
+		logging.Info(ctx, "Health service gRPC starting", "addr", deps.listener.Addr())
+		if err := deps.grpcServer.Serve(deps.listener); err != nil {
 			logging.Fatal(ctx, "gRPC server failed", "error", err)
 		}
 	}()
 
-	// 2. Setup gRPC Gateway
-	httpTransportCreds, err := tlsutil.NewClientCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
-	if err != nil {
-		logging.Fatal(ctx, "Failed to create client credentials", "error", err)
-	}
-
-	gwmux := runtime.NewServeMux(runtime.WithIncomingHeaderMatcher(oauth2.IncomingHeaderMatcher))
-	dialOpts := []grpc.DialOption{
-		grpc.WithTransportCredentials(httpTransportCreds),
-	}
-	err = gwpb.RegisterHealthServiceHandlerFromEndpoint(ctx, gwmux, "127.0.0.1:"+cfg.GRPCPort, dialOpts)
-	if err != nil {
-		logging.Fatal(ctx, "Failed to register gateway", "error", err)
-	}
-
-	// 3. Setup HTTP Server mux
-	mux := http.NewServeMux()
-
-	// Probes
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-
-	// Secure private gRPC-Gateway endpoints with Authenticate middleware
-	authenticatedGwmux := authenticator.Authenticate(gwmux)
-
-	// Route gateway endpoints
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
-			return
-		}
-		authenticatedGwmux.ServeHTTP(w, r)
-	})
-
+	handler := initGatewayMux(ctx, cfg, authenticator)
 	addr := fmt.Sprintf(":%s", cfg.Port)
-	handler := authenticator.SecurityMiddlewares(mux)
 
 	httpServer := &http.Server{
 		Addr:              addr,
@@ -169,7 +147,117 @@ func main() {
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logging.Info(ctx, "Error shutting down HTTP server", "error", err)
 	}
-	grpcServer.GracefulStop()
+	deps.grpcServer.GracefulStop()
+
+	if err := deps.srv.Close(); err != nil {
+		logging.Info(ctx, "Error closing server resources", "error", err)
+	}
 
 	logging.Info(ctx, "Health service stopped")
+}
+
+func initSpannerHealthClient(ctx context.Context, dbPath string, name string) (*spanner.Client, health.SpannerHealthClient) {
+	if dbPath == "" {
+		return nil, nil
+	}
+	client, err := spanner.NewClient(ctx, dbPath)
+	if err != nil {
+		logging.Warn(ctx, fmt.Sprintf("Failed to initialize %s Spanner client", name), "database", dbPath, "error", err)
+		return nil, nil
+	}
+	return client, health.NewSpannerHealthClient(client)
+}
+
+func initGRPCServer(ctx context.Context, cfg *Config, authenticator *oauth2.Authenticator, auth authz.AuthorizerInterface) *grpcServerDeps {
+	lis, err := net.Listen("tcp", "127.0.0.1:"+cfg.GRPCPort)
+	if err != nil {
+		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
+	}
+
+	transportCreds, err := tlsutil.NewServerCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
+	if err != nil {
+		logging.Fatal(ctx, "Failed to create server credentials", "error", err)
+	}
+
+	grpcServer := grpc.NewServer(grpc.Creds(transportCreds))
+
+	essClient, essHealth := initSpannerHealthClient(ctx, cfg.EssSpannerDatabase, "ESS")
+	xidClient, xidHealth := initSpannerHealthClient(ctx, cfg.XidSpannerDatabase, "XID")
+
+	var redisPingClient RedisPingClient
+	var publisher *redisclient.PublisherClient
+	if cfg.RedisAddr != "" {
+		redisCfg := redisclient.Config{Addr: cfg.RedisAddr}
+		publisher = redisclient.NewPublisher(redisCfg, "")
+		redisPingClient = publisher
+	}
+
+	cloudRunService, err := run.NewService(ctx)
+	if err != nil {
+		logging.Warn(ctx, "Failed to create cloud run client, Cloud Run checks will report UNSPECIFIED", "error", err)
+	}
+
+	checker, err := NewHealthChecker(HealthCheckerParams{
+		Config:          cfg,
+		EssHealthClient: essHealth,
+		XidHealthClient: xidHealth,
+		RedisClient:     redisPingClient,
+		CloudRunService: cloudRunService,
+	})
+	if err != nil {
+		logging.Fatal(ctx, "Failed to create health checker", "error", err)
+	}
+
+	srv := newServer(cfg, checker, authenticator, auth)
+	spb.RegisterHealthServiceServer(grpcServer, srv)
+	reflection.Register(grpcServer)
+
+	return &grpcServerDeps{
+		grpcServer:  grpcServer,
+		listener:    lis,
+		srv:         srv,
+		essClient:   essClient,
+		xidClient:   xidClient,
+		redisClient: publisher,
+	}
+}
+
+func initGatewayMux(ctx context.Context, cfg *Config, authenticator *oauth2.Authenticator) http.Handler {
+	httpTransportCreds, err := tlsutil.NewClientCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
+	if err != nil {
+		logging.Fatal(ctx, "Failed to create client credentials", "error", err)
+	}
+
+	gwmux := runtime.NewServeMux(runtime.WithIncomingHeaderMatcher(oauth2.IncomingHeaderMatcher))
+	dialOpts := []grpc.DialOption{
+		grpc.WithTransportCredentials(httpTransportCreds),
+	}
+	err = gwpb.RegisterHealthServiceHandlerFromEndpoint(ctx, gwmux, "127.0.0.1:"+cfg.GRPCPort, dialOpts)
+	if err != nil {
+		logging.Fatal(ctx, "Failed to register gateway", "error", err)
+	}
+
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
+	authenticatedGwmux := authenticator.Authenticate(gwmux)
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("OK"))
+			return
+		}
+		authenticatedGwmux.ServeHTTP(w, r)
+	})
+
+	return authenticator.SecurityMiddlewares(mux)
 }

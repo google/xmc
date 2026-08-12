@@ -31,13 +31,13 @@ func TestParseXMCLabels(t *testing.T) {
 	wantWID := int64(456)
 	wantEID := int64(789)
 
-	gotXID, gotWID, gotEID, err := ParseXMCLabels(labels)
+	got, err := ParseXMCLabels(labels)
 	if err != nil {
 		t.Fatalf("ParseXMCLabels() failed with %v", err)
 	}
 
-	if gotXID != wantXID || gotWID != wantWID || gotEID != wantEID {
-		t.Errorf("ParseXMCLabels() = (%d, %d, %d), want (%d, %d, %d)", gotXID, gotWID, gotEID, wantXID, wantWID, wantEID)
+	if got.XID != wantXID || got.WID != wantWID || got.EID != wantEID {
+		t.Errorf("ParseXMCLabels() = (%d, %d, %d), want (%d, %d, %d)", got.XID, got.WID, got.EID, wantXID, wantWID, wantEID)
 	}
 }
 
@@ -112,7 +112,7 @@ func TestParseXMCLabelsErrors(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotXID, gotWID, gotEID, err := ParseXMCLabels(tc.labels)
+			got, err := ParseXMCLabels(tc.labels)
 			if err == nil {
 				t.Fatalf("ParseXMCLabels() got nil error, want error containing %v", tc.wantErr)
 			}
@@ -120,16 +120,16 @@ func TestParseXMCLabelsErrors(t *testing.T) {
 				t.Errorf("ParseXMCLabels() error = %v, want error containing %v", err, tc.wantErr)
 			}
 
-			if gotXID != 0 {
-				t.Errorf("ParseXMCLabels() got xid %d, want 0 when error is %v", gotXID, tc.wantErr)
+			if got.XID != 0 {
+				t.Errorf("ParseXMCLabels() got xid %d, want 0 when error is %v", got.XID, tc.wantErr)
 			}
 
-			if gotWID != 0 {
-				t.Errorf("ParseXMCLabels() got wid %d, want 0 when error is %v", gotWID, tc.wantErr)
+			if got.WID != 0 {
+				t.Errorf("ParseXMCLabels() got wid %d, want 0 when error is %v", got.WID, tc.wantErr)
 			}
 
-			if gotEID != 0 {
-				t.Errorf("ParseXMCLabels() got eid %d, want 0 when error is %v", gotEID, tc.wantErr)
+			if got.EID != 0 {
+				t.Errorf("ParseXMCLabels() got eid %d, want 0 when error is %v", got.EID, tc.wantErr)
 			}
 		})
 	}

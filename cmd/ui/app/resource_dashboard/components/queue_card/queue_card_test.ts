@@ -14,12 +14,15 @@
 
 import 'jasmine';
 
+import { Clipboard } from '@angular/cdk/clipboard';
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { of } from 'rxjs';
 
-import { ClusterQueue } from 'xmanager_cloud/ui/app/service/resource_types';
+import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 
 import { QueueCardComponent } from './queue_card';
 import { QueueCardHarness } from './queue_card_harness';
@@ -36,31 +39,13 @@ import { QueueCardHarness } from './queue_card_harness';
   `,
 })
 class TestHostComponent {
-  readonly queue = signal<ClusterQueue>({
-    name: 'gpu-cluster-queue',
-    strategy: 'BestEffortFIFO',
-    cohort: 'gpu-cohort',
-    status: 'Active',
-    statusMessage: 'Can admit new workloads',
-    lastTransitionTime: '2026-07-22T10:00:00Z',
-    admittedWorkloads: 1,
-    reservingWorkloads: 0,
-    pendingWorkloads: 0,
-    pendingJobsCount: 0,
-    admittedJobsCount: 1,
-    dominantResource: 'GPU H100',
-    dominantResourceUnits: 8,
-    requestedResources: '0',
-    localQueues: [{ name: 'gpu-queue', namespace: 'default' }],
-    flavors: [
+  readonly queue = signal<QueueOverview>({
+    queueName: 'gpu-cluster-queue',
+    queueCapacity: [
       {
-        name: 'h100-flavor',
-        resourceName: 'nvidia.com/gpu',
-        nominalQuota: '64',
-        inUse: '8',
-        reserved: '0',
-        freeCapacity: '56',
-        largestSlot: '56 → 64',
+        resourceType: 'nvidia.com/gpu',
+        totalCapacity: 64,
+        freeCapacity: 56,
       },
     ],
   });
@@ -73,10 +58,15 @@ describe('QueueCardComponent', () => {
   let fixture: ComponentFixture<TestHostComponent>;
   let hostInstance: TestHostComponent;
   let harness: QueueCardHarness;
+  let resourceServiceSpy: jasmine.SpyObj<ResourceService>;
 
   beforeEach(async () => {
+    resourceServiceSpy = jasmine.createSpyObj('ResourceService', ['getSubmitQueue']);
+    resourceServiceSpy.getSubmitQueue.and.returnValue(of({ submitQueue: 'lq-gpu-1' }));
+
     await TestBed.configureTestingModule({
       imports: [TestHostComponent, NoopAnimationsModule],
+      providers: [{ provide: ResourceService, useValue: resourceServiceSpy }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(TestHostComponent);
@@ -110,5 +100,19 @@ describe('QueueCardComponent', () => {
     fixture.detectChanges();
 
     expect(hostInstance.selectedQueueName()).toBe('gpu-cluster-queue');
+  });
+
+  it('should render copy flag button and copy --queue flag with submit queue on click', async () => {
+    expect(await harness.getCopyFlagButtonText()).toContain('Copy flag');
+
+    const clipboard = TestBed.inject(Clipboard);
+    spyOn(clipboard, 'copy').and.returnValue(true);
+
+    await harness.clickCopyFlagButton();
+    fixture.detectChanges();
+
+    expect(resourceServiceSpy.getSubmitQueue).toHaveBeenCalledWith('gpu-cluster-queue');
+    expect(clipboard.copy).toHaveBeenCalledWith('--queue=lq-gpu-1');
+    expect(await harness.getCopyFlagButtonText()).toContain('Copied');
   });
 });

@@ -30,10 +30,11 @@ limitations under the License.
   <div class="paginator-controls">
     <xmc-page-size-selector [pageSize]="pageSize()" (pageSizeChange)="onPageSizeChange($event)" />
     <button
+      type="button"
       mat-icon-button
       data-test-id="previous-page-button"
-      (click)="goToPreviousPage()"
       [disabled]="!hasPreviousPage()"
+      (click)="goToPreviousPage()"
     >
       <mat-icon>chevron_left</mat-icon>
     </button>
@@ -41,10 +42,11 @@ limitations under the License.
     <span> Page {{ pageIndex() + 1 }} </span>
 
     <button
+      type="button"
       mat-icon-button
       data-test-id="next-page-button"
-      (click)="goToNextPage()"
       [disabled]="!hasNextPage()"
+      (click)="goToNextPage()"
     >
       <mat-icon>chevron_right</mat-icon>
     </button>

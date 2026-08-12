@@ -139,11 +139,11 @@ def get_replica_id_and_silence_status(
 def harvest_client_metadata(
     env: Mapping[str, str] | None = None,
     log_all_replicas: bool = False,
-) -> tuple[str, str, str, str, bool]:
-    """Harvests mandatory XMC environment variables (XMC_XID, XMC_WORK_UNIT_ID, XMC_EXECUTION_ID, XMC_REPLICA_ID).
+) -> tuple[str, str, str, str, str, bool]:
+    """Harvests mandatory and optional XMC environment variables (XMC_XID, XMC_WORK_UNIT_ID, XMC_EXECUTION_ID, XMC_JOB_NAME, XMC_REPLICA_ID).
 
     Returns:
-        tuple[xid, work_unit_id, execution_id, replica_id, is_silenced]
+        tuple[xid, work_unit_id, execution_id, job_name, replica_id, is_silenced]
 
     Fail-Closed Safety:
         XMC_XID, XMC_WORK_UNIT_ID, and XMC_EXECUTION_ID are mandatory. If any are missing or empty,
@@ -155,6 +155,7 @@ def harvest_client_metadata(
     raw_xid = env.get("XMC_XID", "").strip()
     raw_wu = env.get("XMC_WORK_UNIT_ID", "").strip()
     raw_exec = env.get("XMC_EXECUTION_ID", "").strip()
+    raw_job_name = env.get("XMC_JOB_NAME", "").strip()
 
     if not raw_xid or not raw_wu or not raw_exec:
         logger.error(
@@ -164,7 +165,7 @@ def harvest_client_metadata(
             raw_wu,
             raw_exec,
         )
-        return "", "", "", "0", True
+        return "", "", "", "", "0", True
 
     raw_replica = env.get("XMC_REPLICA_ID", "").strip()
     if raw_replica:
@@ -175,7 +176,7 @@ def harvest_client_metadata(
             env=env, log_all_replicas=log_all_replicas
         )
 
-    return raw_xid, raw_wu, raw_exec, replica_id, is_silenced
+    return raw_xid, raw_wu, raw_exec, raw_job_name, replica_id, is_silenced
 
 
 # Alias matching CamelCase specification for backward compatibility.

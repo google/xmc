@@ -151,6 +151,12 @@ message JobSetExecutable {
   // Success policy for the JobSet. If not specified, defaults to requiring all jobs to succeed,
   // unless a known leader role like "pathways-head" is detected in jobs.
   optional SuccessPolicy success_policy = 4;
+
+  // Custom annotations to apply to the top-level JobSet resource.
+  map<string, string> annotations = 6;
+
+  // Custom labels to apply to the top-level JobSet resource.
+  map<string, string> labels = 7;
 }
 
 // A KubernetesJob is a single Kubernetes Job that is run as part of a
@@ -198,6 +204,9 @@ message KubernetesJob {
   // namespace's default KSA is used.
   string service_account = 8;
   // Sidecar / auxiliary containers to run alongside the primary container in each Pod.
+  // Sidecars are implemented as Kubernetes native sidecar containers (init containers with
+  // restartPolicy: Always), meaning they start during pod initialization and are automatically
+  // terminated by Kubernetes when the primary container completes.
   repeated ExecutableSpec sidecars = 9;
   // Init containers to run before primary and sidecar containers start.
   repeated ExecutableSpec init_containers = 10;
@@ -215,6 +224,33 @@ message KubernetesJob {
 
   // Custom volumes available to containers in the pod.
   repeated Volume volumes = 13;
+
+  // Optional flag to request host networking for pods in this job.
+  // Requires backend feature flag to be enabled.
+  optional bool host_network = 14;
+
+  // Optional Kubernetes DNS policy for pods in this job (e.g. "ClusterFirst", "ClusterFirstWithHostNet", "Default").
+  // If host_network is true and dns_policy is unset, defaults to "ClusterFirstWithHostNet".
+  optional string dns_policy = 15;
+
+  // Group name for Kueue podSet grouping. If omitted, Kueue defaults the podSet name to the ReplicatedJob name.
+  string group_name = 16;
+
+  // Custom labels to apply to the Kubernetes Job and Pod templates.
+  // Note: Reserved system labels (e.g. Experiment ID, WorkUnit ID, Queue Name)
+  // take precedence and cannot be overridden.
+  map<string, string> labels = 17;
+
+  // Optional Kubernetes Pod restart policy for pods in this job ("OnFailure", "Never").
+  // Defaults to "Never" if omitted.
+  // Note: "Always" is explicitly forbidden to comply with the XMC Non-Restarting JobSets
+  // contract (in-place pod restarts without coordinator synchronization cause multi-host deadlocks).
+  // See: https://github.com/kubernetes/api/blob/a9c6d6c7c5a6a319844d4bd0631fc3b28de3a407/core/v1/types.go#L3891
+  optional string restart_policy = 18;
+
+  // Optional termination grace period in seconds for pods created by this KubernetesJob.
+  // Controls how long Kubernetes waits for containers to gracefully shut down before forcefully killing them.
+  optional int64 termination_grace_period_seconds = 19;
 }
 
 // Represents a volume that can be mounted by containers in a KubernetesJob.
@@ -383,6 +419,10 @@ message ExecutableSpec {
   repeated VolumeMount volume_mounts = 9;
   // List of ports exposed from the container.
   repeated ContainerPort ports = 10;
+  // Whether to run the container in privileged mode (requires backend feature flag -allow_privileged_containers).
+  optional bool privileged = 11;
+  // Optional restart policy for init containers (e.g. "Always" to configure Kubernetes native sidecar containers).
+  optional string restart_policy = 12;
 }
 
 // SchedulingConstraints contains the scheduling constraints for the

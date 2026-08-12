@@ -84,19 +84,15 @@ The XMC services require OCI container images built from the codebase. You must 
    bazel run //cmd/reconciler:reconciler_image_push
    bazel run //cmd/log_monitor:log_monitor_image_push
    bazel run //cmd/health_service:health_service_image_push
+   bazel run //cmd/dashboard_service:dashboard_service_image_push
+   bazel run //cmd/rod_data_provider:rod_data_provider_image_push
    bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
    ```
 
 5. **Update image variables** in your deployment configuration file (e.g. `xmanager-cloud-deployment.yaml`, copy of [xmc-deployment-template.yaml](deploy/ctk_v2/xmc-deployment-template.yaml)):
    ```yaml
-   xid_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/xid-service-dev:<IMAGE_TAG>"
-   actuator_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/actuator-dev:<IMAGE_TAG>"
-   ess_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/experiment-state-server-dev:<IMAGE_TAG>"
-   ui_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/ui-dev:<IMAGE_TAG>"
-   reconciler_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/reconciler-dev:<IMAGE_TAG>"
-   log_monitor_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/log-monitor-dev:<IMAGE_TAG>"
-   health_service_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/health-service-dev:<IMAGE_TAG>"
-   ingestion_gateway_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/ingestion-gateway-dev:<IMAGE_TAG>"
+   image_registry: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc"
+   image_tag: "<IMAGE_TAG>"
    ```
 
 ### 3. DNS and Domain Name Configuration
@@ -395,6 +391,9 @@ bazel run //cmd/ui:ui_image_push
 bazel run //cmd/reconciler:reconciler_image_push
 bazel run //cmd/log_monitor:log_monitor_image_push
 bazel run //cmd/health_service:health_service_image_push
+bazel run //cmd/dashboard_service:dashboard_service_image_push
+bazel run //cmd/rod_data_provider:rod_data_provider_image_push
+bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
 ```
 
 #### Step 3: Run Database Schema Migrations
@@ -575,12 +574,8 @@ Supply these parameters in your Cluster Toolkit overrides file (`xmanager-cloud-
 | `certs_email` | **Yes** | - | Owner email registered with Google Trust Services (GTS) |
 | `gts_key_id` | **Yes** | - | GTS External Account Binding key ID for certificates |
 | `gts_hmac_key` | **Yes** | - | GTS External Account Binding HMAC secret for certificates |
-| `xid_image` | **Yes** | - | Container image path for the XID service |
-| `actuator_image` | **Yes** | - | Container image path for the Actuator daemon |
-| `ess_image` | **Yes** | - | Container image path for the Experiment State Server (ESS) |
-| `ui_image` | **Yes** | - | Container image path for the Frontend UI portal |
-| `reconciler_image` | **Yes** | - | Container image path for the Kueue Reconciler service |
-| `log_monitor_image`| **Yes** | - | Container image path for the Pub/Sub Log Monitor |
+| `image_registry` | **Yes** | - | Target Google Artifact Registry repository path for XMC images |
+| `image_tag` | No | `"latest"` | OCI container image tag to deploy (e.g. git commit hash or release version) |
 | `namespace` | No | `"xmc"` | Target Kubernetes namespace for services |
 | `gcp_public_cidrs_access_enabled` | No | `false` | Toggles public endpoints on the GKE Control Plane |
 | `deletion_protection` | No | `false` | Enables deletion protection on supported GCP resources (databases, Cloud Run) |
