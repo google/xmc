@@ -19,7 +19,10 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import { ResourceRequirementQuery, SmartResourceFinderComponent } from './smart_resource_finder';
+import {
+  ResourceRequirementQuery,
+  SmartResourceFinderComponent,
+} from './smart_resource_finder';
 import { SmartResourceFinderHarness } from './smart_resource_finder_harness';
 
 @Component({
@@ -27,18 +30,13 @@ import { SmartResourceFinderHarness } from './smart_resource_finder_harness';
   imports: [SmartResourceFinderComponent],
   template: `
     <xmc-smart-resource-finder
-      [availableResourceTypes]="availableResourceTypes()"
-      (findMatchingQueues)="onFind($event)"
+      [availableResourceTypes]="['cpu', 'nvidia.com/gpu', 'tpu']"
+      (findMatchingQueues)="lastQuery.set($event)"
     />
   `,
 })
 class TestHostComponent {
-  readonly availableResourceTypes = signal<string[]>(['nvidia.com/gpu', 'cpu', 'tpu']);
   readonly lastQuery = signal<ResourceRequirementQuery | null>(null);
-
-  onFind(query: ResourceRequirementQuery) {
-    this.lastQuery.set(query);
-  }
 }
 
 describe('SmartResourceFinderComponent', () => {
@@ -63,7 +61,7 @@ describe('SmartResourceFinderComponent', () => {
     expect(await harness.getResourceTypeSelectCount()).toBe(1);
     expect(await harness.getRemoveButtonCount()).toBe(0);
     expect(hostInstance.lastQuery()).toEqual({
-      requirements: [{ amount: 64, resourceType: '' }],
+      requirements: [jasmine.objectContaining({ amount: 64, resourceType: '' })],
     });
   });
 
@@ -75,8 +73,8 @@ describe('SmartResourceFinderComponent', () => {
     expect(await harness.getRemoveButtonCount()).toBe(2);
     expect(hostInstance.lastQuery()).toEqual({
       requirements: [
-        { amount: 64, resourceType: '' },
-        { amount: 64, resourceType: '' },
+        jasmine.objectContaining({ amount: 64, resourceType: '' }),
+        jasmine.objectContaining({ amount: 64, resourceType: '' }),
       ],
     });
   });
@@ -98,8 +96,8 @@ describe('SmartResourceFinderComponent', () => {
     expect(await harness.getResourceTypeSelectCount()).toBe(2);
     expect(hostInstance.lastQuery()).toEqual({
       requirements: [
-        { amount: 64, resourceType: 'nvidia.com/gpu' },
-        { amount: 64, resourceType: 'tpu' },
+        jasmine.objectContaining({ amount: 64, resourceType: 'nvidia.com/gpu' }),
+        jasmine.objectContaining({ amount: 64, resourceType: 'tpu' }),
       ],
     });
   });
@@ -109,7 +107,7 @@ describe('SmartResourceFinderComponent', () => {
     fixture.detectChanges();
 
     expect(hostInstance.lastQuery()).toEqual({
-      requirements: [{ amount: 64, resourceType: 'nvidia.com/gpu' }],
+      requirements: [jasmine.objectContaining({ amount: 64, resourceType: 'nvidia.com/gpu' })],
     });
   });
 
@@ -118,7 +116,7 @@ describe('SmartResourceFinderComponent', () => {
     fixture.detectChanges();
 
     expect(hostInstance.lastQuery()).toEqual({
-      requirements: [{ amount: 128, resourceType: '' }],
+      requirements: [jasmine.objectContaining({ amount: 128, resourceType: '' })],
     });
   });
 

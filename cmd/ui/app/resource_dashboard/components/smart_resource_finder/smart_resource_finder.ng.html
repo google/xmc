@@ -16,7 +16,7 @@
 <div class="finder-query-card">
   <span class="query-prefix">I need</span>
 
-  @for (row of rows(); track $index) {
+  @for (row of rows(); track row.id) {
     <div class="query-row">
       <div class="query-input-group">
         <label class="query-label" [for]="'amount-input-' + $index">Amount *</label>

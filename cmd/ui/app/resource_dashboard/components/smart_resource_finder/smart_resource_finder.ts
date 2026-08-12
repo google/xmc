@@ -18,12 +18,19 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 
 export interface ResourceRequirementRow {
+  id: string;
   amount: number;
   resourceType: string;
 }
 
 export interface ResourceRequirementQuery {
   requirements: ResourceRequirementRow[];
+}
+
+let nextRowId = 0;
+
+function createRow(amount = 64, resourceType = ''): ResourceRequirementRow {
+  return { id: `row-${++nextRowId}`, amount, resourceType };
 }
 
 @Component({
@@ -38,14 +45,14 @@ export class SmartResourceFinderComponent implements OnInit {
   readonly availableResourceTypes = input<string[]>([]);
   readonly findMatchingQueues = output<ResourceRequirementQuery>();
 
-  protected readonly rows = signal<ResourceRequirementRow[]>([{ amount: 64, resourceType: '' }]);
+  protected readonly rows = signal<ResourceRequirementRow[]>([createRow(64, '')]);
 
   ngOnInit() {
     this.emitQuery();
   }
 
   protected addRow() {
-    this.rows.update((r) => [...r, { amount: 64, resourceType: '' }]);
+    this.rows.update((r) => [...r, createRow(64, '')]);
     this.emitQuery();
   }
 

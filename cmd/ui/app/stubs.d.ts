@@ -221,9 +221,9 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
     queuePredictability?: QueuePredictability[];
   }
 
-  export interface GetQueuesRequest {}
+  export interface ListClusterQueuesRequest {}
 
-  export interface GetQueuesResponse {
+  export interface ListClusterQueuesResponse {
     queues?: QueueOverview[];
   }
 

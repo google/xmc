@@ -20,7 +20,7 @@ import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
 import {
-  GetQueuesResponse,
+  ListClusterQueuesResponse,
   QueueOverview,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
@@ -75,7 +75,7 @@ describe('ResourceDashboard Container', () => {
       'getQueueJobs',
     ]);
     resourceService.getClusterQueues.and.returnValue(
-      of({ queues: [mockGpuQueue, mockCpuQueue] } as GetQueuesResponse),
+      of({ queues: [mockGpuQueue, mockCpuQueue] } as ListClusterQueuesResponse),
     );
     resourceService.getQueueJobs.and.returnValue(of({ jobs: [], totalQueueSize: 0 }));
 

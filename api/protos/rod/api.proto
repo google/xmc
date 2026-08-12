@@ -26,8 +26,8 @@ option go_package = "xmanager_cloud/api/protos/rod";
 service ResourceObservabilityService {
   // TODO: Implement the rest of methods
 
-  // Get all cluster queues.
-  rpc GetQueues(GetQueuesRequest) returns (GetQueuesResponse) {
+  // List all cluster queues.
+  rpc ListClusterQueues(ListClusterQueuesRequest) returns (ListClusterQueuesResponse) {
     option (google.api.http) = {
       get: "/v1/clusterqueues"
     };
@@ -69,11 +69,14 @@ message QueueOverview {
   repeated QueueResourceCapacity queue_capacity = 3;
 }
 
-// GetQueuesRequest represents parameters for retrieving ClusterQueues.
-message GetQueuesRequest {}
+// ListClusterQueuesRequest represents parameters for retrieving ClusterQueues.
+message ListClusterQueuesRequest {
+  reserved 1;
+  reserved "requirements";
+}
 
-// GetQueuesResponse contains the list of ClusterQueues.
-message GetQueuesResponse {
+// ListClusterQueuesResponse contains the list of ClusterQueues.
+message ListClusterQueuesResponse {
   repeated QueueOverview queues = 1;
 }
 
