@@ -15,7 +15,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { BehaviorSubject, of } from 'rxjs';
-import { catchError, switchMap, tap } from 'rxjs/operators';
+import { catchError, finalize, switchMap, tap } from 'rxjs/operators';
 
 import {
   HealthStatusResponse,
@@ -59,11 +59,9 @@ export class AdminPanelPage {
           tap((status) => {
             this.lastKnownStatus = status;
             this.healthStatusError.set(null);
-            this.isRefreshing.set(false);
           }),
           catchError((error) => {
             console.error('Failed to fetch health status', error);
-            this.isRefreshing.set(false);
             if (this.lastKnownStatus) {
               this.snackbarService.open('Failed to refresh health status.');
               return of(this.lastKnownStatus);
@@ -71,6 +69,7 @@ export class AdminPanelPage {
             this.healthStatusError.set(error);
             return of({} as HealthStatusResponse);
           }),
+          finalize(() => this.isRefreshing.set(false)),
         ),
       ),
     ),
