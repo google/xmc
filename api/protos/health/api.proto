@@ -45,9 +45,7 @@ service HealthService {
   }
 }
 
-message GetHealthStatusRequest {
-  bool force_refresh = 1;
-}
+message GetHealthStatusRequest {}
 
 enum ComponentType {
   COMPONENT_TYPE_UNSPECIFIED = 0;

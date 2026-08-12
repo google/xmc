@@ -132,4 +132,41 @@ describe('ResourceService', () => {
       await flush();
     });
   });
+
+  describe('getQueueSecondaryData', () => {
+    it('should fetch secondary queue data via HTTP POST', async () => {
+      const mockResponse = {
+        queuePredictability: {
+          'cq-gpu': {
+            queuePredictability: [
+              {
+                jobVelocity: 12.5,
+                resourceVelocity: { resourceType: 'GPU H100', velocity: 1200 },
+                velocityRange: 'LAST_HOUR' as const,
+              },
+            ],
+          },
+        },
+      };
+
+      const responsePromise = firstValueFrom(
+        state.service.getQueueSecondaryData(['cq-gpu'], 'LAST_HOUR'),
+      );
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/clusterqueues:batchGetSecondaryData`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ queueNames: ['cq-gpu'], range: 'LAST_HOUR' });
+      req.flush(mockResponse);
+
+      const response = await responsePromise;
+      expect(response.queuePredictability?.['cq-gpu']?.queuePredictability?.length).toBe(1);
+      expect(response.queuePredictability?.['cq-gpu']?.queuePredictability?.[0].jobVelocity).toBe(12.5);
+      await flush();
+    });
+
+    it('should return empty queuePredictability immediately when queueNames is empty', async () => {
+      const response = await firstValueFrom(state.service.getQueueSecondaryData([]));
+      expect(response.queuePredictability).toEqual({});
+    });
+  });
 });

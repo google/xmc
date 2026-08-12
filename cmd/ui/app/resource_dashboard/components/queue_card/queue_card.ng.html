@@ -126,7 +126,62 @@
         </mat-icon>
         <span class="section-title-text">Predictability</span>
       </div>
-      <xmc-wip-banner />
+
+
+      @if (isSecondaryLoading() || !predictability()) {
+        <div class="predictability-spinner-container">
+          <mat-spinner diameter="24" />
+          <span class="spinner-text">Fetching predictability metrics...</span>
+        </div>
+      } @else {
+        @let pred = predictability()!;
+        <div class="predictability-stats-grid">
+          <div class="stat-cell">
+            <div class="cell-label">
+              Job velocity
+              <mat-icon
+                class="help-tip-icon"
+                matTooltipClass="rod-term-tooltip"
+                [matTooltip]="termTooltips.jobVelocity"
+                >help_outline</mat-icon
+              >
+            </div>
+            <div class="cell-value bold-metric dark-text">
+              {{ pred.jobVelocity | number: '1.0-2' }} jobs/hr
+            </div>
+          </div>
+          <div class="stat-cell">
+            <div class="cell-label">
+              Resource velocity
+              <mat-icon
+                class="help-tip-icon"
+                matTooltipClass="rod-term-tooltip"
+                [matTooltip]="termTooltips.resourceVelocity"
+                >help_outline</mat-icon
+              >
+            </div>
+            <div class="cell-value bold-metric dark-text">
+              {{ pred.resourceVelocity?.velocity | number: '1.0-2' }} {{ pred.resourceVelocity?.resourceType || 'CPU' }}/hr
+            </div>
+          </div>
+          <div class="stat-cell">
+            <div class="cell-label">
+              Pending jobs
+            </div>
+            <div class="cell-value bold-metric dark-text">
+              {{ pred.pendingJobs }}
+            </div>
+          </div>
+          <div class="stat-cell">
+            <div class="cell-label">
+              Requested resources
+            </div>
+            <div class="cell-value bold-metric dark-text">
+              {{ pred.pendingResourceRequests?.count || 0 }} {{ pred.pendingResourceRequests?.resourceType || 'CPU' }}
+            </div>
+          </div>
+        </div>
+      }
     </div>
   </div>
 </div>

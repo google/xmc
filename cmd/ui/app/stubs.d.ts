@@ -234,7 +234,7 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
   }
 
   export interface BatchGetQueueSecondaryDataResponse {
-    queuePredictability?: Record<string, QueueSecondaryData>;
+    queuePredictability?: { [key: string]: QueueSecondaryData };
   }
 
   export interface DashboardJob {

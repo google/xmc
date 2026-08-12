@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-// CI Test Scope Verification: Modifying this deeply nested .go file verifies whether Bazel rdeps query discovery completes within timeout limits in CI.
+// Package workunitexecutionschema provides the Spanner schema for the WorkUnitExecutions table.
 package workunitexecutionschema
 
 // WorkUnitExecutionsTable is the name of the WorkUnitExecutions table.

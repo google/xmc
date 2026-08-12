@@ -212,18 +212,12 @@ py_library(
 )
 
 py_library(
-    name = "resolve_test_scope_lib",
-    srcs = ["resolve_test_scope.py"],
+    name = "run_affected_tests_lib",
+    srcs = ["run_affected_tests.py"],
     imports = ["."],
     visibility = ["//visibility:public"],
-)
-
-py_test(
-    name = "resolve_test_scope_test",
-    srcs = ["resolve_test_scope_test.py"],
-    imports = ["."],
     deps = [
-        ":resolve_test_scope_lib",
+        ":tool_utils",
     ],
 )
 
@@ -246,6 +240,22 @@ py_test(
         ":generate_review_checklist_lib",
         ":github_utils_lib",
         ":tool_utils",
+    ],
+)
+
+py_library(
+    name = "discover_test_matrix_lib",
+    srcs = ["discover_test_matrix.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "discover_test_matrix_test",
+    srcs = ["discover_test_matrix_test.py"],
+    imports = ["."],
+    deps = [
+        ":discover_test_matrix_lib",
     ],
 )
 

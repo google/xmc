@@ -22,9 +22,6 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	mpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	"xmanager_cloud/pkg/auth/oauth2"
@@ -45,7 +42,7 @@ func TestCreateDashboard(t *testing.T) {
 		},
 	}
 
-	s := newServer(LoadConfig(), nil, nil)
+	s := newServer(LoadConfig())
 	ctx := context.Background()
 
 	for _, tt := range tests {
@@ -74,7 +71,7 @@ func TestGetDashboard(t *testing.T) {
 		},
 	}
 
-	s := newServer(LoadConfig(), nil, nil)
+	s := newServer(LoadConfig())
 	ctx := context.Background()
 
 	for _, tt := range tests {
@@ -91,7 +88,7 @@ func TestGetDashboard(t *testing.T) {
 }
 
 func TestListDashboards(t *testing.T) {
-	s := newServer(LoadConfig(), nil, nil)
+	s := newServer(LoadConfig())
 	ctx := context.Background()
 
 	resp, err := s.ListDashboards(ctx, &spb.ListDashboardsRequest{})
@@ -118,7 +115,7 @@ func TestUpdateDashboard(t *testing.T) {
 		},
 	}
 
-	s := newServer(LoadConfig(), nil, nil)
+	s := newServer(LoadConfig())
 	ctx := context.Background()
 
 	for _, tt := range tests {
@@ -135,7 +132,7 @@ func TestUpdateDashboard(t *testing.T) {
 }
 
 func TestDeleteDashboard(t *testing.T) {
-	s := newServer(LoadConfig(), nil, nil)
+	s := newServer(LoadConfig())
 	ctx := context.Background()
 
 	_, err := s.DeleteDashboard(ctx, &spb.DeleteDashboardRequest{Name: "dashboards/123"})
@@ -159,7 +156,7 @@ func TestCreateChart(t *testing.T) {
 		},
 	}
 
-	s := newServer(LoadConfig(), nil, nil)
+	s := newServer(LoadConfig())
 	ctx := context.Background()
 
 	for _, tt := range tests {
@@ -188,7 +185,7 @@ func TestGetChart(t *testing.T) {
 		},
 	}
 
-	s := newServer(LoadConfig(), nil, nil)
+	s := newServer(LoadConfig())
 	ctx := context.Background()
 
 	for _, tt := range tests {
@@ -205,30 +202,20 @@ func TestGetChart(t *testing.T) {
 }
 
 func TestGetChartData(t *testing.T) {
-	s := newServer(LoadConfig(), nil, nil)
+	s := newServer(LoadConfig())
 	ctx := context.Background()
 
-	// 1. Test nil request returns InvalidArgument
-	_, err := s.GetChartData(ctx, nil)
-	if err == nil {
-		t.Fatal("GetChartData(nil) expected error, got nil")
+	resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+	if err != nil {
+		t.Fatalf("GetChartData failed: %v", err)
 	}
-	if status.Code(err) != codes.InvalidArgument {
-		t.Errorf("GetChartData(nil) status code = %v, want %v", status.Code(err), codes.InvalidArgument)
-	}
-
-	// 2. Test nil dataEngine returns FailedPrecondition
-	_, err = s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
-	if err == nil {
-		t.Fatal("GetChartData expected error when dataEngine is nil, got nil")
-	}
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("GetChartData status code = %v, want %v", status.Code(err), codes.FailedPrecondition)
+	if resp == nil {
+		t.Error("GetChartData returned nil response")
 	}
 }
 
 func TestListCharts(t *testing.T) {
-	s := newServer(LoadConfig(), nil, nil)
+	s := newServer(LoadConfig())
 	ctx := context.Background()
 
 	resp, err := s.ListCharts(ctx, &spb.ListChartsRequest{Parent: "dashboards/123"})
@@ -255,7 +242,7 @@ func TestUpdateChart(t *testing.T) {
 		},
 	}
 
-	s := newServer(LoadConfig(), nil, nil)
+	s := newServer(LoadConfig())
 	ctx := context.Background()
 
 	for _, tt := range tests {
@@ -272,7 +259,7 @@ func TestUpdateChart(t *testing.T) {
 }
 
 func TestDeleteChart(t *testing.T) {
-	s := newServer(LoadConfig(), nil, nil)
+	s := newServer(LoadConfig())
 	ctx := context.Background()
 
 	_, err := s.DeleteChart(ctx, &spb.DeleteChartRequest{Name: "dashboards/123/charts/456"})

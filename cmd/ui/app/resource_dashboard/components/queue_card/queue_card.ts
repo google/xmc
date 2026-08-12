@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import { Clipboard } from '@angular/cdk/clipboard';
+import { DecimalPipe } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -23,10 +24,10 @@ import {
   signal,
 } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
-import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
-import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
+import { QueueOverview, QueuePredictability, QueueSecondaryData } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
 import {
   FreeTotalDisplayPipe,
@@ -42,7 +43,9 @@ import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service'
   styleUrl: './queue_card.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    DecimalPipe,
     MatIconModule,
+    MatProgressSpinnerModule,
     MatTooltipModule,
     MaxWorkloadDisplayPipe,
     FreeTotalDisplayPipe,
@@ -52,6 +55,8 @@ import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service'
 })
 export class QueueCardComponent {
   readonly queue = input.required<QueueOverview>();
+  readonly secondaryData = input<QueueSecondaryData | undefined>(undefined);
+  readonly isSecondaryLoading = input<boolean>(false);
   readonly isSelected = input<boolean>(false);
   readonly activeResourceFilters = input<string[]>([]);
   readonly selectQueue = output<string>();
@@ -78,6 +83,10 @@ export class QueueCardComponent {
   protected readonly isQueueHealthy = computed(() => true);
 
   protected readonly isCopied = signal<boolean>(false);
+  protected readonly predictability = computed<QueuePredictability | undefined>(() => {
+    const sec = this.secondaryData();
+    return sec?.queuePredictability?.[0];
+  });
 
   protected onCardClick(): void {
     const name = this.queue().queueName;

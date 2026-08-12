@@ -88,7 +88,9 @@ export function findQueuePredictability(
 ): QueuePredictability | undefined {
   const targetRange = mapPeriodToRangePreset(period);
   const predictabilities = queue?.queuePredictability ?? [];
-  return predictabilities.find((p) => p.velocityRange === targetRange) ?? predictabilities[0];
+  return (
+    predictabilities.find((p) => p.velocityRange === targetRange) ?? predictabilities[0]
+  );
 }
 
 /**
@@ -110,7 +112,8 @@ export function getPendingJobsCount(queue: QueueSecondaryData): number {
 export function calculateResourceVelocity(queue: QueueSecondaryData, period: string): string {
   const match = findQueuePredictability(queue, period);
   const vel = match?.resourceVelocity?.velocity ?? 0;
-  return `~${formatRate(vel)} GPUs/hr`;
+  const resType = match?.resourceVelocity?.resourceType ?? 'units';
+  return `~${formatRate(vel)} ${resType}/hr`;
 }
 
 /**

@@ -17,9 +17,12 @@ import { inject, Injectable } from '@angular/core';
 import { catchError, Observable, of } from 'rxjs';
 
 import {
+  BatchGetQueueSecondaryDataResponse,
+  GetFittingQueuesResponse,
   GetRunningAndPendingJobsResponse,
   GetSubmitQueueResponse,
   ListClusterQueuesResponse,
+  RangePreset,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { XMC_API_DOMAIN } from './constants';
@@ -80,6 +83,30 @@ export class ResourceService {
         catchError((error) => {
           console.error(`Failed to fetch submit queue for ${queueName}:`, error);
           return of({ submitQueue: queueName });
+        }),
+      );
+  }
+
+  /**
+   * Fetches secondary data (velocity / turnover rate) for the specified cluster queues.
+   */
+  getQueueSecondaryData(
+    queueNames: string[],
+    range: RangePreset = 'LAST_HOUR',
+  ): Observable<BatchGetQueueSecondaryDataResponse> {
+    if (!queueNames || queueNames.length === 0) {
+      return of({ queuePredictability: {} });
+    }
+    return this.http
+      .post<BatchGetQueueSecondaryDataResponse>(
+        `${XMC_API_DOMAIN}/clusterqueues:batchGetSecondaryData`,
+        { queueNames, range },
+        { withCredentials: true },
+      )
+      .pipe(
+        catchError((error) => {
+          console.error('Failed to fetch secondary queue data:', error);
+          return of({ queuePredictability: {} });
         }),
       );
   }

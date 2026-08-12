@@ -73,11 +73,13 @@ describe('ResourceDashboard Container', () => {
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
       'getClusterQueues',
       'getQueueJobs',
+      'getQueueSecondaryData',
     ]);
     resourceService.getClusterQueues.and.returnValue(
       of({ queues: [mockGpuQueue, mockCpuQueue] } as ListClusterQueuesResponse),
     );
     resourceService.getQueueJobs.and.returnValue(of({ jobs: [], totalQueueSize: 0 }));
+    resourceService.getQueueSecondaryData.and.returnValue(of({ secondaryData: [] }));
 
     setupModule({
       imports: [TestHostComponent, NoopAnimationsModule],

@@ -83,6 +83,8 @@ type mockWorkUnitFetcher struct {
 	err           error
 }
 
+var _ WorkUnitFetcher = (*mockWorkUnitFetcher)(nil)
+
 func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*workunit.ActiveWorkUnitsResult, error) {
 	if m.err != nil {
 		return nil, m.err
@@ -159,7 +161,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := newServer(cfg, nil, tt.fetcher)
+			srv := newServer(cfg, nil, tt.fetcher, nil)
 			resp, err := srv.GetRunningAndPendingJobs(tt.ctx, tt.req)
 
 			gotCode := status.Code(err)
@@ -211,7 +213,7 @@ func TestGetRunningAndPendingJobs_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	srv := newServer(cfg, nil, &mockWorkUnitFetcher{})
+	srv := newServer(cfg, nil, &mockWorkUnitFetcher{}, nil)
 	req := baseReq
 	_, err := srv.GetRunningAndPendingJobs(ctx, req)
 

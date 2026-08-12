@@ -39,7 +39,6 @@ import { HealthStatusSectionHarness } from './testing/health_status_section_harn
       [components]="components()"
       [overallStatus]="overallStatus()"
       [lastChecked]="lastChecked()"
-      [loading]="loading()"
       (refresh)="onRefresh()"
     ></xmc-health-status-section>
   `,
@@ -50,7 +49,6 @@ class TestHostComponent {
   readonly components = signal<ComponentHealth[]>([]);
   readonly overallStatus = signal<string>(HealthState.UNSPECIFIED);
   readonly lastChecked = signal<string>('');
-  readonly loading = signal<boolean>(false);
 
   refreshCalled = false;
 
@@ -114,15 +112,5 @@ describe('HealthStatusSectionComponent', () => {
     await flush();
 
     expect(host.refreshCalled).toBeTrue();
-  });
-
-  it('should disable refresh button and show loading text when loading is true', async () => {
-    const host = bootstrap(TestHostComponent);
-    host.loading.set(true);
-    await flush();
-
-    const harness = await getHarness(HealthStatusSectionHarness);
-    expect(await harness.isRefreshDisabled()).toBeTrue();
-    expect(await harness.getRefreshButtonText()).toContain('Refreshing...');
   });
 });

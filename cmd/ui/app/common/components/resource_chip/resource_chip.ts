@@ -36,5 +36,5 @@ export class ResourceChip {
   readonly resourceType = input.required<ResourceType>();
   readonly text = input.required<string>();
 
-  readonly ResourceType = ResourceType;
+  protected readonly ResourceType = ResourceType;
 }
