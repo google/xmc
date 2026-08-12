@@ -47,6 +47,8 @@ ingestionGatewayDeployment:
 
 healthService:
   gcpServiceAccount: ""
+  iap:
+    httpAudience: "placeholder-health-http-audience"
 
 detectInadmissibleWorkUnits: true
 startupPodErrorCheckEnabled: true

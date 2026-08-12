@@ -16,17 +16,41 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	auth "xmanager_cloud/auth/auth"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 	"xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/auth/oauth2/mock"
 )
 
+type mockAuthorizer struct {
+	auth.MockAuth
+}
+
+func (m *mockAuthorizer) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return "", "", status.Errorf(codes.Unauthenticated, "missing metadata")
+	}
+	emails := md.Get("x-goog-user-email")
+	if len(emails) == 0 || emails[0] == "" {
+		emails = md.Get("x-goog-authenticated-user-email")
+	}
+	if len(emails) == 0 || emails[0] == "" {
+		return "", "", status.Errorf(codes.Unauthenticated, "missing user identity")
+	}
+	email := strings.TrimPrefix(emails[0], "accounts.google.com:")
+	return email, "mock-user-id", nil
+}
+
 func TestGetHealthStatus(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051", ProjectID: "test-project"}
-	s := newServer(cfg, nil)
+	s := newServer(cfg, nil, &mockAuthorizer{})
 
 	resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
 	if err != nil {
@@ -44,7 +68,7 @@ func TestGetHealthStatus(t *testing.T) {
 
 func TestListConfigEntries(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051", ProjectID: "test-project"}
-	s := newServer(cfg, nil)
+	s := newServer(cfg, nil, &mockAuthorizer{})
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
 	if err != nil {
@@ -86,7 +110,7 @@ func TestGetUserInfo(t *testing.T) {
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
 	mock.ConfigureMockAuth(authenticator)
 
-	s := newServer(&Config{}, authenticator)
+	s := newServer(&Config{}, authenticator, &mockAuthorizer{})
 
 	tests := []struct {
 		name           string

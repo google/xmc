@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//	http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,12 +16,11 @@ package main
 
 import (
 	"context"
-	"strings"
 
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	authz "xmanager_cloud/auth/auth"
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
@@ -31,10 +30,11 @@ type server struct {
 	spb.UnimplementedHealthServiceServer
 	cfg           *Config
 	authenticator *oauth2.Authenticator
+	auth          authz.AuthorizerInterface
 }
 
-func newServer(cfg *Config, authenticator *oauth2.Authenticator) *server {
-	return &server{cfg: cfg, authenticator: authenticator}
+func newServer(cfg *Config, authenticator *oauth2.Authenticator, auth authz.AuthorizerInterface) *server {
+	return &server{cfg: cfg, authenticator: authenticator, auth: auth}
 }
 
 func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRequest) (*spb.HealthStatusResponse, error) {
@@ -95,7 +95,10 @@ func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntri
 }
 
 func (s *server) GetUserInfo(ctx context.Context, req *spb.GetUserInfoRequest) (*spb.UserInfoResponse, error) {
-	email, _ := s.getUser(ctx)
+	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	if err != nil {
+		return &spb.UserInfoResponse{UserEmail: "", Privileges: nil}, nil
+	}
 
 	if err := s.checkAdminGuard(ctx); err != nil {
 		return &spb.UserInfoResponse{UserEmail: email, Privileges: nil}, nil
@@ -112,9 +115,9 @@ func (s *server) checkAdminGuard(ctx context.Context) error {
 		return nil
 	}
 
-	email, ok := s.getUser(ctx)
-	if !ok {
-		return status.Errorf(codes.Unauthenticated, "missing user identity")
+	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	if err != nil {
+		return err
 	}
 
 	authorized, err := s.authenticator.IsAdmin(ctx, email)
@@ -127,18 +130,4 @@ func (s *server) checkAdminGuard(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func (s *server) getUser(ctx context.Context) (string, bool) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return "", false
-	}
-	if emails := md.Get("x-goog-user-email"); len(emails) > 0 && emails[0] != "" {
-		return emails[0], true
-	}
-	if emails := md.Get("x-goog-authenticated-user-email"); len(emails) > 0 && emails[0] != "" {
-		return strings.TrimPrefix(emails[0], "accounts.google.com:"), true
-	}
-	return "", false
 }

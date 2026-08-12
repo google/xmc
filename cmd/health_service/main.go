@@ -27,8 +27,10 @@ import (
 
 	"go/google"
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
+	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
+	authz "xmanager_cloud/auth/auth"
 	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
@@ -54,6 +56,28 @@ func main() {
 	}
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
 
+	var idService *cloudidentity.Service
+	if !cfg.DisableAuthentication {
+		idService, err = cloudidentity.NewService(ctx)
+		if err != nil {
+			logging.Fatal(ctx, "Failed to create cloud identity service", "error", err)
+		}
+	}
+
+	auth, err := authz.NewAuthorizer(
+		ctx,
+		idService,
+		10*time.Minute,
+		1*time.Minute,
+		[]string{cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID},
+		cfg.IAPIssuer,
+		cfg.DisableAuthentication,
+		[]byte(oauthCfg.JWTSecret),
+	)
+	if err != nil {
+		logging.Fatal(ctx, "Failed to create authorizer", "error", err)
+	}
+
 	// 1. Setup gRPC server
 	lis, err := net.Listen("tcp", "127.0.0.1:"+cfg.GRPCPort)
 	if err != nil {
@@ -66,7 +90,7 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer(grpc.Creds(transportCreds))
-	spb.RegisterHealthServiceServer(grpcServer, newServer(cfg, authenticator))
+	spb.RegisterHealthServiceServer(grpcServer, newServer(cfg, authenticator, auth))
 	reflection.Register(grpcServer)
 
 	go func() {

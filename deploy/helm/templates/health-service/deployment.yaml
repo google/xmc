@@ -61,6 +61,10 @@ spec:
         - "-tls_cert_file="
         - "-tls_key_file="
         env:
+        - name: IAP_EXPECTED_HTTP_AUDIENCE
+          value: {{ .Values.healthService.iap.httpAudience | quote }}
+        - name: IAP_EXPECTED_GRPC_AUDIENCE
+          value: {{ .Values.healthService.iap.httpAudience | quote }}
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
         readinessProbe:
           httpGet:

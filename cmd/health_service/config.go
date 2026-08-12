@@ -20,11 +20,16 @@ import (
 
 // Config holds the configuration for the health service.
 type Config struct {
-	Port        string
-	GRPCPort    string
-	ProjectID   string
-	TLSCertFile string
-	TLSKeyFile  string
+	Port                  string
+	GRPCPort              string
+	ProjectID             string
+	TLSCertFile           string
+	TLSKeyFile            string
+	DisableAuthentication bool
+	IAPIssuer             string
+	HTTPAudience          string
+	GRPCAudience          string
+	JWTSecret             string
 }
 
 var (
@@ -49,11 +54,22 @@ func init() {
 
 // LoadConfig loads and returns the configuration.
 func LoadConfig() *Config {
+	disableAuth := os.Getenv("DISABLE_AUTHENTICATION") == "true"
+	iapIssuer := os.Getenv("IAP_EXPECTED_ISSUER")
+	if iapIssuer == "" {
+		iapIssuer = "https://iap.googleapis.com"
+	}
+
 	return &Config{
-		Port:        port,
-		GRPCPort:    grpcPort,
-		ProjectID:   projectID,
-		TLSCertFile: tlsCertFile,
-		TLSKeyFile:  tlsKeyFile,
+		Port:                  port,
+		GRPCPort:              grpcPort,
+		ProjectID:             projectID,
+		TLSCertFile:           tlsCertFile,
+		TLSKeyFile:            tlsKeyFile,
+		DisableAuthentication: disableAuth,
+		IAPIssuer:             iapIssuer,
+		HTTPAudience:          os.Getenv("IAP_EXPECTED_HTTP_AUDIENCE"),
+		GRPCAudience:          os.Getenv("IAP_EXPECTED_GRPC_AUDIENCE"),
+		JWTSecret:             os.Getenv("JWT_SECRET"),
 	}
 }
