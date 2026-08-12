@@ -56,12 +56,12 @@ describe('SmartResourceFinderComponent', () => {
     harness = await loader.getHarness(SmartResourceFinderHarness);
   });
 
-  it('should initialize with default amount and single empty resource type filter and emit initial query', async () => {
-    expect(await harness.getAmountValue()).toBe('64');
+  it('should initialize with default amount 1 and single empty resource type filter and emit initial query', async () => {
+    expect(await harness.getAmountValue()).toBe('1');
     expect(await harness.getResourceTypeSelectCount()).toBe(1);
     expect(await harness.getRemoveButtonCount()).toBe(0);
     expect(hostInstance.lastQuery()).toEqual({
-      requirements: [jasmine.objectContaining({ amount: 64, resourceType: '' })],
+      requirements: [jasmine.objectContaining({ amount: 1, resourceType: '' })],
     });
   });
 
@@ -73,8 +73,8 @@ describe('SmartResourceFinderComponent', () => {
     expect(await harness.getRemoveButtonCount()).toBe(2);
     expect(hostInstance.lastQuery()).toEqual({
       requirements: [
-        jasmine.objectContaining({ amount: 64, resourceType: '' }),
-        jasmine.objectContaining({ amount: 64, resourceType: '' }),
+        jasmine.objectContaining({ amount: 1, resourceType: '' }),
+        jasmine.objectContaining({ amount: 1, resourceType: '' }),
       ],
     });
   });
@@ -96,8 +96,8 @@ describe('SmartResourceFinderComponent', () => {
     expect(await harness.getResourceTypeSelectCount()).toBe(2);
     expect(hostInstance.lastQuery()).toEqual({
       requirements: [
-        jasmine.objectContaining({ amount: 64, resourceType: 'nvidia.com/gpu' }),
-        jasmine.objectContaining({ amount: 64, resourceType: 'tpu' }),
+        jasmine.objectContaining({ amount: 1, resourceType: 'nvidia.com/gpu' }),
+        jasmine.objectContaining({ amount: 1, resourceType: 'tpu' }),
       ],
     });
   });
@@ -107,7 +107,7 @@ describe('SmartResourceFinderComponent', () => {
     fixture.detectChanges();
 
     expect(hostInstance.lastQuery()).toEqual({
-      requirements: [jasmine.objectContaining({ amount: 64, resourceType: 'nvidia.com/gpu' })],
+      requirements: [jasmine.objectContaining({ amount: 1, resourceType: 'nvidia.com/gpu' })],
     });
   });
 

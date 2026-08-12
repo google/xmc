@@ -70,10 +70,7 @@ message QueueOverview {
 }
 
 // ListClusterQueuesRequest represents parameters for retrieving ClusterQueues.
-message ListClusterQueuesRequest {
-  reserved 1;
-  reserved "requirements";
-}
+message ListClusterQueuesRequest {}
 
 // ListClusterQueuesResponse contains the list of ClusterQueues.
 message ListClusterQueuesResponse {

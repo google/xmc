@@ -29,7 +29,7 @@ export interface ResourceRequirementQuery {
 
 let nextRowId = 0;
 
-function createRow(amount = 64, resourceType = ''): ResourceRequirementRow {
+function createRow(amount = 1, resourceType = ''): ResourceRequirementRow {
   return { id: `row-${++nextRowId}`, amount, resourceType };
 }
 
@@ -45,14 +45,14 @@ export class SmartResourceFinderComponent implements OnInit {
   readonly availableResourceTypes = input<string[]>([]);
   readonly findMatchingQueues = output<ResourceRequirementQuery>();
 
-  protected readonly rows = signal<ResourceRequirementRow[]>([createRow(64, '')]);
+  protected readonly rows = signal<ResourceRequirementRow[]>([createRow(1, '')]);
 
   ngOnInit() {
     this.emitQuery();
   }
 
   protected addRow() {
-    this.rows.update((r) => [...r, createRow(64, '')]);
+    this.rows.update((r) => [...r, createRow(1, '')]);
     this.emitQuery();
   }
 
