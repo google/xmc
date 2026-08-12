@@ -1,0 +1,87 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: "Incident Report / Critical Outage"
+description: "Report a critical production outage, cluster deadlock, or severe scheduling failure."
+title: "[Incident]: "
+labels: ["kind/incident", "status/triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for **high-severity production incidents** (e.g., total scheduling failure, controller crash loops, cluster-wide deadlock, or data loss).
+        **Important:** Do NOT include sensitive secrets or private GCP credentials in this issue.
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: "Incident Severity"
+      description: "Assess the operational impact of this incident."
+      options:
+        - "Critical - Complete cluster outage / controller crash loop / workload deadlock"
+        - "Major - Core scheduling degraded / API gateway unreachable / authentication failure"
+        - "Moderate - Intermittent reconciliation failures / high latency"
+    validations:
+      required: true
+
+  - type: input
+    id: xmc-version
+    attributes:
+      label: "XMC Version & Deployment Topology"
+      placeholder: "e.g., v0.2.0, Blueprint v2 on GKE 1.30, us-central1"
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary-and-impact
+    attributes:
+      label: "Incident Summary & Blast Radius"
+      description: "Describe the outage, affected workloads, TPU/GPU slices impacted, and business disruption."
+    validations:
+      required: true
+
+  - type: textarea
+    id: timeline
+    attributes:
+      label: "Timeline & Initial Triggers"
+      description: "When did the incident start? Were there any preceding actions (e.g. upgrade, node drain, scaling event)?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: error-logs
+    attributes:
+      label: "Diagnostic Logs & Error Traces"
+      description: "Paste controller pod logs, `kubectl describe` outputs, or gateway status messages."
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: mitigations
+    attributes:
+      label: "Attempted Mitigations / Workarounds"
+      description: "Detail any recovery steps attempted (pod restarts, rollback, node pool recreate) and the results."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: "Verification Checklist"
+      options:
+        - label: "I have verified that all sensitive auth tokens, keys, and private infrastructure secrets have been sanitized."
+          required: true
+        - label: "I have gathered logs from both controller pods and the relevant GKE workloads."
+          required: false
