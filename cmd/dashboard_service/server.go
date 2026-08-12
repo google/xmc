@@ -18,6 +18,8 @@ import (
 	"context"
 	"fmt"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	mpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
@@ -76,20 +78,18 @@ func (s *server) GetChart(ctx context.Context, req *spb.GetChartRequest) (*mpb.C
 }
 
 func (s *server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest) (*mpb.ChartData, error) {
-	if s.dataEngine == nil {
-		return &mpb.ChartData{Name: req.GetName()}, nil
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request must not be nil")
 	}
-	var chart *mpb.Chart
-	if s.repo != nil {
-		var err error
-		chart, err = s.repo.GetChart(ctx, req.GetName())
-		if err != nil {
-			return nil, fmt.Errorf("failed to get chart %q: %w", req.GetName(), err)
-		}
-	} else {
-		chart = &mpb.Chart{
-			Name: req.GetName(),
-		}
+	if s.dataEngine == nil {
+		return nil, status.Error(codes.FailedPrecondition, "data engine is not configured")
+	}
+	if s.repo == nil {
+		return nil, status.Error(codes.FailedPrecondition, "chart repository is not configured")
+	}
+	chart, err := s.repo.GetChart(ctx, req.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chart %q: %w", req.GetName(), err)
 	}
 	return s.dataEngine.FetchChartData(ctx, chart, req)
 }

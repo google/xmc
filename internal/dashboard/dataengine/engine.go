@@ -89,6 +89,8 @@ func (e *DataEngine) FetchChartData(ctx context.Context, chart *dpb.Chart, req *
 				return nil, fmt.Errorf("failed to fetch series data for plot %q: %w", plot.GetPlotId(), err)
 			}
 			chartData.PlotsData = append(chartData.PlotsData, pd...)
+		default:
+			return nil, fmt.Errorf("unsupported plot type: %v", plot.GetType())
 		}
 	}
 

@@ -105,10 +105,12 @@ func main() {
 	spb.RegisterDashboardServiceServer(grpcServer, newServer(cfg, nil, de))
 	reflection.Register(grpcServer)
 
+	errChan := make(chan error, 2)
+
 	go func() {
 		logging.Info(ctx, "Dashboard service gRPC server starting", "addr", lis.Addr())
 		if err := grpcServer.Serve(lis); err != nil {
-			logging.Fatal(ctx, "gRPC server failed", "error", err)
+			errChan <- fmt.Errorf("gRPC server failed: %w", err)
 		}
 	}()
 
@@ -135,16 +137,21 @@ func main() {
 	go func() {
 		logging.Info(ctx, "Dashboard service HTTP gateway starting", "addr", addr)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logging.Fatal(ctx, "HTTP server failed", "error", err)
+			errChan <- fmt.Errorf("HTTP server failed: %w", err)
 		}
 	}()
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
 
-	logging.Info(ctx, "Shutting down dashboard service...")
+	select {
+	case <-quit:
+		logging.Info(ctx, "Shutting down dashboard service...")
+	case err := <-errChan:
+		logging.Info(ctx, "Server encountered error, shutting down...", "error", err)
+	}
+
 	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 

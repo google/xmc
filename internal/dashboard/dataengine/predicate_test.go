@@ -65,8 +65,8 @@ func TestBuildWhereClause(t *testing.T) {
 				Metrics: []string{"train/loss", "eval/loss"},
 			},
 			ranges:     nil,
-			wantClause: "xid = ? AND metric_name IN (?)",
-			wantArgs:   []any{int64(1001), []string{"train/loss", "eval/loss"}},
+			wantClause: "xid = ? AND metric_name IN (?, ?)",
+			wantArgs:   []any{int64(1001), "train/loss", "eval/loss"},
 		},
 		{
 			name: "with step ranges",

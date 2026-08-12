@@ -37,13 +37,15 @@ func calculateBucketSize(ranges []*dpb.DataSpec_DataRange, targetPoints int32) i
 			continue
 		}
 		startStep := int64(0)
-		hasStart := false
-		if s, ok := r.GetStart().(*dpb.DataSpec_DataRange_StartStep); ok {
+		isValidStart := false
+		if r.GetStart() == nil {
+			isValidStart = true
+		} else if s, ok := r.GetStart().(*dpb.DataSpec_DataRange_StartStep); ok {
 			startStep = s.StartStep
-			hasStart = true
+			isValidStart = true
 		}
 		if e, ok := r.GetEnd().(*dpb.DataSpec_DataRange_EndStep); ok {
-			if hasStart && e.EndStep > startStep {
+			if isValidStart && e.EndStep > startStep {
 				span := e.EndStep - startStep
 				bucket := span / int64(targetPoints)
 				if bucket > 1 {

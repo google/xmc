@@ -126,6 +126,23 @@ func TestFetchChartData(t *testing.T) {
 			req:     nil,
 			wantErr: true,
 		},
+		{
+			name: "unsupported plot type returns error",
+			chart: &dpb.Chart{
+				Name: "experiments/1001/charts/chart-bar",
+				Plots: []*dpb.PlotSpec{
+					{
+						PlotId: "bar_plot",
+						Type:   dpb.PlotType_BAR,
+						Data: &dpb.DataSpec{
+							Metrics: []string{"loss"},
+						},
+					},
+				},
+			},
+			req:     nil,
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

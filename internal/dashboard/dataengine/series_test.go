@@ -61,6 +61,17 @@ func TestCalculateBucketSize(t *testing.T) {
 			targetPoints: 1000,
 			wantBucket:   100,
 		},
+		{
+			name: "omitted start step defaults to 0 and calculates bucket size",
+			ranges: []*dpb.DataSpec_DataRange{
+				{
+					Start: nil,
+					End:   &dpb.DataSpec_DataRange_EndStep{EndStep: 100000},
+				},
+			},
+			targetPoints: 1000,
+			wantBucket:   100,
+		},
 	}
 
 	for _, tt := range tests {

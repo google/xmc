@@ -22,6 +22,9 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	mpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	"xmanager_cloud/pkg/auth/oauth2"
@@ -205,12 +208,22 @@ func TestGetChartData(t *testing.T) {
 	s := newServer(LoadConfig(), nil, nil)
 	ctx := context.Background()
 
-	resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
-	if err != nil {
-		t.Fatalf("GetChartData failed: %v", err)
+	// 1. Test nil request returns InvalidArgument
+	_, err := s.GetChartData(ctx, nil)
+	if err == nil {
+		t.Fatal("GetChartData(nil) expected error, got nil")
 	}
-	if resp == nil {
-		t.Error("GetChartData returned nil response")
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("GetChartData(nil) status code = %v, want %v", status.Code(err), codes.InvalidArgument)
+	}
+
+	// 2. Test nil dataEngine returns FailedPrecondition
+	_, err = s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+	if err == nil {
+		t.Fatal("GetChartData expected error when dataEngine is nil, got nil")
+	}
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("GetChartData status code = %v, want %v", status.Code(err), codes.FailedPrecondition)
 	}
 }
 
