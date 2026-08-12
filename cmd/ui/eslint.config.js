@@ -92,28 +92,31 @@ export default tseslint.config(
       'no-restricted-syntax': [
         'error',
         {
-          selector:
-            'Decorator[expression.callee.name="Input"], Decorator[expression.name="Input"]',
-          message:
-            'Use signal primitives `input()` instead of `@Input`.',
+          selector: 'Decorator[expression.callee.name="Input"], Decorator[expression.name="Input"]',
+          message: 'Use signal primitives `input()` instead of `@Input`.',
         },
         {
           selector:
             'Decorator[expression.callee.name="Output"], Decorator[expression.name="Output"]',
-          message:
-            'Use signal primitives `output()` instead of `@Output`.',
+          message: 'Use signal primitives `output()` instead of `@Output`.',
         },
         {
           selector:
             'Decorator[expression.callee.name="ViewChild"], Decorator[expression.name="ViewChild"]',
-          message:
-            'Use signal primitives `viewChild()` instead of `@ViewChild`.',
+          message: 'Use signal primitives `viewChild()` instead of `@ViewChild`.',
         },
       ],
     },
   },
   {
-    files: ['**/*_test.ts', '**/*.spec.ts', '**/*.d.ts', '**/testing/**', '**/stubs/**', '**/mock_*.ts'],
+    files: [
+      '**/*_test.ts',
+      '**/*.spec.ts',
+      '**/*.d.ts',
+      '**/testing/**',
+      '**/stubs/**',
+      '**/mock_*.ts',
+    ],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
@@ -137,22 +140,18 @@ export default tseslint.config(
       'no-restricted-syntax': [
         'error',
         {
-          selector:
-            'Decorator[expression.callee.name="Input"], Decorator[expression.name="Input"]',
-          message:
-            'Use signal primitives `input()` instead of `@Input`.',
+          selector: 'Decorator[expression.callee.name="Input"], Decorator[expression.name="Input"]',
+          message: 'Use signal primitives `input()` instead of `@Input`.',
         },
         {
           selector:
             'Decorator[expression.callee.name="Output"], Decorator[expression.name="Output"]',
-          message:
-            'Use signal primitives `output()` instead of `@Output`.',
+          message: 'Use signal primitives `output()` instead of `@Output`.',
         },
         {
           selector:
             'Decorator[expression.callee.name="ViewChild"], Decorator[expression.name="ViewChild"]',
-          message:
-            'Use signal primitives `viewChild()` instead of `@ViewChild`.',
+          message: 'Use signal primitives `viewChild()` instead of `@ViewChild`.',
         },
         {
           selector:
