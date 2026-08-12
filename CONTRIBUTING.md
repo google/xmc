@@ -28,7 +28,7 @@ This project follows
 
 ### Reporting Issues & Incidents
 
-We use GitHub Issues to track bugs, production incidents, feature requests, and documentation improvements. When submitting an issue:
+GitHub Issues can be used to report and track bugs, production incidents, feature requests, and documentation improvements. Note that GitHub Issues is not used exclusively and does not represent an exhaustive list of all internal issues or roadmap planning. When submitting an issue:
 
 1. **Use the appropriate issue template**: Choose between [Bug Report](https://github.com/google/xmc/issues/new?template=bug_report.yml), [Incident Report](https://github.com/google/xmc/issues/new?template=incident_report.yml), or [Feature Request](https://github.com/google/xmc/issues/new?template=feature_request.yml).
 2. **Provide full environment context**: Specify your XMC version / commit SHA, GKE/Kubernetes version, deployment topology (Blueprint v1 vs v2), and accelerator hardware (TPU/GPU models).
