@@ -21,13 +21,14 @@ compat_go_library(
     srcs = [
         "config.go",
         "main.go",
-        "server.go",
     ],
     importpath = "xmanager_cloud/cmd/dashboard_service/main",
     visibility = ["//visibility:private"],
     deps = [
         "//api/protos/dashboard:api_go_grpc_proto",
         "//api/protos/dashboard:api_go_proto",
+        "//cmd/dashboard_service/server",
+        "//internal/auth",
         "//internal/compat/google",
         "//internal/dashboard/dataengine",
         "//internal/logging",
@@ -35,12 +36,12 @@ compat_go_library(
         "//pkg/auth/oauth2",
         "//pkg/clickhouse",
         "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
+        "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_api//cloudidentity/v1beta1",
+        "@org_golang_google_api//option",
         "@org_golang_google_grpc//:go_default_library",
-        "@org_golang_google_grpc//codes:go_default_library",
         "@org_golang_google_grpc//credentials/insecure:go_default_library",
         "@org_golang_google_grpc//reflection:go_default_library",
-        "@org_golang_google_grpc//status:go_default_library",
-        "@org_golang_google_protobuf//types/known/emptypb",
     ],
 )
 
@@ -66,4 +67,7 @@ compat_go_test(
     name = "server_test",
     srcs = ["server_test.go"],
     embed = [":dashboard_service_lib"],
+    deps = [
+        "//pkg/auth/oauth2",
+    ],
 )

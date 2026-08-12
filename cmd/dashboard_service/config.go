@@ -17,19 +17,15 @@ package main
 import (
 	"flag"
 	"os"
+
+	"xmanager_cloud/cmd/dashboard_service/server"
 )
 
-// Config holds the configuration for the dashboard service.
-type Config struct {
-	Port      string
-	GRPCPort  string
-	ProjectID string
-}
-
 var (
-	port      string
-	grpcPort  string
-	projectID string
+	port                string
+	grpcPort            string
+	projectID           string
+	spannerDatabaseName string
 )
 
 func init() {
@@ -40,11 +36,12 @@ func init() {
 	flag.StringVar(&port, "port", defaultPort, "The HTTP server port to listen on.")
 	flag.StringVar(&grpcPort, "grpc_port", "50051", "The gRPC server port to listen on.")
 	flag.StringVar(&projectID, "project_id", os.Getenv("GOOGLE_CLOUD_PROJECT"), "The GCP project ID.")
+	flag.StringVar(&spannerDatabaseName, "spanner_database_name", os.Getenv("SPANNER_DATABASE_NAME"), "The Spanner database resource name.")
 }
 
 // LoadConfig loads and returns the configuration.
-func LoadConfig() *Config {
-	return &Config{
+func LoadConfig() *server.Config {
+	return &server.Config{
 		Port:      port,
 		GRPCPort:  grpcPort,
 		ProjectID: projectID,

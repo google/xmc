@@ -267,7 +267,25 @@ const (
 	ArtifactResource
 	// OperationResource represents an operation resource.
 	OperationResource
+	// DashboardResource represents a dashboard resource.
+	DashboardResource
 )
+
+// ValidateDashboardName checks if a given dashboard name is valid.
+// It ensures that the name is in the correct format "dashboards/{dashboard_id}".
+// It returns the dashboard ID string if it is valid.
+func ValidateDashboardName(name string) (string, error) {
+	parts := strings.Split(name, "/")
+	if len(parts) != 2 || parts[0] != "dashboards" || parts[1] == "" {
+		return "", fmt.Errorf("dashboard name must be in the format 'dashboards/{dashboard_id}': %w", status.ErrInvalidArgument)
+	}
+	return parts[1], nil
+}
+
+// ConstructDashboardName constructs the name of a dashboard in the format "dashboards/{dashboard_id}".
+func ConstructDashboardName(dashboardID string) string {
+	return fmt.Sprintf("dashboards/%s", dashboardID)
+}
 
 // GetResourceType identifies the type of the given resource name.
 func GetResourceType(name string) ResourceType {
@@ -288,6 +306,9 @@ func GetResourceType(name string) ResourceType {
 	}
 	if _, _, _, err := ValidateOperationName(name); err == nil {
 		return OperationResource
+	}
+	if _, err := ValidateDashboardName(name); err == nil {
+		return DashboardResource
 	}
 	return UnknownResource
 }

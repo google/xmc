@@ -26,17 +26,23 @@ import (
 	"syscall"
 	"time"
 
+	"cloud.google.com/go/spanner"
 	"go/google"
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
+	"google.golang.org/api/cloudidentity/v1beta1"
+	"google.golang.org/api/option"
+
+	"xmanager_cloud/cmd/dashboard_service/server"
+	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/dashboard/dataengine"
+	"xmanager_cloud/internal/storage/spanner/dashboard"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/clickhouse"
-
-	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 )
 
 func setupHTTPHandler(authenticator *oauth2.Authenticator, gwmux http.Handler) http.Handler {
@@ -96,13 +102,58 @@ func main() {
 		}
 	}
 
+	var repo server.DashboardRepository
+	if spannerDatabaseName != "" {
+		sessionPoolConfig := spanner.SessionPoolConfig{
+			TrackSessionHandles: true,
+			InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
+				ActionOnInactiveTransaction: spanner.Warn,
+			},
+		}
+		sc, err := spanner.NewClientWithConfig(
+			ctx,
+			spannerDatabaseName,
+			spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
+			option.WithQuotaProject(cfg.ProjectID),
+		)
+		if err != nil {
+			logging.Fatal(ctx, "failed to create spanner client", "error", err)
+		}
+		defer sc.Close()
+
+		spannerRepo, err := dashboard.NewRepository(sc)
+		if err != nil {
+			logging.Fatal(ctx, "failed to initialize dashboard repository", "error", err)
+		}
+		repo = spannerRepo
+	}
+
+	var authorizer auth.AuthorizerInterface
+	idService, err := cloudidentity.NewService(ctx, option.WithQuotaProject(cfg.ProjectID))
+	if err != nil {
+		logging.Info(ctx, "Cloud Identity service not available at startup", "error", err)
+	}
+	authorizer, err = auth.NewAuthorizer(
+		ctx,
+		idService,
+		10*time.Minute,
+		1*time.Minute,
+		[]string{oauthCfg.ClientID},
+		auth.DefaultIAPIssuer,
+		oauthCfg.MockAuth,
+		[]byte(oauthCfg.JWTSecret),
+	)
+	if err != nil {
+		logging.Info(ctx, "Authorizer initialized without full IAP configuration", "error", err)
+	}
+
 	// 1. Setup gRPC server
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
-	spb.RegisterDashboardServiceServer(grpcServer, newServer(cfg, nil, de))
+	spb.RegisterDashboardServiceServer(grpcServer, server.NewServer(cfg, repo, authorizer, de))
 	reflection.Register(grpcServer)
 
 	errChan := make(chan error, 2)

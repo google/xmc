@@ -707,6 +707,74 @@ func TestValidateArtifactParent(t *testing.T) {
 	}
 }
 
+func TestValidateDashboardName(t *testing.T) {
+	tests := []struct {
+		name     string
+		dashName string
+		wantID   string
+		wantErr  error
+	}{
+		{
+			name:     "valid_dashboard_name",
+			dashName: "dashboards/123",
+			wantID:   "123",
+			wantErr:  nil,
+		},
+		{
+			name:     "valid_dashboard_name_with_uuid",
+			dashName: "dashboards/550e8400-e29b-41d4-a716-446655440000",
+			wantID:   "550e8400-e29b-41d4-a716-446655440000",
+			wantErr:  nil,
+		},
+		{
+			name:     "invalid_dashboard_name_format",
+			dashName: "invalid/123",
+			wantID:   "",
+			wantErr:  status.ErrInvalidArgument,
+		},
+		{
+			name:     "invalid_dashboard_name_parts",
+			dashName: "dashboards/123/456",
+			wantID:   "",
+			wantErr:  status.ErrInvalidArgument,
+		},
+		{
+			name:     "invalid_dashboard_name_empty_id",
+			dashName: "dashboards/",
+			wantID:   "",
+			wantErr:  status.ErrInvalidArgument,
+		},
+		{
+			name:     "invalid_dashboard_name_empty_string",
+			dashName: "",
+			wantID:   "",
+			wantErr:  status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ValidateDashboardName(tc.dashName)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateDashboardName(%q) returned an unexpected error: %v, want %v", tc.dashName, err, tc.wantErr)
+			}
+
+			if got != tc.wantID {
+				t.Errorf("ValidateDashboardName(%q) = %q, want: %q", tc.dashName, got, tc.wantID)
+			}
+		})
+	}
+}
+
+func TestConstructDashboardName(t *testing.T) {
+	dashID := "123"
+	want := "dashboards/123"
+	got := ConstructDashboardName(dashID)
+	if got != want {
+		t.Errorf("ConstructDashboardName(%q) = %q, want: %q", dashID, got, want)
+	}
+}
+
 func TestGetResourceType(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -742,6 +810,11 @@ func TestGetResourceType(t *testing.T) {
 			name:     "valid_operation",
 			resource: "experiments/1/workUnits/1/operations/uuid",
 			want:     OperationResource,
+		},
+		{
+			name:     "valid_dashboard",
+			resource: "dashboards/123",
+			want:     DashboardResource,
 		},
 		{
 			name:     "unknown_resource",
