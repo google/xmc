@@ -290,7 +290,8 @@ ON WorkUnits (
   PositionInQueue ASC, 
   CreateTime ASC, 
   WorkUnitId ASC
-) WHERE IsPendingOrRunningJob IS NOT NULL;
+) STORING (IsPendingOrRunningJob)
+WHERE IsPendingOrRunningJob IS NOT NULL;
 
 -- Table that holds the list of operations.
 CREATE TABLE Operations (

@@ -56,4 +56,5 @@ ON WorkUnits (
   PositionInQueue ASC, 
   CreateTime ASC, 
   WorkUnitId ASC
-) WHERE IsPendingOrRunningJob IS NOT NULL;
+) STORING (IsPendingOrRunningJob)
+WHERE IsPendingOrRunningJob IS NOT NULL;
