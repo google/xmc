@@ -53,7 +53,7 @@ describe('ResourceDashboard Container', () => {
       {
         resourceType: 'nvidia.com/gpu',
         totalCapacity: 64,
-        freeCapacity: 64,
+        freeCapacity: 56,
       },
     ],
   };

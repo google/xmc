@@ -108,6 +108,23 @@ describe('QueueCardComponent', () => {
     expect(await harness.getFlavorRowText(0)).toContain('cpu');
   });
 
+  it('should restore all flavor capacity sub-cards when activeResourceFilters are cleared', async () => {
+    hostInstance.queue.set({
+      queueName: 'multi-res-queue',
+      queueCapacity: [
+        { resourceType: 'nvidia.com/gpu', totalCapacity: 64, freeCapacity: 56 },
+        { resourceType: 'cpu', totalCapacity: 512, freeCapacity: 448 },
+      ],
+    });
+    hostInstance.activeResourceFilters.set(['cpu']);
+    fixture.detectChanges();
+    expect(await harness.getFlavorRowCount()).toBe(1);
+
+    hostInstance.activeResourceFilters.set([]);
+    fixture.detectChanges();
+    expect(await harness.getFlavorRowCount()).toBe(2);
+  });
+
   it('should update selected state and emit queue selection output on click', async () => {
     expect(await harness.isSelected()).toBeFalse();
 
