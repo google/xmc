@@ -16,25 +16,25 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background-color: #fef7e0;
-  border: 1px solid #fdd663;
+  background-color: var(--xmc-wip-banner-bg, #fef7e0);
+  border: 1px solid var(--xmc-wip-banner-border, #fdd663);
   border-radius: 6px;
   padding: 10px 14px;
   font-size: 13px;
   font-weight: 500;
-  color: #b06000;
+  color: var(--xmc-wip-banner-text, #b06000);
   margin-top: 8px;
 
   .wip-icon {
     font-size: 18px;
     width: 18px;
     height: 18px;
-    color: #e37400;
+    color: var(--xmc-wip-banner-icon, #e37400);
   }
 
   .wip-text {
     font-size: 13px;
     font-weight: 600;
-    color: #b06000;
+    color: var(--xmc-wip-banner-text, #b06000);
   }
 }

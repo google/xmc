@@ -48,8 +48,11 @@ describe('WipBannerComponent', () => {
     harness = await loader.getHarness(WipBannerHarness);
   });
 
-  it('should render default Work in Progress banner text', async () => {
-    expect(await harness.getText()).toBe('Work in Progress');
+  it('should render default Work in Progress banner text when input is omitted', async () => {
+    const defaultFixture = TestBed.createComponent(WipBannerComponent);
+    const loader = TestbedHarnessEnvironment.loader(defaultFixture);
+    const defaultHarness = await loader.getHarness(WipBannerHarness);
+    expect(await defaultHarness.getText()).toBe('Work in Progress');
   });
 
   it('should render updated banner text when input changes', async () => {

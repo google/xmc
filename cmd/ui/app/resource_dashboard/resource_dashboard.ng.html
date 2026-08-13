@@ -34,7 +34,7 @@
         <xmc-queue-jobs-table [queueName]="selectedQueue()" />
       </div>
     </div>
-  } @else {
+  } @else if (activeTab() === TAB_RESOURCE_AVAILABILITY) {
     <div class="resource-availability-container">
       <xmc-wip-banner />
     </div>
