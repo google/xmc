@@ -32,25 +32,25 @@ const (
 	workUnitSearchStaleness = 15 * time.Second
 )
 
-func (s *Server) ListWorkUnits(ctx context.Context, req *apipb.ListWorkUnitsRequest) (*apipb.ListWorkUnitsResponse, error) {
+func (h *WorkUnitHandler) ListWorkUnits(ctx context.Context, req *apipb.ListWorkUnitsRequest) (*apipb.ListWorkUnitsResponse, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Fetch work units", "request", req)
-	resp, err := s.listWorkUnitsWithStaleness(ctx, req, 0*time.Second)
+	resp, err := h.listWorkUnitsWithStaleness(ctx, req, 0*time.Second)
 	logging.Info(ctx, "Fetched work units", "response", resp)
 	return resp, err
 }
 
-func (s *Server) SearchWorkUnits(ctx context.Context, req *apipb.ListWorkUnitsRequest) (*apipb.ListWorkUnitsResponse, error) {
+func (h *WorkUnitHandler) SearchWorkUnits(ctx context.Context, req *apipb.ListWorkUnitsRequest) (*apipb.ListWorkUnitsResponse, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Search work units", "request", req)
-	resp, err := s.listWorkUnitsWithStaleness(ctx, req, workUnitSearchStaleness)
+	resp, err := h.listWorkUnitsWithStaleness(ctx, req, workUnitSearchStaleness)
 	logging.Info(ctx, "Searched work units", "response", resp)
 	return resp, err
 }
 
-func (s *Server) listWorkUnitsWithStaleness(ctx context.Context, req *apipb.ListWorkUnitsRequest, staleness time.Duration) (*apipb.ListWorkUnitsResponse, error) {
+func (h *WorkUnitHandler) listWorkUnitsWithStaleness(ctx context.Context, req *apipb.ListWorkUnitsRequest, staleness time.Duration) (*apipb.ListWorkUnitsResponse, error) {
 	// 1. Authenticate the user.
-	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	email, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func (s *Server) listWorkUnitsWithStaleness(ctx context.Context, req *apipb.List
 	ctx = logging.WithExperimentName(ctx, req.GetParent())
 
 	// 3. Authorize the caller to get the work units for this experiment.
-	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_READER.Enum())
+	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_READER.Enum())
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func (s *Server) listWorkUnitsWithStaleness(ctx context.Context, req *apipb.List
 	}
 
 	// 3. Get the list of WorkUnits from the storage layer.
-	workUnits, nextPageToken, err := s.storage.ListWorkUnits(ctx, req.GetParent(), req.GetPageSize(), req.GetPageToken(), req.GetFilter(), req.GetOrderBy(), staleness)
+	workUnits, nextPageToken, err := h.storage.ListWorkUnits(ctx, req.GetParent(), req.GetPageSize(), req.GetPageToken(), req.GetFilter(), req.GetOrderBy(), staleness)
 	if err != nil {
 		statusErr, ok := status.FromError(err)
 		if !ok {

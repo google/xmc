@@ -269,7 +269,7 @@ func TestRestartWorkUnit_DependencyFailures(t *testing.T) {
 				opts = append(opts, withXidClient(tc.xidClient))
 			}
 			if tc.taskQueueClient != nil {
-				opts = append(opts, withTaskQueueClient(tc.taskQueueClient))
+				opts = append(opts, withWorkUnitActuator(tc.taskQueueClient))
 			}
 			server := newTestServer(t, opts...)
 			_, err := server.RestartWorkUnit(ctx, goodReq)
@@ -301,7 +301,7 @@ func TestRestartWorkUnit_TaskEnqueueFails(t *testing.T) {
 	server := newTestServer(t,
 		withStorage(storage),
 		withXidClient(xidClient),
-		withTaskQueueClient(taskQueueClient),
+		withWorkUnitActuator(taskQueueClient),
 	)
 	_, err := server.RestartWorkUnit(ctx, goodReq)
 	if !errors.Is(err, status.ErrInternal) {

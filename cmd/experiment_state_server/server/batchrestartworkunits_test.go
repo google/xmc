@@ -429,7 +429,7 @@ func TestBatchRestartWorkUnits_TaskEnqueueFails(t *testing.T) {
 	server := newTestServer(t,
 		withStorage(storage),
 		withXidClient(xidClient),
-		withTaskQueueClient(taskQueueClient),
+		withWorkUnitActuator(taskQueueClient),
 	)
 	_, err := server.BatchRestartWorkUnits(ctx, goodReq)
 	if !errors.Is(err, status.ErrInternal) {

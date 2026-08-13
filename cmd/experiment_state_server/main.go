@@ -103,11 +103,11 @@ func main() {
 
 	// 6. Set up the gRPC server.
 	experimentStateServer := server.New(server.Params{
-		Config:          &cfg,
-		Storage:         storage,
-		Authorizer:      auth,
-		XidClient:       xidClient,
-		TaskQueueClient: taskQueueClient,
+		Config:           &cfg,
+		Storage:          storage,
+		Authorizer:       auth,
+		XidClient:        xidClient,
+		WorkUnitActuator: taskQueueClient,
 	})
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)

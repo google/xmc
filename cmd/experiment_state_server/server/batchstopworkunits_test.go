@@ -346,7 +346,7 @@ func TestBatchStopWorkUnits_TaskEnqueueFails(t *testing.T) {
 	server := newTestServer(t,
 		withStorage(storage),
 		withXidClient(xidClient),
-		withTaskQueueClient(taskQueueClient),
+		withWorkUnitActuator(taskQueueClient),
 	)
 
 	req := &apipb.BatchStopWorkUnitsRequest{Parent: "experiments/123"}

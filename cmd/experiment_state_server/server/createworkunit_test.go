@@ -46,9 +46,8 @@ func TestCreateWorkUnit_HappyPath(t *testing.T) {
 	ctx := context.Background()
 	cleanup := tq.MockGenerateOIDCTokenForTest()
 	defer cleanup()
-	server, _ := createExperimentStateServer(ctx, t)
 	realTaskQueueClient := tq.CreateTaskQueueClient(ctx, t)
-	server.taskQueueClient = realTaskQueueClient
+	server, _ := createExperimentStateServer(ctx, t, withWorkUnitActuator(realTaskQueueClient))
 	redisFake := tq.GetFakeRedisClient(realTaskQueueClient)
 
 	exp := &msgpb.Experiment{
@@ -458,7 +457,7 @@ func TestCreateWorkUnit_TaskEnqueueFails(t *testing.T) {
 	server := newTestServer(t,
 		withConfig(cfg),
 		withXidClient(xidClient),
-		withTaskQueueClient(taskQueueClient),
+		withWorkUnitActuator(taskQueueClient),
 	)
 
 	_, err := server.CreateWorkUnit(ctx, proto.Clone(goodReq).(*apipb.CreateWorkUnitRequest))

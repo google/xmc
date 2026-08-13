@@ -24,11 +24,13 @@ import (
 	timestamppb "protobuf/timestamp_go_proto"
 	rpcstatuspb "rpc/status_go_proto"
 	statusutils "task/go/status"
+	"xmanager_cloud/experiment_state_server/config"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/storage"
 	ee "xmanager_cloud/toollibs/execution_environments/executionenvironments"
 	"xmanager_cloud/validator/validator"
+	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -61,32 +63,58 @@ func propagateIAPJWT(ctx context.Context) context.Context {
 	return ctx
 }
 
-// Utility function to retrieve an XID entry from the XID service.
-func (s *Server) getXid(ctx context.Context, name string) (*xidmsgpb.XidEntry, error) {
+func getXid(ctx context.Context, xidClient xidgrpcpb.XidServiceClient, name string) (*xidmsgpb.XidEntry, error) {
 	req := &xidapipb.GetXidEntryRequest{
 		Name: &name,
 	}
 
-	res, err := s.xidClient.GetXidEntry(propagateIAPJWT(ctx), req)
+	res, err := xidClient.GetXidEntry(propagateIAPJWT(ctx), req)
 	if err != nil {
 		return nil, fmt.Errorf("rpc GetXid failed: %w", err)
 	}
 	return res, nil
 }
 
-// Utility function to retrieve an XID entry from the XID service.
-func (s *Server) checkUserAuthorization(ctx context.Context, name string, user string, roleType *xidmsgpb.XidAcls_RoleType) (bool, error) {
+func (h *ExperimentHandler) getXid(ctx context.Context, name string) (*xidmsgpb.XidEntry, error) {
+	return getXid(ctx, h.xidClient, name)
+}
+
+func (h *ArtifactHandler) getXid(ctx context.Context, name string) (*xidmsgpb.XidEntry, error) {
+	return getXid(ctx, h.xidClient, name)
+}
+
+func (h *WorkUnitHandler) getXid(ctx context.Context, name string) (*xidmsgpb.XidEntry, error) {
+	return getXid(ctx, h.xidClient, name)
+}
+
+func checkUserAuthorization(ctx context.Context, xidClient xidgrpcpb.XidServiceClient, name string, user string, roleType *xidmsgpb.XidAcls_RoleType) (bool, error) {
 	req := &xidapipb.CheckUserAuthorizationRequest{
 		Name:     &name,
 		User:     &user,
 		RoleType: roleType,
 	}
 
-	resp, err := s.xidClient.CheckUserAuthorization(propagateIAPJWT(ctx), req)
+	resp, err := xidClient.CheckUserAuthorization(propagateIAPJWT(ctx), req)
 	if err != nil {
 		return false, fmt.Errorf("rpc CheckUserAuthorization failed: %w", err)
 	}
 	return *resp.Authorized, nil
+}
+
+func (h *ExperimentHandler) checkUserAuthorization(ctx context.Context, name string, user string, roleType *xidmsgpb.XidAcls_RoleType) (bool, error) {
+	return checkUserAuthorization(ctx, h.xidClient, name, user, roleType)
+}
+
+func (h *ArtifactHandler) checkUserAuthorization(ctx context.Context, name string, user string, roleType *xidmsgpb.XidAcls_RoleType) (bool, error) {
+	return checkUserAuthorization(ctx, h.xidClient, name, user, roleType)
+}
+
+func (h *StatusMessageHandler) checkUserAuthorization(ctx context.Context, name string, user string, roleType *xidmsgpb.XidAcls_RoleType) (bool, error) {
+	return checkUserAuthorization(ctx, h.xidClient, name, user, roleType)
+}
+
+func (h *WorkUnitHandler) checkUserAuthorization(ctx context.Context, name string, user string, roleType *xidmsgpb.XidAcls_RoleType) (bool, error) {
+	return checkUserAuthorization(ctx, h.xidClient, name, user, roleType)
 }
 
 func newWorkUnitExecution(xid int64, wid int64) *msgpb.WorkUnitExecution {
@@ -108,7 +136,7 @@ func newWorkUnitExecution(xid int64, wid int64) *msgpb.WorkUnitExecution {
 	}
 }
 
-func (s *Server) stopOperationOnError(ctx context.Context, operation *lropb.Operation, err error) {
+func (h *WorkUnitHandler) stopOperationOnError(ctx context.Context, operation *lropb.Operation, err error) {
 	if err == nil {
 		return
 	}
@@ -130,7 +158,7 @@ func (s *Server) stopOperationOnError(ctx context.Context, operation *lropb.Oper
 		logging.Error(ctx, "Failed to validate operation name", "error", err)
 		return
 	}
-	_, err = s.storage.UpdateWorkUnitOperation(ctx, &storage.OperationUpdate{
+	_, err = h.storage.UpdateWorkUnitOperation(ctx, &storage.OperationUpdate{
 		XID: xid,
 		WID: wid,
 		OID: oid,
@@ -150,11 +178,11 @@ func (s *Server) stopOperationOnError(ctx context.Context, operation *lropb.Oper
 	}
 }
 
-func (s *Server) updateWorkUnitExecutionStatusMessage(ctx context.Context, xid int64, wid int64, eid int64, msg *msgpb.StructuredMessage, forceUpdate bool) error {
+func (h *WorkUnitHandler) updateWorkUnitExecutionStatusMessage(ctx context.Context, xid int64, wid int64, eid int64, msg *msgpb.StructuredMessage, forceUpdate bool) error {
 	msg.Source = msgpb.StructuredMessage_XMANAGER_BACKEND
 	msg.CreateTime = timestamppb.Now()
 
-	_, err := s.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+	_, err := h.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
 		{
 			WID: wid,
 			EID: eid,
@@ -170,7 +198,7 @@ func (s *Server) updateWorkUnitExecutionStatusMessage(ctx context.Context, xid i
 	return err
 }
 
-func (s *Server) handleEnqueueActionError(ctx context.Context, action string, workUnit *msgpb.WorkUnit, xid, wid int64, severity msgpb.StructuredMessage_Severity, err error) error {
+func (h *WorkUnitHandler) handleEnqueueActionError(ctx context.Context, action string, workUnit *msgpb.WorkUnit, xid, wid int64, severity msgpb.StructuredMessage_Severity, err error) error {
 	logging.Error(ctx, fmt.Sprintf("Failed to enqueue %s request for work unit", action), "error", err)
 	_, _, eid, valErr := validator.ValidateWorkUnitExecutionName(workUnit.GetCurrentWorkUnitExecution().GetName())
 	if valErr != nil {
@@ -179,7 +207,7 @@ func (s *Server) handleEnqueueActionError(ctx context.Context, action string, wo
 	}
 
 	userFacingText := fmt.Sprintf("Failed to %s work unit. Please try again.", action)
-	if statusMsgErr := s.updateWorkUnitExecutionStatusMessage(ctx, xid, wid, eid, &msgpb.StructuredMessage{
+	if statusMsgErr := h.updateWorkUnitExecutionStatusMessage(ctx, xid, wid, eid, &msgpb.StructuredMessage{
 		UserFacingText: userFacingText,
 		Severity:       severity,
 		Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,
@@ -204,7 +232,7 @@ func newExperimentStatus(name string) *msgpb.ExperimentStatus {
 	}
 }
 
-func (s *Server) createXid(ctx context.Context, creator, endpoint string, acls *xidmsgpb.XidAcls, parentXID string) (*xidmsgpb.XidEntry, error) {
+func createXid(ctx context.Context, xidClient xidgrpcpb.XidServiceClient, creator, endpoint string, acls *xidmsgpb.XidAcls, parentXID string) (*xidmsgpb.XidEntry, error) {
 	req := &xidapipb.CreateXidEntryRequest{
 		XidEntry: &xidmsgpb.XidEntry{
 			Creator: &creator,
@@ -216,7 +244,7 @@ func (s *Server) createXid(ctx context.Context, creator, endpoint string, acls *
 		},
 	}
 
-	xidEntry, err := s.xidClient.CreateXidEntry(propagateIAPJWT(ctx), req)
+	xidEntry, err := xidClient.CreateXidEntry(propagateIAPJWT(ctx), req)
 	if err != nil {
 		return nil, fmt.Errorf("rpc CreateXid failed: %w", err)
 	}
@@ -224,10 +252,26 @@ func (s *Server) createXid(ctx context.Context, creator, endpoint string, acls *
 	return xidEntry, nil
 }
 
-func (s *Server) defaultExecutionEnvironment() (ee.Environment, error) {
-	executionEnv, ok := ee.Lookup(s.cfg.DefaultExecutionEnvironment)
+func (h *ExperimentHandler) createXid(ctx context.Context, creator, endpoint string, acls *xidmsgpb.XidAcls, parentXID string) (*xidmsgpb.XidEntry, error) {
+	return createXid(ctx, h.xidClient, creator, endpoint, acls, parentXID)
+}
+
+func (h *ArtifactHandler) createXid(ctx context.Context, creator, endpoint string, acls *xidmsgpb.XidAcls, parentXID string) (*xidmsgpb.XidEntry, error) {
+	return createXid(ctx, h.xidClient, creator, endpoint, acls, parentXID)
+}
+
+func defaultExecutionEnvironment(cfg *config.Config) (ee.Environment, error) {
+	executionEnv, ok := ee.Lookup(cfg.DefaultExecutionEnvironment)
 	if !ok {
-		return nil, fmt.Errorf("failed to get execution environment %q: %w", s.cfg.DefaultExecutionEnvironment, statusutils.ErrInternal)
+		return nil, fmt.Errorf("failed to get execution environment %q: %w", cfg.DefaultExecutionEnvironment, statusutils.ErrInternal)
 	}
 	return executionEnv, nil
+}
+
+func (h *ExperimentHandler) defaultExecutionEnvironment() (ee.Environment, error) {
+	return defaultExecutionEnvironment(h.cfg)
+}
+
+func (h *WorkUnitHandler) defaultExecutionEnvironment() (ee.Environment, error) {
+	return defaultExecutionEnvironment(h.cfg)
 }

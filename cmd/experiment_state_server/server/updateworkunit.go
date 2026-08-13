@@ -29,13 +29,13 @@ import (
 )
 
 // UpdateWorkUnit updates a work unit's data.
-func (s *Server) UpdateWorkUnit(ctx context.Context, req *apipb.UpdateWorkUnitRequest) (*msgpb.WorkUnit, error) {
+func (h *WorkUnitHandler) UpdateWorkUnit(ctx context.Context, req *apipb.UpdateWorkUnitRequest) (*msgpb.WorkUnit, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Update work unit", "request", req)
 
 	// 1. Authenticate the user.
 	logging.Debug(ctx, "Extracting user identity from context")
-	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	email, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (s *Server) UpdateWorkUnit(ctx context.Context, req *apipb.UpdateWorkUnitRe
 	ctx = logging.WithWorkUnitName(ctx, name)
 
 	// 3. Authorize the caller to update work units for this experiment.
-	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
+	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +67,7 @@ func (s *Server) UpdateWorkUnit(ctx context.Context, req *apipb.UpdateWorkUnitRe
 		WorkUnit:   req.GetWorkUnit(),
 		UpdateMask: req.GetUpdateMask(),
 	}
-	res, err := s.storage.UpdateWorkUnit(ctx, update)
+	res, err := h.storage.UpdateWorkUnit(ctx, update)
 	if err != nil {
 		logging.Error(ctx, "Failed to update work unit", "error", err)
 		return nil, fmt.Errorf("failed to update work unit %s: %w (%v)", name, status.ErrInternal, err)
@@ -75,7 +75,7 @@ func (s *Server) UpdateWorkUnit(ctx context.Context, req *apipb.UpdateWorkUnitRe
 	originalWu, returnedWu := res.Original, res.Updated
 
 	// 5. Check if we need to enqueue a task to update the work unit execution.
-	updateAction, err := s.shouldEnqueueWorkUnitTask(ctx, xid, originalWu, returnedWu)
+	updateAction, err := h.shouldEnqueueWorkUnitTask(ctx, xid, originalWu, returnedWu)
 	if err != nil {
 		logging.Error(ctx, "Failed to check if we need to enqueue a task to update the work unit execution", "error", err)
 		return nil, fmt.Errorf("failed to check if we need to enqueue a task to update the work unit execution: %w (%v)", status.ErrInternal, err)
@@ -92,7 +92,7 @@ func (s *Server) UpdateWorkUnit(ctx context.Context, req *apipb.UpdateWorkUnitRe
 			},
 		}
 
-		err = s.taskQueueClient.EnqueueWorkUnitTask(ctx, returnedWu.GetCurrentWorkUnitExecution().GetName(), returnedWu, action, "")
+		err = h.actuator.EnqueueWorkUnitTask(ctx, returnedWu.GetCurrentWorkUnitExecution().GetName(), returnedWu, action, "")
 		if err != nil {
 			logging.Error(ctx, "Failed to enqueue work unit for updating the corresponding work unit execution", "error", err)
 			return nil, fmt.Errorf("failed to enqueue work unit for updating the corresponding work unit execution %s: %w (%v)", returnedWu.GetName(), status.ErrInternal, err)
@@ -104,7 +104,7 @@ func (s *Server) UpdateWorkUnit(ctx context.Context, req *apipb.UpdateWorkUnitRe
 	return returnedWu, nil
 }
 
-func (s *Server) shouldEnqueueWorkUnitTask(ctx context.Context, xid int64, originalWu, returnedWu *msgpb.WorkUnit) (*actuatortaskpb.UpdateAction, error) {
+func (h *WorkUnitHandler) shouldEnqueueWorkUnitTask(ctx context.Context, xid int64, originalWu, returnedWu *msgpb.WorkUnit) (*actuatortaskpb.UpdateAction, error) {
 	updateAction := &actuatortaskpb.UpdateAction{
 		UpdateMask: &fmpb.FieldMask{},
 	}
@@ -112,7 +112,7 @@ func (s *Server) shouldEnqueueWorkUnitTask(ctx context.Context, xid int64, origi
 	if originalWu.GetPriority() != returnedWu.GetPriority() {
 		updateAction.UpdateMask.Paths = append(updateAction.UpdateMask.Paths, "priority")
 
-		exp, err := s.storage.FetchExperiment(ctx, xid)
+		exp, err := h.storage.FetchExperiment(ctx, xid)
 		if err != nil {
 			logging.Error(ctx, "Failed to fetch experiment", "error", err)
 			return nil, fmt.Errorf("failed to fetch experiment: %w (%v)", status.ErrInternal, err)

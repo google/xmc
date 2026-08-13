@@ -115,20 +115,20 @@ func withXidClient(x xidgrpcpb.XidServiceClient) testServerOpt {
 	}
 }
 
-func withTaskQueueClient(tqClient TaskQueueClient) testServerOpt {
+func withWorkUnitActuator(actuator WorkUnitActuator) testServerOpt {
 	return func(p *Params) {
-		p.TaskQueueClient = tqClient
+		p.WorkUnitActuator = actuator
 	}
 }
 
 func newTestServer(t *testing.T, opts ...testServerOpt) *Server {
 	t.Helper()
 	p := Params{
-		Config:          &config.Config{},
-		Storage:         &storage.MockStorage{},
-		Authorizer:      createTestAuthorizer(context.Background(), t),
-		XidClient:       &mockXidClient{},
-		TaskQueueClient: &tq.FakeClient{},
+		Config:           &config.Config{},
+		Storage:          &storage.MockStorage{},
+		Authorizer:       createTestAuthorizer(context.Background(), t),
+		XidClient:        &mockXidClient{},
+		WorkUnitActuator: &tq.FakeClient{},
 	}
 	for _, opt := range opts {
 		opt(&p)
@@ -136,7 +136,7 @@ func newTestServer(t *testing.T, opts ...testServerOpt) *Server {
 	return New(p)
 }
 
-func createExperimentStateServer(ctx context.Context, t *testing.T) (*Server, *tq.FakeClient) {
+func createExperimentStateServer(ctx context.Context, t *testing.T, opts ...testServerOpt) (*Server, *tq.FakeClient) {
 	t.Helper()
 	xidStorageClient, essStorageClient := emulator.Setup(ctx, t)
 	storage, _ := spanner.NewStorage(essStorageClient)
@@ -155,13 +155,17 @@ func createExperimentStateServer(ctx context.Context, t *testing.T) (*Server, *t
 	}
 	xidClient := xidgrpcpb.NewXidServiceClient(conn)
 	taskQueueClient := &tq.FakeClient{}
-	return New(Params{
-		Config:          &cfg,
-		Storage:         storage,
-		Authorizer:      createTestAuthorizer(ctx, t),
-		XidClient:       xidClient,
-		TaskQueueClient: taskQueueClient,
-	}), taskQueueClient
+	p := Params{
+		Config:           &cfg,
+		Storage:          storage,
+		Authorizer:       createTestAuthorizer(ctx, t),
+		XidClient:        xidClient,
+		WorkUnitActuator: taskQueueClient,
+	}
+	for _, opt := range opts {
+		opt(&p)
+	}
+	return New(p), taskQueueClient
 }
 
 func createXidServer(ctx context.Context, t *testing.T, xidClient *googlespanner.Client) net.Listener {

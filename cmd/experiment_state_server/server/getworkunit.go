@@ -27,13 +27,13 @@ import (
 )
 
 // GetWorkUnit orchestrates the retrieval of a single work unit by its ID.
-func (s *Server) GetWorkUnit(ctx context.Context, req *apipb.GetWorkUnitRequest) (*msgpb.WorkUnit, error) {
+func (h *WorkUnitHandler) GetWorkUnit(ctx context.Context, req *apipb.GetWorkUnitRequest) (*msgpb.WorkUnit, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Fetch work unit", "request", req)
 
 	// 1. Authenticate the user.
 	logging.Debug(ctx, "Extracting user identity from context")
-	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	email, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func (s *Server) GetWorkUnit(ctx context.Context, req *apipb.GetWorkUnitRequest)
 	ctx = logging.WithWorkUnitName(ctx, name)
 
 	// 3. Authorize the caller to get the work unit from this experiment.
-	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_READER.Enum())
+	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_READER.Enum())
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func (s *Server) GetWorkUnit(ctx context.Context, req *apipb.GetWorkUnitRequest)
 
 	// 4. Retrieve the work unit from the storage layer.
 	logging.Debug(ctx, "Fetching work unit from storage")
-	wu, err := s.storage.FetchWorkUnit(ctx, xid, wid)
+	wu, err := h.storage.FetchWorkUnit(ctx, xid, wid)
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.NotFound {
 			logging.Warn(ctx, "Work unit not found in storage")

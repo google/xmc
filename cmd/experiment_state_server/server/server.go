@@ -26,39 +26,111 @@ import (
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 )
 
+var _ apipb.ExperimentStateServiceServer = (*Server)(nil)
+
 // Server implements the generated pb.ExperimentStateServiceServer interface.
 type Server struct {
-	apipb.UnimplementedExperimentStateServiceServer
+	storage storage.Storage
 
-	cfg             *config.Config
-	storage         storage.Storage
-	auth            auth.AuthorizerInterface
-	xidClient       xidgrpcpb.XidServiceClient
-	taskQueueClient TaskQueueClient
+	*ExperimentHandler
+	*WorkUnitHandler
+	*ArtifactHandler
+	*StatusMessageHandler
 }
 
-// TaskQueueClient defines the interface for task queue operations.
-type TaskQueueClient interface {
+// WorkUnitActuator defines the interface for task actuation on work units.
+type WorkUnitActuator interface {
 	EnqueueWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error
-	Close() error
+}
+
+// ExperimentHandler handles experiment lifecycle operations.
+type ExperimentHandler struct {
+	cfg       *config.Config
+	storage   storage.Storage
+	auth      auth.AuthorizerInterface
+	xidClient xidgrpcpb.XidServiceClient
+}
+
+// ArtifactHandler handles artifact operations.
+type ArtifactHandler struct {
+	cfg       *config.Config
+	storage   storage.Storage
+	auth      auth.AuthorizerInterface
+	xidClient xidgrpcpb.XidServiceClient
+}
+
+// StatusMessageHandler handles status message operations.
+type StatusMessageHandler struct {
+	storage   storage.Storage
+	auth      auth.AuthorizerInterface
+	xidClient xidgrpcpb.XidServiceClient
+}
+
+// WorkUnitHandler handles work unit lifecycle and actuation operations.
+type WorkUnitHandler struct {
+	cfg       *config.Config
+	storage   storage.Storage
+	auth      auth.AuthorizerInterface
+	xidClient xidgrpcpb.XidServiceClient
+	actuator  WorkUnitActuator
+}
+
+// NewExperimentHandler creates a new ExperimentHandler.
+func NewExperimentHandler(cfg *config.Config, storage storage.Storage, auth auth.AuthorizerInterface, xidClient xidgrpcpb.XidServiceClient) *ExperimentHandler {
+	return &ExperimentHandler{
+		cfg:       cfg,
+		storage:   storage,
+		auth:      auth,
+		xidClient: xidClient,
+	}
+}
+
+// NewArtifactHandler creates a new ArtifactHandler.
+func NewArtifactHandler(cfg *config.Config, storage storage.Storage, auth auth.AuthorizerInterface, xidClient xidgrpcpb.XidServiceClient) *ArtifactHandler {
+	return &ArtifactHandler{
+		cfg:       cfg,
+		storage:   storage,
+		auth:      auth,
+		xidClient: xidClient,
+	}
+}
+
+// NewStatusMessageHandler creates a new StatusMessageHandler.
+func NewStatusMessageHandler(storage storage.Storage, auth auth.AuthorizerInterface, xidClient xidgrpcpb.XidServiceClient) *StatusMessageHandler {
+	return &StatusMessageHandler{
+		storage:   storage,
+		auth:      auth,
+		xidClient: xidClient,
+	}
+}
+
+// NewWorkUnitHandler creates a new WorkUnitHandler.
+func NewWorkUnitHandler(cfg *config.Config, storage storage.Storage, auth auth.AuthorizerInterface, xidClient xidgrpcpb.XidServiceClient, actuator WorkUnitActuator) *WorkUnitHandler {
+	return &WorkUnitHandler{
+		cfg:       cfg,
+		storage:   storage,
+		auth:      auth,
+		xidClient: xidClient,
+		actuator:  actuator,
+	}
 }
 
 // Params holds dependencies for creating a Server.
 type Params struct {
-	Config          *config.Config
-	Storage         storage.Storage
-	Authorizer      auth.AuthorizerInterface
-	XidClient       xidgrpcpb.XidServiceClient
-	TaskQueueClient TaskQueueClient
+	Config           *config.Config
+	Storage          storage.Storage
+	Authorizer       auth.AuthorizerInterface
+	XidClient        xidgrpcpb.XidServiceClient
+	WorkUnitActuator WorkUnitActuator
 }
 
 // New creates a new instance of the Experiment State Server.
 func New(p Params) *Server {
 	return &Server{
-		cfg:             p.Config,
-		storage:         p.Storage,
-		auth:            p.Authorizer,
-		xidClient:       p.XidClient,
-		taskQueueClient: p.TaskQueueClient,
+		storage:              p.Storage,
+		ExperimentHandler:    NewExperimentHandler(p.Config, p.Storage, p.Authorizer, p.XidClient),
+		WorkUnitHandler:      NewWorkUnitHandler(p.Config, p.Storage, p.Authorizer, p.XidClient, p.WorkUnitActuator),
+		ArtifactHandler:      NewArtifactHandler(p.Config, p.Storage, p.Authorizer, p.XidClient),
+		StatusMessageHandler: NewStatusMessageHandler(p.Storage, p.Authorizer, p.XidClient),
 	}
 }

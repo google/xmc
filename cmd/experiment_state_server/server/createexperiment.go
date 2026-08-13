@@ -27,13 +27,13 @@ import (
 )
 
 // CreateExperiment orchestrates the creation of a new experiment.
-func (s *Server) CreateExperiment(ctx context.Context, req *apipb.CreateExperimentRequest) (*msgpb.Experiment, error) {
+func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *apipb.CreateExperimentRequest) (*msgpb.Experiment, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Received CreateExperiment request", "request", req)
 
 	// 1. Authenticate the user.
 	logging.Info(ctx, "Extracting user identity from context")
-	creator, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	creator, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -48,11 +48,11 @@ func (s *Server) CreateExperiment(ctx context.Context, req *apipb.CreateExperime
 	exp := validator.FillExperimentNullValues(req.GetExperiment())
 
 	// 2.2. Inject the execution environment on experiment creation.
-	executionEnv, err := s.defaultExecutionEnvironment()
+	executionEnv, err := h.defaultExecutionEnvironment()
 	if err != nil {
 		return nil, err
 	}
-	exp, err = executionEnv.InjectOnExperimentCreation(ctx, s, exp)
+	exp, err = executionEnv.InjectOnExperimentCreation(ctx, nil, exp)
 	if err != nil {
 		logging.Error(ctx, "Failed to inject execution environment data into experiment", "error", err)
 		return nil, status.Errorf(status.Internal, "failed to inject execution environment data into experiment: %v", err)
@@ -60,7 +60,7 @@ func (s *Server) CreateExperiment(ctx context.Context, req *apipb.CreateExperime
 
 	// 3. Provision an XIDEntry for the experiment.
 	logging.Info(ctx, "Calling XID service to provision ID", "creator", creator)
-	xidEntry, err := s.createXid(ctx, creator, s.cfg.EndpointURL, exp.Acls, "")
+	xidEntry, err := h.createXid(ctx, creator, h.cfg.EndpointURL, exp.Acls, "")
 	if err != nil {
 		logging.Error(ctx, "Failed to provision XID", "error", err)
 		return nil, fmt.Errorf("failed to provision XID: %v", err)
@@ -76,7 +76,7 @@ func (s *Server) CreateExperiment(ctx context.Context, req *apipb.CreateExperime
 	logging.Info(ctx, "Successfully provisioned XID")
 
 	// 3.2. Check if the current user has write permissions on the XIDEntry.
-	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), creator, xidmsgpb.XidAcls_WRITER.Enum())
+	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), creator, xidmsgpb.XidAcls_WRITER.Enum())
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func (s *Server) CreateExperiment(ctx context.Context, req *apipb.CreateExperime
 
 	// 5. Persist the experiment to the storage layer.
 	logging.Info(ctx, "Persisting experiment", "experiment_name", newExp.Name)
-	retExp, err := s.storage.CreateExperiment(ctx, newExp)
+	retExp, err := h.storage.CreateExperiment(ctx, newExp)
 	if err != nil {
 		logging.Error(ctx, "Failed to save experiment", "experiment_name", newExp.GetName(), "error", err)
 		return nil, fmt.Errorf("failed to save experiment %s: %v: %w", newExp.GetName(), err, status.ErrInternal)

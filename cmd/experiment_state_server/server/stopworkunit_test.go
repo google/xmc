@@ -269,7 +269,7 @@ func TestStopWorkUnit_TaskEnqueueFails(t *testing.T) {
 	server := newTestServer(t,
 		withStorage(storage),
 		withXidClient(xidClient),
-		withTaskQueueClient(taskQueueClient),
+		withWorkUnitActuator(taskQueueClient),
 	)
 
 	req := &apipb.StopWorkUnitRequest{Name: "experiments/123/workUnits/456"}

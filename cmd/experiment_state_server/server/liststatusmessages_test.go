@@ -81,8 +81,7 @@ func TestListStatusMessages_InvalidRequest(t *testing.T) {
 
 func TestListStatusMessages_Unauthenticated(t *testing.T) {
 	ctx := t.Context()
-	server, _ := createExperimentStateServer(ctx, t)
-	server.auth = &mockAuthenticator{err: status.ErrUnauthenticated}
+	server := newTestServer(t, withAuthorizer(&mockAuthenticator{err: status.ErrUnauthenticated}))
 
 	req := &apipb.ListStatusMessagesRequest{
 		Parent: "experiments/123",
@@ -96,7 +95,6 @@ func TestListStatusMessages_Unauthenticated(t *testing.T) {
 
 func TestListStatusMessages_PermissionDenied(t *testing.T) {
 	ctx := t.Context()
-	server, _ := createExperimentStateServer(ctx, t)
 
 	// Mock XidClient to deny access.
 	mockXid := &mockXidClient{
@@ -104,7 +102,7 @@ func TestListStatusMessages_PermissionDenied(t *testing.T) {
 			Authorized: proto.Bool(false),
 		},
 	}
-	server.xidClient = mockXid
+	server := newTestServer(t, withXidClient(mockXid))
 
 	req := &apipb.ListStatusMessagesRequest{
 		Parent: "experiments/123",
