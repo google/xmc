@@ -23,6 +23,7 @@ import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 import { ResourceChip } from 'xmanager_cloud/ui/app/common/components/resource_chip/resource_chip';
 import { StatusChip } from 'xmanager_cloud/ui/app/common/components/status_chip/status_chip';
+import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import {
   BaseSidePanelContent,
@@ -34,8 +35,6 @@ import {
   QueueJobResourcesPipe,
   QueueJobStatusPipe,
 } from './queue_jobs_pipes';
-
-import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
 
 /** Payload data required to open the queue jobs inspection panel. */
 export class QueueJobsTableData implements BaseSidePanelData {

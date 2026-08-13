@@ -26,13 +26,13 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
 import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
 import {
   FreeTotalDisplayPipe,
   MaxWorkloadDisplayPipe,
   QueueStatusBadgePipe,
 } from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
-import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 
 @Component({

@@ -50,6 +50,7 @@ describe('WipBannerComponent', () => {
 
   it('should render default Work in Progress banner text when input is omitted', async () => {
     const defaultFixture = TestBed.createComponent(WipBannerComponent);
+    defaultFixture.detectChanges();
     const loader = TestbedHarnessEnvironment.loader(defaultFixture);
     const defaultHarness = await loader.getHarness(WipBannerHarness);
     expect(await defaultHarness.getText()).toBe('Work in Progress');
