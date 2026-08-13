@@ -18,11 +18,10 @@ import { ComponentHarness } from '@angular/cdk/testing';
 export class SmartResourceFinderHarness extends ComponentHarness {
   static hostSelector = 'xmc-smart-resource-finder';
 
-  private readonly amountInput = this.locatorFor('#amount-input');
+  private readonly amountInputs = this.locatorForAll('.query-amount-input');
   private readonly selectBoxes = this.locatorForAll('.query-select-box');
   private readonly removeButtons = this.locatorForAll('.remove-resource-btn');
   private readonly addButton = this.locatorFor('.add-resource-btn');
-  private readonly findButton = this.locatorFor('.find-queues-action');
   private readonly optionElements = this.locatorForAll('.query-select-box option');
 
   /** Gets all option labels available in the resource type dropdowns. */
@@ -31,15 +30,22 @@ export class SmartResourceFinderHarness extends ComponentHarness {
     return Promise.all(options.map(async (opt) => (await opt.text()).trim()));
   }
 
-  /** Gets the amount input value as a string. */
-  async getAmountValue(): Promise<string> {
-    const input = await this.amountInput();
-    return input.getProperty<string>('value');
+  /** Gets the amount input value as a string for the given index. */
+  async getAmountValue(index = 0): Promise<string> {
+    const inputs = await this.amountInputs();
+    if (!inputs[index]) {
+      throw new Error(`No amount input found at index ${index}`);
+    }
+    return inputs[index].getProperty<string>('value');
   }
 
-  /** Sets the amount input value and dispatches input change events. */
-  async setAmountValue(val: string): Promise<void> {
-    const input = await this.amountInput();
+  /** Sets the amount input value for the given index and dispatches input change events. */
+  async setAmountValue(val: string, index = 0): Promise<void> {
+    const inputs = await this.amountInputs();
+    if (!inputs[index]) {
+      throw new Error(`No amount input found at index ${index}`);
+    }
+    const input = inputs[index];
     await input.clear();
     if (val !== '') {
       await input.sendKeys(val);
@@ -93,11 +99,5 @@ export class SmartResourceFinderHarness extends ComponentHarness {
   async clickAddButton(): Promise<void> {
     const addBtn = await this.addButton();
     await addBtn.click();
-  }
-
-  /** Clicks the Find matching queues action button. */
-  async clickFindButton(): Promise<void> {
-    const findBtn = await this.findButton();
-    await findBtn.click();
   }
 }

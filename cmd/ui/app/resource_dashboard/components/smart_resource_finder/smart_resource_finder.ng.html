@@ -16,61 +16,52 @@
 <div class="finder-query-card">
   <span class="query-prefix">I need</span>
 
-  <div class="query-input-group">
-    <label class="query-label" for="amount-input">Amount *</label>
-    <input
-      id="amount-input"
-      type="number"
-      min="1"
-      class="query-input-box"
-      placeholder="e.g. 64"
-      [ngModel]="amount()"
-      (ngModelChange)="amount.set($event)"
-    />
-  </div>
+  @for (row of rows(); track row.id) {
+    <div class="query-row">
+      <div class="query-input-group">
+        <label class="query-label" [for]="'amount-input-' + row.id">Amount *</label>
+        <input
+          type="number"
+          min="1"
+          class="query-input-box query-amount-input"
+          placeholder="e.g. 1"
+          [id]="'amount-input-' + row.id"
+          [ngModel]="row.amount"
+          (ngModelChange)="updateRowAmount($index, $event)"
+        />
+      </div>
 
-  @for (typeVal of selectedResourceTypes(); track $index) {
-    <div class="query-input-group">
-      <label class="query-label" [for]="'resource-type-select-' + $index">Resource type *</label>
-      <div class="select-with-remove-box">
-        <select
-          class="query-select-box"
-          [id]="'resource-type-select-' + $index"
-          [ngModel]="typeVal"
-          (ngModelChange)="updateResourceType($index, $event)"
-        >
-          <option value="">All resource types (Default - empty)</option>
-          @for (resType of availableResourceTypes(); track resType) {
-            <option [value]="resType">{{ resType }}</option>
-          }
-        </select>
-        @if (selectedResourceTypes().length > 1) {
-          <button
-            type="button"
-            mat-icon-button
-            class="remove-resource-btn"
-            aria-label="Remove resource filter"
-            (click)="removeResourceTypeFilter($index)"
+      <div class="query-input-group">
+        <label class="query-label" [for]="'resource-type-select-' + row.id">Resource type *</label>
+        <div class="select-with-remove-box">
+          <select
+            class="query-select-box"
+            [id]="'resource-type-select-' + row.id"
+            [ngModel]="row.resourceType"
+            (ngModelChange)="updateRowResourceType($index, $event)"
           >
-            <mat-icon class="remove-icon">close</mat-icon>
-          </button>
-        }
+            <option value="">-</option>
+            @for (resType of availableResourceTypes(); track resType) {
+              <option [value]="resType">{{ resType }}</option>
+            }
+          </select>
+          @if (rows().length > 1) {
+            <button
+              type="button"
+              mat-icon-button
+              class="remove-resource-btn"
+              aria-label="Remove resource filter"
+              (click)="removeRow($index)"
+            >
+              <mat-icon class="remove-icon">close</mat-icon>
+            </button>
+          }
+        </div>
       </div>
     </div>
   }
 
-  <button type="button" mat-button class="add-resource-btn" (click)="addResourceTypeFilter()">
+  <button type="button" mat-button class="add-resource-btn" (click)="addRow()">
     + Add resource type
-  </button>
-
-  <button
-    type="button"
-    mat-flat-button
-    color="primary"
-    class="find-queues-action"
-    (click)="onFindMatchingQueues()"
-  >
-    <mat-icon>search</mat-icon>
-    Find matching queues
   </button>
 </div>

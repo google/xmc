@@ -29,6 +29,7 @@ export class QueueListComponent {
   readonly queues = input<QueueOverview[]>([]);
   readonly selectedQueue = input<string>('');
   readonly isLoading = input<boolean>(false);
+  readonly activeResourceFilters = input<string[]>([]);
   readonly selectQueue = output<string>();
 
   readonly velocityPeriod = model<string>('1h');

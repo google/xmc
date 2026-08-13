@@ -184,7 +184,8 @@ func initGRPCServer(ctx context.Context, cfg *Config) *grpcServerDeps {
 		logging.Fatal(ctx, "Failed to create health checker", "error", err)
 	}
 
-	srv := newServer(cfg, checker)
+	guard := NewAdminRoleGuard()
+	srv := newServer(cfg, checker, guard)
 	spb.RegisterHealthServiceServer(grpcServer, srv)
 	reflection.Register(grpcServer)
 
