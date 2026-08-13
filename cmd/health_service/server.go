@@ -25,7 +25,9 @@ import (
 
 	"golang.org/x/sync/singleflight"
 	"golang.org/x/time/rate"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -75,9 +77,11 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 			return nil, status.Error(codes.ResourceExhausted, "rate limit exceeded for force refresh")
 		}
 	} else if cached := s.getHealthStatusCache(); cached != nil {
+		_ = grpc.SetHeader(ctx, metadata.Pairs("x-cache", "HIT"))
 		return cached, nil
 	}
 
+	_ = grpc.SetHeader(ctx, metadata.Pairs("x-cache", "MISS"))
 	return s.runChecksSingleflight(ctx)
 }
 

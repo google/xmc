@@ -111,150 +111,146 @@ func (f *testFixture) assertRateLimited(ctx context.Context, req *spb.GetHealthS
 	f.assertCallCount(expectedCalls)
 }
 
-func TestGetHealthStatus_AllHealthy(t *testing.T) {
-	cfg := &Config{
-		Port:             "8080",
-		GRPCPort:         "50051",
-		ProjectID:        "test-project",
-		AppVersion:       "test-version-1.2.3",
-		BuildVersion:     "test-build-version-4.5.6",
-		ObservabilityURL: "http://test-observability-url",
-	}
-	mockResult := RunChecksResult{
-		EssDbSchemaVersion: "6",
-		XidDbSchemaVersion: "1",
-		Components: []*spb.ComponentHealth{
-			{Name: "ESS", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
-			{Name: "XID", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
-			{Name: "Actuator", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
-			{Name: "Reconciler", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
-			{Name: "Log Monitor", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
-			{Name: "Spanner ESS", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
-			{Name: "Spanner XID", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
-			{Name: "Redis", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+func TestGetHealthStatus(t *testing.T) {
+	tests := []struct {
+		name               string
+		cfg                *Config
+		mockResult         RunChecksResult
+		expectedState      spb.HealthState
+		expectedSystemInfo *spb.SystemInfo
+		expectedComponents map[string]spb.HealthState
+	}{
+		{
+			name: "AllHealthy",
+			cfg: &Config{
+				Port:             "8080",
+				GRPCPort:         "50051",
+				ProjectID:        "test-project",
+				AppVersion:       "test-version-1.2.3",
+				BuildVersion:     "test-build-version-4.5.6",
+				ObservabilityURL: "http://test-observability-url",
+			},
+			mockResult: RunChecksResult{
+				EssDbSchemaVersion: "6",
+				XidDbSchemaVersion: "1",
+				Components: []*spb.ComponentHealth{
+					{Name: "ESS", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "XID", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "Actuator", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "Reconciler", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "Log Monitor", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "Spanner ESS", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "Spanner XID", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "Redis", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+				},
+			},
+			expectedState: spb.HealthState_HEALTH_STATE_HEALTHY,
+			expectedSystemInfo: &spb.SystemInfo{
+				AppVersion:         "test-version-1.2.3",
+				BuildVersion:       "test-build-version-4.5.6",
+				ObservabilityUrl:   "http://test-observability-url",
+				EssDbSchemaVersion: "6",
+				XidDbSchemaVersion: "1",
+			},
+			expectedComponents: map[string]spb.HealthState{
+				"ESS":         spb.HealthState_HEALTH_STATE_HEALTHY,
+				"XID":         spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Actuator":    spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Reconciler":  spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Log Monitor": spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Spanner ESS": spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Spanner XID": spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
+			},
+		},
+		{
+			name: "UnhealthyWithFallbackDefaults",
+			cfg: &Config{
+				Port:      "8080",
+				GRPCPort:  "50051",
+				ProjectID: "test-project",
+			},
+			mockResult: RunChecksResult{
+				EssDbSchemaVersion: "",
+				XidDbSchemaVersion: "",
+				Components: []*spb.ComponentHealth{
+					{Name: "ESS", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "500 Internal Server Error"},
+					{Name: "XID", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "NOT_SERVING"},
+					{Name: "Actuator", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "connection refused"},
+					{Name: "Reconciler", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "Log Monitor", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "Spanner ESS", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "spanner client not initialized"},
+					{Name: "Spanner XID", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "spanner client not initialized"},
+					{Name: "Redis", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+				},
+			},
+			expectedState: spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			expectedSystemInfo: &spb.SystemInfo{
+				AppVersion:         "unknown",
+				BuildVersion:       "unknown",
+				ObservabilityUrl:   "",
+				EssDbSchemaVersion: "unknown",
+				XidDbSchemaVersion: "unknown",
+			},
+			expectedComponents: map[string]spb.HealthState{
+				"ESS":         spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"XID":         spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"Actuator":    spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"Reconciler":  spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Log Monitor": spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Spanner ESS": spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"Spanner XID": spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
+			},
 		},
 	}
-	checker := &mockHealthChecker{result: mockResult}
-	s := newServer(cfg, checker)
-	defer s.Close()
 
-	resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
-	if err != nil {
-		t.Fatalf("GetHealthStatus failed: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checker := &mockHealthChecker{result: tt.mockResult}
+			s := newServer(tt.cfg, checker)
+			defer s.Close()
 
-	if resp.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY {
-		t.Errorf("Expected overall status 'HEALTH_STATE_HEALTHY', got %v", resp.HealthState)
-	}
+			resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
+			if err != nil {
+				t.Fatalf("GetHealthStatus failed: %v", err)
+			}
 
-	if resp.SystemInfo.AppVersion != "test-version-1.2.3" {
-		t.Errorf("Expected AppVersion 'test-version-1.2.3', got %q", resp.SystemInfo.AppVersion)
-	}
-	if resp.SystemInfo.BuildVersion != "test-build-version-4.5.6" {
-		t.Errorf("Expected BuildVersion 'test-build-version-4.5.6', got %q", resp.SystemInfo.BuildVersion)
-	}
+			if resp.HealthState != tt.expectedState {
+				t.Errorf("Expected overall status %v, got %v", tt.expectedState, resp.HealthState)
+			}
 
-	if resp.SystemInfo.ObservabilityUrl != "http://test-observability-url" {
-		t.Errorf("Expected ObservabilityUrl 'http://test-observability-url', got %q", resp.SystemInfo.ObservabilityUrl)
-	}
+			if resp.SystemInfo.AppVersion != tt.expectedSystemInfo.AppVersion {
+				t.Errorf("Expected AppVersion %q, got %q", tt.expectedSystemInfo.AppVersion, resp.SystemInfo.AppVersion)
+			}
+			if resp.SystemInfo.BuildVersion != tt.expectedSystemInfo.BuildVersion {
+				t.Errorf("Expected BuildVersion %q, got %q", tt.expectedSystemInfo.BuildVersion, resp.SystemInfo.BuildVersion)
+			}
+			if resp.SystemInfo.ObservabilityUrl != tt.expectedSystemInfo.ObservabilityUrl {
+				t.Errorf("Expected ObservabilityUrl %q, got %q", tt.expectedSystemInfo.ObservabilityUrl, resp.SystemInfo.ObservabilityUrl)
+			}
+			if resp.SystemInfo.EssDbSchemaVersion != tt.expectedSystemInfo.EssDbSchemaVersion {
+				t.Errorf("Expected EssDbSchemaVersion %q, got %q", tt.expectedSystemInfo.EssDbSchemaVersion, resp.SystemInfo.EssDbSchemaVersion)
+			}
+			if resp.SystemInfo.XidDbSchemaVersion != tt.expectedSystemInfo.XidDbSchemaVersion {
+				t.Errorf("Expected XidDbSchemaVersion %q, got %q", tt.expectedSystemInfo.XidDbSchemaVersion, resp.SystemInfo.XidDbSchemaVersion)
+			}
 
-	if resp.SystemInfo.EssDbSchemaVersion != "6" {
-		t.Errorf("Expected EssDbSchemaVersion '6', got %q", resp.SystemInfo.EssDbSchemaVersion)
-	}
-	if resp.SystemInfo.XidDbSchemaVersion != "1" {
-		t.Errorf("Expected XidDbSchemaVersion '1', got %q", resp.SystemInfo.XidDbSchemaVersion)
-	}
+			if len(resp.Components) != len(tt.expectedComponents) {
+				t.Fatalf("Expected %d components, got %d", len(tt.expectedComponents), len(resp.Components))
+			}
 
-	expectedComponents := map[string]spb.HealthState{
-		"ESS":         spb.HealthState_HEALTH_STATE_HEALTHY,
-		"XID":         spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Actuator":    spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Reconciler":  spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Log Monitor": spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Spanner ESS": spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Spanner XID": spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
-	}
-
-	if len(resp.Components) != 8 {
-		t.Fatalf("Expected 8 components, got %d", len(resp.Components))
-	}
-
-	for _, c := range resp.Components {
-		expectedState, found := expectedComponents[c.Name]
-		if !found {
-			t.Errorf("Unexpected component in response: %q", c.Name)
-			continue
-		}
-		if c.HealthState != expectedState {
-			t.Errorf("Expected component %q to be %v, got %v (error: %q)", c.Name, expectedState, c.HealthState, c.ErrorMessage)
-		}
-	}
-}
-
-func TestGetHealthStatus_Unhealthy(t *testing.T) {
-	cfg := &Config{
-		Port:      "8080",
-		GRPCPort:  "50051",
-		ProjectID: "test-project",
-	}
-	mockResult := RunChecksResult{
-		EssDbSchemaVersion: "", // triggers "unknown" in server.go
-		XidDbSchemaVersion: "", // triggers "unknown" in server.go
-		Components: []*spb.ComponentHealth{
-			{Name: "ESS", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "500 Internal Server Error"},
-			{Name: "XID", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "NOT_SERVING"},
-			{Name: "Actuator", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "connection refused"},
-			{Name: "Reconciler", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
-			{Name: "Log Monitor", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
-			{Name: "Spanner ESS", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "spanner client not initialized"},
-			{Name: "Spanner XID", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "spanner client not initialized"},
-			{Name: "Redis", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
-		},
-	}
-	checker := &mockHealthChecker{result: mockResult}
-	s := newServer(cfg, checker)
-	defer s.Close()
-
-	resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
-	if err != nil {
-		t.Fatalf("GetHealthStatus failed: %v", err)
-	}
-
-	// Verify overall state is unhealthy
-	if resp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
-		t.Errorf("Expected overall status 'HEALTH_STATE_UNHEALTHY', got %v", resp.HealthState)
-	}
-
-	if resp.SystemInfo.EssDbSchemaVersion != "unknown" {
-		t.Errorf("Expected EssDbSchemaVersion 'unknown', got %q", resp.SystemInfo.EssDbSchemaVersion)
-	}
-	if resp.SystemInfo.XidDbSchemaVersion != "unknown" {
-		t.Errorf("Expected XidDbSchemaVersion 'unknown', got %q", resp.SystemInfo.XidDbSchemaVersion)
-	}
-	if resp.SystemInfo.AppVersion != "unknown" {
-		t.Errorf("Expected AppVersion 'unknown', got %q", resp.SystemInfo.AppVersion)
-	}
-	if resp.SystemInfo.BuildVersion != "unknown" {
-		t.Errorf("Expected BuildVersion 'unknown', got %q", resp.SystemInfo.BuildVersion)
-	}
-
-	expectedComponents := map[string]spb.HealthState{
-		"ESS":         spb.HealthState_HEALTH_STATE_UNHEALTHY,
-		"XID":         spb.HealthState_HEALTH_STATE_UNHEALTHY,
-		"Actuator":    spb.HealthState_HEALTH_STATE_UNHEALTHY,
-		"Reconciler":  spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Log Monitor": spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Spanner ESS": spb.HealthState_HEALTH_STATE_UNHEALTHY,
-		"Spanner XID": spb.HealthState_HEALTH_STATE_UNHEALTHY,
-		"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
-	}
-
-	for _, c := range resp.Components {
-		expectedState := expectedComponents[c.Name]
-		if c.HealthState != expectedState {
-			t.Errorf("Expected component %q to be %v, got %v (error: %q)", c.Name, expectedState, c.HealthState, c.ErrorMessage)
-		}
+			for _, c := range resp.Components {
+				expectedState, found := tt.expectedComponents[c.Name]
+				if !found {
+					t.Errorf("Unexpected component in response: %q", c.Name)
+					continue
+				}
+				if c.HealthState != expectedState {
+					t.Errorf("Expected component %q to be %v, got %v (error: %q)", c.Name, expectedState, c.HealthState, c.ErrorMessage)
+				}
+			}
+		})
 	}
 }
 
