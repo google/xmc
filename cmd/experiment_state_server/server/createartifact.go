@@ -16,6 +16,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"task/go/status"
 
@@ -144,6 +145,10 @@ func (s *Server) provisionChartArtifactAsync(ctxBg context.Context, artifactToPr
 			logging.Error(ctxBg, "Recovered from panic in provisionChartArtifactAsync", "panic", r)
 		}
 	}()
+
+	// Apply 2-minute deadline to avoid indefinite hang blocking server teardown.
+	ctxBg, cancel := context.WithTimeout(ctxBg, 2*time.Minute)
+	defer cancel()
 
 	// Determine parent XID and WID to construct dashboard chart.
 	xid, wid, _ := validator.ValidateWorkUnitName(artifactToProvision.GetParent())
