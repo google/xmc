@@ -45,6 +45,10 @@ echo "==> Deploying Redis cache"
 helm repo add bitnami https://charts.bitnami.com/bitnami
 helm upgrade --install redis bitnami/redis --set architecture=standalone --set auth.enabled=false --wait
 
+# The XMC Helm charts contain GKE-specific resources (BackendConfig, ManagedCertificate, etc).
+# Since KinD is a vanilla Kubernetes cluster, it does not have these CRDs installed by default.
+# We inject empty dummy schemas here so that Helm does not crash during deployment when it encounters them.
+
 echo "==> Injecting Dummy GKE CRDs"
 kubectl apply -f - <<CRDS
 apiVersion: apiextensions.k8s.io/v1
