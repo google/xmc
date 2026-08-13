@@ -19,8 +19,8 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { firstValueFrom } from 'rxjs';
 
 import {
-  GetFittingQueuesResponse,
   GetRunningAndPendingJobsResponse,
+  ListClusterQueuesResponse,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { cleanState, flush, get, setupModule, setupObservableMatchers } from '../testing/test';
@@ -46,8 +46,8 @@ describe('ResourceService', () => {
   });
 
   describe('getClusterQueues', () => {
-    it('should fetch cluster queues directly matching GetFittingQueuesResponse proto shape', async () => {
-      const mockResponse: GetFittingQueuesResponse = {
+    it('should fetch cluster queues directly matching ListClusterQueuesResponse proto shape', async () => {
+      const mockResponse: ListClusterQueuesResponse = {
         queues: [
           {
             queueName: 'gpu-cluster-queue',
@@ -62,7 +62,7 @@ describe('ResourceService', () => {
         ],
       };
 
-      const responsePromise: Promise<GetFittingQueuesResponse> = firstValueFrom(
+      const responsePromise: Promise<ListClusterQueuesResponse> = firstValueFrom(
         state.service.getClusterQueues(),
       );
 
@@ -78,7 +78,7 @@ describe('ResourceService', () => {
     });
 
     it('should handle HTTP error gracefully and return empty queues response', async () => {
-      const responsePromise: Promise<GetFittingQueuesResponse> = firstValueFrom(
+      const responsePromise: Promise<ListClusterQueuesResponse> = firstValueFrom(
         state.service.getClusterQueues(),
       );
 

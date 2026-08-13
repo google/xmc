@@ -221,11 +221,10 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
     queuePredictability?: QueuePredictability[];
   }
 
-  export interface GetFittingQueuesRequest {
-    requirements?: Resource[];
-  }
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  export interface ListClusterQueuesRequest {}
 
-  export interface GetFittingQueuesResponse {
+  export interface ListClusterQueuesResponse {
     queues?: QueueOverview[];
   }
 

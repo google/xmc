@@ -26,7 +26,6 @@ compat_go_library(
         "kueue_resource_extractor.go",
         "main.go",
         "queue_converters.go",
-        "queue_matcher.go",
         "resource_accumulator.go",
         "server.go",
         "submit_queue.go",
@@ -83,7 +82,6 @@ compat_go_test(
     srcs = [
         "config_test.go",
         "jobs_test.go",
-        "queue_matcher_test.go",
         "resource_accumulator_test.go",
         "server_test.go",
         "submit_queue_test.go",

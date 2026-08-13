@@ -17,9 +17,9 @@ import { inject, Injectable } from '@angular/core';
 import { catchError, Observable, of } from 'rxjs';
 
 import {
-  GetFittingQueuesResponse,
   GetRunningAndPendingJobsResponse,
   GetSubmitQueueResponse,
+  ListClusterQueuesResponse,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { XMC_API_DOMAIN } from './constants';
@@ -35,11 +35,11 @@ export class ResourceService {
   private readonly http = inject(HttpClient);
 
   /**
-   * Fetches the list of cluster queues strictly matching the GetFittingQueuesResponse proto shape.
+   * Fetches the list of cluster queues strictly matching the ListClusterQueuesResponse proto shape.
    */
-  getClusterQueues(): Observable<GetFittingQueuesResponse> {
+  getClusterQueues(): Observable<ListClusterQueuesResponse> {
     return this.http
-      .get<GetFittingQueuesResponse>(`${XMC_API_DOMAIN}/clusterqueues`, {
+      .get<ListClusterQueuesResponse>(`${XMC_API_DOMAIN}/clusterqueues`, {
         withCredentials: true,
       })
       .pipe(

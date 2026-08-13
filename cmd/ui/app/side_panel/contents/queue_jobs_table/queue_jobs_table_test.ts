@@ -122,7 +122,7 @@ describe('QueueJobsTable Component', () => {
     expect(firstRow.resources).toContain('memory: 3298886726347889');
     expect(firstRow.resources).toContain('4 x H100');
     expect(firstRow.workUnitId).toContain('1');
-    expect(firstRow.user).toContain('example@example.com');
+    expect(firstRow.user).toContain('Work in Progress');
 
     const secondRow = await harness.getRowCellsText(1);
     expect(secondRow.position).toBe('2');
