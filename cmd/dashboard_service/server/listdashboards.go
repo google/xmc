@@ -17,6 +17,7 @@ package server
 import (
 	"context"
 
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -55,14 +56,33 @@ func (s *Server) ListDashboards(ctx context.Context, req *spb.ListDashboardsRequ
 
 // filterAuthorizedDashboards filters out dashboards the user is not permitted to read.
 func (s *Server) filterAuthorizedDashboards(ctx context.Context, user string, dashboards []*dpb.Dashboard) ([]*dpb.Dashboard, error) {
+	if len(dashboards) == 0 {
+		return nil, nil
+	}
+
+	allowed := make([]bool, len(dashboards))
+	g, gctx := errgroup.WithContext(ctx)
+
+	for i, dash := range dashboards {
+		i, dash := i, dash
+		g.Go(func() error {
+			ok, err := s.checkDashboardAuthorization(gctx, user, dash, auth.Reader)
+			if err != nil {
+				return err
+			}
+			allowed[i] = ok
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
 	var authorized []*dpb.Dashboard
-	for _, dash := range dashboards {
-		allowed, err := s.checkDashboardAuthorization(ctx, user, dash, auth.Reader)
-		if err != nil {
-			return nil, err
-		}
-		if allowed {
-			authorized = append(authorized, dash)
+	for i, isAllowed := range allowed {
+		if isAllowed {
+			authorized = append(authorized, dashboards[i])
 		}
 	}
 	return authorized, nil

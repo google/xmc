@@ -17,6 +17,7 @@ package server
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -63,6 +64,12 @@ var _ spb.DashboardServiceServer = (*Server)(nil)
 
 // NewServer creates a new instance of Server.
 func NewServer(cfg *Config, repo DashboardRepository, auth auth.AuthorizerInterface, de *dataengine.DataEngine) *Server {
+	if repo == nil {
+		panic("repo must not be nil")
+	}
+	if auth == nil {
+		panic("auth must not be nil")
+	}
 	return &Server{
 		cfg:        cfg,
 		repo:       repo,
@@ -120,6 +127,10 @@ func (s *Server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest)
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request must not be nil")
 	}
+	user, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "failed to authenticate user: %v", err)
+	}
 	if s.dataEngine == nil {
 		return nil, status.Error(codes.FailedPrecondition, "data engine is not configured")
 	}
@@ -133,6 +144,30 @@ func (s *Server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest)
 		}
 		return nil, status.Errorf(codes.Internal, "failed to get chart %q: %v", req.GetName(), err)
 	}
+
+	// Extract parent dashboard ID from chart name (e.g., "dashboards/{dashboard_id}/charts/{chart_id}")
+	parts := strings.Split(chart.GetName(), "/")
+	if len(parts) < 2 || parts[0] != "dashboards" {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid chart name format: %q", chart.GetName())
+	}
+	dashID := parts[1]
+
+	dash, err := s.repo.GetDashboard(ctx, dashID)
+	if err != nil {
+		if isNotFoundError(err) {
+			return nil, status.Errorf(codes.NotFound, "parent dashboard %q not found", dashID)
+		}
+		return nil, status.Errorf(codes.Internal, "failed to get parent dashboard: %v", err)
+	}
+
+	authorized, err := s.checkDashboardAuthorization(ctx, user, dash, auth.Reader)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to check dashboard authorization: %v", err)
+	}
+	if !authorized {
+		return nil, status.Errorf(codes.PermissionDenied, "user %q is not authorized to access chart data", user)
+	}
+
 	return s.dataEngine.FetchChartData(ctx, chart, req)
 }
 

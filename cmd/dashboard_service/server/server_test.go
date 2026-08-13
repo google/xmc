@@ -139,6 +139,33 @@ func TestGetChart(t *testing.T) {
 	}
 }
 
+func TestNewServer(t *testing.T) {
+	t.Run("panics on nil repo", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("expected NewServer to panic on nil repo, but it did not")
+			}
+		}()
+		NewServer(&Config{}, nil, &mockAuthorizer{}, nil)
+	})
+
+	t.Run("panics on nil auth", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("expected NewServer to panic on nil auth, but it did not")
+			}
+		}()
+		NewServer(&Config{}, &mockRepository{}, nil, nil)
+	})
+
+	t.Run("successful server initialization", func(t *testing.T) {
+		s := NewServer(&Config{Port: "8080"}, &mockRepository{}, &mockAuthorizer{}, nil)
+		if s == nil {
+			t.Fatal("expected non-nil server")
+		}
+	})
+}
+
 func TestGetChartData(t *testing.T) {
 	ctx := context.Background()
 
@@ -150,6 +177,19 @@ func TestGetChartData(t *testing.T) {
 		}
 	})
 
+	t.Run("unauthenticated user returns Unauthenticated", func(t *testing.T) {
+		authMock := &mockAuthorizer{
+			authenticateFn: func(ctx context.Context) (string, string, error) {
+				return "", "", status.Error(codes.Unauthenticated, "unauthenticated")
+			},
+		}
+		s := NewServer(&Config{}, &mockRepository{}, authMock, nil)
+		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		if status.Code(err) != codes.Unauthenticated {
+			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.Unauthenticated)
+		}
+	})
+
 	t.Run("nil dataEngine returns FailedPrecondition", func(t *testing.T) {
 		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, nil)
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
@@ -158,15 +198,18 @@ func TestGetChartData(t *testing.T) {
 		}
 	})
 
-	t.Run("nil repo returns FailedPrecondition", func(t *testing.T) {
-		s := NewServer(&Config{}, nil, &mockAuthorizer{}, nil)
+	t.Run("nil repo in server struct returns FailedPrecondition", func(t *testing.T) {
+		s := &Server{
+			auth:       &mockAuthorizer{},
+			dataEngine: &dataengine.DataEngine{},
+		}
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.FailedPrecondition {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.FailedPrecondition)
 		}
 	})
 
-	t.Run("repo not found returns NotFound", func(t *testing.T) {
+	t.Run("chart not found returns NotFound", func(t *testing.T) {
 		repo := &mockRepository{
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
 				return nil, status.Error(codes.NotFound, "not found")
@@ -179,7 +222,7 @@ func TestGetChartData(t *testing.T) {
 		}
 	})
 
-	t.Run("repo error returns Internal", func(t *testing.T) {
+	t.Run("chart repo error returns Internal", func(t *testing.T) {
 		repo := &mockRepository{
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
 				return nil, status.Error(codes.Unknown, "database failure")
@@ -189,6 +232,124 @@ func TestGetChartData(t *testing.T) {
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.Internal {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.Internal)
+		}
+	})
+
+	t.Run("invalid chart name format returns InvalidArgument", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return &dpb.Chart{Name: "invalid-name-format"}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &dataengine.DataEngine{})
+		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "invalid-name-format"})
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.InvalidArgument)
+		}
+	})
+
+	t.Run("parent dashboard not found returns NotFound", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return &dpb.Chart{Name: "dashboards/123/charts/456"}, nil
+			},
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
+				return nil, status.Error(codes.NotFound, "dashboard not found")
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &dataengine.DataEngine{})
+		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		if status.Code(err) != codes.NotFound {
+			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.NotFound)
+		}
+	})
+
+	t.Run("parent dashboard repo error returns Internal", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return &dpb.Chart{Name: "dashboards/123/charts/456"}, nil
+			},
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
+				return nil, status.Error(codes.Internal, "storage error")
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &dataengine.DataEngine{})
+		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		if status.Code(err) != codes.Internal {
+			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.Internal)
+		}
+	})
+
+	t.Run("dashboard authorization error returns Internal", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return &dpb.Chart{Name: "dashboards/123/charts/456"}, nil
+			},
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
+				return &dpb.Dashboard{Name: "dashboards/123", Owner: "owner@example.com"}, nil
+			},
+		}
+		authMock := &mockAuthorizer{
+			isUserAuthorizedFn: func(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error) {
+				return false, status.Error(codes.Internal, "auth check failed")
+			},
+		}
+		s := NewServer(&Config{}, repo, authMock, &dataengine.DataEngine{})
+		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		if status.Code(err) != codes.Internal {
+			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.Internal)
+		}
+	})
+
+	t.Run("unauthorized user returns PermissionDenied", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return &dpb.Chart{Name: "dashboards/123/charts/456"}, nil
+			},
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
+				return &dpb.Dashboard{Name: "dashboards/123", Owner: "owner@example.com"}, nil
+			},
+		}
+		authMock := &mockAuthorizer{
+			isUserAuthorizedFn: func(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error) {
+				return false, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, authMock, &dataengine.DataEngine{})
+		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		if status.Code(err) != codes.PermissionDenied {
+			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.PermissionDenied)
+		}
+	})
+
+	t.Run("authorized user successfully gets chart data", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return &dpb.Chart{
+					Name: "dashboards/123/charts/456",
+					Xid:  1,
+					Wid:  1,
+				}, nil
+			},
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
+				return &dpb.Dashboard{Name: "dashboards/123", Owner: "user@example.com"}, nil
+			},
+		}
+		authMock := &mockAuthorizer{
+			authenticateFn: func(ctx context.Context) (string, string, error) {
+				return "user@example.com", "uid-1", nil
+			},
+			isUserAuthorizedFn: func(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error) {
+				return true, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, authMock, &dataengine.DataEngine{})
+		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		if err != nil {
+			t.Fatalf("GetChartData() unexpected error: %v", err)
+		}
+		if resp.GetName() != "dashboards/123/charts/456" {
+			t.Errorf("GetChartData().Name = %q, want %q", resp.GetName(), "dashboards/123/charts/456")
 		}
 	})
 }

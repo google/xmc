@@ -113,33 +113,31 @@ func main() {
 		}
 	}
 
-	var repo server.DashboardRepository
-	var sc *spanner.Client
-	if spannerDatabaseName != "" {
-		sessionPoolConfig := spanner.SessionPoolConfig{
-			TrackSessionHandles: true,
-			InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
-				ActionOnInactiveTransaction: spanner.Warn,
-			},
-		}
-		var err error
-		sc, err = spanner.NewClientWithConfig(
-			ctx,
-			spannerDatabaseName,
-			spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
-			option.WithQuotaProject(cfg.ProjectID),
-		)
-		if err != nil {
-			logging.Fatal(ctx, "failed to create spanner client", "error", err)
-		}
-		defer sc.Close()
-
-		spannerRepo, err := dashboard.NewRepository(sc)
-		if err != nil {
-			logging.Fatal(ctx, "failed to initialize dashboard repository", "error", err)
-		}
-		repo = spannerRepo
+	if spannerDatabaseName == "" {
+		logging.Fatal(ctx, "spanner_database_name is required but not configured")
 	}
+	sessionPoolConfig := spanner.SessionPoolConfig{
+		TrackSessionHandles: true,
+		InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
+			ActionOnInactiveTransaction: spanner.Warn,
+		},
+	}
+	sc, err := spanner.NewClientWithConfig(
+		ctx,
+		spannerDatabaseName,
+		spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
+		option.WithQuotaProject(cfg.ProjectID),
+	)
+	if err != nil {
+		logging.Fatal(ctx, "failed to create spanner client", "error", err)
+	}
+	defer sc.Close()
+
+	spannerRepo, err := dashboard.NewRepository(sc)
+	if err != nil {
+		logging.Fatal(ctx, "failed to initialize dashboard repository", "error", err)
+	}
+	var repo server.DashboardRepository = spannerRepo
 
 	var authorizer auth.AuthorizerInterface
 	idService, err := cloudidentity.NewService(ctx, option.WithQuotaProject(cfg.ProjectID))

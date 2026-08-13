@@ -118,6 +118,51 @@ func TestUpdateDashboard(t *testing.T) {
 		}
 	})
 
+	t.Run("prevents unauthorized ownership modification during update", func(t *testing.T) {
+		var updatedDash *dpb.Dashboard
+		repo := &mockRepository{
+			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
+				return &dpb.Dashboard{
+					Name:  "dashboards/" + dashboardId,
+					Title: "Original",
+					Owner: "original-owner@example.com",
+				}, nil
+			},
+			updateDashboardFn: func(ctx context.Context, dashboard *dpb.Dashboard, updateMask *fieldmaskpb.FieldMask) (*dpb.Dashboard, error) {
+				updatedDash = dashboard
+				return dashboard, nil
+			},
+		}
+		authMock := &mockAuthorizer{
+			authenticateFn: func(ctx context.Context) (string, string, error) {
+				return "original-owner@example.com", "u-1", nil
+			},
+			isUserAuthorizedFn: func(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error) {
+				return true, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, authMock, nil)
+
+		req := &spb.UpdateDashboardRequest{
+			Dashboard: &dpb.Dashboard{
+				Name:  "dashboards/dash-123",
+				Title: "Updated Title",
+				Owner: "attacker@example.com",
+			},
+		}
+
+		resp, err := s.UpdateDashboard(ctx, req)
+		if err != nil {
+			t.Fatalf("UpdateDashboard failed: %v", err)
+		}
+		if resp.GetOwner() != "original-owner@example.com" {
+			t.Errorf("Expected owner to remain 'original-owner@example.com', got %q", resp.GetOwner())
+		}
+		if updatedDash == nil || updatedDash.GetOwner() != "original-owner@example.com" {
+			t.Errorf("Expected repo to receive original owner, got %v", updatedDash)
+		}
+	})
+
 	t.Run("unauthenticated caller returns Unauthenticated", func(t *testing.T) {
 		authMock := &mockAuthorizer{
 			authenticateFn: func(ctx context.Context) (string, string, error) {

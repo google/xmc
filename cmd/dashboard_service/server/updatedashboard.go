@@ -58,6 +58,9 @@ func (s *Server) UpdateDashboard(ctx context.Context, req *spb.UpdateDashboardRe
 		return nil, status.Errorf(codes.PermissionDenied, "user %q is not authorized to update dashboard %q", user, req.GetDashboard().GetName())
 	}
 
+	// Prevent unauthorized ownership modification
+	req.GetDashboard().Owner = existing.GetOwner()
+
 	updated, err := s.repo.UpdateDashboard(ctx, req.GetDashboard(), req.GetUpdateMask())
 	if err != nil {
 		if isNotFoundError(err) {
