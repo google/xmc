@@ -208,7 +208,7 @@ func (a *Authenticator) IsUserAuthorizedViaIAM(ctx context.Context, email string
 
 // IsUserAuthorizedForRoleViaIAM queries Google Cloud Resource Manager API to verify IAM role mappings for a specific role.
 func (a *Authenticator) IsUserAuthorizedForRoleViaIAM(ctx context.Context, email string, role string) (bool, error) {
-	if email == "" {
+	if email == "" || role == "" {
 		return false, nil
 	}
 	policy, err := a.getIamPolicy(ctx)
