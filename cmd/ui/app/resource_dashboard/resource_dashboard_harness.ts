@@ -14,6 +14,7 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 
+import { WipBannerHarness } from '../common/components/wip_banner/wip_banner_harness';
 import { QueueJobsTableHarness } from '../side_panel/contents/queue_jobs_table/queue_jobs_table_harness';
 import { QueueListHarness } from './components/queue_list/queue_list_harness';
 import { SmartResourceFinderHarness } from './components/smart_resource_finder/smart_resource_finder_harness';
@@ -41,5 +42,10 @@ export class ResourceDashboardHarness extends ComponentHarness {
   /** Gets the queue jobs table harness if present. */
   async getQueueJobsTable(): Promise<QueueJobsTableHarness | null> {
     return this.locatorForOptional(QueueJobsTableHarness)();
+  }
+
+  /** Gets the WIP banner harness if present. */
+  async getWipBanner(): Promise<WipBannerHarness | null> {
+    return this.locatorForOptional(WipBannerHarness)();
   }
 }

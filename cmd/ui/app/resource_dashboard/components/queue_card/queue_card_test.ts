@@ -115,4 +115,9 @@ describe('QueueCardComponent', () => {
     expect(clipboard.copy).toHaveBeenCalledWith('--queue=lq-gpu-1');
     expect(await harness.getCopyFlagButtonText()).toContain('Copied');
   });
+
+  it('should render Work in Progress banner in predictability section', async () => {
+    const bannerText = await harness.getWipBannerText();
+    expect(bannerText).toContain('Work in Progress');
+  });
 });
