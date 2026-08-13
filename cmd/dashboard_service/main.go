@@ -85,35 +85,33 @@ func setupHTTPHandler(authenticator *oauth2.Authenticator, gwmux http.Handler, r
 	return authenticator.SecurityMiddlewares(mux)
 }
 
-func main() {
-	google.Init()
-	flag.Parse()
-
-	cfg := LoadConfig()
-	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
-	ctx := logging.WithLogger(context.Background(), logger)
-
+func initAuthenticator(ctx context.Context, projectID string) (*oauth2.Authenticator, *oauth2.Config) {
 	oauthCfg, err := oauth2.LoadConfig()
 	if err != nil {
 		logging.Fatal(ctx, "Failed to load OAuth config", "error", err)
 	}
 	if oauthCfg.GCPProjectID == "" {
-		oauthCfg.GCPProjectID = cfg.ProjectID
+		oauthCfg.GCPProjectID = projectID
 	}
-	authenticator := oauth2.NewAuthenticator(oauthCfg)
+	return oauth2.NewAuthenticator(oauthCfg), oauthCfg
+}
 
+func initDataEngine(ctx context.Context) *dataengine.DataEngine {
 	clickhouseConn, err := clickhouse.Connect(ctx)
-	var de *dataengine.DataEngine
 	if err != nil {
 		logging.Info(ctx, "ClickHouse connection not available at startup, initializing without data engine", "error", err)
-	} else {
-		de, err = dataengine.New(clickhouseConn)
-		if err != nil {
-			logging.Info(ctx, "Failed to initialize DataEngine", "error", err)
-		}
+		return nil
 	}
+	de, err := dataengine.New(clickhouseConn)
+	if err != nil {
+		logging.Info(ctx, "Failed to initialize DataEngine", "error", err)
+		return nil
+	}
+	return de
+}
 
-	if spannerDatabaseName == "" {
+func initSpannerClient(ctx context.Context, databaseName string, projectID string) *spanner.Client {
+	if databaseName == "" {
 		logging.Fatal(ctx, "spanner_database_name is required but not configured")
 	}
 	sessionPoolConfig := spanner.SessionPoolConfig{
@@ -124,27 +122,30 @@ func main() {
 	}
 	sc, err := spanner.NewClientWithConfig(
 		ctx,
-		spannerDatabaseName,
+		databaseName,
 		spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
-		option.WithQuotaProject(cfg.ProjectID),
+		option.WithQuotaProject(projectID),
 	)
 	if err != nil {
 		logging.Fatal(ctx, "failed to create spanner client", "error", err)
 	}
-	defer sc.Close()
+	return sc
+}
 
+func initRepository(ctx context.Context, sc *spanner.Client) server.DashboardRepository {
 	spannerRepo, err := dashboard.NewRepository(sc)
 	if err != nil {
 		logging.Fatal(ctx, "failed to initialize dashboard repository", "error", err)
 	}
-	var repo server.DashboardRepository = spannerRepo
+	return spannerRepo
+}
 
-	var authorizer auth.AuthorizerInterface
-	idService, err := cloudidentity.NewService(ctx, option.WithQuotaProject(cfg.ProjectID))
+func initAuthorizer(ctx context.Context, projectID string, oauthCfg *oauth2.Config) auth.AuthorizerInterface {
+	idService, err := cloudidentity.NewService(ctx, option.WithQuotaProject(projectID))
 	if err != nil {
 		logging.Info(ctx, "Cloud Identity service not available at startup", "error", err)
 	}
-	authorizer, err = auth.NewAuthorizer(
+	authorizer, err := auth.NewAuthorizer(
 		ctx,
 		idService,
 		10*time.Minute,
@@ -157,8 +158,10 @@ func main() {
 	if err != nil {
 		logging.Info(ctx, "Authorizer initialized without full IAP configuration", "error", err)
 	}
+	return authorizer
+}
 
-	// 1. Setup gRPC server
+func initGRPCServer(ctx context.Context, cfg *server.Config, repo server.DashboardRepository, authorizer auth.AuthorizerInterface, de *dataengine.DataEngine, errChan chan<- error) (*grpc.Server, net.Listener) {
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
@@ -172,8 +175,6 @@ func main() {
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("xmc.DashboardService", healthpb.HealthCheckResponse_SERVING)
 
-	errChan := make(chan error, 2)
-
 	go func() {
 		logging.Info(ctx, "Dashboard service gRPC server starting", "addr", lis.Addr())
 		if err := grpcServer.Serve(lis); err != nil {
@@ -181,17 +182,19 @@ func main() {
 		}
 	}()
 
-	// 2. Setup gRPC Gateway with header forwarding for auth
+	return grpcServer, lis
+}
+
+func initHTTPServer(ctx context.Context, cfg *server.Config, authenticator *oauth2.Authenticator, sc *spanner.Client, errChan chan<- error) *http.Server {
 	gwmux := runtime.NewServeMux(runtime.WithIncomingHeaderMatcher(oauth2.IncomingHeaderMatcher))
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
-	err = spb.RegisterDashboardServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
+	err := spb.RegisterDashboardServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to register gateway", "error", err)
 	}
 
-	// 3. Setup HTTP Server with active readiness probe
 	var readinessCheck func(context.Context) error
 	if sc != nil {
 		readinessCheck = func(ctx context.Context) error {
@@ -217,10 +220,10 @@ func main() {
 		}
 	}()
 
-	// Graceful shutdown
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	return httpServer
+}
 
+func gracefulShutdown(ctx context.Context, httpServer *http.Server, grpcServer *grpc.Server, quit <-chan os.Signal, errChan <-chan error) {
 	select {
 	case <-quit:
 		logging.Info(ctx, "Shutting down dashboard service...")
@@ -250,4 +253,31 @@ func main() {
 	}
 
 	logging.Info(ctx, "Dashboard service stopped")
+}
+
+func main() {
+	google.Init()
+	flag.Parse()
+
+	cfg := LoadConfig()
+	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
+	ctx := logging.WithLogger(context.Background(), logger)
+
+	authenticator, oauthCfg := initAuthenticator(ctx, cfg.ProjectID)
+	de := initDataEngine(ctx)
+
+	sc := initSpannerClient(ctx, spannerDatabaseName, cfg.ProjectID)
+	defer sc.Close()
+
+	repo := initRepository(ctx, sc)
+	authorizer := initAuthorizer(ctx, cfg.ProjectID, oauthCfg)
+
+	errChan := make(chan error, 2)
+	grpcServer, _ := initGRPCServer(ctx, cfg, repo, authorizer, de, errChan)
+	httpServer := initHTTPServer(ctx, cfg, authenticator, sc, errChan)
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	gracefulShutdown(ctx, httpServer, grpcServer, quit, errChan)
 }

@@ -19,11 +19,14 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
 	"xmanager_cloud/pkg/auth/oauth2"
@@ -196,5 +199,74 @@ func TestIncomingHeaderMatcher_Propagation(t *testing.T) {
 
 	if dropped := md.Get("x-custom-unmatched-header"); len(dropped) > 0 {
 		t.Errorf("Expected x-custom-unmatched-header to be dropped, got %v", dropped)
+	}
+}
+
+func TestInitDataEngine_GracefulFallback(t *testing.T) {
+	// In test environments without ClickHouse running, initDataEngine should gracefully
+	// return nil without panicking or failing fatally.
+	ctx := context.Background()
+	_ = initDataEngine(ctx)
+}
+
+func TestGracefulShutdown_Signal(t *testing.T) {
+	httpServer := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	}
+	grpcServer := grpc.NewServer()
+
+	quit := make(chan os.Signal, 1)
+	errChan := make(chan error, 2)
+
+	// Send signal immediately to trigger shutdown
+	quit <- syscall.SIGTERM
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		gracefulShutdown(ctx, httpServer, grpcServer, quit, errChan)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Succeeded cleanly
+	case <-time.After(3 * time.Second):
+		t.Fatal("gracefulShutdown timed out on signal")
+	}
+}
+
+func TestGracefulShutdown_ServerError(t *testing.T) {
+	httpServer := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+	}
+	grpcServer := grpc.NewServer()
+
+	quit := make(chan os.Signal, 1)
+	errChan := make(chan error, 2)
+
+	// Send error to trigger shutdown
+	errChan <- errors.New("simulated fatal server error")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		gracefulShutdown(ctx, httpServer, grpcServer, quit, errChan)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Succeeded cleanly
+	case <-time.After(3 * time.Second):
+		t.Fatal("gracefulShutdown timed out on error")
 	}
 }
