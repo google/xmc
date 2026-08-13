@@ -30,13 +30,22 @@ import (
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
+type (
+	createDashboardFunc = func(ctx context.Context, dashboard *dpb.Dashboard) error
+	getDashboardFunc    = func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error)
+	listDashboardsFunc  = func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error)
+	updateDashboardFunc = func(ctx context.Context, dashboard *dpb.Dashboard, updateMask *fieldmaskpb.FieldMask) (*dpb.Dashboard, error)
+	deleteDashboardFunc = func(ctx context.Context, dashboardId string) error
+	getChartFunc        = func(ctx context.Context, chartId string) (*dpb.Chart, error)
+)
+
 type mockRepository struct {
-	createDashboardFn func(ctx context.Context, dashboard *dpb.Dashboard) error
-	getDashboardFn    func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error)
-	listDashboardsFn  func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error)
-	updateDashboardFn func(ctx context.Context, dashboard *dpb.Dashboard, updateMask *fieldmaskpb.FieldMask) (*dpb.Dashboard, error)
-	deleteDashboardFn func(ctx context.Context, dashboardId string) error
-	getChartFn        func(ctx context.Context, chartId string) (*dpb.Chart, error)
+	createDashboardFn createDashboardFunc
+	getDashboardFn    getDashboardFunc
+	listDashboardsFn  listDashboardsFunc
+	updateDashboardFn updateDashboardFunc
+	deleteDashboardFn deleteDashboardFunc
+	getChartFn        getChartFunc
 }
 
 func (m *mockRepository) CreateDashboard(ctx context.Context, dashboard *dpb.Dashboard) error {
