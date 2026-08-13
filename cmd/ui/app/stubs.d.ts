@@ -181,7 +181,11 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
     import('xmanager_cloud/experiment_state_server/proto/status.jsonpb_decls').WorkUnitStatus.WorkUnitState;
 
   export type RangePreset =
-    'RANGE_PRESET_UNSPECIFIED' | 'LAST_HOUR' | 'LAST_DAY' | 'LAST_WEEK' | number;
+    | 'RANGE_PRESET_UNSPECIFIED'
+    | 'LAST_HOUR'
+    | 'LAST_DAY'
+    | 'LAST_WEEK'
+    | number;
 
   export interface Resource {
     resourceType?: string;
