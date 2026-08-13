@@ -24,7 +24,6 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/storage"
@@ -189,18 +188,19 @@ func TestUpdateArtifact_HappyPath(t *testing.T) {
 
 func TestUpdateArtifact_BadPaths(t *testing.T) {
 	ctx := context.Background()
-	authorizer := createTestAuthorizer(ctx, t)
-	cfg := &config.Config{}
 	xidClient := &mockXidClient{
 		getXidEntryResp:            &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
 		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
-	server := New(&storage.MockStorage{
-		Artifact: &msgpb.Artifact{
-			Name:   "artifacts/123",
-			Parent: "experiments/123",
-		},
-	}, cfg, authorizer, xidClient, nil)
+	server := newTestServer(t,
+		withStorage(&storage.MockStorage{
+			Artifact: &msgpb.Artifact{
+				Name:   "artifacts/123",
+				Parent: "experiments/123",
+			},
+		}),
+		withXidClient(xidClient),
+	)
 
 	testCases := []struct {
 		name    string
@@ -243,8 +243,6 @@ func TestUpdateArtifact_BadPaths(t *testing.T) {
 
 func TestUpdateArtifact_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
-
-	cfg := &config.Config{}
 
 	goodReq := &apipb.UpdateArtifactRequest{
 		Artifact:   &msgpb.Artifact{Name: "artifacts/123", Parent: "experiments/123", Notes: "new notes"},
@@ -358,10 +356,17 @@ func TestUpdateArtifact_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.authenticator == nil {
-				tc.authenticator = createTestAuthorizer(ctx, t)
+			var opts []testServerOpt
+			if tc.storage != nil {
+				opts = append(opts, withStorage(tc.storage))
 			}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil)
+			if tc.authenticator != nil {
+				opts = append(opts, withAuthorizer(tc.authenticator))
+			}
+			if tc.xidClient != nil {
+				opts = append(opts, withXidClient(tc.xidClient))
+			}
+			server := newTestServer(t, opts...)
 			_, err := server.UpdateArtifact(ctx, tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("UpdateArtifact(%q) returned error %v, want %v", tc.req.GetArtifact().GetName(), err, tc.wantErr)

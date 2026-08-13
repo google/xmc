@@ -24,7 +24,6 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/storage"
@@ -96,7 +95,6 @@ func TestGetArtifact_BadPaths(t *testing.T) {
 
 func TestGetArtifact_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{}
 
 	goodReq := &apipb.GetArtifactRequest{Name: "artifacts/123"}
 
@@ -162,10 +160,17 @@ func TestGetArtifact_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.authenticator == nil {
-				tc.authenticator = createTestAuthorizer(ctx, t)
+			var opts []testServerOpt
+			if tc.storage != nil {
+				opts = append(opts, withStorage(tc.storage))
 			}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil)
+			if tc.authenticator != nil {
+				opts = append(opts, withAuthorizer(tc.authenticator))
+			}
+			if tc.xidClient != nil {
+				opts = append(opts, withXidClient(tc.xidClient))
+			}
+			server := newTestServer(t, opts...)
 			_, err := server.GetArtifact(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("GetArtifact(name=%q) returned error %v, want %v", goodReq.GetName(), err, tc.wantErr)
@@ -253,7 +258,7 @@ func TestEnrichManagedXprof(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			s := &Server{storage: tc.mockStorage}
+			s := newTestServer(t, withStorage(tc.mockStorage))
 			s.enrichManagedXprof(ctx, tc.artifact)
 
 			xprof := tc.artifact.GetPayload().GetManagedXprof()
@@ -387,7 +392,7 @@ func TestEnrichArtifactOutputFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			s := &Server{storage: tc.mockStorage}
+			s := newTestServer(t, withStorage(tc.mockStorage))
 			s.enrichArtifactOutputFields(ctx, tc.artifact)
 
 			xprof := tc.artifact.GetPayload().GetManagedXprof()
@@ -408,7 +413,7 @@ func TestEnrichArtifactOutputFields(t *testing.T) {
 
 func TestEnrichArtifactOutputFieldsNilSafety(t *testing.T) {
 	ctx := context.Background()
-	s := &Server{storage: &storage.MockStorage{}}
+	s := newTestServer(t)
 
 	// Calling enrichArtifactOutputFields with a nil artifact should return immediately without panicking.
 	s.enrichArtifactOutputFields(ctx, nil)

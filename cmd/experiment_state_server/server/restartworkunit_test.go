@@ -25,7 +25,6 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/storage"
@@ -147,9 +146,7 @@ func TestRestartWorkUnit_HappyPath(t *testing.T) {
 
 func TestRestartWorkUnit_BadPaths(t *testing.T) {
 	ctx := context.Background()
-	authorizer := createTestAuthorizer(ctx, t)
-	cfg := &config.Config{}
-	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil)
+	server := newTestServer(t)
 
 	testCases := []struct {
 		name    string
@@ -175,7 +172,6 @@ func TestRestartWorkUnit_BadPaths(t *testing.T) {
 
 func TestRestartWorkUnit_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{}
 
 	goodReq := &apipb.RestartWorkUnitRequest{Name: "experiments/123/workUnits/456"}
 	workUnit := &msgpb.WorkUnit{
@@ -262,14 +258,20 @@ func TestRestartWorkUnit_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.authenticator == nil {
-				tc.authenticator = createTestAuthorizer(ctx, t)
+			var opts []testServerOpt
+			if tc.storage != nil {
+				opts = append(opts, withStorage(tc.storage))
 			}
-			taskQueueClient := tc.taskQueueClient
-			if taskQueueClient == nil {
-				taskQueueClient = &tq.FakeClient{}
+			if tc.authenticator != nil {
+				opts = append(opts, withAuthorizer(tc.authenticator))
 			}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient)
+			if tc.xidClient != nil {
+				opts = append(opts, withXidClient(tc.xidClient))
+			}
+			if tc.taskQueueClient != nil {
+				opts = append(opts, withTaskQueueClient(tc.taskQueueClient))
+			}
+			server := newTestServer(t, opts...)
 			_, err := server.RestartWorkUnit(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("RestartWorkUnit() returned error %v, want %v", err, tc.wantErr)
@@ -280,7 +282,6 @@ func TestRestartWorkUnit_DependencyFailures(t *testing.T) {
 
 func TestRestartWorkUnit_TaskEnqueueFails(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{}
 
 	goodReq := &apipb.RestartWorkUnitRequest{Name: "experiments/123/workUnits/456"}
 	workUnit := &msgpb.WorkUnit{
@@ -297,8 +298,11 @@ func TestRestartWorkUnit_TaskEnqueueFails(t *testing.T) {
 		EnqueueErr: fmt.Errorf("task enqueue failed"),
 	}
 
-	authenticator := createTestAuthorizer(ctx, t)
-	server := New(storage, cfg, authenticator, xidClient, taskQueueClient)
+	server := newTestServer(t,
+		withStorage(storage),
+		withXidClient(xidClient),
+		withTaskQueueClient(taskQueueClient),
+	)
 	_, err := server.RestartWorkUnit(ctx, goodReq)
 	if !errors.Is(err, status.ErrInternal) {
 		t.Errorf("RestartWorkUnit() returned error %v, want %v", err, status.ErrInternal)

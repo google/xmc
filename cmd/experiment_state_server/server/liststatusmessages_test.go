@@ -21,7 +21,6 @@ import (
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
-	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/storage"
@@ -43,7 +42,10 @@ func TestListStatusMessages(t *testing.T) {
 		},
 	}
 
-	server := New(mockStorage, &config.Config{}, createTestAuthorizer(ctx, t), mockXid, nil)
+	server := newTestServer(t,
+		withStorage(mockStorage),
+		withXidClient(mockXid),
+	)
 
 	req := &apipb.ListStatusMessagesRequest{
 		Parent: "experiments/123",
@@ -129,7 +131,10 @@ func TestSearchStatusMessages(t *testing.T) {
 		},
 	}
 
-	server := New(mockStorage, &config.Config{}, createTestAuthorizer(ctx, t), mockXid, nil)
+	server := newTestServer(t,
+		withStorage(mockStorage),
+		withXidClient(mockXid),
+	)
 
 	req := &apipb.ListStatusMessagesRequest{
 		Parent: "experiments/123",

@@ -25,7 +25,6 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/storage"
@@ -177,7 +176,6 @@ func TestListArtifacts_BadPaths(t *testing.T) {
 
 func TestListArtifacts_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{}
 
 	goodReq := &apipb.ListArtifactsRequest{PageSize: 10}
 
@@ -215,7 +213,14 @@ func TestListArtifacts_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			server := New(tc.storage, cfg, tc.authenticator, &mockXidClient{}, nil)
+			var opts []testServerOpt
+			if tc.storage != nil {
+				opts = append(opts, withStorage(tc.storage))
+			}
+			if tc.authenticator != nil {
+				opts = append(opts, withAuthorizer(tc.authenticator))
+			}
+			server := newTestServer(t, opts...)
 			_, err := server.ListArtifacts(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ListArtifacts() returned error %v, want %v", err, tc.wantErr)

@@ -34,21 +34,31 @@ type Server struct {
 	storage         storage.Storage
 	auth            auth.AuthorizerInterface
 	xidClient       xidgrpcpb.XidServiceClient
-	taskQueueClient taskQueueClientInterface
+	taskQueueClient TaskQueueClient
 }
 
-type taskQueueClientInterface interface {
+// TaskQueueClient defines the interface for task queue operations.
+type TaskQueueClient interface {
 	EnqueueWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error
 	Close() error
 }
 
+// Params holds dependencies for creating a Server.
+type Params struct {
+	Config          *config.Config
+	Storage         storage.Storage
+	Authorizer      auth.AuthorizerInterface
+	XidClient       xidgrpcpb.XidServiceClient
+	TaskQueueClient TaskQueueClient
+}
+
 // New creates a new instance of the Experiment State Server.
-func New(storage storage.Storage, cfg *config.Config, auth auth.AuthorizerInterface, xidClient xidgrpcpb.XidServiceClient, taskQueueClient taskQueueClientInterface) *Server {
+func New(p Params) *Server {
 	return &Server{
-		cfg:             cfg,
-		storage:         storage,
-		auth:            auth,
-		xidClient:       xidClient,
-		taskQueueClient: taskQueueClient,
+		cfg:             p.Config,
+		storage:         p.Storage,
+		auth:            p.Authorizer,
+		xidClient:       p.XidClient,
+		taskQueueClient: p.TaskQueueClient,
 	}
 }

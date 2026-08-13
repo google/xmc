@@ -102,7 +102,13 @@ func main() {
 	defer taskQueueClient.Close()
 
 	// 6. Set up the gRPC server.
-	experimentStateServer := server.New(storage, &cfg, auth, xidClient, taskQueueClient)
+	experimentStateServer := server.New(server.Params{
+		Config:          &cfg,
+		Storage:         storage,
+		Authorizer:      auth,
+		XidClient:       xidClient,
+		TaskQueueClient: taskQueueClient,
+	})
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
