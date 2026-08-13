@@ -78,6 +78,14 @@ export class QueueCardHarness extends ComponentHarness {
     return btn ? btn.text() : null;
   }
 
+  private readonly wipBannerElement = this.locatorForOptional('.wip-banner');
+
+  /** Gets the text of the Work in Progress banner if present. */
+  async getWipBannerText(): Promise<string | null> {
+    const banner = await this.wipBannerElement();
+    return banner ? banner.text() : null;
+  }
+
   /** Clicks the queue card element. */
   async click(): Promise<void> {
     const card = await this.cardElement();
