@@ -22,6 +22,7 @@ compat_go_library(
         "createartifact.go",
         "createexperiment.go",
         "createworkunit.go",
+        "dashboard_observer.go",
         "deleteartifact.go",
         "getartifact.go",
         "getcurrentworkunitexecution.go",

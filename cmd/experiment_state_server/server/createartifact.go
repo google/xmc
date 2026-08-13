@@ -1,22 +1,22 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//	http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 package server
 
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"task/go/status"
 
@@ -26,39 +26,28 @@ import (
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
-
-	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
-
-	dashboard_apipb "xmanager_cloud/dashboard_service/proto/api_go_proto"
-	dashboard_pb "xmanager_cloud/dashboard_service/proto/service_go_proto"
-	"xmanager_cloud/storage/storage"
 )
 
 func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRequest) (*msgpb.Artifact, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Create artifact", "request", req)
 
-	// 1. Authenticate the user.
 	creator, _, err := s.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. Validate the request payload.
 	if err := validator.ValidateCreateArtifactRequest(req); err != nil {
 		logging.Warn(ctx, "CreateArtifact validation failed", "error", err)
 		return nil, fmt.Errorf("CreateArtifact validation failed: %w (%v)", status.ErrInvalidArgument, err)
 	}
 
-	// 2.1. Fill in any null values in the request payload.
 	artifact := validator.FillArtifactNullValues(req.GetArtifact())
 
-	// 2.2. Validate ChartArtifact payload.
 	if err := s.validateChartArtifactPayload(ctx, artifact, req.GetParent()); err != nil {
 		return nil, err
 	}
 
-	// 3. Get the parent experiment or work unit.
 	parentXID, _, err := validator.ValidateArtifactParent(req.GetParent())
 	if err != nil {
 		logging.Error(ctx, "Failed to validate parent", "parent", req.GetParent(), "error", err)
@@ -66,7 +55,6 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 	}
 	ctx = logging.WithArtifactParent(ctx, req.GetParent())
 
-	// 3.1. Authorize the user to write against the parent experiment or work unit.
 	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(parentXID), creator, xidmsgpb.XidAcls_READER.Enum())
 	if err != nil {
 		return nil, err
@@ -76,7 +64,6 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 		return nil, fmt.Errorf("user %s is not authorized to create artifacts for XID %d: %w", creator, parentXID, status.ErrPermissionDenied)
 	}
 
-	// 4. Provision an XIDEntry for the artifact.
 	logging.Debug(ctx, "Calling XID service to provision ID", "creator", creator)
 	artifactXIDEntry, err := s.createXid(ctx, creator, s.cfg.EndpointURL, artifact.Acls, validator.ConstructXIDName(parentXID))
 	if err != nil {
@@ -85,14 +72,12 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 	}
 	logging.Debug(ctx, "Successfully provisioned XID")
 
-	// 4.1. Get the XID from the XIDEntry.
 	artifactXID, err := validator.ValidateXIDName(artifactXIDEntry.GetName())
 	if err != nil {
 		logging.Error(ctx, "Failed to validate XID name", "xid_name", artifactXIDEntry.GetName(), "error", err)
 		return nil, fmt.Errorf("failed to validate XID name %s: %w (%v)", artifactXIDEntry.GetName(), status.ErrInternal, err)
 	}
 
-	// 5. Assemble the artifact object.
 	logging.Debug(ctx, "Assembling artifact object")
 	name := validator.ConstructArtifactName(artifactXID)
 	ctx = logging.WithArtifactName(ctx, name)
@@ -110,7 +95,6 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 		Payload:        artifact.Payload,
 	}
 
-	// 6. Persist the artifact to the storage layer.
 	logging.Debug(ctx, "Persisting artifact")
 	retArtifact, err := s.storage.CreateArtifact(ctx, newArtifact)
 	if err != nil {
@@ -118,80 +102,21 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 		return nil, fmt.Errorf("failed to save artifact %s: %w (%v)", newArtifact.GetName(), status.ErrInternal, err)
 	}
 
-	// 6.1. Set the artifact's ACLs to the XIDEntry's ACLs.
 	retArtifact.Acls = artifactXIDEntry.Acls
 
-	// 6.2. If it is a ChartArtifact, provision it asynchronously in the background.
-	if chartArtifact := retArtifact.GetPayload().GetChart(); chartArtifact != nil {
-		// Create a decoupled copy for the background task to mutate safely
+	if len(s.artifactObservers) > 0 {
 		artifactCopy, ok := proto.Clone(retArtifact).(*msgpb.Artifact)
 		if !ok {
 			logging.Error(ctx, "Failed to clone retArtifact for async provisioning")
 			return nil, fmt.Errorf("failed to clone artifact: %w", status.ErrInternal)
 		}
-		s.bgTaskWG.Add(1)
-		go s.provisionChartArtifactAsync(context.WithoutCancel(ctx), artifactCopy)
+		for _, obs := range s.artifactObservers {
+			obs.OnArtifactCreated(context.WithoutCancel(ctx), artifactCopy)
+		}
 	}
 
-	// 7. Return the successful response.
 	logging.Info(ctx, "Created artifact")
 	return retArtifact, nil
-}
-
-func (s *Server) provisionChartArtifactAsync(ctxBg context.Context, artifactToProvision *msgpb.Artifact) {
-	defer s.bgTaskWG.Done()
-	defer func() {
-		if r := recover(); r != nil {
-			logging.Error(ctxBg, "Recovered from panic in provisionChartArtifactAsync", "panic", r)
-		}
-	}()
-
-	// Apply 2-minute deadline to avoid indefinite hang blocking server teardown.
-	ctxBg, cancel := context.WithTimeout(ctxBg, 2*time.Minute)
-	defer cancel()
-
-	// Determine parent XID and WID to construct dashboard chart.
-	xid, wid, _ := validator.ValidateWorkUnitName(artifactToProvision.GetParent())
-
-	cArtifact := artifactToProvision.GetPayload().GetChart()
-	title := cArtifact.GetTitle()
-	if title == "" {
-		title = fmt.Sprintf("Chart for XID %d WID %d", xid, wid)
-	}
-
-	// Call Dashboard service.
-	_, err := s.dashboardToolClient.CreateChart(ctxBg, &dashboard_pb.CreateChartRequest{
-		Parent: fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid), // Or maybe just dashboard name
-		Chart: &dashboard_apipb.Chart{
-			Title: title,
-			Xid:   xid,
-			Wid:   wid,
-		},
-	})
-
-	if err != nil {
-		logging.Error(ctxBg, "Background Chart provisioning failed", "error", err)
-		cArtifact.Status = msgpb.ChartArtifact_FAILED
-		cArtifact.ErrorMessage = err.Error()
-	} else {
-		logging.Info(ctxBg, "Background Chart provisioning succeeded")
-		cArtifact.Status = msgpb.ChartArtifact_SUCCESS
-	}
-
-	// Save back to Spanner.
-	aid, _ := validator.ValidateArtifactName(artifactToProvision.GetName())
-
-	if artifactToProvision.Tags == nil {
-		artifactToProvision.Tags = []string{}
-	}
-
-	if _, err := s.storage.UpdateArtifact(ctxBg, &storage.ArtifactUpdate{
-		AID:        aid,
-		Artifact:   artifactToProvision,
-		UpdateMask: &fmpb.FieldMask{Paths: []string{"payload", "tags"}},
-	}); err != nil {
-		logging.Error(ctxBg, "Failed to update ChartArtifact status in Spanner", "error", err)
-	}
 }
 
 func (s *Server) validateChartArtifactPayload(ctx context.Context, artifact *msgpb.Artifact, parent string) error {

@@ -278,7 +278,7 @@ func TestCreateWorkUnit_IncompatibleWorkUnit(t *testing.T) {
 	taskQueueClient := &tq.FakeClient{}
 
 	authenticator := createTestAuthorizer(ctx, t)
-	server := New(storage, cfg, authenticator, xidClient, taskQueueClient, nil)
+	server := New(storage, cfg, authenticator, xidClient, taskQueueClient)
 
 	_, err := server.CreateWorkUnit(ctx, req)
 	if !errors.Is(err, status.ErrInvalidArgument) {
@@ -420,7 +420,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 				tc.authenticator = createTestAuthorizer(ctx, t)
 			}
 			taskQueueClient := &tq.FakeClient{}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient, nil)
+			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient)
 			_, err := server.CreateWorkUnit(ctx, proto.Clone(goodReq).(*apipb.CreateWorkUnitRequest))
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("CreateWorkUnit() = error %v, want %v", err, tc.wantErr)
@@ -452,7 +452,7 @@ func TestCreateWorkUnit_TaskEnqueueFails(t *testing.T) {
 	}
 
 	authenticator := createTestAuthorizer(ctx, t)
-	server := New(storage, cfg, authenticator, xidClient, taskQueueClient, nil)
+	server := New(storage, cfg, authenticator, xidClient, taskQueueClient)
 
 	_, err := server.CreateWorkUnit(ctx, proto.Clone(goodReq).(*apipb.CreateWorkUnitRequest))
 	if !errors.Is(err, status.ErrInternal) {

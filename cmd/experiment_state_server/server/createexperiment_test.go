@@ -256,7 +256,7 @@ func TestCreateExperiment_DependencyFailures(t *testing.T) {
 			if tc.authenticator != nil {
 				auth = tc.authenticator
 			}
-			server := New(tc.storage, cfg, auth, tc.xidClient, nil, nil)
+			server := New(tc.storage, cfg, auth, tc.xidClient, nil)
 			_, err := server.CreateExperiment(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("CreateExperiment() returned error %v, want %v", err, tc.wantErr)

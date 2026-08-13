@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -288,7 +289,7 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 			if tc.authenticator != nil {
 				auth = tc.authenticator
 			}
-			server := New(tc.storage, cfg, auth, tc.xidClient, nil, nil)
+			server := New(tc.storage, cfg, auth, tc.xidClient, nil)
 			_, err := server.CreateArtifact(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("%s: CreateArtifact() returned error %v, want %v", tc.name, err, tc.wantErr)
@@ -359,8 +360,13 @@ func TestCreateArtifact_ChartArtifact(t *testing.T) {
 			mockDash := &mockDashboardClient{
 				createChartErr: tc.clientErr,
 			}
-			toolClient := toollibs.NewDashboardToolClient(mockDash)
-			server := New(storageClient, cfg, auth, xidClient, taskQueueClient, toolClient)
+			var bgTaskWG sync.WaitGroup
+			var obs []ArtifactObserver
+			if mockDash != nil {
+				toolClient := toollibs.NewDashboardToolClient(mockDash)
+				obs = append(obs, NewDashboardObserver(toolClient, storageClient, &bgTaskWG))
+			}
+			server := New(storageClient, cfg, auth, xidClient, taskQueueClient, obs...)
 
 			// Create parent Experiment
 			exp := mustCreateExperiment(ctx, t, server, nil)
@@ -376,7 +382,7 @@ func TestCreateArtifact_ChartArtifact(t *testing.T) {
 				t.Fatalf("CreateArtifact returned unexpected error: %v", err)
 			}
 			// Synchronize WaitGroup on the server to wait for async tasks
-			server.Wait()
+			bgTaskWG.Wait()
 
 			gotFromDB, err := server.GetArtifact(ctx, &apipb.GetArtifactRequest{
 				Name: got.GetName(),

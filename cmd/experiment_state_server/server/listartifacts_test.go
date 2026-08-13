@@ -216,7 +216,7 @@ func TestListArtifacts_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			server := New(tc.storage, cfg, tc.authenticator, &mockXidClient{}, nil, nil)
+			server := New(tc.storage, cfg, tc.authenticator, &mockXidClient{}, nil)
 			_, err := server.ListArtifacts(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ListArtifacts() returned error %v, want %v", err, tc.wantErr)

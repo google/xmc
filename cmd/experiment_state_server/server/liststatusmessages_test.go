@@ -44,7 +44,7 @@ func TestListStatusMessages(t *testing.T) {
 		},
 	}
 
-	server := New(mockStorage, &config.Config{}, createTestAuthorizer(ctx, t), mockXid, nil, nil)
+	server := New(mockStorage, &config.Config{}, createTestAuthorizer(ctx, t), mockXid, nil)
 
 	req := &apipb.ListStatusMessagesRequest{
 		Parent: "experiments/123",
@@ -130,7 +130,7 @@ func TestSearchStatusMessages(t *testing.T) {
 		},
 	}
 
-	server := New(mockStorage, &config.Config{}, createTestAuthorizer(ctx, t), mockXid, nil, nil)
+	server := New(mockStorage, &config.Config{}, createTestAuthorizer(ctx, t), mockXid, nil)
 
 	req := &apipb.ListStatusMessagesRequest{
 		Parent: "experiments/123",

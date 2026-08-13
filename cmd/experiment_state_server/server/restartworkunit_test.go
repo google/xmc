@@ -150,7 +150,7 @@ func TestRestartWorkUnit_BadPaths(t *testing.T) {
 	ctx := context.Background()
 	authorizer := createTestAuthorizer(ctx, t)
 	cfg := &config.Config{}
-	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil, nil)
+	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil)
 
 	testCases := []struct {
 		name    string
@@ -270,7 +270,7 @@ func TestRestartWorkUnit_DependencyFailures(t *testing.T) {
 			if taskQueueClient == nil {
 				taskQueueClient = &tq.FakeClient{}
 			}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient, nil)
+			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient)
 			_, err := server.RestartWorkUnit(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("RestartWorkUnit() returned error %v, want %v", err, tc.wantErr)
@@ -299,7 +299,7 @@ func TestRestartWorkUnit_TaskEnqueueFails(t *testing.T) {
 	}
 
 	authenticator := createTestAuthorizer(ctx, t)
-	server := New(storage, cfg, authenticator, xidClient, taskQueueClient, nil)
+	server := New(storage, cfg, authenticator, xidClient, taskQueueClient)
 	_, err := server.RestartWorkUnit(ctx, goodReq)
 	if !errors.Is(err, status.ErrInternal) {
 		t.Errorf("RestartWorkUnit() returned error %v, want %v", err, status.ErrInternal)

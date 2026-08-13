@@ -164,7 +164,7 @@ func TestDeleteArtifact_DependencyFailures(t *testing.T) {
 			if tc.authenticator == nil {
 				tc.authenticator = createTestAuthorizer(ctx, t)
 			}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil, nil)
+			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil)
 			_, err := server.DeleteArtifact(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("DeleteArtifact() returned error %v, want %v", err, tc.wantErr)

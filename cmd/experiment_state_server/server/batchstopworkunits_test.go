@@ -205,7 +205,7 @@ func TestBatchStopWorkUnits_BadPaths(t *testing.T) {
 	ctx := context.Background()
 	authorizer := createTestAuthorizer(ctx, t)
 	cfg := &config.Config{}
-	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil, nil)
+	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil)
 
 	testCases := []struct {
 		name    string
@@ -313,7 +313,7 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 				tc.authenticator = createTestAuthorizer(ctx, t)
 			}
 			taskQueueClient := &tq.FakeClient{}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient, nil)
+			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient)
 			_, err := server.BatchStopWorkUnits(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("BatchStopWorkUnits() got error %v, want %v", err, tc.wantErr)
@@ -344,7 +344,7 @@ func TestBatchStopWorkUnits_TaskEnqueueFails(t *testing.T) {
 	}
 
 	authenticator := createTestAuthorizer(ctx, t)
-	server := New(storage, cfg, authenticator, xidClient, taskQueueClient, nil)
+	server := New(storage, cfg, authenticator, xidClient, taskQueueClient)
 
 	req := &apipb.BatchStopWorkUnitsRequest{Parent: "experiments/123"}
 	_, err := server.BatchStopWorkUnits(ctx, req)

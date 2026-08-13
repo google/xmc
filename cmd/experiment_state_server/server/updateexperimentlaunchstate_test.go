@@ -71,7 +71,7 @@ func TestUpdateExperimentLaunchState_BadPaths(t *testing.T) {
 	ctx := context.Background()
 	authorizer := createTestAuthorizer(ctx, t)
 	cfg := &config.Config{}
-	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil, nil)
+	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil)
 
 	testCases := []struct {
 		name    string
@@ -172,7 +172,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 			if tc.authenticator == nil {
 				tc.authenticator = createTestAuthorizer(ctx, t)
 			}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil, nil)
+			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil)
 			_, err := server.UpdateExperimentLaunchState(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("UpdateExperimentLaunchState() returned error %v, want %v", err, tc.wantErr)

@@ -91,7 +91,7 @@ func TestGetWorkUnit_BadPaths(t *testing.T) {
 	ctx := context.Background()
 	authorizer := createTestAuthorizer(ctx, t)
 	cfg := &config.Config{}
-	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil, nil)
+	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil)
 
 	testCases := []struct {
 		name    string
@@ -178,7 +178,7 @@ func TestGetWorkUnit_DependencyFailures(t *testing.T) {
 			if tc.authenticator == nil {
 				tc.authenticator = createTestAuthorizer(ctx, t)
 			}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil, nil)
+			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil)
 			_, err := server.GetWorkUnit(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("GetWorkUnit(%v) returned error %v, want %v", goodReq, err, tc.wantErr)

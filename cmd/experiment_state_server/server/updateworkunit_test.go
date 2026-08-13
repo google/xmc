@@ -185,7 +185,7 @@ func TestUpdateWorkUnit_BadPaths(t *testing.T) {
 	ctx := context.Background()
 	authorizer := createTestAuthorizer(ctx, t)
 	cfg := &config.Config{}
-	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil, nil)
+	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil)
 
 	testCases := []struct {
 		name    string
@@ -303,7 +303,7 @@ func TestUpdateWorkUnit_DependencyFailures(t *testing.T) {
 				tc.authenticator = createTestAuthorizer(ctx, t)
 			}
 			taskQueueClient := &tq.FakeClient{}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient, nil)
+			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient)
 			_, err := server.UpdateWorkUnit(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("UpdateWorkUnit() got error %v, want %v", err, tc.wantErr)

@@ -109,7 +109,7 @@ func createExperimentStateServer(ctx context.Context, t *testing.T) (*Server, *t
 	}
 	xidClient := xidgrpcpb.NewXidServiceClient(conn)
 	taskQueueClient := &tq.FakeClient{}
-	return New(storage, &cfg, createTestAuthorizer(ctx, t), xidClient, taskQueueClient, nil), taskQueueClient
+	return New(storage, &cfg, createTestAuthorizer(ctx, t), xidClient, taskQueueClient), taskQueueClient
 }
 
 func createXidServer(ctx context.Context, t *testing.T, xidClient *googlespanner.Client) net.Listener {
@@ -357,7 +357,7 @@ func TestStopOperationOnError(t *testing.T) {
 			storage := &storage.MockStorage{
 				UpdateWorkUnitOperationErr: tc.updateWorkUnitOperationErr,
 			}
-			server := New(storage, cfg, authorizer, &mockXidClient{}, nil, nil)
+			server := New(storage, cfg, authorizer, &mockXidClient{}, nil)
 
 			server.stopOperationOnError(ctx, tc.op, tc.err)
 
@@ -537,7 +537,7 @@ func TestHandleEnqueueActionError(t *testing.T) {
 			mockStore := &storage.MockStorage{
 				UpdateWorkUnitExecutionsErr: tc.updateWorkUnitExecutionsErr,
 			}
-			server := New(mockStore, cfg, authorizer, &mockXidClient{}, nil, nil)
+			server := New(mockStore, cfg, authorizer, &mockXidClient{}, nil)
 
 			err := server.handleEnqueueActionError(ctx, "stop", tc.workUnit, 123, 456, essmsgpb.StructuredMessage_ERROR, enqueueErr)
 			if (err != nil) != tc.wantErr {

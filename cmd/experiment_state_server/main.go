@@ -28,6 +28,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -103,6 +104,8 @@ func main() {
 	// 5. Initialize Task Queue client.
 	taskQueueClient := initTaskQueueClient(ctx, &cfg)
 	defer taskQueueClient.Close()
+	var bgTaskWG sync.WaitGroup
+	var artifactObservers []server.ArtifactObserver
 
 	// 5.5 Initialize Dashboard client.
 	logging.Info(ctx, "Connecting to Dashboard service", "addr", cfg.DashboardServiceAddr)
@@ -114,9 +117,10 @@ func main() {
 	}
 	defer dashboardConn.Close()
 	dashboardToolClient := toollibs.NewDashboardToolClient(dashboard_pb.NewDashboardServiceClient(dashboardConn))
+	artifactObservers = append(artifactObservers, server.NewDashboardObserver(dashboardToolClient, storage, &bgTaskWG))
 
 	// 6. Set up the gRPC server.
-	experimentStateServer := server.New(storage, &cfg, auth, xidClient, taskQueueClient, dashboardToolClient)
+	experimentStateServer := server.New(storage, &cfg, auth, xidClient, taskQueueClient, artifactObservers...)
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
@@ -242,7 +246,7 @@ func main() {
 	logging.Info(ctx, "Shutting down gRPC server")
 	s.GracefulStop()
 	logging.Info(ctx, "Waiting for background tasks to complete")
-	experimentStateServer.Wait()
+	bgTaskWG.Wait()
 	logging.Info(ctx, "Server gracefully stopped")
 }
 

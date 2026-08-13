@@ -201,7 +201,7 @@ func TestUpdateArtifact_BadPaths(t *testing.T) {
 			Name:   "artifacts/123",
 			Parent: "experiments/123",
 		},
-	}, cfg, authorizer, xidClient, nil, nil)
+	}, cfg, authorizer, xidClient, nil)
 
 	testCases := []struct {
 		name    string
@@ -362,7 +362,7 @@ func TestUpdateArtifact_DependencyFailures(t *testing.T) {
 			if tc.authenticator == nil {
 				tc.authenticator = createTestAuthorizer(ctx, t)
 			}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil, nil)
+			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil)
 			_, err := server.UpdateArtifact(ctx, tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("UpdateArtifact(%q) returned error %v, want %v", tc.req.GetArtifact().GetName(), err, tc.wantErr)
