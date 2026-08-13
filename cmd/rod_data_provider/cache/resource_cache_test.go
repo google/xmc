@@ -113,4 +113,3 @@ func TestResourceCacheConcurrent(t *testing.T) {
 		<-done
 	}
 }
-

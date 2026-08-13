@@ -127,7 +127,6 @@
         <span class="section-title-text">Predictability</span>
       </div>
 
-
       @if (isSecondaryLoading() || !predictability()) {
         <div class="predictability-spinner-container">
           <mat-spinner diameter="24" />
@@ -161,23 +160,21 @@
               >
             </div>
             <div class="cell-value bold-metric dark-text">
-              {{ pred.resourceVelocity?.velocity | number: '1.0-2' }} {{ pred.resourceVelocity?.resourceType || 'units' }}/hr
+              {{ pred.resourceVelocity?.velocity | number: '1.0-2' }}
+              {{ pred.resourceVelocity?.resourceType || 'units' }}/hr
             </div>
           </div>
           <div class="stat-cell">
-            <div class="cell-label">
-              Pending jobs
-            </div>
+            <div class="cell-label">Pending jobs</div>
             <div class="cell-value bold-metric dark-text">
               {{ pred.pendingJobs }}
             </div>
           </div>
           <div class="stat-cell">
-            <div class="cell-label">
-              Requested resources
-            </div>
+            <div class="cell-label">Requested resources</div>
             <div class="cell-value bold-metric dark-text">
-              {{ pred.pendingResourceRequests?.count || 0 }} {{ pred.pendingResourceRequests?.resourceType || 'units' }}
+              {{ pred.pendingResourceRequests?.count || 0 }}
+              {{ pred.pendingResourceRequests?.resourceType || 'units' }}
             </div>
           </div>
         </div>

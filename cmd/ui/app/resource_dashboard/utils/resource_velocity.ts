@@ -88,9 +88,7 @@ export function findQueuePredictability(
 ): QueuePredictability | undefined {
   const targetRange = mapPeriodToRangePreset(period);
   const predictabilities = queue?.queuePredictability ?? [];
-  return (
-    predictabilities.find((p) => p.velocityRange === targetRange) ?? predictabilities[0]
-  );
+  return predictabilities.find((p) => p.velocityRange === targetRange) ?? predictabilities[0];
 }
 
 /**
@@ -109,7 +107,10 @@ export function getPendingJobsCount(queue: ClusterQueueSecondaryMetrics): number
 /**
  * Calculate resource velocity string for a cluster queue over a timeframe.
  */
-export function calculateResourceVelocity(queue: ClusterQueueSecondaryMetrics, period: string): string {
+export function calculateResourceVelocity(
+  queue: ClusterQueueSecondaryMetrics,
+  period: string,
+): string {
   const match = findQueuePredictability(queue, period);
   const vel = match?.resourceVelocity?.velocity ?? 0;
   const resType = match?.resourceVelocity?.resourceType ?? 'units';

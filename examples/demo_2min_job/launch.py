@@ -24,7 +24,6 @@ Usage:
 
 import logging
 import os
-import sys
 from collections.abc import Sequence
 
 import dotenv
@@ -58,7 +57,7 @@ def parse_priority(priority_str: str) -> priority_pb2.Priority.ValueType:
     p_upper = priority_str.upper()
     if p_upper == "HIGH":
         return priority_pb2.Priority.HIGH
-    elif p_upper == "LOW":
+    if p_upper == "LOW":
         return priority_pb2.Priority.LOW
     return priority_pb2.Priority.NORMAL
 
@@ -71,7 +70,6 @@ def main(argv: Sequence[str]) -> None:
     os.environ["USER"] = FLAGS.author
     os.environ["LOGNAME"] = FLAGS.author
 
-    project_id = os.environ.get("PROJECT_ID")
     image_path = os.environ.get("IMAGE_PATH", "python:3.11-slim")
 
     priority_enum = parse_priority(FLAGS.priority)

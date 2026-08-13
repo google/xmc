@@ -161,12 +161,16 @@ describe('ResourceService', () => {
 
       const response = await responsePromise;
       expect(response.queuePredictability?.['cq-gpu']?.queuePredictability?.length).toBe(1);
-      expect(response.queuePredictability?.['cq-gpu']?.queuePredictability?.[0].jobVelocity).toBe(12.5);
+      expect(response.queuePredictability?.['cq-gpu']?.queuePredictability?.[0].jobVelocity).toBe(
+        12.5,
+      );
       await flush();
     });
 
     it('should return empty queuePredictability immediately when queueNames is empty', async () => {
-      const response: BatchGetQueueSecondaryDataResponse = await firstValueFrom(state.service.getQueueSecondaryData([]));
+      const response: BatchGetQueueSecondaryDataResponse = await firstValueFrom(
+        state.service.getQueueSecondaryData([]),
+      );
       expect(response.queuePredictability).toEqual({});
     });
   });
