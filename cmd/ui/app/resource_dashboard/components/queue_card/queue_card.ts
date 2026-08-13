@@ -32,7 +32,7 @@ import {
   MaxWorkloadDisplayPipe,
   QueueStatusBadgePipe,
 } from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
-import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
+import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
 
 @Component({
   selector: 'xmc-rod-queue-card',
@@ -46,6 +46,7 @@ import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service'
     MaxWorkloadDisplayPipe,
     FreeTotalDisplayPipe,
     QueueStatusBadgePipe,
+    WipBannerComponent,
   ],
 })
 export class QueueCardComponent {
