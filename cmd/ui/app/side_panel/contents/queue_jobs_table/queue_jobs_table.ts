@@ -35,6 +35,8 @@ import {
   QueueJobStatusPipe,
 } from './queue_jobs_pipes';
 
+import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
+
 /** Payload data required to open the queue jobs inspection panel. */
 export class QueueJobsTableData implements BaseSidePanelData {
   constructor(readonly queueName: string) {}
@@ -60,6 +62,7 @@ export class QueueJobsTableData implements BaseSidePanelData {
     QueueJobStatusPipe,
     QueueJobPositionPipe,
     QueueJobResourcesPipe,
+    WipBannerComponent,
   ],
 })
 export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> {
