@@ -28,8 +28,15 @@ import { WipBannerHarness } from './wip_banner_harness';
   template: `<xmc-wip-banner [text]="customText()" />`,
 })
 class TestHostComponent {
-  readonly customText = signal<string>('Work in Progress');
+  readonly customText = signal<string>('Custom Banner Text');
 }
+
+@Component({
+  standalone: true,
+  imports: [WipBannerComponent],
+  template: `<xmc-wip-banner />`,
+})
+class TestDefaultHostComponent {}
 
 describe('WipBannerComponent', () => {
   let fixture: ComponentFixture<TestHostComponent>;
@@ -38,7 +45,7 @@ describe('WipBannerComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [TestHostComponent, NoopAnimationsModule],
+      imports: [TestHostComponent, TestDefaultHostComponent, NoopAnimationsModule],
     }).compileComponents();
 
     fixture = TestBed.createComponent(TestHostComponent);
@@ -49,7 +56,7 @@ describe('WipBannerComponent', () => {
   });
 
   it('should render default Work in Progress banner text when input is omitted', async () => {
-    const defaultFixture = TestBed.createComponent(WipBannerComponent);
+    const defaultFixture = TestBed.createComponent(TestDefaultHostComponent);
     defaultFixture.detectChanges();
     const loader = TestbedHarnessEnvironment.loader(defaultFixture);
     const defaultHarness = await loader.getHarness(WipBannerHarness);
