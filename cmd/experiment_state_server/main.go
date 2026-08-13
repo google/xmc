@@ -112,6 +112,7 @@ func main() {
 	if err != nil {
 		logging.Fatal(ctx, "failed to create gRPC client for Dashboard service", "error", err)
 	}
+	defer dashboardConn.Close()
 	dashboardToolClient := toollibs.NewDashboardToolClient(dashboard_pb.NewDashboardServiceClient(dashboardConn))
 
 	// 6. Set up the gRPC server.
@@ -240,6 +241,8 @@ func main() {
 
 	logging.Info(ctx, "Shutting down gRPC server")
 	s.GracefulStop()
+	logging.Info(ctx, "Waiting for background tasks to complete")
+	experimentStateServer.Wait()
 	logging.Info(ctx, "Server gracefully stopped")
 }
 

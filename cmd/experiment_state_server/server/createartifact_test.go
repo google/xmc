@@ -21,19 +21,26 @@ import (
 	"time"
 
 	"golang/cmp/cmp"
+	"golang/grpc/credentials/insecure/insecure"
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
 
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/cmd/experiment_state_server/toollibs"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
+	"xmanager_cloud/storage/spanner/emulator/emulator"
+	"xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/storage/storage"
+	tq "xmanager_cloud/task_queue/client"
 	"xmanager_cloud/validator/validator"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+
+	"golang/grpc/grpc"
 )
 
 func TestCreateArtifact_HappyPath(t *testing.T) {
@@ -285,6 +292,110 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 			_, err := server.CreateArtifact(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("%s: CreateArtifact() returned error %v, want %v", tc.name, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestCreateArtifact_ChartArtifact(t *testing.T) {
+	ctx := context.Background()
+	cfg := &config.Config{
+		DefaultExecutionEnvironment: "gke",
+	}
+	auth := createTestAuthorizer(ctx, t)
+
+	xidStorageClient, essStorageClient := emulator.Setup(ctx, t)
+	storageClient, _ := spanner.NewStorage(essStorageClient)
+
+	// Setup fake XID server
+	xidAddr := createXidServer(ctx, t, xidStorageClient)
+	cfg.XidServiceAddr = xidAddr.Addr().String()
+
+	conn, err := grpc.NewClient(cfg.XidServiceAddr, []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}...)
+	if err != nil {
+		t.Fatalf("Failed to create gRPC client for XID service: %v", err)
+	}
+	xidClient := xidgrpcpb.NewXidServiceClient(conn)
+	taskQueueClient := &tq.FakeClient{}
+
+	chartArtifact := &msgpb.Artifact{
+		Url: &msgpb.Url{Url: "http://example.com/chart"},
+		Payload: &msgpb.ArtifactPayload{
+			Type: &msgpb.ArtifactPayload_Chart{
+				Chart: &msgpb.ChartArtifact{
+					Title:       "Test Chart",
+					MetricNames: []string{"loss"},
+				},
+			},
+		},
+		Acls: &xidmsgpb.XidAcls{
+			Writers: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
+		},
+	}
+
+	testCases := []struct {
+		name       string
+		clientErr  error
+		wantStatus msgpb.ChartArtifact_Status
+		wantErrMsg string
+	}{
+		{
+			name:       "success",
+			clientErr:  nil,
+			wantStatus: msgpb.ChartArtifact_SUCCESS,
+		},
+		{
+			name:       "failure",
+			clientErr:  fmt.Errorf("fake dashboard error"),
+			wantStatus: msgpb.ChartArtifact_FAILED,
+			wantErrMsg: "fake dashboard error",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockDash := &mockDashboardClient{
+				createChartErr: tc.clientErr,
+			}
+			toolClient := toollibs.NewDashboardToolClient(mockDash)
+			server := New(storageClient, cfg, auth, xidClient, taskQueueClient, toolClient)
+
+			// Create parent Experiment
+			exp := mustCreateExperiment(ctx, t, server, nil)
+			mustCreateWorkUnit(ctx, t, server, exp.GetName(), 1, nil)
+			req := &apipb.CreateArtifactRequest{
+				Parent:   fmt.Sprintf("%s/workUnits/1", exp.GetName()),
+				Artifact: proto.Clone(chartArtifact).(*msgpb.Artifact),
+			}
+
+			// Action
+			got, err := server.CreateArtifact(ctx, req)
+			if err != nil {
+				t.Fatalf("CreateArtifact returned unexpected error: %v", err)
+			}
+			// Synchronize WaitGroup on the server to wait for async tasks
+			server.Wait()
+
+			gotFromDB, err := server.GetArtifact(ctx, &apipb.GetArtifactRequest{
+				Name: got.GetName(),
+			})
+			if err != nil {
+				t.Fatalf("Failed to fetch created artifact from DB: %v", err)
+			}
+
+			chartPayload := gotFromDB.GetPayload().GetChart()
+			if chartPayload == nil {
+				t.Fatal("Chart payload is nil")
+			}
+
+			if chartPayload.GetStatus() != tc.wantStatus {
+				t.Errorf("Expected status %v, got %v", tc.wantStatus, chartPayload.GetStatus())
+			}
+
+			if tc.wantErrMsg != "" && chartPayload.GetErrorMessage() != tc.wantErrMsg {
+				t.Errorf("Expected err msg %q, got %q", tc.wantErrMsg, chartPayload.GetErrorMessage())
 			}
 		})
 	}

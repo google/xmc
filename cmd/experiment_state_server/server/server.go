@@ -16,6 +16,7 @@ package server
 
 import (
 	"context"
+	"sync"
 
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
@@ -37,6 +38,7 @@ type Server struct {
 	xidClient           xidgrpcpb.XidServiceClient
 	taskQueueClient     taskQueueClientInterface
 	dashboardToolClient *toollibs.DashboardToolClient
+	bgTaskWG            sync.WaitGroup
 }
 
 type taskQueueClientInterface interface {
@@ -54,4 +56,9 @@ func New(storage storage.Storage, cfg *config.Config, auth auth.AuthorizerInterf
 		taskQueueClient:     taskQueueClient,
 		dashboardToolClient: dashboardToolClient,
 	}
+}
+
+// Wait blocks until all background tasks managed by the Server have completed.
+func (s *Server) Wait() {
+	s.bgTaskWG.Wait()
 }

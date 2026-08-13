@@ -128,6 +128,7 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 			logging.Error(ctx, "Failed to clone retArtifact for async provisioning")
 			return nil, fmt.Errorf("failed to clone artifact: %w", status.ErrInternal)
 		}
+		s.bgTaskWG.Add(1)
 		go s.provisionChartArtifactAsync(context.WithoutCancel(ctx), artifactCopy)
 	}
 
@@ -137,6 +138,13 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 }
 
 func (s *Server) provisionChartArtifactAsync(ctxBg context.Context, artifactToProvision *msgpb.Artifact) {
+	defer s.bgTaskWG.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			logging.Error(ctxBg, "Recovered from panic in provisionChartArtifactAsync", "panic", r)
+		}
+	}()
+
 	// Determine parent XID and WID to construct dashboard chart.
 	xid, wid, _ := validator.ValidateWorkUnitName(artifactToProvision.GetParent())
 
@@ -166,9 +174,16 @@ func (s *Server) provisionChartArtifactAsync(ctxBg context.Context, artifactToPr
 	}
 
 	// Save back to Spanner.
+	aid, _ := validator.ValidateArtifactName(artifactToProvision.GetName())
+
+	if artifactToProvision.Tags == nil {
+		artifactToProvision.Tags = []string{}
+	}
+
 	if _, err := s.storage.UpdateArtifact(ctxBg, &storage.ArtifactUpdate{
+		AID:        aid,
 		Artifact:   artifactToProvision,
-		UpdateMask: &fmpb.FieldMask{Paths: []string{"payload"}},
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"payload", "tags"}},
 	}); err != nil {
 		logging.Error(ctxBg, "Failed to update ChartArtifact status in Spanner", "error", err)
 	}

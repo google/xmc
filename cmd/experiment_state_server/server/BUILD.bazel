@@ -98,6 +98,7 @@ compat_go_test(
         "liststatusmessages_test.go",
         "listworkunitexecutions_test.go",
         "listworkunits_test.go",
+        "mock_dashboard_test.go",
         "restartworkunit_test.go",
         "stopworkunit_test.go",
         "updateartifact_test.go",
