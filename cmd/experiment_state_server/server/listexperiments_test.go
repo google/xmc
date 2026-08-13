@@ -24,6 +24,7 @@ import (
 	"golang/cmp/cmp"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
+
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
@@ -211,7 +212,7 @@ func TestListExperiments_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			server := New(tc.storage, cfg, tc.authenticator, &mockXidClient{}, nil)
+			server := New(tc.storage, cfg, tc.authenticator, &mockXidClient{}, nil, nil)
 			_, err := server.ListExperiments(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ListExperiments() returned error %v, want %v", err, tc.wantErr)

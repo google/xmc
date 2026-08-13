@@ -24,6 +24,7 @@ import (
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
+
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
@@ -247,7 +248,7 @@ func TestListWorkUnits_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil)
+			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil, nil)
 			_, err := server.ListWorkUnits(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ListWorkUnits(%v) returned error %v, want %v", goodReq, err, tc.wantErr)
@@ -286,5 +287,5 @@ func createExperimentStateServerWithMockXid(ctx context.Context, t *testing.T) (
 		createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/1")},
 	}
 	taskQueueClient := &tq.FakeClient{}
-	return New(storage, &cfg, createTestAuthorizer(ctx, t), xidClient, taskQueueClient), xidClient
+	return New(storage, &cfg, createTestAuthorizer(ctx, t), xidClient, taskQueueClient, nil), xidClient
 }

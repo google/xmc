@@ -23,6 +23,7 @@ import (
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
+
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
@@ -184,7 +185,7 @@ func TestUpdateWorkUnit_BadPaths(t *testing.T) {
 	ctx := context.Background()
 	authorizer := createTestAuthorizer(ctx, t)
 	cfg := &config.Config{}
-	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil)
+	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil, nil)
 
 	testCases := []struct {
 		name    string
@@ -302,7 +303,7 @@ func TestUpdateWorkUnit_DependencyFailures(t *testing.T) {
 				tc.authenticator = createTestAuthorizer(ctx, t)
 			}
 			taskQueueClient := &tq.FakeClient{}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient)
+			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient, nil)
 			_, err := server.UpdateWorkUnit(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("UpdateWorkUnit() got error %v, want %v", err, tc.wantErr)

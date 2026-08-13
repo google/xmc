@@ -45,12 +45,15 @@ compat_go_library(
     importpath = "xmanager_cloud/cmd/experiment_state_server/server",
     visibility = ["//visibility:public"],
     deps = [
+        "//api/protos/dashboard:api_go_proto",
+        "//api/protos/dashboard:service_go_proto",
         "//api/protos/experiment:api_go_proto",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue:task_go_proto",
         "//api/protos/xid:api_go_proto",
         "//api/protos/xid:messages_go_proto",
         "//cmd/experiment_state_server/config",
+        "//cmd/experiment_state_server/toollibs",
         "//internal/auth",
         "//internal/compat/field_mask",
         "//internal/compat/log",
@@ -71,6 +74,7 @@ compat_go_library(
         "@org_golang_google_protobuf//types/descriptorpb:go_default_library",
         "@org_golang_google_protobuf//types/known/anypb:go_default_library",
         "@org_golang_google_protobuf//types/known/emptypb:go_default_library",
+        "@org_golang_google_protobuf//types/known/fieldmaskpb:go_default_library",
         "@org_golang_google_protobuf//types/known/timestamppb:go_default_library",
     ],
 )

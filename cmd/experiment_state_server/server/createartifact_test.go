@@ -24,6 +24,7 @@ import (
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
+
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
@@ -280,7 +281,7 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 			if tc.authenticator != nil {
 				auth = tc.authenticator
 			}
-			server := New(tc.storage, cfg, auth, tc.xidClient, nil)
+			server := New(tc.storage, cfg, auth, tc.xidClient, nil, nil)
 			_, err := server.CreateArtifact(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("%s: CreateArtifact() returned error %v, want %v", tc.name, err, tc.wantErr)

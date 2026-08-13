@@ -24,6 +24,7 @@ import (
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
+
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	"xmanager_cloud/storage/storage"
@@ -255,7 +256,7 @@ func TestCreateExperiment_DependencyFailures(t *testing.T) {
 			if tc.authenticator != nil {
 				auth = tc.authenticator
 			}
-			server := New(tc.storage, cfg, auth, tc.xidClient, nil)
+			server := New(tc.storage, cfg, auth, tc.xidClient, nil, nil)
 			_, err := server.CreateExperiment(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("CreateExperiment() returned error %v, want %v", err, tc.wantErr)

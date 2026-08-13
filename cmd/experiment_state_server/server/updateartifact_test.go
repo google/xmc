@@ -23,6 +23,7 @@ import (
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
+
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
@@ -200,7 +201,7 @@ func TestUpdateArtifact_BadPaths(t *testing.T) {
 			Name:   "artifacts/123",
 			Parent: "experiments/123",
 		},
-	}, cfg, authorizer, xidClient, nil)
+	}, cfg, authorizer, xidClient, nil, nil)
 
 	testCases := []struct {
 		name    string
@@ -361,7 +362,7 @@ func TestUpdateArtifact_DependencyFailures(t *testing.T) {
 			if tc.authenticator == nil {
 				tc.authenticator = createTestAuthorizer(ctx, t)
 			}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil)
+			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil, nil)
 			_, err := server.UpdateArtifact(ctx, tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("UpdateArtifact(%q) returned error %v, want %v", tc.req.GetArtifact().GetName(), err, tc.wantErr)

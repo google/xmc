@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"xmanager_cloud/auth/auth"
+	"xmanager_cloud/cmd/experiment_state_server/toollibs"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
@@ -30,11 +31,12 @@ import (
 type Server struct {
 	apipb.UnimplementedExperimentStateServiceServer
 
-	cfg             *config.Config
-	storage         storage.Storage
-	auth            auth.AuthorizerInterface
-	xidClient       xidgrpcpb.XidServiceClient
-	taskQueueClient taskQueueClientInterface
+	cfg                 *config.Config
+	storage             storage.Storage
+	auth                auth.AuthorizerInterface
+	xidClient           xidgrpcpb.XidServiceClient
+	taskQueueClient     taskQueueClientInterface
+	dashboardToolClient *toollibs.DashboardToolClient
 }
 
 type taskQueueClientInterface interface {
@@ -43,12 +45,13 @@ type taskQueueClientInterface interface {
 }
 
 // New creates a new instance of the Experiment State Server.
-func New(storage storage.Storage, cfg *config.Config, auth auth.AuthorizerInterface, xidClient xidgrpcpb.XidServiceClient, taskQueueClient taskQueueClientInterface) *Server {
+func New(storage storage.Storage, cfg *config.Config, auth auth.AuthorizerInterface, xidClient xidgrpcpb.XidServiceClient, taskQueueClient taskQueueClientInterface, dashboardToolClient *toollibs.DashboardToolClient) *Server {
 	return &Server{
-		cfg:             cfg,
-		storage:         storage,
-		auth:            auth,
-		xidClient:       xidClient,
-		taskQueueClient: taskQueueClient,
+		cfg:                 cfg,
+		storage:             storage,
+		auth:                auth,
+		xidClient:           xidClient,
+		taskQueueClient:     taskQueueClient,
+		dashboardToolClient: dashboardToolClient,
 	}
 }

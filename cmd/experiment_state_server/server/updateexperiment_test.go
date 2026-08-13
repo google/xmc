@@ -23,6 +23,7 @@ import (
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
+
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
@@ -170,7 +171,7 @@ func TestUpdateExperiment_BadPaths(t *testing.T) {
 		getXidEntryResp:            &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
 		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
-	server := New(&storage.MockStorage{}, cfg, authorizer, xidClient, nil)
+	server := New(&storage.MockStorage{}, cfg, authorizer, xidClient, nil, nil)
 
 	testCases := []struct {
 		name    string
@@ -288,7 +289,7 @@ func TestUpdateExperiment_DependencyFailures(t *testing.T) {
 			if tc.authenticator == nil {
 				tc.authenticator = createTestAuthorizer(ctx, t)
 			}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil)
+			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil, nil)
 			_, err := server.UpdateExperiment(ctx, tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("UpdateExperiment() returned error %v, want %v", err, tc.wantErr)

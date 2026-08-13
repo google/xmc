@@ -25,8 +25,10 @@ import (
 	"golang/protobuf/v2/encoding/protojson/protojson"
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
-	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	"task/go/status"
+
+	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
@@ -276,7 +278,7 @@ func TestCreateWorkUnit_IncompatibleWorkUnit(t *testing.T) {
 	taskQueueClient := &tq.FakeClient{}
 
 	authenticator := createTestAuthorizer(ctx, t)
-	server := New(storage, cfg, authenticator, xidClient, taskQueueClient)
+	server := New(storage, cfg, authenticator, xidClient, taskQueueClient, nil)
 
 	_, err := server.CreateWorkUnit(ctx, req)
 	if !errors.Is(err, status.ErrInvalidArgument) {
@@ -418,7 +420,7 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 				tc.authenticator = createTestAuthorizer(ctx, t)
 			}
 			taskQueueClient := &tq.FakeClient{}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient)
+			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient, nil)
 			_, err := server.CreateWorkUnit(ctx, proto.Clone(goodReq).(*apipb.CreateWorkUnitRequest))
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("CreateWorkUnit() = error %v, want %v", err, tc.wantErr)
@@ -450,7 +452,7 @@ func TestCreateWorkUnit_TaskEnqueueFails(t *testing.T) {
 	}
 
 	authenticator := createTestAuthorizer(ctx, t)
-	server := New(storage, cfg, authenticator, xidClient, taskQueueClient)
+	server := New(storage, cfg, authenticator, xidClient, taskQueueClient, nil)
 
 	_, err := server.CreateWorkUnit(ctx, proto.Clone(goodReq).(*apipb.CreateWorkUnitRequest))
 	if !errors.Is(err, status.ErrInternal) {

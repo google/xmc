@@ -24,6 +24,7 @@ import (
 	fieldmaskpb "protobuf/field_mask_go_proto"
 	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
+
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
@@ -70,7 +71,7 @@ func TestUpdateExperimentLaunchState_BadPaths(t *testing.T) {
 	ctx := context.Background()
 	authorizer := createTestAuthorizer(ctx, t)
 	cfg := &config.Config{}
-	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil)
+	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil, nil)
 
 	testCases := []struct {
 		name    string
@@ -171,7 +172,7 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 			if tc.authenticator == nil {
 				tc.authenticator = createTestAuthorizer(ctx, t)
 			}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil)
+			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil, nil)
 			_, err := server.UpdateExperimentLaunchState(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("UpdateExperimentLaunchState() returned error %v, want %v", err, tc.wantErr)

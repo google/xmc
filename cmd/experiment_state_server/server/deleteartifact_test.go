@@ -21,6 +21,7 @@ import (
 
 	"golang/protobuf/v2/proto/proto"
 	"task/go/status"
+
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
@@ -163,7 +164,7 @@ func TestDeleteArtifact_DependencyFailures(t *testing.T) {
 			if tc.authenticator == nil {
 				tc.authenticator = createTestAuthorizer(ctx, t)
 			}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil)
+			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil, nil)
 			_, err := server.DeleteArtifact(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("DeleteArtifact() returned error %v, want %v", err, tc.wantErr)

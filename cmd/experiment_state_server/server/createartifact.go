@@ -18,11 +18,19 @@ import (
 	"fmt"
 
 	"task/go/status"
+
+	"golang/protobuf/v2/proto/proto"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/validator/validator"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
+
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+
+	dashboard_apipb "xmanager_cloud/dashboard_service/proto/api_go_proto"
+	dashboard_pb "xmanager_cloud/dashboard_service/proto/service_go_proto"
+	"xmanager_cloud/storage/storage"
 )
 
 func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRequest) (*msgpb.Artifact, error) {
@@ -45,16 +53,8 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 	artifact := validator.FillArtifactNullValues(req.GetArtifact())
 
 	// 2.2. Validate ChartArtifact payload.
-	if chartArtifact := artifact.GetPayload().GetChart(); chartArtifact != nil {
-		if _, _, err := validator.ValidateWorkUnitName(req.GetParent()); err != nil {
-			logging.Warn(ctx, "ChartArtifact requires a Work Unit parent", "parent", req.GetParent(), "error", err)
-			return nil, fmt.Errorf("ChartArtifact requires a Work Unit parent: %w (%v)", status.ErrInvalidArgument, err)
-		}
-		if chartArtifact.GetStatus() != msgpb.ChartArtifact_STATUS_UNSPECIFIED || chartArtifact.GetChart() != nil || chartArtifact.GetErrorMessage() != "" {
-			logging.Warn(ctx, "ChartArtifact client-supplied status, chart, or error_message values are not allowed")
-			return nil, fmt.Errorf("ChartArtifact client-supplied status, chart, or error_message values are not allowed: %w", status.ErrInvalidArgument)
-		}
-		chartArtifact.Status = msgpb.ChartArtifact_PROVISIONING
+	if err := s.validateChartArtifactPayload(ctx, artifact, req.GetParent()); err != nil {
+		return nil, err
 	}
 
 	// 3. Get the parent experiment or work unit.
@@ -120,7 +120,71 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 	// 6.1. Set the artifact's ACLs to the XIDEntry's ACLs.
 	retArtifact.Acls = artifactXIDEntry.Acls
 
+	// 6.2. If it is a ChartArtifact, provision it asynchronously in the background.
+	if chartArtifact := retArtifact.GetPayload().GetChart(); chartArtifact != nil {
+		// Create a decoupled copy for the background task to mutate safely
+		artifactCopy, ok := proto.Clone(retArtifact).(*msgpb.Artifact)
+		if !ok {
+			logging.Error(ctx, "Failed to clone retArtifact for async provisioning")
+			return nil, fmt.Errorf("failed to clone artifact: %w", status.ErrInternal)
+		}
+		go s.provisionChartArtifactAsync(context.WithoutCancel(ctx), artifactCopy)
+	}
+
 	// 7. Return the successful response.
 	logging.Info(ctx, "Created artifact")
 	return retArtifact, nil
+}
+
+func (s *Server) provisionChartArtifactAsync(ctxBg context.Context, artifactToProvision *msgpb.Artifact) {
+	// Determine parent XID and WID to construct dashboard chart.
+	xid, wid, _ := validator.ValidateWorkUnitName(artifactToProvision.GetParent())
+
+	cArtifact := artifactToProvision.GetPayload().GetChart()
+	title := cArtifact.GetTitle()
+	if title == "" {
+		title = fmt.Sprintf("Chart for XID %d WID %d", xid, wid)
+	}
+
+	// Call Dashboard service.
+	_, err := s.dashboardToolClient.CreateChart(ctxBg, &dashboard_pb.CreateChartRequest{
+		Parent: fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid), // Or maybe just dashboard name
+		Chart: &dashboard_apipb.Chart{
+			Title: title,
+			Xid:   xid,
+			Wid:   wid,
+		},
+	})
+
+	if err != nil {
+		logging.Error(ctxBg, "Background Chart provisioning failed", "error", err)
+		cArtifact.Status = msgpb.ChartArtifact_FAILED
+		cArtifact.ErrorMessage = err.Error()
+	} else {
+		logging.Info(ctxBg, "Background Chart provisioning succeeded")
+		cArtifact.Status = msgpb.ChartArtifact_SUCCESS
+	}
+
+	// Save back to Spanner.
+	if _, err := s.storage.UpdateArtifact(ctxBg, &storage.ArtifactUpdate{
+		Artifact:   artifactToProvision,
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"payload"}},
+	}); err != nil {
+		logging.Error(ctxBg, "Failed to update ChartArtifact status in Spanner", "error", err)
+	}
+}
+
+func (s *Server) validateChartArtifactPayload(ctx context.Context, artifact *msgpb.Artifact, parent string) error {
+	if chartArtifact := artifact.GetPayload().GetChart(); chartArtifact != nil {
+		if _, _, err := validator.ValidateWorkUnitName(parent); err != nil {
+			logging.Warn(ctx, "ChartArtifact requires a Work Unit parent", "parent", parent, "error", err)
+			return fmt.Errorf("ChartArtifact requires a Work Unit parent: %w (%v)", status.ErrInvalidArgument, err)
+		}
+		if chartArtifact.GetStatus() != msgpb.ChartArtifact_STATUS_UNSPECIFIED || chartArtifact.GetChart() != nil || chartArtifact.GetErrorMessage() != "" {
+			logging.Warn(ctx, "ChartArtifact client-supplied status, chart, or error_message values are not allowed")
+			return fmt.Errorf("ChartArtifact client-supplied status, chart, or error_message values are not allowed: %w", status.ErrInvalidArgument)
+		}
+		chartArtifact.Status = msgpb.ChartArtifact_PROVISIONING
+	}
+	return nil
 }

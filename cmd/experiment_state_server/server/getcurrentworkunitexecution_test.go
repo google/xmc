@@ -24,6 +24,7 @@ import (
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
+
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
 	"xmanager_cloud/storage/storage"
@@ -96,7 +97,7 @@ func TestGetCurrentWorkUnitExecution_BadPaths(t *testing.T) {
 	ctx := context.Background()
 	authorizer := createTestAuthorizer(ctx, t)
 	cfg := &config.Config{}
-	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil)
+	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil, nil)
 
 	testCases := []struct {
 		name    string
@@ -183,7 +184,7 @@ func TestGetCurrentWorkUnitExecution_DependencyFailures(t *testing.T) {
 			if tc.authenticator == nil {
 				tc.authenticator = createTestAuthorizer(ctx, t)
 			}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil)
+			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil, nil)
 			_, err := server.GetCurrentWorkUnitExecution(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("GetCurrentWorkUnitExecution(%v) returned error %v, want %v", goodReq, err, tc.wantErr)

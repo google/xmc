@@ -42,8 +42,11 @@ import (
 	"golang/grpc/reflection/reflection"
 	healthgrpc "grpc_proto/health_go_grpc"
 	healthpb "grpc_proto/health_go_proto"
+
 	authz "xmanager_cloud/auth/auth"
+	"xmanager_cloud/cmd/experiment_state_server/toollibs"
 	commonhealth "xmanager_cloud/common/health"
+	dashboard_pb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	"xmanager_cloud/experiment_state_server/config"
 	gwpb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_gateway_proto"
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
@@ -101,8 +104,18 @@ func main() {
 	taskQueueClient := initTaskQueueClient(ctx, &cfg)
 	defer taskQueueClient.Close()
 
+	// 5.5 Initialize Dashboard client.
+	logging.Info(ctx, "Connecting to Dashboard service", "addr", cfg.DashboardServiceAddr)
+	dashboardConn, err := grpc.NewClient(cfg.DashboardServiceAddr, []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}...)
+	if err != nil {
+		logging.Fatal(ctx, "failed to create gRPC client for Dashboard service", "error", err)
+	}
+	dashboardToolClient := toollibs.NewDashboardToolClient(dashboard_pb.NewDashboardServiceClient(dashboardConn))
+
 	// 6. Set up the gRPC server.
-	experimentStateServer := server.New(storage, &cfg, auth, xidClient, taskQueueClient)
+	experimentStateServer := server.New(storage, &cfg, auth, xidClient, taskQueueClient, dashboardToolClient)
 
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
