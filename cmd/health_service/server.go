@@ -35,12 +35,14 @@ type server struct {
 	spb.UnimplementedHealthServiceServer
 	cfg     *Config
 	checker healthChecker
+	guard   AdminRoleGuard
 }
 
-func newServer(cfg *Config, checker healthChecker) *server {
+func newServer(cfg *Config, checker healthChecker, guard AdminRoleGuard) *server {
 	return &server{
 		cfg:     cfg,
 		checker: checker,
+		guard:   guard,
 	}
 }
 
@@ -49,6 +51,10 @@ func (s *server) Close() error {
 }
 
 func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRequest) (*spb.HealthStatusResponse, error) {
+	if err := s.guard.CheckAdminRole(ctx); err != nil {
+		return nil, err
+	}
+
 	res := s.checker.RunChecks(ctx)
 
 	overallHealthy := spb.HealthState_HEALTH_STATE_HEALTHY
@@ -95,6 +101,10 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 }
 
 func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntriesRequest) (*spb.ListConfigEntriesResponse, error) {
+	if err := s.guard.CheckAdminRole(ctx); err != nil {
+		return nil, err
+	}
+
 	groups, err := listConfigs(ctx, os.DirFS(s.cfg.ConfigDir))
 	if err != nil {
 		return nil, err
@@ -105,10 +115,19 @@ func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntri
 }
 
 func (s *server) GetUserInfo(ctx context.Context, req *spb.GetUserInfoRequest) (*spb.UserInfoResponse, error) {
+	email, hasRole, err := s.guard.HasAdminRole(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to check admin role for user info", "error", err)
+		return &spb.UserInfoResponse{UserEmail: "", Privileges: nil}, nil
+	}
+
+	var privileges []spb.Privilege
+	if hasRole {
+		privileges = append(privileges, spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL)
+	}
+
 	return &spb.UserInfoResponse{
-		UserEmail: "mock-user@google.com",
-		Privileges: []spb.Privilege{
-			spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL,
-		},
+		UserEmail:  email,
+		Privileges: privileges,
 	}, nil
 }

@@ -16,11 +16,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type mockHealthChecker struct {
@@ -34,6 +38,27 @@ func (m *mockHealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 
 func (m *mockHealthChecker) Close() error {
 	return m.err
+}
+
+type mockAdminRoleGuard struct {
+	email   string
+	hasRole bool
+	err     error
+}
+
+func (m *mockAdminRoleGuard) CheckAdminRole(ctx context.Context) error {
+	return m.err
+}
+
+func (m *mockAdminRoleGuard) HasAdminRole(ctx context.Context) (string, bool, error) {
+	if m.err != nil {
+		return "", false, m.err
+	}
+	email := m.email
+	if email == "" {
+		email = "mock-user@google.com"
+	}
+	return email, m.hasRole, nil
 }
 
 func TestGetHealthStatus_AllHealthy(t *testing.T) {
@@ -60,7 +85,7 @@ func TestGetHealthStatus_AllHealthy(t *testing.T) {
 		},
 	}
 	checker := &mockHealthChecker{result: mockResult}
-	s := newServer(cfg, checker)
+	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true})
 	defer s.Close()
 
 	resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
@@ -138,7 +163,7 @@ func TestGetHealthStatus_Unhealthy(t *testing.T) {
 		},
 	}
 	checker := &mockHealthChecker{result: mockResult}
-	s := newServer(cfg, checker)
+	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true})
 	defer s.Close()
 
 	resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
@@ -183,6 +208,22 @@ func TestGetHealthStatus_Unhealthy(t *testing.T) {
 	}
 }
 
+func TestGetHealthStatus_Unauthorized(t *testing.T) {
+	cfg := &Config{Port: "8080", GRPCPort: "50051"}
+	checker := &mockHealthChecker{}
+	guard := &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden")}
+	s := newServer(cfg, checker, guard)
+	defer s.Close()
+
+	_, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
+	if err == nil {
+		t.Fatal("Expected error for unauthorized GetHealthStatus call, got nil")
+	}
+	if status.Code(err) != codes.PermissionDenied {
+		t.Errorf("Expected status code %v, got %v", codes.PermissionDenied, status.Code(err))
+	}
+}
+
 func TestListConfigEntries(t *testing.T) {
 	tempDir := t.TempDir()
 
@@ -212,7 +253,7 @@ func TestListConfigEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create health checker: %v", err)
 	}
-	s := newServer(cfg, checker)
+	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true})
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -237,31 +278,79 @@ func TestListConfigEntries(t *testing.T) {
 	}
 }
 
-func TestGetUserInfo(t *testing.T) {
-	cfg := &Config{Port: "8080", GRPCPort: "50051", ProjectID: "test-project", XidAddr: "localhost:50051"}
-	checker, err := NewHealthChecker(HealthCheckerParams{
-		Config:          cfg,
-		EssHealthClient: nil,
-		XidHealthClient: nil,
-		RedisClient:     nil,
-		CloudRunService: nil,
-	})
-	if err != nil {
-		t.Fatalf("failed to create health checker: %v", err)
-	}
-	s := newServer(cfg, checker)
+func TestListConfigEntries_Unauthorized(t *testing.T) {
+	cfg := &Config{Port: "8080", GRPCPort: "50051"}
+	checker := &mockHealthChecker{}
+	guard := &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden")}
+	s := newServer(cfg, checker, guard)
 	defer s.Close()
 
-	resp, err := s.GetUserInfo(context.Background(), &spb.GetUserInfoRequest{})
-	if err != nil {
-		t.Fatalf("GetUserInfo failed: %v", err)
+	_, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
+	if err == nil {
+		t.Fatal("Expected error for unauthorized ListConfigEntries call, got nil")
+	}
+	if status.Code(err) != codes.PermissionDenied {
+		t.Errorf("Expected status code %v, got %v", codes.PermissionDenied, status.Code(err))
+	}
+}
+
+func TestGetUserInfo(t *testing.T) {
+	tests := []struct {
+		name           string
+		guard          AdminRoleGuard
+		wantEmail      string
+		wantPrivileges []spb.Privilege
+	}{
+		{
+			name: "admin user receives admin panel privilege",
+			guard: &mockAdminRoleGuard{
+				email:   "admin@google.com",
+				hasRole: true,
+			},
+			wantEmail: "admin@google.com",
+			wantPrivileges: []spb.Privilege{
+				spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL,
+			},
+		},
+		{
+			name: "non-admin user receives no privileges",
+			guard: &mockAdminRoleGuard{
+				email:   "viewer@google.com",
+				hasRole: false,
+			},
+			wantEmail:      "viewer@google.com",
+			wantPrivileges: nil,
+		},
+		{
+			name: "guard error returns empty response without failure",
+			guard: &mockAdminRoleGuard{
+				err: errors.New("auth failure"),
+			},
+			wantEmail:      "",
+			wantPrivileges: nil,
+		},
 	}
 
-	if resp.UserEmail != "mock-user@google.com" {
-		t.Errorf("Expected UserEmail 'mock-user@google.com', got %q", resp.UserEmail)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newServer(&Config{}, &mockHealthChecker{}, tt.guard)
+			resp, err := s.GetUserInfo(context.Background(), &spb.GetUserInfoRequest{})
+			if err != nil {
+				t.Fatalf("GetUserInfo failed: %v", err)
+			}
 
-	if len(resp.Privileges) != 1 || resp.Privileges[0] != spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL {
-		t.Errorf("Expected privileges [PRIVILEGE_ACCESS_ADMIN_PANEL], got %v", resp.Privileges)
+			if resp.UserEmail != tt.wantEmail {
+				t.Errorf("Expected UserEmail %q, got %q", tt.wantEmail, resp.UserEmail)
+			}
+
+			if len(resp.Privileges) != len(tt.wantPrivileges) {
+				t.Fatalf("Expected %d privileges, got %d", len(tt.wantPrivileges), len(resp.Privileges))
+			}
+			for i, p := range resp.Privileges {
+				if p != tt.wantPrivileges[i] {
+					t.Errorf("Expected privilege at index %d to be %v, got %v", i, tt.wantPrivileges[i], p)
+				}
+			}
+		})
 	}
 }
