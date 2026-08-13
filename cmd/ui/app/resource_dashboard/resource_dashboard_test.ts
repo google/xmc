@@ -201,6 +201,9 @@ describe('ResourceDashboard Container', () => {
     expect(await tabsHarness.isTabActive(1)).toBeTrue();
     expect(await dashboard.getQueueList()).toBeNull();
     expect(await dashboard.getQueueJobsTable()).toBeNull();
+    const wipBanner = await dashboard.getWipBanner();
+    expect(wipBanner).not.toBeNull();
+    expect(await wipBanner!.getText()).toBe('Work in Progress');
 
     await tabsHarness.clickTab(0);
     await flush();

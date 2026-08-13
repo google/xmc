@@ -34,5 +34,9 @@
         <xmc-queue-jobs-table [queueName]="selectedQueue()" />
       </div>
     </div>
+  } @else {
+    <div class="resource-availability-container">
+      <xmc-wip-banner />
+    </div>
   }
 </div>
