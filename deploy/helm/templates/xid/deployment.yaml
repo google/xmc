@@ -48,7 +48,7 @@ spec:
       containers:
       - name: xid-service
         image: {{ .Values.xid_custom_image | quote }}
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false
