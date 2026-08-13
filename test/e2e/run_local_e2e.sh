@@ -15,6 +15,19 @@
 
 set -eo pipefail
 
+if [ -z "${GCP_PROJECT_ID}" ]; then
+  echo "Error: GCP_PROJECT_ID environment variable is not set."
+  echo "Please set it (e.g. export GCP_PROJECT_ID=my-gcp-project)"
+  exit 1
+fi
+
+if [ -z "${SPANNER_INSTANCE}" ]; then
+  echo "Error: SPANNER_INSTANCE environment variable is not set."
+  echo "Please set it to an existing Spanner instance in your project (e.g. export SPANNER_INSTANCE=my-spanner-instance)"
+  exit 1
+fi
+
+
 echo "==> Cleaning up previous runs"
 kind delete cluster --name xmc-local-e2e || true
 
@@ -107,18 +120,18 @@ find "$HELM_DIR/templates/kueue-dev" -type f -name "*.yaml" -exec sed -i 's/kueu
 
 DB_ID="e2e-xmc-local"
 echo "==> Refreshing Ephemeral Spanner DB ($DB_ID)"
-gcloud spanner databases create xids-db-${DB_ID} --instance=xmc-vluk-test --project=xmc-test-project-3 || true
-gcloud spanner databases create ess-db-${DB_ID} --instance=xmc-vluk-test --project=xmc-test-project-3 || true
+gcloud spanner databases create xids-db-${DB_ID} --instance=${SPANNER_INSTANCE} --project=${GCP_PROJECT_ID} || true
+gcloud spanner databases create ess-db-${DB_ID} --instance=${SPANNER_INSTANCE} --project=${GCP_PROJECT_ID} || true
 
-bazel run //internal/storage/spanner/migrations:migrations -- -command=up -project=xmc-test-project-3 -instance=xmc-vluk-test -database=xids-db-${DB_ID} -migrations_dir=xid
-bazel run //internal/storage/spanner/migrations:migrations -- -command=up -project=xmc-test-project-3 -instance=xmc-vluk-test -database=ess-db-${DB_ID} -migrations_dir=ess
+bazel run //internal/storage/spanner/migrations:migrations -- -command=up -project=${GCP_PROJECT_ID} -instance=${SPANNER_INSTANCE} -database=xids-db-${DB_ID} -migrations_dir=xid
+bazel run //internal/storage/spanner/migrations:migrations -- -command=up -project=${GCP_PROJECT_ID} -instance=${SPANNER_INSTANCE} -database=ess-db-${DB_ID} -migrations_dir=ess
 
 echo "==> Creating Auth Mounts"
 kubectl create secret generic xmc-gcp-creds --from-file=key.json="${GOOGLE_APPLICATION_CREDENTIALS}" -n default
 
 echo "==> Installing Helm Chart"
 helm upgrade --install xmc-test "$HELM_DIR" \
-  --set projectId=xmc-test-project-3 \
+  --set projectId=${GCP_PROJECT_ID} \
   --set environment=e2e \
   --set auth.mockAuth=true \
     --set ui.apiUrl="http://localhost:8081/v1" \
@@ -130,8 +143,8 @@ helm upgrade --install xmc-test "$HELM_DIR" \
   --set essDeployment.image=experiment_state_server_image:latest \
   --set reconciler.image=reconciler_image:latest \
   --set xid.image=xid_service_image:latest \
-  --set experimentStateServer.spannerDatabaseName="projects/xmc-test-project-3/instances/xmc-vluk-test/databases/ess-db-${DB_ID}" \
-  --set xid.spannerDatabaseName="projects/xmc-test-project-3/instances/xmc-vluk-test/databases/xids-db-${DB_ID}" \
+  --set experimentStateServer.spannerDatabaseName="projects/${GCP_PROJECT_ID}/instances/${SPANNER_INSTANCE}/databases/ess-db-${DB_ID}" \
+  --set xid.spannerDatabaseName="projects/${GCP_PROJECT_ID}/instances/${SPANNER_INSTANCE}/databases/xids-db-${DB_ID}" \
   --set "redisAddr=redis-master.default.svc.cluster.local" \
   --wait
 
@@ -141,7 +154,7 @@ for deploy in actuator-deployment experiment-state-server-deployment reconciler-
     GOOGLE_APPLICATION_CREDENTIALS=/auth/key.json \
     XMC_CLUSTER_NAME=xmc-local-e2e \
     XMC_CLUSTER_LOCATION=local \
-    XMC_PROJECT_ID=xmc-test-project-3
+    XMC_PROJECT_ID=${GCP_PROJECT_ID}
     
   kubectl patch deploy $deploy -n default --type='json' -p='[
     {"op": "add", "path": "/spec/template/spec/volumes/-", "value": {"name": "gcp-creds", "secret": {"secretName": "xmc-gcp-creds"}}},

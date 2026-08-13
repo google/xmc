@@ -36,6 +36,8 @@ A dedicated teardown-and-bootstrap script is provided to stand up the local repl
 
 ```bash
 cd xmc/
+export GCP_PROJECT_ID=your-project-id
+export SPANNER_INSTANCE=your-spanner-instance-name
 ./test/e2e/run_local_e2e.sh
 ```
 
@@ -50,7 +52,7 @@ cd xmc/
 - Copies the `deploy/helm` repo, patches it to use local images, and installs it.
 - Patches the Pod specs to mount your local `GOOGLE_APPLICATION_CREDENTIALS` (crucial for Spanner).
 
-*Note: You must have `GOOGLE_APPLICATION_CREDENTIALS` exported in your shell pointing to your `application_default_credentials.json` before running the script.*
+*Note: You must have `GCP_PROJECT_ID`, `SPANNER_INSTANCE`, and `GOOGLE_APPLICATION_CREDENTIALS` exported in your shell before running the script.*
 
 ### 2. Stand Up Port Forwards
 
