@@ -26,6 +26,7 @@ var (
 	grpcPort            string
 	projectID           string
 	spannerDatabaseName string
+	xidServiceAddr      string
 )
 
 func init() {
@@ -37,13 +38,20 @@ func init() {
 	flag.StringVar(&grpcPort, "grpc_port", "50051", "The gRPC server port to listen on.")
 	flag.StringVar(&projectID, "project_id", os.Getenv("GOOGLE_CLOUD_PROJECT"), "The GCP project ID.")
 	flag.StringVar(&spannerDatabaseName, "spanner_database_name", os.Getenv("SPANNER_DATABASE_NAME"), "The Spanner database resource name.")
+
+	defaultXidAddr := os.Getenv("XID_SERVICE_ADDR")
+	if defaultXidAddr == "" {
+		defaultXidAddr = "localhost:8082"
+	}
+	flag.StringVar(&xidServiceAddr, "xid_service_addr", defaultXidAddr, "The XID service gRPC address.")
 }
 
 // LoadConfig loads and returns the configuration.
 func LoadConfig() *server.Config {
 	return &server.Config{
-		Port:      port,
-		GRPCPort:  grpcPort,
-		ProjectID: projectID,
+		Port:           port,
+		GRPCPort:       grpcPort,
+		ProjectID:      projectID,
+		XidServiceAddr: xidServiceAddr,
 	}
 }

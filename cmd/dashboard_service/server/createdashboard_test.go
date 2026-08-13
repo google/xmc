@@ -43,7 +43,7 @@ func TestCreateDashboard(t *testing.T) {
 				return "author@example.com", "user-1", nil
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, nil)
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
 		req := &spb.CreateDashboardRequest{
 			Dashboard: &dpb.Dashboard{
@@ -74,7 +74,7 @@ func TestCreateDashboard(t *testing.T) {
 				return "author@example.com", "user-1", nil
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, nil)
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
 		req := &spb.CreateDashboardRequest{
 			DashboardId: "custom-id-123",
@@ -99,7 +99,7 @@ func TestCreateDashboard(t *testing.T) {
 				return "", "", errors.New("missing auth token")
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, nil)
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
 		req := &spb.CreateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Title: "My Dash"},
@@ -114,7 +114,7 @@ func TestCreateDashboard(t *testing.T) {
 	t.Run("invalid request returns InvalidArgument", func(t *testing.T) {
 		repo := &mockRepository{}
 		authMock := &mockAuthorizer{}
-		s := NewServer(&Config{}, repo, authMock, nil)
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
 		tests := []struct {
 			name string
@@ -146,7 +146,7 @@ func TestCreateDashboard(t *testing.T) {
 			},
 		}
 		authMock := &mockAuthorizer{}
-		s := NewServer(&Config{}, repo, authMock, nil)
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
 		req := &spb.CreateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Title: "My Dash"},

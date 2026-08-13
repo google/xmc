@@ -16,17 +16,22 @@ package server
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/dashboard/dataengine"
+	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
@@ -117,8 +122,20 @@ func (m *mockAuthorizer) IsUserAuthorizedForChart(ctx context.Context, user stri
 	return true, nil
 }
 
+type mockXidClient struct {
+	xidapipb.XidServiceClient
+	checkUserAuthorizationFn func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error)
+}
+
+func (m *mockXidClient) CheckUserAuthorization(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+	if m.checkUserAuthorizationFn != nil {
+		return m.checkUserAuthorizationFn(ctx, in, opts...)
+	}
+	return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
+}
+
 func TestCreateChart(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, nil)
+	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
 	ctx := context.Background()
 
 	req := &spb.CreateChartRequest{
@@ -135,7 +152,7 @@ func TestCreateChart(t *testing.T) {
 }
 
 func TestGetChart(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, nil)
+	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
 	ctx := context.Background()
 
 	req := &spb.GetChartRequest{Name: "dashboards/123/charts/456"}
@@ -155,7 +172,7 @@ func TestNewServer(t *testing.T) {
 				t.Errorf("expected NewServer to panic on nil repo, but it did not")
 			}
 		}()
-		NewServer(&Config{}, nil, &mockAuthorizer{}, nil)
+		NewServer(&Config{}, nil, &mockAuthorizer{}, &mockXidClient{}, nil)
 	})
 
 	t.Run("panics on nil auth", func(t *testing.T) {
@@ -164,11 +181,20 @@ func TestNewServer(t *testing.T) {
 				t.Errorf("expected NewServer to panic on nil auth, but it did not")
 			}
 		}()
-		NewServer(&Config{}, &mockRepository{}, nil, nil)
+		NewServer(&Config{}, &mockRepository{}, nil, &mockXidClient{}, nil)
+	})
+
+	t.Run("panics on nil xidClient", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("expected NewServer to panic on nil xidClient, but it did not")
+			}
+		}()
+		NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, nil, nil)
 	})
 
 	t.Run("successful server initialization", func(t *testing.T) {
-		s := NewServer(&Config{Port: "8080"}, &mockRepository{}, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{Port: "8080"}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
 		if s == nil {
 			t.Fatal("expected non-nil server")
 		}
@@ -179,7 +205,7 @@ func TestGetChartData(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("nil request returns InvalidArgument", func(t *testing.T) {
-		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
 		_, err := s.GetChartData(ctx, nil)
 		if status.Code(err) != codes.InvalidArgument {
 			t.Errorf("GetChartData(nil) code = %v, want %v", status.Code(err), codes.InvalidArgument)
@@ -192,7 +218,7 @@ func TestGetChartData(t *testing.T) {
 				return "", "", status.Error(codes.Unauthenticated, "unauthenticated")
 			},
 		}
-		s := NewServer(&Config{}, &mockRepository{}, authMock, nil)
+		s := NewServer(&Config{}, &mockRepository{}, authMock, &mockXidClient{}, nil)
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.Unauthenticated {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.Unauthenticated)
@@ -200,7 +226,7 @@ func TestGetChartData(t *testing.T) {
 	})
 
 	t.Run("nil dataEngine returns FailedPrecondition", func(t *testing.T) {
-		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.FailedPrecondition {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.FailedPrecondition)
@@ -210,6 +236,19 @@ func TestGetChartData(t *testing.T) {
 	t.Run("nil repo in server struct returns FailedPrecondition", func(t *testing.T) {
 		s := &Server{
 			auth:       &mockAuthorizer{},
+			xidClient:  &mockXidClient{},
+			dataEngine: &dataengine.DataEngine{},
+		}
+		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.FailedPrecondition)
+		}
+	})
+
+	t.Run("nil xidClient in server struct returns FailedPrecondition", func(t *testing.T) {
+		s := &Server{
+			auth:       &mockAuthorizer{},
+			repo:       &mockRepository{},
 			dataEngine: &dataengine.DataEngine{},
 		}
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
@@ -224,7 +263,7 @@ func TestGetChartData(t *testing.T) {
 				return nil, status.Error(codes.NotFound, "not found")
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &dataengine.DataEngine{})
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &dataengine.DataEngine{})
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.NotFound {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.NotFound)
@@ -237,94 +276,56 @@ func TestGetChartData(t *testing.T) {
 				return nil, status.Error(codes.Unknown, "database failure")
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &dataengine.DataEngine{})
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &dataengine.DataEngine{})
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.Internal {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.Internal)
 		}
 	})
 
-	t.Run("invalid chart name format returns InvalidArgument", func(t *testing.T) {
+	t.Run("chart missing valid xid returns FailedPrecondition", func(t *testing.T) {
 		repo := &mockRepository{
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return &dpb.Chart{Name: "invalid-name-format"}, nil
+				return &dpb.Chart{Name: "dashboards/123/charts/456", Xid: 0, Wid: 1}, nil
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &dataengine.DataEngine{})
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "invalid-name-format"})
-		if status.Code(err) != codes.InvalidArgument {
-			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.InvalidArgument)
-		}
-	})
-
-	t.Run("parent dashboard not found returns NotFound", func(t *testing.T) {
-		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return &dpb.Chart{Name: "dashboards/123/charts/456"}, nil
-			},
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
-				return nil, status.Error(codes.NotFound, "dashboard not found")
-			},
-		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &dataengine.DataEngine{})
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &dataengine.DataEngine{})
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
-		if status.Code(err) != codes.NotFound {
-			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.NotFound)
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.FailedPrecondition)
 		}
 	})
 
-	t.Run("parent dashboard repo error returns Internal", func(t *testing.T) {
+	t.Run("XID service returns RPC error returns Internal", func(t *testing.T) {
 		repo := &mockRepository{
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return &dpb.Chart{Name: "dashboards/123/charts/456"}, nil
-			},
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
-				return nil, status.Error(codes.Internal, "storage error")
+				return &dpb.Chart{Name: "dashboards/123/charts/456", Xid: 100, Wid: 1}, nil
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &dataengine.DataEngine{})
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				return nil, errors.New("xid service unavailable")
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, &dataengine.DataEngine{})
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.Internal {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.Internal)
 		}
 	})
 
-	t.Run("dashboard authorization error returns Internal", func(t *testing.T) {
+	t.Run("XID service returns Authorized = false returns PermissionDenied", func(t *testing.T) {
 		repo := &mockRepository{
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return &dpb.Chart{Name: "dashboards/123/charts/456"}, nil
-			},
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
-				return &dpb.Dashboard{Name: "dashboards/123", Owner: "owner@example.com"}, nil
+				return &dpb.Chart{Name: "dashboards/123/charts/456", Xid: 100, Wid: 1}, nil
 			},
 		}
-		authMock := &mockAuthorizer{
-			isUserAuthorizedFn: func(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error) {
-				return false, status.Error(codes.Internal, "auth check failed")
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)}, nil
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, &dataengine.DataEngine{})
-		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
-		if status.Code(err) != codes.Internal {
-			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.Internal)
-		}
-	})
-
-	t.Run("unauthorized user returns PermissionDenied", func(t *testing.T) {
-		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				return &dpb.Chart{Name: "dashboards/123/charts/456"}, nil
-			},
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
-				return &dpb.Dashboard{Name: "dashboards/123", Owner: "owner@example.com"}, nil
-			},
-		}
-		authMock := &mockAuthorizer{
-			isUserAuthorizedFn: func(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error) {
-				return false, nil
-			},
-		}
-		s := NewServer(&Config{}, repo, authMock, &dataengine.DataEngine{})
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, &dataengine.DataEngine{})
 		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if status.Code(err) != codes.PermissionDenied {
 			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.PermissionDenied)
@@ -336,23 +337,24 @@ func TestGetChartData(t *testing.T) {
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
 				return &dpb.Chart{
 					Name: "dashboards/123/charts/456",
-					Xid:  1,
+					Xid:  100,
 					Wid:  1,
 				}, nil
-			},
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
-				return &dpb.Dashboard{Name: "dashboards/123", Owner: "user@example.com"}, nil
 			},
 		}
 		authMock := &mockAuthorizer{
 			authenticateFn: func(ctx context.Context) (string, string, error) {
 				return "user@example.com", "uid-1", nil
 			},
-			isUserAuthorizedFn: func(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error) {
-				return true, nil
+		}
+		var capturedReq *xidapipb.CheckUserAuthorizationRequest
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				capturedReq = in
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, &dataengine.DataEngine{})
+		s := NewServer(&Config{}, repo, authMock, xidMock, &dataengine.DataEngine{})
 		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
 		if err != nil {
 			t.Fatalf("GetChartData() unexpected error: %v", err)
@@ -360,11 +362,79 @@ func TestGetChartData(t *testing.T) {
 		if resp.GetName() != "dashboards/123/charts/456" {
 			t.Errorf("GetChartData().Name = %q, want %q", resp.GetName(), "dashboards/123/charts/456")
 		}
+		if capturedReq == nil || capturedReq.GetName() != "xids/100" || capturedReq.GetUser() != "user@example.com" || capturedReq.GetRoleType() != xpb.XidAcls_READER {
+			t.Errorf("CheckUserAuthorization called with unexpected request: %v", capturedReq)
+		}
+	})
+
+	t.Run("context headers forwarded to XID service", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return &dpb.Chart{
+					Name: "dashboards/123/charts/456",
+					Xid:  100,
+					Wid:  1,
+				}, nil
+			},
+		}
+		authMock := &mockAuthorizer{}
+		var capturedMD metadata.MD
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				capturedMD, _ = metadata.FromOutgoingContext(ctx)
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, authMock, xidMock, &dataengine.DataEngine{})
+
+		incomingMD := metadata.Pairs(
+			"x-goog-iap-jwt-assertion", "jwt-token-val",
+			"x-goog-user-email", "user@example.com",
+			"authorization", "Bearer token-123",
+		)
+		callCtx := metadata.NewIncomingContext(context.Background(), incomingMD)
+
+		_, err := s.GetChartData(callCtx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456"})
+		if err != nil {
+			t.Fatalf("GetChartData() unexpected error: %v", err)
+		}
+		if jwts := capturedMD.Get("x-goog-iap-jwt-assertion"); len(jwts) != 1 || jwts[0] != "jwt-token-val" {
+			t.Errorf("Expected forwarded x-goog-iap-jwt-assertion = %q, got %v", "jwt-token-val", jwts)
+		}
+		if emails := capturedMD.Get("x-goog-user-email"); len(emails) != 1 || emails[0] != "user@example.com" {
+			t.Errorf("Expected forwarded x-goog-user-email = %q, got %v", "user@example.com", emails)
+		}
+		if auths := capturedMD.Get("authorization"); len(auths) != 1 || auths[0] != "Bearer token-123" {
+			t.Errorf("Expected forwarded authorization = %q, got %v", "Bearer token-123", auths)
+		}
+	})
+}
+
+func TestPropagateAuthContext(t *testing.T) {
+	t.Run("no incoming metadata returns original context", func(t *testing.T) {
+		ctx := context.Background()
+		outCtx := propagateAuthContext(ctx)
+		if _, ok := metadata.FromOutgoingContext(outCtx); ok {
+			t.Errorf("Expected no outgoing metadata when incoming metadata is missing")
+		}
+	})
+
+	t.Run("empty header values are omitted", func(t *testing.T) {
+		incomingMD := metadata.Pairs(
+			"x-goog-iap-jwt-assertion", "",
+			"x-goog-user-email", "",
+			"authorization", "",
+		)
+		ctx := metadata.NewIncomingContext(context.Background(), incomingMD)
+		outCtx := propagateAuthContext(ctx)
+		if _, ok := metadata.FromOutgoingContext(outCtx); ok {
+			t.Errorf("Expected no outgoing metadata when all relevant incoming headers are empty")
+		}
 	})
 }
 
 func TestListCharts(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, nil)
+	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
 	ctx := context.Background()
 
 	resp, err := s.ListCharts(ctx, &spb.ListChartsRequest{Parent: "dashboards/123"})
@@ -377,7 +447,7 @@ func TestListCharts(t *testing.T) {
 }
 
 func TestUpdateChart(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, nil)
+	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
 	ctx := context.Background()
 
 	req := &spb.UpdateChartRequest{
@@ -393,11 +463,41 @@ func TestUpdateChart(t *testing.T) {
 }
 
 func TestDeleteChart(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, nil)
+	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
 	ctx := context.Background()
 
 	_, err := s.DeleteChart(ctx, &spb.DeleteChartRequest{Name: "dashboards/123/charts/456"})
 	if err != nil {
 		t.Fatalf("DeleteChart failed: %v", err)
+	}
+}
+
+func TestCheckDashboardAuthorization(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("nil dashboard returns false and nil error", func(t *testing.T) {
+		s := &Server{auth: &mockAuthorizer{}}
+		authz, err := s.checkDashboardAuthorization(ctx, "user@example.com", nil, auth.Owner)
+		if err != nil || authz {
+			t.Errorf("checkDashboardAuthorization(nil dash) = (%v, %v), want (false, nil)", authz, err)
+		}
+	})
+
+	t.Run("nil auth in server returns true", func(t *testing.T) {
+		s := &Server{}
+		dash := &dpb.Dashboard{Owner: "user@example.com"}
+		authz, err := s.checkDashboardAuthorization(ctx, "user@example.com", dash, auth.Owner)
+		if err != nil || !authz {
+			t.Errorf("checkDashboardAuthorization(nil auth) = (%v, %v), want (true, nil)", authz, err)
+		}
+	})
+}
+
+func TestIsNotFoundError(t *testing.T) {
+	if isNotFoundError(nil) {
+		t.Errorf("isNotFoundError(nil) = true, want false")
+	}
+	if !isNotFoundError(status.Error(codes.NotFound, "not found")) {
+		t.Errorf("isNotFoundError(status.NotFound) = false, want true")
 	}
 }

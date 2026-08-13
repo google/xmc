@@ -53,7 +53,7 @@ func TestUpdateDashboard(t *testing.T) {
 				return true, nil
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, nil)
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
 		req := &spb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{
@@ -97,7 +97,7 @@ func TestUpdateDashboard(t *testing.T) {
 				return true, nil
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, nil)
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
 		req := &spb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{
@@ -141,7 +141,7 @@ func TestUpdateDashboard(t *testing.T) {
 				return true, nil
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, nil)
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
 		req := &spb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{
@@ -169,7 +169,7 @@ func TestUpdateDashboard(t *testing.T) {
 				return "", "", errors.New("unauthenticated")
 			},
 		}
-		s := NewServer(&Config{}, &mockRepository{}, authMock, nil)
+		s := NewServer(&Config{}, &mockRepository{}, authMock, &mockXidClient{}, nil)
 
 		_, err := s.UpdateDashboard(ctx, &spb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Name: "dashboards/1", Title: "Title"},
@@ -180,7 +180,7 @@ func TestUpdateDashboard(t *testing.T) {
 	})
 
 	t.Run("invalid request returns InvalidArgument", func(t *testing.T) {
-		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		tests := []struct {
 			name string
@@ -212,7 +212,7 @@ func TestUpdateDashboard(t *testing.T) {
 				return nil, status.Error(codes.NotFound, "not found")
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		_, err := s.UpdateDashboard(ctx, &spb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Name: "dashboards/dash-123", Title: "Title"},
@@ -228,7 +228,7 @@ func TestUpdateDashboard(t *testing.T) {
 				return nil, errors.New("read error")
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		_, err := s.UpdateDashboard(ctx, &spb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Name: "dashboards/dash-123", Title: "Title"},
@@ -249,7 +249,7 @@ func TestUpdateDashboard(t *testing.T) {
 				return false, nil
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, nil)
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
 		_, err := s.UpdateDashboard(ctx, &spb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Name: "dashboards/dash-123", Title: "Title"},
@@ -270,7 +270,7 @@ func TestUpdateDashboard(t *testing.T) {
 				return false, errors.New("auth error")
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, nil)
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
 		_, err := s.UpdateDashboard(ctx, &spb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Name: "dashboards/dash-123", Title: "Title"},
@@ -289,7 +289,7 @@ func TestUpdateDashboard(t *testing.T) {
 				return nil, errors.New("update write failed")
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		_, err := s.UpdateDashboard(ctx, &spb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Name: "dashboards/dash-123", Title: "Title"},
@@ -308,13 +308,25 @@ func TestUpdateDashboard(t *testing.T) {
 				return nil, status.Error(codes.NotFound, "dashboard not found")
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		_, err := s.UpdateDashboard(ctx, &spb.UpdateDashboardRequest{
 			Dashboard: &dpb.Dashboard{Name: "dashboards/dash-123", Title: "Title"},
 		})
 		if status.Code(err) != codes.NotFound {
 			t.Errorf("Expected code NotFound, got %v", status.Code(err))
+		}
+	})
+
+	t.Run("nil repo in server struct returns FailedPrecondition", func(t *testing.T) {
+		s := &Server{
+			auth: &mockAuthorizer{},
+		}
+		_, err := s.UpdateDashboard(ctx, &spb.UpdateDashboardRequest{
+			Dashboard: &dpb.Dashboard{Name: "dashboards/dash-123", Title: "Title"},
+		})
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("Expected code FailedPrecondition, got %v", status.Code(err))
 		}
 	})
 }

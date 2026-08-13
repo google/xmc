@@ -25,19 +25,18 @@ import (
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
-	"xmanager_cloud/internal/auth"
-	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestListDashboards(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("list with full authorized results", func(t *testing.T) {
+	t.Run("returns all dashboards without owner filtering", func(t *testing.T) {
 		repo := &mockRepository{
 			listDashboardsFn: func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error) {
 				return []*dpb.Dashboard{
 					{Name: "dashboards/1", Owner: "user@example.com"},
-					{Name: "dashboards/2", Owner: "user@example.com"},
+					{Name: "dashboards/2", Owner: "other@example.com"},
+					{Name: "dashboards/3", Owner: "third@example.com"},
 				}, "next-tok", nil
 			},
 		}
@@ -45,56 +44,18 @@ func TestListDashboards(t *testing.T) {
 			authenticateFn: func(ctx context.Context) (string, string, error) {
 				return "user@example.com", "u-1", nil
 			},
-			isUserAuthorizedFn: func(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error) {
-				return true, nil
-			},
 		}
-		s := NewServer(&Config{}, repo, authMock, nil)
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
 		resp, err := s.ListDashboards(ctx, &spb.ListDashboardsRequest{PageSize: 10})
 		if err != nil {
 			t.Fatalf("ListDashboards failed: %v", err)
 		}
-		if len(resp.GetDashboards()) != 2 {
-			t.Fatalf("Expected 2 dashboards, got %d", len(resp.GetDashboards()))
+		if len(resp.GetDashboards()) != 3 {
+			t.Fatalf("Expected 3 dashboards, got %d", len(resp.GetDashboards()))
 		}
 		if resp.GetNextPageToken() != "next-tok" {
 			t.Errorf("Expected next page token 'next-tok', got %q", resp.GetNextPageToken())
-		}
-	})
-
-	t.Run("filters out unauthorized dashboards", func(t *testing.T) {
-		repo := &mockRepository{
-			listDashboardsFn: func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error) {
-				return []*dpb.Dashboard{
-					{Name: "dashboards/1", Owner: "user@example.com"},
-					{Name: "dashboards/2", Owner: "other@example.com"},
-					{Name: "dashboards/3", Owner: "user@example.com"},
-				}, "", nil
-			},
-		}
-		authMock := &mockAuthorizer{
-			authenticateFn: func(ctx context.Context) (string, string, error) {
-				return "user@example.com", "u-1", nil
-			},
-			isUserAuthorizedFn: func(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error) {
-				if len(acls.GetOwners()) > 0 && acls.GetOwners()[0].GetUser() == user {
-					return true, nil
-				}
-				return false, nil
-			},
-		}
-		s := NewServer(&Config{}, repo, authMock, nil)
-
-		resp, err := s.ListDashboards(ctx, &spb.ListDashboardsRequest{})
-		if err != nil {
-			t.Fatalf("ListDashboards failed: %v", err)
-		}
-		if len(resp.GetDashboards()) != 2 {
-			t.Fatalf("Expected 2 authorized dashboards, got %d", len(resp.GetDashboards()))
-		}
-		if resp.GetDashboards()[0].GetName() != "dashboards/1" || resp.GetDashboards()[1].GetName() != "dashboards/3" {
-			t.Errorf("Unexpected filtered list: %v", resp.GetDashboards())
 		}
 	})
 
@@ -104,7 +65,7 @@ func TestListDashboards(t *testing.T) {
 				return nil, "", nil
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		resp, err := s.ListDashboards(ctx, &spb.ListDashboardsRequest{})
 		if err != nil {
@@ -121,7 +82,7 @@ func TestListDashboards(t *testing.T) {
 				return "", "", errors.New("missing token")
 			},
 		}
-		s := NewServer(&Config{}, &mockRepository{}, authMock, nil)
+		s := NewServer(&Config{}, &mockRepository{}, authMock, &mockXidClient{}, nil)
 
 		_, err := s.ListDashboards(ctx, &spb.ListDashboardsRequest{})
 		if status.Code(err) != codes.Unauthenticated {
@@ -130,7 +91,7 @@ func TestListDashboards(t *testing.T) {
 	})
 
 	t.Run("negative page size returns InvalidArgument", func(t *testing.T) {
-		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		_, err := s.ListDashboards(ctx, &spb.ListDashboardsRequest{PageSize: -1})
 		if status.Code(err) != codes.InvalidArgument {
@@ -144,26 +105,7 @@ func TestListDashboards(t *testing.T) {
 				return nil, "", errors.New("storage query failure")
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, nil)
-
-		_, err := s.ListDashboards(ctx, &spb.ListDashboardsRequest{})
-		if status.Code(err) != codes.Internal {
-			t.Errorf("Expected code Internal, got %v", status.Code(err))
-		}
-	})
-
-	t.Run("authorization check error returns Internal", func(t *testing.T) {
-		repo := &mockRepository{
-			listDashboardsFn: func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error) {
-				return []*dpb.Dashboard{{Name: "dashboards/1"}}, "", nil
-			},
-		}
-		authMock := &mockAuthorizer{
-			isUserAuthorizedFn: func(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error) {
-				return false, errors.New("auth service error")
-			},
-		}
-		s := NewServer(&Config{}, repo, authMock, nil)
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		_, err := s.ListDashboards(ctx, &spb.ListDashboardsRequest{})
 		if status.Code(err) != codes.Internal {

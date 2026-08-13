@@ -47,6 +47,7 @@ import (
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/clickhouse"
+	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
 func setupHTTPHandler(authenticator *oauth2.Authenticator, gwmux http.Handler, readinessCheck func(context.Context) error) http.Handler {
@@ -161,13 +162,21 @@ func initAuthorizer(ctx context.Context, projectID string, oauthCfg *oauth2.Conf
 	return authorizer
 }
 
-func initGRPCServer(ctx context.Context, cfg *server.Config, repo server.DashboardRepository, authorizer auth.AuthorizerInterface, de *dataengine.DataEngine, errChan chan<- error) (*grpc.Server, net.Listener) {
+func initXidClient(addr string) (xidapipb.XidServiceClient, *grpc.ClientConn, error) {
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to connect to XID service at %q: %w", addr, err)
+	}
+	return xidapipb.NewXidServiceClient(conn), conn, nil
+}
+
+func initGRPCServer(ctx context.Context, cfg *server.Config, repo server.DashboardRepository, authorizer auth.AuthorizerInterface, xidClient xidapipb.XidServiceClient, de *dataengine.DataEngine, errChan chan<- error) (*grpc.Server, net.Listener) {
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
-	spb.RegisterDashboardServiceServer(grpcServer, server.NewServer(cfg, repo, authorizer, de))
+	spb.RegisterDashboardServiceServer(grpcServer, server.NewServer(cfg, repo, authorizer, xidClient, de))
 	reflection.Register(grpcServer)
 
 	healthServer := health.NewServer()
@@ -272,8 +281,14 @@ func main() {
 	repo := initRepository(ctx, sc)
 	authorizer := initAuthorizer(ctx, cfg.ProjectID, oauthCfg)
 
+	xidClient, xidConn, err := initXidClient(cfg.XidServiceAddr)
+	if err != nil {
+		logging.Fatal(ctx, "failed to initialize XID service client", "error", err)
+	}
+	defer xidConn.Close()
+
 	errChan := make(chan error, 2)
-	grpcServer, _ := initGRPCServer(ctx, cfg, repo, authorizer, de, errChan)
+	grpcServer, _ := initGRPCServer(ctx, cfg, repo, authorizer, xidClient, de, errChan)
 	httpServer := initHTTPServer(ctx, cfg, authenticator, sc, errChan)
 
 	quit := make(chan os.Signal, 1)

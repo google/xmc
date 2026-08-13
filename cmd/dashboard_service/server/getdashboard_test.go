@@ -24,14 +24,12 @@ import (
 
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
-	"xmanager_cloud/internal/auth"
-	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 func TestGetDashboard(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("successful retrieval by authorized user", func(t *testing.T) {
+	t.Run("successful retrieval by non-owner authenticated user", func(t *testing.T) {
 		repo := &mockRepository{
 			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
 				return &dpb.Dashboard{
@@ -45,14 +43,8 @@ func TestGetDashboard(t *testing.T) {
 			authenticateFn: func(ctx context.Context) (string, string, error) {
 				return "reader@example.com", "user-1", nil
 			},
-			isUserAuthorizedFn: func(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error) {
-				if role == auth.Reader {
-					return true, nil
-				}
-				return false, nil
-			},
 		}
-		s := NewServer(&Config{}, repo, authMock, nil)
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
 		req := &spb.GetDashboardRequest{Name: "dashboards/dash-123"}
 		resp, err := s.GetDashboard(ctx, req)
@@ -62,6 +54,9 @@ func TestGetDashboard(t *testing.T) {
 		if resp.GetName() != "dashboards/dash-123" {
 			t.Errorf("Expected name 'dashboards/dash-123', got %q", resp.GetName())
 		}
+		if resp.GetOwner() != "owner@example.com" {
+			t.Errorf("Expected owner 'owner@example.com', got %q", resp.GetOwner())
+		}
 	})
 
 	t.Run("unauthenticated caller returns Unauthenticated", func(t *testing.T) {
@@ -70,7 +65,7 @@ func TestGetDashboard(t *testing.T) {
 				return "", "", errors.New("unauthenticated")
 			},
 		}
-		s := NewServer(&Config{}, &mockRepository{}, authMock, nil)
+		s := NewServer(&Config{}, &mockRepository{}, authMock, &mockXidClient{}, nil)
 
 		_, err := s.GetDashboard(ctx, &spb.GetDashboardRequest{Name: "dashboards/dash-123"})
 		if status.Code(err) != codes.Unauthenticated {
@@ -79,7 +74,7 @@ func TestGetDashboard(t *testing.T) {
 	})
 
 	t.Run("invalid request returns InvalidArgument", func(t *testing.T) {
-		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		tests := []struct {
 			name string
@@ -106,7 +101,7 @@ func TestGetDashboard(t *testing.T) {
 				return nil, status.Error(codes.NotFound, "row not found")
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		_, err := s.GetDashboard(ctx, &spb.GetDashboardRequest{Name: "dashboards/dash-123"})
 		if status.Code(err) != codes.NotFound {
@@ -120,7 +115,7 @@ func TestGetDashboard(t *testing.T) {
 				return nil, errors.New("spanner timeout")
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		_, err := s.GetDashboard(ctx, &spb.GetDashboardRequest{Name: "dashboards/dash-123"})
 		if status.Code(err) != codes.Internal {
@@ -128,41 +123,13 @@ func TestGetDashboard(t *testing.T) {
 		}
 	})
 
-	t.Run("unauthorized user returns PermissionDenied", func(t *testing.T) {
-		repo := &mockRepository{
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
-				return &dpb.Dashboard{Name: "dashboards/" + dashboardId, Owner: "other@example.com"}, nil
-			},
+	t.Run("nil repo in server struct returns FailedPrecondition", func(t *testing.T) {
+		s := &Server{
+			auth: &mockAuthorizer{},
 		}
-		authMock := &mockAuthorizer{
-			isUserAuthorizedFn: func(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error) {
-				return false, nil
-			},
-		}
-		s := NewServer(&Config{}, repo, authMock, nil)
-
 		_, err := s.GetDashboard(ctx, &spb.GetDashboardRequest{Name: "dashboards/dash-123"})
-		if status.Code(err) != codes.PermissionDenied {
-			t.Errorf("Expected code PermissionDenied, got %v", status.Code(err))
-		}
-	})
-
-	t.Run("authorization check error returns Internal", func(t *testing.T) {
-		repo := &mockRepository{
-			getDashboardFn: func(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
-				return &dpb.Dashboard{Name: "dashboards/" + dashboardId, Owner: "other@example.com"}, nil
-			},
-		}
-		authMock := &mockAuthorizer{
-			isUserAuthorizedFn: func(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error) {
-				return false, errors.New("cloud identity api failure")
-			},
-		}
-		s := NewServer(&Config{}, repo, authMock, nil)
-
-		_, err := s.GetDashboard(ctx, &spb.GetDashboardRequest{Name: "dashboards/dash-123"})
-		if status.Code(err) != codes.Internal {
-			t.Errorf("Expected code Internal, got %v", status.Code(err))
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("Expected code FailedPrecondition, got %v", status.Code(err))
 		}
 	})
 }

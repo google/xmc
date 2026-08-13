@@ -53,7 +53,7 @@ func TestDeleteDashboard(t *testing.T) {
 				return true, nil
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, nil)
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
 		req := &spb.DeleteDashboardRequest{Name: "dashboards/dash-123"}
 		_, err := s.DeleteDashboard(ctx, req)
@@ -71,7 +71,7 @@ func TestDeleteDashboard(t *testing.T) {
 				return "", "", errors.New("unauthenticated")
 			},
 		}
-		s := NewServer(&Config{}, &mockRepository{}, authMock, nil)
+		s := NewServer(&Config{}, &mockRepository{}, authMock, &mockXidClient{}, nil)
 
 		_, err := s.DeleteDashboard(ctx, &spb.DeleteDashboardRequest{Name: "dashboards/dash-123"})
 		if status.Code(err) != codes.Unauthenticated {
@@ -80,7 +80,7 @@ func TestDeleteDashboard(t *testing.T) {
 	})
 
 	t.Run("invalid request returns InvalidArgument", func(t *testing.T) {
-		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		tests := []struct {
 			name string
@@ -107,7 +107,7 @@ func TestDeleteDashboard(t *testing.T) {
 				return nil, status.Error(codes.NotFound, "not found")
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		_, err := s.DeleteDashboard(ctx, &spb.DeleteDashboardRequest{Name: "dashboards/dash-123"})
 		if status.Code(err) != codes.NotFound {
@@ -121,7 +121,7 @@ func TestDeleteDashboard(t *testing.T) {
 				return nil, errors.New("read error")
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		_, err := s.DeleteDashboard(ctx, &spb.DeleteDashboardRequest{Name: "dashboards/dash-123"})
 		if status.Code(err) != codes.Internal {
@@ -140,7 +140,7 @@ func TestDeleteDashboard(t *testing.T) {
 				return false, nil
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, nil)
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
 		_, err := s.DeleteDashboard(ctx, &spb.DeleteDashboardRequest{Name: "dashboards/dash-123"})
 		if status.Code(err) != codes.PermissionDenied {
@@ -159,7 +159,7 @@ func TestDeleteDashboard(t *testing.T) {
 				return false, errors.New("auth error")
 			},
 		}
-		s := NewServer(&Config{}, repo, authMock, nil)
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
 
 		_, err := s.DeleteDashboard(ctx, &spb.DeleteDashboardRequest{Name: "dashboards/dash-123"})
 		if status.Code(err) != codes.Internal {
@@ -176,7 +176,7 @@ func TestDeleteDashboard(t *testing.T) {
 				return errors.New("delete failed")
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		_, err := s.DeleteDashboard(ctx, &spb.DeleteDashboardRequest{Name: "dashboards/dash-123"})
 		if status.Code(err) != codes.Internal {
@@ -193,11 +193,21 @@ func TestDeleteDashboard(t *testing.T) {
 				return status.Error(codes.NotFound, "not found")
 			},
 		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, nil)
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
 		_, err := s.DeleteDashboard(ctx, &spb.DeleteDashboardRequest{Name: "dashboards/dash-123"})
 		if status.Code(err) != codes.NotFound {
 			t.Errorf("Expected code NotFound, got %v", status.Code(err))
+		}
+	})
+
+	t.Run("nil repo in server struct returns FailedPrecondition", func(t *testing.T) {
+		s := &Server{
+			auth: &mockAuthorizer{},
+		}
+		_, err := s.DeleteDashboard(ctx, &spb.DeleteDashboardRequest{Name: "dashboards/dash-123"})
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("Expected code FailedPrecondition, got %v", status.Code(err))
 		}
 	})
 }

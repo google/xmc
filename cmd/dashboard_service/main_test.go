@@ -209,6 +209,19 @@ func TestInitDataEngine_GracefulFallback(t *testing.T) {
 	_ = initDataEngine(ctx)
 }
 
+func TestInitXidClient(t *testing.T) {
+	client, conn, err := initXidClient("localhost:8082")
+	if err != nil {
+		t.Fatalf("initXidClient failed: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected non-nil XidServiceClient")
+	}
+	if conn != nil {
+		_ = conn.Close()
+	}
+}
+
 func TestGracefulShutdown_Signal(t *testing.T) {
 	httpServer := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -27,6 +27,7 @@ compat_go_library(
     deps = [
         "//api/protos/dashboard:api_go_grpc_proto",
         "//api/protos/dashboard:api_go_proto",
+        "//api/protos/xid:api_go_proto",
         "//cmd/dashboard_service/server",
         "//internal/auth",
         "//internal/common/health",

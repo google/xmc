@@ -17,10 +17,10 @@ package server
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -30,6 +30,9 @@ import (
 	spb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/dashboard/dataengine"
+	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/validator/validator"
+	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
@@ -45,9 +48,10 @@ type DashboardRepository interface {
 
 // Config holds configuration for the dashboard service server.
 type Config struct {
-	Port      string
-	GRPCPort  string
-	ProjectID string
+	Port           string
+	GRPCPort       string
+	ProjectID      string
+	XidServiceAddr string
 }
 
 // Server implements the generated pb.DashboardServiceServer interface.
@@ -57,25 +61,52 @@ type Server struct {
 	cfg        *Config
 	repo       DashboardRepository
 	auth       auth.AuthorizerInterface
+	xidClient  xidapipb.XidServiceClient
 	dataEngine *dataengine.DataEngine
 }
 
 var _ spb.DashboardServiceServer = (*Server)(nil)
 
 // NewServer creates a new instance of Server.
-func NewServer(cfg *Config, repo DashboardRepository, auth auth.AuthorizerInterface, de *dataengine.DataEngine) *Server {
+func NewServer(cfg *Config, repo DashboardRepository, auth auth.AuthorizerInterface, xidClient xidapipb.XidServiceClient, de *dataengine.DataEngine) *Server {
 	if repo == nil {
 		panic("repo must not be nil")
 	}
 	if auth == nil {
 		panic("auth must not be nil")
 	}
+	if xidClient == nil {
+		panic("xidClient must not be nil")
+	}
 	return &Server{
 		cfg:        cfg,
 		repo:       repo,
 		auth:       auth,
+		xidClient:  xidClient,
 		dataEngine: de,
 	}
+}
+
+// propagateAuthContext forwards identity headers to downstream gRPC services without clobbering tracing metadata.
+func propagateAuthContext(ctx context.Context) context.Context {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ctx
+	}
+	var pairs []string
+	if jwt := md.Get("x-goog-iap-jwt-assertion"); len(jwt) > 0 && jwt[0] != "" {
+		pairs = append(pairs, "x-goog-iap-jwt-assertion", jwt[0])
+	}
+	if email := md.Get("x-goog-user-email"); len(email) > 0 && email[0] != "" {
+		pairs = append(pairs, "x-goog-user-email", email[0])
+	}
+	if authHeader := md.Get("authorization"); len(authHeader) > 0 && authHeader[0] != "" {
+		pairs = append(pairs, "authorization", authHeader[0])
+	}
+	if len(pairs) == 0 {
+		return ctx
+	}
+	return metadata.AppendToOutgoingContext(ctx, pairs...)
 }
 
 // checkDashboardAuthorization verifies user permissions against the dashboard owner principal.
@@ -122,7 +153,7 @@ func (s *Server) GetChart(ctx context.Context, req *spb.GetChartRequest) (*dpb.C
 	}, nil
 }
 
-// GetChartData retrieves chart data using the configured data engine.
+// GetChartData retrieves chart data after validating experiment-level read permissions via XID service.
 func (s *Server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest) (*dpb.ChartData, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request must not be nil")
@@ -137,6 +168,9 @@ func (s *Server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest)
 	if s.repo == nil {
 		return nil, status.Error(codes.FailedPrecondition, "chart repository is not configured")
 	}
+	if s.xidClient == nil {
+		return nil, status.Error(codes.FailedPrecondition, "xid client is not configured")
+	}
 	chart, err := s.repo.GetChart(ctx, req.GetName())
 	if err != nil {
 		if isNotFoundError(err) {
@@ -145,27 +179,24 @@ func (s *Server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest)
 		return nil, status.Errorf(codes.Internal, "failed to get chart %q: %v", req.GetName(), err)
 	}
 
-	// Extract parent dashboard ID from chart name (e.g., "dashboards/{dashboard_id}/charts/{chart_id}")
-	parts := strings.Split(chart.GetName(), "/")
-	if len(parts) < 2 || parts[0] != "dashboards" {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid chart name format: %q", chart.GetName())
-	}
-	dashID := parts[1]
-
-	dash, err := s.repo.GetDashboard(ctx, dashID)
-	if err != nil {
-		if isNotFoundError(err) {
-			return nil, status.Errorf(codes.NotFound, "parent dashboard %q not found", dashID)
-		}
-		return nil, status.Errorf(codes.Internal, "failed to get parent dashboard: %v", err)
+	if chart.GetXid() <= 0 {
+		return nil, status.Errorf(codes.FailedPrecondition, "chart %q is missing a valid experiment XID (%d)", req.GetName(), chart.GetXid())
 	}
 
-	authorized, err := s.checkDashboardAuthorization(ctx, user, dash, auth.Reader)
+	// Authorize experiment access via XID Service using canonical name ("xids/{xid}")
+	xidName := validator.ConstructXIDName(chart.GetXid())
+	roleType := xpb.XidAcls_READER
+	xidResp, err := s.xidClient.CheckUserAuthorization(propagateAuthContext(ctx), &xidapipb.CheckUserAuthorizationRequest{
+		Name:     &xidName,
+		User:     &user,
+		RoleType: &roleType,
+	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to check dashboard authorization: %v", err)
+		logging.Error(ctx, "failed to check user authorization with XID service", "xid", chart.GetXid(), "user", user, "error", err)
+		return nil, status.Errorf(codes.Internal, "failed to verify permissions for experiment %d", chart.GetXid())
 	}
-	if !authorized {
-		return nil, status.Errorf(codes.PermissionDenied, "user %q is not authorized to access chart data", user)
+	if xidResp == nil || !xidResp.GetAuthorized() {
+		return nil, status.Errorf(codes.PermissionDenied, "user %q is not authorized to read experiment %d", user, chart.GetXid())
 	}
 
 	return s.dataEngine.FetchChartData(ctx, chart, req)

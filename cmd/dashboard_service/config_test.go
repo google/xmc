@@ -29,4 +29,7 @@ func TestLoadConfig(t *testing.T) {
 	if cfg.GRPCPort == "" {
 		t.Error("Expected default GRPCPort to be non-empty")
 	}
+	if cfg.XidServiceAddr == "" {
+		t.Error("Expected default XidServiceAddr to be non-empty")
+	}
 }

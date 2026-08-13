@@ -42,6 +42,10 @@ func (s *Server) UpdateDashboard(ctx context.Context, req *spb.UpdateDashboardRe
 		return nil, status.Errorf(codes.InvalidArgument, "invalid dashboard name: %v", err)
 	}
 
+	if s.repo == nil {
+		return nil, status.Error(codes.FailedPrecondition, "server repository not initialized")
+	}
+
 	existing, err := s.repo.GetDashboard(ctx, dashID)
 	if err != nil {
 		if isNotFoundError(err) {
