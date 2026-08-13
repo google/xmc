@@ -107,20 +107,6 @@ func (c *ResourceCache[T]) Delete(key string) {
 	c.listSnapshot.Store(&newList)
 }
 
-func buildSortedList[T any](m map[string]T) []T {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	list := make([]T, 0, len(m))
-	for _, k := range keys {
-		list = append(list, m[k])
-	}
-	return list
-}
-
 // Get retrieves an item by key from the cache without acquiring any locks (100% Lock-Free O(1)).
 func (c *ResourceCache[T]) Get(key string) (T, bool) {
 	m := c.mapSnapshot.Load()

@@ -20,7 +20,6 @@ import { firstValueFrom } from 'rxjs';
 
 import {
   BatchGetQueueSecondaryDataResponse,
-  GetFittingQueuesResponse,
   GetRunningAndPendingJobsResponse,
   ListClusterQueuesResponse,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';

@@ -50,7 +50,6 @@ import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service'
     MaxWorkloadDisplayPipe,
     FreeTotalDisplayPipe,
     QueueStatusBadgePipe,
-    WipBannerComponent,
   ],
 })
 export class QueueCardComponent {
