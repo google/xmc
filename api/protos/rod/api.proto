@@ -88,7 +88,7 @@ message QueueResourceCapacity {
 // QueueOverview provides an overview of the queue and its resources.
 message QueueOverview {
   string queue_name = 1;
-  repeated QueueResourceCapacity queue_capacity = 3;
+  repeated QueueResourceCapacity queue_capacity = 2;
 }
 
 // ListClusterQueuesRequest represents parameters for retrieving ClusterQueues.
