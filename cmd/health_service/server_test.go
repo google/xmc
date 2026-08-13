@@ -26,7 +26,9 @@ import (
 
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -88,13 +90,34 @@ func (f *testFixture) assertCallCount(expected int) {
 	}
 }
 
+type mockTransportStream struct {
+	grpc.ServerTransportStream
+	header metadata.MD
+}
+
+func (m *mockTransportStream) SetHeader(md metadata.MD) error {
+	m.header = metadata.Join(m.header, md)
+	return nil
+}
+
 func (f *testFixture) assertCall(ctx context.Context, req *spb.GetHealthStatusRequest, expectedCalls int) *spb.HealthStatusResponse {
 	f.t.Helper()
-	resp, err := f.server.GetHealthStatus(ctx, req)
+	return f.assertCallWithHeader(ctx, req, expectedCalls, "")
+}
+
+func (f *testFixture) assertCallWithHeader(ctx context.Context, req *spb.GetHealthStatusRequest, expectedCalls int, expectedCacheHeader string) *spb.HealthStatusResponse {
+	f.t.Helper()
+	stream := &mockTransportStream{}
+	resp, err := f.server.GetHealthStatus(grpc.NewContextWithServerTransportStream(ctx, stream), req)
 	if err != nil {
 		f.t.Fatalf("call failed: %v", err)
 	}
 	f.assertCallCount(expectedCalls)
+	if expectedCacheHeader != "" {
+		if got := stream.header.Get("x-cache"); len(got) == 0 || got[0] != expectedCacheHeader {
+			f.t.Errorf("expected X-Cache header %q, got %v", expectedCacheHeader, got)
+		}
+	}
 	return resp
 }
 
@@ -345,11 +368,11 @@ func TestGetHealthStatus_CachingAndRateLimiting(t *testing.T) {
 
 		ctx := context.Background()
 
-		// 1. First call - Cache Miss
-		resp1 := tf.assertCall(ctx, &spb.GetHealthStatusRequest{}, 1)
+		// 1. First call - Cache Miss (X-Cache: MISS)
+		resp1 := tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{}, 1, "MISS")
 
-		// 2. Second call immediately - Cache Hit
-		resp2 := tf.assertCall(ctx, &spb.GetHealthStatusRequest{}, 1)
+		// 2. Second call immediately - Cache Hit (X-Cache: HIT)
+		resp2 := tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{}, 1, "HIT")
 		if resp1.HealthCheckTime.AsTime() != resp2.HealthCheckTime.AsTime() {
 			t.Error("expected cached response to have the same health check time")
 		}
@@ -357,15 +380,15 @@ func TestGetHealthStatus_CachingAndRateLimiting(t *testing.T) {
 		// 3. Sleep past TTL (15s) to expire cache
 		time.Sleep(16 * time.Second)
 
-		// 4. Third call - Cache Miss
-		tf.assertCall(ctx, &spb.GetHealthStatusRequest{}, 2)
+		// 4. Third call - Cache Miss (X-Cache: MISS)
+		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{}, 2, "MISS")
 
-		// 5. Force refresh calls - allowed up to 5 times (limit is 5)
-		tf.assertCall(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 3)
-		tf.assertCall(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 4)
-		tf.assertCall(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 5)
-		tf.assertCall(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 6)
-		tf.assertCall(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 7)
+		// 5. Force refresh calls - allowed up to 5 times (limit is 5, all X-Cache: MISS)
+		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 3, "MISS")
+		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 4, "MISS")
+		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 5, "MISS")
+		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 6, "MISS")
+		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 7, "MISS")
 
 		// 6. 6th Force refresh immediately - Rate Limited
 		tf.assertRateLimited(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 7)
