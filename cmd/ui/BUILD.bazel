@@ -106,6 +106,9 @@ py_library(
 py_test(
     name = "server_test",
     srcs = ["server_test.py"],
+    data = [
+        "//test/dataengine:testdata",
+    ],
     deps = [
         ":server",
     ],

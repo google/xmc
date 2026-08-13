@@ -1,0 +1,87 @@
+{
+  "name": "experiments/234911122/charts/baseline",
+  "xid": "234911122",
+  "wid": "1",
+  "plots_data": [
+    {
+      "plot_id": "val_loss_kpi",
+      "type": "SUMMARY_BOX",
+      "summary_data": {
+        "metric_name": "val/loss",
+        "latest_value": 1.2115,
+        "min_value": 1.2115,
+        "max_value": 2.0,
+        "mean_value": 1.543,
+        "baseline_value": 1.2115,
+        "delta_vs_baseline": 0.0,
+        "polarity": "LOWER_IS_BETTER",
+        "latest_step": "500",
+        "latest_timestamp": "2026-08-11T12:00:00Z"
+      }
+    },
+    {
+      "plot_id": "train_acc_kpi",
+      "type": "SUMMARY_BOX",
+      "summary_data": {
+        "metric_name": "train/accuracy",
+        "latest_value": 0.885,
+        "min_value": 0.3,
+        "max_value": 0.885,
+        "mean_value": 0.709,
+        "baseline_value": 0.885,
+        "delta_vs_baseline": 0.0,
+        "polarity": "HIGHER_IS_BETTER",
+        "latest_step": "500",
+        "latest_timestamp": "2026-08-11T12:00:00Z"
+      }
+    },
+    {
+      "plot_id": "loss_vs_steps",
+      "type": "SCATTER",
+      "scatter_series": {
+        "metric_name": "val/loss",
+        "work_unit_id": "1",
+        "xid": "234911122",
+        "series_label": "Baseline Run",
+        "is_baseline": true,
+        "points": [
+          { "step": "0", "avg_value": 2.0, "min_value": 2.0, "max_value": 2.0, "timestamp": "2026-08-11T10:00:00Z" },
+          { "step": "50", "avg_value": 1.82, "min_value": 1.82, "max_value": 1.82, "timestamp": "2026-08-11T10:10:00Z" },
+          { "step": "100", "avg_value": 1.68, "min_value": 1.68, "max_value": 1.68, "timestamp": "2026-08-11T10:20:00Z" },
+          { "step": "150", "avg_value": 1.55, "min_value": 1.55, "max_value": 1.55, "timestamp": "2026-08-11T10:30:00Z" },
+          { "step": "200", "avg_value": 1.45, "min_value": 1.45, "max_value": 1.45, "timestamp": "2026-08-11T10:40:00Z" },
+          { "step": "250", "avg_value": 1.38, "min_value": 1.38, "max_value": 1.38, "timestamp": "2026-08-11T10:50:00Z" },
+          { "step": "300", "avg_value": 1.32, "min_value": 1.32, "max_value": 1.32, "timestamp": "2026-08-11T11:00:00Z" },
+          { "step": "350", "avg_value": 1.28, "min_value": 1.28, "max_value": 1.28, "timestamp": "2026-08-11T11:10:00Z" },
+          { "step": "400", "avg_value": 1.24, "min_value": 1.24, "max_value": 1.24, "timestamp": "2026-08-11T11:20:00Z" },
+          { "step": "450", "avg_value": 1.22, "min_value": 1.22, "max_value": 1.22, "timestamp": "2026-08-11T11:30:00Z" },
+          { "step": "500", "avg_value": 1.2115, "min_value": 1.2115, "max_value": 1.2115, "timestamp": "2026-08-11T11:40:00Z" }
+        ]
+      }
+    },
+    {
+      "plot_id": "acc_vs_steps",
+      "type": "SCATTER",
+      "scatter_series": {
+        "metric_name": "train/accuracy",
+        "work_unit_id": "1",
+        "xid": "234911122",
+        "series_label": "Baseline Run",
+        "is_baseline": true,
+        "points": [
+          { "step": "0", "avg_value": 0.30, "min_value": 0.30, "max_value": 0.30, "timestamp": "2026-08-11T10:00:00Z" },
+          { "step": "50", "avg_value": 0.45, "min_value": 0.45, "max_value": 0.45, "timestamp": "2026-08-11T10:10:00Z" },
+          { "step": "100", "avg_value": 0.58, "min_value": 0.58, "max_value": 0.58, "timestamp": "2026-08-11T10:20:00Z" },
+          { "step": "150", "avg_value": 0.67, "min_value": 0.67, "max_value": 0.67, "timestamp": "2026-08-11T10:30:00Z" },
+          { "step": "200", "avg_value": 0.74, "min_value": 0.74, "max_value": 0.74, "timestamp": "2026-08-11T10:40:00Z" },
+          { "step": "250", "avg_value": 0.79, "min_value": 0.79, "max_value": 0.79, "timestamp": "2026-08-11T10:50:00Z" },
+          { "step": "300", "avg_value": 0.82, "min_value": 0.82, "max_value": 0.82, "timestamp": "2026-08-11T11:00:00Z" },
+          { "step": "350", "avg_value": 0.85, "min_value": 0.85, "max_value": 0.85, "timestamp": "2026-08-11T11:10:00Z" },
+          { "step": "400", "avg_value": 0.87, "min_value": 0.87, "max_value": 0.87, "timestamp": "2026-08-11T11:20:00Z" },
+          { "step": "450", "avg_value": 0.88, "min_value": 0.88, "max_value": 0.88, "timestamp": "2026-08-11T11:30:00Z" },
+          { "step": "500", "avg_value": 0.885, "min_value": 0.885, "max_value": 0.885, "timestamp": "2026-08-11T11:40:00Z" }
+        ]
+      }
+    }
+  ]
+}
