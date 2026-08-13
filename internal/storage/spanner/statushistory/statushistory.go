@@ -131,7 +131,7 @@ func FetchQueueVelocity(ctx context.Context, client *spanner.Client, queueName s
 		      FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
 		      WHERE QueueName = @queueName
 		        AND TransitionTime >= @cutoffTime
-		        AND NewState IN (2, 3, 4)`, // 2: SCHEDULING, 3: STARTING, 4: RUNNING
+		        AND NewState IN (1, 2, 3, 4)`, // 1: INITIALIZING, 2: SCHEDULING, 3: STARTING, 4: RUNNING
 		Params: map[string]interface{}{
 			"queueName":  queueName,
 			"cutoffTime": cutoff,
@@ -185,7 +185,7 @@ func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueN
 		      FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
 		      WHERE QueueName IN UNNEST(@queueNames)
 		        AND TransitionTime >= @cutoffTime
-		        AND NewState IN (2, 3, 4)
+		        AND NewState IN (1, 2, 3, 4)
 		      GROUP BY QueueName`,
 		Params: map[string]interface{}{
 			"queueNames": queueNames,
