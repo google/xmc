@@ -67,6 +67,7 @@ type Handler struct {
 	projectID              string
 	audience               string
 	xmanagerServiceAccount string
+	disableAuthentication  bool
 	JWTVerifier            func() (jwt.Verifier, error)
 	redisClient            redisclient.Consumer
 }
@@ -78,6 +79,7 @@ func New(client *k8sclient.Client, projectID string, audience string, xmanagerSe
 		projectID:              projectID,
 		audience:               audience,
 		xmanagerServiceAccount: xmanagerServiceAccount,
+		disableAuthentication:  os.Getenv("DISABLE_AUTHENTICATION") == "true",
 		JWTVerifier:            jwtVerifier,
 		redisClient:            redisClient,
 	}
@@ -145,7 +147,7 @@ func (h *Handler) HandleWorkUnitRedisTask(ctx context.Context, workerID, data st
 	}
 
 	var authErr error
-	if os.Getenv("DISABLE_AUTHENTICATION") != "true" {
+	if !h.disableAuthentication {
 		authErr = h.validateAuthTokenString(ctx, msg.OidcToken)
 	}
 	if authErr != nil {

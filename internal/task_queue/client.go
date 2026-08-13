@@ -50,13 +50,14 @@ const (
 var osHostname = os.Hostname
 
 type Client struct {
-	invokerSA        string
-	gcpProjectID     string
-	actuatorURL      string
-	actuatorAudience string
-	signer           func() (jwt.Signer, error)
-	signatureTTL     time.Duration
-	redisClient      redisclient.Publisher
+	invokerSA             string
+	gcpProjectID          string
+	actuatorURL           string
+	actuatorAudience      string
+	disableAuthentication bool
+	signer                func() (jwt.Signer, error)
+	signatureTTL          time.Duration
+	redisClient           redisclient.Publisher
 }
 
 // New creates a new Client instance.
@@ -78,13 +79,14 @@ func New(ctx context.Context, projectID, invokerSA, actuatorURL, actuatorAudienc
 	logging.Info(ctx, "Initialized Redis task queue publisher")
 
 	return &Client{
-		invokerSA:        invokerSA,
-		gcpProjectID:     projectID,
-		actuatorURL:      actuatorURL,
-		actuatorAudience: aud,
-		signer:           signer,
-		signatureTTL:     time.Duration(ttl) * time.Second,
-		redisClient:      redisClient,
+		invokerSA:             invokerSA,
+		gcpProjectID:          projectID,
+		actuatorURL:           actuatorURL,
+		actuatorAudience:      aud,
+		disableAuthentication: os.Getenv("DISABLE_AUTHENTICATION") == "true",
+		signer:                signer,
+		signatureTTL:          time.Duration(ttl) * time.Second,
+		redisClient:           redisClient,
 	}, nil
 }
 
@@ -126,7 +128,7 @@ func (c *Client) EnqueueWorkUnitTask(ctx context.Context, target string, workUni
 	}
 
 	var oidcTokenString string
-	if os.Getenv("DISABLE_AUTHENTICATION") == "true" {
+	if c.disableAuthentication {
 		oidcTokenString = "MOCK_OIDC_TOKEN"
 	} else {
 		oidcTokenString, err = generateOIDCToken(ctx, c.invokerSA, c.actuatorAudience)

@@ -39,8 +39,10 @@ async def main():
             )
             print(e)
 
-        print("Waiting 3 seconds for angular to fetch and render the DataTable rows...")
-        await page.wait_for_timeout(3000)
+        print("Waiting for the DataTable rows to render...")
+        await page.locator(".data-table-row-selector, mat-row").first.wait_for(
+            state="visible", timeout=5000
+        )
 
         screenshot_path = "xmc_ui_experiment_list_v3.png"
         await page.screenshot(path=screenshot_path, full_page=True)
