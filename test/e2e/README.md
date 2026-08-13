@@ -36,7 +36,7 @@ A dedicated teardown-and-bootstrap script is provided to stand up the local repl
 
 ```bash
 cd xmc/
-./tools/e2e/run_local_e2e.sh
+./test/e2e/run_local_e2e.sh
 ```
 
 **What this script does:**
@@ -68,7 +68,7 @@ kubectl port-forward svc/api-service 8081:80 &
 The tests use Playwright for Python. We recommend using a virtual environment:
 
 ```bash
-cd tools/e2e
+cd test/e2e
 uv venv
 source .venv/bin/activate
 uv pip install pytest playwright requests
