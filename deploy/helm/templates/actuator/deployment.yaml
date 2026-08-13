@@ -51,6 +51,8 @@ spec:
         - configMapRef:
             name: actuator-config
         env:
+        - name: DISABLE_AUTHENTICATION
+          value: {{ .Values.auth.disableAuthentication | default "false" | quote }}
         - name: REDIS_PASSWORD
           valueFrom:
             secretKeyRef:

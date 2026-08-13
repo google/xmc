@@ -29,3 +29,6 @@ cmd/ui/playwright-report/
 
 # PR review checklist artifacts
 pr_review_checklist.md
+
+# Local KinD binary
+kind

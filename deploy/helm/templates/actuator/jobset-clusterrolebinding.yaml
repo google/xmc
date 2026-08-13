@@ -18,7 +18,7 @@ metadata:
 subjects:
 - kind: ServiceAccount
   name: actuator-service-account
-  namespace: xmc
+  namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
   name: jobset-creator

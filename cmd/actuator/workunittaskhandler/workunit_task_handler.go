@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -143,10 +144,14 @@ func (h *Handler) HandleWorkUnitRedisTask(ctx context.Context, workerID, data st
 		return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: false, Error: fmt.Errorf("failed to validate signature")}
 	}
 
-	if err := h.validateAuthTokenString(ctx, msg.OidcToken); err != nil {
-		logging.Warn(ctx, "Failed to validate OIDC token", "error", err)
+	var authErr error
+	if os.Getenv("DISABLE_AUTHENTICATION") != "true" {
+		authErr = h.validateAuthTokenString(ctx, msg.OidcToken)
+	}
+	if authErr != nil {
+		logging.Warn(ctx, "Failed to validate OIDC token", "error", authErr)
 		ctMessagesFailed.WithLabelValues().Inc()
-		return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: false, Error: fmt.Errorf("failed to validate OIDC token: %w", err)}
+		return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: false, Error: fmt.Errorf("failed to validate OIDC token: %w", authErr)}
 	}
 
 	var payload actuatortaskpb.ActuatorPayload

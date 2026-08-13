@@ -18,7 +18,7 @@ metadata:
 subjects:
 - kind: ServiceAccount
   name: reconciler-service-account
-  namespace: xmc
+  namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
   name: reconciler-role

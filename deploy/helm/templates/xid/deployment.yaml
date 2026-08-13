@@ -84,6 +84,8 @@ spec:
         - configMapRef:
             name: xid-config
         env:
+        - name: DISABLE_AUTHENTICATION
+          value: {{ .Values.auth.disableAuthentication | default "false" | quote }}
         - name: IAP_EXPECTED_ISSUER
           value: {{ .Values.auth.iap.iapIssuer | quote }}
         - name: IAP_EXPECTED_HTTP_AUDIENCE

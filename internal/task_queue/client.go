@@ -125,7 +125,12 @@ func (c *Client) EnqueueWorkUnitTask(ctx context.Context, target string, workUni
 		return fmt.Errorf("failed to create message signature: %w", err)
 	}
 
-	oidcTokenString, err := generateOIDCToken(ctx, c.invokerSA, c.actuatorAudience)
+	var oidcTokenString string
+	if os.Getenv("DISABLE_AUTHENTICATION") == "true" {
+		oidcTokenString = "MOCK_OIDC_TOKEN"
+	} else {
+		oidcTokenString, err = generateOIDCToken(ctx, c.invokerSA, c.actuatorAudience)
+	}
 	if err != nil {
 		logging.Warn(ctx, "Failed to generate OIDC token for redis task", "error", err)
 		return fmt.Errorf("failed to generate OIDC token for redis task: %w", err)

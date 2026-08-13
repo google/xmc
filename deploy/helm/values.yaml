@@ -109,6 +109,7 @@ experimentStateServer:
   spannerDatabaseName: "projects/YOUR_GCP_PROJECT_ID/instances/YOUR_SPANNER_INSTANCE/databases/YOUR_SPANNER_DATABASE"
 
 auth:
+  disableAuthentication: false
   iap:
     iapIssuer: "https://iap.googleapis.com"
     clientId: "YOUR_IAP_CLIENT_ID"

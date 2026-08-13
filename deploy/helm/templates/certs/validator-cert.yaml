@@ -15,7 +15,6 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: validator-ca
-  namespace: xmc
 spec:
   isCA: true
   commonName: validator-ca

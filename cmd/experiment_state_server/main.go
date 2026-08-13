@@ -260,7 +260,7 @@ func initServices(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Confi
 		logging.Fatal(ctx, "failed to create storage", "error", err)
 	}
 
-	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}, cfg.IAPIssuer, false, []byte(oauthCfg.JWTSecret))
+	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}, cfg.IAPIssuer, os.Getenv("DISABLE_AUTHENTICATION") == "true", []byte(oauthCfg.JWTSecret))
 	if err != nil {
 		logging.Fatal(ctx, "failed to create authorizer", "error", err)
 	}
