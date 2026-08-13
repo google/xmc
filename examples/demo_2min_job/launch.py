@@ -40,7 +40,9 @@ from xmanager_cloud.xid_service.proto import messages_pb2 as xid_messages_pb2
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string("queue", "tpu-cluster-queue", "Target ClusterQueue name for workload")
-flags.DEFINE_integer("duration", 120, "Workload duration in seconds (default: 120 seconds / 2 minutes)")
+flags.DEFINE_integer(
+    "duration", 120, "Workload duration in seconds (default: 120 seconds / 2 minutes)"
+)
 flags.DEFINE_integer("workunits", 3, "Number of WorkUnits to launch in this experiment")
 flags.DEFINE_string("priority", "HIGH", "Priority string: HIGH, NORMAL, or LOW")
 flags.DEFINE_integer("gpus", 0, "Number of GPUs requested (set to 0 for CPU-only)")
@@ -84,7 +86,9 @@ def main(argv: Sequence[str]) -> None:
     print(f"Number of WorkUnits: {num_workunits}")
     print(f"Workload Duration  : {duration_sec} seconds")
     print(f"Priority           : {FLAGS.priority}")
-    print(f"Requested Resources: {FLAGS.gpus} GPU(s), {FLAGS.cpu_milli}m CPU, {FLAGS.memory_mb}MB Memory per WorkUnit")
+    print(
+        f"Requested Resources: {FLAGS.gpus} GPU(s), {FLAGS.cpu_milli}m CPU, {FLAGS.memory_mb}MB Memory per WorkUnit"
+    )
     print(f"Container Image    : {image_path}")
     print("-----------------------------------------------------------------")
 
@@ -117,7 +121,7 @@ def main(argv: Sequence[str]) -> None:
                 "-c",
                 (
                     "import time, sys; "
-                    f"print('Demo workload WU #{i+1} started for XID {xid}. Running for {duration_sec}s...'); "
+                    f"print('Demo workload WU #{i + 1} started for XID {xid}. Running for {duration_sec}s...'); "
                     "sys.stdout.flush(); "
                     f"time.sleep({duration_sec}); "
                     "print('Demo workload completed successfully!'); "
@@ -128,14 +132,16 @@ def main(argv: Sequence[str]) -> None:
             work_unit = work_unit_pb2.WorkUnit(
                 work_unit_type=work_unit_pb2.WorkUnit.WorkUnitType.STANDARD,
                 priority=priority_enum,
-                notes=f"ROD Demo WU #{i+1} (2-minute workload targeted at {queue_name})",
+                notes=f"ROD Demo WU #{i + 1} (2-minute workload targeted at {queue_name})",
                 tags=["rod-demo", "2min-workload", queue_name],
                 executable=work_unit_pb2.Executable(
-                    scheduling_constraints=work_unit_pb2.SchedulingConstraints(queue_name=queue_name),
+                    scheduling_constraints=work_unit_pb2.SchedulingConstraints(
+                        queue_name=queue_name
+                    ),
                     jobset=work_unit_pb2.JobSetExecutable(
                         jobs=[
                             work_unit_pb2.KubernetesJob(
-                                name=f"demo-worker-{i+1}",
+                                name=f"demo-worker-{i + 1}",
                                 replicas=1,
                                 spec=work_unit_pb2.ExecutableSpec(
                                     docker_image=image_path,
@@ -154,7 +160,7 @@ def main(argv: Sequence[str]) -> None:
             )
             created_wu = stub.create_work_unit(create_req)
             wu_id = created_wu.name.split("/")[-1]
-            print(f"   ✅ WorkUnit #{i+1} created - ID: {wu_id}")
+            print(f"   ✅ WorkUnit #{i + 1} created - ID: {wu_id}")
 
         print("\n📊 Monitor in Resource Observability Dashboard (ROD):")
         domain = os.environ.get("XMC_DOMAIN", "janzak.dev.xmanageriso.dev")

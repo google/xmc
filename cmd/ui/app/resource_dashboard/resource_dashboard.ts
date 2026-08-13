@@ -96,7 +96,7 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   constructor() {
     effect(() => {
       const queues = this.queues();
-      const period = this.velocityPeriod();
+      const _period = this.velocityPeriod();
       if (queues.length > 0) {
         this.fetchSecondaryData();
       }

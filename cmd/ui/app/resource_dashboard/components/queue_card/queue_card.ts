@@ -28,9 +28,9 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import {
+  ClusterQueueSecondaryMetrics,
   QueueOverview,
   QueuePredictability,
-  ClusterQueueSecondaryMetrics,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
 import {

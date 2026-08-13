@@ -15,8 +15,8 @@
 import { ChangeDetectionStrategy, Component, input, model, output } from '@angular/core';
 
 import {
-  QueueOverview,
   ClusterQueueSecondaryMetrics,
+  QueueOverview,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { QueueCardComponent } from 'xmanager_cloud/ui/app/resource_dashboard/components/queue_card/queue_card';
 
