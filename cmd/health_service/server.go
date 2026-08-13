@@ -27,6 +27,7 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -73,16 +74,7 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 		if s.forceRefreshLimiter != nil && !s.forceRefreshLimiter.Allow() {
 			return nil, status.Error(codes.ResourceExhausted, "rate limit exceeded for force refresh")
 		}
-		return s.runChecksSingleflight(ctx)
-	}
-
-	// Try cache
-	s.cacheMu.RLock()
-	cached := s.cachedStatus
-	expires := s.cacheExpires
-	s.cacheMu.RUnlock()
-
-	if cached != nil && time.Now().Before(expires) {
+	} else if cached := s.getHealthStatusCache(); cached != nil {
 		return cached, nil
 	}
 
@@ -90,11 +82,16 @@ func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRe
 }
 
 func (s *server) runChecksSingleflight(ctx context.Context) (*spb.HealthStatusResponse, error) {
-	ch := s.sfGroup.DoChan("health_status", func() (interface{}, error) {
+	ch := s.sfGroup.DoChan("health_status", func() (val interface{}, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = status.Errorf(codes.Internal, "panic in health check: %v", r)
+			}
+		}()
 		detachedCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		resp := s.calculateHealthStatus(detachedCtx)
-		s.updateCache(resp)
+		s.updateHealthStatusCache(resp)
 		return resp, nil
 	})
 
@@ -102,12 +99,18 @@ func (s *server) runChecksSingleflight(ctx context.Context) (*spb.HealthStatusRe
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case res := <-ch:
-		return res.Val.(*spb.HealthStatusResponse), nil
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		resp, ok := res.Val.(*spb.HealthStatusResponse)
+		if !ok || resp == nil {
+			return nil, status.Error(codes.Internal, "failed to calculate health status")
+		}
+		return proto.Clone(resp).(*spb.HealthStatusResponse), nil
 	}
 }
 
 func (s *server) calculateHealthStatus(ctx context.Context) *spb.HealthStatusResponse {
-	checkStartTime := time.Now()
 	res := s.checker.RunChecks(ctx)
 
 	overallHealthy := spb.HealthState_HEALTH_STATE_HEALTHY
@@ -149,22 +152,29 @@ func (s *server) calculateHealthStatus(ctx context.Context) *spb.HealthStatusRes
 			IsSchedulingPaused: false,
 		},
 		Components:      res.Components,
-		HealthCheckTime: timestamppb.New(checkStartTime),
+		HealthCheckTime: timestamppb.Now(),
 	}
 }
 
-func (s *server) updateCache(resp *spb.HealthStatusResponse) {
+func (s *server) getHealthStatusCache() *spb.HealthStatusResponse {
+	s.cacheMu.RLock()
+	defer s.cacheMu.RUnlock()
+
+	if s.cachedStatus != nil && time.Now().Before(s.cacheExpires) {
+		return proto.Clone(s.cachedStatus).(*spb.HealthStatusResponse)
+	}
+	return nil
+}
+
+func (s *server) updateHealthStatusCache(resp *spb.HealthStatusResponse) {
+	if resp == nil {
+		return
+	}
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
 
-	checkStartTime := resp.GetHealthCheckTime().AsTime()
-
-	if s.cachedStatus != nil && checkStartTime.Before(s.cachedStatus.GetHealthCheckTime().AsTime()) {
-		return
-	}
-
 	s.cachedStatus = resp
-	s.cacheExpires = checkStartTime.Add(s.cfg.CacheTTL)
+	s.cacheExpires = time.Now().Add(s.cfg.CacheTTL)
 }
 
 func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntriesRequest) (*spb.ListConfigEntriesResponse, error) {
