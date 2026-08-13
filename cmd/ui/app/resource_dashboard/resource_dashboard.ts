@@ -40,6 +40,7 @@ import { WipBannerComponent } from '../common/components/wip_banner/wip_banner';
 import { QueueListComponent } from './components/queue_list/queue_list';
 import {
   ResourceRequirementQuery,
+  ResourceRequirementRow,
   SmartResourceFinderComponent,
 } from './components/smart_resource_finder/smart_resource_finder';
 import {
@@ -99,26 +100,31 @@ export class ResourceDashboard implements OnInit, OnDestroy {
     return Array.from(types).sort();
   });
 
+  protected readonly activeResourceFilters = computed<string[]>(() => {
+    const query = this.activeQuery();
+    if (!query) return [];
+    const types = new Set<string>();
+    for (const req of query.requirements) {
+      if (req.resourceType && req.resourceType.trim() !== '') {
+        types.add(req.resourceType.trim());
+      }
+    }
+    return Array.from(types);
+  });
+
   protected readonly filteredQueues = computed<QueueOverview[]>(() => {
     const allQueues = this.queues();
     if (this.activeTab() !== TAB_SMART_FINDER) {
       return allQueues;
     }
     const query = this.activeQuery();
-    if (!query) {
+    if (!query || !query.requirements || query.requirements.length === 0) {
       return allQueues;
     }
-    const reqAmount = query.amount;
-    const activeFilters = query.resourceTypes
-      .map((t) => t.trim().toLowerCase())
-      .filter((t) => t !== '');
 
     return allQueues.filter((queue) => {
       const capacities = queue.queueCapacity ?? [];
-      if (!matchesResourceTypes(capacities, activeFilters)) {
-        return false;
-      }
-      return matchesRequestedAmount(capacities, activeFilters, reqAmount);
+      return query.requirements.every((row) => matchesRequirementRow(capacities, row));
     });
   });
 
@@ -163,42 +169,20 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   }
 }
 
-function matchesResourceTypes(
+function matchesRequirementRow(
   capacities: QueueResourceCapacity[] | undefined,
-  activeFilters: string[],
+  row: ResourceRequirementRow,
 ): boolean {
-  if (!activeFilters.length) return true;
   if (!capacities) return false;
-  return activeFilters.every((filter) =>
-    capacities.some((cap) => {
-      const rName = (cap.resourceType || '').toLowerCase();
-      return !!rName && (rName === filter || rName.includes(filter) || filter.includes(rName));
-    }),
-  );
-}
+  const filter = (row.resourceType || '').trim().toLowerCase();
+  const reqAmount = row.amount;
 
-function matchesRequestedAmount(
-  capacities: QueueResourceCapacity[] | undefined,
-  activeFilters: string[],
-  reqAmount?: number | null,
-): boolean {
-  if (!reqAmount || reqAmount <= 0) return true;
-  if (!capacities) return false;
-  const targetCapacities =
-    activeFilters.length > 0
-      ? capacities.filter((cap) => {
-          const rName = (cap.resourceType || '').toLowerCase();
-          return (
-            !!rName &&
-            activeFilters.some(
-              (filter) => rName === filter || rName.includes(filter) || filter.includes(rName),
-            )
-          );
-        })
-      : capacities;
-
-  return targetCapacities.some((cap) => {
+  return capacities.some((cap) => {
     const free = cap.freeCapacity ?? 0;
-    return free >= reqAmount;
+    if (free < reqAmount) return false;
+    if (!filter) return true;
+
+    const rName = (cap.resourceType || '').toLowerCase();
+    return !!rName && (rName === filter || rName.includes(filter) || filter.includes(rName));
   });
 }

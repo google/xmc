@@ -53,13 +53,26 @@ import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service'
 export class QueueCardComponent {
   readonly queue = input.required<QueueOverview>();
   readonly isSelected = input<boolean>(false);
+  readonly activeResourceFilters = input<string[]>([]);
   readonly selectQueue = output<string>();
 
   private readonly clipboard = inject(Clipboard);
   private readonly resourceService = inject(ResourceService);
 
   protected readonly termTooltips = ROD_TERM_TOOLTIPS;
-  protected readonly capacities = computed(() => this.queue()?.queueCapacity ?? []);
+  protected readonly capacities = computed(() => {
+    const allCapacities = this.queue()?.queueCapacity ?? [];
+    const filters = this.activeResourceFilters()
+      .map((f) => f.trim().toLowerCase())
+      .filter((f) => f !== '');
+    if (filters.length === 0) {
+      return allCapacities;
+    }
+    return allCapacities.filter((cap) => {
+      const rName = (cap.resourceType || '').toLowerCase();
+      return !!rName && filters.some((f) => rName === f || rName.includes(f) || f.includes(rName));
+    });
+  });
 
   // TODO: Restore actual health check logic once queue status/pending workloads are available in backend API.
   protected readonly isQueueHealthy = computed(() => true);
