@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -50,13 +51,13 @@ func (s *server) BatchGetQueueSecondaryData(ctx context.Context, req *spb.BatchG
 	var batchResults map[string]statushistory.QueueVelocityResult
 	if s.velocityStore != nil && len(req.GetQueueNames()) > 0 {
 		var err error
-		batchResults, err = s.velocityStore.FetchBatchQueueVelocity(ctx, req.GetQueueNames(), windowDuration)
+		batchResults, err = fetchBatchVelocity(ctx, s.velocityStore, req.GetQueueNames(), windowDuration)
 		if err != nil {
-			logging.Warn(ctx, "failed to batch fetch queue velocity", "error", err)
+			return nil, err
 		}
 	}
 
-	queueMap := make(map[string]*spb.QueueSecondaryData)
+	queueMap := make(map[string]*spb.ClusterQueueSecondaryMetrics)
 	for _, qName := range req.GetQueueNames() {
 		res := batchResults[qName]
 		jobVel := float64(res.AdmittedJobsCount) / windowHours
@@ -78,7 +79,7 @@ func (s *server) BatchGetQueueSecondaryData(ctx context.Context, req *spb.BatchG
 			PendingJobs: 0,
 		}
 
-		queueMap[qName] = &spb.QueueSecondaryData{
+		queueMap[qName] = &spb.ClusterQueueSecondaryMetrics{
 			QueuePredictability: []*spb.QueuePredictability{predictability},
 		}
 	}
@@ -88,13 +89,35 @@ func (s *server) BatchGetQueueSecondaryData(ctx context.Context, req *spb.BatchG
 	}, nil
 }
 
+func fetchBatchVelocity(ctx context.Context, store QueueVelocityFetcher, queueNames []string, windowDuration time.Duration) (map[string]statushistory.QueueVelocityResult, error) {
+	batchResults, err := store.FetchBatchQueueVelocity(ctx, queueNames, windowDuration)
+	if err == nil {
+		return batchResults, nil
+	}
+
+	logging.Warn(ctx, "failed to batch fetch queue velocity", "error", err)
+	if errors.Is(err, context.Canceled) {
+		return nil, status.Error(codes.Canceled, err.Error())
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return nil, status.Error(codes.DeadlineExceeded, err.Error())
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, status.FromContextError(ctxErr).Err()
+	}
+	if st, ok := status.FromError(err); ok && st.Code() != codes.OK {
+		return nil, err
+	}
+	return nil, status.Errorf(codes.Internal, "failed to fetch batch queue velocity: %v", err)
+}
+
 func rangePresetToDuration(preset spb.RangePreset) time.Duration {
 	switch preset {
-	case spb.RangePreset_LAST_DAY:
+	case spb.RangePreset_RANGE_PRESET_LAST_DAY:
 		return 24 * time.Hour
-	case spb.RangePreset_LAST_WEEK:
+	case spb.RangePreset_RANGE_PRESET_LAST_WEEK:
 		return 7 * 24 * time.Hour
-	case spb.RangePreset_LAST_HOUR:
+	case spb.RangePreset_RANGE_PRESET_LAST_HOUR:
 		fallthrough
 	default:
 		return 1 * time.Hour

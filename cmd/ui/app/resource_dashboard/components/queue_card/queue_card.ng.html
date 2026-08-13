@@ -161,7 +161,7 @@
               >
             </div>
             <div class="cell-value bold-metric dark-text">
-              {{ pred.resourceVelocity?.velocity | number: '1.0-2' }} {{ pred.resourceVelocity?.resourceType || 'CPU' }}/hr
+              {{ pred.resourceVelocity?.velocity | number: '1.0-2' }} {{ pred.resourceVelocity?.resourceType || 'units' }}/hr
             </div>
           </div>
           <div class="stat-cell">
@@ -177,7 +177,7 @@
               Requested resources
             </div>
             <div class="cell-value bold-metric dark-text">
-              {{ pred.pendingResourceRequests?.count || 0 }} {{ pred.pendingResourceRequests?.resourceType || 'CPU' }}
+              {{ pred.pendingResourceRequests?.count || 0 }} {{ pred.pendingResourceRequests?.resourceType || 'units' }}
             </div>
           </div>
         </div>

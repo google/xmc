@@ -36,6 +36,8 @@ CREATE TABLE WorkUnitStatusHistory (
   ResourceUnits INT64,
   -- Timestamp of state transition.
   TransitionTime TIMESTAMP NOT NULL,
+  -- Stored alias for query compatibility.
+  CreateTime TIMESTAMP NOT NULL AS (TransitionTime) STORED,
   -- Expiration time for automatic row pruning via TTL policy (30 days).
   ExpirationTime TIMESTAMP AS (TIMESTAMP_ADD(TransitionTime, INTERVAL 30 DAY)) STORED,
 ) PRIMARY KEY (BitReversedXid, WorkUnitId, HistoryId),
@@ -45,3 +47,5 @@ CREATE TABLE WorkUnitStatusHistory (
 
 -- Index for efficient sliding-window queue velocity and turnover rate queries.
 CREATE INDEX WorkUnitStatusHistoryByQueueAndTransitionTime ON WorkUnitStatusHistory (QueueName, TransitionTime DESC, NewState, PreviousState) STORING (ResourceType, ResourceUnits);
+
+CREATE INDEX idx_work_unit_status_history_create_time ON WorkUnitStatusHistory (CreateTime);

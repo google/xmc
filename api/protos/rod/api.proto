@@ -59,9 +59,9 @@ service ResourceObservabilityService {
 // RangePreset specifies predefined time windows for historical telemetry calculations.
 enum RangePreset {
   RANGE_PRESET_UNSPECIFIED = 0;
-  LAST_HOUR = 1;
-  LAST_DAY = 2;
-  LAST_WEEK = 3;
+  RANGE_PRESET_LAST_HOUR = 1;
+  RANGE_PRESET_LAST_DAY = 2;
+  RANGE_PRESET_LAST_WEEK = 3;
 }
 
 // Resource represents requested or available compute resources.
@@ -103,9 +103,9 @@ message QueuePredictability {
   RangePreset velocity_range = 5;
 }
 
-// QueueSecondaryData represents secondary predictability data for a cluster queue.
-message QueueSecondaryData {
-  repeated QueuePredictability queue_predictability = 4;
+// ClusterQueueSecondaryMetrics represents secondary predictability data for a cluster queue.
+message ClusterQueueSecondaryMetrics {
+  repeated QueuePredictability queue_predictability = 1;
 }
 
 // ListClusterQueuesResponse contains the list of ClusterQueues.
@@ -155,11 +155,11 @@ message GetSubmitQueueResponse {
 // BatchGetQueueSecondaryDataRequest represents parameters for requesting secondary queue metrics.
 message BatchGetQueueSecondaryDataRequest {
   repeated string queue_names = 1;
-  RangePreset range = 3;
+  RangePreset range = 2;
 }
 
 // BatchGetQueueSecondaryDataResponse contains secondary metrics mapped by queue name.
 message BatchGetQueueSecondaryDataResponse {
-  map<string, QueueSecondaryData> queue_predictability = 1;
+  map<string, ClusterQueueSecondaryMetrics> queue_predictability = 1;
 }
 

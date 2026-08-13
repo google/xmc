@@ -92,7 +92,7 @@ export class ResourceService {
    */
   getQueueSecondaryData(
     queueNames: string[],
-    range: RangePreset = 'LAST_HOUR',
+    range: RangePreset = 'RANGE_PRESET_LAST_HOUR',
   ): Observable<BatchGetQueueSecondaryDataResponse> {
     if (!queueNames || queueNames.length === 0) {
       return of({ queuePredictability: {} });

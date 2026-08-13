@@ -79,7 +79,7 @@ describe('ResourceDashboard Container', () => {
       of({ queues: [mockGpuQueue, mockCpuQueue] } as ListClusterQueuesResponse),
     );
     resourceService.getQueueJobs.and.returnValue(of({ jobs: [], totalQueueSize: 0 }));
-    resourceService.getQueueSecondaryData.and.returnValue(of({ secondaryData: [] }));
+    resourceService.getQueueSecondaryData.and.returnValue(of({ queuePredictability: {} }));
 
     setupModule({
       imports: [TestHostComponent, NoopAnimationsModule],

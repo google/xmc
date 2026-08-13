@@ -19,6 +19,8 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { firstValueFrom } from 'rxjs';
 
 import {
+  BatchGetQueueSecondaryDataResponse,
+  GetFittingQueuesResponse,
   GetRunningAndPendingJobsResponse,
   ListClusterQueuesResponse,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
@@ -142,20 +144,20 @@ describe('ResourceService', () => {
               {
                 jobVelocity: 12.5,
                 resourceVelocity: { resourceType: 'GPU H100', velocity: 1200 },
-                velocityRange: 'LAST_HOUR' as const,
+                velocityRange: 'RANGE_PRESET_LAST_HOUR' as const,
               },
             ],
           },
         },
       };
 
-      const responsePromise = firstValueFrom(
-        state.service.getQueueSecondaryData(['cq-gpu'], 'LAST_HOUR'),
+      const responsePromise: Promise<BatchGetQueueSecondaryDataResponse> = firstValueFrom(
+        state.service.getQueueSecondaryData(['cq-gpu'], 'RANGE_PRESET_LAST_HOUR'),
       );
 
       const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/clusterqueues:batchGetSecondaryData`);
       expect(req.request.method).toBe('POST');
-      expect(req.request.body).toEqual({ queueNames: ['cq-gpu'], range: 'LAST_HOUR' });
+      expect(req.request.body).toEqual({ queueNames: ['cq-gpu'], range: 'RANGE_PRESET_LAST_HOUR' });
       req.flush(mockResponse);
 
       const response = await responsePromise;
@@ -165,7 +167,7 @@ describe('ResourceService', () => {
     });
 
     it('should return empty queuePredictability immediately when queueNames is empty', async () => {
-      const response = await firstValueFrom(state.service.getQueueSecondaryData([]));
+      const response: BatchGetQueueSecondaryDataResponse = await firstValueFrom(state.service.getQueueSecondaryData([]));
       expect(response.queuePredictability).toEqual({});
     });
   });

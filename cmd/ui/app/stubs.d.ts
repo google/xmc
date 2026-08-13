@@ -182,9 +182,9 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
 
   export type RangePreset =
     | 'RANGE_PRESET_UNSPECIFIED'
-    | 'LAST_HOUR'
-    | 'LAST_DAY'
-    | 'LAST_WEEK'
+    | 'RANGE_PRESET_LAST_HOUR'
+    | 'RANGE_PRESET_LAST_DAY'
+    | 'RANGE_PRESET_LAST_WEEK'
     | number;
 
   export interface Resource {
@@ -217,7 +217,7 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
     velocityRange?: RangePreset;
   }
 
-  export interface QueueSecondaryData {
+  export interface ClusterQueueSecondaryMetrics {
     queuePredictability?: QueuePredictability[];
   }
 
@@ -234,7 +234,7 @@ declare module 'xmanager_cloud/api/protos/rod/api.jsonpb_decls' {
   }
 
   export interface BatchGetQueueSecondaryDataResponse {
-    queuePredictability?: { [key: string]: QueueSecondaryData };
+    queuePredictability?: { [key: string]: ClusterQueueSecondaryMetrics };
   }
 
   export interface DashboardJob {

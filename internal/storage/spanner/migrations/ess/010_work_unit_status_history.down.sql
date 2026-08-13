@@ -14,4 +14,6 @@
 
 DROP INDEX WorkUnitStatusHistoryByQueueAndTransitionTime;
 
+DROP INDEX idx_work_unit_status_history_create_time;
+
 DROP TABLE WorkUnitStatusHistory;

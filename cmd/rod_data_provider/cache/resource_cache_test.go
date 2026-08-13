@@ -53,6 +53,24 @@ func TestResourceCache(t *testing.T) {
 	}
 }
 
+func TestResourceCacheSortedList(t *testing.T) {
+	cache := NewResourceCache[string]()
+	cache.Set("charlie", "3")
+	cache.Set("alpha", "1")
+	cache.Set("bravo", "2")
+
+	got := cache.List()
+	want := []string{"1", "2", "3"}
+	if len(got) != len(want) {
+		t.Fatalf("List() length = %d, want %d", len(got), len(want))
+	}
+	for i, v := range want {
+		if got[i] != v {
+			t.Errorf("List()[%d] = %q, want %q", i, got[i], v)
+		}
+	}
+}
+
 func TestResourceCacheConcurrent(t *testing.T) {
 	cqCache := NewResourceCache[int]()
 	const goroutines = 10

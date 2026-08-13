@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -60,7 +61,7 @@ func TestBatchGetQueueSecondaryData(t *testing.T) {
 
 	req := &spb.BatchGetQueueSecondaryDataRequest{
 		QueueNames: []string{"cq-gpu"},
-		Range:      spb.RangePreset_LAST_HOUR,
+		Range:      spb.RangePreset_RANGE_PRESET_LAST_HOUR,
 	}
 
 	resp, err := srv.BatchGetQueueSecondaryData(ctx, req)
@@ -101,14 +102,70 @@ func TestBatchGetQueueSecondaryData_NilRequest(t *testing.T) {
 	}
 }
 
+func TestBatchGetQueueSecondaryData_StorageError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantCode codes.Code
+	}{
+		{
+			name:     "Context Canceled",
+			err:      context.Canceled,
+			wantCode: codes.Canceled,
+		},
+		{
+			name:     "Wrapped Context Canceled",
+			err:      fmt.Errorf("storage error: %w", context.Canceled),
+			wantCode: codes.Canceled,
+		},
+		{
+			name:     "Context DeadlineExceeded",
+			err:      context.DeadlineExceeded,
+			wantCode: codes.DeadlineExceeded,
+		},
+		{
+			name:     "Wrapped Context DeadlineExceeded",
+			err:      fmt.Errorf("storage timeout: %w", context.DeadlineExceeded),
+			wantCode: codes.DeadlineExceeded,
+		},
+		{
+			name:     "Generic Storage Error",
+			err:      status.Error(codes.Internal, "database error"),
+			wantCode: codes.Internal,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockFetcher := &mockVelocityFetcher{err: tt.err}
+			srv := &server{velocityStore: mockFetcher}
+			req := &spb.BatchGetQueueSecondaryDataRequest{
+				QueueNames: []string{"cq-gpu"},
+				Range:      spb.RangePreset_RANGE_PRESET_LAST_HOUR,
+			}
+			_, err := srv.BatchGetQueueSecondaryData(context.Background(), req)
+			if err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			st, ok := status.FromError(err)
+			if !ok {
+				t.Fatalf("expected gRPC status error, got %v", err)
+			}
+			if st.Code() != tt.wantCode {
+				t.Errorf("status code = %v, want %v", st.Code(), tt.wantCode)
+			}
+		})
+	}
+}
+
 func TestRangePresetToDuration(t *testing.T) {
 	tests := []struct {
 		preset spb.RangePreset
 		want   time.Duration
 	}{
-		{spb.RangePreset_LAST_HOUR, 1 * time.Hour},
-		{spb.RangePreset_LAST_DAY, 24 * time.Hour},
-		{spb.RangePreset_LAST_WEEK, 168 * time.Hour},
+		{spb.RangePreset_RANGE_PRESET_LAST_HOUR, 1 * time.Hour},
+		{spb.RangePreset_RANGE_PRESET_LAST_DAY, 24 * time.Hour},
+		{spb.RangePreset_RANGE_PRESET_LAST_WEEK, 168 * time.Hour},
 		{spb.RangePreset_RANGE_PRESET_UNSPECIFIED, 1 * time.Hour},
 	}
 

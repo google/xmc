@@ -176,16 +176,25 @@ func createInstance(ctx context.Context, emu *Emulator) error {
 	}
 	defer i.Close()
 
-	_, err = i.GetInstance(ctx, &instancepb.GetInstanceRequest{Name: instanceURI})
-	if err == nil {
-		return nil
+	if _, err := i.GetInstance(ctx, &instancepb.GetInstanceRequest{Name: instanceURI}); err == nil {
+		_ = i.DeleteInstance(ctx, &instancepb.DeleteInstanceRequest{Name: instanceURI})
 	}
+
+	return createInstanceWithID(ctx, emu, instanceID, instanceURI)
+}
+
+func createInstanceWithID(ctx context.Context, emu *Emulator, instID, instURI string) error {
+	i, err := instance.NewInstanceAdminClient(ctx, emu.ClientOptions()...)
+	if err != nil {
+		return err
+	}
+	defer i.Close()
 
 	op, err := i.CreateInstance(ctx, &instancepb.CreateInstanceRequest{
 		Parent:     projectURI,
-		InstanceId: instanceID,
+		InstanceId: instID,
 		Instance: &instancepb.Instance{
-			DisplayName: instanceID,
+			DisplayName: instID,
 			NodeCount:   1,
 		},
 	})
@@ -200,6 +209,10 @@ func createInstance(ctx context.Context, emu *Emulator) error {
 }
 
 func createDatabase(ctx context.Context, emu *Emulator, databaseID string, databaseURI string, schema string, descriptors []byte, applySchema bool) error {
+	return createDatabaseWithURI(ctx, emu, instanceURI, databaseID, databaseURI, schema, descriptors, applySchema)
+}
+
+func createDatabaseWithURI(ctx context.Context, emu *Emulator, instURI string, databaseID string, databaseURI string, schema string, descriptors []byte, applySchema bool) error {
 	dba, err := database.NewDatabaseAdminClient(ctx, emu.ClientOptions()...)
 	if err != nil {
 		return err
@@ -209,7 +222,7 @@ func createDatabase(ctx context.Context, emu *Emulator, databaseID string, datab
 	_ = dba.DropDatabase(ctx, &dbadminpb.DropDatabaseRequest{Database: databaseURI})
 
 	op, err := dba.CreateDatabase(ctx, &dbadminpb.CreateDatabaseRequest{
-		Parent:          instanceURI,
+		Parent:          instURI,
 		CreateStatement: "CREATE DATABASE `" + databaseID + "`",
 	})
 	if err != nil {

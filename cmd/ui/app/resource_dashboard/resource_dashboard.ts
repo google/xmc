@@ -27,9 +27,9 @@ import { ActivatedRoute } from '@angular/router';
 import { Subscription } from 'rxjs';
 
 import {
+  ClusterQueueSecondaryMetrics,
   QueueOverview,
   QueueResourceCapacity,
-  QueueSecondaryData,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 import { QueueJobsTable } from 'xmanager_cloud/ui/app/side_panel/contents/queue_jobs_table/queue_jobs_table';
@@ -86,7 +86,7 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   protected readonly activeTab = signal<DashboardTab>(TAB_SMART_FINDER);
   protected readonly velocityPeriod = signal<string>('1h');
   protected readonly activeQuery = signal<ResourceRequirementQuery | null>(null);
-  protected readonly secondaryDataMap = signal<Record<string, QueueSecondaryData>>({});
+  protected readonly secondaryDataMap = signal<Record<string, ClusterQueueSecondaryMetrics>>({});
   protected readonly isSecondaryLoading = signal<boolean>(true);
 
   protected readonly TAB_SMART_FINDER = TAB_SMART_FINDER;
@@ -165,7 +165,6 @@ export class ResourceDashboard implements OnInit, OnDestroy {
       }),
     );
     this.reloader.start();
-    this.fetchSecondaryData();
   }
 
   protected fetchSecondaryData() {

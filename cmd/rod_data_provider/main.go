@@ -128,7 +128,7 @@ func run(ctx context.Context, cfg *Config) error {
 func initStorage(ctx context.Context, cfg *Config) (WorkUnitFetcher, QueueVelocityFetcher, error) {
 	if cfg.SpannerDatabaseName == "" {
 		logging.Warn(ctx, "OPERATIONAL WARNING: Spanner database name not configured. Active WorkUnit queue queries will fail until database connection is configured.", "database", cfg.SpannerDatabaseName)
-		return &workunit.Repository{}, &statushistory.Repository{}, nil
+		return nil, nil, nil
 	}
 	logging.Info(ctx, "Initializing Spanner WorkUnit storage", "database", cfg.SpannerDatabaseName)
 	var opts []option.ClientOption

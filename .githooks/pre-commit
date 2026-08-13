@@ -167,6 +167,8 @@ check_license() {
     -ignore "**/node_modules/**"
     -ignore "**/.angular/**"
     -ignore "**/venv/**"
+    -ignore "tools/venv/**"
+    -ignore "tools/**"
     -ignore "**/ctk-out/**"
     -ignore "**.json"
     -ignore "**.lock"
