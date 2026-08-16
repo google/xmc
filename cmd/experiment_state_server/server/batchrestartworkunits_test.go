@@ -149,7 +149,7 @@ func TestBatchRestartWorkUnits_HappyPath(t *testing.T) {
 	}
 
 	for _, workUnitID := range []int64{workUnitID1, workUnitID2} {
-		workUnitExecutions, err := server.storage.ListWorkUnitExecutions(ctx, xid, workUnitID)
+		workUnitExecutions, err := server.WorkUnitHandler.storage.ListWorkUnitExecutions(ctx, xid, workUnitID)
 		if err != nil {
 			t.Fatalf("ListWorkUnitExecutions() for work unit %d returned an unexpected error: %v", workUnitID, err)
 		}
@@ -167,7 +167,7 @@ func TestBatchRestartWorkUnits_HappyPath(t *testing.T) {
 			t.Errorf("Old work unit execution state is %v, want %v", oldWorkUnitExecution.GetStatus().GetState(), msgpb.WorkUnitStatus_RESTARTING)
 		}
 
-		newExecution, err := server.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
+		newExecution, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
 		if err != nil {
 			t.Fatalf("FetchWorkUnitExecution() for work unit %d returned an unexpected error: %v", workUnitID, err)
 		}
@@ -490,7 +490,7 @@ func TestBatchRestartWorkUnits_PartialFailure(t *testing.T) {
 		t.Fatalf("ValidateExperimentName() returned an unexpected error: %v", err)
 	}
 	for _, workUnitID := range []int64{workUnitID1, workUnitID2} {
-		newExecution, err := server.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
+		newExecution, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
 		if err != nil {
 			t.Fatalf("FetchWorkUnitExecution() for work unit %d returned an unexpected error: %v", workUnitID, err)
 		}

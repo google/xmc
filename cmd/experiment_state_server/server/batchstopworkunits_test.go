@@ -135,7 +135,7 @@ func TestBatchStopWorkUnits_HappyPath(t *testing.T) {
 	}
 
 	for _, workUnitID := range []int64{workUnitID1, workUnitID2} {
-		workUnitExecution, err := server.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
+		workUnitExecution, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
 		if err != nil {
 			t.Fatalf("FetchCurrentWorkUnitExecution() for work unit %d returned an unexpected error: %v", workUnitID, err)
 		}
@@ -409,11 +409,11 @@ func TestBatchStopWorkUnits_PartialFailure(t *testing.T) {
 		t.Fatalf("ValidateExperimentName() returned an unexpected error: %v", err)
 	}
 
-	wu1Exec, err := server.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID1)
+	wu1Exec, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID1)
 	if err != nil {
 		t.Fatalf("FetchCurrentWorkUnitExecution() for work unit 1 returned an unexpected error: %v", err)
 	}
-	wu2Exec, err := server.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID2)
+	wu2Exec, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID2)
 	if err != nil {
 		t.Fatalf("FetchCurrentWorkUnitExecution() for work unit 2 returned an unexpected error: %v", err)
 	}

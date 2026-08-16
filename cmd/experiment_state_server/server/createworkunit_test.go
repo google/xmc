@@ -214,7 +214,7 @@ func TestCreateWorkUnit_FillNilValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateExperimentName() returned an unexpected error: %v", err)
 	}
-	got, err := server.storage.FetchWorkUnit(ctx, xid, 1)
+	got, err := server.WorkUnitHandler.storage.FetchWorkUnit(ctx, xid, 1)
 	if err != nil {
 		t.Fatalf("FetchWorkUnit() returned an unexpected error: %v", err)
 	}

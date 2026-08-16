@@ -112,7 +112,7 @@ func TestRestartWorkUnit_HappyPath(t *testing.T) {
 	}
 
 	// Check that the work unit execution was restarted.
-	workUnitExecutions, err := server.storage.ListWorkUnitExecutions(ctx, xid, workUnitID)
+	workUnitExecutions, err := server.WorkUnitHandler.storage.ListWorkUnitExecutions(ctx, xid, workUnitID)
 	if err != nil {
 		t.Fatalf("ListWorkUnitExecutions() returned an unexpected error: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestRestartWorkUnit_HappyPath(t *testing.T) {
 	}
 
 	// Check that the new work unit execution has a different name and creation time.
-	newExecution, err := server.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
+	newExecution, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
 	if err != nil {
 		t.Fatalf("FetchWorkUnitExecution() returned an unexpected error: %v", err)
 	}

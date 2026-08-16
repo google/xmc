@@ -70,7 +70,7 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *apipb.CreateW
 	wu.CurrentWorkUnitExecution = newWorkUnitExecution(xid, req.GetWorkUnitId())
 
 	// 4.2. Inject the execution environment on work unit creation.
-	wu, err = executionEnv.InjectOnWorkUnitCreation(ctx, nil, wu)
+	wu, err = executionEnv.InjectOnWorkUnitCreation(ctx, h.server, wu)
 	if err != nil {
 		logging.Error(ctx, "Failed to inject execution environment data into work unit", "error", err)
 		return nil, fmt.Errorf("failed to inject execution environment data into work unit: %w", err)

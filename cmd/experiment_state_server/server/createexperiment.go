@@ -52,7 +52,7 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *apipb.Cre
 	if err != nil {
 		return nil, err
 	}
-	exp, err = executionEnv.InjectOnExperimentCreation(ctx, nil, exp)
+	exp, err = executionEnv.InjectOnExperimentCreation(ctx, h.server, exp)
 	if err != nil {
 		logging.Error(ctx, "Failed to inject execution environment data into experiment", "error", err)
 		return nil, status.Errorf(status.Internal, "failed to inject execution environment data into experiment: %v", err)

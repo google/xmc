@@ -107,7 +107,7 @@ func TestStopWorkUnit_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateWorkUnitName() returned an unexpected error: %v", err)
 	}
-	workUnitExecution, err := server.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
+	workUnitExecution, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
 	if err != nil {
 		t.Fatalf("FetchCurrentWorkUnitExecution() returned an unexpected error: %v", err)
 	}

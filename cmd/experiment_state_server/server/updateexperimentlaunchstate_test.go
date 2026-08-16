@@ -187,7 +187,7 @@ func TestUpdateExperimentLaunchState_ActiveState(t *testing.T) {
 	ctx := context.Background()
 	server, _ := createExperimentStateServer(ctx, t)
 
-	s := server.storage
+	s := server.ExperimentHandler.storage
 	testCases := []struct {
 		name       string
 		wu1State   msgpb.WorkUnitStatus_WorkUnitState
@@ -310,7 +310,7 @@ func TestUpdateExperimentLaunchState_ActiveStateUpdatesPostLaunching(t *testing.
 	ctx := context.Background()
 	server, _ := createExperimentStateServer(ctx, t)
 
-	s := server.storage
+	s := server.ExperimentHandler.storage
 	testCases := []struct {
 		name       string
 		wu1State   msgpb.WorkUnitStatus_WorkUnitState

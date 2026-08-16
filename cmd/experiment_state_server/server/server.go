@@ -19,6 +19,7 @@ import (
 
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
+	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/storage"
@@ -30,8 +31,6 @@ var _ apipb.ExperimentStateServiceServer = (*Server)(nil)
 
 // Server implements the generated pb.ExperimentStateServiceServer interface.
 type Server struct {
-	storage storage.Storage
-
 	*ExperimentHandler
 	*WorkUnitHandler
 	*ArtifactHandler
@@ -49,6 +48,7 @@ type ExperimentHandler struct {
 	storage   storage.Storage
 	auth      auth.AuthorizerInterface
 	xidClient xidgrpcpb.XidServiceClient
+	server    spb.ExperimentStateServiceServer
 }
 
 // ArtifactHandler handles artifact operations.
@@ -73,6 +73,7 @@ type WorkUnitHandler struct {
 	auth      auth.AuthorizerInterface
 	xidClient xidgrpcpb.XidServiceClient
 	actuator  WorkUnitActuator
+	server    spb.ExperimentStateServiceServer
 }
 
 // NewExperimentHandler creates a new ExperimentHandler.
@@ -126,11 +127,13 @@ type Params struct {
 
 // New creates a new instance of the Experiment State Server.
 func New(p Params) *Server {
-	return &Server{
-		storage:              p.Storage,
+	s := &Server{
 		ExperimentHandler:    NewExperimentHandler(p.Config, p.Storage, p.Authorizer, p.XidClient),
 		WorkUnitHandler:      NewWorkUnitHandler(p.Config, p.Storage, p.Authorizer, p.XidClient, p.WorkUnitActuator),
 		ArtifactHandler:      NewArtifactHandler(p.Config, p.Storage, p.Authorizer, p.XidClient),
 		StatusMessageHandler: NewStatusMessageHandler(p.Storage, p.Authorizer, p.XidClient),
 	}
+	s.ExperimentHandler.server = s
+	s.WorkUnitHandler.server = s
+	return s
 }
