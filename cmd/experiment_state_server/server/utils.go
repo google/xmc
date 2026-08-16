@@ -261,6 +261,9 @@ func (h *ArtifactHandler) createXid(ctx context.Context, creator, endpoint strin
 }
 
 func defaultExecutionEnvironment(cfg *config.Config) (ee.Environment, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config is nil: %w", statusutils.ErrInternal)
+	}
 	executionEnv, ok := ee.Lookup(cfg.DefaultExecutionEnvironment)
 	if !ok {
 		return nil, fmt.Errorf("failed to get execution environment %q: %w", cfg.DefaultExecutionEnvironment, statusutils.ErrInternal)

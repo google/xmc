@@ -57,6 +57,13 @@ func (p *ProdServer) Close() error {
 
 // NewProd creates and initializes a production Server instance along with its dependencies.
 func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (*ProdServer, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config cannot be nil")
+	}
+	if oauthCfg == nil {
+		return nil, fmt.Errorf("oauth config cannot be nil")
+	}
+
 	sessionPoolConfig := spanner.SessionPoolConfig{
 		TrackSessionHandles: true,
 		InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
