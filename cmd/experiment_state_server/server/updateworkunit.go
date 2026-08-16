@@ -74,8 +74,8 @@ func (h *WorkUnitHandler) UpdateWorkUnit(ctx context.Context, req *apipb.UpdateW
 	}
 	originalWu, returnedWu := res.Original, res.Updated
 
-	if returnedWu == nil || returnedWu.GetCurrentWorkUnitExecution() == nil {
-		return nil, fmt.Errorf("updated work unit or its current execution is nil: %w", status.ErrInternal)
+	if originalWu == nil || returnedWu == nil || returnedWu.GetCurrentWorkUnitExecution() == nil {
+		return nil, fmt.Errorf("original work unit, updated work unit, or its current execution is nil: %w", status.ErrInternal)
 	}
 
 	// 5. Check if we need to enqueue a task to update the work unit execution.

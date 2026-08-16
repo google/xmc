@@ -111,6 +111,9 @@ func (h *WorkUnitHandler) BatchRestartWorkUnits(ctx context.Context, req *apipb.
 }
 
 func (h *WorkUnitHandler) processWorkUnitRestartItem(ctx context.Context, workUnit *msgpb.WorkUnit, restartedExecutions map[int64]*msgpb.WorkUnitExecution, email string, priority msgpb.Priority, xid int64) (*lropb.Operation, error) {
+	if workUnit == nil {
+		return nil, fmt.Errorf("workUnit is nil: %w", status.ErrInvalidArgument)
+	}
 	_, wid, err := validator.ValidateWorkUnitName(workUnit.GetName())
 	if err != nil {
 		logging.Warn(ctx, "Failed to parse work unit name", "work_unit_name", workUnit.GetName(), "error", err)
@@ -124,9 +127,6 @@ func (h *WorkUnitHandler) processWorkUnitRestartItem(ctx context.Context, workUn
 		return nil, fmt.Errorf("no execution was restarted for work unit %s: %w", workUnit.GetName(), status.ErrInternal)
 	}
 
-	if workUnit == nil {
-		return nil, fmt.Errorf("workUnit is nil: %w", status.ErrInvalidArgument)
-	}
 	if workUnit.GetCurrentWorkUnitExecution() == nil {
 		logging.Error(ctx, "Work unit has no current execution", "work_unit_name", workUnit.GetName())
 		return nil, fmt.Errorf("work unit %s has no current execution: %w", workUnit.GetName(), status.ErrInvalidArgument)
