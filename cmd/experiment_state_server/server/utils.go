@@ -64,6 +64,9 @@ func propagateIAPJWT(ctx context.Context) context.Context {
 }
 
 func getXid(ctx context.Context, xidClient xidgrpcpb.XidServiceClient, name string) (*xidmsgpb.XidEntry, error) {
+	if xidClient == nil {
+		return nil, fmt.Errorf("xidClient is nil: %w", statusutils.ErrInternal)
+	}
 	req := &xidapipb.GetXidEntryRequest{
 		Name: &name,
 	}
@@ -88,6 +91,9 @@ func (h *WorkUnitHandler) getXid(ctx context.Context, name string) (*xidmsgpb.Xi
 }
 
 func checkUserAuthorization(ctx context.Context, xidClient xidgrpcpb.XidServiceClient, name string, user string, roleType *xidmsgpb.XidAcls_RoleType) (bool, error) {
+	if xidClient == nil {
+		return false, fmt.Errorf("xidClient is nil: %w", statusutils.ErrInternal)
+	}
 	req := &xidapipb.CheckUserAuthorizationRequest{
 		Name:     &name,
 		User:     &user,
@@ -97,6 +103,9 @@ func checkUserAuthorization(ctx context.Context, xidClient xidgrpcpb.XidServiceC
 	resp, err := xidClient.CheckUserAuthorization(propagateIAPJWT(ctx), req)
 	if err != nil {
 		return false, fmt.Errorf("rpc CheckUserAuthorization failed: %w", err)
+	}
+	if resp == nil || resp.Authorized == nil {
+		return false, fmt.Errorf("rpc CheckUserAuthorization returned nil response or authorized field: %w", statusutils.ErrInternal)
 	}
 	return *resp.Authorized, nil
 }

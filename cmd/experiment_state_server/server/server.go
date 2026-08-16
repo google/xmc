@@ -127,6 +127,21 @@ type Params struct {
 
 // New creates a new instance of the Experiment State Server.
 func New(p Params) *Server {
+	if p.Config == nil {
+		panic("server.New: Config is required")
+	}
+	if p.Storage == nil {
+		panic("server.New: Storage is required")
+	}
+	if p.Authorizer == nil {
+		panic("server.New: Authorizer is required")
+	}
+	if p.XidClient == nil {
+		panic("server.New: XidClient is required")
+	}
+	if p.WorkUnitActuator == nil {
+		panic("server.New: WorkUnitActuator is required")
+	}
 	s := &Server{
 		ExperimentHandler:    NewExperimentHandler(p.Config, p.Storage, p.Authorizer, p.XidClient),
 		WorkUnitHandler:      NewWorkUnitHandler(p.Config, p.Storage, p.Authorizer, p.XidClient, p.WorkUnitActuator),

@@ -124,6 +124,13 @@ func (h *WorkUnitHandler) processWorkUnitRestartItem(ctx context.Context, workUn
 		return nil, fmt.Errorf("no execution was restarted for work unit %s: %w", workUnit.GetName(), status.ErrInternal)
 	}
 
+	if workUnit == nil {
+		return nil, fmt.Errorf("workUnit is nil: %w", status.ErrInvalidArgument)
+	}
+	if workUnit.GetCurrentWorkUnitExecution() == nil {
+		logging.Error(ctx, "Work unit has no current execution", "work_unit_name", workUnit.GetName())
+		return nil, fmt.Errorf("work unit %s has no current execution: %w", workUnit.GetName(), status.ErrInvalidArgument)
+	}
 	oldExecutionName := workUnit.GetCurrentWorkUnitExecution().GetName()
 	workUnit.CurrentWorkUnitExecution = restartedExecutions[wid]
 
