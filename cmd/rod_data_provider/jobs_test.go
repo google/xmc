@@ -21,12 +21,15 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"golang/protobuf/v2/proto/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/cmd/rod_data_provider/cache"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/workunit"
 )
@@ -78,12 +81,14 @@ var (
 )
 
 type mockWorkUnitFetcher struct {
-	workUnits     []*essmsgpb.WorkUnit
-	nextPageToken string
-	err           error
+	workUnits      []*essmsgpb.WorkUnit
+	nextPageToken  string
+	err            error
+	lastQueueNames []string
 }
 
 func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*workunit.ActiveWorkUnitsResult, error) {
+	m.lastQueueNames = queueNames
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -269,5 +274,85 @@ func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 	res := job.GetRequestedResources()[0]
 	if res.GetResourceType() != "nvidia-tesla-h100" || res.GetCount() != 10.0 {
 		t.Errorf("RequestedResource = %v %v, want nvidia-tesla-h100 10.0", res.GetResourceType(), res.GetCount())
+	}
+}
+
+func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
+	cfg := &Config{Port: "8080", GRPCPort: "50051"}
+	clusterQueueName := "cq-test"
+
+	tests := []struct {
+		name             string
+		nilCache         bool
+		setupCache       func(c *cache.KueueCache)
+		wantTargetQueues []string
+	}{
+		{
+			name:             "Nil cache, falls back to clusterQueueName",
+			nilCache:         true,
+			wantTargetQueues: []string{clusterQueueName},
+		},
+		{
+			name: "Mapped LocalQueues exist, targetQueues contains ONLY localQueues",
+			setupCache: func(c *cache.KueueCache) {
+				lq1 := &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: kueuev1beta1.ClusterQueueReference(clusterQueueName)},
+				}
+				lq2 := &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-2"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: kueuev1beta1.ClusterQueueReference(clusterQueueName)},
+				}
+				c.LocalQueues.Set("lq-1", lq1)
+				c.LocalQueues.Set("lq-2", lq2)
+			},
+			wantTargetQueues: []string{"lq-1", "lq-2"},
+		},
+		{
+			name: "No mapped LocalQueues exist, falls back to clusterQueueName",
+			setupCache: func(c *cache.KueueCache) {
+				// No LocalQueues added
+			},
+			wantTargetQueues: []string{clusterQueueName},
+		},
+		{
+			name: "LocalQueues mapped to different ClusterQueue, falls back to clusterQueueName",
+			setupCache: func(c *cache.KueueCache) {
+				lqOther := &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-other"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "other-cq"},
+				}
+				c.LocalQueues.Set("lq-other", lqOther)
+			},
+			wantTargetQueues: []string{clusterQueueName},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var kCache *cache.KueueCache
+			if !tt.nilCache {
+				kCache = cache.NewKueueCache()
+				if tt.setupCache != nil {
+					tt.setupCache(kCache)
+				}
+			}
+
+			fetcher := &mockWorkUnitFetcher{}
+			srv := newServer(cfg, kCache, fetcher)
+
+			req := &spb.GetRunningAndPendingJobsRequest{
+				QueueName: clusterQueueName,
+			}
+
+			_, err := srv.GetRunningAndPendingJobs(context.Background(), req)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if diff := cmp.Diff(tt.wantTargetQueues, fetcher.lastQueueNames); diff != "" {
+				t.Errorf("targetQueues mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
