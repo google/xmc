@@ -36,6 +36,7 @@ import (
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/security/keyreloader"
 	ss "xmanager_cloud/storage/spanner/spanner"
+	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 )
