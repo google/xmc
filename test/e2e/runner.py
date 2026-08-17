@@ -251,16 +251,6 @@ class KinDClusterManager:
 
         logger.info("Applying dummy CRDs, Redis, and Gateway Proxy...")
         run_cmd(["kubectl", "apply", "-f", os.path.join(manifests_dir, "dummy_crds.yaml")])
-        run_cmd(
-            [
-                self.cfg.kind_bin,
-                "load",
-                "docker-image",
-                "redis:7-alpine",
-                "--name",
-                self.cfg.cluster_name,
-            ]
-        )
         run_cmd(["kubectl", "apply", "-f", os.path.join(manifests_dir, "redis.yaml")])
         run_cmd(["kubectl", "apply", "-f", os.path.join(manifests_dir, "dex.yaml")])
         run_cmd(["kubectl", "apply", "-f", os.path.join(manifests_dir, "gateway_proxy.yaml")])
