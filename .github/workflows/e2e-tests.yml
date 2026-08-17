@@ -40,7 +40,7 @@ jobs:
   run-e2e:
     name: 'KinD & Playwright Headless E2E'
     runs-on: 'arc-runner-set'
-    timeout-minutes: 25
+    timeout-minutes: 35
 
     steps:
       - name: 'Checkout'
@@ -59,6 +59,17 @@ jobs:
 
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
+
+      - name: 'Cache Bazel repository and build artifacts'
+        uses: 'actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        with:
+          path: |
+            ~/.cache/bazelisk
+            ~/.cache/bazel
+          key: ${{ runner.os }}-bazel-e2e-${{ hashFiles('MODULE.bazel', 'WORKSPACE*') }}
+          restore-keys: |
+            ${{ runner.os }}-bazel-e2e-
+            ${{ runner.os }}-bazel-
 
       - name: 'Set up Python'
         uses: 'actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38' # v5.4.0

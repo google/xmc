@@ -305,10 +305,12 @@ class ImageBuilder:
             ("cmd/reconciler", "reconciler_image_tarball", "reconciler_image:latest"),
         ]
 
+        logger.info("Building all service images in parallel with Bazel...")
+        bazel_targets = [f"//{pkg}:{target}" for pkg, target, _ in services]
+        run_cmd(["bazel", "build", *bazel_targets], cwd=self.cfg.workspace_root)
+
         images: list[str] = []
         for pkg, target, tag in services:
-            logger.info("Building %s (%s)...", pkg, target)
-            run_cmd(["bazel", "build", f"//{pkg}:{target}"], cwd=self.cfg.workspace_root)
             tar_path = os.path.join(self.cfg.workspace_root, "bazel-bin", pkg, f"{target}.tar")
             run_cmd(["docker", "load", "-i", tar_path])
             images.append(tag)
