@@ -39,3 +39,8 @@ variable "db_type" {
   description = "Database type (e.g. ess or xid)"
 }
 
+variable "depends_on_anchor" {
+  type        = any
+  default     = null
+  description = "Unused. Point this at another module's output to order this module after it."
+}
