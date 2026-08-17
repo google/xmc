@@ -379,3 +379,36 @@ func TestUpdateWorkUnit_DoesNotEnqueueOnOtherChanges(t *testing.T) {
 		t.Errorf("UpdateWorkUnit() with non-priority change should not enqueue tasks, but enqueued %d tasks", len(taskQueueClient.EnqueuedTasks))
 	}
 }
+
+func TestUpdateWorkUnit_NoExecutionWithoutActuationSucceeds(t *testing.T) {
+	ctx := context.Background()
+	mockStorage := &storage.MockStorage{
+		UpdateWorkUnitRespOriginal: &msgpb.WorkUnit{
+			Name:  "experiments/1/workUnits/1",
+			Notes: "old notes",
+		},
+		UpdateWorkUnitRespReturned: &msgpb.WorkUnit{
+			Name:  "experiments/1/workUnits/1",
+			Notes: "updated notes",
+		},
+	}
+	mockXid := &mockXidClient{
+		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+	}
+	server := newTestServer(t, withStorage(mockStorage), withXidClient(mockXid))
+
+	req := &apipb.UpdateWorkUnitRequest{
+		WorkUnit: &msgpb.WorkUnit{
+			Name:  "experiments/1/workUnits/1",
+			Notes: "updated notes",
+		},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"notes"}},
+	}
+	res, err := server.UpdateWorkUnit(ctx, req)
+	if err != nil {
+		t.Fatalf("UpdateWorkUnit() without execution returned error: %v", err)
+	}
+	if res.GetNotes() != "updated notes" {
+		t.Errorf("res.GetNotes() = %q, want %q", res.GetNotes(), "updated notes")
+	}
+}

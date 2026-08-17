@@ -123,17 +123,30 @@ func withWorkUnitActuator(actuator WorkUnitActuator) testServerOpt {
 
 func newTestServer(t *testing.T, opts ...testServerOpt) *Server {
 	t.Helper()
-	p := Params{
-		Config:           &config.Config{},
-		Storage:          &storage.MockStorage{},
-		Authorizer:       createTestAuthorizer(context.Background(), t),
-		XidClient:        &mockXidClient{},
-		WorkUnitActuator: &tq.FakeClient{},
-	}
+	p := Params{}
 	for _, opt := range opts {
 		opt(&p)
 	}
-	return New(p)
+	if p.Config == nil {
+		p.Config = &config.Config{}
+	}
+	if p.Storage == nil {
+		p.Storage = &storage.MockStorage{}
+	}
+	if p.Authorizer == nil {
+		p.Authorizer = createTestAuthorizer(context.Background(), t)
+	}
+	if p.XidClient == nil {
+		p.XidClient = &mockXidClient{}
+	}
+	if p.WorkUnitActuator == nil {
+		p.WorkUnitActuator = &tq.FakeClient{}
+	}
+	s, err := New(p)
+	if err != nil {
+		t.Fatalf("newTestServer failed: %v", err)
+	}
+	return s
 }
 
 func createExperimentStateServer(ctx context.Context, t *testing.T, opts ...testServerOpt) (*Server, *tq.FakeClient) {
@@ -154,18 +167,22 @@ func createExperimentStateServer(ctx context.Context, t *testing.T, opts ...test
 		log.FatalContextf(ctx, "Failed to create gRPC client for XID service: %v", err)
 	}
 	xidClient := xidgrpcpb.NewXidServiceClient(conn)
-	taskQueueClient := &tq.FakeClient{}
 	p := Params{
 		Config:           &cfg,
 		Storage:          storage,
 		Authorizer:       createTestAuthorizer(ctx, t),
 		XidClient:        xidClient,
-		WorkUnitActuator: taskQueueClient,
+		WorkUnitActuator: &tq.FakeClient{},
 	}
 	for _, opt := range opts {
 		opt(&p)
 	}
-	return New(p), taskQueueClient
+	s, err := New(p)
+	if err != nil {
+		t.Fatalf("createExperimentStateServer failed: %v", err)
+	}
+	fakeActuator, _ := p.WorkUnitActuator.(*tq.FakeClient)
+	return s, fakeActuator
 }
 
 func createXidServer(ctx context.Context, t *testing.T, xidClient *googlespanner.Client) net.Listener {

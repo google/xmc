@@ -26,6 +26,7 @@ import (
 	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
 	authz "xmanager_cloud/auth/auth"
+	commonhealth "xmanager_cloud/common/health"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	"xmanager_cloud/logging/logging"
@@ -41,10 +42,18 @@ var _ apipb.ExperimentStateServiceServer = (*ProdServer)(nil)
 // ProdServer encapsulates the production Server instance along with its underlying infrastructure dependencies and lifecycle.
 type ProdServer struct {
 	*Server
-	SpannerClient   *spanner.Client
-	XidClient       xidgrpcpb.XidServiceClient
-	TaskQueueClient *tq.Client
+	spannerClient   *spanner.Client
+	xidClient       xidgrpcpb.XidServiceClient
+	taskQueueClient *tq.Client
 	cleanup         func() error
+}
+
+// HealthCheckers returns the health client interfaces required for active readiness checks.
+func (p *ProdServer) HealthCheckers() (commonhealth.SpannerHealthClient, xidgrpcpb.XidServiceClient, *tq.Client) {
+	if p == nil {
+		return nil, nil, nil
+	}
+	return commonhealth.NewSpannerHealthClient(p.spannerClient), p.xidClient, p.taskQueueClient
 }
 
 // Close closes all underlying production client connections.
@@ -55,8 +64,52 @@ func (p *ProdServer) Close() error {
 	return p.cleanup()
 }
 
+func initSpannerClient(ctx context.Context, cfg *config.Config) (*spanner.Client, error) {
+	sessionPoolConfig := spanner.SessionPoolConfig{
+		TrackSessionHandles: true,
+		InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
+			ActionOnInactiveTransaction: spanner.Warn,
+		},
+	}
+	return spanner.NewClientWithConfig(
+		ctx,
+		cfg.SpannerDatabaseName,
+		spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
+		option.WithQuotaProject(cfg.QuotaProjectID),
+	)
+}
+
+func initXidClient(ctx context.Context, cfg *config.Config) (xidgrpcpb.XidServiceClient, *grpc.ClientConn, error) {
+	logging.Info(ctx, "Connecting to XID service", "addr", cfg.XidServiceAddr)
+	conn, err := grpc.NewClient(cfg.XidServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create gRPC client for XID service: %w", err)
+	}
+	return xidgrpcpb.NewXidServiceClient(conn), conn, nil
+}
+
+func initTaskQueueClient(ctx context.Context, cfg *config.Config) (*tq.Client, error) {
+	keyReloader, err := keyreloader.NewSignerReloader(cfg.SigningKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load signing key: %w", err)
+	}
+	return tq.New(ctx, cfg.ProjectID, cfg.InvokerSA, cfg.ActuatorURL, cfg.ActuatorAudience, keyReloader.Signer, cfg.SignatureTTLSeconds, cfg.RedisAddr)
+}
+
+func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (authz.AuthorizerInterface, error) {
+	idService, err := cloudidentity.NewService(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cloud identity service: %w", err)
+	}
+	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}, cfg.IAPIssuer, false, []byte(oauthCfg.JWTSecret))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create authorizer: %w", err)
+	}
+	return auth, nil
+}
+
 // NewProd creates and initializes a production Server instance along with its dependencies.
-func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (*ProdServer, error) {
+func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_ *ProdServer, retErr error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config cannot be nil")
 	}
@@ -64,87 +117,82 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (*
 		return nil, fmt.Errorf("oauth config cannot be nil")
 	}
 
-	sessionPoolConfig := spanner.SessionPoolConfig{
-		TrackSessionHandles: true,
-		InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
-			ActionOnInactiveTransaction: spanner.Warn,
-		},
-	}
-	spannerClient, err := spanner.NewClientWithConfig(
-		ctx,
-		cfg.SpannerDatabaseName,
-		spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
-		option.WithQuotaProject(cfg.QuotaProjectID),
-	)
+	var cleanups []func() error
+	defer func() {
+		if retErr != nil {
+			for i := len(cleanups) - 1; i >= 0; i-- {
+				_ = cleanups[i]()
+			}
+		}
+	}()
+
+	spannerClient, err := initSpannerClient(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create spanner client: %w", err)
 	}
-
-	idService, err := cloudidentity.NewService(ctx)
-	if err != nil {
+	cleanups = append(cleanups, func() error {
 		spannerClient.Close()
-		return nil, fmt.Errorf("failed to create cloud identity service: %w", err)
-	}
+		return nil
+	})
 
 	storage, err := ss.NewStorageWithConfig(spannerClient, ss.StorageConfig{StatusMessageHistoryEnabled: cfg.StatusMessageHistoryEnabled})
 	if err != nil {
-		spannerClient.Close()
 		return nil, fmt.Errorf("failed to create storage: %w", err)
 	}
 
-	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}, cfg.IAPIssuer, false, []byte(oauthCfg.JWTSecret))
+	auth, err := initAuth(ctx, cfg, oauthCfg)
 	if err != nil {
-		spannerClient.Close()
-		return nil, fmt.Errorf("failed to create authorizer: %w", err)
+		return nil, err
 	}
 
-	logging.Info(ctx, "Connecting to XID service", "addr", cfg.XidServiceAddr)
-	conn, err := grpc.NewClient(cfg.XidServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	xidClient, conn, err := initXidClient(ctx, cfg)
 	if err != nil {
-		spannerClient.Close()
-		return nil, fmt.Errorf("failed to create gRPC client for XID service: %w", err)
+		return nil, err
 	}
-	xidClient := xidgrpcpb.NewXidServiceClient(conn)
+	cleanups = append(cleanups, func() error {
+		if err := conn.Close(); err != nil {
+			return fmt.Errorf("failed to close XID gRPC connection: %w", err)
+		}
+		return nil
+	})
 
-	keyReloader, err := keyreloader.NewSignerReloader(cfg.SigningKeyFile)
+	taskQueueClient, err := initTaskQueueClient(ctx, cfg)
 	if err != nil {
-		_ = conn.Close()
-		spannerClient.Close()
-		return nil, fmt.Errorf("failed to load signing key: %w", err)
-	}
-
-	taskQueueClient, err := tq.New(ctx, cfg.ProjectID, cfg.InvokerSA, cfg.ActuatorURL, cfg.ActuatorAudience, keyReloader.Signer, cfg.SignatureTTLSeconds, cfg.RedisAddr)
-	if err != nil {
-		_ = conn.Close()
-		spannerClient.Close()
 		return nil, fmt.Errorf("failed to create task queue client: %w", err)
 	}
+	cleanups = append(cleanups, func() error {
+		if err := taskQueueClient.Close(); err != nil {
+			return fmt.Errorf("failed to close task queue client: %w", err)
+		}
+		return nil
+	})
 
-	srv := New(Params{
+	srv, err := New(Params{
 		Config:           cfg,
 		Storage:          storage,
 		Authorizer:       auth,
 		XidClient:        xidClient,
 		WorkUnitActuator: taskQueueClient,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create server: %w", err)
+	}
 
 	cleanup := func() error {
 		var errs []error
-		if err := taskQueueClient.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("failed to close task queue client: %w", err))
+		for i := len(cleanups) - 1; i >= 0; i-- {
+			if err := cleanups[i](); err != nil {
+				errs = append(errs, err)
+			}
 		}
-		if err := conn.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("failed to close XID gRPC connection: %w", err))
-		}
-		spannerClient.Close()
 		return errors.Join(errs...)
 	}
 
 	return &ProdServer{
 		Server:          srv,
-		SpannerClient:   spannerClient,
-		XidClient:       xidClient,
-		TaskQueueClient: taskQueueClient,
+		spannerClient:   spannerClient,
+		xidClient:       xidClient,
+		taskQueueClient: taskQueueClient,
 		cleanup:         cleanup,
 	}, nil
 }

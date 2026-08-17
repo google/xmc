@@ -16,6 +16,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/experiment_state_server/config"
@@ -42,77 +43,61 @@ type WorkUnitActuator interface {
 	EnqueueWorkUnitTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error
 }
 
-// ExperimentHandler handles experiment lifecycle operations.
-type ExperimentHandler struct {
+// baseHandler encapsulates common infrastructure dependencies shared across domain handlers.
+type baseHandler struct {
 	cfg       *config.Config
 	storage   storage.Storage
 	auth      auth.AuthorizerInterface
 	xidClient xidgrpcpb.XidServiceClient
-	server    spb.ExperimentStateServiceServer
+}
+
+// ExperimentHandler handles experiment lifecycle operations.
+type ExperimentHandler struct {
+	baseHandler
+	server spb.ExperimentStateServiceServer
 }
 
 // ArtifactHandler handles artifact operations.
 type ArtifactHandler struct {
-	cfg       *config.Config
-	storage   storage.Storage
-	auth      auth.AuthorizerInterface
-	xidClient xidgrpcpb.XidServiceClient
+	baseHandler
 }
 
 // StatusMessageHandler handles status message operations.
 type StatusMessageHandler struct {
-	storage   storage.Storage
-	auth      auth.AuthorizerInterface
-	xidClient xidgrpcpb.XidServiceClient
+	baseHandler
 }
 
 // WorkUnitHandler handles work unit lifecycle and actuation operations.
 type WorkUnitHandler struct {
-	cfg       *config.Config
-	storage   storage.Storage
-	auth      auth.AuthorizerInterface
-	xidClient xidgrpcpb.XidServiceClient
-	actuator  WorkUnitActuator
-	server    spb.ExperimentStateServiceServer
+	baseHandler
+	actuator WorkUnitActuator
+	server   spb.ExperimentStateServiceServer
 }
 
-// NewExperimentHandler creates a new ExperimentHandler.
-func NewExperimentHandler(cfg *config.Config, storage storage.Storage, auth auth.AuthorizerInterface, xidClient xidgrpcpb.XidServiceClient) *ExperimentHandler {
+func newExperimentHandler(base baseHandler, server spb.ExperimentStateServiceServer) *ExperimentHandler {
 	return &ExperimentHandler{
-		cfg:       cfg,
-		storage:   storage,
-		auth:      auth,
-		xidClient: xidClient,
+		baseHandler: base,
+		server:      server,
 	}
 }
 
-// NewArtifactHandler creates a new ArtifactHandler.
-func NewArtifactHandler(cfg *config.Config, storage storage.Storage, auth auth.AuthorizerInterface, xidClient xidgrpcpb.XidServiceClient) *ArtifactHandler {
+func newArtifactHandler(base baseHandler) *ArtifactHandler {
 	return &ArtifactHandler{
-		cfg:       cfg,
-		storage:   storage,
-		auth:      auth,
-		xidClient: xidClient,
+		baseHandler: base,
 	}
 }
 
-// NewStatusMessageHandler creates a new StatusMessageHandler.
-func NewStatusMessageHandler(storage storage.Storage, auth auth.AuthorizerInterface, xidClient xidgrpcpb.XidServiceClient) *StatusMessageHandler {
+func newStatusMessageHandler(base baseHandler) *StatusMessageHandler {
 	return &StatusMessageHandler{
-		storage:   storage,
-		auth:      auth,
-		xidClient: xidClient,
+		baseHandler: base,
 	}
 }
 
-// NewWorkUnitHandler creates a new WorkUnitHandler.
-func NewWorkUnitHandler(cfg *config.Config, storage storage.Storage, auth auth.AuthorizerInterface, xidClient xidgrpcpb.XidServiceClient, actuator WorkUnitActuator) *WorkUnitHandler {
+func newWorkUnitHandler(base baseHandler, actuator WorkUnitActuator, server spb.ExperimentStateServiceServer) *WorkUnitHandler {
 	return &WorkUnitHandler{
-		cfg:       cfg,
-		storage:   storage,
-		auth:      auth,
-		xidClient: xidClient,
-		actuator:  actuator,
+		baseHandler: base,
+		actuator:    actuator,
+		server:      server,
 	}
 }
 
@@ -126,29 +111,34 @@ type Params struct {
 }
 
 // New creates a new instance of the Experiment State Server.
-func New(p Params) *Server {
+func New(p Params) (*Server, error) {
 	if p.Config == nil {
-		panic("server.New: Config is required")
+		return nil, fmt.Errorf("server.New: Config is required")
 	}
 	if p.Storage == nil {
-		panic("server.New: Storage is required")
+		return nil, fmt.Errorf("server.New: Storage is required")
 	}
 	if p.Authorizer == nil {
-		panic("server.New: Authorizer is required")
+		return nil, fmt.Errorf("server.New: Authorizer is required")
 	}
 	if p.XidClient == nil {
-		panic("server.New: XidClient is required")
+		return nil, fmt.Errorf("server.New: XidClient is required")
 	}
 	if p.WorkUnitActuator == nil {
-		panic("server.New: WorkUnitActuator is required")
+		return nil, fmt.Errorf("server.New: WorkUnitActuator is required")
 	}
-	s := &Server{
-		ExperimentHandler:    NewExperimentHandler(p.Config, p.Storage, p.Authorizer, p.XidClient),
-		WorkUnitHandler:      NewWorkUnitHandler(p.Config, p.Storage, p.Authorizer, p.XidClient, p.WorkUnitActuator),
-		ArtifactHandler:      NewArtifactHandler(p.Config, p.Storage, p.Authorizer, p.XidClient),
-		StatusMessageHandler: NewStatusMessageHandler(p.Storage, p.Authorizer, p.XidClient),
+
+	base := baseHandler{
+		cfg:       p.Config,
+		storage:   p.Storage,
+		auth:      p.Authorizer,
+		xidClient: p.XidClient,
 	}
-	s.ExperimentHandler.server = s
-	s.WorkUnitHandler.server = s
-	return s
+
+	s := &Server{}
+	s.ExperimentHandler = newExperimentHandler(base, s)
+	s.WorkUnitHandler = newWorkUnitHandler(base, p.WorkUnitActuator, s)
+	s.ArtifactHandler = newArtifactHandler(base)
+	s.StatusMessageHandler = newStatusMessageHandler(base)
+	return s, nil
 }

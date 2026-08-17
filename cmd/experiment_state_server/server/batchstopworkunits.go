@@ -120,12 +120,6 @@ type WorkUnitStopEnqueueResult struct {
 
 // enqueueWorkUnitStop handles the stopping process for a single work unit.
 func (h *WorkUnitHandler) enqueueWorkUnitStop(ctx context.Context, workUnit *msgpb.WorkUnit, email string) (WorkUnitStopEnqueueResult, error) {
-	if workUnit == nil {
-		return WorkUnitStopEnqueueResult{}, fmt.Errorf("workUnit is nil: %w", status.ErrInvalidArgument)
-	}
-	if workUnit.GetCurrentWorkUnitExecution() == nil {
-		return WorkUnitStopEnqueueResult{}, fmt.Errorf("workUnit %s has no current execution: %w", workUnit.GetName(), status.ErrInvalidArgument)
-	}
 	xid, wid, eid, err := validator.ValidateWorkUnitExecutionName(workUnit.GetCurrentWorkUnitExecution().GetName())
 	if err != nil {
 		logging.Warn(ctx, "Failed to validate work unit name", "name", workUnit.GetName(), "error", err)

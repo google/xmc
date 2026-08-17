@@ -17,6 +17,8 @@ package server
 import (
 	"errors"
 	"testing"
+
+	"xmanager_cloud/experiment_state_server/config"
 )
 
 func TestProdServer_Close(t *testing.T) {
@@ -40,6 +42,39 @@ func TestProdServer_Close(t *testing.T) {
 		}
 		if err := ps.Close(); !errors.Is(err, expectedErr) {
 			t.Errorf("Close() = %v, want %v", err, expectedErr)
+		}
+	})
+}
+
+func TestNewProd_Validation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil config", func(t *testing.T) {
+		t.Parallel()
+		ps, err := NewProd(t.Context(), nil, nil)
+		if ps != nil || err == nil {
+			t.Errorf("NewProd(nil, nil) = (%v, %v), want (nil, error)", ps, err)
+		}
+	})
+
+	t.Run("nil oauth config", func(t *testing.T) {
+		t.Parallel()
+		ps, err := NewProd(t.Context(), &config.Config{}, nil)
+		if ps != nil || err == nil {
+			t.Errorf("NewProd(cfg, nil) = (%v, %v), want (nil, error)", ps, err)
+		}
+	})
+}
+
+func TestProdServer_HealthCheckers(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil ProdServer returns nil checkers", func(t *testing.T) {
+		t.Parallel()
+		var ps *ProdServer
+		sp, xid, tq := ps.HealthCheckers()
+		if sp != nil || xid != nil || tq != nil {
+			t.Errorf("HealthCheckers() on nil ProdServer = (%v, %v, %v), want all nil", sp, xid, tq)
 		}
 	})
 }

@@ -503,3 +503,27 @@ func TestBatchRestartWorkUnits_PartialFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestBatchRestartWorkUnits_NoCurrentExecutionFails(t *testing.T) {
+	ctx := context.Background()
+	mockStorage := &storage.MockStorage{
+		Experiment: &msgpb.Experiment{Name: "experiments/1"},
+		ListWorkUnitsResp: []*msgpb.WorkUnit{
+			{
+				Name: "experiments/1/workUnits/1",
+			},
+		},
+		RestartWorkUnitExecutionsResp: map[int64]*msgpb.WorkUnitExecution{
+			1: {Name: "experiments/1/workUnits/1/executions/2"},
+		},
+	}
+	mockXid := &mockXidClient{
+		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+	}
+	server := newTestServer(t, withStorage(mockStorage), withXidClient(mockXid))
+
+	_, err := server.BatchRestartWorkUnits(ctx, &apipb.BatchRestartWorkUnitsRequest{Parent: "experiments/1"})
+	if err == nil {
+		t.Fatal("BatchRestartWorkUnits() with work unit having no current execution want error, got nil")
+	}
+}
