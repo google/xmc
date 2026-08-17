@@ -60,11 +60,10 @@ spec:
         env:
         - name: GOOGLE_CLOUD_PROJECT
           value: {{ .Values.projectId | quote }}
-        - name: SPANNER_DATABASE_NAME
-          value: {{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}
-        - name: XID_SERVICE_ADDR
-          value: "xid-svc.{{ .Values.namespace | default "xmc" }}.svc.cluster.local:50051"
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
+        envFrom:
+        - configMapRef:
+            name: dashboard-config
         readinessProbe:
           httpGet:
             path: /readyz

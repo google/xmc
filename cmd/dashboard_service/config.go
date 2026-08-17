@@ -19,66 +19,46 @@ import (
 	"os"
 
 	"xmanager_cloud/cmd/dashboard_service/server"
+	"xmanager_cloud/internal/configutil"
 )
 
-var (
-	port                string
-	grpcPort            string
-	projectID           string
-	spannerDatabaseName string
-	xidServiceAddr      string
-)
+// Config holds the configuration for the dashboard service.
+type Config struct {
+	Port                string
+	GRPCPort            string
+	ProjectID           string
+	SpannerDatabaseName string
+	XidServiceAddr      string
+}
+
+var cfg Config
 
 func init() {
-	flag.StringVar(&port, "port", "", "The HTTP server port to listen on.")
-	flag.StringVar(&grpcPort, "grpc_port", "", "The gRPC server port to listen on.")
-	flag.StringVar(&projectID, "project_id", "", "The GCP project ID.")
-	flag.StringVar(&spannerDatabaseName, "spanner_database_name", "", "The Spanner database resource name.")
-	flag.StringVar(&xidServiceAddr, "xid_service_addr", "", "The XID service gRPC address.")
+	// 1. Load configurations from environment variables
+	configutil.StringEnv(&cfg.SpannerDatabaseName, "dashboard_spanner_database_name", "")
+	configutil.StringEnv(&cfg.XidServiceAddr, "dashboard_xid_service_addr", "xid-svc:50051")
+
+	defaultPort := os.Getenv("PORT")
+	if defaultPort == "" {
+		defaultPort = "8080"
+	}
+
+	// 2. Register flags using loaded configurations as default values
+	flag.StringVar(&cfg.Port, "port", defaultPort, "The HTTP server port to listen on.")
+	flag.StringVar(&cfg.GRPCPort, "grpc_port", "50051", "The gRPC server port to listen on.")
+	flag.StringVar(&cfg.ProjectID, "project_id", os.Getenv("GOOGLE_CLOUD_PROJECT"), "The GCP project ID.")
 }
 
 func getSpannerDatabaseName() string {
-	if spannerDatabaseName != "" {
-		return spannerDatabaseName
-	}
-	return os.Getenv("SPANNER_DATABASE_NAME")
+	return cfg.SpannerDatabaseName
 }
 
 // LoadConfig loads and returns the configuration.
 func LoadConfig() *server.Config {
-	p := port
-	if p == "" {
-		p = os.Getenv("PORT")
-	}
-	if p == "" {
-		p = "8080"
-	}
-
-	gp := grpcPort
-	if gp == "" {
-		gp = os.Getenv("GRPC_PORT")
-	}
-	if gp == "" {
-		gp = "50051"
-	}
-
-	proj := projectID
-	if proj == "" {
-		proj = os.Getenv("GOOGLE_CLOUD_PROJECT")
-	}
-
-	xidAddr := xidServiceAddr
-	if xidAddr == "" {
-		xidAddr = os.Getenv("XID_SERVICE_ADDR")
-	}
-	if xidAddr == "" {
-		xidAddr = "localhost:8082"
-	}
-
 	return &server.Config{
-		Port:           p,
-		GRPCPort:       gp,
-		ProjectID:      proj,
-		XidServiceAddr: xidAddr,
+		Port:           cfg.Port,
+		GRPCPort:       cfg.GRPCPort,
+		ProjectID:      cfg.ProjectID,
+		XidServiceAddr: cfg.XidServiceAddr,
 	}
 }

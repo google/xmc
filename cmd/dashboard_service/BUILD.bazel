@@ -32,6 +32,7 @@ compat_go_library(
         "//internal/auth",
         "//internal/common/health",
         "//internal/compat/google",
+        "//internal/configutil",
         "//internal/dashboard/dataengine",
         "//internal/logging",
         "//internal/storage/spanner/dashboard",
