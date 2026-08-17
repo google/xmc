@@ -60,16 +60,32 @@ jobs:
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
 
-      - name: 'Cache Bazel repository and build artifacts'
-        uses: 'actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+      - name: 'Restore Bazel Repository Cache'
+        id: 'cache-bazel-repo-restore'
+        uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
         with:
-          path: |
-            ~/.cache/bazelisk
-            ~/.cache/bazel
-          key: ${{ runner.os }}-bazel-e2e-${{ hashFiles('MODULE.bazel', 'WORKSPACE*') }}
+          path: ~/.cache/bazel-repo
+          key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
           restore-keys: |
-            ${{ runner.os }}-bazel-e2e-
-            ${{ runner.os }}-bazel-
+            bazel-repo-${{ runner.os }}-
+
+      - name: 'Restore Bazel Disk Cache'
+        id: 'cache-bazel-disk-restore'
+        uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        with:
+          path: ~/.cache/bazel-disk
+          key: bazel-disk-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            bazel-disk-${{ runner.os }}-
+
+      - name: 'Configure Bazel Cache Settings'
+        run: |
+          mkdir -p ~/.cache/bazel-repo ~/.cache/bazel-disk
+          cat << 'EOF_BAZEL' >> ~/.bazelrc
+          common --repository_cache=/home/runner/.cache/bazel-repo
+          common --disk_cache=/home/runner/.cache/bazel-disk
+          common --experimental_repository_cache_hardlinks
+          EOF_BAZEL
 
       - name: 'Set up Python'
         uses: 'actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38' # v5.4.0
