@@ -487,3 +487,4 @@ CREATE TABLE WorkUnitStatusHistory (
 CREATE INDEX WorkUnitStatusHistoryByQueueAndTransitionTime ON WorkUnitStatusHistory (QueueName, TransitionTime DESC, NewState, PreviousState) STORING (ResourceType, ResourceUnits);
 
 
+
