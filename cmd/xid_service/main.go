@@ -54,7 +54,11 @@ func main() {
 	if err != nil {
 		logging.Fatal(ctx, "failed to initialize production server", "error", err)
 	}
-	defer prodServer.Close()
+	defer func() {
+		if err := prodServer.Close(); err != nil {
+			logging.Error(ctx, "failed to close production server", "error", err)
+		}
+	}()
 
 	// 3. Set up the gRPC server.
 	lis, err := net.Listen("tcp", ":"+cfg.Port)

@@ -57,17 +57,45 @@ func TestProdServer_Close(t *testing.T) {
 	t.Run("idempotent close", func(t *testing.T) {
 		t.Parallel()
 		var callCount int
+		expectedErr := errors.New("idempotent cleanup error")
 		ps := &ProdServer{
 			cleanup: func() error {
 				callCount++
-				return nil
+				return expectedErr
 			},
 		}
-		if err := ps.Close(); err != nil {
-			t.Errorf("first Close() = %v, want nil", err)
+		if err := ps.Close(); !errors.Is(err, expectedErr) {
+			t.Errorf("first Close() = %v, want %v", err, expectedErr)
 		}
-		if err := ps.Close(); err != nil {
-			t.Errorf("second Close() = %v, want nil", err)
+		if err := ps.Close(); !errors.Is(err, expectedErr) {
+			t.Errorf("second Close() = %v, want %v", err, expectedErr)
+		}
+		if callCount != 1 {
+			t.Errorf("cleanup callCount = %d, want 1", callCount)
+		}
+	})
+
+	t.Run("concurrent close", func(t *testing.T) {
+		t.Parallel()
+		var callCount int
+		expectedErr := errors.New("concurrent cleanup error")
+		ps := &ProdServer{
+			cleanup: func() error {
+				callCount++
+				return expectedErr
+			},
+		}
+		const goroutines = 10
+		errChan := make(chan error, goroutines)
+		for i := 0; i < goroutines; i++ {
+			go func() {
+				errChan <- ps.Close()
+			}()
+		}
+		for i := 0; i < goroutines; i++ {
+			if err := <-errChan; !errors.Is(err, expectedErr) {
+				t.Errorf("concurrent Close() = %v, want %v", err, expectedErr)
+			}
 		}
 		if callCount != 1 {
 			t.Errorf("cleanup callCount = %d, want 1", callCount)

@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
@@ -38,6 +39,8 @@ type ProdServer struct {
 	*XIDServer
 	spannerClient *spanner.Client
 	cleanup       func() error
+	closeOnce     sync.Once
+	closeErr      error
 }
 
 // HealthCheckers returns the health client interfaces required for active readiness checks.
@@ -48,14 +51,17 @@ func (p *ProdServer) HealthCheckers() commonhealth.SpannerHealthClient {
 	return commonhealth.NewSpannerHealthClient(p.spannerClient)
 }
 
-// Close closes all underlying production client connections.
+// Close closes all underlying production client connections in a thread-safe, idempotent manner.
 func (p *ProdServer) Close() error {
-	if p == nil || p.cleanup == nil {
+	if p == nil {
 		return nil
 	}
-	cleanup := p.cleanup
-	p.cleanup = nil
-	return cleanup()
+	p.closeOnce.Do(func() {
+		if p.cleanup != nil {
+			p.closeErr = p.cleanup()
+		}
+	})
+	return p.closeErr
 }
 
 func initSpannerClient(ctx context.Context, cfg *config.Config) (*spanner.Client, error) {
