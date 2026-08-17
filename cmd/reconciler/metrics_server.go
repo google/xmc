@@ -61,7 +61,9 @@ func serveMetrics(ctx context.Context, addr string) {
 	// graceful rather than relying on process exit.
 	go func() {
 		<-ctx.Done()
-		if err := srv.Shutdown(context.Background()); err != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
 			logging.Error(ctx, "Failed to shut down metrics server gracefully", "error", err)
 		}
 	}()
