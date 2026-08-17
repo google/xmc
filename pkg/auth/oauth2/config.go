@@ -82,82 +82,37 @@ func (c *Config) IsNonProdAuth() bool {
 
 // LoadConfig bootstraps the configuration from environment variables.
 func LoadConfig() (*Config, error) {
-	port := getEnv("PORT", "8080")
 	mockAuth := getEnvBool("MOCK_AUTH", false)
 	disableAuth := getEnvBool("DISABLE_AUTHENTICATION", false)
 
-	allowedDomains := parseCommaSpaceSeparated(getEnv("ALLOWED_DOMAINS", ""))
-	allowedEmails := parseCommaSpaceSeparated(getEnv("ALLOWED_EMAILS", ""))
-	allowedOrigins := parseCommaSpaceSeparated(getEnv("ALLOWED_ORIGINS", ""))
-
-	clientSecret, err := getEnvOrFile("CLIENT_SECRET", "")
+	clientSecret, err := loadClientSecret()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load CLIENT_SECRET: %w", err)
-	}
-	if clientSecret == "" {
-		clientSecret, err = getEnvOrFile("OIDC_CLIENT_SECRET", "")
-		if err != nil {
-			return nil, fmt.Errorf("failed to load OIDC_CLIENT_SECRET: %w", err)
-		}
+		return nil, err
 	}
 
-	jwtSecret, err := getEnvOrFile("JWT_SECRET", "")
+	jwtSecret, err := loadJWTSecret(mockAuth, disableAuth)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load JWT_SECRET: %w", err)
-	}
-	if jwtSecret == "" {
-		if mockAuth || disableAuth {
-			// Local/dev only: no real secret configured, but auth is off anyway.
-			jwtSecret = devOnlyJWTSecret
-		} else {
-			return nil, fmt.Errorf("JWT_SECRET must be set (via JWT_SECRET or JWT_SECRET_FILE) when authentication is enabled")
-		}
-	} else if !mockAuth && !disableAuth && len(jwtSecret) < minJWTSecretLen {
-		return nil, fmt.Errorf("JWT_SECRET must be at least %d bytes when authentication is enabled", minJWTSecretLen)
+		return nil, err
 	}
 
 	frontendURL := getEnv("FRONTEND_URL", "http://localhost:8080")
 	redirectURL := getEnv("REDIRECT_URL", "http://localhost:8080/api/callback")
-
-	var cookieDomain string
-	var allowedHosts []string
-
-	if u, err := url.Parse(frontendURL); err == nil {
-		host := u.Hostname()
-		if !isLocalhost(host) {
-			cookieDomain = host
-		}
-		allowedHosts = append(allowedHosts, strings.ToLower(u.Host))
-	}
-	if u, err := url.Parse(redirectURL); err == nil {
-		allowedHosts = append(allowedHosts, strings.ToLower(u.Host))
-	}
+	cookieDomain, allowedHosts := loadHostSettings(frontendURL, redirectURL)
 
 	oidcIssuerURL := getEnv("OIDC_ISSUER_URL", getEnv("IAP_EXPECTED_ISSUER", ""))
-	defaultAuthURL := "https://accounts.google.com/o/oauth2/v2/auth"
-	defaultTokenURL := "https://oauth2.googleapis.com/token"
-	defaultAPIURL := "https://openidconnect.googleapis.com/v1/userinfo"
-
-	if oidcIssuerURL != "" && !strings.Contains(oidcIssuerURL, "google.com") && !strings.Contains(oidcIssuerURL, "googleapis.com") {
-		trimmedIssuer := strings.TrimSuffix(oidcIssuerURL, "/")
-		defaultAuthURL = trimmedIssuer + "/auth"
-		defaultTokenURL = trimmedIssuer + "/token"
-		defaultAPIURL = trimmedIssuer + "/userinfo"
-	}
-
-	clientID := getEnv("CLIENT_ID", getEnv("OIDC_CLIENT_ID", ""))
+	defaultAuthURL, defaultTokenURL, defaultAPIURL := loadDefaultOIDCURLs(oidcIssuerURL)
 
 	return &Config{
-		Port:                  port,
+		Port:                  getEnv("PORT", "8080"),
 		MockAuth:              mockAuth,
 		DisableAuthentication: disableAuth,
-		AllowedDomains:        allowedDomains,
-		AllowedEmails:         allowedEmails,
-		AllowedOrigins:        allowedOrigins,
+		AllowedDomains:        parseCommaSpaceSeparated(getEnv("ALLOWED_DOMAINS", "")),
+		AllowedEmails:         parseCommaSpaceSeparated(getEnv("ALLOWED_EMAILS", "")),
+		AllowedOrigins:        parseCommaSpaceSeparated(getEnv("ALLOWED_ORIGINS", "")),
 		GCPProjectID:          getEnv("GCP_PROJECT_ID", ""),
 		TargetIAMRole:         getEnv("AUTHORIZED_IAM_ROLE", "roles/viewer"),
 		AdminIAMRole:          getEnv("ADMIN_IAM_ROLE", "roles/owner"),
-		ClientID:              clientID,
+		ClientID:              getEnv("CLIENT_ID", getEnv("OIDC_CLIENT_ID", "")),
 		ClientSecret:          clientSecret,
 		JWTSecret:             jwtSecret,
 		RedirectURL:           redirectURL,
@@ -172,6 +127,69 @@ func LoadConfig() (*Config, error) {
 		CookieDomain:          cookieDomain,
 		AllowedHosts:          allowedHosts,
 	}, nil
+}
+
+func loadClientSecret() (string, error) {
+	clientSecret, err := getEnvOrFile("CLIENT_SECRET", "")
+	if err != nil {
+		return "", fmt.Errorf("failed to load CLIENT_SECRET: %w", err)
+	}
+	if clientSecret != "" {
+		return clientSecret, nil
+	}
+	clientSecret, err = getEnvOrFile("OIDC_CLIENT_SECRET", "")
+	if err != nil {
+		return "", fmt.Errorf("failed to load OIDC_CLIENT_SECRET: %w", err)
+	}
+	return clientSecret, nil
+}
+
+func loadJWTSecret(mockAuth, disableAuth bool) (string, error) {
+	jwtSecret, err := getEnvOrFile("JWT_SECRET", "")
+	if err != nil {
+		return "", fmt.Errorf("failed to load JWT_SECRET: %w", err)
+	}
+	if jwtSecret == "" {
+		if mockAuth || disableAuth {
+			return devOnlyJWTSecret, nil
+		}
+		return "", fmt.Errorf("JWT_SECRET must be set (via JWT_SECRET or JWT_SECRET_FILE) when authentication is enabled")
+	}
+	if !mockAuth && !disableAuth && len(jwtSecret) < minJWTSecretLen {
+		return "", fmt.Errorf("JWT_SECRET must be at least %d bytes when authentication is enabled", minJWTSecretLen)
+	}
+	return jwtSecret, nil
+}
+
+func loadHostSettings(frontendURL, redirectURL string) (string, []string) {
+	var cookieDomain string
+	var allowedHosts []string
+
+	if u, err := url.Parse(frontendURL); err == nil {
+		host := u.Hostname()
+		if !isLocalhost(host) {
+			cookieDomain = host
+		}
+		allowedHosts = append(allowedHosts, strings.ToLower(u.Host))
+	}
+	if u, err := url.Parse(redirectURL); err == nil {
+		allowedHosts = append(allowedHosts, strings.ToLower(u.Host))
+	}
+	return cookieDomain, allowedHosts
+}
+
+func loadDefaultOIDCURLs(oidcIssuerURL string) (string, string, string) {
+	defaultAuthURL := "https://accounts.google.com/o/oauth2/v2/auth"
+	defaultTokenURL := "https://oauth2.googleapis.com/token"
+	defaultAPIURL := "https://openidconnect.googleapis.com/v1/userinfo"
+
+	if oidcIssuerURL != "" && !strings.Contains(oidcIssuerURL, "google.com") && !strings.Contains(oidcIssuerURL, "googleapis.com") {
+		trimmedIssuer := strings.TrimSuffix(oidcIssuerURL, "/")
+		defaultAuthURL = trimmedIssuer + "/auth"
+		defaultTokenURL = trimmedIssuer + "/token"
+		defaultAPIURL = trimmedIssuer + "/userinfo"
+	}
+	return defaultAuthURL, defaultTokenURL, defaultAPIURL
 }
 
 func parseCommaSpaceSeparated(val string) []string {
