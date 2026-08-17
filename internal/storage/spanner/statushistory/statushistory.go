@@ -18,6 +18,8 @@ import (
 	"context"
 	"crypto/rand"
 	"math/big"
+	"strconv"
+	"strings"
 	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
@@ -45,7 +47,6 @@ type PendingQueueMetricsResult struct {
 func ExtractAllResourcesFromExecutable(exec *essmsgpb.Executable) map[string]int64 {
 	resources := make(map[string]int64)
 	if exec == nil || exec.GetJobset() == nil {
-		resources["CPU"] = 1
 		return resources
 	}
 	for _, j := range exec.GetJobset().GetJobs() {
@@ -53,28 +54,47 @@ func ExtractAllResourcesFromExecutable(exec *essmsgpb.Executable) map[string]int
 			continue
 		}
 		r := j.GetSpec().GetResources()
-		if cpu := r.GetCpuResources(); cpu != nil {
+		switch {
+		case r.GetCpuResources() != nil:
+			cpu := r.GetCpuResources()
 			cpus := cpu.GetCpuMillicores() / 1000
-			if cpus == 0 {
-				cpus = 1
+			if cpus > 0 {
+				resources["CPU"] += cpus
 			}
-			resources["CPU"] += cpus
-		}
-		if gpu := r.GetGpuResources(); gpu != nil && gpu.GetCount() > 0 {
-			res := gpu.GetType()
-			if res == "" {
-				res = "GPU H100"
+		case r.GetGpuResources() != nil:
+			gpu := r.GetGpuResources()
+			if gpu.GetCount() > 0 && gpu.GetType() != "" {
+				resources[gpu.GetType()] += gpu.GetCount()
 			}
-			resources[res] += gpu.GetCount()
+		case r.GetTpuResources() != nil:
+			tpu := r.GetTpuResources()
+			res := tpu.GetType()
+			if res != "" {
+				chips := parseTotalChips(tpu.GetTopology())
+				if chips > 0 {
+					resources[res] += chips
+				}
+			}
 		}
-		if r.GetTpuResources() != nil {
-			resources["TPU"] += 1
-		}
-	}
-	if len(resources) == 0 {
-		resources["CPU"] = 1
 	}
 	return resources
+}
+
+func parseTotalChips(topology string) int64 {
+	if topology == "" {
+		return 0
+	}
+	cleaned := strings.TrimSpace(strings.ToLower(topology))
+	dims := strings.Split(cleaned, "x")
+	totalChips := int64(1)
+	for _, d := range dims {
+		v, err := strconv.ParseInt(d, 10, 64)
+		if err != nil || v <= 0 {
+			return 0
+		}
+		totalChips *= v
+	}
+	return totalChips
 }
 
 // SaveWorkUnitStatusHistoryIfChanged buffers Spanner mutations for all requested resources if the WorkUnit state transitioned.
@@ -87,16 +107,13 @@ func SaveWorkUnitStatusHistoryIfChanged(ctx context.Context, xid, wid int64, eid
 	}
 
 	if len(resourceMap) == 0 {
-		resourceMap = map[string]int64{"CPU": 1}
+		return
 	}
 
 	now := time.Now()
 	for resType, units := range resourceMap {
-		if resType == "" {
-			resType = "CPU"
-		}
-		if units <= 0 {
-			units = 1
+		if resType == "" || units <= 0 {
+			continue
 		}
 
 		historyID, err := generateHistoryID()
@@ -120,73 +137,14 @@ func NewRepository(client *spanner.Client) *Repository {
 	return &Repository{client: client}
 }
 
-// FetchQueueVelocity queries the WorkUnitStatusHistory table in Spanner for transitions in the sliding window.
-func (r *Repository) FetchQueueVelocity(ctx context.Context, queueName string, window time.Duration) (QueueVelocityResult, error) {
-	return FetchQueueVelocity(ctx, r.client, queueName, window)
-}
-
 // FetchBatchQueueVelocity queries the WorkUnitStatusHistory table for multiple queues in a single Spanner query.
 func (r *Repository) FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) (map[string]QueueVelocityResult, error) {
 	return FetchBatchQueueVelocity(ctx, r.client, queueNames, window)
 }
 
-// FetchPendingQueueMetrics queries the WorkUnitStatusHistory table in Spanner for pending work units (states 1 and 2: INITIALIZING, SCHEDULING).
-func (r *Repository) FetchPendingQueueMetrics(ctx context.Context, queueName string) (PendingQueueMetricsResult, error) {
-	return FetchPendingQueueMetrics(ctx, r.client, queueName)
-}
-
 // FetchBatchPendingQueueMetrics queries the WorkUnitStatusHistory table for pending work units across multiple queues.
 func (r *Repository) FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) (map[string]PendingQueueMetricsResult, error) {
 	return FetchBatchPendingQueueMetrics(ctx, r.client, queueNames)
-}
-
-// FetchQueueVelocity queries the WorkUnitStatusHistory table in Spanner for transitions to SCHEDULING/STARTING/RUNNING in the sliding window.
-func FetchQueueVelocity(ctx context.Context, client *spanner.Client, queueName string, window time.Duration) (QueueVelocityResult, error) {
-	cutoff := time.Now().Add(-window)
-	stmt := spanner.Statement{
-		SQL: `SELECT COUNT(1) AS AdmittedCount, IFNULL(SUM(ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(ResourceType), "CPU") AS ResType
-		      FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
-		      WHERE QueueName = @queueName
-		        AND TransitionTime >= @cutoffTime
-		        AND NewState IN (1, 2, 3, 4)`, // 1: INITIALIZING, 2: SCHEDULING, 3: STARTING, 4: RUNNING
-		Params: map[string]interface{}{
-			"queueName":  queueName,
-			"cutoffTime": cutoff,
-		},
-	}
-
-	var res QueueVelocityResult
-	if client == nil {
-		return res, nil
-	}
-
-	iter := client.Single().Query(ctx, stmt)
-	defer iter.Stop()
-
-	row, err := iter.Next()
-	if err != nil {
-		if err == iterator.Done {
-			return res, nil
-		}
-		return res, err
-	}
-
-	var admittedCount, totalUnits int64
-	var resType string
-	if err := row.ColumnByName("AdmittedCount", &admittedCount); err != nil {
-		return res, err
-	}
-	if err := row.ColumnByName("TotalUnits", &totalUnits); err != nil {
-		return res, err
-	}
-	if err := row.ColumnByName("ResType", &resType); err != nil {
-		return res, err
-	}
-
-	res.AdmittedJobsCount = admittedCount
-	res.ResourceUnits = totalUnits
-	res.ResourceType = resType
-	return res, nil
 }
 
 // FetchBatchQueueVelocity queries the WorkUnitStatusHistory table for multiple queues in a single Spanner query.
@@ -198,7 +156,7 @@ func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueN
 
 	cutoff := time.Now().Add(-window)
 	stmt := spanner.Statement{
-		SQL: `SELECT QueueName, COUNT(1) AS AdmittedCount, IFNULL(SUM(ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(ResourceType), "CPU") AS ResType
+		SQL: `SELECT QueueName, COUNT(1) AS AdmittedCount, IFNULL(SUM(ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(ResourceType), "") AS ResType
 		      FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
 		      WHERE QueueName IN UNNEST(@queueNames)
 		        AND TransitionTime >= @cutoffTime
@@ -251,57 +209,6 @@ func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueN
 	return results, nil
 }
 
-// FetchPendingQueueMetrics queries the WorkUnitStatusHistory table in Spanner for pending work units (states 1 and 2: INITIALIZING, SCHEDULING) per queue.
-func FetchPendingQueueMetrics(ctx context.Context, client *spanner.Client, queueName string) (PendingQueueMetricsResult, error) {
-	stmt := spanner.Statement{
-		SQL: `WITH LatestStatus AS (
-		        SELECT QueueName, ResourceType, ResourceUnits, NewState,
-		               ROW_NUMBER() OVER (PARTITION BY BitReversedXid, WorkUnitId ORDER BY HistoryId DESC) AS rn
-		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
-		        WHERE QueueName = @queueName
-		      )
-		      SELECT COUNT(1) AS PendingJobs, IFNULL(SUM(ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(ResourceType), "CPU") AS ResType
-		      FROM LatestStatus
-		      WHERE rn = 1 AND NewState IN (1, 2)`, // 1: INITIALIZING, 2: SCHEDULING
-		Params: map[string]interface{}{
-			"queueName": queueName,
-		},
-	}
-
-	var res PendingQueueMetricsResult
-	if client == nil {
-		return res, nil
-	}
-
-	iter := client.Single().Query(ctx, stmt)
-	defer iter.Stop()
-
-	row, err := iter.Next()
-	if err != nil {
-		if err == iterator.Done {
-			return res, nil
-		}
-		return res, err
-	}
-
-	var pendingJobs, totalUnits int64
-	var resType string
-	if err := row.ColumnByName("PendingJobs", &pendingJobs); err != nil {
-		return res, err
-	}
-	if err := row.ColumnByName("TotalUnits", &totalUnits); err != nil {
-		return res, err
-	}
-	if err := row.ColumnByName("ResType", &resType); err != nil {
-		return res, err
-	}
-
-	res.PendingJobs = pendingJobs
-	res.PendingResourceRequests = totalUnits
-	res.ResourceType = resType
-	return res, nil
-}
-
 // FetchBatchPendingQueueMetrics queries the WorkUnitStatusHistory table for pending work units across multiple queues.
 func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, queueNames []string) (map[string]PendingQueueMetricsResult, error) {
 	results := make(map[string]PendingQueueMetricsResult)
@@ -316,7 +223,7 @@ func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, 
 		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
 		        WHERE QueueName IN UNNEST(@queueNames)
 		      )
-		      SELECT QueueName, COUNT(1) AS PendingJobs, IFNULL(SUM(ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(ResourceType), "CPU") AS ResType
+		      SELECT QueueName, COUNT(1) AS PendingJobs, IFNULL(SUM(ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(ResourceType), "") AS ResType
 		      FROM LatestStatus
 		      WHERE rn = 1 AND NewState IN (1, 2)
 		      GROUP BY QueueName`,

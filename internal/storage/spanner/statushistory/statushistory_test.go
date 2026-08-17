@@ -49,6 +49,18 @@ func TestExtractAllResourcesFromExecutable(t *testing.T) {
 							},
 						},
 					},
+					{
+						Spec: &essmsgpb.ExecutableSpec{
+							Resources: &essmsgpb.ResourceSet{
+								Resources: &essmsgpb.ResourceSet_TpuResources{
+									TpuResources: &essmsgpb.TpuResources{
+										Type:     "tpu-v5p",
+										Topology: "2x2x4",
+									},
+								},
+							},
+						},
+					},
 				},
 			},
 		},
@@ -60,6 +72,95 @@ func TestExtractAllResourcesFromExecutable(t *testing.T) {
 	}
 	if got["CPU"] != 16 {
 		t.Errorf("CPU = %d, want 16", got["CPU"])
+	}
+	if got["tpu-v5p"] != 16 {
+		t.Errorf("tpu-v5p = %d, want 16 (2x2x4 topology)", got["tpu-v5p"])
+	}
+}
+
+func TestExtractAllResourcesFromExecutable_NoFallbacks(t *testing.T) {
+	// Nil executable should return empty map, NOT default CPU: 1
+	gotNil := ExtractAllResourcesFromExecutable(nil)
+	if len(gotNil) != 0 {
+		t.Errorf("ExtractAllResourcesFromExecutable(nil) = %+v, want empty map", gotNil)
+	}
+
+	// Executable with empty GPU type should not add GPU H100 default
+	execEmptyGPU := &essmsgpb.Executable{
+		Type: &essmsgpb.Executable_Jobset{
+			Jobset: &essmsgpb.JobSetExecutable{
+				Jobs: []*essmsgpb.KubernetesJob{
+					{
+						Spec: &essmsgpb.ExecutableSpec{
+							Resources: &essmsgpb.ResourceSet{
+								Resources: &essmsgpb.ResourceSet_GpuResources{
+									GpuResources: &essmsgpb.GpuResources{
+										Type:  "",
+										Count: 4,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	gotEmptyGPU := ExtractAllResourcesFromExecutable(execEmptyGPU)
+	if len(gotEmptyGPU) != 0 {
+		t.Errorf("ExtractAllResourcesFromExecutable with empty GPU type = %+v, want empty map", gotEmptyGPU)
+	}
+
+	// Executable with empty TPU type should not add TPU default
+	execEmptyTPU := &essmsgpb.Executable{
+		Type: &essmsgpb.Executable_Jobset{
+			Jobset: &essmsgpb.JobSetExecutable{
+				Jobs: []*essmsgpb.KubernetesJob{
+					{
+						Spec: &essmsgpb.ExecutableSpec{
+							Resources: &essmsgpb.ResourceSet{
+								Resources: &essmsgpb.ResourceSet_TpuResources{
+									TpuResources: &essmsgpb.TpuResources{
+										Type:     "",
+										Topology: "2x2",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	gotEmptyTPU := ExtractAllResourcesFromExecutable(execEmptyTPU)
+	if len(gotEmptyTPU) != 0 {
+		t.Errorf("ExtractAllResourcesFromExecutable with empty TPU type = %+v, want empty map", gotEmptyTPU)
+	}
+
+	// Executable with invalid TPU topology should not assume 1 chip
+	execInvalidTPU := &essmsgpb.Executable{
+		Type: &essmsgpb.Executable_Jobset{
+			Jobset: &essmsgpb.JobSetExecutable{
+				Jobs: []*essmsgpb.KubernetesJob{
+					{
+						Spec: &essmsgpb.ExecutableSpec{
+							Resources: &essmsgpb.ResourceSet{
+								Resources: &essmsgpb.ResourceSet_TpuResources{
+									TpuResources: &essmsgpb.TpuResources{
+										Type:     "tpu-v4",
+										Topology: "invalid",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	gotInvalidTPU := ExtractAllResourcesFromExecutable(execInvalidTPU)
+	if len(gotInvalidTPU) != 0 {
+		t.Errorf("ExtractAllResourcesFromExecutable with invalid TPU topology = %+v, want empty map", gotInvalidTPU)
 	}
 }
 
@@ -77,21 +178,21 @@ func TestQueueVelocityResult(t *testing.T) {
 	}
 }
 
-func TestFetchPendingQueueMetrics_NilClient(t *testing.T) {
+func TestFetchBatchQueueMetrics_NilClient(t *testing.T) {
 	repo := NewRepository(nil)
-	single, err := repo.FetchPendingQueueMetrics(nil, "cq-gpu")
+	batchVel, err := repo.FetchBatchQueueVelocity(nil, []string{"cq-gpu"}, 1*time.Hour)
 	if err != nil {
-		t.Fatalf("expected no error for nil client, got %v", err)
+		t.Fatalf("expected no error for nil client batch velocity, got %v", err)
 	}
-	if single.PendingJobs != 0 || single.PendingResourceRequests != 0 {
-		t.Errorf("expected 0 pending metrics for nil client, got %+v", single)
+	if len(batchVel) != 0 {
+		t.Errorf("expected empty batch map for nil client, got %+v", batchVel)
 	}
 
-	batch, err := repo.FetchBatchPendingQueueMetrics(nil, []string{"cq-gpu"})
+	batchPending, err := repo.FetchBatchPendingQueueMetrics(nil, []string{"cq-gpu"})
 	if err != nil {
-		t.Fatalf("expected no error for nil client batch, got %v", err)
+		t.Fatalf("expected no error for nil client batch pending, got %v", err)
 	}
-	if len(batch) != 0 {
-		t.Errorf("expected empty batch map for nil client, got %+v", batch)
+	if len(batchPending) != 0 {
+		t.Errorf("expected empty batch map for nil client, got %+v", batchPending)
 	}
 }

@@ -147,7 +147,6 @@ export class ResourceDashboard implements OnInit, OnDestroy {
     emitOnStart: false,
   });
   private readonly subscriptions = new Subscription();
-  private secondaryDataSub?: Subscription;
 
   ngOnInit() {
     this.subscriptions.add(
@@ -176,22 +175,22 @@ export class ResourceDashboard implements OnInit, OnDestroy {
       return;
     }
     this.isSecondaryLoading.set(true);
-    this.secondaryDataSub?.unsubscribe();
-    this.secondaryDataSub = this.resourceService
-      .getQueueSecondaryData(queueNames, mapPeriodToRangePreset(this.velocityPeriod()))
-      .subscribe({
-        next: (res) => {
-          this.secondaryDataMap.set(res.queuePredictability ?? {});
-          this.isSecondaryLoading.set(false);
-        },
-        error: () => {
-          this.isSecondaryLoading.set(false);
-        },
-      });
+    this.subscriptions.add(
+      this.resourceService
+        .getQueueSecondaryData(queueNames, mapPeriodToRangePreset(this.velocityPeriod()))
+        .subscribe({
+          next: (res) => {
+            this.secondaryDataMap.set(res.queuePredictability ?? {});
+            this.isSecondaryLoading.set(false);
+          },
+          error: () => {
+            this.isSecondaryLoading.set(false);
+          },
+        }),
+    );
   }
 
   ngOnDestroy() {
-    this.secondaryDataSub?.unsubscribe();
     this.subscriptions.unsubscribe();
     this.reloader.stop();
   }

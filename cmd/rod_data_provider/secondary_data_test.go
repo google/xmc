@@ -34,10 +34,6 @@ type mockVelocityFetcher struct {
 
 var _ QueueVelocityFetcher = (*mockVelocityFetcher)(nil)
 
-func (m *mockVelocityFetcher) FetchQueueVelocity(ctx context.Context, queueName string, window time.Duration) (statushistory.QueueVelocityResult, error) {
-	return m.result, m.err
-}
-
 func (m *mockVelocityFetcher) FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) (map[string]statushistory.QueueVelocityResult, error) {
 	res := make(map[string]statushistory.QueueVelocityResult)
 	for _, qName := range queueNames {
@@ -129,6 +125,9 @@ func TestBatchGetQueueSecondaryData_NilVelocityStore(t *testing.T) {
 	}
 	if p.PendingResourceRequests.Count != 0 {
 		t.Errorf("PendingResourceRequests.Count = %f, want 0", p.PendingResourceRequests.Count)
+	}
+	if p.ResourceVelocity.ResourceType != "" {
+		t.Errorf("ResourceVelocity.ResourceType = %q, want empty string", p.ResourceVelocity.ResourceType)
 	}
 }
 

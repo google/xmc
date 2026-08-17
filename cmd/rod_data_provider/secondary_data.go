@@ -28,7 +28,6 @@ import (
 
 // QueueVelocityFetcher defines interface for fetching velocity metrics from storage.
 type QueueVelocityFetcher interface {
-	FetchQueueVelocity(ctx context.Context, queueName string, window time.Duration) (statushistory.QueueVelocityResult, error)
 	FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) (map[string]statushistory.QueueVelocityResult, error)
 	FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) (map[string]statushistory.PendingQueueMetricsResult, error)
 }
@@ -80,7 +79,7 @@ func (s *server) BatchGetQueueSecondaryData(ctx context.Context, req *spb.BatchG
 
 func buildQueuePredictability(preset spb.RangePreset, windowHours float64, res statushistory.QueueVelocityResult, pendingRes statushistory.PendingQueueMetricsResult) *spb.QueuePredictability {
 	jobVel := float64(res.AdmittedJobsCount) / windowHours
-	resType := "CPU"
+	resType := ""
 	if res.ResourceType != "" {
 		resType = res.ResourceType
 	} else if pendingRes.ResourceType != "" {
