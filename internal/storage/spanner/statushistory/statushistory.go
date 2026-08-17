@@ -154,7 +154,7 @@ func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueN
 
 	cutoff := time.Now().Add(-window)
 	stmt := spanner.Statement{
-		SQL: `SELECT QueueName, COUNT(DISTINCT WorkUnitId) AS AdmittedCount, IFNULL(SUM(ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(ResourceType), "") AS ResType
+		SQL: `SELECT QueueName, COUNT(DISTINCT CONCAT(CAST(BitReversedXid AS STRING), '-', CAST(WorkUnitId AS STRING))) AS AdmittedCount, IFNULL(SUM(ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(ResourceType), "") AS ResType
 		      FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
 		      WHERE QueueName IN UNNEST(@queueNames)
 		        AND TransitionTime >= @cutoffTime
@@ -221,7 +221,7 @@ func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, 
 		        WHERE QueueName IN UNNEST(@queueNames)
 		        GROUP BY BitReversedXid, WorkUnitId
 		      )
-		      SELECT h.QueueName, COUNT(DISTINCT h.WorkUnitId) AS PendingJobs, IFNULL(SUM(h.ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(h.ResourceType), "") AS ResType
+		      SELECT h.QueueName, COUNT(1) AS PendingJobs, IFNULL(SUM(h.ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(h.ResourceType), "") AS ResType
 		      FROM WorkUnitStatusHistory h
 		      JOIN MaxHistory m
 		        ON h.BitReversedXid = m.BitReversedXid
