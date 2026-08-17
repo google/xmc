@@ -26,21 +26,13 @@ import (
 	"golang/google_api/idtoken/idtoken"
 	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/schema/schema"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/util/validation/field/field"
-	dynamicfake "golang/k8s_io/client_go/v/v0_23/dynamic/fake/fake"
-	kubernetesfake "golang/k8s_io/client_go/v/v0_23/kubernetes/fake/fake"
 	"golang/prometheus/client/prometheus/testutil/testutil"
 	"tink/go/jwt/jwt"
-	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
-	"xmanager_cloud/kubernetes/actuator/k8s_client/preconditions_validator/preconditionsvalidator"
 	"xmanager_cloud/security/securitytest"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
-)
-
-var (
-	runtimeConfig = k8sclient.ActuatorRuntimeConfig{CreateNewNamespaces: true, DefaultExecutionEnvironment: "gke"}
+	"xmanager_cloud/task_queue_redis/redisclient"
 )
 
 const testAudience = "test-audience"
@@ -144,29 +136,134 @@ func mockidTokenValidator(t *testing.T, wantErr bool) {
 	})
 }
 
-func newHandlerForTesting(t *testing.T) *Handler {
+type testHandlerOption func(*Params)
+
+func withK8sClient(client K8sClient) testHandlerOption {
+	return func(p *Params) {
+		p.K8sClient = client
+	}
+}
+
+func withProjectID(projectID string) testHandlerOption {
+	return func(p *Params) {
+		p.ProjectID = projectID
+	}
+}
+
+func withAudience(audience string) testHandlerOption {
+	return func(p *Params) {
+		p.Audience = audience
+	}
+}
+
+func withServiceAccount(sa string) testHandlerOption {
+	return func(p *Params) {
+		p.XManagerServiceAccount = sa
+	}
+}
+
+func withJWTVerifier(v func() (jwt.Verifier, error)) testHandlerOption {
+	return func(p *Params) {
+		p.JWTVerifier = v
+	}
+}
+
+func withRedisClient(c redisclient.Consumer) testHandlerOption {
+	return func(p *Params) {
+		p.RedisClient = c
+	}
+}
+
+func newTestTaskHandler(t *testing.T, opts ...testHandlerOption) *Handler {
 	t.Helper()
-	scheme := runtime.NewScheme()
-	dynamicClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
-		k8sclient.JobSetGVR: "JobSetList",
-	})
-	clientset := kubernetesfake.NewSimpleClientset()
-	k8sClient := k8sclient.NewWithClients(clientset, dynamicClient, runtimeConfig, preconditionsvalidator.New(), nil, nil)
-	return New(k8sClient, "test-project", testAudience, testServiceAccount, securitytest.MustCreateTestVerifier(t), nil)
+	params := Params{
+		K8sClient:              &mockK8sClient{},
+		ProjectID:              "test-project",
+		Audience:               testAudience,
+		XManagerServiceAccount: testServiceAccount,
+		JWTVerifier:            securitytest.MustCreateTestVerifier(t),
+	}
+	for _, opt := range opts {
+		opt(&params)
+	}
+	h, err := New(params)
+	if err != nil {
+		t.Fatalf("failed to create test task handler: %v", err)
+	}
+	return h
+}
+
+func TestNew_Validation(t *testing.T) {
+	validParams := Params{
+		K8sClient:              &mockK8sClient{},
+		ProjectID:              "test-project",
+		Audience:               testAudience,
+		XManagerServiceAccount: testServiceAccount,
+		JWTVerifier:            securitytest.MustCreateTestVerifier(t),
+	}
+
+	testCases := []struct {
+		name       string
+		modify     func(p *Params)
+		wantErrMsg string
+	}{
+		{
+			name: "missing_k8s_client",
+			modify: func(p *Params) {
+				p.K8sClient = nil
+			},
+			wantErrMsg: "k8s client is required",
+		},
+		{
+			name: "missing_project_id",
+			modify: func(p *Params) {
+				p.ProjectID = ""
+			},
+			wantErrMsg: "project ID is required",
+		},
+		{
+			name: "missing_audience",
+			modify: func(p *Params) {
+				p.Audience = ""
+			},
+			wantErrMsg: "audience is required",
+		},
+		{
+			name: "missing_service_account",
+			modify: func(p *Params) {
+				p.XManagerServiceAccount = ""
+			},
+			wantErrMsg: "xmanager service account is required",
+		},
+		{
+			name: "missing_jwt_verifier",
+			modify: func(p *Params) {
+				p.JWTVerifier = nil
+			},
+			wantErrMsg: "jwt verifier is required",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := validParams
+			tc.modify(&p)
+			handler, err := New(p)
+			if err == nil {
+				t.Fatalf("New() expected error containing %q, got nil error (handler: %v)", tc.wantErrMsg, handler)
+			}
+			if !strings.Contains(err.Error(), tc.wantErrMsg) {
+				t.Errorf("New() error mismatch: got %q, want error containing %q", err.Error(), tc.wantErrMsg)
+			}
+		})
+	}
 }
 
 func TestHandleWorkUnitRedisTask_K8sClientError(t *testing.T) {
 	workUnitsCreated.Reset()
 	ctMessagesFailed.Reset()
 	ctMessagesProcessed.Reset()
-	handler := &Handler{
-		k8sClient:              &mockK8sClient{err: apierrors.NewInternalError(errors.New("internal error"))},
-		projectID:              "test-project",
-		audience:               testAudience,
-		xmanagerServiceAccount: testServiceAccount,
-		JWTVerifier:            securitytest.MustCreateTestVerifier(t),
-		redisClient:            nil,
-	}
+	handler := newTestTaskHandler(t, withK8sClient(&mockK8sClient{err: apierrors.NewInternalError(errors.New("internal error"))}))
 	mockidTokenValidator(t, false)
 
 	payload := []byte(`{
@@ -239,7 +336,7 @@ func TestHandleWorkUnitRedisTask_K8sClientError(t *testing.T) {
 func TestHandleWorkUnitRedisTask_MalformedJSON(t *testing.T) {
 	ctMessagesFailed.Reset()
 	ctMessagesProcessed.Reset()
-	handler := newHandlerForTesting(t)
+	handler := newTestTaskHandler(t)
 	mockidTokenValidator(t, false)
 
 	payload := []byte(`this is not json`)
@@ -309,8 +406,7 @@ func TestHandleWorkUnitRedisTask_Auth(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			handler := newHandlerForTesting(t)
-			handler.xmanagerServiceAccount = tc.xmanagerServiceAccount
+			handler := newTestTaskHandler(t, withServiceAccount(tc.xmanagerServiceAccount))
 			mockidTokenValidator(t, tc.validationErr)
 
 			payload := []byte(`{
@@ -493,13 +589,7 @@ func TestHandleActuatorPayload(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctMessagesProcessed.Reset()
-			h := &Handler{
-				k8sClient:              &mockK8sClient{err: tc.k8sErr},
-				audience:               testAudience,
-				xmanagerServiceAccount: testServiceAccount,
-				JWTVerifier:            securitytest.MustCreateTestVerifier(t),
-				redisClient:            nil,
-			}
+			h := newTestTaskHandler(t, withK8sClient(&mockK8sClient{err: tc.k8sErr}))
 
 			payload := &actuatortaskpb.ActuatorPayload{
 				Target: stringPtr("workunits/123"),
@@ -522,7 +612,7 @@ func TestHandleWorkUnitRedisTask_Success(t *testing.T) {
 	workUnitsCreated.Reset()
 	ctMessagesProcessed.Reset()
 	ctMessagesFailed.Reset()
-	handler := newHandlerForTesting(t)
+	handler := newTestTaskHandler(t)
 	mockidTokenValidator(t, false)
 
 	payload := []byte(`{
@@ -591,7 +681,7 @@ func TestHandleWorkUnitRedisTask_Success(t *testing.T) {
 func TestHandleWorkUnitRedisTask_Failures(t *testing.T) {
 	ctMessagesFailed.Reset()
 	ctMessagesProcessed.Reset()
-	handler := newHandlerForTesting(t)
+	handler := newTestTaskHandler(t)
 
 	validPayload := []byte(`{
     "kind": "WORK_UNIT_ACTUATION_REQUEST",
@@ -753,14 +843,7 @@ func TestHandleWorkUnitRedisTask_SignatureValidation(t *testing.T) {
 			if jwtVerifier == nil {
 				jwtVerifier = securitytest.MustCreateTestVerifier(t)
 			}
-			handler := &Handler{
-				k8sClient:              &mockK8sClient{},
-				projectID:              "test-project",
-				audience:               testAudience,
-				xmanagerServiceAccount: testServiceAccount,
-				JWTVerifier:            jwtVerifier,
-				redisClient:            nil,
-			}
+			handler := newTestTaskHandler(t, withJWTVerifier(jwtVerifier))
 			mockidTokenValidator(t, false)
 
 			b64Payload := base64.StdEncoding.EncodeToString(payload)

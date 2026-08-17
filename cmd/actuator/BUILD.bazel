@@ -1,6 +1,6 @@
 # Copyright 2025 Google LLC
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("//:compat.bzl", "compat_go_library")
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
 load("//:oci.bzl", "oci_image_for_service")
 
 package(default_visibility = ["//visibility:private"])
@@ -10,6 +10,7 @@ compat_go_library(
     srcs = [
         "config.go",
         "main.go",
+        "prod.go",
     ],
     importpath = "xmanager_cloud/cmd/actuator/main",
     deps = [
@@ -28,9 +29,21 @@ compat_go_library(
         "@com_github_prometheus_client_golang//prometheus/promhttp:go_default_library",
         "@com_google_cloud_go_compute_metadata//:metadata",
         "@com_google_cloud_go_spanner//:spanner",
+        "@io_k8s_client_go//kubernetes",
         "@io_k8s_sigs_controller_runtime//:go_default_library",
         "@org_golang_google_api//option",
         "@org_golang_x_sync//errgroup:go_default_library",
+    ],
+)
+
+compat_go_test(
+    name = "actuator_test",
+    srcs = ["prod_test.go"],
+    embed = [":actuator_lib"],
+    deps = [
+        "//internal/task_queue_redis/redisclient",
+        "@io_k8s_client_go//kubernetes",
+        "@io_k8s_client_go//kubernetes/fake",
     ],
 )
 

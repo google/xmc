@@ -31,7 +31,6 @@ import (
 	"golang/uuid/uuid"
 	"tink/go/jwt/jwt"
 	"xmanager_cloud/common/interfaces"
-	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/logging/logging"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
 	"xmanager_cloud/task_queue_redis/redisclient"
@@ -53,16 +52,27 @@ var (
 	idtokenValidate = idtoken.Validate
 )
 
-type k8sClient interface {
+// K8sClient defines the Kubernetes operations required by the work unit task handler.
+type K8sClient interface {
 	CreateWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error
 	DeleteWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error
 	RestartWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error
 	UpdateWorkUnit(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error
 }
 
+// Params contains the dependencies required to instantiate a Handler.
+type Params struct {
+	K8sClient              K8sClient
+	ProjectID              string
+	Audience               string
+	XManagerServiceAccount string
+	JWTVerifier            func() (jwt.Verifier, error)
+	RedisClient            redisclient.Consumer
+}
+
 // Handler processes incoming actuation requests.
 type Handler struct {
-	k8sClient              k8sClient
+	k8sClient              K8sClient
 	projectID              string
 	audience               string
 	xmanagerServiceAccount string
@@ -71,15 +81,30 @@ type Handler struct {
 }
 
 // New creates a new Handler.
-func New(client *k8sclient.Client, projectID string, audience string, xmanagerServiceAccount string, jwtVerifier func() (jwt.Verifier, error), redisClient redisclient.Consumer) *Handler {
-	return &Handler{
-		k8sClient:              client,
-		projectID:              projectID,
-		audience:               audience,
-		xmanagerServiceAccount: xmanagerServiceAccount,
-		JWTVerifier:            jwtVerifier,
-		redisClient:            redisClient,
+func New(p Params) (*Handler, error) {
+	if p.K8sClient == nil {
+		return nil, fmt.Errorf("k8s client is required")
 	}
+	if p.ProjectID == "" {
+		return nil, fmt.Errorf("project ID is required")
+	}
+	if p.Audience == "" {
+		return nil, fmt.Errorf("audience is required")
+	}
+	if p.XManagerServiceAccount == "" {
+		return nil, fmt.Errorf("xmanager service account is required")
+	}
+	if p.JWTVerifier == nil {
+		return nil, fmt.Errorf("jwt verifier is required")
+	}
+	return &Handler{
+		k8sClient:              p.K8sClient,
+		projectID:              p.ProjectID,
+		audience:               p.Audience,
+		xmanagerServiceAccount: p.XManagerServiceAccount,
+		JWTVerifier:            p.JWTVerifier,
+		redisClient:            p.RedisClient,
+	}, nil
 }
 
 func (h *Handler) handleActuatorPayload(ctx context.Context, payload *actuatortaskpb.ActuatorPayload) error {
