@@ -49,6 +49,8 @@ const (
 	kueueWorkloadAnnotation = "kueue.x-k8s.io/workload"
 	// defaultTTLSeconds is the default time-to-live for JobSet and Jobs after finishing.
 	defaultTTLSeconds = 7 * 24 * 60 * 60 // 7 days
+	// defaultOnFailureRetryLimit is the default backoff limit for jobs with RestartPolicy OnFailure.
+	defaultOnFailureRetryLimit = int32(100)
 )
 
 var (
@@ -329,6 +331,15 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 		restartPolicy = corev1.RestartPolicy(job.GetRestartPolicy())
 	}
 
+	var pfp *batchv1.PodFailurePolicy
+	if restartPolicy == corev1.RestartPolicyOnFailure {
+		if retryLimit == 0 {
+			retryLimit = defaultOnFailureRetryLimit
+		}
+	} else if !job.GetDisablePodFailurePolicy() {
+		pfp = podFailurePolicy(primaryName)
+	}
+
 	return jobsetv1alpha2.ReplicatedJob{
 		Name:      job.GetName(),
 		GroupName: job.GetGroupName(),
@@ -343,7 +354,7 @@ func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.Kubernete
 				BackoffLimit:            &retryLimit,
 				CompletionMode:          completionModePtr(batchv1.IndexedCompletion),
 				Completions:             proto.Int32(1),
-				PodFailurePolicy:        podFailurePolicy(primaryName),
+				PodFailurePolicy:        pfp,
 				TTLSecondsAfterFinished: proto.Int32(defaultTTLSeconds),
 				ActiveDeadlineSeconds:   activeDeadlineSeconds,
 				Template: corev1.PodTemplateSpec{

@@ -17,7 +17,8 @@
 Runs:
 1. `pathways-head` (1 replica with `pathways-rm` and `pathways-proxy` init containers
    exposing ports 29001/29002 and 29000).
-2. `worker` (multi-replica TPU worker pods exposing ports 29005, 29006, 8471, and 8080).
+2. `worker` (multi-replica TPU worker pods exposing ports 29005, 29006, 8471, and 8080,
+   configured with `restart_policy="OnFailure"` for resilient daemon lifecycle and graceful teardown).
 """
 
 import logging
@@ -140,9 +141,16 @@ def main(argv: Sequence[str]) -> None:
                             ),
                         ),
                         # Role 2: worker
+                        # Setting restart_policy="OnFailure" and retry_limit=100 on worker compute slices
+                        # enables a resilient daemon lifecycle and avoids shutdown race conditions with
+                        # pathways-head: worker servers run continuously until pathways-head finishes
+                        # computation, at which point the JobSet success policy triggers overall JobSet completion
+                        # and cleanly tears down the worker daemons.
                         work_unit_pb2.KubernetesJob(
                             name="worker",
                             replicas=2,
+                            restart_policy="OnFailure",
+                            retry_limit=100,
                             dependency_order=work_unit_pb2.KubernetesJob.DependencyOrder(
                                 job_name="pathways-head",
                                 job_dependency_state=work_unit_pb2.KubernetesJob.DependencyOrder.READY,
