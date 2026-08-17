@@ -29,7 +29,10 @@ import (
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
+	"google.golang.org/api/cloudidentity/v1beta1"
+	"google.golang.org/api/option"
 	health "xmanager_cloud/common/health"
+	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
@@ -85,7 +88,7 @@ func main() {
 	}
 	authenticator := oauth2.NewAuthenticator(oauthCfg)
 
-	deps := initGRPCServer(ctx, cfg)
+	deps := initGRPCServer(ctx, cfg, *oauthCfg, authenticator)
 	defer deps.Close(ctx)
 
 	go func() {
@@ -144,7 +147,7 @@ func initSpannerHealthClient(ctx context.Context, dbPath string, name string) (*
 	return client, health.NewSpannerHealthClient(client)
 }
 
-func initGRPCServer(ctx context.Context, cfg *Config) *grpcServerDeps {
+func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, authenticator *oauth2.Authenticator) *grpcServerDeps {
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
@@ -184,7 +187,11 @@ func initGRPCServer(ctx context.Context, cfg *Config) *grpcServerDeps {
 		logging.Fatal(ctx, "Failed to create health checker", "error", err)
 	}
 
-	guard := NewAdminRoleGuard()
+	authorizer := initAuthorizer(ctx, oauthCfg)
+	guard := NewAdminRoleGuard(AdminRoleGuardParams{
+		Authorizer:    authorizer,
+		Authenticator: authenticator,
+	})
 	srv := newServer(cfg, checker, guard)
 	spb.RegisterHealthServiceServer(grpcServer, srv)
 	reflection.Register(grpcServer)
@@ -237,4 +244,32 @@ func initGatewayMux(ctx context.Context, cfg *Config, authenticator *oauth2.Auth
 	})
 
 	return authenticator.SecurityMiddlewares(mux)
+}
+
+func initAuthorizer(ctx context.Context, oauthCfg oauth2.Config) auth.AuthorizerInterface {
+	idService, err := cloudidentity.NewService(ctx, option.WithScopes(cloudidentity.CloudIdentityGroupsReadonlyScope))
+	if err != nil {
+		logging.Fatal(ctx, "Failed to create Cloud Identity service", "error", err)
+	}
+
+	var audiences []string
+	if oauthCfg.ClientID != "" {
+		audiences = append(audiences, oauthCfg.ClientID)
+	}
+
+	authorizer, err := auth.NewAuthorizer(
+		ctx,
+		idService,
+		10*time.Minute,
+		1*time.Minute,
+		audiences,
+		auth.DefaultIAPIssuer,
+		oauthCfg.DisableAuthentication,
+		[]byte(oauthCfg.JWTSecret),
+	)
+	if err != nil {
+		logging.Fatal(ctx, "Failed to create authorizer", "error", err)
+	}
+
+	return authorizer
 }
