@@ -213,6 +213,13 @@ describe('dashboard_models normalization', () => {
       expect(spec.type).toBe(PlotType.SCATTER);
       expect(spec.data?.metrics).toEqual([]);
     });
+
+    it('should return safe default PlotSpec when undefined is passed', () => {
+      const spec = normalizePlotSpec(undefined);
+      expect(spec.plotId).toBe('');
+      expect(spec.type).toBe(PlotType.SCATTER);
+      expect(spec.data?.metrics).toEqual([]);
+    });
   });
 
   describe('normalizeChart', () => {
@@ -239,6 +246,13 @@ describe('dashboard_models normalization', () => {
       expect(chart.title).toBe('Experiment 99');
       expect(chart.xid).toBe(99);
     });
+
+    it('should return safe default Chart when undefined is passed', () => {
+      const chart = normalizeChart(undefined);
+      expect(chart.title).toBe('Experiment 0');
+      expect(chart.xid).toBe(0);
+      expect(chart.plots).toEqual([]);
+    });
   });
 
   describe('normalizeDashboard', () => {
@@ -257,6 +271,11 @@ describe('dashboard_models normalization', () => {
       expect(dash.charts?.length).toBe(1);
       expect(dash.charts?.[0].title).toBe('Chart 101');
       expect(dash.createTime).toBe('2026-08-17T00:00:00Z');
+    });
+
+    it('should return safe default Dashboard when undefined is passed', () => {
+      const dash = normalizeDashboard(undefined);
+      expect(dash.title).toBe('Dashboard');
     });
   });
 });

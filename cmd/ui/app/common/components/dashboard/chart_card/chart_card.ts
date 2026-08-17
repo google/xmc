@@ -19,6 +19,7 @@ import {
   computed,
   inject,
   input,
+  OnDestroy,
   OnInit,
   output,
   signal,
@@ -29,6 +30,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { RouterModule } from '@angular/router';
+import { Subscription } from 'rxjs';
 
 import {
   Chart,
@@ -61,12 +63,13 @@ import { PlotCardComponent } from '../plot_card/plot_card';
     PlotCardComponent,
   ],
 })
-export class ChartCardComponent implements OnInit {
+export class ChartCardComponent implements OnInit, OnDestroy {
   readonly chart = input.required<Chart>();
   readonly isBaseline = input<boolean>(false);
   readonly remove = output<string>();
 
   private readonly dashboardService = inject(DashboardService);
+  private chartDataSub?: Subscription;
 
   protected readonly chartData = signal<ChartData | undefined>(undefined);
   protected readonly isLoading = signal<boolean>(false);
@@ -112,14 +115,19 @@ export class ChartCardComponent implements OnInit {
     this.fetchChartData();
   }
 
+  ngOnDestroy(): void {
+    this.chartDataSub?.unsubscribe();
+  }
+
   fetchChartData(): void {
     const c = this.chart();
     const chartName = c.name || `experiments/${c.xid}/charts/${c.title || 'default'}`;
 
     this.isLoading.set(true);
     this.error.set(null);
+    this.chartDataSub?.unsubscribe();
 
-    this.dashboardService.getChartData({ name: chartName }).subscribe({
+    this.chartDataSub = this.dashboardService.getChartData({ name: chartName }).subscribe({
       next: (data) => {
         this.chartData.set(data);
         this.isLoading.set(false);

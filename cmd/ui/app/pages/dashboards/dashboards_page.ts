@@ -193,8 +193,16 @@ export class DashboardsPage implements OnInit {
 
   onShare(): void {
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(window.location.href);
-      this.snackbar?.open?.('Dashboard link copied to clipboard');
+      navigator.clipboard
+        .writeText(window.location.href)
+        .then(() => {
+          this.snackbar?.open?.('Dashboard link copied to clipboard');
+        })
+        .catch(() => {
+          this.snackbar?.open?.('Failed to copy link to clipboard');
+        });
+    } else {
+      this.snackbar?.open?.('Clipboard API not supported');
     }
   }
 

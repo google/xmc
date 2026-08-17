@@ -194,6 +194,6 @@ export class DashboardService {
         params,
         withCredentials: true,
       })
-      .pipe(map((res) => normalizeChartData(res)!));
+      .pipe(map((res) => normalizeChartData(res) ?? { plotsData: [] }));
   }
 }

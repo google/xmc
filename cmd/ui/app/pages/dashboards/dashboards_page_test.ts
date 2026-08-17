@@ -128,4 +128,38 @@ describe('DashboardsPage', () => {
     pageComponent.onRemoveChart('experiments/234911124/charts/tuned_v2');
     expect(pageComponent.charts().length).toBe(2);
   });
+
+  describe('onShare', () => {
+    let snackbarOpenSpy: jasmine.Spy;
+
+    beforeEach(() => {
+      snackbarOpenSpy = jasmine.createSpy('open');
+      (pageComponent as unknown as { snackbar: { open: jasmine.Spy } }).snackbar = {
+        open: snackbarOpenSpy,
+      };
+    });
+
+    it('should open success snackbar when clipboard write succeeds', async () => {
+      const clipboardSpy = spyOn(navigator.clipboard, 'writeText').and.returnValue(
+        Promise.resolve(),
+      );
+
+      pageComponent.onShare();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(clipboardSpy).toHaveBeenCalled();
+      expect(snackbarOpenSpy).toHaveBeenCalledWith('Dashboard link copied to clipboard');
+    });
+
+    it('should open error snackbar when clipboard write fails', async () => {
+      spyOn(navigator.clipboard, 'writeText').and.returnValue(
+        Promise.reject(new Error('Permission denied')),
+      );
+
+      pageComponent.onShare();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(snackbarOpenSpy).toHaveBeenCalledWith('Failed to copy link to clipboard');
+    });
+  });
 });

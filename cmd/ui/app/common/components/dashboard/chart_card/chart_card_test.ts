@@ -19,7 +19,7 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 
 import {
   Chart,
@@ -124,5 +124,33 @@ describe('ChartCardComponent', () => {
   it('should render child summary box and plot card', async () => {
     expect(await harness.getSummaryBoxCount()).toBe(1);
     expect(await harness.getPlotCardCount()).toBe(2);
+  });
+
+  it('should unsubscribe and re-subscribe cleanly on consecutive fetchChartData calls', () => {
+    const subject = new Subject<ChartData>();
+    dashboardServiceSpy.getChartData.and.returnValue(subject);
+
+    const chartCard = fixture.debugElement.children[0].componentInstance as ChartCardComponent;
+    chartCard.fetchChartData();
+
+    const initialSub = (chartCard as unknown as { chartDataSub: { closed: boolean } }).chartDataSub;
+    expect(initialSub.closed).toBeFalse();
+
+    chartCard.fetchChartData();
+    expect(initialSub.closed).toBeTrue();
+  });
+
+  it('should unsubscribe on component destruction', () => {
+    const subject = new Subject<ChartData>();
+    dashboardServiceSpy.getChartData.and.returnValue(subject);
+
+    const chartCard = fixture.debugElement.children[0].componentInstance as ChartCardComponent;
+    chartCard.fetchChartData();
+
+    const sub = (chartCard as unknown as { chartDataSub: { closed: boolean } }).chartDataSub;
+    expect(sub?.closed).toBeFalse();
+
+    chartCard.ngOnDestroy();
+    expect(sub?.closed).toBeTrue();
   });
 });

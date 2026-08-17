@@ -529,7 +529,8 @@ export interface RawDashboard {
   update_time?: string;
 }
 
-export function normalizePlotSpec(p: RawPlotSpec): PlotSpec {
+export function normalizePlotSpec(p?: RawPlotSpec): PlotSpec {
+  if (!p) return { plotId: '', type: PlotType.SCATTER, data: { metrics: [] } };
   const result: PlotSpec = {
     plotId: p.plotId ?? p.plot_id ?? '',
     type: p.type ?? PlotType.SCATTER,
@@ -552,7 +553,8 @@ export function parseNumericId(id?: number | string | null): number | undefined 
   return isNaN(parsed) ? undefined : parsed;
 }
 
-export function normalizeChart(c: RawChart): Chart {
+export function normalizeChart(c?: RawChart): Chart {
+  if (!c) return { title: 'Experiment 0', xid: 0, plots: [] };
   const xid = parseNumericId(c.xid) ?? 0;
   const wid = parseNumericId(c.wid);
   const result: Chart = {
@@ -571,7 +573,8 @@ export function normalizeChart(c: RawChart): Chart {
   return result;
 }
 
-export function normalizeDashboard(d: RawDashboard): Dashboard {
+export function normalizeDashboard(d?: RawDashboard): Dashboard {
+  if (!d) return { title: 'Dashboard' };
   const result: Dashboard = {
     title: d.title ?? d.name ?? 'Dashboard',
   };
