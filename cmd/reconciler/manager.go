@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/google_api/option/option"
@@ -48,6 +49,8 @@ type Manager struct {
 	spannerClient *spanner.Client
 	kueueSync     *kueuesync.Reconciler
 	cleanup       func() error
+	closeOnce     sync.Once
+	closeErr      error
 }
 
 // HealthCheckers returns the client interfaces required for active readiness checks.
@@ -67,9 +70,10 @@ func (m *Manager) Close() error {
 	if m == nil || m.cleanup == nil {
 		return nil
 	}
-	cleanup := m.cleanup
-	m.cleanup = nil
-	return cleanup()
+	m.closeOnce.Do(func() {
+		m.closeErr = m.cleanup()
+	})
+	return m.closeErr
 }
 
 // Start starts background workers and the controller-runtime manager.

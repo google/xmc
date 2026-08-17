@@ -28,7 +28,6 @@ import (
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
 	"xmanager_cloud/kubernetes/reconciler/workload/workload"
 	"xmanager_cloud/logging/logging"
-	ss "xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/storage/storage"
 )
 
@@ -61,6 +60,10 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 	if p.mgr == nil {
 		return nil, nil, errors.New("manager cannot be nil")
 	}
+	if p.k8sClient == nil {
+		return nil, nil, errors.New("k8sClient cannot be nil")
+	}
+
 	cqReconciler, err := clusterqueue.NewReconciler(clusterqueue.Params{
 		Client: p.mgr.GetClient(),
 		Scheme: p.mgr.GetScheme(),
@@ -73,22 +76,13 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		return nil, nil, fmt.Errorf("unable to setup clusterqueue controller: %w", err)
 	}
 
-	var spannerStorage *ss.Storage
-	if p.storage != nil {
-		var ok bool
-		spannerStorage, ok = p.storage.(*ss.Storage)
-		if !ok {
-			return nil, nil, fmt.Errorf("storage is not *spanner.Storage: %T", p.storage)
-		}
-	}
-
 	batcher := shared.NewUpdateBatcher(
 		ctx,
 		&shared.BatcherConfig{
 			TickDuration:           p.cfg.BatcherTickDuration,
 			MaxParallelExperiments: p.cfg.MaxParallelExperiments,
 		},
-		spannerStorage,
+		p.storage,
 	)
 
 	jobsetReconciler, err := jobset.NewReconciler(jobset.Params{

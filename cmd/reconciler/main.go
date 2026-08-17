@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 
 	"go/google"
@@ -30,9 +31,15 @@ func main() {
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.RuntimeConfig.QuotaProjectID)
 	ctx = logging.WithLogger(ctx, logger)
 
+	if err := run(ctx, cfg); err != nil {
+		logging.Fatal(ctx, "Failed to run reconciler", "error", err)
+	}
+}
+
+func run(ctx context.Context, cfg Config) error {
 	mgr, err := NewManager(ctx, cfg)
 	if err != nil {
-		logging.Fatal(ctx, "Failed to initialize manager", "error", err)
+		return err
 	}
 	defer func() {
 		if err := mgr.Close(); err != nil {
@@ -40,7 +47,5 @@ func main() {
 		}
 	}()
 
-	if err := mgr.Start(ctx); err != nil {
-		logging.Fatal(ctx, "Failed to start manager", "error", err)
-	}
+	return mgr.Start(ctx)
 }

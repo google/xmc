@@ -17,6 +17,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -91,6 +93,28 @@ func TestManager_Close(t *testing.T) {
 		}
 		if cleanCount != 1 {
 			t.Errorf("cleanup called %d times, want 1", cleanCount)
+		}
+	})
+
+	t.Run("cleanup is concurrent safe", func(t *testing.T) {
+		var cleanCount int32
+		m := &Manager{
+			cleanup: func() error {
+				atomic.AddInt32(&cleanCount, 1)
+				return nil
+			},
+		}
+		var wg sync.WaitGroup
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_ = m.Close()
+			}()
+		}
+		wg.Wait()
+		if got := atomic.LoadInt32(&cleanCount); got != 1 {
+			t.Errorf("cleanup called %d times concurrently, want 1", got)
 		}
 	})
 }
