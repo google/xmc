@@ -158,17 +158,22 @@ class SPAHandlerTest(unittest.TestCase):
                 output = self._get_config_js_output(case["environ"])
                 self.assertIn(case["expected"], output)
 
-    def test_config_js_feature_flags(self):
+    def test_config_js_refresh_interval(self):
         cases = [
             {
-                "testcase_name": "performance_dashboard_enabled_by_default",
+                "testcase_name": "defaults",
                 "environ": {},
-                "expected": '"performanceDashboardEnabled": true',
+                "expected": "window.XMC_REFRESH_INTERVAL_MS=30000;",
             },
             {
-                "testcase_name": "performance_dashboard_disabled",
-                "environ": {"XMC_PERFORMANCE_DASHBOARD_ENABLED": "false"},
-                "expected": '"performanceDashboardEnabled": false',
+                "testcase_name": "custom_env",
+                "environ": {"XMC_REFRESH_INTERVAL_MS": "60000"},
+                "expected": "window.XMC_REFRESH_INTERVAL_MS=60000;",
+            },
+            {
+                "testcase_name": "invalid_env",
+                "environ": {"XMC_REFRESH_INTERVAL_MS": "invalid"},
+                "expected": "window.XMC_REFRESH_INTERVAL_MS=30000;",
             },
         ]
         for case in cases:
@@ -177,6 +182,50 @@ class SPAHandlerTest(unittest.TestCase):
                 self.mock_wfile.truncate(0)
                 output = self._get_config_js_output(case["environ"])
                 self.assertIn(case["expected"], output)
+
+    def test_config_js_feature_flags(self):
+        cases = [
+            {
+                "testcase_name": "all_enabled_by_default",
+                "environ": {},
+                "expected": '"performanceDashboardEnabled": true',
+            },
+            {
+                "testcase_name": "performance_dashboard_disabled",
+                "environ": {"XMC_PERFORMANCE_DASHBOARD_ENABLED": "false"},
+                "expected": '"performanceDashboardEnabled": false',
+            },
+            {
+                "testcase_name": "status_history_disabled",
+                "environ": {"XMC_STATUS_MESSAGE_HISTORY_ENABLED": "false"},
+                "expected": '"statusMessageHistoryEnabled": false',
+            },
+            {
+                "testcase_name": "admin_panel_disabled",
+                "environ": {"XMC_ADMIN_PANEL_ENABLED": "false"},
+                "expected": '"adminPanelEnabled": false',
+            },
+            {
+                "testcase_name": "resource_dashboard_disabled",
+                "environ": {"XMC_RESOURCE_DASHBOARD_ENABLED": "false"},
+                "expected": '"resourceDashboardEnabled": false',
+            },
+        ]
+        for case in cases:
+            with self.subTest(case["testcase_name"]):
+                self.mock_wfile.seek(0)
+                self.mock_wfile.truncate(0)
+                output = self._get_config_js_output(case["environ"])
+                self.assertIn(case["expected"], output)
+
+    def test_create_dashboard(self):
+        payload = json.dumps({"dashboard": {"title": "New Custom Dashboard", "charts": []}}).encode("utf-8")
+        handler = self._get_handler("/v1/dashboards", method="POST", body=payload)
+        handler.do_POST()
+        handler.send_response.assert_called_with(200)
+        response_body = json.loads(self.mock_wfile.getvalue().decode())
+        self.assertEqual(response_body["title"], "New Custom Dashboard")
+        self.assertTrue(response_body["name"].startswith("dashboards/"))
 
     def test_fallback_to_index(self):
         self.enter_context(
@@ -204,6 +253,34 @@ class SPAHandlerTest(unittest.TestCase):
         handler.do_GET()
 
         mock_do_get.assert_called_once_with(handler)
+
+    def test_no_fallback_if_file_exists(self):
+        self.enter_context(
+            mock.patch.object(os.path, "exists", return_value=True, autospec=True, spec_set=True)
+        )
+        self.enter_context(
+            mock.patch.object(
+                server.SPAHandler,
+                "translate_path",
+                return_value="/fake/file.js",
+                autospec=True,
+                spec_set=True,
+            )
+        )
+        mock_do_get = self.enter_context(
+            mock.patch.object(
+                http.server.SimpleHTTPRequestHandler,
+                "do_GET",
+                autospec=True,
+                spec_set=True,
+            )
+        )
+
+        handler = self._get_handler("/file.js")
+        handler.do_GET()
+
+        mock_do_get.assert_called_once_with(handler)
+        self.assertEqual(handler.path, "/file.js")
 
 
 if __name__ == "__main__":

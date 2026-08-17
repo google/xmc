@@ -369,7 +369,7 @@ export interface RawChartData {
 
 function assignDefined<T extends object>(target: T, source: Partial<T>): void {
   for (const [key, value] of Object.entries(source)) {
-    if (value !== undefined) {
+    if (value !== undefined && value !== null) {
       (target as Record<string, unknown>)[key] = value;
     }
   }
@@ -426,7 +426,7 @@ export function normalizeSeriesData(s?: RawSeriesData): SeriesData | undefined {
   assignDefined(res, {
     metricName: s.metricName ?? s.metric_name,
     workUnitId: s.workUnitId ?? s.work_unit_id,
-    xid: s.xid,
+    xid: parseNumericId(s.xid),
     seriesLabel: s.seriesLabel ?? s.series_label,
     isBaseline: s.isBaseline ?? s.is_baseline,
   });
@@ -483,8 +483,8 @@ export function normalizeChartData(cd?: RawChartData): ChartData | undefined {
   const rawPlots = cd.plotsData ?? cd.plots_data ?? [];
   return {
     name: cd.name,
-    xid: cd.xid,
-    wid: cd.wid,
+    xid: parseNumericId(cd.xid),
+    wid: parseNumericId(cd.wid),
     plotsData: rawPlots.map((p) => normalizePlotData(p)).filter(Boolean) as PlotData[],
   };
 }
@@ -548,9 +548,10 @@ export function normalizePlotSpec(p: RawPlotSpec): PlotSpec {
   return result;
 }
 
-function parseNumericId(id?: number | string): number | undefined {
-  if (id === undefined) return undefined;
-  return typeof id === 'string' ? parseInt(id, 10) : id;
+export function parseNumericId(id?: number | string | null): number | undefined {
+  if (id === undefined || id === null || id === '') return undefined;
+  const parsed = typeof id === 'string' ? parseInt(id, 10) : id;
+  return isNaN(parsed) ? undefined : parsed;
 }
 
 export function normalizeChart(c: RawChart): Chart {
@@ -564,7 +565,7 @@ export function normalizeChart(c: RawChart): Chart {
   assignDefined(result, {
     name: c.name,
     description: c.description,
-    wid: wid !== undefined && !isNaN(wid) ? wid : undefined,
+    wid,
     plotLayout: c.plotLayout ?? c.plot_layout,
     createTime: c.createTime ?? c.create_time,
     updateTime: c.updateTime ?? c.update_time,

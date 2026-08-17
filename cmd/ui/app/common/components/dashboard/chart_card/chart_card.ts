@@ -68,9 +68,9 @@ export class ChartCardComponent implements OnInit {
 
   private readonly dashboardService = inject(DashboardService);
 
-  readonly chartData = signal<ChartData | undefined>(undefined);
-  readonly isLoading = signal<boolean>(false);
-  readonly error = signal<string | null>(null);
+  protected readonly chartData = signal<ChartData | undefined>(undefined);
+  protected readonly isLoading = signal<boolean>(false);
+  protected readonly error = signal<string | null>(null);
 
   protected readonly headerTitle = computed(() => {
     const c = this.chart();

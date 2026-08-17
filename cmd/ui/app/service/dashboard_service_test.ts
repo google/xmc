@@ -31,6 +31,7 @@ import {
   ListDashboardsRequest,
   ListDashboardsResponse,
   PlotType,
+  RawChartData,
   UpdateDashboardRequest,
 } from './dashboard_models';
 import { DashboardService } from './dashboard_service';
@@ -79,8 +80,8 @@ describe('DashboardService', () => {
       try {
         await firstValueFrom(state.service.getDashboard(''));
         fail('expected error');
-      } catch (err: any) {
-        expect(err.message).toContain('Dashboard resource name is required');
+      } catch (err: unknown) {
+        expect((err as Error).message).toContain('Dashboard resource name is required');
       }
     });
   });
@@ -219,38 +220,44 @@ describe('DashboardService', () => {
   });
 
   describe('getChartData', () => {
-    const mockChartData: ChartData = {
+    const mockRawChartData: RawChartData = {
       name: 'experiments/9001/charts/summary_single',
       xid: '9001',
       wid: '1',
-      plotsData: [
+      plots_data: [
         {
-          plotId: 'kpi_loss',
+          plot_id: 'kpi_loss',
           type: PlotType.SUMMARY_BOX,
-          summaryData: {
-            metricName: 'train/loss',
-            latestValue: 0.1631,
-            meanValue: 0.7398,
+          content: {
+            summary_data: {
+              metric_name: 'train/loss',
+              latest_value: 0.1631,
+              mean_value: 0.7398,
+            },
           },
         },
       ],
     };
 
-    it('should fetch chart metrics data via custom :getData endpoint', async () => {
+    it('should fetch and normalize chart metrics data via custom :getData endpoint', async () => {
       const request: GetChartDataRequest = {
         name: 'experiments/9001/charts/summary_single',
         chartWidthPixels: 800,
       };
-      const responsePromise = firstValueFrom(state.service.getChartData(request));
+      const responsePromise = firstValueFrom<ChartData>(state.service.getChartData(request));
 
       const req = state.httpMock.expectOne(
         `${XMC_API_DOMAIN}/experiments/9001/charts/summary_single:getData?chartWidthPixels=800`,
       );
       expect(req.request.method).toBe('GET');
-      req.flush(mockChartData);
+      req.flush(mockRawChartData);
 
       const response = await responsePromise;
-      expect(response).toEqual(mockChartData);
+      expect(response.name).toBe('experiments/9001/charts/summary_single');
+      expect(response.xid).toBe(9001);
+      expect(response.wid).toBe(1);
+      expect(response.plotsData?.[0].plotId).toBe('kpi_loss');
+      expect(response.plotsData?.[0].summaryData?.latestValue).toBe(0.1631);
     });
   });
 });

@@ -20,7 +20,7 @@ import json
 import os
 import re
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 
 def get_bool_env(name: str, default: bool = False) -> bool:
@@ -200,7 +200,10 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         if path == "/v1/dashboards":
-            length = int(self.headers.get("Content-Length", 0))
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                length = 0
             body = self.rfile.read(length) if length > 0 else b"{}"
             try:
                 payload = json.loads(body.decode("utf-8"))
@@ -219,9 +222,10 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         self.send_json(404, {"error": "Not found"})
 
     def _handle_config_js(self) -> None:
-        """Serves runtime config.js for the Angular frontend."""
+        """Generates dynamic runtime config.js containing API url and feature flags."""
         self.send_response(200)
         self.send_header("Content-type", "application/javascript")
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.end_headers()
 
         api_url = os.environ.get("XMC_API_URL", "/v1")
@@ -255,8 +259,8 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         user = {
             "email": "developer@google.com",
             "name": "Local Developer",
-            "pictureUrl": "",
-            "sessionExpiresAt": 9999999999,
+            "pictureUrl": "https://lh3.googleusercontent.com/a/default-user",
+            "sessionExpiresAt": 1799999999,
             "allowedDomains": ["google.com"],
         }
         self.send_json(200, user)
@@ -346,7 +350,8 @@ def main() -> None:
     serve_dir = args.dir or find_dist_dir()
     SPAHandler.initialize_mock_data()
 
-    handler_factory = lambda *h_args, **h_kwargs: SPAHandler(*h_args, directory=serve_dir, **h_kwargs)
+    def handler_factory(*h_args: Any, **h_kwargs: Any) -> SPAHandler:
+        return SPAHandler(*h_args, directory=serve_dir, **h_kwargs)
 
     server_address = ("0.0.0.0", args.port)
     httpd = http.server.ThreadingHTTPServer(server_address, handler_factory)

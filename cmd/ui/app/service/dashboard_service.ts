@@ -27,8 +27,11 @@ import {
   GetChartDataRequest,
   ListDashboardsRequest,
   ListDashboardsResponse,
+  normalizeChart,
   normalizeChartData,
   normalizeDashboard,
+  RawChart,
+  RawChartData,
   RawDashboard,
   UpdateDashboardRequest,
 } from './dashboard_models';
@@ -48,37 +51,35 @@ export class DashboardService {
       return throwError(() => new Error('Dashboard resource name is required'));
     }
     return this.http
-      .get<RawDashboard>(`${XMC_API_DOMAIN}/${name}`, {
-        withCredentials: true,
-      })
+      .get<RawDashboard>(`${XMC_API_DOMAIN}/${name}`, { withCredentials: true })
       .pipe(map(normalizeDashboard));
   }
 
   /**
    * Lists available dashboards with optional pagination and filtering.
    */
-  listDashboards(request?: ListDashboardsRequest): Observable<ListDashboardsResponse> {
-    const paramsMap: Record<string, string | number> = {};
-    if (request?.pageSize) {
-      paramsMap['pageSize'] = request.pageSize;
+  listDashboards(request: ListDashboardsRequest = {}): Observable<ListDashboardsResponse> {
+    const paramsMap: Record<string, string> = {};
+    if (request.pageSize) {
+      paramsMap['pageSize'] = request.pageSize.toString();
     }
-    if (request?.pageToken) {
+    if (request.pageToken) {
       paramsMap['pageToken'] = request.pageToken;
     }
-    if (request?.filter) {
+    if (request.filter) {
       paramsMap['filter'] = request.filter;
     }
-
     const params = new HttpParams({ fromObject: paramsMap });
     return this.http
       .get<{
         dashboards?: RawDashboard[];
         nextPageToken?: string;
+        next_page_token?: string;
       }>(`${XMC_API_DOMAIN}/dashboards`, { params, withCredentials: true })
       .pipe(
         map((res) => ({
           dashboards: (res.dashboards ?? []).map(normalizeDashboard),
-          nextPageToken: res.nextPageToken,
+          nextPageToken: res.nextPageToken ?? res.next_page_token,
         })),
       );
   }
@@ -95,10 +96,12 @@ export class DashboardService {
       paramsMap['dashboardId'] = request.dashboardId;
     }
     const params = new HttpParams({ fromObject: paramsMap });
-    return this.http.post<Dashboard>(`${XMC_API_DOMAIN}/dashboards`, request.dashboard, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .post<RawDashboard>(`${XMC_API_DOMAIN}/dashboards`, request.dashboard, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map(normalizeDashboard));
   }
 
   /**
@@ -113,11 +116,13 @@ export class DashboardService {
       paramsMap['updateMask'] = request.updateMask;
     }
     const params = new HttpParams({ fromObject: paramsMap });
-    return this.http.patch<Dashboard>(
-      `${XMC_API_DOMAIN}/${request.dashboard.name}`,
-      request.dashboard,
-      { params, withCredentials: true },
-    );
+    return this.http
+      .patch<RawDashboard>(
+        `${XMC_API_DOMAIN}/${request.dashboard.name}`,
+        request.dashboard,
+        { params, withCredentials: true },
+      )
+      .pipe(map(normalizeDashboard));
   }
 
   /**
@@ -144,10 +149,12 @@ export class DashboardService {
       paramsMap['chartId'] = request.chartId;
     }
     const params = new HttpParams({ fromObject: paramsMap });
-    return this.http.post<Chart>(`${XMC_API_DOMAIN}/${request.parent}/charts`, request.chart, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .post<RawChart>(`${XMC_API_DOMAIN}/${request.parent}/charts`, request.chart, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map(normalizeChart));
   }
 
   /**
@@ -157,9 +164,11 @@ export class DashboardService {
     if (!name) {
       return throwError(() => new Error('Chart resource name is required'));
     }
-    return this.http.get<Chart>(`${XMC_API_DOMAIN}/${name}`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<RawChart>(`${XMC_API_DOMAIN}/${name}`, {
+        withCredentials: true,
+      })
+      .pipe(map(normalizeChart));
   }
 
   /**
@@ -182,7 +191,7 @@ export class DashboardService {
 
     const params = new HttpParams({ fromObject: paramsMap });
     return this.http
-      .get<ChartData>(`${XMC_API_DOMAIN}/${request.name}:getData`, {
+      .get<RawChartData>(`${XMC_API_DOMAIN}/${request.name}:getData`, {
         params,
         withCredentials: true,
       })
