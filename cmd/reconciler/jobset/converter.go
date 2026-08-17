@@ -211,16 +211,18 @@ func ToWorkUnitState(jobSet *v1alpha2.JobSet) spb.WorkUnitStatus_WorkUnitState {
 }
 
 // targetSuccessPolicySatisfied returns true if the JobSet defines TargetReplicatedJobs in its
-// SuccessPolicy and all target replicated jobs have fully succeeded (Succeeded >= Replicas).
+// SuccessPolicy and the target replicated jobs have succeeded according to SuccessPolicy.Operator
+// (OperatorAll requires all target replicated jobs to achieve Succeeded >= Replicas, whereas
+// OperatorAny requires at least one target replicated job to achieve Succeeded >= Replicas).
 func targetSuccessPolicySatisfied(jobSet *v1alpha2.JobSet) bool {
 	if jobSet.Spec.SuccessPolicy == nil || len(jobSet.Spec.SuccessPolicy.TargetReplicatedJobs) == 0 {
 		return false
 	}
-	expectedReplicas := make(map[string]int32)
+	expectedReplicas := make(map[string]int32, len(jobSet.Spec.ReplicatedJobs))
 	for _, rj := range jobSet.Spec.ReplicatedJobs {
 		expectedReplicas[rj.Name] = rj.Replicas
 	}
-	succeededJobs := make(map[string]bool)
+	succeededJobs := make(map[string]bool, len(jobSet.Status.ReplicatedJobsStatus))
 	for _, rjs := range jobSet.Status.ReplicatedJobsStatus {
 		expected, ok := expectedReplicas[rjs.Name]
 		if ok && expected > 0 && rjs.Succeeded >= expected {
