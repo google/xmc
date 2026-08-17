@@ -188,3 +188,13 @@ func TestManager_Start(t *testing.T) {
 		t.Fatalf("m.Start() unexpected error: %v", err)
 	}
 }
+
+func TestInitCtrlManager_NoKubeconfig(t *testing.T) {
+	t.Setenv("KUBECONFIG", "/nonexistent/kubeconfig")
+	_, err := initCtrlManager(context.Background(), Config{})
+	if err == nil {
+		t.Log("initCtrlManager unexpectedly found kubeconfig")
+	} else {
+		t.Logf("initCtrlManager returned expected error on missing kubeconfig: %v", err)
+	}
+}

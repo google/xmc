@@ -133,7 +133,10 @@ func initCtrlManager(ctx context.Context, cfg Config) (ctrl.Manager, error) {
 	v1alpha2.AddToScheme(scheme)
 	v1beta1.AddToScheme(scheme)
 
-	k8sConfig := ctrl.GetConfigOrDie()
+	k8sConfig, err := ctrl.GetConfig()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get kubeconfig: %w", err)
+	}
 	k8sConfig.QPS = float32(cfg.KubeAPIQPS)
 	k8sConfig.Burst = cfg.KubeAPIBurst
 
