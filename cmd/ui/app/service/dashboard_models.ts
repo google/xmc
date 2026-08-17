@@ -367,75 +367,69 @@ export interface RawChartData {
   plots_data?: RawPlotData[];
 }
 
+function assignDefined<T extends object>(target: T, source: Partial<T>): void {
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== undefined) {
+      (target as Record<string, unknown>)[key] = value;
+    }
+  }
+}
+
+function extractNumericSummaryValues(raw: RawSummaryBoxValue): Partial<SummaryBoxValue> {
+  return {
+    latestValue: raw.latestValue ?? raw.latest_value,
+    minValue: raw.minValue ?? raw.min_value,
+    maxValue: raw.maxValue ?? raw.max_value,
+    meanValue: raw.meanValue ?? raw.mean_value,
+    baselineValue: raw.baselineValue ?? raw.baseline_value,
+    polarity: raw.polarity,
+  };
+}
+
+function extractMetaSummaryValues(raw: RawSummaryBoxValue): Partial<SummaryBoxValue> {
+  return {
+    metricName: raw.metricName ?? raw.metric_name,
+    latestStep: raw.latestStep ?? raw.latest_step,
+    latestIteration: raw.latestIteration ?? raw.latest_iteration,
+    latestTimestamp: raw.latestTimestamp ?? raw.latest_timestamp,
+    deltaVsBaseline: raw.deltaVsBaseline ?? raw.delta_vs_baseline,
+    deltaPercentVsBaseline: raw.deltaPercentVsBaseline ?? raw.delta_percent_vs_baseline,
+  };
+}
+
 export function normalizeSummaryBoxValue(raw?: RawSummaryBoxValue): SummaryBoxValue | undefined {
   if (!raw) return undefined;
   const result: SummaryBoxValue = {};
-
-  const metric = raw.metricName ?? raw.metric_name;
-  if (metric !== undefined) result.metricName = metric;
-
-  const latest = raw.latestValue ?? raw.latest_value;
-  if (latest !== undefined) result.latestValue = latest;
-
-  const min = raw.minValue ?? raw.min_value;
-  if (min !== undefined) result.minValue = min;
-
-  const max = raw.maxValue ?? raw.max_value;
-  if (max !== undefined) result.maxValue = max;
-
-  const mean = raw.meanValue ?? raw.mean_value;
-  if (mean !== undefined) result.meanValue = mean;
-
-  const step = raw.latestStep ?? raw.latest_step;
-  if (step !== undefined) result.latestStep = step;
-
-  const iter = raw.latestIteration ?? raw.latest_iteration;
-  if (iter !== undefined) result.latestIteration = iter;
-
-  const ts = raw.latestTimestamp ?? raw.latest_timestamp;
-  if (ts !== undefined) result.latestTimestamp = ts;
-
-  const delta = raw.deltaVsBaseline ?? raw.delta_vs_baseline;
-  if (delta !== undefined) result.deltaVsBaseline = delta;
-
-  const deltaPct = raw.deltaPercentVsBaseline ?? raw.delta_percent_vs_baseline;
-  if (deltaPct !== undefined) result.deltaPercentVsBaseline = deltaPct;
-
-  const baseline = raw.baselineValue ?? raw.baseline_value;
-  if (baseline !== undefined) result.baselineValue = baseline;
-
-  if (raw.polarity !== undefined) result.polarity = raw.polarity;
-
+  assignDefined(result, extractNumericSummaryValues(raw));
+  assignDefined(result, extractMetaSummaryValues(raw));
   return result;
 }
 
 export function normalizeSeriesPoint(p: RawSeriesPoint): SeriesPoint {
   const pt: SeriesPoint = {};
-  if (p.step !== undefined) pt.step = p.step;
-  if (p.iteration !== undefined) pt.iteration = p.iteration;
-  if (p.timestamp !== undefined) pt.timestamp = p.timestamp;
-  const avg = p.avgValue ?? p.avg_value;
-  if (avg !== undefined) pt.avgValue = avg;
-  const min = p.minValue ?? p.min_value;
-  if (min !== undefined) pt.minValue = min;
-  const max = p.maxValue ?? p.max_value;
-  if (max !== undefined) pt.maxValue = max;
+  assignDefined(pt, {
+    step: p.step,
+    iteration: p.iteration,
+    timestamp: p.timestamp,
+    avgValue: p.avgValue ?? p.avg_value,
+    minValue: p.minValue ?? p.min_value,
+    maxValue: p.maxValue ?? p.max_value,
+  });
   return pt;
 }
 
 export function normalizeSeriesData(s?: RawSeriesData): SeriesData | undefined {
   if (!s) return undefined;
-  const points = (s.points ?? []).map((p) => normalizeSeriesPoint(p));
-  const res: SeriesData = { points };
-  const metric = s.metricName ?? s.metric_name;
-  if (metric !== undefined) res.metricName = metric;
-  const wu = s.workUnitId ?? s.work_unit_id;
-  if (wu !== undefined) res.workUnitId = wu;
-  if (s.xid !== undefined) res.xid = s.xid;
-  const label = s.seriesLabel ?? s.series_label;
-  if (label !== undefined) res.seriesLabel = label;
-  const base = s.isBaseline ?? s.is_baseline;
-  if (base !== undefined) res.isBaseline = base;
+  const res: SeriesData = {
+    points: (s.points ?? []).map(normalizeSeriesPoint),
+  };
+  assignDefined(res, {
+    metricName: s.metricName ?? s.metric_name,
+    workUnitId: s.workUnitId ?? s.work_unit_id,
+    xid: s.xid,
+    seriesLabel: s.seriesLabel ?? s.series_label,
+    isBaseline: s.isBaseline ?? s.is_baseline,
+  });
   return res;
 }
 
@@ -453,44 +447,34 @@ function extractRawBar(pd: RawPlotData): RawBarData | undefined {
   return pd.barData ?? pd.bar_data ?? pd.content?.barData ?? pd.content?.bar_data;
 }
 
+function normalizeRawBarData(rawBar?: RawBarData): BarData | undefined {
+  if (!rawBar) return undefined;
+  return {
+    metricName: rawBar.metricName ?? rawBar.metric_name,
+    buckets: (rawBar.buckets ?? []).map((b) => ({
+      categoryOrBin: b.categoryOrBin ?? b.category_or_bin,
+      valueOrCount: b.valueOrCount ?? b.value_or_count,
+    })),
+  };
+}
+
 export function normalizePlotData(pd?: RawPlotData): PlotData | undefined {
   if (!pd) return undefined;
-  const rawBar = extractRawBar(pd);
   const rawSeriesList = pd.seriesList ?? pd.series_list;
-  const rawSummary = extractRawSummary(pd);
-  const rawScatter = extractRawScatter(pd);
+  const seriesList = rawSeriesList
+    ?.map(normalizeSeriesData)
+    .filter((s): s is SeriesData => !!s);
 
   const result: PlotData = {
     plotId: pd.plotId ?? pd.plot_id ?? '',
     type: pd.type,
   };
-
-  const summary = normalizeSummaryBoxValue(rawSummary);
-  if (summary !== undefined) {
-    result.summaryData = summary;
-  }
-
-  const scatter = normalizeSeriesData(rawScatter);
-  if (scatter !== undefined) {
-    result.scatterSeries = scatter;
-  }
-
-  if (rawBar) {
-    result.barData = {
-      metricName: rawBar.metricName ?? rawBar.metric_name,
-      buckets: (rawBar.buckets ?? []).map((b) => ({
-        categoryOrBin: b.categoryOrBin ?? b.category_or_bin,
-        valueOrCount: b.valueOrCount ?? b.value_or_count,
-      })),
-    };
-  }
-
-  if (rawSeriesList) {
-    result.seriesList = rawSeriesList
-      .map((s) => normalizeSeriesData(s))
-      .filter(Boolean) as SeriesData[];
-  }
-
+  assignDefined(result, {
+    summaryData: normalizeSummaryBoxValue(extractRawSummary(pd)),
+    scatterSeries: normalizeSeriesData(extractRawScatter(pd)),
+    barData: normalizeRawBarData(extractRawBar(pd)),
+    seriesList,
+  });
   return result;
 }
 
@@ -553,33 +537,38 @@ export function normalizePlotSpec(p: RawPlotSpec): PlotSpec {
     type: p.type ?? PlotType.SCATTER,
     data: p.data ?? { metrics: [] },
   };
-  if (p.title !== undefined) result.title = p.title;
-  if (p.mapping !== undefined) result.mapping = p.mapping;
-  if (p.geoms !== undefined) result.geoms = p.geoms;
-  if (p.stats !== undefined) result.stats = p.stats;
-  if (p.coords !== undefined) result.coords = p.coords;
-  if (p.facets !== undefined) result.facets = p.facets;
+  assignDefined(result, {
+    title: p.title,
+    mapping: p.mapping,
+    geoms: p.geoms,
+    stats: p.stats,
+    coords: p.coords,
+    facets: p.facets,
+  });
   return result;
 }
 
+function parseNumericId(id?: number | string): number | undefined {
+  if (id === undefined) return undefined;
+  return typeof id === 'string' ? parseInt(id, 10) : id;
+}
+
 export function normalizeChart(c: RawChart): Chart {
-  const xidNum = typeof c.xid === 'string' ? parseInt(c.xid, 10) : (c.xid ?? 0);
-  const widNum = typeof c.wid === 'string' ? parseInt(c.wid, 10) : c.wid;
-  const plots = (c.plots ?? []).map((p) => normalizePlotSpec(p));
+  const xid = parseNumericId(c.xid) ?? 0;
+  const wid = parseNumericId(c.wid);
   const result: Chart = {
-    title: c.title ?? `Experiment ${xidNum}`,
-    xid: xidNum,
-    plots,
+    title: c.title ?? `Experiment ${xid}`,
+    xid,
+    plots: (c.plots ?? []).map(normalizePlotSpec),
   };
-  if (c.name !== undefined) result.name = c.name;
-  if (c.description !== undefined) result.description = c.description;
-  if (widNum !== undefined && !isNaN(widNum)) result.wid = widNum;
-  const layout = c.plotLayout ?? c.plot_layout;
-  if (layout !== undefined) result.plotLayout = layout;
-  const createTime = c.createTime ?? c.create_time;
-  if (createTime !== undefined) result.createTime = createTime;
-  const updateTime = c.updateTime ?? c.update_time;
-  if (updateTime !== undefined) result.updateTime = updateTime;
+  assignDefined(result, {
+    name: c.name,
+    description: c.description,
+    wid: wid !== undefined && !isNaN(wid) ? wid : undefined,
+    plotLayout: c.plotLayout ?? c.plot_layout,
+    createTime: c.createTime ?? c.create_time,
+    updateTime: c.updateTime ?? c.update_time,
+  });
   return result;
 }
 
@@ -587,17 +576,14 @@ export function normalizeDashboard(d: RawDashboard): Dashboard {
   const result: Dashboard = {
     title: d.title ?? d.name ?? 'Dashboard',
   };
-  if (d.name !== undefined) result.name = d.name;
-  if (d.description !== undefined) result.description = d.description;
-  if (d.owner !== undefined) result.owner = d.owner;
-  if (d.charts !== undefined) {
-    result.charts = d.charts.map((c) => normalizeChart(c));
-  }
-  const chartLayout = d.chartLayout ?? d.chart_layout;
-  if (chartLayout !== undefined) result.chartLayout = chartLayout;
-  const createTime = d.createTime ?? d.create_time;
-  if (createTime !== undefined) result.createTime = createTime;
-  const updateTime = d.updateTime ?? d.update_time;
-  if (updateTime !== undefined) result.updateTime = updateTime;
+  assignDefined(result, {
+    name: d.name,
+    description: d.description,
+    owner: d.owner,
+    charts: d.charts?.map(normalizeChart),
+    chartLayout: d.chartLayout ?? d.chart_layout,
+    createTime: d.createTime ?? d.create_time,
+    updateTime: d.updateTime ?? d.update_time,
+  });
   return result;
 }

@@ -23,7 +23,7 @@ import {
   input,
   OnDestroy,
   output,
-  ViewChild,
+  viewChild,
 } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
@@ -69,7 +69,7 @@ export class PlotCardComponent implements AfterViewInit, OnDestroy {
 
   readonly exportImage = output<string>();
 
-  @ViewChild('chartCanvas') chartCanvas?: ElementRef<HTMLDivElement>;
+  readonly chartCanvas = viewChild<ElementRef<HTMLDivElement>>('chartCanvas');
 
   private chartInstance?: echarts.ECharts;
   private resizeObserver?: ResizeObserver;
@@ -125,9 +125,10 @@ export class PlotCardComponent implements AfterViewInit, OnDestroy {
    * Initializes the ECharts instance on the canvas container element.
    */
   private initChart(): void {
-    if (!this.chartCanvas?.nativeElement) return;
+    const canvasEl = this.chartCanvas()?.nativeElement;
+    if (!canvasEl) return;
 
-    this.chartInstance = echarts.init(this.chartCanvas.nativeElement);
+    this.chartInstance = echarts.init(canvasEl);
     this.renderChart();
 
     if (typeof ResizeObserver !== 'undefined') {
@@ -145,7 +146,7 @@ export class PlotCardComponent implements AfterViewInit, OnDestroy {
           this.chartInstance?.resize();
         });
       });
-      this.resizeObserver.observe(this.chartCanvas.nativeElement);
+      this.resizeObserver.observe(canvasEl);
     }
   }
 
