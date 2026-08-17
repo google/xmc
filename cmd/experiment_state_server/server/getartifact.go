@@ -26,11 +26,11 @@ import (
 )
 
 // GetArtifact orchestrates the retrieval of a single artifact by its ID.
-func (s *Server) GetArtifact(ctx context.Context, req *apipb.GetArtifactRequest) (*msgpb.Artifact, error) {
+func (h *ArtifactHandler) GetArtifact(ctx context.Context, req *apipb.GetArtifactRequest) (*msgpb.Artifact, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Received GetArtifact request", "request", req)
 
-	_, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	_, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func (s *Server) GetArtifact(ctx context.Context, req *apipb.GetArtifactRequest)
 
 	// 3. Retrieve the XID entry from the XID service. This is for authorization purposes and to get
 	// the ACLs.
-	xidEntry, err := s.getXid(ctx, validator.ConstructXIDName(aid))
+	xidEntry, err := h.getXid(ctx, validator.ConstructXIDName(aid))
 	if err != nil {
 		switch status.ExtractCanonicalCode(err) {
 		case status.PermissionDenied:
@@ -63,7 +63,7 @@ func (s *Server) GetArtifact(ctx context.Context, req *apipb.GetArtifactRequest)
 
 	// 4. Retrieve the artifact from the storage layer.
 	logging.Info(ctx, "Fetching artifact from storage")
-	artifact, err := s.storage.FetchArtifact(ctx, aid)
+	artifact, err := h.storage.FetchArtifact(ctx, aid)
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.NotFound {
 			logging.Warn(ctx, "Artifact not found in storage")
@@ -75,7 +75,7 @@ func (s *Server) GetArtifact(ctx context.Context, req *apipb.GetArtifactRequest)
 	}
 	ctx = logging.WithArtifactParent(ctx, artifact.GetParent())
 
-	s.enrichArtifactOutputFields(ctx, artifact)
+	h.enrichArtifactOutputFields(ctx, artifact)
 
 	// 4.1. Attach the ACLs from the XID entry to the artifact.
 	artifact.Acls = xidEntry.GetAcls()
@@ -86,18 +86,18 @@ func (s *Server) GetArtifact(ctx context.Context, req *apipb.GetArtifactRequest)
 }
 
 // enrichArtifactOutputFields enriches output fields of an artifact if it is in the EXECUTION or OUTPUT phase.
-func (s *Server) enrichArtifactOutputFields(ctx context.Context, artifact *msgpb.Artifact) {
+func (h *ArtifactHandler) enrichArtifactOutputFields(ctx context.Context, artifact *msgpb.Artifact) {
 	if artifact == nil {
 		return
 	}
 	if phase := artifact.GetLifecyclePhase(); phase != msgpb.Artifact_EXECUTION && phase != msgpb.Artifact_OUTPUT {
 		return
 	}
-	s.enrichManagedXprof(ctx, artifact)
+	h.enrichManagedXprof(ctx, artifact)
 }
 
 // enrichManagedXprof enriches the artifact with MLRun URL if it is a ManagedXprof payload.
-func (s *Server) enrichManagedXprof(ctx context.Context, artifact *msgpb.Artifact) {
+func (h *ArtifactHandler) enrichManagedXprof(ctx context.Context, artifact *msgpb.Artifact) {
 	xprof := artifact.GetPayload().GetManagedXprof()
 	if xprof == nil || xprof.GetXprof().GetXprofUrl() != "" {
 		return
@@ -112,7 +112,7 @@ func (s *Server) enrichManagedXprof(ctx context.Context, artifact *msgpb.Artifac
 		return
 	}
 
-	execution, err := s.storage.FetchCurrentWorkUnitExecution(ctx, xid, wid)
+	execution, err := h.storage.FetchCurrentWorkUnitExecution(ctx, xid, wid)
 	if err != nil {
 		// A missing execution is an expected pre-execution state: the artifact can
 		// be read during work unit creation, before any execution exists. Skip

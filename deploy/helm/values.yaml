@@ -125,6 +125,7 @@ auth:
   allowedDomains: "YOUR_ALLOWED_DOMAINS"
   allowedEmails: "YOUR_ALLOWED_EMAILS"
   authorizedIamRole: "projects/YOUR_GCP_PROJECT_ID/roles/YOUR_ROLE"
+  adminIamRole: "roles/owner"
 
 # Overrides for the xid-service Spanner database. If empty, the conventional
 # name projects/<projectId>/instances/xmc-<environment>/databases/xids-db-<environment>

@@ -29,13 +29,13 @@ import (
 )
 
 // UpdateExperiment updates an experiment's data.
-func (s *Server) UpdateExperiment(ctx context.Context, req *apipb.UpdateExperimentRequest) (*msgpb.Experiment, error) {
+func (h *ExperimentHandler) UpdateExperiment(ctx context.Context, req *apipb.UpdateExperimentRequest) (*msgpb.Experiment, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Update experiment", "request", req)
 
 	// 1. Authenticate the user.
 	logging.Debug(ctx, "Extracting user identity from context")
-	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	email, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +60,7 @@ func (s *Server) UpdateExperiment(ctx context.Context, req *apipb.UpdateExperime
 	}
 
 	// 3. Authorize the user to update the experiment.
-	isAuthorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
+	isAuthorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (s *Server) UpdateExperiment(ctx context.Context, req *apipb.UpdateExperime
 		Experiment: req.GetExperiment(),
 		UpdateMask: req.GetUpdateMask(),
 	}
-	res, err := s.storage.UpdateExperiment(ctx, update)
+	res, err := h.storage.UpdateExperiment(ctx, update)
 	if err != nil {
 		logging.Error(ctx, "Failed to update experiment", "error", err)
 		return nil, fmt.Errorf("failed to update experiment %s: %w (%v)", name, status.ErrInternal, err)
@@ -100,7 +100,7 @@ func (s *Server) UpdateExperiment(ctx context.Context, req *apipb.UpdateExperime
 			UpdateMask: updateMask,
 		}
 
-		if _, err := s.xidClient.UpdateXidEntry(propagateIAPJWT(ctx), request); err != nil {
+		if _, err := h.xidClient.UpdateXidEntry(propagateIAPJWT(ctx), request); err != nil {
 			logging.Error(ctx, "Failed to update XID entry", "error", err)
 			return nil, fmt.Errorf("failed to update XID entry, experiment resource may have been partially updated: %w (%v)", status.ErrInternal, err)
 		}
@@ -108,7 +108,7 @@ func (s *Server) UpdateExperiment(ctx context.Context, req *apipb.UpdateExperime
 	} else {
 		// 6.1. Fetch the XID entry from the XID service if required.
 		// This is required to populate the ACLs in the response.
-		currentXidEntry, err := s.getXid(ctx, validator.ConstructXIDName(xid))
+		currentXidEntry, err := h.getXid(ctx, validator.ConstructXIDName(xid))
 		if err != nil {
 			logging.Error(ctx, "XID lookup failed", "error", err)
 			return nil, fmt.Errorf("XID lookup failed for XID %d: %w (%v)", xid, status.ErrInternal, err)

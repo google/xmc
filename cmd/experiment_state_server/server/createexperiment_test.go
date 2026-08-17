@@ -25,7 +25,6 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/experiment_state_server/config"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
 
@@ -192,9 +191,6 @@ func TestCreateExperiment_BadPaths(t *testing.T) {
 
 func TestCreateExperiment_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{}
-	// authorizer is used for the non-auth_fails cases.
-	authorizer := createTestAuthorizer(ctx, t)
 
 	goodExp := &msgpb.Experiment{
 		Title: "test experiment",
@@ -251,11 +247,17 @@ func TestCreateExperiment_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			var auth auth.AuthorizerInterface = authorizer
-			if tc.authenticator != nil {
-				auth = tc.authenticator
+			var opts []testServerOpt
+			if tc.storage != nil {
+				opts = append(opts, withStorage(tc.storage))
 			}
-			server := New(tc.storage, cfg, auth, tc.xidClient, nil)
+			if tc.authenticator != nil {
+				opts = append(opts, withAuthorizer(tc.authenticator))
+			}
+			if tc.xidClient != nil {
+				opts = append(opts, withXidClient(tc.xidClient))
+			}
+			server := newTestServer(t, opts...)
 			_, err := server.CreateExperiment(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("CreateExperiment() returned error %v, want %v", err, tc.wantErr)

@@ -24,11 +24,9 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/storage"
-	tq "xmanager_cloud/task_queue/client"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -182,9 +180,7 @@ func TestUpdateWorkUnit_EmptyMask(t *testing.T) {
 
 func TestUpdateWorkUnit_BadPaths(t *testing.T) {
 	ctx := context.Background()
-	authorizer := createTestAuthorizer(ctx, t)
-	cfg := &config.Config{}
-	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil)
+	server := newTestServer(t)
 
 	testCases := []struct {
 		name    string
@@ -222,7 +218,6 @@ func TestUpdateWorkUnit_BadPaths(t *testing.T) {
 
 func TestUpdateWorkUnit_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{}
 
 	goodReq := &apipb.UpdateWorkUnitRequest{
 		WorkUnit: &msgpb.WorkUnit{
@@ -298,11 +293,17 @@ func TestUpdateWorkUnit_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.authenticator == nil {
-				tc.authenticator = createTestAuthorizer(ctx, t)
+			var opts []testServerOpt
+			if tc.storage != nil {
+				opts = append(opts, withStorage(tc.storage))
 			}
-			taskQueueClient := &tq.FakeClient{}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient)
+			if tc.authenticator != nil {
+				opts = append(opts, withAuthorizer(tc.authenticator))
+			}
+			if tc.xidClient != nil {
+				opts = append(opts, withXidClient(tc.xidClient))
+			}
+			server := newTestServer(t, opts...)
 			_, err := server.UpdateWorkUnit(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("UpdateWorkUnit() got error %v, want %v", err, tc.wantErr)
@@ -376,5 +377,38 @@ func TestUpdateWorkUnit_DoesNotEnqueueOnOtherChanges(t *testing.T) {
 
 	if len(taskQueueClient.EnqueuedTasks) != 0 {
 		t.Errorf("UpdateWorkUnit() with non-priority change should not enqueue tasks, but enqueued %d tasks", len(taskQueueClient.EnqueuedTasks))
+	}
+}
+
+func TestUpdateWorkUnit_NoExecutionWithoutActuationSucceeds(t *testing.T) {
+	ctx := context.Background()
+	mockStorage := &storage.MockStorage{
+		UpdateWorkUnitRespOriginal: &msgpb.WorkUnit{
+			Name:  "experiments/1/workUnits/1",
+			Notes: "old notes",
+		},
+		UpdateWorkUnitRespReturned: &msgpb.WorkUnit{
+			Name:  "experiments/1/workUnits/1",
+			Notes: "updated notes",
+		},
+	}
+	mockXid := &mockXidClient{
+		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+	}
+	server := newTestServer(t, withStorage(mockStorage), withXidClient(mockXid))
+
+	req := &apipb.UpdateWorkUnitRequest{
+		WorkUnit: &msgpb.WorkUnit{
+			Name:  "experiments/1/workUnits/1",
+			Notes: "updated notes",
+		},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"notes"}},
+	}
+	res, err := server.UpdateWorkUnit(ctx, req)
+	if err != nil {
+		t.Fatalf("UpdateWorkUnit() without execution returned error: %v", err)
+	}
+	if res.GetNotes() != "updated notes" {
+		t.Errorf("res.GetNotes() = %q, want %q", res.GetNotes(), "updated notes")
 	}
 }

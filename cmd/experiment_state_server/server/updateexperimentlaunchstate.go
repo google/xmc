@@ -27,13 +27,13 @@ import (
 
 // UpdateExperimentLaunchState updates the launch state of an experiment. This should be called by
 // the client when it's done with an experiment launch.
-func (s *Server) UpdateExperimentLaunchState(ctx context.Context, req *apipb.UpdateExperimentLaunchStateRequest) (*msgpb.Experiment, error) {
+func (h *ExperimentHandler) UpdateExperimentLaunchState(ctx context.Context, req *apipb.UpdateExperimentLaunchStateRequest) (*msgpb.Experiment, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Update experiment launch state", "request", req)
 
 	// 1. Authenticate the user.
 	logging.Debug(ctx, "Extracting user identity from context")
-	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	email, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func (s *Server) UpdateExperimentLaunchState(ctx context.Context, req *apipb.Upd
 	}
 
 	// 3. Authorize the user to update the experiment.
-	isAuthorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
+	isAuthorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func (s *Server) UpdateExperimentLaunchState(ctx context.Context, req *apipb.Upd
 
 	// 4. Update the experiment status in the storage layer.
 	logging.Debug(ctx, "Updating experiment launch state in storage")
-	exp, err := s.storage.UpdateExperimentLaunchState(ctx, xid, req.GetLaunchState())
+	exp, err := h.storage.UpdateExperimentLaunchState(ctx, xid, req.GetLaunchState())
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.NotFound {
 			logging.Warn(ctx, "Experiment not found in storage")
@@ -76,7 +76,7 @@ func (s *Server) UpdateExperimentLaunchState(ctx context.Context, req *apipb.Upd
 
 	// 5. Retrieve the XID entry from the XID service. This is required to populate the ACLs in the
 	// response.
-	xidEntry, err := s.getXid(ctx, validator.ConstructXIDName(xid))
+	xidEntry, err := h.getXid(ctx, validator.ConstructXIDName(xid))
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.PermissionDenied {
 			logging.Warn(ctx, "User not authorized to update experiment launch state", "xid", xid, "error", err)

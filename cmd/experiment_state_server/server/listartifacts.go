@@ -41,25 +41,25 @@ const (
 	artifactSearchStaleness = 15 * time.Second
 )
 
-func (s *Server) ListArtifacts(ctx context.Context, req *apipb.ListArtifactsRequest) (*apipb.ListArtifactsResponse, error) {
+func (h *ArtifactHandler) ListArtifacts(ctx context.Context, req *apipb.ListArtifactsRequest) (*apipb.ListArtifactsResponse, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Fetch artifacts", "request", req)
-	resp, err := s.listArtifactsWithStaleness(ctx, req, 0*time.Second)
+	resp, err := h.listArtifactsWithStaleness(ctx, req, 0*time.Second)
 	logging.Info(ctx, "Fetched artifacts", "response", resp)
 	return resp, err
 }
 
-func (s *Server) SearchArtifacts(ctx context.Context, req *apipb.ListArtifactsRequest) (*apipb.ListArtifactsResponse, error) {
+func (h *ArtifactHandler) SearchArtifacts(ctx context.Context, req *apipb.ListArtifactsRequest) (*apipb.ListArtifactsResponse, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Search artifacts", "request", req)
-	resp, err := s.listArtifactsWithStaleness(ctx, req, artifactSearchStaleness)
+	resp, err := h.listArtifactsWithStaleness(ctx, req, artifactSearchStaleness)
 	logging.Info(ctx, "Searched artifacts", "response", resp)
 	return resp, err
 }
 
-func (s *Server) listArtifactsWithStaleness(ctx context.Context, req *apipb.ListArtifactsRequest, staleness time.Duration) (*apipb.ListArtifactsResponse, error) {
+func (h *ArtifactHandler) listArtifactsWithStaleness(ctx context.Context, req *apipb.ListArtifactsRequest, staleness time.Duration) (*apipb.ListArtifactsResponse, error) {
 	// 1. Authenticate the user.
-	_, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	_, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (s *Server) listArtifactsWithStaleness(ctx context.Context, req *apipb.List
 	}
 
 	// 3. Get the list of Artifacts from the storage layer.
-	artifacts, nextPageToken, err := s.storage.ListArtifacts(ctx, req.GetParent(), req.GetPageSize(), req.GetPageToken(), req.GetFilter(), req.GetOrderBy(), staleness)
+	artifacts, nextPageToken, err := h.storage.ListArtifacts(ctx, req.GetParent(), req.GetPageSize(), req.GetPageToken(), req.GetFilter(), req.GetOrderBy(), staleness)
 	if err != nil {
 		statusErr, ok := status.FromError(err)
 		if !ok {
@@ -93,13 +93,13 @@ func (s *Server) listArtifactsWithStaleness(ctx context.Context, req *apipb.List
 	}
 
 	// 4. Populate ACLs from XID service.
-	if err := s.fetchACLsForArtifacts(ctx, artifacts, req.GetPageSize()); err != nil {
+	if err := h.fetchACLsForArtifacts(ctx, artifacts, req.GetPageSize()); err != nil {
 		return nil, err
 	}
 
 	// 5. Enrich artifact output fields (e.g. ManagedXprof with the MLRun URL).
 	for _, artifact := range artifacts {
-		s.enrichArtifactOutputFields(ctx, artifact)
+		h.enrichArtifactOutputFields(ctx, artifact)
 	}
 
 	// 6. Return the successful response.
@@ -109,7 +109,7 @@ func (s *Server) listArtifactsWithStaleness(ctx context.Context, req *apipb.List
 	}, nil
 }
 
-func (s *Server) fetchACLsForArtifacts(ctx context.Context, artifacts []*essmsgpb.Artifact, pageSize int32) error {
+func (h *ArtifactHandler) fetchACLsForArtifacts(ctx context.Context, artifacts []*essmsgpb.Artifact, pageSize int32) error {
 	if len(artifacts) == 0 {
 		return nil
 	}
@@ -125,7 +125,7 @@ func (s *Server) fetchACLsForArtifacts(ctx context.Context, artifacts []*essmsgp
 	}
 
 	// Call the XID service to get the XID entries.
-	xidListResponse, err := s.xidClient.ListXidEntries(propagateIAPJWT(ctx), &xidapipb.ListXidEntriesRequest{
+	xidListResponse, err := h.xidClient.ListXidEntries(propagateIAPJWT(ctx), &xidapipb.ListXidEntriesRequest{
 		PageSize: proto.Int32(pageSize),
 		// page sizes.
 		Filter: proto.String(strings.Join(xidFilter, " OR ")),

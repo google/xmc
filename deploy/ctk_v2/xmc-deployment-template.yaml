@@ -46,6 +46,10 @@ vars:
   # Required when allowed_emails is not provided.
   authorized_iam_role: "roles/viewer"
 
+  # GCP IAM role required for administrative access (Health Service, Admin Panel).
+  # Defaults to roles/owner if not provided.
+  admin_iam_role: "roles/owner"
+
   # Owner email registered with Google Trust Services (GTS)
   certs_email: "YOUR_EMAIL@example.com"
 

@@ -21,7 +21,6 @@ import (
 	"golang/protobuf/v2/proto/proto"
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
-	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/storage"
@@ -43,7 +42,10 @@ func TestListStatusMessages(t *testing.T) {
 		},
 	}
 
-	server := New(mockStorage, &config.Config{}, createTestAuthorizer(ctx, t), mockXid, nil)
+	server := newTestServer(t,
+		withStorage(mockStorage),
+		withXidClient(mockXid),
+	)
 
 	req := &apipb.ListStatusMessagesRequest{
 		Parent: "experiments/123",
@@ -79,8 +81,7 @@ func TestListStatusMessages_InvalidRequest(t *testing.T) {
 
 func TestListStatusMessages_Unauthenticated(t *testing.T) {
 	ctx := t.Context()
-	server, _ := createExperimentStateServer(ctx, t)
-	server.auth = &mockAuthenticator{err: status.ErrUnauthenticated}
+	server := newTestServer(t, withAuthorizer(&mockAuthenticator{err: status.ErrUnauthenticated}))
 
 	req := &apipb.ListStatusMessagesRequest{
 		Parent: "experiments/123",
@@ -94,7 +95,6 @@ func TestListStatusMessages_Unauthenticated(t *testing.T) {
 
 func TestListStatusMessages_PermissionDenied(t *testing.T) {
 	ctx := t.Context()
-	server, _ := createExperimentStateServer(ctx, t)
 
 	// Mock XidClient to deny access.
 	mockXid := &mockXidClient{
@@ -102,7 +102,7 @@ func TestListStatusMessages_PermissionDenied(t *testing.T) {
 			Authorized: proto.Bool(false),
 		},
 	}
-	server.xidClient = mockXid
+	server := newTestServer(t, withXidClient(mockXid))
 
 	req := &apipb.ListStatusMessagesRequest{
 		Parent: "experiments/123",
@@ -129,7 +129,10 @@ func TestSearchStatusMessages(t *testing.T) {
 		},
 	}
 
-	server := New(mockStorage, &config.Config{}, createTestAuthorizer(ctx, t), mockXid, nil)
+	server := newTestServer(t,
+		withStorage(mockStorage),
+		withXidClient(mockXid),
+	)
 
 	req := &apipb.ListStatusMessagesRequest{
 		Parent: "experiments/123",
