@@ -131,40 +131,13 @@ func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (
 	return auth, nil
 }
 
-type storageHandle struct {
-	storage storage.Storage
-	client  *spanner.Client
-	cleanup func() error
-}
-
-func initStorage(ctx context.Context, cfg *config.Config) (*storageHandle, error) {
-	spClient, err := initSpannerClient(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create spanner client: %w", err)
-	}
-	cleanup := func() error {
-		spClient.Close()
-		return nil
-	}
-	st, err := ss.NewStorageWithConfig(spClient, ss.StorageConfig{StatusMessageHistoryEnabled: cfg.StatusMessageHistoryEnabled})
-	if err != nil {
-		_ = cleanup()
-		return nil, fmt.Errorf("failed to create storage: %w", err)
-	}
-	return &storageHandle{
-		storage: st,
-		client:  spClient,
-		cleanup: cleanup,
-	}, nil
-}
-
 func initObservers(ctx context.Context, cfg *config.Config, st storage.Storage, wg *sync.WaitGroup) ([]ArtifactObserver, func() error, error) {
+	if cfg.DashboardServiceAddr == "" {
+		return nil, func() error { return nil }, nil
+	}
 	dashboardClient, dashConn, err := initDashboardClient(ctx, cfg)
 	if err != nil {
 		return nil, nil, err
-	}
-	if dashboardClient == nil {
-		return nil, func() error { return nil }, nil
 	}
 	cleanup := func() error {
 		if err := dashConn.Close(); err != nil {
@@ -201,11 +174,19 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 		}
 	}()
 
-	stHandle, err := initStorage(ctx, cfg)
+	spannerClient, err := initSpannerClient(ctx, cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create spanner client: %w", err)
 	}
-	cleanups = append(cleanups, stHandle.cleanup)
+	cleanups = append(cleanups, func() error {
+		spannerClient.Close()
+		return nil
+	})
+
+	storage, err := ss.NewStorageWithConfig(spannerClient, ss.StorageConfig{StatusMessageHistoryEnabled: cfg.StatusMessageHistoryEnabled})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create storage: %w", err)
+	}
 
 	auth, err := initAuth(ctx, cfg, oauthCfg)
 	if err != nil {
@@ -235,7 +216,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 	})
 
 	var bgTaskWG sync.WaitGroup
-	observers, obsCleanup, err := initObservers(ctx, cfg, stHandle.storage, &bgTaskWG)
+	observers, obsCleanup, err := initObservers(ctx, cfg, storage, &bgTaskWG)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +224,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 
 	srv, err := New(Params{
 		Config:            cfg,
-		Storage:           stHandle.storage,
+		Storage:           storage,
 		Authorizer:        auth,
 		XidClient:         xidClient,
 		WorkUnitActuator:  taskQueueClient,
@@ -255,7 +236,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 
 	return &ProdServer{
 		Server:          srv,
-		spannerClient:   stHandle.client,
+		spannerClient:   spannerClient,
 		xidClient:       xidClient,
 		taskQueueClient: taskQueueClient,
 		bgTaskWG:        &bgTaskWG,

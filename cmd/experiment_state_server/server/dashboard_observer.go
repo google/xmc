@@ -66,7 +66,7 @@ func (o *dashboardObserver) OnArtifactCreated(ctxBg context.Context, artifactToP
 			}
 		}()
 
-		xid, wid, _ := validator.ValidateWorkUnitName(artifactToProvision.GetParent())
+		xid, wid, _ := validator.ValidateArtifactParent(artifactToProvision.GetParent())
 
 		cArtifact := artifactToProvision.GetPayload().GetChart()
 		title := cArtifact.GetTitle()

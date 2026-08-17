@@ -98,6 +98,7 @@ compat_go_test(
         "createartifact_test.go",
         "createexperiment_test.go",
         "createworkunit_test.go",
+        "dashboard_observer_test.go",
         "deleteartifact_test.go",
         "getartifact_test.go",
         "getcurrentworkunitexecution_test.go",
