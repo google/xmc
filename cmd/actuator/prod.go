@@ -22,7 +22,6 @@ import (
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/google_api/option/option"
-	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
 	"xmanager_cloud/common/health"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/kubernetes/actuator/workunittaskhandler"
@@ -35,10 +34,6 @@ import (
 )
 
 var osHostname = os.Hostname
-
-type k8sHealthClient interface {
-	Clientset() kubernetes.Interface
-}
 
 // ProdServer encapsulates the production actuator dependencies and lifecycle.
 type ProdServer struct {

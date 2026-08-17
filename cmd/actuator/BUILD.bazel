@@ -9,7 +9,9 @@ compat_go_library(
     name = "actuator_lib",
     srcs = [
         "config.go",
+        "health.go",
         "main.go",
+        "metadata.go",
         "prod.go",
     ],
     importpath = "xmanager_cloud/cmd/actuator/main",
@@ -38,7 +40,11 @@ compat_go_library(
 
 compat_go_test(
     name = "actuator_test",
-    srcs = ["prod_test.go"],
+    srcs = [
+        "health_test.go",
+        "metadata_test.go",
+        "prod_test.go",
+    ],
     embed = [":actuator_lib"],
     deps = [
         "//internal/common/health",
