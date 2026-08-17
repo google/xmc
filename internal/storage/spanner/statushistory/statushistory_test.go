@@ -111,7 +111,7 @@ func TestExtractAllResourcesFromExecutable_NoFallbacks(t *testing.T) {
 		t.Errorf("ExtractAllResourcesFromExecutable with empty GPU type = %+v, want empty map", gotEmptyGPU)
 	}
 
-	// Executable with empty TPU type should not add TPU default
+	// Executable with empty TPU type should default resource type to "TPU"
 	execEmptyTPU := &essmsgpb.Executable{
 		Type: &essmsgpb.Executable_Jobset{
 			Jobset: &essmsgpb.JobSetExecutable{
@@ -133,8 +133,8 @@ func TestExtractAllResourcesFromExecutable_NoFallbacks(t *testing.T) {
 		},
 	}
 	gotEmptyTPU := ExtractAllResourcesFromExecutable(execEmptyTPU)
-	if len(gotEmptyTPU) != 0 {
-		t.Errorf("ExtractAllResourcesFromExecutable with empty TPU type = %+v, want empty map", gotEmptyTPU)
+	if gotEmptyTPU["TPU"] != 4 {
+		t.Errorf("ExtractAllResourcesFromExecutable with empty TPU type = %+v, want TPU: 4", gotEmptyTPU)
 	}
 
 	// Executable with invalid TPU topology should not assume 1 chip
@@ -161,6 +161,32 @@ func TestExtractAllResourcesFromExecutable_NoFallbacks(t *testing.T) {
 	gotInvalidTPU := ExtractAllResourcesFromExecutable(execInvalidTPU)
 	if len(gotInvalidTPU) != 0 {
 		t.Errorf("ExtractAllResourcesFromExecutable with invalid TPU topology = %+v, want empty map", gotInvalidTPU)
+	}
+
+	// Executable with TPU type but empty topology should default to 1 chip
+	execEmptyTopology := &essmsgpb.Executable{
+		Type: &essmsgpb.Executable_Jobset{
+			Jobset: &essmsgpb.JobSetExecutable{
+				Jobs: []*essmsgpb.KubernetesJob{
+					{
+						Spec: &essmsgpb.ExecutableSpec{
+							Resources: &essmsgpb.ResourceSet{
+								Resources: &essmsgpb.ResourceSet_TpuResources{
+									TpuResources: &essmsgpb.TpuResources{
+										Type:     "tpu-v4",
+										Topology: "",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	gotEmptyTopology := ExtractAllResourcesFromExecutable(execEmptyTopology)
+	if gotEmptyTopology["tpu-v4"] != 1 {
+		t.Errorf("ExtractAllResourcesFromExecutable with empty TPU topology = %+v, want tpu-v4: 1", gotEmptyTopology)
 	}
 }
 

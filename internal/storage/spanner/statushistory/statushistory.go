@@ -34,6 +34,7 @@ type QueueVelocityResult struct {
 	AdmittedJobsCount int64
 	ResourceUnits     int64
 	ResourceType      string
+	ResourceUnitsMap  map[string]int64
 }
 
 // PendingQueueMetricsResult contains pending metrics retrieved from Spanner.
@@ -41,6 +42,7 @@ type PendingQueueMetricsResult struct {
 	PendingJobs             int64
 	PendingResourceRequests int64
 	ResourceType            string
+	ResourceUnitsMap        map[string]int64
 }
 
 // ExtractAllResourcesFromExecutable extracts all compute resource types and unit counts from an Executable.
@@ -67,11 +69,12 @@ func ExtractAllResourcesFromExecutable(exec *essmsgpb.Executable) map[string]int
 		}
 		if tpu := r.GetTpuResources(); tpu != nil {
 			res := tpu.GetType()
-			if res != "" {
-				chips := parseTotalChips(tpu.GetTopology())
-				if chips > 0 {
-					resources[res] += chips
-				}
+			if res == "" {
+				res = "TPU"
+			}
+			chips := parseTotalChips(tpu.GetTopology())
+			if chips > 0 {
+				resources[res] += chips
 			}
 		}
 	}
@@ -80,7 +83,7 @@ func ExtractAllResourcesFromExecutable(exec *essmsgpb.Executable) map[string]int
 
 func parseTotalChips(topology string) int64 {
 	if topology == "" {
-		return 0
+		return 1
 	}
 	cleaned := strings.TrimSpace(strings.ToLower(topology))
 	dims := strings.Split(cleaned, "x")
@@ -154,12 +157,25 @@ func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueN
 
 	cutoff := time.Now().Add(-window)
 	stmt := spanner.Statement{
-		SQL: `SELECT QueueName, COUNT(DISTINCT CONCAT(CAST(BitReversedXid AS STRING), '-', CAST(WorkUnitId AS STRING))) AS AdmittedCount, IFNULL(SUM(ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(ResourceType), "") AS ResType
-		      FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
-		      WHERE QueueName IN UNNEST(@queueNames)
-		        AND TransitionTime >= @cutoffTime
-		        AND NewState = 1
-		      GROUP BY QueueName`,
+		SQL: `WITH Admitted AS (
+		        SELECT QueueName, BitReversedXid, WorkUnitId, ResourceType, ResourceUnits
+		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
+		        WHERE QueueName IN UNNEST(@queueNames)
+		          AND TransitionTime >= @cutoffTime
+		          AND NewState = 1
+		      ),
+		      QueueTotals AS (
+		        SELECT QueueName, COUNT(DISTINCT CONCAT(CAST(BitReversedXid AS STRING), '-', CAST(WorkUnitId AS STRING))) AS TotalAdmittedJobs
+		        FROM Admitted
+		        GROUP BY QueueName
+		      )
+		      SELECT a.QueueName,
+		             qt.TotalAdmittedJobs AS AdmittedCount,
+		             IFNULL(SUM(a.ResourceUnits), 0) AS TotalUnits,
+		             a.ResourceType AS ResType
+		      FROM Admitted a
+		      JOIN QueueTotals qt ON a.QueueName = qt.QueueName
+		      GROUP BY a.QueueName, qt.TotalAdmittedJobs, a.ResourceType`,
 		Params: map[string]interface{}{
 			"queueNames": queueNames,
 			"cutoffTime": cutoff,
@@ -186,11 +202,27 @@ func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueN
 		if err != nil {
 			return nil, err
 		}
-		results[m.queueName] = QueueVelocityResult{
-			AdmittedJobsCount: m.count,
-			ResourceUnits:     m.totalUnits,
-			ResourceType:      m.resType,
+
+		curr, exists := results[m.queueName]
+		if !exists {
+			curr = QueueVelocityResult{
+				AdmittedJobsCount: m.count,
+				ResourceUnits:     m.totalUnits,
+				ResourceType:      m.resType,
+				ResourceUnitsMap:  make(map[string]int64),
+			}
 		}
+		if m.count > curr.AdmittedJobsCount {
+			curr.AdmittedJobsCount = m.count
+		}
+		if m.resType != "" {
+			curr.ResourceUnitsMap[m.resType] = m.totalUnits
+		}
+		if curr.ResourceType == "" || curr.ResourceType == "CPU" || (m.resType != "" && m.resType != "CPU" && (curr.ResourceType == "CPU" || m.resType < curr.ResourceType)) {
+			curr.ResourceType = m.resType
+			curr.ResourceUnits = m.totalUnits
+		}
+		results[m.queueName] = curr
 	}
 
 	return results, nil
@@ -209,15 +241,28 @@ func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, 
 		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
 		        WHERE QueueName IN UNNEST(@queueNames)
 		        GROUP BY BitReversedXid, WorkUnitId
+		      ),
+		      LatestPending AS (
+		        SELECT h.QueueName, h.BitReversedXid, h.WorkUnitId, h.ResourceType, h.ResourceUnits
+		        FROM WorkUnitStatusHistory h
+		        JOIN MaxHistory m
+		          ON h.BitReversedXid = m.BitReversedXid
+		         AND h.WorkUnitId = m.WorkUnitId
+		         AND h.TransitionTime = m.MaxTransitionTime
+		        WHERE h.NewState IN (1, 2)
+		      ),
+		      QueueTotals AS (
+		        SELECT QueueName, COUNT(DISTINCT CONCAT(CAST(BitReversedXid AS STRING), '-', CAST(WorkUnitId AS STRING))) AS TotalPendingJobs
+		        FROM LatestPending
+		        GROUP BY QueueName
 		      )
-		      SELECT h.QueueName, COUNT(1) AS PendingJobs, IFNULL(SUM(h.ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(h.ResourceType), "") AS ResType
-		      FROM WorkUnitStatusHistory h
-		      JOIN MaxHistory m
-		        ON h.BitReversedXid = m.BitReversedXid
-		       AND h.WorkUnitId = m.WorkUnitId
-		       AND h.TransitionTime = m.MaxTransitionTime
-		      WHERE h.NewState IN (1, 2)
-		      GROUP BY h.QueueName`,
+		      SELECT lp.QueueName,
+		             qt.TotalPendingJobs AS PendingJobs,
+		             IFNULL(SUM(lp.ResourceUnits), 0) AS TotalUnits,
+		             lp.ResourceType AS ResType
+		      FROM LatestPending lp
+		      JOIN QueueTotals qt ON lp.QueueName = qt.QueueName
+		      GROUP BY lp.QueueName, qt.TotalPendingJobs, lp.ResourceType`,
 		Params: map[string]interface{}{
 			"queueNames": queueNames,
 		},
@@ -243,11 +288,27 @@ func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, 
 		if err != nil {
 			return nil, err
 		}
-		results[m.queueName] = PendingQueueMetricsResult{
-			PendingJobs:             m.count,
-			PendingResourceRequests: m.totalUnits,
-			ResourceType:            m.resType,
+
+		curr, exists := results[m.queueName]
+		if !exists {
+			curr = PendingQueueMetricsResult{
+				PendingJobs:             m.count,
+				PendingResourceRequests: m.totalUnits,
+				ResourceType:            m.resType,
+				ResourceUnitsMap:        make(map[string]int64),
+			}
 		}
+		if m.count > curr.PendingJobs {
+			curr.PendingJobs = m.count
+		}
+		if m.resType != "" {
+			curr.ResourceUnitsMap[m.resType] = m.totalUnits
+		}
+		if curr.ResourceType == "" || curr.ResourceType == "CPU" || (m.resType != "" && m.resType != "CPU" && (curr.ResourceType == "CPU" || m.resType < curr.ResourceType)) {
+			curr.ResourceType = m.resType
+			curr.PendingResourceRequests = m.totalUnits
+		}
+		results[m.queueName] = curr
 	}
 
 	return results, nil
