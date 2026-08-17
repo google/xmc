@@ -178,6 +178,7 @@ type UserResponse struct {
 	PictureUrl       string   `json:"pictureUrl"`
 	SessionExpiresAt int64    `json:"sessionExpiresAt"`
 	AllowedDomains   []string `json:"allowedDomains"`
+	IsNonProdAuth    bool     `json:"isNonProdAuth"`
 }
 
 // HandleUser returns current session claims if authenticated.
@@ -199,6 +200,7 @@ func (a *Authenticator) HandleUser(w http.ResponseWriter, r *http.Request) {
 		PictureUrl:       claims.Picture,
 		SessionExpiresAt: expiresAt,
 		AllowedDomains:   a.Config.AllowedDomains,
+		IsNonProdAuth:    a.Config.IsNonProdAuth(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

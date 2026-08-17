@@ -110,8 +110,15 @@ func TestXidRoundTrip(t *testing.T) {
 				values = append(values, xidParams[k])
 			}
 
-			keys = append(keys, "Xid")
-			values = append(values, tc.xid)
+			keys = append(keys, "Xid", "CreateTime", "UpdateTime")
+			var ct, ut spanner.NullTime
+			if tc.xidEntry.CreateTime != nil {
+				ct = spanner.NullTime{Time: tc.xidEntry.CreateTime.AsTime(), Valid: true}
+			}
+			if tc.xidEntry.UpdateTime != nil {
+				ut = spanner.NullTime{Time: tc.xidEntry.UpdateTime.AsTime(), Valid: true}
+			}
+			values = append(values, tc.xid, ct, ut)
 
 			row, err := spanner.NewRow(keys, values)
 			if err != nil {

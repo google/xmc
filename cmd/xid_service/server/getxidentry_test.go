@@ -68,7 +68,7 @@ func TestGetXidEntry_HappyPath(t *testing.T) {
 	}
 
 	// Assert successful response.
-	opts := []cmp.Option{protocmp.Transform()}
+	opts := []cmp.Option{protocmp.Transform(), protocmp.IgnoreFields(&msgpb.XidEntry{}, "create_time", "update_time")}
 	if diff := cmp.Diff(createXidEntry, gotXidEntry, opts...); diff != "" {
 		t.Errorf("GetXid() mismatch (-want +got):\n%s", diff)
 	}

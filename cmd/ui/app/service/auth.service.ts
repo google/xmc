@@ -23,6 +23,7 @@ export interface UserResponse {
   pictureUrl: string;
   sessionExpiresAt: number;
   allowedDomains: string[];
+  isNonProdAuth?: boolean;
 }
 
 @Injectable({

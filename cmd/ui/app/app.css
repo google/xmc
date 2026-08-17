@@ -13,3 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+.non-prod-auth-banner {
+  background-color: #fff3cd;
+  color: #856404;
+  border-bottom: 2px solid #ffeeba;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  z-index: 1000;
+}
+
+.warning-icon {
+  font-size: 16px;
+}

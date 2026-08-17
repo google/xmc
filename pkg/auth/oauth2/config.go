@@ -55,7 +55,29 @@ type Config struct {
 	SecureCookie          bool
 	TrustXForwardedProto  bool
 	CookieDomain          string
+	OIDCIssuerURL         string
 	AllowedHosts          []string
+}
+
+// IsNonProdAuth determines whether the authentication setup connects to a non-production or local IdP (e.g. Dex).
+func (c *Config) IsNonProdAuth() bool {
+	if c.MockAuth {
+		return true
+	}
+	checkTarget := strings.ToLower(c.AuthURL + " " + c.TokenURL + " " + c.OIDCIssuerURL)
+	if strings.Contains(checkTarget, "localhost") ||
+		strings.Contains(checkTarget, "127.0.0.1") ||
+		strings.Contains(checkTarget, "dex") ||
+		strings.Contains(checkTarget, ".local") {
+		return true
+	}
+	if !strings.Contains(checkTarget, "accounts.google.com") &&
+		!strings.Contains(checkTarget, "oauth2.googleapis.com") &&
+		!strings.Contains(checkTarget, "cloud.google.com/iap") &&
+		!strings.Contains(checkTarget, "iap.googleapis.com") {
+		return true
+	}
+	return false
 }
 
 // LoadConfig bootstraps the configuration from environment variables.
@@ -72,6 +94,13 @@ func LoadConfig() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load CLIENT_SECRET: %w", err)
 	}
+	if clientSecret == "" {
+		clientSecret, err = getEnvOrFile("OIDC_CLIENT_SECRET", "")
+		if err != nil {
+			return nil, fmt.Errorf("failed to load OIDC_CLIENT_SECRET: %w", err)
+		}
+	}
+
 	jwtSecret, err := getEnvOrFile("JWT_SECRET", "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to load JWT_SECRET: %w", err)
@@ -104,6 +133,20 @@ func LoadConfig() (*Config, error) {
 		allowedHosts = append(allowedHosts, strings.ToLower(u.Host))
 	}
 
+	oidcIssuerURL := getEnv("OIDC_ISSUER_URL", getEnv("IAP_EXPECTED_ISSUER", ""))
+	defaultAuthURL := "https://accounts.google.com/o/oauth2/v2/auth"
+	defaultTokenURL := "https://oauth2.googleapis.com/token"
+	defaultAPIURL := "https://openidconnect.googleapis.com/v1/userinfo"
+
+	if oidcIssuerURL != "" && !strings.Contains(oidcIssuerURL, "google.com") && !strings.Contains(oidcIssuerURL, "googleapis.com") {
+		trimmedIssuer := strings.TrimSuffix(oidcIssuerURL, "/")
+		defaultAuthURL = trimmedIssuer + "/auth"
+		defaultTokenURL = trimmedIssuer + "/token"
+		defaultAPIURL = trimmedIssuer + "/userinfo"
+	}
+
+	clientID := getEnv("CLIENT_ID", getEnv("OIDC_CLIENT_ID", ""))
+
 	return &Config{
 		Port:                  port,
 		MockAuth:              mockAuth,
@@ -114,13 +157,14 @@ func LoadConfig() (*Config, error) {
 		GCPProjectID:          getEnv("GCP_PROJECT_ID", ""),
 		TargetIAMRole:         getEnv("AUTHORIZED_IAM_ROLE", "roles/viewer"),
 		AdminIAMRole:          getEnv("ADMIN_IAM_ROLE", "roles/owner"),
-		ClientID:              getEnv("CLIENT_ID", ""),
+		ClientID:              clientID,
 		ClientSecret:          clientSecret,
 		JWTSecret:             jwtSecret,
 		RedirectURL:           redirectURL,
-		AuthURL:               getEnv("AUTH_URL", "https://accounts.google.com/o/oauth2/v2/auth"),
-		TokenURL:              getEnv("TOKEN_URL", "https://oauth2.googleapis.com/token"),
-		APIURL:                getEnv("API_URL", "https://openidconnect.googleapis.com/v1/userinfo"),
+		AuthURL:               getEnv("AUTH_URL", defaultAuthURL),
+		TokenURL:              getEnv("TOKEN_URL", defaultTokenURL),
+		APIURL:                getEnv("API_URL", getEnv("USERINFO_URL", defaultAPIURL)),
+		OIDCIssuerURL:         oidcIssuerURL,
 		UsePKCE:               getEnvBool("USE_PKCE", true),
 		FrontendURL:           frontendURL,
 		SecureCookie:          getEnvBool("SECURE_COOKIE", !mockAuth),

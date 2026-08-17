@@ -69,7 +69,7 @@ func TestFetchXidEntry(t *testing.T) {
 		t.Fatalf("FetchXidEntry failed: %v", err)
 	}
 
-	if diff := cmp.Diff(createdEntry, gotEntry, protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(createdEntry, gotEntry, protocmp.Transform(), protocmp.IgnoreFields(&xidpb.XidEntry{}, "create_time", "update_time")); diff != "" {
 		t.Errorf("FetchXidEntry(%d) returned diff (-want +got):\n%s", xid, diff)
 	}
 }

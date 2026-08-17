@@ -145,37 +145,74 @@ class SPAHandlerTest(unittest.TestCase):
             {
                 "testcase_name": "defaults",
                 "environ": {},
-                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true, "adminPanelEnabled": false, "resourceDashboardEnabled": false};',
+                "expected": (
+                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
+                    ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
+                    ' "isNonProdAuth": false};'
+                ),
             },
             {
                 "testcase_name": "status_message_history_true",
                 "environ": {"XMC_STATUS_MESSAGE_HISTORY_ENABLED": "true"},
-                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true, "adminPanelEnabled": false, "resourceDashboardEnabled": false};',
+                "expected": (
+                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
+                    ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
+                    ' "isNonProdAuth": false};'
+                ),
             },
             {
                 "testcase_name": "status_message_history_false",
                 "environ": {"XMC_STATUS_MESSAGE_HISTORY_ENABLED": "false"},
-                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": false, "adminPanelEnabled": false, "resourceDashboardEnabled": false};',
+                "expected": (
+                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": false,'
+                    ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
+                    ' "isNonProdAuth": false};'
+                ),
             },
             {
                 "testcase_name": "admin_panel_true",
                 "environ": {"XMC_ADMIN_PANEL_ENABLED": "true"},
-                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true, "adminPanelEnabled": true, "resourceDashboardEnabled": false};',
+                "expected": (
+                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
+                    ' "adminPanelEnabled": true, "resourceDashboardEnabled": false,'
+                    ' "isNonProdAuth": false};'
+                ),
             },
             {
                 "testcase_name": "admin_panel_false",
                 "environ": {"XMC_ADMIN_PANEL_ENABLED": "false"},
-                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true, "adminPanelEnabled": false, "resourceDashboardEnabled": false};',
+                "expected": (
+                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
+                    ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
+                    ' "isNonProdAuth": false};'
+                ),
             },
             {
                 "testcase_name": "resource_dashboard_true",
                 "environ": {"XMC_RESOURCE_DASHBOARD_ENABLED": "true"},
-                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true, "adminPanelEnabled": false, "resourceDashboardEnabled": true};',
+                "expected": (
+                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
+                    ' "adminPanelEnabled": false, "resourceDashboardEnabled": true,'
+                    ' "isNonProdAuth": false};'
+                ),
             },
             {
                 "testcase_name": "resource_dashboard_false",
                 "environ": {"XMC_RESOURCE_DASHBOARD_ENABLED": "false"},
-                "expected": 'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true, "adminPanelEnabled": false, "resourceDashboardEnabled": false};',
+                "expected": (
+                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
+                    ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
+                    ' "isNonProdAuth": false};'
+                ),
+            },
+            {
+                "testcase_name": "non_prod_auth_true",
+                "environ": {"XMC_NON_PROD_AUTH": "true"},
+                "expected": (
+                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
+                    ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
+                    ' "isNonProdAuth": true};'
+                ),
             },
         ]
         for case in cases:

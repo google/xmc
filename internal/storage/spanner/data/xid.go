@@ -83,22 +83,10 @@ func XIDProtoToParamsMap(entry *pb.XidEntry) (map[string]any, error) {
 	}
 
 	m := map[string]any{
-		"Creator":           entry.Creator,
-		"OriginatingSystem": entry.Origin,
-		"Acls":              entry.Acls,
+		"Creator":           entry.GetCreator(),
+		"OriginatingSystem": entry.GetOrigin(),
+		"Acls":              entry.GetAcls(),
 		"ParentXid":         parentXID,
-	}
-
-	if entry.CreateTime != nil {
-		m["CreateTime"] = entry.CreateTime.AsTime()
-	} else {
-		m["CreateTime"] = spanner.NullTime{}
-	}
-
-	if entry.UpdateTime != nil {
-		m["UpdateTime"] = entry.UpdateTime.AsTime()
-	} else {
-		m["UpdateTime"] = spanner.NullTime{}
 	}
 
 	return m, nil

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 
 	"go/google"
 	"golang/cloud_google_com/go/compute/metadata/v/v0/metadata"
@@ -145,6 +146,28 @@ type GceMetadata struct {
 }
 
 func getGceMetadata(ctx context.Context) (GceMetadata, error) {
+	proj := os.Getenv("XMC_PROJECT_ID")
+	if proj == "" {
+		proj = os.Getenv("GCP_PROJECT_ID")
+	}
+	cluster := os.Getenv("XMC_CLUSTER_NAME")
+	if cluster == "" {
+		cluster = os.Getenv("CLUSTER_NAME")
+	}
+	loc := os.Getenv("XMC_CLUSTER_LOCATION")
+	if loc == "" {
+		loc = os.Getenv("CLUSTER_LOCATION")
+	}
+
+	if proj != "" && cluster != "" && loc != "" {
+		logging.Info(ctx, "Using cluster metadata from environment variables", "project_id", proj, "location", loc, "cluster_name", cluster)
+		return GceMetadata{
+			ProjectID:   proj,
+			Location:    loc,
+			ClusterName: cluster,
+		}, nil
+	}
+
 	logging.Debug(ctx, "Fetching GCE Metadata...")
 	projectID, err := metadata.ProjectIDWithContext(ctx)
 	if err != nil {

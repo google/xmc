@@ -89,7 +89,7 @@ func TestListXidEntries_HappyPath(t *testing.T) {
 	// They are created in order 0, 2, 4.
 	// Order by created desc: 4, 2, 0.
 	wantPage1 := []*msgpb.XidEntry{entries[4], entries[2]}
-	if diff := cmp.Diff(wantPage1, resp1.GetXidEntries(), protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(wantPage1, resp1.GetXidEntries(), protocmp.Transform(), protocmp.IgnoreFields(&msgpb.XidEntry{}, "create_time", "update_time")); diff != "" {
 		t.Errorf("ListXidEntries page 1 returned diff (-want +got):\n%s", diff)
 	}
 
@@ -108,7 +108,7 @@ func TestListXidEntries_HappyPath(t *testing.T) {
 		t.Errorf("ListXidEntries page 2 got next page token %q, want empty", resp2.GetNextPageToken())
 	}
 	wantPage2 := []*msgpb.XidEntry{entries[0]}
-	if diff := cmp.Diff(wantPage2, resp2.GetXidEntries(), protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(wantPage2, resp2.GetXidEntries(), protocmp.Transform(), protocmp.IgnoreFields(&msgpb.XidEntry{}, "create_time", "update_time")); diff != "" {
 		t.Errorf("ListXidEntries page 2 returned diff (-want +got):\n%s", diff)
 	}
 }
@@ -169,7 +169,7 @@ func TestSearchXidEntries_HappyPath(t *testing.T) {
 	// They are created in order 1, 3.
 	// Order by created asc: 1, 3.
 	wantPage1 := []*msgpb.XidEntry{entries[1]}
-	if diff := cmp.Diff(wantPage1, resp1.GetXidEntries(), protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(wantPage1, resp1.GetXidEntries(), protocmp.Transform(), protocmp.IgnoreFields(&msgpb.XidEntry{}, "create_time", "update_time")); diff != "" {
 		t.Errorf("SearchXidEntries page 1 returned diff (-want +got):\n%s", diff)
 	}
 
@@ -188,7 +188,7 @@ func TestSearchXidEntries_HappyPath(t *testing.T) {
 		t.Errorf("SearchXidEntries page 2 got next page token %q, want empty", resp2.GetNextPageToken())
 	}
 	wantPage2 := []*msgpb.XidEntry{entries[3]}
-	if diff := cmp.Diff(wantPage2, resp2.GetXidEntries(), protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(wantPage2, resp2.GetXidEntries(), protocmp.Transform(), protocmp.IgnoreFields(&msgpb.XidEntry{}, "create_time", "update_time")); diff != "" {
 		t.Errorf("SearchXidEntries page 2 returned diff (-want +got):\n%s", diff)
 	}
 }

@@ -73,7 +73,7 @@ func TestListXidEntries(t *testing.T) {
 		jXID, _ := validator.ValidateXIDName(gotEntries[j].GetName())
 		return iXID < jXID
 	})
-	if diff := cmp.Diff(entries, gotEntries, protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(entries, gotEntries, protocmp.Transform(), protocmp.IgnoreFields(&xidpb.XidEntry{}, "create_time", "update_time")); diff != "" {
 		t.Errorf("ListXidEntries() returned diff (-want +got):\n%s", diff)
 	}
 }
@@ -225,7 +225,7 @@ func TestListXidEntries_FilterFields(t *testing.T) {
 				jXID, _ := validator.ValidateXIDName(tc.want[j].GetName())
 				return iXID < jXID
 			})
-			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(tc.want, got, protocmp.Transform(), protocmp.IgnoreFields(&xidpb.XidEntry{}, "create_time", "update_time")); diff != "" {
 				t.Errorf("ListXidEntries with filter=%q returned diff (-want +got):\n%s", tc.filter, diff)
 			}
 		})
@@ -294,7 +294,7 @@ func TestListXidEntries_OrderByFields(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ListXidEntries with orderBy=%q failed: %v", tc.orderBy, err)
 			}
-			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(tc.want, got, protocmp.Transform(), protocmp.IgnoreFields(&xidpb.XidEntry{}, "create_time", "update_time")); diff != "" {
 				t.Errorf("ListXidEntries with orderBy=%q returned diff (-want +got):\n%s", tc.orderBy, diff)
 			}
 		})
@@ -346,7 +346,7 @@ func TestListXidEntries_Complex(t *testing.T) {
 	}
 
 	wantPage1 := []*xidpb.XidEntry{entries[4], entries[2]} // B, A
-	if diff := cmp.Diff(wantPage1, gotPage1, protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(wantPage1, gotPage1, protocmp.Transform(), protocmp.IgnoreFields(&xidpb.XidEntry{}, "create_time", "update_time")); diff != "" {
 		t.Errorf("ListXidEntries page 1 returned diff (-want +got):\n%s", diff)
 	}
 
@@ -359,7 +359,7 @@ func TestListXidEntries_Complex(t *testing.T) {
 		t.Errorf("ListXidEntries page 2 got next page token %q, want empty", page2Token)
 	}
 	wantPage2 := []*xidpb.XidEntry{entries[0]} // C
-	if diff := cmp.Diff(wantPage2, gotPage2, protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(wantPage2, gotPage2, protocmp.Transform(), protocmp.IgnoreFields(&xidpb.XidEntry{}, "create_time", "update_time")); diff != "" {
 		t.Errorf("ListXidEntries page 2 returned diff (-want +got):\n%s", diff)
 	}
 }

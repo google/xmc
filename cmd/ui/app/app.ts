@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { MatIconModule } from '@angular/material/icon';
 import { MatListModule } from '@angular/material/list';
@@ -57,6 +57,14 @@ export class App {
 
   protected readonly isResourceDashboardEnabled =
     this.featureFlagService.isResourceDashboardEnabled;
+
+  protected readonly isNonProdAuth = computed(() => {
+    const user = this.user();
+    if (user?.isNonProdAuth !== undefined) {
+      return user.isNonProdAuth;
+    }
+    return this.featureFlagService.isNonProdAuth;
+  });
 
   protected readonly isAdminPanelEnabled = toSignal(this.healthService.isAdminPanelAccessible(), {
     initialValue: false,

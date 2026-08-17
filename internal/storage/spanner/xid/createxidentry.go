@@ -23,6 +23,7 @@ import (
 	"googlesql/safesql/go/safesql"
 	timestamppb "protobuf/timestamp_go_proto"
 	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/storage/data/data"
 	spannerdata "xmanager_cloud/storage/spanner/data/spannerdata"
 	"xmanager_cloud/validator/validator"
 	xidpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -44,10 +45,10 @@ VALUES (
 	@Creator,
 	@OriginatingSystem,
 	@Acls,
-	@CreateTime,
-	@UpdateTime
+	PENDING_COMMIT_TIMESTAMP(),
+	PENDING_COMMIT_TIMESTAMP()
 )
-THEN RETURN Xid
+THEN RETURN BitReversedXid
 `)
 
 // CreateXidEntry creates a new XidEntry in storage.
@@ -73,17 +74,18 @@ func (r *Repository) CreateXidEntry(ctx context.Context, entry *xidpb.XidEntry) 
 
 		iter := tx.Query(ctx, stmt)
 		if err := iter.Do(func(row *spanner.Row) error {
-			var xid int64
-			if err := row.ColumnByName("Xid", &xid); err != nil {
-				return fmt.Errorf("failed to get XID from row: %v", row)
+			var bitReversedXid int64
+			if err := row.ColumnByName("BitReversedXid", &bitReversedXid); err != nil {
+				return fmt.Errorf("failed to get BitReversedXid from row: %v", row)
 			}
 
+			xid := data.ReverseBits(bitReversedXid)
 			name := validator.ConstructXIDName(xid)
 			entry.Name = &name
 
 			return nil
 		}); err != nil {
-			logging.Error(ctx, "failed to execute create XID statement", "error", err)
+			logging.Error(ctx, "failed to execute create XID statement", "error", err, "sql", createXidSQL.String(), "params", fmt.Sprintf("%+v", params))
 			return err
 		}
 		return nil

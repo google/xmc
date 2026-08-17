@@ -50,7 +50,7 @@ func (s *XIDServer) CreateXidEntry(ctx context.Context, in *apipb.CreateXidEntry
 	createdEntry, err := s.storage.CreateXidEntry(ctx, in.GetXidEntry())
 	if err != nil {
 		logging.Error(ctx, "Storage layer returned a non-gRPC error for CreateXidEntry", "error", err)
-		return nil, fmt.Errorf("an internal error occurred while creating the XID: %w", status.ErrInternal)
+		return nil, fmt.Errorf("an internal error occurred while creating the XID: %v: %w", err, status.ErrInternal)
 	}
 
 	ctx = logging.WithXIDName(ctx, createdEntry.GetName())

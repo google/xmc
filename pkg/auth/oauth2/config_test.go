@@ -241,3 +241,95 @@ func TestParseCommaSpaceSeparated(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadConfig_OIDCIssuer(t *testing.T) {
+	t.Setenv("MOCK_AUTH", "false")
+	t.Setenv("JWT_SECRET", "this-is-a-sufficiently-long-jwt-secret-value")
+	t.Setenv("OIDC_ISSUER_URL", "http://dex.dex.svc.cluster.local:5556/dex")
+	t.Setenv("OIDC_CLIENT_ID", "xmc-client")
+	t.Setenv("OIDC_CLIENT_SECRET", "xmc-client-secret")
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig() failed: %v", err)
+	}
+
+	if cfg.ClientID != "xmc-client" {
+		t.Errorf("Expected ClientID %q, got %q", "xmc-client", cfg.ClientID)
+	}
+	if cfg.ClientSecret != "xmc-client-secret" {
+		t.Errorf("Expected ClientSecret %q, got %q", "xmc-client-secret", cfg.ClientSecret)
+	}
+	if cfg.AuthURL != "http://dex.dex.svc.cluster.local:5556/dex/auth" {
+		t.Errorf("Expected AuthURL %q, got %q", "http://dex.dex.svc.cluster.local:5556/dex/auth", cfg.AuthURL)
+	}
+	if cfg.TokenURL != "http://dex.dex.svc.cluster.local:5556/dex/token" {
+		t.Errorf("Expected TokenURL %q, got %q", "http://dex.dex.svc.cluster.local:5556/dex/token", cfg.TokenURL)
+	}
+	if cfg.APIURL != "http://dex.dex.svc.cluster.local:5556/dex/userinfo" {
+		t.Errorf("Expected APIURL %q, got %q", "http://dex.dex.svc.cluster.local:5556/dex/userinfo", cfg.APIURL)
+	}
+	if !cfg.IsNonProdAuth() {
+		t.Errorf("Expected IsNonProdAuth() to be true for Dex issuer")
+	}
+}
+
+func TestIsNonProdAuth(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      Config
+		wantProd bool
+	}{
+		{
+			name: "Google prod",
+			cfg: Config{
+				AuthURL:  "https://accounts.google.com/o/oauth2/v2/auth",
+				TokenURL: "https://oauth2.googleapis.com/token",
+			},
+			wantProd: true,
+		},
+		{
+			name: "Google IAP",
+			cfg: Config{
+				AuthURL:       "https://accounts.google.com/o/oauth2/v2/auth",
+				OIDCIssuerURL: "https://cloud.google.com/iap",
+			},
+			wantProd: true,
+		},
+		{
+			name: "Dex local",
+			cfg: Config{
+				AuthURL:       "http://localhost:5556/dex/auth",
+				TokenURL:      "http://localhost:5556/dex/token",
+				OIDCIssuerURL: "http://localhost:5556/dex",
+			},
+			wantProd: false,
+		},
+		{
+			name: "Dex k8s cluster",
+			cfg: Config{
+				AuthURL:       "http://dex.dex.svc.cluster.local:5556/dex/auth",
+				TokenURL:      "http://dex.dex.svc.cluster.local:5556/dex/token",
+				OIDCIssuerURL: "http://dex.dex.svc.cluster.local:5556/dex",
+			},
+			wantProd: false,
+		},
+		{
+			name: "Mock auth",
+			cfg: Config{
+				MockAuth: true,
+				AuthURL:  "https://accounts.google.com/o/oauth2/v2/auth",
+			},
+			wantProd: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			isNonProd := tc.cfg.IsNonProdAuth()
+			if isNonProd == tc.wantProd {
+				t.Errorf("IsNonProdAuth() = %v, want NonProd = %v", isNonProd, !tc.wantProd)
+			}
+		})
+	}
+}
