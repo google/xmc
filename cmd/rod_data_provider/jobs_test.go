@@ -323,7 +323,7 @@ func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
 			wantQueues: []string{"lq-1", "lq-2"},
 		},
 		{
-			name: "fallback to cluster queue when no local queues match",
+			name: "returns nil when no local queues match",
 			setupCache: func() *cache.KueueCache {
 				c := cache.NewKueueCache()
 				c.LocalQueues.Set("team-c/other-lq", &kueuev1beta1.LocalQueue{
@@ -333,13 +333,13 @@ func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
 				return c
 			},
 			queueName:  "cq-test",
-			wantQueues: []string{"cq-test"},
+			wantQueues: nil,
 		},
 		{
-			name:       "fallback to cluster queue when cache is nil",
+			name:       "returns nil when cache is nil",
 			setupCache: func() *cache.KueueCache { return nil },
 			queueName:  "cq-test",
-			wantQueues: []string{"cq-test"},
+			wantQueues: nil,
 		},
 	}
 
