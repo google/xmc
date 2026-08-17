@@ -18,8 +18,8 @@ import io
 import json
 import os
 import socket
-import unittest
 from typing import TYPE_CHECKING
+import unittest
 from unittest import mock
 
 if TYPE_CHECKING:

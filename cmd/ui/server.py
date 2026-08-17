@@ -87,7 +87,7 @@ def load_golden_files() -> dict[str, Any]:
                 elif isinstance(data, list):
                     # Could be dashboards list
                     goldens[os.path.basename(filepath)] = data
-        except Exception:
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
             continue
     return goldens
 
@@ -112,7 +112,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 with open(dashboards_file, "r", encoding="utf-8") as f:
                     cls.in_memory_dashboards = json.load(f)
-            except Exception:
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
                 cls.in_memory_dashboards = []
         else:
             cls.in_memory_dashboards = []
@@ -261,7 +261,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             body = self.rfile.read(length) if length > 0 else b"{}"
             try:
                 payload = json.loads(body.decode("utf-8"))
-            except Exception:
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
                 payload = {}
             new_dash = payload.get("dashboard", payload)
             if not isinstance(new_dash, dict):
