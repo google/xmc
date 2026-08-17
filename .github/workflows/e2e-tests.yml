@@ -34,6 +34,7 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   run-e2e:
@@ -46,6 +47,9 @@ jobs:
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
         with:
           persist-credentials: false
+
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@6182d5e69f07420a48170452f2a7ae33604f84c9' # v2.1.1
 
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
