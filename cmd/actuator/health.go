@@ -15,6 +15,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -39,14 +41,9 @@ func activeHealthCheck(k8s k8sHealthClient, spClient health.SpannerHealthClient,
 		// 1. Kubernetes check
 		eg.Go(func() error {
 			if k8s == nil || k8s.Clientset() == nil {
-				slog.Error("Kubernetes healthcheck failed: client is nil")
 				return fmt.Errorf("k8s client is nil")
 			}
-			err := health.CheckKubernetes(k8s.Clientset())
-			if err != nil {
-				slog.Error("Kubernetes healthcheck failed", "error", err)
-			}
-			return err
+			return health.CheckKubernetes(k8s.Clientset())
 		})
 
 		// 2. Spanner check
@@ -54,28 +51,26 @@ func activeHealthCheck(k8s k8sHealthClient, spClient health.SpannerHealthClient,
 			if spClient == nil {
 				return nil
 			}
-			err := health.CheckSpannerESS(ctx, spClient)
-			if err != nil {
-				slog.Error("Spanner healthcheck failed", "error", err)
-			}
-			return err
+			return health.CheckSpannerESS(ctx, spClient)
 		})
 
 		// 3. Redis check
 		eg.Go(func() error {
 			if redis == nil {
-				slog.Error("Redis healthcheck failed: client is nil")
 				return fmt.Errorf("redis client is nil")
 			}
 			if err := redis.Ping(ctx); err != nil {
-				slog.Error("Redis healthcheck failed", "error", err)
 				return fmt.Errorf("redis reachability: %w", err)
 			}
 			return nil
 		})
 
 		if err := eg.Wait(); err != nil {
-			slog.Error("Overall healthcheck failed", "error", err)
+			if errors.Is(err, context.Canceled) || errors.Is(r.Context().Err(), context.Canceled) {
+				slog.InfoContext(ctx, "Healthcheck canceled by client", "error", err)
+			} else {
+				slog.ErrorContext(ctx, "Overall healthcheck failed", "error", err)
+			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
