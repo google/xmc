@@ -32,28 +32,28 @@ const (
 )
 
 // ListStatusMessages returns a list of historical status messages for an experiment or work unit.
-func (s *Server) ListStatusMessages(ctx context.Context, req *apipb.ListStatusMessagesRequest) (*apipb.ListStatusMessagesResponse, error) {
+func (h *StatusMessageHandler) ListStatusMessages(ctx context.Context, req *apipb.ListStatusMessagesRequest) (*apipb.ListStatusMessagesResponse, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Fetch status messages", "request", req)
-	resp, err := s.listStatusMessagesWithStaleness(ctx, req, 0*time.Second)
+	resp, err := h.listStatusMessagesWithStaleness(ctx, req, 0*time.Second)
 	logging.Info(ctx, "Fetched status messages", "response", resp)
 	return resp, err
 }
 
 // SearchStatusMessages returns a list of historical status messages for an experiment or work unit
 // with a specified staleness for potentially faster reads.
-func (s *Server) SearchStatusMessages(ctx context.Context, req *apipb.ListStatusMessagesRequest) (*apipb.ListStatusMessagesResponse, error) {
+func (h *StatusMessageHandler) SearchStatusMessages(ctx context.Context, req *apipb.ListStatusMessagesRequest) (*apipb.ListStatusMessagesResponse, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Search status messages", "request", req)
-	resp, err := s.listStatusMessagesWithStaleness(ctx, req, statusMessageSearchStaleness)
+	resp, err := h.listStatusMessagesWithStaleness(ctx, req, statusMessageSearchStaleness)
 	logging.Info(ctx, "Searched status messages", "response", resp)
 	return resp, err
 }
 
-func (s *Server) listStatusMessagesWithStaleness(ctx context.Context, req *apipb.ListStatusMessagesRequest, staleness time.Duration) (*apipb.ListStatusMessagesResponse, error) {
+func (h *StatusMessageHandler) listStatusMessagesWithStaleness(ctx context.Context, req *apipb.ListStatusMessagesRequest, staleness time.Duration) (*apipb.ListStatusMessagesResponse, error) {
 	// 1. Authenticate the user.
 	logging.Debug(ctx, "Extracting user identity from context")
-	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	email, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func (s *Server) listStatusMessagesWithStaleness(ctx context.Context, req *apipb
 	ctx = logging.WithStatusMessageParent(ctx, parent)
 
 	// 4. Authorize the caller to get the status messages for this experiment or work unit.
-	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(parentXID), email, xidmsgpb.XidAcls_READER.Enum())
+	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(parentXID), email, xidmsgpb.XidAcls_READER.Enum())
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (s *Server) listStatusMessagesWithStaleness(ctx context.Context, req *apipb
 	}
 
 	// 5. Get the list of StatusMessages from the storage layer.
-	messages, nextPageToken, err := s.storage.ListStatusMessages(ctx, req.GetParent(), req.GetPageSize(), req.GetPageToken(), req.GetFilter(), req.GetOrderBy(), staleness)
+	messages, nextPageToken, err := h.storage.ListStatusMessages(ctx, req.GetParent(), req.GetPageSize(), req.GetPageToken(), req.GetFilter(), req.GetOrderBy(), staleness)
 	if err != nil {
 		return nil, err
 	}

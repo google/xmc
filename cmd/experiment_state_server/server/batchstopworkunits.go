@@ -34,13 +34,13 @@ import (
 )
 
 // BatchStopWorkUnits sends a request to stop multiple work units based on a filter.
-func (s *Server) BatchStopWorkUnits(ctx context.Context, req *apipb.BatchStopWorkUnitsRequest) (*lropb.Operation, error) {
+func (h *WorkUnitHandler) BatchStopWorkUnits(ctx context.Context, req *apipb.BatchStopWorkUnitsRequest) (*lropb.Operation, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Batch stop work units", "request", req)
 
 	// 1. Authenticate the user.
 	logging.Debug(ctx, "Extracting user identity from context")
-	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	email, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (s *Server) BatchStopWorkUnits(ctx context.Context, req *apipb.BatchStopWor
 	ctx = logging.WithExperimentName(ctx, req.GetParent())
 
 	// 3. Authorize the caller to stop work units for this experiment.
-	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
+	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func (s *Server) BatchStopWorkUnits(ctx context.Context, req *apipb.BatchStopWor
 	}
 
 	// 4. Retrieve the list of work units to stop from the storage layer.
-	workUnits, _, err := s.storage.ListWorkUnits(ctx, req.Parent, math.MaxInt32, "", req.GetFilter(), "", 0)
+	workUnits, _, err := h.storage.ListWorkUnits(ctx, req.Parent, math.MaxInt32, "", req.GetFilter(), "", 0)
 	if err != nil {
 		logging.Error(ctx, "Failed to list work units", "error", err, "filter", req.GetFilter())
 		return nil, fmt.Errorf("failed to list work units: %w (%v)", status.ErrInternal, err)
@@ -82,7 +82,7 @@ func (s *Server) BatchStopWorkUnits(ctx context.Context, req *apipb.BatchStopWor
 	for _, workUnit := range workUnits {
 		ctx := logging.WithWorkUnitName(ctx, workUnit.GetName())
 
-		res, err := s.enqueueWorkUnitStop(ctx, workUnit, email)
+		res, err := h.enqueueWorkUnitStop(ctx, workUnit, email)
 		if err != nil {
 			multiErr = errors.Join(multiErr, err)
 			continue
@@ -95,7 +95,7 @@ func (s *Server) BatchStopWorkUnits(ctx context.Context, req *apipb.BatchStopWor
 	// 6. Update the work unit execution statuses to STOPPING for all work units that were
 	// successfully processed.
 	if len(execUpdates) > 0 {
-		if _, err := s.storage.UpdateWorkUnitExecutions(ctx, xid, execUpdates); err != nil {
+		if _, err := h.storage.UpdateWorkUnitExecutions(ctx, xid, execUpdates); err != nil {
 			logging.Error(ctx, "Failed to batch update work unit statuses", "error", err)
 			multiErr = errors.Join(multiErr, fmt.Errorf("failed to batch update work unit statuses: %w (%v)", status.ErrInternal, err))
 		}
@@ -119,7 +119,7 @@ type WorkUnitStopEnqueueResult struct {
 }
 
 // enqueueWorkUnitStop handles the stopping process for a single work unit.
-func (s *Server) enqueueWorkUnitStop(ctx context.Context, workUnit *msgpb.WorkUnit, email string) (WorkUnitStopEnqueueResult, error) {
+func (h *WorkUnitHandler) enqueueWorkUnitStop(ctx context.Context, workUnit *msgpb.WorkUnit, email string) (WorkUnitStopEnqueueResult, error) {
 	xid, wid, eid, err := validator.ValidateWorkUnitExecutionName(workUnit.GetCurrentWorkUnitExecution().GetName())
 	if err != nil {
 		logging.Warn(ctx, "Failed to validate work unit name", "name", workUnit.GetName(), "error", err)
@@ -133,7 +133,7 @@ func (s *Server) enqueueWorkUnitStop(ctx context.Context, workUnit *msgpb.WorkUn
 		ActionType:        msgpb.OperationMetadata_STOP,
 		OriginalRequester: email,
 	}
-	operation, err := s.storage.AddWorkUnitOperation(ctx, xid, wid, metadata)
+	operation, err := h.storage.AddWorkUnitOperation(ctx, xid, wid, metadata)
 	if err != nil {
 		logging.Error(ctx, "Failed to add work unit operation", "error", err)
 		return WorkUnitStopEnqueueResult{}, fmt.Errorf("failed to add work unit operation: %w (%v)", status.ErrInternal, err)
@@ -141,13 +141,13 @@ func (s *Server) enqueueWorkUnitStop(ctx context.Context, workUnit *msgpb.WorkUn
 
 	// 1.1. Ensure that the operation is marked as done if an error is returned from now on.
 	defer func() {
-		s.stopOperationOnError(ctx, operation, err)
+		h.stopOperationOnError(ctx, operation, err)
 	}()
 
 	// 2. Enqueue the work unit for stopping.
 	logging.Info(ctx, "Add stop request for work unit to the queue")
-	if err = s.taskQueueClient.EnqueueWorkUnitTask(ctx, workUnit.GetCurrentWorkUnitExecution().GetName(), workUnit, client.DeleteAction(), operation.GetName()); err != nil {
-		return WorkUnitStopEnqueueResult{}, s.handleEnqueueActionError(ctx, "stop", workUnit, xid, wid, msgpb.StructuredMessage_ERROR, err)
+	if err = h.actuator.EnqueueWorkUnitTask(ctx, workUnit.GetCurrentWorkUnitExecution().GetName(), workUnit, client.DeleteAction(), operation.GetName()); err != nil {
+		return WorkUnitStopEnqueueResult{}, h.handleEnqueueActionError(ctx, "stop", workUnit, xid, wid, msgpb.StructuredMessage_ERROR, err)
 	}
 
 	// 3. Update the work unit's status to STOPPING.

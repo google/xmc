@@ -31,7 +31,6 @@ import (
 	"xmanager_cloud/storage/spanner/emulator/emulator"
 	"xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/storage/storage"
-	tq "xmanager_cloud/task_queue/client"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 	xidapipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
@@ -191,7 +190,6 @@ func TestListWorkUnits_BadPaths(t *testing.T) {
 
 func TestListWorkUnits_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{}
 
 	goodReq := &apipb.ListWorkUnitsRequest{PageSize: 10, Parent: "experiments/1"}
 
@@ -247,7 +245,17 @@ func TestListWorkUnits_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil)
+			var opts []testServerOpt
+			if tc.storage != nil {
+				opts = append(opts, withStorage(tc.storage))
+			}
+			if tc.authenticator != nil {
+				opts = append(opts, withAuthorizer(tc.authenticator))
+			}
+			if tc.xidClient != nil {
+				opts = append(opts, withXidClient(tc.xidClient))
+			}
+			server := newTestServer(t, opts...)
 			_, err := server.ListWorkUnits(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ListWorkUnits(%v) returned error %v, want %v", goodReq, err, tc.wantErr)
@@ -277,7 +285,7 @@ func createExperimentStateServerWithMockXid(ctx context.Context, t *testing.T) (
 	t.Helper()
 	_, essStorageClient := emulator.Setup(ctx, t)
 	storage, _ := spanner.NewStorage(essStorageClient)
-	cfg := config.Config{
+	cfg := &config.Config{
 		EndpointURL:                 "http://localhost:8080",
 		DefaultExecutionEnvironment: "gke",
 	}
@@ -285,6 +293,10 @@ func createExperimentStateServerWithMockXid(ctx context.Context, t *testing.T) (
 	xidClient := &mockXidClient{
 		createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/1")},
 	}
-	taskQueueClient := &tq.FakeClient{}
-	return New(storage, &cfg, createTestAuthorizer(ctx, t), xidClient, taskQueueClient), xidClient
+	server := newTestServer(t,
+		withStorage(storage),
+		withConfig(cfg),
+		withXidClient(xidClient),
+	)
+	return server, xidClient
 }

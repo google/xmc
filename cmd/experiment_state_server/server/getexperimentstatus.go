@@ -27,13 +27,13 @@ import (
 )
 
 // GetExperimentStatus orchestrates the retrieval of a single experiment's status by its ID.
-func (s *Server) GetExperimentStatus(ctx context.Context, req *apipb.GetExperimentStatusRequest) (*msgpb.ExperimentStatus, error) {
+func (h *ExperimentHandler) GetExperimentStatus(ctx context.Context, req *apipb.GetExperimentStatusRequest) (*msgpb.ExperimentStatus, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Fetch experiment status", "request", req)
 
 	// 1. Authenticate the user.
 	logging.Debug(ctx, "Extracting user identity from context")
-	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	email, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func (s *Server) GetExperimentStatus(ctx context.Context, req *apipb.GetExperime
 	ctx = logging.WithExperimentName(ctx, name)
 
 	// 3. Authorize the caller to get the experiment status for this experiment.
-	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_READER.Enum())
+	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_READER.Enum())
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.NotFound {
 			logging.Warn(ctx, "Experiment not found in XID service")
@@ -64,7 +64,7 @@ func (s *Server) GetExperimentStatus(ctx context.Context, req *apipb.GetExperime
 
 	// 4. Retrieve the experiment from the storage layer.
 	logging.Debug(ctx, "Fetching experiment status from storage")
-	exp, err := s.storage.FetchExperimentStatus(ctx, xid)
+	exp, err := h.storage.FetchExperimentStatus(ctx, xid)
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.NotFound {
 			logging.Warn(ctx, "Experiment not found in storage")

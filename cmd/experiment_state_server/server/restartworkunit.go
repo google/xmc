@@ -27,13 +27,13 @@ import (
 )
 
 // RestartWorkUnit sends a request to restart a work unit.
-func (s *Server) RestartWorkUnit(ctx context.Context, req *apipb.RestartWorkUnitRequest) (*lropb.Operation, error) {
+func (h *WorkUnitHandler) RestartWorkUnit(ctx context.Context, req *apipb.RestartWorkUnitRequest) (*lropb.Operation, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Enqueue restart work unit", "request", req)
 
 	// 1. Authenticate the user.
 	logging.Debug(ctx, "Extracting user identity from context")
-	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	email, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func (s *Server) RestartWorkUnit(ctx context.Context, req *apipb.RestartWorkUnit
 	ctx = logging.WithWorkUnitName(ctx, req.GetName())
 
 	// 3. Authorize the caller to restart work units for this experiment.
-	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
+	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func (s *Server) RestartWorkUnit(ctx context.Context, req *apipb.RestartWorkUnit
 	}
 
 	// 4. Retrieve the work unit from the storage layer. We need this to get the executable later.
-	workUnit, err := s.storage.FetchWorkUnit(ctx, xid, wid)
+	workUnit, err := h.storage.FetchWorkUnit(ctx, xid, wid)
 	if err != nil {
 		logging.Error(ctx, "Failed to get work unit", "error", err)
 		return nil, fmt.Errorf("failed to get work unit: %w (%v)", status.ErrNotFound, err)
@@ -65,7 +65,7 @@ func (s *Server) RestartWorkUnit(ctx context.Context, req *apipb.RestartWorkUnit
 	oldExecutionName := workUnit.GetCurrentWorkUnitExecution().GetName()
 
 	// 5. Restart the work unit execution.
-	restartedExecutions, err := s.storage.RestartWorkUnitExecutions(ctx, email, xid, []int64{wid})
+	restartedExecutions, err := h.storage.RestartWorkUnitExecutions(ctx, email, xid, []int64{wid})
 	if err != nil {
 		logging.Error(ctx, "Failed to restart work unit executions", "error", err)
 		return nil, fmt.Errorf("failed to restart work unit executions: %w (%v)", status.ErrInternal, err)
@@ -80,16 +80,16 @@ func (s *Server) RestartWorkUnit(ctx context.Context, req *apipb.RestartWorkUnit
 	workUnit.CurrentWorkUnitExecution = restartedExecution
 
 	// 6. Get the experiment priority for this experiment.
-	experiment, err := s.storage.FetchExperiment(ctx, xid)
+	experiment, err := h.storage.FetchExperiment(ctx, xid)
 	if err != nil {
 		logging.Error(ctx, "Failed to get experiment priority", "error", err)
 		return nil, fmt.Errorf("failed to get experiment priority: %w (%v)", status.ErrInternal, err)
 	}
 
 	// 7. Enqueue the restart request for the work unit.
-	operation, err := s.enqueueWorkUnitRestart(ctx, oldExecutionName, workUnit, email, experiment.GetPriority())
+	operation, err := h.enqueueWorkUnitRestart(ctx, oldExecutionName, workUnit, email, experiment.GetPriority())
 	if err != nil {
-		return nil, s.handleEnqueueActionError(ctx, "restart", workUnit, xid, wid, msgpb.StructuredMessage_FATAL, err)
+		return nil, h.handleEnqueueActionError(ctx, "restart", workUnit, xid, wid, msgpb.StructuredMessage_FATAL, err)
 	}
 
 	// 8. Return the successful response.

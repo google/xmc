@@ -46,9 +46,8 @@ func TestCreateWorkUnit_HappyPath(t *testing.T) {
 	ctx := context.Background()
 	cleanup := tq.MockGenerateOIDCTokenForTest()
 	defer cleanup()
-	server, _ := createExperimentStateServer(ctx, t)
 	realTaskQueueClient := tq.CreateTaskQueueClient(ctx, t)
-	server.taskQueueClient = realTaskQueueClient
+	server, _ := createExperimentStateServer(ctx, t, withWorkUnitActuator(realTaskQueueClient))
 	redisFake := tq.GetFakeRedisClient(realTaskQueueClient)
 
 	exp := &msgpb.Experiment{
@@ -215,7 +214,7 @@ func TestCreateWorkUnit_FillNilValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateExperimentName() returned an unexpected error: %v", err)
 	}
-	got, err := server.storage.FetchWorkUnit(ctx, xid, 1)
+	got, err := server.WorkUnitHandler.storage.FetchWorkUnit(ctx, xid, 1)
 	if err != nil {
 		t.Fatalf("FetchWorkUnit() returned an unexpected error: %v", err)
 	}
@@ -272,11 +271,11 @@ func TestCreateWorkUnit_IncompatibleWorkUnit(t *testing.T) {
 	xidClient := &mockXidClient{
 		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
-	storage := &storage.MockStorage{}
-	taskQueueClient := &tq.FakeClient{}
 
-	authenticator := createTestAuthorizer(ctx, t)
-	server := New(storage, cfg, authenticator, xidClient, taskQueueClient)
+	server := newTestServer(t,
+		withConfig(cfg),
+		withXidClient(xidClient),
+	)
 
 	_, err := server.CreateWorkUnit(ctx, req)
 	if !errors.Is(err, status.ErrInvalidArgument) {
@@ -414,11 +413,18 @@ func TestCreateWorkUnit_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.authenticator == nil {
-				tc.authenticator = createTestAuthorizer(ctx, t)
+			var opts []testServerOpt
+			if tc.storage != nil {
+				opts = append(opts, withStorage(tc.storage))
 			}
-			taskQueueClient := &tq.FakeClient{}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient)
+			if tc.authenticator != nil {
+				opts = append(opts, withAuthorizer(tc.authenticator))
+			}
+			if tc.xidClient != nil {
+				opts = append(opts, withXidClient(tc.xidClient))
+			}
+			opts = append(opts, withConfig(cfg))
+			server := newTestServer(t, opts...)
 			_, err := server.CreateWorkUnit(ctx, proto.Clone(goodReq).(*apipb.CreateWorkUnitRequest))
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("CreateWorkUnit() = error %v, want %v", err, tc.wantErr)
@@ -444,13 +450,15 @@ func TestCreateWorkUnit_TaskEnqueueFails(t *testing.T) {
 	xidClient := &mockXidClient{
 		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
-	storage := &storage.MockStorage{}
 	taskQueueClient := &tq.FakeClient{
 		EnqueueErr: fmt.Errorf("Task enqueue failed"),
 	}
 
-	authenticator := createTestAuthorizer(ctx, t)
-	server := New(storage, cfg, authenticator, xidClient, taskQueueClient)
+	server := newTestServer(t,
+		withConfig(cfg),
+		withXidClient(xidClient),
+		withWorkUnitActuator(taskQueueClient),
+	)
 
 	_, err := server.CreateWorkUnit(ctx, proto.Clone(goodReq).(*apipb.CreateWorkUnitRequest))
 	if !errors.Is(err, status.ErrInternal) {

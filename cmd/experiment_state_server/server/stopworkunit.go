@@ -28,13 +28,13 @@ import (
 )
 
 // StopWorkUnit sends a request to stop a work unit and updates its state to Stopping.
-func (s *Server) StopWorkUnit(ctx context.Context, req *apipb.StopWorkUnitRequest) (*lropb.Operation, error) {
+func (h *WorkUnitHandler) StopWorkUnit(ctx context.Context, req *apipb.StopWorkUnitRequest) (*lropb.Operation, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Enqueue stop work unit", "request", req)
 
 	// 1. Authenticate the user.
 	logging.Debug(ctx, "Extracting user identity from context")
-	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	email, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func (s *Server) StopWorkUnit(ctx context.Context, req *apipb.StopWorkUnitReques
 	ctx = logging.WithWorkUnitName(ctx, req.GetName())
 
 	// 3. Authorize the caller to get the current work unit execution for this experiment.
-	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
+	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_WRITER.Enum())
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func (s *Server) StopWorkUnit(ctx context.Context, req *apipb.StopWorkUnitReques
 	}
 
 	// 4. Retrieve the work unit from the storage layer.
-	workUnit, err := s.storage.FetchWorkUnit(ctx, xid, wid)
+	workUnit, err := h.storage.FetchWorkUnit(ctx, xid, wid)
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.NotFound {
 			logging.Warn(ctx, "Work unit not found in storage")
@@ -70,14 +70,14 @@ func (s *Server) StopWorkUnit(ctx context.Context, req *apipb.StopWorkUnitReques
 	}
 
 	// 5. Enqueue the stop request for the work unit.
-	res, err := s.enqueueWorkUnitStop(ctx, workUnit, email)
+	res, err := h.enqueueWorkUnitStop(ctx, workUnit, email)
 	if err != nil {
-		return nil, s.handleEnqueueActionError(ctx, "stop", workUnit, xid, wid, msgpb.StructuredMessage_ERROR, err)
+		return nil, h.handleEnqueueActionError(ctx, "stop", workUnit, xid, wid, msgpb.StructuredMessage_ERROR, err)
 	}
 	operation, execUpdate := res.Operation, res.ExecutionUpdate
 
 	// 6. Update the work unit execution status to STOPPING.
-	_, err = s.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{execUpdate})
+	_, err = h.storage.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{execUpdate})
 	if err != nil {
 		logging.Error(ctx, "Failed to update work unit execution statuses", "error", err)
 		return nil, fmt.Errorf("failed to update work unit execution statuses: %w (%v)", status.ErrInternal, err)
