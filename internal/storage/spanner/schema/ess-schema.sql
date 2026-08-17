@@ -236,7 +236,7 @@ CREATE TABLE WorkUnits (
   -- The status of the current work unit execution.
   WorkUnitStatus cloud.xmanager.v1.WorkUnitStatus NOT NULL,
 
-  -- The queue name of the work unit. Stored for indexing.
+  -- The queue name of the work unit. Stored for indexing. Should match the kueue ClusterQueue.
   QueueName STRING(MAX) NOT NULL AS (Executable.scheduling_constraints.queue_name) STORED,
   -- The state of the current work unit execution. Stored for searching.
   ExecutionState cloud.xmanager.v1.WorkUnitStatus.WorkUnitState NOT NULL AS (WorkUnitStatus.state) STORED,
@@ -290,7 +290,9 @@ ON WorkUnits (
   PositionInQueue ASC, 
   CreateTime ASC, 
   WorkUnitId ASC
-) STORING (IsPendingOrRunningJob) WHERE IsPendingOrRunningJob IS NOT NULL;
+) STORING (
+  IsPendingOrRunningJob
+) WHERE IsPendingOrRunningJob IS NOT NULL;
 
 -- Table that holds the list of operations.
 CREATE TABLE Operations (
@@ -462,7 +464,7 @@ CREATE TABLE WorkUnitStatusHistory (
   HistoryId INT64 NOT NULL,
   -- The associated work unit execution ID.
   ExecutionId INT64,
-  -- The name of the queue assigned to the work unit.
+  -- The name of the queue assigned to the work unit. Should match the kueue ClusterQueue.
   QueueName STRING(MAX),
   -- The previous work unit state prior to transition.
   PreviousState cloud.xmanager.v1.WorkUnitStatus.WorkUnitState,
@@ -472,19 +474,14 @@ CREATE TABLE WorkUnitStatusHistory (
   ResourceType STRING(MAX),
   -- Quantity of compute resource units requested.
   ResourceUnits INT64,
-  -- Timestamp of state transition.
-  TransitionTime TIMESTAMP NOT NULL,
-  -- Stored alias for query compatibility.
-  CreateTime TIMESTAMP NOT NULL AS (TransitionTime) STORED,
-  -- Expiration time for automatic row pruning via TTL policy (30 days).
-  ExpirationTime TIMESTAMP AS (TIMESTAMP_ADD(TransitionTime, INTERVAL 30 DAY)) STORED,
+  -- Timestamp when the state transition was recorded.
+  TransitionTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+  -- Optional human-readable message describing state transition or failure reason.
+  StatusMessage STRING(MAX),
+  -- Timestamp when row was inserted into history.
+  CreateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
 ) PRIMARY KEY (BitReversedXid, WorkUnitId, HistoryId),
-  INTERLEAVE IN PARENT WorkUnits
-  ON DELETE CASCADE,
-  ROW DELETION POLICY (OLDER_THAN(ExpirationTime, INTERVAL 0 DAY));
+  INTERLEAVE IN PARENT WorkUnits ON DELETE CASCADE;
 
--- Index for efficient sliding-window queue velocity and turnover rate queries.
 CREATE INDEX WorkUnitStatusHistoryByQueueAndTransitionTime ON WorkUnitStatusHistory (QueueName, TransitionTime DESC, NewState, PreviousState) STORING (ResourceType, ResourceUnits);
-
-
 

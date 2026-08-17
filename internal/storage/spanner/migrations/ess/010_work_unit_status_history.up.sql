@@ -24,7 +24,7 @@ CREATE TABLE WorkUnitStatusHistory (
   HistoryId INT64 NOT NULL,
   -- The associated work unit execution ID.
   ExecutionId INT64,
-  -- The name of the queue assigned to the work unit.
+  -- The name of the queue assigned to the work unit. Should match the kueue ClusterQueue.
   QueueName STRING(MAX),
   -- The previous work unit state prior to transition.
   PreviousState cloud.xmanager.v1.WorkUnitStatus.WorkUnitState,
