@@ -44,6 +44,7 @@ type server struct {
 	spb.UnimplementedHealthServiceServer
 	cfg     *Config
 	checker healthChecker
+	guard   AdminRoleGuard
 
 	// Caching
 	cacheMu      sync.RWMutex
@@ -55,7 +56,7 @@ type server struct {
 	sfGroup             singleflight.Group
 }
 
-func newServer(cfg *Config, checker healthChecker) *server {
+func newServer(cfg *Config, checker healthChecker, guard AdminRoleGuard) *server {
 	var limiter *rate.Limiter
 	if cfg.ForceRefreshMaxRequests > 0 && cfg.ForceRefreshWindow > 0 {
 		limiter = rate.NewLimiter(rate.Limit(float64(cfg.ForceRefreshMaxRequests)/cfg.ForceRefreshWindow.Seconds()), cfg.ForceRefreshMaxRequests)
@@ -63,6 +64,7 @@ func newServer(cfg *Config, checker healthChecker) *server {
 	return &server{
 		cfg:                 cfg,
 		checker:             checker,
+		guard:               guard,
 		forceRefreshLimiter: limiter,
 	}
 }
@@ -72,6 +74,10 @@ func (s *server) Close() error {
 }
 
 func (s *server) GetHealthStatus(ctx context.Context, req *spb.GetHealthStatusRequest) (*spb.HealthStatusResponse, error) {
+	if err := s.guard.CheckAdminRole(ctx); err != nil {
+		return nil, err
+	}
+
 	if req.GetForceRefresh() {
 		if s.forceRefreshLimiter != nil && !s.forceRefreshLimiter.Allow() {
 			return nil, status.Error(codes.ResourceExhausted, "rate limit exceeded for force refresh")
@@ -182,6 +188,10 @@ func (s *server) updateHealthStatusCache(resp *spb.HealthStatusResponse) {
 }
 
 func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntriesRequest) (*spb.ListConfigEntriesResponse, error) {
+	if err := s.guard.CheckAdminRole(ctx); err != nil {
+		return nil, err
+	}
+
 	groups, err := listConfigs(ctx, os.DirFS(s.cfg.ConfigDir))
 	if err != nil {
 		return nil, err
@@ -192,10 +202,19 @@ func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntri
 }
 
 func (s *server) GetUserInfo(ctx context.Context, req *spb.GetUserInfoRequest) (*spb.UserInfoResponse, error) {
+	email, hasRole, err := s.guard.HasAdminRole(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to check admin role for user info", "error", err)
+		return &spb.UserInfoResponse{UserEmail: "", Privileges: nil}, nil
+	}
+
+	var privileges []spb.Privilege
+	if hasRole {
+		privileges = append(privileges, spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL)
+	}
+
 	return &spb.UserInfoResponse{
-		UserEmail: "mock-user@google.com",
-		Privileges: []spb.Privilege{
-			spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL,
-		},
+		UserEmail:  email,
+		Privileges: privileges,
 	}, nil
 }

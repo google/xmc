@@ -19,6 +19,7 @@ load("//:oci.bzl", "oci_image_for_service")
 compat_go_library(
     name = "health_service_lib",
     srcs = [
+        "admin_role_guard.go",
         "config.go",
         "health_checker.go",
         "list_configs.go",
@@ -72,6 +73,7 @@ oci_image_for_service(
 compat_go_test(
     name = "server_test",
     srcs = [
+        "admin_role_guard_test.go",
         "health_checker_test.go",
         "list_configs_test.go",
         "server_test.go",
@@ -82,7 +84,9 @@ compat_go_test(
         "@org_golang_google_api//option:go_default_library",
         "@org_golang_google_api//run/v2:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//codes:go_default_library",
         "@org_golang_google_grpc//health:go_default_library",
+        "@org_golang_google_grpc//status:go_default_library",
         "@org_golang_google_protobuf//testing/protocmp:go_default_library",
     ],
 )
