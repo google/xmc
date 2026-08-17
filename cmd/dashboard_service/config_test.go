@@ -19,17 +19,49 @@ import (
 )
 
 func TestLoadConfig(t *testing.T) {
-	cfg := LoadConfig()
-	if cfg == nil {
-		t.Fatal("LoadConfig() returned nil")
-	}
-	if cfg.Port == "" {
-		t.Error("Expected default Port to be non-empty")
-	}
-	if cfg.GRPCPort == "" {
-		t.Error("Expected default GRPCPort to be non-empty")
-	}
-	if cfg.XidServiceAddr == "" {
-		t.Error("Expected default XidServiceAddr to be non-empty")
-	}
+	t.Run("default fallbacks when env is empty", func(t *testing.T) {
+		cfg := LoadConfig()
+		if cfg == nil {
+			t.Fatal("LoadConfig() returned nil")
+		}
+		if cfg.Port != "8080" {
+			t.Errorf("Expected default Port '8080', got %q", cfg.Port)
+		}
+		if cfg.GRPCPort != "50051" {
+			t.Errorf("Expected default GRPCPort '50051', got %q", cfg.GRPCPort)
+		}
+		if cfg.XidServiceAddr != "localhost:8082" {
+			t.Errorf("Expected default XidServiceAddr 'localhost:8082', got %q", cfg.XidServiceAddr)
+		}
+	})
+
+	t.Run("environment variable fallbacks", func(t *testing.T) {
+		t.Setenv("PORT", "9090")
+		t.Setenv("GRPC_PORT", "60051")
+		t.Setenv("GOOGLE_CLOUD_PROJECT", "custom-proj")
+		t.Setenv("XID_SERVICE_ADDR", "custom-xid:9999")
+
+		cfg := LoadConfig()
+		if cfg.Port != "9090" {
+			t.Errorf("Expected Port '9090', got %q", cfg.Port)
+		}
+		if cfg.GRPCPort != "60051" {
+			t.Errorf("Expected GRPCPort '60051', got %q", cfg.GRPCPort)
+		}
+		if cfg.ProjectID != "custom-proj" {
+			t.Errorf("Expected ProjectID 'custom-proj', got %q", cfg.ProjectID)
+		}
+		if cfg.XidServiceAddr != "custom-xid:9999" {
+			t.Errorf("Expected XidServiceAddr 'custom-xid:9999', got %q", cfg.XidServiceAddr)
+		}
+	})
+}
+
+func TestGetSpannerDatabaseName(t *testing.T) {
+	t.Run("returns env variable when flag is empty", func(t *testing.T) {
+		t.Setenv("SPANNER_DATABASE_NAME", "projects/p/instances/i/databases/d")
+		if got := getSpannerDatabaseName(); got != "projects/p/instances/i/databases/d" {
+			t.Errorf("getSpannerDatabaseName() = %q, want 'projects/p/instances/i/databases/d'", got)
+		}
+	})
 }

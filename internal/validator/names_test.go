@@ -817,6 +817,11 @@ func TestGetResourceType(t *testing.T) {
 			want:     DashboardResource,
 		},
 		{
+			name:     "valid_chart",
+			resource: "dashboards/123/charts/456",
+			want:     ChartResource,
+		},
+		{
 			name:     "unknown_resource",
 			resource: "invalid/resource",
 			want:     UnknownResource,
@@ -835,5 +840,94 @@ func TestGetResourceType(t *testing.T) {
 				t.Errorf("GetResourceType(%q) = %v, want %v", tc.resource, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestValidateChartName(t *testing.T) {
+	tests := []struct {
+		name          string
+		chartName     string
+		wantDashID    string
+		wantChartID   string
+		wantErr       error
+	}{
+		{
+			name:        "valid_chart_name",
+			chartName:   "dashboards/dash-123/charts/chart-456",
+			wantDashID:  "dash-123",
+			wantChartID: "chart-456",
+			wantErr:     nil,
+		},
+		{
+			name:        "valid_chart_name_uuid",
+			chartName:   "dashboards/550e8400-e29b-41d4-a716-446655440000/charts/chart-uuid-1",
+			wantDashID:  "550e8400-e29b-41d4-a716-446655440000",
+			wantChartID: "chart-uuid-1",
+			wantErr:     nil,
+		},
+		{
+			name:        "invalid_chart_name_format",
+			chartName:   "invalid/123/charts/456",
+			wantDashID:  "",
+			wantChartID: "",
+			wantErr:     status.ErrInvalidArgument,
+		},
+		{
+			name:        "invalid_chart_name_missing_charts_literal",
+			chartName:   "dashboards/123/panels/456",
+			wantDashID:  "",
+			wantChartID: "",
+			wantErr:     status.ErrInvalidArgument,
+		},
+		{
+			name:        "invalid_chart_name_empty_dashboard_id",
+			chartName:   "dashboards//charts/456",
+			wantDashID:  "",
+			wantChartID: "",
+			wantErr:     status.ErrInvalidArgument,
+		},
+		{
+			name:        "invalid_chart_name_empty_chart_id",
+			chartName:   "dashboards/123/charts/",
+			wantDashID:  "",
+			wantChartID: "",
+			wantErr:     status.ErrInvalidArgument,
+		},
+		{
+			name:        "invalid_chart_name_extra_parts",
+			chartName:   "dashboards/123/charts/456/extra",
+			wantDashID:  "",
+			wantChartID: "",
+			wantErr:     status.ErrInvalidArgument,
+		},
+		{
+			name:        "invalid_chart_name_empty_string",
+			chartName:   "",
+			wantDashID:  "",
+			wantChartID: "",
+			wantErr:     status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotDashID, gotChartID, err := ValidateChartName(tc.chartName)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateChartName(%q) returned unexpected error: %v, want %v", tc.chartName, err, tc.wantErr)
+			}
+			if gotDashID != tc.wantDashID || gotChartID != tc.wantChartID {
+				t.Errorf("ValidateChartName(%q) = (%q, %q), want (%q, %q)", tc.chartName, gotDashID, gotChartID, tc.wantDashID, tc.wantChartID)
+			}
+		})
+	}
+}
+
+func TestConstructChartName(t *testing.T) {
+	dashID := "dash-123"
+	chartID := "chart-456"
+	want := "dashboards/dash-123/charts/chart-456"
+	got := ConstructChartName(dashID, chartID)
+	if got != want {
+		t.Errorf("ConstructChartName(%q, %q) = %q, want: %q", dashID, chartID, got, want)
 	}
 }

@@ -377,3 +377,318 @@ func TestValidateDeleteDashboardRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateGetChartDataRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     *spb.GetChartDataRequest
+		wantErr error
+	}{
+		{
+			name: "valid_request",
+			req: &spb.GetChartDataRequest{
+				Name:             "dashboards/dash-1/charts/chart-1",
+				ChartWidthPixels: 800,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid_request_zero_pixels",
+			req: &spb.GetChartDataRequest{
+				Name:             "dashboards/dash-1/charts/chart-1",
+				ChartWidthPixels: 0,
+			},
+			wantErr: nil,
+		},
+		{
+			name:    "nil_request",
+			req:     nil,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "empty_name",
+			req: &spb.GetChartDataRequest{
+				Name: "",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_chart_name",
+			req: &spb.GetChartDataRequest{
+				Name: "invalid-name",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "negative_chart_width_pixels",
+			req: &spb.GetChartDataRequest{
+				Name:             "dashboards/dash-1/charts/chart-1",
+				ChartWidthPixels: -100,
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateGetChartDataRequest(tc.req)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateGetChartDataRequest() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateGetChartRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     *spb.GetChartRequest
+		wantErr error
+	}{
+		{
+			name: "valid_request",
+			req: &spb.GetChartRequest{
+				Name: "dashboards/dash-1/charts/chart-1",
+			},
+			wantErr: nil,
+		},
+		{
+			name:    "nil_request",
+			req:     nil,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "empty_name",
+			req: &spb.GetChartRequest{
+				Name: "",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_name",
+			req: &spb.GetChartRequest{
+				Name: "dashboards/dash-1",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateGetChartRequest(tc.req)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateGetChartRequest() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateCreateChartRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     *spb.CreateChartRequest
+		wantErr error
+	}{
+		{
+			name: "valid_request",
+			req: &spb.CreateChartRequest{
+				Parent: "dashboards/dash-1",
+				Chart:  &dpb.Chart{Title: "My Chart"},
+			},
+			wantErr: nil,
+		},
+		{
+			name:    "nil_request",
+			req:     nil,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "empty_parent",
+			req: &spb.CreateChartRequest{
+				Parent: "",
+				Chart:  &dpb.Chart{Title: "My Chart"},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_parent",
+			req: &spb.CreateChartRequest{
+				Parent: "invalid-parent",
+				Chart:  &dpb.Chart{Title: "My Chart"},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "nil_chart",
+			req: &spb.CreateChartRequest{
+				Parent: "dashboards/dash-1",
+				Chart:  nil,
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateCreateChartRequest(tc.req)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateCreateChartRequest() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateListChartsRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     *spb.ListChartsRequest
+		wantErr error
+	}{
+		{
+			name: "valid_request",
+			req: &spb.ListChartsRequest{
+				Parent:   "dashboards/dash-1",
+				PageSize: 10,
+			},
+			wantErr: nil,
+		},
+		{
+			name:    "nil_request",
+			req:     nil,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "empty_parent",
+			req: &spb.ListChartsRequest{
+				Parent: "",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_parent",
+			req: &spb.ListChartsRequest{
+				Parent: "invalid-dash",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "negative_page_size",
+			req: &spb.ListChartsRequest{
+				Parent:   "dashboards/dash-1",
+				PageSize: -1,
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateListChartsRequest(tc.req)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateListChartsRequest() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateUpdateChartRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     *spb.UpdateChartRequest
+		wantErr error
+	}{
+		{
+			name: "valid_request",
+			req: &spb.UpdateChartRequest{
+				Chart: &dpb.Chart{
+					Name:  "dashboards/dash-1/charts/chart-1",
+					Title: "Updated Chart",
+				},
+			},
+			wantErr: nil,
+		},
+		{
+			name:    "nil_request",
+			req:     nil,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "nil_chart",
+			req: &spb.UpdateChartRequest{
+				Chart: nil,
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "empty_chart_name",
+			req: &spb.UpdateChartRequest{
+				Chart: &dpb.Chart{
+					Name: "",
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_chart_name",
+			req: &spb.UpdateChartRequest{
+				Chart: &dpb.Chart{
+					Name: "invalid-name",
+				},
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateUpdateChartRequest(tc.req)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateUpdateChartRequest() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateDeleteChartRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     *spb.DeleteChartRequest
+		wantErr error
+	}{
+		{
+			name: "valid_request",
+			req: &spb.DeleteChartRequest{
+				Name: "dashboards/dash-1/charts/chart-1",
+			},
+			wantErr: nil,
+		},
+		{
+			name:    "nil_request",
+			req:     nil,
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "empty_name",
+			req: &spb.DeleteChartRequest{
+				Name: "",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_name",
+			req: &spb.DeleteChartRequest{
+				Name: "invalid-name",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateDeleteChartRequest(tc.req)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateDeleteChartRequest() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}

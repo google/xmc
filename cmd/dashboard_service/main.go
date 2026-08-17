@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -86,15 +87,15 @@ func setupHTTPHandler(authenticator *oauth2.Authenticator, gwmux http.Handler, r
 	return authenticator.SecurityMiddlewares(mux)
 }
 
-func initAuthenticator(ctx context.Context, projectID string) (*oauth2.Authenticator, *oauth2.Config) {
+func initAuthenticator(ctx context.Context, projectID string) (*oauth2.Authenticator, *oauth2.Config, error) {
 	oauthCfg, err := oauth2.LoadConfig()
 	if err != nil {
-		logging.Fatal(ctx, "Failed to load OAuth config", "error", err)
+		return nil, nil, fmt.Errorf("failed to load OAuth config: %w", err)
 	}
 	if oauthCfg.GCPProjectID == "" {
 		oauthCfg.GCPProjectID = projectID
 	}
-	return oauth2.NewAuthenticator(oauthCfg), oauthCfg
+	return oauth2.NewAuthenticator(oauthCfg), oauthCfg, nil
 }
 
 func initDataEngine(ctx context.Context) *dataengine.DataEngine {
@@ -111,9 +112,9 @@ func initDataEngine(ctx context.Context) *dataengine.DataEngine {
 	return de
 }
 
-func initSpannerClient(ctx context.Context, databaseName string, projectID string) *spanner.Client {
+func initSpannerClient(ctx context.Context, databaseName string, projectID string) (*spanner.Client, error) {
 	if databaseName == "" {
-		logging.Fatal(ctx, "spanner_database_name is required but not configured")
+		return nil, errors.New("spanner_database_name is required but not configured")
 	}
 	sessionPoolConfig := spanner.SessionPoolConfig{
 		TrackSessionHandles: true,
@@ -128,17 +129,17 @@ func initSpannerClient(ctx context.Context, databaseName string, projectID strin
 		option.WithQuotaProject(projectID),
 	)
 	if err != nil {
-		logging.Fatal(ctx, "failed to create spanner client", "error", err)
+		return nil, fmt.Errorf("failed to create spanner client: %w", err)
 	}
-	return sc
+	return sc, nil
 }
 
-func initRepository(ctx context.Context, sc *spanner.Client) server.DashboardRepository {
+func initRepository(ctx context.Context, sc *spanner.Client) (server.DashboardRepository, error) {
 	spannerRepo, err := dashboard.NewRepository(sc)
 	if err != nil {
-		logging.Fatal(ctx, "failed to initialize dashboard repository", "error", err)
+		return nil, fmt.Errorf("failed to initialize dashboard repository: %w", err)
 	}
-	return spannerRepo
+	return spannerRepo, nil
 }
 
 func initAuthorizer(ctx context.Context, projectID string, oauthCfg *oauth2.Config) auth.AuthorizerInterface {
@@ -170,10 +171,10 @@ func initXidClient(addr string) (xidapipb.XidServiceClient, *grpc.ClientConn, er
 	return xidapipb.NewXidServiceClient(conn), conn, nil
 }
 
-func initGRPCServer(ctx context.Context, cfg *server.Config, repo server.DashboardRepository, authorizer auth.AuthorizerInterface, xidClient xidapipb.XidServiceClient, de *dataengine.DataEngine, errChan chan<- error) (*grpc.Server, net.Listener) {
+func initGRPCServer(ctx context.Context, cfg *server.Config, repo server.DashboardRepository, authorizer auth.AuthorizerInterface, xidClient xidapipb.XidServiceClient, de *dataengine.DataEngine, errChan chan<- error) (*grpc.Server, net.Listener, error) {
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
-		logging.Fatal(ctx, "Failed to listen on gRPC port", "error", err)
+		return nil, nil, fmt.Errorf("failed to listen on gRPC port: %w", err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
 	spb.RegisterDashboardServiceServer(grpcServer, server.NewServer(cfg, repo, authorizer, xidClient, de))
@@ -191,17 +192,17 @@ func initGRPCServer(ctx context.Context, cfg *server.Config, repo server.Dashboa
 		}
 	}()
 
-	return grpcServer, lis
+	return grpcServer, lis, nil
 }
 
-func initHTTPServer(ctx context.Context, cfg *server.Config, authenticator *oauth2.Authenticator, sc *spanner.Client, errChan chan<- error) *http.Server {
+func initHTTPServer(ctx context.Context, cfg *server.Config, authenticator *oauth2.Authenticator, sc *spanner.Client, errChan chan<- error) (*http.Server, error) {
 	gwmux := runtime.NewServeMux(runtime.WithIncomingHeaderMatcher(oauth2.IncomingHeaderMatcher))
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
 	err := spb.RegisterDashboardServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
 	if err != nil {
-		logging.Fatal(ctx, "Failed to register gateway", "error", err)
+		return nil, fmt.Errorf("failed to register gateway: %w", err)
 	}
 
 	var readinessCheck func(context.Context) error
@@ -229,7 +230,7 @@ func initHTTPServer(ctx context.Context, cfg *server.Config, authenticator *oaut
 		}
 	}()
 
-	return httpServer
+	return httpServer, nil
 }
 
 func gracefulShutdown(ctx context.Context, httpServer *http.Server, grpcServer *grpc.Server, quit <-chan os.Signal, errChan <-chan error) {
@@ -265,6 +266,10 @@ func gracefulShutdown(ctx context.Context, httpServer *http.Server, grpcServer *
 }
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	google.Init()
 	flag.Parse()
 
@@ -272,27 +277,52 @@ func main() {
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
 	ctx := logging.WithLogger(context.Background(), logger)
 
-	authenticator, oauthCfg := initAuthenticator(ctx, cfg.ProjectID)
+	authenticator, oauthCfg, err := initAuthenticator(ctx, cfg.ProjectID)
+	if err != nil {
+		logging.Error(ctx, "Failed to initialize authenticator", "error", err)
+		return 1
+	}
 	de := initDataEngine(ctx)
 
-	sc := initSpannerClient(ctx, spannerDatabaseName, cfg.ProjectID)
+	spannerDB := getSpannerDatabaseName()
+	sc, err := initSpannerClient(ctx, spannerDB, cfg.ProjectID)
+	if err != nil {
+		logging.Error(ctx, "Failed to initialize Spanner client", "error", err)
+		return 1
+	}
 	defer sc.Close()
 
-	repo := initRepository(ctx, sc)
+	repo, err := initRepository(ctx, sc)
+	if err != nil {
+		logging.Error(ctx, "Failed to initialize dashboard repository", "error", err)
+		return 1
+	}
 	authorizer := initAuthorizer(ctx, cfg.ProjectID, oauthCfg)
 
 	xidClient, xidConn, err := initXidClient(cfg.XidServiceAddr)
 	if err != nil {
-		logging.Fatal(ctx, "failed to initialize XID service client", "error", err)
+		logging.Error(ctx, "Failed to initialize XID service client", "error", err)
+		return 1
 	}
 	defer xidConn.Close()
 
 	errChan := make(chan error, 2)
-	grpcServer, _ := initGRPCServer(ctx, cfg, repo, authorizer, xidClient, de, errChan)
-	httpServer := initHTTPServer(ctx, cfg, authenticator, sc, errChan)
+	grpcServer, lis, err := initGRPCServer(ctx, cfg, repo, authorizer, xidClient, de, errChan)
+	if err != nil {
+		logging.Error(ctx, "Failed to initialize gRPC server", "error", err)
+		return 1
+	}
+	defer lis.Close()
+
+	httpServer, err := initHTTPServer(ctx, cfg, authenticator, sc, errChan)
+	if err != nil {
+		logging.Error(ctx, "Failed to initialize HTTP server", "error", err)
+		return 1
+	}
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	gracefulShutdown(ctx, httpServer, grpcServer, quit, errChan)
+	return 0
 }

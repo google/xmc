@@ -30,28 +30,55 @@ var (
 )
 
 func init() {
-	defaultPort := os.Getenv("PORT")
-	if defaultPort == "" {
-		defaultPort = "8080"
-	}
-	flag.StringVar(&port, "port", defaultPort, "The HTTP server port to listen on.")
-	flag.StringVar(&grpcPort, "grpc_port", "50051", "The gRPC server port to listen on.")
-	flag.StringVar(&projectID, "project_id", os.Getenv("GOOGLE_CLOUD_PROJECT"), "The GCP project ID.")
-	flag.StringVar(&spannerDatabaseName, "spanner_database_name", os.Getenv("SPANNER_DATABASE_NAME"), "The Spanner database resource name.")
+	flag.StringVar(&port, "port", "", "The HTTP server port to listen on.")
+	flag.StringVar(&grpcPort, "grpc_port", "", "The gRPC server port to listen on.")
+	flag.StringVar(&projectID, "project_id", "", "The GCP project ID.")
+	flag.StringVar(&spannerDatabaseName, "spanner_database_name", "", "The Spanner database resource name.")
+	flag.StringVar(&xidServiceAddr, "xid_service_addr", "", "The XID service gRPC address.")
+}
 
-	defaultXidAddr := os.Getenv("XID_SERVICE_ADDR")
-	if defaultXidAddr == "" {
-		defaultXidAddr = "localhost:8082"
+func getSpannerDatabaseName() string {
+	if spannerDatabaseName != "" {
+		return spannerDatabaseName
 	}
-	flag.StringVar(&xidServiceAddr, "xid_service_addr", defaultXidAddr, "The XID service gRPC address.")
+	return os.Getenv("SPANNER_DATABASE_NAME")
 }
 
 // LoadConfig loads and returns the configuration.
 func LoadConfig() *server.Config {
+	p := port
+	if p == "" {
+		p = os.Getenv("PORT")
+	}
+	if p == "" {
+		p = "8080"
+	}
+
+	gp := grpcPort
+	if gp == "" {
+		gp = os.Getenv("GRPC_PORT")
+	}
+	if gp == "" {
+		gp = "50051"
+	}
+
+	proj := projectID
+	if proj == "" {
+		proj = os.Getenv("GOOGLE_CLOUD_PROJECT")
+	}
+
+	xidAddr := xidServiceAddr
+	if xidAddr == "" {
+		xidAddr = os.Getenv("XID_SERVICE_ADDR")
+	}
+	if xidAddr == "" {
+		xidAddr = "localhost:8082"
+	}
+
 	return &server.Config{
-		Port:           port,
-		GRPCPort:       grpcPort,
-		ProjectID:      projectID,
-		XidServiceAddr: xidServiceAddr,
+		Port:           p,
+		GRPCPort:       gp,
+		ProjectID:      proj,
+		XidServiceAddr: xidAddr,
 	}
 }

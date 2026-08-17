@@ -212,6 +212,22 @@ func TestGetChartData(t *testing.T) {
 		}
 	})
 
+	t.Run("invalid chart name returns InvalidArgument", func(t *testing.T) {
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
+		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "invalid-name"})
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("GetChartData(invalid name) code = %v, want %v", status.Code(err), codes.InvalidArgument)
+		}
+	})
+
+	t.Run("negative chart width returns InvalidArgument", func(t *testing.T) {
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
+		_, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "dashboards/123/charts/456", ChartWidthPixels: -50})
+		if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("GetChartData(negative width) code = %v, want %v", status.Code(err), codes.InvalidArgument)
+		}
+	})
+
 	t.Run("unauthenticated user returns Unauthenticated", func(t *testing.T) {
 		authMock := &mockAuthorizer{
 			authenticateFn: func(ctx context.Context) (string, string, error) {
@@ -499,5 +515,14 @@ func TestIsNotFoundError(t *testing.T) {
 	}
 	if !isNotFoundError(status.Error(codes.NotFound, "not found")) {
 		t.Errorf("isNotFoundError(status.NotFound) = false, want true")
+	}
+}
+
+func TestIsAlreadyExistsError(t *testing.T) {
+	if isAlreadyExistsError(nil) {
+		t.Errorf("isAlreadyExistsError(nil) = true, want false")
+	}
+	if !isAlreadyExistsError(status.Error(codes.AlreadyExists, "already exists")) {
+		t.Errorf("isAlreadyExistsError(status.AlreadyExists) = false, want true")
 	}
 }

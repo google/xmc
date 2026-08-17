@@ -140,6 +140,17 @@ func isNotFoundError(err error) bool {
 	return cstatus.ExtractCanonicalCode(err) == cstatus.NotFound
 }
 
+// isAlreadyExistsError checks if an error represents an AlreadyExists error code.
+func isAlreadyExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if status.Code(err) == codes.AlreadyExists {
+		return true
+	}
+	return cstatus.ExtractCanonicalCode(err) == cstatus.AlreadyExists
+}
+
 // CreateChart creates a chart stub.
 func (s *Server) CreateChart(ctx context.Context, req *spb.CreateChartRequest) (*dpb.Chart, error) {
 	return req.GetChart(), nil
@@ -155,8 +166,8 @@ func (s *Server) GetChart(ctx context.Context, req *spb.GetChartRequest) (*dpb.C
 
 // GetChartData retrieves chart data after validating experiment-level read permissions via XID service.
 func (s *Server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest) (*dpb.ChartData, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "request must not be nil")
+	if err := validator.ValidateGetChartDataRequest(req); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid get chart data request: %v", err)
 	}
 	user, _, err := s.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {

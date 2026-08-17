@@ -47,6 +47,9 @@ func (s *Server) CreateDashboard(ctx context.Context, req *spb.CreateDashboardRe
 	dash.Owner = user
 
 	if err := s.repo.CreateDashboard(ctx, dash); err != nil {
+		if isAlreadyExistsError(err) {
+			return nil, status.Errorf(codes.AlreadyExists, "dashboard %q already exists", dashID)
+		}
 		return nil, status.Errorf(codes.Internal, "failed to create dashboard: %v", err)
 	}
 

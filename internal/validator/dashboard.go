@@ -142,3 +142,100 @@ func ValidateDeleteDashboardRequest(in *spb.DeleteDashboardRequest) error {
 	}
 	return nil
 }
+
+// ValidateGetChartDataRequest validates the given GetChartDataRequest.
+func ValidateGetChartDataRequest(in *spb.GetChartDataRequest) error {
+	if in == nil {
+		return fmt.Errorf("request cannot be nil: %w", status.ErrInvalidArgument)
+	}
+	if in.GetName() == "" {
+		return fmt.Errorf("chart name cannot be empty: %w", status.ErrInvalidArgument)
+	}
+	if _, _, err := ValidateChartName(in.GetName()); err != nil {
+		return fmt.Errorf("invalid chart name: %w", err)
+	}
+	if in.GetChartWidthPixels() < 0 {
+		return fmt.Errorf("chart_width_pixels cannot be negative: %w", status.ErrInvalidArgument)
+	}
+	return nil
+}
+
+// ValidateGetChartRequest validates the given GetChartRequest.
+func ValidateGetChartRequest(in *spb.GetChartRequest) error {
+	if in == nil {
+		return fmt.Errorf("request cannot be nil: %w", status.ErrInvalidArgument)
+	}
+	if in.GetName() == "" {
+		return fmt.Errorf("chart name cannot be empty: %w", status.ErrInvalidArgument)
+	}
+	if _, _, err := ValidateChartName(in.GetName()); err != nil {
+		return fmt.Errorf("invalid chart name: %w", err)
+	}
+	return nil
+}
+
+// ValidateCreateChartRequest validates the given CreateChartRequest.
+func ValidateCreateChartRequest(in *spb.CreateChartRequest) error {
+	if in == nil {
+		return fmt.Errorf("request cannot be nil: %w", status.ErrInvalidArgument)
+	}
+	if in.GetParent() == "" {
+		return fmt.Errorf("parent cannot be empty: %w", status.ErrInvalidArgument)
+	}
+	if _, err := ValidateDashboardName(in.GetParent()); err != nil {
+		return fmt.Errorf("invalid parent dashboard name: %w", err)
+	}
+	if in.GetChart() == nil {
+		return fmt.Errorf("chart cannot be nil: %w", status.ErrInvalidArgument)
+	}
+	return nil
+}
+
+// ValidateListChartsRequest validates the given ListChartsRequest.
+func ValidateListChartsRequest(in *spb.ListChartsRequest) error {
+	if in == nil {
+		return fmt.Errorf("request cannot be nil: %w", status.ErrInvalidArgument)
+	}
+	if in.GetParent() == "" {
+		return fmt.Errorf("parent cannot be empty: %w", status.ErrInvalidArgument)
+	}
+	if _, err := ValidateDashboardName(in.GetParent()); err != nil {
+		return fmt.Errorf("invalid parent dashboard name: %w", err)
+	}
+	if in.GetPageSize() < 0 {
+		return fmt.Errorf("page_size cannot be negative: %w", status.ErrInvalidArgument)
+	}
+	return nil
+}
+
+// ValidateUpdateChartRequest validates the given UpdateChartRequest.
+func ValidateUpdateChartRequest(in *spb.UpdateChartRequest) error {
+	if in == nil {
+		return fmt.Errorf("request cannot be nil: %w", status.ErrInvalidArgument)
+	}
+	if in.GetChart() == nil {
+		return fmt.Errorf("chart cannot be nil: %w", status.ErrInvalidArgument)
+	}
+	chart := in.GetChart()
+	if chart.GetName() == "" {
+		return fmt.Errorf("chart.name cannot be empty: %w", status.ErrInvalidArgument)
+	}
+	if _, _, err := ValidateChartName(chart.GetName()); err != nil {
+		return fmt.Errorf("invalid chart.name: %w", err)
+	}
+	return nil
+}
+
+// ValidateDeleteChartRequest validates the given DeleteChartRequest.
+func ValidateDeleteChartRequest(in *spb.DeleteChartRequest) error {
+	if in == nil {
+		return fmt.Errorf("request cannot be nil: %w", status.ErrInvalidArgument)
+	}
+	if in.GetName() == "" {
+		return fmt.Errorf("chart name cannot be empty: %w", status.ErrInvalidArgument)
+	}
+	if _, _, err := ValidateChartName(in.GetName()); err != nil {
+		return fmt.Errorf("invalid chart name: %w", err)
+	}
+	return nil
+}

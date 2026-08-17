@@ -283,3 +283,19 @@ func TestGracefulShutdown_ServerError(t *testing.T) {
 		t.Fatal("gracefulShutdown timed out on error")
 	}
 }
+
+func TestInitSpannerClient_EmptyDatabaseName(t *testing.T) {
+	ctx := context.Background()
+	_, err := initSpannerClient(ctx, "", "proj")
+	if err == nil {
+		t.Fatal("expected error for empty database name, got nil")
+	}
+}
+
+func TestInitRepository_NilClient(t *testing.T) {
+	ctx := context.Background()
+	_, err := initRepository(ctx, nil)
+	if err == nil {
+		t.Fatal("expected error for nil spanner client, got nil")
+	}
+}

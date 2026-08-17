@@ -157,4 +157,24 @@ func TestCreateDashboard(t *testing.T) {
 			t.Errorf("Expected code Internal, got %v", status.Code(err))
 		}
 	})
+
+	t.Run("repo AlreadyExists error returns AlreadyExists", func(t *testing.T) {
+		repo := &mockRepository{
+			createDashboardFn: func(ctx context.Context, dashboard *dpb.Dashboard) error {
+				return status.Error(codes.AlreadyExists, "dashboard already exists")
+			},
+		}
+		authMock := &mockAuthorizer{}
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
+
+		req := &spb.CreateDashboardRequest{
+			DashboardId: "duplicate-id",
+			Dashboard:   &dpb.Dashboard{Title: "My Dash"},
+		}
+
+		_, err := s.CreateDashboard(ctx, req)
+		if status.Code(err) != codes.AlreadyExists {
+			t.Errorf("Expected code AlreadyExists, got %v", status.Code(err))
+		}
+	})
 }
