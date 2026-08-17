@@ -19,6 +19,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 )
 
 func TestProdServer_Close(t *testing.T) {
@@ -62,6 +64,23 @@ func TestProdServer_Close(t *testing.T) {
 			t.Errorf("Close() error = %v, want 'cleanup failed'", err)
 		}
 	})
+
+	t.Run("cleanup_multiple_errors_joined", func(t *testing.T) {
+		err1 := errors.New("spanner close failed")
+		err2 := errors.New("redis close failed")
+		p := &ProdServer{
+			cleanup: func() error {
+				return errors.Join(err1, err2)
+			},
+		}
+		err := p.Close()
+		if err == nil {
+			t.Fatalf("Close() expected joined error, got nil")
+		}
+		if !errors.Is(err, err1) || !errors.Is(err, err2) {
+			t.Errorf("Close() error = %v, want joined err1 and err2", err)
+		}
+	})
 }
 
 func TestProdServer_HealthCheckers(t *testing.T) {
@@ -78,6 +97,24 @@ func TestProdServer_HealthCheckers(t *testing.T) {
 		k8s, sp, rd := p.HealthCheckers()
 		if k8s != nil || sp != nil || rd != nil {
 			t.Errorf("HealthCheckers() on empty ProdServer returned non-nil (%v, %v, %v), want all nil", k8s, sp, rd)
+		}
+	})
+
+	t.Run("populated_server", func(t *testing.T) {
+		fakeRedis := &mockRedisConsumer{}
+		p := &ProdServer{
+			K8sClient:   &k8sclient.Client{},
+			RedisClient: fakeRedis,
+		}
+		k8s, sp, rd := p.HealthCheckers()
+		if k8s == nil {
+			t.Errorf("HealthCheckers() k8s client = nil, want non-nil")
+		}
+		if sp != nil {
+			t.Errorf("HealthCheckers() spanner client = %v, want nil", sp)
+		}
+		if rd != fakeRedis {
+			t.Errorf("HealthCheckers() redis client = %v, want %v", rd, fakeRedis)
 		}
 	})
 }
@@ -103,6 +140,38 @@ func TestNewProd_Validation(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "project ID is required") {
 			t.Errorf("NewProd error mismatch: got %q, want 'project ID is required'", err.Error())
+		}
+	})
+
+	t.Run("invalid_spanner_database_name", func(t *testing.T) {
+		cfg := Config{
+			RuntimeConfig: k8sclient.ActuatorRuntimeConfig{
+				SpannerDatabaseName: "invalid-db-format",
+			},
+		}
+		server, err := NewProd(ctx, &cfg, "test-project")
+		if err == nil {
+			t.Fatalf("NewProd(invalid spanner db) expected error, got nil (server: %v)", server)
+		}
+		if !strings.Contains(err.Error(), "failed to create spanner client") {
+			t.Errorf("NewProd error mismatch: got %q, want 'failed to create spanner client'", err.Error())
+		}
+	})
+
+	t.Run("k8s_incluster_error_with_spanner_rollback", func(t *testing.T) {
+		// Outside GKE cluster, k8sclient.New fails to find in-cluster config,
+		// verifying the LIFO rollback stack cleanly closes the Spanner client on error.
+		cfg := Config{
+			RuntimeConfig: k8sclient.ActuatorRuntimeConfig{
+				SpannerDatabaseName: "projects/test-project/instances/test-instance/databases/test-db",
+			},
+		}
+		server, err := NewProd(ctx, &cfg, "test-project")
+		if err == nil {
+			t.Fatalf("NewProd outside GKE expected k8s config error, got nil (server: %v)", server)
+		}
+		if !strings.Contains(err.Error(), "failed to create kubernetes client") {
+			t.Errorf("NewProd error mismatch: got %q, want 'failed to create kubernetes client'", err.Error())
 		}
 	})
 }

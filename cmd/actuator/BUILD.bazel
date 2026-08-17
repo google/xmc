@@ -42,6 +42,7 @@ compat_go_test(
     name = "actuator_test",
     srcs = [
         "health_test.go",
+        "main_test.go",
         "metadata_test.go",
         "prod_test.go",
     ],

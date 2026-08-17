@@ -51,14 +51,24 @@ func main() {
 		}
 	}()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", livenessCheck())
-	mux.HandleFunc("/readyz", activeHealthCheck(prodServer.HealthCheckers()))
-	mux.Handle("/metrics", promhttp.Handler())
+	mux := setupMux(prodServer)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	logging.Info(ctx, "Actuator server listening on", "addr", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		logging.Fatal(ctx, "Server failed to start", "error", err)
 	}
+}
+
+// setupMux configures the HTTP routes for the actuator service.
+func setupMux(prodServer *ProdServer) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", livenessCheck())
+	if prodServer != nil {
+		mux.HandleFunc("/readyz", activeHealthCheck(prodServer.HealthCheckers()))
+	} else {
+		mux.HandleFunc("/readyz", activeHealthCheck(nil, nil, nil))
+	}
+	mux.Handle("/metrics", promhttp.Handler())
+	return mux
 }

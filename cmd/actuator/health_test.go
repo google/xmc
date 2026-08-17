@@ -43,6 +43,9 @@ type mockSpannerHealthClient struct {
 }
 
 func (m *mockSpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64, bool, error) {
+	if ctx.Err() != nil {
+		return 0, false, ctx.Err()
+	}
 	return m.version, m.dirty, m.err
 }
 
@@ -52,6 +55,9 @@ type mockRedisConsumer struct {
 }
 
 func (m *mockRedisConsumer) Ping(ctx context.Context) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	return m.pingErr
 }
 
@@ -132,6 +138,13 @@ func TestActiveHealthCheck(t *testing.T) {
 			redis:      &mockRedisConsumer{pingErr: fmt.Errorf("connection refused")},
 			wantStatus: http.StatusInternalServerError,
 		},
+		{
+			name:       "redis_context_canceled",
+			k8s:        validK8s,
+			spClient:   nil,
+			redis:      &mockRedisConsumer{pingErr: context.Canceled},
+			wantStatus: http.StatusInternalServerError,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -146,6 +159,25 @@ func TestActiveHealthCheck(t *testing.T) {
 				t.Errorf("activeHealthCheck status = %d, want %d, body: %s", rec.Code, tc.wantStatus, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestActiveHealthCheck_RequestContextCanceled(t *testing.T) {
+	fakeClientset := kubernetesfake.NewSimpleClientset()
+	validK8s := &mockK8sHealthClient{clientset: fakeClientset}
+	validRedis := &mockRedisConsumer{pingErr: nil}
+
+	handler := activeHealthCheck(validK8s, nil, validRedis)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("activeHealthCheck with canceled request context status = %d, want %d", rec.Code, http.StatusInternalServerError)
 	}
 }
 
