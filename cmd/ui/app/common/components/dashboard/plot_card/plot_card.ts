@@ -18,6 +18,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   ElementRef,
   input,
   OnDestroy,
@@ -72,10 +73,15 @@ export class PlotCardComponent implements AfterViewInit, OnDestroy {
 
   private chartInstance?: echarts.ECharts;
   private resizeObserver?: ResizeObserver;
+  private resizeAnimationId: number | null = null;
+  private lastWidth = 0;
 
   protected readonly isSummaryBox = computed(() => {
     const type = this.plotSpec().type;
-    return type === PlotType.SUMMARY_BOX || type === 1 || this.plotData()?.type === 'SUMMARY_BOX';
+    const pd = this.plotData();
+    return (
+      type === PlotType.SUMMARY_BOX || type === 1 || pd?.type === 'SUMMARY_BOX' || pd?.type === 1
+    );
   });
 
   protected readonly summaryValue = computed<SummaryBoxValue | undefined>(() => {
@@ -92,6 +98,19 @@ export class PlotCardComponent implements AfterViewInit, OnDestroy {
     const metrics = spec.data?.metrics?.join(', ') || '';
     return metrics ? `Metrics: ${metrics}` : 'Metrics visualization';
   });
+
+  constructor() {
+    effect(() => {
+      // Reactively track signal changes
+      this.plotSpec();
+      this.plotData();
+      this.themeConfig();
+      if (this.isSummaryBox()) return;
+      if (this.chartInstance) {
+        this.renderChart();
+      }
+    });
+  }
 
   ngAfterViewInit(): void {
     if (this.isSummaryBox()) return;
@@ -112,8 +131,19 @@ export class PlotCardComponent implements AfterViewInit, OnDestroy {
     this.renderChart();
 
     if (typeof ResizeObserver !== 'undefined') {
-      this.resizeObserver = new ResizeObserver(() => {
-        this.chartInstance?.resize();
+      this.resizeObserver = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        const currentWidth = Math.round(entry.contentRect.width);
+        if (currentWidth <= 0 || currentWidth === this.lastWidth) return;
+
+        this.lastWidth = currentWidth;
+        if (this.resizeAnimationId !== null) {
+          cancelAnimationFrame(this.resizeAnimationId);
+        }
+        this.resizeAnimationId = requestAnimationFrame(() => {
+          this.chartInstance?.resize();
+        });
       });
       this.resizeObserver.observe(this.chartCanvas.nativeElement);
     }
@@ -135,6 +165,10 @@ export class PlotCardComponent implements AfterViewInit, OnDestroy {
   }
 
   private cleanupChart(): void {
+    if (this.resizeAnimationId !== null) {
+      cancelAnimationFrame(this.resizeAnimationId);
+      this.resizeAnimationId = null;
+    }
     this.resizeObserver?.disconnect();
     this.resizeObserver = undefined;
     this.chartInstance?.dispose();

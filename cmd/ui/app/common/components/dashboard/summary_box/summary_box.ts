@@ -50,23 +50,25 @@ function getDeltaDifference(s: SummaryBoxValue): number | null {
   return null;
 }
 
+function getDeltaSentiment(isImproved: boolean, isWorse: boolean): string {
+  if (isImproved) return 'better than baseline';
+  if (isWorse) return 'worse than baseline';
+  return 'equal to baseline';
+}
+
 function computeDeltaInfo(s: SummaryBoxValue) {
   const delta = getDeltaDifference(s);
   if (delta === null || isNaN(delta)) return null;
 
-  const polarity = resolvePolarity(s.polarity, s.metricName || '');
-  const isLowerBetter = polarity === MetricPolarity.LOWER_IS_BETTER;
+  const metricName = s.metricName ?? '';
+  const isLowerBetter = resolvePolarity(s.polarity, metricName) === MetricPolarity.LOWER_IS_BETTER;
   const isImproved = isLowerBetter ? delta < 0 : delta > 0;
   const isWorse = isLowerBetter ? delta > 0 : delta < 0;
 
   const absDelta = Math.abs(delta);
-  const isPct = /acc|pct/i.test(s.metricName || '');
+  const isPct = /acc|pct/i.test(metricName);
   const formattedDelta = isPct ? `${(absDelta * 100).toFixed(2)}%` : absDelta.toFixed(2);
-  const sentiment = isImproved
-    ? 'better than baseline'
-    : isWorse
-      ? 'worse than baseline'
-      : 'equal to baseline';
+  const sentiment = getDeltaSentiment(isImproved, isWorse);
 
   return {
     deltaText: `${formattedDelta} ${sentiment}`,
@@ -74,6 +76,16 @@ function computeDeltaInfo(s: SummaryBoxValue) {
     isImproved,
     isWorse,
   };
+}
+
+function computeDisplayTitle(s: SummaryBoxValue, customTitle?: string): string {
+  if (customTitle) return customTitle;
+  const metric = s.metricName ?? 'Metric';
+  if (metric.includes('val') && metric.includes('loss')) return 'Last validation loss';
+  if (metric.includes('train') && metric.includes('acc')) return 'Last training accuracy';
+  if (metric.includes('loss')) return 'Last loss';
+  if (metric.includes('acc')) return 'Last accuracy';
+  return metric;
 }
 
 /**
@@ -94,22 +106,17 @@ export class SummaryBoxComponent {
   /**
    * Title displayed on top of the card.
    */
-  protected readonly displayTitle = computed(() => {
-    if (this.title()) return this.title();
-    const metric = this.summary().metricName || 'Metric';
-    if (metric.includes('val') && metric.includes('loss')) return 'Avg validation loss';
-    if (metric.includes('train') && metric.includes('acc')) return 'Avg training accuracy';
-    if (metric.includes('loss')) return 'Avg loss';
-    if (metric.includes('acc')) return 'Avg accuracy';
-    return metric;
-  });
+  protected readonly displayTitle = computed(() =>
+    computeDisplayTitle(this.summary(), this.title()),
+  );
 
   /**
    * Formatted scalar value.
    */
   protected readonly formattedValue = computed(() => {
-    const val = this.summary().latestValue ?? this.summary().meanValue;
-    return formatScalarValue(val, this.summary().metricName || '');
+    const s = this.summary();
+    const val = s.latestValue ?? s.meanValue;
+    return formatScalarValue(val, s.metricName ?? '');
   });
 
   /**

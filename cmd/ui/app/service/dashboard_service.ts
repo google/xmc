@@ -15,6 +15,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable, throwError } from 'rxjs';
+import { map } from 'rxjs/operators';
 
 import { XMC_API_DOMAIN } from './constants';
 import {
@@ -26,6 +27,9 @@ import {
   GetChartDataRequest,
   ListDashboardsRequest,
   ListDashboardsResponse,
+  normalizeChartData,
+  normalizeDashboard,
+  RawDashboard,
   UpdateDashboardRequest,
 } from './dashboard_models';
 
@@ -43,9 +47,11 @@ export class DashboardService {
     if (!name) {
       return throwError(() => new Error('Dashboard resource name is required'));
     }
-    return this.http.get<Dashboard>(`${XMC_API_DOMAIN}/${name}`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<RawDashboard>(`${XMC_API_DOMAIN}/${name}`, {
+        withCredentials: true,
+      })
+      .pipe(map(normalizeDashboard));
   }
 
   /**
@@ -64,10 +70,17 @@ export class DashboardService {
     }
 
     const params = new HttpParams({ fromObject: paramsMap });
-    return this.http.get<ListDashboardsResponse>(`${XMC_API_DOMAIN}/dashboards`, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<{
+        dashboards?: RawDashboard[];
+        nextPageToken?: string;
+      }>(`${XMC_API_DOMAIN}/dashboards`, { params, withCredentials: true })
+      .pipe(
+        map((res) => ({
+          dashboards: (res.dashboards ?? []).map(normalizeDashboard),
+          nextPageToken: res.nextPageToken,
+        })),
+      );
   }
 
   /**
@@ -168,9 +181,11 @@ export class DashboardService {
     }
 
     const params = new HttpParams({ fromObject: paramsMap });
-    return this.http.get<ChartData>(`${XMC_API_DOMAIN}/${request.name}:getData`, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<ChartData>(`${XMC_API_DOMAIN}/${request.name}:getData`, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map((res) => normalizeChartData(res)!));
   }
 }

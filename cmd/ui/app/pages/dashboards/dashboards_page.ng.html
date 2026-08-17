@@ -14,9 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 <div class="dashboards-page-container">
-  <!-- Top Toolbar matching Figma -->
+  <!-- Top Toolbar with Back Link, Title, and Actions -->
   <div class="dashboards-header-toolbar">
     <div class="header-left">
+      <a mat-button class="back-link" routerLink="/dashboards">
+        <mat-icon>arrow_back</mat-icon>
+        <span>All Dashboards</span>
+      </a>
+      <div class="title-separator">/</div>
       <h1 class="dashboard-title">{{ dashboardTitle() }}</h1>
     </div>
 
@@ -53,8 +58,25 @@ limitations under the License.
     </div>
   </div>
 
-  <!-- Main Multi-Column Grid Canvas -->
-  <div class="dashboards-content-area">
-    <xmc-dashboard-grid [charts]="charts()" (removeChart)="onRemoveChart($event)" />
-  </div>
+  @if (isLoading()) {
+    <mat-progress-bar mode="indeterminate" class="page-loading-bar" />
+  }
+
+  @if (dashboardNotFound()) {
+    <div class="not-found-container">
+      <mat-icon class="not-found-icon">error_outline</mat-icon>
+      <div class="not-found-title">Dashboard Not Found</div>
+      <div class="not-found-subtitle">
+        The requested dashboard does not exist or has been removed.
+      </div>
+      <button mat-flat-button color="primary" type="button" (click)="onBackToDashboards()">
+        Return to Dashboards
+      </button>
+    </div>
+  } @else {
+    <!-- Main Multi-Column Grid Canvas -->
+    <div class="dashboards-content-area">
+      <xmc-dashboard-grid [charts]="charts()" (removeChart)="onRemoveChart($event)" />
+    </div>
+  }
 </div>

@@ -203,11 +203,15 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(length) if length > 0 else b"{}"
             try:
-                new_dash = json.loads(body.decode("utf-8"))
+                payload = json.loads(body.decode("utf-8"))
             except Exception:
+                payload = {}
+            new_dash = payload.get("dashboard", payload)
+            if not isinstance(new_dash, dict):
                 new_dash = {}
-            if "name" not in new_dash:
-                new_dash["name"] = f"dashboards/dash_{len(self.in_memory_dashboards) + 1}"
+            if "name" not in new_dash or not new_dash["name"]:
+                dash_id = payload.get("dashboardId") or f"dash_{len(self.in_memory_dashboards) + 1}"
+                new_dash["name"] = f"dashboards/{dash_id}"
             self.in_memory_dashboards.append(new_dash)
             self.send_json(200, new_dash)
             return
@@ -230,11 +234,13 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         status_history = get_bool_env("XMC_STATUS_MESSAGE_HISTORY_ENABLED", True)
         admin_panel_enabled = get_bool_env("XMC_ADMIN_PANEL_ENABLED", True)
         resource_dashboard_enabled = get_bool_env("XMC_RESOURCE_DASHBOARD_ENABLED", True)
+        performance_dashboard_enabled = get_bool_env("XMC_PERFORMANCE_DASHBOARD_ENABLED", True)
 
         feature_flags = {
             "statusMessageHistoryEnabled": status_history,
             "adminPanelEnabled": admin_panel_enabled,
             "resourceDashboardEnabled": resource_dashboard_enabled,
+            "performanceDashboardEnabled": performance_dashboard_enabled,
         }
 
         config_content = (

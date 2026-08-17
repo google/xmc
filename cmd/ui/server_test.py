@@ -158,6 +158,26 @@ class SPAHandlerTest(unittest.TestCase):
                 output = self._get_config_js_output(case["environ"])
                 self.assertIn(case["expected"], output)
 
+    def test_config_js_feature_flags(self):
+        cases = [
+            {
+                "testcase_name": "performance_dashboard_enabled_by_default",
+                "environ": {},
+                "expected": '"performanceDashboardEnabled": true',
+            },
+            {
+                "testcase_name": "performance_dashboard_disabled",
+                "environ": {"XMC_PERFORMANCE_DASHBOARD_ENABLED": "false"},
+                "expected": '"performanceDashboardEnabled": false',
+            },
+        ]
+        for case in cases:
+            with self.subTest(case["testcase_name"]):
+                self.mock_wfile.seek(0)
+                self.mock_wfile.truncate(0)
+                output = self._get_config_js_output(case["environ"])
+                self.assertIn(case["expected"], output)
+
     def test_fallback_to_index(self):
         self.enter_context(
             mock.patch.object(os.path, "exists", return_value=False, autospec=True, spec_set=True)

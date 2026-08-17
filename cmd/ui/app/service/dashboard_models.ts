@@ -272,3 +272,332 @@ export interface GetChartDataRequest {
   parentWorkunit?: string;
   chartWidthPixels?: number;
 }
+
+export interface RawSummaryBoxValue {
+  metricName?: string;
+  metric_name?: string;
+  latestValue?: number;
+  latest_value?: number;
+  minValue?: number;
+  min_value?: number;
+  maxValue?: number;
+  max_value?: number;
+  meanValue?: number;
+  mean_value?: number;
+  latestStep?: number | string;
+  latest_step?: number | string;
+  latestIteration?: number | string;
+  latest_iteration?: number | string;
+  latestTimestamp?: string;
+  latest_timestamp?: string;
+  deltaVsBaseline?: number;
+  delta_vs_baseline?: number;
+  deltaPercentVsBaseline?: number;
+  delta_percent_vs_baseline?: number;
+  baselineValue?: number;
+  baseline_value?: number;
+  polarity?: MetricPolarity;
+}
+
+export interface RawSeriesPoint {
+  step?: number | string;
+  iteration?: number | string;
+  timestamp?: string;
+  avgValue?: number;
+  avg_value?: number;
+  minValue?: number;
+  min_value?: number;
+  maxValue?: number;
+  max_value?: number;
+}
+
+export interface RawSeriesData {
+  metricName?: string;
+  metric_name?: string;
+  workUnitId?: string;
+  work_unit_id?: string;
+  xid?: number | string;
+  points?: RawSeriesPoint[];
+  seriesLabel?: string;
+  series_label?: string;
+  isBaseline?: boolean;
+  is_baseline?: boolean;
+}
+
+export interface RawBarBucket {
+  categoryOrBin?: string;
+  category_or_bin?: string;
+  valueOrCount?: number;
+  value_or_count?: number;
+}
+
+export interface RawBarData {
+  metricName?: string;
+  metric_name?: string;
+  buckets?: RawBarBucket[];
+}
+
+export interface RawPlotData {
+  plotId?: string;
+  plot_id?: string;
+  type?: PlotType | string | number;
+  summaryData?: RawSummaryBoxValue;
+  summary_data?: RawSummaryBoxValue;
+  scatterSeries?: RawSeriesData;
+  scatter_series?: RawSeriesData;
+  barData?: RawBarData;
+  bar_data?: RawBarData;
+  seriesList?: RawSeriesData[];
+  series_list?: RawSeriesData[];
+  content?: {
+    summaryData?: RawSummaryBoxValue;
+    summary_data?: RawSummaryBoxValue;
+    scatterSeries?: RawSeriesData;
+    scatter_series?: RawSeriesData;
+    barData?: RawBarData;
+    bar_data?: RawBarData;
+  };
+}
+
+export interface RawChartData {
+  name?: string;
+  xid?: number | string;
+  wid?: number | string;
+  plotsData?: RawPlotData[];
+  plots_data?: RawPlotData[];
+}
+
+export function normalizeSummaryBoxValue(raw?: RawSummaryBoxValue): SummaryBoxValue | undefined {
+  if (!raw) return undefined;
+  const result: SummaryBoxValue = {};
+
+  const metric = raw.metricName ?? raw.metric_name;
+  if (metric !== undefined) result.metricName = metric;
+
+  const latest = raw.latestValue ?? raw.latest_value;
+  if (latest !== undefined) result.latestValue = latest;
+
+  const min = raw.minValue ?? raw.min_value;
+  if (min !== undefined) result.minValue = min;
+
+  const max = raw.maxValue ?? raw.max_value;
+  if (max !== undefined) result.maxValue = max;
+
+  const mean = raw.meanValue ?? raw.mean_value;
+  if (mean !== undefined) result.meanValue = mean;
+
+  const step = raw.latestStep ?? raw.latest_step;
+  if (step !== undefined) result.latestStep = step;
+
+  const iter = raw.latestIteration ?? raw.latest_iteration;
+  if (iter !== undefined) result.latestIteration = iter;
+
+  const ts = raw.latestTimestamp ?? raw.latest_timestamp;
+  if (ts !== undefined) result.latestTimestamp = ts;
+
+  const delta = raw.deltaVsBaseline ?? raw.delta_vs_baseline;
+  if (delta !== undefined) result.deltaVsBaseline = delta;
+
+  const deltaPct = raw.deltaPercentVsBaseline ?? raw.delta_percent_vs_baseline;
+  if (deltaPct !== undefined) result.deltaPercentVsBaseline = deltaPct;
+
+  const baseline = raw.baselineValue ?? raw.baseline_value;
+  if (baseline !== undefined) result.baselineValue = baseline;
+
+  if (raw.polarity !== undefined) result.polarity = raw.polarity;
+
+  return result;
+}
+
+export function normalizeSeriesPoint(p: RawSeriesPoint): SeriesPoint {
+  const pt: SeriesPoint = {};
+  if (p.step !== undefined) pt.step = p.step;
+  if (p.iteration !== undefined) pt.iteration = p.iteration;
+  if (p.timestamp !== undefined) pt.timestamp = p.timestamp;
+  const avg = p.avgValue ?? p.avg_value;
+  if (avg !== undefined) pt.avgValue = avg;
+  const min = p.minValue ?? p.min_value;
+  if (min !== undefined) pt.minValue = min;
+  const max = p.maxValue ?? p.max_value;
+  if (max !== undefined) pt.maxValue = max;
+  return pt;
+}
+
+export function normalizeSeriesData(s?: RawSeriesData): SeriesData | undefined {
+  if (!s) return undefined;
+  const points = (s.points ?? []).map((p) => normalizeSeriesPoint(p));
+  const res: SeriesData = { points };
+  const metric = s.metricName ?? s.metric_name;
+  if (metric !== undefined) res.metricName = metric;
+  const wu = s.workUnitId ?? s.work_unit_id;
+  if (wu !== undefined) res.workUnitId = wu;
+  if (s.xid !== undefined) res.xid = s.xid;
+  const label = s.seriesLabel ?? s.series_label;
+  if (label !== undefined) res.seriesLabel = label;
+  const base = s.isBaseline ?? s.is_baseline;
+  if (base !== undefined) res.isBaseline = base;
+  return res;
+}
+
+function extractRawSummary(pd: RawPlotData): RawSummaryBoxValue | undefined {
+  return pd.summaryData ?? pd.summary_data ?? pd.content?.summaryData ?? pd.content?.summary_data;
+}
+
+function extractRawScatter(pd: RawPlotData): RawSeriesData | undefined {
+  return (
+    pd.scatterSeries ?? pd.scatter_series ?? pd.content?.scatterSeries ?? pd.content?.scatter_series
+  );
+}
+
+function extractRawBar(pd: RawPlotData): RawBarData | undefined {
+  return pd.barData ?? pd.bar_data ?? pd.content?.barData ?? pd.content?.bar_data;
+}
+
+export function normalizePlotData(pd?: RawPlotData): PlotData | undefined {
+  if (!pd) return undefined;
+  const rawBar = extractRawBar(pd);
+  const rawSeriesList = pd.seriesList ?? pd.series_list;
+  const rawSummary = extractRawSummary(pd);
+  const rawScatter = extractRawScatter(pd);
+
+  const result: PlotData = {
+    plotId: pd.plotId ?? pd.plot_id ?? '',
+    type: pd.type,
+  };
+
+  const summary = normalizeSummaryBoxValue(rawSummary);
+  if (summary !== undefined) {
+    result.summaryData = summary;
+  }
+
+  const scatter = normalizeSeriesData(rawScatter);
+  if (scatter !== undefined) {
+    result.scatterSeries = scatter;
+  }
+
+  if (rawBar) {
+    result.barData = {
+      metricName: rawBar.metricName ?? rawBar.metric_name,
+      buckets: (rawBar.buckets ?? []).map((b) => ({
+        categoryOrBin: b.categoryOrBin ?? b.category_or_bin,
+        valueOrCount: b.valueOrCount ?? b.value_or_count,
+      })),
+    };
+  }
+
+  if (rawSeriesList) {
+    result.seriesList = rawSeriesList
+      .map((s) => normalizeSeriesData(s))
+      .filter(Boolean) as SeriesData[];
+  }
+
+  return result;
+}
+
+export function normalizeChartData(cd?: RawChartData): ChartData | undefined {
+  if (!cd) return undefined;
+  const rawPlots = cd.plotsData ?? cd.plots_data ?? [];
+  return {
+    name: cd.name,
+    xid: cd.xid,
+    wid: cd.wid,
+    plotsData: rawPlots.map((p) => normalizePlotData(p)).filter(Boolean) as PlotData[],
+  };
+}
+
+export interface RawPlotSpec {
+  plotId?: string;
+  plot_id?: string;
+  title?: string;
+  type?: PlotType | number;
+  data?: DataSpec;
+  mapping?: MappingSpec;
+  geoms?: GeomSpec[];
+  stats?: StatSpec;
+  coords?: CoordSpec;
+  facets?: FacetSpec;
+}
+
+export interface RawChart {
+  name?: string;
+  title?: string;
+  description?: string;
+  xid?: number | string;
+  wid?: number | string;
+  plots?: RawPlotSpec[];
+  plotLayout?: LayoutSpec;
+  plot_layout?: LayoutSpec;
+  createTime?: string;
+  create_time?: string;
+  updateTime?: string;
+  update_time?: string;
+}
+
+export interface RawDashboard {
+  name?: string;
+  title?: string;
+  description?: string;
+  owner?: string;
+  charts?: RawChart[];
+  chartLayout?: LayoutSpec;
+  chart_layout?: LayoutSpec;
+  createTime?: string;
+  create_time?: string;
+  updateTime?: string;
+  update_time?: string;
+}
+
+export function normalizePlotSpec(p: RawPlotSpec): PlotSpec {
+  const result: PlotSpec = {
+    plotId: p.plotId ?? p.plot_id ?? '',
+    type: p.type ?? PlotType.SCATTER,
+    data: p.data ?? { metrics: [] },
+  };
+  if (p.title !== undefined) result.title = p.title;
+  if (p.mapping !== undefined) result.mapping = p.mapping;
+  if (p.geoms !== undefined) result.geoms = p.geoms;
+  if (p.stats !== undefined) result.stats = p.stats;
+  if (p.coords !== undefined) result.coords = p.coords;
+  if (p.facets !== undefined) result.facets = p.facets;
+  return result;
+}
+
+export function normalizeChart(c: RawChart): Chart {
+  const xidNum = typeof c.xid === 'string' ? parseInt(c.xid, 10) : (c.xid ?? 0);
+  const widNum = typeof c.wid === 'string' ? parseInt(c.wid, 10) : c.wid;
+  const plots = (c.plots ?? []).map((p) => normalizePlotSpec(p));
+  const result: Chart = {
+    title: c.title ?? `Experiment ${xidNum}`,
+    xid: xidNum,
+    plots,
+  };
+  if (c.name !== undefined) result.name = c.name;
+  if (c.description !== undefined) result.description = c.description;
+  if (widNum !== undefined && !isNaN(widNum)) result.wid = widNum;
+  const layout = c.plotLayout ?? c.plot_layout;
+  if (layout !== undefined) result.plotLayout = layout;
+  const createTime = c.createTime ?? c.create_time;
+  if (createTime !== undefined) result.createTime = createTime;
+  const updateTime = c.updateTime ?? c.update_time;
+  if (updateTime !== undefined) result.updateTime = updateTime;
+  return result;
+}
+
+export function normalizeDashboard(d: RawDashboard): Dashboard {
+  const result: Dashboard = {
+    title: d.title ?? d.name ?? 'Dashboard',
+  };
+  if (d.name !== undefined) result.name = d.name;
+  if (d.description !== undefined) result.description = d.description;
+  if (d.owner !== undefined) result.owner = d.owner;
+  if (d.charts !== undefined) {
+    result.charts = d.charts.map((c) => normalizeChart(c));
+  }
+  const chartLayout = d.chartLayout ?? d.chart_layout;
+  if (chartLayout !== undefined) result.chartLayout = chartLayout;
+  const createTime = d.createTime ?? d.create_time;
+  if (createTime !== undefined) result.createTime = createTime;
+  const updateTime = d.updateTime ?? d.update_time;
+  if (updateTime !== undefined) result.updateTime = updateTime;
+  return result;
+}

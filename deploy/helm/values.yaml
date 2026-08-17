@@ -90,6 +90,8 @@ dashboardServiceDeployment:
 dashboardService:
   gcpServiceAccount: ""
 
+performanceDashboardEnabled: false
+
 detectInadmissibleWorkUnits: true
 startupPodErrorCheckEnabled: true
 statusMessageHistoryEnabled: true

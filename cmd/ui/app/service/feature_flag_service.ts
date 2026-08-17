@@ -51,4 +51,11 @@ export class FeatureFlagService {
   get isResourceDashboardEnabled(): boolean {
     return this.isFeatureEnabled('resourceDashboardEnabled');
   }
+
+  /**
+   * Returns whether performance dashboards are enabled.
+   */
+  get isPerformanceDashboardEnabled(): boolean {
+    return this.isFeatureEnabled('performanceDashboardEnabled');
+  }
 }

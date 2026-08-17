@@ -17,11 +17,12 @@ import 'jasmine';
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MatDialog } from '@angular/material/dialog';
+import { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
+import { AddExperimentDialogComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/add_experiment_dialog/add_experiment_dialog';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 
 import { DashboardsPage } from './dashboards_page';
@@ -39,7 +40,6 @@ describe('DashboardsPage', () => {
   let pageComponent: DashboardsPage;
   let harness: DashboardsPageHarness;
   let dashboardServiceSpy: jasmine.SpyObj<DashboardService>;
-  let matDialog: MatDialog;
 
   beforeEach(async () => {
     dashboardServiceSpy = jasmine.createSpyObj('DashboardService', [
@@ -49,6 +49,32 @@ describe('DashboardsPage', () => {
     dashboardServiceSpy.getChartData.and.returnValue(
       of({
         plotsData: [],
+      }),
+    );
+    dashboardServiceSpy.getDashboard.and.returnValue(
+      of({
+        name: 'dashboards/vcc_comparison',
+        title: 'VCC baseline tune comparison',
+        charts: [
+          {
+            name: 'experiments/234911122/charts/baseline',
+            title: 'VCC Baseline',
+            xid: 234911122,
+            plots: [],
+          },
+          {
+            name: 'experiments/234911123/charts/tuned_v1',
+            title: 'VCC tuned_v1',
+            xid: 234911123,
+            plots: [],
+          },
+          {
+            name: 'experiments/234911124/charts/tuned_v2',
+            title: 'VCC tuned_v2',
+            xid: 234911124,
+            plots: [],
+          },
+        ],
       }),
     );
 
@@ -61,7 +87,7 @@ describe('DashboardsPage', () => {
           useValue: {
             snapshot: {
               paramMap: {
-                get: () => null,
+                get: (key: string) => (key === 'id' ? 'vcc_comparison' : null),
               },
             },
           },
@@ -70,7 +96,6 @@ describe('DashboardsPage', () => {
       ],
     }).compileComponents();
 
-    matDialog = TestBed.inject(MatDialog);
     fixture = TestBed.createComponent(TestHostComponent);
     fixture.detectChanges();
     pageComponent = fixture.debugElement.children[0].componentInstance as DashboardsPage;
@@ -88,9 +113,10 @@ describe('DashboardsPage', () => {
   });
 
   it('should open AddExperimentDialog when clicking add experiment', () => {
-    spyOn(MatDialog.prototype, 'open').and.returnValue({
+    const mockDialogRef = {
       afterClosed: () => of({ xid: 234911125, wid: 1, title: 'VCC tuned_v3' }),
-    } as any);
+    } as MatDialogRef<AddExperimentDialogComponent>;
+    spyOn(MatDialog.prototype, 'open').and.returnValue(mockDialogRef);
 
     pageComponent.onOpenAddExperiment();
     expect(MatDialog.prototype.open).toHaveBeenCalled();

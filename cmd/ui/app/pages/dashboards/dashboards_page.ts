@@ -18,8 +18,9 @@ import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
 import {
   AddExperimentDialogComponent,
@@ -39,13 +40,13 @@ function createDefaultPlots(): PlotSpec[] {
   return [
     {
       plotId: 'val_loss_kpi',
-      title: 'Avg validation loss',
+      title: 'Last validation loss',
       type: PlotType.SUMMARY_BOX,
       data: { metrics: ['val/loss'] },
     },
     {
       plotId: 'train_acc_kpi',
-      title: 'Avg training accuracy',
+      title: 'Last training accuracy',
       type: PlotType.SUMMARY_BOX,
       data: { metrics: ['train/accuracy'] },
     },
@@ -94,28 +95,35 @@ function createDefaultCharts(): Chart[] {
   imports: [
     CommonModule,
     FormsModule,
+    RouterLink,
     MatButtonModule,
     MatIconModule,
     MatSlideToggleModule,
     MatDialogModule,
+    MatProgressBarModule,
     DashboardGridComponent,
   ],
 })
 export class DashboardsPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly dashboardService = inject(DashboardService);
   private readonly dialog = inject(MatDialog);
   private readonly snackbar = inject(SnackbarService, { optional: true });
 
-  readonly dashboardTitle = signal<string>('VCC baseline tune comparison');
+  readonly dashboardTitle = signal<string>('Dashboard');
   readonly autosaveEnabled = signal<boolean>(true);
   readonly charts = signal<Chart[]>([]);
   readonly isLoading = signal<boolean>(false);
+  readonly dashboardNotFound = signal<boolean>(false);
 
   ngOnInit(): void {
     const dashboardId = this.route.snapshot.paramMap.get('id');
     if (dashboardId) {
-      this.loadDashboard(`dashboards/${dashboardId}`);
+      const resourceName = dashboardId.startsWith('dashboards/')
+        ? dashboardId
+        : `dashboards/${dashboardId}`;
+      this.loadDashboard(resourceName);
     } else {
       this.initDefaultComparisonDashboard();
     }
@@ -123,15 +131,23 @@ export class DashboardsPage implements OnInit {
 
   loadDashboard(name: string): void {
     this.isLoading.set(true);
+    this.dashboardNotFound.set(false);
     this.dashboardService.getDashboard(name).subscribe({
       next: (dashboard) => {
-        this.dashboardTitle.set(dashboard.title);
+        this.dashboardTitle.set(dashboard.title || dashboard.name || 'Dashboard');
         this.charts.set(dashboard.charts ?? []);
         this.isLoading.set(false);
       },
       error: () => {
-        this.initDefaultComparisonDashboard();
-        this.isLoading.set(false);
+        // If not found in API, check if it's the default comparative dashboard
+        if (name.includes('vcc_comparison') || name.includes('default')) {
+          this.dashboardTitle.set('VCC baseline tune comparison');
+          this.initDefaultComparisonDashboard();
+          this.isLoading.set(false);
+        } else {
+          this.dashboardNotFound.set(true);
+          this.isLoading.set(false);
+        }
       },
     });
   }
@@ -154,7 +170,7 @@ export class DashboardsPage implements OnInit {
     dialogRef.afterClosed().subscribe((result?: AddExperimentDialogResult) => {
       if (!result) return;
 
-      const templatePlots = this.charts()[0]?.plots ?? [];
+      const templatePlots = this.charts()[0]?.plots ?? createDefaultPlots();
       const newChart: Chart = {
         name: `experiments/${result.xid}/charts/custom_${Date.now()}`,
         title: result.title || `Experiment ${result.xid}`,
@@ -180,5 +196,9 @@ export class DashboardsPage implements OnInit {
       navigator.clipboard.writeText(window.location.href);
       this.snackbar?.open?.('Dashboard link copied to clipboard');
     }
+  }
+
+  onBackToDashboards(): void {
+    this.router.navigate(['/dashboards']);
   }
 }

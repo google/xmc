@@ -60,7 +60,7 @@ describe('SummaryBoxComponent', () => {
   });
 
   it('should render scalar value from golden summary_box_single', async () => {
-    expect(await harness.getTitle()).toBe('Avg loss');
+    expect(await harness.getTitle()).toBe('Last loss');
     expect(await harness.getValue()).toBe('0.1631');
     expect(await harness.hasDelta()).toBeFalse();
   });
@@ -77,7 +77,7 @@ describe('SummaryBoxComponent', () => {
       latestValue: 0.924,
     });
     fixture.detectChanges();
-    expect(await harness.getTitle()).toBe('Avg accuracy');
+    expect(await harness.getTitle()).toBe('Last accuracy');
     expect(await harness.getValue()).toBe('92.4%');
   });
 

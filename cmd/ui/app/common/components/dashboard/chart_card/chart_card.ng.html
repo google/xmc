@@ -52,7 +52,7 @@ limitations under the License.
     <!-- KPI Summary Boxes Row -->
     @if (summaryPlots().length) {
       <div class="summary-boxes-row">
-        @for (plot of summaryPlots(); track plot.plotId) {
+        @for (plot of summaryPlots(); track plot.plotId || $index) {
           @let pData = getPlotData(plot.plotId);
           <xmc-plot-card [plotSpec]="plot" [plotData]="pData" />
         }
@@ -61,7 +61,7 @@ limitations under the License.
 
     <!-- Curve / Visualization Plots -->
     <div class="curve-plots-container">
-      @for (plot of curvePlots(); track plot.plotId) {
+      @for (plot of curvePlots(); track plot.plotId || $index) {
         @let pData = getPlotData(plot.plotId);
         <xmc-plot-card [plotSpec]="plot" [plotData]="pData" />
       }

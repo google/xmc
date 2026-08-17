@@ -89,11 +89,23 @@ export class ChartCardComponent implements OnInit {
   });
 
   protected readonly summaryPlots = computed<PlotSpec[]>(() => {
-    return this.chart().plots.filter((p) => p.type === PlotType.SUMMARY_BOX || p.type === 1);
+    const plots = this.chart().plots ?? [];
+    return plots.filter(
+      (p) =>
+        p.type === PlotType.SUMMARY_BOX ||
+        (p.type as unknown) === 1 ||
+        (p.type as unknown) === 'SUMMARY_BOX',
+    );
   });
 
   protected readonly curvePlots = computed<PlotSpec[]>(() => {
-    return this.chart().plots.filter((p) => p.type !== PlotType.SUMMARY_BOX && p.type !== 1);
+    const plots = this.chart().plots ?? [];
+    return plots.filter(
+      (p) =>
+        p.type !== PlotType.SUMMARY_BOX &&
+        (p.type as unknown) !== 1 &&
+        (p.type as unknown) !== 'SUMMARY_BOX',
+    );
   });
 
   ngOnInit(): void {
@@ -119,9 +131,10 @@ export class ChartCardComponent implements OnInit {
     });
   }
 
-  getPlotData(plotId: string): PlotData | undefined {
+  getPlotData(plotId?: string): PlotData | undefined {
     const plotsData = this.chartData()?.plotsData;
-    return plotsData?.find((p) => p.plotId === plotId);
+    if (!plotsData || !plotId) return undefined;
+    return plotsData.find((p) => p.plotId === plotId);
   }
 
   onRemove(): void {

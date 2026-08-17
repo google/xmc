@@ -12,12 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+:host {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
 .dashboard-grid-container {
   display: flex;
   flex-direction: row;
   align-items: stretch;
   gap: 20px;
   width: 100%;
+  min-width: 0;
   overflow-x: auto;
   padding-bottom: 16px;
+  box-sizing: border-box;
 }

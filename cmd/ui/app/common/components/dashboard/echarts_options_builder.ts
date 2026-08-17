@@ -169,6 +169,12 @@ function getScatterAxes(spec: PlotSpec, theme: XmcChartThemeConfig) {
   };
 }
 
+function extractSeriesList(data?: PlotData): SeriesData[] {
+  if (!data) return [];
+  const rawSeries = data.scatterSeries || data.content?.scatterSeries;
+  return data.seriesList ?? (rawSeries ? [rawSeries] : []);
+}
+
 /**
  * Builds ECharts options for Scatter / Time-Series metrics plots.
  */
@@ -177,8 +183,7 @@ export function buildScatterOption(
   data?: PlotData,
   theme: XmcChartThemeConfig = DEFAULT_XMC_THEME_CONFIG,
 ): EChartsOption {
-  const rawSeries = data?.scatterSeries || data?.content?.scatterSeries;
-  const seriesList = data?.seriesList ?? (rawSeries ? [rawSeries] : []);
+  const seriesList = extractSeriesList(data);
   if (!seriesList.length) return getEmptyChartOption();
 
   const seriesOptions: SeriesOption[] = seriesList.map((s, idx) =>

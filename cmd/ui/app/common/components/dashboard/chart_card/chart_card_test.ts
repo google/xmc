@@ -47,7 +47,7 @@ class TestHostComponent {
     plots: [
       {
         plotId: 'loss_kpi',
-        title: 'Avg validation loss',
+        title: 'Last validation loss',
         type: PlotType.SUMMARY_BOX,
         data: { metrics: ['train/loss'] },
       },
