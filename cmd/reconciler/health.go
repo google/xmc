@@ -14,6 +14,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -48,6 +49,9 @@ func activeHealthChecker(k8s *k8sclient.Client, spClient health.SpannerHealthCli
 }
 
 func registerHealthChecks(mgr ctrl.Manager, k8sClient *k8sclient.Client, spClient *spanner.Client) error {
+	if mgr == nil {
+		return errors.New("manager cannot be nil")
+	}
 	var spHealth health.SpannerHealthClient
 	if spClient != nil {
 		spHealth = health.NewSpannerHealthClient(spClient)

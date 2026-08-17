@@ -15,6 +15,8 @@ package main
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -91,4 +93,18 @@ func TestManager_Close(t *testing.T) {
 			t.Errorf("cleanup called %d times, want 1", cleanCount)
 		}
 	})
+}
+
+func TestActiveHealthChecker(t *testing.T) {
+	checker := activeHealthChecker(nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	if err := checker(req); err != nil {
+		t.Errorf("activeHealthChecker(nil, nil) error = %v, want nil", err)
+	}
+}
+
+func TestRegisterHealthChecks_NilManager(t *testing.T) {
+	if err := registerHealthChecks(nil, nil, nil); err == nil {
+		t.Error("registerHealthChecks(nil, ...) want non-nil error, got nil")
+	}
 }

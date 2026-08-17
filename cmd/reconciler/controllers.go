@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
@@ -57,6 +58,9 @@ type controllerRegistrationParams struct {
 }
 
 func registerControllers(ctx context.Context, p controllerRegistrationParams) (*shared.UpdateBatcher, *kueuesync.Reconciler, error) {
+	if p.mgr == nil {
+		return nil, nil, errors.New("manager cannot be nil")
+	}
 	cqReconciler, err := clusterqueue.NewReconciler(clusterqueue.Params{
 		Client: p.mgr.GetClient(),
 		Scheme: p.mgr.GetScheme(),
