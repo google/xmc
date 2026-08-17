@@ -53,24 +53,6 @@ func TestResourceCache(t *testing.T) {
 	}
 }
 
-func TestResourceCacheSortedList(t *testing.T) {
-	cache := NewResourceCache[string]()
-	cache.Set("charlie", "3")
-	cache.Set("alpha", "1")
-	cache.Set("bravo", "2")
-
-	got := cache.List()
-	want := []string{"1", "2", "3"}
-	if len(got) != len(want) {
-		t.Fatalf("List() length = %d, want %d", len(got), len(want))
-	}
-	for i, v := range want {
-		if got[i] != v {
-			t.Errorf("List()[%d] = %q, want %q", i, got[i], v)
-		}
-	}
-}
-
 func TestResourceCacheConcurrent(t *testing.T) {
 	cqCache := NewResourceCache[int]()
 	const goroutines = 10
@@ -111,5 +93,39 @@ func TestResourceCacheConcurrent(t *testing.T) {
 
 	for i := 0; i < goroutines*3; i++ {
 		<-done
+	}
+}
+
+func TestResourceCacheSortedList(t *testing.T) {
+	c := NewResourceCache[string]()
+
+	// Insert items out of order
+	c.Set("charlie", "c")
+	c.Set("alpha", "a")
+	c.Set("delta", "d")
+	c.Set("bravo", "b")
+
+	list := c.List()
+	expected := []string{"a", "b", "c", "d"}
+	if len(list) != len(expected) {
+		t.Fatalf("List() len = %d, want %d", len(list), len(expected))
+	}
+	for i, val := range list {
+		if val != expected[i] {
+			t.Errorf("List()[%d] = %q, want %q", i, val, expected[i])
+		}
+	}
+
+	// Delete item and verify list remains sorted
+	c.Delete("bravo")
+	listAfterDelete := c.List()
+	expectedAfterDelete := []string{"a", "c", "d"}
+	if len(listAfterDelete) != len(expectedAfterDelete) {
+		t.Fatalf("List() len after delete = %d, want %d", len(listAfterDelete), len(expectedAfterDelete))
+	}
+	for i, val := range listAfterDelete {
+		if val != expectedAfterDelete[i] {
+			t.Errorf("List()[%d] after delete = %q, want %q", i, val, expectedAfterDelete[i])
+		}
 	}
 }
