@@ -96,6 +96,18 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   private readonly fetchTrigger$ = new Subject<void>();
 
   constructor() {
+    this.setupSecondaryDataSubscription();
+
+    effect(() => {
+      const queues = this.queues();
+      const _period = this.velocityPeriod();
+      if (queues.length > 0) {
+        this.fetchSecondaryData();
+      }
+    });
+  }
+
+  private setupSecondaryDataSubscription(): void {
     this.subscriptions.add(
       this.fetchTrigger$
         .pipe(
@@ -123,14 +135,6 @@ export class ResourceDashboard implements OnInit, OnDestroy {
           this.isSecondaryLoading.set(false);
         }),
     );
-
-    effect(() => {
-      const queues = this.queues();
-      const _period = this.velocityPeriod();
-      if (queues.length > 0) {
-        this.fetchSecondaryData();
-      }
-    });
   }
 
   protected readonly availableResourceTypes = computed<string[]>(() => {
