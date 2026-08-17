@@ -108,17 +108,26 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 	now := time.Now()
 
 	tests := []struct {
-		name      string
-		ctx       context.Context
-		req       *spb.GetRunningAndPendingJobsRequest
-		fetcher   WorkUnitFetcher
-		wantCode  codes.Code
-		wantCount int
+		name       string
+		ctx        context.Context
+		req        *spb.GetRunningAndPendingJobsRequest
+		setupCache func() *cache.KueueCache
+		fetcher    WorkUnitFetcher
+		wantCode   codes.Code
+		wantCount  int
 	}{
 		{
 			name: "Success With Fetcher",
 			ctx:  context.Background(),
 			req:  baseReq,
+			setupCache: func() *cache.KueueCache {
+				c := cache.NewKueueCache()
+				c.LocalQueues.Set("lq-1", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "gpu-cluster-queue"},
+				})
+				return c
+			},
 			fetcher: &mockWorkUnitFetcher{
 				workUnits: []*essmsgpb.WorkUnit{
 					proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
@@ -127,7 +136,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 				},
 			},
 			wantCode:  codes.OK,
-			wantCount: 0,
+			wantCount: 1,
 		},
 		{
 			name:      "Unavailable With Nil Fetcher",
@@ -169,7 +178,11 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := newServer(cfg, nil, tt.fetcher)
+			var kCache *cache.KueueCache
+			if tt.setupCache != nil {
+				kCache = tt.setupCache()
+			}
+			srv := newServer(cfg, kCache, tt.fetcher)
 			resp, err := srv.GetRunningAndPendingJobs(tt.ctx, tt.req)
 
 			gotCode := status.Code(err)
