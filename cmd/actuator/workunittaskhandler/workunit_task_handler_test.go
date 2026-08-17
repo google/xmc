@@ -32,7 +32,6 @@ import (
 	"tink/go/jwt/jwt"
 	"xmanager_cloud/security/securitytest"
 	actuatortaskpb "xmanager_cloud/task_queue/proto/task_go_proto"
-	"xmanager_cloud/task_queue_redis/redisclient"
 )
 
 const testAudience = "test-audience"
@@ -165,12 +164,6 @@ func withServiceAccount(sa string) testHandlerOption {
 func withJWTVerifier(v func() (jwt.Verifier, error)) testHandlerOption {
 	return func(p *Params) {
 		p.JWTVerifier = v
-	}
-}
-
-func withRedisClient(c redisclient.Consumer) testHandlerOption {
-	return func(p *Params) {
-		p.RedisClient = c
 	}
 }
 

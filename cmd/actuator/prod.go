@@ -22,6 +22,7 @@ import (
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/google_api/option/option"
+	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
 	"xmanager_cloud/common/health"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	"xmanager_cloud/kubernetes/actuator/workunittaskhandler"
@@ -35,6 +36,10 @@ import (
 
 var osHostname = os.Hostname
 
+type k8sHealthClient interface {
+	Clientset() kubernetes.Interface
+}
+
 // ProdServer encapsulates the production actuator dependencies and lifecycle.
 type ProdServer struct {
 	Handler       *workunittaskhandler.Handler
@@ -45,15 +50,19 @@ type ProdServer struct {
 }
 
 // HealthCheckers returns the health client interfaces required for active readiness checks.
-func (p *ProdServer) HealthCheckers() (*k8sclient.Client, health.SpannerHealthClient, redisclient.Consumer) {
+func (p *ProdServer) HealthCheckers() (k8sHealthClient, health.SpannerHealthClient, redisclient.Consumer) {
 	if p == nil {
 		return nil, nil, nil
+	}
+	var k8s k8sHealthClient
+	if p.K8sClient != nil {
+		k8s = p.K8sClient
 	}
 	var spHealth health.SpannerHealthClient
 	if p.SpannerClient != nil {
 		spHealth = health.NewSpannerHealthClient(p.SpannerClient)
 	}
-	return p.K8sClient, spHealth, p.RedisClient
+	return k8s, spHealth, p.RedisClient
 }
 
 // Close closes all underlying production client connections in reverse initialization order.
@@ -70,7 +79,7 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 		return nil, fmt.Errorf("config cannot be nil")
 	}
 	if projectID == "" {
-		return nil, fmt.Errorf("project ID cannot be empty")
+		return nil, fmt.Errorf("project ID is required")
 	}
 
 	var cleanups []func() error
@@ -150,7 +159,6 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 		Audience:               cfg.Audience,
 		XManagerServiceAccount: cfg.XManagerServiceAccount,
 		JWTVerifier:            keyReloader.Verifier,
-		RedisClient:            redisConsumer,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create work unit task handler: %w", err)

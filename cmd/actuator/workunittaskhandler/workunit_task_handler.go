@@ -67,7 +67,6 @@ type Params struct {
 	Audience               string
 	XManagerServiceAccount string
 	JWTVerifier            func() (jwt.Verifier, error)
-	RedisClient            redisclient.Consumer
 }
 
 // Handler processes incoming actuation requests.
@@ -77,7 +76,6 @@ type Handler struct {
 	audience               string
 	xmanagerServiceAccount string
 	JWTVerifier            func() (jwt.Verifier, error)
-	redisClient            redisclient.Consumer
 }
 
 // New creates a new Handler.
@@ -103,7 +101,6 @@ func New(p Params) (*Handler, error) {
 		audience:               p.Audience,
 		xmanagerServiceAccount: p.XManagerServiceAccount,
 		JWTVerifier:            p.JWTVerifier,
-		redisClient:            p.RedisClient,
 	}, nil
 }
 

@@ -23,7 +23,6 @@ import (
 	"go/google"
 	"golang/cloud_google_com/go/compute/metadata/v/v0/metadata"
 	"golang/go_sync/errgroup/errgroup"
-	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
 	"xmanager_cloud/common/health"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/task_queue_redis/redisclient"
@@ -99,10 +98,6 @@ func getGceMetadata(ctx context.Context) (GceMetadata, error) {
 		Location:    location,
 		ClusterName: clusterName,
 	}, nil
-}
-
-type k8sHealthClient interface {
-	Clientset() kubernetes.Interface
 }
 
 func activeHealthCheck(k8s k8sHealthClient, spClient health.SpannerHealthClient, redis redisclient.Consumer) http.HandlerFunc {

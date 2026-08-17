@@ -25,6 +25,8 @@ import (
 
 	kubernetesfake "golang/k8s_io/client_go/v/v0_23/kubernetes/fake/fake"
 	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
+	"xmanager_cloud/common/health"
+	"xmanager_cloud/internal/storage/spanner/migrations/version"
 	"xmanager_cloud/task_queue_redis/redisclient"
 )
 
@@ -37,11 +39,13 @@ func (m *mockK8sHealthClient) Clientset() kubernetes.Interface {
 }
 
 type mockSpannerHealthClient struct {
-	pingErr error
+	version int64
+	dirty   bool
+	err     error
 }
 
-func (m *mockSpannerHealthClient) Single() any {
-	return nil
+func (m *mockSpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64, bool, error) {
+	return m.version, m.dirty, m.err
 }
 
 type mockRedisConsumer struct {
@@ -137,8 +141,8 @@ func TestNewProd_Validation(t *testing.T) {
 		if err == nil {
 			t.Fatalf("NewProd(empty projectID) expected error, got nil (server: %v)", server)
 		}
-		if !strings.Contains(err.Error(), "project ID cannot be empty") {
-			t.Errorf("NewProd error mismatch: got %q, want 'project ID cannot be empty'", err.Error())
+		if !strings.Contains(err.Error(), "project ID is required") {
+			t.Errorf("NewProd error mismatch: got %q, want 'project ID is required'", err.Error())
 		}
 	})
 }
@@ -183,11 +187,16 @@ func TestActiveHealthCheck(t *testing.T) {
 	fakeClientset := kubernetesfake.NewSimpleClientset()
 	validK8s := &mockK8sHealthClient{clientset: fakeClientset}
 	validRedis := &mockRedisConsumer{pingErr: nil}
+	validSpanner := &mockSpannerHealthClient{
+		version: version.EssExpectedSchemaVersion(),
+		dirty:   false,
+		err:     nil,
+	}
 
 	testCases := []struct {
 		name       string
 		k8s        k8sHealthClient
-		spClient   *mockSpannerHealthClient
+		spClient   health.SpannerHealthClient
 		redis      redisclient.Consumer
 		wantStatus int
 	}{
@@ -197,6 +206,27 @@ func TestActiveHealthCheck(t *testing.T) {
 			spClient:   nil,
 			redis:      validRedis,
 			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "all_healthy_with_spanner",
+			k8s:        validK8s,
+			spClient:   validSpanner,
+			redis:      validRedis,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "spanner_query_error",
+			k8s:        validK8s,
+			spClient:   &mockSpannerHealthClient{err: fmt.Errorf("spanner unreachable")},
+			redis:      validRedis,
+			wantStatus: http.StatusInternalServerError,
+		},
+		{
+			name:       "spanner_dirty_migration",
+			k8s:        validK8s,
+			spClient:   &mockSpannerHealthClient{version: version.EssExpectedSchemaVersion(), dirty: true},
+			redis:      validRedis,
+			wantStatus: http.StatusInternalServerError,
 		},
 		{
 			name:       "nil_k8s_client",
@@ -230,7 +260,7 @@ func TestActiveHealthCheck(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			handler := activeHealthCheck(tc.k8s, nil, tc.redis)
+			handler := activeHealthCheck(tc.k8s, tc.spClient, tc.redis)
 			req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 			rec := httptest.NewRecorder()
 
