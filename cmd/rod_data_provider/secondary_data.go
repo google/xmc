@@ -60,25 +60,7 @@ func (s *server) BatchGetQueueSecondaryData(ctx context.Context, req *spb.BatchG
 	queueMap := make(map[string]*spb.ClusterQueueSecondaryMetrics)
 	for _, qName := range req.GetQueueNames() {
 		res := batchResults[qName]
-		jobVel := float64(res.AdmittedJobsCount) / windowHours
-		resType := "CPU"
-		if res.ResourceType != "" {
-			resType = res.ResourceType
-		}
-		predictability := &spb.QueuePredictability{
-			VelocityRange: preset,
-			JobVelocity:   jobVel,
-			ResourceVelocity: &spb.ResourceVelocity{
-				ResourceType: resType,
-				Velocity:     jobVel * float64(res.ResourceUnits),
-			},
-			PendingResourceRequests: &spb.Resource{
-				ResourceType: resType,
-				Count:        0,
-			},
-			PendingJobs: 0,
-		}
-
+		predictability := buildQueuePredictability(preset, windowHours, res)
 		queueMap[qName] = &spb.ClusterQueueSecondaryMetrics{
 			QueuePredictability: []*spb.QueuePredictability{predictability},
 		}
@@ -87,6 +69,27 @@ func (s *server) BatchGetQueueSecondaryData(ctx context.Context, req *spb.BatchG
 	return &spb.BatchGetQueueSecondaryDataResponse{
 		QueuePredictability: queueMap,
 	}, nil
+}
+
+func buildQueuePredictability(preset spb.RangePreset, windowHours float64, res statushistory.QueueVelocityResult) *spb.QueuePredictability {
+	jobVel := float64(res.AdmittedJobsCount) / windowHours
+	resType := "CPU"
+	if res.ResourceType != "" {
+		resType = res.ResourceType
+	}
+	return &spb.QueuePredictability{
+		VelocityRange: preset,
+		JobVelocity:   jobVel,
+		ResourceVelocity: &spb.ResourceVelocity{
+			ResourceType: resType,
+			Velocity:     jobVel * float64(res.ResourceUnits),
+		},
+		PendingResourceRequests: &spb.Resource{
+			ResourceType: resType,
+			Count:        0,
+		},
+		PendingJobs: 0,
+	}
 }
 
 func fetchBatchVelocity(ctx context.Context, store QueueVelocityFetcher, queueNames []string, windowDuration time.Duration) (map[string]statushistory.QueueVelocityResult, error) {
