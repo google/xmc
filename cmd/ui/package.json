@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve",
+    "start": "ng serve --proxy-config proxy.conf.json",
     "serve:local": "python3 ../../test/local/ui/server_local.py",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
@@ -27,6 +27,7 @@
     "@angular/platform-browser-dynamic": "^22.0.2",
     "@angular/router": "^22.0.2",
     "@ngrx/component-store": "^18.0.0",
+    "echarts": "^5.5.1",
     "rxjs": "~7.8.0",
     "safevalues": "^0.5.0",
     "tslib": "^2.6.2",

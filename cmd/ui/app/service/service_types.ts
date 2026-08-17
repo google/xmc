@@ -19,6 +19,7 @@ export interface FeatureFlags {
   adminPanelEnabled?: boolean;
   resourceDashboardEnabled?: boolean;
   isNonProdAuth?: boolean;
+  performanceDashboardEnabled?: boolean;
 }
 
 declare global {
