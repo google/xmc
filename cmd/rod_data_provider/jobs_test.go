@@ -277,26 +277,87 @@ func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 	}
 }
 
-func TestGetRunningAndPendingJobs_OnlyUsesLocalQueuesFromCache(t *testing.T) {
-	kCache := cache.NewKueueCache()
-	lq := &kueuev1beta1.LocalQueue{
-		ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
-		Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "cq-test"},
+func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
+	tests := []struct {
+		name       string
+		setupCache func() *cache.KueueCache
+		queueName  string
+		wantQueues []string
+	}{
+		{
+			name: "single mapped local queue",
+			setupCache: func() *cache.KueueCache {
+				c := cache.NewKueueCache()
+				c.LocalQueues.Set("lq-1", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "cq-test"},
+				})
+				return c
+			},
+			queueName:  "cq-test",
+			wantQueues: []string{"lq-1"},
+		},
+		{
+			name: "multiple mapped local queues sorted and deduplicated",
+			setupCache: func() *cache.KueueCache {
+				c := cache.NewKueueCache()
+				c.LocalQueues.Set("team-a/lq-2", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-2", Namespace: "team-a"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "cq-test"},
+				})
+				c.LocalQueues.Set("team-a/lq-1", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-1", Namespace: "team-a"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "cq-test"},
+				})
+				c.LocalQueues.Set("team-b/lq-1", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-1", Namespace: "team-b"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "cq-test"},
+				})
+				c.LocalQueues.Set("team-c/other-lq", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "other-lq", Namespace: "team-c"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "other-cq"},
+				})
+				return c
+			},
+			queueName:  "cq-test",
+			wantQueues: []string{"lq-1", "lq-2"},
+		},
+		{
+			name: "fallback to cluster queue when no local queues match",
+			setupCache: func() *cache.KueueCache {
+				c := cache.NewKueueCache()
+				c.LocalQueues.Set("team-c/other-lq", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "other-lq", Namespace: "team-c"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "other-cq"},
+				})
+				return c
+			},
+			queueName:  "cq-test",
+			wantQueues: []string{"cq-test"},
+		},
+		{
+			name:       "fallback to cluster queue when cache is nil",
+			setupCache: func() *cache.KueueCache { return nil },
+			queueName:  "cq-test",
+			wantQueues: []string{"cq-test"},
+		},
 	}
-	kCache.LocalQueues.Set("lq-1", lq)
 
-	fetcher := &mockWorkUnitFetcher{}
-	srv := newServer(&Config{}, kCache, fetcher)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fetcher := &mockWorkUnitFetcher{}
+			srv := newServer(&Config{}, tt.setupCache(), fetcher)
 
-	_, err := srv.GetRunningAndPendingJobs(context.Background(), &spb.GetRunningAndPendingJobsRequest{
-		QueueName: "cq-test",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+			_, err := srv.GetRunningAndPendingJobs(context.Background(), &spb.GetRunningAndPendingJobsRequest{
+				QueueName: tt.queueName,
+			})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
-	want := []string{"lq-1"}
-	if diff := cmp.Diff(want, fetcher.lastQueueNames); diff != "" {
-		t.Errorf("targetQueues mismatch (-want +got):\n%s", diff)
+			if diff := cmp.Diff(tt.wantQueues, fetcher.lastQueueNames); diff != "" {
+				t.Errorf("targetQueues mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
