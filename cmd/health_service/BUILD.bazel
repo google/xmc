@@ -30,6 +30,7 @@ compat_go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//api/protos/health:api_go_proto",
+        "//internal/auth",
         "//internal/common/health",
         "//internal/compat/google",
         "//internal/configutil",
@@ -39,6 +40,7 @@ compat_go_library(
         "//pkg/auth/oauth2",
         "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
         "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_api//cloudidentity/v1beta1:go_default_library",
         "@org_golang_google_api//option:go_default_library",
         "@org_golang_google_api//run/v2:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
@@ -80,7 +82,11 @@ compat_go_test(
     ],
     embed = [":health_service_lib"],
     deps = [
+        "//api/protos/xid:messages_go_proto",
+        "//internal/auth",
+        "//pkg/auth/oauth2",
         "@com_github_google_go_cmp//cmp:go_default_library",
+        "@com_google_cloud_go_iam//apiv1/iampb:go_default_library",
         "@org_golang_google_api//option:go_default_library",
         "@org_golang_google_api//run/v2:go_default_library",
         "@org_golang_google_grpc//:go_default_library",

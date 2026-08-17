@@ -25,6 +25,7 @@ vars:
   jwt_secret: ""        # Secret key used by backend to sign session tokens
   allowed_emails: ""    # Comma-separated list of allowed user emails
   authorized_iam_role:  # GCP IAM Role for cluster workloads access
+  admin_iam_role: "roles/owner" # GCP IAM Role for admin panel access
   certs_email:          # Email registered with cert-manager/GTS
   gts_key_id:           # GTS External Account Binding key ID
   gts_hmac_key:         # GTS External Account Binding HMAC secret
@@ -426,6 +427,8 @@ deployment_groups:
         type: string
       - name: auth.authorizedIamRole
         value: $(vars.authorized_iam_role)
+      - name: auth.adminIamRole
+        value: $(vars.admin_iam_role)
       - name: statusMessageHistoryEnabled
         value: $(vars.status_message_history_enabled)
         type: auto

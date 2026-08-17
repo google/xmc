@@ -16,6 +16,7 @@ package oauth2
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -109,4 +110,134 @@ func TestIamPolicyCachingAndClientReuse(t *testing.T) {
 	if err := a.Close(); err != nil {
 		t.Errorf("unexpected error on Close: %v", err)
 	}
+}
+
+func TestIsUserAuthorizedForRoleViaIAM(t *testing.T) {
+	cfg := &Config{
+		GCPProjectID:  "test-project-id",
+		TargetIAMRole: "roles/viewer",
+		AdminIAMRole:  "roles/owner",
+	}
+
+	a := NewAuthenticator(cfg)
+
+	mockPolicy := &iampb.Policy{
+		Bindings: []*iampb.Binding{
+			{
+				Role:    "roles/viewer",
+				Members: []string{"user:viewer@company.com"},
+			},
+			{
+				Role:    "roles/owner",
+				Members: []string{"user:owner@company.com"},
+			},
+		},
+	}
+
+	a.PolicyFetcher = func(ctx context.Context) (*iampb.Policy, error) {
+		return mockPolicy, nil
+	}
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		email   string
+		role    string
+		want    bool
+		wantErr bool
+	}{
+		{
+			name:    "viewer email has viewer role",
+			email:   "viewer@company.com",
+			role:    "roles/viewer",
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name:    "viewer email does not have owner role",
+			email:   "viewer@company.com",
+			role:    "roles/owner",
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name:    "owner email has owner role",
+			email:   "owner@company.com",
+			role:    "roles/owner",
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name:    "owner email does not have viewer role",
+			email:   "owner@company.com",
+			role:    "roles/viewer",
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name:    "empty role returns false",
+			email:   "owner@company.com",
+			role:    "",
+			want:    false,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := a.IsUserAuthorizedForRoleViaIAM(ctx, tt.email, tt.role)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("IsUserAuthorizedForRoleViaIAM() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("IsUserAuthorizedForRoleViaIAM() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsAdmin(t *testing.T) {
+	mockPolicy := &iampb.Policy{
+		Bindings: []*iampb.Binding{
+			{
+				Role:    "roles/owner",
+				Members: []string{"user:admin@company.com"},
+			},
+		},
+	}
+
+	t.Run("returns true when DisableAuthentication is true", func(t *testing.T) {
+		a := NewAuthenticator(&Config{DisableAuthentication: true})
+		got, err := a.IsAdmin(context.Background(), "anyone@company.com")
+		if err != nil || !got {
+			t.Errorf("IsAdmin() = (%v, %v), want (true, nil)", got, err)
+		}
+	})
+
+	t.Run("returns error when AdminIAMRole is not configured", func(t *testing.T) {
+		a := NewAuthenticator(&Config{AdminIAMRole: ""})
+		_, err := a.IsAdmin(context.Background(), "admin@company.com")
+		if !errors.Is(err, ErrAdminRoleNotConfigured) {
+			t.Errorf("IsAdmin() error = %v, want %v", err, ErrAdminRoleNotConfigured)
+		}
+	})
+
+	t.Run("evaluates role when AdminIAMRole configured", func(t *testing.T) {
+		a := NewAuthenticator(&Config{GCPProjectID: "test-proj", AdminIAMRole: "roles/owner"})
+		a.PolicyFetcher = func(ctx context.Context) (*iampb.Policy, error) {
+			return mockPolicy, nil
+		}
+
+		gotAdmin, err := a.IsAdmin(context.Background(), "admin@company.com")
+		if err != nil || !gotAdmin {
+			t.Errorf("IsAdmin(admin) = (%v, %v), want (true, nil)", gotAdmin, err)
+		}
+
+		gotNonAdmin, err := a.IsAdmin(context.Background(), "user@company.com")
+		if err != nil || gotNonAdmin {
+			t.Errorf("IsAdmin(user) = (%v, %v), want (false, nil)", gotNonAdmin, err)
+		}
+	})
 }

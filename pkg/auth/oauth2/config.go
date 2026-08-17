@@ -42,6 +42,7 @@ type Config struct {
 	AllowedOrigins        []string
 	GCPProjectID          string
 	TargetIAMRole         string
+	AdminIAMRole          string
 	ClientID              string
 	ClientSecret          string
 	JWTSecret             string
@@ -112,6 +113,7 @@ func LoadConfig() (*Config, error) {
 		AllowedOrigins:        allowedOrigins,
 		GCPProjectID:          getEnv("GCP_PROJECT_ID", ""),
 		TargetIAMRole:         getEnv("AUTHORIZED_IAM_ROLE", "roles/viewer"),
+		AdminIAMRole:          getEnv("ADMIN_IAM_ROLE", "roles/owner"),
 		ClientID:              getEnv("CLIENT_ID", ""),
 		ClientSecret:          clientSecret,
 		JWTSecret:             jwtSecret,
