@@ -25,6 +25,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Generator
 
@@ -49,6 +50,7 @@ class E2EConfig:
     skip_build: bool = False
     ess_db: str = ""
     xid_db: str = ""
+    temp_dir: str = ""
 
     def __post_init__(self) -> None:
         ts = int(time.time())
@@ -56,6 +58,8 @@ class E2EConfig:
             self.ess_db = f"e2e-ess-{ts}"
         if not self.xid_db:
             self.xid_db = f"e2e-xid-{ts}"
+        if not self.temp_dir:
+            self.temp_dir = tempfile.mkdtemp(prefix="xmc_e2e_")
 
 
 def run_cmd(
@@ -218,7 +222,7 @@ class KinDClusterManager:
             secrets_cmd.append(f"--from-file=key.json={adc_file}")
         run_cmd(secrets_cmd)
 
-        tls_key_path = "/tmp/e2e-validation.key"
+        tls_key_path = os.path.join(self.cfg.temp_dir, "e2e-validation.key")
         if not os.path.exists(tls_key_path):
             run_cmd(
                 [
@@ -327,8 +331,8 @@ class HelmDeployer:
 
     def __init__(self, config: E2EConfig) -> None:
         self.cfg = config
-        self.helm_dir = "/tmp/xmc-helm-e2e"
-        self.values_file = "/tmp/xmc-e2e-values.yaml"
+        self.helm_dir = os.path.join(self.cfg.temp_dir, "helm")
+        self.values_file = os.path.join(self.cfg.temp_dir, "values.yaml")
 
     def deploy(self) -> None:
         """Copies chart, generates values, and executes helm upgrade --install."""
@@ -496,7 +500,7 @@ class PlaywrightTestExecutor:
 
     def __init__(self, config: E2EConfig) -> None:
         self.cfg = config
-        self.venv_dir = "/tmp/xmc_e2e_venv"
+        self.venv_dir = os.path.join(self.cfg.temp_dir, "venv")
 
     def setup_venv(self) -> str:
         """Sets up Python virtual environment and installs dependencies."""
@@ -552,6 +556,9 @@ class E2EOrchestrator:
             logger.info("=== Executing Teardown ===")
             self.kind.teardown()
             self.spanner.teardown()
+            if not self.cfg.keep_cluster and os.path.exists(self.cfg.temp_dir):
+                logger.info("Cleaning up temporary directory %s...", self.cfg.temp_dir)
+                shutil.rmtree(self.cfg.temp_dir, ignore_errors=True)
 
     def run(self) -> None:
         start_time = time.time()

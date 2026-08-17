@@ -22,10 +22,18 @@ from typing import Any
 
 from playwright.sync_api import BrowserContext, Page, expect, sync_playwright
 
+SCREENSHOTS_DIR = os.getenv(
+    "XMC_SCREENSHOTS_DIR",
+    "/usr/local/google/home/vluk/.gemini/jetski/brain/4eaf6530-cdad-4e4d-b9b2-c998778f24c5",
+)
+os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-trace_handler = logging.FileHandler("/tmp/playwright_e2e_trace.txt", mode="w")
+trace_handler = logging.FileHandler(
+    os.path.join(SCREENSHOTS_DIR, "playwright_e2e_trace.txt"), mode="w"
+)
 trace_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 logger.addHandler(trace_handler)
 
@@ -37,12 +45,6 @@ ADMIN_PASSWORD = "password123"
 
 VIEWER_USER = "viewer@xmc.local"
 VIEWER_PASSWORD = "password123"
-
-
-SCREENSHOTS_DIR = os.getenv(
-    "XMC_SCREENSHOTS_DIR",
-    "/usr/local/google/home/vluk/.gemini/jetski/brain/4eaf6530-cdad-4e4d-b9b2-c998778f24c5",
-)
 
 
 def save_screenshot(page: Page, name: str) -> str:
@@ -70,17 +72,19 @@ def login_via_dex(page: Page, email: str, password: str) -> None:
     sign_in_btn.click()
 
     logger.info("Waiting for Dex auth page (current URL: %s)...", page.url)
-    page.wait_for_timeout(1000)
+    try:
+        page.wait_for_url(lambda u: "5556" in u or "dex" in u, timeout=10000)
+    except Exception:
+        pass
     logger.info("Current URL after login click: %s", page.url)
 
     # If Dex presents a connector choice (e.g. 'Log in with Email' or 'local')
     local_login_btn = page.locator(
         "a:has-text('Log in with'), button:has-text('Log in with'), a[href*='local']"
-    )
+    ).first
     try:
-        if local_login_btn.count() > 0 and local_login_btn.first.is_visible():
-            logger.info("Clicking Dex connector selection...")
-            local_login_btn.first.click()
+        local_login_btn.click(timeout=3000)
+        logger.info("Clicked Dex connector selection.")
     except Exception:
         pass
 
@@ -104,7 +108,13 @@ def login_via_dex(page: Page, email: str, password: str) -> None:
         "button:has-text('Log in'), button:has-text('Login'), button[type='submit']"
     ).first.click()
 
-    page.wait_for_timeout(1000)
+    try:
+        page.wait_for_url(
+            lambda u: "/approval" in u or "8080" in u or "callback" in u or "experiments" in u,
+            timeout=10000,
+        )
+    except Exception:
+        pass
     logger.info("Current URL after credentials submission: %s", page.url)
 
     # If Dex presents an OAuth consent/approval screen (e.g. 'Grant Access')
@@ -112,11 +122,10 @@ def login_via_dex(page: Page, email: str, password: str) -> None:
         save_screenshot(page, f"dex_approval_prompt_{email.split('@')[0]}")
         grant_btn = page.locator(
             "button:has-text('Grant Access'), button:has-text('Grant Approval'), button:has-text('Approval'), button:has-text('Allow'), button[type='submit']"
-        )
+        ).first
         try:
-            if grant_btn.count() > 0 and grant_btn.first.is_visible():
-                logger.info("Clicking Dex grant access button...")
-                grant_btn.first.click()
+            grant_btn.click(timeout=3000)
+            logger.info("Clicked Dex grant access button.")
         except Exception:
             pass
 
@@ -231,7 +240,8 @@ def main() -> None:
         except Exception:
             logger.error("Test execution failed at URL: %s", page.url)
             try:
-                with open("/tmp/playwright_e2e_error.txt", "w") as ef:
+                error_log_path = os.path.join(SCREENSHOTS_DIR, "playwright_e2e_error.txt")
+                with open(error_log_path, "w", encoding="utf-8") as ef:
                     ef.write(f"Failed at URL: {page.url}\n")
                     ef.write(traceback.format_exc())
             except Exception:
