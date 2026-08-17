@@ -197,7 +197,14 @@ func createXidServer(ctx context.Context, t *testing.T, xidClient *googlespanner
 
 	s := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
 
-	xidServer := xidserver.NewXIDServer(cfg, createTestAuthorizer(ctx, t), storage)
+	xidServer, err := xidserver.New(xidserver.Params{
+		Config:     cfg,
+		Authorizer: createTestAuthorizer(ctx, t),
+		Storage:    storage,
+	})
+	if err != nil {
+		t.Fatalf("failed to create xid server: %v", err)
+	}
 	xidgrpcpb.RegisterXidServiceServer(s, xidServer)
 
 	reflection.Register(s)

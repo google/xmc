@@ -25,7 +25,6 @@ import (
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/storage/storage"
 	"xmanager_cloud/validator/validator"
-	"xmanager_cloud/xid_service/config"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -176,7 +175,7 @@ func TestCreateXidEntry_Failures(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			server := NewXIDServer(config.Config{}, tc.mockAuth, tc.mockStorage)
+			server := newTestServer(t, withAuthorizer(tc.mockAuth), withStorage(tc.mockStorage))
 			_, err := server.CreateXidEntry(ctx, &apipb.CreateXidEntryRequest{
 				XidEntry: &msgpb.XidEntry{
 					Acls:   &msgpb.XidAcls{Owners: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "test@example.com"}}}},
