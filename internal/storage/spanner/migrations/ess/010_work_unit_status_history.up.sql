@@ -47,5 +47,3 @@ CREATE TABLE WorkUnitStatusHistory (
 
 -- Index for efficient sliding-window queue velocity and turnover rate queries.
 CREATE INDEX WorkUnitStatusHistoryByQueueAndTransitionTime ON WorkUnitStatusHistory (QueueName, TransitionTime DESC, NewState, PreviousState) STORING (ResourceType, ResourceUnits);
-
-CREATE INDEX idx_work_unit_status_history_create_time ON WorkUnitStatusHistory (CreateTime);
