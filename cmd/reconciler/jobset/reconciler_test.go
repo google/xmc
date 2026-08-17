@@ -172,6 +172,67 @@ func newScheme() (*runtime.Scheme, error) {
 	return scheme, nil
 }
 
+func TestNewReconciler_Validation(t *testing.T) {
+	scheme, err := newScheme()
+	if err != nil {
+		t.Fatalf("Failed to create scheme: %v", err)
+	}
+	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+	batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
+
+	tests := []struct {
+		name    string
+		params  Params
+		wantErr bool
+	}{
+		{
+			name: "valid params",
+			params: Params{
+				Client:  cl,
+				Scheme:  scheme,
+				Batcher: batcher,
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing client",
+			params: Params{
+				Scheme:  scheme,
+				Batcher: batcher,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing scheme",
+			params: Params{
+				Client:  cl,
+				Batcher: batcher,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing batcher",
+			params: Params{
+				Client: cl,
+				Scheme: scheme,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec, err := NewReconciler(tc.params)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("NewReconciler() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if !tc.wantErr && rec == nil {
+				t.Fatal("NewReconciler() returned nil reconciler without error")
+			}
+		})
+	}
+}
+
 func TestActuatorReconciler(t *testing.T) {
 	scheme, err := newScheme()
 	if err != nil {
@@ -253,10 +314,13 @@ func TestActuatorReconciler(t *testing.T) {
 				reconcilerClient = &clientWithError{Client: cl, getErr: tc.getErr}
 			}
 
-			reconciler := &Reconciler{
+			reconciler, err := NewReconciler(Params{
 				Client:  reconcilerClient,
 				Scheme:  scheme,
 				Batcher: shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{}),
+			})
+			if err != nil {
+				t.Fatalf("NewReconciler() unexpected error: %v", err)
 			}
 
 			result, err := reconciler.Reconcile(context.Background(), tc.req)
@@ -305,10 +369,13 @@ func TestReconcileAddsToBatcher(t *testing.T) {
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(jobSet).Build()
 
-	r := &Reconciler{
+	r, err := NewReconciler(Params{
 		Client:  fakeClient,
 		Scheme:  scheme,
 		Batcher: shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{}),
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
 	}
 
 	req := ctrl.Request{
@@ -702,10 +769,13 @@ func TestActuatorReconcilerFinalizer_PatchErrors(t *testing.T) {
 			cl := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initialJobSet).Build()
 			reconcilerClient := &clientWithError{Client: cl, patchErr: tc.patchErr}
 			batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
-			reconciler := &Reconciler{
+			reconciler, err := NewReconciler(Params{
 				Client:  reconcilerClient,
 				Scheme:  scheme,
 				Batcher: batcher,
+			})
+			if err != nil {
+				t.Fatalf("NewReconciler() unexpected error: %v", err)
 			}
 
 			result, err := reconciler.Reconcile(context.Background(), req)
@@ -798,10 +868,13 @@ func TestActuatorReconcilerFinalizer_WithBatcherUpdate(t *testing.T) {
 			updatesSentTotal.Reset()
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(tc.initialJobSet).Build()
 			batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
-			reconciler := &Reconciler{
+			reconciler, err := NewReconciler(Params{
 				Client:  fakeClient,
 				Scheme:  scheme,
 				Batcher: batcher,
+			})
+			if err != nil {
+				t.Fatalf("NewReconciler() unexpected error: %v", err)
 			}
 
 			result, err := reconciler.Reconcile(context.Background(), tc.req)
@@ -869,10 +942,13 @@ func TestActuatorReconcilerFinalizer_WithoutBatcherUpdateDeletesJobSet(t *testin
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initialJobSet).Build()
 	batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
-	reconciler := &Reconciler{
+	reconciler, err := NewReconciler(Params{
 		Client:  fakeClient,
 		Scheme:  scheme,
 		Batcher: batcher,
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
 	}
 
 	result, err := reconciler.Reconcile(context.Background(), reqNoLabels)
@@ -923,10 +999,13 @@ func TestActuatorReconcilerFinalizer_WithoutBatcherUpdateDoesNotDeleteJobSet(t *
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(initialJobSet).Build()
 	batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
-	reconciler := &Reconciler{
+	reconciler, err := NewReconciler(Params{
 		Client:  fakeClient,
 		Scheme:  scheme,
 		Batcher: batcher,
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
 	}
 
 	result, err := reconciler.Reconcile(context.Background(), req)
@@ -1094,12 +1173,15 @@ func TestReconcileImagePullBackOff(t *testing.T) {
 				}).
 				Build()
 			batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
-			r := &Reconciler{
+			r, err := NewReconciler(Params{
 				Client:                      fakeClient,
 				Scheme:                      scheme,
 				Batcher:                     batcher,
 				StartupPodErrorCheckEnabled: true,
 				StartupPodErrorCheckTime:    2 * time.Minute,
+			})
+			if err != nil {
+				t.Fatalf("NewReconciler() unexpected error: %v", err)
 			}
 
 			req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-jobset", Namespace: "default"}}
@@ -1219,12 +1301,15 @@ func TestReconcileUnschedulablePods(t *testing.T) {
 				}).
 				Build()
 			batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
-			r := &Reconciler{
+			r, err := NewReconciler(Params{
 				Client:                      fakeClient,
 				Scheme:                      scheme,
 				Batcher:                     batcher,
 				StartupPodErrorCheckEnabled: true,
 				StartupPodErrorCheckTime:    2 * time.Minute,
+			})
+			if err != nil {
+				t.Fatalf("NewReconciler() unexpected error: %v", err)
 			}
 
 			req := ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-jobset", Namespace: "default"}}

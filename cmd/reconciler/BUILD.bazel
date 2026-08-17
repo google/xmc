@@ -21,6 +21,7 @@ compat_go_library(
     srcs = [
         "config.go",
         "main.go",
+        "manager.go",
     ],
     importpath = "xmanager_cloud/cmd/reconciler",
     visibility = ["//visibility:private"],
@@ -59,7 +60,10 @@ compat_go_library(
 
 compat_go_test(
     name = "reconciler_test",
-    srcs = ["main_test.go"],
+    srcs = [
+        "main_test.go",
+        "manager_test.go",
+    ],
     embed = [":reconciler_lib"],
 )
 

@@ -34,6 +34,64 @@ func newScheme() *runtime.Scheme {
 	return s
 }
 
+func TestNewReconciler_Validation(t *testing.T) {
+	scheme := newScheme()
+	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+	cache := NewNameCache()
+
+	tests := []struct {
+		name    string
+		params  Params
+		wantErr bool
+	}{
+		{
+			name: "valid params",
+			params: Params{
+				Client: cl,
+				Scheme: scheme,
+				Cache:  cache,
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing client",
+			params: Params{
+				Scheme: scheme,
+				Cache:  cache,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing scheme",
+			params: Params{
+				Client: cl,
+				Cache:  cache,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing cache",
+			params: Params{
+				Client: cl,
+				Scheme: scheme,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec, err := NewReconciler(tc.params)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("NewReconciler() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if !tc.wantErr && rec == nil {
+				t.Fatal("NewReconciler() returned nil reconciler without error")
+			}
+		})
+	}
+}
+
 func TestClusterQueueReconciler(t *testing.T) {
 	scheme := newScheme()
 	cq := &kueuev1beta1.ClusterQueue{
@@ -43,13 +101,16 @@ func TestClusterQueueReconciler(t *testing.T) {
 	}
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects([]runtime.Object{cq}...).Build()
 	cache := NewNameCache()
-	rec := &Reconciler{
+	rec, err := NewReconciler(Params{
 		Client: cl,
 		Scheme: scheme,
 		Cache:  cache,
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
 	}
 
-	_, err := rec.Reconcile(context.Background(), ctrl.Request{
+	_, err = rec.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{
 			Name: "test-clusterqueue",
 		},
@@ -70,13 +131,16 @@ func TestClusterQueueReconciler_NotFound(t *testing.T) {
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects([]runtime.Object{}...).Build()
 	cache := NewNameCache()
 	cache.Add("test-clusterqueue")
-	rec := &Reconciler{
+	rec, err := NewReconciler(Params{
 		Client: cl,
 		Scheme: scheme,
 		Cache:  cache,
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
 	}
 
-	_, err := rec.Reconcile(context.Background(), ctrl.Request{
+	_, err = rec.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{
 			Name: "test-clusterqueue",
 		},
