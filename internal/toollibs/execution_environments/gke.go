@@ -108,6 +108,12 @@ var (
 		"H200":       "nvidia-h200-141gb",
 		"B200":       "nvidia-b200",
 		"GB200":      "nvidia-gb200",
+		// The NVIDIA RTX PRO 6000 Blackwell Server Edition, which backs GCP's G4
+		// machine types. XManager's client enum already carries this card as
+		// B40_48TH and special-cases it in JobRequirements topology handling, but
+		// no entry was ever added here, so requesting one is rejected outright by
+		// updateNodeSelector.
+		"B40_48TH": "nvidia-rtx-pro-6000",
 	}
 )
 
