@@ -57,7 +57,8 @@ limitations under the License.
       <!-- Section: Base Experiment -->
       <div class="section-title">2. Base experiment (Baseline)</div>
       <p class="section-hint">
-        Specify the reference baseline experiment ID and work unit ID to evaluate other runs against.
+        Specify the reference baseline experiment ID and work unit ID to evaluate other runs
+        against.
       </p>
 
       <div class="form-row-multi">
@@ -84,11 +85,7 @@ limitations under the License.
       <div class="form-row">
         <mat-form-field appearance="outline" class="full-width">
           <mat-label>Baseline Label / Title (Optional)</mat-label>
-          <input
-            matInput
-            formControlName="baseChartTitle"
-            placeholder="e.g. VCC Baseline Run"
-          />
+          <input matInput formControlName="baseChartTitle" placeholder="e.g. VCC Baseline Run" />
         </mat-form-field>
       </div>
 
@@ -100,12 +97,7 @@ limitations under the License.
           3. Metric charts & plots
           <span class="plot-count-badge">{{ plots().length }} plots</span>
         </div>
-        <button
-          mat-button
-          class="reset-plots-button"
-          type="button"
-          (click)="resetPlotsToDefault()"
-        >
+        <button mat-button class="reset-plots-button" type="button" (click)="resetPlotsToDefault()">
           <mat-icon>restart_alt</mat-icon>
           <span>Reset to default ML plots</span>
         </button>
@@ -179,11 +171,7 @@ limitations under the License.
 
           <mat-form-field appearance="outline" class="plot-title-field">
             <mat-label>Plot Title (Optional)</mat-label>
-            <input
-              matInput
-              formControlName="title"
-              placeholder="e.g. Last validation loss"
-            />
+            <input matInput formControlName="title" placeholder="e.g. Last validation loss" />
           </mat-form-field>
 
           <button

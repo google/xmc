@@ -45,11 +45,24 @@ def find_testdata_dir() -> str | None:
             continue
         candidates.extend([
             os.path.join(base, "test", "dataengine", "testdata", "golden"),
-            os.path.join(base, "_main", "test", "dataengine", "testdata", "golden"),
-            os.path.join(base, "xmanager_cloud", "test", "dataengine", "testdata", "golden"),
+            os.path.join(
+                base, "_main", "test", "dataengine", "testdata", "golden"
+            ),
+            os.path.join(
+                base,
+                "xmanager_cloud",
+                "test",
+                "dataengine",
+                "testdata",
+                "golden",
+            ),
             os.path.join(base, "..", "test", "dataengine", "testdata", "golden"),
-            os.path.join(base, "..", "..", "test", "dataengine", "testdata", "golden"),
-            os.path.join(base, "..", "_main", "test", "dataengine", "testdata", "golden"),
+            os.path.join(
+                base, "..", "..", "test", "dataengine", "testdata", "golden"
+            ),
+            os.path.join(
+                base, "..", "_main", "test", "dataengine", "testdata", "golden"
+            ),
         ])
     for c in candidates:
         norm = os.path.normpath(c)
@@ -90,7 +103,11 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         """Initializes golden and in-memory mock datasets."""
         cls.goldens = load_golden_files()
         golden_dir = find_testdata_dir()
-        dashboards_file = os.path.join(golden_dir, "dashboards_list.golden.json") if golden_dir else ""
+        dashboards_file = (
+            os.path.join(golden_dir, "dashboards_list.golden.json")
+            if golden_dir
+            else ""
+        )
         if os.path.exists(dashboards_file):
             try:
                 with open(dashboards_file, "r", encoding="utf-8") as f:
@@ -107,8 +124,13 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header(
+            "Access-Control-Allow-Methods",
+            "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+        )
+        self.send_header(
+            "Access-Control-Allow-Headers", "Content-Type, Authorization"
+        )
         self.end_headers()
         self.wfile.write(body)
 
@@ -116,12 +138,17 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         """Handles preflight CORS requests."""
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header(
+            "Access-Control-Allow-Methods",
+            "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+        )
+        self.send_header(
+            "Access-Control-Allow-Headers", "Content-Type, Authorization"
+        )
         self.end_headers()
 
     def do_GET(self) -> None:
-        """Handles GET requests for SPA routing, health checks, config, and mock APIs."""
+        """Handles GET requests for SPA routing, health checks, and mock APIs."""
         parsed_url = urlparse(self.path)
         path = parsed_url.path
 
@@ -145,9 +172,12 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         if path.startswith("/v1/dashboards/") and ":getData" not in path:
-            dashboard_id = path[len("/v1/dashboards/") :]
+            dashboard_id = path[len("/v1/dashboards/"):]
             for d in self.in_memory_dashboards:
-                if d.get("name") == f"dashboards/{dashboard_id}" or d.get("name") == dashboard_id:
+                if (
+                    d.get("name") == f"dashboards/{dashboard_id}"
+                    or d.get("name") == dashboard_id
+                ):
                     self.send_json(200, d)
                     return
             # Fallback default dashboard if not found
@@ -170,12 +200,31 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         if path == "/v1/clusterqueues":
-            self.send_json(200, [{"queueName": "gpu-cluster-queue", "queueCapacity": [{"resourceType": "nvidia.com/gpu", "totalCapacity": 64, "freeCapacity": 56}]}])
+            self.send_json(
+                200,
+                [
+                    {
+                        "queueName": "gpu-cluster-queue",
+                        "queueCapacity": [
+                            {
+                                "resourceType": "nvidia.com/gpu",
+                                "totalCapacity": 64,
+                                "freeCapacity": 56,
+                            }
+                        ],
+                    }
+                ],
+            )
             return
 
         translated_path = self.translate_path(self.path)
         if not os.path.exists(translated_path) or os.path.isdir(translated_path):
-            index_path = os.path.join(self.directory if hasattr(self, "directory") else os.getcwd(), "index.html")
+            serve_root = (
+                self.directory
+                if hasattr(self, "directory")
+                else os.getcwd()
+            )
+            index_path = os.path.join(serve_root, "index.html")
             if os.path.exists(index_path):
                 self.path = "/index.html"
 
@@ -185,13 +234,18 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         """Handles HEAD requests using the same SPA routing fallback."""
         translated_path = self.translate_path(self.path)
         if not os.path.exists(translated_path) or os.path.isdir(translated_path):
-            index_path = os.path.join(self.directory if hasattr(self, "directory") else os.getcwd(), "index.html")
+            serve_root = (
+                self.directory
+                if hasattr(self, "directory")
+                else os.getcwd()
+            )
+            index_path = os.path.join(serve_root, "index.html")
             if os.path.exists(index_path):
                 self.path = "/index.html"
         super().do_HEAD()
 
     def do_POST(self) -> None:
-        """Handles POST requests for custom methods (:getData) and creating dashboards."""
+        """Handles POST requests for custom methods and creating dashboards."""
         parsed_url = urlparse(self.path)
         path = parsed_url.path
 
@@ -213,7 +267,8 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             if not isinstance(new_dash, dict):
                 new_dash = {}
             if "name" not in new_dash or not new_dash["name"]:
-                dash_id = payload.get("dashboardId") or f"dash_{len(self.in_memory_dashboards) + 1}"
+                count = len(self.in_memory_dashboards) + 1
+                dash_id = payload.get("dashboardId") or f"dash_{count}"
                 new_dash["name"] = f"dashboards/{dash_id}"
             self.in_memory_dashboards.append(new_dash)
             self.send_json(200, new_dash)
@@ -222,7 +277,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         self.send_json(404, {"error": "Not found"})
 
     def _handle_config_js(self) -> None:
-        """Generates dynamic runtime config.js containing API url and feature flags."""
+        """Generates dynamic runtime config.js with API url & feature flags."""
         self.send_response(200)
         self.send_header("Content-type", "application/javascript")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -237,8 +292,12 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
 
         status_history = get_bool_env("XMC_STATUS_MESSAGE_HISTORY_ENABLED", True)
         admin_panel_enabled = get_bool_env("XMC_ADMIN_PANEL_ENABLED", True)
-        resource_dashboard_enabled = get_bool_env("XMC_RESOURCE_DASHBOARD_ENABLED", True)
-        performance_dashboard_enabled = get_bool_env("XMC_PERFORMANCE_DASHBOARD_ENABLED", True)
+        resource_dashboard_enabled = get_bool_env(
+            "XMC_RESOURCE_DASHBOARD_ENABLED", True
+        )
+        performance_dashboard_enabled = get_bool_env(
+            "XMC_PERFORMANCE_DASHBOARD_ENABLED", True
+        )
 
         feature_flags = {
             "statusMessageHistoryEnabled": status_history,
@@ -278,7 +337,9 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
 
         # Match by XID or chart name
         for golden_name, golden_data in self.goldens.items():
-            if golden_name.endswith(clean_path) or clean_path.endswith(golden_name):
+            if golden_name.endswith(clean_path) or clean_path.endswith(
+                golden_name
+            ):
                 self.send_json(200, golden_data)
                 return
 
@@ -287,7 +348,10 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         if match:
             xid, chart_id = match.group(1), match.group(2)
             for golden_name, golden_data in self.goldens.items():
-                if f"experiments/{xid}" in golden_name or chart_id in golden_name:
+                if (
+                    f"experiments/{xid}" in golden_name
+                    or chart_id in golden_name
+                ):
                     self.send_json(200, golden_data)
                     return
 
@@ -301,10 +365,30 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
     def _handle_experiments_list(self) -> None:
         """Serves mock experiments list."""
         experiments = [
-            {"name": "experiments/234911122", "xid": 234911122, "title": "VCC Baseline", "state": "COMPLETED"},
-            {"name": "experiments/234911123", "xid": 234911123, "title": "VCC tuned_v1", "state": "RUNNING"},
-            {"name": "experiments/234911124", "xid": 234911124, "title": "VCC tuned_v2", "state": "COMPLETED"},
-            {"name": "experiments/9001", "xid": 9001, "title": "Data Engine Golden Testcases", "state": "COMPLETED"},
+            {
+                "name": "experiments/234911122",
+                "xid": 234911122,
+                "title": "VCC Baseline",
+                "state": "COMPLETED",
+            },
+            {
+                "name": "experiments/234911123",
+                "xid": 234911123,
+                "title": "VCC tuned_v1",
+                "state": "RUNNING",
+            },
+            {
+                "name": "experiments/234911124",
+                "xid": 234911124,
+                "title": "VCC tuned_v2",
+                "state": "COMPLETED",
+            },
+            {
+                "name": "experiments/9001",
+                "xid": 9001,
+                "title": "Data Engine Golden Testcases",
+                "state": "COMPLETED",
+            },
         ]
         self.send_json(200, {"experiments": experiments})
 
@@ -342,9 +426,21 @@ def find_dist_dir() -> str:
 
 def main() -> None:
     """Main entrypoint running the local UI server."""
-    parser = argparse.ArgumentParser(description="XMC UI and Mock API Server")
-    parser.add_argument("--port", type=int, default=8080, help="Port to listen on (default: 8080)")
-    parser.add_argument("--dir", type=str, default="", help="Directory to serve static files from")
+    parser = argparse.ArgumentParser(
+        description="XMC UI and Mock API Server"
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port to listen on (default: 8080)",
+    )
+    parser.add_argument(
+        "--dir",
+        type=str,
+        default="",
+        help="Directory to serve static files from",
+    )
     args = parser.parse_args()
 
     serve_dir = args.dir or find_dist_dir()
@@ -358,7 +454,10 @@ def main() -> None:
 
     print(f"Starting XMC Local UI Server on http://localhost:{args.port}...")
     print(f"Serving static assets from: {serve_dir}")
-    print(f"Mock testdata loaded: {len(SPAHandler.goldens)} golden files, {len(SPAHandler.in_memory_dashboards)} dashboards")
+    print(
+        f"Mock testdata loaded: {len(SPAHandler.goldens)} golden files, "
+        f"{len(SPAHandler.in_memory_dashboards)} dashboards"
+    )
     print("Press Ctrl+C to stop.")
 
     try:

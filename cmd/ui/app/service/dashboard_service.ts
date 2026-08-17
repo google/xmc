@@ -117,11 +117,10 @@ export class DashboardService {
     }
     const params = new HttpParams({ fromObject: paramsMap });
     return this.http
-      .patch<RawDashboard>(
-        `${XMC_API_DOMAIN}/${request.dashboard.name}`,
-        request.dashboard,
-        { params, withCredentials: true },
-      )
+      .patch<RawDashboard>(`${XMC_API_DOMAIN}/${request.dashboard.name}`, request.dashboard, {
+        params,
+        withCredentials: true,
+      })
       .pipe(map(normalizeDashboard));
   }
 

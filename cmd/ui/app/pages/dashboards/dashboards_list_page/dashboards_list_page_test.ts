@@ -113,7 +113,9 @@ describe('DashboardsListPage', () => {
       title: 'New Evaluation',
       charts: [],
     };
-    dashboardServiceSpy.createDashboard = jasmine.createSpy('createDashboard').and.returnValue(of(newDash));
+    dashboardServiceSpy.createDashboard = jasmine
+      .createSpy('createDashboard')
+      .and.returnValue(of(newDash));
 
     component.createDashboard(newDash);
 

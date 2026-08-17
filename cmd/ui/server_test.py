@@ -40,19 +40,27 @@ class SPAHandlerTest(unittest.TestCase):
     def setUp(self):
         super().setUp()
         self.mock_wfile = io.BytesIO()
-        self.mock_request = mock.create_autospec(socket.socket, instance=True, spec_set=True)
+        self.mock_request = mock.create_autospec(
+            socket.socket, instance=True, spec_set=True
+        )
         self.mock_client_address = ("::1", 1234)
         self.mock_server = mock.create_autospec(
             http.server.HTTPServer, instance=True, spec_set=True
         )
         self.enter_context(
-            mock.patch.object(server.SPAHandler, "finish", autospec=True, spec_set=True)
+            mock.patch.object(
+                server.SPAHandler, "finish", autospec=True, spec_set=True
+            )
         )
         self.enter_context(
-            mock.patch.object(server.SPAHandler, "handle", autospec=True, spec_set=True)
+            mock.patch.object(
+                server.SPAHandler, "handle", autospec=True, spec_set=True
+            )
         )
         self.enter_context(
-            mock.patch.object(server.SPAHandler, "setup", autospec=True, spec_set=True)
+            mock.patch.object(
+                server.SPAHandler, "setup", autospec=True, spec_set=True
+            )
         )
         server.SPAHandler.initialize_mock_data()
 
@@ -61,15 +69,23 @@ class SPAHandlerTest(unittest.TestCase):
         super().tearDown()
 
     def _get_handler(self, path, method="GET", body=b""):
-        handler = server.SPAHandler(self.mock_request, self.mock_client_address, self.mock_server)
+        handler = server.SPAHandler(
+            self.mock_request, self.mock_client_address, self.mock_server
+        )
         handler.path = path
         handler.command = method
         handler.wfile = self.mock_wfile
         handler.rfile = io.BytesIO(body)
         handler.headers = {"Content-Length": str(len(body))}
-        handler.send_response = mock.create_autospec(handler.send_response, spec_set=True)  # type: ignore[method-assign]
-        handler.send_header = mock.create_autospec(handler.send_header, spec_set=True)  # type: ignore[method-assign]
-        handler.end_headers = mock.create_autospec(handler.end_headers, spec_set=True)  # type: ignore[method-assign]
+        handler.send_response = mock.create_autospec(
+            handler.send_response, spec_set=True
+        )  # type: ignore[method-assign]
+        handler.send_header = mock.create_autospec(
+            handler.send_header, spec_set=True
+        )  # type: ignore[method-assign]
+        handler.end_headers = mock.create_autospec(
+            handler.end_headers, spec_set=True
+        )  # type: ignore[method-assign]
         return handler
 
     def enter_context(self, context_manager):
@@ -219,7 +235,9 @@ class SPAHandlerTest(unittest.TestCase):
                 self.assertIn(case["expected"], output)
 
     def test_create_dashboard(self):
-        payload = json.dumps({"dashboard": {"title": "New Custom Dashboard", "charts": []}}).encode("utf-8")
+        payload = json.dumps(
+            {"dashboard": {"title": "New Custom Dashboard", "charts": []}}
+        ).encode("utf-8")
         handler = self._get_handler("/v1/dashboards", method="POST", body=payload)
         handler.do_POST()
         handler.send_response.assert_called_with(200)
@@ -229,7 +247,13 @@ class SPAHandlerTest(unittest.TestCase):
 
     def test_fallback_to_index(self):
         self.enter_context(
-            mock.patch.object(os.path, "exists", return_value=False, autospec=True, spec_set=True)
+            mock.patch.object(
+                os.path,
+                "exists",
+                return_value=False,
+                autospec=True,
+                spec_set=True,
+            )
         )
         self.enter_context(
             mock.patch.object(
@@ -256,7 +280,13 @@ class SPAHandlerTest(unittest.TestCase):
 
     def test_no_fallback_if_file_exists(self):
         self.enter_context(
-            mock.patch.object(os.path, "exists", return_value=True, autospec=True, spec_set=True)
+            mock.patch.object(
+                os.path,
+                "exists",
+                return_value=True,
+                autospec=True,
+                spec_set=True,
+            )
         )
         self.enter_context(
             mock.patch.object(

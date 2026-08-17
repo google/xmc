@@ -20,10 +20,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
 import { Dashboard, LayoutType, PlotType } from 'xmanager_cloud/ui/app/service/dashboard_models';
 
-import {
-  CreateDashboardDialogComponent,
-  getDefaultPlotSpecs,
-} from './create_dashboard_dialog';
+import { CreateDashboardDialogComponent, getDefaultPlotSpecs } from './create_dashboard_dialog';
 
 describe('CreateDashboardDialogComponent', () => {
   let fixture: ComponentFixture<CreateDashboardDialogComponent>;

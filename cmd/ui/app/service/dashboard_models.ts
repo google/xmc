@@ -461,9 +461,7 @@ function normalizeRawBarData(rawBar?: RawBarData): BarData | undefined {
 export function normalizePlotData(pd?: RawPlotData): PlotData | undefined {
   if (!pd) return undefined;
   const rawSeriesList = pd.seriesList ?? pd.series_list;
-  const seriesList = rawSeriesList
-    ?.map(normalizeSeriesData)
-    .filter((s): s is SeriesData => !!s);
+  const seriesList = rawSeriesList?.map(normalizeSeriesData).filter((s): s is SeriesData => !!s);
 
   const result: PlotData = {
     plotId: pd.plotId ?? pd.plot_id ?? '',

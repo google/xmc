@@ -165,10 +165,7 @@ export class CreateDashboardDialogComponent {
 
     const metric = this.newPlotForm.value.metricName?.trim() ?? '';
     const type = this.newPlotForm.value.type ?? PlotType.SUMMARY_BOX;
-    const defaultTitle =
-      type === PlotType.SUMMARY_BOX
-        ? `Last ${metric}`
-        : `${metric} vs steps`;
+    const defaultTitle = type === PlotType.SUMMARY_BOX ? `Last ${metric}` : `${metric} vs steps`;
     const title = this.newPlotForm.value.title?.trim() || defaultTitle;
     const plotId = `${metric.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
 
@@ -226,10 +223,16 @@ export class CreateDashboardDialogComponent {
 
     const formVal = this.form.value;
     const baseXid = Number(formVal.baseXid);
-    const baseWid = formVal.baseWid !== null && formVal.baseWid !== undefined ? Number(formVal.baseWid) : 1;
+    const baseWid =
+      formVal.baseWid !== null && formVal.baseWid !== undefined ? Number(formVal.baseWid) : 1;
     const rawTitle = formVal.title?.trim() || `Dashboard for Experiment ${baseXid}`;
 
-    const baseChart = buildBaseChart(baseXid, baseWid, formVal.baseChartTitle ?? undefined, this.plots());
+    const baseChart = buildBaseChart(
+      baseXid,
+      baseWid,
+      formVal.baseChartTitle ?? undefined,
+      this.plots(),
+    );
     const comparisonCharts = buildComparisonCharts(this.comparisons(), this.plots());
 
     const dashboard: Dashboard = {
