@@ -1,0 +1,88 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'XMC Headless E2E Tests'
+
+on:
+  pull_request:
+    paths:
+      - 'cmd/**'
+      - 'deploy/**'
+      - 'internal/**'
+      - 'pkg/**'
+      - 'test/e2e/**'
+      - '.github/workflows/e2e-tests.yml'
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  run-e2e:
+    name: 'KinD & Playwright Headless E2E'
+    runs-on: 'arc-runner-set'
+    timeout-minutes: 25
+
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: 'Set up Bazel'
+        uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
+
+      - name: 'Set up Python'
+        uses: 'actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38' # v5.4.0
+        with:
+          python-version: '3.13'
+
+      - name: 'Install KinD & Helm'
+        run: |
+          echo "=== Installing KinD ==="
+          if ! command -v kind &>/dev/null; then
+            curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64
+            chmod +x ./kind
+            sudo mv ./kind /usr/local/bin/kind
+          fi
+          kind --version
+
+          echo "=== Installing Helm ==="
+          if ! command -v helm &>/dev/null; then
+            curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          fi
+          helm version
+
+      - name: 'Run E2E Test Suite'
+        env:
+          GCP_PROJECT_ID: 'xmc-test-project-3'
+          SPANNER_INSTANCE: 'xmc-e2e'
+          XMC_SCREENSHOTS_DIR: '${{ github.workspace }}/e2e-screenshots'
+        run: |
+          mkdir -p "${XMC_SCREENSHOTS_DIR}"
+          python3 test/e2e/runner.py --screenshots-dir "${XMC_SCREENSHOTS_DIR}"
+
+      - name: 'Upload E2E Screenshots & Diagnostic Logs'
+        if: always()
+        uses: 'actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1' # v4.6.1
+        with:
+          name: 'e2e-artifacts'
+          path: '${{ github.workspace }}/e2e-screenshots/'
