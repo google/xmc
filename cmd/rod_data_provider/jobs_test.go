@@ -288,9 +288,9 @@ func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
 		wantTargetQueues []string
 	}{
 		{
-			name:             "Nil cache, falls back to clusterQueueName",
+			name:             "Nil cache, targetQueues is empty",
 			nilCache:         true,
-			wantTargetQueues: []string{clusterQueueName},
+			wantTargetQueues: nil,
 		},
 		{
 			name: "Mapped LocalQueues exist, targetQueues contains ONLY localQueues",
@@ -309,14 +309,14 @@ func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
 			wantTargetQueues: []string{"lq-1", "lq-2"},
 		},
 		{
-			name: "No mapped LocalQueues exist, falls back to clusterQueueName",
+			name: "No mapped LocalQueues exist, targetQueues is empty",
 			setupCache: func(c *cache.KueueCache) {
 				// No LocalQueues added
 			},
-			wantTargetQueues: []string{clusterQueueName},
+			wantTargetQueues: nil,
 		},
 		{
-			name: "LocalQueues mapped to different ClusterQueue, falls back to clusterQueueName",
+			name: "LocalQueues mapped to different ClusterQueue, targetQueues is empty",
 			setupCache: func(c *cache.KueueCache) {
 				lqOther := &kueuev1beta1.LocalQueue{
 					ObjectMeta: metav1.ObjectMeta{Name: "lq-other"},
@@ -324,7 +324,7 @@ func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
 				}
 				c.LocalQueues.Set("lq-other", lqOther)
 			},
-			wantTargetQueues: []string{clusterQueueName},
+			wantTargetQueues: nil,
 		},
 	}
 
