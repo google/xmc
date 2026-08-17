@@ -14,19 +14,48 @@
 package main
 
 import (
+	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
+	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 )
+
+type fakeStartManager struct {
+	ctrl.Manager
+	startErr error
+}
+
+func (f *fakeStartManager) Start(ctx context.Context) error {
+	if f.startErr != nil {
+		return f.startErr
+	}
+	return nil
+}
 
 func TestManager_HealthCheckers_NilManager(t *testing.T) {
 	var m *Manager
 	k8s, sp := m.HealthCheckers()
 	if k8s != nil {
 		t.Errorf("HealthCheckers() k8sClient = %v, want nil", k8s)
+	}
+	if sp != nil {
+		t.Errorf("HealthCheckers() spannerClient = %v, want nil", sp)
+	}
+}
+
+func TestManager_HealthCheckers_NonNilManager(t *testing.T) {
+	k8sClient := k8sclient.NewWithClients(nil, nil, k8sclient.ActuatorRuntimeConfig{}, nil, nil, nil)
+	m := &Manager{
+		k8sClient:     k8sClient,
+		spannerClient: nil,
+	}
+	k8s, sp := m.HealthCheckers()
+	if k8s != k8sClient {
+		t.Errorf("HealthCheckers() k8sClient = %v, want %v", k8s, k8sClient)
 	}
 	if sp != nil {
 		t.Errorf("HealthCheckers() spannerClient = %v, want nil", sp)
@@ -119,16 +148,43 @@ func TestManager_Close(t *testing.T) {
 	})
 }
 
-func TestActiveHealthChecker(t *testing.T) {
-	checker := activeHealthChecker(nil, nil)
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-	if err := checker(req); err != nil {
-		t.Errorf("activeHealthChecker(nil, nil) error = %v, want nil", err)
+func TestInitSpannerAndStorage_EmptyDBName(t *testing.T) {
+	sp, st, err := initSpannerAndStorage(context.Background(), Config{})
+	if err != nil {
+		t.Fatalf("initSpannerAndStorage() unexpected error: %v", err)
+	}
+	if sp != nil {
+		t.Errorf("initSpannerAndStorage() spannerClient = %v, want nil", sp)
+	}
+	if st != nil {
+		t.Errorf("initSpannerAndStorage() storage = %v, want nil", st)
 	}
 }
 
-func TestRegisterHealthChecks_NilManager(t *testing.T) {
-	if err := registerHealthChecks(nil, nil, nil); err == nil {
-		t.Error("registerHealthChecks(nil, ...) want non-nil error, got nil")
+func TestStartManager(t *testing.T) {
+	t.Run("start succeeds", func(t *testing.T) {
+		mgr := &fakeStartManager{}
+		if err := startManager(context.Background(), mgr); err != nil {
+			t.Fatalf("startManager() unexpected error: %v", err)
+		}
+	})
+
+	t.Run("start returns error", func(t *testing.T) {
+		expectedErr := errors.New("start failed")
+		mgr := &fakeStartManager{startErr: expectedErr}
+		err := startManager(context.Background(), mgr)
+		if !errors.Is(err, expectedErr) {
+			t.Fatalf("startManager() error = %v, want %v", err, expectedErr)
+		}
+	})
+}
+
+func TestManager_Start(t *testing.T) {
+	mgr := &fakeStartManager{}
+	m := &Manager{
+		ctrlMgr: mgr,
+	}
+	if err := m.Start(context.Background()); err != nil {
+		t.Fatalf("m.Start() unexpected error: %v", err)
 	}
 }
