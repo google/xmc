@@ -61,9 +61,9 @@ func updateHealthStatus(ctx context.Context, sc commonhealth.SpannerHealthClient
 	if err := checkSpanner(ctx, sc); err != nil {
 		logging.Error(ctx, "Active health check failed", "error", err)
 		healthServer.SetServingStatus(xidServiceHealthCheckName, healthpb.HealthCheckResponse_NOT_SERVING)
-	} else {
-		healthServer.SetServingStatus(xidServiceHealthCheckName, healthpb.HealthCheckResponse_SERVING)
+		return
 	}
+	healthServer.SetServingStatus(xidServiceHealthCheckName, healthpb.HealthCheckResponse_SERVING)
 }
 
 func checkSpanner(ctx context.Context, sc commonhealth.SpannerHealthClient) error {
