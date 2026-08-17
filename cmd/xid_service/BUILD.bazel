@@ -54,11 +54,21 @@ oci_image_for_service(
 
 compat_go_test(
     name = "health_test",
-    srcs = ["health_test.go"],
+    srcs = [
+        "health_test.go",
+        "main_test.go",
+    ],
     embed = [":xid_service_lib"],
     deps = [
+        "//api/protos/xid:api_go_proto",
+        "//cmd/xid_service/config",
+        "//cmd/xid_service/server",
+        "//internal/auth",
+        "//internal/storage",
         "//internal/storage/spanner/migrations/version",
         "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//credentials/insecure:go_default_library",
         "@org_golang_google_grpc//health/grpc_health_v1:go_default_library",
+        "@org_golang_google_grpc//reflection:go_default_library",
     ],
 )

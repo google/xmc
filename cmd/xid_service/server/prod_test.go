@@ -19,6 +19,8 @@ import (
 	"errors"
 	"testing"
 
+	"golang/cloud_google_com/go/spanner/v/v1/spanner"
+	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/xid_service/config"
 )
 
@@ -101,6 +103,30 @@ func TestProdServer_Close(t *testing.T) {
 			t.Errorf("cleanup callCount = %d, want 1", callCount)
 		}
 	})
+
+	t.Run("multiple cleanup errors joined", func(t *testing.T) {
+		t.Parallel()
+		err1 := errors.New("cleanup error 1")
+		err2 := errors.New("cleanup error 2")
+		cleanups := []func() error{
+			func() error { return err1 },
+			func() error { return err2 },
+		}
+		cleanup := func() error {
+			var errs []error
+			for i := len(cleanups) - 1; i >= 0; i-- {
+				if err := cleanups[i](); err != nil {
+					errs = append(errs, err)
+				}
+			}
+			return errors.Join(errs...)
+		}
+		ps := &ProdServer{cleanup: cleanup}
+		err := ps.Close()
+		if !errors.Is(err, err1) || !errors.Is(err, err2) {
+			t.Errorf("Close() = %v, want joined error containing %v and %v", err, err1, err2)
+		}
+	})
 }
 
 func TestNewProd_Validation(t *testing.T) {
@@ -119,6 +145,22 @@ func TestNewProd_Validation(t *testing.T) {
 		ps, err := NewProd(context.Background(), &config.Config{}, nil)
 		if ps != nil || err == nil {
 			t.Errorf("NewProd(cfg, nil) = (%v, %v), want (nil, error)", ps, err)
+		}
+	})
+
+	t.Run("invalid spanner database name returns error", func(t *testing.T) {
+		t.Parallel()
+		cfg := &config.Config{
+			SpannerDatabaseName: "invalid-database-name",
+			QuotaProjectID:      "test-proj",
+		}
+		oauthCfg := &oauth.Config{
+			ClientID:  "test-client-id",
+			JWTSecret: "test-secret",
+		}
+		ps, err := NewProd(context.Background(), cfg, oauthCfg)
+		if ps != nil || err == nil {
+			t.Errorf("NewProd(invalidDbName) = (%v, %v), want (nil, error)", ps, err)
 		}
 	})
 }
@@ -141,6 +183,17 @@ func TestProdServer_HealthCheckers(t *testing.T) {
 		sp := ps.HealthCheckers()
 		if sp != nil {
 			t.Errorf("HealthCheckers() on ProdServer with nil spannerClient = %v, want nil", sp)
+		}
+	})
+
+	t.Run("non-nil spanner client returns checkers", func(t *testing.T) {
+		t.Parallel()
+		ps := &ProdServer{
+			spannerClient: &spanner.Client{},
+		}
+		sp := ps.HealthCheckers()
+		if sp == nil {
+			t.Error("HealthCheckers() on ProdServer with non-nil spannerClient returned nil, want non-nil")
 		}
 	})
 }
