@@ -102,7 +102,7 @@ func createXidServer(ctx context.Context, t *testing.T, opts ...testServerOpt) *
 func TestServer_New_Validation(t *testing.T) {
 	t.Parallel()
 
-	validParams := func() Params {
+	validParams := func(t *testing.T) Params {
 		return Params{
 			Config:     config.Config{},
 			Storage:    &storage.MockStorage{},
@@ -140,7 +140,7 @@ func TestServer_New_Validation(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			p := validParams()
+			p := validParams(t)
 			tc.modify(&p)
 
 			s, err := New(p)

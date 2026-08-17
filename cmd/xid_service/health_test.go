@@ -110,6 +110,20 @@ func TestUpdateHealthStatus(t *testing.T) {
 		}
 	})
 
+	t.Run("NOT_SERVING when spanner client is nil", func(t *testing.T) {
+		healthServer := RegisterHealthServer(grpc.NewServer())
+
+		updateHealthStatus(ctx, nil, healthServer)
+
+		resp, err := healthServer.Check(ctx, &healthpb.HealthCheckRequest{Service: xidServiceHealthCheckName})
+		if err != nil {
+			t.Fatalf("healthServer.Check(%q) failed: %v", xidServiceHealthCheckName, err)
+		}
+		if resp.Status != healthpb.HealthCheckResponse_NOT_SERVING {
+			t.Errorf("healthServer.Check(%q).Status = %v, want %v", xidServiceHealthCheckName, resp.Status, healthpb.HealthCheckResponse_NOT_SERVING)
+		}
+	})
+
 	t.Run("NOT_SERVING when spanner dirty schema", func(t *testing.T) {
 		mockClient := &mockSpannerHealthClient{
 			version: version.XidExpectedSchemaVersion(),

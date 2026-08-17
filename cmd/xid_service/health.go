@@ -58,6 +58,11 @@ func StartHealthMonitor(ctx context.Context, sc commonhealth.SpannerHealthClient
 }
 
 func updateHealthStatus(ctx context.Context, sc commonhealth.SpannerHealthClient, healthServer *health.Server) {
+	if sc == nil {
+		logging.Error(ctx, "Active health check failed: spanner health client is nil")
+		healthServer.SetServingStatus(xidServiceHealthCheckName, healthpb.HealthCheckResponse_NOT_SERVING)
+		return
+	}
 	if err := checkSpanner(ctx, sc); err != nil {
 		logging.Error(ctx, "Active health check failed", "error", err)
 		healthServer.SetServingStatus(xidServiceHealthCheckName, healthpb.HealthCheckResponse_NOT_SERVING)
