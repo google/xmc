@@ -80,7 +80,7 @@ def load_golden_files() -> dict[str, Any]:
     goldens: dict[str, Any] = {}
     for filepath in glob.glob(os.path.join(golden_dir, "*.golden.json")):
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
+            with open(filepath, encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, dict) and "name" in data:
                     goldens[data["name"]] = data
@@ -110,7 +110,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         )
         if os.path.exists(dashboards_file):
             try:
-                with open(dashboards_file, "r", encoding="utf-8") as f:
+                with open(dashboards_file, encoding="utf-8") as f:
                     cls.in_memory_dashboards = json.load(f)
             except (json.JSONDecodeError, OSError, UnicodeDecodeError):
                 cls.in_memory_dashboards = []
