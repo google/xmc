@@ -76,3 +76,22 @@ func TestQueueVelocityResult(t *testing.T) {
 		t.Errorf("rate = %f, want 12.0", rate)
 	}
 }
+
+func TestFetchPendingQueueMetrics_NilClient(t *testing.T) {
+	repo := NewRepository(nil)
+	single, err := repo.FetchPendingQueueMetrics(nil, "cq-gpu")
+	if err != nil {
+		t.Fatalf("expected no error for nil client, got %v", err)
+	}
+	if single.PendingJobs != 0 || single.PendingResourceRequests != 0 {
+		t.Errorf("expected 0 pending metrics for nil client, got %+v", single)
+	}
+
+	batch, err := repo.FetchBatchPendingQueueMetrics(nil, []string{"cq-gpu"})
+	if err != nil {
+		t.Fatalf("expected no error for nil client batch, got %v", err)
+	}
+	if len(batch) != 0 {
+		t.Errorf("expected empty batch map for nil client, got %+v", batch)
+	}
+}

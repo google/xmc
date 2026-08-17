@@ -27,8 +27,9 @@ import (
 )
 
 type mockVelocityFetcher struct {
-	result statushistory.QueueVelocityResult
-	err    error
+	result        statushistory.QueueVelocityResult
+	pendingResult statushistory.PendingQueueMetricsResult
+	err           error
 }
 
 var _ QueueVelocityFetcher = (*mockVelocityFetcher)(nil)
@@ -45,6 +46,14 @@ func (m *mockVelocityFetcher) FetchBatchQueueVelocity(ctx context.Context, queue
 	return res, m.err
 }
 
+func (m *mockVelocityFetcher) FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) (map[string]statushistory.PendingQueueMetricsResult, error) {
+	res := make(map[string]statushistory.PendingQueueMetricsResult)
+	for _, qName := range queueNames {
+		res[qName] = m.pendingResult
+	}
+	return res, m.err
+}
+
 func TestBatchGetQueueSecondaryData(t *testing.T) {
 	ctx := context.Background()
 	mockFetcher := &mockVelocityFetcher{
@@ -52,6 +61,11 @@ func TestBatchGetQueueSecondaryData(t *testing.T) {
 			AdmittedJobsCount: 12,
 			ResourceUnits:     96,
 			ResourceType:      "nvidia-tesla-h100",
+		},
+		pendingResult: statushistory.PendingQueueMetricsResult{
+			PendingJobs:             5,
+			PendingResourceRequests: 40,
+			ResourceType:            "nvidia-tesla-h100",
 		},
 	}
 
@@ -87,6 +101,34 @@ func TestBatchGetQueueSecondaryData(t *testing.T) {
 	}
 	if p.ResourceVelocity.ResourceType != "nvidia-tesla-h100" {
 		t.Errorf("ResourceVelocity.ResourceType = %q, want 'nvidia-tesla-h100'", p.ResourceVelocity.ResourceType)
+	}
+	if p.PendingJobs != 5 {
+		t.Errorf("PendingJobs = %d, want 5", p.PendingJobs)
+	}
+	if p.PendingResourceRequests.Count != 40.0 {
+		t.Errorf("PendingResourceRequests.Count = %f, want 40.0", p.PendingResourceRequests.Count)
+	}
+	if p.PendingResourceRequests.ResourceType != "nvidia-tesla-h100" {
+		t.Errorf("PendingResourceRequests.ResourceType = %q, want 'nvidia-tesla-h100'", p.PendingResourceRequests.ResourceType)
+	}
+}
+
+func TestBatchGetQueueSecondaryData_NilVelocityStore(t *testing.T) {
+	srv := &server{velocityStore: nil}
+	req := &spb.BatchGetQueueSecondaryDataRequest{
+		QueueNames: []string{"cq-gpu"},
+		Range:      spb.RangePreset_RANGE_PRESET_LAST_HOUR,
+	}
+	resp, err := srv.BatchGetQueueSecondaryData(context.Background(), req)
+	if err != nil {
+		t.Fatalf("expected no error for nil velocityStore, got: %v", err)
+	}
+	p := resp.QueuePredictability["cq-gpu"].QueuePredictability[0]
+	if p.PendingJobs != 0 {
+		t.Errorf("PendingJobs = %d, want 0", p.PendingJobs)
+	}
+	if p.PendingResourceRequests.Count != 0 {
+		t.Errorf("PendingResourceRequests.Count = %f, want 0", p.PendingResourceRequests.Count)
 	}
 }
 

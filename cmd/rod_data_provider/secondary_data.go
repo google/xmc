@@ -30,6 +30,7 @@ import (
 type QueueVelocityFetcher interface {
 	FetchQueueVelocity(ctx context.Context, queueName string, window time.Duration) (statushistory.QueueVelocityResult, error)
 	FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) (map[string]statushistory.QueueVelocityResult, error)
+	FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) (map[string]statushistory.PendingQueueMetricsResult, error)
 }
 
 // BatchGetQueueSecondaryData handles calculation and retrieval of queue velocity metrics.
@@ -49,9 +50,14 @@ func (s *server) BatchGetQueueSecondaryData(ctx context.Context, req *spb.BatchG
 	}
 
 	var batchResults map[string]statushistory.QueueVelocityResult
+	var pendingResults map[string]statushistory.PendingQueueMetricsResult
 	if s.velocityStore != nil && len(req.GetQueueNames()) > 0 {
 		var err error
 		batchResults, err = fetchBatchVelocity(ctx, s.velocityStore, req.GetQueueNames(), windowDuration)
+		if err != nil {
+			return nil, err
+		}
+		pendingResults, err = fetchBatchPendingMetrics(ctx, s.velocityStore, req.GetQueueNames())
 		if err != nil {
 			return nil, err
 		}
@@ -60,7 +66,8 @@ func (s *server) BatchGetQueueSecondaryData(ctx context.Context, req *spb.BatchG
 	queueMap := make(map[string]*spb.ClusterQueueSecondaryMetrics)
 	for _, qName := range req.GetQueueNames() {
 		res := batchResults[qName]
-		predictability := buildQueuePredictability(preset, windowHours, res)
+		pendingRes := pendingResults[qName]
+		predictability := buildQueuePredictability(preset, windowHours, res, pendingRes)
 		queueMap[qName] = &spb.ClusterQueueSecondaryMetrics{
 			QueuePredictability: []*spb.QueuePredictability{predictability},
 		}
@@ -71,11 +78,13 @@ func (s *server) BatchGetQueueSecondaryData(ctx context.Context, req *spb.BatchG
 	}, nil
 }
 
-func buildQueuePredictability(preset spb.RangePreset, windowHours float64, res statushistory.QueueVelocityResult) *spb.QueuePredictability {
+func buildQueuePredictability(preset spb.RangePreset, windowHours float64, res statushistory.QueueVelocityResult, pendingRes statushistory.PendingQueueMetricsResult) *spb.QueuePredictability {
 	jobVel := float64(res.AdmittedJobsCount) / windowHours
 	resType := "CPU"
 	if res.ResourceType != "" {
 		resType = res.ResourceType
+	} else if pendingRes.ResourceType != "" {
+		resType = pendingRes.ResourceType
 	}
 	return &spb.QueuePredictability{
 		VelocityRange: preset,
@@ -86,9 +95,9 @@ func buildQueuePredictability(preset spb.RangePreset, windowHours float64, res s
 		},
 		PendingResourceRequests: &spb.Resource{
 			ResourceType: resType,
-			Count:        0,
+			Count:        float64(pendingRes.PendingResourceRequests),
 		},
-		PendingJobs: 0,
+		PendingJobs: pendingRes.PendingJobs,
 	}
 }
 
@@ -112,6 +121,28 @@ func fetchBatchVelocity(ctx context.Context, store QueueVelocityFetcher, queueNa
 		return nil, err
 	}
 	return nil, status.Errorf(codes.Internal, "failed to fetch batch queue velocity: %v", err)
+}
+
+func fetchBatchPendingMetrics(ctx context.Context, store QueueVelocityFetcher, queueNames []string) (map[string]statushistory.PendingQueueMetricsResult, error) {
+	batchResults, err := store.FetchBatchPendingQueueMetrics(ctx, queueNames)
+	if err == nil {
+		return batchResults, nil
+	}
+
+	logging.Warn(ctx, "failed to batch fetch pending queue metrics", "error", err)
+	if errors.Is(err, context.Canceled) {
+		return nil, status.Error(codes.Canceled, err.Error())
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return nil, status.Error(codes.DeadlineExceeded, err.Error())
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, status.FromContextError(ctxErr).Err()
+	}
+	if st, ok := status.FromError(err); ok && st.Code() != codes.OK {
+		return nil, err
+	}
+	return nil, status.Errorf(codes.Internal, "failed to fetch batch pending queue metrics: %v", err)
 }
 
 func rangePresetToDuration(preset spb.RangePreset) time.Duration {

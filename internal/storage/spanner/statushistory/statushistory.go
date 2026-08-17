@@ -34,6 +34,13 @@ type QueueVelocityResult struct {
 	ResourceType      string
 }
 
+// PendingQueueMetricsResult contains pending metrics retrieved from Spanner.
+type PendingQueueMetricsResult struct {
+	PendingJobs             int64
+	PendingResourceRequests int64
+	ResourceType            string
+}
+
 // ExtractAllResourcesFromExecutable extracts all compute resource types and unit counts from an Executable.
 func ExtractAllResourcesFromExecutable(exec *essmsgpb.Executable) map[string]int64 {
 	resources := make(map[string]int64)
@@ -121,6 +128,16 @@ func (r *Repository) FetchQueueVelocity(ctx context.Context, queueName string, w
 // FetchBatchQueueVelocity queries the WorkUnitStatusHistory table for multiple queues in a single Spanner query.
 func (r *Repository) FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) (map[string]QueueVelocityResult, error) {
 	return FetchBatchQueueVelocity(ctx, r.client, queueNames, window)
+}
+
+// FetchPendingQueueMetrics queries the WorkUnitStatusHistory table in Spanner for pending work units (states 1 and 2: INITIALIZING, SCHEDULING).
+func (r *Repository) FetchPendingQueueMetrics(ctx context.Context, queueName string) (PendingQueueMetricsResult, error) {
+	return FetchPendingQueueMetrics(ctx, r.client, queueName)
+}
+
+// FetchBatchPendingQueueMetrics queries the WorkUnitStatusHistory table for pending work units across multiple queues.
+func (r *Repository) FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) (map[string]PendingQueueMetricsResult, error) {
+	return FetchBatchPendingQueueMetrics(ctx, r.client, queueNames)
 }
 
 // FetchQueueVelocity queries the WorkUnitStatusHistory table in Spanner for transitions to SCHEDULING/STARTING/RUNNING in the sliding window.
@@ -228,6 +245,121 @@ func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueN
 			AdmittedJobsCount: admittedCount,
 			ResourceUnits:     totalUnits,
 			ResourceType:      resType,
+		}
+	}
+
+	return results, nil
+}
+
+// FetchPendingQueueMetrics queries the WorkUnitStatusHistory table in Spanner for pending work units (states 1 and 2: INITIALIZING, SCHEDULING) per queue.
+func FetchPendingQueueMetrics(ctx context.Context, client *spanner.Client, queueName string) (PendingQueueMetricsResult, error) {
+	stmt := spanner.Statement{
+		SQL: `WITH LatestStatus AS (
+		        SELECT QueueName, ResourceType, ResourceUnits, NewState,
+		               ROW_NUMBER() OVER (PARTITION BY BitReversedXid, WorkUnitId ORDER BY HistoryId DESC) AS rn
+		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
+		        WHERE QueueName = @queueName
+		      )
+		      SELECT COUNT(1) AS PendingJobs, IFNULL(SUM(ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(ResourceType), "CPU") AS ResType
+		      FROM LatestStatus
+		      WHERE rn = 1 AND NewState IN (1, 2)`, // 1: INITIALIZING, 2: SCHEDULING
+		Params: map[string]interface{}{
+			"queueName": queueName,
+		},
+	}
+
+	var res PendingQueueMetricsResult
+	if client == nil {
+		return res, nil
+	}
+
+	iter := client.Single().Query(ctx, stmt)
+	defer iter.Stop()
+
+	row, err := iter.Next()
+	if err != nil {
+		if err == iterator.Done {
+			return res, nil
+		}
+		return res, err
+	}
+
+	var pendingJobs, totalUnits int64
+	var resType string
+	if err := row.ColumnByName("PendingJobs", &pendingJobs); err != nil {
+		return res, err
+	}
+	if err := row.ColumnByName("TotalUnits", &totalUnits); err != nil {
+		return res, err
+	}
+	if err := row.ColumnByName("ResType", &resType); err != nil {
+		return res, err
+	}
+
+	res.PendingJobs = pendingJobs
+	res.PendingResourceRequests = totalUnits
+	res.ResourceType = resType
+	return res, nil
+}
+
+// FetchBatchPendingQueueMetrics queries the WorkUnitStatusHistory table for pending work units across multiple queues.
+func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, queueNames []string) (map[string]PendingQueueMetricsResult, error) {
+	results := make(map[string]PendingQueueMetricsResult)
+	if len(queueNames) == 0 {
+		return results, nil
+	}
+
+	stmt := spanner.Statement{
+		SQL: `WITH LatestStatus AS (
+		        SELECT QueueName, ResourceType, ResourceUnits, NewState,
+		               ROW_NUMBER() OVER (PARTITION BY BitReversedXid, WorkUnitId ORDER BY HistoryId DESC) AS rn
+		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
+		        WHERE QueueName IN UNNEST(@queueNames)
+		      )
+		      SELECT QueueName, COUNT(1) AS PendingJobs, IFNULL(SUM(ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(ResourceType), "CPU") AS ResType
+		      FROM LatestStatus
+		      WHERE rn = 1 AND NewState IN (1, 2)
+		      GROUP BY QueueName`,
+		Params: map[string]interface{}{
+			"queueNames": queueNames,
+		},
+	}
+
+	if client == nil {
+		return results, nil
+	}
+
+	iter := client.Single().Query(ctx, stmt)
+	defer iter.Stop()
+
+	for {
+		row, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		var qName, resType string
+		var pendingJobs, totalUnits int64
+		if err := row.ColumnByName("QueueName", &qName); err != nil {
+			return nil, err
+		}
+		if err := row.ColumnByName("PendingJobs", &pendingJobs); err != nil {
+			return nil, err
+		}
+		if err := row.ColumnByName("TotalUnits", &totalUnits); err != nil {
+			return nil, err
+		}
+		if err := row.ColumnByName("ResType", &resType); err != nil {
+			return nil, err
+		}
+
+		results[qName] = PendingQueueMetricsResult{
+			PendingJobs:             pendingJobs,
+			PendingResourceRequests: totalUnits,
+			ResourceType:            resType,
 		}
 	}
 
