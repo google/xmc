@@ -95,14 +95,10 @@ func (o *dashboardObserver) OnArtifactCreated(ctxBg context.Context, artifactToP
 
 		aid, _ := validator.ValidateArtifactName(artifactToProvision.GetName())
 
-		if artifactToProvision.Tags == nil {
-			artifactToProvision.Tags = []string{}
-		}
-
 		if _, err := o.storage.UpdateArtifact(ctxBg, &storage.ArtifactUpdate{
 			AID:        aid,
 			Artifact:   artifactToProvision,
-			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"payload", "tags"}},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"payload"}},
 		}); err != nil {
 			logging.Error(ctxBg, "Failed to update ChartArtifact status in Spanner", "error", err)
 		}

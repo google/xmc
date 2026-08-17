@@ -117,12 +117,12 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *apipb.CreateA
 
 	// 6.2. Trigger post-creation hooks asynchronously (Observers).
 	if len(h.artifactObservers) > 0 {
-		artifactCopy, ok := proto.Clone(retArtifact).(*msgpb.Artifact)
-		if !ok {
-			logging.Error(ctx, "Failed to clone retArtifact for async provisioning")
-			return nil, fmt.Errorf("failed to clone artifact: %w", status.ErrInternal)
-		}
 		for _, obs := range h.artifactObservers {
+			artifactCopy, ok := proto.Clone(retArtifact).(*msgpb.Artifact)
+			if !ok {
+				logging.Error(ctx, "Failed to clone retArtifact for async provisioning")
+				return nil, fmt.Errorf("failed to clone artifact: %w", status.ErrInternal)
+			}
 			obs.OnArtifactCreated(context.WithoutCancel(ctx), artifactCopy)
 		}
 	}

@@ -133,11 +133,8 @@ func TestDashboardObserver_OnArtifactCreated_Success(t *testing.T) {
 	if up.Artifact.GetPayload().GetChart().GetStatus() != essmsgpb.ChartArtifact_SUCCESS {
 		t.Errorf("Chart status = %v, want SUCCESS", up.Artifact.GetPayload().GetChart().GetStatus())
 	}
-	if up.Artifact.Tags == nil {
-		t.Error("up.Artifact.Tags is nil, want initialized empty slice")
-	}
-	if up.UpdateMask == nil || len(up.UpdateMask.Paths) != 2 || up.UpdateMask.Paths[0] != "payload" || up.UpdateMask.Paths[1] != "tags" {
-		t.Errorf("up.UpdateMask = %v, want ['payload', 'tags']", up.UpdateMask)
+	if up.UpdateMask == nil || len(up.UpdateMask.Paths) != 1 || up.UpdateMask.Paths[0] != "payload" {
+		t.Errorf("up.UpdateMask = %v, want ['payload']", up.UpdateMask)
 	}
 }
 
