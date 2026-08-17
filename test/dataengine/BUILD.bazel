@@ -15,12 +15,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
-filegroup(
-    name = "testdata",
-    srcs = glob(["testdata/**/*"]),
-    visibility = ["//visibility:public"],
-)
-
 compat_go_library(
     name = "dataengine_harness",
     srcs = [
