@@ -182,25 +182,14 @@ func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueN
 			return nil, err
 		}
 
-		var qName, resType string
-		var admittedCount, totalUnits int64
-		if err := row.ColumnByName("QueueName", &qName); err != nil {
+		m, err := parseQueueMetricRow(row, "AdmittedCount")
+		if err != nil {
 			return nil, err
 		}
-		if err := row.ColumnByName("AdmittedCount", &admittedCount); err != nil {
-			return nil, err
-		}
-		if err := row.ColumnByName("TotalUnits", &totalUnits); err != nil {
-			return nil, err
-		}
-		if err := row.ColumnByName("ResType", &resType); err != nil {
-			return nil, err
-		}
-
-		results[qName] = QueueVelocityResult{
-			AdmittedJobsCount: admittedCount,
-			ResourceUnits:     totalUnits,
-			ResourceType:      resType,
+		results[m.queueName] = QueueVelocityResult{
+			AdmittedJobsCount: m.count,
+			ResourceUnits:     m.totalUnits,
+			ResourceType:      m.resType,
 		}
 	}
 
@@ -250,29 +239,42 @@ func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, 
 			return nil, err
 		}
 
-		var qName, resType string
-		var pendingJobs, totalUnits int64
-		if err := row.ColumnByName("QueueName", &qName); err != nil {
+		m, err := parseQueueMetricRow(row, "PendingJobs")
+		if err != nil {
 			return nil, err
 		}
-		if err := row.ColumnByName("PendingJobs", &pendingJobs); err != nil {
-			return nil, err
-		}
-		if err := row.ColumnByName("TotalUnits", &totalUnits); err != nil {
-			return nil, err
-		}
-		if err := row.ColumnByName("ResType", &resType); err != nil {
-			return nil, err
-		}
-
-		results[qName] = PendingQueueMetricsResult{
-			PendingJobs:             pendingJobs,
-			PendingResourceRequests: totalUnits,
-			ResourceType:            resType,
+		results[m.queueName] = PendingQueueMetricsResult{
+			PendingJobs:             m.count,
+			PendingResourceRequests: m.totalUnits,
+			ResourceType:            m.resType,
 		}
 	}
 
 	return results, nil
+}
+
+type rawQueueMetricRow struct {
+	queueName  string
+	count      int64
+	totalUnits int64
+	resType    string
+}
+
+func parseQueueMetricRow(row *spanner.Row, countCol string) (*rawQueueMetricRow, error) {
+	var r rawQueueMetricRow
+	if err := row.ColumnByName("QueueName", &r.queueName); err != nil {
+		return nil, err
+	}
+	if err := row.ColumnByName(countCol, &r.count); err != nil {
+		return nil, err
+	}
+	if err := row.ColumnByName("TotalUnits", &r.totalUnits); err != nil {
+		return nil, err
+	}
+	if err := row.ColumnByName("ResType", &r.resType); err != nil {
+		return nil, err
+	}
+	return &r, nil
 }
 
 func generateHistoryID() (int64, error) {
