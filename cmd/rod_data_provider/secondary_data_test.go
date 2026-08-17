@@ -92,8 +92,8 @@ func TestBatchGetQueueSecondaryData(t *testing.T) {
 	if p.JobVelocity != 12.0 {
 		t.Errorf("JobVelocity = %f, want 12.0", p.JobVelocity)
 	}
-	if p.ResourceVelocity.Velocity != 1152.0 { // 12 * 96
-		t.Errorf("ResourceVelocity.Velocity = %f, want 1152.0", p.ResourceVelocity.Velocity)
+	if p.ResourceVelocity.Velocity != 96.0 { // 96 / 1.0
+		t.Errorf("ResourceVelocity.Velocity = %f, want 96.0", p.ResourceVelocity.Velocity)
 	}
 	if p.ResourceVelocity.ResourceType != "nvidia-tesla-h100" {
 		t.Errorf("ResourceVelocity.ResourceType = %q, want 'nvidia-tesla-h100'", p.ResourceVelocity.ResourceType)

@@ -24,7 +24,7 @@ import {
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { catchError, EMPTY, Subject, Subscription, switchMap } from 'rxjs';
 
 import {
   ClusterQueueSecondaryMetrics,
@@ -93,7 +93,37 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   protected readonly TAB_RESOURCE_AVAILABILITY = TAB_RESOURCE_AVAILABILITY;
   protected readonly termTooltips = ROD_TERM_TOOLTIPS;
 
+  private readonly fetchTrigger$ = new Subject<void>();
+
   constructor() {
+    this.subscriptions.add(
+      this.fetchTrigger$
+        .pipe(
+          switchMap(() => {
+            const queueNames = this.queues()
+              .map((q) => q.queueName)
+              .filter((name): name is string => !!name);
+            if (!queueNames.length) {
+              this.isSecondaryLoading.set(false);
+              return EMPTY;
+            }
+            this.isSecondaryLoading.set(true);
+            return this.resourceService
+              .getQueueSecondaryData(queueNames, mapPeriodToRangePreset(this.velocityPeriod()))
+              .pipe(
+                catchError(() => {
+                  this.isSecondaryLoading.set(false);
+                  return EMPTY;
+                }),
+              );
+          }),
+        )
+        .subscribe((res) => {
+          this.secondaryDataMap.set(res.queuePredictability ?? {});
+          this.isSecondaryLoading.set(false);
+        }),
+    );
+
     effect(() => {
       const queues = this.queues();
       const _period = this.velocityPeriod();
@@ -167,27 +197,7 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   }
 
   protected fetchSecondaryData() {
-    const queueNames = this.queues()
-      .map((q) => q.queueName)
-      .filter((name): name is string => !!name);
-    if (!queueNames.length) {
-      this.isSecondaryLoading.set(false);
-      return;
-    }
-    this.isSecondaryLoading.set(true);
-    this.subscriptions.add(
-      this.resourceService
-        .getQueueSecondaryData(queueNames, mapPeriodToRangePreset(this.velocityPeriod()))
-        .subscribe({
-          next: (res) => {
-            this.secondaryDataMap.set(res.queuePredictability ?? {});
-            this.isSecondaryLoading.set(false);
-          },
-          error: () => {
-            this.isSecondaryLoading.set(false);
-          },
-        }),
-    );
+    this.fetchTrigger$.next();
   }
 
   ngOnDestroy() {

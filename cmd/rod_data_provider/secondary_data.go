@@ -90,7 +90,7 @@ func buildQueuePredictability(preset spb.RangePreset, windowHours float64, res s
 		JobVelocity:   jobVel,
 		ResourceVelocity: &spb.ResourceVelocity{
 			ResourceType: resType,
-			Velocity:     jobVel * float64(res.ResourceUnits),
+			Velocity:     float64(res.ResourceUnits) / windowHours,
 		},
 		PendingResourceRequests: &spb.Resource{
 			ResourceType: resType,

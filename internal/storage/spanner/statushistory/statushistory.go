@@ -54,20 +54,18 @@ func ExtractAllResourcesFromExecutable(exec *essmsgpb.Executable) map[string]int
 			continue
 		}
 		r := j.GetSpec().GetResources()
-		switch {
-		case r.GetCpuResources() != nil:
-			cpu := r.GetCpuResources()
+		if cpu := r.GetCpuResources(); cpu != nil {
 			cpus := cpu.GetCpuMillicores() / 1000
 			if cpus > 0 {
 				resources["CPU"] += cpus
 			}
-		case r.GetGpuResources() != nil:
-			gpu := r.GetGpuResources()
+		}
+		if gpu := r.GetGpuResources(); gpu != nil {
 			if gpu.GetCount() > 0 && gpu.GetType() != "" {
 				resources[gpu.GetType()] += gpu.GetCount()
 			}
-		case r.GetTpuResources() != nil:
-			tpu := r.GetTpuResources()
+		}
+		if tpu := r.GetTpuResources(); tpu != nil {
 			res := tpu.GetType()
 			if res != "" {
 				chips := parseTotalChips(tpu.GetTopology())
@@ -156,11 +154,11 @@ func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueN
 
 	cutoff := time.Now().Add(-window)
 	stmt := spanner.Statement{
-		SQL: `SELECT QueueName, COUNT(1) AS AdmittedCount, IFNULL(SUM(ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(ResourceType), "") AS ResType
+		SQL: `SELECT QueueName, COUNT(DISTINCT WorkUnitId) AS AdmittedCount, IFNULL(SUM(ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(ResourceType), "") AS ResType
 		      FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
 		      WHERE QueueName IN UNNEST(@queueNames)
 		        AND TransitionTime >= @cutoffTime
-		        AND NewState IN (1, 2, 3, 4)
+		        AND NewState = 1
 		      GROUP BY QueueName`,
 		Params: map[string]interface{}{
 			"queueNames": queueNames,
@@ -218,17 +216,17 @@ func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, 
 
 	stmt := spanner.Statement{
 		SQL: `WITH MaxHistory AS (
-		        SELECT BitReversedXid, WorkUnitId, MAX(HistoryId) AS MaxHistoryId
+		        SELECT BitReversedXid, WorkUnitId, MAX(TransitionTime) AS MaxTransitionTime
 		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
 		        WHERE QueueName IN UNNEST(@queueNames)
 		        GROUP BY BitReversedXid, WorkUnitId
 		      )
-		      SELECT h.QueueName, COUNT(1) AS PendingJobs, IFNULL(SUM(h.ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(h.ResourceType), "") AS ResType
+		      SELECT h.QueueName, COUNT(DISTINCT h.WorkUnitId) AS PendingJobs, IFNULL(SUM(h.ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(h.ResourceType), "") AS ResType
 		      FROM WorkUnitStatusHistory h
 		      JOIN MaxHistory m
 		        ON h.BitReversedXid = m.BitReversedXid
 		       AND h.WorkUnitId = m.WorkUnitId
-		       AND h.HistoryId = m.MaxHistoryId
+		       AND h.TransitionTime = m.MaxTransitionTime
 		      WHERE h.NewState IN (1, 2)
 		      GROUP BY h.QueueName`,
 		Params: map[string]interface{}{

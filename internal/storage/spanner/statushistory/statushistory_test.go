@@ -196,3 +196,45 @@ func TestFetchBatchQueueMetrics_NilClient(t *testing.T) {
 		t.Errorf("expected empty batch map for nil client, got %+v", batchPending)
 	}
 }
+
+func TestExtractAllResourcesFromExecutable_BothCpuAndGpu(t *testing.T) {
+	exec := &essmsgpb.Executable{
+		Type: &essmsgpb.Executable_Jobset{
+			Jobset: &essmsgpb.JobSetExecutable{
+				Jobs: []*essmsgpb.KubernetesJob{
+					{
+						Spec: &essmsgpb.ExecutableSpec{
+							Resources: &essmsgpb.ResourceSet{
+								Resources: &essmsgpb.ResourceSet_CpuResources{
+									CpuResources: &essmsgpb.CpuResources{
+										CpuMillicores: 16000,
+									},
+								},
+							},
+						},
+					},
+					{
+						Spec: &essmsgpb.ExecutableSpec{
+							Resources: &essmsgpb.ResourceSet{
+								Resources: &essmsgpb.ResourceSet_GpuResources{
+									GpuResources: &essmsgpb.GpuResources{
+										Type:  "nvidia-tesla-h100",
+										Count: 8,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got := ExtractAllResourcesFromExecutable(exec)
+	if got["CPU"] != 16 {
+		t.Errorf("CPU = %d, want 16", got["CPU"])
+	}
+	if got["nvidia-tesla-h100"] != 8 {
+		t.Errorf("nvidia-tesla-h100 = %d, want 8", got["nvidia-tesla-h100"])
+	}
+}
