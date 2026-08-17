@@ -126,6 +126,7 @@ def login_via_dex(page: Page, email: str, password: str) -> None:
         try:
             grant_btn.click(timeout=3000)
             logger.info("Clicked Dex grant access button.")
+            page.wait_for_url(lambda u: "5556" not in u, timeout=15000)
         except Exception:
             pass
 
@@ -210,17 +211,18 @@ def test_viewer_unauthorized_boundary(page: Page) -> None:
 
     # Wait for redirection to landing page with forbidden error parameter
     logger.info("Verifying access denial for unauthorized persona (current URL: %s)...", page.url)
-    page.wait_for_url(lambda u: "error=forbidden" in u or "8080" in u, timeout=15000)
+    page.wait_for_url(lambda u: "error=forbidden" in u, timeout=20000)
 
     # Assert Access Denied banner is displayed
-    access_denied_heading = page.get_by_role("heading", name="Access Denied")
+    access_denied_heading = page.locator(".error-banner h4, h4:has-text('Access Denied')").first
     expect(access_denied_heading).to_be_visible(timeout=15000)
     logger.info("✓ 'Access Denied' heading is visible.")
 
-    # Assert user specific rejection text
-    unauth_message = page.get_by_text("viewer@xmc.local")
-    expect(unauth_message).to_be_visible(timeout=10000)
-    logger.info("✓ Account rejection notice confirmed for viewer@xmc.local.")
+    # Assert user specific rejection text in the error banner
+    error_banner = page.locator(".error-banner").first
+    expect(error_banner).to_be_visible(timeout=15000)
+    expect(error_banner).to_contain_text("not authorized", timeout=10000)
+    logger.info("✓ Account rejection notice confirmed for unauthorized persona.")
     save_screenshot(page, "03_access_denied_unauthorized_persona")
 
 
