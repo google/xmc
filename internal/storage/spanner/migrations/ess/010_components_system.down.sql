@@ -17,4 +17,5 @@ DROP INDEX Idx_Snapshots_Component;
 DROP TABLE ExperimentComponentSnapshots;
 DROP TABLE ComponentDependencies;
 DROP INDEX Idx_Components_ActiveName;
+DROP INDEX Idx_Components_Class;
 DROP TABLE Components;

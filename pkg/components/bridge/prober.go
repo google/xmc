@@ -85,18 +85,25 @@ func (p *NetworkProber) ProbeHealth(ctx context.Context, spec *componentspb.Comp
 		endpointCandidates = append(endpointCandidates, strings.Split(ep, ",")...)
 	}
 
+	var dialErrors []string
+	validEndpoints := 0
 	for _, ep := range endpointCandidates {
 		target := strings.TrimSpace(ep)
 		if target == "" {
 			continue
 		}
+		validEndpoints++
 		dialer := net.Dialer{Timeout: p.timeout}
 		conn, err := dialer.DialContext(ctx, "tcp", target)
-		if err != nil {
-			// In isolated testing or offline mode, report dial error details
-			return false, fmt.Sprintf("TCP dial to %q failed: %v", target, err)
+		if err == nil {
+			conn.Close()
+			return true, "Endpoints reachable"
 		}
-		conn.Close()
+		dialErrors = append(dialErrors, fmt.Sprintf("%q: %v", target, err))
+	}
+
+	if validEndpoints > 0 {
+		return false, fmt.Sprintf("all TCP dials failed: %s", strings.Join(dialErrors, "; "))
 	}
 
 	return true, "Endpoints reachable"

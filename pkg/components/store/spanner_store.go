@@ -91,8 +91,8 @@ func (s *SpannerStore) SetComponentIntent(ctx context.Context, name string, inte
 
 			mutations := []*spanner.Mutation{
 				spanner.Insert("Components",
-					[]string{"ComponentId", "Name", "ConfigProto", "State", "Generation", "CreateTime", "UpdateTime"},
-					[]interface{}{componentID, name, intentBytes, int64(state), desiredGen, spanner.CommitTimestamp, spanner.CommitTimestamp},
+					[]string{"ComponentId", "Name", "ComponentClass", "ConfigProto", "State", "Generation", "CreateTime", "UpdateTime"},
+					[]interface{}{componentID, name, intent.GetComponentClass(), intentBytes, int64(state), desiredGen, spanner.CommitTimestamp, spanner.CommitTimestamp},
 				),
 			}
 
@@ -111,13 +111,14 @@ func (s *SpannerStore) SetComponentIntent(ctx context.Context, name string, inte
 			}
 
 			result = &ComponentRecord{
-				ComponentID: componentID,
-				Name:        name,
-				ConfigProto: intent,
-				State:       state,
-				Generation:  desiredGen,
-				CreateTime:  now,
-				UpdateTime:  now,
+				ComponentID:    componentID,
+				Name:           name,
+				ComponentClass: intent.GetComponentClass(),
+				ConfigProto:    intent,
+				State:          state,
+				Generation:     desiredGen,
+				CreateTime:     now,
+				UpdateTime:     now,
 			}
 			return nil
 		}
@@ -144,8 +145,8 @@ func (s *SpannerStore) SetComponentIntent(ctx context.Context, name string, inte
 
 		mutations := []*spanner.Mutation{
 			spanner.Update("Components",
-				[]string{"ComponentId", "ConfigProto", "State", "Generation", "UpdateTime"},
-				[]interface{}{existing.ComponentID, intentBytes, int64(nextState), desiredGen, spanner.CommitTimestamp},
+				[]string{"ComponentId", "ComponentClass", "ConfigProto", "State", "Generation", "UpdateTime"},
+				[]interface{}{existing.ComponentID, intent.GetComponentClass(), intentBytes, int64(nextState), desiredGen, spanner.CommitTimestamp},
 			),
 			// Clear old dependencies and write new ones.
 			spanner.Delete("ComponentDependencies", spanner.KeyRange{
@@ -172,6 +173,7 @@ func (s *SpannerStore) SetComponentIntent(ctx context.Context, name string, inte
 		result = &ComponentRecord{
 			ComponentID:        existing.ComponentID,
 			Name:               name,
+			ComponentClass:     intent.GetComponentClass(),
 			ConfigProto:        intent,
 			AccessPayload:      existing.AccessPayload,
 			State:              nextState,
@@ -207,7 +209,7 @@ func (s *SpannerStore) querySingleComponent(ctx context.Context, stmt spanner.St
 // GetComponent retrieves a component record by its name using the ActiveName index.
 func (s *SpannerStore) GetComponent(ctx context.Context, name string) (*ComponentRecord, error) {
 	stmt := spanner.Statement{
-		SQL: `SELECT ComponentId, Name, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
+		SQL: `SELECT ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
 		      FROM Components
 		      WHERE ActiveName = @name
 		      LIMIT 1`,
@@ -219,7 +221,7 @@ func (s *SpannerStore) GetComponent(ctx context.Context, name string) (*Componen
 // GetComponentByID retrieves a component record by its primary key.
 func (s *SpannerStore) GetComponentByID(ctx context.Context, componentID int64) (*ComponentRecord, error) {
 	stmt := spanner.Statement{
-		SQL: `SELECT ComponentId, Name, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
+		SQL: `SELECT ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
 		      FROM Components
 		      WHERE ComponentId = @id
 		      LIMIT 1`,
@@ -231,7 +233,7 @@ func (s *SpannerStore) GetComponentByID(ctx context.Context, componentID int64) 
 // ListComponents returns all registered component records.
 func (s *SpannerStore) ListComponents(ctx context.Context) ([]*ComponentRecord, error) {
 	stmt := spanner.Statement{
-		SQL: `SELECT ComponentId, Name, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
+		SQL: `SELECT ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
 		      FROM Components
 		      WHERE State != 5
 		      ORDER BY Name`,
@@ -559,7 +561,7 @@ func (s *SpannerStore) GetPlatformHealth(ctx context.Context) (*componentspb.Get
 // Helper methods for transactions.
 func (s *SpannerStore) getComponentTxn(ctx context.Context, txn *spanner.ReadWriteTransaction, name string) (*ComponentRecord, error) {
 	stmt := spanner.Statement{
-		SQL: `SELECT ComponentId, Name, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
+		SQL: `SELECT ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
 		      FROM Components
 		      WHERE ActiveName = @name
 		      LIMIT 1`,
@@ -579,71 +581,43 @@ func (s *SpannerStore) getComponentTxn(ctx context.Context, txn *spanner.ReadWri
 }
 
 func (s *SpannerStore) getComponentByClassOrNameSingle(ctx context.Context, classOrName string) (*ComponentRecord, error) {
-	rec, err := s.GetComponent(ctx, classOrName)
-	if err == nil {
-		return rec, nil
-	}
-
 	stmt := spanner.Statement{
-		SQL: `SELECT ComponentId, Name, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
+		SQL: `SELECT ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
 		      FROM Components
-		      WHERE State != 5
-		      ORDER BY Name`,
+		      WHERE ActiveName = @name OR (ComponentClass = @class AND State IN (1, 4))
+		      ORDER BY CASE WHEN ActiveName = @name THEN 0 ELSE 1 END
+		      LIMIT 1`,
+		Params: map[string]interface{}{
+			"name":  classOrName,
+			"class": classOrName,
+		},
 	}
-	iter := s.client.Single().Query(ctx, stmt)
-	defer iter.Stop()
-
-	for {
-		row, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		r, err := parseComponentRow(row)
-		if err != nil {
-			return nil, err
-		}
-		if r.ConfigProto != nil && r.ConfigProto.GetComponentClass() == classOrName {
-			return r, nil
-		}
-	}
-	return nil, status.Errorf(codes.NotFound, "component with class or name %q not found", classOrName)
+	return s.querySingleComponent(ctx, stmt, fmt.Sprintf("component with class or name %q not found", classOrName))
 }
 
 func (s *SpannerStore) getComponentByClassOrNameTxn(ctx context.Context, txn *spanner.ReadWriteTransaction, classOrName string) (*ComponentRecord, error) {
-	rec, err := s.getComponentTxn(ctx, txn, classOrName)
-	if err == nil {
-		return rec, nil
-	}
-
 	stmt := spanner.Statement{
-		SQL: `SELECT ComponentId, Name, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
+		SQL: `SELECT ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime
 		      FROM Components
-		      WHERE State != 5
-		      ORDER BY Name`,
+		      WHERE ActiveName = @name OR (ComponentClass = @class AND State IN (1, 4))
+		      ORDER BY CASE WHEN ActiveName = @name THEN 0 ELSE 1 END
+		      LIMIT 1`,
+		Params: map[string]interface{}{
+			"name":  classOrName,
+			"class": classOrName,
+		},
 	}
 	iter := txn.Query(ctx, stmt)
 	defer iter.Stop()
 
-	for {
-		row, err := iter.Next()
+	row, err := iter.Next()
+	if err != nil {
 		if err == iterator.Done {
-			break
+			return nil, status.Errorf(codes.NotFound, "component with class or name %q not found", classOrName)
 		}
-		if err != nil {
-			return nil, err
-		}
-		r, err := parseComponentRow(row)
-		if err != nil {
-			return nil, err
-		}
-		if r.ConfigProto != nil && r.ConfigProto.GetComponentClass() == classOrName {
-			return r, nil
-		}
+		return nil, status.Errorf(codes.Internal, "failed to query component: %v", err)
 	}
-	return nil, status.Errorf(codes.NotFound, "component with class or name %q not found", classOrName)
+	return parseComponentRow(row)
 }
 
 func (s *SpannerStore) getDependentComponentsTxn(ctx context.Context, txn *spanner.ReadWriteTransaction, compID int64) ([]string, error) {
@@ -677,49 +651,20 @@ func (s *SpannerStore) getDependentComponentsTxn(ctx context.Context, txn *spann
 
 func parseComponentRow(row *spanner.Row) (*ComponentRecord, error) {
 	var (
-		compID      int64
-		name        string
-		configBytes []byte
-		accessBytes spanner.NullRow
-		state       int64
-		gen         int64
-		observedGen spanner.NullInt64
-		createTime  time.Time
-		updateTime  time.Time
+		compID         int64
+		name           string
+		componentClass spanner.NullString
+		configBytes    []byte
+		accessBytes    []byte
+		state          int64
+		gen            int64
+		observedGen    spanner.NullInt64
+		createTime     time.Time
+		updateTime     time.Time
 	)
 
-	if err := row.Columns(&compID, &name, &configBytes, &accessBytes, &state, &gen, &observedGen, &createTime, &updateTime); err != nil {
-		// try unmarshaling with NullRow/nullable bytes
-		var rawAccess []byte
-		if err := row.Columns(&compID, &name, &configBytes, &rawAccess, &state, &gen, &observedGen, &createTime, &updateTime); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to scan component row: %v", err)
-		}
-		configProto := &componentspb.ComponentSpecProto{}
-		if err := proto.Unmarshal(configBytes, configProto); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to unmarshal config proto: %v", err)
-		}
-		var accessProto *componentspb.ComponentAccessStatusProto
-		if len(rawAccess) > 0 {
-			accessProto = &componentspb.ComponentAccessStatusProto{}
-			if err := proto.Unmarshal(rawAccess, accessProto); err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to unmarshal access proto: %v", err)
-			}
-		}
-		var obsPtr *int64
-		if observedGen.Valid {
-			obsPtr = &observedGen.Int64
-		}
-		return &ComponentRecord{
-			ComponentID:        compID,
-			Name:               name,
-			ConfigProto:        configProto,
-			AccessPayload:      accessProto,
-			State:              componentspb.ComponentState(state),
-			Generation:         gen,
-			ObservedGeneration: obsPtr,
-			CreateTime:         createTime,
-			UpdateTime:         updateTime,
-		}, nil
+	if err := row.Columns(&compID, &name, &componentClass, &configBytes, &accessBytes, &state, &gen, &observedGen, &createTime, &updateTime); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to scan component row: %v", err)
 	}
 
 	configProto := &componentspb.ComponentSpecProto{}
@@ -727,15 +672,32 @@ func parseComponentRow(row *spanner.Row) (*ComponentRecord, error) {
 		return nil, status.Errorf(codes.Internal, "failed to unmarshal config proto: %v", err)
 	}
 
+	var accessProto *componentspb.ComponentAccessStatusProto
+	if len(accessBytes) > 0 {
+		accessProto = &componentspb.ComponentAccessStatusProto{}
+		if err := proto.Unmarshal(accessBytes, accessProto); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to unmarshal access proto: %v", err)
+		}
+	}
+
 	var obsPtr *int64
 	if observedGen.Valid {
 		obsPtr = &observedGen.Int64
 	}
 
+	classStr := ""
+	if componentClass.Valid {
+		classStr = componentClass.StringVal
+	} else if configProto.GetComponentClass() != "" {
+		classStr = configProto.GetComponentClass()
+	}
+
 	return &ComponentRecord{
 		ComponentID:        compID,
 		Name:               name,
+		ComponentClass:     classStr,
 		ConfigProto:        configProto,
+		AccessPayload:      accessProto,
 		State:              componentspb.ComponentState(state),
 		Generation:         gen,
 		ObservedGeneration: obsPtr,

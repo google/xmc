@@ -27,6 +27,7 @@ import (
 type ComponentRecord struct {
 	ComponentID        int64
 	Name               string
+	ComponentClass     string
 	ConfigProto        *componentspb.ComponentSpecProto
 	AccessPayload      *componentspb.ComponentAccessStatusProto
 	State              componentspb.ComponentState

@@ -16,6 +16,7 @@
 CREATE TABLE Components (
   ComponentId INT64 NOT NULL,
   Name STRING(MAX) NOT NULL,
+  ComponentClass STRING(128),
   ConfigProto BYTES(MAX) NOT NULL,
   AccessPayload BYTES(MAX),
   State INT64 NOT NULL,
@@ -28,6 +29,7 @@ CREATE TABLE Components (
 ) PRIMARY KEY (ComponentId);
 
 CREATE UNIQUE NULL_FILTERED INDEX Idx_Components_ActiveName ON Components(ActiveName);
+CREATE INDEX Idx_Components_Class ON Components(ComponentClass);
 
 -- Table: ComponentDependencies
 CREATE TABLE ComponentDependencies (

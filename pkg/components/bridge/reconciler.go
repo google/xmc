@@ -42,6 +42,7 @@ type CMSClient interface {
 	SetComponentIntent(ctx context.Context, in *componentspb.SetComponentIntentRequest, opts ...grpc.CallOption) (*componentspb.SetComponentIntentResponse, error)
 	UpdateObservedGeneration(ctx context.Context, in *componentspb.UpdateObservedGenerationRequest, opts ...grpc.CallOption) (*componentspb.UpdateObservedGenerationResponse, error)
 	ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteDeletionRequest, opts ...grpc.CallOption) (*componentspb.ExecuteDeletionResponse, error)
+	CompleteDeactivation(ctx context.Context, in *componentspb.CompleteDeactivationRequest, opts ...grpc.CallOption) (*componentspb.CompleteDeactivationResponse, error)
 }
 
 type serverClientAdapter struct {
@@ -58,6 +59,10 @@ func (a *serverClientAdapter) UpdateObservedGeneration(ctx context.Context, in *
 
 func (a *serverClientAdapter) ExecuteDeletion(ctx context.Context, in *componentspb.ExecuteDeletionRequest, opts ...grpc.CallOption) (*componentspb.ExecuteDeletionResponse, error) {
 	return a.server.ExecuteDeletion(ctx, in)
+}
+
+func (a *serverClientAdapter) CompleteDeactivation(ctx context.Context, in *componentspb.CompleteDeactivationRequest, opts ...grpc.CallOption) (*componentspb.CompleteDeactivationResponse, error) {
+	return a.server.CompleteDeactivation(ctx, in)
 }
 
 // NewCMSClientAdapter adapts a ComponentManagerServiceServer to CMSClient for testing or in-process usage.
@@ -136,11 +141,13 @@ func (r *Reconciler) ReconcileComponent(
 		}
 
 		// Deletion protection is false: Sync updated intent to CMS so store updates deletionProtection flag.
-		_, _ = r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		if _, err := r.cmsClient.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
 			ComponentName:        name,
 			Intent:               spec,
 			DesiredK8SGeneration: generation,
-		})
+		}); err != nil {
+			return nil, fmt.Errorf("failed to sync deletion intent to CMS: %w", err)
+		}
 
 		// Clean up 1P child workloads and execute deletion in CMS.
 		if spec.GetComponentType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.workloadManager != nil {
@@ -171,9 +178,6 @@ func (r *Reconciler) ReconcileComponent(
 		DesiredK8SGeneration: generation,
 	})
 	if err != nil {
-		if spec.GetComponentType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.workloadManager != nil {
-			_ = r.workloadManager.Delete1PWorkload(ctx, namespace, name)
-		}
 		setCondition(&res.Conditions, existing, ConditionDeactBlocked, "True", generation, "PreconditionFailed", err.Error())
 		setCondition(&res.Conditions, existing, ConditionReady, "False", generation, "IntentApplicationFailed", err.Error())
 		setCondition(&res.Conditions, existing, ConditionDegraded, "True", generation, "IntentApplicationFailed", err.Error())
@@ -182,7 +186,7 @@ func (r *Reconciler) ReconcileComponent(
 
 	res.State = setResp.GetReconciliationState()
 
-	// 4. If component is disabled, clean up 1P child workloads and report Ready=False.
+	// 4. If component is disabled, clean up 1P child workloads, complete deactivation, and report Ready=False.
 	if !spec.GetEnabled() {
 		if spec.GetComponentType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT && r.workloadManager != nil {
 			_ = r.workloadManager.Delete1PWorkload(ctx, namespace, name)
@@ -191,6 +195,12 @@ func (r *Reconciler) ReconcileComponent(
 		res.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
 		setCondition(&res.Conditions, existing, ConditionReady, "False", generation, "ComponentDisabled", "Component is explicitly disabled in spec.enabled")
 		setCondition(&res.Conditions, existing, ConditionDegraded, "False", generation, "ComponentDisabled", "Component is disabled")
+		
+		if _, err := r.cmsClient.CompleteDeactivation(ctx, &componentspb.CompleteDeactivationRequest{
+			ComponentName: name,
+		}); err != nil {
+			return nil, fmt.Errorf("failed to complete deactivation in CMS: %w", err)
+		}
 		_ = r.updateObservedCMS(ctx, name, generation, nil, "Ready=False")
 		return res, nil
 	}
