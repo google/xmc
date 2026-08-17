@@ -43,27 +43,23 @@ def find_testdata_dir() -> str | None:
     for base in bases:
         if not base:
             continue
-        candidates.extend([
-            os.path.join(base, "test", "dataengine", "testdata", "golden"),
-            os.path.join(
-                base, "_main", "test", "dataengine", "testdata", "golden"
-            ),
-            os.path.join(
-                base,
-                "xmanager_cloud",
-                "test",
-                "dataengine",
-                "testdata",
-                "golden",
-            ),
-            os.path.join(base, "..", "test", "dataengine", "testdata", "golden"),
-            os.path.join(
-                base, "..", "..", "test", "dataengine", "testdata", "golden"
-            ),
-            os.path.join(
-                base, "..", "_main", "test", "dataengine", "testdata", "golden"
-            ),
-        ])
+        candidates.extend(
+            [
+                os.path.join(base, "test", "dataengine", "testdata", "golden"),
+                os.path.join(base, "_main", "test", "dataengine", "testdata", "golden"),
+                os.path.join(
+                    base,
+                    "xmanager_cloud",
+                    "test",
+                    "dataengine",
+                    "testdata",
+                    "golden",
+                ),
+                os.path.join(base, "..", "test", "dataengine", "testdata", "golden"),
+                os.path.join(base, "..", "..", "test", "dataengine", "testdata", "golden"),
+                os.path.join(base, "..", "_main", "test", "dataengine", "testdata", "golden"),
+            ]
+        )
     for c in candidates:
         norm = os.path.normpath(c)
         if os.path.isdir(norm) and glob.glob(os.path.join(norm, "*.golden.json")):
@@ -104,9 +100,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         cls.goldens = load_golden_files()
         golden_dir = find_testdata_dir()
         dashboards_file = (
-            os.path.join(golden_dir, "dashboards_list.golden.json")
-            if golden_dir
-            else ""
+            os.path.join(golden_dir, "dashboards_list.golden.json") if golden_dir else ""
         )
         if os.path.exists(dashboards_file):
             try:
@@ -128,9 +122,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             "Access-Control-Allow-Methods",
             "GET, POST, PATCH, PUT, DELETE, OPTIONS",
         )
-        self.send_header(
-            "Access-Control-Allow-Headers", "Content-Type, Authorization"
-        )
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
         self.wfile.write(body)
 
@@ -142,9 +134,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             "Access-Control-Allow-Methods",
             "GET, POST, PATCH, PUT, DELETE, OPTIONS",
         )
-        self.send_header(
-            "Access-Control-Allow-Headers", "Content-Type, Authorization"
-        )
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
 
     def do_GET(self) -> None:
@@ -172,12 +162,9 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         if path.startswith("/v1/dashboards/") and ":getData" not in path:
-            dashboard_id = path[len("/v1/dashboards/"):]
+            dashboard_id = path[len("/v1/dashboards/") :]
             for d in self.in_memory_dashboards:
-                if (
-                    d.get("name") == f"dashboards/{dashboard_id}"
-                    or d.get("name") == dashboard_id
-                ):
+                if d.get("name") == f"dashboards/{dashboard_id}" or d.get("name") == dashboard_id:
                     self.send_json(200, d)
                     return
             # Fallback default dashboard if not found
@@ -219,11 +206,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
 
         translated_path = self.translate_path(self.path)
         if not os.path.exists(translated_path) or os.path.isdir(translated_path):
-            serve_root = (
-                self.directory
-                if hasattr(self, "directory")
-                else os.getcwd()
-            )
+            serve_root = self.directory if hasattr(self, "directory") else os.getcwd()
             index_path = os.path.join(serve_root, "index.html")
             if os.path.exists(index_path):
                 self.path = "/index.html"
@@ -234,11 +217,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         """Handles HEAD requests using the same SPA routing fallback."""
         translated_path = self.translate_path(self.path)
         if not os.path.exists(translated_path) or os.path.isdir(translated_path):
-            serve_root = (
-                self.directory
-                if hasattr(self, "directory")
-                else os.getcwd()
-            )
+            serve_root = self.directory if hasattr(self, "directory") else os.getcwd()
             index_path = os.path.join(serve_root, "index.html")
             if os.path.exists(index_path):
                 self.path = "/index.html"
@@ -292,12 +271,8 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
 
         status_history = get_bool_env("XMC_STATUS_MESSAGE_HISTORY_ENABLED", True)
         admin_panel_enabled = get_bool_env("XMC_ADMIN_PANEL_ENABLED", True)
-        resource_dashboard_enabled = get_bool_env(
-            "XMC_RESOURCE_DASHBOARD_ENABLED", True
-        )
-        performance_dashboard_enabled = get_bool_env(
-            "XMC_PERFORMANCE_DASHBOARD_ENABLED", True
-        )
+        resource_dashboard_enabled = get_bool_env("XMC_RESOURCE_DASHBOARD_ENABLED", True)
+        performance_dashboard_enabled = get_bool_env("XMC_PERFORMANCE_DASHBOARD_ENABLED", True)
 
         feature_flags = {
             "statusMessageHistoryEnabled": status_history,
@@ -337,9 +312,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
 
         # Match by XID or chart name
         for golden_name, golden_data in self.goldens.items():
-            if golden_name.endswith(clean_path) or clean_path.endswith(
-                golden_name
-            ):
+            if golden_name.endswith(clean_path) or clean_path.endswith(golden_name):
                 self.send_json(200, golden_data)
                 return
 
@@ -348,10 +321,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         if match:
             xid, chart_id = match.group(1), match.group(2)
             for golden_name, golden_data in self.goldens.items():
-                if (
-                    f"experiments/{xid}" in golden_name
-                    or chart_id in golden_name
-                ):
+                if f"experiments/{xid}" in golden_name or chart_id in golden_name:
                     self.send_json(200, golden_data)
                     return
 
@@ -426,9 +396,7 @@ def find_dist_dir() -> str:
 
 def main() -> None:
     """Main entrypoint running the local UI server."""
-    parser = argparse.ArgumentParser(
-        description="XMC UI and Mock API Server"
-    )
+    parser = argparse.ArgumentParser(description="XMC UI and Mock API Server")
     parser.add_argument(
         "--port",
         type=int,
