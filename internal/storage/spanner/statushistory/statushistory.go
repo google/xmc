@@ -217,16 +217,20 @@ func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, 
 	}
 
 	stmt := spanner.Statement{
-		SQL: `WITH LatestStatus AS (
-		        SELECT QueueName, ResourceType, ResourceUnits, NewState,
-		               ROW_NUMBER() OVER (PARTITION BY BitReversedXid, WorkUnitId ORDER BY HistoryId DESC) AS rn
+		SQL: `WITH MaxHistory AS (
+		        SELECT BitReversedXid, WorkUnitId, MAX(HistoryId) AS MaxHistoryId
 		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime}
 		        WHERE QueueName IN UNNEST(@queueNames)
+		        GROUP BY BitReversedXid, WorkUnitId
 		      )
-		      SELECT QueueName, COUNT(1) AS PendingJobs, IFNULL(SUM(ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(ResourceType), "") AS ResType
-		      FROM LatestStatus
-		      WHERE rn = 1 AND NewState IN (1, 2)
-		      GROUP BY QueueName`,
+		      SELECT h.QueueName, COUNT(1) AS PendingJobs, IFNULL(SUM(h.ResourceUnits), 0) AS TotalUnits, IFNULL(ANY_VALUE(h.ResourceType), "") AS ResType
+		      FROM WorkUnitStatusHistory h
+		      JOIN MaxHistory m
+		        ON h.BitReversedXid = m.BitReversedXid
+		       AND h.WorkUnitId = m.WorkUnitId
+		       AND h.HistoryId = m.MaxHistoryId
+		      WHERE h.NewState IN (1, 2)
+		      GROUP BY h.QueueName`,
 		Params: map[string]interface{}{
 			"queueNames": queueNames,
 		},
