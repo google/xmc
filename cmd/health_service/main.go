@@ -249,7 +249,7 @@ func initGatewayMux(ctx context.Context, cfg *Config, authenticator *oauth2.Auth
 func initAuthorizer(ctx context.Context, oauthCfg oauth2.Config) auth.AuthorizerInterface {
 	idService, err := cloudidentity.NewService(ctx, option.WithScopes(cloudidentity.CloudIdentityGroupsReadonlyScope))
 	if err != nil {
-		logging.Warn(ctx, "Failed to create Cloud Identity service", "error", err)
+		logging.Fatal(ctx, "Failed to create Cloud Identity service", "error", err)
 	}
 
 	var audiences []string

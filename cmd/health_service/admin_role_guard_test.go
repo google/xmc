@@ -22,9 +22,7 @@ import (
 	"cloud.google.com/go/iam/apiv1/iampb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/pkg/auth/oauth2"
-	xpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
 type testAuthorizer struct {
@@ -38,14 +36,6 @@ func (m *testAuthorizer) AuthenticateUserFromContext(ctx context.Context) (strin
 		return "", "", m.authnErr
 	}
 	return m.email, m.userID, nil
-}
-
-func (m *testAuthorizer) IsUserAuthorized(ctx context.Context, user string, acls *xpb.XidAcls, role auth.Role) (bool, error) {
-	return true, nil
-}
-
-func (m *testAuthorizer) IsUserAuthorizedForChart(ctx context.Context, user string, acls *xpb.XidAcls) (bool, error) {
-	return true, nil
 }
 
 func newTestAuthenticator(adminRole string, disableAuth bool, policy *iampb.Policy, fetchErr error) *oauth2.Authenticator {

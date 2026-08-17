@@ -17,13 +17,17 @@ package main
 import (
 	"context"
 
-	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/pkg/auth/oauth2"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+// UserAuthenticator extracts caller identity from context.
+type UserAuthenticator interface {
+	AuthenticateUserFromContext(ctx context.Context) (string, string, error)
+}
 
 // AdminRoleGuard defines the interface for authenticating callers and verifying admin permissions.
 type AdminRoleGuard interface {
@@ -36,13 +40,13 @@ type AdminRoleGuard interface {
 
 // AdminRoleGuardParams contains the initialization parameters for AdminRoleGuard.
 type AdminRoleGuardParams struct {
-	Authorizer    auth.AuthorizerInterface
+	Authorizer    UserAuthenticator
 	Authenticator *oauth2.Authenticator
 }
 
 // adminRoleGuard provides the real implementation of AdminRoleGuard.
 type adminRoleGuard struct {
-	authorizer    auth.AuthorizerInterface
+	authorizer    UserAuthenticator
 	authenticator *oauth2.Authenticator
 }
 
