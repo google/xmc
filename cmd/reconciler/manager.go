@@ -53,6 +53,14 @@ type Manager struct {
 	closeErr      error
 }
 
+// CtrlManager returns the underlying controller-runtime Manager.
+func (m *Manager) CtrlManager() ctrl.Manager {
+	if m == nil {
+		return nil
+	}
+	return m.ctrlMgr
+}
+
 // HealthCheckers returns the client interfaces required for active readiness checks.
 func (m *Manager) HealthCheckers() (*k8sclient.Client, health.SpannerHealthClient) {
 	if m == nil {
@@ -224,10 +232,6 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 		clusterName: gceMeta.ClusterName,
 	})
 	if err != nil {
-		return nil, err
-	}
-
-	if err := registerHealthChecks(ctrlMgr, k8sClient, spannerClient); err != nil {
 		return nil, err
 	}
 

@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"go/google"
@@ -46,6 +47,11 @@ func run(ctx context.Context, cfg Config) error {
 			logging.Error(ctx, "Failed to close manager resources", "error", err)
 		}
 	}()
+
+	k8s, spHealth := mgr.HealthCheckers()
+	if err := registerHealthChecks(mgr.CtrlManager(), k8s, spHealth); err != nil {
+		return fmt.Errorf("failed to register health checks: %w", err)
+	}
 
 	return mgr.Start(ctx)
 }

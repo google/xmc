@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/go_sync/errgroup/errgroup"
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
 	"xmanager_cloud/common/health"
@@ -48,13 +47,9 @@ func activeHealthChecker(k8s *k8sclient.Client, spClient health.SpannerHealthCli
 	}
 }
 
-func registerHealthChecks(mgr ctrl.Manager, k8sClient *k8sclient.Client, spClient *spanner.Client) error {
+func registerHealthChecks(mgr ctrl.Manager, k8sClient *k8sclient.Client, spHealth health.SpannerHealthClient) error {
 	if mgr == nil {
 		return errors.New("manager cannot be nil")
-	}
-	var spHealth health.SpannerHealthClient
-	if spClient != nil {
-		spHealth = health.NewSpannerHealthClient(spClient)
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", func(req *http.Request) error { return nil }); err != nil {

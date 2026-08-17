@@ -198,3 +198,20 @@ func TestInitCtrlManager_NoKubeconfig(t *testing.T) {
 		t.Logf("initCtrlManager returned expected error on missing kubeconfig: %v", err)
 	}
 }
+
+func TestManager_CtrlManager(t *testing.T) {
+	t.Run("nil manager returns nil", func(t *testing.T) {
+		var m *Manager
+		if m.CtrlManager() != nil {
+			t.Errorf("CtrlManager() = %v, want nil", m.CtrlManager())
+		}
+	})
+
+	t.Run("non-nil manager returns ctrlMgr", func(t *testing.T) {
+		fakeMgr := &fakeStartManager{}
+		m := &Manager{ctrlMgr: fakeMgr}
+		if m.CtrlManager() != fakeMgr {
+			t.Errorf("CtrlManager() = %v, want %v", m.CtrlManager(), fakeMgr)
+		}
+	})
+}
