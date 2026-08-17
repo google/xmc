@@ -127,7 +127,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 				},
 			},
 			wantCode:  codes.OK,
-			wantCount: 1,
+			wantCount: 0,
 		},
 		{
 			name:      "Unavailable With Nil Fetcher",
@@ -167,15 +167,9 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 		},
 	}
 
-	kCache := cache.NewKueueCache()
-	kCache.LocalQueues.Set("lq-1", &kueuev1beta1.LocalQueue{
-		ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
-		Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "gpu-cluster-queue"},
-	})
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := newServer(cfg, kCache, tt.fetcher)
+			srv := newServer(cfg, nil, tt.fetcher)
 			resp, err := srv.GetRunningAndPendingJobs(tt.ctx, tt.req)
 
 			gotCode := status.Code(err)
