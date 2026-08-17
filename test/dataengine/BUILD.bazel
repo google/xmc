@@ -17,7 +17,7 @@ load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
 filegroup(
     name = "testdata",
-    srcs = glob(["testdata/**"]),
+    srcs = glob(["testdata/**/*"]),
     visibility = ["//visibility:public"],
 )
 
