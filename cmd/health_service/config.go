@@ -17,29 +17,33 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
 	"xmanager_cloud/internal/configutil"
 )
 
 // Config holds the configuration for the health service.
 type Config struct {
-	Port                   string
-	GRPCPort               string
-	ProjectID              string
-	TLSCertFile            string
-	TLSKeyFile             string
-	EssURL                 string
-	XidAddr                string
-	ActuatorURL            string
-	ReconcilerURL          string
-	LogMonitorResourceName string
-	ConfigDir              string
-	EssSpannerDatabase     string
-	XidSpannerDatabase     string
-	RedisAddr              string
-	AppVersion             string
-	BuildVersion           string
-	ObservabilityURL       string
+	Port                    string
+	GRPCPort                string
+	ProjectID               string
+	TLSCertFile             string
+	TLSKeyFile              string
+	EssURL                  string
+	XidAddr                 string
+	ActuatorURL             string
+	ReconcilerURL           string
+	LogMonitorResourceName  string
+	ConfigDir               string
+	EssSpannerDatabase      string
+	XidSpannerDatabase      string
+	RedisAddr               string
+	AppVersion              string
+	BuildVersion            string
+	ObservabilityURL        string
+	CacheTTL                time.Duration
+	ForceRefreshMaxRequests int
+	ForceRefreshWindow      time.Duration
 }
 
 var buildVersion string
@@ -66,6 +70,9 @@ func init() {
 	configutil.StringEnv(&cfg.AppVersion, "health_app_version", "")
 	configutil.StringEnv(&cfg.ObservabilityURL, "health_observability_url", "")
 	cfg.BuildVersion = getBuildVersion()
+	configutil.DurationEnv(&cfg.CacheTTL, "health_status_cache_ttl", 15*time.Second)
+	configutil.IntEnv(&cfg.ForceRefreshMaxRequests, "health_status_force_refresh_max_requests", 5)
+	configutil.DurationEnv(&cfg.ForceRefreshWindow, "health_status_force_refresh_window", 5*time.Second)
 
 	defaultPort := os.Getenv("PORT")
 	if defaultPort == "" {

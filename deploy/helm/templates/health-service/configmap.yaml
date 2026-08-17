@@ -29,4 +29,7 @@ data:
   health_redis_addr: {{ .Values.redisAddr | quote }}
   health_observability_url: {{ .Values.healthService.observabilityUrl | quote }}
   health_app_version: {{ .Values.imageTag | quote }}
+  health_status_cache_ttl: {{ .Values.healthService.cacheTTL | quote }}
+  health_status_force_refresh_max_requests: {{ .Values.healthService.forceRefreshMaxRequests | quote }}
+  health_status_force_refresh_window: {{ .Values.healthService.forceRefreshWindow | quote }}
 {{- end }}
