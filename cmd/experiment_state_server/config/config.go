@@ -82,7 +82,7 @@ func (c *Config) registerConfigs() {
 	configutil.StringEnv(&c.AllowedOrigins, "ess_allowed_origins", "")
 	configutil.BoolEnv(&c.StatusMessageHistoryEnabled, "ess_status_message_history_enabled", true)
 	configutil.StringEnv(&c.RedisAddr, "redis_addr", "")
-	configutil.StringEnv(&c.DashboardServiceAddr, "ess_dashboard_service_addr", "localhost:50054")
+	configutil.StringEnv(&c.DashboardServiceAddr, "ess_dashboard_service_addr", "")
 }
 
 // Load returns a Config struct populated with the values from ConfigMaps and parsed flags.
