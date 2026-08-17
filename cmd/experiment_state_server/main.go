@@ -42,6 +42,7 @@ import (
 	"golang/grpc/reflection/reflection"
 	healthgrpc "grpc_proto/health_go_grpc"
 	healthpb "grpc_proto/health_go_proto"
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	authz "xmanager_cloud/auth/auth"
 	commonhealth "xmanager_cloud/common/health"
 	"xmanager_cloud/experiment_state_server/config"
@@ -51,6 +52,8 @@ import (
 	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/logging/logging"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/pkg/components/cms"
+	componentsstore "xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/security/keyreloader"
 	ss "xmanager_cloud/storage/spanner/spanner"
 	tq "xmanager_cloud/task_queue/client"
@@ -113,12 +116,21 @@ func main() {
 
 	spb.RegisterExperimentStateServiceServer(s, experimentStateServer)
 
+	// Register ComponentManagerService
+	compStore := componentsstore.NewSpannerStore(spannerClient)
+	cmsServer, err := cms.NewServer(compStore)
+	if err != nil {
+		logging.Fatal(ctx, "failed to initialize CMS server", "error", err)
+	}
+	componentspb.RegisterComponentManagerServiceServer(s, cmsServer)
+
 	reflection.Register(s)
 
 	healthServer := health.NewServer()
 	healthgrpc.RegisterHealthServer(s, healthServer)
-
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus("xmc.ExperimentStateService", healthpb.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus("google.cloud.xmanager.components.v1alpha1.ComponentManagerService", healthpb.HealthCheckResponse_SERVING)
 
 	logging.Info(ctx, "gRPC server listening", "addr", lis.Addr())
 

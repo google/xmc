@@ -1,0 +1,38 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: ingestion-gateway
+  namespace: {{ .Release.Namespace | default "xmc" }}
+  labels:
+    xmc.dev/profile: {{ if and .Values.global .Values.global.platformProfile }}{{ .Values.global.platformProfile }}{{ else }}stable-2026a{{ end }}
+    app.kubernetes.io/name: ingestion-gateway
+spec:
+  enabled: {{ if hasKey .Values "enabled" }}{{ .Values.enabled }}{{ else }}true{{ end }}
+  componentType: COMPONENT_TYPE_CUSTOM_1P_COMPONENT
+  componentClass: {{ .Values.componentClass | default "metrics-ingestion" | quote }}
+  deletionProtection: {{ if hasKey .Values "deletionProtection" }}{{ .Values.deletionProtection }}{{ else }}true{{ end }}
+  deletionPolicy: {{ .Values.deletionPolicy | default "Delete" | quote }}
+  lifecycleControl:
+    cascade: {{ .Values.lifecycleControl.cascade | default false }}
+    drainTimeoutSeconds: {{ .Values.lifecycleControl.drainTimeoutSeconds | default 300 }}
+    forceUpgrade: {{ .Values.lifecycleControl.forceUpgrade | default false }}
+  dependencies:
+    {{- toYaml .Values.dependencies | nindent 4 }}
+  chartVersion: {{ .Chart.Version | quote }}
+  imageTag: {{ if and .Values.global .Values.global.imageTag }}{{ .Values.global.imageTag | quote }}{{ else }}{{ .Values.image.tag | quote }}{{ end }}
+  parameters:
+    {{- toYaml .Values.parameters | nindent 4 }}

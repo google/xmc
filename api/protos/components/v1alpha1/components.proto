@@ -1,0 +1,237 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.xmanager.components.v1alpha1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "xmanager_cloud/api/protos/components/v1alpha1;componentspb";
+
+// ComponentType defines the taxonomy of modular components.
+enum ComponentType {
+  COMPONENT_TYPE_UNSPECIFIED = 0;
+  COMPONENT_TYPE_CUSTOM_1P_COMPONENT = 1; // Dynamic 1P modular extensions (e.g. metrics/logging)
+  COMPONENT_TYPE_CUSTOM_3P_WRAPPER = 2;   // Customer-managed 3P wrapper integrations (e.g. ClickHouse/Redpanda)
+}
+
+// DeletionPolicy governs whether backing Spanner records are retained upon deletion.
+enum DeletionPolicy {
+  DELETION_POLICY_UNSPECIFIED = 0;
+  DELETION_POLICY_DELETE = 1; // Logical soft-delete: releases name for future reuse.
+  DELETION_POLICY_ORPHAN = 2; // Disables catalog integration but keeps the name locked.
+}
+
+// ComponentState represents the Spanner lifecycle state.
+enum ComponentState {
+  COMPONENT_STATE_UNSPECIFIED = 0;
+  COMPONENT_STATE_ENABLED = 1;
+  COMPONENT_STATE_DISABLING = 2;
+  COMPONENT_STATE_DISABLED = 3;
+  COMPONENT_STATE_PENDING_RECONCILIATION = 4;
+  COMPONENT_STATE_DELETED = 5;
+}
+
+// LifecycleControlProto defines execution directives for component deactivation.
+message LifecycleControlProto {
+  bool cascade = 1;
+  int32 drain_timeout_seconds = 2 [json_name = "drainTimeoutSeconds"];
+  bool force_upgrade = 3 [json_name = "forceUpgrade"];
+}
+
+// WrapperRefProto defines the coordinates of a third-party custom resource to poll for status.
+message WrapperRefProto {
+  string group = 1;
+  string version = 2;
+  string kind = 3;
+  string name = 4;
+  string namespace = 5;
+  string observed_generation_path = 6 [json_name = "observedGenerationPath"];
+  string ready_condition_path = 7 [json_name = "readyConditionPath"];
+  string expected_ready_value = 8 [json_name = "expectedReadyValue"];
+  string endpoint_json_path = 9 [json_name = "endpointJsonPath"];
+  string connection_secret_json_path = 10 [json_name = "connectionSecretJsonPath"];
+}
+
+// ComponentSpecProto defines the administrative intent for a component.
+message ComponentSpecProto {
+  bool enabled = 1;
+  ComponentType component_type = 2 [json_name = "componentType"];
+  string component_class = 3 [json_name = "componentClass"];
+  bool deletion_protection = 4 [json_name = "deletionProtection"];
+  DeletionPolicy deletion_policy = 5 [json_name = "deletionPolicy"];
+  LifecycleControlProto lifecycle_control = 6 [json_name = "lifecycleControl"];
+  map<string, string> parameters = 7;
+  WrapperRefProto wrapper_ref = 8 [json_name = "wrapperRef"];
+  repeated string dependencies = 9;
+  string chart_version = 10 [json_name = "chartVersion"];
+  string image_tag = 11 [json_name = "imageTag"];
+}
+
+// SecretKeySelectorProto defines a pointer to a specific key within a GKE Secret.
+message SecretKeySelectorProto {
+  string secret_name = 1 [json_name = "secretName"];
+  string secret_key = 2 [json_name = "secretKey"];
+}
+
+// SecretVolumeMountProto defines directory volume mount projections for secret files.
+message SecretVolumeMountProto {
+  string secret_name = 1 [json_name = "secretName"];
+  string mount_path = 2 [json_name = "mountPath"];
+  map<string, string> items = 3;
+}
+
+// ComponentAccessStatusProto defines resolved connection endpoints and credentials.
+message ComponentAccessStatusProto {
+  map<string, string> env_vars = 1 [json_name = "envVars"];
+  map<string, SecretKeySelectorProto> secret_env_vars = 2 [json_name = "secretEnvVars"];
+  repeated SecretVolumeMountProto secret_volume_mounts = 3 [json_name = "secretVolumeMounts"];
+}
+
+// ConditionProto mirrors metav1.Condition entries.
+message ConditionProto {
+  string type = 1;
+  string status = 2;
+  int64 observed_generation = 3 [json_name = "observedGeneration"];
+  google.protobuf.Timestamp last_transition_time = 4 [json_name = "lastTransitionTime"];
+  string reason = 5;
+  string message = 6;
+}
+
+// ComponentStatusProto defines observed state projected from Spanner SOT.
+message ComponentStatusProto {
+  int64 observed_generation = 1 [json_name = "observedGeneration"];
+  ComponentState state = 2;
+  ComponentAccessStatusProto access = 3;
+  repeated ConditionProto conditions = 4;
+}
+
+// ComponentProto encapsulates the declarative contract representing Component.xmc.dev CR.
+message ComponentProto {
+  string api_version = 1 [json_name = "apiVersion"];
+  string kind = 2;
+  google.protobuf.Struct metadata = 3;
+  ComponentSpecProto spec = 4;
+  ComponentStatusProto status = 5;
+}
+
+// ComponentManagerService (CMS) defines the control plane managing relational DAG component topologies.
+service ComponentManagerService {
+  rpc SetComponentIntent(SetComponentIntentRequest) returns (SetComponentIntentResponse);
+  rpc PrepareDeactivation(PrepareDeactivationRequest) returns (PrepareDeactivationResponse);
+  rpc CompleteDeactivation(CompleteDeactivationRequest) returns (CompleteDeactivationResponse);
+  rpc GetPlatformHealth(GetPlatformHealthRequest) returns (GetPlatformHealthResponse);
+  rpc ValidateComponentRequirement(ValidateComponentRequirementRequest) returns (ValidateComponentRequirementResponse);
+  rpc ResolveComponentSnapshot(ResolveComponentSnapshotRequest) returns (ResolveComponentSnapshotResponse);
+  rpc UpdateObservedGeneration(UpdateObservedGenerationRequest) returns (UpdateObservedGenerationResponse);
+  rpc ExecuteDeletion(ExecuteDeletionRequest) returns (ExecuteDeletionResponse);
+}
+
+message SetComponentIntentRequest {
+  string component_name = 1;
+  ComponentSpecProto intent = 2;
+  int64 desired_k8s_generation = 3;
+}
+
+message SetComponentIntentResponse {
+  int64 committed_generation = 1;
+  ComponentState reconciliation_state = 2;
+  google.protobuf.Timestamp commit_timestamp = 3;
+}
+
+message PrepareDeactivationRequest {
+  string component_name = 1;
+  bool request_cascade = 2;
+}
+
+message PrepareDeactivationResponse {
+  bool is_safe_to_deactivate = 1;
+  repeated string blocking_dependents = 2;
+  int32 recommended_drain_seconds = 3;
+  string rejection_reason = 4;
+  repeated string cascaded_deactivations = 5;
+}
+
+message CompleteDeactivationRequest {
+  string component_name = 1;
+}
+
+message CompleteDeactivationResponse {
+  bool success = 1;
+  google.protobuf.Timestamp deactivation_timestamp = 2;
+}
+
+message GetPlatformHealthRequest {}
+
+message ComponentHealthTelemetry {
+  string component_name = 1;
+  string status_condition = 2;
+  int64 observed_generation = 3;
+  int64 desired_generation = 4;
+  bool is_cdc_projection_lagging = 5;
+}
+
+message GetPlatformHealthResponse {
+  bool is_platform_degraded = 1;
+  repeated ComponentHealthTelemetry component_metrics = 2;
+}
+
+message ValidateComponentRequirementRequest {
+  string required_component_class = 1;
+  map<string, string> minimum_parameters = 2;
+}
+
+message ValidateComponentRequirementResponse {
+  bool is_satisfied = 1;
+  string satisfying_component_name = 2;
+  string error_detail = 3;
+}
+
+message ResolveComponentSnapshotRequest {
+  int64 experiment_xid = 1;
+  repeated string requested_component_classes = 2;
+}
+
+message ResolvedComponentCoordinates {
+  string component_class = 1;
+  string component_name = 2;
+  int64 locked_generation = 3;
+  ComponentAccessStatusProto access = 4;
+}
+
+message ResolveComponentSnapshotResponse {
+  repeated ResolvedComponentCoordinates snapshot_bindings = 1;
+  google.protobuf.Timestamp locked_timestamp = 2;
+}
+
+message UpdateObservedGenerationRequest {
+  string component_name = 1;
+  int64 observed_generation = 2;
+  ComponentAccessStatusProto access_status = 3;
+  string status_condition = 4;
+}
+
+message UpdateObservedGenerationResponse {
+  bool success = 1;
+}
+
+message ExecuteDeletionRequest {
+  string component_name = 1;
+}
+
+message ExecuteDeletionResponse {
+  bool success = 1;
+}

@@ -452,3 +452,65 @@ CREATE TABLE ArtifactCharts (
 
 CREATE INDEX ArtifactChartsByChartId ON ArtifactCharts (ChartId);
 
+-- Table: Components
+CREATE TABLE Components (
+  ComponentId INT64 NOT NULL,
+  Name STRING(MAX) NOT NULL,
+  ConfigProto BYTES(MAX) NOT NULL,
+  AccessPayload BYTES(MAX),
+  State INT64 NOT NULL,
+  Generation INT64 NOT NULL,
+  ObservedGeneration INT64,
+  CreateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+  UpdateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+  ActiveName STRING(MAX) AS (IF(State != 5, Name, NULL)) STORED,
+  CONSTRAINT CK_Components_State CHECK (State IN (1, 2, 3, 4, 5))
+) PRIMARY KEY (ComponentId);
+
+CREATE UNIQUE NULL_FILTERED INDEX Idx_Components_ActiveName ON Components(ActiveName);
+
+-- Table: ComponentDependencies
+CREATE TABLE ComponentDependencies (
+  ComponentId INT64 NOT NULL,
+  DependencyComponentId INT64 NOT NULL,
+  CONSTRAINT FK_Dependency FOREIGN KEY (DependencyComponentId) REFERENCES Components(ComponentId)
+) PRIMARY KEY (ComponentId, DependencyComponentId),
+  INTERLEAVE IN PARENT Components ON DELETE CASCADE;
+
+-- Table: ExperimentComponentSnapshots
+CREATE TABLE ExperimentComponentSnapshots (
+  BitReversedXid INT64 NOT NULL,
+  ComponentId INT64 NOT NULL,
+  LockedGeneration INT64 NOT NULL,
+  ConfigProto BYTES(MAX) NOT NULL,
+  AccessPayload BYTES(MAX),
+  CONSTRAINT FK_Snapshots_Component FOREIGN KEY (ComponentId) REFERENCES Components(ComponentId)
+) PRIMARY KEY (BitReversedXid, ComponentId),
+  INTERLEAVE IN PARENT Experiments ON DELETE CASCADE;
+
+CREATE INDEX Idx_Snapshots_Component ON ExperimentComponentSnapshots(ComponentId);
+
+-- View: ExperimentConsistencyInfo
+CREATE VIEW ExperimentConsistencyInfo SQL SECURITY INVOKER AS
+SELECT
+  e.BitReversedXid,
+  e.Xid,
+  NOT EXISTS (
+    SELECT 1
+    FROM ExperimentComponentSnapshots s
+    LEFT JOIN Components c ON s.ComponentId = c.ComponentId
+    WHERE s.BitReversedXid = e.BitReversedXid
+      AND (c.ComponentId IS NULL OR c.State = 5 OR (c.ObservedGeneration IS NOT NULL AND s.LockedGeneration != c.ObservedGeneration))
+  ) AS IsExperimentConsistent,
+  EXISTS (
+    SELECT 1
+    FROM ExperimentComponentSnapshots s
+    LEFT JOIN Components c ON s.ComponentId = c.ComponentId
+    WHERE s.BitReversedXid = e.BitReversedXid
+      AND c.ComponentId IS NOT NULL
+      AND c.ObservedGeneration IS NULL
+  ) AS HasPendingReconciliation
+FROM Experiments e
+WHERE e.ActiveState = 1;
+
+

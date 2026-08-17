@@ -1,0 +1,52 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "bridge",
+    srcs = [
+        "prober.go",
+        "reconciler.go",
+        "workload_manager.go",
+    ],
+    importpath = "xmanager_cloud/pkg/components/bridge",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/protos/components/v1alpha1:components",
+        "@io_k8s_api//apps/v1:apps",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_apimachinery//pkg/util/intstr",
+        "@io_k8s_client_go//kubernetes",
+        "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+go_test(
+    name = "bridge_test",
+    srcs = [
+        "reconciler_test.go",
+    ],
+    embed = [":bridge"],
+    deps = [
+        "//api/protos/components/v1alpha1:components",
+        "//pkg/components/cms",
+        "//pkg/components/store",
+        "@org_golang_google_grpc//:go_default_library",
+    ],
+)
