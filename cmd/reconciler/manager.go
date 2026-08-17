@@ -17,11 +17,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 
-	"golang/cloud_google_com/go/compute/metadata/v/v0/metadata"
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/go_sync/errgroup/errgroup"
 	"golang/google_api/option/option"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/labels/labels"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
@@ -32,61 +29,16 @@ import (
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/common/health"
-	spb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/kubernetes/actuator/k8s_client/k8sclient"
 	constants "xmanager_cloud/kubernetes/common/constants"
 	"xmanager_cloud/kubernetes/reconciler/clusterqueue/clusterqueue"
-	"xmanager_cloud/kubernetes/reconciler/hypercomputeclient/hypercomputeclient"
 	"xmanager_cloud/kubernetes/reconciler/jobset/jobset"
 	"xmanager_cloud/kubernetes/reconciler/kueue_sync/kueuesync"
 	"xmanager_cloud/kubernetes/reconciler/shared/shared"
-	"xmanager_cloud/kubernetes/reconciler/workload/workload"
 	"xmanager_cloud/logging/logging"
 	ss "xmanager_cloud/storage/spanner/spanner"
 	"xmanager_cloud/storage/storage"
 )
-
-// GceMetadata holds cluster metadata fetched from GCE metadata server.
-type GceMetadata struct {
-	ProjectID   string
-	Location    string
-	ClusterName string
-}
-
-func getGceMetadata(ctx context.Context) (GceMetadata, error) {
-	logging.Debug(ctx, "Fetching GCE Metadata...")
-	projectID, err := metadata.ProjectIDWithContext(ctx)
-	if err != nil {
-		return GceMetadata{}, fmt.Errorf("failed to get Project ID from metadata: %w", err)
-	}
-	clusterName, err := metadata.InstanceAttributeValueWithContext(ctx, "cluster-name")
-	if err != nil {
-		return GceMetadata{}, fmt.Errorf("failed to get cluster-name from metadata: %w", err)
-	}
-	location, err := metadata.InstanceAttributeValueWithContext(ctx, "cluster-location")
-	if err != nil {
-		return GceMetadata{}, fmt.Errorf("failed to get cluster-location from metadata: %w", err)
-	}
-	logging.Debug(ctx, "Successfully fetched GCE Metadata", "project_id", projectID, "location", location, "cluster_name", clusterName)
-	return GceMetadata{
-		ProjectID:   projectID,
-		Location:    location,
-		ClusterName: clusterName,
-	}, nil
-}
-
-// newMLRunCreator builds the MLRun control-plane client. It returns a nil
-// MLRunCreator interface (never a typed-nil *ControlPlaneClient) when
-// initialization fails, so the reconciler's r.MLRunClient == nil guard is not
-// defeated by a non-nil interface that wraps a nil pointer.
-func newMLRunCreator(ctx context.Context, projectID, environment, location string) jobset.MLRunCreator {
-	client, err := hypercomputeclient.NewControlPlaneClient(ctx, projectID, environment, location)
-	if err != nil {
-		logging.Error(ctx, "Failed to create MLRun control plane client", "error", err)
-		return nil
-	}
-	return client
-}
 
 // Manager encapsulates the controller-runtime Manager and its underlying dependencies and lifecycle.
 type Manager struct {
@@ -138,29 +90,6 @@ func startManager(ctx context.Context, mgr ctrl.Manager) error {
 	}
 	logging.Info(ctx, "Manager stopped")
 	return nil
-}
-
-func activeHealthChecker(k8s *k8sclient.Client, spClient health.SpannerHealthClient) func(req *http.Request) error {
-	return func(req *http.Request) error {
-		ctx := req.Context()
-		eg, ctx := errgroup.WithContext(ctx)
-
-		// 1. Kubernetes check
-		if k8s != nil && k8s.Clientset() != nil {
-			eg.Go(func() error {
-				return health.CheckKubernetes(k8s.Clientset())
-			})
-		}
-
-		// 2. Spanner check
-		if spClient != nil {
-			eg.Go(func() error {
-				return health.CheckSpannerESS(ctx, spClient)
-			})
-		}
-
-		return eg.Wait()
-	}
 }
 
 func initSpannerAndStorage(ctx context.Context, cfg Config) (*spanner.Client, storage.Storage, error) {
@@ -232,119 +161,6 @@ func initCtrlManager(ctx context.Context, cfg Config) (ctrl.Manager, error) {
 	}
 
 	return mgr, nil
-}
-
-type controllerRegistrationParams struct {
-	mgr         ctrl.Manager
-	cfg         Config
-	storage     storage.Storage
-	k8sClient   *k8sclient.Client
-	cqCache     *clusterqueue.NameCache
-	mlRunClient jobset.MLRunCreator
-	projectID   string
-	location    string
-	clusterName string
-}
-
-func registerControllers(ctx context.Context, p controllerRegistrationParams) (*shared.UpdateBatcher, *kueuesync.Reconciler, error) {
-	cqReconciler, err := clusterqueue.NewReconciler(clusterqueue.Params{
-		Client: p.mgr.GetClient(),
-		Scheme: p.mgr.GetScheme(),
-		Cache:  p.cqCache,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create clusterqueue reconciler: %w", err)
-	}
-	if err := cqReconciler.SetupWithManager(ctx, p.mgr); err != nil {
-		return nil, nil, fmt.Errorf("unable to setup clusterqueue controller: %w", err)
-	}
-
-	var spannerStorage *ss.Storage
-	if p.storage != nil {
-		var ok bool
-		spannerStorage, ok = p.storage.(*ss.Storage)
-		if !ok {
-			return nil, nil, fmt.Errorf("storage is not *spanner.Storage: %T", p.storage)
-		}
-	}
-
-	batcher := shared.NewUpdateBatcher(
-		ctx,
-		&shared.BatcherConfig{
-			TickDuration:           p.cfg.BatcherTickDuration,
-			MaxParallelExperiments: p.cfg.MaxParallelExperiments,
-		},
-		spannerStorage,
-	)
-
-	jobsetReconciler, err := jobset.NewReconciler(jobset.Params{
-		Client:                      p.mgr.GetClient(),
-		Scheme:                      p.mgr.GetScheme(),
-		Project:                     p.projectID,
-		Location:                    p.location,
-		ClusterName:                 p.clusterName,
-		Batcher:                     batcher,
-		MaxConcurrentReconciles:     p.cfg.MaxConcurrentReconciles,
-		StartupPodErrorCheckTime:    p.cfg.StartupPodErrorCheckTime,
-		StartupPodErrorCheckEnabled: p.cfg.StartupPodErrorCheckEnabled,
-		Storage:                     p.storage,
-		MLRunClient:                 p.mlRunClient,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create jobset reconciler: %w", err)
-	}
-	if err := jobsetReconciler.SetupWithManager(ctx, p.mgr); err != nil {
-		return nil, nil, fmt.Errorf("unable to setup jobset controller: %w", err)
-	}
-
-	workloadReconciler, err := workload.NewReconciler(workload.Params{
-		Client:  p.mgr.GetClient(),
-		Scheme:  p.mgr.GetScheme(),
-		Batcher: batcher,
-		ManagementClusterInfo: &spb.ClusterInfo{
-			Project:     p.projectID,
-			Location:    p.location,
-			ClusterName: p.clusterName,
-		},
-		MaxConcurrentReconciles:     p.cfg.MaxConcurrentReconciles,
-		DetectInadmissibleWorkUnits: p.cfg.DetectInadmissibleWorkUnits,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create workload reconciler: %w", err)
-	}
-	if err := workloadReconciler.SetupWithManager(ctx, p.mgr); err != nil {
-		return nil, nil, fmt.Errorf("unable to setup workload controller: %w", err)
-	}
-
-	kueueSyncReconciler, err := kueuesync.NewReconciler(kueuesync.Params{
-		Client:                           p.mgr.GetClient(),
-		Clientset:                        p.k8sClient.Clientset(),
-		CQCache:                          p.cqCache,
-		Storage:                          p.storage,
-		UpdateBatcher:                    batcher,
-		KueueSyncTickDuration:            p.cfg.KueueSyncTickDuration,
-		MaxConcurrentKueueSyncReconciles: p.cfg.MaxConcurrentKueueSyncReconciles,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create kueuesync reconciler: %w", err)
-	}
-
-	return batcher, kueueSyncReconciler, nil
-}
-
-func registerHealthChecks(mgr ctrl.Manager, k8sClient *k8sclient.Client, spClient *spanner.Client) error {
-	var spHealth health.SpannerHealthClient
-	if spClient != nil {
-		spHealth = health.NewSpannerHealthClient(spClient)
-	}
-
-	if err := mgr.AddHealthzCheck("healthz", func(req *http.Request) error { return nil }); err != nil {
-		return fmt.Errorf("unable to set up health check: %w", err)
-	}
-	if err := mgr.AddReadyzCheck("readyz", activeHealthChecker(k8sClient, spHealth)); err != nil {
-		return fmt.Errorf("unable to set up ready check: %w", err)
-	}
-	return nil
 }
 
 // NewManager constructs and initializes the production Manager along with all controllers,

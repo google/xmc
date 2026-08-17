@@ -20,8 +20,11 @@ compat_go_library(
     name = "reconciler_lib",
     srcs = [
         "config.go",
+        "controllers.go",
+        "health.go",
         "main.go",
         "manager.go",
+        "metadata.go",
     ],
     importpath = "xmanager_cloud/cmd/reconciler",
     visibility = ["//visibility:private"],
