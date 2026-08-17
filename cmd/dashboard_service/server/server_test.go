@@ -424,6 +424,100 @@ func TestGetChartData(t *testing.T) {
 			t.Errorf("Expected forwarded authorization = %q, got %v", "Bearer token-123", auths)
 		}
 	})
+
+	t.Run("authorized user gets experiment-scoped chart data", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return &dpb.Chart{
+					Name: "experiments/1001/charts/chart-loss",
+					Xid:  1001,
+					Wid:  0,
+				}, nil
+			},
+		}
+		authMock := &mockAuthorizer{
+			authenticateFn: func(ctx context.Context) (string, string, error) {
+				return "user@example.com", "uid-1", nil
+			},
+		}
+		var capturedReq *xidapipb.CheckUserAuthorizationRequest
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				capturedReq = in
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, authMock, xidMock, &dataengine.DataEngine{})
+		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/1001/charts/chart-loss"})
+		if err != nil {
+			t.Fatalf("GetChartData() unexpected error: %v", err)
+		}
+		if resp.GetName() != "experiments/1001/charts/chart-loss" {
+			t.Errorf("GetChartData().Name = %q, want %q", resp.GetName(), "experiments/1001/charts/chart-loss")
+		}
+		if capturedReq == nil || capturedReq.GetName() != "xids/1001" {
+			t.Errorf("CheckUserAuthorization called with unexpected request: %v", capturedReq)
+		}
+	})
+
+	t.Run("authorized user gets work-unit-scoped chart data", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return &dpb.Chart{
+					Name: "experiments/1001/workUnits/2002/charts/chart-loss",
+					Xid:  1001,
+					Wid:  2002,
+				}, nil
+			},
+		}
+		authMock := &mockAuthorizer{
+			authenticateFn: func(ctx context.Context) (string, string, error) {
+				return "user@example.com", "uid-1", nil
+			},
+		}
+		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, &dataengine.DataEngine{})
+		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/1001/workUnits/2002/charts/chart-loss"})
+		if err != nil {
+			t.Fatalf("GetChartData() unexpected error: %v", err)
+		}
+		if resp.GetName() != "experiments/1001/workUnits/2002/charts/chart-loss" {
+			t.Errorf("GetChartData().Name = %q, want %q", resp.GetName(), "experiments/1001/workUnits/2002/charts/chart-loss")
+		}
+	})
+
+	t.Run("infers xid from experiment chart name when stored chart xid is zero", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return &dpb.Chart{
+					Name: "experiments/1001/charts/chart-loss",
+					Xid:  0,
+				}, nil
+			},
+		}
+		authMock := &mockAuthorizer{
+			authenticateFn: func(ctx context.Context) (string, string, error) {
+				return "user@example.com", "uid-1", nil
+			},
+		}
+		var capturedReq *xidapipb.CheckUserAuthorizationRequest
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				capturedReq = in
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, authMock, xidMock, &dataengine.DataEngine{})
+		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/1001/charts/chart-loss"})
+		if err != nil {
+			t.Fatalf("GetChartData() unexpected error: %v", err)
+		}
+		if resp.GetName() != "experiments/1001/charts/chart-loss" {
+			t.Errorf("GetChartData().Name = %q, want %q", resp.GetName(), "experiments/1001/charts/chart-loss")
+		}
+		if capturedReq == nil || capturedReq.GetName() != "xids/1001" {
+			t.Errorf("Expected xids/1001, got %v", capturedReq)
+		}
+	})
 }
 
 func TestPropagateAuthContext(t *testing.T) {

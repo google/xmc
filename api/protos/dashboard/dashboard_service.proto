@@ -75,14 +75,32 @@ service DashboardService {
 
   rpc GetChart(GetChartRequest) returns (Chart) {
     option (google.api.http) = {
-      get: "/v1/{name=dashboards/*/charts/*}"
+      get: "/v1/{name=experiments/*/workUnits/*/charts/*}"
+      additional_bindings {
+        get: "/v1/{name=experiments/*/charts/*}"
+      }
+      additional_bindings {
+        get: "/v1/{name=charts/*}"
+      }
+      additional_bindings {
+        get: "/v1/{name=dashboards/*/charts/*}"
+      }
     };
     option (google.api.method_signature) = "name";
   }
 
   rpc GetChartData(GetChartDataRequest) returns (ChartData) {
     option (google.api.http) = {
-      get: "/v1/{name=dashboards/*/charts/*}:getData"
+      get: "/v1/{name=experiments/*/workUnits/*/charts/*}:getData"
+      additional_bindings {
+        get: "/v1/{name=experiments/*/charts/*}:getData"
+      }
+      additional_bindings {
+        get: "/v1/{name=charts/*}:getData"
+      }
+      additional_bindings {
+        get: "/v1/{name=dashboards/*/charts/*}:getData"
+      }
     };
     option (google.api.method_signature) = "name";
   }
@@ -96,15 +114,36 @@ service DashboardService {
 
   rpc UpdateChart(UpdateChartRequest) returns (Chart) {
     option (google.api.http) = {
-      patch: "/v1/{chart.name=dashboards/*/charts/*}"
+      patch: "/v1/{chart.name=experiments/*/workUnits/*/charts/*}"
       body: "chart"
+      additional_bindings {
+        patch: "/v1/{chart.name=experiments/*/charts/*}"
+        body: "chart"
+      }
+      additional_bindings {
+        patch: "/v1/{chart.name=charts/*}"
+        body: "chart"
+      }
+      additional_bindings {
+        patch: "/v1/{chart.name=dashboards/*/charts/*}"
+        body: "chart"
+      }
     };
     option (google.api.method_signature) = "chart,update_mask";
   }
 
   rpc DeleteChart(DeleteChartRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      delete: "/v1/{name=dashboards/*/charts/*}"
+      delete: "/v1/{name=experiments/*/workUnits/*/charts/*}"
+      additional_bindings {
+        delete: "/v1/{name=experiments/*/charts/*}"
+      }
+      additional_bindings {
+        delete: "/v1/{name=charts/*}"
+      }
+      additional_bindings {
+        delete: "/v1/{name=dashboards/*/charts/*}"
+      }
     };
     option (google.api.method_signature) = "name";
   }

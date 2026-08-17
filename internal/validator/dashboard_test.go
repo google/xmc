@@ -385,9 +385,43 @@ func TestValidateGetChartDataRequest(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name: "valid_request",
+			name: "valid_request_dashboard_chart",
 			req: &spb.GetChartDataRequest{
 				Name:             "dashboards/dash-1/charts/chart-1",
+				ChartWidthPixels: 800,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid_request_experiment_chart",
+			req: &spb.GetChartDataRequest{
+				Name:             "experiments/1001/charts/chart-1",
+				ChartWidthPixels: 800,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid_request_work_unit_chart",
+			req: &spb.GetChartDataRequest{
+				Name:             "experiments/1001/workUnits/123/charts/chart-1",
+				ChartWidthPixels: 800,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid_request_root_chart",
+			req: &spb.GetChartDataRequest{
+				Name:             "charts/chart-1",
+				ChartWidthPixels: 800,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid_request_with_parents",
+			req: &spb.GetChartDataRequest{
+				Name:             "charts/chart-1",
+				ParentExperiment: "experiments/1001",
+				ParentWorkunit:   "experiments/1001/workUnits/123",
 				ChartWidthPixels: 800,
 			},
 			wantErr: nil,
@@ -424,6 +458,22 @@ func TestValidateGetChartDataRequest(t *testing.T) {
 			req: &spb.GetChartDataRequest{
 				Name:             "dashboards/dash-1/charts/chart-1",
 				ChartWidthPixels: -100,
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_parent_experiment",
+			req: &spb.GetChartDataRequest{
+				Name:             "charts/chart-1",
+				ParentExperiment: "invalid-exp",
+			},
+			wantErr: status.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_parent_workunit",
+			req: &spb.GetChartDataRequest{
+				Name:           "charts/chart-1",
+				ParentWorkunit: "invalid-wu",
 			},
 			wantErr: status.ErrInvalidArgument,
 		},

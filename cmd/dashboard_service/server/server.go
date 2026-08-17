@@ -190,12 +190,18 @@ func (s *Server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest)
 		return nil, status.Errorf(codes.Internal, "failed to get chart %q: %v", req.GetName(), err)
 	}
 
-	if chart.GetXid() <= 0 {
+	xid := chart.GetXid()
+	if xid <= 0 {
+		if parsed, err := validator.ParseChartName(req.GetName()); err == nil && parsed.XID > 0 {
+			xid = parsed.XID
+		}
+	}
+	if xid <= 0 {
 		return nil, status.Errorf(codes.FailedPrecondition, "chart %q is missing a valid experiment XID (%d)", req.GetName(), chart.GetXid())
 	}
 
 	// Authorize experiment access via XID Service using canonical name ("xids/{xid}")
-	xidName := validator.ConstructXIDName(chart.GetXid())
+	xidName := validator.ConstructXIDName(xid)
 	roleType := xpb.XidAcls_READER
 	xidResp, err := s.xidClient.CheckUserAuthorization(propagateAuthContext(ctx), &xidapipb.CheckUserAuthorizationRequest{
 		Name:     &xidName,
@@ -203,11 +209,11 @@ func (s *Server) GetChartData(ctx context.Context, req *spb.GetChartDataRequest)
 		RoleType: &roleType,
 	})
 	if err != nil {
-		logging.Error(ctx, "failed to check user authorization with XID service", "xid", chart.GetXid(), "user", user, "error", err)
-		return nil, status.Errorf(codes.Internal, "failed to verify permissions for experiment %d", chart.GetXid())
+		logging.Error(ctx, "failed to check user authorization with XID service", "xid", xid, "user", user, "error", err)
+		return nil, status.Errorf(codes.Internal, "failed to verify permissions for experiment %d", xid)
 	}
 	if xidResp == nil || !xidResp.GetAuthorized() {
-		return nil, status.Errorf(codes.PermissionDenied, "user %q is not authorized to read experiment %d", user, chart.GetXid())
+		return nil, status.Errorf(codes.PermissionDenied, "user %q is not authorized to read experiment %d", user, xid)
 	}
 
 	return s.dataEngine.FetchChartData(ctx, chart, req)

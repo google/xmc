@@ -157,6 +157,16 @@ func ValidateGetChartDataRequest(in *spb.GetChartDataRequest) error {
 	if in.GetChartWidthPixels() < 0 {
 		return fmt.Errorf("chart_width_pixels cannot be negative: %w", status.ErrInvalidArgument)
 	}
+	if in.GetParentExperiment() != "" {
+		if _, err := ValidateExperimentName(in.GetParentExperiment()); err != nil {
+			return fmt.Errorf("invalid parent_experiment: %w", err)
+		}
+	}
+	if in.GetParentWorkunit() != "" {
+		if _, _, err := ValidateWorkUnitName(in.GetParentWorkunit()); err != nil {
+			return fmt.Errorf("invalid parent_workunit: %w", err)
+		}
+	}
 	return nil
 }
 
