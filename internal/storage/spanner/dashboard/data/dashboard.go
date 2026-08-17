@@ -19,6 +19,7 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/spanner"
@@ -29,7 +30,16 @@ import (
 	"task/go/status"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
+	"xmanager_cloud/validator/validator"
 )
+
+// ExtractDashboardID extracts the bare dashboard ID from a full resource name or returns the ID as-is.
+func ExtractDashboardID(name string) string {
+	if dashID, err := validator.ValidateDashboardName(name); err == nil {
+		return dashID
+	}
+	return name
+}
 
 // SortCharts returns a new slice with charts sorted alphabetically by Name.
 func SortCharts(charts []*dpb.Chart) []*dpb.Chart {
@@ -93,6 +103,8 @@ func DashboardProtoToInsertMutations(dashboard *dpb.Dashboard) ([]*spanner.Mutat
 		return nil, fmt.Errorf("dashboard proto must not be nil")
 	}
 
+	dashID := ExtractDashboardID(dashboard.GetName())
+
 	var layoutBytes []byte
 	if dashboard.ChartLayout != nil {
 		var err error
@@ -106,7 +118,7 @@ func DashboardProtoToInsertMutations(dashboard *dpb.Dashboard) ([]*spanner.Mutat
 	m := spanner.InsertOrUpdate(dashboardschema.DashboardsTableName, []string{
 		"DashboardId", "Title", "Description", "Owner", "ChartLayout", "CreatedAt", "UpdatedAt",
 	}, []interface{}{
-		dashboard.Name, dashboard.Title, dashboard.Description, dashboard.Owner, layoutBytes, spanner.CommitTimestamp, spanner.CommitTimestamp,
+		dashID, dashboard.Title, dashboard.Description, dashboard.Owner, layoutBytes, spanner.CommitTimestamp, spanner.CommitTimestamp,
 	})
 	mutations = append(mutations, m)
 
@@ -117,7 +129,7 @@ func DashboardProtoToInsertMutations(dashboard *dpb.Dashboard) ([]*spanner.Mutat
 		mChart := spanner.InsertOrUpdate(dashboardschema.DashboardChartsTableName, []string{
 			"DashboardId", "DashboardChartId", "ChartId", "GridPosition", "CreatedAt",
 		}, []interface{}{
-			dashboard.GetName(), chart.GetName(), chart.GetName(), nil, spanner.CommitTimestamp,
+			dashID, chart.GetName(), chart.GetName(), nil, spanner.CommitTimestamp,
 		})
 		mutations = append(mutations, mChart)
 	}
@@ -134,6 +146,8 @@ func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateCharts bool
 		return nil, fmt.Errorf("dashboard name must not be empty: %w", status.ErrInvalidArgument)
 	}
 
+	dashID := ExtractDashboardID(dashboard.GetName())
+
 	var layoutBytes []byte
 	if dashboard.ChartLayout != nil {
 		var err error
@@ -145,7 +159,7 @@ func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateCharts bool
 
 	var mutations []*spanner.Mutation
 	m := spanner.UpdateMap(dashboardschema.DashboardsTableName, map[string]interface{}{
-		"DashboardId": dashboard.GetName(),
+		"DashboardId": dashID,
 		"Title":       dashboard.GetTitle(),
 		"Description": dashboard.GetDescription(),
 		"ChartLayout": layoutBytes,
@@ -154,7 +168,7 @@ func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateCharts bool
 	mutations = append(mutations, m)
 
 	if updateCharts {
-		mDel := spanner.Delete(dashboardschema.DashboardChartsTableName, spanner.Key{dashboard.GetName()}.AsPrefix())
+		mDel := spanner.Delete(dashboardschema.DashboardChartsTableName, spanner.Key{dashID}.AsPrefix())
 		mutations = append(mutations, mDel)
 
 		for _, chart := range dashboard.GetCharts() {
@@ -164,7 +178,7 @@ func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateCharts bool
 			mChart := spanner.InsertOrUpdate(dashboardschema.DashboardChartsTableName, []string{
 				"DashboardId", "DashboardChartId", "ChartId", "GridPosition", "CreatedAt",
 			}, []interface{}{
-				dashboard.GetName(), chart.GetName(), chart.GetName(), nil, spanner.CommitTimestamp,
+				dashID, chart.GetName(), chart.GetName(), nil, spanner.CommitTimestamp,
 			})
 			mutations = append(mutations, mChart)
 		}
@@ -227,8 +241,13 @@ func DashboardRowToProto(row *spanner.Row, charts []*dpb.Chart) (*dpb.Dashboard,
 		}
 	}
 
+	dashName := data.ID
+	if !strings.HasPrefix(data.ID, "dashboards/") {
+		dashName = validator.ConstructDashboardName(data.ID)
+	}
+
 	return &dpb.Dashboard{
-		Name:        data.ID,
+		Name:        dashName,
 		Title:       data.Title,
 		Description: data.Description,
 		Owner:       data.Owner,
