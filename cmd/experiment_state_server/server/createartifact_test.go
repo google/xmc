@@ -209,8 +209,6 @@ func TestCreateArtifact_BadPaths(t *testing.T) {
 
 func TestCreateArtifact_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{}
-	authorizer := createTestAuthorizer(ctx, t)
 	server, _ := createExperimentStateServer(ctx, t)
 	exp := mustCreateExperiment(ctx, t, server, nil)
 
@@ -285,11 +283,17 @@ func TestCreateArtifact_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			var auth auth.AuthorizerInterface = authorizer
-			if tc.authenticator != nil {
-				auth = tc.authenticator
+			var opts []testServerOpt
+			if tc.storage != nil {
+				opts = append(opts, withStorage(tc.storage))
 			}
-			server := New(tc.storage, cfg, auth, tc.xidClient, nil)
+			if tc.authenticator != nil {
+				opts = append(opts, withAuthorizer(tc.authenticator))
+			}
+			if tc.xidClient != nil {
+				opts = append(opts, withXidClient(tc.xidClient))
+			}
+			server := newTestServer(t, opts...)
 			_, err := server.CreateArtifact(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("%s: CreateArtifact() returned error %v, want %v", tc.name, err, tc.wantErr)
@@ -366,7 +370,17 @@ func TestCreateArtifact_ChartArtifact(t *testing.T) {
 				toolClient := toollibs.NewDashboardToolClient(mockDash)
 				obs = append(obs, NewDashboardObserver(toolClient, storageClient, &bgTaskWG))
 			}
-			server := New(storageClient, cfg, auth, xidClient, taskQueueClient, obs...)
+			server, err := New(Params{
+				Config:            cfg,
+				Storage:           storageClient,
+				Authorizer:        auth,
+				XidClient:         xidClient,
+				WorkUnitActuator:  taskQueueClient,
+				ArtifactObservers: obs,
+			})
+			if err != nil {
+				t.Fatalf("Failed to create server: %v", err)
+			}
 
 			// Create parent Experiment
 			exp := mustCreateExperiment(ctx, t, server, nil)

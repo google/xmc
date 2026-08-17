@@ -27,13 +27,13 @@ import (
 )
 
 // GetCurrentWorkUnitExecution returns the current execution that was run for a work unit.
-func (s *Server) GetCurrentWorkUnitExecution(ctx context.Context, req *apipb.GetCurrentWorkUnitExecutionRequest) (*msgpb.WorkUnitExecution, error) {
+func (h *WorkUnitHandler) GetCurrentWorkUnitExecution(ctx context.Context, req *apipb.GetCurrentWorkUnitExecutionRequest) (*msgpb.WorkUnitExecution, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Fetch current work unit execution", "request", req)
 
 	// 1. Authenticate the user.
 	logging.Debug(ctx, "Extracting user identity from context")
-	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	email, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func (s *Server) GetCurrentWorkUnitExecution(ctx context.Context, req *apipb.Get
 	ctx = logging.WithWorkUnitName(ctx, name)
 
 	// 3. Authorize the caller to get the current work unit execution for this experiment.
-	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_READER.Enum())
+	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(xid), email, xidmsgpb.XidAcls_READER.Enum())
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func (s *Server) GetCurrentWorkUnitExecution(ctx context.Context, req *apipb.Get
 	}
 
 	// 4. Retrieve the work unit from the storage layer.
-	wue, err := s.getCurrentWorkUnitExecution(ctx, name, xid, wid)
+	wue, err := h.getCurrentWorkUnitExecution(ctx, name, xid, wid)
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.NotFound {
 			logging.Warn(ctx, "Current work unit execution not found in storage")
@@ -74,10 +74,10 @@ func (s *Server) GetCurrentWorkUnitExecution(ctx context.Context, req *apipb.Get
 	return wue, nil
 }
 
-func (s *Server) getCurrentWorkUnitExecution(ctx context.Context, name string, xid int64, wid int64) (*msgpb.WorkUnitExecution, error) {
+func (h *WorkUnitHandler) getCurrentWorkUnitExecution(ctx context.Context, name string, xid int64, wid int64) (*msgpb.WorkUnitExecution, error) {
 	logging.Debug(ctx, "Fetching current work unit execution from storage")
 
-	wue, err := s.storage.FetchCurrentWorkUnitExecution(ctx, xid, wid)
+	wue, err := h.storage.FetchCurrentWorkUnitExecution(ctx, xid, wid)
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.NotFound {
 			return nil, fmt.Errorf("current work unit execution with ID %s not found: %w (%v)", name, status.ErrNotFound, err)

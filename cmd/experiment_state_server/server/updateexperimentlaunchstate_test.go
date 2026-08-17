@@ -25,7 +25,6 @@ import (
 	timestamppb "protobuf/timestamp_go_proto"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/storage"
@@ -68,9 +67,7 @@ func TestUpdateExperimentLaunchState_HappyPath(t *testing.T) {
 
 func TestUpdateExperimentLaunchState_BadPaths(t *testing.T) {
 	ctx := context.Background()
-	authorizer := createTestAuthorizer(ctx, t)
-	cfg := &config.Config{}
-	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil)
+	server := newTestServer(t)
 
 	testCases := []struct {
 		name    string
@@ -107,7 +104,6 @@ func TestUpdateExperimentLaunchState_BadPaths(t *testing.T) {
 
 func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{}
 
 	goodReq := &apipb.UpdateExperimentLaunchStateRequest{Name: "experiments/123", LaunchState: msgpb.ExperimentStatus_COMPLETED}
 
@@ -168,10 +164,17 @@ func TestUpdateExperimentLaunchState_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.authenticator == nil {
-				tc.authenticator = createTestAuthorizer(ctx, t)
+			var opts []testServerOpt
+			if tc.storage != nil {
+				opts = append(opts, withStorage(tc.storage))
 			}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil)
+			if tc.authenticator != nil {
+				opts = append(opts, withAuthorizer(tc.authenticator))
+			}
+			if tc.xidClient != nil {
+				opts = append(opts, withXidClient(tc.xidClient))
+			}
+			server := newTestServer(t, opts...)
 			_, err := server.UpdateExperimentLaunchState(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("UpdateExperimentLaunchState() returned error %v, want %v", err, tc.wantErr)
@@ -184,7 +187,7 @@ func TestUpdateExperimentLaunchState_ActiveState(t *testing.T) {
 	ctx := context.Background()
 	server, _ := createExperimentStateServer(ctx, t)
 
-	s := server.storage
+	s := server.ExperimentHandler.storage
 	testCases := []struct {
 		name       string
 		wu1State   msgpb.WorkUnitStatus_WorkUnitState
@@ -307,7 +310,7 @@ func TestUpdateExperimentLaunchState_ActiveStateUpdatesPostLaunching(t *testing.
 	ctx := context.Background()
 	server, _ := createExperimentStateServer(ctx, t)
 
-	s := server.storage
+	s := server.ExperimentHandler.storage
 	testCases := []struct {
 		name       string
 		wu1State   msgpb.WorkUnitStatus_WorkUnitState

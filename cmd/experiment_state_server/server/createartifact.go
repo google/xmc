@@ -28,12 +28,12 @@ import (
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
-func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRequest) (*msgpb.Artifact, error) {
+func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRequest) (*msgpb.Artifact, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Create artifact", "request", req)
 
 	// 1. Authenticate the user.
-	creator, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	creator, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 	artifact := validator.FillArtifactNullValues(req.GetArtifact())
 
 	// 2.2. Validate ChartArtifact payload.
-	if err := s.validateChartArtifactPayload(ctx, artifact, req.GetParent()); err != nil {
+	if err := h.validateChartArtifactPayload(ctx, artifact, req.GetParent()); err != nil {
 		return nil, err
 	}
 
@@ -61,7 +61,7 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 	ctx = logging.WithArtifactParent(ctx, req.GetParent())
 
 	// 3.1. Authorize the user to write against the parent experiment or work unit.
-	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(parentXID), creator, xidmsgpb.XidAcls_READER.Enum())
+	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(parentXID), creator, xidmsgpb.XidAcls_READER.Enum())
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 
 	// 4. Provision an XIDEntry for the artifact.
 	logging.Debug(ctx, "Calling XID service to provision ID", "creator", creator)
-	artifactXIDEntry, err := s.createXid(ctx, creator, s.cfg.EndpointURL, artifact.Acls, validator.ConstructXIDName(parentXID))
+	artifactXIDEntry, err := h.createXid(ctx, creator, h.cfg.EndpointURL, artifact.Acls, validator.ConstructXIDName(parentXID))
 	if err != nil {
 		logging.Error(ctx, "Failed to provision XID", "error", err)
 		return nil, fmt.Errorf("failed to provision XID: %w", err)
@@ -106,7 +106,7 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 
 	// 6. Persist the artifact to the storage layer.
 	logging.Debug(ctx, "Persisting artifact")
-	retArtifact, err := s.storage.CreateArtifact(ctx, newArtifact)
+	retArtifact, err := h.storage.CreateArtifact(ctx, newArtifact)
 	if err != nil {
 		logging.Error(ctx, "Failed to save artifact", "artifact_name", newArtifact.GetName(), "error", err)
 		return nil, fmt.Errorf("failed to save artifact %s: %w (%v)", newArtifact.GetName(), status.ErrInternal, err)
@@ -116,13 +116,13 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 	retArtifact.Acls = artifactXIDEntry.Acls
 
 	// 6.2. Trigger post-creation hooks asynchronously (Observers).
-	if len(s.artifactObservers) > 0 {
+	if len(h.artifactObservers) > 0 {
 		artifactCopy, ok := proto.Clone(retArtifact).(*msgpb.Artifact)
 		if !ok {
 			logging.Error(ctx, "Failed to clone retArtifact for async provisioning")
 			return nil, fmt.Errorf("failed to clone artifact: %w", status.ErrInternal)
 		}
-		for _, obs := range s.artifactObservers {
+		for _, obs := range h.artifactObservers {
 			obs.OnArtifactCreated(context.WithoutCancel(ctx), artifactCopy)
 		}
 	}
@@ -132,7 +132,7 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 	return retArtifact, nil
 }
 
-func (s *Server) validateChartArtifactPayload(ctx context.Context, artifact *msgpb.Artifact, parent string) error {
+func (h *ArtifactHandler) validateChartArtifactPayload(ctx context.Context, artifact *msgpb.Artifact, parent string) error {
 	if chartArtifact := artifact.GetPayload().GetChart(); chartArtifact != nil {
 		if _, _, err := validator.ValidateWorkUnitName(parent); err != nil {
 			logging.Warn(ctx, "ChartArtifact requires a Work Unit parent", "parent", parent, "error", err)

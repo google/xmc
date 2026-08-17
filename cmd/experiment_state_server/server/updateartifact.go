@@ -29,12 +29,12 @@ import (
 )
 
 // UpdateArtifact updates an artifact's data.
-func (s *Server) UpdateArtifact(ctx context.Context, req *apipb.UpdateArtifactRequest) (*msgpb.Artifact, error) {
+func (h *ArtifactHandler) UpdateArtifact(ctx context.Context, req *apipb.UpdateArtifactRequest) (*msgpb.Artifact, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Received UpdateArtifact request", "request", req)
 
 	// 1. Authenticate the user.
-	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	email, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (s *Server) UpdateArtifact(ctx context.Context, req *apipb.UpdateArtifactRe
 	}
 
 	// 3. Authorize the user to update the artifact.
-	isAuthorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(aid), email, xidmsgpb.XidAcls_WRITER.Enum())
+	isAuthorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(aid), email, xidmsgpb.XidAcls_WRITER.Enum())
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (s *Server) UpdateArtifact(ctx context.Context, req *apipb.UpdateArtifactRe
 	// We do this before updating the artifact to avoid partial updates.
 	var xidEntry *xidmsgpb.XidEntry
 	if updateMask.GetPaths() == nil {
-		xidEntry, err = s.getXid(ctx, validator.ConstructXIDName(aid))
+		xidEntry, err = h.getXid(ctx, validator.ConstructXIDName(aid))
 		if err != nil {
 			if status.ExtractCanonicalCode(err) == status.PermissionDenied {
 				logging.Warn(ctx, "User not authorized to read artifact", "error", err)
@@ -94,7 +94,7 @@ func (s *Server) UpdateArtifact(ctx context.Context, req *apipb.UpdateArtifactRe
 		Artifact:   req.GetArtifact(),
 		UpdateMask: req.GetUpdateMask(),
 	}
-	res, err := s.storage.UpdateArtifact(ctx, update)
+	res, err := h.storage.UpdateArtifact(ctx, update)
 	if err != nil {
 		logging.Error(ctx, "Failed to update artifact", "error", err)
 		return nil, fmt.Errorf("failed to update artifact %s: %w (%v)", name, status.ErrInternal, err)
@@ -111,7 +111,7 @@ func (s *Server) UpdateArtifact(ctx context.Context, req *apipb.UpdateArtifactRe
 			UpdateMask: updateMask,
 		}
 
-		if _, err := s.xidClient.UpdateXidEntry(propagateIAPJWT(ctx), request); err != nil {
+		if _, err := h.xidClient.UpdateXidEntry(propagateIAPJWT(ctx), request); err != nil {
 			logging.Error(ctx, "Failed to update XID entry", "error", err)
 			return nil, fmt.Errorf("failed to update XID entry: %w (%v)", status.ErrInternal, err)
 		}

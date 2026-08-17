@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("//:compat.bzl", "compat_go_library")
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
 load("//:oci.bzl", "oci_image_for_service")
 
 compat_go_library(
@@ -28,12 +28,10 @@ compat_go_library(
     importpath = "xmanager_cloud/cmd/experiment_state_server/main",
     visibility = ["//visibility:private"],
     deps = [
-        "//api/protos/dashboard:service_go_proto",
         "//api/protos/experiment:api_go_proto",
         "//api/protos/xid:api_go_proto",
         "//cmd/experiment_state_server/config",
         "//cmd/experiment_state_server/server",
-        "//cmd/experiment_state_server/toollibs",
         "//internal/auth",
         "//internal/common/health",
         "//internal/compat/google",
@@ -76,4 +74,13 @@ go_binary(
 oci_image_for_service(
     name = "experiment_state_server_image",
     binary = ":experiment_state_server_dev",
+)
+
+compat_go_test(
+    name = "health_test",
+    srcs = ["health_test.go"],
+    embed = [":experiment_state_server_lib"],
+    deps = [
+        "//internal/storage/spanner/migrations/version",
+    ],
 )

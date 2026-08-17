@@ -24,7 +24,6 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/storage"
@@ -164,13 +163,13 @@ func TestUpdateExperiment_HappyPath(t *testing.T) {
 
 func TestUpdateExperiment_BadPaths(t *testing.T) {
 	ctx := context.Background()
-	authorizer := createTestAuthorizer(ctx, t)
-	cfg := &config.Config{}
 	xidClient := &mockXidClient{
 		getXidEntryResp:            &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
 		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
-	server := New(&storage.MockStorage{}, cfg, authorizer, xidClient, nil)
+	server := newTestServer(t,
+		withXidClient(xidClient),
+	)
 
 	testCases := []struct {
 		name    string
@@ -207,7 +206,6 @@ func TestUpdateExperiment_BadPaths(t *testing.T) {
 
 func TestUpdateExperiment_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{}
 
 	goodReq := &apipb.UpdateExperimentRequest{
 		Experiment: &msgpb.Experiment{Name: "experiments/123", Title: "new title"},
@@ -285,10 +283,17 @@ func TestUpdateExperiment_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.authenticator == nil {
-				tc.authenticator = createTestAuthorizer(ctx, t)
+			var opts []testServerOpt
+			if tc.storage != nil {
+				opts = append(opts, withStorage(tc.storage))
 			}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, nil)
+			if tc.authenticator != nil {
+				opts = append(opts, withAuthorizer(tc.authenticator))
+			}
+			if tc.xidClient != nil {
+				opts = append(opts, withXidClient(tc.xidClient))
+			}
+			server := newTestServer(t, opts...)
 			_, err := server.UpdateExperiment(ctx, tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("UpdateExperiment() returned error %v, want %v", err, tc.wantErr)

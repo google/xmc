@@ -28,26 +28,15 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
-	"time"
 
 	"go/google"
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
 	"golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
-	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
-	"golang/google_api/option/option"
-	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
 	"golang/grpc/health/health"
 	"golang/grpc/reflection/reflection"
 	healthgrpc "grpc_proto/health_go_grpc"
 	healthpb "grpc_proto/health_go_proto"
-
-	authz "xmanager_cloud/auth/auth"
-	"xmanager_cloud/cmd/experiment_state_server/toollibs"
-	commonhealth "xmanager_cloud/common/health"
-	dashboard_pb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	"xmanager_cloud/experiment_state_server/config"
 	gwpb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_gateway_proto"
 	spb "xmanager_cloud/experiment_state_server/proto/api_go_grpc_proto"
@@ -55,10 +44,6 @@ import (
 	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/logging/logging"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
-	"xmanager_cloud/security/keyreloader"
-	ss "xmanager_cloud/storage/spanner/spanner"
-	tq "xmanager_cloud/task_queue/client"
-	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 )
 
 //go:embed xmanager_cloud/experiment_state_server/static/*
@@ -84,14 +69,14 @@ func main() {
 		logging.Fatal(ctx, "failed to load configuration, invoker service account is empty")
 	}
 
-	// 2. Initialize dependencies
-	spannerClient := initSpannerClient(ctx, &cfg)
-	defer spannerClient.Close()
+	// 2. Initialize production server.
+	prodServer, err := server.NewProd(ctx, &cfg, oauthCfg)
+	if err != nil {
+		logging.Fatal(ctx, "failed to initialize production server", "error", err)
+	}
+	defer prodServer.Close()
 
-	// 3. Initialize Cloud Identity, Storage, Auth, and XID services.
-	storage, auth, xidClient := initServices(ctx, &cfg, oauthCfg, spannerClient)
-
-	// 4. Initialize TLS credentials.
+	// 3. Initialize TLS credentials.
 	transportCreds, err := tlsutil.NewServerCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
 		logging.Fatal(ctx, "failed to configure server credentials", "error", err)
@@ -101,27 +86,7 @@ func main() {
 		grpc.Creds(transportCreds),
 	}
 
-	// 5. Initialize Task Queue client.
-	taskQueueClient := initTaskQueueClient(ctx, &cfg)
-	defer taskQueueClient.Close()
-	var bgTaskWG sync.WaitGroup
-	var artifactObservers []server.ArtifactObserver
-
-	// 5.5 Initialize Dashboard client.
-	logging.Info(ctx, "Connecting to Dashboard service", "addr", cfg.DashboardServiceAddr)
-	dashboardConn, err := grpc.NewClient(cfg.DashboardServiceAddr, []grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	}...)
-	if err != nil {
-		logging.Fatal(ctx, "failed to create gRPC client for Dashboard service", "error", err)
-	}
-	defer dashboardConn.Close()
-	dashboardToolClient := toollibs.NewDashboardToolClient(dashboard_pb.NewDashboardServiceClient(dashboardConn))
-	artifactObservers = append(artifactObservers, server.NewDashboardObserver(dashboardToolClient, storage, &bgTaskWG))
-
-	// 6. Set up the gRPC server.
-	experimentStateServer := server.New(storage, &cfg, auth, xidClient, taskQueueClient, artifactObservers...)
-
+	// 4. Set up the gRPC server.
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		logging.Fatal(ctx, "failed to listen", "error", err)
@@ -129,7 +94,7 @@ func main() {
 
 	s := grpc.NewServer(opts...)
 
-	spb.RegisterExperimentStateServiceServer(s, experimentStateServer)
+	spb.RegisterExperimentStateServiceServer(s, prodServer)
 
 	reflection.Register(s)
 
@@ -146,7 +111,7 @@ func main() {
 		}
 	}()
 
-	// 7. Initialize the gRPC gateway mux.
+	// 5. Initialize the gRPC gateway mux.
 	httpTransportCreds, err := tlsutil.NewClientCredentials(cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
 		logging.Fatal(ctx, "failed to configure client credentials", "error", err)
@@ -161,7 +126,7 @@ func main() {
 		logging.Fatal(ctx, "failed to register gateway", "error", err)
 	}
 
-	// 8. Create a master HTTP mux for the gRPC gateway + health checks.
+	// 6. Create a master HTTP mux for the gRPC gateway + health checks.
 	httpMux := http.NewServeMux()
 
 	// Load dynamic OAuth2 Authentication configurations
@@ -177,7 +142,7 @@ func main() {
 
 	staticRootFS, err := fs.Sub(embedFS, "xmanager_cloud/experiment_state_server/static")
 	if err != nil {
-		logging.Fatal(ctx, "Failed to create static file system", "error", err)
+		logging.Fatal(ctx, "failed to create static file system", "error", err)
 	}
 	staticServer := http.FileServer(http.FS(staticRootFS))
 
@@ -203,7 +168,8 @@ func main() {
 		http.StripPrefix("/v1/static/", staticServer).ServeHTTP(w, r)
 	})
 
-	httpMux.HandleFunc("/readyz", activeHealthCheck(commonhealth.NewSpannerHealthClient(spannerClient), xidClient, taskQueueClient))
+	spHealth, xidHealth, tqHealth := prodServer.HealthCheckers()
+	httpMux.HandleFunc("/readyz", activeHealthCheck(spHealth, xidHealth, tqHealth))
 	httpMux.HandleFunc("/healthz", livenessCheck())
 
 	// Secure the private gRPC-Gateway endpoints with the Authenticate middleware.
@@ -223,10 +189,10 @@ func main() {
 		authenticatedGwmux.ServeHTTP(w, r)
 	})
 
-	// 9. Apply security middlewares
+	// 7. Apply security middlewares
 	handler := oauthAuth.SecurityMiddlewares(httpMux)
 
-	// 10. Start the HTTP server.
+	// 8. Start the HTTP server.
 	gwServer := &http.Server{
 		Addr:    ":" + cfg.HTTPPort,
 		Handler: handler,
@@ -238,71 +204,12 @@ func main() {
 		}
 	}()
 
-	// 11. Gracefully shut down the server when a signal is received.
+	// 9. Gracefully shut down the server when a signal is received.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit // Block until a signal is received
 
 	logging.Info(ctx, "Shutting down gRPC server")
 	s.GracefulStop()
-	logging.Info(ctx, "Waiting for background tasks to complete")
-	bgTaskWG.Wait()
 	logging.Info(ctx, "Server gracefully stopped")
-}
-
-func initSpannerClient(ctx context.Context, cfg *config.Config) *spanner.Client {
-	sessionPoolConfig := spanner.SessionPoolConfig{
-		TrackSessionHandles: true,
-		InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
-			ActionOnInactiveTransaction: spanner.Warn,
-		},
-	}
-	client, err := spanner.NewClientWithConfig(
-		ctx,
-		cfg.SpannerDatabaseName,
-		spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
-		option.WithQuotaProject(cfg.QuotaProjectID),
-	)
-	if err != nil {
-		logging.Fatal(ctx, "failed to create spanner client", "error", err)
-	}
-	return client
-}
-
-func initServices(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, spannerClient *spanner.Client) (*ss.Storage, *authz.Authorizer, xidgrpcpb.XidServiceClient) {
-	idService, err := cloudidentity.NewService(ctx)
-	if err != nil {
-		logging.Fatal(ctx, "failed to create cloud identity service", "error", err)
-	}
-
-	storage, err := ss.NewStorageWithConfig(spannerClient, ss.StorageConfig{StatusMessageHistoryEnabled: cfg.StatusMessageHistoryEnabled})
-	if err != nil {
-		logging.Fatal(ctx, "failed to create storage", "error", err)
-	}
-
-	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}, cfg.IAPIssuer, false, []byte(oauthCfg.JWTSecret))
-	if err != nil {
-		logging.Fatal(ctx, "failed to create authorizer", "error", err)
-	}
-
-	logging.Info(ctx, "Connecting to XID service", "addr", cfg.XidServiceAddr)
-	conn, err := grpc.NewClient(cfg.XidServiceAddr, []grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	}...)
-	if err != nil {
-		logging.Fatal(ctx, "failed to create gRPC client for XID service", "error", err)
-	}
-	return storage, auth, xidgrpcpb.NewXidServiceClient(conn)
-}
-
-func initTaskQueueClient(ctx context.Context, cfg *config.Config) *tq.Client {
-	keyReloader, err := keyreloader.NewSignerReloader(cfg.SigningKeyFile)
-	if err != nil {
-		logging.Fatal(ctx, "failed to load signing key", "error", err)
-	}
-	taskQueueClient, err := tq.New(ctx, cfg.ProjectID, cfg.InvokerSA, cfg.ActuatorURL, cfg.ActuatorAudience, keyReloader.Signer, cfg.SignatureTTLSeconds, cfg.RedisAddr)
-	if err != nil {
-		logging.Fatal(ctx, "failed to create task queue client", "error", err)
-	}
-	return taskQueueClient
 }
