@@ -92,6 +92,11 @@ func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, 
 	if m.err != nil {
 		return nil, m.err
 	}
+	if len(queueNames) == 0 {
+		return &workunit.ActiveWorkUnitsResult{
+			WorkUnits: []*essmsgpb.WorkUnit{},
+		}, nil
+	}
 	return &workunit.ActiveWorkUnitsResult{
 		WorkUnits:     m.workUnits,
 		NextPageToken: m.nextPageToken,
@@ -162,9 +167,15 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 		},
 	}
 
+	kCache := cache.NewKueueCache()
+	kCache.LocalQueues.Set("lq-1", &kueuev1beta1.LocalQueue{
+		ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
+		Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "gpu-cluster-queue"},
+	})
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := newServer(cfg, nil, tt.fetcher)
+			srv := newServer(cfg, kCache, tt.fetcher)
 			resp, err := srv.GetRunningAndPendingJobs(tt.ctx, tt.req)
 
 			gotCode := status.Code(err)
