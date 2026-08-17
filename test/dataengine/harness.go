@@ -81,7 +81,7 @@ func Run(ctx context.Context, opts *HarnessOptions) ([]*TestResult, error) {
 	}
 
 	if opts.SeedData {
-		_ = CleanupTestMetrics(ctx, conn, opts.TableName, 9001, 9002)
+		_ = CleanupTestMetrics(ctx, conn, opts.TableName, 9001, 9002, 234911122, 234911123, 234911124)
 		count, err := SeedDataset(ctx, conn, opts.TableName, opts.SeedFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to seed dataset: %w", err)
@@ -109,7 +109,7 @@ func Run(ctx context.Context, opts *HarnessOptions) ([]*TestResult, error) {
 	}
 
 	if opts.CleanData {
-		if err := CleanupTestMetrics(ctx, conn, opts.TableName, 9001, 9002); err != nil {
+		if err := CleanupTestMetrics(ctx, conn, opts.TableName, 9001, 9002, 234911122, 234911123, 234911124); err != nil {
 			fmt.Printf("WARNING: Failed to cleanup test metrics: %v\n", err)
 		}
 	}
