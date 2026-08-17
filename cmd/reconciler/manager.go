@@ -115,11 +115,16 @@ func (m *Manager) Close() error {
 	if m == nil || m.cleanup == nil {
 		return nil
 	}
-	return m.cleanup()
+	cleanup := m.cleanup
+	m.cleanup = nil
+	return cleanup()
 }
 
 // Start starts background workers and the controller-runtime manager.
 func (m *Manager) Start(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	if m.kueueSync != nil {
 		go m.kueueSync.RunPositionInQueueSync(ctx)
 	}
@@ -344,7 +349,7 @@ func registerHealthChecks(mgr ctrl.Manager, k8sClient *k8sclient.Client, spClien
 
 // NewManager constructs and initializes the production Manager along with all controllers,
 // batchers, storage, and infrastructure dependencies with automatic LIFO rollback on error.
-func NewManager(ctx context.Context, cfg Config) (_ *Manager, retErr error) {
+func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 	var cleanups []func() error
 	defer func() {
 		if retErr != nil {
@@ -375,7 +380,7 @@ func NewManager(ctx context.Context, cfg Config) (_ *Manager, retErr error) {
 		return nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
 	}
 
-	mgr, err := initCtrlManager(ctx, cfg)
+	ctrlMgr, err := initCtrlManager(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +390,7 @@ func NewManager(ctx context.Context, cfg Config) (_ *Manager, retErr error) {
 		newMLRunCreator(ctx, gceMeta.ProjectID, cfg.MldiagnosticsEnvironment, gceMeta.Location))
 
 	batcher, kueueSyncReconciler, err := registerControllers(ctx, controllerRegistrationParams{
-		mgr:         mgr,
+		mgr:         ctrlMgr,
 		cfg:         cfg,
 		storage:     storage,
 		k8sClient:   k8sClient,
@@ -399,7 +404,7 @@ func NewManager(ctx context.Context, cfg Config) (_ *Manager, retErr error) {
 		return nil, err
 	}
 
-	if err := registerHealthChecks(mgr, k8sClient, spannerClient); err != nil {
+	if err := registerHealthChecks(ctrlMgr, k8sClient, spannerClient); err != nil {
 		return nil, err
 	}
 
@@ -414,7 +419,7 @@ func NewManager(ctx context.Context, cfg Config) (_ *Manager, retErr error) {
 	}
 
 	return &Manager{
-		ctrlMgr:       mgr,
+		ctrlMgr:       ctrlMgr,
 		batcher:       batcher,
 		k8sClient:     k8sClient,
 		spannerClient: spannerClient,

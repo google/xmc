@@ -72,4 +72,23 @@ func TestManager_Close(t *testing.T) {
 			t.Errorf("Close() error = %v, want %v", err, expectedErr)
 		}
 	})
+
+	t.Run("cleanup is idempotent", func(t *testing.T) {
+		cleanCount := 0
+		m := &Manager{
+			cleanup: func() error {
+				cleanCount++
+				return nil
+			},
+		}
+		if err := m.Close(); err != nil {
+			t.Errorf("First Close() error = %v, want nil", err)
+		}
+		if err := m.Close(); err != nil {
+			t.Errorf("Second Close() error = %v, want nil", err)
+		}
+		if cleanCount != 1 {
+			t.Errorf("cleanup called %d times, want 1", cleanCount)
+		}
+	})
 }
