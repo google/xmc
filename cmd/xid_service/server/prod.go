@@ -42,7 +42,7 @@ type ProdServer struct {
 
 // HealthCheckers returns the health client interfaces required for active readiness checks.
 func (p *ProdServer) HealthCheckers() commonhealth.SpannerHealthClient {
-	if p == nil {
+	if p == nil || p.spannerClient == nil {
 		return nil
 	}
 	return commonhealth.NewSpannerHealthClient(p.spannerClient)
@@ -53,7 +53,9 @@ func (p *ProdServer) Close() error {
 	if p == nil || p.cleanup == nil {
 		return nil
 	}
-	return p.cleanup()
+	cleanup := p.cleanup
+	p.cleanup = nil
+	return cleanup()
 }
 
 func initSpannerClient(ctx context.Context, cfg *config.Config) (*spanner.Client, error) {

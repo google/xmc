@@ -15,6 +15,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -52,6 +53,26 @@ func TestProdServer_Close(t *testing.T) {
 			t.Errorf("Close() = %v, want %v", err, expectedErr)
 		}
 	})
+
+	t.Run("idempotent close", func(t *testing.T) {
+		t.Parallel()
+		var callCount int
+		ps := &ProdServer{
+			cleanup: func() error {
+				callCount++
+				return nil
+			},
+		}
+		if err := ps.Close(); err != nil {
+			t.Errorf("first Close() = %v, want nil", err)
+		}
+		if err := ps.Close(); err != nil {
+			t.Errorf("second Close() = %v, want nil", err)
+		}
+		if callCount != 1 {
+			t.Errorf("cleanup callCount = %d, want 1", callCount)
+		}
+	})
 }
 
 func TestNewProd_Validation(t *testing.T) {
@@ -59,7 +80,7 @@ func TestNewProd_Validation(t *testing.T) {
 
 	t.Run("nil config", func(t *testing.T) {
 		t.Parallel()
-		ps, err := NewProd(t.Context(), nil, nil)
+		ps, err := NewProd(context.Background(), nil, nil)
 		if ps != nil || err == nil {
 			t.Errorf("NewProd(nil, nil) = (%v, %v), want (nil, error)", ps, err)
 		}
@@ -67,7 +88,7 @@ func TestNewProd_Validation(t *testing.T) {
 
 	t.Run("nil oauth config", func(t *testing.T) {
 		t.Parallel()
-		ps, err := NewProd(t.Context(), &config.Config{}, nil)
+		ps, err := NewProd(context.Background(), &config.Config{}, nil)
 		if ps != nil || err == nil {
 			t.Errorf("NewProd(cfg, nil) = (%v, %v), want (nil, error)", ps, err)
 		}
@@ -83,6 +104,15 @@ func TestProdServer_HealthCheckers(t *testing.T) {
 		sp := ps.HealthCheckers()
 		if sp != nil {
 			t.Errorf("HealthCheckers() on nil ProdServer = %v, want nil", sp)
+		}
+	})
+
+	t.Run("nil spanner client returns nil checkers", func(t *testing.T) {
+		t.Parallel()
+		ps := &ProdServer{}
+		sp := ps.HealthCheckers()
+		if sp != nil {
+			t.Errorf("HealthCheckers() on ProdServer with nil spannerClient = %v, want nil", sp)
 		}
 	})
 }
