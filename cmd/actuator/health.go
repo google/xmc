@@ -18,12 +18,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 
 	"golang/go_sync/errgroup/errgroup"
 	"golang/k8s_io/client_go/v/v0_23/kubernetes/kubernetes"
 	"xmanager_cloud/common/health"
+	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/task_queue_redis/redisclient"
 )
 
@@ -67,9 +67,9 @@ func activeHealthCheck(k8s k8sHealthClient, spClient health.SpannerHealthClient,
 
 		if err := eg.Wait(); err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(r.Context().Err(), context.Canceled) {
-				slog.InfoContext(ctx, "Healthcheck canceled by client", "error", err)
+				logging.Info(ctx, "Healthcheck canceled by client", "error", err)
 			} else {
-				slog.ErrorContext(ctx, "Overall healthcheck failed", "error", err)
+				logging.Error(ctx, "Overall healthcheck failed", "error", err)
 			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
