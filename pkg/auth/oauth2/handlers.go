@@ -90,7 +90,8 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	userInfo, err := a.OAuthProvider.ExchangeAndGetUserInfo(ctx, r, code)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to get user info: %v", err), http.StatusInternalServerError)
+		log.Printf("[Callback Auth] Failed to get user info: %v", err)
+		http.Error(w, "Failed to get user info", http.StatusInternalServerError)
 		return
 	}
 
@@ -124,13 +125,13 @@ func (a *Authenticator) validateState(r *http.Request) (string, error) {
 	stateParam := r.URL.Query().Get("state")
 	stateCookie, err := r.Cookie("oauth_state")
 	if err != nil {
-		return "", fmt.Errorf("CSRF cookie missing: %w", err)
+		return "", fmt.Errorf("csrf cookie missing: %w", err)
 	}
 	if stateCookie.Value == "" {
-		return "", fmt.Errorf("CSRF cookie is empty")
+		return "", fmt.Errorf("csrf cookie is empty")
 	}
 	if stateCookie.Value != stateParam {
-		return "", fmt.Errorf("CSRF state mismatch")
+		return "", fmt.Errorf("csrf state mismatch")
 	}
 	return stateParam, nil
 }
@@ -138,7 +139,7 @@ func (a *Authenticator) validateState(r *http.Request) (string, error) {
 func (a *Authenticator) createSession(w http.ResponseWriter, r *http.Request, email, name, picture string) error {
 	sessionToken, err := GenerateSessionToken(email, name, picture, 1*time.Hour, a.JWTSecret)
 	if err != nil {
-		return fmt.Errorf("Failed to generate session token: %w", err)
+		return fmt.Errorf("failed to generate session token: %w", err)
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -175,9 +176,10 @@ func (a *Authenticator) HandleLogout(w http.ResponseWriter, r *http.Request) {
 type UserResponse struct {
 	Email            string   `json:"email"`
 	Name             string   `json:"name"`
-	PictureUrl       string   `json:"pictureUrl"`
+	PictureURL       string   `json:"pictureUrl"`
 	SessionExpiresAt int64    `json:"sessionExpiresAt"`
 	AllowedDomains   []string `json:"allowedDomains"`
+	IsNonProdAuth    bool     `json:"isNonProdAuth"`
 }
 
 // HandleUser returns current session claims if authenticated.
@@ -196,9 +198,10 @@ func (a *Authenticator) HandleUser(w http.ResponseWriter, r *http.Request) {
 	res := &UserResponse{
 		Email:            claims.Email,
 		Name:             claims.Name,
-		PictureUrl:       claims.Picture,
+		PictureURL:       claims.Picture,
 		SessionExpiresAt: expiresAt,
 		AllowedDomains:   a.Config.AllowedDomains,
+		IsNonProdAuth:    a.Config.IsNonProdAuth(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -245,7 +248,8 @@ func (a *Authenticator) getRequestSchemeAndHost(r *http.Request) (string, string
 func isLocalhost(host string) bool {
 	hostLower := strings.ToLower(host)
 	return hostLower == "localhost" || strings.HasPrefix(hostLower, "localhost:") ||
-		hostLower == "127.0.0.1" || strings.HasPrefix(hostLower, "127.0.0.1:")
+		hostLower == "127.0.0.1" || strings.HasPrefix(hostLower, "127.0.0.1:") ||
+		hostLower == "::1" || strings.HasPrefix(hostLower, "[::1]")
 }
 
 func isHostAllowed(host string, allowedHosts []string, mockAuth bool) bool {

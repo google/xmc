@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { MatIconModule } from '@angular/material/icon';
 import { MatListModule } from '@angular/material/list';
@@ -61,6 +61,10 @@ export class App {
   protected readonly isAdminPanelEnabled = toSignal(this.healthService.isAdminPanelAccessible(), {
     initialValue: false,
   });
+
+  protected readonly isNonProdAuth = computed(
+    () => !!(this.user()?.isNonProdAuth || this.featureFlagService.isNonProdAuth),
+  );
 
   toggleSidenav() {
     this.isSidenavOpened.set(!this.isSidenavOpened());

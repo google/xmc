@@ -1152,6 +1152,110 @@ func TestSecurityMiddlewares(t *testing.T) {
 	})
 }
 
+func TestHandleUser(t *testing.T) {
+	t.Run("Unauthorized when no claims in context", func(t *testing.T) {
+		cfg := &Config{
+			Port:     "8080",
+			MockAuth: true,
+		}
+		a := newTestAuthenticator(cfg)
+
+		req := httptest.NewRequest("GET", "/api/user", nil)
+		w := httptest.NewRecorder()
+
+		a.HandleUser(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("Expected status 401 Unauthorized, got %d", w.Code)
+		}
+	})
+
+	t.Run("Returns UserResponse with isNonProdAuth true for mock auth", func(t *testing.T) {
+		cfg := &Config{
+			Port:           "8080",
+			MockAuth:       true,
+			AllowedDomains: []string{"example.com"},
+		}
+		a := newTestAuthenticator(cfg)
+
+		claims := &SessionClaims{
+			Email:   "user@example.com",
+			Name:    "Test User",
+			Picture: "https://example.com/pic.png",
+			RegisteredClaims: jwt.RegisteredClaims{
+				ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
+			},
+		}
+
+		req := httptest.NewRequest("GET", "/api/user", nil)
+		req = req.WithContext(context.WithValue(req.Context(), UserClaimsContextKey, claims))
+		w := httptest.NewRecorder()
+
+		a.HandleUser(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("Expected status 200 OK, got %d", w.Code)
+		}
+
+		var res UserResponse
+		if err := json.NewDecoder(w.Body).Decode(&res); err != nil {
+			t.Fatalf("Failed to decode UserResponse: %v", err)
+		}
+
+		if res.Email != "user@example.com" {
+			t.Errorf("Expected email %q, got %q", "user@example.com", res.Email)
+		}
+		if res.Name != "Test User" {
+			t.Errorf("Expected name %q, got %q", "Test User", res.Name)
+		}
+		if res.PictureURL != "https://example.com/pic.png" {
+			t.Errorf("Expected pictureUrl %q, got %q", "https://example.com/pic.png", res.PictureURL)
+		}
+		if !res.IsNonProdAuth {
+			t.Errorf("Expected isNonProdAuth true, got false")
+		}
+		if len(res.AllowedDomains) != 1 || res.AllowedDomains[0] != "example.com" {
+			t.Errorf("Expected allowedDomains [example.com], got %v", res.AllowedDomains)
+		}
+	})
+
+	t.Run("Returns UserResponse with isNonProdAuth false for production Google OAuth", func(t *testing.T) {
+		cfg := &Config{
+			Port:           "8080",
+			AuthURL:        "https://accounts.google.com/o/oauth2/v2/auth",
+			AllowedDomains: []string{"google.com"},
+		}
+		a := newTestAuthenticator(cfg)
+
+		claims := &SessionClaims{
+			Email: "prod-user@google.com",
+			Name:  "Prod User",
+		}
+
+		req := httptest.NewRequest("GET", "/api/user", nil)
+		req = req.WithContext(context.WithValue(req.Context(), UserClaimsContextKey, claims))
+		w := httptest.NewRecorder()
+
+		a.HandleUser(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("Expected status 200 OK, got %d", w.Code)
+		}
+
+		var res UserResponse
+		if err := json.NewDecoder(w.Body).Decode(&res); err != nil {
+			t.Fatalf("Failed to decode UserResponse: %v", err)
+		}
+
+		if res.Email != "prod-user@google.com" {
+			t.Errorf("Expected email %q, got %q", "prod-user@google.com", res.Email)
+		}
+		if res.IsNonProdAuth {
+			t.Errorf("Expected isNonProdAuth false, got true")
+		}
+	})
+}
+
 func newTestAuthenticator(cfg *Config) *Authenticator {
 	a := NewAuthenticator(cfg)
 	if cfg.MockAuth {

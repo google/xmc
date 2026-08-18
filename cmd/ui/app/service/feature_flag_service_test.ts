@@ -48,6 +48,10 @@ describe('FeatureFlagService', () => {
     it('isResourceDashboardEnabled should be false', () => {
       expect(state.service.isResourceDashboardEnabled).toBeFalse();
     });
+
+    it('isNonProdAuth should be false', () => {
+      expect(state.service.isNonProdAuth).toBeFalse();
+    });
   });
 
   describe('when XMC_FEATURE_FLAGS is defined', () => {
@@ -102,6 +106,24 @@ describe('FeatureFlagService', () => {
       it('isResourceDashboardEnabled should be false if resourceDashboardEnabled is false', () => {
         expect(state.service.isResourceDashboardEnabled).toBeFalse();
         expect(state.service.isFeatureEnabled('resourceDashboardEnabled')).toBeFalse();
+      });
+    });
+
+    describe('when isNonProdAuth is true', () => {
+      const state = setup({ isNonProdAuth: true });
+
+      it('isNonProdAuth should be true if isNonProdAuth is true', () => {
+        expect(state.service.isNonProdAuth).toBeTrue();
+        expect(state.service.isFeatureEnabled('isNonProdAuth')).toBeTrue();
+      });
+    });
+
+    describe('when isNonProdAuth is false', () => {
+      const state = setup({ isNonProdAuth: false });
+
+      it('isNonProdAuth should be false if isNonProdAuth is false', () => {
+        expect(state.service.isNonProdAuth).toBeFalse();
+        expect(state.service.isFeatureEnabled('isNonProdAuth')).toBeFalse();
       });
     });
   });
