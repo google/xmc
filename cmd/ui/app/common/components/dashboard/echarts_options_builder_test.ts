@@ -231,12 +231,43 @@ describe('echarts_options_builder', () => {
       data: { metrics: ['eval/accuracy'] },
     };
 
-    it('should build bar chart with categories and values', () => {
+    it('should build bar chart with categories, values, and series name from spec title', () => {
       const option = buildBarOption(mockSpec, mockBarData);
       expect((option.xAxis as any)?.data).toEqual(['WorkUnit 1', 'WorkUnit 2', 'WorkUnit 3']);
       const seriesArr = option.series as any[];
       expect(seriesArr[0].type).toBe('bar');
+      expect(seriesArr[0].name).toBe('Accuracy Distribution');
       expect(seriesArr[0].data).toEqual([0.92, 0.88, 0.94]);
+    });
+
+    it('should respect yMin and yMax bounds on yAxis when defined in spec coords', () => {
+      const specWithCoords: PlotSpec = {
+        ...mockSpec,
+        coords: { yMin: 0, yMax: 1.0 },
+      };
+      const option = buildBarOption(specWithCoords, mockBarData);
+      expect((option.yAxis as any)?.min).toBe(0);
+      expect((option.yAxis as any)?.max).toBe(1.0);
+    });
+
+    it('should fallback series name to metricName or Value when spec title is omitted', () => {
+      const specNoTitle: PlotSpec = {
+        plotId: 'accuracy_dist',
+        type: PlotType.BAR,
+        data: { metrics: ['eval/accuracy'] },
+      };
+      const optionMetric = buildBarOption(specNoTitle, mockBarData);
+      expect((optionMetric.series as any[])[0].name).toBe('eval/accuracy');
+
+      const dataNoMetric: PlotData = {
+        plotId: 'accuracy_dist',
+        type: 'BAR',
+        barData: {
+          buckets: [{ categoryOrBin: 'Bin 1', valueOrCount: 5 }],
+        },
+      };
+      const optionFallback = buildBarOption(specNoTitle, dataNoMetric);
+      expect((optionFallback.series as any[])[0].name).toBe('Value');
     });
   });
 

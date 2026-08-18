@@ -220,11 +220,14 @@ export function buildBarOption(
     },
     yAxis: {
       type: 'value',
+      min: spec.coords?.yMin,
+      max: spec.coords?.yMax,
       axisLabel: { color: theme.axisTextColor, fontSize: 11 },
       splitLine: { lineStyle: { color: theme.gridLineColor } },
     },
     series: [
       {
+        name: spec.title || barData?.metricName || 'Value',
         type: 'bar',
         data: buckets.map((b) => b.valueOrCount ?? 0),
         itemStyle: { color: XMC_SERIES_PALETTE[0], borderRadius: [4, 4, 0, 0] },
