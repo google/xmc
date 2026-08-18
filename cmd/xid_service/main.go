@@ -49,14 +49,14 @@ func main() {
 		logging.Fatal(ctx, "failed to load oauth configuration", "error", err)
 	}
 
-	// 2. Initialize production server.
-	prodServer, err := server.NewProd(ctx, &cfg, oauthCfg)
+	// 2. Initialize runtime server.
+	runtimeServer, err := server.NewRuntimeServer(ctx, &cfg, oauthCfg)
 	if err != nil {
-		logging.Fatal(ctx, "failed to initialize production server", "error", err)
+		logging.Fatal(ctx, "failed to initialize runtime server", "error", err)
 	}
 	defer func() {
-		if err := prodServer.Close(); err != nil {
-			logging.Error(ctx, "failed to close production server", "error", err)
+		if err := runtimeServer.Close(); err != nil {
+			logging.Error(ctx, "failed to close runtime server", "error", err)
 		}
 	}()
 
@@ -68,13 +68,13 @@ func main() {
 
 	s := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
 
-	apipb.RegisterXidServiceServer(s, prodServer)
+	apipb.RegisterXidServiceServer(s, runtimeServer)
 
 	reflection.Register(s)
 
 	// Start active monitoring of dependencies
 	healthServer := RegisterHealthServer(s)
-	go StartHealthMonitor(ctx, prodServer.HealthCheckers(), healthServer)
+	go StartHealthMonitor(ctx, runtimeServer.HealthCheckers(), healthServer)
 
 	logging.Info(ctx, "gRPC server listening", "addr", lis.Addr())
 

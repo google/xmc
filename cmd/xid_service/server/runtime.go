@@ -32,10 +32,10 @@ import (
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 )
 
-var _ apipb.XidServiceServer = (*ProdServer)(nil)
+var _ apipb.XidServiceServer = (*RuntimeServer)(nil)
 
-// ProdServer encapsulates the live runtime XIDServer instance along with its real cloud infrastructure dependencies (Cloud Spanner, Cloud Identity, OAuth2) and lifecycle management. It serves as the production/runtime composition root across deployed environments (dev, staging, prod), in contrast to unit-test environments which instantiate XIDServer directly with test doubles via New(Params).
-type ProdServer struct {
+// RuntimeServer encapsulates the live runtime XIDServer instance along with its real cloud infrastructure dependencies (Cloud Spanner, Cloud Identity, OAuth2) and lifecycle management. It serves as the runtime composition root across deployed environments, in contrast to unit-test environments which instantiate XIDServer directly with test doubles via New(Params).
+type RuntimeServer struct {
 	*XIDServer
 	spannerClient *spanner.Client
 	cleanup       func() error
@@ -44,24 +44,24 @@ type ProdServer struct {
 }
 
 // HealthCheckers returns the health client interfaces required for active readiness checks.
-func (p *ProdServer) HealthCheckers() commonhealth.SpannerHealthClient {
-	if p == nil || p.spannerClient == nil {
+func (r *RuntimeServer) HealthCheckers() commonhealth.SpannerHealthClient {
+	if r == nil || r.spannerClient == nil {
 		return nil
 	}
-	return commonhealth.NewSpannerHealthClient(p.spannerClient)
+	return commonhealth.NewSpannerHealthClient(r.spannerClient)
 }
 
-// Close closes all underlying production client connections in a thread-safe, idempotent manner.
-func (p *ProdServer) Close() error {
-	if p == nil {
+// Close closes all underlying runtime client connections in a thread-safe, idempotent manner.
+func (r *RuntimeServer) Close() error {
+	if r == nil {
 		return nil
 	}
-	p.closeOnce.Do(func() {
-		if p.cleanup != nil {
-			p.closeErr = p.cleanup()
+	r.closeOnce.Do(func() {
+		if r.cleanup != nil {
+			r.closeErr = r.cleanup()
 		}
 	})
-	return p.closeErr
+	return r.closeErr
 }
 
 func initSpannerClient(ctx context.Context, cfg *config.Config) (*spanner.Client, error) {
@@ -100,8 +100,8 @@ func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (
 	return auth, nil
 }
 
-// NewProd creates and initializes a live runtime XIDServer instance with real cloud infrastructure dependencies (Spanner, Cloud Identity, OAuth2) and automated LIFO rollback cleanup on error.
-func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_ *ProdServer, retErr error) {
+// NewRuntimeServer creates and initializes a live runtime XIDServer instance with real cloud infrastructure dependencies (Spanner, Cloud Identity, OAuth2) and automated LIFO rollback cleanup on error.
+func NewRuntimeServer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_ *RuntimeServer, retErr error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config cannot be nil")
 	}
@@ -156,7 +156,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 		return errors.Join(errs...)
 	}
 
-	return &ProdServer{
+	return &RuntimeServer{
 		XIDServer:     srv,
 		spannerClient: spannerClient,
 		cleanup:       cleanup,

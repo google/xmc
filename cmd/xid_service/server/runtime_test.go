@@ -24,21 +24,21 @@ import (
 	"xmanager_cloud/xid_service/config"
 )
 
-func TestProdServer_Close(t *testing.T) {
+func TestRuntimeServer_Close(t *testing.T) {
 	t.Parallel()
 
 	t.Run("nil cleanup returns nil", func(t *testing.T) {
 		t.Parallel()
-		ps := &ProdServer{}
-		if err := ps.Close(); err != nil {
+		rs := &RuntimeServer{}
+		if err := rs.Close(); err != nil {
 			t.Errorf("Close() = %v, want nil", err)
 		}
 	})
 
-	t.Run("nil ProdServer returns nil", func(t *testing.T) {
+	t.Run("nil RuntimeServer returns nil", func(t *testing.T) {
 		t.Parallel()
-		var ps *ProdServer
-		if err := ps.Close(); err != nil {
+		var rs *RuntimeServer
+		if err := rs.Close(); err != nil {
 			t.Errorf("Close() = %v, want nil", err)
 		}
 	})
@@ -46,12 +46,12 @@ func TestProdServer_Close(t *testing.T) {
 	t.Run("cleanup called and returns error", func(t *testing.T) {
 		t.Parallel()
 		expectedErr := errors.New("cleanup error")
-		ps := &ProdServer{
+		rs := &RuntimeServer{
 			cleanup: func() error {
 				return expectedErr
 			},
 		}
-		if err := ps.Close(); !errors.Is(err, expectedErr) {
+		if err := rs.Close(); !errors.Is(err, expectedErr) {
 			t.Errorf("Close() = %v, want %v", err, expectedErr)
 		}
 	})
@@ -60,16 +60,16 @@ func TestProdServer_Close(t *testing.T) {
 		t.Parallel()
 		var callCount int
 		expectedErr := errors.New("idempotent cleanup error")
-		ps := &ProdServer{
+		rs := &RuntimeServer{
 			cleanup: func() error {
 				callCount++
 				return expectedErr
 			},
 		}
-		if err := ps.Close(); !errors.Is(err, expectedErr) {
+		if err := rs.Close(); !errors.Is(err, expectedErr) {
 			t.Errorf("first Close() = %v, want %v", err, expectedErr)
 		}
-		if err := ps.Close(); !errors.Is(err, expectedErr) {
+		if err := rs.Close(); !errors.Is(err, expectedErr) {
 			t.Errorf("second Close() = %v, want %v", err, expectedErr)
 		}
 		if callCount != 1 {
@@ -81,7 +81,7 @@ func TestProdServer_Close(t *testing.T) {
 		t.Parallel()
 		var callCount int
 		expectedErr := errors.New("concurrent cleanup error")
-		ps := &ProdServer{
+		rs := &RuntimeServer{
 			cleanup: func() error {
 				callCount++
 				return expectedErr
@@ -91,7 +91,7 @@ func TestProdServer_Close(t *testing.T) {
 		errChan := make(chan error, goroutines)
 		for i := 0; i < goroutines; i++ {
 			go func() {
-				errChan <- ps.Close()
+				errChan <- rs.Close()
 			}()
 		}
 		for i := 0; i < goroutines; i++ {
@@ -121,30 +121,30 @@ func TestProdServer_Close(t *testing.T) {
 			}
 			return errors.Join(errs...)
 		}
-		ps := &ProdServer{cleanup: cleanup}
-		err := ps.Close()
+		rs := &RuntimeServer{cleanup: cleanup}
+		err := rs.Close()
 		if !errors.Is(err, err1) || !errors.Is(err, err2) {
 			t.Errorf("Close() = %v, want joined error containing %v and %v", err, err1, err2)
 		}
 	})
 }
 
-func TestNewProd_Validation(t *testing.T) {
+func TestNewRuntimeServer_Validation(t *testing.T) {
 	t.Parallel()
 
 	t.Run("nil config", func(t *testing.T) {
 		t.Parallel()
-		ps, err := NewProd(context.Background(), nil, nil)
-		if ps != nil || err == nil {
-			t.Errorf("NewProd(nil, nil) = (%v, %v), want (nil, error)", ps, err)
+		rs, err := NewRuntimeServer(context.Background(), nil, nil)
+		if rs != nil || err == nil {
+			t.Errorf("NewRuntimeServer(nil, nil) = (%v, %v), want (nil, error)", rs, err)
 		}
 	})
 
 	t.Run("nil oauth config", func(t *testing.T) {
 		t.Parallel()
-		ps, err := NewProd(context.Background(), &config.Config{}, nil)
-		if ps != nil || err == nil {
-			t.Errorf("NewProd(cfg, nil) = (%v, %v), want (nil, error)", ps, err)
+		rs, err := NewRuntimeServer(context.Background(), &config.Config{}, nil)
+		if rs != nil || err == nil {
+			t.Errorf("NewRuntimeServer(cfg, nil) = (%v, %v), want (nil, error)", rs, err)
 		}
 	})
 
@@ -158,42 +158,42 @@ func TestNewProd_Validation(t *testing.T) {
 			ClientID:  "test-client-id",
 			JWTSecret: "test-secret",
 		}
-		ps, err := NewProd(context.Background(), cfg, oauthCfg)
-		if ps != nil || err == nil {
-			t.Errorf("NewProd(invalidDbName) = (%v, %v), want (nil, error)", ps, err)
+		rs, err := NewRuntimeServer(context.Background(), cfg, oauthCfg)
+		if rs != nil || err == nil {
+			t.Errorf("NewRuntimeServer(invalidDbName) = (%v, %v), want (nil, error)", rs, err)
 		}
 	})
 }
 
-func TestProdServer_HealthCheckers(t *testing.T) {
+func TestRuntimeServer_HealthCheckers(t *testing.T) {
 	t.Parallel()
 
-	t.Run("nil ProdServer returns nil checkers", func(t *testing.T) {
+	t.Run("nil RuntimeServer returns nil checkers", func(t *testing.T) {
 		t.Parallel()
-		var ps *ProdServer
-		sp := ps.HealthCheckers()
+		var rs *RuntimeServer
+		sp := rs.HealthCheckers()
 		if sp != nil {
-			t.Errorf("HealthCheckers() on nil ProdServer = %v, want nil", sp)
+			t.Errorf("HealthCheckers() on nil RuntimeServer = %v, want nil", sp)
 		}
 	})
 
 	t.Run("nil spanner client returns nil checkers", func(t *testing.T) {
 		t.Parallel()
-		ps := &ProdServer{}
-		sp := ps.HealthCheckers()
+		rs := &RuntimeServer{}
+		sp := rs.HealthCheckers()
 		if sp != nil {
-			t.Errorf("HealthCheckers() on ProdServer with nil spannerClient = %v, want nil", sp)
+			t.Errorf("HealthCheckers() on RuntimeServer with nil spannerClient = %v, want nil", sp)
 		}
 	})
 
 	t.Run("non-nil spanner client returns checkers", func(t *testing.T) {
 		t.Parallel()
-		ps := &ProdServer{
+		rs := &RuntimeServer{
 			spannerClient: &spanner.Client{},
 		}
-		sp := ps.HealthCheckers()
+		sp := rs.HealthCheckers()
 		if sp == nil {
-			t.Error("HealthCheckers() on ProdServer with non-nil spannerClient returned nil, want non-nil")
+			t.Error("HealthCheckers() on RuntimeServer with non-nil spannerClient returned nil, want non-nil")
 		}
 	})
 }
