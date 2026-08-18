@@ -111,6 +111,21 @@ py_test(
     ],
 )
 
+py_library(
+    name = "server_local",
+    srcs = ["server_local.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "server_local_test",
+    srcs = ["server_local_test.py"],
+    deps = [
+        ":server_local",
+    ],
+)
+
 py_test(
     name = "ui_unit_tests",
     srcs = ["run_ui_tests.py"],
