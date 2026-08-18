@@ -241,7 +241,8 @@ class SPAHandler(server.SPAHandler):
             return
 
         if not isinstance(payload, dict):
-            payload = {}
+            self.send_json(400, {"error": "Invalid JSON payload: expected a JSON object"})
+            return
 
         dashboard_id = (
             payload.get("dashboardId") or f"dashboard-{len(SPAHandler.in_memory_dashboards) + 1}"

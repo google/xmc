@@ -183,11 +183,18 @@ class SPAHandlerLocalTest(unittest.TestCase):
         handler.send_response.assert_called_with(400)
 
     def test_create_dashboard_non_dict_payload(self):
-        handler = self._get_handler("/v1/dashboards", method="POST", body=b'"string-payload"')
-        handler.do_POST()
-        handler.send_response.assert_called_with(200)
-        response_body = json.loads(self.mock_wfile.getvalue().decode())
-        self.assertEqual(response_body["title"], "New Dashboard")
+        for payload in [b'"string-payload"', b"[1, 2, 3]", b"123", b"true"]:
+            with self.subTest(payload=payload):
+                self.mock_wfile.seek(0)
+                self.mock_wfile.truncate(0)
+                handler = self._get_handler("/v1/dashboards", method="POST", body=payload)
+                handler.do_POST()
+                handler.send_response.assert_called_with(400)
+                response_body = json.loads(self.mock_wfile.getvalue().decode())
+                self.assertIn("error", response_body)
+                self.assertEqual(
+                    response_body["error"], "Invalid JSON payload: expected a JSON object"
+                )
 
     def test_delete_dashboard(self):
         handler = self._get_handler("/v1/dashboards/vcc_benchmark_suite", method="DELETE")
@@ -464,9 +471,7 @@ class SPAHandlerLocalTest(unittest.TestCase):
             self.assertEqual(server_local.SPAHandler.in_memory_dashboards, [])
 
     def test_load_golden_files_dict(self):
-        mock_open_file = mock.mock_open(
-            read_data=json.dumps({"name": "chart1", "data": [1, 2, 3]})
-        )
+        mock_open_file = mock.mock_open(read_data=json.dumps({"name": "chart1", "data": [1, 2, 3]}))
         with (
             mock.patch.object(
                 server_local,
@@ -498,9 +503,7 @@ class SPAHandlerLocalTest(unittest.TestCase):
             ),
             mock.patch(
                 "glob.glob",
-                side_effect=lambda p: (
-                    ["/fake/testdata/list.json"] if p.endswith("*.json") else []
-                ),
+                side_effect=lambda p: ["/fake/testdata/list.json"] if p.endswith("*.json") else [],
             ),
             mock.patch("builtins.open", mock_open_file),
         ):

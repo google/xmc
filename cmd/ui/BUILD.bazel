@@ -115,10 +115,10 @@ py_library(
     name = "server_local",
     srcs = ["server_local.py"],
     imports = ["."],
+    visibility = ["//visibility:public"],
     deps = [
         ":server",
     ],
-    visibility = ["//visibility:public"],
 )
 
 py_test(
