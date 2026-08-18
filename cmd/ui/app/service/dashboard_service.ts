@@ -27,14 +27,16 @@ import {
   GetChartDataRequest,
   ListDashboardsRequest,
   ListDashboardsResponse,
-  normalizeChart,
-  normalizeChartData,
-  normalizeDashboard,
   RawChart,
   RawChartData,
   RawDashboard,
   UpdateDashboardRequest,
 } from './dashboard_models';
+import {
+  normalizeChart,
+  normalizeChartData,
+  normalizeDashboard,
+} from './dashboard_normalizer';
 
 /**
  * Service for communicating with the XMC Dashboard Service.

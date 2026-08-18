@@ -14,8 +14,8 @@
 
 import 'jasmine';
 
+import { MetricPolarity, PlotType } from './dashboard_models';
 import {
-  MetricPolarity,
   normalizeChart,
   normalizeChartData,
   normalizeDashboard,
@@ -25,10 +25,9 @@ import {
   normalizeSeriesPoint,
   normalizeSummaryBoxValue,
   parseNumericId,
-  PlotType,
-} from './dashboard_models';
+} from './dashboard_normalizer';
 
-describe('dashboard_models normalization', () => {
+describe('dashboard_normalizer', () => {
   describe('parseNumericId', () => {
     it('should parse valid number inputs and strings', () => {
       expect(parseNumericId(123)).toBe(123);
