@@ -227,6 +227,33 @@ class SPAHandlerLocalTest(unittest.TestCase):
         self.assertEqual(response_body["name"], "experiments/9001/charts/scatter_multi")
         self.assertIn("plots_data", response_body)
 
+    def test_chart_data_wrong_experiment_returns_empty_fallback(self):
+        handler = self._get_handler("/v1/experiments/99999/charts/baseline:getData")
+        handler.do_GET()
+        handler.send_response.assert_called_with(200)
+        response_body = json.loads(self.mock_wfile.getvalue().decode())
+        self.assertEqual(response_body["name"], "experiments/99999/charts/baseline")
+        self.assertEqual(response_body["plots_data"], [])
+
+    def test_chart_data_wrong_chart_id_returns_empty_fallback(self):
+        handler = self._get_handler("/v1/experiments/234911122/charts/nonexistent_chart:getData")
+        handler.do_GET()
+        handler.send_response.assert_called_with(200)
+        response_body = json.loads(self.mock_wfile.getvalue().decode())
+        self.assertEqual(response_body["name"], "experiments/234911122/charts/nonexistent_chart")
+        self.assertEqual(response_body["plots_data"], [])
+
+    def test_chart_data_fallback_both_xid_and_chart_match(self):
+        server_local.SPAHandler.goldens["prefix/experiments/55555/charts/loss_plot/extra"] = {
+            "name": "experiments/55555/charts/loss_plot",
+            "plots_data": [{"plot_id": "loss", "type": "LINE"}],
+        }
+        handler = self._get_handler("/v1/experiments/55555/charts/loss_plot:getData")
+        handler.do_GET()
+        handler.send_response.assert_called_with(200)
+        response_body = json.loads(self.mock_wfile.getvalue().decode())
+        self.assertEqual(response_body["plots_data"], [{"plot_id": "loss", "type": "LINE"}])
+
     def test_experiments_list(self):
         handler = self._get_handler("/v1/experiments")
         handler.do_GET()

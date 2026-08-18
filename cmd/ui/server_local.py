@@ -305,7 +305,7 @@ class SPAHandler(server.SPAHandler):
         if match:
             xid, chart_id = match.group(1), match.group(2)
             for golden_name, golden_data in SPAHandler.goldens.items():
-                if f"experiments/{xid}" in golden_name or chart_id in golden_name:
+                if f"experiments/{xid}" in golden_name and chart_id in golden_name:
                     self.send_json(200, golden_data)
                     return
 
