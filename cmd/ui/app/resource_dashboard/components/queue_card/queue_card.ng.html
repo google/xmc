@@ -133,12 +133,12 @@
           <mat-spinner diameter="24" />
           <span class="spinner-text">Fetching predictability metrics...</span>
         </div>
-      } @else if (!predictability()) {
+      } @else if (!predictabilityVm()) {
         <div class="predictability-spinner-container">
           <span class="spinner-text">No predictability data available.</span>
         </div>
       } @else {
-        @let pred = predictability()!;
+        @let vm = predictabilityVm()!;
         <div class="predictability-stats-grid">
           <div class="stat-cell">
             <div class="cell-label">
@@ -151,7 +151,7 @@
               >
             </div>
             <div class="cell-value bold-metric dark-text">
-              {{ pred.jobVelocity | number: '1.0-2' }} jobs/hr
+              {{ vm.jobVelocityDisplay }}
             </div>
           </div>
           <div class="stat-cell">
@@ -165,21 +165,19 @@
               >
             </div>
             <div class="cell-value bold-metric dark-text">
-              {{ pred.resourceVelocity?.velocity | number: '1.0-2' }}
-              {{ pred.resourceVelocity?.resourceType || 'units' }}/hr
+              {{ vm.resourceVelocityDisplay }}
             </div>
           </div>
           <div class="stat-cell">
             <div class="cell-label">Pending jobs</div>
             <div class="cell-value bold-metric dark-text">
-              {{ pred.pendingJobs }}
+              {{ vm.pendingJobs }}
             </div>
           </div>
           <div class="stat-cell">
             <div class="cell-label">Requested resources</div>
             <div class="cell-value bold-metric dark-text">
-              {{ pred.pendingResourceRequests?.count || 0 }}
-              {{ pred.pendingResourceRequests?.resourceType || 'units' }}
+              {{ vm.requestedResourcesDisplay }}
             </div>
           </div>
         </div>

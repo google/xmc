@@ -14,7 +14,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { catchError, Observable, of } from 'rxjs';
+import { catchError, Observable, of, throwError } from 'rxjs';
 
 import {
   BatchGetQueueSecondaryDataResponse,
@@ -105,7 +105,7 @@ export class ResourceService {
       .pipe(
         catchError((error) => {
           console.error('Failed to fetch secondary queue data:', error);
-          return of({ queuePredictability: {} });
+          return throwError(() => error);
         }),
       );
   }

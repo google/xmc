@@ -37,8 +37,9 @@ func (s *server) BatchGetQueueSecondaryData(ctx context.Context, req *spb.BatchG
 	}
 
 	preset := req.GetRange()
-	queueMap := make(map[string]*spb.ClusterQueueSecondaryMetrics)
-	for _, qName := range req.GetQueueNames() {
+	queueNames := req.GetQueueNames()
+	queueMap := make(map[string]*spb.ClusterQueueSecondaryMetrics, len(queueNames))
+	for _, qName := range queueNames {
 		resType := "CPU"
 		if strings.Contains(strings.ToLower(qName), "gpu") {
 			resType = "GPU H100"

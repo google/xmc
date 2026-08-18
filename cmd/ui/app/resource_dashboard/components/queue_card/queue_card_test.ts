@@ -156,6 +156,12 @@ describe('QueueCardComponent', () => {
 
     expect(resourceServiceSpy.getSubmitQueue).toHaveBeenCalledWith('gpu-cluster-queue');
     expect(clipboard.copy).toHaveBeenCalledWith('--queue=lq-gpu-1');
+    expect(await harness.getCopyFlagButtonText()).toContain('Copied');
+  });
+
+  it('should render Work in Progress banner in predictability section', async () => {
+    const bannerText = await harness.getWipBannerText();
+    expect(bannerText).toContain('Work in Progress');
   });
 
   it('should display loading spinner when isSecondaryLoading is true', async () => {
@@ -165,6 +171,16 @@ describe('QueueCardComponent', () => {
     const spinnerText = await harness.getSpinnerContainerText();
     expect(spinnerText).not.toBeNull();
     expect(spinnerText).toContain('Fetching predictability metrics...');
+  });
+
+  it('should display fallback message when predictability data is not available', async () => {
+    hostInstance.isSecondaryLoading.set(false);
+    hostInstance.secondaryData.set(undefined);
+    fixture.detectChanges();
+
+    const text = await harness.getSpinnerContainerText();
+    expect(text).not.toBeNull();
+    expect(text).toContain('No predictability data available.');
   });
 
   it('should display predictability metrics when secondaryData is provided', async () => {

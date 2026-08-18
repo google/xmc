@@ -31,7 +31,6 @@ import { take } from 'rxjs';
 import {
   ClusterQueueSecondaryMetrics,
   QueueOverview,
-  QueuePredictability,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
 import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
@@ -40,7 +39,20 @@ import {
   MaxWorkloadDisplayPipe,
   QueueStatusBadgePipe,
 } from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
+import {
+  calculateJobVelocity,
+  calculatePendingRequestsDisplay,
+  calculateResourceVelocity,
+  getPendingJobsCount,
+} from 'xmanager_cloud/ui/app/resource_dashboard/utils/resource_velocity';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
+
+export interface PredictabilityViewModel {
+  readonly jobVelocityDisplay: string;
+  readonly resourceVelocityDisplay: string;
+  readonly pendingJobs: number;
+  readonly requestedResourcesDisplay: string;
+}
 
 @Component({
   selector: 'xmc-rod-queue-card',
@@ -89,9 +101,18 @@ export class QueueCardComponent {
   protected readonly isQueueHealthy = computed(() => true);
 
   protected readonly isCopied = signal<boolean>(false);
-  protected readonly predictability = computed<QueuePredictability | undefined>(() => {
+  protected readonly predictabilityVm = computed<PredictabilityViewModel | null>(() => {
     const sec = this.secondaryData();
-    return sec?.queuePredictability?.[0];
+    if (!sec?.queuePredictability?.length) return null;
+    const reqRes = calculatePendingRequestsDisplay(sec);
+    const firstPred = sec.queuePredictability[0];
+    const resType = firstPred?.pendingResourceRequests?.resourceType;
+    return {
+      jobVelocityDisplay: calculateJobVelocity(sec, '1h'),
+      resourceVelocityDisplay: calculateResourceVelocity(sec, '1h'),
+      pendingJobs: getPendingJobsCount(sec),
+      requestedResourcesDisplay: resType ? `${reqRes} ${resType}` : `${reqRes} units`,
+    };
   });
 
   protected onCardClick(): void {
