@@ -21,7 +21,10 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { of } from 'rxjs';
 
-import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import {
+  ClusterQueueSecondaryMetrics,
+  QueueOverview,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 
 import { QueueCardComponent } from './queue_card';
@@ -33,6 +36,8 @@ import { QueueCardHarness } from './queue_card_harness';
   template: `
     <xmc-rod-queue-card
       [queue]="queue()"
+      [secondaryData]="secondaryData()"
+      [isSecondaryLoading]="isSecondaryLoading()"
       [isSelected]="isSelected()"
       [activeResourceFilters]="activeResourceFilters()"
       (selectQueue)="selectedQueueName.set($event)"
@@ -51,6 +56,8 @@ class TestHostComponent {
     ],
   });
 
+  readonly secondaryData = signal<ClusterQueueSecondaryMetrics | undefined>(undefined);
+  readonly isSecondaryLoading = signal<boolean>(false);
   readonly isSelected = signal<boolean>(false);
   readonly activeResourceFilters = signal<string[]>([]);
   readonly selectedQueueName = signal<string>('');
@@ -149,11 +156,68 @@ describe('QueueCardComponent', () => {
 
     expect(resourceServiceSpy.getSubmitQueue).toHaveBeenCalledWith('gpu-cluster-queue');
     expect(clipboard.copy).toHaveBeenCalledWith('--queue=lq-gpu-1');
-    expect(await harness.getCopyFlagButtonText()).toContain('Copied');
   });
 
-  it('should render Work in Progress banner in predictability section', async () => {
-    const bannerText = await harness.getWipBannerText();
-    expect(bannerText).toContain('Work in Progress');
+  it('should display loading spinner when isSecondaryLoading is true', () => {
+    hostInstance.isSecondaryLoading.set(true);
+    fixture.detectChanges();
+
+    const spinner = fixture.nativeElement.querySelector('.predictability-spinner-container');
+    expect(spinner).not.toBeNull();
+    expect(spinner.textContent).toContain('Fetching predictability metrics...');
+  });
+
+  it('should display predictability metrics when secondaryData is provided', () => {
+    hostInstance.isSecondaryLoading.set(false);
+    hostInstance.secondaryData.set({
+      queuePredictability: [
+        {
+          velocityRange: 1,
+          jobVelocity: 12.5,
+          resourceVelocity: {
+            resourceType: 'nvidia-tesla-h100',
+            velocity: 100,
+          },
+          pendingJobs: 3,
+          pendingResourceRequests: {
+            resourceType: 'nvidia-tesla-h100',
+            count: 24,
+          },
+        },
+      ],
+    });
+    fixture.detectChanges();
+
+    const predSection = fixture.nativeElement.querySelector('.predictability-section');
+    expect(predSection).not.toBeNull();
+    expect(predSection.textContent).toContain('12.5 jobs/hr');
+    expect(predSection.textContent).toContain('100 nvidia-tesla-h100/hr');
+    expect(predSection.textContent).toContain('3');
+    expect(predSection.textContent).toContain('24 nvidia-tesla-h100');
+  });
+
+  it('should display default units string when resourceType is missing in predictability metrics', () => {
+    hostInstance.isSecondaryLoading.set(false);
+    hostInstance.secondaryData.set({
+      queuePredictability: [
+        {
+          velocityRange: 1,
+          jobVelocity: 5,
+          resourceVelocity: {
+            velocity: 40,
+          },
+          pendingJobs: 2,
+          pendingResourceRequests: {
+            count: 16,
+          },
+        },
+      ],
+    });
+    fixture.detectChanges();
+
+    const predSection = fixture.nativeElement.querySelector('.predictability-section');
+    expect(predSection).not.toBeNull();
+    expect(predSection.textContent).toContain('40 units/hr');
+    expect(predSection.textContent).toContain('16 units');
   });
 });

@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { take } from 'rxjs';
+
 import { Clipboard } from '@angular/cdk/clipboard';
+import { DecimalPipe } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -23,10 +26,14 @@ import {
   signal,
 } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
-import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
-import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
+import {
+  ClusterQueueSecondaryMetrics,
+  QueueOverview,
+  QueuePredictability,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
 import {
   FreeTotalDisplayPipe,
@@ -42,16 +49,19 @@ import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service'
   styleUrl: './queue_card.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    DecimalPipe,
     MatIconModule,
+    MatProgressSpinnerModule,
     MatTooltipModule,
     MaxWorkloadDisplayPipe,
     FreeTotalDisplayPipe,
     QueueStatusBadgePipe,
-    WipBannerComponent,
   ],
 })
 export class QueueCardComponent {
   readonly queue = input.required<QueueOverview>();
+  readonly secondaryData = input<ClusterQueueSecondaryMetrics | undefined>(undefined);
+  readonly isSecondaryLoading = input<boolean>(false);
   readonly isSelected = input<boolean>(false);
   readonly activeResourceFilters = input<string[]>([]);
   readonly selectQueue = output<string>();
@@ -78,6 +88,10 @@ export class QueueCardComponent {
   protected readonly isQueueHealthy = computed(() => true);
 
   protected readonly isCopied = signal<boolean>(false);
+  protected readonly predictability = computed<QueuePredictability | undefined>(() => {
+    const sec = this.secondaryData();
+    return sec?.queuePredictability?.[0];
+  });
 
   protected onCardClick(): void {
     const name = this.queue().queueName;
@@ -91,7 +105,10 @@ export class QueueCardComponent {
     const clusterQueueName = this.queue()?.queueName ?? '';
     if (!clusterQueueName) return;
 
-    this.resourceService.getSubmitQueue(clusterQueueName).subscribe((resp) => {
+    this.resourceService
+      .getSubmitQueue(clusterQueueName)
+      .pipe(take(1))
+      .subscribe((resp) => {
       const targetQueue = resp?.submitQueue || clusterQueueName;
       const flagText = `--queue=${targetQueue}`;
 
