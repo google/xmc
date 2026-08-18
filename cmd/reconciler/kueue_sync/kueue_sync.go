@@ -18,6 +18,7 @@ package kueuesync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -37,6 +38,17 @@ import (
 	"xmanager_cloud/storage/storage"
 )
 
+// Params holds dependencies and configuration for constructing a KueueSync Reconciler.
+type Params struct {
+	Client                           runtimeclient.Client
+	Clientset                        kubernetes.Interface
+	CQCache                          *clusterqueue.NameCache
+	Storage                          storage.Storage
+	UpdateBatcher                    *shared.UpdateBatcher
+	KueueSyncTickDuration            time.Duration
+	MaxConcurrentKueueSyncReconciles int
+}
+
 // Reconciler runs in background to sync queue position.
 type Reconciler struct {
 	Client                           runtimeclient.Client
@@ -46,6 +58,31 @@ type Reconciler struct {
 	UpdateBatcher                    *shared.UpdateBatcher
 	KueueSyncTickDuration            time.Duration
 	MaxConcurrentKueueSyncReconciles int
+}
+
+// NewReconciler creates and validates a new KueueSync Reconciler.
+func NewReconciler(p Params) (*Reconciler, error) {
+	if p.Client == nil {
+		return nil, errors.New("client is required")
+	}
+	if p.Clientset == nil {
+		return nil, errors.New("clientset is required")
+	}
+	if p.CQCache == nil {
+		return nil, errors.New("cq cache is required")
+	}
+	if p.UpdateBatcher == nil {
+		return nil, errors.New("update batcher is required")
+	}
+	return &Reconciler{
+		Client:                           p.Client,
+		Clientset:                        p.Clientset,
+		CQCache:                          p.CQCache,
+		Storage:                          p.Storage,
+		UpdateBatcher:                    p.UpdateBatcher,
+		KueueSyncTickDuration:            p.KueueSyncTickDuration,
+		MaxConcurrentKueueSyncReconciles: p.MaxConcurrentKueueSyncReconciles,
+	}, nil
 }
 
 const (

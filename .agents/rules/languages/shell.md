@@ -27,3 +27,11 @@ set -euo pipefail
 ## 4. Terminal Command Execution & Sandbox Safety
 - **Forbidden Unconstrained Traversals**: NEVER execute unconstrained root searches (`find /`, `find ~`, `grep -r "pattern" /`) outside the active workspace directory. Bounded searches MUST specify explicit workspace paths or subdirectories (`find .agents/`, `find tools/`).
 - **Avoid Heavy Compound Chaining**: Avoid using long compound command chains (`cmd1 && cmd2 && cmd3 && cmd4`) in a single `run_command` invocation, as network or sandbox resets can break terminal pipes (`connection reset by peer`). Split preparation and execution into discrete single commands.
+
+## 5. Parameterized Cloud Environment Guardrails
+- **No Hardcoded Cloud Infrastructure Identifiers**: Shell scripts interacting with cloud infrastructure (GCP project IDs, Spanner instances, GCS buckets) must never hardcode developer-specific identifiers (e.g. `xmc-some-test-project`, `xmc-alice-bob-test`).
+- **Entrypoint Parameter Validation**: Scripts must validate all required cloud environment variables at entrypoint using bash parameter expansion error syntax or explicit validation blocks:
+  ```bash
+  : "${GCP_PROJECT_ID:?Error: GCP_PROJECT_ID environment variable is required}"
+  : "${SPANNER_INSTANCE:?Error: SPANNER_INSTANCE environment variable is required}"
+  ```
