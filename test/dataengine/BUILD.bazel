@@ -87,3 +87,9 @@ compat_go_test(
         "//pkg/clickhouse",
     ],
 )
+
+filegroup(
+    name = "golden_testdata",
+    srcs = glob(["testdata/golden/*.json"]),
+    visibility = ["//visibility:public"],
+)
