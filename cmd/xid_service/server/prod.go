@@ -34,7 +34,7 @@ import (
 
 var _ apipb.XidServiceServer = (*ProdServer)(nil)
 
-// ProdServer encapsulates the production XIDServer instance along with its underlying infrastructure dependencies and lifecycle.
+// ProdServer encapsulates the live runtime XIDServer instance along with its real cloud infrastructure dependencies (Cloud Spanner, Cloud Identity, OAuth2) and lifecycle management. It serves as the production/runtime composition root across deployed environments (dev, staging, prod), in contrast to unit-test environments which instantiate XIDServer directly with test doubles via New(Params).
 type ProdServer struct {
 	*XIDServer
 	spannerClient *spanner.Client
@@ -100,7 +100,7 @@ func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (
 	return auth, nil
 }
 
-// NewProd creates and initializes a production XIDServer instance along with its dependencies.
+// NewProd creates and initializes a live runtime XIDServer instance with real cloud infrastructure dependencies (Spanner, Cloud Identity, OAuth2) and automated LIFO rollback cleanup on error.
 func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_ *ProdServer, retErr error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config cannot be nil")
