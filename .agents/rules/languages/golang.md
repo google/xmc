@@ -93,7 +93,7 @@ graph TD
 - **Ergonomic Test Fixtures (`newTestServer(t, opts...)`)**: Unit tests inject fast in-memory fakes or doubles via functional test fixtures with zero cloud SDK overhead.
 
 ### 2. Tier 2: Runtime Composition Root (`server.NewRuntimeServer(ctx, cfg) (*RuntimeServer, error)`)
-- **Environment-Neutral Naming (No `Prod` Suffixes)**: NEVER name composition roots `ProdServer` or `NewProd`. The term "Prod" is overloaded with deployment environments (`XMC_ENV=prod` vs `dev` vs `staging`) and causes confusion because the composition root runs in all live deployments. Use explicit, environment-neutral names: `RuntimeServer`, `NewRuntimeServer`, `LiveServer`, or `NewManager`.
+- **Environment-Neutral Naming (No `Prod` Suffixes)**: NEVER name composition roots `ProdServer` or `NewProd`. The term "Prod" is overloaded with deployment environment semantics and causes confusion because this composition root is used whenever running the live server binary (as opposed to unit-test fakes). Use explicit, environment-neutral names: `RuntimeServer`, `NewRuntimeServer`, `LiveServer`, or `NewManager`.
 - **LIFO Rollback Cleanup Stack**: When instantiating multi-step cloud infrastructure (Spanner, Redis, K8s clients, OAuth verifiers), track cleanups in a LIFO slice (`var cleanups []func() error`) with an error-triggered deferred rollback:
   ```go
   var cleanups []func() error
