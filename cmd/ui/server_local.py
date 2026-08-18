@@ -177,12 +177,12 @@ class SPAHandler(server.SPAHandler):
         if self.path.startswith("/v1/dashboards") or self.path.startswith("/dashboards"):
             clean_path = self.path.split("?")[0].rstrip("/")
             if clean_path in ("/v1/dashboards", "/dashboards"):
-                self.send_json(200, {"dashboards": self.in_memory_dashboards})
+                self.send_json(200, {"dashboards": SPAHandler.in_memory_dashboards})
                 return
             dashboard_name = clean_path.lstrip("/")
             if dashboard_name.startswith("v1/"):
                 dashboard_name = dashboard_name[3:]
-            for dash in self.in_memory_dashboards:
+            for dash in SPAHandler.in_memory_dashboards:
                 if dash.get("name") == dashboard_name:
                     self.send_json(200, dash)
                     return
@@ -235,7 +235,7 @@ class SPAHandler(server.SPAHandler):
             payload = {}
 
         dashboard_id = (
-            payload.get("dashboardId") or f"dashboard-{len(self.in_memory_dashboards) + 1}"
+            payload.get("dashboardId") or f"dashboard-{len(SPAHandler.in_memory_dashboards) + 1}"
         )
         new_dashboard = {
             "name": f"dashboards/{dashboard_id}",
@@ -246,7 +246,7 @@ class SPAHandler(server.SPAHandler):
             "create_time": "2026-08-18T00:00:00Z",
             "update_time": "2026-08-18T00:00:00Z",
         }
-        self.in_memory_dashboards.append(new_dashboard)
+        SPAHandler.in_memory_dashboards.append(new_dashboard)
         self.send_json(200, new_dashboard)
 
     def _handle_dashboards_delete(self) -> None:
@@ -254,11 +254,11 @@ class SPAHandler(server.SPAHandler):
         clean_path = self.path.split("?")[0].lstrip("/")
         if clean_path.startswith("v1/"):
             clean_path = clean_path[3:]
-        initial_len = len(self.in_memory_dashboards)
-        self.in_memory_dashboards = [
-            d for d in self.in_memory_dashboards if d.get("name") != clean_path
+        initial_len = len(SPAHandler.in_memory_dashboards)
+        SPAHandler.in_memory_dashboards = [
+            d for d in SPAHandler.in_memory_dashboards if d.get("name") != clean_path
         ]
-        if len(self.in_memory_dashboards) < initial_len:
+        if len(SPAHandler.in_memory_dashboards) < initial_len:
             self.send_json(200, {"message": f"Dashboard {clean_path} deleted successfully"})
         else:
             self.send_json(404, {"error": f"Dashboard {clean_path} not found"})
@@ -290,12 +290,12 @@ class SPAHandler(server.SPAHandler):
             clean_path = clean_path[3:]
 
         # Exact match in golden files
-        if clean_path in self.goldens:
-            self.send_json(200, self.goldens[clean_path])
+        if clean_path in SPAHandler.goldens:
+            self.send_json(200, SPAHandler.goldens[clean_path])
             return
 
         # Match by XID or chart name
-        for golden_name, golden_data in self.goldens.items():
+        for golden_name, golden_data in SPAHandler.goldens.items():
             if golden_name.endswith(clean_path) or clean_path.endswith(golden_name):
                 self.send_json(200, golden_data)
                 return
@@ -304,7 +304,7 @@ class SPAHandler(server.SPAHandler):
         match = re.search(r"experiments/(\d+)/charts/([^/]+)", clean_path)
         if match:
             xid, chart_id = match.group(1), match.group(2)
-            for golden_name, golden_data in self.goldens.items():
+            for golden_name, golden_data in SPAHandler.goldens.items():
                 if f"experiments/{xid}" in golden_name or chart_id in golden_name:
                     self.send_json(200, golden_data)
                     return

@@ -175,6 +175,7 @@ class SPAHandlerLocalTest(unittest.TestCase):
         response_body = json.loads(self.mock_wfile.getvalue().decode())
         self.assertEqual(response_body["name"], "dashboards/test-dash")
         self.assertEqual(response_body["title"], "Test Dash")
+        self.assertEqual(len(server_local.SPAHandler.in_memory_dashboards), 2)
 
     def test_create_dashboard_invalid_json(self):
         handler = self._get_handler("/v1/dashboards", method="POST", body=b"invalid-json")
@@ -192,11 +193,22 @@ class SPAHandlerLocalTest(unittest.TestCase):
         handler = self._get_handler("/v1/dashboards/vcc_benchmark_suite", method="DELETE")
         handler.do_DELETE()
         handler.send_response.assert_called_with(200)
+        self.assertEqual(len(server_local.SPAHandler.in_memory_dashboards), 0)
+
+        # Verify subsequent request sees the deletion
+        self.mock_wfile.seek(0)
+        self.mock_wfile.truncate(0)
+        get_handler = self._get_handler("/v1/dashboards")
+        get_handler.do_GET()
+        get_handler.send_response.assert_called_with(200)
+        response_body = json.loads(self.mock_wfile.getvalue().decode())
+        self.assertEqual(response_body["dashboards"], [])
 
     def test_delete_dashboard_not_found(self):
         handler = self._get_handler("/v1/dashboards/non_existent", method="DELETE")
         handler.do_DELETE()
         handler.send_response.assert_called_with(404)
+        self.assertEqual(len(server_local.SPAHandler.in_memory_dashboards), 1)
 
     def test_chart_data_golden(self):
         handler = self._get_handler("/v1/experiments/234911122/charts/baseline:getData")
