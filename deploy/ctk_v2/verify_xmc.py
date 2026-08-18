@@ -46,40 +46,61 @@ def _extract_yaml_val(content: str, key: str) -> str | None:
     return match.group(1)
 
 
+def _parse_bool(val: str | None) -> bool:
+    """Parses boolean from string representation.
+
+    Args:
+      val: Input string or None.
+
+    Returns:
+      True if string is truthy ('true', '1', 'yes'), False otherwise.
+    """
+    if not val:
+        return False
+    return val.strip().lower() in ("true", "1", "yes")
+
+
 def _resolve_config(
     config_path: pathlib.Path | None = None,
-) -> tuple[str | None, str | None, str | None]:
-    """Resolves environment, region, and project_id from env or YAML config.
+) -> tuple[str | None, str | None, str | None, bool]:
+    """Resolves environment, region, project_id, and enable_components flag.
 
     Args:
       config_path: Optional explicit Path to xmanager-cloud-deployment.yaml.
 
     Returns:
-      Tuple of (environment, region, project_id).
+      Tuple of (environment, region, project_id, enable_components).
     """
     env_val = os.environ.get("ENVIRONMENT")
     region_val = os.environ.get("REGION")
     project_val = os.environ.get("PROJECT_ID")
+    enable_components_env = os.environ.get("ENABLE_COMPONENTS")
 
-    if env_val and region_val and project_val:
-        return env_val, region_val, project_val
+    if env_val and region_val and project_val and enable_components_env is not None:
+        return env_val, region_val, project_val, _parse_bool(enable_components_env)
 
     if config_path is None:
         config_path = pathlib.Path(__file__).parent / "xmanager-cloud-deployment.yaml"
 
     if not config_path.is_file():
-        return env_val, region_val, project_val
+        return env_val, region_val, project_val, _parse_bool(enable_components_env)
 
     try:
         content = config_path.read_text(encoding="utf-8")
     except OSError:
-        return env_val, region_val, project_val
+        return env_val, region_val, project_val, _parse_bool(enable_components_env)
 
     env_val = env_val or _extract_yaml_val(content, "environment")
     region_val = region_val or _extract_yaml_val(content, "region")
     project_val = project_val or _extract_yaml_val(content, "project_id")
 
-    return env_val, region_val, project_val
+    if enable_components_env is not None:
+        enable_components = _parse_bool(enable_components_env)
+    else:
+        yaml_comp = _extract_yaml_val(content, "enable_components")
+        enable_components = _parse_bool(yaml_comp)
+
+    return env_val, region_val, project_val, enable_components
 
 
 def _run_command(cmd: list[str]) -> str:
@@ -209,21 +230,39 @@ def _check_log_monitor(
     print("✅ Log Monitor Cloud Run service is running and Ready.")
 
 
+def _check_components(enable_components: bool) -> None:
+    """Checks status of foundational component controllers if enabled.
+
+    Args:
+      enable_components: Whether foundational component controllers are enabled.
+    """
+    print("\n--- 8. Component Controllers Status ---")
+    if not enable_components:
+        print("ℹ️ Skipping Component Controllers check: enable_components is false.")
+        return
+
+    cmd = ["kubectl", "get", "pods", "-n", "xmc", "-l", "app=components-controller"]
+    out = _run_command(cmd)
+    if out:
+        sys.stdout.write(out)
+
+
 def main() -> int:
     """Executes full diagnostic verification suite against target XMC environment.
 
     Returns:
-        Exit code 0 on success, 1 on any check warning/failure.
+      Exit code 0 on success, 1 on any check warning/failure.
     """
     ensure_venv()
     print("=========================================")
     print("XManager on Cloud (XMC) v2 Verification")
     print("=========================================")
 
-    env, region, project_id = _resolve_config()
+    env, region, project_id, enable_components = _resolve_config()
     _check_k8s_resources()
     _check_connectivity()
     _check_log_monitor(env, region, project_id)
+    _check_components(enable_components)
 
     print("=========================================")
     return 0

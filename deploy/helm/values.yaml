@@ -43,6 +43,9 @@ essDeployment:
 healthServiceDeployment:
   enabled: false
 
+componentsDeployment:
+  enabled: false
+
 metrics:
   enabled: false
 
