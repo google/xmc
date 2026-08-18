@@ -18,6 +18,7 @@ import { catchError, Observable, of } from 'rxjs';
 
 import {
   BatchGetQueueSecondaryDataResponse,
+  ClusterQueueSecondaryMetrics,
   GetRunningAndPendingJobsResponse,
   GetSubmitQueueResponse,
   ListClusterQueuesResponse,
@@ -87,7 +88,8 @@ export class ResourceService {
   }
 
   /**
-   * Fetches secondary data (velocity / turnover rate) for the specified cluster queues.
+   * Fetches secondary predictability telemetry data for the specified cluster queues.
+   * UI-Driven PR 1 Mock Implementation: returns hardcoded telemetry fixtures.
    */
   getQueueSecondaryData(
     queueNames: string[],
@@ -96,17 +98,29 @@ export class ResourceService {
     if (!queueNames || queueNames.length === 0) {
       return of({ queuePredictability: {} });
     }
-    return this.http
-      .post<BatchGetQueueSecondaryDataResponse>(
-        `${XMC_API_DOMAIN}/clusterqueues:batchGetSecondaryData`,
-        { queueNames, range },
-        { withCredentials: true },
-      )
-      .pipe(
-        catchError((error) => {
-          console.error('Failed to fetch secondary queue data:', error);
-          return of({ queuePredictability: {} });
-        }),
-      );
+    const mockData: Record<string, ClusterQueueSecondaryMetrics> = {};
+    for (const name of queueNames) {
+      const isGpu = name.includes('gpu');
+      const isTpu = name.includes('tpu');
+      const resType = isGpu ? 'GPU H100' : isTpu ? 'TPU v5p' : 'CPU';
+      mockData[name] = {
+        queuePredictability: [
+          {
+            velocityRange: range,
+            jobVelocity: 12.5,
+            resourceVelocity: {
+              resourceType: resType,
+              velocity: 25.0,
+            },
+            pendingJobs: 3,
+            pendingResourceRequests: {
+              resourceType: resType,
+              count: 6.0,
+            },
+          },
+        ],
+      };
+    }
+    return of({ queuePredictability: mockData });
   }
 }
