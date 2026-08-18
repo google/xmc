@@ -336,4 +336,88 @@ describe('echarts_options_builder', () => {
       expect(seriesArr[0].type).toBe('bar');
     });
   });
+
+  describe('getPointStep coordinate mapping', () => {
+    const baseSpec: PlotSpec = {
+      plotId: 'time_series_plot',
+      title: 'Time Series Metric',
+      type: PlotType.SCATTER,
+      data: { metrics: ['system/gpu_util'] },
+    };
+
+    it('should map coordinates using timestamp when step and iteration are absent', () => {
+      const timestamp1 = '2026-08-18T12:00:00Z';
+      const timestamp2 = '2026-08-18T12:05:00Z';
+      const parsedTime1 = Date.parse(timestamp1);
+      const parsedTime2 = Date.parse(timestamp2);
+
+      const plotData: PlotData = {
+        plotId: 'time_series_plot',
+        type: 'SCATTER',
+        scatterSeries: {
+          metricName: 'system/gpu_util',
+          points: [
+            { timestamp: timestamp1, avgValue: 85.5 },
+            { timestamp: timestamp2, avgValue: 92.0 },
+          ],
+        },
+      };
+
+      const option = buildScatterOption(baseSpec, plotData);
+      const seriesArr = option.series as any[];
+      expect(seriesArr.length).toBe(1);
+      expect(seriesArr[0].data).toEqual([
+        [parsedTime1, 85.5],
+        [parsedTime2, 92.0],
+      ]);
+    });
+
+    it('should map coordinates using numeric or string iteration when step is absent', () => {
+      const plotData: PlotData = {
+        plotId: 'iteration_plot',
+        type: 'SCATTER',
+        scatterSeries: {
+          metricName: 'epoch/accuracy',
+          points: [
+            { iteration: 1, avgValue: 0.75 },
+            { iteration: '2', avgValue: 0.82 },
+          ],
+        },
+      };
+
+      const option = buildScatterOption(baseSpec, plotData);
+      const seriesArr = option.series as any[];
+      expect(seriesArr.length).toBe(1);
+      expect(seriesArr[0].data).toEqual([
+        [1, 0.75],
+        [2, 0.82],
+      ]);
+    });
+
+    it('should fallback to 0 when step or iteration is NaN or timestamp is invalid', () => {
+      const plotData: PlotData = {
+        plotId: 'invalid_coords_plot',
+        type: 'SCATTER',
+        scatterSeries: {
+          metricName: 'invalid/metric',
+          points: [
+            { step: 'invalid_step', avgValue: 10 },
+            { iteration: 'invalid_iter', avgValue: 20 },
+            { timestamp: 'invalid_date', avgValue: 30 },
+            { avgValue: 40 },
+          ],
+        },
+      };
+
+      const option = buildScatterOption(baseSpec, plotData);
+      const seriesArr = option.series as any[];
+      expect(seriesArr.length).toBe(1);
+      expect(seriesArr[0].data).toEqual([
+        [0, 10],
+        [0, 20],
+        [0, 30],
+        [0, 40],
+      ]);
+    });
+  });
 });

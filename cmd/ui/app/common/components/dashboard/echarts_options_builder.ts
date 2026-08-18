@@ -52,10 +52,16 @@ export function getEmptyChartOption(): EChartsOption {
 
 function getPointStep(point: SeriesPoint): number {
   if (point.step !== undefined && point.step !== null) {
-    return typeof point.step === 'string' ? parseFloat(point.step) : point.step;
+    const step = typeof point.step === 'string' ? parseFloat(point.step) : point.step;
+    return isNaN(step) ? 0 : step;
   }
   if (point.iteration !== undefined && point.iteration !== null) {
-    return typeof point.iteration === 'string' ? parseFloat(point.iteration) : point.iteration;
+    const iter = typeof point.iteration === 'string' ? parseFloat(point.iteration) : point.iteration;
+    return isNaN(iter) ? 0 : iter;
+  }
+  if (point.timestamp) {
+    const parsedTime = Date.parse(point.timestamp);
+    if (!isNaN(parsedTime)) return parsedTime;
   }
   return 0;
 }
