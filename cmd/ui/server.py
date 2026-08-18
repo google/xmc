@@ -60,11 +60,15 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             status_history = get_bool_env("XMC_STATUS_MESSAGE_HISTORY_ENABLED", True)
             admin_panel_enabled = get_bool_env("XMC_ADMIN_PANEL_ENABLED", False)
             resource_dashboard_enabled = get_bool_env("XMC_RESOURCE_DASHBOARD_ENABLED", False)
+            performance_dashboard_enabled = get_bool_env(
+                "XMC_PERFORMANCE_DASHBOARD_ENABLED", False
+            )
 
             feature_flags = {
                 "statusMessageHistoryEnabled": status_history,
                 "adminPanelEnabled": admin_panel_enabled,
                 "resourceDashboardEnabled": resource_dashboard_enabled,
+                "performanceDashboardEnabled": performance_dashboard_enabled,
             }
 
             config_content = (
