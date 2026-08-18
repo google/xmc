@@ -127,10 +127,14 @@
         <span class="section-title-text">Predictability</span>
       </div>
 
-      @if (isSecondaryLoading() || !predictability()) {
+      @if (isSecondaryLoading()) {
         <div class="predictability-spinner-container">
           <mat-spinner diameter="24" />
           <span class="spinner-text">Fetching predictability metrics...</span>
+        </div>
+      } @else if (!predictability()) {
+        <div class="predictability-spinner-container">
+          <span class="spinner-text">No predictability data available.</span>
         </div>
       } @else {
         @let pred = predictability()!;
