@@ -234,7 +234,13 @@ export function buildBarOption(
 }
 
 function isScatterType(spec: PlotSpec, data: PlotData): boolean {
-  return spec.type === PlotType.SCATTER || spec.type === 2 || data.type === 'SCATTER';
+  return (
+    spec.type === PlotType.SCATTER ||
+    spec.type === 2 ||
+    data.type === PlotType.SCATTER ||
+    data.type === 2 ||
+    data.type === 'SCATTER'
+  );
 }
 
 function isBarType(spec: PlotSpec, data: PlotData): boolean {
@@ -243,7 +249,12 @@ function isBarType(spec: PlotSpec, data: PlotData): boolean {
     spec.type === 3 ||
     spec.type === PlotType.HISTOGRAM ||
     spec.type === 4 ||
-    data.type === 'BAR'
+    data.type === PlotType.BAR ||
+    data.type === 3 ||
+    data.type === PlotType.HISTOGRAM ||
+    data.type === 4 ||
+    data.type === 'BAR' ||
+    data.type === 'HISTOGRAM'
   );
 }
 
