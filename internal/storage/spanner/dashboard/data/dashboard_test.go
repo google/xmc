@@ -660,30 +660,6 @@ func TestMergeDashboards_PreservesChartsOrder(t *testing.T) {
 	}
 }
 
-func TestExtractDashboardID(t *testing.T) {
-	t.Run("valid dashboard resource name", func(t *testing.T) {
-		got, err := ExtractDashboardID("dashboards/my-dash-1")
-		if err != nil {
-			t.Fatalf("ExtractDashboardID() unexpected error: %v", err)
-		}
-		if got != "my-dash-1" {
-			t.Errorf("ExtractDashboardID() = %q, want %q", got, "my-dash-1")
-		}
-	})
-
-	t.Run("invalid dashboard name returns error", func(t *testing.T) {
-		if _, err := ExtractDashboardID("invalid/name"); err == nil {
-			t.Errorf("ExtractDashboardID(\"invalid/name\") succeeded, want error")
-		}
-	})
-
-	t.Run("bare id returns error", func(t *testing.T) {
-		if _, err := ExtractDashboardID("bare-id"); err == nil {
-			t.Errorf("ExtractDashboardID(\"bare-id\") succeeded, want error")
-		}
-	})
-}
-
 func TestDashboardProtoToInsertMutations_InvalidDashboardName(t *testing.T) {
 	dash := &dpb.Dashboard{
 		Name: "invalid-name-without-prefix",
@@ -701,4 +677,3 @@ func TestDashboardProtoToUpdateMutations_InvalidDashboardName(t *testing.T) {
 		t.Errorf("DashboardProtoToUpdateMutations with invalid name succeeded, want error")
 	}
 }
-

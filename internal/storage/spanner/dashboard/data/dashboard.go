@@ -32,11 +32,6 @@ import (
 	"xmanager_cloud/validator/validator"
 )
 
-// ExtractDashboardID extracts and validates the bare dashboard ID from a full resource name ("dashboards/{dashboard_id}").
-func ExtractDashboardID(name string) (string, error) {
-	return validator.ValidateDashboardName(name)
-}
-
 // SortCharts returns a new slice with charts sorted alphabetically by Name.
 func SortCharts(charts []*dpb.Chart) []*dpb.Chart {
 	if len(charts) <= 1 {
