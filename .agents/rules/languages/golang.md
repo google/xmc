@@ -45,7 +45,7 @@ This document defines coding standards and conventions for Go development across
 - **Pre-allocating Map Capacity**: Specify initial capacity `make(map[K]V, capacity)` whenever map entry counts are known to prevent runtime re-allocations.
 - **Deterministic Map Iteration**: Map iteration in Go is non-deterministic. Always sort slice outputs derived from map keys prior to serialization or return.
 
-## 8. Context Safety in `defer` Cleanups & Error Branches
+## 9. Context Safety in `defer` Cleanups & Error Branches
 - **Fresh Cleanup Context**: Deferred cleanup functions (`Teardown`, `Close`, container termination) MUST NOT pass a parent context (`ctx`) that might already be canceled or timed out. Wrap the context creation and cleanup call inside a deferred closure so the timeout begins when cleanup actually starts:
   ```go
   defer func() {
@@ -55,7 +55,63 @@ This document defines coding standards and conventions for Go development across
   }()
   ```
 
-## 9. Integration Testing & Testcontainers Best Practices
+## 10. Two-Tier Service Constructor & Runtime Composition Root Architecture
+To enable high-fidelity, decoupled unit testing without bloated mock setups or cloud SDK coupling, all Go gRPC/HTTP services and controllers MUST follow the **Two-Tier Constructor & Composition Root Pattern**:
+
+```mermaid
+graph TD
+    subgraph Tier1 ["Tier 1: Pure Domain Layer (server.go / reconciler.go)"]
+        New["server.New(p Params) (*Server, error)"]
+        Params["Params Struct (Pure Interfaces Only)"]
+        TestFixture["newTestServer(t, opts...) Fixtures"]
+        New --> Params
+        TestFixture --> New
+    end
+
+    subgraph Tier2 ["Tier 2: Runtime Composition Root (runtime.go / manager.go)"]
+        NewRuntime["NewRuntimeServer(ctx, cfg...) (*RuntimeServer, error)"]
+        LIFO["LIFO Rollback Cleanup Stack"]
+        HealthCheckers["HealthCheckers() Readiness Accessor"]
+        Close["Thread-Safe Idempotent Close() via sync.Once"]
+        NewRuntime --> LIFO
+        NewRuntime --> HealthCheckers
+        NewRuntime --> Close
+        NewRuntime --> New
+    end
+
+    subgraph Tier3 ["Tier 3: Declarative Binary Entrypoint (main.go)"]
+        Main["main() / run(ctx, cfg)"]
+        Main --> NewRuntime
+        Main -->|"Wires HealthCheckers()"| HealthMux["HTTP / gRPC Health Server"]
+    end
+```
+
+### 1. Tier 1: Pure Domain Constructor (`server.New(p Params) (*Server, error)`)
+- **Interface-Only `Params` Struct**: Accepts a `Params` parameter object containing **pure domain interfaces** (`storage.Storage`, `auth.AuthorizerInterface`, `taskqueue.Client`).
+- **Fail-Fast Dependency Validation**: Validates all required dependencies on initialization and returns descriptive errors on nil/missing parameters (`go/go-style/decisions#panics`). NEVER panic in constructors.
+- **Zero Cloud SDK Instantiation**: Never instantiate concrete cloud SDKs (Spanner, Redis, K8s, Cloud Identity) or perform external I/O directly in `server.New`.
+- **Ergonomic Test Fixtures (`newTestServer(t, opts...)`)**: Unit tests inject fast in-memory fakes or doubles via functional test fixtures with zero cloud SDK overhead.
+
+### 2. Tier 2: Runtime Composition Root (`server.NewRuntimeServer(ctx, cfg) (*RuntimeServer, error)`)
+- **Environment-Neutral Naming (No `Prod` Suffixes)**: NEVER name composition roots `ProdServer` or `NewProd`. The term "Prod" is overloaded with deployment environments (`XMC_ENV=prod` vs `dev` vs `staging`) and causes confusion because the composition root runs in all live deployments. Use explicit, environment-neutral names: `RuntimeServer`, `NewRuntimeServer`, `LiveServer`, or `NewManager`.
+- **LIFO Rollback Cleanup Stack**: When instantiating multi-step cloud infrastructure (Spanner, Redis, K8s clients, OAuth verifiers), track cleanups in a LIFO slice (`var cleanups []func() error`) with an error-triggered deferred rollback:
+  ```go
+  var cleanups []func() error
+  defer func() {
+      if retErr != nil {
+          for i := len(cleanups) - 1; i >= 0; i-- {
+              _ = cleanups[i]()
+          }
+      }
+  }()
+  ```
+- **Thread-Safe Idempotent Teardown (`Close() error`)**: Protect `Close()` using `sync.Once` and `errors.Join` across sub-cleanups.
+- **Encapsulated Readiness & Probes (`HealthCheckers()`)**: Expose health checking interfaces from `RuntimeServer` to allow `main.go` to wire HTTP `/readyz` or gRPC health checks without leaking raw database or cloud client handles.
+
+### 3. Tier 3: Minimal Binary Entrypoint (`main.go` / `run()`)
+- `main()` and `run(ctx, cfg) error` act strictly as the outer process bootstrapper: load configuration, invoke `NewRuntimeServer`, wire `HealthCheckers()` into HTTP/gRPC multiplexers, set up OS signal traps, and coordinate graceful shutdown.
+
+## 11. Integration Testing & Testcontainers Best Practices
 - **Host File Mount Permissions**: Call `os.Chmod(path, 0644)` on temporary host files mounted into Docker containers so non-root container users (e.g. `clickhouse`) have read access.
 - **Shared Container Networks**: Multi-container integration tests requiring inter-service resolution MUST create and attach a shared bridge network (`testcontainers.NewDockerNetwork(ctx, ...)`).
 - **Bazel Runfiles & Local Tag**: Integration tests reading repo files MUST declare `data` dependencies in `BUILD.bazel`, resolve runfiles using the official `bazel.Runfile(path)` helper from `github.com/bazelbuild/rules_go/go/tools/bazel` (or `os.Getenv("TEST_SRCDIR")`), and set `tags = ["local"]`.
@@ -64,3 +120,4 @@ This document defines coding standards and conventions for Go development across
   ```go
   var _ storage.WorkUnitStore = (*Repository)(nil)
   ```
+
