@@ -16,6 +16,7 @@ package gcemetadata
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"golang/cmp/cmp"
@@ -120,12 +121,14 @@ func TestGet_FromEnvironment(t *testing.T) {
 
 func TestGet_MissingEnvVars_FallsBackToMetadataServer(t *testing.T) {
 	tests := []struct {
-		name   string
-		envMap map[string]string
+		name             string
+		envMap           map[string]string
+		wantErrSubstring string
 	}{
 		{
-			name:   "all_env_vars_missing",
-			envMap: map[string]string{},
+			name:             "all_env_vars_missing",
+			envMap:           map[string]string{},
+			wantErrSubstring: "from metadata",
 		},
 		{
 			name: "missing_cluster_name",
@@ -133,6 +136,7 @@ func TestGet_MissingEnvVars_FallsBackToMetadataServer(t *testing.T) {
 				"XMC_PROJECT_ID":       "my-proj",
 				"XMC_CLUSTER_LOCATION": "us-central1-a",
 			},
+			wantErrSubstring: "failed to get cluster-name from metadata",
 		},
 		{
 			name: "missing_project_id",
@@ -140,6 +144,7 @@ func TestGet_MissingEnvVars_FallsBackToMetadataServer(t *testing.T) {
 				"XMC_CLUSTER_NAME":     "my-cluster",
 				"XMC_CLUSTER_LOCATION": "us-central1-a",
 			},
+			wantErrSubstring: "from metadata",
 		},
 		{
 			name: "missing_location",
@@ -147,6 +152,7 @@ func TestGet_MissingEnvVars_FallsBackToMetadataServer(t *testing.T) {
 				"XMC_PROJECT_ID":   "my-proj",
 				"XMC_CLUSTER_NAME": "my-cluster",
 			},
+			wantErrSubstring: "failed to get cluster-location from metadata",
 		},
 	}
 
@@ -157,12 +163,14 @@ func TestGet_MissingEnvVars_FallsBackToMetadataServer(t *testing.T) {
 				t.Setenv(k, v)
 			}
 
-			// In non-GCE test environments, metadata server is unreachable and returns an error.
+			// In test environments without full GKE metadata, querying missing attributes returns an error.
 			_, err := Get(context.Background())
 			if err == nil {
 				t.Log("Get() succeeded via ambient GCE metadata server")
-			} else {
-				t.Logf("Get() returned expected error when querying GCE metadata server in test sandbox: %v", err)
+				return
+			}
+			if !strings.Contains(err.Error(), tc.wantErrSubstring) {
+				t.Errorf("Get() error = %v, want substring %q", err, tc.wantErrSubstring)
 			}
 		})
 	}

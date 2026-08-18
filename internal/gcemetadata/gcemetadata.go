@@ -58,23 +58,33 @@ func Get(ctx context.Context) (Metadata, error) {
 		}, nil
 	}
 
-	logging.Debug(ctx, "Fetching GCE Metadata...")
-	projectID, err := metadata.ProjectIDWithContext(ctx)
-	if err != nil {
-		return Metadata{}, fmt.Errorf("failed to get Project ID from metadata: %w", err)
+	logging.Debug(ctx, "Some cluster metadata missing from environment; fetching from GCE Metadata...")
+	if proj == "" {
+		var err error
+		proj, err = metadata.ProjectIDWithContext(ctx)
+		if err != nil {
+			return Metadata{}, fmt.Errorf("failed to get Project ID from metadata: %w", err)
+		}
 	}
-	clusterName, err := metadata.InstanceAttributeValueWithContext(ctx, "cluster-name")
-	if err != nil {
-		return Metadata{}, fmt.Errorf("failed to get cluster-name from metadata: %w", err)
+	if cluster == "" {
+		var err error
+		cluster, err = metadata.InstanceAttributeValueWithContext(ctx, "cluster-name")
+		if err != nil {
+			return Metadata{}, fmt.Errorf("failed to get cluster-name from metadata: %w", err)
+		}
 	}
-	location, err := metadata.InstanceAttributeValueWithContext(ctx, "cluster-location")
-	if err != nil {
-		return Metadata{}, fmt.Errorf("failed to get cluster-location from metadata: %w", err)
+	if loc == "" {
+		var err error
+		loc, err = metadata.InstanceAttributeValueWithContext(ctx, "cluster-location")
+		if err != nil {
+			return Metadata{}, fmt.Errorf("failed to get cluster-location from metadata: %w", err)
+		}
 	}
-	logging.Debug(ctx, "Successfully fetched GCE Metadata", "project_id", projectID, "location", location, "cluster_name", clusterName)
+	logging.Debug(ctx, "Successfully fetched GCE Metadata", "project_id", proj, "location", loc, "cluster_name", cluster)
+
 	return Metadata{
-		ProjectID:   projectID,
-		Location:    location,
-		ClusterName: clusterName,
+		ProjectID:   proj,
+		Location:    loc,
+		ClusterName: cluster,
 	}, nil
 }
