@@ -35,111 +35,39 @@ import {
   SummaryBoxValue,
 } from './dashboard_models';
 
-function assignDefined<T extends object>(target: T, source: Partial<T>): void {
-  for (const [key, value] of Object.entries(source)) {
-    if (value !== undefined && value !== null) {
-      (target as Record<string, unknown>)[key] = value;
-    }
-  }
-}
-
-function extractNumericSummaryValues(raw: RawSummaryBoxValue): Partial<SummaryBoxValue> {
-  return {
-    latestValue: raw.latestValue ?? raw.latest_value,
-    minValue: raw.minValue ?? raw.min_value,
-    maxValue: raw.maxValue ?? raw.max_value,
-    meanValue: raw.meanValue ?? raw.mean_value,
-    baselineValue: raw.baselineValue ?? raw.baseline_value,
-    polarity: raw.polarity,
+export function normalizeDashboard(d?: RawDashboard): Dashboard {
+  if (!d) return { title: 'Dashboard' };
+  const result: Dashboard = {
+    title: d.title ?? d.name ?? 'Dashboard',
   };
-}
-
-function extractMetaSummaryValues(raw: RawSummaryBoxValue): Partial<SummaryBoxValue> {
-  return {
-    metricName: raw.metricName ?? raw.metric_name,
-    latestStep: raw.latestStep ?? raw.latest_step,
-    latestIteration: raw.latestIteration ?? raw.latest_iteration,
-    latestTimestamp: raw.latestTimestamp ?? raw.latest_timestamp,
-    deltaVsBaseline: raw.deltaVsBaseline ?? raw.delta_vs_baseline,
-    deltaPercentVsBaseline: raw.deltaPercentVsBaseline ?? raw.delta_percent_vs_baseline,
-  };
-}
-
-export function normalizeSummaryBoxValue(raw?: RawSummaryBoxValue): SummaryBoxValue | undefined {
-  if (!raw) return undefined;
-  const result: SummaryBoxValue = {};
-  assignDefined(result, extractNumericSummaryValues(raw));
-  assignDefined(result, extractMetaSummaryValues(raw));
+  assignDefined(result, {
+    name: d.name,
+    description: d.description,
+    owner: d.owner,
+    charts: d.charts?.map(normalizeChart),
+    chartLayout: d.chartLayout ?? d.chart_layout,
+    createTime: d.createTime ?? d.create_time,
+    updateTime: d.updateTime ?? d.update_time,
+  });
   return result;
 }
 
-export function normalizeSeriesPoint(p: RawSeriesPoint): SeriesPoint {
-  const pt: SeriesPoint = {};
-  assignDefined(pt, {
-    step: p.step,
-    iteration: p.iteration,
-    timestamp: p.timestamp,
-    avgValue: p.avgValue ?? p.avg_value,
-    minValue: p.minValue ?? p.min_value,
-    maxValue: p.maxValue ?? p.max_value,
-  });
-  return pt;
-}
-
-export function normalizeSeriesData(s?: RawSeriesData): SeriesData | undefined {
-  if (!s) return undefined;
-  const res: SeriesData = {
-    points: (s.points ?? []).map(normalizeSeriesPoint),
-  };
-  assignDefined(res, {
-    metricName: s.metricName ?? s.metric_name,
-    workUnitId: s.workUnitId ?? s.work_unit_id,
-    xid: parseNumericId(s.xid),
-    seriesLabel: s.seriesLabel ?? s.series_label,
-    isBaseline: s.isBaseline ?? s.is_baseline,
-  });
-  return res;
-}
-
-function extractRawSummary(pd: RawPlotData): RawSummaryBoxValue | undefined {
-  return pd.summaryData ?? pd.summary_data ?? pd.content?.summaryData ?? pd.content?.summary_data;
-}
-
-function extractRawScatter(pd: RawPlotData): RawSeriesData | undefined {
-  return (
-    pd.scatterSeries ?? pd.scatter_series ?? pd.content?.scatterSeries ?? pd.content?.scatter_series
-  );
-}
-
-function extractRawBar(pd: RawPlotData): RawBarData | undefined {
-  return pd.barData ?? pd.bar_data ?? pd.content?.barData ?? pd.content?.bar_data;
-}
-
-function normalizeRawBarData(rawBar?: RawBarData): BarData | undefined {
-  if (!rawBar) return undefined;
-  return {
-    metricName: rawBar.metricName ?? rawBar.metric_name,
-    buckets: (rawBar.buckets ?? []).map((b) => ({
-      categoryOrBin: b.categoryOrBin ?? b.category_or_bin,
-      valueOrCount: b.valueOrCount ?? b.value_or_count,
-    })),
-  };
-}
-
-export function normalizePlotData(pd?: RawPlotData): PlotData | undefined {
-  if (!pd) return undefined;
-  const rawSeriesList = pd.seriesList ?? pd.series_list;
-  const seriesList = rawSeriesList?.map(normalizeSeriesData).filter((s): s is SeriesData => !!s);
-
-  const result: PlotData = {
-    plotId: pd.plotId ?? pd.plot_id ?? '',
-    type: pd.type,
+export function normalizeChart(c?: RawChart): Chart {
+  if (!c) return { title: 'Experiment 0', xid: 0, plots: [] };
+  const xid = parseNumericId(c.xid) ?? 0;
+  const wid = parseNumericId(c.wid);
+  const result: Chart = {
+    title: c.title ?? `Experiment ${xid}`,
+    xid,
+    plots: (c.plots ?? []).map(normalizePlotSpec),
   };
   assignDefined(result, {
-    summaryData: normalizeSummaryBoxValue(extractRawSummary(pd)),
-    scatterSeries: normalizeSeriesData(extractRawScatter(pd)),
-    barData: normalizeRawBarData(extractRawBar(pd)),
-    seriesList,
+    name: c.name,
+    description: c.description,
+    wid,
+    plotLayout: c.plotLayout ?? c.plot_layout,
+    createTime: c.createTime ?? c.create_time,
+    updateTime: c.updateTime ?? c.update_time,
   });
   return result;
 }
@@ -177,6 +105,60 @@ export function normalizePlotSpec(p?: RawPlotSpec): PlotSpec {
   return result;
 }
 
+export function normalizePlotData(pd?: RawPlotData): PlotData | undefined {
+  if (!pd) return undefined;
+  const rawSeriesList = pd.seriesList ?? pd.series_list;
+  const seriesList = rawSeriesList?.map(normalizeSeriesData).filter((s): s is SeriesData => !!s);
+
+  const result: PlotData = {
+    plotId: pd.plotId ?? pd.plot_id ?? '',
+    type: pd.type,
+  };
+  assignDefined(result, {
+    summaryData: normalizeSummaryBoxValue(extractRawSummary(pd)),
+    scatterSeries: normalizeSeriesData(extractRawScatter(pd)),
+    barData: normalizeRawBarData(extractRawBar(pd)),
+    seriesList,
+  });
+  return result;
+}
+
+export function normalizeSeriesData(s?: RawSeriesData): SeriesData | undefined {
+  if (!s) return undefined;
+  const res: SeriesData = {
+    points: (s.points ?? []).map(normalizeSeriesPoint),
+  };
+  assignDefined(res, {
+    metricName: s.metricName ?? s.metric_name,
+    workUnitId: s.workUnitId ?? s.work_unit_id,
+    xid: parseNumericId(s.xid),
+    seriesLabel: s.seriesLabel ?? s.series_label,
+    isBaseline: s.isBaseline ?? s.is_baseline,
+  });
+  return res;
+}
+
+export function normalizeSeriesPoint(p: RawSeriesPoint): SeriesPoint {
+  const pt: SeriesPoint = {};
+  assignDefined(pt, {
+    step: p.step,
+    iteration: p.iteration,
+    timestamp: p.timestamp,
+    avgValue: p.avgValue ?? p.avg_value,
+    minValue: p.minValue ?? p.min_value,
+    maxValue: p.maxValue ?? p.max_value,
+  });
+  return pt;
+}
+
+export function normalizeSummaryBoxValue(raw?: RawSummaryBoxValue): SummaryBoxValue | undefined {
+  if (!raw) return undefined;
+  const result: SummaryBoxValue = {};
+  assignDefined(result, extractNumericSummaryValues(raw));
+  assignDefined(result, extractMetaSummaryValues(raw));
+  return result;
+}
+
 export function parseNumericId(id?: number | string | null): number | undefined {
   if (id === undefined || id === null || id === '') return undefined;
   if (typeof id === 'number') {
@@ -189,39 +171,61 @@ export function parseNumericId(id?: number | string | null): number | undefined 
   return undefined;
 }
 
-export function normalizeChart(c?: RawChart): Chart {
-  if (!c) return { title: 'Experiment 0', xid: 0, plots: [] };
-  const xid = parseNumericId(c.xid) ?? 0;
-  const wid = parseNumericId(c.wid);
-  const result: Chart = {
-    title: c.title ?? `Experiment ${xid}`,
-    xid,
-    plots: (c.plots ?? []).map(normalizePlotSpec),
-  };
-  assignDefined(result, {
-    name: c.name,
-    description: c.description,
-    wid,
-    plotLayout: c.plotLayout ?? c.plot_layout,
-    createTime: c.createTime ?? c.create_time,
-    updateTime: c.updateTime ?? c.update_time,
-  });
-  return result;
+// ---------------------------------------------------------------------------
+// Internal helper functions
+// ---------------------------------------------------------------------------
+
+function assignDefined<T extends object>(target: T, source: Partial<T>): void {
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== undefined && value !== null) {
+      (target as Record<string, unknown>)[key] = value;
+    }
+  }
 }
 
-export function normalizeDashboard(d?: RawDashboard): Dashboard {
-  if (!d) return { title: 'Dashboard' };
-  const result: Dashboard = {
-    title: d.title ?? d.name ?? 'Dashboard',
+function extractNumericSummaryValues(raw: RawSummaryBoxValue): Partial<SummaryBoxValue> {
+  return {
+    latestValue: raw.latestValue ?? raw.latest_value,
+    minValue: raw.minValue ?? raw.min_value,
+    maxValue: raw.maxValue ?? raw.max_value,
+    meanValue: raw.meanValue ?? raw.mean_value,
+    baselineValue: raw.baselineValue ?? raw.baseline_value,
+    polarity: raw.polarity,
   };
-  assignDefined(result, {
-    name: d.name,
-    description: d.description,
-    owner: d.owner,
-    charts: d.charts?.map(normalizeChart),
-    chartLayout: d.chartLayout ?? d.chart_layout,
-    createTime: d.createTime ?? d.create_time,
-    updateTime: d.updateTime ?? d.update_time,
-  });
-  return result;
+}
+
+function extractMetaSummaryValues(raw: RawSummaryBoxValue): Partial<SummaryBoxValue> {
+  return {
+    metricName: raw.metricName ?? raw.metric_name,
+    latestStep: raw.latestStep ?? raw.latest_step,
+    latestIteration: raw.latestIteration ?? raw.latest_iteration,
+    latestTimestamp: raw.latestTimestamp ?? raw.latest_timestamp,
+    deltaVsBaseline: raw.deltaVsBaseline ?? raw.delta_vs_baseline,
+    deltaPercentVsBaseline: raw.deltaPercentVsBaseline ?? raw.delta_percent_vs_baseline,
+  };
+}
+
+function extractRawSummary(pd: RawPlotData): RawSummaryBoxValue | undefined {
+  return pd.summaryData ?? pd.summary_data ?? pd.content?.summaryData ?? pd.content?.summary_data;
+}
+
+function extractRawScatter(pd: RawPlotData): RawSeriesData | undefined {
+  return (
+    pd.scatterSeries ?? pd.scatter_series ?? pd.content?.scatterSeries ?? pd.content?.scatter_series
+  );
+}
+
+function extractRawBar(pd: RawPlotData): RawBarData | undefined {
+  return pd.barData ?? pd.bar_data ?? pd.content?.barData ?? pd.content?.bar_data;
+}
+
+function normalizeRawBarData(rawBar?: RawBarData): BarData | undefined {
+  if (!rawBar) return undefined;
+  return {
+    metricName: rawBar.metricName ?? rawBar.metric_name,
+    buckets: (rawBar.buckets ?? []).map((b) => ({
+      categoryOrBin: b.categoryOrBin ?? b.category_or_bin,
+      valueOrCount: b.valueOrCount ?? b.value_or_count,
+    })),
+  };
 }

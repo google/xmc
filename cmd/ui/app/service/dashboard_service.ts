@@ -32,11 +32,7 @@ import {
   RawDashboard,
   UpdateDashboardRequest,
 } from './dashboard_models';
-import {
-  normalizeChart,
-  normalizeChartData,
-  normalizeDashboard,
-} from './dashboard_normalizer';
+import { normalizeChart, normalizeChartData, normalizeDashboard } from './dashboard_normalizer';
 
 /**
  * Service for communicating with the XMC Dashboard Service.
