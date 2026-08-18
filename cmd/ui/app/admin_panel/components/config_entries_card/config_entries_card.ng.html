@@ -44,15 +44,30 @@
         </tr>
       </thead>
       <tbody>
-        @for (group of filteredGroups(); track group.displayName ?? $index) {
-          <tr class="group-header-row">
-            <td colspan="2" class="group-header-cell">{{ group.displayName }}</td>
+        @for (group of filteredGroups(); track group.displayName) {
+          <tr
+            class="group-header-row"
+            tabindex="0"
+            role="button"
+            [attr.aria-expanded]="!group.isCollapsed"
+            (click)="toggleGroup(group.displayName)"
+            (keydown.enter)="toggleGroup(group.displayName)"
+            (keydown.space)="toggleGroup(group.displayName); $event.preventDefault()"
+          >
+            <td colspan="2" class="group-header-cell">
+              <div class="group-header-content">
+                <span class="group-toggle-icon">{{ group.isCollapsed ? '+' : '−' }}</span>
+                <span class="group-display-name">{{ group.displayName }}</span>
+              </div>
+            </td>
           </tr>
-          @for (config of group.configs; track config.key ?? $index) {
-            <tr class="config-row">
-              <td class="cell-key">{{ config.key }}</td>
-              <td class="cell-value">{{ config.value }}</td>
-            </tr>
+          @if (!group.isCollapsed) {
+            @for (config of group.configs; track config.key ?? $index) {
+              <tr class="config-row">
+                <td class="cell-key">{{ config.key }}</td>
+                <td class="cell-value">{{ config.value }}</td>
+              </tr>
+            }
           }
         }
         @if (filteredGroups().length === 0) {
