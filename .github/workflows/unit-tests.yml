@@ -33,7 +33,7 @@ permissions:
 jobs:
   resolve-scope:
     name: 'Resolve Test Scope & Targets'
-    runs-on: 'ubuntu-24.04'
+    runs-on: 'arc-runner-set'
     timeout-minutes: 5
 
     permissions:
@@ -73,7 +73,7 @@ jobs:
     name: 'Run Go & Backend Unit Tests'
     needs: resolve-scope
     if: needs.resolve-scope.outputs.run_backend == 'true'
-    runs-on: 'ubuntu-24.04'
+    runs-on: 'arc-runner-set'
     timeout-minutes: 30
 
     permissions:
@@ -224,7 +224,7 @@ jobs:
     name: 'Run Angular UI Unit Tests'
     needs: resolve-scope
     if: needs.resolve-scope.outputs.run_ui == 'true'
-    runs-on: 'ubuntu-24.04'
+    runs-on: 'arc-runner-set'
     timeout-minutes: 15
 
     steps:
@@ -251,7 +251,7 @@ jobs:
   run-tests:
     name: 'Run Unit Tests'
     needs: [resolve-scope, run-backend-tests, run-ui-tests]
-    runs-on: 'ubuntu-24.04'
+    runs-on: 'arc-runner-set'
     if: always()
     steps:
       - name: 'Verify All Unit Tests Passed'

@@ -39,7 +39,7 @@ permissions:
 jobs:
   run-e2e:
     name: 'KinD & Playwright Headless E2E'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-24.04'
     timeout-minutes: 35
 
     steps:
@@ -47,6 +47,11 @@ jobs:
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
         with:
           persist-credentials: false
+
+      - name: 'Start Async Disk Space Cleanup'
+        run: |
+          echo "=== Starting background cleanup of Android SDK & .NET ==="
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet &
 
       - name: 'Authenticate to Google Cloud via Workload Identity Federation'
         uses: 'google-github-actions/auth@v2'
@@ -81,9 +86,9 @@ jobs:
       - name: 'Configure Bazel Cache Settings'
         run: |
           mkdir -p ~/.cache/bazel-repo ~/.cache/bazel-disk
-          cat << 'EOF_BAZEL' >> ~/.bazelrc
-          common --repository_cache=/home/runner/.cache/bazel-repo
-          common --disk_cache=/home/runner/.cache/bazel-disk
+          cat << EOF_BAZEL >> ~/.bazelrc
+          common --repository_cache=${HOME}/.cache/bazel-repo
+          common --disk_cache=${HOME}/.cache/bazel-disk
           common --experimental_repository_cache_hardlinks
           EOF_BAZEL
 
