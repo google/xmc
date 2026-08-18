@@ -158,16 +158,16 @@ describe('QueueCardComponent', () => {
     expect(clipboard.copy).toHaveBeenCalledWith('--queue=lq-gpu-1');
   });
 
-  it('should display loading spinner when isSecondaryLoading is true', () => {
+  it('should display loading spinner when isSecondaryLoading is true', async () => {
     hostInstance.isSecondaryLoading.set(true);
     fixture.detectChanges();
 
-    const spinner = fixture.nativeElement.querySelector('.predictability-spinner-container');
-    expect(spinner).not.toBeNull();
-    expect(spinner.textContent).toContain('Fetching predictability metrics...');
+    const spinnerText = await harness.getSpinnerContainerText();
+    expect(spinnerText).not.toBeNull();
+    expect(spinnerText).toContain('Fetching predictability metrics...');
   });
 
-  it('should display predictability metrics when secondaryData is provided', () => {
+  it('should display predictability metrics when secondaryData is provided', async () => {
     hostInstance.isSecondaryLoading.set(false);
     hostInstance.secondaryData.set({
       queuePredictability: [
@@ -188,15 +188,15 @@ describe('QueueCardComponent', () => {
     });
     fixture.detectChanges();
 
-    const predSection = fixture.nativeElement.querySelector('.predictability-section');
-    expect(predSection).not.toBeNull();
-    expect(predSection.textContent).toContain('12.5 jobs/hr');
-    expect(predSection.textContent).toContain('100 nvidia-tesla-h100/hr');
-    expect(predSection.textContent).toContain('3');
-    expect(predSection.textContent).toContain('24 nvidia-tesla-h100');
+    const predText = await harness.getPredictabilitySectionText();
+    expect(predText).not.toBeNull();
+    expect(predText).toContain('12.5 jobs/hr');
+    expect(predText).toContain('100 nvidia-tesla-h100/hr');
+    expect(predText).toContain('3');
+    expect(predText).toContain('24 nvidia-tesla-h100');
   });
 
-  it('should display default units string when resourceType is missing in predictability metrics', () => {
+  it('should display default units string when resourceType is missing in predictability metrics', async () => {
     hostInstance.isSecondaryLoading.set(false);
     hostInstance.secondaryData.set({
       queuePredictability: [
@@ -215,9 +215,9 @@ describe('QueueCardComponent', () => {
     });
     fixture.detectChanges();
 
-    const predSection = fixture.nativeElement.querySelector('.predictability-section');
-    expect(predSection).not.toBeNull();
-    expect(predSection.textContent).toContain('40 units/hr');
-    expect(predSection.textContent).toContain('16 units');
+    const predText = await harness.getPredictabilitySectionText();
+    expect(predText).not.toBeNull();
+    expect(predText).toContain('40 units/hr');
+    expect(predText).toContain('16 units');
   });
 });
