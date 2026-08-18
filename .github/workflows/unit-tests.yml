@@ -150,11 +150,13 @@ jobs:
       - name: 'Run Backend Unit Tests'
         env:
           TARGETS: ${{ needs.resolve-scope.outputs.bazel_targets }}
+          REMOTE_UPLOAD: ${{ github.ref == 'refs/heads/main' }}
         run: |
           RUN_TARGETS="${TARGETS:-//... -//cmd/ui/...}"
-          echo "Executing Bazel tests for targets: ${RUN_TARGETS}"
+          echo "Executing Bazel tests for targets: ${RUN_TARGETS} (remote_upload: ${REMOTE_UPLOAD})"
           bazel test \
             --config=ci \
+            --remote_upload_local_results="${REMOTE_UPLOAD}" \
             --repository_cache=~/.cache/bazel-repo \
             --experimental_repository_cache_hardlinks \
             --test_output=errors \
