@@ -105,7 +105,7 @@ func TestGetSubmitQueue_Success(t *testing.T) {
 			for _, lq := range tt.localQueues {
 				c.LocalQueues.Set(lq.Namespace+"/"+lq.Name, lq)
 			}
-			srv := newServer(&Config{}, c, nil)
+			srv := newServer(&Config{}, c, nil, nil)
 
 			resp, err := srv.GetSubmitQueue(ctx, &spb.GetSubmitQueueRequest{QueueName: tt.clusterName})
 			if err != nil {
@@ -127,7 +127,7 @@ func TestGetSubmitQueue_Errors(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "lq-1", Namespace: "default"},
 		Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "cq-exist"},
 	})
-	srv := newServer(&Config{}, validCache, nil)
+	srv := newServer(&Config{}, validCache, nil, nil)
 
 	tests := []struct {
 		name     string
@@ -160,14 +160,14 @@ func TestGetSubmitQueue_Errors(t *testing.T) {
 		{
 			name:     "nil cache",
 			ctx:      context.Background(),
-			server:   newServer(&Config{}, nil, nil),
+			server:   newServer(&Config{}, nil, nil, nil),
 			req:      &spb.GetSubmitQueueRequest{QueueName: "cq-exist"},
 			wantCode: codes.Unavailable,
 		},
 		{
 			name:     "uninitialized cache local queues",
 			ctx:      context.Background(),
-			server:   newServer(&Config{}, &cache.KueueCache{}, nil),
+			server:   newServer(&Config{}, &cache.KueueCache{}, nil, nil),
 			req:      &spb.GetSubmitQueueRequest{QueueName: "cq-exist"},
 			wantCode: codes.Unavailable,
 		},
