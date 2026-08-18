@@ -34,17 +34,13 @@ type server struct {
 	cfg           *Config
 	cache         *cache.KueueCache
 	workUnitStore WorkUnitFetcher
-	velocityStore QueueVelocityFetcher
 }
 
-var _ spb.ResourceObservabilityServiceServer = (*server)(nil)
-
-func newServer(cfg *Config, cache *cache.KueueCache, fetcher WorkUnitFetcher, velocityFetcher QueueVelocityFetcher) *server {
+func newServer(cfg *Config, cache *cache.KueueCache, fetcher WorkUnitFetcher) *server {
 	return &server{
 		cfg:           cfg,
 		cache:         cache,
 		workUnitStore: fetcher,
-		velocityStore: velocityFetcher,
 	}
 }
 

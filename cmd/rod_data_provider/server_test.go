@@ -68,7 +68,7 @@ func TestListClusterQueues(t *testing.T) {
 		Port:     "8080",
 		GRPCPort: "50051",
 	}
-	srv := newServer(cfg, c, nil, nil)
+	srv := newServer(cfg, c, nil)
 
 	req := &spb.ListClusterQueuesRequest{}
 	resp, err := srv.ListClusterQueues(ctx, req)
@@ -87,7 +87,7 @@ func TestListClusterQueues(t *testing.T) {
 func TestListClusterQueues_Errors(t *testing.T) {
 	c := cache.NewKueueCache()
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
-	srv := newServer(cfg, c, nil, nil)
+	srv := newServer(cfg, c, nil)
 
 	canceledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -116,14 +116,14 @@ func TestListClusterQueues_Errors(t *testing.T) {
 		{
 			name:     "nil cache",
 			ctx:      context.Background(),
-			server:   newServer(cfg, nil, nil, nil),
+			server:   newServer(cfg, nil, nil),
 			req:      &spb.ListClusterQueuesRequest{},
 			wantCode: codes.Unavailable,
 		},
 		{
 			name:     "uninitialized cache cluster queues",
 			ctx:      context.Background(),
-			server:   newServer(cfg, &cache.KueueCache{}, nil, nil),
+			server:   newServer(cfg, &cache.KueueCache{}, nil),
 			req:      &spb.ListClusterQueuesRequest{},
 			wantCode: codes.Unavailable,
 		},
@@ -148,7 +148,7 @@ func TestListClusterQueues_Errors(t *testing.T) {
 
 func TestServerInitialization(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
-	srv := newServer(cfg, nil, nil, nil)
+	srv := newServer(cfg, nil, nil)
 	if srv.cfg != cfg {
 		t.Errorf("srv.cfg = %v, want %v", srv.cfg, cfg)
 	}
