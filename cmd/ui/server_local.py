@@ -19,15 +19,20 @@ import http.server
 import json
 import os
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+if TYPE_CHECKING:
+    from cmd.ui import server
+else:
+    try:
+        from cmd.ui import server
+    except ImportError:
+        try:
+            from xmanager_cloud.ui import server
+        except ImportError:
+            import server
 
-def get_bool_env(name: str, default: bool = False) -> bool:
-    """Reads a boolean environment variable, returning default if unset."""
-    val = os.environ.get(name)
-    if val is None:
-        return default
-    return val.lower() == "true"
+get_bool_env = server.get_bool_env
 
 
 def find_testdata_dirs() -> list[str]:
@@ -97,7 +102,7 @@ def load_golden_files() -> dict[str, Any]:
     return goldens
 
 
-class SPAHandler(http.server.SimpleHTTPRequestHandler):
+class SPAHandler(server.SPAHandler):
     """Custom request handler supporting SPA routing, config.js, and mock APIs."""
 
     goldens: dict[str, Any] = {}
@@ -192,7 +197,6 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             self._handle_single_experiment(clean_path)
             return
 
-        self._apply_spa_fallback()
         super().do_GET()
 
     def do_HEAD(self) -> None:
@@ -201,14 +205,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             self.do_GET()
             return
 
-        self._apply_spa_fallback()
         super().do_HEAD()
-
-    def _apply_spa_fallback(self) -> None:
-        """Translates path and rewrites to index.html if file is missing."""
-        translated_path = self.translate_path(self.path)
-        if not os.path.exists(translated_path):
-            self.path = "/index.html"
 
     def do_POST(self) -> None:
         """Handles POST requests for creating resources."""
@@ -272,26 +269,7 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Type", "application/javascript")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-
-        api_url = os.environ.get("XMC_API_URL", "/v1")
-        refresh_interval_str = os.environ.get("XMC_REFRESH_INTERVAL_MS", "30000")
-        try:
-            refresh_interval = int(refresh_interval_str)
-        except ValueError:
-            refresh_interval = 30000
-
-        feature_flags = {
-            "statusMessageHistoryEnabled": get_bool_env("XMC_STATUS_MESSAGE_HISTORY_ENABLED", True),
-            "adminPanelEnabled": get_bool_env("XMC_ADMIN_PANEL_ENABLED", False),
-            "resourceDashboardEnabled": get_bool_env("XMC_RESOURCE_DASHBOARD_ENABLED", False),
-            "performanceDashboardEnabled": get_bool_env("XMC_PERFORMANCE_DASHBOARD_ENABLED", False),
-        }
-
-        config_content = (
-            f'window.XMC_API_URL="{api_url}";\n'
-            f"window.XMC_REFRESH_INTERVAL_MS={refresh_interval};\n"
-            f"window.XMC_FEATURE_FLAGS={json.dumps(feature_flags)};\n"
-        )
+        config_content = server.generate_runtime_config(default_api_url="/v1")
         self.wfile.write(config_content.encode("utf-8"))
 
     def _handle_auth_user(self) -> None:

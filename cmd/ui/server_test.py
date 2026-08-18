@@ -287,6 +287,81 @@ class SPAHandlerTest(unittest.TestCase):
         self.assertEqual(handler.path, "/real/file.css")
         mock_do_get.assert_called_once()
 
+    def test_get_bool_env(self):
+        cases = [
+            {"env_val": "true", "default": False, "expected": True},
+            {"env_val": "TRUE", "default": False, "expected": True},
+            {"env_val": "false", "default": True, "expected": False},
+            {"env_val": "FALSE", "default": True, "expected": False},
+            {"env_val": None, "default": True, "expected": True},
+            {"env_val": None, "default": False, "expected": False},
+        ]
+        for case in cases:
+            env = {"TEST_VAR": case["env_val"]} if case["env_val"] is not None else {}
+            with mock.patch.dict(os.environ, env, clear=True):
+                self.assertEqual(
+                    server.get_bool_env("TEST_VAR", default=case["default"]),
+                    case["expected"],
+                )
+
+    def test_generate_runtime_config_defaults(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            config = server.generate_runtime_config()
+            self.assertIn('window.XMC_API_URL="https://api.example.com/v1";', config)
+            self.assertIn("window.XMC_REFRESH_INTERVAL_MS=30000;", config)
+
+    def test_generate_runtime_config_custom(self):
+        with mock.patch.dict(
+            os.environ,
+            {
+                "XMC_API_URL": "https://custom.api/v1",
+                "XMC_REFRESH_INTERVAL_MS": "15000",
+                "XMC_PERFORMANCE_DASHBOARD_ENABLED": "true",
+            },
+            clear=True,
+        ):
+            config = server.generate_runtime_config(default_api_url="/fallback")
+            self.assertIn('window.XMC_API_URL="https://custom.api/v1";', config)
+            self.assertIn("window.XMC_REFRESH_INTERVAL_MS=15000;", config)
+            self.assertIn('"performanceDashboardEnabled": true', config)
+
+    def test_fallback_to_index_head(self):
+        self.enter_context(
+            mock.patch.object(os.path, "exists", return_value=False, autospec=True, spec_set=True)
+        )
+        self.enter_context(
+            mock.patch.object(
+                server.SPAHandler,
+                "translate_path",
+                return_value="/fake/path",
+                autospec=True,
+                spec_set=True,
+            )
+        )
+        mock_do_head = self.enter_context(
+            mock.patch.object(
+                http.server.SimpleHTTPRequestHandler,
+                "do_HEAD",
+                autospec=True,
+                spec_set=True,
+            )
+        )
+
+        handler = self._get_handler("/some-route")
+        handler.do_HEAD()
+
+        self.assertEqual(handler.path, "/index.html")
+        mock_do_head.assert_called_once_with(handler)
+
+    def test_head_special_routes(self):
+        handler_healthz = self._get_handler("/healthz")
+        handler_healthz.do_HEAD()
+        handler_healthz.send_response.assert_called_with(200, "OK")
+
+        handler_config = self._get_handler("/config.js")
+        handler_config.do_HEAD()
+        handler_config.send_response.assert_called_with(200)
+
 
 if __name__ == "__main__":
     unittest.main()

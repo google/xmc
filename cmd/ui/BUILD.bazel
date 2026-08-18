@@ -115,6 +115,9 @@ py_library(
     name = "server_local",
     srcs = ["server_local.py"],
     imports = ["."],
+    deps = [
+        ":server",
+    ],
     visibility = ["//visibility:public"],
 )
 

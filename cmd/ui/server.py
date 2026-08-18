@@ -26,10 +26,57 @@ def get_bool_env(name: str, default: bool = False) -> bool:
     return val.lower() == "true"
 
 
+def generate_runtime_config(
+    default_api_url: str = "https://api.example.com/v1",
+    api_url: str | None = None,
+) -> str:
+    """Generates dynamic runtime config.js matching deployment settings."""
+    resolved_api_url = os.environ.get("XMC_API_URL", api_url or default_api_url)
+    refresh_interval_str = os.environ.get("XMC_REFRESH_INTERVAL_MS", "30000")
+    try:
+        refresh_interval = int(refresh_interval_str)
+    except ValueError:
+        refresh_interval = 30000
+
+    feature_flags = {
+        "statusMessageHistoryEnabled": get_bool_env("XMC_STATUS_MESSAGE_HISTORY_ENABLED", True),
+        "adminPanelEnabled": get_bool_env("XMC_ADMIN_PANEL_ENABLED", False),
+        "resourceDashboardEnabled": get_bool_env("XMC_RESOURCE_DASHBOARD_ENABLED", False),
+        "performanceDashboardEnabled": get_bool_env("XMC_PERFORMANCE_DASHBOARD_ENABLED", False),
+    }
+
+    return (
+        f'window.XMC_API_URL="{resolved_api_url}";\n'
+        f"window.XMC_REFRESH_INTERVAL_MS={refresh_interval};\n"
+        f"window.XMC_FEATURE_FLAGS={json.dumps(feature_flags)};\n"
+    )
+
+
 class SPAHandler(http.server.SimpleHTTPRequestHandler):
     """Custom request handler that supports SPA routing fallbacks and config.js."""
 
-    def do_GET(self):
+    def _apply_spa_fallback(self) -> None:
+        """Translates path and rewrites to index.html if file is missing."""
+        translated_path = self.translate_path(self.path)
+        if not os.path.exists(translated_path):
+            self.path = "/index.html"
+
+    def _handle_config_js(self) -> None:
+        """Handles config.js GET requests."""
+        self.send_response(200)
+        self.send_header("Content-type", "application/javascript")
+        self.end_headers()
+
+        if not os.environ.get("XMC_API_URL"):
+            self.log_message(
+                "WARNING: XMC_API_URL environment variable is not set. Defaulting"
+                " to 'https://api.example.com/v1'"
+            )
+
+        config_content = generate_runtime_config(default_api_url="https://api.example.com/v1")
+        self.wfile.write(config_content.encode("utf-8"))
+
+    def do_GET(self) -> None:
         """Handles GET requests for SPA routing, health checks, and config."""
         if self.path == "/healthz":
             self.send_response(200, "OK")
@@ -39,48 +86,17 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         if self.path == "/config.js":
-            self.send_response(200)
-            self.send_header("Content-type", "application/javascript")
-            self.end_headers()
-
-            api_url = os.environ.get("XMC_API_URL")
-            if not api_url:
-                self.log_message(
-                    "WARNING: XMC_API_URL environment variable is not set. Defaulting"
-                    " to 'https://api.example.com/v1'"
-                )
-                api_url = "https://api.example.com/v1"
-
-            refresh_interval_str = os.environ.get("XMC_REFRESH_INTERVAL_MS", "30000")
-            try:
-                refresh_interval = int(refresh_interval_str)
-            except ValueError:
-                refresh_interval = 30000
-
-            status_history = get_bool_env("XMC_STATUS_MESSAGE_HISTORY_ENABLED", True)
-            admin_panel_enabled = get_bool_env("XMC_ADMIN_PANEL_ENABLED", False)
-            resource_dashboard_enabled = get_bool_env("XMC_RESOURCE_DASHBOARD_ENABLED", False)
-            performance_dashboard_enabled = get_bool_env(
-                "XMC_PERFORMANCE_DASHBOARD_ENABLED", False
-            )
-
-            feature_flags = {
-                "statusMessageHistoryEnabled": status_history,
-                "adminPanelEnabled": admin_panel_enabled,
-                "resourceDashboardEnabled": resource_dashboard_enabled,
-                "performanceDashboardEnabled": performance_dashboard_enabled,
-            }
-
-            config_content = (
-                f'window.XMC_API_URL="{api_url}";\n'
-                f"window.XMC_REFRESH_INTERVAL_MS={refresh_interval};\n"
-                f"window.XMC_FEATURE_FLAGS={json.dumps(feature_flags)};\n"
-            )
-            self.wfile.write(config_content.encode("utf-8"))
+            self._handle_config_js()
             return
 
-        translated_path = self.translate_path(self.path)
-        if not os.path.exists(translated_path):
-            self.path = "/index.html"
-
+        self._apply_spa_fallback()
         super().do_GET()
+
+    def do_HEAD(self) -> None:
+        """Handles HEAD requests, routing them with SPA fallback."""
+        if self.path in ("/healthz", "/config.js"):
+            self.do_GET()
+            return
+
+        self._apply_spa_fallback()
+        super().do_HEAD()
