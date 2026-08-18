@@ -149,9 +149,29 @@ Common OAuth environment variables for XMC services.
 - name: CLIENT_SECRET_FILE
   value: "/etc/gcp-secrets/client-secret"
 - name: REDIRECT_URL
-  value: "https://{{ include "xmanager-cloud.apiHostname" . }}/api/callback"
+  value: {{ .Values.auth.redirectUrl | default (printf "https://%s/api/callback" (include "xmanager-cloud.apiHostname" .)) | quote }}
 - name: FRONTEND_URL
-  value: "https://{{ include "xmanager-cloud.uiHostname" . }}"
+  value: {{ .Values.auth.frontendUrl | default (printf "https://%s" (include "xmanager-cloud.uiHostname" .)) | quote }}
+{{- if .Values.auth.authUrl }}
+- name: AUTH_URL
+  value: {{ .Values.auth.authUrl | quote }}
+{{- end }}
+{{- if .Values.auth.tokenUrl }}
+- name: TOKEN_URL
+  value: {{ .Values.auth.tokenUrl | quote }}
+{{- end }}
+{{- if .Values.auth.apiUrl }}
+- name: API_URL
+  value: {{ .Values.auth.apiUrl | quote }}
+{{- end }}
+{{- if hasKey .Values.auth "secureCookie" }}
+- name: SECURE_COOKIE
+  value: {{ .Values.auth.secureCookie | quote }}
+{{- end }}
+{{- if or .Values.auth.googleApplicationCredentials .Values.googleApplicationCredentials }}
+- name: GOOGLE_APPLICATION_CREDENTIALS
+  value: {{ default .Values.googleApplicationCredentials .Values.auth.googleApplicationCredentials | quote }}
+{{- end }}
 {{- end -}}
 
 {{/*

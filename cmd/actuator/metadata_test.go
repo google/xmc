@@ -19,26 +19,64 @@ import (
 	"testing"
 )
 
-func TestGceMetadataStruct(t *testing.T) {
-	meta := GceMetadata{
-		ProjectID:   "test-project",
-		Location:    "us-central1-a",
-		ClusterName: "test-cluster",
+func TestGetGceMetadata(t *testing.T) {
+	tests := []struct {
+		name    string
+		envMap  map[string]string
+		want    GceMetadata
+		wantErr bool
+	}{
+		{
+			name: "primary_env_vars",
+			envMap: map[string]string{
+				"XMC_PROJECT_ID":       "test-project-1",
+				"XMC_CLUSTER_NAME":     "test-cluster-1",
+				"XMC_CLUSTER_LOCATION": "us-central1-a",
+			},
+			want: GceMetadata{
+				ProjectID:   "test-project-1",
+				Location:    "us-central1-a",
+				ClusterName: "test-cluster-1",
+			},
+		},
+		{
+			name: "fallback_env_vars",
+			envMap: map[string]string{
+				"GCP_PROJECT_ID":   "fallback-proj",
+				"CLUSTER_NAME":     "fallback-cluster",
+				"CLUSTER_LOCATION": "us-east1-b",
+			},
+			want: GceMetadata{
+				ProjectID:   "fallback-proj",
+				Location:    "us-east1-b",
+				ClusterName: "fallback-cluster",
+			},
+		},
 	}
 
-	if meta.ProjectID != "test-project" {
-		t.Errorf("meta.ProjectID = %q, want %q", meta.ProjectID, "test-project")
-	}
-	if meta.Location != "us-central1-a" {
-		t.Errorf("meta.Location = %q, want %q", meta.Location, "us-central1-a")
-	}
-	if meta.ClusterName != "test-cluster" {
-		t.Errorf("meta.ClusterName = %q, want %q", meta.ClusterName, "test-cluster")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, k := range []string{"XMC_PROJECT_ID", "GCP_PROJECT_ID", "XMC_CLUSTER_NAME", "CLUSTER_NAME", "XMC_CLUSTER_LOCATION", "CLUSTER_LOCATION"} {
+				t.Setenv(k, "")
+			}
+			for k, v := range tc.envMap {
+				t.Setenv(k, v)
+			}
+			got, err := getGceMetadata(context.Background())
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("getGceMetadata() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Errorf("getGceMetadata() = %+v, want %+v", got, tc.want)
+			}
+		})
 	}
 }
 
 func TestGetGceMetadata_NonGCE(t *testing.T) {
-	// In test environment without GCE metadata server, getGceMetadata returns an error.
+	for _, k := range []string{"XMC_PROJECT_ID", "GCP_PROJECT_ID", "XMC_CLUSTER_NAME", "CLUSTER_NAME", "XMC_CLUSTER_LOCATION", "CLUSTER_LOCATION"} {
+		t.Setenv(k, "")
+	}
 	ctx := context.Background()
 	_, err := getGceMetadata(ctx)
 	if err == nil {

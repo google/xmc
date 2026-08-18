@@ -11,41 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 package main
 
 import (
 	"context"
-	"fmt"
 
-	"golang/cloud_google_com/go/compute/metadata/v/v0/metadata"
-	"xmanager_cloud/logging/logging"
+	"xmanager_cloud/internal/gcemetadata"
 )
 
-// GceMetadata holds cluster metadata fetched from GCE metadata server.
-type GceMetadata struct {
-	ProjectID   string
-	Location    string
-	ClusterName string
-}
+// GceMetadata holds cluster metadata fetched from GCE metadata server or environment variables.
+type GceMetadata = gcemetadata.Metadata
 
 func getGceMetadata(ctx context.Context) (GceMetadata, error) {
-	logging.Debug(ctx, "Fetching GCE Metadata...")
-	projectID, err := metadata.ProjectIDWithContext(ctx)
-	if err != nil {
-		return GceMetadata{}, fmt.Errorf("failed to get Project ID from metadata: %w", err)
-	}
-	clusterName, err := metadata.InstanceAttributeValueWithContext(ctx, "cluster-name")
-	if err != nil {
-		return GceMetadata{}, fmt.Errorf("failed to get cluster-name from metadata: %w", err)
-	}
-	location, err := metadata.InstanceAttributeValueWithContext(ctx, "cluster-location")
-	if err != nil {
-		return GceMetadata{}, fmt.Errorf("failed to get cluster-location from metadata: %w", err)
-	}
-	logging.Debug(ctx, "Successfully fetched GCE Metadata", "project_id", projectID, "location", location, "cluster_name", clusterName)
-	return GceMetadata{
-		ProjectID:   projectID,
-		Location:    location,
-		ClusterName: clusterName,
-	}, nil
+	return gcemetadata.Get(ctx)
 }
