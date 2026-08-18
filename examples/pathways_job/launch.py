@@ -141,7 +141,7 @@ def main(argv: Sequence[str]) -> None:
                             ),
                         ),
                         # Role 2: worker
-                        # Setting restart_policy="OnFailure" and retry_limit=100 on worker compute slices
+                        # Setting restart_policy="OnFailure" and retry_limit=10 on worker compute slices
                         # enables a resilient daemon lifecycle and avoids shutdown race conditions with
                         # pathways-head: worker servers run continuously until pathways-head finishes
                         # computation, at which point the JobSet success policy triggers overall JobSet completion
@@ -150,7 +150,7 @@ def main(argv: Sequence[str]) -> None:
                             name="worker",
                             replicas=2,
                             restart_policy="OnFailure",
-                            retry_limit=100,
+                            retry_limit=10,
                             dependency_order=work_unit_pb2.KubernetesJob.DependencyOrder(
                                 job_name="pathways-head",
                                 job_dependency_state=work_unit_pb2.KubernetesJob.DependencyOrder.READY,

@@ -1295,7 +1295,7 @@ func TestConstructJobSet_OnFailureRestartPolicy(t *testing.T) {
 		{
 			name:        "default backoff limit when retry_limit is 0",
 			retryLimit:  0,
-			wantBackoff: 100,
+			wantBackoff: constants.DefaultOnFailureRetryLimit,
 		},
 		{
 			name:        "custom retry limit",
