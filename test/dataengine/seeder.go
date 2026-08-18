@@ -184,3 +184,31 @@ func CleanupTestMetrics(ctx context.Context, conn driver.Conn, tableName string,
 	}
 	return nil
 }
+
+// ExtractSeedXIDs extracts distinct XIDs present in a seed JSON file.
+func ExtractSeedXIDs(seedFilePath string) ([]int64, error) {
+	resolvedPath, err := FindFile(seedFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to locate seed file: %w", err)
+	}
+
+	data, err := os.ReadFile(resolvedPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read seed file %q: %w", resolvedPath, err)
+	}
+
+	var records []MetricRecord
+	if err := json.Unmarshal(data, &records); err != nil {
+		return nil, fmt.Errorf("failed to parse seed JSON: %w", err)
+	}
+
+	seen := make(map[int64]struct{})
+	var xids []int64
+	for _, r := range records {
+		if _, exists := seen[r.Xid]; !exists {
+			seen[r.Xid] = struct{}{}
+			xids = append(xids, r.Xid)
+		}
+	}
+	return xids, nil
+}
