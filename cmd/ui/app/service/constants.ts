@@ -21,7 +21,7 @@ declare global {
 
 /** Base domain URL for XMC backend services (ESS, Health, ROD, etc.). */
 export const XMC_API_DOMAIN =
-  typeof window !== 'undefined' && window.XMC_API_URL !== undefined ? window.XMC_API_URL : '/v1';
+  typeof window !== 'undefined' && window.XMC_API_URL != null ? window.XMC_API_URL : '/v1';
 
 /** Whether to use the mock data or not. */
 export const USE_MOCK_DATA = new InjectionToken<boolean>('USE_MOCK_DATA', {

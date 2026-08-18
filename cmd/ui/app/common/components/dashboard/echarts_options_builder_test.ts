@@ -195,6 +195,19 @@ describe('echarts_options_builder', () => {
       // Verify markLine baseline
       expect(seriesArr[3].markLine.data[0].yAxis).toBe(0.7);
     });
+
+    it('should ignore geoms with null or undefined yintercept', () => {
+      const specWithNullGeom: PlotSpec = {
+        ...mockSpec,
+        geoms: [
+          { type: GeomType.HLINE, yintercept: null as unknown as number },
+          { type: GeomType.HLINE, yintercept: undefined },
+        ],
+      };
+      const option = buildScatterOption(specWithNullGeom, mockPlotData);
+      const seriesArr = option.series as any[];
+      expect(seriesArr.length).toBe(3); // Only 3 data series, no markLine series
+    });
   });
 
   describe('Golden dataset: bar_data', () => {

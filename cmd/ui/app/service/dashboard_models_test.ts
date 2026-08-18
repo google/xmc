@@ -42,6 +42,9 @@ describe('dashboard_models normalization', () => {
       expect(parseNumericId(null)).toBeUndefined();
       expect(parseNumericId('')).toBeUndefined();
       expect(parseNumericId('abc')).toBeUndefined();
+      expect(parseNumericId(true as unknown as number)).toBeUndefined();
+      expect(parseNumericId(false as unknown as number)).toBeUndefined();
+      expect(parseNumericId({} as unknown as number)).toBeUndefined();
     });
   });
 
@@ -211,6 +214,15 @@ describe('dashboard_models normalization', () => {
       expect(spec.plotId).toBe('spec_1');
       expect(spec.title).toBe('Loss Plot');
       expect(spec.type).toBe(PlotType.SCATTER);
+      expect(spec.data?.metrics).toEqual([]);
+    });
+
+    it('should defensively ensure metrics array when data is an empty object', () => {
+      const spec = normalizePlotSpec({
+        plot_id: 'spec_empty_data',
+        data: {} as unknown as any,
+      });
+
       expect(spec.data?.metrics).toEqual([]);
     });
 

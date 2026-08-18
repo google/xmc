@@ -531,10 +531,14 @@ export interface RawDashboard {
 
 export function normalizePlotSpec(p?: RawPlotSpec): PlotSpec {
   if (!p) return { plotId: '', type: PlotType.SCATTER, data: { metrics: [] } };
+  const data: DataSpec = { metrics: p.data?.metrics ?? [] };
+  if (p.data?.ranges !== undefined) {
+    data.ranges = p.data.ranges;
+  }
   const result: PlotSpec = {
     plotId: p.plotId ?? p.plot_id ?? '',
     type: p.type ?? PlotType.SCATTER,
-    data: p.data ?? { metrics: [] },
+    data,
   };
   assignDefined(result, {
     title: p.title,
@@ -549,8 +553,14 @@ export function normalizePlotSpec(p?: RawPlotSpec): PlotSpec {
 
 export function parseNumericId(id?: number | string | null): number | undefined {
   if (id === undefined || id === null || id === '') return undefined;
-  const parsed = typeof id === 'string' ? parseInt(id, 10) : id;
-  return isNaN(parsed) ? undefined : parsed;
+  if (typeof id === 'number') {
+    return isNaN(id) ? undefined : id;
+  }
+  if (typeof id === 'string') {
+    const parsed = parseInt(id, 10);
+    return isNaN(parsed) ? undefined : parsed;
+  }
+  return undefined;
 }
 
 export function normalizeChart(c?: RawChart): Chart {

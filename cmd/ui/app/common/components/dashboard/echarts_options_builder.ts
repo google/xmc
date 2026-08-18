@@ -111,7 +111,7 @@ function buildSingleScatterSeries(
 function extractHlineSeries(geoms?: GeomSpec[]): SeriesOption[] {
   if (!geoms) return [];
   return geoms
-    .filter((g) => g.type === GeomType.HLINE && g.yintercept !== undefined)
+    .filter((g) => g.type === GeomType.HLINE && g.yintercept != null)
     .map((g) => ({
       name: 'Baseline',
       type: 'line',

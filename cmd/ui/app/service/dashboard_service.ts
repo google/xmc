@@ -78,8 +78,8 @@ export class DashboardService {
       }>(`${XMC_API_DOMAIN}/dashboards`, { params, withCredentials: true })
       .pipe(
         map((res) => ({
-          dashboards: (res.dashboards ?? []).map(normalizeDashboard),
-          nextPageToken: res.nextPageToken ?? res.next_page_token,
+          dashboards: (res?.dashboards ?? []).map(normalizeDashboard),
+          nextPageToken: res?.nextPageToken ?? res?.next_page_token,
         })),
       );
   }

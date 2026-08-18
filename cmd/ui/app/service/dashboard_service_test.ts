@@ -115,6 +115,18 @@ describe('DashboardService', () => {
       const response = await responsePromise;
       expect(response).toEqual(mockResponse);
     });
+
+    it('should handle null/empty response gracefully without crashing', async () => {
+      const responsePromise = firstValueFrom(state.service.listDashboards());
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/dashboards`);
+      expect(req.request.method).toBe('GET');
+      req.flush(null);
+
+      const response = (await responsePromise) as ListDashboardsResponse;
+      expect(response.dashboards).toEqual([]);
+      expect(response.nextPageToken).toBeUndefined();
+    });
   });
 
   describe('createDashboard', () => {
