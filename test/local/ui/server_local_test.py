@@ -18,20 +18,28 @@ import io
 import json
 import os
 import socket
+import sys
 import unittest
 from typing import TYPE_CHECKING
 from unittest import mock
 
+_this_dir = os.path.dirname(__file__)
+_repo_root = os.path.normpath(os.path.join(_this_dir, "..", "..", ".."))
+if _this_dir not in sys.path:
+    sys.path.insert(0, _this_dir)
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+
 if TYPE_CHECKING:
-    from cmd.ui import server_local
+    import server_local
 else:
     try:
-        from cmd.ui import server_local
+        import server_local
     except ImportError:
         try:
-            from xmanager_cloud.ui import server_local
+            from test.local.ui import server_local
         except ImportError:
-            import server_local
+            from xmanager_cloud.test.local.ui import server_local
 
 
 class SPAHandlerLocalTest(unittest.TestCase):

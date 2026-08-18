@@ -20,20 +20,29 @@ import json
 import logging
 import os
 import re
+import sys
 from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
+# Ensure cmd/ui and repo root are in sys.path for direct python execution
+_repo_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+_cmd_ui_dir = os.path.normpath(os.path.join(_repo_root, "cmd", "ui"))
+if _cmd_ui_dir not in sys.path:
+    sys.path.insert(0, _cmd_ui_dir)
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+
 if TYPE_CHECKING:
-    from cmd.ui import server
+    import server
 else:
     try:
-        from cmd.ui import server
+        import server
     except ImportError:
         try:
-            from xmanager_cloud.ui import server
+            from cmd.ui import server
         except ImportError:
-            import server
+            from xmanager_cloud.ui import server
 
 get_bool_env = server.get_bool_env
 
@@ -46,7 +55,6 @@ def find_testdata_dirs() -> list[str]:
         os.getcwd(),
         os.path.dirname(__file__),
     ]
-    candidates: list[str] = []
     subpaths = [
         os.path.join("test", "fixtures", "dashboards"),
         os.path.join("test", "dataengine", "testdata", "golden"),
@@ -64,7 +72,13 @@ def find_testdata_dirs() -> list[str]:
                 os.path.join(base, "xmanager_cloud", sub),
                 os.path.join(base, "..", sub),
                 os.path.join(base, "..", "..", sub),
+                os.path.join(base, "..", "..", "..", sub),
                 os.path.join(base, "..", "_main", sub),
+                os.path.join(base, "..", "..", "_main", sub),
+                os.path.join(base, "..", "..", "..", "_main", sub),
+                os.path.join(base, "..", "xmanager_cloud", sub),
+                os.path.join(base, "..", "..", "xmanager_cloud", sub),
+                os.path.join(base, "..", "..", "..", "xmanager_cloud", sub),
             ]
             for c in candidates:
                 norm = os.path.normpath(c)
@@ -437,12 +451,16 @@ class SPAHandler(server.SPAHandler):
 
 def find_dist_dir() -> str:
     """Finds the Angular build distribution directory."""
+    this_dir = os.path.dirname(__file__)
     candidates = [
-        os.path.join(os.path.dirname(__file__), "dist", "browser"),
-        os.path.join(os.path.dirname(__file__), "dist"),
+        os.path.join(this_dir, "..", "..", "..", "cmd", "ui", "dist", "browser"),
+        os.path.join(this_dir, "..", "..", "..", "cmd", "ui", "dist"),
         os.path.join(os.getcwd(), "cmd", "ui", "dist", "browser"),
+        os.path.join(os.getcwd(), "cmd", "ui", "dist"),
         os.path.join(os.getcwd(), "dist", "browser"),
         os.path.join(os.getcwd(), "dist"),
+        os.path.join(this_dir, "dist", "browser"),
+        os.path.join(this_dir, "dist"),
         os.getcwd(),
     ]
     for c in candidates:

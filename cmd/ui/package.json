@@ -4,7 +4,7 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
-    "serve:local": "python3 server_local.py",
+    "serve:local": "python3 ../../test/local/ui/server_local.py",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
