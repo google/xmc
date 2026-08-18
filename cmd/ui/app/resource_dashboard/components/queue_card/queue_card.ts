@@ -40,6 +40,7 @@ import {
   MaxWorkloadDisplayPipe,
   QueueStatusBadgePipe,
 } from 'xmanager_cloud/ui/app/resource_dashboard/pipes/resource_dashboard_pipes';
+import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
 import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 
 @Component({
@@ -56,6 +57,7 @@ import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service'
     MaxWorkloadDisplayPipe,
     FreeTotalDisplayPipe,
     QueueStatusBadgePipe,
+    WipBannerComponent,
   ],
 })
 export class QueueCardComponent {
