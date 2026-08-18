@@ -13,13 +13,13 @@
 # limitations under the License.
 """
 A standalone Python server for local UI development with mock APIs and SPA fallback.
-This is intentionally scoped as a minimal mock setup for the performance dashboards 
-and metrics workflow for now rather than an exhaustive mock of all XMC endpoints 
-(such as /v1/clusterqueues). 
-There is parallel ongoing work around running the UI locally, 
-so this implementation serves as the starting point to establish 
-and consolidate those local development workflows. 
-Additional endpoints can be incrementally added 
+This is intentionally scoped as a minimal mock setup for the performance dashboards
+and metrics workflow for now rather than an exhaustive mock of all XMC endpoints
+(such as /v1/clusterqueues).
+There is parallel ongoing work around running the UI locally,
+so this implementation serves as the starting point to establish
+and consolidate those local development workflows.
+Additional endpoints can be incrementally added
 and unified as those parallel efforts converge.
 """
 
