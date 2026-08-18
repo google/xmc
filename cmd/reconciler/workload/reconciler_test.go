@@ -64,10 +64,75 @@ func (m *mockStorageUpdater) UpdateWorkUnitExecutions(ctx context.Context, xid i
 	return m.updateRes, m.updateErr
 }
 
+func newScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	clientgoscheme.AddToScheme(s)
+	v1beta1.AddToScheme(s)
+	return s
+}
+
+func TestNewReconciler_Validation(t *testing.T) {
+	scheme := newScheme()
+	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
+	batcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{})
+
+	tests := []struct {
+		name    string
+		params  Params
+		wantErr bool
+	}{
+		{
+			name: "valid params",
+			params: Params{
+				Client:  cl,
+				Scheme:  scheme,
+				Batcher: batcher,
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing client",
+			params: Params{
+				Scheme:  scheme,
+				Batcher: batcher,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing scheme",
+			params: Params{
+				Client:  cl,
+				Batcher: batcher,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing batcher",
+			params: Params{
+				Client: cl,
+				Scheme: scheme,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec, err := NewReconciler(tc.params)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("NewReconciler() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if !tc.wantErr && rec == nil {
+				t.Fatal("NewReconciler() returned nil reconciler without error")
+			}
+		})
+	}
+}
+
 func TestWorkloadReconciler_GetErrors(t *testing.T) {
 	scheme := newScheme()
 	cl := fake.NewClientBuilder().WithScheme(scheme).Build()
-	rec := &Reconciler{
+	rec, err := NewReconciler(Params{
 		Client: &clientWithError{
 			Client: cl,
 			getErr: k8serrors.NewInternalError(errors.New("API server unavailable")),
@@ -77,9 +142,12 @@ func TestWorkloadReconciler_GetErrors(t *testing.T) {
 		ManagementClusterInfo: &spb.ClusterInfo{
 			Project: "mgmt-project",
 		},
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
 	}
 
-	_, err := rec.Reconcile(context.Background(), ctrl.Request{
+	_, err = rec.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{
 			Name:      "test-workload",
 			Namespace: "default",
@@ -88,13 +156,6 @@ func TestWorkloadReconciler_GetErrors(t *testing.T) {
 	if err == nil {
 		t.Errorf("Reconcile() returned nil error, want non-nil")
 	}
-}
-
-func newScheme() *runtime.Scheme {
-	s := runtime.NewScheme()
-	clientgoscheme.AddToScheme(s)
-	v1beta1.AddToScheme(s)
-	return s
 }
 
 func TestWorkloadReconciler(t *testing.T) {
@@ -118,16 +179,19 @@ func TestWorkloadReconciler(t *testing.T) {
 		},
 	}
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects([]runtime.Object{workload, mkc}...).Build()
-	rec := &Reconciler{
+	rec, err := NewReconciler(Params{
 		Client:  cl,
 		Scheme:  scheme,
 		Batcher: shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{}),
 		ManagementClusterInfo: &spb.ClusterInfo{
 			Project: "mgmt-project",
 		},
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
 	}
 
-	_, err := rec.Reconcile(context.Background(), ctrl.Request{
+	_, err = rec.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{
 			Name:      "test-workload",
 			Namespace: "default",
@@ -164,16 +228,19 @@ func TestWorkloadReconciler_NoLabels(t *testing.T) {
 		},
 	}
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects([]runtime.Object{workload}...).Build()
-	rec := &Reconciler{
+	rec, err := NewReconciler(Params{
 		Client:  cl,
 		Scheme:  scheme,
 		Batcher: shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, &mockStorageUpdater{}),
 		ManagementClusterInfo: &spb.ClusterInfo{
 			Project: "mgmt-project",
 		},
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
 	}
 
-	_, err := rec.Reconcile(context.Background(), ctrl.Request{
+	_, err = rec.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{
 			Name:      "test-workload",
 			Namespace: "default",
@@ -319,15 +386,18 @@ func TestWorkloadReconciler_Inadmissible(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cl := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects([]runtime.Object{tc.workload}...).Build()
 			storageUpdater := &mockStorageUpdater{}
-			rec := &Reconciler{
+			rec, err := NewReconciler(Params{
 				Client:                      cl,
 				Scheme:                      scheme,
 				Batcher:                     shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{TickDuration: 250 * time.Millisecond}, storageUpdater),
 				ManagementClusterInfo:       &spb.ClusterInfo{Project: "mgmt-project"},
 				DetectInadmissibleWorkUnits: tc.detectInadmissibleWorkUnits,
+			})
+			if err != nil {
+				t.Fatalf("NewReconciler() unexpected error: %v", err)
 			}
 
-			_, err := rec.Reconcile(context.Background(), ctrl.Request{
+			_, err = rec.Reconcile(context.Background(), ctrl.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      tc.workload.Name,
 					Namespace: tc.workload.Namespace,
