@@ -46,15 +46,17 @@ def _extract_yaml_val(content: str, key: str) -> str | None:
     return match.group(1)
 
 
-def _parse_bool(val: str | None) -> bool:
-    """Parses boolean from string representation.
+def _parse_bool(val: str | bool | None) -> bool:
+    """Parses boolean from string or boolean representation.
 
     Args:
-      val: Input string or None.
+      val: Input string, boolean, or None.
 
     Returns:
-      True if string is truthy ('true', '1', 'yes'), False otherwise.
+      True if string is truthy ('true', '1', 'yes') or if val is True, False otherwise.
     """
+    if isinstance(val, bool):
+        return val
     if not val:
         return False
     return val.strip().lower() in ("true", "1", "yes")
@@ -245,6 +247,8 @@ def _check_components(enable_components: bool) -> None:
     out = _run_command(cmd)
     if out:
         sys.stdout.write(out)
+    else:
+        print("❌ No component controller pods found or failed to query cluster.")
 
 
 def main() -> int:
