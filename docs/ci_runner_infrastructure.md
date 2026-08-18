@@ -8,17 +8,21 @@ This document outlines the XMC continuous integration infrastructure, the in-clu
 
 XMC CI workflows execute on self-hosted GitHub Actions runners managed by **Actions Runner Controller (ARC)** on GKE.
 
-### Infrastructure Topology
+> [!NOTE]
+> Detailed internal infrastructure topology, GCP project assignments, runner image build pipelines, and cluster management commands are maintained in Google3 internal documentation:
+> [`g3doc/devops/github_runners.md`](https://source.corp.google.com/piper///depot/google3/third_party/xmanager_cloud/g3doc/devops/github_runners.md?l=1).
+
+### Infrastructure Overview
 
 ```
 +-----------------------------------------------------------------------------------------+
-| GKE Cluster: xmc-gh-runners (us-central1-a, Project: xmc-test-project-6)               |
+| GKE ARC Cluster                                                                         |
 |                                                                                         |
 |  +---------------------------+       +-----------------------------------------------+  |
 |  | Namespace: arc-systems    |       | Namespace: arc-runners                        |  |
 |  |                           |       |                                               |  |
 |  |  - gha-rs-controller      |       |  - AutoscalingRunnerSet (arc-runner-set)      |  |
-|  |  - gha-rs-listener        |       |    - Runner Pods (arc-runner:latest + dind)   |  |
+|  |  - gha-rs-listener        |       |    - Runner Pods (arc-runner + dind)          |  |
 |  +---------------------------+       |                                               |  |
 |                                      |  - Service: bazel-remote-cache:8080 / :9092   |  |
 |                                      |  - Deployment: bazel-remote-cache             |  |
@@ -31,8 +35,7 @@ XMC CI workflows execute on self-hosted GitHub Actions runners managed by **Acti
 
 1. **ARC AutoscalingRunnerSet (`arc-runner-set`)**:
    - Deployed in the `arc-runners` namespace.
-   - Dynamically scales ephemeral runner pods up to 30 replicas based on GitHub Actions job queue demand.
-   - Image: `us-docker.pkg.dev/xmc-test-project-6/xmc/arc-runner:latest`.
+   - Dynamically scales ephemeral runner pods up based on GitHub Actions job queue demand.
 
 2. **In-Cluster Bazel Remote Cache (`bazel-remote-cache`)**:
    - Manifest: [`deploy/ci/bazel-remote-cache.yaml`](file:///usr/local/google/home/vluk/.gemini/jetski/worktrees/xmc/analyze_ci_runner_performance/deploy/ci/bazel-remote-cache.yaml)
@@ -163,19 +166,16 @@ GitHub-hosted `ubuntu-latest` virtual environments come with many pre-installed 
 
 ---
 
-### Step 5: Decommissioning the Self-Hosted GKE ARC Cluster
+### Step 5: Decommissioning or Pausing the Self-Hosted GKE ARC Cluster
 
 To eliminate cloud resource costs when reverting to GitHub-hosted runners:
 
-1. **Scale down runner set**:
+1. **Scale down runner set to 0**:
    ```bash
    kubectl scale autoscalingrunnerset arc-runner-set -n arc-runners --replicas=0
    ```
-2. **Delete GKE cluster** (if no longer needed):
-   ```bash
-   gcloud container clusters delete xmc-gh-runners --zone=us-central1-a --project=xmc-test-project-6 --quiet
-   ```
-3. **Delete GCS / artifact registry resources** associated with custom runner images.
+2. **Decommission ARC resources & cluster**:
+   Refer to the cluster decommissioning playbook in [`g3doc/devops/github_runners.md`](https://source.corp.google.com/piper///depot/google3/third_party/xmanager_cloud/g3doc/devops/github_runners.md?l=1).
 
 ---
 
