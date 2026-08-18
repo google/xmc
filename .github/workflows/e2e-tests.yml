@@ -39,7 +39,7 @@ permissions:
 jobs:
   run-e2e:
     name: 'KinD & Playwright Headless E2E'
-    runs-on: 'ubuntu-24.04'
+    runs-on: 'arc-runner-set'
     timeout-minutes: 35
 
     steps:
