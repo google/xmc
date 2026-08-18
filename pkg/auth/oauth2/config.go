@@ -179,11 +179,15 @@ func (c *Config) IsNonProdAuth() bool {
 	if c.MockAuth || c.DisableAuthentication {
 		return true
 	}
-	if c.OIDCIssuerURL != "" && !strings.Contains(c.OIDCIssuerURL, "accounts.google.com") {
-		return true
+	if c.OIDCIssuerURL != "" {
+		if u, err := url.Parse(c.OIDCIssuerURL); err != nil || u.Hostname() != "accounts.google.com" {
+			return true
+		}
 	}
-	if c.AuthURL != "" && !strings.Contains(c.AuthURL, "accounts.google.com") {
-		return true
+	if c.AuthURL != "" {
+		if u, err := url.Parse(c.AuthURL); err != nil || u.Hostname() != "accounts.google.com" {
+			return true
+		}
 	}
 	return false
 }

@@ -249,7 +249,7 @@ func isLocalhost(host string) bool {
 	hostLower := strings.ToLower(host)
 	return hostLower == "localhost" || strings.HasPrefix(hostLower, "localhost:") ||
 		hostLower == "127.0.0.1" || strings.HasPrefix(hostLower, "127.0.0.1:") ||
-		hostLower == "::1" || strings.HasPrefix(hostLower, "[::1]")
+		hostLower == "::1" || hostLower == "[::1]" || strings.HasPrefix(hostLower, "[::1]:")
 }
 
 func isHostAllowed(host string, allowedHosts []string, mockAuth bool) bool {
