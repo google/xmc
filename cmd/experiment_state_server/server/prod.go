@@ -148,6 +148,8 @@ func initObservers(ctx context.Context, cfg *config.Config, st storage.Storage, 
 	return []ArtifactObserver{NewDashboardObserver(dashboardClient, st, wg)}, cleanup, nil
 }
 
+// runCleanups executes cleanup functions in reverse (LIFO) order to tear down
+// dependencies in the reverse order of their initialization.
 func runCleanups(cleanups []func() error) error {
 	var errs []error
 	for i := len(cleanups) - 1; i >= 0; i-- {
