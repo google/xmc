@@ -1,5 +1,5 @@
 # Copyright 2025 Google LLC
-load("//:compat.bzl", "compat_go_library")
+load("//:compat.bzl", "compat_go_library", "compat_go_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -13,4 +13,10 @@ compat_go_library(
         "//internal/configutil",
         "//internal/logging",
     ],
+)
+
+compat_go_test(
+    name = "config_test",
+    srcs = ["config_test.go"],
+    embed = [":config"],
 )

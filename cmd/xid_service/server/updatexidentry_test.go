@@ -26,7 +26,6 @@ import (
 	fmpb "protobuf/field_mask_go_proto"
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/xid_service/config"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -195,7 +194,7 @@ func TestUpdateXidEntry_Failures(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			server := NewXIDServer(config.Config{}, tc.mockAuth, tc.mockStorage)
+			server := newTestServer(t, withAuthorizer(tc.mockAuth), withStorage(tc.mockStorage))
 			_, err := server.UpdateXidEntry(ctx, &apipb.UpdateXidEntryRequest{
 				XidEntry: &msgpb.XidEntry{Name: proto.String("xids/1")},
 			})

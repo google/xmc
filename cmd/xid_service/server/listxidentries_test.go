@@ -25,7 +25,6 @@ import (
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/xid_service/config"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -249,7 +248,7 @@ func TestListXidEntries_Failures(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			server := NewXIDServer(config.Config{}, tc.mockAuth, tc.mockStorage)
+			server := newTestServer(t, withAuthorizer(tc.mockAuth), withStorage(tc.mockStorage))
 			_, err := server.ListXidEntries(ctx, &apipb.ListXidEntriesRequest{})
 			if status.CodeFromError(err) != status.CodeFromError(tc.wantErr) {
 				t.Errorf("ListXidEntries() returned error %v, want code %v", err, status.CodeFromError(tc.wantErr))
@@ -260,7 +259,7 @@ func TestListXidEntries_Failures(t *testing.T) {
 
 func TestSearchXidEntries_AuthFailure(t *testing.T) {
 	ctx := context.Background()
-	server := NewXIDServer(config.Config{}, &auth.MockAuth{AuthnErr: status.ErrPermissionDenied}, &storage.MockStorage{})
+	server := newTestServer(t, withAuthorizer(&auth.MockAuth{AuthnErr: status.ErrPermissionDenied}), withStorage(&storage.MockStorage{}))
 	_, err := server.SearchXidEntries(ctx, &apipb.ListXidEntriesRequest{})
 	if !errors.Is(err, status.ErrPermissionDenied) {
 		t.Errorf("SearchXidEntries() returned error %v, want %v", err, status.ErrPermissionDenied)
