@@ -33,6 +33,7 @@ import {
   QueueOverview,
   QueuePredictability,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { WipBannerComponent } from 'xmanager_cloud/ui/app/common/components/wip_banner/wip_banner';
 import { ROD_TERM_TOOLTIPS } from 'xmanager_cloud/ui/app/resource_dashboard/constants/rod_tooltips';
 import {
   FreeTotalDisplayPipe,
@@ -55,6 +56,7 @@ import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service'
     MaxWorkloadDisplayPipe,
     FreeTotalDisplayPipe,
     QueueStatusBadgePipe,
+    WipBannerComponent,
   ],
 })
 export class QueueCardComponent {
