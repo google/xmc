@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { take } from 'rxjs';
+
 import { Clipboard } from '@angular/cdk/clipboard';
 import { DecimalPipe } from '@angular/common';
 import {
@@ -103,7 +105,10 @@ export class QueueCardComponent {
     const clusterQueueName = this.queue()?.queueName ?? '';
     if (!clusterQueueName) return;
 
-    this.resourceService.getSubmitQueue(clusterQueueName).subscribe((resp) => {
+    this.resourceService
+      .getSubmitQueue(clusterQueueName)
+      .pipe(take(1))
+      .subscribe((resp) => {
       const targetQueue = resp?.submitQueue || clusterQueueName;
       const flagText = `--queue=${targetQueue}`;
 

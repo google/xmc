@@ -70,8 +70,8 @@ func TestExtractAllResourcesFromExecutable(t *testing.T) {
 	if got["nvidia-tesla-h100"] != 8 {
 		t.Errorf("nvidia-tesla-h100 = %d, want 8", got["nvidia-tesla-h100"])
 	}
-	if got["CPU"] != 16 {
-		t.Errorf("CPU = %d, want 16", got["CPU"])
+	if got["CPU"] != 16000 {
+		t.Errorf("CPU = %d, want 16000", got["CPU"])
 	}
 	if got["tpu-v5p"] != 16 {
 		t.Errorf("tpu-v5p = %d, want 16 (2x2x4 topology)", got["tpu-v5p"])
@@ -257,8 +257,8 @@ func TestExtractAllResourcesFromExecutable_BothCpuAndGpu(t *testing.T) {
 	}
 
 	got := ExtractAllResourcesFromExecutable(exec)
-	if got["CPU"] != 16 {
-		t.Errorf("CPU = %d, want 16", got["CPU"])
+	if got["CPU"] != 16000 {
+		t.Errorf("CPU = %d, want 16000", got["CPU"])
 	}
 	if got["nvidia-tesla-h100"] != 8 {
 		t.Errorf("nvidia-tesla-h100 = %d, want 8", got["nvidia-tesla-h100"])

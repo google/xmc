@@ -57,9 +57,8 @@ func ExtractAllResourcesFromExecutable(exec *essmsgpb.Executable) map[string]int
 		}
 		r := j.GetSpec().GetResources()
 		if cpu := r.GetCpuResources(); cpu != nil {
-			cpus := cpu.GetCpuMillicores() / 1000
-			if cpus > 0 {
-				resources["CPU"] += cpus
+			if cpu.GetCpuMillicores() > 0 {
+				resources["CPU"] += cpu.GetCpuMillicores()
 			}
 		}
 		if gpu := r.GetGpuResources(); gpu != nil {
@@ -149,6 +148,8 @@ func (r *Repository) FetchBatchPendingQueueMetrics(ctx context.Context, queueNam
 }
 
 // FetchBatchQueueVelocity queries the WorkUnitStatusHistory table for multiple queues in a single Spanner query.
+//
+//nolint:dupl
 func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueNames []string, window time.Duration) (map[string]QueueVelocityResult, error) {
 	results := make(map[string]QueueVelocityResult)
 	if len(queueNames) == 0 {
@@ -229,6 +230,8 @@ func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueN
 }
 
 // FetchBatchPendingQueueMetrics queries the WorkUnitStatusHistory table for pending work units across multiple queues.
+//
+//nolint:dupl
 func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, queueNames []string) (map[string]PendingQueueMetricsResult, error) {
 	results := make(map[string]PendingQueueMetricsResult)
 	if len(queueNames) == 0 {
@@ -244,7 +247,7 @@ func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, 
 		      ),
 		      LatestPending AS (
 		        SELECT h.QueueName, h.BitReversedXid, h.WorkUnitId, h.ResourceType, h.ResourceUnits
-		        FROM WorkUnitStatusHistory h
+		        FROM WorkUnitStatusHistory@{FORCE_INDEX=WorkUnitStatusHistoryByQueueAndTransitionTime} h
 		        JOIN MaxHistory m
 		          ON h.BitReversedXid = m.BitReversedXid
 		         AND h.WorkUnitId = m.WorkUnitId

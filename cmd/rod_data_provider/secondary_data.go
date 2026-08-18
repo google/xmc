@@ -51,18 +51,7 @@ func (s *server) BatchGetQueueSecondaryData(ctx context.Context, req *spb.BatchG
 	var batchResults map[string]statushistory.QueueVelocityResult
 	var pendingResults map[string]statushistory.PendingQueueMetricsResult
 	if s.velocityStore != nil && len(req.GetQueueNames()) > 0 {
-		var targetQueues []string
-		queueMapping := make(map[string][]string)
-		for _, cq := range req.GetQueueNames() {
-			qs := []string{cq}
-			if s.cache != nil {
-				if lqs := s.cache.GetLocalQueuesForClusterQueue(cq); len(lqs) > 0 {
-					qs = append(qs, lqs...)
-				}
-			}
-			queueMapping[cq] = qs
-			targetQueues = append(targetQueues, qs...)
-		}
+		targetQueues, queueMapping := s.buildTargetQueueMappings(req.GetQueueNames())
 
 		var err error
 		rawVelocity, err := fetchBatchVelocity(ctx, s.velocityStore, targetQueues, windowDuration)
@@ -93,6 +82,35 @@ func (s *server) BatchGetQueueSecondaryData(ctx context.Context, req *spb.BatchG
 	}, nil
 }
 
+func (s *server) buildTargetQueueMappings(queueNames []string) ([]string, map[string][]string) {
+	var targetQueues []string
+	queueMapping := make(map[string][]string)
+	for _, cq := range queueNames {
+		qs := []string{cq}
+		if s.cache != nil {
+			if lqs := s.cache.GetLocalQueuesForClusterQueue(cq); len(lqs) > 0 {
+				qs = append(qs, lqs...)
+			}
+		}
+		queueMapping[cq] = qs
+		targetQueues = append(targetQueues, qs...)
+	}
+	return targetQueues, queueMapping
+}
+
+func mergeResourceUnitsMap(combined map[string]int64, unitsMap map[string]int64, fallbackType string, fallbackUnits int64) {
+	if len(unitsMap) > 0 {
+		for k, v := range unitsMap {
+			combined[k] += v
+		}
+		return
+	}
+	if fallbackType != "" {
+		combined[fallbackType] += fallbackUnits
+	}
+}
+
+//nolint:dupl
 func mergeVelocityResults(mapping map[string][]string, raw map[string]statushistory.QueueVelocityResult) map[string]statushistory.QueueVelocityResult {
 	merged := make(map[string]statushistory.QueueVelocityResult)
 	for cq, targets := range mapping {
@@ -106,13 +124,7 @@ func mergeVelocityResults(mapping map[string][]string, raw map[string]statushist
 			if r.AdmittedJobsCount > combined.AdmittedJobsCount {
 				combined.AdmittedJobsCount = r.AdmittedJobsCount
 			}
-			if len(r.ResourceUnitsMap) > 0 {
-				for k, v := range r.ResourceUnitsMap {
-					combined.ResourceUnitsMap[k] += v
-				}
-			} else if r.ResourceType != "" {
-				combined.ResourceUnitsMap[r.ResourceType] += r.ResourceUnits
-			}
+			mergeResourceUnitsMap(combined.ResourceUnitsMap, r.ResourceUnitsMap, r.ResourceType, r.ResourceUnits)
 			if combined.ResourceType == "" || combined.ResourceType == "CPU" || (r.ResourceType != "" && r.ResourceType != "CPU") {
 				combined.ResourceType = r.ResourceType
 				combined.ResourceUnits = combined.ResourceUnitsMap[r.ResourceType]
@@ -123,6 +135,7 @@ func mergeVelocityResults(mapping map[string][]string, raw map[string]statushist
 	return merged
 }
 
+//nolint:dupl
 func mergePendingResults(mapping map[string][]string, raw map[string]statushistory.PendingQueueMetricsResult) map[string]statushistory.PendingQueueMetricsResult {
 	merged := make(map[string]statushistory.PendingQueueMetricsResult)
 	for cq, targets := range mapping {
@@ -136,13 +149,7 @@ func mergePendingResults(mapping map[string][]string, raw map[string]statushisto
 			if r.PendingJobs > combined.PendingJobs {
 				combined.PendingJobs = r.PendingJobs
 			}
-			if len(r.ResourceUnitsMap) > 0 {
-				for k, v := range r.ResourceUnitsMap {
-					combined.ResourceUnitsMap[k] += v
-				}
-			} else if r.ResourceType != "" {
-				combined.ResourceUnitsMap[r.ResourceType] += r.PendingResourceRequests
-			}
+			mergeResourceUnitsMap(combined.ResourceUnitsMap, r.ResourceUnitsMap, r.ResourceType, r.PendingResourceRequests)
 			if combined.ResourceType == "" || combined.ResourceType == "CPU" || (r.ResourceType != "" && r.ResourceType != "CPU") {
 				combined.ResourceType = r.ResourceType
 				combined.PendingResourceRequests = combined.ResourceUnitsMap[r.ResourceType]
@@ -161,16 +168,22 @@ func buildQueuePredictability(preset spb.RangePreset, windowHours float64, res s
 	} else if pendingRes.ResourceType != "" {
 		resType = pendingRes.ResourceType
 	}
+	resVel := float64(res.ResourceUnits)
+	pendingCount := float64(pendingRes.PendingResourceRequests)
+	if resType == "CPU" {
+		resVel /= 1000.0
+		pendingCount /= 1000.0
+	}
 	return &spb.QueuePredictability{
 		VelocityRange: preset,
 		JobVelocity:   jobVel,
 		ResourceVelocity: &spb.ResourceVelocity{
 			ResourceType: resType,
-			Velocity:     float64(res.ResourceUnits) / windowHours,
+			Velocity:     resVel / windowHours,
 		},
 		PendingResourceRequests: &spb.Resource{
 			ResourceType: resType,
-			Count:        float64(pendingRes.PendingResourceRequests),
+			Count:        pendingCount,
 		},
 		PendingJobs: pendingRes.PendingJobs,
 	}
