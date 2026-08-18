@@ -21,7 +21,6 @@ import (
 	"cloud.google.com/go/spanner"
 
 	"task/go/status"
-	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
 )
@@ -32,12 +31,11 @@ func (r *Repository) DeleteDashboard(ctx context.Context, dashboardId string) er
 		return fmt.Errorf("dashboardId must not be empty: %w", status.ErrInvalidArgument)
 	}
 
-	dashID := data.ExtractDashboardID(dashboardId)
-	logging.Info(ctx, "Delete dashboard from storage", "dashboardId", dashID)
+	logging.Info(ctx, "Delete dashboard from storage", "dashboardId", dashboardId)
 
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		// 1. Verify that the dashboard exists.
-		_, err := txn.ReadRow(ctx, dashboardschema.DashboardsTableName, spanner.Key{dashID}, []string{"DashboardId"})
+		_, err := txn.ReadRow(ctx, dashboardschema.DashboardsTableName, spanner.Key{dashboardId}, []string{"DashboardId"})
 		if err != nil {
 			if err == spanner.ErrRowNotFound || status.ExtractCanonicalCode(err) == status.NotFound {
 				return fmt.Errorf("dashboard %s not found: %w", dashboardId, status.ErrNotFound)
@@ -46,7 +44,7 @@ func (r *Repository) DeleteDashboard(ctx context.Context, dashboardId string) er
 		}
 
 		// 2. Delete by Spanner mutation on primary key. Child DashboardCharts are deleted automatically via ON DELETE CASCADE.
-		m := spanner.Delete(dashboardschema.DashboardsTableName, spanner.Key{dashID})
+		m := spanner.Delete(dashboardschema.DashboardsTableName, spanner.Key{dashboardId})
 		return txn.BufferWrite([]*spanner.Mutation{m})
 	})
 	if err != nil {

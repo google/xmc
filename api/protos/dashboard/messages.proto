@@ -46,7 +46,6 @@ message Chart {
   option (google.api.resource) = {
     type: "cloud.xmanager.googleapis.com/Chart"
     pattern: "experiments/{experiment}/workUnits/{wid}/charts/{chart}"
-    pattern: "experiments/{experiment}/charts/{chart}"
     pattern: "charts/{chart}"
     pattern: "dashboards/{dashboard}/charts/{chart}"
     singular: "chart"

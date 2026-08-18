@@ -28,6 +28,7 @@ import (
 	ls "xmanager_cloud/query_generator/liststatement"
 	"xmanager_cloud/query_generator/normalizer/normalizer"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
+	"xmanager_cloud/validator/validator"
 )
 
 // ListDashboards returns a paginated list of Dashboard protos matching the given filter and ordering.
@@ -100,8 +101,13 @@ func ExtractDashboardCursor(dash *dpb.Dashboard) (map[string]any, error) {
 		return nil, fmt.Errorf("dashboard must not be nil: %w", status.ErrInvalidArgument)
 	}
 
+	dashID, err := validator.ValidateDashboardName(dash.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("invalid dashboard name in cursor: %w", err)
+	}
+
 	cursor := map[string]any{
-		"dashboard_id": data.ExtractDashboardID(dash.GetName()),
+		"dashboard_id": dashID,
 	}
 
 	if dash.GetCreateTime() != nil {

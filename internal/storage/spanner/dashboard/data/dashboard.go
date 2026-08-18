@@ -19,7 +19,6 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/spanner"
@@ -33,12 +32,9 @@ import (
 	"xmanager_cloud/validator/validator"
 )
 
-// ExtractDashboardID extracts the bare dashboard ID from a full resource name or returns the ID as-is.
-func ExtractDashboardID(name string) string {
-	if dashID, err := validator.ValidateDashboardName(name); err == nil {
-		return dashID
-	}
-	return name
+// ExtractDashboardID extracts and validates the bare dashboard ID from a full resource name ("dashboards/{dashboard_id}").
+func ExtractDashboardID(name string) (string, error) {
+	return validator.ValidateDashboardName(name)
 }
 
 // SortCharts returns a new slice with charts sorted alphabetically by Name.
@@ -100,10 +96,13 @@ func MergeDashboards(current, updated *dpb.Dashboard, updateMask *fieldmaskpb.Fi
 // DashboardProtoToInsertMutations creates Spanner mutations to insert a Dashboard and its child DashboardCharts.
 func DashboardProtoToInsertMutations(dashboard *dpb.Dashboard) ([]*spanner.Mutation, error) {
 	if dashboard == nil {
-		return nil, fmt.Errorf("dashboard proto must not be nil")
+		return nil, fmt.Errorf("dashboard proto must not be nil: %w", status.ErrInvalidArgument)
 	}
 
-	dashID := ExtractDashboardID(dashboard.GetName())
+	dashID, err := validator.ValidateDashboardName(dashboard.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("invalid dashboard name: %w", err)
+	}
 
 	var layoutBytes []byte
 	if dashboard.ChartLayout != nil {
@@ -146,7 +145,10 @@ func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateCharts bool
 		return nil, fmt.Errorf("dashboard name must not be empty: %w", status.ErrInvalidArgument)
 	}
 
-	dashID := ExtractDashboardID(dashboard.GetName())
+	dashID, err := validator.ValidateDashboardName(dashboard.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("invalid dashboard name: %w", err)
+	}
 
 	var layoutBytes []byte
 	if dashboard.ChartLayout != nil {
@@ -241,13 +243,8 @@ func DashboardRowToProto(row *spanner.Row, charts []*dpb.Chart) (*dpb.Dashboard,
 		}
 	}
 
-	dashName := data.ID
-	if !strings.HasPrefix(data.ID, "dashboards/") {
-		dashName = validator.ConstructDashboardName(data.ID)
-	}
-
 	return &dpb.Dashboard{
-		Name:        dashName,
+		Name:        validator.ConstructDashboardName(data.ID),
 		Title:       data.Title,
 		Description: data.Description,
 		Owner:       data.Owner,

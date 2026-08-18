@@ -85,7 +85,7 @@ func TestFetchChartData(t *testing.T) {
 		{
 			name: "chart with summary box and scatter plot",
 			chart: &dpb.Chart{
-				Name: "experiments/1001/charts/chart-1",
+				Name: "experiments/1001/workUnits/1/charts/chart-1",
 				Xid:  1001,
 				Wid:  1,
 				Plots: []*dpb.PlotSpec{
@@ -106,7 +106,7 @@ func TestFetchChartData(t *testing.T) {
 				},
 			},
 			req: &spb.GetChartDataRequest{
-				Name:             "experiments/1001/charts/chart-1",
+				Name:             "experiments/1001/workUnits/1/charts/chart-1",
 				ChartWidthPixels: 1000,
 			},
 			queryResponses: map[string][][]any{
@@ -129,7 +129,7 @@ func TestFetchChartData(t *testing.T) {
 		{
 			name: "unsupported plot type returns error",
 			chart: &dpb.Chart{
-				Name: "experiments/1001/charts/chart-bar",
+				Name: "experiments/1001/workUnits/1/charts/chart-bar",
 				Plots: []*dpb.PlotSpec{
 					{
 						PlotId: "bar_plot",

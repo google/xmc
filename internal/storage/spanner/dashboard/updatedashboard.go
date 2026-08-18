@@ -28,6 +28,7 @@ import (
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
+	"xmanager_cloud/validator/validator"
 )
 
 // UpdateDashboard updates an existing dashboard in Spanner and returns the updated proto.
@@ -39,11 +40,16 @@ func (r *Repository) UpdateDashboard(ctx context.Context, dashboard *dpb.Dashboa
 		return nil, fmt.Errorf("dashboard name must not be empty: %w", status.ErrInvalidArgument)
 	}
 
+	dashID, err := validator.ValidateDashboardName(dashboard.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("invalid dashboard name: %w", err)
+	}
+
 	logging.Info(ctx, "Update dashboard in storage", "name", dashboard.GetName())
 
 	var updatedDashboard *dpb.Dashboard
-	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		existing, err := fetchDashboardInTransaction(ctx, txn, dashboard.GetName())
+	_, err = r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		existing, err := fetchDashboardInTransaction(ctx, txn, dashID)
 		if err != nil {
 			return err
 		}
@@ -78,8 +84,7 @@ func (r *Repository) UpdateDashboard(ctx context.Context, dashboard *dpb.Dashboa
 
 // fetchDashboardInTransaction reads an existing dashboard and its child charts inside a ReadWriteTransaction.
 func fetchDashboardInTransaction(ctx context.Context, txn *spanner.ReadWriteTransaction, dashboardId string) (*dpb.Dashboard, error) {
-	dashID := data.ExtractDashboardID(dashboardId)
-	row, err := txn.ReadRow(ctx, dashboardschema.DashboardsTableName, spanner.Key{dashID}, dashboardschema.FetchedDashboardColumns)
+	row, err := txn.ReadRow(ctx, dashboardschema.DashboardsTableName, spanner.Key{dashboardId}, dashboardschema.FetchedDashboardColumns)
 	if err != nil {
 		if err == spanner.ErrRowNotFound || status.ExtractCanonicalCode(err) == status.NotFound {
 			return nil, fmt.Errorf("dashboard %s not found: %w", dashboardId, status.ErrNotFound)
@@ -87,7 +92,7 @@ func fetchDashboardInTransaction(ctx context.Context, txn *spanner.ReadWriteTran
 		return nil, fmt.Errorf("failed to read dashboard %s: %w", dashboardId, err)
 	}
 
-	charts, err := fetchDashboardChartsInTransaction(ctx, txn, dashID)
+	charts, err := fetchDashboardChartsInTransaction(ctx, txn, dashboardId)
 	if err != nil {
 		return nil, err
 	}
@@ -97,8 +102,7 @@ func fetchDashboardInTransaction(ctx context.Context, txn *spanner.ReadWriteTran
 
 // fetchDashboardChartsInTransaction reads child chart IDs for a given dashboard via Spanner prefix read.
 func fetchDashboardChartsInTransaction(ctx context.Context, txn *spanner.ReadWriteTransaction, dashboardId string) ([]*dpb.Chart, error) {
-	dashID := data.ExtractDashboardID(dashboardId)
-	iter := txn.Read(ctx, dashboardschema.DashboardChartsTableName, spanner.Key{dashID}.AsPrefix(), []string{"ChartId"})
+	iter := txn.Read(ctx, dashboardschema.DashboardChartsTableName, spanner.Key{dashboardId}.AsPrefix(), []string{"ChartId"})
 	defer iter.Stop()
 
 	var charts []*dpb.Chart

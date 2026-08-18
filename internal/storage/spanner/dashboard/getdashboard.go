@@ -23,6 +23,7 @@ import (
 
 	fepb "api/filter/filter_expression_go_proto"
 	aipfilter "api/filter/go/filter"
+	"task/go/status"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/logging/logging"
@@ -32,13 +33,15 @@ import (
 
 // GetDashboard retrieves a dashboard by its unique ID along with its layout and child charts.
 func (r *Repository) GetDashboard(ctx context.Context, dashboardId string) (*dpb.Dashboard, error) {
-	dashID := data.ExtractDashboardID(dashboardId)
-	logging.Info(ctx, "Get dashboard from storage", "dashboardId", dashID)
+	if dashboardId == "" {
+		return nil, fmt.Errorf("dashboardId must not be empty: %w", status.ErrInvalidArgument)
+	}
+	logging.Info(ctx, "Get dashboard from storage", "dashboardId", dashboardId)
 
 	txn := r.client.ReadOnlyTransaction()
 	defer txn.Close()
 
-	row, err := txn.ReadRow(ctx, dashboardschema.DashboardsTableName, spanner.Key{dashID}, dashboardschema.FetchedDashboardColumns)
+	row, err := txn.ReadRow(ctx, dashboardschema.DashboardsTableName, spanner.Key{dashboardId}, dashboardschema.FetchedDashboardColumns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read dashboard %s: %w", dashboardId, err)
 	}
@@ -47,7 +50,7 @@ func (r *Repository) GetDashboard(ctx context.Context, dashboardId string) (*dpb
 		RejectLegacyOperatorPrecedence: true,
 		EnableSimpleQuotedStrings:      true,
 		EnforceValidStrings:            true,
-	}.Build(), fmt.Sprintf("dashboard_id = %q", dashID))
+	}.Build(), fmt.Sprintf("dashboard_id = %q", dashboardId))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse filter for dashboard charts: %w", err)
 	}

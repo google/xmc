@@ -36,8 +36,3 @@ func TestLoadConfig(t *testing.T) {
 	})
 }
 
-func TestGetSpannerDatabaseName(t *testing.T) {
-	t.Run("returns string value", func(t *testing.T) {
-		_ = getSpannerDatabaseName()
-	})
-}

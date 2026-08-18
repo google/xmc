@@ -425,11 +425,11 @@ func TestGetChartData(t *testing.T) {
 		}
 	})
 
-	t.Run("authorized user gets experiment-scoped chart data", func(t *testing.T) {
+	t.Run("authorized user gets root-scoped chart data", func(t *testing.T) {
 		repo := &mockRepository{
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
 				return &dpb.Chart{
-					Name: "experiments/1001/charts/chart-loss",
+					Name: "charts/chart-loss",
 					Xid:  1001,
 					Wid:  0,
 				}, nil
@@ -448,12 +448,12 @@ func TestGetChartData(t *testing.T) {
 			},
 		}
 		s := NewServer(&Config{}, repo, authMock, xidMock, &dataengine.DataEngine{})
-		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/1001/charts/chart-loss"})
+		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "charts/chart-loss"})
 		if err != nil {
 			t.Fatalf("GetChartData() unexpected error: %v", err)
 		}
-		if resp.GetName() != "experiments/1001/charts/chart-loss" {
-			t.Errorf("GetChartData().Name = %q, want %q", resp.GetName(), "experiments/1001/charts/chart-loss")
+		if resp.GetName() != "charts/chart-loss" {
+			t.Errorf("GetChartData().Name = %q, want %q", resp.GetName(), "charts/chart-loss")
 		}
 		if capturedReq == nil || capturedReq.GetName() != "xids/1001" {
 			t.Errorf("CheckUserAuthorization called with unexpected request: %v", capturedReq)
@@ -485,11 +485,11 @@ func TestGetChartData(t *testing.T) {
 		}
 	})
 
-	t.Run("infers xid from experiment chart name when stored chart xid is zero", func(t *testing.T) {
+	t.Run("infers xid from work unit chart name when stored chart xid is zero", func(t *testing.T) {
 		repo := &mockRepository{
 			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
 				return &dpb.Chart{
-					Name: "experiments/1001/charts/chart-loss",
+					Name: "experiments/1001/workUnits/2002/charts/chart-loss",
 					Xid:  0,
 				}, nil
 			},
@@ -507,12 +507,12 @@ func TestGetChartData(t *testing.T) {
 			},
 		}
 		s := NewServer(&Config{}, repo, authMock, xidMock, &dataengine.DataEngine{})
-		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/1001/charts/chart-loss"})
+		resp, err := s.GetChartData(ctx, &spb.GetChartDataRequest{Name: "experiments/1001/workUnits/2002/charts/chart-loss"})
 		if err != nil {
 			t.Fatalf("GetChartData() unexpected error: %v", err)
 		}
-		if resp.GetName() != "experiments/1001/charts/chart-loss" {
-			t.Errorf("GetChartData().Name = %q, want %q", resp.GetName(), "experiments/1001/charts/chart-loss")
+		if resp.GetName() != "experiments/1001/workUnits/2002/charts/chart-loss" {
+			t.Errorf("GetChartData().Name = %q, want %q", resp.GetName(), "experiments/1001/workUnits/2002/charts/chart-loss")
 		}
 		if capturedReq == nil || capturedReq.GetName() != "xids/1001" {
 			t.Errorf("Expected xids/1001, got %v", capturedReq)

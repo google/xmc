@@ -278,7 +278,7 @@ func TestDashboardRowToProto_Success(t *testing.T) {
 	now := time.Now().UTC()
 	row, err := spanner.NewRow(
 		[]string{"CreatedAt", "DashboardId", "UpdatedAt", "Description", "Owner", "Title", "ChartLayout", "ExtraIgnoredCol"},
-		[]interface{}{now, "dashboards/d1", now, "Test Desc", "owner@example.com", "Test Title", layoutBytes, "extra_value"},
+		[]interface{}{now, "d1", now, "Test Desc", "owner@example.com", "Test Title", layoutBytes, "extra_value"},
 	)
 	if err != nil {
 		t.Fatalf("spanner.NewRow failed: %v", err)
@@ -659,3 +659,46 @@ func TestMergeDashboards_PreservesChartsOrder(t *testing.T) {
 		t.Errorf("merged.Charts order not preserved: got %v", charts)
 	}
 }
+
+func TestExtractDashboardID(t *testing.T) {
+	t.Run("valid dashboard resource name", func(t *testing.T) {
+		got, err := ExtractDashboardID("dashboards/my-dash-1")
+		if err != nil {
+			t.Fatalf("ExtractDashboardID() unexpected error: %v", err)
+		}
+		if got != "my-dash-1" {
+			t.Errorf("ExtractDashboardID() = %q, want %q", got, "my-dash-1")
+		}
+	})
+
+	t.Run("invalid dashboard name returns error", func(t *testing.T) {
+		if _, err := ExtractDashboardID("invalid/name"); err == nil {
+			t.Errorf("ExtractDashboardID(\"invalid/name\") succeeded, want error")
+		}
+	})
+
+	t.Run("bare id returns error", func(t *testing.T) {
+		if _, err := ExtractDashboardID("bare-id"); err == nil {
+			t.Errorf("ExtractDashboardID(\"bare-id\") succeeded, want error")
+		}
+	})
+}
+
+func TestDashboardProtoToInsertMutations_InvalidDashboardName(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name: "invalid-name-without-prefix",
+	}
+	if _, err := DashboardProtoToInsertMutations(dash); err == nil {
+		t.Errorf("DashboardProtoToInsertMutations with invalid name succeeded, want error")
+	}
+}
+
+func TestDashboardProtoToUpdateMutations_InvalidDashboardName(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name: "invalid-name-without-prefix",
+	}
+	if _, err := DashboardProtoToUpdateMutations(dash, false); err == nil {
+		t.Errorf("DashboardProtoToUpdateMutations with invalid name succeeded, want error")
+	}
+}
+

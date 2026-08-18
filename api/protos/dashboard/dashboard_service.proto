@@ -77,9 +77,6 @@ service DashboardService {
     option (google.api.http) = {
       get: "/v1/{name=experiments/*/workUnits/*/charts/*}"
       additional_bindings {
-        get: "/v1/{name=experiments/*/charts/*}"
-      }
-      additional_bindings {
         get: "/v1/{name=charts/*}"
       }
       additional_bindings {
@@ -92,9 +89,6 @@ service DashboardService {
   rpc GetChartData(GetChartDataRequest) returns (ChartData) {
     option (google.api.http) = {
       get: "/v1/{name=experiments/*/workUnits/*/charts/*}:getData"
-      additional_bindings {
-        get: "/v1/{name=experiments/*/charts/*}:getData"
-      }
       additional_bindings {
         get: "/v1/{name=charts/*}:getData"
       }
@@ -117,10 +111,6 @@ service DashboardService {
       patch: "/v1/{chart.name=experiments/*/workUnits/*/charts/*}"
       body: "chart"
       additional_bindings {
-        patch: "/v1/{chart.name=experiments/*/charts/*}"
-        body: "chart"
-      }
-      additional_bindings {
         patch: "/v1/{chart.name=charts/*}"
         body: "chart"
       }
@@ -135,9 +125,6 @@ service DashboardService {
   rpc DeleteChart(DeleteChartRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
       delete: "/v1/{name=experiments/*/workUnits/*/charts/*}"
-      additional_bindings {
-        delete: "/v1/{name=experiments/*/charts/*}"
-      }
       additional_bindings {
         delete: "/v1/{name=charts/*}"
       }

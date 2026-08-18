@@ -34,7 +34,7 @@ type Config struct {
 var cfg Config
 
 func init() {
-	// 1. Load configurations from environment variables
+	// 1. Load configurations from ConfigMap (via environment variables)
 	configutil.StringEnv(&cfg.SpannerDatabaseName, "dashboard_spanner_database_name", "")
 	configutil.StringEnv(&cfg.XidServiceAddr, "dashboard_xid_service_addr", "xid-svc:50051")
 

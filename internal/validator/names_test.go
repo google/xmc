@@ -880,13 +880,6 @@ func TestValidateChartName(t *testing.T) {
 			wantErr:     nil,
 		},
 		{
-			name:        "valid_experiment_chart_name",
-			chartName:   "experiments/1001/charts/chart-loss",
-			wantParent:  "experiments/1001",
-			wantChartID: "chart-loss",
-			wantErr:     nil,
-		},
-		{
 			name:        "valid_root_chart_name",
 			chartName:   "charts/chart-loss",
 			wantParent:  "",
@@ -936,20 +929,6 @@ func TestValidateChartName(t *testing.T) {
 			wantErr:     status.ErrInvalidArgument,
 		},
 		{
-			name:        "invalid_experiment_chart_name_non_numeric_xid",
-			chartName:   "experiments/abc/charts/chart-1",
-			wantParent:  "",
-			wantChartID: "",
-			wantErr:     status.ErrInvalidArgument,
-		},
-		{
-			name:        "invalid_experiment_chart_name_zero_xid",
-			chartName:   "experiments/0/charts/chart-1",
-			wantParent:  "",
-			wantChartID: "",
-			wantErr:     status.ErrInvalidArgument,
-		},
-		{
 			name:        "invalid_work_unit_chart_name_negative_wid",
 			chartName:   "experiments/1001/workUnits/-1/charts/chart-1",
 			wantParent:  "",
@@ -986,15 +965,6 @@ func TestParseChartName(t *testing.T) {
 				WID:     2002,
 				ChartID: "chart-1",
 				Parent:  "experiments/1001/workUnits/2002",
-			},
-		},
-		{
-			name:      "experiment_chart",
-			chartName: "experiments/1001/charts/chart-1",
-			want: ParsedChartName{
-				XID:     1001,
-				ChartID: "chart-1",
-				Parent:  "experiments/1001",
 			},
 		},
 		{
@@ -1051,14 +1021,6 @@ func TestConstructChartNames(t *testing.T) {
 		got := ConstructWorkUnitChartName(1001, 2002, "chart-456")
 		if got != want {
 			t.Errorf("ConstructWorkUnitChartName() = %q, want %q", got, want)
-		}
-	})
-
-	t.Run("ConstructExperimentChartName", func(t *testing.T) {
-		want := "experiments/1001/charts/chart-456"
-		got := ConstructExperimentChartName(1001, "chart-456")
-		if got != want {
-			t.Errorf("ConstructExperimentChartName() = %q, want %q", got, want)
 		}
 	})
 

@@ -255,4 +255,13 @@ func TestExtractDashboardCursor(t *testing.T) {
 			t.Errorf("updated = %v, want %v", cursor["updated"], now.UTC())
 		}
 	})
+
+	t.Run("invalid dashboard name returns error", func(t *testing.T) {
+		dash := &dpb.Dashboard{
+			Name: "invalid-name",
+		}
+		if _, err := ExtractDashboardCursor(dash); err == nil {
+			t.Errorf("ExtractDashboardCursor with invalid name succeeded, want error")
+		}
+	})
 }
