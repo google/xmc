@@ -16,6 +16,12 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { catchError, map, Observable, throwError } from 'rxjs';
 
+import type {
+  Chart as RawChart,
+  ChartData as RawChartData,
+  Dashboard as RawDashboard,
+} from 'xmanager_cloud/dashboard_service/proto/messages.jsonpb_decls';
+
 import { XMC_API_DOMAIN } from './constants';
 import {
   Chart,
@@ -26,9 +32,6 @@ import {
   GetChartDataRequest,
   ListDashboardsRequest,
   ListDashboardsResponse,
-  RawChart,
-  RawChartData,
-  RawDashboard,
   UpdateDashboardRequest,
 } from './dashboard_models';
 import { normalizeChart, normalizeChartData, normalizeDashboard } from './dashboard_normalizer';

@@ -13,7 +13,43 @@
 // limitations under the License.
 
 /**
- * Enums representing Plot Types in XMC.
+ * @fileoverview Dashboard models and view-model interfaces.
+ * Reuses generated Protobuf interfaces from messages.proto and
+ * dashboard_service.proto for wire DTOs and provides client-side view models.
+ */
+
+import type {
+  CreateChartRequest as ProtoCreateChartRequest,
+  CreateDashboardRequest as ProtoCreateDashboardRequest,
+  DeleteChartRequest as ProtoDeleteChartRequest,
+  DeleteDashboardRequest as ProtoDeleteDashboardRequest,
+  GetChartDataRequest as ProtoGetChartDataRequest,
+  GetChartRequest as ProtoGetChartRequest,
+  GetDashboardRequest as ProtoGetDashboardRequest,
+  ListChartsRequest as ProtoListChartsRequest,
+  ListChartsResponse as ProtoListChartsResponse,
+  ListDashboardsRequest as ProtoListDashboardsRequest,
+  ListDashboardsResponse as ProtoListDashboardsResponse,
+  UpdateChartRequest as ProtoUpdateChartRequest,
+  UpdateDashboardRequest as ProtoUpdateDashboardRequest,
+} from 'xmanager_cloud/dashboard_service/proto/dashboard_service.jsonpb_decls';
+import type {
+  Chart as ProtoChart,
+  ChartData as ProtoChartData,
+  CoordSpec as ProtoCoordSpec,
+  Dashboard as ProtoDashboard,
+  DataSpec as ProtoDataSpec,
+  FacetSpec as ProtoFacetSpec,
+  GeomSpec as ProtoGeomSpec,
+  GridPosition as ProtoGridPosition,
+  LayoutSpec as ProtoLayoutSpec,
+  MappingSpec as ProtoMappingSpec,
+  PlotSpec as ProtoPlotSpec,
+  StatSpec as ProtoStatSpec,
+} from 'xmanager_cloud/dashboard_service/proto/messages.jsonpb_decls';
+
+/**
+ * Canonical plot types matching api/protos/dashboard/messages.proto PlotType enum.
  */
 export enum PlotType {
   PLOT_TYPE_UNSPECIFIED = 0,
@@ -24,7 +60,7 @@ export enum PlotType {
 }
 
 /**
- * Enums representing Layout Types for Dashboards and Charts.
+ * Canonical layout types matching api/protos/dashboard/messages.proto LayoutType enum.
  */
 export enum LayoutType {
   LAYOUT_TYPE_UNSPECIFIED = 0,
@@ -35,7 +71,7 @@ export enum LayoutType {
 }
 
 /**
- * Enums representing Geometries.
+ * Canonical geometry types matching api/protos/dashboard/messages.proto GeomType enum.
  */
 export enum GeomType {
   GEOM_TYPE_UNSPECIFIED = 0,
@@ -57,123 +93,87 @@ export enum MetricPolarity {
   NEUTRAL = 'NEUTRAL',
 }
 
-export interface GridPosition {
-  itemId?: string;
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
+// Wire Protobuf RPC request/response aliases
+export type {
+  ProtoCreateChartRequest,
+  ProtoCreateDashboardRequest,
+  ProtoDeleteChartRequest,
+  ProtoDeleteDashboardRequest,
+  ProtoGetChartDataRequest,
+  ProtoGetChartRequest,
+  ProtoGetDashboardRequest,
+  ProtoListChartsRequest,
+  ProtoListChartsResponse,
+  ProtoListDashboardsRequest,
+  ProtoListDashboardsResponse,
+  ProtoUpdateChartRequest,
+  ProtoUpdateDashboardRequest,
+};
+
+// Client-Side Request / Response Interfaces
+export interface CreateDashboardRequest {
+  dashboard: Dashboard;
+  dashboardId?: string;
 }
 
-export interface LayoutSpec {
-  type: LayoutType | number;
-  columns?: number;
-  positions?: GridPosition[];
+export interface UpdateDashboardRequest {
+  dashboard: Dashboard;
+  updateMask?: string;
 }
 
-export interface DataRange {
-  startStep?: number | string;
-  startIteration?: number | string;
-  startTime?: string;
-  endStep?: number | string;
-  endIteration?: number | string;
-  endTime?: string;
+export interface ListDashboardsRequest {
+  pageSize?: number;
+  pageToken?: string;
+  filter?: string;
 }
 
-export interface DataSpec {
-  metrics: string[];
-  ranges?: DataRange[];
+export interface ListDashboardsResponse {
+  dashboards?: Dashboard[];
+  nextPageToken?: string;
 }
 
-export interface MappingSpec {
-  x?: string;
-  y?: string;
-  color?: string;
-  group?: string;
-  size?: string;
+export interface CreateChartRequest {
+  parent: string;
+  chart: Chart;
+  chartId?: string;
 }
 
-export interface StyleSpec {
-  color?: string;
-  opacity?: number;
-  size?: number;
-  lineStyle?: string;
+export interface GetChartDataRequest {
+  name: string;
+  parentExperiment?: string;
+  parentWorkunit?: string;
+  chartWidthPixels?: number;
 }
 
-export interface GeomSpec {
-  type: GeomType | number;
-  yintercept?: number;
-  xintercept?: number;
-  style?: StyleSpec;
-}
+// Wire Protobuf DTO aliases matching canonical messages.proto
+export type RawDashboard = ProtoDashboard;
+export type RawChart = ProtoChart;
+export type RawPlotSpec = ProtoPlotSpec;
+export type RawChartData = ProtoChartData;
+export type RawPlotData = ProtoChartData.PlotData;
+export type RawSeriesData = ProtoChartData.SeriesData;
+export type RawSeriesPoint = ProtoChartData.SeriesPoint;
+export type RawBarData = ProtoChartData.BarData;
+export type RawBarBucket = ProtoChartData.BarBucket;
+export type RawSummaryBoxValue = ProtoChartData.SummaryBoxValue;
 
-export interface SmoothConfig {
-  algorithm: number;
-  alpha?: number;
-  windowSize?: number;
-}
+// Wire Spec Type Aliases matching canonical messages.proto
+export type GridPosition = ProtoGridPosition;
+export type LayoutSpec = ProtoLayoutSpec;
+export type DataRange = ProtoDataSpec.DataRange;
+export type DataSpec = ProtoDataSpec;
+export type MappingSpec = ProtoMappingSpec;
+export type StyleSpec = ProtoGeomSpec.StyleSpec;
+export type GeomSpec = ProtoGeomSpec;
+export type SmoothConfig = ProtoStatSpec.SmoothConfig;
+export type ForecastConfig = ProtoStatSpec.ForecastConfig;
+export type StatSpec = ProtoStatSpec;
+export type CoordSpec = ProtoCoordSpec;
+export type FacetSpec = ProtoFacetSpec;
 
-export interface ForecastConfig {
-  alpha?: number;
-  beta?: number;
-  stepsAhead: number;
-}
-
-export interface StatSpec {
-  type: number;
-  aggregation?: number;
-  smooth?: SmoothConfig;
-  forecast?: ForecastConfig;
-}
-
-export interface CoordSpec {
-  xScale?: number;
-  yScale?: number;
-  yMin?: number;
-  yMax?: number;
-}
-
-export interface FacetSpec {
-  type: number;
-  facetBy: string[];
-  ncol?: number;
-  nrow?: number;
-}
-
-export interface PlotSpec {
-  plotId: string;
-  title?: string;
-  type: PlotType | number;
-  data: DataSpec;
-  mapping?: MappingSpec;
-  geoms?: GeomSpec[];
-  stats?: StatSpec;
-  coords?: CoordSpec;
-  facets?: FacetSpec;
-}
-
-export interface Chart {
-  name?: string;
-  title: string;
-  xid: number;
-  wid?: number;
-  plots: PlotSpec[];
-  description?: string;
-  plotLayout?: LayoutSpec;
-  createTime?: string;
-  updateTime?: string;
-}
-
-export interface Dashboard {
-  name?: string;
-  title: string;
-  description?: string;
-  owner?: string;
-  charts?: Chart[];
-  chartLayout?: LayoutSpec;
-  createTime?: string;
-  updateTime?: string;
-}
+// ---------------------------------------------------------------------------
+// Client-Side View Models & Domain Types
+// ---------------------------------------------------------------------------
 
 export interface SummaryBoxValue {
   metricName?: string;
@@ -239,140 +239,11 @@ export interface ChartData {
   plotsData?: PlotData[];
 }
 
-export interface CreateDashboardRequest {
-  dashboard: Dashboard;
-  dashboardId?: string;
-}
-
-export interface UpdateDashboardRequest {
-  dashboard: Dashboard;
-  updateMask?: string;
-}
-
-export interface ListDashboardsRequest {
-  pageSize?: number;
-  pageToken?: string;
-  filter?: string;
-}
-
-export interface ListDashboardsResponse {
-  dashboards?: Dashboard[];
-  nextPageToken?: string;
-}
-
-export interface CreateChartRequest {
-  parent: string;
-  chart: Chart;
-  chartId?: string;
-}
-
-export interface GetChartDataRequest {
-  name: string;
-  parentExperiment?: string;
-  parentWorkunit?: string;
-  chartWidthPixels?: number;
-}
-
-export interface RawSummaryBoxValue {
-  metricName?: string;
-  metric_name?: string;
-  latestValue?: number;
-  latest_value?: number;
-  minValue?: number;
-  min_value?: number;
-  maxValue?: number;
-  max_value?: number;
-  meanValue?: number;
-  mean_value?: number;
-  latestStep?: number | string;
-  latest_step?: number | string;
-  latestIteration?: number | string;
-  latest_iteration?: number | string;
-  latestTimestamp?: string;
-  latest_timestamp?: string;
-  deltaVsBaseline?: number;
-  delta_vs_baseline?: number;
-  deltaPercentVsBaseline?: number;
-  delta_percent_vs_baseline?: number;
-  baselineValue?: number;
-  baseline_value?: number;
-  polarity?: MetricPolarity;
-}
-
-export interface RawSeriesPoint {
-  step?: number | string;
-  iteration?: number | string;
-  timestamp?: string;
-  avgValue?: number;
-  avg_value?: number;
-  minValue?: number;
-  min_value?: number;
-  maxValue?: number;
-  max_value?: number;
-}
-
-export interface RawSeriesData {
-  metricName?: string;
-  metric_name?: string;
-  workUnitId?: string;
-  work_unit_id?: string;
-  xid?: number | string;
-  points?: RawSeriesPoint[];
-  seriesLabel?: string;
-  series_label?: string;
-  isBaseline?: boolean;
-  is_baseline?: boolean;
-}
-
-export interface RawBarBucket {
-  categoryOrBin?: string;
-  category_or_bin?: string;
-  valueOrCount?: number;
-  value_or_count?: number;
-}
-
-export interface RawBarData {
-  metricName?: string;
-  metric_name?: string;
-  buckets?: RawBarBucket[];
-}
-
-export interface RawPlotData {
-  plotId?: string;
-  plot_id?: string;
-  type?: PlotType | string | number;
-  summaryData?: RawSummaryBoxValue;
-  summary_data?: RawSummaryBoxValue;
-  scatterSeries?: RawSeriesData;
-  scatter_series?: RawSeriesData;
-  barData?: RawBarData;
-  bar_data?: RawBarData;
-  seriesList?: RawSeriesData[];
-  series_list?: RawSeriesData[];
-  content?: {
-    summaryData?: RawSummaryBoxValue;
-    summary_data?: RawSummaryBoxValue;
-    scatterSeries?: RawSeriesData;
-    scatter_series?: RawSeriesData;
-    barData?: RawBarData;
-    bar_data?: RawBarData;
-  };
-}
-
-export interface RawChartData {
-  name?: string;
-  xid?: number | string;
-  wid?: number | string;
-  plotsData?: RawPlotData[];
-  plots_data?: RawPlotData[];
-}
-
-export interface RawPlotSpec {
-  plotId?: string;
-  plot_id?: string;
+export interface PlotSpec {
+  plotId: string;
   title?: string;
-  type?: PlotType | number;
-  data?: DataSpec;
+  type: PlotType | string | number;
+  data: DataSpec;
   mapping?: MappingSpec;
   geoms?: GeomSpec[];
   stats?: StatSpec;
@@ -380,31 +251,25 @@ export interface RawPlotSpec {
   facets?: FacetSpec;
 }
 
-export interface RawChart {
+export interface Chart {
   name?: string;
-  title?: string;
+  title: string;
+  xid: number;
+  wid?: number;
+  plots: PlotSpec[];
   description?: string;
-  xid?: number | string;
-  wid?: number | string;
-  plots?: RawPlotSpec[];
   plotLayout?: LayoutSpec;
-  plot_layout?: LayoutSpec;
   createTime?: string;
-  create_time?: string;
   updateTime?: string;
-  update_time?: string;
 }
 
-export interface RawDashboard {
+export interface Dashboard {
   name?: string;
-  title?: string;
+  title: string;
   description?: string;
   owner?: string;
-  charts?: RawChart[];
+  charts?: Chart[];
   chartLayout?: LayoutSpec;
-  chart_layout?: LayoutSpec;
   createTime?: string;
-  create_time?: string;
   updateTime?: string;
-  update_time?: string;
 }

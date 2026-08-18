@@ -18,21 +18,24 @@ import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
+import type {
+  CreateChartRequest,
+  CreateDashboardRequest,
+  GetChartDataRequest,
+  ListDashboardsRequest,
+  ListDashboardsResponse,
+  UpdateDashboardRequest,
+} from 'xmanager_cloud/dashboard_service/proto/dashboard_service.jsonpb_decls';
+
 import { cleanState, get, setupModule, setupObservableMatchers } from '../testing/test';
 import { XMC_API_DOMAIN } from './constants';
 import {
   Chart,
   ChartData,
-  CreateChartRequest,
-  CreateDashboardRequest,
   Dashboard,
-  GetChartDataRequest,
   LayoutType,
-  ListDashboardsRequest,
-  ListDashboardsResponse,
   PlotType,
   RawChartData,
-  UpdateDashboardRequest,
 } from './dashboard_models';
 import { DashboardService } from './dashboard_service';
 
