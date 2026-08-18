@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { take } from 'rxjs';
-
 import { Clipboard } from '@angular/cdk/clipboard';
 import { DecimalPipe } from '@angular/common';
 import {
@@ -28,6 +26,7 @@ import {
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { take } from 'rxjs';
 
 import {
   ClusterQueueSecondaryMetrics,

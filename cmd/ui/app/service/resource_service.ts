@@ -18,7 +18,6 @@ import { catchError, Observable, of } from 'rxjs';
 
 import {
   BatchGetQueueSecondaryDataResponse,
-  ClusterQueueSecondaryMetrics,
   GetRunningAndPendingJobsResponse,
   GetSubmitQueueResponse,
   ListClusterQueuesResponse,
