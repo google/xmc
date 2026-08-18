@@ -110,15 +110,15 @@ export class QueueCardComponent {
       .getSubmitQueue(clusterQueueName)
       .pipe(take(1))
       .subscribe((resp) => {
-      const targetQueue = resp?.submitQueue || clusterQueueName;
-      const flagText = `--queue=${targetQueue}`;
+        const targetQueue = resp?.submitQueue || clusterQueueName;
+        const flagText = `--queue=${targetQueue}`;
 
-      if (this.clipboard.copy(flagText)) {
-        this.isCopied.set(true);
-        setTimeout(() => {
-          this.isCopied.set(false);
-        }, 2000);
-      }
-    });
+        if (this.clipboard.copy(flagText)) {
+          this.isCopied.set(true);
+          setTimeout(() => {
+            this.isCopied.set(false);
+          }, 2000);
+        }
+      });
   }
 }
