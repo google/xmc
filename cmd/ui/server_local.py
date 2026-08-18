@@ -17,9 +17,12 @@ import argparse
 import glob
 import http.server
 import json
+import logging
 import os
 import re
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from cmd.ui import server
@@ -97,7 +100,13 @@ def load_golden_files() -> dict[str, Any]:
                             goldens[data["name"]] = data
                         elif isinstance(data, list):
                             goldens[os.path.basename(filepath)] = data
-                except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+                        else:
+                            logger.warning(
+                                "Skipping '%s': expected a dict with a 'name' key or a list.",
+                                filepath,
+                            )
+                except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+                    logger.warning("Failed to load golden file '%s': %s", filepath, e)
                     continue
     return goldens
 

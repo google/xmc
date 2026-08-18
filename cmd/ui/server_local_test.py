@@ -463,6 +463,122 @@ class SPAHandlerLocalTest(unittest.TestCase):
             server_local.SPAHandler.initialize_mock_data()
             self.assertEqual(server_local.SPAHandler.in_memory_dashboards, [])
 
+    def test_load_golden_files_dict(self):
+        mock_open_file = mock.mock_open(
+            read_data=json.dumps({"name": "chart1", "data": [1, 2, 3]})
+        )
+        with (
+            mock.patch.object(
+                server_local,
+                "find_testdata_dirs",
+                return_value=["/fake/testdata"],
+                autospec=True,
+                spec_set=True,
+            ),
+            mock.patch(
+                "glob.glob",
+                side_effect=lambda p: (
+                    ["/fake/testdata/chart1.json"] if p.endswith("*.json") else []
+                ),
+            ),
+            mock.patch("builtins.open", mock_open_file),
+        ):
+            goldens = server_local.load_golden_files()
+            self.assertEqual(goldens, {"chart1": {"name": "chart1", "data": [1, 2, 3]}})
+
+    def test_load_golden_files_list(self):
+        mock_open_file = mock.mock_open(read_data=json.dumps([{"item": 1}]))
+        with (
+            mock.patch.object(
+                server_local,
+                "find_testdata_dirs",
+                return_value=["/fake/testdata"],
+                autospec=True,
+                spec_set=True,
+            ),
+            mock.patch(
+                "glob.glob",
+                side_effect=lambda p: (
+                    ["/fake/testdata/list.json"] if p.endswith("*.json") else []
+                ),
+            ),
+            mock.patch("builtins.open", mock_open_file),
+        ):
+            goldens = server_local.load_golden_files()
+            self.assertEqual(goldens, {"list.json": [{"item": 1}]})
+
+    def test_load_golden_files_unrecognized_dict_logs_warning(self):
+        mock_open_file = mock.mock_open(read_data=json.dumps({"no_name": "value"}))
+        with (
+            mock.patch.object(
+                server_local,
+                "find_testdata_dirs",
+                return_value=["/fake/testdata"],
+                autospec=True,
+                spec_set=True,
+            ),
+            mock.patch(
+                "glob.glob",
+                side_effect=lambda p: (
+                    ["/fake/testdata/unrecognized.json"] if p.endswith("*.json") else []
+                ),
+            ),
+            mock.patch("builtins.open", mock_open_file),
+            mock.patch.object(server_local.logger, "warning") as mock_warn,
+        ):
+            goldens = server_local.load_golden_files()
+            self.assertEqual(goldens, {})
+            mock_warn.assert_called_once()
+            self.assertIn("unrecognized.json", mock_warn.call_args[0][1])
+
+    def test_load_golden_files_primitive_logs_warning(self):
+        mock_open_file = mock.mock_open(read_data=json.dumps("string_primitive"))
+        with (
+            mock.patch.object(
+                server_local,
+                "find_testdata_dirs",
+                return_value=["/fake/testdata"],
+                autospec=True,
+                spec_set=True,
+            ),
+            mock.patch(
+                "glob.glob",
+                side_effect=lambda p: (
+                    ["/fake/testdata/primitive.json"] if p.endswith("*.json") else []
+                ),
+            ),
+            mock.patch("builtins.open", mock_open_file),
+            mock.patch.object(server_local.logger, "warning") as mock_warn,
+        ):
+            goldens = server_local.load_golden_files()
+            self.assertEqual(goldens, {})
+            mock_warn.assert_called_once()
+            self.assertIn("primitive.json", mock_warn.call_args[0][1])
+
+    def test_load_golden_files_decode_error_logs_warning(self):
+        mock_open_file = mock.mock_open(read_data="not-valid-json")
+        with (
+            mock.patch.object(
+                server_local,
+                "find_testdata_dirs",
+                return_value=["/fake/testdata"],
+                autospec=True,
+                spec_set=True,
+            ),
+            mock.patch(
+                "glob.glob",
+                side_effect=lambda p: (
+                    ["/fake/testdata/corrupt.json"] if p.endswith("*.json") else []
+                ),
+            ),
+            mock.patch("builtins.open", mock_open_file),
+            mock.patch.object(server_local.logger, "warning") as mock_warn,
+        ):
+            goldens = server_local.load_golden_files()
+            self.assertEqual(goldens, {})
+            mock_warn.assert_called_once()
+            self.assertIn("corrupt.json", mock_warn.call_args[0][1])
+
 
 if __name__ == "__main__":
     unittest.main()
