@@ -12,7 +12,7 @@ build --workspace_status_command="python3 tools/workspace_status.py"
 build --stamp
 
 # In-cluster Bazel Remote Cache for self-hosted ARC CI runners (GKE)
-build:ci --remote_cache=http://bazel-remote-cache.arc-runners.svc.cluster.local:8080
+build:ci --remote_cache=grpc://bazel-remote-cache.arc-runners.svc.cluster.local:9092
 build:ci --remote_upload_local_results=true
 build:ci --remote_download_toplevel
 build:ci --experimental_remote_cache_compression=true

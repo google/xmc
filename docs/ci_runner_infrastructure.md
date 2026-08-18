@@ -8,10 +8,6 @@ This document outlines the XMC continuous integration infrastructure, the in-clu
 
 XMC CI workflows execute on self-hosted GitHub Actions runners managed by **Actions Runner Controller (ARC)** on GKE.
 
-> [!NOTE]
-> Detailed internal infrastructure topology, GCP project assignments, runner image build pipelines, and cluster management commands are maintained in Google3 internal documentation:
-> [`g3doc/devops/github_runners.md`](https://source.corp.google.com/piper///depot/google3/third_party/xmanager_cloud/g3doc/devops/github_runners.md?l=1).
-
 ### Infrastructure Overview
 
 ```
@@ -38,16 +34,16 @@ XMC CI workflows execute on self-hosted GitHub Actions runners managed by **Acti
    - Dynamically scales ephemeral runner pods up based on GitHub Actions job queue demand.
 
 2. **In-Cluster Bazel Remote Cache (`bazel-remote-cache`)**:
-   - Manifest: [`deploy/ci/bazel-remote-cache.yaml`](file:///usr/local/google/home/vluk/.gemini/jetski/worktrees/xmc/analyze_ci_runner_performance/deploy/ci/bazel-remote-cache.yaml)
+   - Manifest: [`deploy/ci/bazel-remote-cache.yaml`](../deploy/ci/bazel-remote-cache.yaml)
    - Runs `buchgr/bazel-remote-cache` backed by a 100Gi SSD PersistentVolumeClaim (`premium-rwo`).
-   - Listens on `http://bazel-remote-cache.arc-runners.svc.cluster.local:8080` (HTTP) and `:9092` (gRPC).
+   - Listens on `grpc://bazel-remote-cache.arc-runners.svc.cluster.local:9092` (gRPC) and `:8080` (HTTP).
    - Provides internal Gigabit/10Gbps cluster networking speeds, eliminating the 2.5–10 minute overhead of downloading/uploading compressed cache tarballs across public GitHub cache APIs.
    - Automatically manages LRU cache eviction at 90 GiB.
 
 3. **Bazel Configuration (`.bazelrc`)**:
    - CI builds use the `--config=ci` profile:
      ```ini
-     build:ci --remote_cache=http://bazel-remote-cache.arc-runners.svc.cluster.local:8080
+     build:ci --remote_cache=grpc://bazel-remote-cache.arc-runners.svc.cluster.local:9092
      build:ci --remote_upload_local_results=true
      build:ci --remote_download_toplevel
      build:ci --experimental_remote_cache_compression=true
@@ -175,7 +171,7 @@ To eliminate cloud resource costs when reverting to GitHub-hosted runners:
    kubectl scale autoscalingrunnerset arc-runner-set -n arc-runners --replicas=0
    ```
 2. **Decommission ARC resources & cluster**:
-   Refer to the cluster decommissioning playbook in [`g3doc/devops/github_runners.md`](https://source.corp.google.com/piper///depot/google3/third_party/xmanager_cloud/g3doc/devops/github_runners.md?l=1).
+   Delete or tear down the ARC Helm release and associated GKE cluster resources.
 
 ---
 
