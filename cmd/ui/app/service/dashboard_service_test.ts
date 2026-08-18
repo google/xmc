@@ -14,7 +14,7 @@
 
 import 'jasmine';
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
@@ -84,6 +84,27 @@ describe('DashboardService', () => {
         expect((err as Error).message).toContain('Dashboard resource name is required');
       }
     });
+
+    it('should log structured diagnostic and rethrow error when HTTP request fails', async () => {
+      const consoleSpy = spyOn(console, 'error');
+      const responsePromise = firstValueFrom(
+        state.service.getDashboard('dashboards/vcc-tune-comparison'),
+      );
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/dashboards/vcc-tune-comparison`);
+      req.flush('Not Found', { status: 404, statusText: 'Not Found' });
+
+      try {
+        await responsePromise;
+        fail('expected error');
+      } catch (err: unknown) {
+        expect((err as HttpErrorResponse).status).toBe(404);
+        expect(consoleSpy).toHaveBeenCalledWith(
+          'Failed to fetch dashboard dashboards/vcc-tune-comparison:',
+          jasmine.any(Object),
+        );
+      }
+    });
   });
 
   describe('listDashboards', () => {
@@ -127,6 +148,22 @@ describe('DashboardService', () => {
       expect(response.dashboards).toEqual([]);
       expect(response.nextPageToken).toBeUndefined();
     });
+
+    it('should log structured diagnostic and rethrow error when HTTP request fails', async () => {
+      const consoleSpy = spyOn(console, 'error');
+      const responsePromise = firstValueFrom(state.service.listDashboards());
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/dashboards`);
+      req.flush('Internal Server Error', { status: 500, statusText: 'Internal Server Error' });
+
+      try {
+        await responsePromise;
+        fail('expected error');
+      } catch (err: unknown) {
+        expect((err as HttpErrorResponse).status).toBe(500);
+        expect(consoleSpy).toHaveBeenCalledWith('Failed to list dashboards:', jasmine.any(Object));
+      }
+    });
   });
 
   describe('createDashboard', () => {
@@ -149,6 +186,34 @@ describe('DashboardService', () => {
 
       const response = (await responsePromise) as Dashboard;
       expect(response.name).toBe('dashboards/custom-id');
+    });
+
+    it('should return error when dashboard payload is missing', async () => {
+      try {
+        await firstValueFrom(state.service.createDashboard({} as CreateDashboardRequest));
+        fail('expected error');
+      } catch (err: unknown) {
+        expect((err as Error).message).toContain('Dashboard payload is required');
+      }
+    });
+
+    it('should log structured diagnostic and rethrow error when HTTP request fails', async () => {
+      const consoleSpy = spyOn(console, 'error');
+      const request: CreateDashboardRequest = {
+        dashboard: newDash,
+      };
+      const responsePromise = firstValueFrom(state.service.createDashboard(request));
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/dashboards`);
+      req.flush('Bad Request', { status: 400, statusText: 'Bad Request' });
+
+      try {
+        await responsePromise;
+        fail('expected error');
+      } catch (err: unknown) {
+        expect((err as HttpErrorResponse).status).toBe(400);
+        expect(consoleSpy).toHaveBeenCalledWith('Failed to create dashboard:', jasmine.any(Object));
+      }
     });
   });
 
@@ -173,6 +238,37 @@ describe('DashboardService', () => {
       const response = await responsePromise;
       expect(response).toEqual(updateDash);
     });
+
+    it('should return error when dashboard or dashboard.name is missing', async () => {
+      try {
+        await firstValueFrom(state.service.updateDashboard({} as UpdateDashboardRequest));
+        fail('expected error');
+      } catch (err: unknown) {
+        expect((err as Error).message).toContain('Dashboard and resource name are required');
+      }
+    });
+
+    it('should log structured diagnostic and rethrow error when HTTP request fails', async () => {
+      const consoleSpy = spyOn(console, 'error');
+      const request: UpdateDashboardRequest = {
+        dashboard: updateDash,
+      };
+      const responsePromise = firstValueFrom(state.service.updateDashboard(request));
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/dashboards/dash-1`);
+      req.flush('Forbidden', { status: 403, statusText: 'Forbidden' });
+
+      try {
+        await responsePromise;
+        fail('expected error');
+      } catch (err: unknown) {
+        expect((err as HttpErrorResponse).status).toBe(403);
+        expect(consoleSpy).toHaveBeenCalledWith(
+          'Failed to update dashboard dashboards/dash-1:',
+          jasmine.any(Object),
+        );
+      }
+    });
   });
 
   describe('deleteDashboard', () => {
@@ -184,6 +280,34 @@ describe('DashboardService', () => {
       req.flush(null);
 
       await responsePromise;
+    });
+
+    it('should return error when name is empty', async () => {
+      try {
+        await firstValueFrom(state.service.deleteDashboard(''));
+        fail('expected error');
+      } catch (err: unknown) {
+        expect((err as Error).message).toContain('Dashboard resource name is required for delete');
+      }
+    });
+
+    it('should log structured diagnostic and rethrow error when HTTP request fails', async () => {
+      const consoleSpy = spyOn(console, 'error');
+      const responsePromise = firstValueFrom(state.service.deleteDashboard('dashboards/dash-1'));
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/dashboards/dash-1`);
+      req.flush('Internal Server Error', { status: 500, statusText: 'Internal Server Error' });
+
+      try {
+        await responsePromise;
+        fail('expected error');
+      } catch (err: unknown) {
+        expect((err as HttpErrorResponse).status).toBe(500);
+        expect(consoleSpy).toHaveBeenCalledWith(
+          'Failed to delete dashboard dashboards/dash-1:',
+          jasmine.any(Object),
+        );
+      }
     });
   });
 
@@ -217,6 +341,38 @@ describe('DashboardService', () => {
       expect(response).toEqual(mockChart);
     });
 
+    it('should return error when parent or chart is missing', async () => {
+      try {
+        await firstValueFrom(state.service.createChart({} as CreateChartRequest));
+        fail('expected error');
+      } catch (err: unknown) {
+        expect((err as Error).message).toContain('Parent and chart resource are required');
+      }
+    });
+
+    it('should log structured diagnostic and rethrow error when createChart HTTP request fails', async () => {
+      const consoleSpy = spyOn(console, 'error');
+      const reqPayload: CreateChartRequest = {
+        parent: 'dashboards/dash-1',
+        chart: mockChart,
+      };
+      const responsePromise = firstValueFrom(state.service.createChart(reqPayload));
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/dashboards/dash-1/charts`);
+      req.flush('Bad Request', { status: 400, statusText: 'Bad Request' });
+
+      try {
+        await responsePromise;
+        fail('expected error');
+      } catch (err: unknown) {
+        expect((err as HttpErrorResponse).status).toBe(400);
+        expect(consoleSpy).toHaveBeenCalledWith(
+          'Failed to create chart under parent dashboards/dash-1:',
+          jasmine.any(Object),
+        );
+      }
+    });
+
     it('should fetch chart by name', async () => {
       const responsePromise = firstValueFrom(
         state.service.getChart('dashboards/dash-1/charts/chart-1'),
@@ -228,6 +384,36 @@ describe('DashboardService', () => {
 
       const response = await responsePromise;
       expect(response).toEqual(mockChart);
+    });
+
+    it('should return error when chart name is empty', async () => {
+      try {
+        await firstValueFrom(state.service.getChart(''));
+        fail('expected error');
+      } catch (err: unknown) {
+        expect((err as Error).message).toContain('Chart resource name is required');
+      }
+    });
+
+    it('should log structured diagnostic and rethrow error when getChart HTTP request fails', async () => {
+      const consoleSpy = spyOn(console, 'error');
+      const responsePromise = firstValueFrom(
+        state.service.getChart('dashboards/dash-1/charts/chart-1'),
+      );
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/dashboards/dash-1/charts/chart-1`);
+      req.flush('Not Found', { status: 404, statusText: 'Not Found' });
+
+      try {
+        await responsePromise;
+        fail('expected error');
+      } catch (err: unknown) {
+        expect((err as HttpErrorResponse).status).toBe(404);
+        expect(consoleSpy).toHaveBeenCalledWith(
+          'Failed to fetch chart dashboards/dash-1/charts/chart-1:',
+          jasmine.any(Object),
+        );
+      }
     });
   });
 
@@ -270,6 +456,41 @@ describe('DashboardService', () => {
       expect(response.wid).toBe(1);
       expect(response.plotsData?.[0].plotId).toBe('kpi_loss');
       expect(response.plotsData?.[0].summaryData?.latestValue).toBe(0.1631);
+    });
+
+    it('should return error when chart name is empty', async () => {
+      try {
+        await firstValueFrom(state.service.getChartData({} as GetChartDataRequest));
+        fail('expected error');
+      } catch (err: unknown) {
+        expect((err as Error).message).toContain(
+          'Chart resource name is required to fetch chart data',
+        );
+      }
+    });
+
+    it('should log structured diagnostic and rethrow error when getChartData HTTP request fails', async () => {
+      const consoleSpy = spyOn(console, 'error');
+      const request: GetChartDataRequest = {
+        name: 'experiments/9001/charts/summary_single',
+      };
+      const responsePromise = firstValueFrom<ChartData>(state.service.getChartData(request));
+
+      const req = state.httpMock.expectOne(
+        `${XMC_API_DOMAIN}/experiments/9001/charts/summary_single:getData`,
+      );
+      req.flush('Gateway Timeout', { status: 504, statusText: 'Gateway Timeout' });
+
+      try {
+        await responsePromise;
+        fail('expected error');
+      } catch (err: unknown) {
+        expect((err as HttpErrorResponse).status).toBe(504);
+        expect(consoleSpy).toHaveBeenCalledWith(
+          'Failed to fetch chart data for experiments/9001/charts/summary_single:',
+          jasmine.any(Object),
+        );
+      }
     });
   });
 });

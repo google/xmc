@@ -14,8 +14,7 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { Observable, throwError } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { catchError, map, Observable, throwError } from 'rxjs';
 
 import { XMC_API_DOMAIN } from './constants';
 import {
@@ -48,9 +47,13 @@ export class DashboardService {
     if (!name) {
       return throwError(() => new Error('Dashboard resource name is required'));
     }
-    return this.http
-      .get<RawDashboard>(`${XMC_API_DOMAIN}/${name}`, { withCredentials: true })
-      .pipe(map(normalizeDashboard));
+    return this.http.get<RawDashboard>(`${XMC_API_DOMAIN}/${name}`, { withCredentials: true }).pipe(
+      map(normalizeDashboard),
+      catchError((error) => {
+        console.error(`Failed to fetch dashboard ${name}:`, error);
+        return throwError(() => error);
+      }),
+    );
   }
 
   /**
@@ -79,6 +82,10 @@ export class DashboardService {
           dashboards: (res?.dashboards ?? []).map(normalizeDashboard),
           nextPageToken: res?.nextPageToken ?? res?.next_page_token,
         })),
+        catchError((error) => {
+          console.error('Failed to list dashboards:', error);
+          return throwError(() => error);
+        }),
       );
   }
 
@@ -99,7 +106,13 @@ export class DashboardService {
         params,
         withCredentials: true,
       })
-      .pipe(map(normalizeDashboard));
+      .pipe(
+        map(normalizeDashboard),
+        catchError((error) => {
+          console.error('Failed to create dashboard:', error);
+          return throwError(() => error);
+        }),
+      );
   }
 
   /**
@@ -119,7 +132,13 @@ export class DashboardService {
         params,
         withCredentials: true,
       })
-      .pipe(map(normalizeDashboard));
+      .pipe(
+        map(normalizeDashboard),
+        catchError((error) => {
+          console.error(`Failed to update dashboard ${request.dashboard.name}:`, error);
+          return throwError(() => error);
+        }),
+      );
   }
 
   /**
@@ -129,9 +148,16 @@ export class DashboardService {
     if (!name) {
       return throwError(() => new Error('Dashboard resource name is required for delete'));
     }
-    return this.http.delete<void>(`${XMC_API_DOMAIN}/${name}`, {
-      withCredentials: true,
-    });
+    return this.http
+      .delete<void>(`${XMC_API_DOMAIN}/${name}`, {
+        withCredentials: true,
+      })
+      .pipe(
+        catchError((error) => {
+          console.error(`Failed to delete dashboard ${name}:`, error);
+          return throwError(() => error);
+        }),
+      );
   }
 
   /**
@@ -151,7 +177,13 @@ export class DashboardService {
         params,
         withCredentials: true,
       })
-      .pipe(map(normalizeChart));
+      .pipe(
+        map(normalizeChart),
+        catchError((error) => {
+          console.error(`Failed to create chart under parent ${request.parent}:`, error);
+          return throwError(() => error);
+        }),
+      );
   }
 
   /**
@@ -165,7 +197,13 @@ export class DashboardService {
       .get<RawChart>(`${XMC_API_DOMAIN}/${name}`, {
         withCredentials: true,
       })
-      .pipe(map(normalizeChart));
+      .pipe(
+        map(normalizeChart),
+        catchError((error) => {
+          console.error(`Failed to fetch chart ${name}:`, error);
+          return throwError(() => error);
+        }),
+      );
   }
 
   /**
@@ -192,6 +230,12 @@ export class DashboardService {
         params,
         withCredentials: true,
       })
-      .pipe(map((res) => normalizeChartData(res) ?? { plotsData: [] }));
+      .pipe(
+        map((res) => normalizeChartData(res) ?? { plotsData: [] }),
+        catchError((error) => {
+          console.error(`Failed to fetch chart data for ${request.name}:`, error);
+          return throwError(() => error);
+        }),
+      );
   }
 }
