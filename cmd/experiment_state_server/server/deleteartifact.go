@@ -26,12 +26,12 @@ import (
 )
 
 // DeleteArtifact deletes an artifact.
-func (s *Server) DeleteArtifact(ctx context.Context, req *apipb.DeleteArtifactRequest) (*emptypb.Empty, error) {
+func (h *ArtifactHandler) DeleteArtifact(ctx context.Context, req *apipb.DeleteArtifactRequest) (*emptypb.Empty, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Delete artifact", "request", req)
 
 	// 1. Authenticate the user.
-	email, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	email, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func (s *Server) DeleteArtifact(ctx context.Context, req *apipb.DeleteArtifactRe
 	ctx = logging.WithArtifactName(ctx, name)
 
 	// 3. Check if artifact exists before authorizing.
-	artifact, err := s.storage.FetchArtifact(ctx, aid)
+	artifact, err := h.storage.FetchArtifact(ctx, aid)
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.NotFound {
 			logging.Warn(ctx, "Artifact not found", "error", err)
@@ -58,7 +58,7 @@ func (s *Server) DeleteArtifact(ctx context.Context, req *apipb.DeleteArtifactRe
 	ctx = logging.WithArtifactParent(ctx, artifact.GetParent())
 
 	// 4. Authorize the user to delete the artifact.
-	isAuthorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(aid), email, xidmsgpb.XidAcls_OWNER.Enum())
+	isAuthorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(aid), email, xidmsgpb.XidAcls_OWNER.Enum())
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (s *Server) DeleteArtifact(ctx context.Context, req *apipb.DeleteArtifactRe
 
 	// 5. Delete the artifact from the storage layer.
 	logging.Debug(ctx, "Deleting artifact", "name", req.GetName())
-	err = s.storage.DeleteArtifact(ctx, aid)
+	err = h.storage.DeleteArtifact(ctx, aid)
 	if err != nil {
 		logging.Error(ctx, "Failed to delete artifact", "error", err)
 		return nil, fmt.Errorf("failed to delete artifact %s: %w (%v)", name, status.ErrInternal, err)

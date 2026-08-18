@@ -25,13 +25,13 @@ import (
 
 // ListWorkUnitExecutions returns all executions that were run for a work unit. This includes the
 // current execution, and past executions that have been run for this work unit.
-func (s *Server) ListWorkUnitExecutions(ctx context.Context, req *apipb.ListWorkUnitExecutionsRequest) (*apipb.ListWorkUnitExecutionsResponse, error) {
+func (h *WorkUnitHandler) ListWorkUnitExecutions(ctx context.Context, req *apipb.ListWorkUnitExecutionsRequest) (*apipb.ListWorkUnitExecutionsResponse, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Fetch work unit executions", "request", req)
 
 	// 1. Authenticate the user.
 	logging.Debug(ctx, "Extracting user identity from context")
-	_, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	_, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func (s *Server) ListWorkUnitExecutions(ctx context.Context, req *apipb.ListWork
 	ctx = logging.WithWorkUnitName(ctx, name)
 
 	// 3. Retrieve the XID entry from the XID service. This is purely for authorization purposes.
-	_, err = s.getXid(ctx, validator.ConstructXIDName(xid))
+	_, err = h.getXid(ctx, validator.ConstructXIDName(xid))
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.PermissionDenied {
 			logging.Warn(ctx, "User not authorized to list work unit executions", "xid", xid, "error", err)
@@ -58,7 +58,7 @@ func (s *Server) ListWorkUnitExecutions(ctx context.Context, req *apipb.ListWork
 	}
 
 	// 4. Retrieve the work unit executions from the storage layer.
-	wues, err := s.storage.ListWorkUnitExecutions(ctx, xid, wid)
+	wues, err := h.storage.ListWorkUnitExecutions(ctx, xid, wid)
 	if err != nil {
 		logging.Error(ctx, "Failed to retrieve work unit executions from storage", "name", name, "error", err)
 		return nil, fmt.Errorf("failed to retrieve work unit executions %s from storage: %w (%v)", name, status.ErrInternal, err)

@@ -1265,6 +1265,147 @@ func TestConstructJobSet_PodFailurePolicy(t *testing.T) {
 	})
 }
 
+func TestConstructJobSet_PodFailurePolicy_Disabled(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Executable.GetJobset().Jobs[0].DisablePodFailurePolicy = proto.Bool(true)
+	})
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if len(got.Spec.ReplicatedJobs) != 1 {
+		t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
+	}
+
+	pfp := got.Spec.ReplicatedJobs[0].Template.Spec.PodFailurePolicy
+	if pfp != nil {
+		t.Errorf("Expected PodFailurePolicy to be nil when disable_pod_failure_policy=true, got %+v", pfp)
+	}
+}
+
+func TestConstructJobSet_OnFailureRestartPolicy(t *testing.T) {
+	tests := []struct {
+		name        string
+		retryLimit  int32
+		wantBackoff int32
+	}{
+		{
+			name:        "default backoff limit when retry_limit is 0",
+			retryLimit:  0,
+			wantBackoff: constants.DefaultOnFailureRetryLimit,
+		},
+		{
+			name:        "custom retry limit",
+			retryLimit:  5,
+			wantBackoff: 5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+			workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+				wu.Executable.GetJobset().Jobs[0].RestartPolicy = proto.String("OnFailure")
+				wu.Executable.GetJobset().Jobs[0].RetryLimit = tt.retryLimit
+			})
+
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+			if err != nil {
+				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+			}
+
+			if len(got.Spec.ReplicatedJobs) != 1 {
+				t.Fatalf("Expected 1 replicated job, got %d", len(got.Spec.ReplicatedJobs))
+			}
+
+			rjSpec := got.Spec.ReplicatedJobs[0].Template.Spec
+			if rjSpec.PodFailurePolicy != nil {
+				t.Errorf("Expected PodFailurePolicy to be nil for OnFailure restart policy, got %+v", rjSpec.PodFailurePolicy)
+			}
+			if rjSpec.BackoffLimit == nil || *rjSpec.BackoffLimit != tt.wantBackoff {
+				t.Errorf("Expected BackoffLimit to be %d, got %v", tt.wantBackoff, rjSpec.BackoffLimit)
+			}
+			if rjSpec.Template.Spec.RestartPolicy != corev1.RestartPolicyOnFailure {
+				t.Errorf("Expected RestartPolicy to be OnFailure, got %v", rjSpec.Template.Spec.RestartPolicy)
+			}
+		})
+	}
+}
+
+func TestConstructJobSet_LeaderWorker_Pathways(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	cpuRes := &esspb.ResourceSet{
+		Resources: &esspb.ResourceSet_CpuResources{
+			CpuResources: &esspb.CpuResources{
+				CpuMillicores: 100,
+				MemoryBytes:   1024,
+			},
+		},
+	}
+	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Executable.GetJobset().Jobs = []*esspb.KubernetesJob{
+			{
+				Name: constants.PathwaysHeadJobName,
+				Spec: &esspb.ExecutableSpec{
+					Name:        "head-container",
+					DockerImage: "head-image",
+					Resources:   cpuRes,
+				},
+				RestartPolicy: proto.String("Never"),
+			},
+			{
+				Name: "worker",
+				Spec: &esspb.ExecutableSpec{
+					Name:        "worker-container",
+					DockerImage: "worker-image",
+					Resources:   cpuRes,
+				},
+				RestartPolicy: proto.String("OnFailure"),
+				RetryLimit:    100,
+			},
+		}
+	})
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if len(got.Spec.ReplicatedJobs) != 2 {
+		t.Fatalf("Expected 2 replicated jobs, got %d", len(got.Spec.ReplicatedJobs))
+	}
+
+	// Head job
+	head := got.Spec.ReplicatedJobs[0]
+	if head.Name != constants.PathwaysHeadJobName {
+		t.Errorf("Head job name: got %q, want %q", head.Name, constants.PathwaysHeadJobName)
+	}
+	if head.Template.Spec.Template.Spec.RestartPolicy != corev1.RestartPolicyNever {
+		t.Errorf("Head RestartPolicy: got %v, want %v", head.Template.Spec.Template.Spec.RestartPolicy, corev1.RestartPolicyNever)
+	}
+	if head.Template.Spec.PodFailurePolicy == nil {
+		t.Error("Head PodFailurePolicy: expected non-nil, got nil")
+	}
+
+	// Worker job
+	worker := got.Spec.ReplicatedJobs[1]
+	if worker.Name != "worker" {
+		t.Errorf("Worker job name: got %q, want %q", worker.Name, "worker")
+	}
+	if worker.Template.Spec.Template.Spec.RestartPolicy != corev1.RestartPolicyOnFailure {
+		t.Errorf("Worker RestartPolicy: got %v, want %v", worker.Template.Spec.Template.Spec.RestartPolicy, corev1.RestartPolicyOnFailure)
+	}
+	if worker.Template.Spec.PodFailurePolicy != nil {
+		t.Errorf("Worker PodFailurePolicy: expected nil, got %+v", worker.Template.Spec.PodFailurePolicy)
+	}
+	if worker.Template.Spec.BackoffLimit == nil || *worker.Template.Spec.BackoffLimit != 100 {
+		t.Errorf("Worker BackoffLimit: got %v, want 100", worker.Template.Spec.BackoffLimit)
+	}
+}
+
 func TestConstructJobSet_ActiveDeadlineSeconds(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := proto.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {

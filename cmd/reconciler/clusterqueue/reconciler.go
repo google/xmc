@@ -16,19 +16,20 @@ package clusterqueue
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 
-	"golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
+	apierrors "golang/k8s_io/apimachinery/v/v0_23/pkg/api/errors/errors"
 	"golang/k8s_io/apimachinery/v/v0_23/pkg/runtime/runtime"
-	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
-	"xmanager_cloud/logging/logging"
-
 	ctrl "golang/sigs_k8s_io/controller_runtime/v/v0_11/controllerruntime"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/client/client"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/controller/controller"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/handler/handler"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/predicate/predicate"
 	"golang/sigs_k8s_io/controller_runtime/v/v0_11/pkg/source/source"
+	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
+	"xmanager_cloud/logging/logging"
 )
 
 // NameCache holds list of ClusterQueue names.
@@ -69,11 +70,36 @@ func (c *NameCache) Names() []string {
 	return names
 }
 
+// Params holds dependencies for constructing a ClusterQueue Reconciler.
+type Params struct {
+	Client client.Client
+	Scheme *runtime.Scheme
+	Cache  *NameCache
+}
+
 // Reconciler reconciles a ClusterQueue object.
 type Reconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 	Cache  *NameCache
+}
+
+// NewReconciler creates and validates a new ClusterQueue Reconciler.
+func NewReconciler(p Params) (*Reconciler, error) {
+	if p.Client == nil {
+		return nil, errors.New("client is required")
+	}
+	if p.Scheme == nil {
+		return nil, errors.New("scheme is required")
+	}
+	if p.Cache == nil {
+		return nil, errors.New("cache is required")
+	}
+	return &Reconciler{
+		Client: p.Client,
+		Scheme: p.Scheme,
+		Cache:  p.Cache,
+	}, nil
 }
 
 // Reconcile will be called by the controller when a ClusterQueue is created or updated.
@@ -82,7 +108,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	log := logging.FromContext(ctx)
 	var cq v1beta1.ClusterQueue
 	if err := r.Get(logging.Strip(ctx), req.NamespacedName, &cq); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			log.Info("ClusterQueue not found, assuming it was deleted", "clusterqueue", req.NamespacedName)
 			r.Cache.Remove(req.Name)
 			return ctrl.Result{}, nil
@@ -99,12 +125,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
+	if r == nil {
+		return errors.New("reconciler cannot be nil")
+	}
 	logging.Debug(ctx, "Setting up clusterqueue reconciler controller")
 	c, err := controller.New("clusterqueue", mgr, controller.Options{
 		Reconciler: r,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create clusterqueue controller: %w", err)
 	}
-	return c.Watch(&source.Kind{Type: &v1beta1.ClusterQueue{}}, &handler.EnqueueRequestForObject{}, predicate.ResourceVersionChangedPredicate{})
+	if err := c.Watch(&source.Kind{Type: &v1beta1.ClusterQueue{}}, &handler.EnqueueRequestForObject{}, predicate.ResourceVersionChangedPredicate{}); err != nil {
+		return fmt.Errorf("failed to watch ClusterQueue: %w", err)
+	}
+	return nil
 }

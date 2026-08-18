@@ -67,11 +67,19 @@ func ConfigureMockAuth(a *oauth2.Authenticator) {
 		return nil, fmt.Errorf("invalid token: %s", idToken)
 	}
 	a.PolicyFetcher = func(ctx context.Context) (*iampb.Policy, error) {
+		adminRole := a.Config.AdminIAMRole
+		if adminRole == "" {
+			adminRole = "roles/owner"
+		}
 		return &iampb.Policy{
 			Bindings: []*iampb.Binding{
 				{
 					Role:    a.Config.TargetIAMRole,
 					Members: []string{"user:mock-admin@mycompany.com", "user:mock-sa-user@mycompany.com", "serviceaccount:service-account@mycompany.com"},
+				},
+				{
+					Role:    adminRole,
+					Members: []string{"user:mock-admin@mycompany.com"},
 				},
 			},
 		}, nil

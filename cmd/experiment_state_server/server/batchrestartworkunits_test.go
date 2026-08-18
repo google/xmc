@@ -25,7 +25,6 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/storage/storage"
@@ -150,7 +149,7 @@ func TestBatchRestartWorkUnits_HappyPath(t *testing.T) {
 	}
 
 	for _, workUnitID := range []int64{workUnitID1, workUnitID2} {
-		workUnitExecutions, err := server.storage.ListWorkUnitExecutions(ctx, xid, workUnitID)
+		workUnitExecutions, err := server.WorkUnitHandler.storage.ListWorkUnitExecutions(ctx, xid, workUnitID)
 		if err != nil {
 			t.Fatalf("ListWorkUnitExecutions() for work unit %d returned an unexpected error: %v", workUnitID, err)
 		}
@@ -168,7 +167,7 @@ func TestBatchRestartWorkUnits_HappyPath(t *testing.T) {
 			t.Errorf("Old work unit execution state is %v, want %v", oldWorkUnitExecution.GetStatus().GetState(), msgpb.WorkUnitStatus_RESTARTING)
 		}
 
-		newExecution, err := server.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
+		newExecution, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
 		if err != nil {
 			t.Fatalf("FetchWorkUnitExecution() for work unit %d returned an unexpected error: %v", workUnitID, err)
 		}
@@ -273,9 +272,7 @@ func TestBatchRestartWorkUnits_Filter(t *testing.T) {
 
 func TestBatchRestartWorkUnits_BadPaths(t *testing.T) {
 	ctx := context.Background()
-	authorizer := createTestAuthorizer(ctx, t)
-	cfg := &config.Config{}
-	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil)
+	server := newTestServer(t)
 
 	testCases := []struct {
 		name    string
@@ -301,7 +298,6 @@ func TestBatchRestartWorkUnits_BadPaths(t *testing.T) {
 
 func TestBatchRestartWorkUnits_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{}
 
 	goodReq := &apipb.BatchRestartWorkUnitsRequest{Parent: "experiments/123"}
 	workUnit := &msgpb.WorkUnit{
@@ -389,11 +385,17 @@ func TestBatchRestartWorkUnits_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.authenticator == nil {
-				tc.authenticator = createTestAuthorizer(ctx, t)
+			var opts []testServerOpt
+			if tc.storage != nil {
+				opts = append(opts, withStorage(tc.storage))
 			}
-			taskQueueClient := &tq.FakeClient{}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient)
+			if tc.authenticator != nil {
+				opts = append(opts, withAuthorizer(tc.authenticator))
+			}
+			if tc.xidClient != nil {
+				opts = append(opts, withXidClient(tc.xidClient))
+			}
+			server := newTestServer(t, opts...)
 			_, err := server.BatchRestartWorkUnits(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("BatchRestartWorkUnits() returned error %v, want %v", err, tc.wantErr)
@@ -404,7 +406,6 @@ func TestBatchRestartWorkUnits_DependencyFailures(t *testing.T) {
 
 func TestBatchRestartWorkUnits_TaskEnqueueFails(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{}
 
 	goodReq := &apipb.BatchRestartWorkUnitsRequest{Parent: "experiments/123"}
 	workUnit := &msgpb.WorkUnit{
@@ -424,9 +425,12 @@ func TestBatchRestartWorkUnits_TaskEnqueueFails(t *testing.T) {
 	taskQueueClient := &tq.FakeClient{
 		EnqueueErr: fmt.Errorf("task enqueue failed"),
 	}
-	authenticator := createTestAuthorizer(ctx, t)
 
-	server := New(storage, cfg, authenticator, xidClient, taskQueueClient)
+	server := newTestServer(t,
+		withStorage(storage),
+		withXidClient(xidClient),
+		withWorkUnitActuator(taskQueueClient),
+	)
 	_, err := server.BatchRestartWorkUnits(ctx, goodReq)
 	if !errors.Is(err, status.ErrInternal) {
 		t.Errorf("BatchRestartWorkUnits() returned error %v, want %v", err, status.ErrInternal)
@@ -486,7 +490,7 @@ func TestBatchRestartWorkUnits_PartialFailure(t *testing.T) {
 		t.Fatalf("ValidateExperimentName() returned an unexpected error: %v", err)
 	}
 	for _, workUnitID := range []int64{workUnitID1, workUnitID2} {
-		newExecution, err := server.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
+		newExecution, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
 		if err != nil {
 			t.Fatalf("FetchWorkUnitExecution() for work unit %d returned an unexpected error: %v", workUnitID, err)
 		}
@@ -497,5 +501,29 @@ func TestBatchRestartWorkUnits_PartialFailure(t *testing.T) {
 		if eid != 2 {
 			t.Errorf("New work unit execution for work unit %d has wrong execution ID: got %d, want 2", workUnitID, eid)
 		}
+	}
+}
+
+func TestBatchRestartWorkUnits_NoCurrentExecutionFails(t *testing.T) {
+	ctx := context.Background()
+	mockStorage := &storage.MockStorage{
+		Experiment: &msgpb.Experiment{Name: "experiments/1"},
+		ListWorkUnitsResp: []*msgpb.WorkUnit{
+			{
+				Name: "experiments/1/workUnits/1",
+			},
+		},
+		RestartWorkUnitExecutionsResp: map[int64]*msgpb.WorkUnitExecution{
+			1: {Name: "experiments/1/workUnits/1/executions/2"},
+		},
+	}
+	mockXid := &mockXidClient{
+		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+	}
+	server := newTestServer(t, withStorage(mockStorage), withXidClient(mockXid))
+
+	_, err := server.BatchRestartWorkUnits(ctx, &apipb.BatchRestartWorkUnitsRequest{Parent: "experiments/1"})
+	if err == nil {
+		t.Fatal("BatchRestartWorkUnits() with work unit having no current execution want error, got nil")
 	}
 }

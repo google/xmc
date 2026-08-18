@@ -26,13 +26,13 @@ import (
 )
 
 // GetExperiment orchestrates the retrieval of a single experiment by its ID.
-func (s *Server) GetExperiment(ctx context.Context, req *apipb.GetExperimentRequest) (*msgpb.Experiment, error) {
+func (h *ExperimentHandler) GetExperiment(ctx context.Context, req *apipb.GetExperimentRequest) (*msgpb.Experiment, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Fetch experiment", "request", req)
 
 	// 1. Authenticate the user.
 	logging.Debug(ctx, "Extracting user identity from context")
-	_, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	_, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func (s *Server) GetExperiment(ctx context.Context, req *apipb.GetExperimentRequ
 
 	// 3. Retrieve the XID entry from the XID service. This is for authorization purposes and to get
 	// the ACLs.
-	xidEntry, err := s.getXid(ctx, validator.ConstructXIDName(xid))
+	xidEntry, err := h.getXid(ctx, validator.ConstructXIDName(xid))
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.PermissionDenied {
 			logging.Warn(ctx, "User not authorized to get experiment", "error", err)
@@ -65,7 +65,7 @@ func (s *Server) GetExperiment(ctx context.Context, req *apipb.GetExperimentRequ
 
 	// 4. Retrieve the experiment from the storage layer.
 	logging.Debug(ctx, "Fetching experiment from storage")
-	exp, err := s.storage.FetchExperiment(ctx, xid)
+	exp, err := h.storage.FetchExperiment(ctx, xid)
 	if err != nil {
 		if status.ExtractCanonicalCode(err) == status.NotFound {
 			logging.Warn(ctx, "Experiment not found in storage")

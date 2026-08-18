@@ -25,12 +25,12 @@ import (
 	xidmsgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
 
-func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRequest) (*msgpb.Artifact, error) {
+func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRequest) (*msgpb.Artifact, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Create artifact", "request", req)
 
 	// 1. Authenticate the user.
-	creator, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	creator, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 	ctx = logging.WithArtifactParent(ctx, req.GetParent())
 
 	// 3.1. Authorize the user to write against the parent experiment or work unit.
-	authorized, err := s.checkUserAuthorization(ctx, validator.ConstructXIDName(parentXID), creator, xidmsgpb.XidAcls_READER.Enum())
+	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(parentXID), creator, xidmsgpb.XidAcls_READER.Enum())
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 
 	// 4. Provision an XIDEntry for the artifact.
 	logging.Debug(ctx, "Calling XID service to provision ID", "creator", creator)
-	artifactXIDEntry, err := s.createXid(ctx, creator, s.cfg.EndpointURL, artifact.Acls, validator.ConstructXIDName(parentXID))
+	artifactXIDEntry, err := h.createXid(ctx, creator, h.cfg.EndpointURL, artifact.Acls, validator.ConstructXIDName(parentXID))
 	if err != nil {
 		logging.Error(ctx, "Failed to provision XID", "error", err)
 		return nil, fmt.Errorf("failed to provision XID: %w", err)
@@ -111,7 +111,7 @@ func (s *Server) CreateArtifact(ctx context.Context, req *apipb.CreateArtifactRe
 
 	// 6. Persist the artifact to the storage layer.
 	logging.Debug(ctx, "Persisting artifact")
-	retArtifact, err := s.storage.CreateArtifact(ctx, newArtifact)
+	retArtifact, err := h.storage.CreateArtifact(ctx, newArtifact)
 	if err != nil {
 		logging.Error(ctx, "Failed to save artifact", "artifact_name", newArtifact.GetName(), "error", err)
 		return nil, fmt.Errorf("failed to save artifact %s: %w (%v)", newArtifact.GetName(), status.ErrInternal, err)

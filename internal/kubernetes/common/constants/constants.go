@@ -137,4 +137,7 @@ const (
 	// PathwaysHeadJobName is the default job name for the Pathways head job in a JobSet
 	// (see https://github.com/google/pathways-job).
 	PathwaysHeadJobName = "pathways-head"
+
+	// DefaultOnFailureRetryLimit is the default backoff limit for jobs with RestartPolicy OnFailure.
+	DefaultOnFailureRetryLimit = int32(100)
 )

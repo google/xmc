@@ -37,25 +37,25 @@ const (
 	experimentSearchStaleness = 15 * time.Second
 )
 
-func (s *Server) ListExperiments(ctx context.Context, req *apipb.ListExperimentsRequest) (*apipb.ListExperimentsResponse, error) {
+func (h *ExperimentHandler) ListExperiments(ctx context.Context, req *apipb.ListExperimentsRequest) (*apipb.ListExperimentsResponse, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Fetch experiments", "request", req)
-	resp, err := s.listExperimentsWithStaleness(ctx, req, 0*time.Second)
+	resp, err := h.listExperimentsWithStaleness(ctx, req, 0*time.Second)
 	logging.Info(ctx, "Fetched experiments", "response", resp)
 	return resp, err
 }
 
-func (s *Server) SearchExperiments(ctx context.Context, req *apipb.ListExperimentsRequest) (*apipb.ListExperimentsResponse, error) {
+func (h *ExperimentHandler) SearchExperiments(ctx context.Context, req *apipb.ListExperimentsRequest) (*apipb.ListExperimentsResponse, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Search experiments", "request", req)
-	resp, err := s.listExperimentsWithStaleness(ctx, req, experimentSearchStaleness)
+	resp, err := h.listExperimentsWithStaleness(ctx, req, experimentSearchStaleness)
 	logging.Info(ctx, "Searched experiments", "response", resp)
 	return resp, err
 }
 
-func (s *Server) listExperimentsWithStaleness(ctx context.Context, req *apipb.ListExperimentsRequest, staleness time.Duration) (*apipb.ListExperimentsResponse, error) {
+func (h *ExperimentHandler) listExperimentsWithStaleness(ctx context.Context, req *apipb.ListExperimentsRequest, staleness time.Duration) (*apipb.ListExperimentsResponse, error) {
 	// 1. Authenticate the user.
-	_, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	_, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (s *Server) listExperimentsWithStaleness(ctx context.Context, req *apipb.Li
 	}
 
 	// 3. Get the list of Experiments from the storage layer.
-	experiments, nextPageToken, err := s.storage.ListExperiments(ctx, req.GetPageSize(), req.GetPageToken(), req.GetFilter(), req.GetOrderBy(), staleness)
+	experiments, nextPageToken, err := h.storage.ListExperiments(ctx, req.GetPageSize(), req.GetPageToken(), req.GetFilter(), req.GetOrderBy(), staleness)
 	if err != nil {
 		statusErr, ok := status.FromError(err)
 		if !ok {
@@ -89,7 +89,7 @@ func (s *Server) listExperimentsWithStaleness(ctx context.Context, req *apipb.Li
 	}
 
 	// 4. Populate ACLs from XID service.
-	if err := s.fetchACLsForExperiments(ctx, experiments, req.GetPageSize()); err != nil {
+	if err := h.fetchACLsForExperiments(ctx, experiments, req.GetPageSize()); err != nil {
 		return nil, err
 	}
 
@@ -100,7 +100,7 @@ func (s *Server) listExperimentsWithStaleness(ctx context.Context, req *apipb.Li
 	}, nil
 }
 
-func (s *Server) fetchACLsForExperiments(ctx context.Context, experiments []*essmsgpb.Experiment, pageSize int32) error {
+func (h *ExperimentHandler) fetchACLsForExperiments(ctx context.Context, experiments []*essmsgpb.Experiment, pageSize int32) error {
 	if len(experiments) == 0 {
 		logging.Warn(ctx, "No experiments fetched, skipping ACL population")
 		return nil
@@ -117,7 +117,7 @@ func (s *Server) fetchACLsForExperiments(ctx context.Context, experiments []*ess
 	}
 
 	// Call the XID service to get the XID entries.
-	xidListResponse, err := s.xidClient.ListXidEntries(propagateIAPJWT(ctx), &xidapipb.ListXidEntriesRequest{
+	xidListResponse, err := h.xidClient.ListXidEntries(propagateIAPJWT(ctx), &xidapipb.ListXidEntriesRequest{
 		PageSize: proto.Int32(pageSize),
 		Filter:   proto.String(strings.Join(xidFilter, " OR ")),
 	})
