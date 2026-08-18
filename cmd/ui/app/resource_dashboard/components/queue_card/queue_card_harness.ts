@@ -79,11 +79,28 @@ export class QueueCardHarness extends ComponentHarness {
   }
 
   private readonly wipBannerElement = this.locatorForOptional('.wip-banner');
+  private readonly predictabilitySectionElement =
+    this.locatorForOptional('.predictability-section');
+  private readonly spinnerContainerElement = this.locatorForOptional(
+    '.predictability-spinner-container',
+  );
 
   /** Gets the text of the Work in Progress banner if present. */
   async getWipBannerText(): Promise<string | null> {
     const banner = await this.wipBannerElement();
     return banner ? banner.text() : null;
+  }
+
+  /** Gets the text of the predictability section if present. */
+  async getPredictabilitySectionText(): Promise<string | null> {
+    const section = await this.predictabilitySectionElement();
+    return section ? section.text() : null;
+  }
+
+  /** Gets the text of the predictability loading spinner container if present. */
+  async getSpinnerContainerText(): Promise<string | null> {
+    const spinner = await this.spinnerContainerElement();
+    return spinner ? spinner.text() : null;
   }
 
   /** Clicks the queue card element. */

@@ -40,6 +40,8 @@
       @for (q of queues(); track q.queueName ?? '') {
         <xmc-rod-queue-card
           [queue]="q"
+          [secondaryData]="secondaryDataMap()[q.queueName || '']"
+          [isSecondaryLoading]="isSecondaryLoading()"
           [isSelected]="selectedQueue() === q.queueName"
           [activeResourceFilters]="activeResourceFilters()"
           (selectQueue)="onQueueSelect($event)"

@@ -16,6 +16,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   inject,
   OnDestroy,
   OnInit,
@@ -23,9 +24,10 @@ import {
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { catchError, EMPTY, Subject, Subscription, switchMap } from 'rxjs';
 
 import {
+  ClusterQueueSecondaryMetrics,
   QueueOverview,
   QueueResourceCapacity,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
@@ -50,6 +52,7 @@ import {
   TAB_SMART_FINDER,
 } from './components/subnav_tabs/subnav_tabs';
 import { ROD_TERM_TOOLTIPS } from './constants/rod_tooltips';
+import { mapPeriodToRangePreset } from './utils/resource_velocity';
 
 /**
  * Resource Observability Dashboard (ROD) primary layout container component.
@@ -83,10 +86,56 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   protected readonly activeTab = signal<DashboardTab>(TAB_SMART_FINDER);
   protected readonly velocityPeriod = signal<string>('1h');
   protected readonly activeQuery = signal<ResourceRequirementQuery | null>(null);
+  protected readonly secondaryDataMap = signal<Record<string, ClusterQueueSecondaryMetrics>>({});
+  protected readonly isSecondaryLoading = signal<boolean>(true);
 
   protected readonly TAB_SMART_FINDER = TAB_SMART_FINDER;
   protected readonly TAB_RESOURCE_AVAILABILITY = TAB_RESOURCE_AVAILABILITY;
   protected readonly termTooltips = ROD_TERM_TOOLTIPS;
+
+  private readonly fetchTrigger$ = new Subject<void>();
+
+  constructor() {
+    this.setupSecondaryDataSubscription();
+
+    effect(() => {
+      const queues = this.queues();
+      const _period = this.velocityPeriod();
+      if (queues.length > 0) {
+        this.fetchSecondaryData();
+      }
+    });
+  }
+
+  private setupSecondaryDataSubscription(): void {
+    this.subscriptions.add(
+      this.fetchTrigger$
+        .pipe(
+          switchMap(() => {
+            const queueNames = this.queues()
+              .map((q) => q.queueName)
+              .filter((name): name is string => !!name);
+            if (!queueNames.length) {
+              this.isSecondaryLoading.set(false);
+              return EMPTY;
+            }
+            this.isSecondaryLoading.set(true);
+            return this.resourceService
+              .getQueueSecondaryData(queueNames, mapPeriodToRangePreset(this.velocityPeriod()))
+              .pipe(
+                catchError(() => {
+                  this.isSecondaryLoading.set(false);
+                  return EMPTY;
+                }),
+              );
+          }),
+        )
+        .subscribe((res) => {
+          this.secondaryDataMap.set(res.queuePredictability ?? {});
+          this.isSecondaryLoading.set(false);
+        }),
+    );
+  }
 
   protected readonly availableResourceTypes = computed<string[]>(() => {
     const types = new Set<string>();
@@ -145,10 +194,14 @@ export class ResourceDashboard implements OnInit, OnDestroy {
 
     this.subscriptions.add(
       this.reloader.reloader$.subscribe(() => {
-        // Auto-reload hook for periodic refresh
+        this.fetchSecondaryData();
       }),
     );
     this.reloader.start();
+  }
+
+  protected fetchSecondaryData() {
+    this.fetchTrigger$.next();
   }
 
   ngOnDestroy() {
