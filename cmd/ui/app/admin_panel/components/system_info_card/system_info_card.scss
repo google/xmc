@@ -27,16 +27,17 @@
   }
 
   .card-grid {
-    display: grid;
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 24px;
 
     @media (min-width: 768px) {
-      grid-template-columns: 1fr 1fr;
+      flex-direction: row;
     }
   }
 
   .version-section {
+    flex: 1;
     display: flex;
     flex-direction: column;
 
@@ -68,6 +69,7 @@
   }
 
   .observability-section {
+    flex: 1;
     display: flex;
     flex-direction: column;
     border-top: 1px solid var(--xmc-border-color, #dadce0);
