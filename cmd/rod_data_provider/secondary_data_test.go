@@ -18,8 +18,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/testing/protocmp"
 	spb "xmanager_cloud/api/protos/rod"
 )
 
@@ -32,35 +34,52 @@ func TestBatchGetQueueSecondaryData_MockHandler(t *testing.T) {
 		Range:      spb.RangePreset_RANGE_PRESET_LAST_HOUR,
 	}
 
-	resp, err := srv.BatchGetQueueSecondaryData(ctx, req)
+	want := &spb.BatchGetQueueSecondaryDataResponse{
+		QueuePredictability: map[string]*spb.ClusterQueueSecondaryMetrics{
+			"cq-gpu": {
+				QueuePredictability: []*spb.QueuePredictability{
+					{
+						VelocityRange: spb.RangePreset_RANGE_PRESET_LAST_HOUR,
+						JobVelocity:   12.5,
+						ResourceVelocity: &spb.ResourceVelocity{
+							ResourceType: "GPU H100",
+							Velocity:     25.0,
+						},
+						PendingJobs: 3,
+						PendingResourceRequests: &spb.Resource{
+							ResourceType: "GPU H100",
+							Count:        6,
+						},
+					},
+				},
+			},
+			"cq-cpu": {
+				QueuePredictability: []*spb.QueuePredictability{
+					{
+						VelocityRange: spb.RangePreset_RANGE_PRESET_LAST_HOUR,
+						JobVelocity:   12.5,
+						ResourceVelocity: &spb.ResourceVelocity{
+							ResourceType: "CPU",
+							Velocity:     25.0,
+						},
+						PendingJobs: 3,
+						PendingResourceRequests: &spb.Resource{
+							ResourceType: "CPU",
+							Count:        6,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := srv.BatchGetQueueSecondaryData(ctx, req)
 	if err != nil {
 		t.Fatalf("BatchGetQueueSecondaryData failed: %v", err)
 	}
 
-	gpuData, ok := resp.QueuePredictability["cq-gpu"]
-	if !ok {
-		t.Fatalf("expected result for cq-gpu in QueuePredictability map")
-	}
-
-	p := gpuData.QueuePredictability[0]
-	if p.JobVelocity != 12.5 {
-		t.Errorf("JobVelocity = %f, want 12.5", p.JobVelocity)
-	}
-	if p.ResourceVelocity.ResourceType != "GPU H100" {
-		t.Errorf("ResourceVelocity.ResourceType = %q, want GPU H100", p.ResourceVelocity.ResourceType)
-	}
-	if p.PendingJobs != 3 {
-		t.Errorf("PendingJobs = %d, want 3", p.PendingJobs)
-	}
-
-	cpuData, ok := resp.QueuePredictability["cq-cpu"]
-	if !ok {
-		t.Fatalf("expected result for cq-cpu in QueuePredictability map")
-	}
-
-	pCpu := cpuData.QueuePredictability[0]
-	if pCpu.ResourceVelocity.ResourceType != "CPU" {
-		t.Errorf("ResourceVelocity.ResourceType = %q, want CPU", pCpu.ResourceVelocity.ResourceType)
+	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		t.Errorf("BatchGetQueueSecondaryData mismatch (-want +got):\n%s", diff)
 	}
 }
 
