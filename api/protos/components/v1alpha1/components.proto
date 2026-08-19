@@ -167,53 +167,50 @@ message ResolvedComponentCoordinates {
 
 // ComponentSpec defines the desired configuration and specification of a component.
 message ComponentSpec {
-  reserved 1, 7;
-  reserved "name", "labels";
-
   // Type of the component (1P or 3P wrapper).
-  ComponentType type = 2 [
+  ComponentType type = 1 [
     (google.api.field_behavior) = REQUIRED,
     json_name = "type"
   ];
 
   // Semantic version of the component (e.g. "v1.2.0").
-  string version = 3 [
+  string version = 2 [
     (google.api.field_behavior) = REQUIRED,
     json_name = "version"
   ];
 
   // Deletion policy when removing the component.
-  DeletionPolicy deletion_policy = 4 [
+  DeletionPolicy deletion_policy = 3 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "deletionPolicy"
   ];
 
   // Optional wrapper configuration if type is CUSTOM_3P_WRAPPER.
-  WrapperRef wrapper_ref = 5 [
+  WrapperRef wrapper_ref = 4 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "wrapperRef"
   ];
 
   // Lifecycle control parameters including graceful drain settings.
-  LifecycleControl lifecycle_control = 6 [
+  LifecycleControl lifecycle_control = 5 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "lifecycleControl"
   ];
 
   // Raw Kubernetes manifests or configuration templates associated with the component.
-  repeated string manifests = 8 [
+  repeated string manifests = 6 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "manifests"
   ];
 
   // Desired generation number of this specification.
-  int64 generation = 9 [
+  int64 generation = 7 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "generation"
   ];
 
   // Human-readable description of the component purpose.
-  string description = 10 [
+  string description = 8 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "description"
   ];
