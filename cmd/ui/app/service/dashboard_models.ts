@@ -13,18 +13,17 @@
 // limitations under the License.
 
 /**
- * @fileoverview Dashboard domain models, enums, and Protobuf specifications.
+ * @fileoverview Dashboard domain models, runtime constants, and Protobuf specifications.
  *
- * Architectural Boundary (Protobuf Specs vs Client Data View-Models):
- * - Specification & Configuration Entities (`Dashboard`, `Chart`, `PlotSpec`, `LayoutSpec`,
- *   `DataSpec`, `GeomSpec`, `CoordSpec`, RPC request/response messages) directly reuse
- *   canonical generated Protobuf declarations from `messages.jsonpb_decls` and
- *   `dashboard_service.jsonpb_decls` as the single source of truth without duplication.
- * - Client Data View Models (`ChartData`, `PlotData`, `SummaryBoxValue`, `SeriesData`,
- *   `BarData`) represent normalized telemetry data containers. They provide:
- *   1. Clean camelCase property access for UI components.
- *   2. Client-computed analytics fields (e.g. delta vs baseline, polarity, series labels)
- *      derived exclusively during UI data normalization.
+ * Architectural Structure:
+ * 1. Canonical Protobuf Spec & RPC Aliases: Reuses generated Protobuf interfaces
+ *    from `messages.jsonpb_decls` and `dashboard_service.jsonpb_decls` as the single
+ *    source of truth without duplicate declarations.
+ * 2. Runtime Enums / Constants (`as const`): Defines string-backed mapping objects
+ *    to prevent schema drift and seamlessly match Protobuf JSON serialization.
+ * 3. Client-Augmented Telemetry View Models: Defines UI view-models (`ChartData`,
+ *    `PlotData`, `SummaryBoxValue`, `SeriesData`) containing client-computed analytics
+ *    derived exclusively during data normalization.
  */
 
 import type {
@@ -58,29 +57,127 @@ import type {
 } from 'xmanager_cloud/dashboard_service/proto/messages.jsonpb_decls';
 
 // ============================================================================
-// 1. Root Specification Entities (Direct Protobuf Reuse)
+// 1. Canonical Protobuf Spec & RPC Aliases (Single Source of Truth)
 // ============================================================================
 
-/**
- * Performance Dashboard configuration specification.
- * Directly reused from canonical messages.proto (ProtoDashboard).
- */
+// Domain Configuration & Specification Entities
 export type Dashboard = ProtoDashboard;
-
-/**
- * Chart container configuration specification.
- * Directly reused from canonical messages.proto (ProtoChart).
- */
 export type Chart = ProtoChart;
-
-/**
- * Plot specification defining metrics, geometries, and statistical transforms.
- * Directly reused from canonical messages.proto (ProtoPlotSpec).
- */
 export type PlotSpec = ProtoPlotSpec;
 
+// Wire Telemetry Data Entities
+export type SeriesPoint = ProtoChartData.SeriesPoint;
+export type BarData = ProtoChartData.BarData;
+export type BarBucket = ProtoChartData.BarBucket;
+
+// Wire Spec Configurations
+export type GridPosition = ProtoGridPosition;
+export type LayoutSpec = ProtoLayoutSpec;
+export type DataRange = ProtoDataSpec.DataRange;
+export type DataSpec = ProtoDataSpec;
+export type MappingSpec = ProtoMappingSpec;
+export type StyleSpec = ProtoGeomSpec.StyleSpec;
+export type GeomSpec = ProtoGeomSpec;
+export type SmoothConfig = ProtoStatSpec.SmoothConfig;
+export type ForecastConfig = ProtoStatSpec.ForecastConfig;
+export type StatSpec = ProtoStatSpec;
+export type CoordSpec = ProtoCoordSpec;
+export type FacetSpec = ProtoFacetSpec;
+
+// Service RPC Request & Response Interfaces
+export type CreateDashboardRequest = ProtoCreateDashboardRequest;
+export type UpdateDashboardRequest = ProtoUpdateDashboardRequest;
+export type ListDashboardsRequest = ProtoListDashboardsRequest;
+export type ListDashboardsResponse = ProtoListDashboardsResponse;
+export type CreateChartRequest = ProtoCreateChartRequest;
+export type GetChartDataRequest = ProtoGetChartDataRequest;
+
+// Consolidated Legacy DTO & RPC Aliases
+export type RawDashboard = ProtoDashboard;
+export type RawChart = ProtoChart;
+export type RawPlotSpec = ProtoPlotSpec;
+export type RawChartData = ProtoChartData;
+export type RawPlotData = ProtoChartData.PlotData;
+export type RawSeriesData = ProtoChartData.SeriesData;
+export type RawSeriesPoint = ProtoChartData.SeriesPoint;
+export type RawBarData = ProtoChartData.BarData;
+export type RawBarBucket = ProtoChartData.BarBucket;
+export type RawSummaryBoxValue = ProtoChartData.SummaryBoxValue;
+
+export type {
+  ProtoCreateChartRequest,
+  ProtoCreateDashboardRequest,
+  ProtoDeleteChartRequest,
+  ProtoDeleteDashboardRequest,
+  ProtoGetChartDataRequest,
+  ProtoGetChartRequest,
+  ProtoGetDashboardRequest,
+  ProtoListChartsRequest,
+  ProtoListChartsResponse,
+  ProtoListDashboardsRequest,
+  ProtoListDashboardsResponse,
+  ProtoUpdateChartRequest,
+  ProtoUpdateDashboardRequest,
+};
+
 // ============================================================================
-// 2. Client-Side Telemetry Data View Models (Top-Down Hierarchy)
+// 2. Runtime Enums & Constants (as const String Mappings)
+// ============================================================================
+
+/**
+ * Plot types matching canonical messages.proto string serialization names.
+ */
+export const PlotType = {
+  PLOT_TYPE_UNSPECIFIED: 'PLOT_TYPE_UNSPECIFIED',
+  UNSPECIFIED: 'PLOT_TYPE_UNSPECIFIED',
+  SUMMARY_BOX: 'SUMMARY_BOX',
+  SCATTER: 'SCATTER',
+  BAR: 'BAR',
+  HISTOGRAM: 'HISTOGRAM',
+} as const;
+export type PlotType = (typeof PlotType)[keyof typeof PlotType] | number;
+
+/**
+ * Layout types matching canonical messages.proto string serialization names.
+ */
+export const LayoutType = {
+  LAYOUT_TYPE_UNSPECIFIED: 'LAYOUT_TYPE_UNSPECIFIED',
+  UNSPECIFIED: 'LAYOUT_TYPE_UNSPECIFIED',
+  GRID: 'GRID',
+  WRAP: 'WRAP',
+  SIDE_BY_SIDE: 'SIDE_BY_SIDE',
+  STACKED: 'STACKED',
+} as const;
+export type LayoutType = (typeof LayoutType)[keyof typeof LayoutType] | number;
+
+/**
+ * Geometry types matching canonical messages.proto string serialization names.
+ */
+export const GeomType = {
+  GEOM_TYPE_UNSPECIFIED: 'GEOM_TYPE_UNSPECIFIED',
+  UNSPECIFIED: 'GEOM_TYPE_UNSPECIFIED',
+  LINE: 'LINE',
+  POINT: 'POINT',
+  BAR: 'BAR',
+  AREA: 'AREA',
+  RIBBON: 'RIBBON',
+  HLINE: 'HLINE',
+  VLINE: 'VLINE',
+} as const;
+export type GeomType = (typeof GeomType)[keyof typeof GeomType] | number;
+
+/**
+ * Metric polarity indicating whether lower or higher values represent improvement.
+ */
+export const MetricPolarity = {
+  LOWER_IS_BETTER: 'LOWER_IS_BETTER',
+  HIGHER_IS_BETTER: 'HIGHER_IS_BETTER',
+  NEUTRAL: 'NEUTRAL',
+} as const;
+export type MetricPolarity = (typeof MetricPolarity)[keyof typeof MetricPolarity];
+
+// ============================================================================
+// 3. Client-Augmented Telemetry View Models
 // ============================================================================
 
 /**
@@ -99,7 +196,7 @@ export interface ChartData {
  * Why `PlotData` is defined here rather than directly aliasing `ProtoChartData.PlotData`
  * from `messages.proto`:
  * 1. **Client-Augmented Child Models**: In `messages.proto`, `summary_data` and `scatter_series`
- *    are raw proto messages without UI analytics. Our client view-model `PlotData` strongly
+ *    are raw wire messages without UI analytics. Our client view-model `PlotData` strongly
  *    types `summaryData?: SummaryBoxValue` and `scatterSeries?: SeriesData` with the client
  *    view models that contain UI-computed analytics (`deltaVsBaseline`, `polarity`,
  *    `isBaseline`, `seriesLabel`).
@@ -107,7 +204,7 @@ export interface ChartData {
  *    a single `scatter_series`. The client view model adds `seriesList?: SeriesData[]` to support
  *    multi-run overlay comparisons (e.g., Run 1 vs Run 2 vs Baseline on the same chart).
  * 3. **Flexible Type Unification (`PlotType | string | number`)**: Unifies wire JSON strings
- *    (`'SCATTER'`), integer tags (`2`), and TypeScript `PlotType` enum values.
+ *    (`'SCATTER'`), integer tags (`2`), and TypeScript `PlotType` constants.
  */
 export interface PlotData {
   plotId?: string;
@@ -167,128 +264,3 @@ export interface SeriesData {
   /** UI-computed flag marking this series as a comparison baseline. */
   isBaseline?: boolean;
 }
-
-/**
- * Coordinate point in a telemetry series curve.
- * Directly reused from canonical messages.proto (ProtoChartData.SeriesPoint).
- */
-export type SeriesPoint = ProtoChartData.SeriesPoint;
-
-/**
- * Categorical bar chart or histogram distribution data.
- * Directly reused from canonical messages.proto (ProtoChartData.BarData).
- */
-export type BarData = ProtoChartData.BarData;
-
-/**
- * Single category or bin bucket in a bar or histogram distribution.
- * Directly reused from canonical messages.proto (ProtoChartData.BarBucket).
- */
-export type BarBucket = ProtoChartData.BarBucket;
-
-// ============================================================================
-// 3. Canonical Enums
-// ============================================================================
-
-/**
- * Canonical plot types matching api/protos/dashboard/messages.proto PlotType enum.
- */
-export enum PlotType {
-  PLOT_TYPE_UNSPECIFIED = 0,
-  SUMMARY_BOX = 1,
-  SCATTER = 2,
-  BAR = 3,
-  HISTOGRAM = 4,
-}
-
-/**
- * Canonical layout types matching api/protos/dashboard/messages.proto LayoutType enum.
- */
-export enum LayoutType {
-  LAYOUT_TYPE_UNSPECIFIED = 0,
-  GRID = 1,
-  WRAP = 2,
-  SIDE_BY_SIDE = 3,
-  STACKED = 4,
-}
-
-/**
- * Canonical geometry types matching api/protos/dashboard/messages.proto GeomType enum.
- */
-export enum GeomType {
-  GEOM_TYPE_UNSPECIFIED = 0,
-  LINE = 1,
-  POINT = 2,
-  BAR = 3,
-  AREA = 4,
-  RIBBON = 5,
-  HLINE = 6,
-  VLINE = 7,
-}
-
-/**
- * Metric polarity indicating whether lower or higher values represent improvement.
- */
-export enum MetricPolarity {
-  LOWER_IS_BETTER = 'LOWER_IS_BETTER',
-  HIGHER_IS_BETTER = 'HIGHER_IS_BETTER',
-  NEUTRAL = 'NEUTRAL',
-}
-
-// ============================================================================
-// 4. Service Request & Response Interfaces (Direct Protobuf Reuse)
-// ============================================================================
-
-export type CreateDashboardRequest = ProtoCreateDashboardRequest;
-export type UpdateDashboardRequest = ProtoUpdateDashboardRequest;
-export type ListDashboardsRequest = ProtoListDashboardsRequest;
-export type ListDashboardsResponse = ProtoListDashboardsResponse;
-export type CreateChartRequest = ProtoCreateChartRequest;
-export type GetChartDataRequest = ProtoGetChartDataRequest;
-
-// ============================================================================
-// 5. Wire & Protobuf Spec Aliases and DTO Re-exports
-// ============================================================================
-
-// Directly reuse canonical generated Protobuf declarations from messages.jsonpb_decls
-export type GridPosition = ProtoGridPosition;
-export type LayoutSpec = ProtoLayoutSpec;
-export type DataRange = ProtoDataSpec.DataRange;
-export type DataSpec = ProtoDataSpec;
-export type MappingSpec = ProtoMappingSpec;
-export type StyleSpec = ProtoGeomSpec.StyleSpec;
-export type GeomSpec = ProtoGeomSpec;
-export type SmoothConfig = ProtoStatSpec.SmoothConfig;
-export type ForecastConfig = ProtoStatSpec.ForecastConfig;
-export type StatSpec = ProtoStatSpec;
-export type CoordSpec = ProtoCoordSpec;
-export type FacetSpec = ProtoFacetSpec;
-
-// Wire Protobuf DTO aliases matching canonical messages.proto
-export type RawDashboard = ProtoDashboard;
-export type RawChart = ProtoChart;
-export type RawPlotSpec = ProtoPlotSpec;
-export type RawChartData = ProtoChartData;
-export type RawPlotData = ProtoChartData.PlotData;
-export type RawSeriesData = ProtoChartData.SeriesData;
-export type RawSeriesPoint = ProtoChartData.SeriesPoint;
-export type RawBarData = ProtoChartData.BarData;
-export type RawBarBucket = ProtoChartData.BarBucket;
-export type RawSummaryBoxValue = ProtoChartData.SummaryBoxValue;
-
-// Wire Protobuf RPC request/response aliases
-export type {
-  ProtoCreateChartRequest,
-  ProtoCreateDashboardRequest,
-  ProtoDeleteChartRequest,
-  ProtoDeleteDashboardRequest,
-  ProtoGetChartDataRequest,
-  ProtoGetChartRequest,
-  ProtoGetDashboardRequest,
-  ProtoListChartsRequest,
-  ProtoListChartsResponse,
-  ProtoListDashboardsRequest,
-  ProtoListDashboardsResponse,
-  ProtoUpdateChartRequest,
-  ProtoUpdateDashboardRequest,
-};
