@@ -52,6 +52,10 @@ describe('FeatureFlagService', () => {
     it('isNonProdAuth should be false', () => {
       expect(state.service.isNonProdAuth).toBeFalse();
     });
+
+    it('isPerformanceDashboardEnabled should be false', () => {
+      expect(state.service.isPerformanceDashboardEnabled).toBeFalse();
+    });
   });
 
   describe('when XMC_FEATURE_FLAGS is defined', () => {
@@ -124,6 +128,24 @@ describe('FeatureFlagService', () => {
       it('isNonProdAuth should be false if isNonProdAuth is false', () => {
         expect(state.service.isNonProdAuth).toBeFalse();
         expect(state.service.isFeatureEnabled('isNonProdAuth')).toBeFalse();
+      });
+    });
+
+    describe('when performanceDashboardEnabled is true', () => {
+      const state = setup({ performanceDashboardEnabled: true });
+
+      it('isPerformanceDashboardEnabled should be true if performanceDashboardEnabled is true', () => {
+        expect(state.service.isPerformanceDashboardEnabled).toBeTrue();
+        expect(state.service.isFeatureEnabled('performanceDashboardEnabled')).toBeTrue();
+      });
+    });
+
+    describe('when performanceDashboardEnabled is false', () => {
+      const state = setup({ performanceDashboardEnabled: false });
+
+      it('isPerformanceDashboardEnabled should be false if performanceDashboardEnabled is false', () => {
+        expect(state.service.isPerformanceDashboardEnabled).toBeFalse();
+        expect(state.service.isFeatureEnabled('performanceDashboardEnabled')).toBeFalse();
       });
     });
   });
