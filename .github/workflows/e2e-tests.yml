@@ -1,0 +1,142 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'XMC Headless E2E Tests'
+
+on:
+  pull_request:
+    paths:
+      - 'cmd/**'
+      - 'deploy/**'
+      - 'internal/**'
+      - 'pkg/**'
+      - 'test/e2e/**'
+      - '.github/workflows/e2e-tests.yml'
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  run-e2e:
+    name: 'KinD & Playwright Headless E2E'
+    runs-on: 'arc-runner-set'
+    timeout-minutes: 35
+
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: 'Start Async Disk Space Cleanup'
+        run: |
+          echo "=== Starting background cleanup of unnecessary files ==="
+          if [ -d /usr/local/lib/android ] || [ -d /usr/share/dotnet ]; then
+            sudo rm -rf /usr/local/lib/android /usr/share/dotnet &
+          fi
+
+      - name: 'Authenticate to Google Cloud via Workload Identity Federation'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: 'projects/815549340089/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'xmc-e2e-ci@xmc-test-project-3.iam.gserviceaccount.com'
+
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+      - name: 'Set up Bazel'
+        uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
+
+      - name: 'Cache Bazel Repository Cache'
+        uses: 'actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        with:
+          path: ~/.cache/bazel-repo
+          key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
+          restore-keys: |
+            bazel-repo-${{ runner.os }}-
+
+      - name: 'Cache Bazel Disk Cache'
+        uses: 'actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        with:
+          path: ~/.cache/bazel-disk
+          key: bazel-disk-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            bazel-disk-${{ runner.os }}-
+
+      - name: 'Configure Bazel Cache Settings'
+        run: |
+          mkdir -p ~/.cache/bazel-repo ~/.cache/bazel-disk
+          cat << EOF_BAZEL >> ~/.bazelrc
+          common --repository_cache=${HOME}/.cache/bazel-repo
+          common --disk_cache=${HOME}/.cache/bazel-disk
+          common --experimental_repository_cache_hardlinks
+          EOF_BAZEL
+
+      - name: 'Set up Python'
+        uses: 'actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38' # v5.4.0
+        with:
+          python-version: '3.13'
+
+      - name: 'Install Kubectl, KinD, and Helm'
+        run: |
+          mkdir -p "${HOME}/.local/bin"
+          echo "${HOME}/.local/bin" >> $GITHUB_PATH
+
+          echo "=== Installing Kubectl ==="
+          if ! command -v kubectl &>/dev/null; then
+            curl -LO "https://dl.k8s.io/release/v1.32.2/bin/linux/amd64/kubectl"
+            chmod +x ./kubectl
+            mv ./kubectl "${HOME}/.local/bin/kubectl"
+          fi
+          kubectl version --client
+
+          echo "=== Installing KinD ==="
+          if ! command -v kind &>/dev/null; then
+            curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64
+            chmod +x ./kind
+            mv ./kind "${HOME}/.local/bin/kind"
+          fi
+          kind --version
+
+          echo "=== Installing Helm ==="
+          if ! command -v helm &>/dev/null; then
+            curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | HELM_INSTALL_DIR="${HOME}/.local/bin" bash
+          fi
+          helm version
+
+
+      - name: 'Run E2E Test Suite'
+        env:
+          GCP_PROJECT_ID: 'xmc-test-project-3'
+          SPANNER_INSTANCE: 'xmc-e2e'
+          XMC_SCREENSHOTS_DIR: '${{ github.workspace }}/e2e-screenshots'
+        run: |
+          mkdir -p "${XMC_SCREENSHOTS_DIR}"
+          python3 test/e2e/runner.py --screenshots-dir "${XMC_SCREENSHOTS_DIR}"
+
+      - name: 'Upload E2E Screenshots & Diagnostic Logs'
+        if: always()
+        uses: 'actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1' # v4.6.1
+        with:
+          name: 'e2e-artifacts'
+          path: '${{ github.workspace }}/e2e-screenshots/'
