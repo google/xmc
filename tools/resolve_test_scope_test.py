@@ -60,6 +60,13 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertFalse(res_doc["has_ui"])
         self.assertFalse(res_doc["has_backend"])
 
+    def test_classify_modified_files_cmd_ui_server_python(self):
+        # Python server in cmd/ui/ triggers both UI and backend tests
+        res = classify_modified_files(["cmd/ui/server.py"])
+        self.assertFalse(res["has_core_infra"])
+        self.assertTrue(res["has_ui"])
+        self.assertTrue(res["has_backend"])
+
     def test_resolve_test_scope_ui_only(self):
         scope = resolve_test_scope(
             ["cmd/ui/src/app/dashboard.component.ts", "cmd/ui/package.json"],
@@ -148,12 +155,20 @@ class TestResolveTestScope(unittest.TestCase):
     def test_discover_bazel_rdeps_targets_parsing_and_filtering(self, mock_run):
         mock_run.return_value = unittest.mock.Mock(
             returncode=0,
-            stdout="//pkg/auth/oauth2:oauth2_test\n//cmd/xid_service/server:server_test\n//cmd/ui:server_test\n",
+            stdout=(
+                "//pkg/auth/oauth2:oauth2_test\n"
+                "//cmd/xid_service/server:server_test\n"
+                "//cmd/ui:server_test\n"
+                "//cmd/ui:ui_unit_tests\n"
+                "//test/local/ui:server_local_test\n"
+            ),
         )
-        targets = discover_bazel_rdeps_targets(["pkg/auth/oauth2/handlers.go"])
+        targets = discover_bazel_rdeps_targets(["cmd/ui/server.py", "pkg/auth/oauth2/handlers.go"])
         self.assertIn("//pkg/auth/oauth2:oauth2_test", targets)
         self.assertIn("//cmd/xid_service/server:server_test", targets)
-        self.assertNotIn("//cmd/ui:server_test", targets)
+        self.assertIn("//cmd/ui:server_test", targets)
+        self.assertIn("//test/local/ui:server_local_test", targets)
+        self.assertNotIn("//cmd/ui:ui_unit_tests", targets)
 
     @patch("subprocess.run")
     def test_discover_bazel_rdeps_targets_exception_safety(self, mock_run):
