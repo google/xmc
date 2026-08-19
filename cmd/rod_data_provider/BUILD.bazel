@@ -83,6 +83,7 @@ compat_go_test(
     srcs = [
         "config_test.go",
         "jobs_test.go",
+        "main_test.go",
         "resource_accumulator_test.go",
         "secondary_data_test.go",
         "server_test.go",

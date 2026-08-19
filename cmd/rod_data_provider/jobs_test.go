@@ -182,7 +182,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			if tt.setupCache != nil {
 				kCache = tt.setupCache()
 			}
-			srv := newServer(cfg, kCache, tt.fetcher)
+			srv := newServer(cfg, kCache, tt.fetcher, nil)
 			resp, err := srv.GetRunningAndPendingJobs(tt.ctx, tt.req)
 
 			gotCode := status.Code(err)
@@ -234,7 +234,7 @@ func TestGetRunningAndPendingJobs_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	srv := newServer(cfg, nil, &mockWorkUnitFetcher{})
+	srv := newServer(cfg, nil, &mockWorkUnitFetcher{}, nil)
 	req := baseReq
 	_, err := srv.GetRunningAndPendingJobs(ctx, req)
 
@@ -364,7 +364,7 @@ func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fetcher := &mockWorkUnitFetcher{}
-			srv := newServer(&Config{}, tt.setupCache(), fetcher)
+			srv := newServer(&Config{}, tt.setupCache(), fetcher, nil)
 
 			_, err := srv.GetRunningAndPendingJobs(context.Background(), &spb.GetRunningAndPendingJobsRequest{
 				QueueName: tt.queueName,

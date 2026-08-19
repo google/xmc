@@ -51,4 +51,11 @@ export class FeatureFlagService {
   get isResourceDashboardEnabled(): boolean {
     return this.isFeatureEnabled('resourceDashboardEnabled');
   }
+
+  /**
+   * Returns whether non-production authentication warning is active.
+   */
+  get isNonProdAuth(): boolean {
+    return this.isFeatureEnabled('isNonProdAuth');
+  }
 }
