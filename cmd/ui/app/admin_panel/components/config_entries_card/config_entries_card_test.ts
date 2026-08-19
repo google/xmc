@@ -67,9 +67,10 @@ describe('ConfigEntriesCardComponent', () => {
     await flush();
 
     const harness = await getHarness(ConfigEntriesCardHarness);
-    expect(await harness.getGroupDisplayNames()).toEqual(['Email Settings', 'General Settings']);
-
+    const names = await harness.getGroupDisplayNames();
     const entries = await harness.getConfigEntries();
+
+    expect(names).toEqual(['Email Settings', 'General Settings']);
     expect(entries.length).toBe(4);
     expect(entries[0]).toEqual({ key: 'email.sender', value: 'admin@google.com' });
     expect(entries[2]).toEqual({ key: 'port', value: '8080' });
@@ -133,5 +134,55 @@ describe('ConfigEntriesCardComponent', () => {
     expect(await harness.getGroupDisplayNames()).toEqual([]);
     expect(await harness.getConfigEntries()).toEqual([]);
     expect(await harness.getNoResultsText()).toContain('No entries match the filter');
+  });
+
+  it('should collapse and expand group entries when group header is clicked', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.groups.set(mockGroups);
+    await flush();
+
+    const harness = await getHarness(ConfigEntriesCardHarness);
+    await harness.toggleGroup(0);
+    await flush();
+    const isCollapsed = await harness.isGroupCollapsed(0);
+    const collapsedEntries = await harness.getConfigEntries();
+
+    expect(isCollapsed).toBeTrue();
+    expect(collapsedEntries.length).toBe(2);
+    expect(collapsedEntries[0]).toEqual({ key: 'port', value: '8080' });
+
+    await harness.toggleGroup(0);
+    await flush();
+    const isExpanded = !(await harness.isGroupCollapsed(0));
+    const expandedEntries = await harness.getConfigEntries();
+
+    expect(isExpanded).toBeTrue();
+    expect(expandedEntries.length).toBe(4);
+  });
+
+  it('should fallback to Configuration when group displayName is undefined or empty', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.groups.set([
+      {
+        displayName: undefined,
+        configs: [{ key: 'anonymous.key', value: 'anonymous.value' }],
+      },
+      {
+        displayName: 'Named Group',
+        configs: [{ key: 'named.key', value: 'named.value' }],
+      },
+    ]);
+    await flush();
+    const harness = await getHarness(ConfigEntriesCardHarness);
+    await harness.toggleGroup(0);
+    await flush();
+
+    const names = await harness.getGroupDisplayNames();
+    const isCollapsed = await harness.isGroupCollapsed(0);
+    const entries = await harness.getConfigEntries();
+
+    expect(names).toEqual(['Configuration', 'Named Group']);
+    expect(isCollapsed).toBeTrue();
+    expect(entries).toEqual([{ key: 'named.key', value: 'named.value' }]);
   });
 });

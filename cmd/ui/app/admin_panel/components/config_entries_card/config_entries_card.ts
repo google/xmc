@@ -25,6 +25,11 @@ export interface ConfigGroup {
   configs?: ConfigInfo[];
 }
 
+export interface ConfigGroupItem extends ConfigGroup {
+  displayName: string;
+  isCollapsed: boolean;
+}
+
 /**
  * A component that displays configuration groups and key-value entries with client-side filtering.
  */
@@ -40,9 +45,10 @@ export class ConfigEntriesCardComponent {
   configGroups = input<ConfigGroup[] | undefined>();
 
   protected readonly searchTerm = signal<string>('');
+  protected readonly collapsedGroups = signal<Set<string>>(new Set());
 
-  protected readonly filteredGroups = computed(() =>
-    this.filterConfigGroups(this.configGroups(), this.searchTerm()),
+  protected readonly filteredGroups = computed<ConfigGroupItem[]>(() =>
+    this.filterConfigGroups(this.configGroups(), this.searchTerm(), this.collapsedGroups()),
   );
 
   protected onSearchInput(event: Event): void {
@@ -50,12 +56,30 @@ export class ConfigEntriesCardComponent {
     this.searchTerm.set(inputElement.value);
   }
 
-  private filterConfigGroups(groups: ConfigGroup[] | undefined, term: string): ConfigGroup[] {
+  protected toggleGroup(groupName?: string): void {
+    if (!groupName) return;
+    this.collapsedGroups.update((current) => {
+      const next = new Set(current);
+      if (next.has(groupName)) {
+        next.delete(groupName);
+      } else {
+        next.add(groupName);
+      }
+      return next;
+    });
+  }
+
+  private filterConfigGroups(
+    groups: ConfigGroup[] | undefined,
+    term: string,
+    collapsed: Set<string>,
+  ): ConfigGroupItem[] {
     if (!groups) return [];
     const searchTerm = term.trim().toLowerCase();
 
     return groups
       .map((group) => {
+        const displayName = group.displayName || 'Configuration';
         const filteredConfigs = (group.configs || []).filter(
           (c) =>
             !searchTerm ||
@@ -64,9 +88,11 @@ export class ConfigEntriesCardComponent {
         );
         return {
           ...group,
+          displayName,
+          isCollapsed: collapsed.has(displayName),
           configs: filteredConfigs,
         };
       })
-      .filter((group) => group.configs.length > 0);
+      .filter((group) => (group.configs || []).length > 0);
   }
 }
