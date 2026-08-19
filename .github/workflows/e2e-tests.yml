@@ -67,28 +67,24 @@ jobs:
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
 
-      - name: 'Cache Bazel Repository Cache'
-        uses: 'actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+      - name: 'Restore Bazel Repository Cache'
+        id: 'cache-bazel-repo-restore'
+        uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
         with:
           path: ~/.cache/bazel-repo
           key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
           restore-keys: |
             bazel-repo-${{ runner.os }}-
 
-      - name: 'Cache Bazel Disk Cache'
-        uses: 'actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-        with:
-          path: ~/.cache/bazel-disk
-          key: bazel-disk-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            bazel-disk-${{ runner.os }}-
-
       - name: 'Configure Bazel Cache Settings'
+        env:
+          REMOTE_UPLOAD: ${{ github.ref == 'refs/heads/main' }}
         run: |
-          mkdir -p ~/.cache/bazel-repo ~/.cache/bazel-disk
+          mkdir -p ~/.cache/bazel-repo
           cat << EOF_BAZEL >> ~/.bazelrc
+          common --config=ci
+          common --remote_upload_local_results=${REMOTE_UPLOAD}
           common --repository_cache=${HOME}/.cache/bazel-repo
-          common --disk_cache=${HOME}/.cache/bazel-disk
           common --experimental_repository_cache_hardlinks
           EOF_BAZEL
 
@@ -133,6 +129,14 @@ jobs:
         run: |
           mkdir -p "${XMC_SCREENSHOTS_DIR}"
           python3 test/e2e/runner.py --screenshots-dir "${XMC_SCREENSHOTS_DIR}"
+
+      - name: 'Save Bazel Repository Cache'
+        uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        # Only save repository cache on main branch pushes when external dependencies change.
+        if: github.ref == 'refs/heads/main' && steps.cache-bazel-repo-restore.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/bazel-repo
+          key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
 
       - name: 'Upload E2E Screenshots & Diagnostic Logs'
         if: always()
