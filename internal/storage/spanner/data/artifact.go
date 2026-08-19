@@ -139,7 +139,7 @@ func ArtifactProtoToInsertMutation(art *pb.Artifact) (*spanner.Mutation, error) 
 			art.Url.Icon,                      // Icon
 			art.Url.DisplayName,               // DisplayName
 			getPriority(art),                  // Priority
-			art.Tags,                          // Tags
+			getTags(art),                      // Tags
 			art.Notes,                         // Notes
 			art.LifecyclePhase,                // LifecyclePhase
 			art.DataType,                      // DataType
@@ -177,7 +177,7 @@ func ArtifactProtoToUpdateMutation(art *pb.Artifact) (*spanner.Mutation, error) 
 			art.Url.Icon,                      // Icon
 			art.Url.DisplayName,               // DisplayName
 			getPriority(art),                  // Priority
-			art.Tags,                          // Tags
+			getTags(art),                      // Tags
 			art.Notes,                         // Notes
 			art.LifecyclePhase,                // LifecyclePhase
 			art.DataType,                      // DataType
@@ -264,4 +264,11 @@ func getPriority(art *pb.Artifact) int64 {
 		return int64(art.GetPriority())
 	}
 	return int64(art.GetUrl().GetPriority())
+}
+
+func getTags(art *pb.Artifact) []string {
+	if art.GetTags() == nil {
+		return []string{}
+	}
+	return art.GetTags()
 }

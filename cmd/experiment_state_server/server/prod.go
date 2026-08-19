@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"golang/cloud_google_com/go/spanner/v/v1/spanner"
@@ -26,13 +27,16 @@ import (
 	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
 	authz "xmanager_cloud/auth/auth"
+	"xmanager_cloud/cmd/experiment_state_server/toollibs"
 	commonhealth "xmanager_cloud/common/health"
+	dashboard_pb "xmanager_cloud/dashboard_service/proto/service_go_proto"
 	"xmanager_cloud/experiment_state_server/config"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	"xmanager_cloud/logging/logging"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/security/keyreloader"
 	ss "xmanager_cloud/storage/spanner/spanner"
+	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
 	xidgrpcpb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 )
@@ -45,6 +49,7 @@ type ProdServer struct {
 	spannerClient   *spanner.Client
 	xidClient       xidgrpcpb.XidServiceClient
 	taskQueueClient *tq.Client
+	bgTaskWG        *sync.WaitGroup
 	cleanup         func() error
 }
 
@@ -58,7 +63,13 @@ func (p *ProdServer) HealthCheckers() (commonhealth.SpannerHealthClient, xidgrpc
 
 // Close closes all underlying production client connections.
 func (p *ProdServer) Close() error {
-	if p == nil || p.cleanup == nil {
+	if p == nil {
+		return nil
+	}
+	if p.bgTaskWG != nil {
+		p.bgTaskWG.Wait()
+	}
+	if p.cleanup == nil {
 		return nil
 	}
 	return p.cleanup()
@@ -96,6 +107,18 @@ func initTaskQueueClient(ctx context.Context, cfg *config.Config) (*tq.Client, e
 	return tq.New(ctx, cfg.ProjectID, cfg.InvokerSA, cfg.ActuatorURL, cfg.ActuatorAudience, keyReloader.Signer, cfg.SignatureTTLSeconds, cfg.RedisAddr)
 }
 
+func initDashboardClient(ctx context.Context, cfg *config.Config) (*toollibs.DashboardToolClient, *grpc.ClientConn, error) {
+	if cfg.DashboardServiceAddr == "" {
+		return nil, nil, nil
+	}
+	logging.Info(ctx, "Connecting to Dashboard service", "addr", cfg.DashboardServiceAddr)
+	conn, err := grpc.NewClient(cfg.DashboardServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create gRPC client for Dashboard service: %w", err)
+	}
+	return toollibs.NewDashboardToolClient(dashboard_pb.NewDashboardServiceClient(conn)), conn, nil
+}
+
 func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (authz.AuthorizerInterface, error) {
 	idService, err := cloudidentity.NewService(ctx)
 	if err != nil {
@@ -106,6 +129,35 @@ func initAuth(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (
 		return nil, fmt.Errorf("failed to create authorizer: %w", err)
 	}
 	return auth, nil
+}
+
+func initObservers(ctx context.Context, cfg *config.Config, st storage.Storage, wg *sync.WaitGroup) ([]ArtifactObserver, func() error, error) {
+	if cfg.DashboardServiceAddr == "" {
+		return nil, func() error { return nil }, nil
+	}
+	dashboardClient, dashConn, err := initDashboardClient(ctx, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	cleanup := func() error {
+		if err := dashConn.Close(); err != nil {
+			return fmt.Errorf("failed to close Dashboard gRPC connection: %w", err)
+		}
+		return nil
+	}
+	return []ArtifactObserver{NewDashboardObserver(dashboardClient, st, wg)}, cleanup, nil
+}
+
+// runCleanups executes cleanup functions in reverse (LIFO) order to tear down
+// dependencies in the reverse order of their initialization.
+func runCleanups(cleanups []func() error) error {
+	var errs []error
+	for i := len(cleanups) - 1; i >= 0; i-- {
+		if err := cleanups[i](); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // NewProd creates and initializes a production Server instance along with its dependencies.
@@ -120,9 +172,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 	var cleanups []func() error
 	defer func() {
 		if retErr != nil {
-			for i := len(cleanups) - 1; i >= 0; i-- {
-				_ = cleanups[i]()
-			}
+			_ = runCleanups(cleanups)
 		}
 	}()
 
@@ -145,12 +195,12 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 		return nil, err
 	}
 
-	xidClient, conn, err := initXidClient(ctx, cfg)
+	xidClient, xidConn, err := initXidClient(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
 	cleanups = append(cleanups, func() error {
-		if err := conn.Close(); err != nil {
+		if err := xidConn.Close(); err != nil {
 			return fmt.Errorf("failed to close XID gRPC connection: %w", err)
 		}
 		return nil
@@ -167,25 +217,23 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 		return nil
 	})
 
+	var bgTaskWG sync.WaitGroup
+	observers, obsCleanup, err := initObservers(ctx, cfg, storage, &bgTaskWG)
+	if err != nil {
+		return nil, err
+	}
+	cleanups = append(cleanups, obsCleanup)
+
 	srv, err := New(Params{
-		Config:           cfg,
-		Storage:          storage,
-		Authorizer:       auth,
-		XidClient:        xidClient,
-		WorkUnitActuator: taskQueueClient,
+		Config:            cfg,
+		Storage:           storage,
+		Authorizer:        auth,
+		XidClient:         xidClient,
+		WorkUnitActuator:  taskQueueClient,
+		ArtifactObservers: observers,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create server: %w", err)
-	}
-
-	cleanup := func() error {
-		var errs []error
-		for i := len(cleanups) - 1; i >= 0; i-- {
-			if err := cleanups[i](); err != nil {
-				errs = append(errs, err)
-			}
-		}
-		return errors.Join(errs...)
 	}
 
 	return &ProdServer{
@@ -193,6 +241,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config) (_
 		spannerClient:   spannerClient,
 		xidClient:       xidClient,
 		taskQueueClient: taskQueueClient,
-		cleanup:         cleanup,
+		bgTaskWG:        &bgTaskWG,
+		cleanup:         func() error { return runCleanups(cleanups) },
 	}, nil
 }

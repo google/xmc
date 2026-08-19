@@ -26,6 +26,8 @@
           [queues]="filteredQueues()"
           [selectedQueue]="selectedQueue()"
           [isLoading]="isLoading()"
+          [secondaryDataMap]="secondaryDataMap()"
+          [isSecondaryLoading]="isSecondaryLoading()"
           [activeResourceFilters]="activeResourceFilters()"
           [(velocityPeriod)]="velocityPeriod"
           (selectQueue)="onQueueSelect($event)"

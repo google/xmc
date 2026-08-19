@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 package server
 
 import (
@@ -18,6 +19,8 @@ import (
 	"fmt"
 
 	"task/go/status"
+
+	"golang/protobuf/v2/proto/proto"
 	apipb "xmanager_cloud/experiment_state_server/proto/api_go_proto"
 	msgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/logging/logging"
@@ -45,16 +48,8 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *apipb.CreateA
 	artifact := validator.FillArtifactNullValues(req.GetArtifact())
 
 	// 2.2. Validate ChartArtifact payload.
-	if chartArtifact := artifact.GetPayload().GetChart(); chartArtifact != nil {
-		if _, _, err := validator.ValidateWorkUnitName(req.GetParent()); err != nil {
-			logging.Warn(ctx, "ChartArtifact requires a Work Unit parent", "parent", req.GetParent(), "error", err)
-			return nil, fmt.Errorf("ChartArtifact requires a Work Unit parent: %w (%v)", status.ErrInvalidArgument, err)
-		}
-		if chartArtifact.GetStatus() != msgpb.ChartArtifact_STATUS_UNSPECIFIED || chartArtifact.GetChart() != nil || chartArtifact.GetErrorMessage() != "" {
-			logging.Warn(ctx, "ChartArtifact client-supplied status, chart, or error_message values are not allowed")
-			return nil, fmt.Errorf("ChartArtifact client-supplied status, chart, or error_message values are not allowed: %w", status.ErrInvalidArgument)
-		}
-		chartArtifact.Status = msgpb.ChartArtifact_PROVISIONING
+	if err := h.validateChartArtifactPayload(ctx, artifact, req.GetParent()); err != nil {
+		return nil, err
 	}
 
 	// 3. Get the parent experiment or work unit.
@@ -120,7 +115,34 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *apipb.CreateA
 	// 6.1. Set the artifact's ACLs to the XIDEntry's ACLs.
 	retArtifact.Acls = artifactXIDEntry.Acls
 
+	// 6.2. Trigger post-creation hooks asynchronously (Observers).
+	if len(h.artifactObservers) > 0 {
+		for _, obs := range h.artifactObservers {
+			artifactCopy, ok := proto.Clone(retArtifact).(*msgpb.Artifact)
+			if !ok {
+				logging.Error(ctx, "Failed to clone retArtifact for async provisioning")
+				return nil, fmt.Errorf("failed to clone artifact: %w", status.ErrInternal)
+			}
+			obs.OnArtifactCreated(context.WithoutCancel(ctx), artifactCopy)
+		}
+	}
+
 	// 7. Return the successful response.
 	logging.Info(ctx, "Created artifact")
 	return retArtifact, nil
+}
+
+func (h *ArtifactHandler) validateChartArtifactPayload(ctx context.Context, artifact *msgpb.Artifact, parent string) error {
+	if chartArtifact := artifact.GetPayload().GetChart(); chartArtifact != nil {
+		if _, _, err := validator.ValidateWorkUnitName(parent); err != nil {
+			logging.Warn(ctx, "ChartArtifact requires a Work Unit parent", "parent", parent, "error", err)
+			return fmt.Errorf("ChartArtifact requires a Work Unit parent: %w (%v)", status.ErrInvalidArgument, err)
+		}
+		if chartArtifact.GetStatus() != msgpb.ChartArtifact_STATUS_UNSPECIFIED || chartArtifact.GetChart() != nil || chartArtifact.GetErrorMessage() != "" {
+			logging.Warn(ctx, "ChartArtifact client-supplied status, chart, or error_message values are not allowed")
+			return fmt.Errorf("ChartArtifact client-supplied status, chart, or error_message values are not allowed: %w", status.ErrInvalidArgument)
+		}
+		chartArtifact.Status = msgpb.ChartArtifact_PROVISIONING
+	}
+	return nil
 }

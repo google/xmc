@@ -205,16 +205,105 @@ func setupKueueTestClientWithFakeRestClient(t *testing.T, restClient rest.Interf
 		MaxParallelExperiments: 1,
 	}, &mockStorage{})
 
-	reconciler := &Reconciler{
+	s := runtime.NewScheme()
+	v1alpha2.AddToScheme(s)
+	clientscheme.AddToScheme(s)
+	cl := fake.NewClientBuilder().WithScheme(s).Build()
+	cqCache := clusterqueue.NewNameCache()
+
+	reconciler, err := NewReconciler(Params{
+		Client:                           cl,
 		Clientset:                        cs,
+		CQCache:                          cqCache,
 		UpdateBatcher:                    updateBatcher,
 		KueueSyncTickDuration:            1 * time.Minute,
 		MaxConcurrentKueueSyncReconciles: 100,
+	})
+	if err != nil {
+		t.Fatalf("NewReconciler() unexpected error: %v", err)
 	}
 	return KueueTestFixture{
 		Ctx:           ctx,
 		Reconciler:    reconciler,
 		UpdateBatcher: updateBatcher,
+	}
+}
+
+func TestNewReconciler_Validation(t *testing.T) {
+	s := runtime.NewScheme()
+	v1alpha2.AddToScheme(s)
+	clientscheme.AddToScheme(s)
+	cl := fake.NewClientBuilder().WithScheme(s).Build()
+	cs := kubernetesfake.NewSimpleClientset()
+	cqCache := clusterqueue.NewNameCache()
+	updateBatcher := shared.NewUpdateBatcher(t.Context(), &shared.BatcherConfig{
+		TickDuration:           1 * time.Minute,
+		MaxParallelExperiments: 1,
+	}, &mockStorage{})
+
+	tests := []struct {
+		name    string
+		params  Params
+		wantErr bool
+	}{
+		{
+			name: "valid params",
+			params: Params{
+				Client:        cl,
+				Clientset:     cs,
+				CQCache:       cqCache,
+				UpdateBatcher: updateBatcher,
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing client",
+			params: Params{
+				Clientset:     cs,
+				CQCache:       cqCache,
+				UpdateBatcher: updateBatcher,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing clientset",
+			params: Params{
+				Client:        cl,
+				CQCache:       cqCache,
+				UpdateBatcher: updateBatcher,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing cq cache",
+			params: Params{
+				Client:        cl,
+				Clientset:     cs,
+				UpdateBatcher: updateBatcher,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing update batcher",
+			params: Params{
+				Client:    cl,
+				Clientset: cs,
+				CQCache:   cqCache,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec, err := NewReconciler(tc.params)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("NewReconciler() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if !tc.wantErr && rec == nil {
+				t.Fatal("NewReconciler() returned nil reconciler without error")
+			}
+		})
 	}
 }
 

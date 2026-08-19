@@ -16,7 +16,9 @@ package server
 
 import (
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"xmanager_cloud/experiment_state_server/config"
 )
@@ -44,6 +46,60 @@ func TestProdServer_Close(t *testing.T) {
 			t.Errorf("Close() = %v, want %v", err, expectedErr)
 		}
 	})
+
+	t.Run("bgTaskWG waits before cleanup", func(t *testing.T) {
+		t.Parallel()
+		var wg sync.WaitGroup
+		wg.Add(1)
+		var order []string
+		go func() {
+			time.Sleep(20 * time.Millisecond)
+			order = append(order, "taskDone")
+			wg.Done()
+		}()
+		ps := &ProdServer{
+			bgTaskWG: &wg,
+			cleanup: func() error {
+				order = append(order, "cleanupDone")
+				return nil
+			},
+		}
+		if err := ps.Close(); err != nil {
+			t.Errorf("Close() = %v, want nil", err)
+		}
+		if len(order) != 2 || order[0] != "taskDone" || order[1] != "cleanupDone" {
+			t.Errorf("execution order = %v, want [taskDone cleanupDone]", order)
+		}
+	})
+}
+
+func TestInitDashboardClient_EmptyAddr(t *testing.T) {
+	t.Parallel()
+	client, conn, err := initDashboardClient(t.Context(), &config.Config{DashboardServiceAddr: ""})
+	if err != nil {
+		t.Errorf("initDashboardClient with empty addr = %v, want nil error", err)
+	}
+	if client != nil || conn != nil {
+		t.Errorf("initDashboardClient with empty addr = (%v, %v), want (nil, nil)", client, conn)
+	}
+}
+
+func TestInitObservers_EmptyAddr(t *testing.T) {
+	t.Parallel()
+	var wg sync.WaitGroup
+	observers, cleanup, err := initObservers(t.Context(), &config.Config{DashboardServiceAddr: ""}, nil, &wg)
+	if err != nil {
+		t.Errorf("initObservers with empty addr = %v, want nil error", err)
+	}
+	if len(observers) != 0 {
+		t.Errorf("len(observers) = %d, want 0", len(observers))
+	}
+	if cleanup == nil {
+		t.Fatal("cleanup func is nil")
+	}
+	if err := cleanup(); err != nil {
+		t.Errorf("cleanup() = %v, want nil", err)
+	}
 }
 
 func TestNewProd_Validation(t *testing.T) {

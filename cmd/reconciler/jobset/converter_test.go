@@ -283,6 +283,118 @@ func TestToWorkUnitState(t *testing.T) {
 			want: spb.WorkUnitStatus_RUNNING,
 		},
 		{
+			name: "Target replicated jobs succeeded - non-target worker failed during teardown",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					SuccessPolicy: &v1alpha2.SuccessPolicy{
+						Operator:             v1alpha2.OperatorAll,
+						TargetReplicatedJobs: []string{"pathways-head"},
+					},
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{Name: "pathways-head", Replicas: 1},
+						{Name: "worker", Replicas: 2},
+					},
+				},
+				Status: v1alpha2.JobSetStatus{
+					ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{
+						{Name: "pathways-head", Succeeded: 1},
+						{Name: "worker", Failed: 1},
+					},
+				},
+			},
+			want: spb.WorkUnitStatus_RUNNING,
+		},
+		{
+			name: "Target replicated jobs not succeeded - non-target worker failed triggers PARTIALLY_FAILED",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					SuccessPolicy: &v1alpha2.SuccessPolicy{
+						Operator:             v1alpha2.OperatorAll,
+						TargetReplicatedJobs: []string{"pathways-head"},
+					},
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{Name: "pathways-head", Replicas: 1},
+						{Name: "worker", Replicas: 2},
+					},
+				},
+				Status: v1alpha2.JobSetStatus{
+					ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{
+						{Name: "pathways-head", Succeeded: 0},
+						{Name: "worker", Failed: 1},
+					},
+				},
+			},
+			want: spb.WorkUnitStatus_PARTIALLY_FAILED,
+		},
+		{
+			name: "Target replicated jobs ANY operator - one succeeded, worker failed",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					SuccessPolicy: &v1alpha2.SuccessPolicy{
+						Operator:             v1alpha2.OperatorAny,
+						TargetReplicatedJobs: []string{"head1", "head2"},
+					},
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{Name: "head1", Replicas: 1},
+						{Name: "head2", Replicas: 1},
+						{Name: "worker", Replicas: 2},
+					},
+				},
+				Status: v1alpha2.JobSetStatus{
+					ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{
+						{Name: "head1", Succeeded: 1},
+						{Name: "head2", Succeeded: 0},
+						{Name: "worker", Failed: 1},
+					},
+				},
+			},
+			want: spb.WorkUnitStatus_RUNNING,
+		},
+		{
+			name: "Multi-replica target job partially succeeded - worker failed triggers PARTIALLY_FAILED",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					SuccessPolicy: &v1alpha2.SuccessPolicy{
+						Operator:             v1alpha2.OperatorAll,
+						TargetReplicatedJobs: []string{"driver"},
+					},
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{Name: "driver", Replicas: 2},
+						{Name: "worker", Replicas: 2},
+					},
+				},
+				Status: v1alpha2.JobSetStatus{
+					ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{
+						{Name: "driver", Succeeded: 1},
+						{Name: "worker", Failed: 1},
+					},
+				},
+			},
+			want: spb.WorkUnitStatus_PARTIALLY_FAILED,
+		},
+		{
+			name: "Multi-replica target job fully succeeded - worker failed during teardown returns RUNNING",
+			jobSet: &v1alpha2.JobSet{
+				Spec: v1alpha2.JobSetSpec{
+					SuccessPolicy: &v1alpha2.SuccessPolicy{
+						Operator:             v1alpha2.OperatorAll,
+						TargetReplicatedJobs: []string{"driver"},
+					},
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{
+						{Name: "driver", Replicas: 2},
+						{Name: "worker", Replicas: 2},
+					},
+				},
+				Status: v1alpha2.JobSetStatus{
+					ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{
+						{Name: "driver", Succeeded: 2},
+						{Name: "worker", Failed: 1},
+					},
+				},
+			},
+			want: spb.WorkUnitStatus_RUNNING,
+		},
+		{
 			name:   "Empty JobSet",
 			jobSet: &v1alpha2.JobSet{},
 			want:   spb.WorkUnitStatus_SCHEDULING,
