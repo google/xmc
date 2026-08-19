@@ -33,6 +33,7 @@ health_service_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/health-s
 dashboard_service_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/dashboard-service-dev:latest"
 rod_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/rod-dev:latest"
 ingestion_gateway_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/ingestion-gateway-dev:latest"
+components_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/components-controller-dev:latest"
 
 essDeployment:
   enabled: true
@@ -45,6 +46,16 @@ healthServiceDeployment:
 
 componentsDeployment:
   enabled: false
+  serviceAccountName: "components-controller-service-account"
+  gcpServiceAccount: ""
+  replicas: 1
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
 
 metrics:
   enabled: false
