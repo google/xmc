@@ -122,13 +122,10 @@ type aggregatedQueueMetric struct {
 	resourceUnitsMap map[string]int64
 }
 
-<<<<<<< HEAD
 // aggregateQueueMetricRows groups raw metric rows by queue name.
 // Note: Spanner status history queries return TotalAdmittedJobs / TotalPendingJobs computed via
 // COUNT(DISTINCT WorkUnitId) for the queue. Because this total job count is repeated across per-resource-type
 // breakdown rows, tracking max r.Count per queue accurately captures the total unique job count.
-=======
->>>>>>> 9805a365 (feat(rod): add secondary metrics API with in-memory Go mocks)
 func aggregateQueueMetricRows(rows []QueueMetricRow) map[string]aggregatedQueueMetric {
 	aggregated := make(map[string]aggregatedQueueMetric)
 	for _, r := range rows {
