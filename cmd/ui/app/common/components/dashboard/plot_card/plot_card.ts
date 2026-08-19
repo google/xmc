@@ -14,7 +14,6 @@
 
 import { CommonModule } from '@angular/common';
 import {
-  AfterViewInit,
   ChangeDetectionStrategy,
   Component,
   computed,
@@ -62,7 +61,7 @@ import { SummaryBoxComponent } from '../summary_box/summary_box';
     SummaryBoxComponent,
   ],
 })
-export class PlotCardComponent implements AfterViewInit, OnDestroy {
+export class PlotCardComponent implements OnDestroy {
   readonly plotSpec = input.required<PlotSpec>();
   readonly plotData = input<PlotData>();
   readonly themeConfig = input<XmcChartThemeConfig>(DEFAULT_XMC_THEME_CONFIG);
@@ -80,7 +79,9 @@ export class PlotCardComponent implements AfterViewInit, OnDestroy {
     const type = this.plotSpec().type;
     const pd = this.plotData();
     return (
-      type === PlotType.SUMMARY_BOX || type === 1 || pd?.type === 'SUMMARY_BOX' || pd?.type === 1
+      type === PlotType.SUMMARY_BOX ||
+      pd?.type === PlotType.SUMMARY_BOX ||
+      pd?.type === 'SUMMARY_BOX'
     );
   });
 
@@ -101,20 +102,23 @@ export class PlotCardComponent implements AfterViewInit, OnDestroy {
 
   constructor() {
     effect(() => {
+      const canvasEl = this.chartCanvas()?.nativeElement;
+      if (canvasEl && !this.isSummaryBox()) {
+        this.initChart(canvasEl);
+      } else {
+        this.cleanupChart();
+      }
+    });
+
+    effect(() => {
       // Reactively track signal changes
       this.plotSpec();
       this.plotData();
       this.themeConfig();
-      if (this.isSummaryBox()) return;
-      if (this.chartInstance) {
+      if (!this.isSummaryBox() && this.chartInstance) {
         this.renderChart();
       }
     });
-  }
-
-  ngAfterViewInit(): void {
-    if (this.isSummaryBox()) return;
-    this.initChart();
   }
 
   ngOnDestroy(): void {
@@ -124,10 +128,8 @@ export class PlotCardComponent implements AfterViewInit, OnDestroy {
   /**
    * Initializes the ECharts instance on the canvas container element.
    */
-  private initChart(): void {
-    const canvasEl = this.chartCanvas()?.nativeElement;
-    if (!canvasEl) return;
-
+  private initChart(canvasEl: HTMLDivElement): void {
+    this.cleanupChart();
     this.chartInstance = echarts.init(canvasEl);
     this.renderChart();
 

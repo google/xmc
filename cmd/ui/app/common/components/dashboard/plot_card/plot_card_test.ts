@@ -95,4 +95,45 @@ describe('PlotCardComponent', () => {
     expect(summaryHarness).not.toBeNull();
     expect(await summaryHarness!.getValue()).toBe('0.65');
   });
+
+  it('should reactively switch between SCATTER canvas and SUMMARY_BOX without errors', async () => {
+    expect(await harness.isSummaryBox()).toBeFalse();
+    expect(await harness.hasCanvas()).toBeTrue();
+
+    host.spec.set({
+      plotId: 'kpi_loss',
+      title: 'Loss KPI',
+      type: PlotType.SUMMARY_BOX,
+      data: { metrics: ['loss/val'] },
+    });
+    host.data.set({
+      plotId: 'kpi_loss',
+      type: 'SUMMARY_BOX',
+      summaryData: {
+        metricName: 'loss/val',
+        latestValue: 0.88,
+      },
+    });
+    fixture.detectChanges();
+    expect(await harness.isSummaryBox()).toBeTrue();
+    expect(await harness.hasCanvas()).toBeFalse();
+
+    host.spec.set({
+      plotId: 'loss_curve',
+      title: 'Validation loss vs steps',
+      type: PlotType.SCATTER,
+      data: { metrics: ['loss/val'] },
+    });
+    host.data.set({
+      plotId: 'loss_curve',
+      type: 'SCATTER',
+      scatterSeries: {
+        metricName: 'loss/val',
+        points: [{ step: 0, avgValue: 1.0 }],
+      },
+    });
+    fixture.detectChanges();
+    expect(await harness.isSummaryBox()).toBeFalse();
+    expect(await harness.hasCanvas()).toBeTrue();
+  });
 });
