@@ -390,17 +390,6 @@ class ImageBuilder:
 
     def build_all(self) -> list[str]:
         """Builds all backend and frontend images."""
-        third_party_images = [
-            "nginx:alpine",
-            "redis:7-alpine",
-            "ghcr.io/dexidp/dex:v2.41.1",
-        ]
-        for img in third_party_images:
-            try:
-                run_cmd(["docker", "pull", img], check=False)
-            except Exception as e:
-                logger.warning("Could not pre-pull third party image %s: %s", img, e)
-
         if self.cfg.skip_build:
             logger.info("=== [Bazel] Skipping image builds (--skip-build set) ===")
             return [
@@ -409,7 +398,6 @@ class ImageBuilder:
                 "ui-image:latest",
                 "actuator_image:latest",
                 "reconciler_image:latest",
-                *third_party_images,
             ]
 
         logger.info("=== [Bazel] Building OCI images ===")
@@ -429,7 +417,7 @@ class ImageBuilder:
         bazel_targets = [f"//{pkg}:{target}" for pkg, target, _ in services]
         run_cmd(["bazel", "build", *bazel_targets], cwd=self.cfg.workspace_root)
 
-        images: list[str] = [*third_party_images]
+        images: list[str] = []
         for pkg, target, tag in services:
             tar_path = os.path.join(self.cfg.workspace_root, "bazel-bin", pkg, f"{target}.tar")
             run_cmd(["docker", "load", "-i", tar_path])
