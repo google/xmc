@@ -42,5 +42,5 @@ variable "db_type" {
 variable "depends_on_anchor" {
   type        = any
   default     = null
-  description = "Unused. Point this at another module's output to order this module after it."
+  description = "Point this at another module's output to order this module after it. The value is never read, but the resource depends on it, which is what builds the graph edge."
 }
