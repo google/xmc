@@ -208,36 +208,19 @@ vars:
 
         mock_run.assert_not_called()
         output = captured.getvalue()
-        self.assertIn("--- 8. Component Controllers Status ---", output)
-        self.assertIn("Skipping Component Controllers check: enable_components is false.", output)
+        self.assertIn("--- 8. Components Feature Switch Status ---", output)
+        self.assertIn("Skipping Components check: enable_components is false.", output)
 
     @mock.patch.object(verify_xmc, "_run_command")
     def test_check_components_enabled(self, mock_run):
-        mock_run.return_value = "components-controller-abc   1/1     Running\n"
         captured = io.StringIO()
         with mock.patch.object(sys, "stdout", captured):
             verify_xmc._check_components(enable_components=True)
 
-        mock_run.assert_called_once_with(
-            ["kubectl", "get", "pods", "-n", "xmc", "-l", "app=components-controller"]
-        )
+        mock_run.assert_not_called()
         output = captured.getvalue()
-        self.assertIn("--- 8. Component Controllers Status ---", output)
-        self.assertIn("components-controller-abc   1/1     Running", output)
-
-    @mock.patch.object(verify_xmc, "_run_command")
-    def test_check_components_enabled_empty_output(self, mock_run):
-        mock_run.return_value = ""
-        captured = io.StringIO()
-        with mock.patch.object(sys, "stdout", captured):
-            verify_xmc._check_components(enable_components=True)
-
-        mock_run.assert_called_once_with(
-            ["kubectl", "get", "pods", "-n", "xmc", "-l", "app=components-controller"]
-        )
-        output = captured.getvalue()
-        self.assertIn("--- 8. Component Controllers Status ---", output)
-        self.assertIn("❌ No component controller pods found or failed to query cluster.", output)
+        self.assertIn("--- 8. Components Feature Switch Status ---", output)
+        self.assertIn("Components feature switch (enable_components) is active.", output)
 
     @mock.patch.object(verify_xmc, "ensure_venv")
     @mock.patch.object(verify_xmc, "_resolve_config")

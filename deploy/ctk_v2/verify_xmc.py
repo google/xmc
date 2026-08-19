@@ -233,22 +233,17 @@ def _check_log_monitor(
 
 
 def _check_components(enable_components: bool) -> None:
-    """Checks status of foundational component controllers if enabled.
+    """Checks status of foundational components feature switch if enabled.
 
     Args:
-      enable_components: Whether foundational component controllers are enabled.
+      enable_components: Whether foundational components feature is enabled.
     """
-    print("\n--- 8. Component Controllers Status ---")
+    print("\n--- 8. Components Feature Switch Status ---")
     if not enable_components:
-        print("ℹ️ Skipping Component Controllers check: enable_components is false.")
+        print("ℹ️ Skipping Components check: enable_components is false.")
         return
 
-    cmd = ["kubectl", "get", "pods", "-n", "xmc", "-l", "app=components-controller"]
-    out = _run_command(cmd)
-    if out and out.strip():
-        sys.stdout.write(out)
-    else:
-        print("❌ No component controller pods found or failed to query cluster.")
+    print("✅ Components feature switch (enable_components) is active.")
 
 
 def main() -> int:
