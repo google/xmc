@@ -213,31 +213,14 @@ vars:
 
     @mock.patch.object(verify_xmc, "_run_command")
     def test_check_components_enabled(self, mock_run):
-        mock_run.return_value = "NAME                              READY   STATUS    RESTARTS   AGE\ncomponents-controller-abc-123   1/1     Running   0          5m\n"
         captured = io.StringIO()
         with mock.patch.object(sys, "stdout", captured):
             verify_xmc._check_components(enable_components=True)
 
-        mock_run.assert_called_once_with(
-            ["kubectl", "get", "pods", "-n", "xmc", "-l", "app=components-controller"]
-        )
+        mock_run.assert_not_called()
         output = captured.getvalue()
         self.assertIn("--- 8. Component Controllers Status ---", output)
-        self.assertIn("components-controller-abc-123", output)
-
-    @mock.patch.object(verify_xmc, "_run_command")
-    def test_check_components_enabled_empty_output(self, mock_run):
-        mock_run.return_value = ""
-        captured = io.StringIO()
-        with mock.patch.object(sys, "stdout", captured):
-            verify_xmc._check_components(enable_components=True)
-
-        mock_run.assert_called_once_with(
-            ["kubectl", "get", "pods", "-n", "xmc", "-l", "app=components-controller"]
-        )
-        output = captured.getvalue()
-        self.assertIn("--- 8. Component Controllers Status ---", output)
-        self.assertIn("❌ No component controller pods found or failed to query cluster.", output)
+        self.assertIn("Foundational Component Controllers enabled.", output)
 
 
 if __name__ == "__main__":

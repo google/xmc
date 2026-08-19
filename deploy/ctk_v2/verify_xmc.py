@@ -243,12 +243,16 @@ def _check_components(enable_components: bool) -> None:
         print("ℹ️ Skipping Component Controllers check: enable_components is false.")
         return
 
-    cmd = ["kubectl", "get", "pods", "-n", "xmc", "-l", "app=components-controller"]
-    out = _run_command(cmd)
-    if out:
-        sys.stdout.write(out)
-    else:
-        print("❌ No component controller pods found or failed to query cluster.")
+    print(
+        "ℹ️ Foundational Component Controllers enabled. Controller verification will be active once controller manifests land."
+    )
+    # Controller pod checks will be activated once Task 1.2 Helm templates land:
+    # cmd = ["kubectl", "get", "pods", "-n", "xmc", "-l", "app=components-controller"]
+    # out = _run_command(cmd)
+    # if out:
+    #     sys.stdout.write(out)
+    # else:
+    #     print("❌ No component controller pods found or failed to query cluster.")
 
 
 def main() -> int:
