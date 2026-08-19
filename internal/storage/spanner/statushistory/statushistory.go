@@ -149,49 +149,92 @@ func runQueueMetricQuery(ctx context.Context, client *spanner.Client, stmt spann
 	return rows, nil
 }
 
-// FetchBatchQueueVelocity returns in-memory mock queue velocity rows.
+// FetchBatchQueueVelocity queries the WorkUnitStatusHistory table for multiple queues in a single Spanner query.
 func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueNames []string, window time.Duration) ([]QueueMetricRow, error) {
-	if len(queueNames) == 0 || client == nil {
+	if len(queueNames) == 0 {
 		return nil, nil
 	}
 
-	var rows []QueueMetricRow
-	for _, q := range queueNames {
-		if q == "cpu-queue" {
-			rows = append(rows, QueueMetricRow{
-				QueueName:    "cpu-queue",
-				Count:        1,
-				TotalUnits:   16000,
-				ResourceType: ResourceTypeCPU,
-			})
-		} else if q == "tpu-queue" {
-			rows = append(rows, QueueMetricRow{
-				QueueName:    "tpu-queue",
-				Count:        1,
-				TotalUnits:   4000,
-				ResourceType: ResourceTypeCPU,
-			})
-		}
+	cutoff := time.Now().Add(-window)
+	// TODO: replace the mockStatusHistory with a real table once the data is populated
+	stmt := spanner.Statement{
+		SQL: `WITH WorkUnitStatusHistoryMock AS (
+		        SELECT * FROM UNNEST(@mockStatusHistory)
+		      ),
+		      Admitted AS (
+		        SELECT QueueName, BitReversedXid, WorkUnitId, ResourceType, ResourceUnits
+		        FROM WorkUnitStatusHistoryMock
+		        WHERE QueueName IN UNNEST(@queueNames)
+		          AND TransitionTime >= @cutoffTime
+		          AND NewState = @admittedState
+		      ),
+		      QueueTotals AS (
+		        SELECT QueueName, COUNT(DISTINCT CONCAT(CAST(BitReversedXid AS STRING), '-', CAST(WorkUnitId AS STRING))) AS TotalAdmittedJobs
+		        FROM Admitted
+		        GROUP BY QueueName
+		      )
+		      SELECT a.QueueName,
+		             qt.TotalAdmittedJobs AS AdmittedCount,
+		             IFNULL(SUM(a.ResourceUnits), 0) AS TotalUnits,
+		             IFNULL(a.ResourceType, '') AS ResType
+		      FROM Admitted a
+		      JOIN QueueTotals qt ON a.QueueName = qt.QueueName
+		      GROUP BY a.QueueName, qt.TotalAdmittedJobs, a.ResourceType`,
+		Params: map[string]interface{}{
+			"mockStatusHistory": DefaultMockStatusHistoryItems,
+			"queueNames":        queueNames,
+			"cutoffTime":        cutoff,
+			"admittedState":     int64(essmsgpb.WorkUnitStatus_INITIALIZING),
+		},
 	}
-	return rows, nil
+
+	return runQueueMetricQuery(ctx, client, stmt, "AdmittedCount")
 }
 
-// FetchBatchPendingQueueMetrics returns in-memory mock pending queue metrics rows.
+// FetchBatchPendingQueueMetrics queries the WorkUnitStatusHistory table mock for pending work units across multiple queues.
 func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, queueNames []string) ([]QueueMetricRow, error) {
 	if len(queueNames) == 0 || client == nil {
 		return nil, nil
 	}
 
-	var rows []QueueMetricRow
-	for _, q := range queueNames {
-		if q == "cpu-queue" {
-			rows = append(rows, QueueMetricRow{
-				QueueName:    "cpu-queue",
-				Count:        1,
-				TotalUnits:   8000,
-				ResourceType: ResourceTypeCPU,
-			})
-		}
+	// TODO: replace the mockStatusHistory with a real table once the data is populated
+	stmt := spanner.Statement{
+		SQL: `WITH WorkUnitStatusHistoryMock AS (
+		        SELECT * FROM UNNEST(@mockStatusHistory)
+		      ),
+		      MaxHistory AS (
+		        SELECT BitReversedXid, WorkUnitId, MAX(TransitionTime) AS MaxTransitionTime
+		        FROM WorkUnitStatusHistoryMock
+		        WHERE QueueName IN UNNEST(@queueNames)
+		        GROUP BY BitReversedXid, WorkUnitId
+		      ),
+		      LatestPending AS (
+		        SELECT h.QueueName, h.BitReversedXid, h.WorkUnitId, h.ResourceType, h.ResourceUnits
+		        FROM WorkUnitStatusHistoryMock h
+		        JOIN MaxHistory m
+		          ON h.BitReversedXid = m.BitReversedXid
+		         AND h.WorkUnitId = m.WorkUnitId
+		         AND h.TransitionTime = m.MaxTransitionTime
+		        WHERE h.NewState = @pendingState
+		      ),
+		      QueueTotals AS (
+		        SELECT QueueName, COUNT(DISTINCT CONCAT(CAST(BitReversedXid AS STRING), '-', CAST(WorkUnitId AS STRING))) AS TotalPendingJobs
+		        FROM LatestPending
+		        GROUP BY QueueName
+		      )
+		      SELECT lp.QueueName,
+		             qt.TotalPendingJobs AS PendingJobs,
+		             IFNULL(SUM(lp.ResourceUnits), 0) AS TotalUnits,
+		             IFNULL(lp.ResourceType, '') AS ResType
+		      FROM LatestPending lp
+		      JOIN QueueTotals qt ON lp.QueueName = qt.QueueName
+		      GROUP BY lp.QueueName, qt.TotalPendingJobs, lp.ResourceType`,
+		Params: map[string]interface{}{
+			"mockStatusHistory": DefaultMockStatusHistoryItems,
+			"queueNames":        queueNames,
+			"pendingState":      int64(essmsgpb.WorkUnitStatus_SCHEDULING),
+		},
 	}
-	return rows, nil
+
+	return runQueueMetricQuery(ctx, client, stmt, "PendingJobs")
 }
