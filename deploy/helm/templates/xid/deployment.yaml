@@ -84,16 +84,11 @@ spec:
         - configMapRef:
             name: xid-config
         env:
-        - name: IAP_EXPECTED_ISSUER
-          value: {{ .Values.auth.iap.iapIssuer | quote }}
         - name: IAP_EXPECTED_HTTP_AUDIENCE
           value: {{ .Values.experimentStateServer.iap.httpAudience | quote }}
         - name: IAP_EXPECTED_GRPC_AUDIENCE
           value: {{ .Values.experimentStateServer.iap.grpcAudience | quote }}
-        - name: CLIENT_ID
-          value: {{ .Values.auth.iap.clientId | quote }}
-        - name: JWT_SECRET_FILE
-          value: "/etc/gcp-secrets/jwt-secret"
+        {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
         args:
         - "-alsologtostderr"
         # Flags to disable internalVCSdependencies.

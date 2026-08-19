@@ -28,6 +28,7 @@ import (
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/logging/logging"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
+	"xmanager_cloud/validator/validator"
 )
 
 // UpdateDashboard updates an existing dashboard in Spanner and returns the updated proto.
@@ -39,11 +40,16 @@ func (r *Repository) UpdateDashboard(ctx context.Context, dashboard *dpb.Dashboa
 		return nil, fmt.Errorf("dashboard name must not be empty: %w", status.ErrInvalidArgument)
 	}
 
+	dashID, err := validator.ValidateDashboardName(dashboard.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("invalid dashboard name: %w", err)
+	}
+
 	logging.Info(ctx, "Update dashboard in storage", "name", dashboard.GetName())
 
 	var updatedDashboard *dpb.Dashboard
-	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-		existing, err := fetchDashboardInTransaction(ctx, txn, dashboard.GetName())
+	_, err = r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		existing, err := fetchDashboardInTransaction(ctx, txn, dashID)
 		if err != nil {
 			return err
 		}

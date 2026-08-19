@@ -29,13 +29,14 @@
     </span>
   </div>
   <div class="group-items-list">
-    @for (item of components(); track item.name ?? $index) {
+    @for (item of items(); track item.name ?? $index) {
       <div class="item-row">
         <div class="item-info">
           <span
             class="item-indicator-dot"
             [class.dot-healthy]="item.healthState === HealthState.HEALTHY"
             [class.dot-degraded]="item.healthState === HealthState.UNHEALTHY"
+            [class.dot-unknown]="item.healthState === HealthState.UNSPECIFIED"
           ></span>
           <span class="item-name">{{ item.name }}</span>
         </div>
@@ -44,8 +45,9 @@
             class="item-status-text"
             [class.text-healthy]="item.healthState === HealthState.HEALTHY"
             [class.text-degraded]="item.healthState === HealthState.UNHEALTHY"
+            [class.text-unknown]="item.healthState === HealthState.UNSPECIFIED"
           >
-            {{ mapHealthState(item.healthState) }}
+            {{ item.statusLabel }}
           </span>
         </div>
         @if (item.errorMessage) {

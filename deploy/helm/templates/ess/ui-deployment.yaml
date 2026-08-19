@@ -51,6 +51,8 @@ spec:
           value: {{ .Values.healthServiceDeployment.enabled | quote }}
         - name: XMC_RESOURCE_DASHBOARD_ENABLED
           value: {{ (default dict .Values.rodDeployment).enabled | quote }}
+        - name: XMC_PERFORMANCE_DASHBOARD_ENABLED
+          value: {{ (default dict .Values.dashboardServiceDeployment).enabled | quote }}
         resources:
           requests:
             cpu: "10m"

@@ -278,7 +278,7 @@ func TestDashboardRowToProto_Success(t *testing.T) {
 	now := time.Now().UTC()
 	row, err := spanner.NewRow(
 		[]string{"CreatedAt", "DashboardId", "UpdatedAt", "Description", "Owner", "Title", "ChartLayout", "ExtraIgnoredCol"},
-		[]interface{}{now, "dashboards/d1", now, "Test Desc", "owner@example.com", "Test Title", layoutBytes, "extra_value"},
+		[]interface{}{now, "d1", now, "Test Desc", "owner@example.com", "Test Title", layoutBytes, "extra_value"},
 	)
 	if err != nil {
 		t.Fatalf("spanner.NewRow failed: %v", err)
@@ -657,5 +657,23 @@ func TestMergeDashboards_PreservesChartsOrder(t *testing.T) {
 	}
 	if charts[0].GetName() != "charts/c3" || charts[1].GetName() != "charts/c1" || charts[2].GetName() != "charts/c2" {
 		t.Errorf("merged.Charts order not preserved: got %v", charts)
+	}
+}
+
+func TestDashboardProtoToInsertMutations_InvalidDashboardName(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name: "invalid-name-without-prefix",
+	}
+	if _, err := DashboardProtoToInsertMutations(dash); err == nil {
+		t.Errorf("DashboardProtoToInsertMutations with invalid name succeeded, want error")
+	}
+}
+
+func TestDashboardProtoToUpdateMutations_InvalidDashboardName(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name: "invalid-name-without-prefix",
+	}
+	if _, err := DashboardProtoToUpdateMutations(dash, false); err == nil {
+		t.Errorf("DashboardProtoToUpdateMutations with invalid name succeeded, want error")
 	}
 }

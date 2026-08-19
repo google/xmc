@@ -32,11 +32,11 @@ func TestDeleteDashboard_Success(t *testing.T) {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
-	if err := repo.DeleteDashboard(ctx, "dashboards/test-delete-1"); err != nil {
+	if err := repo.DeleteDashboard(ctx, "test-delete-1"); err != nil {
 		t.Fatalf("DeleteDashboard failed: %v", err)
 	}
 
-	_, err := repo.GetDashboard(ctx, "dashboards/test-delete-1")
+	_, err := repo.GetDashboard(ctx, "test-delete-1")
 	if err == nil {
 		t.Errorf("GetDashboard after DeleteDashboard succeeded, want error")
 	}
@@ -57,12 +57,12 @@ func TestDeleteDashboard_CascadesCharts(t *testing.T) {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
-	if err := repo.DeleteDashboard(ctx, "dashboards/test-delete-cascade-1"); err != nil {
+	if err := repo.DeleteDashboard(ctx, "test-delete-cascade-1"); err != nil {
 		t.Fatalf("DeleteDashboard failed: %v", err)
 	}
 
 	// Dashboard should be gone.
-	if _, err := repo.GetDashboard(ctx, "dashboards/test-delete-cascade-1"); err == nil {
+	if _, err := repo.GetDashboard(ctx, "test-delete-cascade-1"); err == nil {
 		t.Errorf("GetDashboard after DeleteDashboard succeeded, want error")
 	}
 
@@ -76,7 +76,7 @@ func TestDeleteDashboard_NotFound(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	err := repo.DeleteDashboard(ctx, "dashboards/non-existent-delete")
+	err := repo.DeleteDashboard(ctx, "non-existent-delete")
 	if err == nil {
 		t.Fatalf("DeleteDashboard for non-existent dashboard succeeded, want error")
 	}

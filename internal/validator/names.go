@@ -27,7 +27,7 @@ func validateStringID(ID string) (int64, error) {
 	intID, err := strconv.ParseInt(ID, 10, 64)
 	if err != nil || intID <= 0 {
 		log.Warningf("ID must be a positive integer: %s, error: %v", ID, err)
-		return 0, fmt.Errorf("ID must be a positive integer: %w (%v)", status.ErrInvalidArgument, err)
+		return 0, fmt.Errorf("id must be a positive integer: %w (%v)", status.ErrInvalidArgument, err)
 	}
 
 	return intID, nil
@@ -50,7 +50,7 @@ func validateStringIDAllowZero(ID string) (int64, error) {
 	intID, err := strconv.ParseInt(ID, 10, 64)
 	if err != nil || intID < 0 {
 		log.Warningf("ID must be a non-negative integer: %s, error: %v", ID, err)
-		return 0, fmt.Errorf("ID must be a non-negative integer: %w (%v)", status.ErrInvalidArgument, err)
+		return 0, fmt.Errorf("id must be a non-negative integer: %w (%v)", status.ErrInvalidArgument, err)
 	}
 
 	return intID, nil
@@ -213,7 +213,7 @@ func ValidateOperationName(name string) (xid int64, wid int64, oidUUID string, e
 
 	if uuid == "" {
 		log.Warningf("Invalid resource name format: got %q, want '%s'. UUID part is empty.", name, format)
-		return 0, 0, "", fmt.Errorf("resource name must be in the format '%s', UUID cannot be empty: %w", format, status.ErrInvalidArgument)
+		return 0, 0, "", fmt.Errorf("resource name must be in the format '%s', uuid cannot be empty: %w", format, status.ErrInvalidArgument)
 	}
 
 	return xid, wid, uuid, nil
@@ -267,7 +267,132 @@ const (
 	ArtifactResource
 	// OperationResource represents an operation resource.
 	OperationResource
+	// DashboardResource represents a dashboard resource.
+	DashboardResource
+	// ChartResource represents a chart resource.
+	ChartResource
 )
+
+// ValidateDashboardName checks if a given dashboard name is valid.
+// It ensures that the name is in the correct format "dashboards/{dashboard_id}".
+// It returns the dashboard ID string if it is valid.
+func ValidateDashboardName(name string) (string, error) {
+	parts := strings.Split(name, "/")
+	if len(parts) != 2 || parts[0] != "dashboards" || parts[1] == "" {
+		return "", fmt.Errorf("dashboard name must be in the format 'dashboards/{dashboard_id}': %w", status.ErrInvalidArgument)
+	}
+	return parts[1], nil
+}
+
+// ConstructDashboardName constructs the name of a dashboard in the format "dashboards/{dashboard_id}".
+func ConstructDashboardName(dashboardID string) string {
+	return fmt.Sprintf("dashboards/%s", dashboardID)
+}
+
+// ParsedChartName contains parsed identifiers from a validated chart resource name.
+type ParsedChartName struct {
+	XID         int64
+	WID         int64
+	DashboardID string
+	ChartID     string
+	Parent      string
+}
+
+func parse2PartChartName(parts []string) (ParsedChartName, bool) {
+	if parts[0] == "charts" && parts[1] != "" {
+		return ParsedChartName{
+			ChartID: parts[1],
+		}, true
+	}
+	return ParsedChartName{}, false
+}
+
+func parse4PartChartName(parts []string) (ParsedChartName, bool, error) {
+	if parts[0] == "dashboards" && parts[2] == "charts" && parts[1] != "" && parts[3] != "" {
+		return ParsedChartName{
+			DashboardID: parts[1],
+			ChartID:     parts[3],
+			Parent:      fmt.Sprintf("dashboards/%s", parts[1]),
+		}, true, nil
+	}
+	return ParsedChartName{}, false, nil
+}
+
+func parse6PartChartName(parts []string) (ParsedChartName, bool, error) {
+	if parts[0] == "experiments" && parts[2] == "workUnits" && parts[4] == "charts" && parts[5] != "" {
+		xid, err := validateStringID(parts[1])
+		if err != nil {
+			return ParsedChartName{}, true, fmt.Errorf("invalid experiment ID in chart name: %w", err)
+		}
+		wid, err := validateStringIDAllowZero(parts[3])
+		if err != nil {
+			return ParsedChartName{}, true, fmt.Errorf("invalid work unit ID in chart name: %w", err)
+		}
+		return ParsedChartName{
+			XID:     xid,
+			WID:     wid,
+			ChartID: parts[5],
+			Parent:  fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid),
+		}, true, nil
+	}
+	return ParsedChartName{}, false, nil
+}
+
+// ParseChartName parses and validates any supported chart resource name:
+// 1. "experiments/{xid}/workUnits/{wid}/charts/{chart_id}"
+// 2. "charts/{chart_id}"
+// 3. "dashboards/{dashboard_id}/charts/{chart_id}"
+func ParseChartName(name string) (ParsedChartName, error) {
+	parts := strings.Split(name, "/")
+	switch len(parts) {
+	case 2:
+		if res, ok := parse2PartChartName(parts); ok {
+			return res, nil
+		}
+	case 4:
+		if res, ok, err := parse4PartChartName(parts); ok {
+			return res, err
+		}
+	case 6:
+		if res, ok, err := parse6PartChartName(parts); ok {
+			return res, err
+		}
+	}
+	return ParsedChartName{}, fmt.Errorf("chart name must be in the format 'experiments/{xid}/workUnits/{wid}/charts/{chart_id}', 'charts/{chart_id}', or 'dashboards/{dashboard_id}/charts/{chart_id}': %w", status.ErrInvalidArgument)
+}
+
+// ValidateChartName checks if a given chart name is valid.
+// It supports all standard chart resource name patterns and returns the parent identifier/path and chart ID.
+func ValidateChartName(name string) (parent string, chartID string, err error) {
+	parsed, err := ParseChartName(name)
+	if err != nil {
+		return "", "", err
+	}
+	if parsed.DashboardID != "" {
+		return parsed.DashboardID, parsed.ChartID, nil
+	}
+	return parsed.Parent, parsed.ChartID, nil
+}
+
+// ConstructWorkUnitChartName constructs a chart name in the format "experiments/{xid}/workUnits/{wid}/charts/{chart_id}".
+func ConstructWorkUnitChartName(xid int64, wid int64, chartID string) string {
+	return fmt.Sprintf("experiments/%d/workUnits/%d/charts/%s", xid, wid, chartID)
+}
+
+// ConstructRootChartName constructs a chart name in the format "charts/{chart_id}".
+func ConstructRootChartName(chartID string) string {
+	return fmt.Sprintf("charts/%s", chartID)
+}
+
+// ConstructDashboardChartName constructs a chart name in the format "dashboards/{dashboard_id}/charts/{chart_id}".
+func ConstructDashboardChartName(dashboardID, chartID string) string {
+	return fmt.Sprintf("dashboards/%s/charts/%s", dashboardID, chartID)
+}
+
+// ConstructChartName constructs the name of a chart in the format "dashboards/{dashboard_id}/charts/{chart_id}".
+func ConstructChartName(dashboardID, chartID string) string {
+	return ConstructDashboardChartName(dashboardID, chartID)
+}
 
 // GetResourceType identifies the type of the given resource name.
 func GetResourceType(name string) ResourceType {
@@ -288,6 +413,12 @@ func GetResourceType(name string) ResourceType {
 	}
 	if _, _, _, err := ValidateOperationName(name); err == nil {
 		return OperationResource
+	}
+	if _, _, err := ValidateChartName(name); err == nil {
+		return ChartResource
+	}
+	if _, err := ValidateDashboardName(name); err == nil {
+		return DashboardResource
 	}
 	return UnknownResource
 }

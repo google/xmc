@@ -29,7 +29,8 @@
       <span
         class="status-badge"
         [class.status-healthy]="isHealthy()"
-        [class.status-degraded]="!isHealthy()"
+        [class.status-degraded]="isDegraded()"
+        [class.status-unknown]="isUnknown()"
       >
         <span class="status-indicator-dot" [class.animate-pulse]="isHealthy()"></span>
         {{ mapHealthState(overallStatus()) }}

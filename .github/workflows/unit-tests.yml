@@ -119,15 +119,6 @@ jobs:
           restore-keys: |
             bazel-repo-${{ runner.os }}-
 
-      - name: 'Restore Bazel Disk Cache'
-        id: 'cache-bazel-disk-restore'
-        uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-        with:
-          path: ~/.cache/bazel-disk
-          key: bazel-disk-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            bazel-disk-${{ runner.os }}-
-
       - name: 'Verify Spanner Emulator Endpoint'
         run: |
           echo "Verifying Spanner Emulator at ${SPANNER_EMULATOR_HOST}..."
@@ -159,12 +150,14 @@ jobs:
       - name: 'Run Backend Unit Tests'
         env:
           TARGETS: ${{ needs.resolve-scope.outputs.bazel_targets }}
+          REMOTE_UPLOAD: ${{ github.ref == 'refs/heads/main' }}
         run: |
           RUN_TARGETS="${TARGETS:-//... -//cmd/ui/...}"
-          echo "Executing Bazel tests for targets: ${RUN_TARGETS}"
+          echo "Executing Bazel tests for targets: ${RUN_TARGETS} (remote_upload: ${REMOTE_UPLOAD})"
           bazel test \
+            --config=ci \
+            --remote_upload_local_results="${REMOTE_UPLOAD}" \
             --repository_cache=~/.cache/bazel-repo \
-            --disk_cache=~/.cache/bazel-disk \
             --experimental_repository_cache_hardlinks \
             --test_output=errors \
             --experimental_ui_max_stdouterr_bytes=2097152 \
@@ -173,36 +166,6 @@ jobs:
             -- \
             ${RUN_TARGETS}
 
-      - name: 'Prune Bazel Cache & Build Tree'
-        if: always()
-        run: |
-          echo "=== Pruning Bazel cache and build tree ==="
-          if [ -d ~/.cache/bazel-disk ]; then
-            # Size-based pruning: Keep disk cache under 1.5GB so tar/compression remains fast,
-            # while avoiding mtime/atime traps that delete valid restored cache entries.
-            MAX_SIZE_MB=1500
-            CURRENT_SIZE_MB=$(du -sm ~/.cache/bazel-disk | cut -f1)
-            if [ "${CURRENT_SIZE_MB}" -gt "${MAX_SIZE_MB}" ]; then
-              if [ -d ~/.cache/bazel-disk/ac ]; then
-                echo "Bazel disk cache (${CURRENT_SIZE_MB}MB) exceeds limit (${MAX_SIZE_MB}MB). Pruning oldest files in ac/..."
-                find ~/.cache/bazel-disk/ac -type f -printf '%T@ %p\0' | sort -z -n | head -z -n 1000 | cut -z -d' ' -f2- | xargs -0 -r rm -f || true
-              fi
-              find ~/.cache/bazel-disk -mindepth 1 -type d -empty -delete || true
-            fi
-          fi
-          if [ -d ~/.cache/bazel-repo ]; then
-            # Size-based pruning: Keep repository cache under 1GB so tar/compression remains fast.
-            MAX_REPO_SIZE_MB=1000
-            CURRENT_REPO_SIZE_MB=$(du -sm ~/.cache/bazel-repo | cut -f1)
-            if [ "${CURRENT_REPO_SIZE_MB}" -gt "${MAX_REPO_SIZE_MB}" ]; then
-              echo "Bazel repository cache (${CURRENT_REPO_SIZE_MB}MB) exceeds limit (${MAX_REPO_SIZE_MB}MB). Pruning oldest files..."
-              find ~/.cache/bazel-repo -type f -printf '%T@ %p\0' | sort -z -n | head -z -n 500 | cut -z -d' ' -f2- | xargs -0 -r rm -f || true
-              find ~/.cache/bazel-repo -mindepth 1 -type d -empty -delete || true
-            fi
-          fi
-          bazel clean || true
-          df -h
-
       - name: 'Save Bazel Repository Cache'
         uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
         # Only save repository cache on main branch pushes when external dependencies change.
@@ -210,15 +173,6 @@ jobs:
         with:
           path: ~/.cache/bazel-repo
           key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
-
-      - name: 'Save Bazel Disk Cache'
-        uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-        # Only save disk cache on main branch pushes to eliminate redundant
-        # tar/compress/upload overhead on PR branches that saturates self-hosted runners.
-        if: github.ref == 'refs/heads/main' && steps.cache-bazel-disk-restore.outputs.cache-hit != 'true'
-        with:
-          path: ~/.cache/bazel-disk
-          key: bazel-disk-${{ runner.os }}-${{ github.sha }}
 
   run-ui-tests:
     name: 'Run Angular UI Unit Tests'

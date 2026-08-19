@@ -195,11 +195,12 @@ func ToWorkUnitState(jobSet *v1alpha2.JobSet) spb.WorkUnitStatus_WorkUnitState {
 
 	// CRITICAL ORDERING:
 	// If the job stopped(Active=0), we MUST check for failures first.
-	if totalFailed > 0 {
+	// If all target replicated jobs succeeded, ignore non-target worker failures during teardown.
+	if totalFailed > 0 && !targetSuccessPolicySatisfied(jobSet) {
 		return spb.WorkUnitStatus_PARTIALLY_FAILED
 	}
 
-	// "Success Gap": The job stopped, had NO failures, but has successes.
+	// "Success Gap": The job stopped, had NO failures (or target success policy satisfied), but has successes.
 	// This is the only safe time to return RUNNING based on Success count alone.
 	if totalSucceeded > 0 {
 		return spb.WorkUnitStatus_RUNNING
@@ -207,6 +208,41 @@ func ToWorkUnitState(jobSet *v1alpha2.JobSet) spb.WorkUnitStatus_WorkUnitState {
 
 	// 6. Fallback (Active=0, Ready=0, Failed=0, Succeeded=0)
 	return spb.WorkUnitStatus_SCHEDULING
+}
+
+// targetSuccessPolicySatisfied returns true if the JobSet defines TargetReplicatedJobs in its
+// SuccessPolicy and the target replicated jobs have succeeded according to SuccessPolicy.Operator
+// (OperatorAll requires all target replicated jobs to achieve Succeeded >= Replicas, whereas
+// OperatorAny requires at least one target replicated job to achieve Succeeded >= Replicas).
+func targetSuccessPolicySatisfied(jobSet *v1alpha2.JobSet) bool {
+	if jobSet.Spec.SuccessPolicy == nil || len(jobSet.Spec.SuccessPolicy.TargetReplicatedJobs) == 0 {
+		return false
+	}
+	expectedReplicas := make(map[string]int32, len(jobSet.Spec.ReplicatedJobs))
+	for _, rj := range jobSet.Spec.ReplicatedJobs {
+		expectedReplicas[rj.Name] = rj.Replicas
+	}
+	succeededJobs := make(map[string]bool, len(jobSet.Status.ReplicatedJobsStatus))
+	for _, rjs := range jobSet.Status.ReplicatedJobsStatus {
+		expected, ok := expectedReplicas[rjs.Name]
+		if ok && expected > 0 && rjs.Succeeded >= expected {
+			succeededJobs[rjs.Name] = true
+		}
+	}
+	if jobSet.Spec.SuccessPolicy.Operator == v1alpha2.OperatorAny {
+		for _, target := range jobSet.Spec.SuccessPolicy.TargetReplicatedJobs {
+			if succeededJobs[target] {
+				return true
+			}
+		}
+		return false
+	}
+	for _, target := range jobSet.Spec.SuccessPolicy.TargetReplicatedJobs {
+		if !succeededJobs[target] {
+			return false
+		}
+	}
+	return true
 }
 
 // ConvertJobSetToWorkUnitExecutionUpdate converts a JobSet to a WorkUnitExecutionUpdate.

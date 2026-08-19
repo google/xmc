@@ -20,6 +20,7 @@ const MOCK_HEALTH_STATUS = {
   healthState: 'HEALTH_STATE_UNHEALTHY',
   systemInfo: {
     appVersion: '1.5.1',
+    buildVersion: 'v1.5.1-build.42',
     essDbSchemaVersion: '3',
     xidDbSchemaVersion: '1',
     observabilityUrl: 'https://monitoring.xmc.internal',
@@ -120,6 +121,9 @@ test.describe('Admin Panel Page - Screenshot Tests', () => {
   test('should match baseline screenshot for the entire Admin Panel page', async ({ page }) => {
     const adminPanel = page.locator('xmc-admin-panel');
     await expect(adminPanel).toBeVisible();
+
+    const footer = page.locator('.admin-panel-footer');
+    await expect(footer).toContainText('Build Version: v1.5.1-build.42');
 
     // Take screenshot of the entire admin panel page
     await expect(adminPanel).toHaveScreenshot('admin-panel-page.png');
