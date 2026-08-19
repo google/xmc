@@ -44,6 +44,13 @@ import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_servic
 import { PlotCardComponent } from '../plot_card/plot_card';
 
 /**
+ * Resolves a unique tracking key and removal identifier for a chart.
+ */
+export function getChartKey(chart: Chart): string {
+  return chart.name || `${chart.xid}_${chart.wid ?? ''}_${chart.title ?? ''}`;
+}
+
+/**
  * Chart card component representing an experiment's visualization column.
  */
 @Component({
@@ -139,14 +146,21 @@ export class ChartCardComponent implements OnInit, OnDestroy {
     });
   }
 
+  private readonly plotDataMap = computed(() => {
+    const map = new Map<string, PlotData>();
+    for (const p of this.chartData()?.plotsData ?? []) {
+      if (p.plotId) {
+        map.set(p.plotId, p);
+      }
+    }
+    return map;
+  });
+
   getPlotData(plotId?: string): PlotData | undefined {
-    const plotsData = this.chartData()?.plotsData;
-    if (!plotsData || !plotId) return undefined;
-    return plotsData.find((p) => p.plotId === plotId);
+    return plotId ? this.plotDataMap().get(plotId) : undefined;
   }
 
   onRemove(): void {
-    const name = this.chart().name || `${this.chart().xid}`;
-    this.remove.emit(name);
+    this.remove.emit(getChartKey(this.chart()));
   }
 }

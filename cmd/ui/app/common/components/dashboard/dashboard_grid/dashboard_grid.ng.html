@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 <div class="dashboard-grid-container">
-  @for (chart of charts(); track chart.name || chart.xid; let idx = $index) {
+  @for (chart of charts(); track getChartKey(chart); let idx = $index) {
     <xmc-chart-card [chart]="chart" [isBaseline]="idx === 0" (remove)="onRemoveChart($event)" />
   }
 </div>

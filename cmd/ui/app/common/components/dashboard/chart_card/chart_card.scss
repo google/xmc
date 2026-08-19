@@ -37,13 +37,13 @@
     align-items: center;
     justify-content: space-between;
     padding-bottom: 8px;
-    border-bottom: 1px solid #f1f3f4;
+    border-bottom: 1px solid var(--mat-sys-outline-variant, #f1f3f4);
     min-width: 0;
 
     .chart-header-link {
       font-size: 15px;
       font-weight: 500;
-      color: #1a73e8; // Google Blue
+      color: var(--mat-sys-primary, #1a73e8);
       text-decoration: underline;
       cursor: pointer;
       white-space: nowrap;
@@ -52,7 +52,7 @@
       min-width: 0;
 
       &:hover {
-        color: #174ea6;
+        color: var(--mat-sys-primary-container, #174ea6);
       }
     }
 

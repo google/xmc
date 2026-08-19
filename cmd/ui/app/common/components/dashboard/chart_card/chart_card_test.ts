@@ -29,7 +29,7 @@ import {
 } from 'xmanager_cloud/ui/app/service/dashboard_models';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 
-import { ChartCardComponent } from './chart_card';
+import { ChartCardComponent, getChartKey } from './chart_card';
 import { ChartCardHarness } from './chart_card_harness';
 
 @Component({
@@ -152,5 +152,26 @@ describe('ChartCardComponent', () => {
 
     chartCard.ngOnDestroy();
     expect(sub?.closed).toBeTrue();
+  });
+
+  it('should compute getChartKey using name or composite xid_wid_title fallback', () => {
+    expect(getChartKey({ name: 'experiments/1/charts/c1', xid: 1 })).toBe(
+      'experiments/1/charts/c1',
+    );
+    expect(getChartKey({ xid: 123, wid: 2, title: 'eval' })).toBe('123_2_eval');
+  });
+
+  it('should look up plot data using cached plotDataMap via getPlotData', () => {
+    const chartCard = fixture.debugElement.children[0].componentInstance as ChartCardComponent;
+    const lossKpi = chartCard.getPlotData('loss_kpi');
+    expect(lossKpi?.plotId).toBe('loss_kpi');
+    expect(chartCard.getPlotData('nonexistent')).toBeUndefined();
+  });
+
+  it('should emit unique getChartKey when onRemove is called', () => {
+    const chartCard = fixture.debugElement.children[0].componentInstance as ChartCardComponent;
+    const emitSpy = spyOn(chartCard.remove, 'emit');
+    chartCard.onRemove();
+    expect(emitSpy).toHaveBeenCalledWith('experiments/9001/charts/mixed_overview');
   });
 });

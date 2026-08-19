@@ -17,7 +17,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
 
 import { Chart, LayoutSpec } from 'xmanager_cloud/ui/app/service/dashboard_models';
 
-import { ChartCardComponent } from '../chart_card/chart_card';
+import { ChartCardComponent, getChartKey } from '../chart_card/chart_card';
 
 /**
  * Dashboard grid component rendering comparative experiment chart columns.
@@ -34,6 +34,8 @@ export class DashboardGridComponent {
   readonly charts = input.required<Chart[]>();
   readonly layout = input<LayoutSpec>();
   readonly removeChart = output<string>();
+
+  protected readonly getChartKey = getChartKey;
 
   onRemoveChart(chartName: string): void {
     this.removeChart.emit(chartName);
