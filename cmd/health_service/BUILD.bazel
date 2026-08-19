@@ -19,6 +19,7 @@ load("//:oci.bzl", "oci_image_for_service")
 compat_go_library(
     name = "health_service_lib",
     srcs = [
+        "admin_role_guard.go",
         "config.go",
         "health_checker.go",
         "list_configs.go",
@@ -29,19 +30,30 @@ compat_go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//api/protos/health:api_go_proto",
+        "//internal/auth",
         "//internal/common/health",
         "//internal/compat/google",
         "//internal/configutil",
         "//internal/logging",
         "//internal/security/tlsutil",
+        "//internal/task_queue_redis/redisclient",
         "//pkg/auth/oauth2",
         "@com_github_grpc_ecosystem_grpc_gateway_v2_custom//:runtime",
         "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_api//cloudidentity/v1beta1:go_default_library",
+        "@org_golang_google_api//option:go_default_library",
+        "@org_golang_google_api//run/v2:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//codes:go_default_library",
         "@org_golang_google_grpc//credentials/insecure:go_default_library",
         "@org_golang_google_grpc//health/grpc_health_v1:go_default_library",
+        "@org_golang_google_grpc//metadata:go_default_library",
         "@org_golang_google_grpc//reflection:go_default_library",
+        "@org_golang_google_grpc//status:go_default_library",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
+        "@org_golang_x_sync//singleflight:go_default_library",
+        "@org_golang_x_time//rate:go_default_library",
     ],
 )
 
@@ -50,6 +62,9 @@ go_binary(
     embed = [":health_service_lib"],
     pure = "on",
     visibility = ["//visibility:public"],
+    x_defs = {
+        "xmanager_cloud/cmd/health_service/main.buildVersion": "{STABLE_APP_VERSION}",
+    },
 )
 
 oci_image_for_service(
@@ -60,15 +75,24 @@ oci_image_for_service(
 compat_go_test(
     name = "server_test",
     srcs = [
+        "admin_role_guard_test.go",
         "health_checker_test.go",
         "list_configs_test.go",
         "server_test.go",
     ],
     embed = [":health_service_lib"],
     deps = [
+        "//api/protos/xid:messages_go_proto",
+        "//internal/auth",
+        "//pkg/auth/oauth2",
         "@com_github_google_go_cmp//cmp:go_default_library",
+        "@com_google_cloud_go_iam//apiv1/iampb:go_default_library",
+        "@org_golang_google_api//option:go_default_library",
+        "@org_golang_google_api//run/v2:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
+        "@org_golang_google_grpc//codes:go_default_library",
         "@org_golang_google_grpc//health:go_default_library",
+        "@org_golang_google_grpc//status:go_default_library",
         "@org_golang_google_protobuf//testing/protocmp:go_default_library",
     ],
 )

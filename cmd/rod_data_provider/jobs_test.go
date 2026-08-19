@@ -21,12 +21,15 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	metav1 "golang/k8s_io/apimachinery/v/v0_23/pkg/apis/meta/v1/v1"
 	"golang/protobuf/v2/proto/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/cmd/rod_data_provider/cache"
 	essmsgpb "xmanager_cloud/experiment_state_server/proto/messages_go_proto"
 	"xmanager_cloud/internal/storage/spanner/workunit"
 )
@@ -78,14 +81,21 @@ var (
 )
 
 type mockWorkUnitFetcher struct {
-	workUnits     []*essmsgpb.WorkUnit
-	nextPageToken string
-	err           error
+	workUnits      []*essmsgpb.WorkUnit
+	nextPageToken  string
+	err            error
+	lastQueueNames []string
 }
 
 func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*workunit.ActiveWorkUnitsResult, error) {
+	m.lastQueueNames = queueNames
 	if m.err != nil {
 		return nil, m.err
+	}
+	if len(queueNames) == 0 {
+		return &workunit.ActiveWorkUnitsResult{
+			WorkUnits: []*essmsgpb.WorkUnit{},
+		}, nil
 	}
 	return &workunit.ActiveWorkUnitsResult{
 		WorkUnits:     m.workUnits,
@@ -98,17 +108,26 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 	now := time.Now()
 
 	tests := []struct {
-		name      string
-		ctx       context.Context
-		req       *spb.GetRunningAndPendingJobsRequest
-		fetcher   WorkUnitFetcher
-		wantCode  codes.Code
-		wantCount int
+		name       string
+		ctx        context.Context
+		req        *spb.GetRunningAndPendingJobsRequest
+		setupCache func() *cache.KueueCache
+		fetcher    WorkUnitFetcher
+		wantCode   codes.Code
+		wantCount  int
 	}{
 		{
 			name: "Success With Fetcher",
 			ctx:  context.Background(),
 			req:  baseReq,
+			setupCache: func() *cache.KueueCache {
+				c := cache.NewKueueCache()
+				c.LocalQueues.Set("lq-1", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "gpu-cluster-queue"},
+				})
+				return c
+			},
 			fetcher: &mockWorkUnitFetcher{
 				workUnits: []*essmsgpb.WorkUnit{
 					proto.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
@@ -159,7 +178,11 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := newServer(cfg, nil, tt.fetcher)
+			var kCache *cache.KueueCache
+			if tt.setupCache != nil {
+				kCache = tt.setupCache()
+			}
+			srv := newServer(cfg, kCache, tt.fetcher, nil)
 			resp, err := srv.GetRunningAndPendingJobs(tt.ctx, tt.req)
 
 			gotCode := status.Code(err)
@@ -190,7 +213,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			wantJob := &spb.DashboardJob{
 				Xid:             100,
 				WorkUnitId:      1,
-				User:            "test@example.com",
+				User:            "",
 				Priority:        100,
 				Status:          essmsgpb.WorkUnitStatus_SCHEDULING,
 				PositionInQueue: 1,
@@ -211,7 +234,7 @@ func TestGetRunningAndPendingJobs_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	srv := newServer(cfg, nil, &mockWorkUnitFetcher{})
+	srv := newServer(cfg, nil, &mockWorkUnitFetcher{}, nil)
 	req := baseReq
 	_, err := srv.GetRunningAndPendingJobs(ctx, req)
 
@@ -269,5 +292,90 @@ func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 	res := job.GetRequestedResources()[0]
 	if res.GetResourceType() != "nvidia-tesla-h100" || res.GetCount() != 10.0 {
 		t.Errorf("RequestedResource = %v %v, want nvidia-tesla-h100 10.0", res.GetResourceType(), res.GetCount())
+	}
+}
+
+func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
+	tests := []struct {
+		name       string
+		setupCache func() *cache.KueueCache
+		queueName  string
+		wantQueues []string
+	}{
+		{
+			name: "single mapped local queue",
+			setupCache: func() *cache.KueueCache {
+				c := cache.NewKueueCache()
+				c.LocalQueues.Set("lq-1", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-1"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "cq-test"},
+				})
+				return c
+			},
+			queueName:  "cq-test",
+			wantQueues: []string{"lq-1"},
+		},
+		{
+			name: "multiple mapped local queues sorted and deduplicated",
+			setupCache: func() *cache.KueueCache {
+				c := cache.NewKueueCache()
+				c.LocalQueues.Set("team-a/lq-2", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-2", Namespace: "team-a"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "cq-test"},
+				})
+				c.LocalQueues.Set("team-a/lq-1", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-1", Namespace: "team-a"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "cq-test"},
+				})
+				c.LocalQueues.Set("team-b/lq-1", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "lq-1", Namespace: "team-b"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "cq-test"},
+				})
+				c.LocalQueues.Set("team-c/other-lq", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "other-lq", Namespace: "team-c"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "other-cq"},
+				})
+				return c
+			},
+			queueName:  "cq-test",
+			wantQueues: []string{"lq-1", "lq-2"},
+		},
+		{
+			name: "returns nil when no local queues match",
+			setupCache: func() *cache.KueueCache {
+				c := cache.NewKueueCache()
+				c.LocalQueues.Set("team-c/other-lq", &kueuev1beta1.LocalQueue{
+					ObjectMeta: metav1.ObjectMeta{Name: "other-lq", Namespace: "team-c"},
+					Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "other-cq"},
+				})
+				return c
+			},
+			queueName:  "cq-test",
+			wantQueues: nil,
+		},
+		{
+			name:       "returns nil when cache is nil",
+			setupCache: func() *cache.KueueCache { return nil },
+			queueName:  "cq-test",
+			wantQueues: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fetcher := &mockWorkUnitFetcher{}
+			srv := newServer(&Config{}, tt.setupCache(), fetcher, nil)
+
+			_, err := srv.GetRunningAndPendingJobs(context.Background(), &spb.GetRunningAndPendingJobsRequest{
+				QueueName: tt.queueName,
+			})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if diff := cmp.Diff(tt.wantQueues, fetcher.lastQueueNames); diff != "" {
+				t.Errorf("targetQueues mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

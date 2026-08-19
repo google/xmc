@@ -21,8 +21,10 @@ echo "Generating runtime config.js at ${CONFIG_FILE}..."
 
 # Helper to parse boolean values to lowercase 'true' or 'false'
 get_bool_env() {
-  local val=$(echo "${1:-$2}" | tr '[:upper:]' '[:lower:]')
-  [ "$val" = "true" ] && echo "true" || echo "false"
+  case "$(echo "${1:-$2}" | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes) echo "true" ;;
+    *) echo "false" ;;
+  esac
 }
 
 # Set default values if not specified
@@ -31,6 +33,11 @@ REFRESH_MS="${XMC_REFRESH_INTERVAL_MS:-30000}"
 STATUS_HISTORY=$(get_bool_env "$XMC_STATUS_MESSAGE_HISTORY_ENABLED" true)
 ADMIN_PANEL=$(get_bool_env "$XMC_ADMIN_PANEL_ENABLED" false)
 RESOURCE_DASHBOARD=$(get_bool_env "$XMC_RESOURCE_DASHBOARD_ENABLED" false)
+PERFORMANCE_DASHBOARD=$(get_bool_env "$XMC_PERFORMANCE_DASHBOARD_ENABLED" false)
+NON_PROD_AUTH="false"
+if [ "$(get_bool_env "$XMC_NON_PROD_AUTH" false)" = "true" ] || [ "$(get_bool_env "$SHOW_SAFETY_WARNING" false)" = "true" ]; then
+  NON_PROD_AUTH="true"
+fi
 
 cat <<EOF > "${CONFIG_FILE}"
 window.XMC_API_URL = "${API_URL}";
@@ -38,7 +45,9 @@ window.XMC_REFRESH_INTERVAL_MS = ${REFRESH_MS};
 window.XMC_FEATURE_FLAGS = {
   "statusMessageHistoryEnabled": ${STATUS_HISTORY},
   "adminPanelEnabled": ${ADMIN_PANEL},
-  "resourceDashboardEnabled": ${RESOURCE_DASHBOARD}
+  "resourceDashboardEnabled": ${RESOURCE_DASHBOARD},
+  "performanceDashboardEnabled": ${PERFORMANCE_DASHBOARD},
+  "isNonProdAuth": ${NON_PROD_AUTH}
 };
 EOF
 

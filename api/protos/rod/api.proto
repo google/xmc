@@ -26,8 +26,8 @@ option go_package = "xmanager_cloud/api/protos/rod";
 service ResourceObservabilityService {
   // TODO: Implement the rest of methods
 
-  // Get all queues that fit specific resource requirements.
-  rpc GetFittingQueues(GetFittingQueuesRequest) returns (GetFittingQueuesResponse) {
+  // List all cluster queues.
+  rpc ListClusterQueues(ListClusterQueuesRequest) returns (ListClusterQueuesResponse) {
     option (google.api.http) = {
       get: "/v1/clusterqueues"
     };
@@ -39,6 +39,29 @@ service ResourceObservabilityService {
       get: "/v1/clusterqueues/{queue_name}/jobs"
     };
   }
+
+  // Get the target submission queue for a specific cluster queue.
+  rpc GetSubmitQueue(GetSubmitQueueRequest) returns (GetSubmitQueueResponse) {
+    option (google.api.http) = {
+      get: "/v1/clusterqueues/{queue_name}/submitqueue"
+    };
+  }
+
+  // Get historical queue velocity and turnover metrics for multiple cluster queues.
+  rpc BatchGetQueueSecondaryData(BatchGetQueueSecondaryDataRequest) returns (BatchGetQueueSecondaryDataResponse) {
+    option (google.api.http) = {
+      post: "/v1/clusterqueues:batchGetSecondaryData"
+      body: "*"
+    };
+  }
+}
+
+// RangePreset specifies predefined time windows for historical telemetry calculations.
+enum RangePreset {
+  RANGE_PRESET_UNSPECIFIED = 0;
+  RANGE_PRESET_LAST_HOUR = 1;
+  RANGE_PRESET_LAST_DAY = 2;
+  RANGE_PRESET_LAST_WEEK = 3;
 }
 
 // Resource represents requested or available compute resources.
@@ -46,6 +69,12 @@ message Resource {
   // Type of resource, e.g., "cpu", "memory", "nvidia.com/gpu", "google.com/tpu".
   string resource_type = 1;
   double count = 2;
+}
+
+// ResourceVelocity represents velocity rate for a specific resource type.
+message ResourceVelocity {
+  string resource_type = 1;
+  double velocity = 2;
 }
 
 // QueueResourceCapacity represents resource capacities for a queue.
@@ -59,16 +88,28 @@ message QueueResourceCapacity {
 // QueueOverview provides an overview of the queue and its resources.
 message QueueOverview {
   string queue_name = 1;
-  repeated QueueResourceCapacity queue_capacity = 3;
+  repeated QueueResourceCapacity queue_capacity = 2;
 }
 
-// GetFittingQueuesRequest represents parameters for filtering matching ClusterQueues.
-message GetFittingQueuesRequest {
-  repeated Resource requirements = 1;
+// ListClusterQueuesRequest represents parameters for retrieving ClusterQueues.
+message ListClusterQueuesRequest {}
+
+// QueuePredictability contains predictability metrics for a queue over a time range.
+message QueuePredictability {
+  Resource pending_resource_requests = 1;
+  ResourceVelocity resource_velocity = 2;
+  int64 pending_jobs = 3;
+  double job_velocity = 4;
+  RangePreset velocity_range = 5;
 }
 
-// GetFittingQueuesResponse contains the list of matching ClusterQueues.
-message GetFittingQueuesResponse {
+// ClusterQueueSecondaryMetrics represents secondary predictability data for a cluster queue.
+message ClusterQueueSecondaryMetrics {
+  repeated QueuePredictability queue_predictability = 1;
+}
+
+// ListClusterQueuesResponse contains the list of ClusterQueues.
+message ListClusterQueuesResponse {
   repeated QueueOverview queues = 1;
 }
 
@@ -100,3 +141,25 @@ message GetRunningAndPendingJobsResponse {
   string next_page_token = 2;
   int64 total_queue_size = 3;
 }
+
+// GetSubmitQueueRequest represents query parameters for fetching the target submission queue.
+message GetSubmitQueueRequest {
+  string queue_name = 1;
+}
+
+// GetSubmitQueueResponse contains the target submit queue name.
+message GetSubmitQueueResponse {
+  string submit_queue = 1;
+}
+
+// BatchGetQueueSecondaryDataRequest represents parameters for requesting secondary queue metrics.
+message BatchGetQueueSecondaryDataRequest {
+  repeated string queue_names = 1;
+  RangePreset range = 2;
+}
+
+// BatchGetQueueSecondaryDataResponse contains secondary metrics mapped by queue name.
+message BatchGetQueueSecondaryDataResponse {
+  map<string, ClusterQueueSecondaryMetrics> queue_predictability = 1;
+}
+

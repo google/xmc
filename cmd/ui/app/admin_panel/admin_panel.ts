@@ -14,8 +14,9 @@
 
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { BehaviorSubject, of } from 'rxjs';
-import { catchError, switchMap, tap } from 'rxjs/operators';
+import { catchError, finalize, switchMap, tap } from 'rxjs/operators';
 
 import {
   HealthStatusResponse,
@@ -34,7 +35,12 @@ import { SystemInfoCardComponent } from './components/system_info_card/system_in
 @Component({
   selector: 'xmc-admin-panel',
   standalone: true,
-  imports: [SystemInfoCardComponent, HealthStatusSectionComponent, ConfigEntriesCardComponent],
+  imports: [
+    MatProgressSpinnerModule,
+    SystemInfoCardComponent,
+    HealthStatusSectionComponent,
+    ConfigEntriesCardComponent,
+  ],
   templateUrl: './admin_panel.ng.html',
   styleUrl: './admin_panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -47,12 +53,15 @@ export class AdminPanelPage {
 
   private lastKnownStatus: HealthStatusResponse | null = null;
 
-  private readonly refreshTrigger$ = new BehaviorSubject<void>(undefined);
+  protected readonly isRefreshing = signal<boolean>(false);
+
+  private readonly refreshTrigger$ = new BehaviorSubject<boolean>(false);
 
   protected readonly healthStatus = toSignal(
     this.refreshTrigger$.pipe(
-      switchMap(() =>
-        this.healthService.getHealthStatus().pipe(
+      tap(() => this.isRefreshing.set(true)),
+      switchMap((forceRefresh) =>
+        this.healthService.getHealthStatus(forceRefresh).pipe(
           tap((status) => {
             this.lastKnownStatus = status;
             this.healthStatusError.set(null);
@@ -66,6 +75,7 @@ export class AdminPanelPage {
             this.healthStatusError.set(error);
             return of({} as HealthStatusResponse);
           }),
+          finalize(() => this.isRefreshing.set(false)),
         ),
       ),
     ),
@@ -96,6 +106,6 @@ export class AdminPanelPage {
   });
 
   protected onRefresh(): void {
-    this.refreshTrigger$.next();
+    this.refreshTrigger$.next(true);
   }
 }

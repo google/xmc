@@ -35,7 +35,8 @@ export class ConfigEntriesCardHarness extends ComponentHarness {
   static hostSelector = 'xmc-config-entries-card';
 
   private readonly _searchInput = this.locatorFor('.filter-input');
-  private readonly _groupHeaders = this.locatorForAll('.group-header-cell');
+  private readonly _groupHeaderRows = this.locatorForAll('.group-header-row');
+  private readonly _groupTitles = this.locatorForAll('.group-display-name');
   private readonly _configRows = this.locatorForAll(ConfigRowHarness);
   private readonly _noResults = this.locatorForOptional('.no-results-cell');
 
@@ -50,8 +51,22 @@ export class ConfigEntriesCardHarness extends ComponentHarness {
   }
 
   async getGroupDisplayNames(): Promise<string[]> {
-    const headers = await this._groupHeaders();
-    return Promise.all(headers.map((h) => h.text()));
+    const titles = await this._groupTitles();
+    return Promise.all(titles.map((t) => t.text()));
+  }
+
+  async toggleGroup(index: number): Promise<void> {
+    const rows = await this._groupHeaderRows();
+    if (rows[index]) {
+      await rows[index].click();
+    }
+  }
+
+  async isGroupCollapsed(index: number): Promise<boolean> {
+    const rows = await this._groupHeaderRows();
+    if (!rows[index]) return false;
+    const expanded = await rows[index].getAttribute('aria-expanded');
+    return expanded === 'false';
   }
 
   async getConfigEntries(): Promise<Array<{ key: string; value: string }>> {

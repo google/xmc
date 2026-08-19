@@ -22,14 +22,15 @@
       XMC Services Health
     </h2>
     <div class="header-actions">
-      <button (click)="onRefresh()" class="refresh-button">
-        <mat-icon class="button-icon">refresh</mat-icon>
-        Refresh
+      <button type="button" class="refresh-button" [disabled]="loading()" (click)="onRefresh()">
+        <mat-icon class="button-icon" [class.animate-spin]="loading()">refresh</mat-icon>
+        {{ loading() ? 'Refreshing...' : 'Refresh' }}
       </button>
       <span
         class="status-badge"
         [class.status-healthy]="isHealthy()"
-        [class.status-degraded]="!isHealthy()"
+        [class.status-degraded]="isDegraded()"
+        [class.status-unknown]="isUnknown()"
       >
         <span class="status-indicator-dot" [class.animate-pulse]="isHealthy()"></span>
         {{ mapHealthState(overallStatus()) }}
@@ -50,7 +51,7 @@
             title="Core XMC Instances"
             icon="widgets"
             [components]="coreComponents()"
-          ></xmc-health-status-group-card>
+          />
         </div>
       </div>
     }
@@ -69,7 +70,7 @@
               title="GCP Hosted Services"
               icon="cloud"
               [components]="gcpComponents()"
-            ></xmc-health-status-group-card>
+            />
           }
 
           <!-- Custom Configured Components Card -->
@@ -78,7 +79,7 @@
               title="Custom Configured Components"
               icon="extension"
               [components]="customComponents()"
-            ></xmc-health-status-group-card>
+            />
           }
         </div>
       </div>

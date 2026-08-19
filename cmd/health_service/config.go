@@ -17,27 +17,45 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
 	"xmanager_cloud/internal/configutil"
 )
 
 // Config holds the configuration for the health service.
 type Config struct {
-	Port               string
-	GRPCPort           string
-	ProjectID          string
-	TLSCertFile        string
-	TLSKeyFile         string
-	EssURL             string
-	XidAddr            string
-	ActuatorURL        string
-	ReconcilerURL      string
-	ConfigDir          string
-	EssSpannerDatabase string
-	XidSpannerDatabase string
+	Port                    string
+	GRPCPort                string
+	ProjectID               string
+	TLSCertFile             string
+	TLSKeyFile              string
+	EssURL                  string
+	XidAddr                 string
+	ActuatorURL             string
+	ReconcilerURL           string
+	LogMonitorResourceName  string
+	ConfigDir               string
+	EssSpannerDatabase      string
+	XidSpannerDatabase      string
+	RedisAddr               string
+	AppVersion              string
+	BuildVersion            string
+	ObservabilityURL        string
+	CacheTTL                time.Duration
+	ForceRefreshMaxRequests int
+	ForceRefreshWindow      time.Duration
 }
 
+var buildVersion string
+
 var cfg Config
+
+func getBuildVersion() string {
+	if buildVersion == "" || buildVersion == "redacted" || buildVersion == "{STABLE_APP_VERSION}" {
+		return "developer-build"
+	}
+	return buildVersion
+}
 
 func init() {
 	// 1. Load configurations from environment variables
@@ -45,8 +63,16 @@ func init() {
 	configutil.StringEnv(&cfg.XidAddr, "health_xid_addr", "xid-svc:50051")
 	configutil.StringEnv(&cfg.ActuatorURL, "health_actuator_url", "http://actuator-service:8080")
 	configutil.StringEnv(&cfg.ReconcilerURL, "health_reconciler_url", "http://reconciler-svc:8080")
+	configutil.StringEnv(&cfg.LogMonitorResourceName, "health_log_monitor_resource_name", "")
 	configutil.StringEnv(&cfg.EssSpannerDatabase, "health_ess_spanner_database_name", "")
 	configutil.StringEnv(&cfg.XidSpannerDatabase, "health_xid_spanner_database_name", "")
+	configutil.StringEnv(&cfg.RedisAddr, "health_redis_addr", "")
+	configutil.StringEnv(&cfg.AppVersion, "health_app_version", "")
+	configutil.StringEnv(&cfg.ObservabilityURL, "health_observability_url", "")
+	cfg.BuildVersion = getBuildVersion()
+	configutil.DurationEnv(&cfg.CacheTTL, "health_status_cache_ttl", 15*time.Second)
+	configutil.IntEnv(&cfg.ForceRefreshMaxRequests, "health_status_force_refresh_max_requests", 5)
+	configutil.DurationEnv(&cfg.ForceRefreshWindow, "health_status_force_refresh_window", 5*time.Second)
 
 	defaultPort := os.Getenv("PORT")
 	if defaultPort == "" {

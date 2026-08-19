@@ -89,7 +89,73 @@ func createTestAuthorizer(ctx context.Context, t *testing.T) authz.AuthorizerInt
 	return auth
 }
 
-func createExperimentStateServer(ctx context.Context, t *testing.T) (*Server, *tq.FakeClient) {
+type testServerOpt func(*Params)
+
+func withStorage(s storage.Storage) testServerOpt {
+	return func(p *Params) {
+		p.Storage = s
+	}
+}
+
+func withConfig(c *config.Config) testServerOpt {
+	return func(p *Params) {
+		p.Config = c
+	}
+}
+
+func withAuthorizer(a authz.AuthorizerInterface) testServerOpt {
+	return func(p *Params) {
+		p.Authorizer = a
+	}
+}
+
+func withXidClient(x xidgrpcpb.XidServiceClient) testServerOpt {
+	return func(p *Params) {
+		p.XidClient = x
+	}
+}
+
+func withWorkUnitActuator(actuator WorkUnitActuator) testServerOpt {
+	return func(p *Params) {
+		p.WorkUnitActuator = actuator
+	}
+}
+
+func withArtifactObservers(observers ...ArtifactObserver) testServerOpt {
+	return func(p *Params) {
+		p.ArtifactObservers = append(p.ArtifactObservers, observers...)
+	}
+}
+
+func newTestServer(t *testing.T, opts ...testServerOpt) *Server {
+	t.Helper()
+	p := Params{}
+	for _, opt := range opts {
+		opt(&p)
+	}
+	if p.Config == nil {
+		p.Config = &config.Config{}
+	}
+	if p.Storage == nil {
+		p.Storage = &storage.MockStorage{}
+	}
+	if p.Authorizer == nil {
+		p.Authorizer = createTestAuthorizer(context.Background(), t)
+	}
+	if p.XidClient == nil {
+		p.XidClient = &mockXidClient{}
+	}
+	if p.WorkUnitActuator == nil {
+		p.WorkUnitActuator = &tq.FakeClient{}
+	}
+	s, err := New(p)
+	if err != nil {
+		t.Fatalf("newTestServer failed: %v", err)
+	}
+	return s
+}
+
+func createExperimentStateServer(ctx context.Context, t *testing.T, opts ...testServerOpt) (*Server, *tq.FakeClient) {
 	t.Helper()
 	xidStorageClient, essStorageClient := emulator.Setup(ctx, t)
 	storage, _ := spanner.NewStorage(essStorageClient)
@@ -107,8 +173,22 @@ func createExperimentStateServer(ctx context.Context, t *testing.T) (*Server, *t
 		log.FatalContextf(ctx, "Failed to create gRPC client for XID service: %v", err)
 	}
 	xidClient := xidgrpcpb.NewXidServiceClient(conn)
-	taskQueueClient := &tq.FakeClient{}
-	return New(storage, &cfg, createTestAuthorizer(ctx, t), xidClient, taskQueueClient), taskQueueClient
+	p := Params{
+		Config:           &cfg,
+		Storage:          storage,
+		Authorizer:       createTestAuthorizer(ctx, t),
+		XidClient:        xidClient,
+		WorkUnitActuator: &tq.FakeClient{},
+	}
+	for _, opt := range opts {
+		opt(&p)
+	}
+	s, err := New(p)
+	if err != nil {
+		t.Fatalf("createExperimentStateServer failed: %v", err)
+	}
+	fakeActuator, _ := p.WorkUnitActuator.(*tq.FakeClient)
+	return s, fakeActuator
 }
 
 func createXidServer(ctx context.Context, t *testing.T, xidClient *googlespanner.Client) net.Listener {
@@ -123,7 +203,14 @@ func createXidServer(ctx context.Context, t *testing.T, xidClient *googlespanner
 
 	s := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
 
-	xidServer := xidserver.NewXIDServer(cfg, createTestAuthorizer(ctx, t), storage)
+	xidServer, err := xidserver.New(xidserver.Params{
+		Config:     cfg,
+		Authorizer: createTestAuthorizer(ctx, t),
+		Storage:    storage,
+	})
+	if err != nil {
+		t.Fatalf("failed to create xid server: %v", err)
+	}
 	xidgrpcpb.RegisterXidServiceServer(s, xidServer)
 
 	reflection.Register(s)
@@ -307,8 +394,6 @@ func TestNewWorkUnitExecution(t *testing.T) {
 
 func TestStopOperationOnError(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{}
-	authorizer := createTestAuthorizer(ctx, t)
 	opName := fmt.Sprintf("experiments/%d/workUnits/%d/operations/%s", 123, 1, uuid.New())
 
 	testCases := []struct {
@@ -356,7 +441,7 @@ func TestStopOperationOnError(t *testing.T) {
 			storage := &storage.MockStorage{
 				UpdateWorkUnitOperationErr: tc.updateWorkUnitOperationErr,
 			}
-			server := New(storage, cfg, authorizer, &mockXidClient{}, nil)
+			server := newTestServer(t, withStorage(storage))
 
 			server.stopOperationOnError(ctx, tc.op, tc.err)
 
@@ -484,8 +569,6 @@ func TestPropagateIAPJWT_NoIncomingMetadata(t *testing.T) {
 
 func TestHandleEnqueueActionError(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{}
-	authorizer := createTestAuthorizer(ctx, t)
 	enqueueErr := errors.New("queue unreachable")
 
 	testCases := []struct {
@@ -536,7 +619,7 @@ func TestHandleEnqueueActionError(t *testing.T) {
 			mockStore := &storage.MockStorage{
 				UpdateWorkUnitExecutionsErr: tc.updateWorkUnitExecutionsErr,
 			}
-			server := New(mockStore, cfg, authorizer, &mockXidClient{}, nil)
+			server := newTestServer(t, withStorage(mockStore))
 
 			err := server.handleEnqueueActionError(ctx, "stop", tc.workUnit, 123, 456, essmsgpb.StructuredMessage_ERROR, enqueueErr)
 			if (err != nil) != tc.wantErr {

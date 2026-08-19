@@ -230,6 +230,83 @@ func TestListCharts_ParentDashboard_WithStaleness(t *testing.T) {
 	}
 }
 
+func TestListCharts_ParentDashboard_WithFilter(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	c1 := blankChartProto("charts/dash-filter-1", 100, 1)
+	c1.Title = "Target Chart"
+	c2 := blankChartProto("charts/dash-filter-2", 100, 1)
+	c2.Title = "Other Chart"
+	if err := repo.CreateChart(ctx, c1); err != nil {
+		t.Fatalf("CreateChart c1 failed: %v", err)
+	}
+	if err := repo.CreateChart(ctx, c2); err != nil {
+		t.Fatalf("CreateChart c2 failed: %v", err)
+	}
+
+	dash := blankDashboardProto("dashboards/parent-dash-filter")
+	dash.Charts = []*dpb.Chart{
+		{Name: "charts/dash-filter-1"},
+		{Name: "charts/dash-filter-2"},
+	}
+	if err := repo.CreateDashboard(ctx, dash); err != nil {
+		t.Fatalf("CreateDashboard failed: %v", err)
+	}
+
+	charts, _, err := repo.ListCharts(ctx, "dashboards/parent-dash-filter", 10, "", "title = \"Target Chart\"", "", 0)
+	if err != nil {
+		t.Fatalf("ListCharts with dashboard parent and title filter failed: %v", err)
+	}
+	if len(charts) != 1 || charts[0].GetName() != "charts/dash-filter-1" {
+		t.Errorf("ListCharts with dashboard parent and filter mismatch: got %+v", charts)
+	}
+}
+
+func TestListCharts_ParentDashboard_Pagination(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	for _, name := range []string{"charts/dp-1", "charts/dp-2", "charts/dp-3"} {
+		c := blankChartProto(name, 100, 1)
+		if err := repo.CreateChart(ctx, c); err != nil {
+			t.Fatalf("CreateChart %s failed: %v", name, err)
+		}
+	}
+
+	dash := blankDashboardProto("dashboards/parent-dash-page")
+	dash.Charts = []*dpb.Chart{
+		{Name: "charts/dp-1"},
+		{Name: "charts/dp-2"},
+		{Name: "charts/dp-3"},
+	}
+	if err := repo.CreateDashboard(ctx, dash); err != nil {
+		t.Fatalf("CreateDashboard failed: %v", err)
+	}
+
+	page1, token1, err := repo.ListCharts(ctx, "dashboards/parent-dash-page", 2, "", "", "chart_id", 0)
+	if err != nil {
+		t.Fatalf("ListCharts page 1 failed: %v", err)
+	}
+	if len(page1) != 2 {
+		t.Fatalf("ListCharts page 1 len mismatch: got %d, want 2", len(page1))
+	}
+	if token1 == "" {
+		t.Fatalf("ListCharts page 1 token is empty, expected token")
+	}
+
+	page2, token2, err := repo.ListCharts(ctx, "dashboards/parent-dash-page", 2, token1, "", "chart_id", 0)
+	if err != nil {
+		t.Fatalf("ListCharts page 2 failed: %v", err)
+	}
+	if len(page2) != 1 || page2[0].GetName() != "charts/dp-3" {
+		t.Fatalf("ListCharts page 2 mismatch: got %+v", page2)
+	}
+	if token2 != "" {
+		t.Errorf("ListCharts page 2 token should be empty, got %q", token2)
+	}
+}
+
 func TestExtractChartCursor_Nil(t *testing.T) {
 	if _, err := ExtractChartCursor(nil); err == nil {
 		t.Errorf("ExtractChartCursor(nil) expected error, got nil")

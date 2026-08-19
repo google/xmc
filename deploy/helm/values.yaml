@@ -43,6 +43,9 @@ essDeployment:
 healthServiceDeployment:
   enabled: false
 
+componentsDeployment:
+  enabled: false
+
 metrics:
   enabled: false
 
@@ -78,6 +81,11 @@ rodDeployment:
 
 healthService:
   gcpServiceAccount: ""
+  logMonitorResourceName: "projects/YOUR_GCP_PROJECT_ID/locations/YOUR_GCP_REGION/services/xmc-log-monitor-YOUR_ENVIRONMENT_NAME"
+  observabilityUrl: ""
+  cacheTTL: "15s"
+  forceRefreshMaxRequests: 5
+  forceRefreshWindow: "5s"
 
 dashboardServiceDeployment:
   enabled: false
@@ -92,7 +100,7 @@ statusMessageHistoryEnabled: true
 reconciler:
   monitoring:
     # Deploy a Google Managed Prometheus PodMonitoring that scrapes the
-    # reconciler's /metrics endpoint (controller-runtime + MLRun RED metrics).
+    # reconciler's /metrics endpoint (MLRun RED metrics).
     enabled: true
     # Scrape interval for the PodMonitoring endpoint.
     interval: 60s
@@ -128,6 +136,15 @@ auth:
   allowedDomains: "YOUR_ALLOWED_DOMAINS"
   allowedEmails: "YOUR_ALLOWED_EMAILS"
   authorizedIamRole: "projects/YOUR_GCP_PROJECT_ID/roles/YOUR_ROLE"
+  adminIamRole: "roles/owner"
+  # Optional OAuth & authentication overrides for non-GCP, KinD, or local dev environments:
+  # redirectUrl: ""  # Defaults to "https://{{ apiHostname }}/api/callback"
+  # frontendUrl: ""  # Defaults to "https://{{ uiHostname }}"
+  # authUrl: ""      # Defaults to Google OAuth2 auth URL ("https://accounts.google.com/o/oauth2/v2/auth")
+  # tokenUrl: ""     # Defaults to Google OAuth2 token URL ("https://oauth2.googleapis.com/token")
+  # apiUrl: ""       # Defaults to Google OIDC userinfo URL ("https://openidconnect.googleapis.com/v1/userinfo")
+  # secureCookie: true # Set to false for plain HTTP local/KinD testing
+  # googleApplicationCredentials: "" # Optional path to service account credentials JSON file
 
 # Overrides for the xid-service Spanner database. If empty, the conventional
 # name projects/<projectId>/instances/xmc-<environment>/databases/xids-db-<environment>

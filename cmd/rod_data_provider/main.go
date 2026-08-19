@@ -25,6 +25,9 @@ import (
 	"syscall"
 	"time"
 
+	"cloud.google.com/go/spanner"
+	"google.golang.org/api/option"
+
 	"go/google"
 	gwruntime "golang/github_com/grpc_ecosystem/grpc_gateway/v/v2/runtime/runtime"
 	"golang/go_sync/errgroup/errgroup"
@@ -68,12 +71,12 @@ func run(ctx context.Context, cfg *Config) error {
 		logging.Warn(ctx, "Kueue manager setup failed or running out-of-cluster", "error", err)
 	}
 
-	workUnitStore, err := initWorkUnitStore(ctx, cfg)
+	workUnitStore, velocityStore, err := initStorage(ctx, cfg)
 	if err != nil {
 		return err
 	}
 
-	grpcComp, err := buildGRPCServer(cfg, kueueCache, workUnitStore)
+	grpcComp, err := buildGRPCServer(cfg, kueueCache, workUnitStore, velocityStore)
 	if err != nil {
 		return fmt.Errorf("failed to build gRPC server: %w", err)
 	}
@@ -121,10 +124,26 @@ func run(ctx context.Context, cfg *Config) error {
 	return g.Wait()
 }
 
-func initWorkUnitStore(ctx context.Context, cfg *Config) (WorkUnitFetcher, error) {
-	// TODO: Replace mock WorkUnit storage with real Spanner repository initialization once Spanner query implementation is merged.
-	logging.Info(ctx, "Using mock WorkUnit storage for PR 404")
-	return &workunit.Repository{}, nil
+func initStorage(ctx context.Context, cfg *Config) (WorkUnitFetcher, QueueVelocityFetcher, error) {
+	if cfg.SpannerDatabaseName == "" {
+		logging.Warn(ctx, "OPERATIONAL WARNING: Spanner database name not configured. Active WorkUnit queue queries will fail until database connection is configured.", "database", cfg.SpannerDatabaseName)
+		return nil, nil, nil
+	}
+	logging.Info(ctx, "Initializing Spanner WorkUnit storage", "database", cfg.SpannerDatabaseName)
+	var opts []option.ClientOption
+	if cfg.QuotaProjectID != "" {
+		opts = append(opts, option.WithQuotaProject(cfg.QuotaProjectID))
+	}
+	spannerClient, err := spanner.NewClient(ctx, cfg.SpannerDatabaseName, opts...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create spanner client for WorkUnit storage: %w", err)
+	}
+	wuStore, err := workunit.NewRepository(spannerClient, nil, workunit.RepositoryConfig{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create WorkUnit repository: %w", err)
+	}
+	velStore := &MockQueueVelocityFetcher{}
+	return wuStore, velStore, nil
 }
 
 // GRPCServerComponents contains the listener and gRPC server instance.
@@ -133,13 +152,13 @@ type GRPCServerComponents struct {
 	Server   *grpc.Server
 }
 
-func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache, workUnitStore WorkUnitFetcher) (GRPCServerComponents, error) {
+func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache, workUnitStore WorkUnitFetcher, velocityStore QueueVelocityFetcher) (GRPCServerComponents, error) {
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		return GRPCServerComponents{}, fmt.Errorf("failed to listen on gRPC port %s: %w", cfg.GRPCPort, err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
-	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache, workUnitStore))
+	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache, workUnitStore, velocityStore))
 	reflection.Register(grpcServer)
 	return GRPCServerComponents{
 		Listener: lis,

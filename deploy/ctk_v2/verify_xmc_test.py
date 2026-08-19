@@ -25,6 +25,19 @@ from deploy.ctk_v2 import verify_xmc
 
 
 class VerifyXmcTest(unittest.TestCase):
+    def test_parse_bool(self):
+        self.assertTrue(verify_xmc._parse_bool("true"))
+        self.assertTrue(verify_xmc._parse_bool("True"))
+        self.assertTrue(verify_xmc._parse_bool("1"))
+        self.assertTrue(verify_xmc._parse_bool("yes"))
+        self.assertTrue(verify_xmc._parse_bool(True))
+        self.assertFalse(verify_xmc._parse_bool("false"))
+        self.assertFalse(verify_xmc._parse_bool("0"))
+        self.assertFalse(verify_xmc._parse_bool("no"))
+        self.assertFalse(verify_xmc._parse_bool(False))
+        self.assertFalse(verify_xmc._parse_bool(None))
+        self.assertFalse(verify_xmc._parse_bool(""))
+
     def test_resolve_config_from_env(self):
         env_dict = {
             "ENVIRONMENT": "dev",
@@ -32,10 +45,25 @@ class VerifyXmcTest(unittest.TestCase):
             "PROJECT_ID": "my-project",
         }
         with mock.patch.dict(os.environ, env_dict, clear=True):
-            env, region, proj = verify_xmc._resolve_config()
+            env, region, proj, enable_components = verify_xmc._resolve_config()
             self.assertEqual(env, "dev")
             self.assertEqual(region, "us-central1")
             self.assertEqual(proj, "my-project")
+            self.assertFalse(enable_components)
+
+    def test_resolve_config_from_env_with_enable_components(self):
+        env_dict = {
+            "ENVIRONMENT": "dev",
+            "REGION": "us-central1",
+            "PROJECT_ID": "my-project",
+            "ENABLE_COMPONENTS": "true",
+        }
+        with mock.patch.dict(os.environ, env_dict, clear=True):
+            env, region, proj, enable_components = verify_xmc._resolve_config()
+            self.assertEqual(env, "dev")
+            self.assertEqual(region, "us-central1")
+            self.assertEqual(proj, "my-project")
+            self.assertTrue(enable_components)
 
     def test_resolve_config_from_yaml(self):
         yaml_content = """
@@ -49,20 +77,57 @@ vars:
         mock_path.read_text.return_value = yaml_content
 
         with mock.patch.dict(os.environ, {}, clear=True):
-            env, region, proj = verify_xmc._resolve_config(config_path=mock_path)
+            env, region, proj, enable_components = verify_xmc._resolve_config(config_path=mock_path)
             self.assertEqual(env, "staging")
             self.assertEqual(region, "us-east1")
             self.assertEqual(proj, "yaml-proj-123")
+            self.assertFalse(enable_components)
+
+    def test_resolve_config_from_yaml_with_enable_components(self):
+        yaml_content = """
+vars:
+  environment: staging
+  region: us-east1
+  project_id: yaml-proj-123
+  enable_components: true
+"""
+        mock_path = mock.MagicMock(spec=pathlib.Path)
+        mock_path.is_file.return_value = True
+        mock_path.read_text.return_value = yaml_content
+
+        with mock.patch.dict(os.environ, {}, clear=True):
+            env, region, proj, enable_components = verify_xmc._resolve_config(config_path=mock_path)
+            self.assertEqual(env, "staging")
+            self.assertEqual(region, "us-east1")
+            self.assertEqual(proj, "yaml-proj-123")
+            self.assertTrue(enable_components)
+
+    def test_resolve_config_env_overrides_yaml(self):
+        yaml_content = """
+vars:
+  environment: staging
+  region: us-east1
+  project_id: yaml-proj-123
+  enable_components: true
+"""
+        mock_path = mock.MagicMock(spec=pathlib.Path)
+        mock_path.is_file.return_value = True
+        mock_path.read_text.return_value = yaml_content
+
+        with mock.patch.dict(os.environ, {"ENABLE_COMPONENTS": "false"}, clear=True):
+            _, _, _, enable_components = verify_xmc._resolve_config(config_path=mock_path)
+            self.assertFalse(enable_components)
 
     def test_resolve_config_missing(self):
         mock_path = mock.MagicMock(spec=pathlib.Path)
         mock_path.is_file.return_value = False
 
         with mock.patch.dict(os.environ, {}, clear=True):
-            env, region, proj = verify_xmc._resolve_config(config_path=mock_path)
+            env, region, proj, enable_components = verify_xmc._resolve_config(config_path=mock_path)
             self.assertIsNone(env)
             self.assertIsNone(region)
             self.assertIsNone(proj)
+            self.assertFalse(enable_components)
 
     @mock.patch.object(verify_xmc, "_run_command")
     def test_check_k8s_resources(self, mock_run):
@@ -134,6 +199,28 @@ vars:
 
         output = captured.getvalue()
         self.assertIn("not found or status is unavailable", output)
+
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_components_disabled(self, mock_run):
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            verify_xmc._check_components(enable_components=False)
+
+        mock_run.assert_not_called()
+        output = captured.getvalue()
+        self.assertIn("--- 8. Component Controllers Status ---", output)
+        self.assertIn("Skipping Component Controllers check: enable_components is false.", output)
+
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_components_enabled(self, mock_run):
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            verify_xmc._check_components(enable_components=True)
+
+        mock_run.assert_not_called()
+        output = captured.getvalue()
+        self.assertIn("--- 8. Component Controllers Status ---", output)
+        self.assertIn("Foundational Component Controllers enabled.", output)
 
 
 if __name__ == "__main__":

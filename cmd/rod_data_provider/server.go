@@ -34,18 +34,22 @@ type server struct {
 	cfg           *Config
 	cache         *cache.KueueCache
 	workUnitStore WorkUnitFetcher
+	velocityStore QueueVelocityFetcher
 }
 
-func newServer(cfg *Config, cache *cache.KueueCache, fetcher WorkUnitFetcher) *server {
+var _ spb.ResourceObservabilityServiceServer = (*server)(nil)
+
+func newServer(cfg *Config, cache *cache.KueueCache, fetcher WorkUnitFetcher, velocityFetcher QueueVelocityFetcher) *server {
 	return &server{
 		cfg:           cfg,
 		cache:         cache,
 		workUnitStore: fetcher,
+		velocityStore: velocityFetcher,
 	}
 }
 
-// GetFittingQueues returns ClusterQueues matching requested resource requirements directly from in-memory KueueCache.
-func (s *server) GetFittingQueues(ctx context.Context, req *spb.GetFittingQueuesRequest) (*spb.GetFittingQueuesResponse, error) {
+// ListClusterQueues returns ClusterQueues matching requested resource requirements directly from in-memory KueueCache.
+func (s *server) ListClusterQueues(ctx context.Context, req *spb.ListClusterQueuesRequest) (*spb.ListClusterQueuesResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, status.FromContextError(err).Err()
 	}
@@ -58,9 +62,8 @@ func (s *server) GetFittingQueues(ctx context.Context, req *spb.GetFittingQueues
 
 	rfMap := buildResourceFlavorMap(s.cache)
 	overviews := buildQueueOverviews(s.cache, rfMap)
-	fittingQueues := filterFittingQueues(overviews, req)
 
-	return &spb.GetFittingQueuesResponse{
-		Queues: fittingQueues,
+	return &spb.ListClusterQueuesResponse{
+		Queues: overviews,
 	}, nil
 }

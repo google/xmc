@@ -35,15 +35,7 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 
 	clusterQueueName := req.GetQueueName()
 
-	targetQueues := []string{clusterQueueName}
-	if s.cache != nil {
-		localQueues := s.cache.GetLocalQueuesForClusterQueue(clusterQueueName)
-		for _, lqName := range localQueues {
-			if lqName != clusterQueueName {
-				targetQueues = append(targetQueues, lqName)
-			}
-		}
-	}
+	targetQueues := s.cache.GetLocalQueuesForClusterQueue(clusterQueueName)
 
 	result, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, req.GetPageSize(), req.GetPageToken())
 	if err != nil {
@@ -107,7 +99,7 @@ func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, now t
 	return &spb.DashboardJob{
 		Xid:                xid,
 		WorkUnitId:         wid,
-		User:               wu.GetNotes(),
+		User:               "", // TODO(#186): Properly populate user field
 		Priority:           int64(wu.GetPriority()),
 		Status:             extractWorkUnitState(wu),
 		TimeInQueueSeconds: calculateQueueDuration(wu, now),

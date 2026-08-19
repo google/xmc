@@ -22,7 +22,7 @@ limitations under the License.
   @if (isRefreshing()) {
     <xmc-loading-bar [isRefreshing]="true" />
   }
-  <table mat-table [dataSource]="workUnits ?? []" multiTemplateDataRows>
+  <table mat-table multiTemplateDataRows [dataSource]="workUnits ?? []">
     <ng-container [matColumnDef]="WorkUnitColumn.ID">
       <th mat-header-cell *matHeaderCellDef>ID</th>
       <td mat-cell *matCellDef="let workUnit">
@@ -37,7 +37,7 @@ limitations under the License.
       <td mat-cell *matCellDef="let workUnit">
         <xmc-status-chip
           [status]="getStatusChip(workUnit.currentWorkUnitExecution?.status?.state)"
-        ></xmc-status-chip>
+        />
       </td>
     </ng-container>
 
@@ -45,7 +45,7 @@ limitations under the License.
       <th mat-header-cell *matHeaderCellDef>Tags</th>
       <td mat-cell *matCellDef="let workUnit">
         @for (tag of workUnit.tags; track tag) {
-          <xmc-tag [text]="tag" [disableLinks]="disableWorkUnitTagLinks()"></xmc-tag>
+          <xmc-tag [text]="tag" [disableLinks]="disableWorkUnitTagLinks()" />
         }
       </td>
     </ng-container>
@@ -77,22 +77,23 @@ limitations under the License.
             @let disableReason = shouldDisableUrl(url, workUnit);
             @if (disableReason) {
               <span [matTooltip]="disableReason">
-                <button mat-icon-button disabled>
+                <button type="button" mat-icon-button disabled>
                   <mat-icon>{{ url.icon }}</mat-icon>
                 </button>
               </span>
             } @else {
               <a
                 mat-icon-button
-                [href]="url.processedUrl"
                 target="_blank"
+                rel="noreferrer"
+                [href]="url.processedUrl"
                 [matTooltip]="url.displayName"
               >
                 <mat-icon>{{ url.icon }}</mat-icon>
               </a>
             }
           } @else {
-            <button mat-icon-button disabled matTooltip="Waiting for data...">
+            <button type="button" mat-icon-button disabled matTooltip="Waiting for data...">
               <mat-icon>pending</mat-icon>
             </button>
           }
@@ -106,7 +107,7 @@ limitations under the License.
         @if (workUnit.statusMessages.length > 0) {
           <div class="status-messages-box">
             @for (message of workUnit.statusMessages; track $index) {
-              <xmc-status-message [message]="message"></xmc-status-message>
+              <xmc-status-message [message]="message" />
             }
           </div>
         }
@@ -137,13 +138,13 @@ limitations under the License.
         (pageSizeChange)="onPageSizeChange($event)"
       />
     }
-    <button mat-icon-button (click)="prevPage()" [disabled]="!hasPrevPage()">
+    <button type="button" mat-icon-button [disabled]="!hasPrevPage()" (click)="prevPage()">
       <mat-icon>chevron_left</mat-icon>
     </button>
 
     <span> Page {{ pageIndex() + 1 }} </span>
 
-    <button mat-icon-button (click)="nextPage()" [disabled]="!hasNextPage()">
+    <button type="button" mat-icon-button [disabled]="!hasNextPage()" (click)="nextPage()">
       <mat-icon>chevron_right</mat-icon>
     </button>
   </div>

@@ -28,7 +28,7 @@ import (
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
-func TestGetFittingQueues(t *testing.T) {
+func TestListClusterQueues(t *testing.T) {
 	ctx := context.Background()
 	c := cache.NewKueueCache()
 
@@ -68,16 +68,12 @@ func TestGetFittingQueues(t *testing.T) {
 		Port:     "8080",
 		GRPCPort: "50051",
 	}
-	srv := newServer(cfg, c, nil)
+	srv := newServer(cfg, c, nil, nil)
 
-	req := &spb.GetFittingQueuesRequest{
-		Requirements: []*spb.Resource{
-			{ResourceType: "nvidia-tesla-h100", Count: 4},
-		},
-	}
-	resp, err := srv.GetFittingQueues(ctx, req)
+	req := &spb.ListClusterQueuesRequest{}
+	resp, err := srv.ListClusterQueues(ctx, req)
 	if err != nil {
-		t.Fatalf("GetFittingQueues failed: %v", err)
+		t.Fatalf("ListClusterQueues failed: %v", err)
 	}
 
 	if len(resp.Queues) != 1 {
@@ -88,10 +84,10 @@ func TestGetFittingQueues(t *testing.T) {
 	}
 }
 
-func TestGetFittingQueues_Errors(t *testing.T) {
+func TestListClusterQueues_Errors(t *testing.T) {
 	c := cache.NewKueueCache()
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
-	srv := newServer(cfg, c, nil)
+	srv := newServer(cfg, c, nil, nil)
 
 	canceledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -100,14 +96,14 @@ func TestGetFittingQueues_Errors(t *testing.T) {
 		name     string
 		ctx      context.Context
 		server   *server
-		req      *spb.GetFittingQueuesRequest
+		req      *spb.ListClusterQueuesRequest
 		wantCode codes.Code
 	}{
 		{
 			name:     "canceled context",
 			ctx:      canceledCtx,
 			server:   srv,
-			req:      &spb.GetFittingQueuesRequest{},
+			req:      &spb.ListClusterQueuesRequest{},
 			wantCode: codes.Canceled,
 		},
 		{
@@ -120,22 +116,22 @@ func TestGetFittingQueues_Errors(t *testing.T) {
 		{
 			name:     "nil cache",
 			ctx:      context.Background(),
-			server:   newServer(cfg, nil, nil),
-			req:      &spb.GetFittingQueuesRequest{},
+			server:   newServer(cfg, nil, nil, nil),
+			req:      &spb.ListClusterQueuesRequest{},
 			wantCode: codes.Unavailable,
 		},
 		{
 			name:     "uninitialized cache cluster queues",
 			ctx:      context.Background(),
-			server:   newServer(cfg, &cache.KueueCache{}, nil),
-			req:      &spb.GetFittingQueuesRequest{},
+			server:   newServer(cfg, &cache.KueueCache{}, nil, nil),
+			req:      &spb.ListClusterQueuesRequest{},
 			wantCode: codes.Unavailable,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := tt.server.GetFittingQueues(tt.ctx, tt.req)
+			_, err := tt.server.ListClusterQueues(tt.ctx, tt.req)
 			if err == nil {
 				t.Fatalf("expected error, got nil")
 			}
@@ -152,7 +148,7 @@ func TestGetFittingQueues_Errors(t *testing.T) {
 
 func TestServerInitialization(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
-	srv := newServer(cfg, nil, nil)
+	srv := newServer(cfg, nil, nil, nil)
 	if srv.cfg != cfg {
 		t.Errorf("srv.cfg = %v, want %v", srv.cfg, cfg)
 	}

@@ -1,0 +1,71 @@
+[
+  {
+    "name": "dashboards/vcc_benchmark_suite",
+    "title": "VCC ResNet Benchmark Suite",
+    "description": "Cross-experiment performance comparison for VCC training runs",
+    "owner": "user@google.com",
+    "charts": [
+      {
+        "name": "experiments/234911122/charts/baseline",
+        "title": "VCC Baseline",
+        "description": "Baseline un-tuned training run",
+        "xid": 234911122,
+        "wid": 1,
+        "plots": [
+          { "plot_id": "val_loss_kpi", "title": "Validation Loss", "type": "SUMMARY_BOX" },
+          { "plot_id": "train_acc_kpi", "title": "Train Accuracy", "type": "SUMMARY_BOX" },
+          { "plot_id": "loss_vs_steps", "title": "Loss vs Steps", "type": "SCATTER" },
+          { "plot_id": "step_time_dist", "title": "Step Time Distribution", "type": "BAR" }
+        ]
+      },
+      {
+        "name": "experiments/234911123/charts/tuned_v1",
+        "title": "VCC Tuned LR",
+        "description": "Tuned learning rate (0.01 -> 0.005)",
+        "xid": 234911123,
+        "wid": 1,
+        "plots": [
+          { "plot_id": "val_loss_kpi", "title": "Validation Loss", "type": "SUMMARY_BOX" },
+          { "plot_id": "train_acc_kpi", "title": "Train Accuracy", "type": "SUMMARY_BOX" },
+          { "plot_id": "loss_vs_steps", "title": "Loss vs Steps", "type": "SCATTER" },
+          { "plot_id": "step_time_dist", "title": "Step Time Distribution", "type": "BAR" }
+        ]
+      },
+      {
+        "name": "experiments/234911124/charts/tuned_v2",
+        "title": "VCC Tuned Batch Size",
+        "description": "Increased batch size (128 -> 256)",
+        "xid": 234911124,
+        "wid": 1,
+        "plots": [
+          { "plot_id": "val_loss_kpi", "title": "Validation Loss", "type": "SUMMARY_BOX" },
+          { "plot_id": "train_acc_kpi", "title": "Train Accuracy", "type": "SUMMARY_BOX" },
+          { "plot_id": "loss_vs_steps", "title": "Loss vs Steps", "type": "SCATTER" },
+          { "plot_id": "step_time_dist", "title": "Step Time Distribution", "type": "BAR" }
+        ]
+      }
+    ],
+    "create_time": "2026-08-11T09:00:00Z",
+    "update_time": "2026-08-11T12:00:00Z"
+  },
+  {
+    "name": "dashboards/transformer_scaling",
+    "title": "Transformer Scaling Analysis",
+    "description": "Evaluating throughput and perplexity across GPU clusters",
+    "owner": "researcher@google.com",
+    "charts": [
+      {
+        "name": "experiments/9001/charts/scatter_multi",
+        "title": "Multi-GPU Cluster",
+        "xid": 9001,
+        "wid": 1,
+        "plots": [
+          { "plot_id": "throughput_kpi", "title": "Tokens / Sec", "type": "SUMMARY_BOX" },
+          { "plot_id": "eval_loss_curve", "title": "Eval Loss", "type": "SCATTER" }
+        ]
+      }
+    ],
+    "create_time": "2026-08-10T14:30:00Z",
+    "update_time": "2026-08-10T18:00:00Z"
+  }
+]

@@ -48,6 +48,14 @@ describe('FeatureFlagService', () => {
     it('isResourceDashboardEnabled should be false', () => {
       expect(state.service.isResourceDashboardEnabled).toBeFalse();
     });
+
+    it('isNonProdAuth should be false', () => {
+      expect(state.service.isNonProdAuth).toBeFalse();
+    });
+
+    it('isPerformanceDashboardEnabled should be false', () => {
+      expect(state.service.isPerformanceDashboardEnabled).toBeFalse();
+    });
   });
 
   describe('when XMC_FEATURE_FLAGS is defined', () => {
@@ -102,6 +110,42 @@ describe('FeatureFlagService', () => {
       it('isResourceDashboardEnabled should be false if resourceDashboardEnabled is false', () => {
         expect(state.service.isResourceDashboardEnabled).toBeFalse();
         expect(state.service.isFeatureEnabled('resourceDashboardEnabled')).toBeFalse();
+      });
+    });
+
+    describe('when isNonProdAuth is true', () => {
+      const state = setup({ isNonProdAuth: true });
+
+      it('isNonProdAuth should be true if isNonProdAuth is true', () => {
+        expect(state.service.isNonProdAuth).toBeTrue();
+        expect(state.service.isFeatureEnabled('isNonProdAuth')).toBeTrue();
+      });
+    });
+
+    describe('when isNonProdAuth is false', () => {
+      const state = setup({ isNonProdAuth: false });
+
+      it('isNonProdAuth should be false if isNonProdAuth is false', () => {
+        expect(state.service.isNonProdAuth).toBeFalse();
+        expect(state.service.isFeatureEnabled('isNonProdAuth')).toBeFalse();
+      });
+    });
+
+    describe('when performanceDashboardEnabled is true', () => {
+      const state = setup({ performanceDashboardEnabled: true });
+
+      it('isPerformanceDashboardEnabled should be true if performanceDashboardEnabled is true', () => {
+        expect(state.service.isPerformanceDashboardEnabled).toBeTrue();
+        expect(state.service.isFeatureEnabled('performanceDashboardEnabled')).toBeTrue();
+      });
+    });
+
+    describe('when performanceDashboardEnabled is false', () => {
+      const state = setup({ performanceDashboardEnabled: false });
+
+      it('isPerformanceDashboardEnabled should be false if performanceDashboardEnabled is false', () => {
+        expect(state.service.isPerformanceDashboardEnabled).toBeFalse();
+        expect(state.service.isFeatureEnabled('performanceDashboardEnabled')).toBeFalse();
       });
     });
   });

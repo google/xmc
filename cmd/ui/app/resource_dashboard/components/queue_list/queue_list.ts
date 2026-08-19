@@ -14,7 +14,10 @@
 
 import { ChangeDetectionStrategy, Component, input, model, output } from '@angular/core';
 
-import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import {
+  ClusterQueueSecondaryMetrics,
+  QueueOverview,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { QueueCardComponent } from 'xmanager_cloud/ui/app/resource_dashboard/components/queue_card/queue_card';
 
 @Component({
@@ -29,6 +32,9 @@ export class QueueListComponent {
   readonly queues = input<QueueOverview[]>([]);
   readonly selectedQueue = input<string>('');
   readonly isLoading = input<boolean>(false);
+  readonly secondaryDataMap = input<Record<string, ClusterQueueSecondaryMetrics>>({});
+  readonly isSecondaryLoading = input<boolean>(false);
+  readonly activeResourceFilters = input<string[]>([]);
   readonly selectQueue = output<string>();
 
   readonly velocityPeriod = model<string>('1h');

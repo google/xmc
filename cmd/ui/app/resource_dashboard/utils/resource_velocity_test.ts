@@ -14,7 +14,7 @@
 
 import 'jasmine';
 
-import { QueueSecondaryData } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { ClusterQueueSecondaryMetrics } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import {
   calculateJobVelocity,
@@ -26,10 +26,10 @@ import {
 } from './resource_velocity';
 
 describe('Resource Velocity Utilities', () => {
-  const mockSecondaryData: QueueSecondaryData = {
+  const mockSecondaryData: ClusterQueueSecondaryMetrics = {
     queuePredictability: [
       {
-        velocityRange: 'LAST_HOUR',
+        velocityRange: 'RANGE_PRESET_LAST_HOUR',
         pendingJobs: 5,
         jobVelocity: 12.5,
         resourceVelocity: {
@@ -42,7 +42,7 @@ describe('Resource Velocity Utilities', () => {
         },
       },
       {
-        velocityRange: 'LAST_DAY',
+        velocityRange: 'RANGE_PRESET_LAST_DAY',
         pendingJobs: 5,
         jobVelocity: 8.2,
         resourceVelocity: {
@@ -86,9 +86,9 @@ describe('Resource Velocity Utilities', () => {
 
   describe('calculateResourceVelocity', () => {
     it('should return resource velocity string for matching timeframe', () => {
-      expect(calculateResourceVelocity({}, '1h')).toBe('~0 GPUs/hr');
-      expect(calculateResourceVelocity(mockSecondaryData, '1h')).toBe('~4.5 GPUs/hr');
-      expect(calculateResourceVelocity(mockSecondaryData, '24h')).toBe('~2.1 GPUs/hr');
+      expect(calculateResourceVelocity({}, '1h')).toBe('~0 units/hr');
+      expect(calculateResourceVelocity(mockSecondaryData, '1h')).toBe('~4.5 nvidia.com/gpu/hr');
+      expect(calculateResourceVelocity(mockSecondaryData, '24h')).toBe('~2.1 nvidia.com/gpu/hr');
     });
   });
 

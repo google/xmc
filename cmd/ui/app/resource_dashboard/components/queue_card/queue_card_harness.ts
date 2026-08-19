@@ -22,6 +22,7 @@ export class QueueCardHarness extends ComponentHarness {
   private readonly queueNameElement = this.locatorFor('.queue-name');
   private readonly statusBadgeElement = this.locatorForOptional('.status-badge');
   private readonly tableRows = this.locatorForAll('.table-row');
+  private readonly copyFlagButtonElement = this.locatorForOptional('.copy-flag-btn');
 
   /** Gets the queue name title text. */
   async getQueueName(): Promise<string> {
@@ -60,6 +61,46 @@ export class QueueCardHarness extends ComponentHarness {
       throw new Error(`No flavor row found at index ${index}`);
     }
     return rows[index].text();
+  }
+
+  /** Clicks the copy flag button. */
+  async clickCopyFlagButton(): Promise<void> {
+    const btn = await this.copyFlagButtonElement();
+    if (!btn) {
+      throw new Error('Copy flag button not found');
+    }
+    await btn.click();
+  }
+
+  /** Gets the copy flag button text. */
+  async getCopyFlagButtonText(): Promise<string | null> {
+    const btn = await this.copyFlagButtonElement();
+    return btn ? btn.text() : null;
+  }
+
+  private readonly wipBannerElement = this.locatorForOptional('.wip-banner');
+  private readonly predictabilitySectionElement =
+    this.locatorForOptional('.predictability-section');
+  private readonly spinnerContainerElement = this.locatorForOptional(
+    '.predictability-spinner-container',
+  );
+
+  /** Gets the text of the Work in Progress banner if present. */
+  async getWipBannerText(): Promise<string | null> {
+    const banner = await this.wipBannerElement();
+    return banner ? banner.text() : null;
+  }
+
+  /** Gets the text of the predictability section if present. */
+  async getPredictabilitySectionText(): Promise<string | null> {
+    const section = await this.predictabilitySectionElement();
+    return section ? section.text() : null;
+  }
+
+  /** Gets the text of the predictability loading spinner container if present. */
+  async getSpinnerContainerText(): Promise<string | null> {
+    const spinner = await this.spinnerContainerElement();
+    return spinner ? spinner.text() : null;
   }
 
   /** Clicks the queue card element. */

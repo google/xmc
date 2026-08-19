@@ -16,6 +16,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   inject,
   OnDestroy,
   OnInit,
@@ -23,9 +24,10 @@ import {
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { catchError, EMPTY, Subject, Subscription, switchMap } from 'rxjs';
 
 import {
+  ClusterQueueSecondaryMetrics,
   QueueOverview,
   QueueResourceCapacity,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
@@ -36,9 +38,11 @@ import {
   AutoReloadService,
   ReloaderControl,
 } from '../common/components/autoreloader/autoreloader_service';
+import { WipBannerComponent } from '../common/components/wip_banner/wip_banner';
 import { QueueListComponent } from './components/queue_list/queue_list';
 import {
   ResourceRequirementQuery,
+  ResourceRequirementRow,
   SmartResourceFinderComponent,
 } from './components/smart_resource_finder/smart_resource_finder';
 import {
@@ -48,6 +52,7 @@ import {
   TAB_SMART_FINDER,
 } from './components/subnav_tabs/subnav_tabs';
 import { ROD_TERM_TOOLTIPS } from './constants/rod_tooltips';
+import { mapPeriodToRangePreset } from './utils/resource_velocity';
 
 /**
  * Resource Observability Dashboard (ROD) primary layout container component.
@@ -59,7 +64,13 @@ import { ROD_TERM_TOOLTIPS } from './constants/rod_tooltips';
   templateUrl: './resource_dashboard.ng.html',
   styleUrl: './resource_dashboard.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SubnavTabsComponent, SmartResourceFinderComponent, QueueListComponent, QueueJobsTable],
+  imports: [
+    SubnavTabsComponent,
+    SmartResourceFinderComponent,
+    QueueListComponent,
+    QueueJobsTable,
+    WipBannerComponent,
+  ],
 })
 export class ResourceDashboard implements OnInit, OnDestroy {
   private readonly autoReloadService = inject(AutoReloadService);
@@ -75,10 +86,56 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   protected readonly activeTab = signal<DashboardTab>(TAB_SMART_FINDER);
   protected readonly velocityPeriod = signal<string>('1h');
   protected readonly activeQuery = signal<ResourceRequirementQuery | null>(null);
+  protected readonly secondaryDataMap = signal<Record<string, ClusterQueueSecondaryMetrics>>({});
+  protected readonly isSecondaryLoading = signal<boolean>(true);
 
   protected readonly TAB_SMART_FINDER = TAB_SMART_FINDER;
   protected readonly TAB_RESOURCE_AVAILABILITY = TAB_RESOURCE_AVAILABILITY;
   protected readonly termTooltips = ROD_TERM_TOOLTIPS;
+
+  private readonly fetchTrigger$ = new Subject<void>();
+
+  constructor() {
+    this.setupSecondaryDataSubscription();
+
+    effect(() => {
+      const queues = this.queues();
+      const _period = this.velocityPeriod();
+      if (queues.length > 0) {
+        this.fetchSecondaryData();
+      }
+    });
+  }
+
+  private setupSecondaryDataSubscription(): void {
+    this.subscriptions.add(
+      this.fetchTrigger$
+        .pipe(
+          switchMap(() => {
+            const queueNames = this.queues()
+              .map((q) => q.queueName)
+              .filter((name): name is string => !!name);
+            if (!queueNames.length) {
+              this.isSecondaryLoading.set(false);
+              return EMPTY;
+            }
+            this.isSecondaryLoading.set(true);
+            return this.resourceService
+              .getQueueSecondaryData(queueNames, mapPeriodToRangePreset(this.velocityPeriod()))
+              .pipe(
+                catchError(() => {
+                  this.isSecondaryLoading.set(false);
+                  return EMPTY;
+                }),
+              );
+          }),
+        )
+        .subscribe((res) => {
+          this.secondaryDataMap.set(res.queuePredictability ?? {});
+          this.isSecondaryLoading.set(false);
+        }),
+    );
+  }
 
   protected readonly availableResourceTypes = computed<string[]>(() => {
     const types = new Set<string>();
@@ -92,26 +149,31 @@ export class ResourceDashboard implements OnInit, OnDestroy {
     return Array.from(types).sort();
   });
 
+  protected readonly activeResourceFilters = computed<string[]>(() => {
+    const query = this.activeQuery();
+    if (!query) return [];
+    const types = new Set<string>();
+    for (const req of query.requirements) {
+      if (req.resourceType && req.resourceType.trim() !== '') {
+        types.add(req.resourceType.trim());
+      }
+    }
+    return Array.from(types);
+  });
+
   protected readonly filteredQueues = computed<QueueOverview[]>(() => {
     const allQueues = this.queues();
     if (this.activeTab() !== TAB_SMART_FINDER) {
       return allQueues;
     }
     const query = this.activeQuery();
-    if (!query) {
+    if (!query || !query.requirements || query.requirements.length === 0) {
       return allQueues;
     }
-    const reqAmount = query.amount;
-    const activeFilters = query.resourceTypes
-      .map((t) => t.trim().toLowerCase())
-      .filter((t) => t !== '');
 
     return allQueues.filter((queue) => {
       const capacities = queue.queueCapacity ?? [];
-      if (!matchesResourceTypes(capacities, activeFilters)) {
-        return false;
-      }
-      return matchesRequestedAmount(capacities, activeFilters, reqAmount);
+      return query.requirements.every((row) => matchesRequirementRow(capacities, row));
     });
   });
 
@@ -132,10 +194,14 @@ export class ResourceDashboard implements OnInit, OnDestroy {
 
     this.subscriptions.add(
       this.reloader.reloader$.subscribe(() => {
-        // Auto-reload hook for periodic refresh
+        this.fetchSecondaryData();
       }),
     );
     this.reloader.start();
+  }
+
+  protected fetchSecondaryData() {
+    this.fetchTrigger$.next();
   }
 
   ngOnDestroy() {
@@ -156,42 +222,20 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   }
 }
 
-function matchesResourceTypes(
+function matchesRequirementRow(
   capacities: QueueResourceCapacity[] | undefined,
-  activeFilters: string[],
+  row: ResourceRequirementRow,
 ): boolean {
-  if (!activeFilters.length) return true;
   if (!capacities) return false;
-  return activeFilters.every((filter) =>
-    capacities.some((cap) => {
-      const rName = (cap.resourceType || '').toLowerCase();
-      return !!rName && (rName === filter || rName.includes(filter) || filter.includes(rName));
-    }),
-  );
-}
+  const filter = (row.resourceType || '').trim().toLowerCase();
+  const reqAmount = row.amount;
 
-function matchesRequestedAmount(
-  capacities: QueueResourceCapacity[] | undefined,
-  activeFilters: string[],
-  reqAmount?: number | null,
-): boolean {
-  if (!reqAmount || reqAmount <= 0) return true;
-  if (!capacities) return false;
-  const targetCapacities =
-    activeFilters.length > 0
-      ? capacities.filter((cap) => {
-          const rName = (cap.resourceType || '').toLowerCase();
-          return (
-            !!rName &&
-            activeFilters.some(
-              (filter) => rName === filter || rName.includes(filter) || filter.includes(rName),
-            )
-          );
-        })
-      : capacities;
-
-  return targetCapacities.some((cap) => {
+  return capacities.some((cap) => {
     const free = cap.freeCapacity ?? 0;
-    return free >= reqAmount;
+    if (free < reqAmount) return false;
+    if (!filter) return true;
+
+    const rName = (cap.resourceType || '').toLowerCase();
+    return !!rName && (rName === filter || rName.includes(filter) || filter.includes(rName));
   });
 }

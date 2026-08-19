@@ -17,10 +17,15 @@
 import tseslint from 'typescript-eslint';
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
 import angular from '@angular-eslint/eslint-plugin';
+import angularTemplate from '@angular-eslint/eslint-plugin-template';
+import angularTemplateParser from '@angular-eslint/template-parser';
 
 import eslintConfigPrettier from 'eslint-config-prettier';
 
 export default tseslint.config(
+  {
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**'],
+  },
   {
     files: ['**/*.ts'],
     extends: [...tseslint.configs.recommended],
@@ -70,22 +75,51 @@ export default tseslint.config(
           ],
         },
       ],
-      'max-lines-per-function': ['warn', { max: 35, skipComments: true }],
-      complexity: ['warn', { max: 10, variant: 'modified' }],
+      'max-lines-per-function': ['error', { max: 35, skipComments: true }],
+      complexity: ['error', { max: 10, variant: 'modified' }],
       'max-depth': ['error', 3],
+
+      '@typescript-eslint/no-explicit-any': 'error',
 
       '@angular-eslint/directive-selector': 'off',
       '@angular-eslint/component-selector': 'off',
       '@angular-eslint/no-output-on-prefix': 'error',
       '@angular-eslint/no-input-rename': 'error',
       '@angular-eslint/no-output-rename': 'error',
+      '@angular-eslint/no-inputs-metadata-property': 'error',
+      '@angular-eslint/no-outputs-metadata-property': 'error',
       '@angular-eslint/use-lifecycle-interface': 'error',
       '@angular-eslint/use-pipe-transform-interface': 'error',
       '@angular-eslint/prefer-standalone': 'error',
+
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Decorator[expression.callee.name="Input"], Decorator[expression.name="Input"]',
+          message: 'Use signal primitives `input()` instead of `@Input`.',
+        },
+        {
+          selector:
+            'Decorator[expression.callee.name="Output"], Decorator[expression.name="Output"]',
+          message: 'Use signal primitives `output()` instead of `@Output`.',
+        },
+        {
+          selector:
+            'Decorator[expression.callee.name="ViewChild"], Decorator[expression.name="ViewChild"]',
+          message: 'Use signal primitives `viewChild()` instead of `@ViewChild`.',
+        },
+      ],
     },
   },
   {
-    files: ['**/*_test.ts', '**/*.d.ts', '**/testing/**', '**/stubs/**', '**/mock_*.ts'],
+    files: [
+      '**/*_test.ts',
+      '**/*.spec.ts',
+      '**/*.d.ts',
+      '**/testing/**',
+      '**/stubs/**',
+      '**/mock_*.ts',
+    ],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
@@ -98,6 +132,7 @@ export default tseslint.config(
     files: ['**/*.ts'],
     ignores: [
       '**/*_test.ts',
+      '**/*.spec.ts',
       '**/*.d.ts',
       '**/testing/**',
       '**/stubs/**',
@@ -108,12 +143,50 @@ export default tseslint.config(
       'no-restricted-syntax': [
         'error',
         {
+          selector: 'Decorator[expression.callee.name="Input"], Decorator[expression.name="Input"]',
+          message: 'Use signal primitives `input()` instead of `@Input`.',
+        },
+        {
+          selector:
+            'Decorator[expression.callee.name="Output"], Decorator[expression.name="Output"]',
+          message: 'Use signal primitives `output()` instead of `@Output`.',
+        },
+        {
+          selector:
+            'Decorator[expression.callee.name="ViewChild"], Decorator[expression.name="ViewChild"]',
+          message: 'Use signal primitives `viewChild()` instead of `@ViewChild`.',
+        },
+        {
           selector:
             'Identifier[name=/^(Mock[A-Z]|mock[A-Z]|mock$)/]:not(MemberExpression > .property):not(ObjectExpression > Property > .key):not(MethodDefinition > .key):not(PropertyDefinition > .key):not(TSPropertySignature > .key):not(TSMethodSignature > .key)',
           message:
             'Identifiers starting with "Mock" or "mock" are not allowed in production files. Move mock classes and data to dedicated testing/mock files, and only reference them in app_config.ts for DI provisioning.',
         },
       ],
+    },
+  },
+  {
+    files: ['**/*.html'],
+    ignores: ['index.html'],
+    languageOptions: {
+      parser: angularTemplateParser,
+    },
+    plugins: {
+      '@angular-eslint/template': angularTemplate,
+    },
+    rules: {
+      '@angular-eslint/template/prefer-control-flow': 'error',
+      '@angular-eslint/template/banana-in-box': 'error',
+      '@angular-eslint/template/button-has-type': 'error',
+      '@angular-eslint/template/no-negated-async': 'error',
+      '@angular-eslint/template/attributes-order': 'error',
+      '@angular-eslint/template/prefer-self-closing-tags': 'error',
+      '@angular-eslint/template/no-duplicate-attributes': 'error',
+      '@angular-eslint/template/eqeqeq': 'error',
+      '@angular-eslint/template/prefer-at-empty': 'error',
+      '@angular-eslint/template/no-empty-control-flow': 'error',
+      '@angular-eslint/template/alt-text': 'error',
+      '@angular-eslint/template/valid-aria': 'error',
     },
   },
   eslintConfigPrettier,

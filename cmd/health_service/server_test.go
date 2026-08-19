@@ -16,200 +16,302 @@ package main
 
 import (
 	"context"
-	"net"
-	"net/http"
-	"net/http/httptest"
+	"errors"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	spb "xmanager_cloud/health_service/proto/api_go_grpc_proto"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
-	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
-func TestGetHealthStatus_AllHealthy(t *testing.T) {
-	// 1. Setup mock HTTP servers
-	essServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/readyz" {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
-		}
-	}))
-	defer essServer.Close()
+type mockHealthChecker struct {
+	result    RunChecksResult
+	err       error
+	callCount int64
+	delay     time.Duration
+}
 
-	actuatorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/readyz" {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
-		}
-	}))
-	defer actuatorServer.Close()
-
-	reconcilerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/readyz" {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
-		}
-	}))
-	defer reconcilerServer.Close()
-
-	// 2. Setup mock gRPC health server
-	lis, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		t.Fatalf("failed to listen for gRPC server: %v", err)
+func (m *mockHealthChecker) RunChecks(ctx context.Context) RunChecksResult {
+	atomic.AddInt64(&m.callCount, 1)
+	if m.delay > 0 {
+		time.Sleep(m.delay)
 	}
-	grpcServer := grpc.NewServer()
-	healthServer := health.NewServer()
-	healthServer.SetServingStatus("xmc.XidService", grpc_health_v1.HealthCheckResponse_SERVING)
-	grpc_health_v1.RegisterHealthServer(grpcServer, healthServer)
-	go func() {
-		_ = grpcServer.Serve(lis)
-	}()
-	defer grpcServer.Stop()
+	return m.result
+}
 
-	// 3. Configure and create server
+func (m *mockHealthChecker) Close() error {
+	return m.err
+}
+
+type mockAdminRoleGuard struct {
+	email   string
+	hasRole bool
+	err     error
+}
+
+func (m *mockAdminRoleGuard) CheckAdminRole(ctx context.Context) error {
+	return m.err
+}
+
+func (m *mockAdminRoleGuard) HasAdminRole(ctx context.Context) (string, bool, error) {
+	if m.err != nil {
+		return "", false, m.err
+	}
+	email := m.email
+	if email == "" {
+		email = "mock-user@google.com"
+	}
+	return email, m.hasRole, nil
+}
+
+type testFixture struct {
+	checker *mockHealthChecker
+	server  *server
+	t       *testing.T
+}
+
+func newTestFixture(t *testing.T, cacheTTL time.Duration, maxRequests int, window time.Duration) *testFixture {
 	cfg := &Config{
-		Port:          "8080",
-		GRPCPort:      "50051",
-		ProjectID:     "test-project",
-		EssURL:        essServer.URL,
-		XidAddr:       lis.Addr().String(),
-		ActuatorURL:   actuatorServer.URL,
-		ReconcilerURL: reconcilerServer.URL,
+		CacheTTL:                cacheTTL,
+		ForceRefreshMaxRequests: maxRequests,
+		ForceRefreshWindow:      window,
 	}
-	mockEss := &mockSpannerHealthClient{version: 6, dirty: false}
-	mockXid := &mockSpannerHealthClient{version: 1, dirty: false}
-	s, err := newServer(cfg, mockEss, mockXid)
-	if err != nil {
-		t.Fatalf("failed to create server: %v", err)
+	mockResult := RunChecksResult{
+		Components: []*spb.ComponentHealth{
+			{Name: "ESS", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+			{Name: "XID", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+			{Name: "Log Monitor", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+		},
 	}
-	defer s.Close()
-
-	// 4. Run health check
-	resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
-	if err != nil {
-		t.Fatalf("GetHealthStatus failed: %v", err)
-	}
-
-	// 5. Verify results
-	if resp.HealthState != spb.HealthState_HEALTH_STATE_HEALTHY {
-		t.Errorf("Expected overall status 'HEALTH_STATE_HEALTHY', got %v", resp.HealthState)
-	}
-
-	if resp.SystemInfo.EssDbSchemaVersion != "6" {
-		t.Errorf("Expected EssDbSchemaVersion '6', got %q", resp.SystemInfo.EssDbSchemaVersion)
-	}
-	if resp.SystemInfo.XidDbSchemaVersion != "1" {
-		t.Errorf("Expected XidDbSchemaVersion '1', got %q", resp.SystemInfo.XidDbSchemaVersion)
-	}
-
-	expectedComponents := map[string]spb.HealthState{
-		"ESS":         spb.HealthState_HEALTH_STATE_HEALTHY,
-		"XID":         spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Actuator":    spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Reconciler":  spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Log Monitor": spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Spanner ESS": spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Spanner XID": spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
-	}
-
-	if len(resp.Components) != 8 {
-		t.Fatalf("Expected 8 components, got %d", len(resp.Components))
-	}
-
-	for _, c := range resp.Components {
-		expectedState, found := expectedComponents[c.Name]
-		if !found {
-			t.Errorf("Unexpected component in response: %q", c.Name)
-			continue
-		}
-		if c.HealthState != expectedState {
-			t.Errorf("Expected component %q to be %v, got %v (error: %q)", c.Name, expectedState, c.HealthState, c.ErrorMessage)
-		}
+	checker := &mockHealthChecker{result: mockResult}
+	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true})
+	return &testFixture{
+		checker: checker,
+		server:  s,
+		t:       t,
 	}
 }
 
-func TestGetHealthStatus_SomeUnhealthy(t *testing.T) {
-	// ESS returns 500 Unhealthy
-	essServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer essServer.Close()
+func (f *testFixture) close() {
+	f.server.Close()
+}
 
-	// Actuator is completely unreachable (mock invalid URL)
-	actuatorURL := "http://localhost:9999" // Assuming nothing runs on port 9999
+func (f *testFixture) assertCallCount(expected int) {
+	f.t.Helper()
+	if actual := int(atomic.LoadInt64(&f.checker.callCount)); actual != expected {
+		f.t.Errorf("expected call count %d, got %d", expected, actual)
+	}
+}
 
-	reconcilerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer reconcilerServer.Close()
+type mockTransportStream struct {
+	grpc.ServerTransportStream
+	header metadata.MD
+}
 
-	// XID serving status is NOT_SERVING
-	lis, err := net.Listen("tcp", "localhost:0")
+func (m *mockTransportStream) SetHeader(md metadata.MD) error {
+	m.header = metadata.Join(m.header, md)
+	return nil
+}
+
+func (f *testFixture) assertCall(ctx context.Context, req *spb.GetHealthStatusRequest, expectedCalls int) *spb.HealthStatusResponse {
+	f.t.Helper()
+	return f.assertCallWithHeader(ctx, req, expectedCalls, "")
+}
+
+func (f *testFixture) assertCallWithHeader(ctx context.Context, req *spb.GetHealthStatusRequest, expectedCalls int, expectedCacheHeader string) *spb.HealthStatusResponse {
+	f.t.Helper()
+	stream := &mockTransportStream{}
+	resp, err := f.server.GetHealthStatus(grpc.NewContextWithServerTransportStream(ctx, stream), req)
 	if err != nil {
-		t.Fatalf("failed to listen for gRPC server: %v", err)
+		f.t.Fatalf("call failed: %v", err)
 	}
-	grpcServer := grpc.NewServer()
-	healthServer := health.NewServer()
-	healthServer.SetServingStatus("xmc.XidService", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
-	grpc_health_v1.RegisterHealthServer(grpcServer, healthServer)
-	go func() {
-		_ = grpcServer.Serve(lis)
-	}()
-	defer grpcServer.Stop()
+	f.assertCallCount(expectedCalls)
+	if expectedCacheHeader != "" {
+		if got := stream.header.Get("x-cache"); len(got) == 0 || got[0] != expectedCacheHeader {
+			f.t.Errorf("expected X-Cache header %q, got %v", expectedCacheHeader, got)
+		}
+	}
+	return resp
+}
 
-	cfg := &Config{
-		Port:          "8080",
-		GRPCPort:      "50051",
-		ProjectID:     "test-project",
-		EssURL:        essServer.URL,
-		XidAddr:       lis.Addr().String(),
-		ActuatorURL:   actuatorURL,
-		ReconcilerURL: reconcilerServer.URL,
+func (f *testFixture) assertRateLimited(ctx context.Context, req *spb.GetHealthStatusRequest, expectedCalls int) {
+	f.t.Helper()
+	_, err := f.server.GetHealthStatus(ctx, req)
+	if err == nil {
+		f.t.Fatal("expected rate limit error, got nil")
 	}
-	s, err := newServer(cfg, nil, nil)
-	if err != nil {
-		t.Fatalf("failed to create server: %v", err)
+	st, ok := status.FromError(err)
+	if !ok || st.Code() != codes.ResourceExhausted {
+		f.t.Errorf("expected ResourceExhausted error, got %v", err)
 	}
+	f.assertCallCount(expectedCalls)
+}
+
+func TestGetHealthStatus(t *testing.T) {
+	tests := []struct {
+		name               string
+		cfg                *Config
+		mockResult         RunChecksResult
+		expectedState      spb.HealthState
+		expectedSystemInfo *spb.SystemInfo
+		expectedComponents map[string]spb.HealthState
+	}{
+		{
+			name: "AllHealthy",
+			cfg: &Config{
+				Port:             "8080",
+				GRPCPort:         "50051",
+				ProjectID:        "test-project",
+				AppVersion:       "test-version-1.2.3",
+				BuildVersion:     "test-build-version-4.5.6",
+				ObservabilityURL: "http://test-observability-url",
+			},
+			mockResult: RunChecksResult{
+				EssDbSchemaVersion: "6",
+				XidDbSchemaVersion: "1",
+				Components: []*spb.ComponentHealth{
+					{Name: "ESS", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "XID", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "Actuator", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "Reconciler", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "Log Monitor", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "Spanner ESS", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "Spanner XID", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "Redis", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+				},
+			},
+			expectedState: spb.HealthState_HEALTH_STATE_HEALTHY,
+			expectedSystemInfo: &spb.SystemInfo{
+				AppVersion:         "test-version-1.2.3",
+				BuildVersion:       "test-build-version-4.5.6",
+				ObservabilityUrl:   "http://test-observability-url",
+				EssDbSchemaVersion: "6",
+				XidDbSchemaVersion: "1",
+			},
+			expectedComponents: map[string]spb.HealthState{
+				"ESS":         spb.HealthState_HEALTH_STATE_HEALTHY,
+				"XID":         spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Actuator":    spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Reconciler":  spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Log Monitor": spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Spanner ESS": spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Spanner XID": spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
+			},
+		},
+		{
+			name: "UnhealthyWithFallbackDefaults",
+			cfg: &Config{
+				Port:      "8080",
+				GRPCPort:  "50051",
+				ProjectID: "test-project",
+			},
+			mockResult: RunChecksResult{
+				EssDbSchemaVersion: "",
+				XidDbSchemaVersion: "",
+				Components: []*spb.ComponentHealth{
+					{Name: "ESS", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "500 Internal Server Error"},
+					{Name: "XID", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "NOT_SERVING"},
+					{Name: "Actuator", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "connection refused"},
+					{Name: "Reconciler", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "Log Monitor", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+					{Name: "Spanner ESS", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "spanner client not initialized"},
+					{Name: "Spanner XID", HealthState: spb.HealthState_HEALTH_STATE_UNHEALTHY, ErrorMessage: "spanner client not initialized"},
+					{Name: "Redis", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+				},
+			},
+			expectedState: spb.HealthState_HEALTH_STATE_UNHEALTHY,
+			expectedSystemInfo: &spb.SystemInfo{
+				AppVersion:         "unknown",
+				BuildVersion:       "unknown",
+				ObservabilityUrl:   "",
+				EssDbSchemaVersion: "unknown",
+				XidDbSchemaVersion: "unknown",
+			},
+			expectedComponents: map[string]spb.HealthState{
+				"ESS":         spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"XID":         spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"Actuator":    spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"Reconciler":  spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Log Monitor": spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Spanner ESS": spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"Spanner XID": spb.HealthState_HEALTH_STATE_UNHEALTHY,
+				"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checker := &mockHealthChecker{result: tt.mockResult}
+			s := newServer(tt.cfg, checker, &mockAdminRoleGuard{hasRole: true})
+			defer s.Close()
+
+			resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
+			if err != nil {
+				t.Fatalf("GetHealthStatus failed: %v", err)
+			}
+
+			if resp.HealthState != tt.expectedState {
+				t.Errorf("Expected overall status %v, got %v", tt.expectedState, resp.HealthState)
+			}
+
+			if resp.SystemInfo.AppVersion != tt.expectedSystemInfo.AppVersion {
+				t.Errorf("Expected AppVersion %q, got %q", tt.expectedSystemInfo.AppVersion, resp.SystemInfo.AppVersion)
+			}
+			if resp.SystemInfo.BuildVersion != tt.expectedSystemInfo.BuildVersion {
+				t.Errorf("Expected BuildVersion %q, got %q", tt.expectedSystemInfo.BuildVersion, resp.SystemInfo.BuildVersion)
+			}
+			if resp.SystemInfo.ObservabilityUrl != tt.expectedSystemInfo.ObservabilityUrl {
+				t.Errorf("Expected ObservabilityUrl %q, got %q", tt.expectedSystemInfo.ObservabilityUrl, resp.SystemInfo.ObservabilityUrl)
+			}
+			if resp.SystemInfo.EssDbSchemaVersion != tt.expectedSystemInfo.EssDbSchemaVersion {
+				t.Errorf("Expected EssDbSchemaVersion %q, got %q", tt.expectedSystemInfo.EssDbSchemaVersion, resp.SystemInfo.EssDbSchemaVersion)
+			}
+			if resp.SystemInfo.XidDbSchemaVersion != tt.expectedSystemInfo.XidDbSchemaVersion {
+				t.Errorf("Expected XidDbSchemaVersion %q, got %q", tt.expectedSystemInfo.XidDbSchemaVersion, resp.SystemInfo.XidDbSchemaVersion)
+			}
+
+			if len(resp.Components) != len(tt.expectedComponents) {
+				t.Fatalf("Expected %d components, got %d", len(tt.expectedComponents), len(resp.Components))
+			}
+
+			for _, c := range resp.Components {
+				expectedState, found := tt.expectedComponents[c.Name]
+				if !found {
+					t.Errorf("Unexpected component in response: %q", c.Name)
+					continue
+				}
+				if c.HealthState != expectedState {
+					t.Errorf("Expected component %q to be %v, got %v (error: %q)", c.Name, expectedState, c.HealthState, c.ErrorMessage)
+				}
+			}
+		})
+	}
+}
+
+func TestGetHealthStatus_Unauthorized(t *testing.T) {
+	cfg := &Config{Port: "8080", GRPCPort: "50051"}
+	checker := &mockHealthChecker{}
+	guard := &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden")}
+	s := newServer(cfg, checker, guard)
 	defer s.Close()
 
-	resp, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
-	if err != nil {
-		t.Fatalf("GetHealthStatus failed: %v", err)
+	_, err := s.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
+	if err == nil {
+		t.Fatal("Expected error for unauthorized GetHealthStatus call, got nil")
 	}
-
-	// Verify overall state is unhealthy
-	if resp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY {
-		t.Errorf("Expected overall status 'HEALTH_STATE_UNHEALTHY', got %v", resp.HealthState)
-	}
-
-	if resp.SystemInfo.EssDbSchemaVersion != "unknown" {
-		t.Errorf("Expected EssDbSchemaVersion 'unknown', got %q", resp.SystemInfo.EssDbSchemaVersion)
-	}
-	if resp.SystemInfo.XidDbSchemaVersion != "unknown" {
-		t.Errorf("Expected XidDbSchemaVersion 'unknown', got %q", resp.SystemInfo.XidDbSchemaVersion)
-	}
-
-	expectedComponents := map[string]spb.HealthState{
-		"ESS":         spb.HealthState_HEALTH_STATE_UNHEALTHY,
-		"XID":         spb.HealthState_HEALTH_STATE_UNHEALTHY,
-		"Actuator":    spb.HealthState_HEALTH_STATE_UNHEALTHY,
-		"Reconciler":  spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Log Monitor": spb.HealthState_HEALTH_STATE_HEALTHY,
-		"Spanner ESS": spb.HealthState_HEALTH_STATE_UNHEALTHY,
-		"Spanner XID": spb.HealthState_HEALTH_STATE_UNHEALTHY,
-		"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
-	}
-
-	for _, c := range resp.Components {
-		expectedState := expectedComponents[c.Name]
-		if c.HealthState != expectedState {
-			t.Errorf("Expected component %q to be %v, got %v (error: %q)", c.Name, expectedState, c.HealthState, c.ErrorMessage)
-		}
+	if status.Code(err) != codes.PermissionDenied {
+		t.Errorf("Expected status code %v, got %v", codes.PermissionDenied, status.Code(err))
 	}
 }
 
@@ -232,10 +334,17 @@ func TestListConfigEntries(t *testing.T) {
 		XidAddr:   "localhost:50051",
 		ConfigDir: tempDir,
 	}
-	s, err := newServer(cfg, nil, nil)
+	checker, err := NewHealthChecker(HealthCheckerParams{
+		Config:          cfg,
+		EssHealthClient: nil,
+		XidHealthClient: nil,
+		RedisClient:     nil,
+		CloudRunService: nil,
+	})
 	if err != nil {
-		t.Fatalf("failed to create server: %v", err)
+		t.Fatalf("failed to create health checker: %v", err)
 	}
+	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true})
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -260,24 +369,156 @@ func TestListConfigEntries(t *testing.T) {
 	}
 }
 
-func TestGetUserInfo(t *testing.T) {
-	cfg := &Config{Port: "8080", GRPCPort: "50051", ProjectID: "test-project", XidAddr: "localhost:50051"}
-	s, err := newServer(cfg, nil, nil)
-	if err != nil {
-		t.Fatalf("failed to create server: %v", err)
-	}
+func TestListConfigEntries_Unauthorized(t *testing.T) {
+	cfg := &Config{Port: "8080", GRPCPort: "50051"}
+	checker := &mockHealthChecker{}
+	guard := &mockAdminRoleGuard{err: status.Errorf(codes.PermissionDenied, "forbidden")}
+	s := newServer(cfg, checker, guard)
 	defer s.Close()
 
-	resp, err := s.GetUserInfo(context.Background(), &spb.GetUserInfoRequest{})
-	if err != nil {
-		t.Fatalf("GetUserInfo failed: %v", err)
+	_, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
+	if err == nil {
+		t.Fatal("Expected error for unauthorized ListConfigEntries call, got nil")
+	}
+	if status.Code(err) != codes.PermissionDenied {
+		t.Errorf("Expected status code %v, got %v", codes.PermissionDenied, status.Code(err))
+	}
+}
+
+func TestGetUserInfo(t *testing.T) {
+	tests := []struct {
+		name           string
+		guard          AdminRoleGuard
+		wantEmail      string
+		wantPrivileges []spb.Privilege
+	}{
+		{
+			name: "admin user receives admin panel privilege",
+			guard: &mockAdminRoleGuard{
+				email:   "admin@google.com",
+				hasRole: true,
+			},
+			wantEmail: "admin@google.com",
+			wantPrivileges: []spb.Privilege{
+				spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL,
+			},
+		},
+		{
+			name: "non-admin user receives no privileges",
+			guard: &mockAdminRoleGuard{
+				email:   "viewer@google.com",
+				hasRole: false,
+			},
+			wantEmail:      "viewer@google.com",
+			wantPrivileges: nil,
+		},
+		{
+			name: "guard error returns empty response without failure",
+			guard: &mockAdminRoleGuard{
+				err: errors.New("auth failure"),
+			},
+			wantEmail:      "",
+			wantPrivileges: nil,
+		},
 	}
 
-	if resp.UserEmail != "mock-user@google.com" {
-		t.Errorf("Expected UserEmail 'mock-user@google.com', got %q", resp.UserEmail)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newServer(&Config{}, &mockHealthChecker{}, tt.guard)
+			resp, err := s.GetUserInfo(context.Background(), &spb.GetUserInfoRequest{})
+			if err != nil {
+				t.Fatalf("GetUserInfo failed: %v", err)
+			}
 
-	if len(resp.Privileges) != 1 || resp.Privileges[0] != spb.Privilege_PRIVILEGE_ACCESS_ADMIN_PANEL {
-		t.Errorf("Expected privileges [PRIVILEGE_ACCESS_ADMIN_PANEL], got %v", resp.Privileges)
+			if resp.UserEmail != tt.wantEmail {
+				t.Errorf("Expected UserEmail %q, got %q", tt.wantEmail, resp.UserEmail)
+			}
+
+			if len(resp.Privileges) != len(tt.wantPrivileges) {
+				t.Fatalf("Expected %d privileges, got %d", len(tt.wantPrivileges), len(resp.Privileges))
+			}
+			for i, p := range resp.Privileges {
+				if p != tt.wantPrivileges[i] {
+					t.Errorf("Expected privilege at index %d to be %v, got %v", i, tt.wantPrivileges[i], p)
+				}
+			}
+		})
 	}
+}
+
+func TestGetHealthStatus_CachingAndRateLimiting(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		// Use production-like values (15s cache, 5 requests per 5s rate limit)
+		tf := newTestFixture(t, 15*time.Second, 5, 5*time.Second)
+		defer tf.close()
+
+		ctx := context.Background()
+
+		// 1. First call - Cache Miss (X-Cache: MISS)
+		resp1 := tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{}, 1, "MISS")
+
+		// 2. Second call immediately - Cache Hit (X-Cache: HIT)
+		resp2 := tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{}, 1, "HIT")
+		if resp1.HealthCheckTime.AsTime() != resp2.HealthCheckTime.AsTime() {
+			t.Error("expected cached response to have the same health check time")
+		}
+
+		// 3. Sleep past TTL (15s) to expire cache
+		time.Sleep(16 * time.Second)
+
+		// 4. Third call - Cache Miss (X-Cache: MISS)
+		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{}, 2, "MISS")
+
+		// 5. Force refresh calls - allowed up to 5 times (limit is 5, all X-Cache: MISS)
+		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 3, "MISS")
+		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 4, "MISS")
+		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 5, "MISS")
+		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 6, "MISS")
+		tf.assertCallWithHeader(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 7, "MISS")
+
+		// 6. 6th Force refresh immediately - Rate Limited
+		tf.assertRateLimited(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 7)
+
+		// 7. Sleep past rate limit window (5s) to reset rate limit
+		time.Sleep(6 * time.Second)
+
+		// 8. Force refresh succeeds again
+		tf.assertCall(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, 8)
+	})
+}
+
+func TestGetHealthStatus_RateLimitingBypassed(t *testing.T) {
+	tf := newTestFixture(t, 15*time.Second, 0, 0)
+	defer tf.close()
+
+	ctx := context.Background()
+
+	// 10 force refresh requests immediately should all succeed without rate limit
+	for i := 1; i <= 10; i++ {
+		tf.assertCall(ctx, &spb.GetHealthStatusRequest{ForceRefresh: true}, i)
+	}
+}
+
+func TestGetHealthStatus_Singleflight(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tf := newTestFixture(t, 15*time.Second, 5, 5*time.Second)
+		defer tf.close()
+
+		// Simulate a slow backend check (1 second)
+		tf.checker.delay = 1 * time.Second
+
+		// Launch 10 concurrent requests
+		var wg sync.WaitGroup
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, _ = tf.server.GetHealthStatus(context.Background(), &spb.GetHealthStatusRequest{})
+			}()
+		}
+		wg.Wait()
+
+		// Verify only 1 backend call was made (others collapsed via singleflight)
+		tf.assertCallCount(1)
+	})
 }

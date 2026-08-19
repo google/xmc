@@ -22,7 +22,6 @@ import (
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
 	"xmanager_cloud/storage/storage"
-	"xmanager_cloud/xid_service/config"
 	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	msgpb "xmanager_cloud/xid_service/proto/messages_go_proto"
 )
@@ -336,7 +335,7 @@ func TestCheckUserAuthorization_Failures(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			server := NewXIDServer(config.Config{}, tc.mockAuth, tc.mockStorage)
+			server := newTestServer(t, withAuthorizer(tc.mockAuth), withStorage(tc.mockStorage))
 			_, err := server.CheckUserAuthorization(ctx, &apipb.CheckUserAuthorizationRequest{
 				Name:     proto.String("xids/1"),
 				RoleType: msgpb.XidAcls_READER.Enum(),

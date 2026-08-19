@@ -33,7 +33,7 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 
 | Task Intent / Workflow | Primary Workflow Rule / Skill |
 | :--- | :--- |
-| PR Review / Inspection | [PR Review Guidelines](rules/pr_review_guidelines.md) |
+| PR Review / Inspection | [XMC Review PR Skill](skills/xmc_review_pr/SKILL.md) & [PR Review Guidelines](rules/pr_review_guidelines.md) |
 | PR Creation & Authoring | [XMC Create PR Skill](skills/xmc_create_pr/SKILL.md) & [GitHub Authoring Standards](rules/github_authoring_and_prs.md) |
 | Addressing PR Comments | [Address PR Comment Skill](skills/xmc_address_pr_comment/SKILL.md) & [PR Review Guidelines](rules/pr_review_guidelines.md) |
 | Feature Development & Refactoring | [XMC Feature Development Skill](skills/xmc_feature_development/SKILL.md) & [Core Engineering Standards](rules/core_engineering.md) |
@@ -52,6 +52,7 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 - 🛠️ [Skills & Automation Guidelines](rules/skills_and_automation.md): Extracting complex logic into testable Python scripts, applying DRY/KISS to skills, preventing context creep, and delegating work to subagents.
 
 ### GitHub & PR Workflows
+- 🔍 [XMC Review PR Skill](skills/xmc_review_pr/SKILL.md): Interactive multi-agent PR review workflow enforcing code rules, open direction discussions, explicit confirmation gates, inline comment deduplication, and follow-up re-review verification.
 - 🚀 [GitHub Authoring & PR Creation](rules/github_authoring_and_prs.md): Git branch prefixes (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`, `koder/`), mandatory session initialization branch check policy, Conventional Commit standards, PR title & body formatting rules, mandatory tags (`TAG=agy`), pre-commit linter policy, forbidden raw log dumps, and CI wait buffer policy.
 - 📦 [XMC Create PR Skill](skills/xmc_create_pr/SKILL.md): Playbook for checking branch format, running pre-commit hooks, formatting PR body templates, updating PR descriptions via helper script, and managing CI wait buffers.
 - ⚡ [XMC Feature Development Skill](skills/xmc_feature_development/SKILL.md): Playbook for requirements scoping, clean code design, running affected test matrices, measuring Bazel coverage, and pre-commit verification.

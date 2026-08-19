@@ -14,11 +14,14 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { catchError, Observable, of } from 'rxjs';
+import { catchError, Observable, of, throwError } from 'rxjs';
 
 import {
-  GetFittingQueuesResponse,
+  BatchGetQueueSecondaryDataResponse,
   GetRunningAndPendingJobsResponse,
+  GetSubmitQueueResponse,
+  ListClusterQueuesResponse,
+  RangePreset,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 
 import { XMC_API_DOMAIN } from './constants';
@@ -34,11 +37,11 @@ export class ResourceService {
   private readonly http = inject(HttpClient);
 
   /**
-   * Fetches the list of cluster queues strictly matching the GetFittingQueuesResponse proto shape.
+   * Fetches the list of cluster queues strictly matching the ListClusterQueuesResponse proto shape.
    */
-  getClusterQueues(): Observable<GetFittingQueuesResponse> {
+  getClusterQueues(): Observable<ListClusterQueuesResponse> {
     return this.http
-      .get<GetFittingQueuesResponse>(`${XMC_API_DOMAIN}/clusterqueues`, {
+      .get<ListClusterQueuesResponse>(`${XMC_API_DOMAIN}/clusterqueues`, {
         withCredentials: true,
       })
       .pipe(
@@ -62,6 +65,47 @@ export class ResourceService {
         catchError((error) => {
           console.error(`Failed to fetch jobs for queue ${queueName}:`, error);
           return of({ jobs: [], totalQueueSize: 0, nextPageToken: '' });
+        }),
+      );
+  }
+
+  /**
+   * Fetches the target submission queue (LocalQueue) for a given cluster queue.
+   */
+  getSubmitQueue(queueName: string): Observable<GetSubmitQueueResponse> {
+    return this.http
+      .get<GetSubmitQueueResponse>(
+        `${XMC_API_DOMAIN}/clusterqueues/${encodeURIComponent(queueName)}/submitqueue`,
+        { withCredentials: true },
+      )
+      .pipe(
+        catchError((error) => {
+          console.error(`Failed to fetch submit queue for ${queueName}:`, error);
+          return of({ submitQueue: queueName });
+        }),
+      );
+  }
+
+  /**
+   * Fetches secondary predictability telemetry data for the specified cluster queues.
+   */
+  getQueueSecondaryData(
+    queueNames: string[],
+    range: RangePreset = 'RANGE_PRESET_LAST_HOUR',
+  ): Observable<BatchGetQueueSecondaryDataResponse> {
+    if (!queueNames || queueNames.length === 0) {
+      return of({ queuePredictability: {} });
+    }
+    return this.http
+      .post<BatchGetQueueSecondaryDataResponse>(
+        `${XMC_API_DOMAIN}/clusterqueues:batchGetSecondaryData`,
+        { queueNames, range },
+        { withCredentials: true },
+      )
+      .pipe(
+        catchError((error) => {
+          console.error('Failed to fetch secondary queue data:', error);
+          return throwError(() => error);
         }),
       );
   }

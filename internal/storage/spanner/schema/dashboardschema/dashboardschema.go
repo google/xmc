@@ -37,6 +37,7 @@ const (
 	XidTableField              = querytools.TableField("xid")
 	PlotIDTableField           = querytools.TableField("plot_id")
 	PlotSpecTableField         = querytools.TableField("plot_spec")
+	ChartLayoutTableField      = querytools.TableField("chart_layout")
 	CreatedTableField          = querytools.TableField("created")
 	UpdatedTableField          = querytools.TableField("updated")
 	PlotLayoutTableField       = querytools.TableField("plot_layout")
@@ -97,6 +98,12 @@ var (
 				Name:         OwnerTableField,
 				QueryLiteral: safesql.New("d.Owner"),
 				Type:         filtervisitor.String,
+				Selectable:   true,
+				Indexed:      false,
+			},
+			ChartLayoutTableField: {
+				Name:         ChartLayoutTableField,
+				QueryLiteral: safesql.New("d.ChartLayout"),
 				Selectable:   true,
 				Indexed:      false,
 			},
@@ -289,11 +296,98 @@ var (
 		},
 	}
 
+	dashboardChartsJoinedTableView = querytools.TableView{
+		Name:       querytools.TableName("DashboardChartsWithCharts"),
+		NameClause: safesql.New("DashboardCharts dc JOIN Charts c ON (dc.ChartId = c.ChartId)"),
+		Cost:       20,
+		Fields: map[querytools.TableField]querytools.Member{
+			DashboardIDTableField: {
+				Name:         DashboardIDTableField,
+				QueryLiteral: safesql.New("dc.DashboardId"),
+				Type:         filtervisitor.String,
+				Selectable:   true,
+				Indexed:      true,
+			},
+			ChartIDTableField: {
+				Name:         ChartIDTableField,
+				QueryLiteral: safesql.New("c.ChartId"),
+				Type:         filtervisitor.String,
+				Selectable:   true,
+				Indexed:      true,
+			},
+			TitleTableField: {
+				Name:         TitleTableField,
+				QueryLiteral: safesql.New("c.Title"),
+				Type:         filtervisitor.String,
+				Selectable:   true,
+				Indexed:      false,
+			},
+			XidTableField: {
+				Name:         XidTableField,
+				QueryLiteral: safesql.New("c.Xid"),
+				Type:         filtervisitor.Integer,
+				Selectable:   true,
+				Indexed:      false,
+			},
+			PlotLayoutTableField: {
+				Name:         PlotLayoutTableField,
+				QueryLiteral: safesql.New("c.PlotLayout"),
+				Type:         filtervisitor.Bytes,
+				Selectable:   true,
+				Indexed:      false,
+			},
+			OwnerTableField: {
+				Name:         OwnerTableField,
+				QueryLiteral: safesql.New("c.Owner"),
+				Type:         filtervisitor.String,
+				Selectable:   true,
+				Indexed:      false,
+			},
+			CreatedTableField: {
+				Name:         CreatedTableField,
+				QueryLiteral: safesql.New("c.CreatedAt"),
+				Type:         filtervisitor.Timestamp,
+				Selectable:   true,
+				Indexed:      false,
+			},
+			UpdatedTableField: {
+				Name:         UpdatedTableField,
+				QueryLiteral: safesql.New("c.UpdatedAt"),
+				Type:         filtervisitor.Timestamp,
+				Selectable:   true,
+				Indexed:      false,
+			},
+		},
+		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
+			{TableField: ChartIDTableField, SortOrder: querytools.Asc},
+		},
+	}
+
 	// DashboardTables is the list of TableViews for Dashboard queries.
 	DashboardTables = []querytools.TableView{dashboardsTableView}
 
+	// DashboardsSelectFields is the list of fields selected for Dashboard queries.
+	DashboardsSelectFields = []querytools.TableField{
+		DashboardIDTableField,
+		TitleTableField,
+		DescriptionTableField,
+		OwnerTableField,
+		ChartLayoutTableField,
+		CreatedTableField,
+		UpdatedTableField,
+	}
+
+	// DashboardsOrderByFields is the list of fields that can be used for ordering Dashboard queries.
+	DashboardsOrderByFields = []querytools.UserOrderedIndex{
+		{TableField: CreatedTableField},
+		{TableField: UpdatedTableField},
+		{TableField: DashboardIDTableField},
+		{TableField: TitleTableField},
+		{TableField: OwnerTableField},
+	}
+
 	// ChartTables is the list of TableViews for Chart queries.
-	ChartTables = []querytools.TableView{chartsTableView}
+	ChartTables = []querytools.TableView{chartsTableView, dashboardChartsJoinedTableView}
 
 	// DashboardChartsTables is the list of TableViews for DashboardCharts queries.
 	DashboardChartsTables = []querytools.TableView{dashboardChartsTableView}

@@ -1,0 +1,215 @@
+[
+  {
+    "id": "summary_box_single",
+    "description": "Summary box KPI card for single metric train/loss",
+    "golden_file": "summary_box_single.golden.json",
+    "chart": {
+      "name": "experiments/9001/charts/summary_single",
+      "title": "Train Loss Summary",
+      "xid": 9001,
+      "wid": 1,
+      "plots": [
+        {
+          "plot_id": "kpi_loss",
+          "title": "Train Loss KPI",
+          "type": 1,
+          "data": {
+            "metrics": ["train/loss"]
+          }
+        }
+      ]
+    },
+    "request": {
+      "name": "experiments/9001/charts/summary_single",
+      "chart_width_pixels": 800
+    }
+  },
+  {
+    "id": "summary_box_multi",
+    "description": "Summary box KPI card for multiple metrics train/loss and train/accuracy",
+    "golden_file": "summary_box_multi.golden.json",
+    "chart": {
+      "name": "experiments/9001/charts/summary_multi",
+      "title": "Multi-Metric Summary",
+      "xid": 9001,
+      "wid": 1,
+      "plots": [
+        {
+          "plot_id": "kpi_overview",
+          "title": "Overview Metrics",
+          "type": 1,
+          "data": {
+            "metrics": ["train/loss", "train/accuracy"]
+          }
+        }
+      ]
+    },
+    "request": {
+      "name": "experiments/9001/charts/summary_multi",
+      "chart_width_pixels": 800
+    }
+  },
+  {
+    "id": "scatter_identity_raw",
+    "description": "Scatter plot with small step range returning raw unaggregated points",
+    "golden_file": "scatter_identity_raw.golden.json",
+    "chart": {
+      "name": "experiments/9001/charts/scatter_raw",
+      "title": "Raw Loss Curve",
+      "xid": 9001,
+      "wid": 1,
+      "plots": [
+        {
+          "plot_id": "raw_loss_plot",
+          "title": "Raw Loss",
+          "type": 2,
+          "data": {
+            "metrics": ["eval/loss"],
+            "ranges": [
+              {
+                "start_step": 0,
+                "end_step": 500
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "request": {
+      "name": "experiments/9001/charts/scatter_raw",
+      "chart_width_pixels": 1000
+    }
+  },
+  {
+    "id": "scatter_downsampled_buckets",
+    "description": "Scatter plot downsampled across 5000 steps into 100-step buckets",
+    "golden_file": "scatter_downsampled_buckets.golden.json",
+    "chart": {
+      "name": "experiments/9001/charts/scatter_downsampled",
+      "title": "Downsampled Curve",
+      "xid": 9001,
+      "wid": 1,
+      "plots": [
+        {
+          "plot_id": "downsampled_plot",
+          "title": "Downsampled Metric",
+          "type": 2,
+          "data": {
+            "metrics": ["downsample_metric"],
+            "ranges": [
+              {
+                "start_step": 0,
+                "end_step": 5000
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "request": {
+      "name": "experiments/9001/charts/scatter_downsampled",
+      "chart_width_pixels": 50
+    }
+  },
+  {
+    "id": "scatter_multi_series",
+    "description": "Scatter plot requesting train/loss and train/accuracy across multiple work units",
+    "golden_file": "scatter_multi_series.golden.json",
+    "chart": {
+      "name": "experiments/9001/charts/scatter_multi",
+      "title": "Multi-Series Training",
+      "xid": 9001,
+      "wid": 0,
+      "plots": [
+        {
+          "plot_id": "multi_series_plot",
+          "title": "Loss & Accuracy",
+          "type": 2,
+          "data": {
+            "metrics": ["train/loss"],
+            "ranges": [
+              {
+                "start_step": 0,
+                "end_step": 100
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "request": {
+      "name": "experiments/9001/charts/scatter_multi",
+      "chart_width_pixels": 1000
+    }
+  },
+  {
+    "id": "scatter_range_filtered",
+    "description": "Scatter plot filtered to a specific step range (steps 100 to 300)",
+    "golden_file": "scatter_range_filtered.golden.json",
+    "chart": {
+      "name": "experiments/9001/charts/scatter_filtered",
+      "title": "Filtered Loss",
+      "xid": 9001,
+      "wid": 1,
+      "plots": [
+        {
+          "plot_id": "filtered_loss_plot",
+          "title": "Windowed Loss",
+          "type": 2,
+          "data": {
+            "metrics": ["train/loss"],
+            "ranges": [
+              {
+                "start_step": 100,
+                "end_step": 300
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "request": {
+      "name": "experiments/9001/charts/scatter_filtered",
+      "chart_width_pixels": 800
+    }
+  },
+  {
+    "id": "mixed_chart_multi_plot",
+    "description": "Chart with both a summary box plot and a scatter curve plot",
+    "golden_file": "mixed_chart_multi_plot.golden.json",
+    "chart": {
+      "name": "experiments/9001/charts/mixed_overview",
+      "title": "Experiment Overview",
+      "xid": 9001,
+      "wid": 1,
+      "plots": [
+        {
+          "plot_id": "loss_kpi",
+          "title": "Loss KPI",
+          "type": 1,
+          "data": {
+            "metrics": ["train/loss"]
+          }
+        },
+        {
+          "plot_id": "loss_curve",
+          "title": "Loss Curve",
+          "type": 2,
+          "data": {
+            "metrics": ["eval/loss"],
+            "ranges": [
+              {
+                "start_step": 0,
+                "end_step": 200
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "request": {
+      "name": "experiments/9001/charts/mixed_overview",
+      "chart_width_pixels": 800
+    }
+  }
+]

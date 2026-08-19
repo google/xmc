@@ -14,12 +14,18 @@
 
 import 'jasmine';
 
+import { Clipboard } from '@angular/cdk/clipboard';
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { of } from 'rxjs';
 
-import { QueueOverview } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import {
+  ClusterQueueSecondaryMetrics,
+  QueueOverview,
+} from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
+import { ResourceService } from 'xmanager_cloud/ui/app/service/resource_service';
 
 import { QueueCardComponent } from './queue_card';
 import { QueueCardHarness } from './queue_card_harness';
@@ -30,7 +36,10 @@ import { QueueCardHarness } from './queue_card_harness';
   template: `
     <xmc-rod-queue-card
       [queue]="queue()"
+      [secondaryData]="secondaryData()"
+      [isSecondaryLoading]="isSecondaryLoading()"
       [isSelected]="isSelected()"
+      [activeResourceFilters]="activeResourceFilters()"
       (selectQueue)="selectedQueueName.set($event)"
     />
   `,
@@ -47,7 +56,10 @@ class TestHostComponent {
     ],
   });
 
+  readonly secondaryData = signal<ClusterQueueSecondaryMetrics | undefined>(undefined);
+  readonly isSecondaryLoading = signal<boolean>(false);
   readonly isSelected = signal<boolean>(false);
+  readonly activeResourceFilters = signal<string[]>([]);
   readonly selectedQueueName = signal<string>('');
 }
 
@@ -55,10 +67,15 @@ describe('QueueCardComponent', () => {
   let fixture: ComponentFixture<TestHostComponent>;
   let hostInstance: TestHostComponent;
   let harness: QueueCardHarness;
+  let resourceServiceSpy: jasmine.SpyObj<ResourceService>;
 
   beforeEach(async () => {
+    resourceServiceSpy = jasmine.createSpyObj('ResourceService', ['getSubmitQueue']);
+    resourceServiceSpy.getSubmitQueue.and.returnValue(of({ submitQueue: 'lq-gpu-1' }));
+
     await TestBed.configureTestingModule({
       imports: [TestHostComponent, NoopAnimationsModule],
+      providers: [{ provide: ResourceService, useValue: resourceServiceSpy }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(TestHostComponent);
@@ -81,6 +98,40 @@ describe('QueueCardComponent', () => {
     expect(rowText).toContain('56 / 64');
   });
 
+  it('should filter flavor capacity sub-cards when activeResourceFilters are set', async () => {
+    hostInstance.queue.set({
+      queueName: 'multi-res-queue',
+      queueCapacity: [
+        { resourceType: 'nvidia.com/gpu', totalCapacity: 64, freeCapacity: 56 },
+        { resourceType: 'cpu', totalCapacity: 512, freeCapacity: 448 },
+      ],
+    });
+    fixture.detectChanges();
+    expect(await harness.getFlavorRowCount()).toBe(2);
+
+    hostInstance.activeResourceFilters.set(['cpu']);
+    fixture.detectChanges();
+    expect(await harness.getFlavorRowCount()).toBe(1);
+    expect(await harness.getFlavorRowText(0)).toContain('cpu');
+  });
+
+  it('should restore all flavor capacity sub-cards when activeResourceFilters are cleared', async () => {
+    hostInstance.queue.set({
+      queueName: 'multi-res-queue',
+      queueCapacity: [
+        { resourceType: 'nvidia.com/gpu', totalCapacity: 64, freeCapacity: 56 },
+        { resourceType: 'cpu', totalCapacity: 512, freeCapacity: 448 },
+      ],
+    });
+    hostInstance.activeResourceFilters.set(['cpu']);
+    fixture.detectChanges();
+    expect(await harness.getFlavorRowCount()).toBe(1);
+
+    hostInstance.activeResourceFilters.set([]);
+    fixture.detectChanges();
+    expect(await harness.getFlavorRowCount()).toBe(2);
+  });
+
   it('should update selected state and emit queue selection output on click', async () => {
     expect(await harness.isSelected()).toBeFalse();
 
@@ -92,5 +143,97 @@ describe('QueueCardComponent', () => {
     fixture.detectChanges();
 
     expect(hostInstance.selectedQueueName()).toBe('gpu-cluster-queue');
+  });
+
+  it('should render copy flag button and copy --queue flag with submit queue on click', async () => {
+    expect(await harness.getCopyFlagButtonText()).toContain('Copy flag');
+
+    const clipboard = TestBed.inject(Clipboard);
+    spyOn(clipboard, 'copy').and.returnValue(true);
+
+    await harness.clickCopyFlagButton();
+    fixture.detectChanges();
+
+    expect(resourceServiceSpy.getSubmitQueue).toHaveBeenCalledWith('gpu-cluster-queue');
+    expect(clipboard.copy).toHaveBeenCalledWith('--queue=lq-gpu-1');
+    expect(await harness.getCopyFlagButtonText()).toContain('Copied');
+  });
+
+  it('should render Work in Progress banner in predictability section', async () => {
+    const bannerText = await harness.getWipBannerText();
+    expect(bannerText).toContain('Work in Progress');
+  });
+
+  it('should display loading spinner when isSecondaryLoading is true', async () => {
+    hostInstance.isSecondaryLoading.set(true);
+    fixture.detectChanges();
+
+    const spinnerText = await harness.getSpinnerContainerText();
+    expect(spinnerText).not.toBeNull();
+    expect(spinnerText).toContain('Fetching predictability metrics...');
+  });
+
+  it('should display fallback message when predictability data is not available', async () => {
+    hostInstance.isSecondaryLoading.set(false);
+    hostInstance.secondaryData.set(undefined);
+    fixture.detectChanges();
+
+    const text = await harness.getSpinnerContainerText();
+    expect(text).not.toBeNull();
+    expect(text).toContain('No predictability data available.');
+  });
+
+  it('should display predictability metrics when secondaryData is provided', async () => {
+    hostInstance.isSecondaryLoading.set(false);
+    hostInstance.secondaryData.set({
+      queuePredictability: [
+        {
+          velocityRange: 1,
+          jobVelocity: 12.5,
+          resourceVelocity: {
+            resourceType: 'nvidia-tesla-h100',
+            velocity: 100,
+          },
+          pendingJobs: 3,
+          pendingResourceRequests: {
+            resourceType: 'nvidia-tesla-h100',
+            count: 24,
+          },
+        },
+      ],
+    });
+    fixture.detectChanges();
+
+    const predText = await harness.getPredictabilitySectionText();
+    expect(predText).not.toBeNull();
+    expect(predText).toContain('12.5 jobs/hr');
+    expect(predText).toContain('100 nvidia-tesla-h100/hr');
+    expect(predText).toContain('3');
+    expect(predText).toContain('24 nvidia-tesla-h100');
+  });
+
+  it('should display default units string when resourceType is missing in predictability metrics', async () => {
+    hostInstance.isSecondaryLoading.set(false);
+    hostInstance.secondaryData.set({
+      queuePredictability: [
+        {
+          velocityRange: 1,
+          jobVelocity: 5,
+          resourceVelocity: {
+            velocity: 40,
+          },
+          pendingJobs: 2,
+          pendingResourceRequests: {
+            count: 16,
+          },
+        },
+      ],
+    });
+    fixture.detectChanges();
+
+    const predText = await harness.getPredictabilitySectionText();
+    expect(predText).not.toBeNull();
+    expect(predText).toContain('40 units/hr');
+    expect(predText).toContain('16 units');
   });
 });

@@ -83,6 +83,21 @@ var (
 	})
 )
 
+// Params holds dependencies and configuration for constructing a JobSet Reconciler.
+type Params struct {
+	Client                      client.Client
+	Scheme                      *runtime.Scheme
+	Batcher                     *shared.UpdateBatcher
+	Project                     string
+	Location                    string
+	ClusterName                 string
+	MaxConcurrentReconciles     int
+	StartupPodErrorCheckTime    time.Duration
+	StartupPodErrorCheckEnabled bool
+	Storage                     ReconcilerStorage
+	MLRunClient                 MLRunCreator
+}
+
 // Reconciler implements reconcile.Reconciler for JobSets.
 type Reconciler struct {
 	client.Client               // Embed the controller-runtime client
@@ -96,6 +111,32 @@ type Reconciler struct {
 	StartupPodErrorCheckEnabled bool
 	Storage                     ReconcilerStorage
 	MLRunClient                 MLRunCreator
+}
+
+// NewReconciler creates and validates a new JobSet Reconciler.
+func NewReconciler(p Params) (*Reconciler, error) {
+	if p.Client == nil {
+		return nil, errors.New("client is required")
+	}
+	if p.Scheme == nil {
+		return nil, errors.New("scheme is required")
+	}
+	if p.Batcher == nil {
+		return nil, errors.New("batcher is required")
+	}
+	return &Reconciler{
+		Client:                      p.Client,
+		Scheme:                      p.Scheme,
+		Batcher:                     p.Batcher,
+		Project:                     p.Project,
+		Location:                    p.Location,
+		ClusterName:                 p.ClusterName,
+		MaxConcurrentReconciles:     p.MaxConcurrentReconciles,
+		StartupPodErrorCheckTime:    p.StartupPodErrorCheckTime,
+		StartupPodErrorCheckEnabled: p.StartupPodErrorCheckEnabled,
+		Storage:                     p.Storage,
+		MLRunClient:                 p.MLRunClient,
+	}, nil
 }
 
 // WorkUnitExecutionReader is an interface for reading WorkUnitExecutions from ESS.
@@ -536,9 +577,12 @@ func checkPodsForStartupErrors(ctx context.Context, pods []corev1.Pod) string {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
+	if r == nil {
+		return errors.New("reconciler cannot be nil")
+	}
 	logging.Debug(ctx, "Setting up jobset reconciler")
 	if r.Batcher == nil {
-		return fmt.Errorf("batcher is not initialized")
+		return errors.New("batcher is not initialized")
 	}
 
 	logging.Debug(ctx, "Starting jobset reconciler controller with MaxConcurrentReconciles", "MaxConcurrentReconciles", r.MaxConcurrentReconciles)

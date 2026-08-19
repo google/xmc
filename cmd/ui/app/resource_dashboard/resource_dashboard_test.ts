@@ -20,7 +20,7 @@ import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
 import {
-  GetFittingQueuesResponse,
+  ListClusterQueuesResponse,
   QueueOverview,
 } from 'xmanager_cloud/api/protos/rod/api.jsonpb_decls';
 import { AUTO_REFRESH_INTERVAL_MS } from 'xmanager_cloud/ui/app/service/constants';
@@ -73,11 +73,13 @@ describe('ResourceDashboard Container', () => {
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
       'getClusterQueues',
       'getQueueJobs',
+      'getQueueSecondaryData',
     ]);
     resourceService.getClusterQueues.and.returnValue(
-      of({ queues: [mockGpuQueue, mockCpuQueue] } as GetFittingQueuesResponse),
+      of({ queues: [mockGpuQueue, mockCpuQueue] } as ListClusterQueuesResponse),
     );
     resourceService.getQueueJobs.and.returnValue(of({ jobs: [], totalQueueSize: 0 }));
+    resourceService.getQueueSecondaryData.and.returnValue(of({ queuePredictability: {} }));
 
     setupModule({
       imports: [TestHostComponent, NoopAnimationsModule],
@@ -102,13 +104,15 @@ describe('ResourceDashboard Container', () => {
     await flush();
 
     const dashboard = await getHarness(ResourceDashboardHarness);
+    const finderHarness = (await dashboard.getSmartResourceFinder())!;
+    await finderHarness.setAmountValue('50');
+    await flush();
+
     const queueListHarness = (await dashboard.getQueueList())!;
     expect(await queueListHarness.getQueueCardCount()).toBe(2);
     expect(await (await queueListHarness.getQueueCard(0)).getQueueName()).toBe('gpu-cluster-queue');
 
-    const finderHarness = (await dashboard.getSmartResourceFinder())!;
     expect(await finderHarness.getResourceTypeSelectCount()).toBe(1);
-
     expect(await dashboard.getQueueJobsTable()).not.toBeNull();
   });
 
@@ -119,7 +123,7 @@ describe('ResourceDashboard Container', () => {
     const dashboard = await getHarness(ResourceDashboardHarness);
     const finderHarness = (await dashboard.getSmartResourceFinder())!;
     const options = await finderHarness.getResourceTypeOptions();
-    expect(options).toEqual(['All resource types (Default - empty)', 'cpu', 'nvidia.com/gpu']);
+    expect(options).toEqual(['-', 'cpu', 'nvidia.com/gpu']);
   });
 
   it('should filter queue list by resource type selection in the picker', async () => {
@@ -130,10 +134,11 @@ describe('ResourceDashboard Container', () => {
     const queueListHarness = (await dashboard.getQueueList())!;
     const finderHarness = (await dashboard.getSmartResourceFinder())!;
 
+    await finderHarness.setAmountValue('50');
+    await flush();
     expect(await queueListHarness.getQueueCardCount()).toBe(2);
 
     await finderHarness.selectResourceType(0, 'cpu');
-    await finderHarness.clickFindButton();
     await flush();
 
     expect(await queueListHarness.getQueueCardCount()).toBe(1);
@@ -148,10 +153,11 @@ describe('ResourceDashboard Container', () => {
     const queueListHarness = (await dashboard.getQueueList())!;
     const finderHarness = (await dashboard.getSmartResourceFinder())!;
 
+    await finderHarness.setAmountValue('50');
+    await flush();
     expect(await queueListHarness.getQueueCardCount()).toBe(2);
 
     await finderHarness.setAmountValue('100');
-    await finderHarness.clickFindButton();
     await flush();
 
     expect(await queueListHarness.getQueueCardCount()).toBe(1);
@@ -168,14 +174,12 @@ describe('ResourceDashboard Container', () => {
 
     await finderHarness.setAmountValue('32');
     await finderHarness.selectResourceType(0, 'nvidia.com/gpu');
-    await finderHarness.clickFindButton();
     await flush();
 
     expect(await queueListHarness.getQueueCardCount()).toBe(1);
     expect(await (await queueListHarness.getQueueCard(0)).getQueueName()).toBe('gpu-cluster-queue');
 
     await finderHarness.setAmountValue('100');
-    await finderHarness.clickFindButton();
     await flush();
 
     expect(await queueListHarness.getQueueCardCount()).toBe(0);
@@ -201,6 +205,9 @@ describe('ResourceDashboard Container', () => {
     expect(await tabsHarness.isTabActive(1)).toBeTrue();
     expect(await dashboard.getQueueList()).toBeNull();
     expect(await dashboard.getQueueJobsTable()).toBeNull();
+    const wipBanner = await dashboard.getWipBanner();
+    expect(wipBanner).not.toBeNull();
+    expect(await wipBanner!.getText()).toBe('Work in Progress');
 
     await tabsHarness.clickTab(0);
     await flush();

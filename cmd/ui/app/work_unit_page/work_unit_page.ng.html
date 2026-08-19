@@ -19,9 +19,9 @@ limitations under the License.
   @let experimentVal = experiment(); @let workUnitVal = workUnit();
   @if (experimentVal && workUnitVal) {
     <xmc-work-unit-header
+      class="header-section"
       [workUnit]="workUnitVal"
       [experiment]="experimentVal"
-      class="header-section"
     />
 
     @let urlsVal = urls();
@@ -30,16 +30,16 @@ limitations under the License.
     }
 
     <xmc-work-unit-details
+      class="details-section"
       [workUnit]="workUnitVal"
       [experiment]="experimentVal"
-      class="details-section"
     />
 
     @let statusMessagesVal = statusMessages();
     @if (statusMessagesVal.length > 0) {
       <div class="status-messages-container">
         @for (message of statusMessagesVal; track $index) {
-          <xmc-status-message [message]="message"></xmc-status-message>
+          <xmc-status-message [message]="message" />
         }
       </div>
     }
@@ -56,7 +56,7 @@ limitations under the License.
           <mat-tab label="Status History">
             <xmc-status-messages-list
               [parentName]="'experiments/' + xid() + '/workUnits/' + wid()"
-            ></xmc-status-messages-list>
+            />
           </mat-tab>
         }
       </mat-tab-group>

@@ -25,7 +25,6 @@ import (
 	"golang/protobuf/v2/testing/protocmp/protocmp"
 	"task/go/status"
 	"xmanager_cloud/auth/auth"
-	"xmanager_cloud/experiment_state_server/config"
 	"xmanager_cloud/storage/storage"
 	tq "xmanager_cloud/task_queue/client"
 	"xmanager_cloud/validator/validator"
@@ -136,7 +135,7 @@ func TestBatchStopWorkUnits_HappyPath(t *testing.T) {
 	}
 
 	for _, workUnitID := range []int64{workUnitID1, workUnitID2} {
-		workUnitExecution, err := server.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
+		workUnitExecution, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
 		if err != nil {
 			t.Fatalf("FetchCurrentWorkUnitExecution() for work unit %d returned an unexpected error: %v", workUnitID, err)
 		}
@@ -202,9 +201,7 @@ func TestBatchStopWorkUnits_Filter(t *testing.T) {
 
 func TestBatchStopWorkUnits_BadPaths(t *testing.T) {
 	ctx := context.Background()
-	authorizer := createTestAuthorizer(ctx, t)
-	cfg := &config.Config{}
-	server := New(&storage.MockStorage{}, cfg, authorizer, &mockXidClient{}, nil)
+	server := newTestServer(t)
 
 	testCases := []struct {
 		name    string
@@ -230,7 +227,6 @@ func TestBatchStopWorkUnits_BadPaths(t *testing.T) {
 
 func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{}
 
 	goodReq := &apipb.BatchStopWorkUnitsRequest{Parent: "experiments/123"}
 	workUnit := &msgpb.WorkUnit{
@@ -308,11 +304,17 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.authenticator == nil {
-				tc.authenticator = createTestAuthorizer(ctx, t)
+			var opts []testServerOpt
+			if tc.storage != nil {
+				opts = append(opts, withStorage(tc.storage))
 			}
-			taskQueueClient := &tq.FakeClient{}
-			server := New(tc.storage, cfg, tc.authenticator, tc.xidClient, taskQueueClient)
+			if tc.authenticator != nil {
+				opts = append(opts, withAuthorizer(tc.authenticator))
+			}
+			if tc.xidClient != nil {
+				opts = append(opts, withXidClient(tc.xidClient))
+			}
+			server := newTestServer(t, opts...)
 			_, err := server.BatchStopWorkUnits(ctx, goodReq)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("BatchStopWorkUnits() got error %v, want %v", err, tc.wantErr)
@@ -323,7 +325,6 @@ func TestBatchStopWorkUnits_DependencyFailures(t *testing.T) {
 
 func TestBatchStopWorkUnits_TaskEnqueueFails(t *testing.T) {
 	ctx := context.Background()
-	cfg := &config.Config{}
 
 	workUnit := &msgpb.WorkUnit{
 		Name:         "experiments/123/workUnits/456",
@@ -342,8 +343,11 @@ func TestBatchStopWorkUnits_TaskEnqueueFails(t *testing.T) {
 		EnqueueErr: fmt.Errorf("task enqueue failed"),
 	}
 
-	authenticator := createTestAuthorizer(ctx, t)
-	server := New(storage, cfg, authenticator, xidClient, taskQueueClient)
+	server := newTestServer(t,
+		withStorage(storage),
+		withXidClient(xidClient),
+		withWorkUnitActuator(taskQueueClient),
+	)
 
 	req := &apipb.BatchStopWorkUnitsRequest{Parent: "experiments/123"}
 	_, err := server.BatchStopWorkUnits(ctx, req)
@@ -405,11 +409,11 @@ func TestBatchStopWorkUnits_PartialFailure(t *testing.T) {
 		t.Fatalf("ValidateExperimentName() returned an unexpected error: %v", err)
 	}
 
-	wu1Exec, err := server.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID1)
+	wu1Exec, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID1)
 	if err != nil {
 		t.Fatalf("FetchCurrentWorkUnitExecution() for work unit 1 returned an unexpected error: %v", err)
 	}
-	wu2Exec, err := server.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID2)
+	wu2Exec, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID2)
 	if err != nil {
 		t.Fatalf("FetchCurrentWorkUnitExecution() for work unit 2 returned an unexpected error: %v", err)
 	}

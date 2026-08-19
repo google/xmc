@@ -54,6 +54,7 @@ export class HealthStatusSectionComponent {
   components = input.required<ComponentHealth[]>();
   overallStatus = input<string>(HealthState.UNSPECIFIED);
   lastChecked = input<string>('');
+  loading = input<boolean>(false);
   refresh = output<void>();
 
   // Computed properties to group components
@@ -70,6 +71,8 @@ export class HealthStatusSectionComponent {
   );
 
   protected readonly isHealthy = computed(() => this.overallStatus() === HealthState.HEALTHY);
+  protected readonly isDegraded = computed(() => this.overallStatus() === HealthState.UNHEALTHY);
+  protected readonly isUnknown = computed(() => this.overallStatus() === HealthState.UNSPECIFIED);
 
   protected mapHealthState(state?: string): string {
     if (state === HealthState.HEALTHY) return 'HEALTHY';

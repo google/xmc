@@ -26,13 +26,20 @@
           [queues]="filteredQueues()"
           [selectedQueue]="selectedQueue()"
           [isLoading]="isLoading()"
+          [secondaryDataMap]="secondaryDataMap()"
+          [isSecondaryLoading]="isSecondaryLoading()"
+          [activeResourceFilters]="activeResourceFilters()"
           [(velocityPeriod)]="velocityPeriod"
           (selectQueue)="onQueueSelect($event)"
         />
       </div>
       <div class="jobs-side-pane">
-        <xmc-queue-jobs-table [queueName]="selectedQueue()"></xmc-queue-jobs-table>
+        <xmc-queue-jobs-table [queueName]="selectedQueue()" />
       </div>
+    </div>
+  } @else if (activeTab() === TAB_RESOURCE_AVAILABILITY) {
+    <div class="resource-availability-container">
+      <xmc-wip-banner />
     </div>
   }
 </div>

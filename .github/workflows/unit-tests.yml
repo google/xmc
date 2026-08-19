@@ -31,8 +31,48 @@ permissions:
   contents: read
 
 jobs:
+  resolve-scope:
+    name: 'Resolve Test Scope & Targets'
+    runs-on: 'arc-runner-set'
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+
+    outputs:
+      run_backend: ${{ steps.scope.outputs.run_backend }}
+      run_ui: ${{ steps.scope.outputs.run_ui }}
+      backend_mode: ${{ steps.scope.outputs.backend_mode }}
+      bazel_targets: ${{ steps.scope.outputs.bazel_targets }}
+      reason: ${{ steps.scope.outputs.reason }}
+
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: 'Resolve Test Scope'
+        id: 'scope'
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          BASE_REF="${PR_BASE_SHA:-origin/main}"
+          python3 tools/resolve_test_scope.py \
+            --base "${BASE_REF}" \
+            --head "${GITHUB_SHA}" \
+            --event "${EVENT_NAME}" \
+            --ref "${GITHUB_REF}" \
+            --github-output "${GITHUB_OUTPUT}"
+
   run-backend-tests:
     name: 'Run Go & Backend Unit Tests'
+    needs: resolve-scope
+    if: needs.resolve-scope.outputs.run_backend == 'true'
     runs-on: 'arc-runner-set'
     timeout-minutes: 30
 
@@ -70,16 +110,14 @@ jobs:
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
 
-      - name: 'Restore Bazel Cache'
-        id: 'cache-bazel-restore'
+      - name: 'Restore Bazel Repository Cache'
+        id: 'cache-bazel-repo-restore'
         uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
         with:
-          path: |
-            ~/.cache/bazel-repo
-            ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          path: ~/.cache/bazel-repo
+          key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
           restore-keys: |
-            bazel-${{ runner.os }}-
+            bazel-repo-${{ runner.os }}-
 
       - name: 'Verify Spanner Emulator Endpoint'
         run: |
@@ -110,50 +148,36 @@ jobs:
           df -h /
 
       - name: 'Run Backend Unit Tests'
+        env:
+          TARGETS: ${{ needs.resolve-scope.outputs.bazel_targets }}
+          REMOTE_UPLOAD: ${{ github.ref == 'refs/heads/main' }}
         run: |
+          RUN_TARGETS="${TARGETS:-//... -//cmd/ui/...}"
+          echo "Executing Bazel tests for targets: ${RUN_TARGETS} (remote_upload: ${REMOTE_UPLOAD})"
           bazel test \
+            --config=ci \
+            --remote_upload_local_results="${REMOTE_UPLOAD}" \
             --repository_cache=~/.cache/bazel-repo \
-            --disk_cache=~/.cache/bazel-disk \
             --experimental_repository_cache_hardlinks \
             --test_output=errors \
             --experimental_ui_max_stdouterr_bytes=2097152 \
             --build_tests_only \
             --test_timeout="${TEST_TIMEOUT_SECONDS}",300,300,300 \
             -- \
-            //... \
-            -//cmd/ui/...
+            ${RUN_TARGETS}
 
-      - name: 'Prune Bazel Cache & Build Tree'
-        if: always()
-        run: |
-          echo "=== Pruning Bazel cache and build tree ==="
-          if [ -d ~/.cache/bazel-disk ]; then
-            # Size-based pruning: Keep disk cache under 3GB so tar/compression remains fast,
-            # while avoiding mtime/atime traps that delete valid restored cache entries.
-            MAX_SIZE_MB=3000
-            CURRENT_SIZE_MB=$(du -sm ~/.cache/bazel-disk | cut -f1)
-            if [ "${CURRENT_SIZE_MB}" -gt "${MAX_SIZE_MB}" ]; then
-              echo "Bazel disk cache (${CURRENT_SIZE_MB}MB) exceeds limit (${MAX_SIZE_MB}MB). Pruning oldest files..."
-              find ~/.cache/bazel-disk -type f -printf '%T@ %p\n' | sort -n | head -n 1000 | cut -d' ' -f2- | xargs rm -f || true
-              find ~/.cache/bazel-disk -type d -empty -delete || true
-            fi
-          fi
-          bazel clean || true
-          df -h
-
-      - name: 'Save Bazel Cache'
+      - name: 'Save Bazel Repository Cache'
         uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-        # Only save cache on main branch pushes when exact cache key was missed to eliminate redundant
-        # tar/compress/upload overhead on PR branches that saturates self-hosted runners.
-        if: github.ref == 'refs/heads/main' && steps.cache-bazel-restore.outputs.cache-hit != 'true'
+        # Only save repository cache on main branch pushes when external dependencies change.
+        if: github.ref == 'refs/heads/main' && steps.cache-bazel-repo-restore.outputs.cache-hit != 'true'
         with:
-          path: |
-            ~/.cache/bazel-repo
-            ~/.cache/bazel-disk
-          key: bazel-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod', 'BUILD.bazel') }}
+          path: ~/.cache/bazel-repo
+          key: bazel-repo-${{ runner.os }}-${{ hashFiles('WORKSPACE', 'MODULE.bazel', 'go.mod') }}
 
   run-ui-tests:
     name: 'Run Angular UI Unit Tests'
+    needs: resolve-scope
+    if: needs.resolve-scope.outputs.run_ui == 'true'
     runs-on: 'arc-runner-set'
     timeout-minutes: 15
 
@@ -180,19 +204,44 @@ jobs:
 
   run-tests:
     name: 'Run Unit Tests'
-    needs: [run-backend-tests, run-ui-tests]
+    needs: [resolve-scope, run-backend-tests, run-ui-tests]
     runs-on: 'arc-runner-set'
     if: always()
     steps:
       - name: 'Verify All Unit Tests Passed'
         env:
+          RESOLVE_RESULT: ${{ needs.resolve-scope.result }}
           BACKEND_RESULT: ${{ needs.run-backend-tests.result }}
           UI_RESULT: ${{ needs.run-ui-tests.result }}
+          REASON: ${{ needs.resolve-scope.outputs.reason }}
         run: |
-          if [ "${BACKEND_RESULT}" != "success" ] || [ "${UI_RESULT}" != "success" ]; then
-            echo "ERROR: One or more unit test suites failed."
-            echo "Backend tests result: ${BACKEND_RESULT}"
-            echo "UI tests result: ${UI_RESULT}"
+          echo "=== Unit Test Resolution & Status Summary ==="
+          echo "Scope Resolution Result: ${RESOLVE_RESULT}"
+          echo "Scope Reason:            ${REASON}"
+          echo "Backend Tests Result:    ${BACKEND_RESULT}"
+          echo "UI Tests Result:         ${UI_RESULT}"
+
+          if [ "${RESOLVE_RESULT}" != "success" ]; then
+            echo "ERROR: Test scope resolution job failed."
             exit 1
           fi
-          echo "All unit test suites passed successfully."
+
+          if [ "${BACKEND_RESULT}" == "failure" ] || [ "${BACKEND_RESULT}" == "cancelled" ]; then
+            echo "ERROR: Backend unit tests job failed or was cancelled."
+            exit 1
+          fi
+
+          if [ "${UI_RESULT}" == "failure" ] || [ "${UI_RESULT}" == "cancelled" ]; then
+            echo "ERROR: UI unit tests job failed or was cancelled."
+            exit 1
+          fi
+
+          if [ "${BACKEND_RESULT}" == "skipped" ] && [ "${UI_RESULT}" == "skipped" ]; then
+            echo "NOTICE: No code-related changes were found in this PR; unit test execution was safely skipped."
+          elif [ "${BACKEND_RESULT}" == "skipped" ]; then
+            echo "NOTICE: No backend code changes found; backend Go unit tests safely skipped."
+          elif [ "${UI_RESULT}" == "skipped" ]; then
+            echo "NOTICE: No UI code changes found; Angular UI unit tests safely skipped."
+          else
+            echo "All required unit test suites passed successfully."
+          fi

@@ -251,6 +251,12 @@ message KubernetesJob {
   // Optional termination grace period in seconds for pods created by this KubernetesJob.
   // Controls how long Kubernetes waits for containers to gracefully shut down before forcefully killing them.
   optional int64 termination_grace_period_seconds = 19;
+
+  // Optional flag to disable the automatic injection of Kubernetes PodFailurePolicy.
+  // When set to true, or when restart_policy is "OnFailure", XMC omits PodFailurePolicy
+  // injection on the JobSpec. This allows standard Kubernetes backoff retries and absorbs
+  // expected non-zero exits (e.g. for worker daemons in multi-component JobSets).
+  optional bool disable_pod_failure_policy = 20;
 }
 
 // Represents a volume that can be mounted by containers in a KubernetesJob.

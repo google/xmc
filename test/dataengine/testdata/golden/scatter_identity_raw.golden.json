@@ -1,0 +1,94 @@
+{
+  "name": "experiments/9001/charts/scatter_raw",
+  "xid": "9001",
+  "wid": "1",
+  "plots_data": [
+    {
+      "plot_id": "raw_loss_plot",
+      "type": "SCATTER",
+      "scatter_series": {
+        "metric_name": "eval/loss",
+        "work_unit_id": "1",
+        "xid": "9001",
+        "points": [
+          {
+            "timestamp": "2026-08-11T10:00:00Z",
+            "avg_value": 1.85,
+            "min_value": 1.85,
+            "max_value": 1.85
+          },
+          {
+            "step": "50",
+            "timestamp": "2026-08-11T10:08:20Z",
+            "avg_value": 1.451,
+            "min_value": 1.451,
+            "max_value": 1.451
+          },
+          {
+            "step": "100",
+            "timestamp": "2026-08-11T10:16:40Z",
+            "avg_value": 1.1404,
+            "min_value": 1.1404,
+            "max_value": 1.1404
+          },
+          {
+            "step": "150",
+            "timestamp": "2026-08-11T10:25:00Z",
+            "avg_value": 0.8987,
+            "min_value": 0.8987,
+            "max_value": 0.8987
+          },
+          {
+            "step": "200",
+            "timestamp": "2026-08-11T10:33:20Z",
+            "avg_value": 0.7105,
+            "min_value": 0.7105,
+            "max_value": 0.7105
+          },
+          {
+            "step": "250",
+            "timestamp": "2026-08-11T10:41:40Z",
+            "avg_value": 0.5641,
+            "min_value": 0.5641,
+            "max_value": 0.5641
+          },
+          {
+            "step": "300",
+            "timestamp": "2026-08-11T10:50:00Z",
+            "avg_value": 0.4501,
+            "min_value": 0.4501,
+            "max_value": 0.4501
+          },
+          {
+            "step": "350",
+            "timestamp": "2026-08-11T10:58:20Z",
+            "avg_value": 0.3614,
+            "min_value": 0.3614,
+            "max_value": 0.3614
+          },
+          {
+            "step": "400",
+            "timestamp": "2026-08-11T11:06:40Z",
+            "avg_value": 0.2924,
+            "min_value": 0.2924,
+            "max_value": 0.2924
+          },
+          {
+            "step": "450",
+            "timestamp": "2026-08-11T11:15:00Z",
+            "avg_value": 0.2387,
+            "min_value": 0.2387,
+            "max_value": 0.2387
+          },
+          {
+            "step": "500",
+            "timestamp": "2026-08-11T11:23:20Z",
+            "avg_value": 0.1968,
+            "min_value": 0.1968,
+            "max_value": 0.1968
+          }
+        ]
+      }
+    }
+  ]
+}

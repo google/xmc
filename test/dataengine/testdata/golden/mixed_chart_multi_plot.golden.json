@@ -1,0 +1,65 @@
+{
+  "name": "experiments/9001/charts/mixed_overview",
+  "xid": "9001",
+  "wid": "1",
+  "plots_data": [
+    {
+      "plot_id": "loss_kpi",
+      "type": "SUMMARY_BOX",
+      "summary_data": {
+        "metric_name": "train/loss",
+        "latest_value": 0.1631,
+        "min_value": 0.1631,
+        "max_value": 2,
+        "mean_value": 0.7398803921568627,
+        "latest_step": "500",
+        "latest_timestamp": "2026-08-11T11:23:20Z"
+      }
+    },
+    {
+      "plot_id": "loss_curve",
+      "type": "SCATTER",
+      "scatter_series": {
+        "metric_name": "eval/loss",
+        "work_unit_id": "1",
+        "xid": "9001",
+        "points": [
+          {
+            "timestamp": "2026-08-11T10:00:00Z",
+            "avg_value": 1.85,
+            "min_value": 1.85,
+            "max_value": 1.85
+          },
+          {
+            "step": "50",
+            "timestamp": "2026-08-11T10:08:20Z",
+            "avg_value": 1.451,
+            "min_value": 1.451,
+            "max_value": 1.451
+          },
+          {
+            "step": "100",
+            "timestamp": "2026-08-11T10:16:40Z",
+            "avg_value": 1.1404,
+            "min_value": 1.1404,
+            "max_value": 1.1404
+          },
+          {
+            "step": "150",
+            "timestamp": "2026-08-11T10:25:00Z",
+            "avg_value": 0.8987,
+            "min_value": 0.8987,
+            "max_value": 0.8987
+          },
+          {
+            "step": "200",
+            "timestamp": "2026-08-11T10:33:20Z",
+            "avg_value": 0.7105,
+            "min_value": 0.7105,
+            "max_value": 0.7105
+          }
+        ]
+      }
+    }
+  ]
+}

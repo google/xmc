@@ -12,60 +12,70 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package workunit
+package workunit_test
 
 import (
 	"context"
 	"testing"
-	"time"
+
+	"xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/storage/spanner/emulator/emulator"
 )
 
-func TestFetchActiveWorkUnitsByQueues_EmptyQueue(t *testing.T) {
-	repo := &Repository{}
-	res, err := repo.FetchActiveWorkUnitsByQueues(context.Background(), nil, 10, "")
-	if err != nil {
-		t.Fatalf("FetchActiveWorkUnitsByQueues(nil) expected nil error, got %v", err)
-	}
-	if res == nil || len(res.WorkUnits) != 0 {
-		t.Fatalf("FetchActiveWorkUnitsByQueues(nil) expected empty workUnits slice, got %v", res)
-	}
-}
-
-func TestFetchActiveWorkUnitsByQueuesAt_EmptyQueuesList(t *testing.T) {
-	repo := &Repository{}
-	res, err := repo.FetchActiveWorkUnitsByQueuesAt(context.Background(), []string{}, 10, "", time.Now())
-	if err != nil {
-		t.Fatalf("FetchActiveWorkUnitsByQueuesAt(empty) expected nil error, got %v", err)
-	}
-	if res == nil || len(res.WorkUnits) != 0 {
-		t.Fatalf("FetchActiveWorkUnitsByQueuesAt(empty) expected empty workUnits slice, got %v", res)
-	}
-}
-
-func TestFetchActiveWorkUnitsByQueues_WithQueues(t *testing.T) {
-	repo := &Repository{}
-	res, err := repo.FetchActiveWorkUnitsByQueues(context.Background(), []string{"gpu-queue"}, 10, "")
-	if err != nil {
-		t.Fatalf("FetchActiveWorkUnitsByQueues(queue) expected nil error, got %v", err)
-	}
-	if res == nil || len(res.WorkUnits) != 2 {
-		t.Fatalf("FetchActiveWorkUnitsByQueues(queue) expected 2 mock work units, got %d", len(res.WorkUnits))
-	}
-	wu := res.WorkUnits[0]
-	if wu.GetName() != "experiments/100/workUnits/1" {
-		t.Errorf("WorkUnit name = %q, want experiments/100/workUnits/1", wu.GetName())
-	}
-	if wu.GetNotes() != "test@example.com" {
-		t.Errorf("WorkUnit notes = %q, want test@example.com", wu.GetNotes())
-	}
-}
-
-func TestFetchActiveWorkUnitsByQueuesAt_CanceledContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+func TestFetchActiveWorkUnitsByQueues_Uninitialized(t *testing.T) {
+	canceledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	repo := &Repository{}
-	_, err := repo.FetchActiveWorkUnitsByQueuesAt(ctx, []string{"gpu-queue"}, 10, "", time.Now())
-	if err == nil {
-		t.Errorf("FetchActiveWorkUnitsByQueuesAt(canceled) expected error, got nil")
+
+	t.Run("canceled context error", func(t *testing.T) {
+		repo := &spanner.Storage{}
+		_, err := repo.FetchActiveWorkUnitsByQueues(canceledCtx, []string{"gpu-queue"}, 10, "")
+		if err == nil {
+			t.Fatalf("FetchActiveWorkUnitsByQueues() expected error for canceled context, got nil")
+		}
+	})
+
+	t.Run("nil client guard returns error", func(t *testing.T) {
+		repo := &spanner.Storage{}
+		_, err := repo.FetchActiveWorkUnitsByQueues(context.Background(), []string{"gpu-queue"}, 10, "")
+		if err == nil {
+			t.Fatalf("FetchActiveWorkUnitsByQueues() expected error for nil spanner client, got nil")
+		}
+	})
+
+	t.Run("empty queue names returns empty result", func(t *testing.T) {
+		ctx := context.Background()
+		_, essClient := emulator.Setup(ctx, t)
+		storage, err := spanner.NewStorage(essClient)
+		if err != nil {
+			t.Fatalf("spanner.NewStorage failed: %v", err)
+		}
+		res, err := storage.FetchActiveWorkUnitsByQueues(ctx, []string{}, 10, "")
+		if err != nil {
+			t.Fatalf("FetchActiveWorkUnitsByQueues() unexpected error: %v", err)
+		}
+		if len(res.WorkUnits) != 0 {
+			t.Errorf("FetchActiveWorkUnitsByQueues() count = %d, want 0", len(res.WorkUnits))
+		}
+	})
+}
+
+func TestFetchActiveWorkUnitsByQueues_EmulatorIntegration(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storage, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("spanner.NewStorage failed: %v", err)
+	}
+
+	xid := int64(100)
+	_ = spanner.CreateBlankExperiment(ctx, t, storage, xid)
+	_ = spanner.CreateBlankWorkUnit(ctx, t, storage, xid, int64(1))
+
+	res, err := storage.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 10, "")
+	if err != nil {
+		t.Fatalf("FetchActiveWorkUnitsByQueues failed: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("FetchActiveWorkUnitsByQueues returned nil result")
 	}
 }

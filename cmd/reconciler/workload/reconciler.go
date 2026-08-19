@@ -71,6 +71,16 @@ var (
 	queueNotFoundRegex = regexp.MustCompile("^LocalQueue (.*) doesn't exist$")
 )
 
+// Params holds dependencies and configuration for constructing a Workload Reconciler.
+type Params struct {
+	Client                      client.Client
+	Scheme                      *runtime.Scheme
+	Batcher                     *shared.UpdateBatcher
+	ManagementClusterInfo       *actuatorpb.ClusterInfo
+	MaxConcurrentReconciles     int
+	DetectInadmissibleWorkUnits bool
+}
+
 // Reconciler implements reconcile.Reconciler for Workloads.
 type Reconciler struct {
 	client.Client
@@ -79,6 +89,27 @@ type Reconciler struct {
 	ManagementClusterInfo       *actuatorpb.ClusterInfo
 	MaxConcurrentReconciles     int
 	DetectInadmissibleWorkUnits bool
+}
+
+// NewReconciler creates and validates a new Workload Reconciler.
+func NewReconciler(p Params) (*Reconciler, error) {
+	if p.Client == nil {
+		return nil, errors.New("client is required")
+	}
+	if p.Scheme == nil {
+		return nil, errors.New("scheme is required")
+	}
+	if p.Batcher == nil {
+		return nil, errors.New("batcher is required")
+	}
+	return &Reconciler{
+		Client:                      p.Client,
+		Scheme:                      p.Scheme,
+		Batcher:                     p.Batcher,
+		ManagementClusterInfo:       p.ManagementClusterInfo,
+		MaxConcurrentReconciles:     p.MaxConcurrentReconciles,
+		DetectInadmissibleWorkUnits: p.DetectInadmissibleWorkUnits,
+	}, nil
 }
 
 func hasValidXMCLabels(ctx context.Context, workload *v1beta1.Workload) bool {
@@ -261,6 +292,9 @@ func (r *Reconciler) updateWorkUnitExecutionUpdateWithInadmissibleReason(ctx con
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
+	if r == nil {
+		return errors.New("reconciler cannot be nil")
+	}
 	logging.Debug(ctx, "Setting up workload reconciler controller with MaxConcurrentReconciles", "MaxConcurrentReconciles", r.MaxConcurrentReconciles)
 	c, err := controller.New("workload", mgr, controller.Options{
 		Reconciler:              r,

@@ -14,6 +14,7 @@
 
 @if (isLoading()) {
   <div class="loading-container">
+    <mat-spinner diameter="40" aria-label="Loading Admin Panel" />
     <p>Loading Admin Panel...</p>
   </div>
 } @else if (healthStatusError()) {
@@ -33,22 +34,30 @@
     </div>
 
     @if (healthStatus()?.systemInfo; as systemInfo) {
-      <xmc-system-info-card [systemInfo]="systemInfo"></xmc-system-info-card>
+      <xmc-system-info-card [systemInfo]="systemInfo" />
     }
 
     <xmc-health-status-section
       [components]="healthStatus()?.components ?? []"
       [overallStatus]="healthStatus()?.healthState ?? 'HEALTH_STATE_UNSPECIFIED'"
       [lastChecked]="lastUpdated()"
+      [loading]="isRefreshing()"
       (refresh)="onRefresh()"
-    ></xmc-health-status-section>
+    />
 
     @if (healthConfigs(); as configs) {
-      <xmc-config-entries-card [configGroups]="configs.configGroups"></xmc-config-entries-card>
+      <xmc-config-entries-card [configGroups]="configs.configGroups" />
     } @else {
-      <div class="loading-container">
+      <div class="loading-container config-loading-container">
+        <mat-spinner diameter="32" aria-label="Loading Configuration" />
         <p>Loading Configuration...</p>
       </div>
+    }
+
+    @if (healthStatus()?.systemInfo; as systemInfo) {
+      <footer class="admin-panel-footer">
+        <span>Build Version: {{ systemInfo.buildVersion }}</span>
+      </footer>
     }
   </div>
 }

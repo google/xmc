@@ -29,7 +29,8 @@ Open `deploy/ctk_v2/xmanager-cloud-deployment.yaml` and configure the deployment
 *   **`iap_client_id`** & **`iap_client_secret`**: OAuth Web Client credentials used by the application backend for Google OAuth2 flow. For step-by-step instructions on creating these, see [OAuth2 Client Setup in INSTALL.md](../../INSTALL.md#4-oauth2-client-iap-credentials-setup).
 *   **`jwt_secret`**: A unique JWT secret key used by the backend to sign and verify cookies.
 *   **`allowed_emails`**: A comma-separated list of email addresses permitted to sign in to XManager.
-*   **`authorized_iam_role`**: The GCP IAM Role for the workload identity binding (e.g., `projects/YOUR_GCP_PROJECT/roles/YOUR_IAM_ROLE`).
+*   **`authorized_iam_role`**: The GCP IAM Role for user workload access (e.g., `projects/YOUR_GCP_PROJECT/roles/YOUR_IAM_ROLE`).
+*   **`admin_iam_role`**: The GCP IAM Role required for administrative access (e.g., `roles/owner` or a custom admin role). Default is `roles/owner`.
 
 ### cert-manager GTS Configuration
 For step-by-step setup of Google Trust Services (GTS) External Account Binding (EAB) keys, see [GTS cert-manager Setup in INSTALL.md](../../INSTALL.md#5-cert-manager-and-google-trust-services-gts-setup).
@@ -39,6 +40,7 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 
 ### Feature Switches
 *   **`enable_metrics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision optional metrics pipeline microservices (Ingestion Gateway and ROD Data Provider).
+*   **`enable_components`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision foundational component controllers.
 
 ---
 
