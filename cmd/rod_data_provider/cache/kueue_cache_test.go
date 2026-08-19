@@ -101,3 +101,41 @@ func TestGetLocalQueuesForClusterQueue(t *testing.T) {
 		}
 	})
 }
+
+func TestGetLocalQueuesForClusterQueues(t *testing.T) {
+	c := NewKueueCache()
+	c.LocalQueues.Set("team-a/lq-1", &kueuev1beta1.LocalQueue{
+		ObjectMeta: metav1.ObjectMeta{Name: "lq-1", Namespace: "team-a"},
+		Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "cq-gpu"},
+	})
+
+	t.Run("returns target queues and mappings for cluster queues", func(t *testing.T) {
+		targetQueues, mapping := c.GetLocalQueuesForClusterQueues([]string{"cq-gpu", "cq-cpu"})
+		wantTargets := []string{"lq-1", "cq-cpu"}
+		wantMapping := map[string][]string{
+			"cq-gpu": {"lq-1"},
+			"cq-cpu": {"cq-cpu"},
+		}
+		if diff := cmp.Diff(wantTargets, targetQueues); diff != "" {
+			t.Errorf("targetQueues mismatch (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff(wantMapping, mapping); diff != "" {
+			t.Errorf("mapping mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("handles nil cache gracefully", func(t *testing.T) {
+		var nilCache *KueueCache
+		targetQueues, mapping := nilCache.GetLocalQueuesForClusterQueues([]string{"cq-gpu"})
+		wantTargets := []string{"cq-gpu"}
+		wantMapping := map[string][]string{
+			"cq-gpu": {"cq-gpu"},
+		}
+		if diff := cmp.Diff(wantTargets, targetQueues); diff != "" {
+			t.Errorf("targetQueues mismatch (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff(wantMapping, mapping); diff != "" {
+			t.Errorf("mapping mismatch (-want +got):\n%s", diff)
+		}
+	})
+}

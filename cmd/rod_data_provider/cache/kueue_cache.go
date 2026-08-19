@@ -57,3 +57,21 @@ func (c *KueueCache) GetLocalQueuesForClusterQueue(clusterQueueName string) []st
 	sort.Strings(matchedNames)
 	return matchedNames
 }
+
+// GetLocalQueuesForClusterQueues returns all target queue names and a mapping of cluster queue name to its target queue names.
+func (c *KueueCache) GetLocalQueuesForClusterQueues(clusterQueueNames []string) ([]string, map[string][]string) {
+	targetQueues := make([]string, 0, len(clusterQueueNames))
+	queueMapping := make(map[string][]string, len(clusterQueueNames))
+	for _, cq := range clusterQueueNames {
+		var targets []string
+		if c != nil {
+			targets = c.GetLocalQueuesForClusterQueue(cq)
+		}
+		if len(targets) == 0 {
+			targets = []string{cq}
+		}
+		queueMapping[cq] = targets
+		targetQueues = append(targetQueues, targets...)
+	}
+	return targetQueues, queueMapping
+}
