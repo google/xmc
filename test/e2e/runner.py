@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import dataclasses
+import json
 import logging
 import os
 import shutil
@@ -91,9 +92,58 @@ class SpannerManager:
     def __init__(self, config: E2EConfig) -> None:
         self.cfg = config
 
+    def _cleanup_stale_databases(self) -> None:
+        """Deletes stale ephemeral test databases to stay under quota limits."""
+        logger.info(
+            "Checking for stale ephemeral databases on instance %s...",
+            self.cfg.spanner_instance,
+        )
+        try:
+            res = run_cmd(
+                [
+                    "gcloud",
+                    "spanner",
+                    "databases",
+                    "list",
+                    f"--instance={self.cfg.spanner_instance}",
+                    f"--project={self.cfg.project_id}",
+                    "--format=value(NAME)",
+                ],
+                capture_output=True,
+                check=False,
+            )
+            current_ts = int(time.time())
+            for line in res.stdout.splitlines():
+                db = line.strip()
+                if not db.startswith("e2e-ess-") and not db.startswith("e2e-xid-"):
+                    continue
+                try:
+                    ts_part = int(db.split("-")[-1])
+                    # If older than 15 minutes, remove it
+                    if current_ts - ts_part > 900:
+                        logger.info("Cleaning up stale database: %s", db)
+                        run_cmd(
+                            [
+                                "gcloud",
+                                "spanner",
+                                "databases",
+                                "delete",
+                                db,
+                                f"--instance={self.cfg.spanner_instance}",
+                                f"--project={self.cfg.project_id}",
+                                "--quiet",
+                            ],
+                            check=False,
+                        )
+                except ValueError:
+                    continue
+        except Exception as e:
+            logger.warning("Stale database cleanup failed: %s", e)
+
     def setup(self) -> None:
         """Creates ephemeral databases and runs migrations."""
         logger.info("=== [Spanner] Setting up ephemeral databases ===")
+        self._cleanup_stale_databases()
         for db_name, mig_dir in [
             (self.cfg.ess_db, "ess"),
             (self.cfg.xid_db, "xid"),
@@ -199,7 +249,17 @@ class KindClusterManager:
             "GOOGLE_APPLICATION_CREDENTIALS",
             os.path.expanduser("~/.config/gcloud/application_default_credentials.json"),
         )
+        is_service_account_json = False
         if os.path.isfile(adc_file):
+            try:
+                with open(adc_file, encoding="utf-8") as cf:
+                    cred_content = json.load(cf)
+                if cred_content.get("type") == "service_account":
+                    is_service_account_json = True
+            except Exception as e:
+                logger.debug("Could not parse credential file %s: %s", adc_file, e)
+
+        if is_service_account_json:
             run_cmd(
                 [
                     "kubectl",
@@ -210,6 +270,22 @@ class KindClusterManager:
                     "-n",
                     "xmc",
                     f"--from-file=key.json={adc_file}",
+                ]
+            )
+        else:
+            dummy_key_path = os.path.join(self.cfg.temp_dir, "dummy_sa_key.json")
+            with open(dummy_key_path, "w", encoding="utf-8") as f:
+                f.write('{"type": "service_account", "project_id": "dummy"}\n')
+            run_cmd(
+                [
+                    "kubectl",
+                    "create",
+                    "secret",
+                    "generic",
+                    "gcp-sa-key",
+                    "-n",
+                    "xmc",
+                    f"--from-file=key.json={dummy_key_path}",
                 ]
             )
 
@@ -225,8 +301,11 @@ class KindClusterManager:
             "--from-literal=jwt-secret=e2e-development-secret-must-be-at-least-32-chars-long",
             "--from-literal=client-secret=xmc-client-secret",
         ]
-        if os.path.isfile(adc_file):
+        if is_service_account_json:
             secrets_cmd.append(f"--from-file=key.json={adc_file}")
+        else:
+            dummy_key_path = os.path.join(self.cfg.temp_dir, "dummy_sa_key.json")
+            secrets_cmd.append(f"--from-file=key.json={dummy_key_path}")
         run_cmd(secrets_cmd)
 
         tls_key_path = os.path.join(self.cfg.temp_dir, "e2e-validation.key")
@@ -291,12 +370,16 @@ class KindClusterManager:
 
     def teardown(self) -> None:
         """Destroys the KinD cluster."""
-        if not self.cfg.keep_cluster and self.exists():
-            logger.info("=== [KinD] Deleting cluster %s ===", self.cfg.cluster_name)
-            run_cmd(
-                [self.cfg.kind_bin, "delete", "cluster", "--name", self.cfg.cluster_name],
-                check=False,
-            )
+        if not self.cfg.keep_cluster:
+            try:
+                if self.exists():
+                    logger.info("=== [KinD] Deleting cluster %s ===", self.cfg.cluster_name)
+                    run_cmd(
+                        [self.cfg.kind_bin, "delete", "cluster", "--name", self.cfg.cluster_name],
+                        check=False,
+                    )
+            except Exception as e:
+                logger.warning("Failed to safely teardown KinD cluster: %s", e)
 
 
 class ImageBuilder:
@@ -517,21 +600,36 @@ ui:
                     )
                     df.write(events_res.stdout + "\n" + events_res.stderr + "\n")
                     df.write(f"=== ALL LOGS (ns: {ns}) ===\n")
-                    logs_res = run_cmd(
+                    pods_list_res = run_cmd(
                         [
                             "kubectl",
-                            "logs",
+                            "get",
+                            "pods",
                             "-n",
                             ns,
-                            "--all-containers=true",
-                            "--tail=100",
-                            "-l",
-                            "app",
+                            "-o",
+                            "jsonpath={.items[*].metadata.name}",
                         ],
                         check=False,
                         capture_output=True,
                     )
-                    df.write(logs_res.stdout + "\n" + logs_res.stderr + "\n")
+                    pod_names = pods_list_res.stdout.strip().split()
+                    for pod_name in pod_names:
+                        df.write(f"--- Logs for pod: {pod_name} ---\n")
+                        logs_res = run_cmd(
+                            [
+                                "kubectl",
+                                "logs",
+                                "-n",
+                                ns,
+                                pod_name,
+                                "--all-containers=true",
+                                "--tail=100",
+                            ],
+                            check=False,
+                            capture_output=True,
+                        )
+                        df.write(logs_res.stdout + "\n" + logs_res.stderr + "\n")
             logger.info("Diagnostics saved to %s", diag_file)
             raise
 
