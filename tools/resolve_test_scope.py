@@ -198,7 +198,9 @@ def _discover_static_rdeps_targets(files: list[str], cwd: Path | None = None) ->
                 if target_label in EXCLUDED_TEST_TARGETS:
                     continue
                 for cd in changed_dirs:
-                    if pkg_path == cd or cd.startswith(pkg_path) or pkg_path.startswith(cd):
+                    if (pkg_path == cd) or (
+                        cd and (cd.startswith(pkg_path) or pkg_path.startswith(cd))
+                    ):
                         test_targets.add(target_label)
     return sorted(test_targets)
 

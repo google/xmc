@@ -176,6 +176,27 @@ class TestResolveTestScope(unittest.TestCase):
         targets = discover_bazel_rdeps_targets(["nonexistent/path/foo.go"])
         self.assertEqual(targets, [])
 
+    def test_discover_static_rdeps_targets_root_dir_matching(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            (tmppath / "BUILD.bazel").write_text('py_test(name = "root_test")\n')
+            (tmppath / "pkg1").mkdir()
+            (tmppath / "pkg1" / "BUILD.bazel").write_text('go_test(name = "pkg1_test")\n')
+            (tmppath / "cmd" / "ui").mkdir(parents=True)
+            (tmppath / "cmd" / "ui" / "BUILD.bazel").write_text(
+                'py_test(name = "server_test")\npy_test(name = "ui_unit_tests")\n'
+            )
+
+            # Test root file does not match all subpackages
+            targets_root = discover_bazel_rdeps_targets(["root_script.py"], cwd=tmppath)
+            self.assertIn("//:root_test", targets_root)
+            self.assertNotIn("//pkg1:pkg1_test", targets_root)
+
+            # Test cmd/ui/server.py matches cmd/ui:server_test but excludes ui_unit_tests
+            targets_ui = discover_bazel_rdeps_targets(["cmd/ui/server.py"], cwd=tmppath)
+            self.assertIn("//cmd/ui:server_test", targets_ui)
+            self.assertNotIn("//cmd/ui:ui_unit_tests", targets_ui)
+
     @patch("subprocess.run")
     def test_get_git_modified_files_strips_quotes(self, mock_run):
         mock_diff = unittest.mock.Mock(
