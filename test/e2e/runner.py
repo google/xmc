@@ -254,19 +254,25 @@ class KindClusterManager:
             "GOOGLE_APPLICATION_CREDENTIALS",
             os.path.expanduser("~/.config/gcloud/application_default_credentials.json"),
         )
-        if os.path.isfile(adc_file):
-            run_cmd(
-                [
-                    "kubectl",
-                    "create",
-                    "secret",
-                    "generic",
-                    "gcp-sa-key",
-                    "-n",
-                    "xmc",
-                    f"--from-file=key.json={adc_file}",
-                ]
+        if not os.path.isfile(adc_file):
+            raise FileNotFoundError(
+                f"GCP credentials file not found at '{adc_file}'. "
+                "A valid credentials file is required to create the 'gcp-sa-key' secret "
+                "for Spanner access in the KinD cluster."
             )
+
+        run_cmd(
+            [
+                "kubectl",
+                "create",
+                "secret",
+                "generic",
+                "gcp-sa-key",
+                "-n",
+                "xmc",
+                f"--from-file=key.json={adc_file}",
+            ]
+        )
 
         logger.info("Creating backend secrets...")
         secrets_cmd = [
@@ -279,9 +285,8 @@ class KindClusterManager:
             "xmc",
             "--from-literal=jwt-secret=e2e-development-secret-must-be-at-least-32-chars-long",
             "--from-literal=client-secret=xmc-client-secret",
+            f"--from-file=key.json={adc_file}",
         ]
-        if os.path.isfile(adc_file):
-            secrets_cmd.append(f"--from-file=key.json={adc_file}")
         run_cmd(secrets_cmd)
 
         tls_key_path = os.path.join(self.cfg.temp_dir, "e2e-validation.key")
