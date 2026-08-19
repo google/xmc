@@ -14,6 +14,7 @@
 
 @if (isLoading()) {
   <div class="loading-container">
+    <mat-spinner diameter="40" aria-label="Loading Admin Panel" />
     <p>Loading Admin Panel...</p>
   </div>
 } @else if (healthStatusError()) {
@@ -47,7 +48,8 @@
     @if (healthConfigs(); as configs) {
       <xmc-config-entries-card [configGroups]="configs.configGroups" />
     } @else {
-      <div class="loading-container">
+      <div class="loading-container config-loading-container">
+        <mat-spinner diameter="32" aria-label="Loading Configuration" />
         <p>Loading Configuration...</p>
       </div>
     }

@@ -128,6 +128,10 @@
         &.dot-degraded {
           background-color: #f59e0b; // amber-500
         }
+
+        &.dot-unknown {
+          background-color: #94a3b8; // slate-400
+        }
       }
 
       .item-name {
@@ -148,6 +152,11 @@
         &.text-degraded {
           color: #d97706; // amber-600
           font-weight: 700;
+        }
+
+        &.text-unknown {
+          color: #64748b; // slate-500
+          font-style: italic;
         }
       }
     }
