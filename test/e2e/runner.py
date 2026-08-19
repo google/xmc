@@ -20,7 +20,6 @@ from __future__ import annotations
 import argparse
 import contextlib
 import dataclasses
-import json
 import logging
 import os
 import shutil
@@ -249,17 +248,7 @@ class KindClusterManager:
             "GOOGLE_APPLICATION_CREDENTIALS",
             os.path.expanduser("~/.config/gcloud/application_default_credentials.json"),
         )
-        is_service_account_json = False
         if os.path.isfile(adc_file):
-            try:
-                with open(adc_file, encoding="utf-8") as cf:
-                    cred_content = json.load(cf)
-                if cred_content.get("type") == "service_account":
-                    is_service_account_json = True
-            except Exception as e:
-                logger.debug("Could not parse credential file %s: %s", adc_file, e)
-
-        if is_service_account_json:
             run_cmd(
                 [
                     "kubectl",
@@ -270,22 +259,6 @@ class KindClusterManager:
                     "-n",
                     "xmc",
                     f"--from-file=key.json={adc_file}",
-                ]
-            )
-        else:
-            dummy_key_path = os.path.join(self.cfg.temp_dir, "dummy_sa_key.json")
-            with open(dummy_key_path, "w", encoding="utf-8") as f:
-                f.write('{"type": "service_account", "project_id": "dummy"}\n')
-            run_cmd(
-                [
-                    "kubectl",
-                    "create",
-                    "secret",
-                    "generic",
-                    "gcp-sa-key",
-                    "-n",
-                    "xmc",
-                    f"--from-file=key.json={dummy_key_path}",
                 ]
             )
 
@@ -301,11 +274,8 @@ class KindClusterManager:
             "--from-literal=jwt-secret=e2e-development-secret-must-be-at-least-32-chars-long",
             "--from-literal=client-secret=xmc-client-secret",
         ]
-        if is_service_account_json:
+        if os.path.isfile(adc_file):
             secrets_cmd.append(f"--from-file=key.json={adc_file}")
-        else:
-            dummy_key_path = os.path.join(self.cfg.temp_dir, "dummy_sa_key.json")
-            secrets_cmd.append(f"--from-file=key.json={dummy_key_path}")
         run_cmd(secrets_cmd)
 
         tls_key_path = os.path.join(self.cfg.temp_dir, "e2e-validation.key")
@@ -558,8 +528,6 @@ ui:
                 "xid-service-deployment",
                 "experiment-state-server-deployment",
                 "ui-deployment",
-                "actuator-deployment",
-                "reconciler-deployment",
             ]:
                 run_cmd(
                     [
