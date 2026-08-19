@@ -30,4 +30,9 @@ compat_go_test(
     name = "statushistory_test",
     srcs = ["statushistory_test.go"],
     embed = [":statushistory"],
+    deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//internal/storage/spanner/emulator",
+        "@com_google_cloud_go_spanner//:spanner",
+    ],
 )

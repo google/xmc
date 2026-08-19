@@ -156,8 +156,8 @@ func runQueueMetricQuery(ctx context.Context, client *spanner.Client, stmt spann
 	return rows, nil
 }
 
-// FetchBatchQueueVelocity queries the WorkUnitStatusHistory table mock for multiple queues in a single Spanner query.
-func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueNames []string, window time.Duration) ([]QueueMetricRow, error) {
+// FetchBatchQueueVelocityWithMockItems queries the WorkUnitStatusHistory table mock for multiple queues with custom mock items.
+func FetchBatchQueueVelocityWithMockItems(ctx context.Context, client *spanner.Client, queueNames []string, window time.Duration, mockItems []WorkUnitStatusHistoryItem) ([]QueueMetricRow, error) {
 	if len(queueNames) == 0 || client == nil {
 		return nil, nil
 	}
@@ -187,7 +187,7 @@ func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueN
 		      JOIN QueueTotals qt ON a.QueueName = qt.QueueName
 		      GROUP BY a.QueueName, qt.TotalAdmittedJobs, a.ResourceType`,
 		Params: map[string]interface{}{
-			"mockStatusHistory": DefaultMockStatusHistoryItems,
+			"mockStatusHistory": mockItems,
 			"queueNames":        queueNames,
 			"cutoffTime":        cutoff,
 			"admittedState":     int64(essmsgpb.WorkUnitStatus_INITIALIZING),
@@ -197,8 +197,8 @@ func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueN
 	return runQueueMetricQuery(ctx, client, stmt, "AdmittedCount")
 }
 
-// FetchBatchPendingQueueMetrics queries the WorkUnitStatusHistory table mock for pending work units across multiple queues.
-func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, queueNames []string) ([]QueueMetricRow, error) {
+// FetchBatchPendingQueueMetricsWithMockItems queries the WorkUnitStatusHistory table mock for pending work units with custom mock items.
+func FetchBatchPendingQueueMetricsWithMockItems(ctx context.Context, client *spanner.Client, queueNames []string, mockItems []WorkUnitStatusHistoryItem) ([]QueueMetricRow, error) {
 	if len(queueNames) == 0 || client == nil {
 		return nil, nil
 	}
@@ -235,11 +235,21 @@ func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, 
 		      JOIN QueueTotals qt ON lp.QueueName = qt.QueueName
 		      GROUP BY lp.QueueName, qt.TotalPendingJobs, lp.ResourceType`,
 		Params: map[string]interface{}{
-			"mockStatusHistory": DefaultMockStatusHistoryItems,
+			"mockStatusHistory": mockItems,
 			"queueNames":        queueNames,
 			"pendingState":      int64(essmsgpb.WorkUnitStatus_SCHEDULING),
 		},
 	}
 
 	return runQueueMetricQuery(ctx, client, stmt, "PendingJobs")
+}
+
+// FetchBatchQueueVelocity queries the WorkUnitStatusHistory table mock for multiple queues in a single Spanner query.
+func FetchBatchQueueVelocity(ctx context.Context, client *spanner.Client, queueNames []string, window time.Duration) ([]QueueMetricRow, error) {
+	return FetchBatchQueueVelocityWithMockItems(ctx, client, queueNames, window, DefaultMockStatusHistoryItems)
+}
+
+// FetchBatchPendingQueueMetrics queries the WorkUnitStatusHistory table mock for pending work units across multiple queues.
+func FetchBatchPendingQueueMetrics(ctx context.Context, client *spanner.Client, queueNames []string) ([]QueueMetricRow, error) {
+	return FetchBatchPendingQueueMetricsWithMockItems(ctx, client, queueNames, DefaultMockStatusHistoryItems)
 }
