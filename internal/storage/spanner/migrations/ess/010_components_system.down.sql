@@ -15,6 +15,7 @@
 DROP VIEW ExperimentConsistencyInfo;
 DROP INDEX Idx_Snapshots_Component;
 DROP TABLE ExperimentComponentSnapshots;
+DROP INDEX Idx_ComponentDependencies_Dependency;
 DROP TABLE ComponentDependencies;
 DROP INDEX Idx_Components_ActiveName;
 DROP INDEX Idx_Components_Class;

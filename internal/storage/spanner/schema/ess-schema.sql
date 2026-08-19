@@ -479,6 +479,8 @@ CREATE TABLE ComponentDependencies (
 ) PRIMARY KEY (ComponentId, DependencyComponentId),
   INTERLEAVE IN PARENT Components ON DELETE CASCADE;
 
+CREATE INDEX Idx_ComponentDependencies_Dependency ON ComponentDependencies(DependencyComponentId);
+
 -- Table: ExperimentComponentSnapshots
 CREATE TABLE ExperimentComponentSnapshots (
   BitReversedXid INT64 NOT NULL,
@@ -500,16 +502,15 @@ SELECT
   NOT EXISTS (
     SELECT 1
     FROM ExperimentComponentSnapshots s
-    LEFT JOIN Components c ON s.ComponentId = c.ComponentId
+    INNER JOIN Components c ON s.ComponentId = c.ComponentId
     WHERE s.BitReversedXid = e.BitReversedXid
-      AND (c.ComponentId IS NULL OR c.State = 5 OR (c.ObservedGeneration IS NOT NULL AND s.LockedGeneration != c.ObservedGeneration))
+      AND (c.State = 5 OR (c.ObservedGeneration IS NOT NULL AND s.LockedGeneration != c.ObservedGeneration))
   ) AS IsExperimentConsistent,
   EXISTS (
     SELECT 1
     FROM ExperimentComponentSnapshots s
-    LEFT JOIN Components c ON s.ComponentId = c.ComponentId
+    INNER JOIN Components c ON s.ComponentId = c.ComponentId
     WHERE s.BitReversedXid = e.BitReversedXid
-      AND c.ComponentId IS NOT NULL
       AND c.ObservedGeneration IS NULL
   ) AS HasPendingReconciliation
 FROM Experiments e
