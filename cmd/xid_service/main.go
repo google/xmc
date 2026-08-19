@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 // Package main implements the XID Service for xmanager_cloud.
 package main
 
@@ -21,25 +22,16 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"go/google"
-	"golang/cloud_google_com/go/spanner/v/v1/spanner"
-	"golang/google_api/cloudidentity/v1beta1/cloudidentity"
-	"golang/google_api/option/option"
 	"golang/grpc/credentials/insecure/insecure"
 	"golang/grpc/grpc"
 	"golang/grpc/reflection/reflection"
-	authz "xmanager_cloud/auth/auth"
-	commonhealth "xmanager_cloud/common/health"
 	"xmanager_cloud/logging/logging"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/xid_service/config"
+	apipb "xmanager_cloud/xid_service/proto/api_go_proto"
 	"xmanager_cloud/xid_service/server/server"
-
-	ss "xmanager_cloud/storage/spanner/spanner"
-
-	spb "xmanager_cloud/xid_service/proto/api_go_grpc_proto"
 )
 
 func main() {
@@ -57,43 +49,18 @@ func main() {
 		logging.Fatal(ctx, "failed to load oauth configuration", "error", err)
 	}
 
-	// 2. Initialize Spanner client.
-	sessionPoolConfig := spanner.SessionPoolConfig{
-		TrackSessionHandles: true,
-		InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
-			ActionOnInactiveTransaction: spanner.Warn,
-		},
-	}
-	sc, err := spanner.NewClientWithConfig(
-		ctx,
-		cfg.SpannerDatabaseName,
-		spanner.ClientConfig{SessionPoolConfig: sessionPoolConfig},
-		option.WithQuotaProject(cfg.QuotaProjectID),
-	)
+	// 2. Initialize runtime server.
+	runtimeServer, err := server.NewRuntimeServer(ctx, &cfg, oauthCfg)
 	if err != nil {
-		logging.Fatal(ctx, "failed to create spanner client", "error", err)
+		logging.Fatal(ctx, "failed to initialize runtime server", "error", err)
 	}
-	defer sc.Close()
+	defer func() {
+		if err := runtimeServer.Close(); err != nil {
+			logging.Error(ctx, "failed to close runtime server", "error", err)
+		}
+	}()
 
-	// 3. Initialize Cloud Identity service.
-	idService, err := cloudidentity.NewService(ctx, option.WithQuotaProject(cfg.QuotaProjectID))
-	if err != nil {
-		logging.Fatal(ctx, "failed to create Cloud Identity service", "error", err)
-	}
-
-	// 4. Inject dependencies into the server
-	auth, err := authz.NewAuthorizer(ctx, idService, 10*time.Minute, 1*time.Minute, []string{cfg.Audience, cfg.HTTPAudience, cfg.GRPCAudience, oauthCfg.ClientID}, cfg.IAPIssuer, cfg.DisableAuthentication, []byte(oauthCfg.JWTSecret))
-	if err != nil {
-		logging.Fatal(ctx, "failed to create authorizer", "error", err)
-	}
-
-	storage, err := ss.NewStorage(sc)
-	if err != nil {
-		logging.Fatal(ctx, "failed to create storage", "error", err)
-	}
-
-	xidServer := server.NewXIDServer(cfg, auth, storage)
-
+	// 3. Set up the gRPC server.
 	lis, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {
 		logging.Fatal(ctx, "failed to listen", "error", err)
@@ -101,13 +68,13 @@ func main() {
 
 	s := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
 
-	spb.RegisterXidServiceServer(s, xidServer)
+	apipb.RegisterXidServiceServer(s, runtimeServer)
 
 	reflection.Register(s)
 
 	// Start active monitoring of dependencies
 	healthServer := RegisterHealthServer(s)
-	go StartHealthMonitor(ctx, commonhealth.NewSpannerHealthClient(sc), healthServer)
+	go StartHealthMonitor(ctx, runtimeServer.HealthCheckers(), healthServer)
 
 	logging.Info(ctx, "gRPC server listening", "addr", lis.Addr())
 

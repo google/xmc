@@ -47,7 +47,7 @@ func TestUpdateDashboard_Success(t *testing.T) {
 		t.Errorf("got Title %q, want 'Updated Dashboard Title'", got.GetTitle())
 	}
 
-	fetched, err := repo.GetDashboard(ctx, "dashboards/test-update-1")
+	fetched, err := repo.GetDashboard(ctx, "test-update-1")
 	if err != nil {
 		t.Fatalf("GetDashboard failed: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestUpdateDashboard_WithFieldMask(t *testing.T) {
 		t.Errorf("got Title %q, want 'New Title'", got.GetTitle())
 	}
 
-	fetched, err := repo.GetDashboard(ctx, "dashboards/test-update-mask-1")
+	fetched, err := repo.GetDashboard(ctx, "test-update-mask-1")
 	if err != nil {
 		t.Fatalf("GetDashboard failed: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestUpdateDashboard_WithCharts(t *testing.T) {
 		t.Fatalf("UpdateDashboard charts failed: %v", err)
 	}
 
-	fetched, err := repo.GetDashboard(ctx, "dashboards/test-update-charts-1")
+	fetched, err := repo.GetDashboard(ctx, "test-update-charts-1")
 	if err != nil {
 		t.Fatalf("GetDashboard failed: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestUpdateDashboard_ReorderedCharts(t *testing.T) {
 		t.Errorf("got Charts %v, want canonically sorted [charts/test-chart-reorder-1, charts/test-chart-reorder-2]", got.GetCharts())
 	}
 
-	fetched, err := repo.GetDashboard(ctx, "dashboards/test-update-reorder-1")
+	fetched, err := repo.GetDashboard(ctx, "test-update-reorder-1")
 	if err != nil {
 		t.Fatalf("GetDashboard failed: %v", err)
 	}

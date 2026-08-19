@@ -20,6 +20,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/internal/dashboard/dataengine"
 	"xmanager_cloud/pkg/clickhouse"
@@ -80,13 +82,17 @@ func Run(ctx context.Context, opts *HarnessOptions) ([]*TestResult, error) {
 		return nil, fmt.Errorf("failed to ensure schema: %w", err)
 	}
 
-	if opts.SeedData {
-		_ = CleanupTestMetrics(ctx, conn, opts.TableName, 9001, 9002)
-		count, err := SeedDataset(ctx, conn, opts.TableName, opts.SeedFile)
+	var seedXIDs []int64
+	if opts.SeedData || opts.CleanData {
+		var err error
+		seedXIDs, err = ExtractSeedXIDs(opts.SeedFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to seed dataset: %w", err)
+			return nil, fmt.Errorf("failed to extract seed XIDs: %w", err)
 		}
-		fmt.Printf("--> Seeded %d records into %s\n", count, opts.TableName)
+	}
+
+	if err := prepareSeedData(ctx, conn, opts, seedXIDs); err != nil {
+		return nil, err
 	}
 
 	engine, err := dataengine.New(conn, dataengine.WithTableName(opts.TableName))
@@ -99,22 +105,39 @@ func Run(ctx context.Context, opts *HarnessOptions) ([]*TestResult, error) {
 		return nil, fmt.Errorf("failed to load test cases: %w", err)
 	}
 
-	var results []*TestResult
-	for _, tc := range testCases {
-		if opts.TestCaseFilter != "" && tc.ID != opts.TestCaseFilter {
-			continue
-		}
-		res := executeTestCase(ctx, engine, tc, opts)
-		results = append(results, res)
-	}
+	results := runTestCases(ctx, engine, testCases, opts)
 
 	if opts.CleanData {
-		if err := CleanupTestMetrics(ctx, conn, opts.TableName, 9001, 9002); err != nil {
+		if err := CleanupTestMetrics(ctx, conn, opts.TableName, seedXIDs...); err != nil {
 			fmt.Printf("WARNING: Failed to cleanup test metrics: %v\n", err)
 		}
 	}
 
 	return results, nil
+}
+
+func prepareSeedData(ctx context.Context, conn driver.Conn, opts *HarnessOptions, seedXIDs []int64) error {
+	if !opts.SeedData {
+		return nil
+	}
+	_ = CleanupTestMetrics(ctx, conn, opts.TableName, seedXIDs...)
+	count, err := SeedDataset(ctx, conn, opts.TableName, opts.SeedFile)
+	if err != nil {
+		return fmt.Errorf("failed to seed dataset: %w", err)
+	}
+	fmt.Printf("--> Seeded %d records into %s\n", count, opts.TableName)
+	return nil
+}
+
+func runTestCases(ctx context.Context, engine *dataengine.DataEngine, testCases []*TestCase, opts *HarnessOptions) []*TestResult {
+	var results []*TestResult
+	for _, tc := range testCases {
+		if opts.TestCaseFilter != "" && tc.ID != opts.TestCaseFilter {
+			continue
+		}
+		results = append(results, executeTestCase(ctx, engine, tc, opts))
+	}
+	return results
 }
 
 func executeTestCase(ctx context.Context, engine *dataengine.DataEngine, tc *TestCase, opts *HarnessOptions) *TestResult {

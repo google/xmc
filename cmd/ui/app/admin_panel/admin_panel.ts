@@ -14,6 +14,7 @@
 
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { BehaviorSubject, of } from 'rxjs';
 import { catchError, finalize, switchMap, tap } from 'rxjs/operators';
 
@@ -34,7 +35,12 @@ import { SystemInfoCardComponent } from './components/system_info_card/system_in
 @Component({
   selector: 'xmc-admin-panel',
   standalone: true,
-  imports: [SystemInfoCardComponent, HealthStatusSectionComponent, ConfigEntriesCardComponent],
+  imports: [
+    MatProgressSpinnerModule,
+    SystemInfoCardComponent,
+    HealthStatusSectionComponent,
+    ConfigEntriesCardComponent,
+  ],
   templateUrl: './admin_panel.ng.html',
   styleUrl: './admin_panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

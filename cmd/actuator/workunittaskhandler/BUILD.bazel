@@ -9,7 +9,6 @@ compat_go_library(
     importpath = "xmanager_cloud/cmd/actuator/workunittaskhandler",
     deps = [
         "//api/protos/task_queue:task_go_proto",
-        "//cmd/actuator/k8s_client",
         "//internal/common/interfaces",
         "//internal/compat/uuid",
         "//internal/logging",
@@ -28,17 +27,13 @@ compat_go_test(
     srcs = ["workunit_task_handler_test.go"],
     embed = [":workunittaskhandler"],
     deps = [
-        "//cmd/actuator/k8s_client/preconditions_validator",
         "//internal/security/securitytest",
         "@com_github_prometheus_client_golang//prometheus/testutil:go_default_library",
         "@com_github_tink_crypto_tink_go_v2//jwt:go_default_library",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
-        "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/runtime/schema",
         "@io_k8s_apimachinery//pkg/util/validation/field",
-        "@io_k8s_client_go//dynamic/fake",
-        "@io_k8s_client_go//kubernetes/fake",
         "@org_golang_google_api//idtoken",
     ],
 )

@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 // Package server implements the gRPC server for the Experiment State Service.
 package server
 
@@ -29,6 +30,14 @@ import (
 )
 
 var _ apipb.ExperimentStateServiceServer = (*Server)(nil)
+
+// TODO(xmc): Refactor out of in-memory observer pattern to a durable Pub/Sub
+// worker service. Relying on the gRPC server to orchestrate side-effects like
+// Dashboard charts and Task Queue pushing violates SRP and risks dropped events
+// during pod restarts.
+type ArtifactObserver interface {
+	OnArtifactCreated(ctx context.Context, artifact *essmsgpb.Artifact)
+}
 
 // Server implements the generated pb.ExperimentStateServiceServer interface.
 type Server struct {
@@ -60,6 +69,7 @@ type ExperimentHandler struct {
 // ArtifactHandler handles artifact operations.
 type ArtifactHandler struct {
 	baseHandler
+	artifactObservers []ArtifactObserver
 }
 
 // StatusMessageHandler handles status message operations.
@@ -81,9 +91,10 @@ func newExperimentHandler(base baseHandler, server spb.ExperimentStateServiceSer
 	}
 }
 
-func newArtifactHandler(base baseHandler) *ArtifactHandler {
+func newArtifactHandler(base baseHandler, observers ...ArtifactObserver) *ArtifactHandler {
 	return &ArtifactHandler{
-		baseHandler: base,
+		baseHandler:       base,
+		artifactObservers: observers,
 	}
 }
 
@@ -103,11 +114,12 @@ func newWorkUnitHandler(base baseHandler, actuator WorkUnitActuator, server spb.
 
 // Params holds dependencies for creating a Server.
 type Params struct {
-	Config           *config.Config
-	Storage          storage.Storage
-	Authorizer       auth.AuthorizerInterface
-	XidClient        xidgrpcpb.XidServiceClient
-	WorkUnitActuator WorkUnitActuator
+	Config            *config.Config
+	Storage           storage.Storage
+	Authorizer        auth.AuthorizerInterface
+	XidClient         xidgrpcpb.XidServiceClient
+	WorkUnitActuator  WorkUnitActuator
+	ArtifactObservers []ArtifactObserver
 }
 
 // New creates a new instance of the Experiment State Server.
@@ -138,7 +150,7 @@ func New(p Params) (*Server, error) {
 	s := &Server{}
 	s.ExperimentHandler = newExperimentHandler(base, s)
 	s.WorkUnitHandler = newWorkUnitHandler(base, p.WorkUnitActuator, s)
-	s.ArtifactHandler = newArtifactHandler(base)
+	s.ArtifactHandler = newArtifactHandler(base, p.ArtifactObservers...)
 	s.StatusMessageHandler = newStatusMessageHandler(base)
 	return s, nil
 }

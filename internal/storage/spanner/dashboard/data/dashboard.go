@@ -29,6 +29,7 @@ import (
 	"task/go/status"
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
+	"xmanager_cloud/validator/validator"
 )
 
 // SortCharts returns a new slice with charts sorted alphabetically by Name.
@@ -90,7 +91,12 @@ func MergeDashboards(current, updated *dpb.Dashboard, updateMask *fieldmaskpb.Fi
 // DashboardProtoToInsertMutations creates Spanner mutations to insert a Dashboard and its child DashboardCharts.
 func DashboardProtoToInsertMutations(dashboard *dpb.Dashboard) ([]*spanner.Mutation, error) {
 	if dashboard == nil {
-		return nil, fmt.Errorf("dashboard proto must not be nil")
+		return nil, fmt.Errorf("dashboard proto must not be nil: %w", status.ErrInvalidArgument)
+	}
+
+	dashID, err := validator.ValidateDashboardName(dashboard.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("invalid dashboard name: %w", err)
 	}
 
 	var layoutBytes []byte
@@ -106,7 +112,7 @@ func DashboardProtoToInsertMutations(dashboard *dpb.Dashboard) ([]*spanner.Mutat
 	m := spanner.InsertOrUpdate(dashboardschema.DashboardsTableName, []string{
 		"DashboardId", "Title", "Description", "Owner", "ChartLayout", "CreatedAt", "UpdatedAt",
 	}, []interface{}{
-		dashboard.Name, dashboard.Title, dashboard.Description, dashboard.Owner, layoutBytes, spanner.CommitTimestamp, spanner.CommitTimestamp,
+		dashID, dashboard.Title, dashboard.Description, dashboard.Owner, layoutBytes, spanner.CommitTimestamp, spanner.CommitTimestamp,
 	})
 	mutations = append(mutations, m)
 
@@ -117,7 +123,7 @@ func DashboardProtoToInsertMutations(dashboard *dpb.Dashboard) ([]*spanner.Mutat
 		mChart := spanner.InsertOrUpdate(dashboardschema.DashboardChartsTableName, []string{
 			"DashboardId", "DashboardChartId", "ChartId", "GridPosition", "CreatedAt",
 		}, []interface{}{
-			dashboard.GetName(), chart.GetName(), chart.GetName(), nil, spanner.CommitTimestamp,
+			dashID, chart.GetName(), chart.GetName(), nil, spanner.CommitTimestamp,
 		})
 		mutations = append(mutations, mChart)
 	}
@@ -134,6 +140,11 @@ func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateCharts bool
 		return nil, fmt.Errorf("dashboard name must not be empty: %w", status.ErrInvalidArgument)
 	}
 
+	dashID, err := validator.ValidateDashboardName(dashboard.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("invalid dashboard name: %w", err)
+	}
+
 	var layoutBytes []byte
 	if dashboard.ChartLayout != nil {
 		var err error
@@ -145,7 +156,7 @@ func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateCharts bool
 
 	var mutations []*spanner.Mutation
 	m := spanner.UpdateMap(dashboardschema.DashboardsTableName, map[string]interface{}{
-		"DashboardId": dashboard.GetName(),
+		"DashboardId": dashID,
 		"Title":       dashboard.GetTitle(),
 		"Description": dashboard.GetDescription(),
 		"ChartLayout": layoutBytes,
@@ -154,7 +165,7 @@ func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateCharts bool
 	mutations = append(mutations, m)
 
 	if updateCharts {
-		mDel := spanner.Delete(dashboardschema.DashboardChartsTableName, spanner.Key{dashboard.GetName()}.AsPrefix())
+		mDel := spanner.Delete(dashboardschema.DashboardChartsTableName, spanner.Key{dashID}.AsPrefix())
 		mutations = append(mutations, mDel)
 
 		for _, chart := range dashboard.GetCharts() {
@@ -164,7 +175,7 @@ func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateCharts bool
 			mChart := spanner.InsertOrUpdate(dashboardschema.DashboardChartsTableName, []string{
 				"DashboardId", "DashboardChartId", "ChartId", "GridPosition", "CreatedAt",
 			}, []interface{}{
-				dashboard.GetName(), chart.GetName(), chart.GetName(), nil, spanner.CommitTimestamp,
+				dashID, chart.GetName(), chart.GetName(), nil, spanner.CommitTimestamp,
 			})
 			mutations = append(mutations, mChart)
 		}
@@ -228,7 +239,7 @@ func DashboardRowToProto(row *spanner.Row, charts []*dpb.Chart) (*dpb.Dashboard,
 	}
 
 	return &dpb.Dashboard{
-		Name:        data.ID,
+		Name:        validator.ConstructDashboardName(data.ID),
 		Title:       data.Title,
 		Description: data.Description,
 		Owner:       data.Owner,

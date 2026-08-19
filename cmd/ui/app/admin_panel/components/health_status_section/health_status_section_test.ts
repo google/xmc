@@ -97,10 +97,10 @@ describe('HealthStatusSectionComponent', () => {
     expect(await cards[1].getTitleText()).toContain('GCP Hosted Services');
     expect(coreInstancesCardItems.length).toBe(1);
     expect(coreInstancesCardItems[0]).toContain('actuator');
-    expect(coreInstancesCardItems[0]).toContain('HEALTHY');
+    expect(coreInstancesCardItems[0]).toContain('Running');
     expect(dependenciesCardItems.length).toBe(1);
     expect(dependenciesCardItems[0]).toContain('db-conn');
-    expect(dependenciesCardItems[0]).toContain('DEGRADED');
+    expect(dependenciesCardItems[0]).toContain('Degraded');
     expect(await cards[1].hasErrorDetails()).toBeTrue();
     expect(await cards[1].getErrorDetailsText()).toContain('View Error Details');
   });
@@ -124,5 +124,30 @@ describe('HealthStatusSectionComponent', () => {
     const harness = await getHarness(HealthStatusSectionHarness);
     expect(await harness.isRefreshDisabled()).toBeTrue();
     expect(await harness.getRefreshButtonText()).toContain('Refreshing...');
+  });
+
+  it('should keep group as HEALTHY and render Unknown when a component is unspecified/unconfigured', async () => {
+    const mockComponents: ComponentHealth[] = [
+      {
+        name: 'log-monitor',
+        type: ComponentType.CORE_SERVICE,
+        healthState: HealthState.UNSPECIFIED,
+      },
+    ];
+    const host = bootstrap(TestHostComponent);
+
+    host.components.set(mockComponents);
+    host.overallStatus.set(HealthState.HEALTHY);
+    await flush();
+
+    const harness = await getHarness(HealthStatusSectionHarness);
+    const cards = await harness.getGroupCards();
+    const items = await cards[0].getItemTexts();
+
+    expect(cards.length).toBe(1);
+    expect(await cards[0].getStatusText()).toBe('HEALTHY');
+    expect(items.length).toBe(1);
+    expect(items[0]).toContain('log-monitor');
+    expect(items[0]).toContain('Unknown');
   });
 });

@@ -36,7 +36,7 @@ func TestGetDashboard_Success(t *testing.T) {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
 
-	got, err := repo.GetDashboard(ctx, "dashboards/test-get-1")
+	got, err := repo.GetDashboard(ctx, "test-get-1")
 	if err != nil {
 		t.Fatalf("GetDashboard failed: %v", err)
 	}
@@ -65,8 +65,18 @@ func TestGetDashboard_NotFound(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	_, err := repo.GetDashboard(ctx, "dashboards/non-existent")
+	_, err := repo.GetDashboard(ctx, "non-existent")
 	if err == nil {
 		t.Errorf("GetDashboard for non-existent dashboard succeeded, want error")
+	}
+}
+
+func TestGetDashboard_EmptyID(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	_, err := repo.GetDashboard(ctx, "")
+	if err == nil {
+		t.Errorf("GetDashboard for empty dashboardId succeeded, want error")
 	}
 }

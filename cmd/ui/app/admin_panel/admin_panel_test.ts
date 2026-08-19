@@ -16,7 +16,7 @@ import 'jasmine';
 
 import { provideHttpClient } from '@angular/common/http';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 
 import { HealthService } from '../service/health_service';
 import { SnackbarService } from '../service/snackbar_service';
@@ -161,5 +161,18 @@ describe('AdminPanelPage Component', () => {
     expect(await harness.getErrorText()).toBeNull();
     expect(preservedSection).not.toBeNull();
     expect(await preservedSection!.getOverallStatusText()).toBe('HEALTHY');
+  });
+
+  it('should display progress spinner while loading', async () => {
+    const healthService = get(HealthService);
+    // Never emit to keep isLoading true
+    spyOn(healthService, 'getHealthStatus').and.returnValue(new Subject<any>());
+
+    bootstrap(AdminPanelPage);
+    // Flush microtasks without completing observable
+    await flush();
+
+    const harness = await getHarness(AdminPanelHarness);
+    expect(await harness.hasSpinner()).toBeTrue();
   });
 });

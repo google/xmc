@@ -73,6 +73,12 @@ compat_go_test(
 )
 
 compat_go_test(
+    name = "seeder_test",
+    srcs = ["seeder_test.go"],
+    embed = [":dataengine_harness"],
+)
+
+compat_go_test(
     name = "dataengine_e2e_test",
     srcs = ["dataengine_e2e_test.go"],
     data = glob(["testdata/**"]),
@@ -80,4 +86,10 @@ compat_go_test(
         ":dataengine_harness",
         "//pkg/clickhouse",
     ],
+)
+
+filegroup(
+    name = "golden_testdata",
+    srcs = glob(["testdata/golden/*.json"]),
+    visibility = ["//visibility:public"],
 )

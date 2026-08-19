@@ -16,7 +16,12 @@ import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 
-import { ComponentHealth, HealthState } from '../health_status_section';
+import { ComponentHealth, ComponentType, HealthState } from '../health_status_section';
+
+/** Extended component health item with precomputed status label. */
+export interface ComponentHealthItem extends ComponentHealth {
+  statusLabel: string;
+}
 
 /** Component representing a single grouped health card (e.g., Core, GCP, Custom). */
 @Component({
@@ -42,9 +47,23 @@ export class HealthStatusGroupCardComponent {
     return this.isDegraded() ? 'DEGRADED' : 'HEALTHY';
   });
 
-  protected mapHealthState(state?: string): string {
-    if (state === HealthState.HEALTHY) return 'HEALTHY';
-    if (state === HealthState.UNHEALTHY) return 'DEGRADED';
-    return 'UNKNOWN';
+  protected readonly items = computed<ComponentHealthItem[]>(() => {
+    return this.components().map((item) => ({
+      ...item,
+      statusLabel: this.calculateStatusLabel(item),
+    }));
+  });
+
+  private calculateStatusLabel(item: ComponentHealth): string {
+    if (item.healthState === HealthState.HEALTHY) {
+      if (item.type === ComponentType.CORE_SERVICE) return 'Running';
+      if (item.type === ComponentType.EXTERNAL_DEPENDENCY) return 'Online';
+      if (item.type === ComponentType.CUSTOM_COMPONENT) return 'Connected';
+      return 'Running';
+    }
+    if (item.healthState === HealthState.UNHEALTHY) {
+      return 'Degraded';
+    }
+    return 'Unknown';
   }
 }

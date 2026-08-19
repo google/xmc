@@ -1,0 +1,69 @@
+{
+  "name": "experiments/234911124/charts/tuned_v2",
+  "xid": "234911124",
+  "wid": "1",
+  "plots_data": [
+    {
+      "plot_id": "val_loss_kpi",
+      "type": "SUMMARY_BOX",
+      "summary_data": {
+        "metric_name": "val/loss",
+        "latest_value": 0.8124,
+        "min_value": 0.8124,
+        "max_value": 2.0,
+        "mean_value": 1.185,
+        "latest_step": "500",
+        "latest_timestamp": "2026-08-11T12:00:00Z"
+      }
+    },
+    {
+      "plot_id": "train_acc_kpi",
+      "type": "SUMMARY_BOX",
+      "summary_data": {
+        "metric_name": "train/accuracy",
+        "latest_value": 0.962,
+        "min_value": 0.3,
+        "max_value": 0.962,
+        "mean_value": 0.835,
+        "latest_step": "500",
+        "latest_timestamp": "2026-08-11T12:00:00Z"
+      }
+    },
+    {
+      "plot_id": "loss_vs_steps",
+      "type": "SCATTER",
+      "scatter_series": {
+        "metric_name": "val/loss",
+        "work_unit_id": "1",
+        "xid": "234911124",
+        "points": [
+          { "step": "0", "avg_value": 2.0, "min_value": 2.0, "max_value": 2.0, "timestamp": "2026-08-11T10:00:00Z" },
+          { "step": "50", "avg_value": 1.62, "min_value": 1.62, "max_value": 1.62, "timestamp": "2026-08-11T10:10:00Z" },
+          { "step": "100", "avg_value": 1.35, "min_value": 1.35, "max_value": 1.35, "timestamp": "2026-08-11T10:20:00Z" },
+          { "step": "150", "avg_value": 1.18, "min_value": 1.18, "max_value": 1.18, "timestamp": "2026-08-11T10:30:00Z" },
+          { "step": "200", "avg_value": 1.05, "min_value": 1.05, "max_value": 1.05, "timestamp": "2026-08-11T10:40:00Z" },
+          { "step": "250", "avg_value": 0.97, "min_value": 0.97, "max_value": 0.97, "timestamp": "2026-08-11T10:50:00Z" },
+          { "step": "300", "avg_value": 0.91, "min_value": 0.91, "max_value": 0.91, "timestamp": "2026-08-11T11:00:00Z" },
+          { "step": "350", "avg_value": 0.87, "min_value": 0.87, "max_value": 0.87, "timestamp": "2026-08-11T11:10:00Z" },
+          { "step": "400", "avg_value": 0.84, "min_value": 0.84, "max_value": 0.84, "timestamp": "2026-08-11T11:20:00Z" },
+          { "step": "450", "avg_value": 0.82, "min_value": 0.82, "max_value": 0.82, "timestamp": "2026-08-11T11:30:00Z" },
+          { "step": "500", "avg_value": 0.8124, "min_value": 0.8124, "max_value": 0.8124, "timestamp": "2026-08-11T11:40:00Z" }
+        ]
+      }
+    },
+    {
+      "plot_id": "step_time_dist",
+      "type": "BAR",
+      "bar_data": {
+        "metric_name": "perf/step_time_ms",
+        "buckets": [
+          { "category_or_bin": "< 10ms", "value_or_count": 8 },
+          { "category_or_bin": "10-20ms", "value_or_count": 55 },
+          { "category_or_bin": "20-30ms", "value_or_count": 395 },
+          { "category_or_bin": "30-40ms", "value_or_count": 38 },
+          { "category_or_bin": "> 40ms", "value_or_count": 4 }
+        ]
+      }
+    }
+  ]
+}
