@@ -71,6 +71,9 @@ vars:
   # Enable Metrics Pipeline (Ingestion Gateway & ROD Data Provider)
   enable_metrics: false
 
+  # Enable Foundational Component Controllers
+  enable_components: false
+
   # The physical address range allowed to call the GKE control plane
   authorized_cidr: 0.0.0.0/0
 
