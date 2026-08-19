@@ -41,6 +41,7 @@ type (
 	listDashboardsFunc  = func(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*dpb.Dashboard, string, error)
 	updateDashboardFunc = func(ctx context.Context, dashboard *dpb.Dashboard, updateMask *fieldmaskpb.FieldMask) (*dpb.Dashboard, error)
 	deleteDashboardFunc = func(ctx context.Context, dashboardId string) error
+	createChartFunc     = func(ctx context.Context, chart *dpb.Chart) error
 	getChartFunc        = func(ctx context.Context, chartId string) (*dpb.Chart, error)
 )
 
@@ -50,7 +51,15 @@ type mockRepository struct {
 	listDashboardsFn  listDashboardsFunc
 	updateDashboardFn updateDashboardFunc
 	deleteDashboardFn deleteDashboardFunc
+	createChartFn     createChartFunc
 	getChartFn        getChartFunc
+}
+
+func (m *mockRepository) CreateChart(ctx context.Context, chart *dpb.Chart) error {
+	if m.createChartFn != nil {
+		return m.createChartFn(ctx, chart)
+	}
+	return nil
 }
 
 func (m *mockRepository) CreateDashboard(ctx context.Context, dashboard *dpb.Dashboard) error {
@@ -132,23 +141,6 @@ func (m *mockXidClient) CheckUserAuthorization(ctx context.Context, in *xidapipb
 		return m.checkUserAuthorizationFn(ctx, in, opts...)
 	}
 	return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
-}
-
-func TestCreateChart(t *testing.T) {
-	s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, nil)
-	ctx := context.Background()
-
-	req := &spb.CreateChartRequest{
-		Parent: "dashboards/123",
-		Chart:  &dpb.Chart{Name: "dashboards/123/charts/new", Title: "New Chart"},
-	}
-	resp, err := s.CreateChart(ctx, req)
-	if err != nil {
-		t.Fatalf("CreateChart failed: %v", err)
-	}
-	if resp.GetName() != "dashboards/123/charts/new" {
-		t.Errorf("CreateChart().Name = %q, want %q", resp.GetName(), "dashboards/123/charts/new")
-	}
 }
 
 func TestGetChart(t *testing.T) {

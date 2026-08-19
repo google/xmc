@@ -88,6 +88,61 @@ func MergeDashboards(current, updated *dpb.Dashboard, updateMask *fieldmaskpb.Fi
 	return merged, nil
 }
 
+// buildPositionsMap encodes grid positions from the chart layout keyed by ItemId.
+func buildPositionsMap(layout *dpb.LayoutSpec) (map[string][]byte, error) {
+	if layout == nil {
+		return nil, nil
+	}
+	positionsMap := make(map[string][]byte, len(layout.GetPositions()))
+	for _, pos := range layout.GetPositions() {
+		if pos == nil || pos.GetItemId() == "" {
+			continue
+		}
+		posBytes, err := proto.Marshal(pos)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal grid position for %q: %w", pos.GetItemId(), err)
+		}
+		positionsMap[pos.GetItemId()] = posBytes
+	}
+	return positionsMap, nil
+}
+
+// buildDashboardChartMutations generates Spanner mutations for child DashboardCharts of a dashboard.
+func buildDashboardChartMutations(dashID string, dashboard *dpb.Dashboard) ([]*spanner.Mutation, error) {
+	positionsMap, err := buildPositionsMap(dashboard.GetChartLayout())
+	if err != nil {
+		return nil, err
+	}
+
+	var mutations []*spanner.Mutation
+	for _, chart := range dashboard.GetCharts() {
+		if chart == nil {
+			return nil, fmt.Errorf("chart in dashboard charts list must not be nil: %w", status.ErrInvalidArgument)
+		}
+		if chart.GetName() == "" {
+			return nil, fmt.Errorf("chart name must not be empty: %w", status.ErrInvalidArgument)
+		}
+		_, _, chartID, err := validator.ValidateChartName(chart.GetName())
+		if err != nil {
+			return nil, fmt.Errorf("invalid chart name %q: %w", chart.GetName(), err)
+		}
+
+		gridPos := positionsMap[chart.GetName()]
+		if gridPos == nil {
+			gridPos = positionsMap[chartID]
+		}
+
+		mChart := spanner.InsertOrUpdate(dashboardschema.DashboardChartsTableName, []string{
+			"DashboardId", "DashboardChartId", "ChartId", "GridPosition", "CreatedAt",
+		}, []interface{}{
+			dashID, chartID, chartID, gridPos, spanner.CommitTimestamp,
+		})
+		mutations = append(mutations, mChart)
+	}
+
+	return mutations, nil
+}
+
 // DashboardProtoToInsertMutations creates Spanner mutations to insert a Dashboard and its child DashboardCharts.
 func DashboardProtoToInsertMutations(dashboard *dpb.Dashboard) ([]*spanner.Mutation, error) {
 	if dashboard == nil {
@@ -101,34 +156,24 @@ func DashboardProtoToInsertMutations(dashboard *dpb.Dashboard) ([]*spanner.Mutat
 
 	var layoutBytes []byte
 	if dashboard.ChartLayout != nil {
-		var err error
 		layoutBytes, err = proto.Marshal(dashboard.ChartLayout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal chart layout: %w", err)
 		}
 	}
 
-	var mutations []*spanner.Mutation
 	m := spanner.InsertOrUpdate(dashboardschema.DashboardsTableName, []string{
 		"DashboardId", "Title", "Description", "Owner", "ChartLayout", "CreatedAt", "UpdatedAt",
 	}, []interface{}{
 		dashID, dashboard.Title, dashboard.Description, dashboard.Owner, layoutBytes, spanner.CommitTimestamp, spanner.CommitTimestamp,
 	})
-	mutations = append(mutations, m)
 
-	for _, chart := range dashboard.GetCharts() {
-		if chart == nil {
-			return nil, fmt.Errorf("chart in dashboard charts list must not be nil: %w", status.ErrInvalidArgument)
-		}
-		mChart := spanner.InsertOrUpdate(dashboardschema.DashboardChartsTableName, []string{
-			"DashboardId", "DashboardChartId", "ChartId", "GridPosition", "CreatedAt",
-		}, []interface{}{
-			dashID, chart.GetName(), chart.GetName(), nil, spanner.CommitTimestamp,
-		})
-		mutations = append(mutations, mChart)
+	chartMutations, err := buildDashboardChartMutations(dashID, dashboard)
+	if err != nil {
+		return nil, err
 	}
 
-	return mutations, nil
+	return append([]*spanner.Mutation{m}, chartMutations...), nil
 }
 
 // DashboardProtoToUpdateMutations creates Spanner mutations to update a Dashboard and optionally its child DashboardCharts.
@@ -147,14 +192,12 @@ func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateCharts bool
 
 	var layoutBytes []byte
 	if dashboard.ChartLayout != nil {
-		var err error
 		layoutBytes, err = proto.Marshal(dashboard.ChartLayout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal chart layout: %w", err)
 		}
 	}
 
-	var mutations []*spanner.Mutation
 	m := spanner.UpdateMap(dashboardschema.DashboardsTableName, map[string]interface{}{
 		"DashboardId": dashID,
 		"Title":       dashboard.GetTitle(),
@@ -162,23 +205,16 @@ func DashboardProtoToUpdateMutations(dashboard *dpb.Dashboard, updateCharts bool
 		"ChartLayout": layoutBytes,
 		"UpdatedAt":   spanner.CommitTimestamp,
 	})
-	mutations = append(mutations, m)
+	mutations := []*spanner.Mutation{m}
 
 	if updateCharts {
 		mDel := spanner.Delete(dashboardschema.DashboardChartsTableName, spanner.Key{dashID}.AsPrefix())
-		mutations = append(mutations, mDel)
-
-		for _, chart := range dashboard.GetCharts() {
-			if chart == nil {
-				return nil, fmt.Errorf("chart in dashboard charts list must not be nil: %w", status.ErrInvalidArgument)
-			}
-			mChart := spanner.InsertOrUpdate(dashboardschema.DashboardChartsTableName, []string{
-				"DashboardId", "DashboardChartId", "ChartId", "GridPosition", "CreatedAt",
-			}, []interface{}{
-				dashID, chart.GetName(), chart.GetName(), nil, spanner.CommitTimestamp,
-			})
-			mutations = append(mutations, mChart)
+		chartMutations, err := buildDashboardChartMutations(dashID, dashboard)
+		if err != nil {
+			return nil, err
 		}
+		mutations = append(mutations, mDel)
+		mutations = append(mutations, chartMutations...)
 	}
 
 	return mutations, nil
@@ -195,13 +231,15 @@ type dashboardRow struct {
 }
 
 type chartRow struct {
-	ID         string    `spanner:"ChartId"`
-	Title      string    `spanner:"Title"`
-	Xid        int64     `spanner:"Xid"`
-	PlotLayout []byte    `spanner:"PlotLayout"`
-	Owner      string    `spanner:"Owner"`
-	CreatedAt  time.Time `spanner:"CreatedAt"`
-	UpdatedAt  time.Time `spanner:"UpdatedAt"`
+	ID          string    `spanner:"ChartId"`
+	Title       string    `spanner:"Title"`
+	Description string    `spanner:"Description"`
+	Xid         int64     `spanner:"Xid"`
+	Wid         int64     `spanner:"Wid"`
+	PlotLayout  []byte    `spanner:"PlotLayout"`
+	Owner       string    `spanner:"Owner"`
+	CreatedAt   time.Time `spanner:"CreatedAt"`
+	UpdatedAt   time.Time `spanner:"UpdatedAt"`
 }
 
 type artifactChartRow struct {
@@ -256,6 +294,20 @@ func ChartProtoToInsertMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) 
 		return nil, fmt.Errorf("chart proto must not be nil")
 	}
 
+	xid, wid, chartID, err := validator.ValidateChartName(chart.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("invalid chart name %q: %w", chart.GetName(), err)
+	}
+
+	chartXid := chart.GetXid()
+	if chartXid == 0 && xid > 0 {
+		chartXid = xid
+	}
+	chartWid := chart.GetWid()
+	if chartWid == 0 && wid > 0 {
+		chartWid = wid
+	}
+
 	var layoutBytes []byte
 	if chart.PlotLayout != nil {
 		var err error
@@ -267,9 +319,9 @@ func ChartProtoToInsertMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) 
 
 	var mutations []*spanner.Mutation
 	m := spanner.InsertOrUpdate(dashboardschema.ChartsTableName, []string{
-		"ChartId", "Title", "Xid", "PlotLayout", "Owner", "CreatedAt", "UpdatedAt",
+		"ChartId", "Title", "Description", "Xid", "Wid", "PlotLayout", "Owner", "CreatedAt", "UpdatedAt",
 	}, []interface{}{
-		chart.Name, chart.Title, chart.Xid, layoutBytes, "", spanner.CommitTimestamp, spanner.CommitTimestamp,
+		chartID, chart.GetTitle(), chart.GetDescription(), chartXid, chartWid, layoutBytes, "", spanner.CommitTimestamp, spanner.CommitTimestamp,
 	})
 	mutations = append(mutations, m)
 
@@ -281,7 +333,7 @@ func ChartProtoToInsertMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) 
 		mPlot := spanner.InsertOrUpdate(dashboardschema.ChartPlotsTableName, []string{
 			"ChartId", "PlotId", "Title", "PlotType", "PlotSpec",
 		}, []interface{}{
-			chart.Name, plot.PlotId, plot.Title, int64(plot.Type), plotSpecBytes,
+			chartID, plot.PlotId, plot.Title, int64(plot.Type), plotSpecBytes,
 		})
 		mutations = append(mutations, mPlot)
 	}
@@ -289,7 +341,7 @@ func ChartProtoToInsertMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) 
 	mArtifact := spanner.InsertOrUpdate(dashboardschema.ArtifactChartsTableName, []string{
 		"Xid", "WorkUnitId", "ArtifactId", "ArtifactChartId", "ChartId", "CreatedAt",
 	}, []interface{}{
-		chart.Xid, chart.Wid, int64(0), chart.Name, chart.Name, spanner.CommitTimestamp,
+		chartXid, chartWid, int64(0), chartID, chartID, spanner.CommitTimestamp,
 	})
 	mutations = append(mutations, mArtifact)
 
@@ -318,12 +370,21 @@ func ChartRowToProto(row *spanner.Row, plots []*dpb.PlotSpec) (*dpb.Chart, error
 		}
 	}
 
+	name := validator.ConstructRootChartName(data.ID)
+	if data.Xid > 0 {
+		name = validator.ConstructWorkUnitChartName(data.Xid, data.Wid, data.ID)
+	}
+
 	return &dpb.Chart{
-		Name:       data.ID,
-		Title:      data.Title,
-		Xid:        data.Xid,
-		Plots:      plots,
-		PlotLayout: layout,
+		Name:        name,
+		Title:       data.Title,
+		Description: data.Description,
+		Xid:         data.Xid,
+		Wid:         data.Wid,
+		Plots:       plots,
+		PlotLayout:  layout,
+		CreateTime:  timestamppb.New(data.CreatedAt),
+		UpdateTime:  timestamppb.New(data.UpdatedAt),
 	}, nil
 }
 
@@ -336,6 +397,11 @@ func ChartProtoToUpdateMutation(chart *dpb.Chart) (*spanner.Mutation, error) {
 		return nil, fmt.Errorf("chart name must not be empty")
 	}
 
+	_, _, chartID, err := validator.ValidateChartName(chart.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("invalid chart name %q: %w", chart.GetName(), err)
+	}
+
 	var layoutBytes []byte
 	if chart.PlotLayout != nil {
 		var err error
@@ -346,9 +412,9 @@ func ChartProtoToUpdateMutation(chart *dpb.Chart) (*spanner.Mutation, error) {
 	}
 
 	return spanner.Update(dashboardschema.ChartsTableName, []string{
-		"ChartId", "Title", "PlotLayout", "UpdatedAt",
+		"ChartId", "Title", "Description", "Wid", "PlotLayout", "UpdatedAt",
 	}, []interface{}{
-		chart.GetName(), chart.GetTitle(), layoutBytes, spanner.CommitTimestamp,
+		chartID, chart.GetTitle(), chart.GetDescription(), chart.GetWid(), layoutBytes, spanner.CommitTimestamp,
 	}), nil
 }
 
@@ -384,8 +450,12 @@ func ChartProtoToUpdateMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) 
 	if err != nil {
 		return nil, err
 	}
-	deleteMut := ChartPlotsToDeleteMutation(chart.GetName())
-	insertMuts, err := PlotSpecsToInsertMutations(chart.GetName(), chart.GetPlots())
+	_, _, chartID, err := validator.ValidateChartName(chart.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("invalid chart name %q: %w", chart.GetName(), err)
+	}
+	deleteMut := ChartPlotsToDeleteMutation(chartID)
+	insertMuts, err := PlotSpecsToInsertMutations(chartID, chart.GetPlots())
 	if err != nil {
 		return nil, err
 	}

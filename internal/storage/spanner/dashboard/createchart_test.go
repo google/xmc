@@ -23,7 +23,7 @@ func TestCreateChart_Success(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	chart := blankChartProto("charts/test-create-chart-1", 100, 1)
+	chart := blankChartProto("test-create-chart-1", 100, 1)
 	if err := repo.CreateChart(ctx, chart); err != nil {
 		t.Fatalf("CreateChart failed: %v", err)
 	}
@@ -33,7 +33,7 @@ func TestCreateChart_WithoutLayout(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	chart := blankChartProto("charts/test-create-chart-no-layout", 100, 1)
+	chart := blankChartProto("test-create-chart-no-layout", 100, 1)
 	chart.PlotLayout = nil
 	if err := repo.CreateChart(ctx, chart); err != nil {
 		t.Fatalf("CreateChart without layout failed: %v", err)

@@ -410,7 +410,9 @@ CREATE TABLE Dashboards (
 CREATE TABLE Charts (
   ChartId STRING(MAX) NOT NULL,
   Title STRING(MAX) NOT NULL,
+  Description STRING(MAX),
   Xid INT64 NOT NULL,
+  Wid INT64,
   PlotLayout BYTES(MAX),
   Owner STRING(MAX) NOT NULL,
   CreatedAt TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),

@@ -46,13 +46,13 @@ func TestDeleteDashboard_CascadesCharts(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	chart := blankChartProto("charts/test-chart-del-1", 100, 1)
+	chart := blankChartProto("test-chart-del-1", 100, 1)
 	if err := repo.CreateChart(ctx, chart); err != nil {
 		t.Fatalf("CreateChart failed: %v", err)
 	}
 
 	dash := blankDashboardProto("dashboards/test-delete-cascade-1")
-	dash.Charts = []*dpb.Chart{{Name: "charts/test-chart-del-1"}}
+	dash.Charts = []*dpb.Chart{{Name: chart.GetName()}}
 	if err := repo.CreateDashboard(ctx, dash); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestDeleteDashboard_CascadesCharts(t *testing.T) {
 	}
 
 	// The referenced chart itself should still exist in Charts table.
-	if _, err := repo.GetChart(ctx, "charts/test-chart-del-1"); err != nil {
+	if _, err := repo.GetChart(ctx, "test-chart-del-1"); err != nil {
 		t.Errorf("GetChart after DeleteDashboard failed: %v, chart entity should still exist", err)
 	}
 }

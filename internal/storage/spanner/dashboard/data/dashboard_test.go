@@ -31,11 +31,20 @@ func TestDashboardProtoToInsertMutations_Success(t *testing.T) {
 		Description: "Test Description",
 		Owner:       "user@example.com",
 		Charts: []*dpb.Chart{
-			{Name: "charts/c1"},
+			{Name: "experiments/100/workUnits/1/charts/c1"},
 		},
 		ChartLayout: &dpb.LayoutSpec{
 			Type:    dpb.LayoutSpec_GRID,
 			Columns: 2,
+			Positions: []*dpb.GridPosition{
+				{
+					ItemId: "experiments/100/workUnits/1/charts/c1",
+					X:      0,
+					Y:      0,
+					Width:  6,
+					Height: 4,
+				},
+			},
 		},
 	}
 
@@ -51,10 +60,11 @@ func TestDashboardProtoToInsertMutations_Success(t *testing.T) {
 
 func TestChartProtoToInsertMutations_Success(t *testing.T) {
 	chart := &dpb.Chart{
-		Name:  "charts/test-chart-data-1",
-		Title: "Test Chart Title",
-		Xid:   100,
-		Wid:   1,
+		Name:        "experiments/100/workUnits/1/charts/test-chart-data-1",
+		Title:       "Test Chart Title",
+		Description: "Test Chart Description",
+		Xid:         100,
+		Wid:         1,
 		Plots: []*dpb.PlotSpec{
 			{
 				PlotId: "plot-1",
@@ -80,8 +90,10 @@ func TestChartProtoToInsertMutations_Success(t *testing.T) {
 
 func TestChartProtoToUpdateMutations_Success(t *testing.T) {
 	chart := &dpb.Chart{
-		Name:  "charts/test-chart-update-1",
-		Title: "Updated Chart Title",
+		Name:        "experiments/100/workUnits/1/charts/test-chart-update-1",
+		Title:       "Updated Chart Title",
+		Description: "Updated Description",
+		Wid:         2,
 		Plots: []*dpb.PlotSpec{
 			{
 				PlotId: "plot-1",
@@ -108,7 +120,7 @@ func TestChartProtoToUpdateMutations_Success(t *testing.T) {
 
 func TestChartProtoToUpdateMutations_WithoutLayout(t *testing.T) {
 	chart := &dpb.Chart{
-		Name:  "charts/test-chart-update-no-layout",
+		Name:  "experiments/100/workUnits/1/charts/test-chart-update-no-layout",
 		Title: "No Layout Chart",
 	}
 
@@ -149,7 +161,7 @@ func TestChartProtoToInsertMutations_Nil(t *testing.T) {
 
 func TestChartProtoToUpdateMutation_Success(t *testing.T) {
 	chart := &dpb.Chart{
-		Name:  "charts/test-chart-update-single",
+		Name:  "experiments/100/workUnits/1/charts/test-chart-update-single",
 		Title: "Updated Single Chart Title",
 		PlotLayout: &dpb.LayoutSpec{
 			Type:    dpb.LayoutSpec_GRID,
@@ -345,8 +357,8 @@ func TestChartRowToProto_Success(t *testing.T) {
 
 	now := time.Now().UTC()
 	row, err := spanner.NewRow(
-		[]string{"CreatedAt", "ChartId", "UpdatedAt", "Owner", "Title", "Xid", "PlotLayout", "ExtraCol"},
-		[]interface{}{now, "charts/c1", now, "owner@example.com", "Test Title", int64(100), layoutBytes, 12345},
+		[]string{"CreatedAt", "ChartId", "UpdatedAt", "Owner", "Title", "Description", "Xid", "Wid", "PlotLayout", "ExtraCol"},
+		[]interface{}{now, "c1", now, "owner@example.com", "Test Title", "Test Description", int64(100), int64(1), layoutBytes, 12345},
 	)
 	if err != nil {
 		t.Fatalf("spanner.NewRow failed: %v", err)
@@ -357,14 +369,26 @@ func TestChartRowToProto_Success(t *testing.T) {
 		t.Fatalf("ChartRowToProto failed: %v", err)
 	}
 
-	if chart.GetName() != "charts/c1" {
-		t.Errorf("chart.Name: got %q, want 'charts/c1'", chart.GetName())
+	if chart.GetName() != "experiments/100/workUnits/1/charts/c1" {
+		t.Errorf("chart.Name: got %q, want 'experiments/100/workUnits/1/charts/c1'", chart.GetName())
 	}
 	if chart.GetTitle() != "Test Title" {
 		t.Errorf("chart.Title: got %q, want 'Test Title'", chart.GetTitle())
 	}
+	if chart.GetDescription() != "Test Description" {
+		t.Errorf("chart.Description: got %q, want 'Test Description'", chart.GetDescription())
+	}
 	if chart.GetXid() != 100 {
 		t.Errorf("chart.Xid: got %d, want 100", chart.GetXid())
+	}
+	if chart.GetWid() != 1 {
+		t.Errorf("chart.Wid: got %d, want 1", chart.GetWid())
+	}
+	if chart.GetCreateTime() == nil || chart.GetCreateTime().AsTime().Unix() != now.Unix() {
+		t.Errorf("chart.CreateTime mismatch: got %v, want %v", chart.GetCreateTime(), now)
+	}
+	if chart.GetUpdateTime() == nil || chart.GetUpdateTime().AsTime().Unix() != now.Unix() {
+		t.Errorf("chart.UpdateTime mismatch: got %v, want %v", chart.GetUpdateTime(), now)
 	}
 	if len(chart.GetPlots()) != 1 || chart.GetPlots()[0].GetPlotId() != "plot-1" {
 		t.Errorf("chart.Plots: got %v, want 1 plot with ID 'plot-1'", chart.GetPlots())
@@ -540,6 +564,26 @@ func TestDashboardProtoToInsertMutations_NilChart(t *testing.T) {
 	}
 }
 
+func TestDashboardProtoToInsertMutations_InvalidChartName(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name:   "dashboards/d1",
+		Charts: []*dpb.Chart{{Name: "invalid-chart-name"}},
+	}
+	if _, err := DashboardProtoToInsertMutations(dash); err == nil {
+		t.Errorf("DashboardProtoToInsertMutations with invalid chart name succeeded, want error")
+	}
+}
+
+func TestDashboardProtoToInsertMutations_EmptyChartName(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name:   "dashboards/d1",
+		Charts: []*dpb.Chart{{Name: ""}},
+	}
+	if _, err := DashboardProtoToInsertMutations(dash); err == nil {
+		t.Errorf("DashboardProtoToInsertMutations with empty chart name succeeded, want error")
+	}
+}
+
 func TestDashboardProtoToUpdateMutations_NilChart(t *testing.T) {
 	dash := &dpb.Dashboard{
 		Name:   "dashboards/d1",
@@ -547,6 +591,26 @@ func TestDashboardProtoToUpdateMutations_NilChart(t *testing.T) {
 	}
 	if _, err := DashboardProtoToUpdateMutations(dash, true); err == nil {
 		t.Errorf("DashboardProtoToUpdateMutations with nil chart succeeded, want error")
+	}
+}
+
+func TestDashboardProtoToUpdateMutations_InvalidChartName(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name:   "dashboards/d1",
+		Charts: []*dpb.Chart{{Name: "invalid-chart-name"}},
+	}
+	if _, err := DashboardProtoToUpdateMutations(dash, true); err == nil {
+		t.Errorf("DashboardProtoToUpdateMutations with invalid chart name succeeded, want error")
+	}
+}
+
+func TestDashboardProtoToUpdateMutations_EmptyChartName(t *testing.T) {
+	dash := &dpb.Dashboard{
+		Name:   "dashboards/d1",
+		Charts: []*dpb.Chart{{Name: ""}},
+	}
+	if _, err := DashboardProtoToUpdateMutations(dash, true); err == nil {
+		t.Errorf("DashboardProtoToUpdateMutations with empty chart name succeeded, want error")
 	}
 }
 

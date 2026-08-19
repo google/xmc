@@ -27,7 +27,6 @@ import (
 	dpb "xmanager_cloud/dashboard_service/proto/api_go_proto"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 	"xmanager_cloud/logging/logging"
-	"xmanager_cloud/query_generator/querytools"
 	"xmanager_cloud/storage/spanner/schema/dashboardschema"
 )
 
@@ -56,7 +55,7 @@ func (r *Repository) GetDashboard(ctx context.Context, dashboardId string) (*dpb
 	}
 
 	stmt, _, _, err := r.dashboardChartsQueryGen.GenerateQuery(
-		[]querytools.TableField{dashboardschema.ChartIDTableField},
+		dashboardschema.ChartsSelectFields,
 		nil, nil, filterExp, nil, 0, 0, nil, nil,
 	)
 	if err != nil {
@@ -75,11 +74,11 @@ func (r *Repository) GetDashboard(ctx context.Context, dashboardId string) (*dpb
 		if err != nil {
 			return nil, err
 		}
-		var chartId string
-		if err := dcRow.Columns(&chartId); err != nil {
+		chart, err := data.ChartRowToProto(dcRow, nil)
+		if err != nil {
 			return nil, err
 		}
-		charts = append(charts, &dpb.Chart{Name: chartId})
+		charts = append(charts, chart)
 	}
 
 	return data.DashboardRowToProto(row, charts)
