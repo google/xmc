@@ -43,28 +43,6 @@ const ResourceTypeCPU = "CPU"
 // DefaultMockStatusHistoryItems provides initial unnest mock records.
 var DefaultMockStatusHistoryItems = []WorkUnitStatusHistoryItem{
 	{
-		BitReversedXid: 101,
-		WorkUnitId:     1,
-		HistoryId:      1,
-		QueueName:      "cq-gpu",
-		TransitionTime: time.Now().Add(-30 * time.Minute),
-		NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-		PreviousState:  int64(essmsgpb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED),
-		ResourceType:   "nvidia-tesla-h100",
-		ResourceUnits:  96,
-	},
-	{
-		BitReversedXid: 102,
-		WorkUnitId:     2,
-		HistoryId:      2,
-		QueueName:      "cq-gpu",
-		TransitionTime: time.Now().Add(-10 * time.Minute),
-		NewState:       int64(essmsgpb.WorkUnitStatus_SCHEDULING),
-		PreviousState:  int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-		ResourceType:   "nvidia-tesla-h100",
-		ResourceUnits:  40,
-	},
-	{
 		BitReversedXid: 103,
 		WorkUnitId:     3,
 		HistoryId:      3,
