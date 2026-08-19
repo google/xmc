@@ -167,7 +167,7 @@ export class CreateDashboardDialogComponent {
     const type = this.newPlotForm.value.type ?? PlotType.SUMMARY_BOX;
     const defaultTitle = type === PlotType.SUMMARY_BOX ? `Last ${metric}` : `${metric} vs steps`;
     const title = this.newPlotForm.value.title?.trim() || defaultTitle;
-    const plotId = `${metric.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}`;
+    const plotId = `${metric.replace(/[^a-zA-Z0-9]/g, '_')}_${Math.random().toString(36).substring(2, 9)}`;
 
     const newPlot: PlotSpec = {
       plotId,
@@ -193,12 +193,14 @@ export class CreateDashboardDialogComponent {
   }
 
   addComparison(): void {
+    if (this.newComparisonForm.invalid) return;
+
     const xid = this.newComparisonForm.value.xid;
-    if (!xid || xid < 1) return;
+    if (!xid) return;
 
     const entry: ComparisonExperimentEntry = {
       xid: Number(xid),
-      wid: this.newComparisonForm.value.wid !== null ? Number(this.newComparisonForm.value.wid) : 1,
+      wid: this.newComparisonForm.value.wid != null ? Number(this.newComparisonForm.value.wid) : 1,
       title: this.newComparisonForm.value.title?.trim() || `Tuned Run (${xid})`,
     };
 

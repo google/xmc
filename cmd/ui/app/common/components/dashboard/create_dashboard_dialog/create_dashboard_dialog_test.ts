@@ -91,6 +91,15 @@ describe('CreateDashboardDialogComponent', () => {
     expect(component.comparisons().length).toBe(0);
   });
 
+  it('should not add comparison experiment when form is invalid', () => {
+    component.newComparisonForm.patchValue({
+      xid: -1,
+      wid: 1,
+    });
+    component.addComparison();
+    expect(component.comparisons().length).toBe(0);
+  });
+
   it('should build and return Dashboard object on submit', () => {
     component.form.patchValue({
       title: 'Custom Evaluation Benchmark',

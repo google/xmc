@@ -243,7 +243,7 @@ limitations under the License.
             mat-stroked-button
             class="add-comp-btn"
             type="button"
-            [disabled]="!newComparisonForm.value.xid"
+            [disabled]="newComparisonForm.invalid || !newComparisonForm.value.xid"
             (click)="addComparison()"
           >
             <mat-icon>add</mat-icon>
