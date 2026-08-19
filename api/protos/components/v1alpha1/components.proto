@@ -1,0 +1,734 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package cloud.xmanager.components.v1alpha1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "xmanager_cloud/api/protos/components/v1alpha1;componentsv1alpha1";
+option java_multiple_files = true;
+
+// ComponentType distinguishes the underlying architecture and control plane model.
+enum ComponentType {
+  // Unspecified component type.
+  COMPONENT_TYPE_UNSPECIFIED = 0;
+
+  // Custom first-party component deployed directly onto the cluster.
+  COMPONENT_TYPE_CUSTOM_1P_COMPONENT = 1;
+
+  // Custom third-party wrapper orchestrating external controllers or CRDs.
+  COMPONENT_TYPE_CUSTOM_3P_WRAPPER = 2;
+}
+
+// DeletionPolicy specifies the cleanup behavior when a component is deleted.
+enum DeletionPolicy {
+  // Unspecified deletion policy. Defaults to DELETE.
+  DELETION_POLICY_UNSPECIFIED = 0;
+
+  // Fully delete and purge underlying Kubernetes resources and manifests.
+  DELETION_POLICY_DELETE = 1;
+
+  // Orphan underlying resources, leaving them running in the cluster.
+  DELETION_POLICY_ORPHAN = 2;
+}
+
+// ComponentState represents the lifecycle phase of a component.
+enum ComponentState {
+  // Unspecified state.
+  COMPONENT_STATE_UNSPECIFIED = 0;
+
+  // Component is actively running and reconciling workloads.
+  COMPONENT_STATE_ENABLED = 1;
+
+  // Component is gracefully draining and preparing to stop.
+  COMPONENT_STATE_DISABLING = 2;
+
+  // Component is disabled and not processing active workloads.
+  COMPONENT_STATE_DISABLED = 3;
+
+  // Component is waiting for reconciliation or configuration propagation.
+  COMPONENT_STATE_PENDING_RECONCILIATION = 4;
+
+  // Component has been marked as deleted or terminated.
+  COMPONENT_STATE_DELETED = 5;
+}
+
+// WrapperRef configures reference metadata for third-party CRDs and controllers.
+message WrapperRef {
+  // API Group of the target CustomResourceDefinition (e.g. "jobset.x-k8s.io").
+  string crd_group = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "crdGroup"
+  ];
+
+  // API Version of the target CustomResourceDefinition (e.g. "v1alpha2").
+  string crd_version = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "crdVersion"
+  ];
+
+  // Kind of the target CustomResourceDefinition (e.g. "JobSet").
+  string crd_kind = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "crdKind"
+  ];
+
+  // Target Kubernetes namespace where the wrapper/CRD operates.
+  string target_namespace = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "targetNamespace"
+  ];
+
+  // Target resource name or controller identifier.
+  string target_name = 5 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "targetName"
+  ];
+}
+
+// LifecycleControl configures timeouts and policies for component lifecycle transitions.
+message LifecycleControl {
+  // Grace period duration for draining active operations before stopping.
+  google.protobuf.Duration grace_period = 1 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "gracePeriod"
+  ];
+
+  // Maximum timeout allowed for the component to drain before force terminating.
+  google.protobuf.Duration draining_timeout = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "drainingTimeout"
+  ];
+
+  // Whether force deletion or bypass of graceful draining is allowed.
+  bool force_deletion = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "forceDeletion"
+  ];
+}
+
+// ResolvedComponentCoordinates defines the reachable endpoint coordinates of an active component.
+message ResolvedComponentCoordinates {
+  // Name of the Kubernetes cluster hosting the component.
+  string cluster_name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "clusterName"
+  ];
+
+  // Namespace where the component service is deployed.
+  string namespace = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "namespace"
+  ];
+
+  // Service name for DNS resolution within the cluster or mesh.
+  string service_name = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "serviceName"
+  ];
+
+  // Network port exposed by the component service (strictly non-negative).
+  uint32 port = 4 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "port"
+  ];
+
+  // Communication scheme (e.g. "http", "https", "grpc").
+  string scheme = 5 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "scheme"
+  ];
+
+  // Fully qualified domain name or IP host address.
+  string host = 6 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "host"
+  ];
+}
+
+// ComponentSpec defines the desired configuration and specification of a component.
+message ComponentSpec {
+  // Type of the component (1P or 3P wrapper).
+  ComponentType type = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "type"
+  ];
+
+  // Semantic version of the component (e.g. "v1.2.0").
+  string version = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "version"
+  ];
+
+  // Deletion policy when removing the component.
+  DeletionPolicy deletion_policy = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "deletionPolicy"
+  ];
+
+  // Optional wrapper configuration if type is CUSTOM_3P_WRAPPER.
+  WrapperRef wrapper_ref = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "wrapperRef"
+  ];
+
+  // Lifecycle control parameters including graceful drain settings.
+  LifecycleControl lifecycle_control = 5 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "lifecycleControl"
+  ];
+
+  // Raw Kubernetes manifests or configuration templates associated with the component.
+  repeated string manifests = 6 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "manifests"
+  ];
+
+  // Desired generation number of this specification.
+  int64 generation = 7 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "generation"
+  ];
+
+  // Human-readable description of the component purpose.
+  string description = 8 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "description"
+  ];
+}
+
+// ComponentAccessStatus represents the observed runtime status and reachability of a component.
+message ComponentAccessStatus {
+  // Current lifecycle state of the component.
+  ComponentState state = 1 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    json_name = "state"
+  ];
+
+  // Most recent generation of the spec observed by the controller.
+  int64 observed_generation = 2 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    json_name = "observedGeneration"
+  ];
+
+  // Network and cluster access coordinates for routing requests to this component.
+  ResolvedComponentCoordinates coordinates = 3 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    json_name = "coordinates"
+  ];
+
+  // Human-readable message detailing health or error condition.
+  string health_message = 4 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    json_name = "healthMessage"
+  ];
+
+  // Timestamp when the component last transitioned between states.
+  google.protobuf.Timestamp last_transition_time = 5 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    json_name = "lastTransitionTime"
+  ];
+
+  // Whether the component is fully ready to accept workload invocations.
+  bool ready = 6 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    json_name = "ready"
+  ];
+}
+
+// Component represents a modular control-plane or workload extension registered with XMC.
+message Component {
+  option (google.api.resource) = {
+    type: "cloud.xmanager.googleapis.com/Component"
+    pattern: "components/{component}"
+    singular: "component"
+    plural: "components"
+  };
+
+  // Resource name of the component.
+  // Format: components/{component}
+  string name = 1 [
+    (google.api.field_behavior) = IDENTIFIER,
+    json_name = "name"
+  ];
+
+  // Specification of the component configuration.
+  ComponentSpec spec = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "spec"
+  ];
+
+  // Observed runtime access and health status.
+  ComponentAccessStatus status = 3 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    json_name = "status"
+  ];
+
+  // Creation timestamp.
+  google.protobuf.Timestamp create_time = 4 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    json_name = "createTime"
+  ];
+
+  // Last update timestamp.
+  google.protobuf.Timestamp update_time = 5 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    json_name = "updateTime"
+  ];
+
+  // Deletion timestamp if marked for deletion.
+  google.protobuf.Timestamp delete_time = 6 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    json_name = "deleteTime"
+  ];
+
+  // Etag used for optimistic concurrency control.
+  string etag = 7 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "etag"
+  ];
+
+  // Key-value metadata labels.
+  map<string, string> labels = 8 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "labels"
+  ];
+}
+
+// Request message for SetComponentIntent.
+message SetComponentIntentRequest {
+  // Resource name of the target component.
+  // Format: components/{component}
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloud.xmanager.googleapis.com/Component"
+    },
+    json_name = "name"
+  ];
+
+  // Desired specification for the component.
+  ComponentSpec spec = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "spec"
+  ];
+
+  // Optional field mask indicating which fields of spec are being updated.
+  google.protobuf.FieldMask update_mask = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "updateMask"
+  ];
+
+  // If true, validate the request without persisting changes.
+  bool validate_only = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "validateOnly"
+  ];
+}
+
+// Response message for SetComponentIntent.
+message SetComponentIntentResponse {
+  // The resulting component resource after intent has been recorded.
+  Component component = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "component"
+  ];
+
+  // Informational status or reconciliation message.
+  string status_message = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "statusMessage"
+  ];
+}
+
+// Request message for PrepareDeactivation.
+message PrepareDeactivationRequest {
+  // Resource name of the component to deactivate.
+  // Format: components/{component}
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloud.xmanager.googleapis.com/Component"
+    },
+    json_name = "name"
+  ];
+
+  // Override draining timeout duration.
+  google.protobuf.Duration draining_timeout = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "drainingTimeout"
+  ];
+
+  // If true, immediately initiate deactivation bypassing soft grace windows.
+  bool force = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "force"
+  ];
+}
+
+// Response message for PrepareDeactivation.
+message PrepareDeactivationResponse {
+  // Resulting lifecycle state of the component (e.g. DISABLING).
+  ComponentState state = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "state"
+  ];
+
+  // Timestamp when deactivation was initiated.
+  google.protobuf.Timestamp deactivation_start_time = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "deactivationStartTime"
+  ];
+
+  // Detailed status message regarding the draining progress.
+  string message = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "message"
+  ];
+}
+
+// Request message for CompleteDeactivation.
+message CompleteDeactivationRequest {
+  // Resource name of the component whose deactivation is complete.
+  // Format: components/{component}
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloud.xmanager.googleapis.com/Component"
+    },
+    json_name = "name"
+  ];
+
+  // If true, force completion even if active workloads remain.
+  bool force = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "force"
+  ];
+}
+
+// Response message for CompleteDeactivation.
+message CompleteDeactivationResponse {
+  // Resulting lifecycle state of the component (e.g. DISABLED).
+  ComponentState state = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "state"
+  ];
+
+  // Timestamp when deactivation was fully completed.
+  google.protobuf.Timestamp completion_time = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "completionTime"
+  ];
+
+  // Detailed status message regarding completion.
+  string message = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "message"
+  ];
+}
+
+// Request message for UpdateObservedGeneration.
+message UpdateObservedGenerationRequest {
+  // Resource name of the component.
+  // Format: components/{component}
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloud.xmanager.googleapis.com/Component"
+    },
+    json_name = "name"
+  ];
+
+  // The observed generation number reported by the reconciler.
+  int64 observed_generation = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "observedGeneration"
+  ];
+
+  // Optional updated state reported during reconciliation.
+  ComponentState state = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "state"
+  ];
+
+  // Informational status message.
+  string status_message = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "statusMessage"
+  ];
+}
+
+// Response message for UpdateObservedGeneration.
+message UpdateObservedGenerationResponse {
+  // The updated component resource.
+  Component component = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "component"
+  ];
+}
+
+// Request message for ExecuteDeletion.
+message ExecuteDeletionRequest {
+  // Resource name of the component to delete.
+  // Format: components/{component}
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloud.xmanager.googleapis.com/Component"
+    },
+    json_name = "name"
+  ];
+
+  // Deletion policy to apply (DELETE or ORPHAN).
+  DeletionPolicy deletion_policy = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "deletionPolicy"
+  ];
+
+  // If true, proceed with deletion regardless of active dependents.
+  bool force = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "force"
+  ];
+}
+
+// Response message for ExecuteDeletion.
+message ExecuteDeletionResponse {
+  // Resulting lifecycle state of the component (e.g. DELETED).
+  ComponentState state = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "state"
+  ];
+
+  // Informational status message regarding deletion execution.
+  string message = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "message"
+  ];
+}
+
+// Request message for ResolveComponentSnapshot.
+message ResolveComponentSnapshotRequest {
+  // Resource name of the component.
+  // Format: components/{component}
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloud.xmanager.googleapis.com/Component"
+    },
+    json_name = "name"
+  ];
+
+  // Specific generation number to resolve snapshot for. If omitted or 0, latest is returned.
+  optional int64 generation = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "generation"
+  ];
+}
+
+// Response message for ResolveComponentSnapshot.
+message ResolveComponentSnapshotResponse {
+  // The resolved component snapshot.
+  Component component = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "component"
+  ];
+
+  // Resolved network coordinates at the time of snapshot.
+  ResolvedComponentCoordinates coordinates = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "coordinates"
+  ];
+
+  // Lifecycle state of the component snapshot.
+  ComponentState state = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "state"
+  ];
+}
+
+// Request message for ValidateComponentRequirement.
+message ValidateComponentRequirementRequest {
+  // Resource name of the component to validate requirements against.
+  // Format: components/{component}
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloud.xmanager.googleapis.com/Component"
+    },
+    json_name = "name"
+  ];
+
+  // Required component type constraint.
+  ComponentType required_type = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "requiredType"
+  ];
+
+  // Minimum required semantic version.
+  string minimum_version = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "minimumVersion"
+  ];
+}
+
+// Response message for ValidateComponentRequirement.
+message ValidateComponentRequirementResponse {
+  // Whether the component satisfies all specified requirements.
+  bool satisfied = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "satisfied"
+  ];
+
+  // Human-readable explanation if requirement validation failed.
+  string reason = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "reason"
+  ];
+
+  // The component resource that was evaluated.
+  Component component = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "component"
+  ];
+}
+
+// Request message for GetPlatformHealth.
+message GetPlatformHealthRequest {
+  // Filter expression to restrict returned components.
+  string filter = 1 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "filter"
+  ];
+
+  // Maximum number of components to return per page.
+  int32 page_size = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "pageSize"
+  ];
+
+  // Page token received from a previous GetPlatformHealth call.
+  string page_token = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "pageToken"
+  ];
+}
+
+// Response message for GetPlatformHealth.
+message GetPlatformHealthResponse {
+  // List of evaluated components and their status.
+  repeated Component components = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    json_name = "components"
+  ];
+
+  // Token for retrieving the next page of results.
+  string next_page_token = 2 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "nextPageToken"
+  ];
+
+  // Total count of healthy components matching the criteria.
+  int32 total_healthy = 3 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "totalHealthy"
+  ];
+
+  // Total count of unhealthy components matching the criteria.
+  int32 total_unhealthy = 4 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "totalUnhealthy"
+  ];
+}
+
+// ComponentManagerService provides APIs for managing the lifecycle, registration,
+// coordination, and health monitoring of XMC components and wrappers.
+service ComponentManagerService {
+  // Sets or updates the desired intent and specification for a component.
+  rpc SetComponentIntent(SetComponentIntentRequest) returns (SetComponentIntentResponse) {
+    option (google.api.http) = {
+      post: "/v1alpha1/{name=components/*}:setIntent"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name,spec";
+  }
+
+  // Prepares a component for graceful deactivation and initiates workload draining.
+  rpc PrepareDeactivation(PrepareDeactivationRequest) returns (PrepareDeactivationResponse) {
+    option (google.api.http) = {
+      post: "/v1alpha1/{name=components/*}:prepareDeactivation"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Completes component deactivation after draining is finalized.
+  rpc CompleteDeactivation(CompleteDeactivationRequest) returns (CompleteDeactivationResponse) {
+    option (google.api.http) = {
+      post: "/v1alpha1/{name=components/*}:completeDeactivation"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Updates the controller-observed generation and reconciliation status of a component.
+  rpc UpdateObservedGeneration(UpdateObservedGenerationRequest) returns (UpdateObservedGenerationResponse) {
+    option (google.api.http) = {
+      post: "/v1alpha1/{name=components/*}:updateObservedGeneration"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name,observed_generation";
+  }
+
+  // Executes component deletion according to the configured deletion policy.
+  rpc ExecuteDeletion(ExecuteDeletionRequest) returns (ExecuteDeletionResponse) {
+    option (google.api.http) = {
+      post: "/v1alpha1/{name=components/*}:executeDeletion"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Resolves the runtime snapshot and network coordinates of a component.
+  rpc ResolveComponentSnapshot(ResolveComponentSnapshotRequest) returns (ResolveComponentSnapshotResponse) {
+    option (google.api.http) = {
+      get: "/v1alpha1/{name=components/*}:resolveSnapshot"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Validates whether a component meets required version and type constraints.
+  rpc ValidateComponentRequirement(ValidateComponentRequirementRequest) returns (ValidateComponentRequirementResponse) {
+    option (google.api.http) = {
+      post: "/v1alpha1/{name=components/*}:validateRequirement"
+      body: "*"
+    };
+    option (google.api.method_signature) = "name";
+  }
+
+  // Retrieves aggregated platform health across all registered components.
+  rpc GetPlatformHealth(GetPlatformHealthRequest) returns (GetPlatformHealthResponse) {
+    option (google.api.http) = {
+      get: "/v1alpha1/components:getPlatformHealth"
+    };
+  }
+}

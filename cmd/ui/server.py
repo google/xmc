@@ -23,7 +23,7 @@ def get_bool_env(name: str, default: bool = False) -> bool:
     val = os.environ.get(name)
     if val is None:
         return default
-    return val.lower() == "true"
+    return val.lower() in ("true", "1", "yes")
 
 
 def generate_runtime_config(
@@ -43,6 +43,8 @@ def generate_runtime_config(
         "adminPanelEnabled": get_bool_env("XMC_ADMIN_PANEL_ENABLED", False),
         "resourceDashboardEnabled": get_bool_env("XMC_RESOURCE_DASHBOARD_ENABLED", False),
         "performanceDashboardEnabled": get_bool_env("XMC_PERFORMANCE_DASHBOARD_ENABLED", False),
+        "isNonProdAuth": get_bool_env("XMC_NON_PROD_AUTH", False)
+        or get_bool_env("SHOW_SAFETY_WARNING", False),
     }
 
     return (

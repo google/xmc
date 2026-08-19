@@ -1311,6 +1311,47 @@ func TestUpdateTolerations(t *testing.T) {
 	})
 }
 
+func TestUpdateNodeSelectorGPU(t *testing.T) {
+	tests := []struct {
+		name    string
+		gpuType string
+		want    string
+		wantErr bool
+	}{
+		{name: "T4", gpuType: "T4", want: "nvidia-tesla-t4"},
+		{name: "B200", gpuType: "B200", want: "nvidia-b200"},
+		// GCP's G4 machine types. XManager's client enum spells the RTX PRO 6000
+		// as B40_48TH, so that is the name that arrives here.
+		{name: "RTX PRO 6000", gpuType: "B40_48TH", want: "nvidia-rtx-pro-6000"},
+		{name: "unknown type is rejected", gpuType: "NOT_A_GPU", wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resourceSet := &epb.ResourceSet{
+				Resources: &epb.ResourceSet_GpuResources{
+					GpuResources: &epb.GpuResources{Type: test.gpuType, Count: 1},
+				},
+			}
+			podSpec := &corev1.PodSpec{}
+			err := updateNodeSelector(resourceSet, podSpec)
+
+			if test.wantErr {
+				if err == nil {
+					t.Fatalf("updateNodeSelector(%q) succeeded, want an error", test.gpuType)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("updateNodeSelector(%q) returned an unexpected error: %v", test.gpuType, err)
+			}
+			if got := podSpec.NodeSelector[nvidiaNodeSelectorKey]; got != test.want {
+				t.Errorf("updateNodeSelector(%q) set %s=%q, want %q", test.gpuType, nvidiaNodeSelectorKey, got, test.want)
+			}
+		})
+	}
+}
+
 func completionModePtr(m batchv1.CompletionMode) *batchv1.CompletionMode {
 	return &m
 }
