@@ -1,0 +1,82 @@
+<!--
+Copyright 2026 Google LLC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<div class="dashboards-page-container">
+  <!-- Top Toolbar with Back Link, Title, and Actions -->
+  <div class="dashboards-header-toolbar">
+    <div class="header-left">
+      <a mat-button class="back-link" routerLink="/dashboards">
+        <mat-icon>arrow_back</mat-icon>
+        <span>All Dashboards</span>
+      </a>
+      <div class="title-separator">/</div>
+      <h1 class="dashboard-title">{{ dashboardTitle() }}</h1>
+    </div>
+
+    <div class="header-right">
+      <button mat-button class="toolbar-button" type="button" (click)="onRefresh()">
+        <mat-icon>refresh</mat-icon>
+        <span>Refresh</span>
+      </button>
+
+      <button mat-button class="toolbar-button" type="button" (click)="onOpenAddExperiment()">
+        <mat-icon>add</mat-icon>
+        <span>Add experiment to compare</span>
+      </button>
+
+      <div class="autosave-toggle-container">
+        <mat-slide-toggle
+          [checked]="autosaveEnabled()"
+          (change)="autosaveEnabled.set($event.checked)"
+        >
+          Autosave
+        </mat-slide-toggle>
+      </div>
+
+      <button
+        mat-flat-button
+        color="primary"
+        class="share-button"
+        type="button"
+        (click)="onShare()"
+      >
+        <mat-icon>share</mat-icon>
+        <span>Share</span>
+      </button>
+    </div>
+  </div>
+
+  @if (isLoading()) {
+    <mat-progress-bar mode="indeterminate" class="page-loading-bar" />
+  }
+
+  @if (dashboardNotFound()) {
+    <div class="not-found-container">
+      <mat-icon class="not-found-icon">error_outline</mat-icon>
+      <div class="not-found-title">Dashboard Not Found</div>
+      <div class="not-found-subtitle">
+        The requested dashboard does not exist or has been removed.
+      </div>
+      <button mat-flat-button color="primary" type="button" (click)="onBackToDashboards()">
+        Return to Dashboards
+      </button>
+    </div>
+  } @else {
+    <!-- Main Multi-Column Grid Canvas -->
+    <div class="dashboards-content-area">
+      <xmc-dashboard-grid [charts]="charts()" (removeChart)="onRemoveChart($event)" />
+    </div>
+  }
+</div>
