@@ -28,6 +28,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from collections.abc import Generator
 from typing import Any
 
@@ -56,10 +57,11 @@ class E2EConfig:
 
     def __post_init__(self) -> None:
         ts = int(time.time())
+        suffix = uuid.uuid4().hex[:6]
         if not self.ess_db:
-            self.ess_db = f"e2e-ess-{ts}"
+            self.ess_db = f"e2e-ess-{ts}-{suffix}"
         if not self.xid_db:
-            self.xid_db = f"e2e-xid-{ts}"
+            self.xid_db = f"e2e-xid-{ts}-{suffix}"
         if not self.temp_dir:
             self.temp_dir = tempfile.mkdtemp(prefix="xmc_e2e_")
 
@@ -117,9 +119,13 @@ class SpannerManager:
                 if not db.startswith("e2e-ess-") and not db.startswith("e2e-xid-"):
                     continue
                 try:
-                    ts_part = int(db.split("-")[-1])
-                    # If older than 15 minutes, remove it
-                    if current_ts - ts_part > 900:
+                    parts = db.split("-")
+                    if len(parts) >= 3:
+                        ts_part = int(parts[2])
+                    else:
+                        continue
+                    # If older than 1 hour (3600s), remove it
+                    if current_ts - ts_part > 3600:
                         logger.info("Cleaning up stale database: %s", db)
                         run_cmd(
                             [
