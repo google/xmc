@@ -17,7 +17,8 @@ graph TD
     D -->|Smooth Trajectory / One-off Friction| F[Report: No Action Needed]
     E & F --> G[4. Present Review Report & Await Approval]
     G -->|Approved| H[5. Benchmark via /XMC Trajectory Comparison & Open Draft PR]
-    G -->|Rejected / No Action| End[User Decision]
+    G -->|Rejected / No Action| End[Workflow Complete]
+    H --> End
 ```
 
 > [!IMPORTANT]

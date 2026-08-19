@@ -24,7 +24,8 @@ graph TD
     M --> N["Agent conducts Root-Cause Retrospective & Proposes /XMC Iterative Reflection"]
     N --> O{"User approves reflection?"}
     O -->|Yes| P["Invoke /XMC Iterative Reflection (Benchmark & Update Rules/Skills)"]
-    O -->|No / Done| Q["Agent reports status & completes task"]
+    P --> Q["Agent reports status & completes task"]
+    O -->|No / Done| Q
 ```
 
 > [!IMPORTANT]
@@ -283,8 +284,8 @@ At the end of the comment resolution report, present a structured proposal table
 
 | Comment ID | Reviewer Feedback Summary | Root-Cause Category | Proposed Rule / Tool Enhancement |
 | :--- | :--- | :--- | :--- |
-| #1234 | "Wrap internal errors with `%w`" | Rule Gap (`rules/languages/golang.md`) | Add explicit Go error wrapping rule |
-| #1235 | "Missing unit test for helper function" | Skill Gap (`skills/xmc_feature_development`) | Enforce 1-to-1 helper unit test check |
+| #1234 | "Wrap internal errors with `%w`" | Rule Gap (`.agents/rules/languages/golang.md`) | Add explicit Go error wrapping rule |
+| #1235 | "Missing unit test for helper function" | Skill Gap (`.agents/skills/xmc_feature_development/SKILL.md`) | Enforce 1-to-1 helper unit test check |
 
 > Would you like to invoke `/XMC Iterative Reflection` to analyze these root causes, benchmark candidate rule updates with `/XMC Trajectory Comparison`, and open a dedicated improvement PR?
 ```
