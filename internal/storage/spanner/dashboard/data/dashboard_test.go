@@ -321,6 +321,57 @@ func TestDashboardRowToProto_Success(t *testing.T) {
 	}
 }
 
+func TestDashboardRowToProto_QueryGenAliases(t *testing.T) {
+	layout := &dpb.LayoutSpec{
+		Type:    dpb.LayoutSpec_GRID,
+		Columns: 3,
+	}
+	layoutBytes, err := proto.Marshal(layout)
+	if err != nil {
+		t.Fatalf("proto.Marshal(layout) failed: %v", err)
+	}
+
+	charts := []*dpb.Chart{
+		{Name: "charts/c1"},
+	}
+
+	now := time.Now().UTC()
+	row, err := spanner.NewRow(
+		[]string{"created", "dashboard_id", "updated", "description", "owner", "title", "chart_layout"},
+		[]interface{}{now, "d1", now, "Test Desc", "owner@example.com", "Test Title", layoutBytes},
+	)
+	if err != nil {
+		t.Fatalf("spanner.NewRow failed: %v", err)
+	}
+
+	dash, err := DashboardRowToProto(row, charts)
+	if err != nil {
+		t.Fatalf("DashboardRowToProto failed with query generator aliases: %v", err)
+	}
+
+	if dash.GetName() != "dashboards/d1" {
+		t.Errorf("dash.Name: got %q, want 'dashboards/d1'", dash.GetName())
+	}
+	if dash.GetTitle() != "Test Title" {
+		t.Errorf("dash.Title: got %q, want 'Test Title'", dash.GetTitle())
+	}
+	if dash.GetDescription() != "Test Desc" {
+		t.Errorf("dash.Description: got %q, want 'Test Desc'", dash.GetDescription())
+	}
+	if dash.GetOwner() != "owner@example.com" {
+		t.Errorf("dash.Owner: got %q, want 'owner@example.com'", dash.GetOwner())
+	}
+	if dash.GetChartLayout() == nil || dash.GetChartLayout().GetColumns() != 3 {
+		t.Errorf("dash.ChartLayout: got %v, want columns=3", dash.GetChartLayout())
+	}
+	if dash.GetCreateTime() == nil || dash.GetCreateTime().AsTime().Unix() != now.Unix() {
+		t.Errorf("dash.CreateTime mismatch: got %v, want %v", dash.GetCreateTime(), now)
+	}
+	if dash.GetUpdateTime() == nil || dash.GetUpdateTime().AsTime().Unix() != now.Unix() {
+		t.Errorf("dash.UpdateTime mismatch: got %v, want %v", dash.GetUpdateTime(), now)
+	}
+}
+
 func TestDashboardRowToProto_MissingRequiredColumn(t *testing.T) {
 	row, err := spanner.NewRow(
 		[]string{"Title", "Description"},
@@ -367,6 +418,63 @@ func TestChartRowToProto_Success(t *testing.T) {
 	chart, err := ChartRowToProto(row, plots)
 	if err != nil {
 		t.Fatalf("ChartRowToProto failed: %v", err)
+	}
+
+	if chart.GetName() != "experiments/100/workUnits/1/charts/c1" {
+		t.Errorf("chart.Name: got %q, want 'experiments/100/workUnits/1/charts/c1'", chart.GetName())
+	}
+	if chart.GetTitle() != "Test Title" {
+		t.Errorf("chart.Title: got %q, want 'Test Title'", chart.GetTitle())
+	}
+	if chart.GetDescription() != "Test Description" {
+		t.Errorf("chart.Description: got %q, want 'Test Description'", chart.GetDescription())
+	}
+	if chart.GetXid() != 100 {
+		t.Errorf("chart.Xid: got %d, want 100", chart.GetXid())
+	}
+	if chart.GetWid() != 1 {
+		t.Errorf("chart.Wid: got %d, want 1", chart.GetWid())
+	}
+	if chart.GetCreateTime() == nil || chart.GetCreateTime().AsTime().Unix() != now.Unix() {
+		t.Errorf("chart.CreateTime mismatch: got %v, want %v", chart.GetCreateTime(), now)
+	}
+	if chart.GetUpdateTime() == nil || chart.GetUpdateTime().AsTime().Unix() != now.Unix() {
+		t.Errorf("chart.UpdateTime mismatch: got %v, want %v", chart.GetUpdateTime(), now)
+	}
+	if len(chart.GetPlots()) != 1 || chart.GetPlots()[0].GetPlotId() != "plot-1" {
+		t.Errorf("chart.Plots: got %v, want 1 plot with ID 'plot-1'", chart.GetPlots())
+	}
+	if chart.GetPlotLayout() == nil || chart.GetPlotLayout().GetColumns() != 2 {
+		t.Errorf("chart.PlotLayout: got %v, want columns=2", chart.GetPlotLayout())
+	}
+}
+
+func TestChartRowToProto_QueryGenAliases(t *testing.T) {
+	layout := &dpb.LayoutSpec{
+		Type:    dpb.LayoutSpec_GRID,
+		Columns: 2,
+	}
+	layoutBytes, err := proto.Marshal(layout)
+	if err != nil {
+		t.Fatalf("proto.Marshal(layout) failed: %v", err)
+	}
+
+	plots := []*dpb.PlotSpec{
+		{PlotId: "plot-1", Title: "Loss"},
+	}
+
+	now := time.Now().UTC()
+	row, err := spanner.NewRow(
+		[]string{"created", "chart_id", "updated", "owner", "title", "description", "xid", "wid", "plot_layout"},
+		[]interface{}{now, "c1", now, "owner@example.com", "Test Title", "Test Description", int64(100), int64(1), layoutBytes},
+	)
+	if err != nil {
+		t.Fatalf("spanner.NewRow failed: %v", err)
+	}
+
+	chart, err := ChartRowToProto(row, plots)
+	if err != nil {
+		t.Fatalf("ChartRowToProto failed with query generator aliases: %v", err)
 	}
 
 	if chart.GetName() != "experiments/100/workUnits/1/charts/c1" {

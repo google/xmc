@@ -264,6 +264,36 @@ func DashboardRowToProto(row *spanner.Row, charts []*dpb.Chart) (*dpb.Dashboard,
 	if err := row.ToStructLenient(&data); err != nil {
 		return nil, fmt.Errorf("failed to decode dashboard row: %w", err)
 	}
+
+	// Safely extract fields that may be aliased differently by the query generator (e.g., lowercase/snake_case).
+	var dashID string
+	if err := row.ColumnByName("DashboardId", &dashID); err == nil {
+		data.ID = dashID
+	} else if err := row.ColumnByName("dashboard_id", &dashID); err == nil {
+		data.ID = dashID
+	}
+
+	var chartLayout []byte
+	if err := row.ColumnByName("ChartLayout", &chartLayout); err == nil {
+		data.ChartLayout = chartLayout
+	} else if err := row.ColumnByName("chart_layout", &chartLayout); err == nil {
+		data.ChartLayout = chartLayout
+	}
+
+	var createdAt time.Time
+	if err := row.ColumnByName("CreatedAt", &createdAt); err == nil {
+		data.CreatedAt = createdAt
+	} else if err := row.ColumnByName("created", &createdAt); err == nil {
+		data.CreatedAt = createdAt
+	}
+
+	var updatedAt time.Time
+	if err := row.ColumnByName("UpdatedAt", &updatedAt); err == nil {
+		data.UpdatedAt = updatedAt
+	} else if err := row.ColumnByName("updated", &updatedAt); err == nil {
+		data.UpdatedAt = updatedAt
+	}
+
 	if data.ID == "" {
 		return nil, fmt.Errorf("dashboard row missing DashboardId")
 	}
@@ -358,6 +388,36 @@ func ChartRowToProto(row *spanner.Row, plots []*dpb.PlotSpec) (*dpb.Chart, error
 	if err := row.ToStructLenient(&data); err != nil {
 		return nil, fmt.Errorf("failed to decode chart row: %w", err)
 	}
+
+	// Safely extract fields that may be aliased differently by the query generator (e.g., lowercase/snake_case).
+	var chartID string
+	if err := row.ColumnByName("ChartId", &chartID); err == nil {
+		data.ID = chartID
+	} else if err := row.ColumnByName("chart_id", &chartID); err == nil {
+		data.ID = chartID
+	}
+
+	var plotLayout []byte
+	if err := row.ColumnByName("PlotLayout", &plotLayout); err == nil {
+		data.PlotLayout = plotLayout
+	} else if err := row.ColumnByName("plot_layout", &plotLayout); err == nil {
+		data.PlotLayout = plotLayout
+	}
+
+	var createdAt time.Time
+	if err := row.ColumnByName("CreatedAt", &createdAt); err == nil {
+		data.CreatedAt = createdAt
+	} else if err := row.ColumnByName("created", &createdAt); err == nil {
+		data.CreatedAt = createdAt
+	}
+
+	var updatedAt time.Time
+	if err := row.ColumnByName("UpdatedAt", &updatedAt); err == nil {
+		data.UpdatedAt = updatedAt
+	} else if err := row.ColumnByName("updated", &updatedAt); err == nil {
+		data.UpdatedAt = updatedAt
+	}
+
 	if data.ID == "" {
 		return nil, fmt.Errorf("chart row missing ChartId")
 	}
