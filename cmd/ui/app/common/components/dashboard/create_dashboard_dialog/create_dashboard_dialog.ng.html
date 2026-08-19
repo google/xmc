@@ -1,0 +1,271 @@
+<!--
+Copyright 2026 Google LLC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+<div class="create-dashboard-dialog">
+  <div class="dialog-header" mat-dialog-title>
+    <div class="title-with-icon">
+      <mat-icon class="header-icon">add_chart</mat-icon>
+      <h2>Add performance dashboard</h2>
+    </div>
+  </div>
+
+  <mat-dialog-content class="dialog-scroll-content">
+    <!-- Form Section: Dashboard Info -->
+    <form class="main-form" [formGroup]="form">
+      <div class="section-title">1. Dashboard details</div>
+
+      <div class="form-row">
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Dashboard Title *</mat-label>
+          <input
+            matInput
+            formControlName="title"
+            placeholder="e.g. VCC baseline tune comparison"
+            required
+          />
+          @if (form.get('title')?.hasError('required')) {
+            <mat-error>Dashboard title is required</mat-error>
+          }
+        </mat-form-field>
+      </div>
+
+      <div class="form-row">
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Description (Optional)</mat-label>
+          <input
+            matInput
+            formControlName="description"
+            placeholder="e.g. Comparative evaluation of baseline tuning across hyperparameter runs"
+          />
+        </mat-form-field>
+      </div>
+
+      <mat-divider class="section-divider" />
+
+      <!-- Section: Base Experiment -->
+      <div class="section-title">2. Base experiment (Baseline)</div>
+      <p class="section-hint">
+        Specify the reference baseline experiment ID and work unit ID to evaluate other runs
+        against.
+      </p>
+
+      <div class="form-row-multi">
+        <mat-form-field appearance="outline" class="form-field-flex-2">
+          <mat-label>Base Experiment ID (XID) *</mat-label>
+          <input
+            matInput
+            type="number"
+            formControlName="baseXid"
+            placeholder="e.g. 234911122"
+            required
+          />
+          @if (form.get('baseXid')?.hasError('required')) {
+            <mat-error>Base Experiment ID is required</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="form-field-flex-1">
+          <mat-label>Work Unit ID (WID)</mat-label>
+          <input matInput type="number" formControlName="baseWid" placeholder="e.g. 1" />
+        </mat-form-field>
+      </div>
+
+      <div class="form-row">
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Baseline Label / Title (Optional)</mat-label>
+          <input matInput formControlName="baseChartTitle" placeholder="e.g. VCC Baseline Run" />
+        </mat-form-field>
+      </div>
+
+      <mat-divider class="section-divider" />
+
+      <!-- Section: Charts & Plots -->
+      <div class="plots-section-header">
+        <div class="section-title">
+          3. Metric charts & plots
+          <span class="plot-count-badge">{{ plots().length }} plots</span>
+        </div>
+        <button mat-button class="reset-plots-button" type="button" (click)="resetPlotsToDefault()">
+          <mat-icon>restart_alt</mat-icon>
+          <span>Reset to default ML plots</span>
+        </button>
+      </div>
+
+      <!-- Current Plots List -->
+      <div class="plots-list-container">
+        @if (plots().length === 0) {
+          <div class="no-plots-warning">
+            <mat-icon class="warning-icon">warning</mat-icon>
+            <span>No plots configured. Please add at least one plot below.</span>
+          </div>
+        } @else {
+          <div class="plot-items-grid">
+            @for (plot of plots(); track plot.plotId; let idx = $index) {
+              <div class="plot-item-card">
+                <div class="plot-item-header">
+                  <span
+                    class="plot-type-chip"
+                    [class.kpi-chip]="plot.type === PlotType.SUMMARY_BOX || plot.type === 1"
+                    [class.curve-chip]="plot.type === PlotType.SCATTER || plot.type === 2"
+                  >
+                    {{
+                      plot.type === PlotType.SUMMARY_BOX || plot.type === 1
+                        ? 'Summary KPI'
+                        : 'Curve Plot'
+                    }}
+                  </span>
+                  <button
+                    mat-icon-button
+                    class="remove-plot-button"
+                    type="button"
+                    aria-label="Remove plot"
+                    matTooltip="Remove plot"
+                    (click)="removePlot(idx)"
+                  >
+                    <mat-icon>close</mat-icon>
+                  </button>
+                </div>
+                <div class="plot-item-title">{{ plot.title || 'Untitled Plot' }}</div>
+                <div class="plot-item-metric">
+                  <mat-icon class="metric-icon">query_stats</mat-icon>
+                  <span>{{ plot.data.metrics[0] || '—' }}</span>
+                </div>
+              </div>
+            }
+          </div>
+        }
+      </div>
+
+      <!-- Add New Plot Sub-form -->
+      <div class="add-plot-subform" [formGroup]="newPlotForm">
+        <div class="subform-title">Add custom plot</div>
+        <div class="subform-controls">
+          <mat-form-field appearance="outline" class="plot-type-field">
+            <mat-label>Plot Type</mat-label>
+            <mat-select formControlName="type">
+              <mat-option [value]="PlotType.SUMMARY_BOX">Summary Box (KPI)</mat-option>
+              <mat-option [value]="PlotType.SCATTER">Curve (Time series)</mat-option>
+            </mat-select>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="plot-metric-field">
+            <mat-label>Metric Name *</mat-label>
+            <input
+              matInput
+              formControlName="metricName"
+              placeholder="e.g. val/loss, train/accuracy"
+            />
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="plot-title-field">
+            <mat-label>Plot Title (Optional)</mat-label>
+            <input matInput formControlName="title" placeholder="e.g. Last validation loss" />
+          </mat-form-field>
+
+          <button
+            mat-stroked-button
+            class="add-plot-btn"
+            color="primary"
+            type="button"
+            [disabled]="newPlotForm.invalid"
+            (click)="addPlot()"
+          >
+            <mat-icon>add</mat-icon>
+            <span>Add Plot</span>
+          </button>
+        </div>
+      </div>
+
+      <mat-divider class="section-divider" />
+
+      <!-- Section 4: (Optional) Comparison Runs -->
+      <div class="section-title">4. Add comparison experiments (Optional)</div>
+      <p class="section-hint">
+        You can attach comparison experiments now or add them later directly on the dashboard.
+      </p>
+
+      @if (comparisons().length > 0) {
+        <div class="comparisons-list">
+          @for (comp of comparisons(); track comp.xid; let idx = $index) {
+            <div class="comparison-item-chip">
+              <mat-icon class="comp-icon">science</mat-icon>
+              <span class="comp-text">
+                <strong>XID {{ comp.xid }}</strong>
+                @if (comp.wid) {
+                  (WID {{ comp.wid }})
+                }
+                — {{ comp.title }}
+              </span>
+              <button
+                mat-icon-button
+                class="remove-comp-button"
+                type="button"
+                aria-label="Remove comparison"
+                (click)="removeComparison(idx)"
+              >
+                <mat-icon>close</mat-icon>
+              </button>
+            </div>
+          }
+        </div>
+      }
+
+      <div class="add-comparison-subform" [formGroup]="newComparisonForm">
+        <div class="subform-controls">
+          <mat-form-field appearance="outline" class="comp-xid-field">
+            <mat-label>Comparison XID</mat-label>
+            <input matInput type="number" formControlName="xid" placeholder="e.g. 234911123" />
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="comp-wid-field">
+            <mat-label>WID</mat-label>
+            <input matInput type="number" formControlName="wid" placeholder="1" />
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="comp-title-field">
+            <mat-label>Label (Optional)</mat-label>
+            <input matInput formControlName="title" placeholder="e.g. VCC tuned_v1" />
+          </mat-form-field>
+
+          <button
+            mat-stroked-button
+            class="add-comp-btn"
+            type="button"
+            [disabled]="!newComparisonForm.value.xid"
+            (click)="addComparison()"
+          >
+            <mat-icon>add</mat-icon>
+            <span>Add Run</span>
+          </button>
+        </div>
+      </div>
+    </form>
+  </mat-dialog-content>
+
+  <mat-dialog-actions align="end" class="dialog-actions">
+    <button mat-button type="button" (click)="onCancel()">Cancel</button>
+    <button
+      mat-flat-button
+      color="primary"
+      type="button"
+      class="submit-button"
+      [disabled]="form.invalid || plots().length === 0"
+      (click)="onSubmit()"
+    >
+      <mat-icon>add_chart</mat-icon>
+      <span>Create Dashboard</span>
+    </button>
+  </mat-dialog-actions>
+</div>
