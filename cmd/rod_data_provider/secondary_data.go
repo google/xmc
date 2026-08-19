@@ -48,6 +48,7 @@ type MockQueueVelocityFetcher struct{}
 
 var _ QueueVelocityFetcher = (*MockQueueVelocityFetcher)(nil)
 
+// TODO: remove this with real data
 func (m *MockQueueVelocityFetcher) FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) ([]QueueMetricRow, error) {
 	return []QueueMetricRow{
 		{QueueName: "cpu-queue", Count: 10, TotalUnits: 25000, ResourceType: ResourceTypeCPU},
