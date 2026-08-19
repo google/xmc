@@ -84,6 +84,19 @@ func compareQueueMetricRows(t *testing.T, got, want []QueueMetricRow) {
 	}
 }
 
+func newMockItem(wid int64, queue string, offset time.Duration, state essmsgpb.WorkUnitStatus_WorkUnitState, resType string, units int64) WorkUnitStatusHistoryItem {
+	return WorkUnitStatusHistoryItem{
+		BitReversedXid: 1,
+		WorkUnitId:     wid,
+		HistoryId:      wid,
+		QueueName:      queue,
+		TransitionTime: time.Now().Add(offset),
+		NewState:       int64(state),
+		ResourceType:   resType,
+		ResourceUnits:  units,
+	}
+}
+
 func TestFetchBatchQueueVelocity_DefaultMockData(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
@@ -95,18 +108,8 @@ func TestFetchBatchQueueVelocity_DefaultMockData(t *testing.T) {
 	}
 
 	want := []QueueMetricRow{
-		{
-			QueueName:    "cpu-queue",
-			Count:        1,
-			TotalUnits:   16000,
-			ResourceType: ResourceTypeCPU,
-		},
-		{
-			QueueName:    "tpu-queue",
-			Count:        2,
-			TotalUnits:   48,
-			ResourceType: "v5p",
-		},
+		{QueueName: "cpu-queue", Count: 1, TotalUnits: 16000, ResourceType: ResourceTypeCPU},
+		{QueueName: "tpu-queue", Count: 2, TotalUnits: 48, ResourceType: "v5p"},
 	}
 
 	compareQueueMetricRows(t, got, want)
@@ -123,12 +126,7 @@ func TestFetchBatchPendingQueueMetrics_DefaultMockData(t *testing.T) {
 	}
 
 	want := []QueueMetricRow{
-		{
-			QueueName:    "cpu-queue",
-			Count:        1,
-			TotalUnits:   8000,
-			ResourceType: ResourceTypeCPU,
-		},
+		{QueueName: "cpu-queue", Count: 1, TotalUnits: 8000, ResourceType: ResourceTypeCPU},
 	}
 
 	compareQueueMetricRows(t, got, want)
@@ -137,8 +135,6 @@ func TestFetchBatchPendingQueueMetrics_DefaultMockData(t *testing.T) {
 func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
-
-	now := time.Now()
 
 	tests := []struct {
 		name       string
@@ -152,44 +148,12 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 			queueNames: []string{"q1"},
 			window:     1 * time.Hour,
 			mockItems: []WorkUnitStatusHistoryItem{
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     101,
-					HistoryId:      1,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-10 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  10,
-				},
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     102,
-					HistoryId:      2,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-5 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_SCHEDULING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  20,
-				},
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     103,
-					HistoryId:      3,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-2 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_RUNNING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  30,
-				},
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 10),
+				newMockItem(102, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 20),
+				newMockItem(103, "q1", -2*time.Minute, essmsgpb.WorkUnitStatus_RUNNING, ResourceTypeCPU, 30),
 			},
 			want: []QueueMetricRow{
-				{
-					QueueName:    "q1",
-					Count:        1,
-					TotalUnits:   10,
-					ResourceType: ResourceTypeCPU,
-				},
+				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: ResourceTypeCPU},
 			},
 		},
 		{
@@ -197,34 +161,11 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 			queueNames: []string{"q1"},
 			window:     30 * time.Minute,
 			mockItems: []WorkUnitStatusHistoryItem{
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     101,
-					HistoryId:      1,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-10 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  10,
-				},
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     102,
-					HistoryId:      2,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-45 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  20,
-				},
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 10),
+				newMockItem(102, "q1", -45*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 20),
 			},
 			want: []QueueMetricRow{
-				{
-					QueueName:    "q1",
-					Count:        1,
-					TotalUnits:   10,
-					ResourceType: ResourceTypeCPU,
-				},
+				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: ResourceTypeCPU},
 			},
 		},
 		{
@@ -232,34 +173,11 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 			queueNames: []string{"q1"},
 			window:     1 * time.Hour,
 			mockItems: []WorkUnitStatusHistoryItem{
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     101,
-					HistoryId:      1,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-10 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  10,
-				},
-				{
-					BitReversedXid: 2,
-					WorkUnitId:     201,
-					HistoryId:      2,
-					QueueName:      "q2",
-					TransitionTime: now.Add(-10 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  20,
-				},
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 10),
+				newMockItem(201, "q2", -10*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 20),
 			},
 			want: []QueueMetricRow{
-				{
-					QueueName:    "q1",
-					Count:        1,
-					TotalUnits:   10,
-					ResourceType: ResourceTypeCPU,
-				},
+				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: ResourceTypeCPU},
 			},
 		},
 		{
@@ -267,50 +185,13 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 			queueNames: []string{"q1"},
 			window:     1 * time.Hour,
 			mockItems: []WorkUnitStatusHistoryItem{
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     101,
-					HistoryId:      1,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-10 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  10,
-				},
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     102,
-					HistoryId:      2,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-8 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  20,
-				},
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     103,
-					HistoryId:      3,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-5 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-					ResourceType:   "GPU",
-					ResourceUnits:  4,
-				},
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 10),
+				newMockItem(102, "q1", -8*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 20),
+				newMockItem(103, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, "GPU", 4),
 			},
 			want: []QueueMetricRow{
-				{
-					QueueName:    "q1",
-					Count:        3,
-					TotalUnits:   30,
-					ResourceType: ResourceTypeCPU,
-				},
-				{
-					QueueName:    "q1",
-					Count:        3,
-					TotalUnits:   4,
-					ResourceType: "GPU",
-				},
+				{QueueName: "q1", Count: 3, TotalUnits: 30, ResourceType: ResourceTypeCPU},
+				{QueueName: "q1", Count: 3, TotalUnits: 4, ResourceType: "GPU"},
 			},
 		},
 		{
@@ -318,16 +199,7 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 			queueNames: []string{},
 			window:     1 * time.Hour,
 			mockItems: []WorkUnitStatusHistoryItem{
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     101,
-					HistoryId:      1,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-10 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  10,
-				},
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 10),
 			},
 			want: nil,
 		},
@@ -355,8 +227,6 @@ func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
 
-	now := time.Now()
-
 	tests := []struct {
 		name       string
 		queueNames []string
@@ -367,188 +237,55 @@ func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
 			name:       "TransitionStateFiltering",
 			queueNames: []string{"q1"},
 			mockItems: []WorkUnitStatusHistoryItem{
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     101,
-					HistoryId:      1,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-10 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_SCHEDULING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  10,
-				},
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     102,
-					HistoryId:      2,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-10 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  20,
-				},
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 10),
+				newMockItem(102, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 20),
 			},
 			want: []QueueMetricRow{
-				{
-					QueueName:    "q1",
-					Count:        1,
-					TotalUnits:   10,
-					ResourceType: ResourceTypeCPU,
-				},
+				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: ResourceTypeCPU},
 			},
 		},
 		{
 			name:       "LatestStateTransition",
 			queueNames: []string{"q1"},
 			mockItems: []WorkUnitStatusHistoryItem{
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     101,
-					HistoryId:      1,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-20 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_SCHEDULING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  10,
-				},
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     101,
-					HistoryId:      2,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-10 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_RUNNING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  10,
-				},
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     102,
-					HistoryId:      3,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-15 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  20,
-				},
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     102,
-					HistoryId:      4,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-5 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_SCHEDULING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  20,
-				},
+				newMockItem(101, "q1", -20*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 10),
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_RUNNING, ResourceTypeCPU, 10),
+				newMockItem(102, "q1", -15*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 20),
+				newMockItem(102, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 20),
 			},
 			want: []QueueMetricRow{
-				{
-					QueueName:    "q1",
-					Count:        1,
-					TotalUnits:   20,
-					ResourceType: ResourceTypeCPU,
-				},
+				{QueueName: "q1", Count: 1, TotalUnits: 20, ResourceType: ResourceTypeCPU},
 			},
 		},
 		{
 			name:       "QueueNameFiltering",
 			queueNames: []string{"q1"},
 			mockItems: []WorkUnitStatusHistoryItem{
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     101,
-					HistoryId:      1,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-10 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_SCHEDULING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  10,
-				},
-				{
-					BitReversedXid: 2,
-					WorkUnitId:     201,
-					HistoryId:      2,
-					QueueName:      "q2",
-					TransitionTime: now.Add(-10 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_SCHEDULING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  20,
-				},
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 10),
+				newMockItem(201, "q2", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 20),
 			},
 			want: []QueueMetricRow{
-				{
-					QueueName:    "q1",
-					Count:        1,
-					TotalUnits:   10,
-					ResourceType: ResourceTypeCPU,
-				},
+				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: ResourceTypeCPU},
 			},
 		},
 		{
 			name:       "MultiResourceAggregation",
 			queueNames: []string{"q1"},
 			mockItems: []WorkUnitStatusHistoryItem{
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     101,
-					HistoryId:      1,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-10 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_SCHEDULING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  10,
-				},
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     102,
-					HistoryId:      2,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-8 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_SCHEDULING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  20,
-				},
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     103,
-					HistoryId:      3,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-5 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_SCHEDULING),
-					ResourceType:   "GPU",
-					ResourceUnits:  4,
-				},
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 10),
+				newMockItem(102, "q1", -8*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 20),
+				newMockItem(103, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, "GPU", 4),
 			},
 			want: []QueueMetricRow{
-				{
-					QueueName:    "q1",
-					Count:        3,
-					TotalUnits:   30,
-					ResourceType: ResourceTypeCPU,
-				},
-				{
-					QueueName:    "q1",
-					Count:        3,
-					TotalUnits:   4,
-					ResourceType: "GPU",
-				},
+				{QueueName: "q1", Count: 3, TotalUnits: 30, ResourceType: ResourceTypeCPU},
+				{QueueName: "q1", Count: 3, TotalUnits: 4, ResourceType: "GPU"},
 			},
 		},
 		{
 			name:       "EmptyQueueNames",
 			queueNames: []string{},
 			mockItems: []WorkUnitStatusHistoryItem{
-				{
-					BitReversedXid: 1,
-					WorkUnitId:     101,
-					HistoryId:      1,
-					QueueName:      "q1",
-					TransitionTime: now.Add(-10 * time.Minute),
-					NewState:       int64(essmsgpb.WorkUnitStatus_SCHEDULING),
-					ResourceType:   ResourceTypeCPU,
-					ResourceUnits:  10,
-				},
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 10),
 			},
 			want: nil,
 		},
