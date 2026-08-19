@@ -58,4 +58,11 @@ export class FeatureFlagService {
   get isNonProdAuth(): boolean {
     return this.isFeatureEnabled('isNonProdAuth');
   }
+
+  /**
+   * Returns whether performance dashboards are enabled.
+   */
+  get isPerformanceDashboardEnabled(): boolean {
+    return this.isFeatureEnabled('performanceDashboardEnabled');
+  }
 }
