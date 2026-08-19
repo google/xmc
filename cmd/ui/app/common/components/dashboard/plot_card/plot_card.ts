@@ -80,7 +80,9 @@ export class PlotCardComponent implements OnDestroy {
     const pd = this.plotData();
     return (
       type === PlotType.SUMMARY_BOX ||
+      type === 1 ||
       pd?.type === PlotType.SUMMARY_BOX ||
+      pd?.type === 1 ||
       pd?.type === 'SUMMARY_BOX'
     );
   });

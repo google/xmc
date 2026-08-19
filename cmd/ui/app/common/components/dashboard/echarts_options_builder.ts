@@ -99,16 +99,24 @@ export function getBaseChartLayout(theme: XmcChartThemeConfig): Partial<EChartsO
 
 export function isScatterType(spec: PlotSpec, data: PlotData): boolean {
   return (
-    spec.type === PlotType.SCATTER || data.type === PlotType.SCATTER || data.type === 'SCATTER'
+    spec.type === PlotType.SCATTER ||
+    spec.type === 2 ||
+    data.type === PlotType.SCATTER ||
+    data.type === 2 ||
+    data.type === 'SCATTER'
   );
 }
 
 export function isBarType(spec: PlotSpec, data: PlotData): boolean {
   return (
     spec.type === PlotType.BAR ||
+    spec.type === 3 ||
     spec.type === PlotType.HISTOGRAM ||
+    spec.type === 4 ||
     data.type === PlotType.BAR ||
+    data.type === 3 ||
     data.type === PlotType.HISTOGRAM ||
+    data.type === 4 ||
     data.type === 'BAR' ||
     data.type === 'HISTOGRAM'
   );
