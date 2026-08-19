@@ -19,14 +19,19 @@ import (
 )
 
 func TestLoadConfig(t *testing.T) {
-	cfg := LoadConfig()
-	if cfg == nil {
-		t.Fatal("LoadConfig() returned nil")
-	}
-	if cfg.Port == "" {
-		t.Error("Expected default Port to be non-empty")
-	}
-	if cfg.GRPCPort == "" {
-		t.Error("Expected default GRPCPort to be non-empty")
-	}
+	t.Run("returns valid config struct", func(t *testing.T) {
+		cfg := LoadConfig()
+		if cfg == nil {
+			t.Fatal("LoadConfig() returned nil")
+		}
+		if cfg.Port == "" {
+			t.Error("Expected non-empty Port")
+		}
+		if cfg.GRPCPort == "" {
+			t.Error("Expected non-empty GRPCPort")
+		}
+		if cfg.XidServiceAddr == "" {
+			t.Error("Expected non-empty XidServiceAddr")
+		}
+	})
 }

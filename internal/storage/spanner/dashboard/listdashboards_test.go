@@ -209,8 +209,8 @@ func TestExtractDashboardCursor(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ExtractDashboardCursor failed: %v", err)
 		}
-		if cursor["dashboard_id"] != "dashboards/d1" {
-			t.Errorf("dashboard_id = %v, want 'dashboards/d1'", cursor["dashboard_id"])
+		if cursor["dashboard_id"] != "d1" {
+			t.Errorf("dashboard_id = %v, want 'd1'", cursor["dashboard_id"])
 		}
 		if _, ok := cursor["title"]; ok {
 			t.Errorf("title should not be present in cursor")
@@ -239,8 +239,8 @@ func TestExtractDashboardCursor(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ExtractDashboardCursor failed: %v", err)
 		}
-		if cursor["dashboard_id"] != "dashboards/d2" {
-			t.Errorf("dashboard_id = %v, want 'dashboards/d2'", cursor["dashboard_id"])
+		if cursor["dashboard_id"] != "d2" {
+			t.Errorf("dashboard_id = %v, want 'd2'", cursor["dashboard_id"])
 		}
 		if _, ok := cursor["title"]; ok {
 			t.Errorf("title should not be present in cursor")
@@ -253,6 +253,15 @@ func TestExtractDashboardCursor(t *testing.T) {
 		}
 		if cursor["updated"] != now.UTC() {
 			t.Errorf("updated = %v, want %v", cursor["updated"], now.UTC())
+		}
+	})
+
+	t.Run("invalid dashboard name returns error", func(t *testing.T) {
+		dash := &dpb.Dashboard{
+			Name: "invalid-name",
+		}
+		if _, err := ExtractDashboardCursor(dash); err == nil {
+			t.Errorf("ExtractDashboardCursor with invalid name succeeded, want error")
 		}
 	})
 }

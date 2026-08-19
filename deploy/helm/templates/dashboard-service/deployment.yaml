@@ -61,6 +61,9 @@ spec:
         - name: GOOGLE_CLOUD_PROJECT
           value: {{ .Values.projectId | quote }}
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
+        envFrom:
+        - configMapRef:
+            name: dashboard-config
         readinessProbe:
           httpGet:
             path: /readyz

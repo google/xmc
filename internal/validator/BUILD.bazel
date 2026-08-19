@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "validator",
     srcs = [
+        "dashboard.go",
         "names.go",
         "parameters.go",
         "requests.go",
@@ -25,6 +26,8 @@ go_library(
     importpath = "xmanager_cloud/validator/validator",  # keep
     visibility = ["//:__subpackages__"],
     deps = [
+        "//api/protos/dashboard:api_go_proto",
+        "//api/protos/dashboard:service_go_proto",
         "//api/protos/experiment:api_go_proto",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/xid:api_go_proto",
@@ -38,6 +41,7 @@ go_library(
 go_test(
     name = "validator_test",
     srcs = [
+        "dashboard_test.go",
         "names_test.go",
         "parameters_test.go",
         "requests_test.go",
@@ -46,6 +50,8 @@ go_test(
     embed = [":validator"],
     shard_count = 10,
     deps = [
+        "//api/protos/dashboard:api_go_proto",
+        "//api/protos/dashboard:service_go_proto",
         "//api/protos/experiment:api_go_proto",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/xid:api_go_proto",
