@@ -16,6 +16,7 @@ package oauth2
 
 import (
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"strings"
@@ -63,6 +64,10 @@ type Config struct {
 func LoadConfig() (*Config, error) {
 	mockAuth := getEnvBool("MOCK_AUTH", false)
 	disableAuth := getEnvBool("DISABLE_AUTHENTICATION", false)
+
+	if mockAuth || disableAuth {
+		log.Printf("WARNING: Non-production auth mode enabled (MOCK_AUTH=%t, DISABLE_AUTHENTICATION=%t)", mockAuth, disableAuth)
+	}
 
 	clientSecret, err := loadClientSecret()
 	if err != nil {
@@ -125,6 +130,9 @@ func loadClientSecret() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to load OIDC_CLIENT_SECRET: %w", err)
 	}
+	if clientSecret == "" {
+		log.Println("WARNING: Neither CLIENT_SECRET nor OIDC_CLIENT_SECRET is set; OAuth2 code exchange may fail if required by IdP")
+	}
 	return clientSecret, nil
 }
 
@@ -135,6 +143,7 @@ func loadJWTSecret(mockAuth, disableAuth bool) (string, error) {
 	}
 	if jwtSecret == "" {
 		if mockAuth || disableAuth {
+			log.Printf("WARNING: Non-production auth active (mockAuth=%t, disableAuth=%t): using ephemeral dev-only JWT secret", mockAuth, disableAuth)
 			return devOnlyJWTSecret, nil
 		}
 		return "", fmt.Errorf("jwt_secret must be set (via JWT_SECRET or JWT_SECRET_FILE) when authentication is enabled")
