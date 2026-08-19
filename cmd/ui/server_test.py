@@ -148,7 +148,7 @@ class SPAHandlerTest(unittest.TestCase):
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
                     ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
-                    ' "performanceDashboardEnabled": false};'
+                    ' "performanceDashboardEnabled": false, "isNonProdAuth": false};'
                 ),
             },
             {
@@ -157,7 +157,7 @@ class SPAHandlerTest(unittest.TestCase):
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
                     ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
-                    ' "performanceDashboardEnabled": false};'
+                    ' "performanceDashboardEnabled": false, "isNonProdAuth": false};'
                 ),
             },
             {
@@ -166,7 +166,7 @@ class SPAHandlerTest(unittest.TestCase):
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": false,'
                     ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
-                    ' "performanceDashboardEnabled": false};'
+                    ' "performanceDashboardEnabled": false, "isNonProdAuth": false};'
                 ),
             },
             {
@@ -175,7 +175,7 @@ class SPAHandlerTest(unittest.TestCase):
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
                     ' "adminPanelEnabled": true, "resourceDashboardEnabled": false,'
-                    ' "performanceDashboardEnabled": false};'
+                    ' "performanceDashboardEnabled": false, "isNonProdAuth": false};'
                 ),
             },
             {
@@ -184,7 +184,7 @@ class SPAHandlerTest(unittest.TestCase):
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
                     ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
-                    ' "performanceDashboardEnabled": false};'
+                    ' "performanceDashboardEnabled": false, "isNonProdAuth": false};'
                 ),
             },
             {
@@ -193,7 +193,7 @@ class SPAHandlerTest(unittest.TestCase):
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
                     ' "adminPanelEnabled": false, "resourceDashboardEnabled": true,'
-                    ' "performanceDashboardEnabled": false};'
+                    ' "performanceDashboardEnabled": false, "isNonProdAuth": false};'
                 ),
             },
             {
@@ -202,7 +202,7 @@ class SPAHandlerTest(unittest.TestCase):
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
                     ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
-                    ' "performanceDashboardEnabled": false};'
+                    ' "performanceDashboardEnabled": false, "isNonProdAuth": false};'
                 ),
             },
             {
@@ -211,7 +211,7 @@ class SPAHandlerTest(unittest.TestCase):
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
                     ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
-                    ' "performanceDashboardEnabled": true};'
+                    ' "performanceDashboardEnabled": true, "isNonProdAuth": false};'
                 ),
             },
             {
@@ -220,7 +220,43 @@ class SPAHandlerTest(unittest.TestCase):
                 "expected": (
                     'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
                     ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
-                    ' "performanceDashboardEnabled": false};'
+                    ' "performanceDashboardEnabled": false, "isNonProdAuth": false};'
+                ),
+            },
+            {
+                "testcase_name": "non_prod_auth_true",
+                "environ": {"XMC_NON_PROD_AUTH": "true"},
+                "expected": (
+                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
+                    ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
+                    ' "performanceDashboardEnabled": false, "isNonProdAuth": true};'
+                ),
+            },
+            {
+                "testcase_name": "non_prod_auth_numeric_1",
+                "environ": {"XMC_NON_PROD_AUTH": "1"},
+                "expected": (
+                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
+                    ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
+                    ' "performanceDashboardEnabled": false, "isNonProdAuth": true};'
+                ),
+            },
+            {
+                "testcase_name": "non_prod_auth_yes",
+                "environ": {"XMC_NON_PROD_AUTH": "yes"},
+                "expected": (
+                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
+                    ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
+                    ' "performanceDashboardEnabled": false, "isNonProdAuth": true};'
+                ),
+            },
+            {
+                "testcase_name": "show_safety_warning_true",
+                "environ": {"SHOW_SAFETY_WARNING": "true"},
+                "expected": (
+                    'window.XMC_FEATURE_FLAGS={"statusMessageHistoryEnabled": true,'
+                    ' "adminPanelEnabled": false, "resourceDashboardEnabled": false,'
+                    ' "performanceDashboardEnabled": false, "isNonProdAuth": true};'
                 ),
             },
         ]
