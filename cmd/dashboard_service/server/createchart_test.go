@@ -55,6 +55,8 @@ func TestCreateChart(t *testing.T) {
 			Chart: &dpb.Chart{
 				Title:       "Loss Curve",
 				Description: "Training loss over time",
+				Xid:         100,
+				Wid:         2,
 			},
 		}
 
@@ -94,6 +96,8 @@ func TestCreateChart(t *testing.T) {
 			ChartId: "custom-chart-1",
 			Chart: &dpb.Chart{
 				Title: "Accuracy Chart",
+				Xid:   100,
+				Wid:   2,
 			},
 		}
 
@@ -121,7 +125,7 @@ func TestCreateChart(t *testing.T) {
 
 		req := &spb.CreateChartRequest{
 			Parent: "experiments/100/workUnits/1",
-			Chart:  &dpb.Chart{Title: "Title"},
+			Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 		}
 
 		_, err := s.CreateChart(ctx, req)
@@ -143,32 +147,44 @@ func TestCreateChart(t *testing.T) {
 			{name: "nil chart", req: &spb.CreateChartRequest{Parent: "experiments/100/workUnits/1"}},
 			{name: "empty title", req: &spb.CreateChartRequest{
 				Parent: "experiments/100/workUnits/1",
-				Chart:  &dpb.Chart{Title: "   "},
+				Chart:  &dpb.Chart{Title: "   ", Xid: 100, Wid: 1},
 			}},
 			{name: "invalid chart ID with slash", req: &spb.CreateChartRequest{
 				Parent:  "experiments/100/workUnits/1",
 				ChartId: "invalid/id",
-				Chart:   &dpb.Chart{Title: "Title"},
+				Chart:   &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 			}},
 			{name: "empty parent", req: &spb.CreateChartRequest{
 				Parent: "",
-				Chart:  &dpb.Chart{Title: "Title"},
+				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 			}},
 			{name: "invalid parent zero wid", req: &spb.CreateChartRequest{
 				Parent: "experiments/100/workUnits/0",
-				Chart:  &dpb.Chart{Title: "Title"},
+				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 			}},
 			{name: "invalid parent", req: &spb.CreateChartRequest{
 				Parent: "invalid-parent",
-				Chart:  &dpb.Chart{Title: "Title"},
+				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 			}},
 			{name: "dashboard parent rejected", req: &spb.CreateChartRequest{
 				Parent: "dashboards/d1",
-				Chart:  &dpb.Chart{Title: "Title"},
+				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 			}},
-			{name: "invalid chart name in request", req: &spb.CreateChartRequest{
+			{name: "zero chart xid", req: &spb.CreateChartRequest{
 				Parent: "experiments/100/workUnits/1",
-				Chart:  &dpb.Chart{Name: "invalid-name", Title: "Title"},
+				Chart:  &dpb.Chart{Title: "Title", Xid: 0, Wid: 1},
+			}},
+			{name: "zero chart wid", req: &spb.CreateChartRequest{
+				Parent: "experiments/100/workUnits/1",
+				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 0},
+			}},
+			{name: "mismatched chart xid", req: &spb.CreateChartRequest{
+				Parent: "experiments/100/workUnits/1",
+				Chart:  &dpb.Chart{Title: "Title", Xid: 999, Wid: 1},
+			}},
+			{name: "mismatched chart wid", req: &spb.CreateChartRequest{
+				Parent: "experiments/100/workUnits/1",
+				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 999},
 			}},
 		}
 
@@ -193,7 +209,7 @@ func TestCreateChart(t *testing.T) {
 
 		req := &spb.CreateChartRequest{
 			Parent: "experiments/100/workUnits/1",
-			Chart:  &dpb.Chart{Title: "Title"},
+			Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 		}
 
 		_, err := s.CreateChart(ctx, req)
@@ -214,7 +230,7 @@ func TestCreateChart(t *testing.T) {
 		req := &spb.CreateChartRequest{
 			Parent:  "experiments/100/workUnits/1",
 			ChartId: "dup-id",
-			Chart:   &dpb.Chart{Title: "Title"},
+			Chart:   &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 		}
 
 		_, err := s.CreateChart(ctx, req)
@@ -239,7 +255,7 @@ func TestCreateChart(t *testing.T) {
 
 		req := &spb.CreateChartRequest{
 			Parent: "experiments/100/workUnits/1",
-			Chart:  &dpb.Chart{Title: "Title"},
+			Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 		}
 
 		_, err := s.CreateChart(ctx, req)
@@ -266,7 +282,7 @@ func TestCreateChart(t *testing.T) {
 
 		req := &spb.CreateChartRequest{
 			Parent: "experiments/42/workUnits/7",
-			Chart:  &dpb.Chart{Title: "Metrics"},
+			Chart:  &dpb.Chart{Title: "Metrics", Xid: 42, Wid: 7},
 		}
 
 		_, err := s.CreateChart(ctx, req)
@@ -299,7 +315,7 @@ func TestCreateChart(t *testing.T) {
 
 		req := &spb.CreateChartRequest{
 			Parent: "experiments/100/workUnits/1",
-			Chart:  &dpb.Chart{Title: "Title"},
+			Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
 		}
 
 		_, err := s.CreateChart(ctx, req)

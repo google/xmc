@@ -213,13 +213,17 @@ func ValidateCreateChartRequest(in *spb.CreateChartRequest) error {
 	if in.GetChartId() != "" && strings.Contains(in.GetChartId(), "/") {
 		return fmt.Errorf("chart_id %q cannot contain slashes: %w", in.GetChartId(), status.ErrInvalidArgument)
 	}
-	if in.GetChart().GetName() != "" {
-		if _, _, _, err := ValidateChartName(in.GetChart().GetName()); err != nil {
-			return fmt.Errorf("invalid chart.name: %w", err)
-		}
+	expXid, wuWid, err := ValidateCreateChartParent(in)
+	if err != nil {
+		return err
 	}
-	_, _, err := ValidateCreateChartParent(in)
-	return err
+	if in.GetChart().GetXid() != expXid {
+		return fmt.Errorf("chart.xid %d must match parent experiment xid %d: %w", in.GetChart().GetXid(), expXid, status.ErrInvalidArgument)
+	}
+	if in.GetChart().GetWid() != wuWid {
+		return fmt.Errorf("chart.wid %d must match parent work unit wid %d: %w", in.GetChart().GetWid(), wuWid, status.ErrInvalidArgument)
+	}
+	return nil
 }
 
 // ValidateListChartsRequest validates the given ListChartsRequest.
