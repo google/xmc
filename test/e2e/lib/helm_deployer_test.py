@@ -85,9 +85,12 @@ class TestHelmDeployer(unittest.TestCase):
     def test_wait_for_rollouts_success(self, mock_run):
         self.deployer._wait_for_rollouts()
 
+        context = f"kind-{self.cfg.cluster_name}"
         mock_run.assert_any_call(
             [
                 "kubectl",
+                "--context",
+                context,
                 "rollout",
                 "status",
                 "deployment/dex",
@@ -99,6 +102,8 @@ class TestHelmDeployer(unittest.TestCase):
         mock_run.assert_any_call(
             [
                 "kubectl",
+                "--context",
+                context,
                 "rollout",
                 "status",
                 "deployment/gateway-proxy",

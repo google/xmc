@@ -159,11 +159,12 @@ ui:
         logger.error("Deployment rollout failed! Capturing diagnostics...")
         diag_file = os.path.join(self.cfg.screenshots_dir, "k8s_diagnostics.log")
         os.makedirs(self.cfg.screenshots_dir, exist_ok=True)
+        context = f"kind-{self.cfg.cluster_name}"
         with open(diag_file, "w", encoding="utf-8") as df:
             for ns in ["xmc", "dex"]:
                 df.write(f"=== PODS (ns: {ns}) ===\n")
                 pods_res = run_cmd(
-                    ["kubectl", "get", "pods", "-n", ns, "-o", "wide"],
+                    ["kubectl", "--context", context, "get", "pods", "-n", ns, "-o", "wide"],
                     check=False,
                     capture_output=True,
                 )
@@ -172,6 +173,8 @@ ui:
                 events_res = run_cmd(
                     [
                         "kubectl",
+                        "--context",
+                        context,
                         "get",
                         "events",
                         "-n",
@@ -186,6 +189,8 @@ ui:
                 pods_list_res = run_cmd(
                     [
                         "kubectl",
+                        "--context",
+                        context,
                         "get",
                         "pods",
                         "-n",
@@ -202,6 +207,8 @@ ui:
                     logs_res = run_cmd(
                         [
                             "kubectl",
+                            "--context",
+                            context,
                             "logs",
                             "-n",
                             ns,
@@ -218,10 +225,13 @@ ui:
     def _wait_for_rollouts(self) -> None:
         """Waits for deployments across namespaces to complete rollouts."""
         logger.info("Waiting for core pods to reach Ready status...")
+        context = f"kind-{self.cfg.cluster_name}"
         try:
             run_cmd(
                 [
                     "kubectl",
+                    "--context",
+                    context,
                     "rollout",
                     "status",
                     "deployment/dex",
@@ -239,6 +249,8 @@ ui:
                 run_cmd(
                     [
                         "kubectl",
+                        "--context",
+                        context,
                         "rollout",
                         "status",
                         f"deployment/{deploy}",
@@ -258,6 +270,7 @@ ui:
         self._patch_image_pull_policy()
         self._generate_values_file()
 
+        context = f"kind-{self.cfg.cluster_name}"
         run_cmd(
             [
                 "helm",
@@ -266,7 +279,7 @@ ui:
                 "xmc",
                 self.helm_dir,
                 "--kube-context",
-                f"kind-{self.cfg.cluster_name}",
+                context,
                 "-n",
                 "xmc",
                 "-f",
@@ -278,6 +291,8 @@ ui:
         run_cmd(
             [
                 "kubectl",
+                "--context",
+                context,
                 "apply",
                 "-f",
                 os.path.join(manifests_dir, "gateway_proxy.yaml"),
@@ -286,6 +301,8 @@ ui:
         run_cmd(
             [
                 "kubectl",
+                "--context",
+                context,
                 "rollout",
                 "restart",
                 "deployment/gateway-proxy",
