@@ -20,6 +20,8 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
 import { AddExperimentDialogComponent } from './add_experiment_dialog';
 
+const SUBMIT_BUTTON_SELECTOR = 'mat-dialog-actions button[color="primary"]';
+
 describe('AddExperimentDialogComponent', () => {
   let fixture: ComponentFixture<AddExperimentDialogComponent>;
   let component: AddExperimentDialogComponent;
@@ -70,5 +72,27 @@ describe('AddExperimentDialogComponent', () => {
   it('should close without value on cancel', () => {
     component.onCancel();
     expect(dialogRefSpy.close).toHaveBeenCalledWith();
+  });
+
+  it('should render "Add to comparison" on the submit button and submit when clicked', () => {
+    const submitButton = fixture.nativeElement.querySelector(
+      SUBMIT_BUTTON_SELECTOR,
+    ) as HTMLButtonElement;
+    expect(submitButton).toBeTruthy();
+    expect(submitButton.textContent?.trim()).toBe('Add to comparison');
+
+    component.form.patchValue({
+      xid: 234911123,
+      wid: 1,
+    });
+    fixture.detectChanges();
+
+    expect(submitButton.disabled).toBeFalse();
+    submitButton.click();
+    expect(dialogRefSpy.close).toHaveBeenCalledWith({
+      xid: 234911123,
+      wid: 1,
+      title: undefined,
+    });
   });
 });
