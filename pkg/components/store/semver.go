@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"golang.org/x/mod/semver"
 )
 
 // Version represents a parsed Semantic Version 2.0.0 structure.
@@ -31,171 +33,99 @@ type Version struct {
 	Raw        string
 }
 
-// Parse parses a semantic version string conforming to SemVer 2.0.0 with optional leading 'v' or 'V'.
-func Parse(v string) (*Version, error) {
-	raw := v
+// normalize prepares a version string for golang.org/x/mod/semver by ensuring the 'v' prefix
+// and validating strict SemVer 2.0.0 (3 numeric segments: major.minor.patch).
+func normalize(v string) (string, error) {
 	s := strings.TrimSpace(v)
 	if s == "" {
-		return nil, errors.New("empty version string")
+		return "", errors.New("empty version string")
 	}
-	if strings.HasPrefix(s, "v") || strings.HasPrefix(s, "V") {
-		s = s[1:]
+	if !strings.HasPrefix(s, "v") && !strings.HasPrefix(s, "V") {
+		s = "v" + s
+	} else if strings.HasPrefix(s, "V") {
+		s = "v" + s[1:]
 	}
+	if !semver.IsValid(s) {
+		return "", fmt.Errorf("invalid semver 2.0.0 string %q", v)
+	}
+	core := strings.TrimPrefix(s, "v")
+	if idx := strings.IndexAny(core, "-+"); idx != -1 {
+		core = core[:idx]
+	}
+	parts := strings.Split(core, ".")
+	if len(parts) != 3 {
+		return "", fmt.Errorf("invalid semver 2.0.0 string %q: expected major.minor.patch", v)
+	}
+	return s, nil
+}
 
-	var build string
-	if idx := strings.IndexByte(s, '+'); idx != -1 {
-		build = s[idx+1:]
-		s = s[:idx]
-		if err := validateBuild(build); err != nil {
-			return nil, fmt.Errorf("invalid build metadata %q: %w", build, err)
-		}
-	}
-
-	var preRelease []string
-	if idx := strings.IndexByte(s, '-'); idx != -1 {
-		preStr := s[idx+1:]
-		s = s[:idx]
-		var err error
-		preRelease, err = parsePreRelease(preStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid pre-release identifier %q: %w", preStr, err)
-		}
-	}
-
-	core, err := parseCore(s)
+// Parse parses a semantic version string conforming to SemVer 2.0.0 with optional leading 'v' or 'V'.
+func Parse(v string) (*Version, error) {
+	norm, err := normalize(v)
 	if err != nil {
-		return nil, fmt.Errorf("invalid core version %q: %w", s, err)
+		return nil, err
+	}
+
+	majStr := strings.TrimPrefix(semver.Major(norm), "v")
+	maj, err := strconv.ParseUint(majStr, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid major version in %q: %w", v, err)
+	}
+
+	majMin := strings.TrimPrefix(semver.MajorMinor(norm), "v")
+	parts := strings.Split(majMin, ".")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid major.minor in %q", v)
+	}
+	min, err := strconv.ParseUint(parts[1], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid minor version in %q: %w", v, err)
+	}
+
+	canonical := semver.Canonical(norm)
+	pre := semver.Prerelease(canonical)
+	build := semver.Build(norm)
+
+	core := strings.TrimPrefix(canonical, "v")
+	if idx := strings.IndexAny(core, "-+"); idx != -1 {
+		core = core[:idx]
+	}
+	coreParts := strings.Split(core, ".")
+	if len(coreParts) != 3 {
+		return nil, fmt.Errorf("expected 3 segments in %q", v)
+	}
+	patch, err := strconv.ParseUint(coreParts[2], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid patch version in %q: %w", v, err)
+	}
+
+	var preList []string
+	if pre != "" {
+		preList = strings.Split(strings.TrimPrefix(pre, "-"), ".")
 	}
 
 	return &Version{
-		Major:      core.major,
-		Minor:      core.minor,
-		Patch:      core.patch,
-		PreRelease: preRelease,
-		Build:      build,
-		Raw:        raw,
+		Major:      maj,
+		Minor:      min,
+		Patch:      patch,
+		PreRelease: preList,
+		Build:      strings.TrimPrefix(build, "+"),
+		Raw:        v,
 	}, nil
-}
-
-type coreVersion struct {
-	major uint64
-	minor uint64
-	patch uint64
-}
-
-// parseCore parses the Major.Minor.Patch segment of a SemVer string.
-func parseCore(s string) (*coreVersion, error) {
-	parts := strings.Split(s, ".")
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("expected 3 numeric segments, got %d", len(parts))
-	}
-	maj, err := parseNumericSegment(parts[0])
-	if err != nil {
-		return nil, fmt.Errorf("invalid major version: %w", err)
-	}
-	min, err := parseNumericSegment(parts[1])
-	if err != nil {
-		return nil, fmt.Errorf("invalid minor version: %w", err)
-	}
-	patch, err := parseNumericSegment(parts[2])
-	if err != nil {
-		return nil, fmt.Errorf("invalid patch version: %w", err)
-	}
-	return &coreVersion{major: maj, minor: min, patch: patch}, nil
-}
-
-// parseNumericSegment parses an individual non-negative integer segment and validates no leading zeroes.
-func parseNumericSegment(seg string) (uint64, error) {
-	if seg == "" {
-		return 0, errors.New("empty segment")
-	}
-	if !isNumeric(seg) {
-		return 0, errors.New("segment contains non-digit characters")
-	}
-	if len(seg) > 1 && seg[0] == '0' {
-		return 0, errors.New("leading zero is not permitted")
-	}
-	val, err := strconv.ParseUint(seg, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse uint64: %w", err)
-	}
-	return val, nil
-}
-
-// parsePreRelease parses and validates dot-separated pre-release identifiers.
-func parsePreRelease(s string) ([]string, error) {
-	if s == "" {
-		return nil, errors.New("empty pre-release string")
-	}
-	parts := strings.Split(s, ".")
-	for _, part := range parts {
-		if part == "" {
-			return nil, errors.New("empty pre-release identifier segment")
-		}
-		if !isValidIdentifier(part) {
-			return nil, fmt.Errorf("identifier %q contains invalid characters", part)
-		}
-		if isNumeric(part) && len(part) > 1 && part[0] == '0' {
-			return nil, fmt.Errorf("numeric identifier %q has leading zero", part)
-		}
-	}
-	return parts, nil
-}
-
-// validateBuild validates dot-separated build metadata identifiers.
-func validateBuild(s string) error {
-	if s == "" {
-		return errors.New("empty build metadata")
-	}
-	parts := strings.Split(s, ".")
-	for _, part := range parts {
-		if part == "" {
-			return errors.New("empty build metadata segment")
-		}
-		if !isValidIdentifier(part) {
-			return fmt.Errorf("identifier %q contains invalid characters", part)
-		}
-	}
-	return nil
-}
-
-// isValidIdentifier returns true if s consists only of ASCII alphanumerics and hyphens.
-func isValidIdentifier(s string) bool {
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-' {
-			continue
-		}
-		return false
-	}
-	return true
-}
-
-// isNumeric returns true if s consists exclusively of ASCII digits.
-func isNumeric(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		if s[i] < '0' || s[i] > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 // Compare compares two version strings according to SemVer 2.0.0 §11.
 // Returns -1 if v1 < v2, 0 if v1 == v2, and 1 if v1 > v2.
 func Compare(v1, v2 string) (int, error) {
-	ver1, err := Parse(v1)
+	n1, err := normalize(v1)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse version %q: %w", v1, err)
 	}
-	ver2, err := Parse(v2)
+	n2, err := normalize(v2)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse version %q: %w", v2, err)
 	}
-	return ver1.Compare(ver2), nil
+	return semver.Compare(n1, n2), nil
 }
 
 // Compare compares the version to another Version struct according to SemVer 2.0.0 §11.
@@ -210,90 +140,8 @@ func (v *Version) Compare(other *Version) int {
 	if other == nil {
 		return 1
 	}
-	if v.Major != other.Major {
-		if v.Major < other.Major {
-			return -1
-		}
-		return 1
-	}
-	if v.Minor != other.Minor {
-		if v.Minor < other.Minor {
-			return -1
-		}
-		return 1
-	}
-	if v.Patch != other.Patch {
-		if v.Patch < other.Patch {
-			return -1
-		}
-		return 1
-	}
-	return comparePreRelease(v.PreRelease, other.PreRelease)
-}
-
-// comparePreRelease compares pre-release identifier slices per SemVer 2.0.0 §11.4.4.
-func comparePreRelease(p1, p2 []string) int {
-	if len(p1) == 0 && len(p2) == 0 {
-		return 0
-	}
-	if len(p1) == 0 {
-		return 1
-	}
-	if len(p2) == 0 {
-		return -1
-	}
-	minLen := len(p1)
-	if len(p2) < minLen {
-		minLen = len(p2)
-	}
-	for i := 0; i < minLen; i++ {
-		if cmp := compareSingleIdentifier(p1[i], p2[i]); cmp != 0 {
-			return cmp
-		}
-	}
-	return compareSliceLengths(len(p1), len(p2))
-}
-
-// compareSingleIdentifier compares two pre-release dot-separated identifiers per §11.4.4.
-func compareSingleIdentifier(id1, id2 string) int {
-	if id1 == id2 {
-		return 0
-	}
-	isNum1 := isNumeric(id1)
-	isNum2 := isNumeric(id2)
-	if isNum1 && isNum2 {
-		if len(id1) < len(id2) {
-			return -1
-		}
-		if len(id1) > len(id2) {
-			return 1
-		}
-		if id1 < id2 {
-			return -1
-		}
-		return 1
-	}
-	if isNum1 {
-		return -1
-	}
-	if isNum2 {
-		return 1
-	}
-	if id1 < id2 {
-		return -1
-	}
-	return 1
-}
-
-// compareSliceLengths returns -1, 0, or 1 based on relative lengths of pre-release slices.
-func compareSliceLengths(len1, len2 int) int {
-	if len1 < len2 {
-		return -1
-	}
-	if len1 > len2 {
-		return 1
-	}
-	return 0
+	cmp, _ := Compare(v.String(), other.String())
+	return cmp
 }
 
 // Equal returns true if the two versions have identical precedence.
@@ -331,32 +179,33 @@ func (v *Version) String() string {
 
 // IsPatchUpdate checks if target is a strictly higher patch version of current with identical Major and Minor.
 func IsPatchUpdate(current, target string) (bool, error) {
-	curVer, err := Parse(current)
+	nCur, err := normalize(current)
 	if err != nil {
 		return false, fmt.Errorf("invalid current version %q: %w", current, err)
 	}
-	targetVer, err := Parse(target)
+	nTarget, err := normalize(target)
 	if err != nil {
 		return false, fmt.Errorf("invalid target version %q: %w", target, err)
 	}
-	if targetVer.Major != curVer.Major || targetVer.Minor != curVer.Minor {
+	if semver.MajorMinor(nCur) != semver.MajorMinor(nTarget) {
 		return false, nil
 	}
-	if len(targetVer.PreRelease) > 0 && len(curVer.PreRelease) == 0 {
+	// Disallow stable to pre-release update
+	if semver.Prerelease(nCur) == "" && semver.Prerelease(nTarget) != "" {
 		return false, nil
 	}
-	return targetVer.GreaterThan(curVer), nil
+	return semver.Compare(nTarget, nCur) > 0, nil
 }
 
 // SatisfiesMinVersion checks if version is greater than or equal to minVersion.
 func SatisfiesMinVersion(version, minVersion string) (bool, error) {
-	ver, err := Parse(version)
+	nVer, err := normalize(version)
 	if err != nil {
 		return false, fmt.Errorf("invalid version %q: %w", version, err)
 	}
-	minVer, err := Parse(minVersion)
+	nMin, err := normalize(minVersion)
 	if err != nil {
 		return false, fmt.Errorf("invalid minVersion %q: %w", minVersion, err)
 	}
-	return ver.Compare(minVer) >= 0, nil
+	return semver.Compare(nVer, nMin) >= 0, nil
 }
