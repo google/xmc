@@ -22,7 +22,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from github_utils import GithubAPIError, GithubAuthError, call_github_api
+from github_utils import (
+    GithubAPIError,
+    GithubAuthError,
+    call_github_api,
+    resolve_review_thread,
+)
 from tool_utils import HandledError, run_tool
 
 
@@ -38,7 +43,7 @@ def get_git_username() -> str:
 
 
 def post_inline_comment(args: argparse.Namespace) -> dict[str, Any]:
-    """Post an inline review comment or thread counter-reply to a Pull Request.
+    """Post an inline review comment, counter-reply, or resolve a thread on a PR.
 
     Handles arbitrary long comments (multi-page markdown descriptions and extensive
     git diff blocks) safely without backtick subshell interpolation or length truncation.
@@ -46,6 +51,33 @@ def post_inline_comment(args: argparse.Namespace) -> dict[str, Any]:
     and single line backticks are read verbatim and serialized as standard JSON payloads
     sent via stdin to gh API or HTTP urllib, bypassing shell command evaluation completely.
     """
+    raw_resolve_thread = getattr(args, "resolve_thread", None)
+    has_resolve_thread = (
+        isinstance(raw_resolve_thread, (str, int)) and str(raw_resolve_thread).strip()
+    )
+    if has_resolve_thread:
+        try:
+            res = resolve_review_thread(
+                args.owner,
+                args.repo,
+                args.pr_number,
+                raw_resolve_thread,
+                user_agent="XMC-PR-Review-Agent",
+            )
+            return {
+                "status": "success",
+                "owner": args.owner,
+                "repo": args.repo,
+                "pr_number": args.pr_number,
+                "resolved_thread_id": res["thread_id"],
+                "is_resolved": res["is_resolved"],
+            }
+        except (GithubAuthError, GithubAPIError) as e:
+            raise HandledError(
+                f"Failed to resolve review thread '{raw_resolve_thread}': {e}",
+                "Verify that the thread ID exists and that you have permission to resolve review threads.",
+            ) from e
+
     if args.message and args.message_file:
         raise HandledError(
             "Cannot specify both a message string (--message) and a message file (-f/--message-file).",
@@ -165,6 +197,10 @@ def build_parser() -> argparse.ArgumentParser:
         "-f",
         "--message-file",
         help="File containing markdown content of the review comment (handles arbitrary long comments).",
+    )
+    parser.add_argument(
+        "--resolve-thread",
+        help="Review thread ID (GraphQL Node ID 'PRRT_...' or comment database ID) to resolve on GitHub.",
     )
     return parser
 

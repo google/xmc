@@ -28,27 +28,119 @@ def parse_checklist_approved_items(
     content: str,
 ) -> list[dict[str, Any]]:
     """Parse approved comment or resolution items from the markdown audit artifact."""
-    items = []
+    items: list[dict[str, Any]] = []
 
-    # Case 1: Initial review checklist table rows:
-    # | Item | Status | File Path | Line | Rule Reference | Proposed Inline Comment |
-    table_pattern = re.compile(
-        r"\|\s*([^\s|]+)\s*\|\s*(Approved|Confirmed|Posted)\s*\|\s*`?([^`|]+)`?\s*\|\s*`?(\d+)`?\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|",
-        re.IGNORECASE,
-    )
-    for match in table_pattern.finditer(content):
-        item_id, status, file_path, line, rule, proposed = match.groups()
-        items.append(
-            {
-                "type": "initial_inline",
-                "item_id": item_id.strip(),
-                "status": status.strip(),
-                "file_path": file_path.strip(),
-                "line": int(line.strip()),
-                "rule": rule.strip(),
-                "proposed": proposed.strip(),
-            }
+    # Case 1: Dynamic Markdown Table Parsing
+    lines = [line.strip() for line in content.splitlines()]
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if (
+            line.startswith("|")
+            and line.endswith("|")
+            and i + 1 < len(lines)
+            and re.match(r"^\|[\s\-:|]+\|$", lines[i + 1])
+        ):
+            headers = [col.strip().lower() for col in line.strip("|").split("|")]
+            i += 2  # Skip header and separator
+
+            # Map column names to indices
+            col_id = next(
+                (idx for idx, h in enumerate(headers) if h in ("item", "item id", "id", "#")), -1
+            )
+            col_status = next((idx for idx, h in enumerate(headers) if "status" in h), -1)
+            col_path = next(
+                (
+                    idx
+                    for idx, h in enumerate(headers)
+                    if any(k in h for k in ("file", "path", "target"))
+                ),
+                -1,
+            )
+            col_line = next((idx for idx, h in enumerate(headers) if "line" in h), -1)
+            col_rule = next((idx for idx, h in enumerate(headers) if "rule" in h), -1)
+            col_proposed = next(
+                (
+                    idx
+                    for idx, h in enumerate(headers)
+                    if any(k in h for k in ("proposed", "comment", "summary", "description"))
+                ),
+                -1,
+            )
+
+            while i < len(lines) and lines[i].startswith("|") and lines[i].endswith("|"):
+                row_cols = [c.strip() for c in lines[i].strip("|").split("|")]
+                if col_status != -1 and col_status < len(row_cols):
+                    raw_status = row_cols[col_status]
+                    # Check if status is Approved, Confirmed, Posted, or checked [x]
+                    if re.search(
+                        r"\b(approved|confirmed|posted)\b|\[x\]", raw_status, re.IGNORECASE
+                    ):
+                        item_id = (
+                            row_cols[col_id]
+                            if col_id != -1 and col_id < len(row_cols)
+                            else f"#{len(items) + 1}"
+                        )
+                        raw_path = (
+                            row_cols[col_path]
+                            if col_path != -1 and col_path < len(row_cols)
+                            else ""
+                        )
+                        raw_line = (
+                            row_cols[col_line]
+                            if col_line != -1 and col_line < len(row_cols)
+                            else "0"
+                        )
+                        raw_rule = (
+                            row_cols[col_rule]
+                            if col_rule != -1 and col_rule < len(row_cols)
+                            else ""
+                        )
+                        raw_proposed = (
+                            row_cols[col_proposed]
+                            if col_proposed != -1 and col_proposed < len(row_cols)
+                            else ""
+                        )
+
+                        clean_path = re.sub(r"[`*]", "", raw_path).strip()
+                        line_match = re.search(r"\d+", raw_line)
+                        clean_line = int(line_match.group(0)) if line_match else 0
+
+                        if clean_path and clean_line > 0:
+                            items.append(
+                                {
+                                    "type": "initial_inline",
+                                    "item_id": item_id.strip(),
+                                    "status": raw_status.strip(),
+                                    "file_path": clean_path,
+                                    "line": clean_line,
+                                    "rule": raw_rule.strip(),
+                                    "proposed": raw_proposed.strip(),
+                                }
+                            )
+                i += 1
+        else:
+            i += 1
+
+    # Fallback to simple regex if dynamic table parsing did not find any items
+    if not items:
+        table_pattern = re.compile(
+            r"\|\s*([^\s|]+)\s*\|\s*(Approved|Confirmed|Posted)\s*\|\s*`?([^`|]+)`?\s*\|\s*`?(\d+)`?\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|",
+            re.IGNORECASE,
         )
+        for match in table_pattern.finditer(content):
+            item_id, status, file_path, line, rule, proposed = match.groups()
+            items.append(
+                {
+                    "type": "initial_inline",
+                    "item_id": item_id.strip(),
+                    "status": status.strip(),
+                    "file_path": file_path.strip(),
+                    "line": int(line.strip()),
+                    "rule": rule.strip(),
+                    "proposed": proposed.strip(),
+                }
+            )
 
     # Case 2: Re-review thread blocks with Recommended Action [RESPOND] or [RESOLVE]
     thread_pattern = re.compile(

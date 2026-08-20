@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import urllib.error
 import urllib.request
+from typing import Any
 
 
 class GithubAuthError(Exception):
@@ -167,3 +168,96 @@ def _raise_detailed_error(errors):
     if is_auth_failure:
         raise GithubAuthError(f"GitHub authentication failed: {error_summary}")
     raise GithubAPIError(f"GitHub API call failed: {error_summary}")
+
+
+def resolve_review_thread(
+    owner: str,
+    repo: str,
+    pr_number: int,
+    thread_or_comment_id: str | int,
+    user_agent: str = "XMC-Github-Agent",
+) -> dict[str, Any]:
+    """Resolves a GitHub Pull Request review comment thread via GraphQL API.
+
+    Accepts either:
+    - A GraphQL review thread Node ID (e.g. 'PRRT_kwDOSdiTps6ayDyJ')
+    - A numeric comment ID / database ID (e.g. 3820938617) or comment URL
+    """
+    target = str(thread_or_comment_id).strip()
+    if target.startswith("PRRT_"):
+        thread_node_id = target
+    else:
+        parsed = parse_comment_url(target)
+        comment_id = parsed["comment_id"] if parsed else int(target)
+
+        query = """
+        query($owner: String!, $repo: String!, $pr: Int!) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $pr) {
+              reviewThreads(first: 100) {
+                nodes {
+                  id
+                  isResolved
+                  comments(first: 50) {
+                    nodes {
+                      databaseId
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+        data = call_github_api(
+            "/graphql",
+            method="POST",
+            payload={
+                "query": query,
+                "variables": {"owner": owner, "repo": repo, "pr": int(pr_number)},
+            },
+            user_agent=user_agent,
+        )
+        threads = (
+            data.get("data", {})
+            .get("repository", {})
+            .get("pullRequest", {})
+            .get("reviewThreads", {})
+            .get("nodes", [])
+        )
+        thread_node_id = None
+        for thread in threads:
+            for comment in thread.get("comments", {}).get("nodes", []):
+                if comment.get("databaseId") == comment_id:
+                    thread_node_id = thread.get("id")
+                    break
+            if thread_node_id:
+                break
+
+        if not thread_node_id:
+            raise GithubAPIError(
+                f"Could not find review thread for comment ID {comment_id} in PR #{pr_number}"
+            )
+
+    mutation = """
+    mutation($threadId: ID!) {
+      resolveReviewThread(input: {threadId: $threadId}) {
+        thread {
+          id
+          isResolved
+        }
+      }
+    }
+    """
+    res = call_github_api(
+        "/graphql",
+        method="POST",
+        payload={"query": mutation, "variables": {"threadId": thread_node_id}},
+        user_agent=user_agent,
+    )
+    res_thread = res.get("data", {}).get("resolveReviewThread", {}).get("thread", {})
+    return {
+        "status": "success",
+        "thread_id": thread_node_id,
+        "is_resolved": res_thread.get("isResolved", True),
+    }

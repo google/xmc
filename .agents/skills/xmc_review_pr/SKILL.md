@@ -110,6 +110,7 @@ All expert subagents invoked during Phase 2 MUST receive the following mandatory
 4. **Strict Inline Deduplication & Already-Resolved Thread Governance**:
    - Inspect the supplied existing comment index (`comments`) and **never generate duplicate inline comments** for problems already raised on the PR.
    - **Already Resolved Threads on GitHub UI (`[RESOLVED ON GITHUB]`)**: Treat threads marked resolved on GitHub as closed engineering decisions. Do NOT re-open or propose duplicate inline comments unless a new commit explicitly regressed that exact file line.
+5. **Strict Mock & Fixture Isolation Audit**: Explicitly audit production files for mock data leakage. Production components, handlers, and service files must NEVER contain static mock datasets, sample entities, or fallback mock branching. All test doubles and fixtures belong strictly in dedicated test files (`*_test.ts`, `*_test.go`, `test_*.py`) or testing helpers (`cmd/ui/app/testing/mock_*.ts`, `test/fixtures/`) per `core_engineering.md#4`.
 
 ---
 
@@ -255,5 +256,5 @@ Because the re-review analysis is saved as a markdown document in `<appDataDir>/
   > *"Please inspect `pr_rereview_audit_report.md`. Shall I proceed with posting recommended counter-replies and resolving verified threads on PR #<pr_number>? (Y/n)"*
 * For every confirmed thread:
   * If `[RESPOND]`: Invoke `review_pr_post_inline_comment.py <owner> <repo> <pr_number> --in-reply-to <thread_id> -f counter_reply.md`.
-  * If `[RESOLVE]`: Update thread status on GitHub and mark item resolved.
-* Run programmatic verification check (`review_pr_verify_posted.py`).
+  * If `[RESOLVE]`: Invoke `review_pr_post_inline_comment.py <owner> <repo> <pr_number> --resolve-thread <thread_id>` to resolve verified threads programmatically via GitHub GraphQL.
+* Run programmatic verification check (`review_pr_verify_posted.py <owner> <repo> <pr_number> <checklist_file>`).
