@@ -38,7 +38,16 @@ describe('AddExperimentDialogComponent', () => {
     fixture.detectChanges();
   });
 
-  it('should initialize with invalid form', () => {
+  it('should initialize with default WID 1 and invalid form', () => {
+    expect(component.form.get('wid')?.value).toBe(1);
+    expect(component.form.invalid).toBeTrue();
+  });
+
+  it('should be invalid when WID is null', () => {
+    component.form.patchValue({
+      xid: 234911123,
+      wid: null,
+    });
     expect(component.form.invalid).toBeTrue();
   });
 

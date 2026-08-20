@@ -35,7 +35,7 @@ import {
 
 export interface ComparisonExperimentEntry {
   xid: number;
-  wid?: number;
+  wid: number;
   title?: string;
 }
 
@@ -92,7 +92,7 @@ export function buildComparisonCharts(
     name: `experiments/${comp.xid}/charts/comparison_${idx + 1}`,
     title: comp.title || `Experiment ${comp.xid}`,
     xid: comp.xid,
-    wid: comp.wid ?? 1,
+    wid: comp.wid,
     plots,
     plotLayout: { type: LayoutType.GRID },
   }));
@@ -139,7 +139,7 @@ export class CreateDashboardDialogComponent {
     title: new FormControl<string>('', [Validators.required, Validators.minLength(2)]),
     description: new FormControl<string>(''),
     baseXid: new FormControl<number | null>(null, [Validators.required, Validators.min(1)]),
-    baseWid: new FormControl<number | null>(1, [Validators.min(0)]),
+    baseWid: new FormControl<number | null>(1, [Validators.required, Validators.min(0)]),
     baseChartTitle: new FormControl<string>(''),
   });
 
@@ -153,7 +153,7 @@ export class CreateDashboardDialogComponent {
   // Comparison experiment sub-form
   readonly newComparisonForm = new FormGroup({
     xid: new FormControl<number | null>(null, [Validators.min(1)]),
-    wid: new FormControl<number | null>(1, [Validators.min(0)]),
+    wid: new FormControl<number | null>(1, [Validators.required, Validators.min(0)]),
     title: new FormControl<string>(''),
   });
 
@@ -200,7 +200,7 @@ export class CreateDashboardDialogComponent {
 
     const entry: ComparisonExperimentEntry = {
       xid: Number(xid),
-      wid: this.newComparisonForm.value.wid != null ? Number(this.newComparisonForm.value.wid) : 1,
+      wid: Number(this.newComparisonForm.value.wid),
       title: this.newComparisonForm.value.title?.trim() || `Tuned Run (${xid})`,
     };
 
@@ -225,7 +225,7 @@ export class CreateDashboardDialogComponent {
 
     const formVal = this.form.value;
     const baseXid = Number(formVal.baseXid);
-    const baseWid = formVal.baseWid != null ? Number(formVal.baseWid) : 1;
+    const baseWid = Number(formVal.baseWid);
     const rawTitle = formVal.title?.trim() || `Dashboard for Experiment ${baseXid}`;
 
     const baseChart = buildBaseChart(

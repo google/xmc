@@ -78,7 +78,10 @@ limitations under the License.
 
         <mat-form-field appearance="outline" class="form-field-flex-1">
           <mat-label>Work Unit ID (WID)</mat-label>
-          <input matInput type="number" formControlName="baseWid" placeholder="e.g. 1" />
+          <input matInput type="number" formControlName="baseWid" placeholder="e.g. 1" required />
+          @if (form.get('baseWid')?.hasError('required')) {
+            <mat-error>Work Unit ID is required</mat-error>
+          }
         </mat-form-field>
       </div>
 
@@ -231,7 +234,10 @@ limitations under the License.
 
           <mat-form-field appearance="outline" class="comp-wid-field">
             <mat-label>WID</mat-label>
-            <input matInput type="number" formControlName="wid" placeholder="1" />
+            <input matInput type="number" formControlName="wid" placeholder="1" required />
+            @if (newComparisonForm.get('wid')?.hasError('required')) {
+              <mat-error>WID is required</mat-error>
+            }
           </mat-form-field>
 
           <mat-form-field appearance="outline" class="comp-title-field">

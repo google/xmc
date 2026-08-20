@@ -22,7 +22,7 @@ import { MatInputModule } from '@angular/material/input';
 
 export interface AddExperimentDialogResult {
   xid: number;
-  wid?: number;
+  wid: number;
   title?: string;
 }
 
@@ -49,7 +49,7 @@ export class AddExperimentDialogComponent {
 
   readonly form = new FormGroup({
     xid: new FormControl<number | null>(null, [Validators.required, Validators.min(1)]),
-    wid: new FormControl<number | null>(null, [Validators.min(0)]),
+    wid: new FormControl<number | null>(1, [Validators.required, Validators.min(0)]),
     title: new FormControl<string>(''),
   });
 
@@ -63,7 +63,7 @@ export class AddExperimentDialogComponent {
     const val = this.form.value;
     const result: AddExperimentDialogResult = {
       xid: Number(val.xid),
-      wid: val.wid != null ? Number(val.wid) : undefined,
+      wid: Number(val.wid),
       title: val.title?.trim() || undefined,
     };
     this.dialogRef.close(result);

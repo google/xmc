@@ -16,7 +16,7 @@ limitations under the License.
 <h2 mat-dialog-title>Add Experiment to Compare</h2>
 <mat-dialog-content class="dialog-content">
   <p class="dialog-description">
-    Enter the Experiment ID (XID) and optional Work Unit ID to compare against baseline.
+    Enter the Experiment ID (XID) and Work Unit ID (WID) to compare against baseline.
   </p>
 
   <form class="dialog-form" [formGroup]="form">
@@ -30,7 +30,10 @@ limitations under the License.
 
     <mat-form-field appearance="outline" class="form-field">
       <mat-label>Work Unit ID (WID)</mat-label>
-      <input matInput type="number" formControlName="wid" placeholder="e.g. 1" />
+      <input matInput type="number" formControlName="wid" placeholder="e.g. 1" required />
+      @if (form.get('wid')?.hasError('required')) {
+        <mat-error>Work Unit ID is required</mat-error>
+      }
     </mat-form-field>
 
     <mat-form-field appearance="outline" class="form-field">

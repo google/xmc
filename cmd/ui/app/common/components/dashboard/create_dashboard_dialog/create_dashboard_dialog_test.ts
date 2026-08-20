@@ -116,13 +116,30 @@ describe('CreateDashboardDialogComponent', () => {
     expect(component.comparisons().length).toBe(0);
   });
 
-  it('should not add comparison experiment when form is invalid', () => {
+  it('should not add comparison experiment when form is invalid or WID is null', () => {
     component.newComparisonForm.patchValue({
       xid: -1,
       wid: 1,
     });
     component.addComparison();
     expect(component.comparisons().length).toBe(0);
+
+    component.newComparisonForm.patchValue({
+      xid: 234911123,
+      wid: null,
+    });
+    expect(component.newComparisonForm.invalid).toBeTrue();
+    component.addComparison();
+    expect(component.comparisons().length).toBe(0);
+  });
+
+  it('should be invalid when baseWid is null', () => {
+    component.form.patchValue({
+      title: 'Benchmark',
+      baseXid: 234911122,
+      baseWid: null,
+    });
+    expect(component.form.invalid).toBeTrue();
   });
 
   it('should build and return Dashboard object on submit', () => {
