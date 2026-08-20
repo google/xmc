@@ -20,7 +20,11 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
 import { Dashboard, LayoutType, PlotType } from 'xmanager_cloud/ui/app/service/dashboard_models';
 
-import { CreateDashboardDialogComponent, getDefaultPlotSpecs } from './create_dashboard_dialog';
+import {
+  buildDashboardResourceName,
+  CreateDashboardDialogComponent,
+  getDefaultPlotSpecs,
+} from './create_dashboard_dialog';
 
 const ADD_COMPARISON_BUTTON_SELECTOR = '.add-comp-btn';
 
@@ -221,5 +225,22 @@ describe('CreateDashboardDialogComponent', () => {
   it('should close without value on cancel', () => {
     component.onCancel();
     expect(dialogRefSpy.close).toHaveBeenCalledWith();
+  });
+});
+
+describe('buildDashboardResourceName', () => {
+  it('should convert standard titles to lowercase underscored resource names', () => {
+    expect(buildDashboardResourceName('My Benchmark Run')).toBe('dashboards/my_benchmark_run');
+  });
+
+  it('should replace special characters and trim leading/trailing underscores', () => {
+    expect(buildDashboardResourceName('  --#1 Performance (v2)!!  ')).toBe(
+      'dashboards/1_performance_v2',
+    );
+  });
+
+  it('should fallback to default dash timestamp when title sanitizes to empty string', () => {
+    const resourceName = buildDashboardResourceName('---###');
+    expect(resourceName).toMatch(/^dashboards\/dash_\d+$/);
   });
 });

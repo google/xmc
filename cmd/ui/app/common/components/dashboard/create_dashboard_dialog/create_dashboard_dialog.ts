@@ -98,12 +98,21 @@ export function buildComparisonCharts(
   }));
 }
 
+/**
+ * Builds a valid dashboard resource name from the user-provided title.
+ * Converts the title into a sanitized, URL-friendly resource identifier (slug) by:
+ * 1. Converting all characters to lowercase.
+ * 2. Replacing any sequence of non-alphanumeric characters with a single underscore.
+ * 3. Trimming leading and trailing underscores.
+ */
 export function buildDashboardResourceName(title: string): string {
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return `dashboards/${slug || `dash_${Date.now()}`}`;
+  const lowercaseTitle = title.toLowerCase();
+  // Replace any continuous sequence of non-alphanumeric characters with a single underscore.
+  const titleWithUnderscores = lowercaseTitle.replace(/[^a-z0-9]+/g, '_');
+  // Strip any leading or trailing underscores from the resulting identifier.
+  const sanitizedTitleId = titleWithUnderscores.replace(/^_+|_+$/g, '');
+
+  return `dashboards/${sanitizedTitleId || `dash_${Date.now()}`}`;
 }
 
 /**
