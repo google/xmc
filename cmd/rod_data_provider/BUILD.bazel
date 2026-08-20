@@ -38,6 +38,7 @@ compat_go_library(
         "//api/protos/rod",
         "//cmd/rod_data_provider/cache",
         "//cmd/rod_data_provider/reconciler",
+        "//internal/common/tputopology",
         "//internal/compat/google",
         "//internal/configutil",
         "//internal/domain/workunit",
