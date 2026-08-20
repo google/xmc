@@ -196,6 +196,13 @@ spec:
 			want: []string{"large-dep", "second-dep"},
 		},
 		{
+			name: "non-map document followed by valid map document",
+			manifests: []string{
+				"- list-item\n---\n\"scalar-doc\"\n---\nmetadata:\n  annotations:\n    xmc.dev/depends-on: valid-dep",
+			},
+			want: []string{"valid-dep"},
+		},
+		{
 			name: "empty and malformed manifests",
 			manifests: []string{
 				"",

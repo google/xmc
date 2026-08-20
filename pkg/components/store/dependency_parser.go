@@ -60,12 +60,12 @@ func ExtractDependenciesFromManifests(manifests []string) []string {
 		}
 		dec := yaml.NewDecoder(strings.NewReader(trimmed))
 		for {
-			var doc map[string]any
+			var doc any
 			if err := dec.Decode(&doc); err != nil {
 				break
 			}
-			if doc != nil {
-				raw = append(raw, extractFromDoc(doc)...)
+			if m, ok := doc.(map[string]any); ok && m != nil {
+				raw = append(raw, extractFromDoc(m)...)
 			}
 		}
 	}
