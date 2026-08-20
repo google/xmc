@@ -121,7 +121,7 @@ export class ChartCardComponent implements OnInit, OnDestroy {
     return `${xidStr}${titleStr}${widStr}`;
   });
 
-  protected readonly experimentUrl = computed(() => {
+  protected readonly headerUrl = computed(() => {
     const c = this.chart();
     if (hasWorkUnit(c)) {
       return `/experiments/${c.xid}/workUnits/${c.wid}`;
