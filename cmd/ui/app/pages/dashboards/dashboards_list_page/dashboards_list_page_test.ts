@@ -21,6 +21,7 @@ import { of, throwError } from 'rxjs';
 
 import { Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
+import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 
 import { DashboardsListPage, extractDashboardId } from './dashboards_list_page';
 
@@ -61,6 +62,10 @@ describe('DashboardsListPage', () => {
         provideRouter([]),
         provideNoopAnimations(),
         { provide: DashboardService, useValue: dashboardServiceSpy },
+        {
+          provide: SnackbarService,
+          useValue: jasmine.createSpyObj<SnackbarService>('SnackbarService', ['open']),
+        },
       ],
     }).compileComponents();
 
@@ -123,15 +128,12 @@ describe('DashboardsListPage', () => {
   });
 
   it('should show error snackbar when listDashboards fails', () => {
-    const snackbarOpenSpy = jasmine.createSpy('open');
-    (component as unknown as { snackbar: { open: jasmine.Spy } }).snackbar = {
-      open: snackbarOpenSpy,
-    };
+    const snackbarService = TestBed.inject(SnackbarService) as jasmine.SpyObj<SnackbarService>;
     dashboardServiceSpy.listDashboards.and.returnValue(throwError(() => new Error('Server error')));
 
     component.loadDashboards();
 
     expect(component.isLoading()).toBeFalse();
-    expect(snackbarOpenSpy).toHaveBeenCalledWith('Failed to load dashboards');
+    expect(snackbarService.open).toHaveBeenCalledWith('Failed to load dashboards');
   });
 });

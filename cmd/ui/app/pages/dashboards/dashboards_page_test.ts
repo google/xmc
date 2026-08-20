@@ -24,6 +24,7 @@ import { of } from 'rxjs';
 
 import { AddExperimentDialogComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/add_experiment_dialog/add_experiment_dialog';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
+import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 
 import { DashboardsPage } from './dashboards_page';
 import { DashboardsPageHarness } from './dashboards_page_harness';
@@ -95,6 +96,10 @@ describe('DashboardsPage', () => {
           },
         },
         { provide: DashboardService, useValue: dashboardServiceSpy },
+        {
+          provide: SnackbarService,
+          useValue: jasmine.createSpyObj<SnackbarService>('SnackbarService', ['open']),
+        },
       ],
     }).compileComponents();
 
@@ -139,8 +144,9 @@ describe('DashboardsPage', () => {
   });
 
   it('should create default comparison charts with independent plots array instances', () => {
-    (pageComponent as unknown as { initDefaultComparisonDashboard: () => void })
-      .initDefaultComparisonDashboard();
+    (
+      pageComponent as unknown as { initDefaultComparisonDashboard: () => void }
+    ).initDefaultComparisonDashboard();
     const charts = pageComponent.charts();
     expect(charts.length).toBe(3);
     expect(charts[0].plots).not.toBe(charts[1].plots);
@@ -154,13 +160,10 @@ describe('DashboardsPage', () => {
   });
 
   describe('onShare', () => {
-    let snackbarOpenSpy: jasmine.Spy;
+    let snackbarService: jasmine.SpyObj<SnackbarService>;
 
     beforeEach(() => {
-      snackbarOpenSpy = jasmine.createSpy('open');
-      (pageComponent as unknown as { snackbar: { open: jasmine.Spy } }).snackbar = {
-        open: snackbarOpenSpy,
-      };
+      snackbarService = TestBed.inject(SnackbarService) as jasmine.SpyObj<SnackbarService>;
     });
 
     it('should open success snackbar when clipboard write succeeds', async () => {
@@ -176,7 +179,7 @@ describe('DashboardsPage', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(mockClipboard.writeText).toHaveBeenCalled();
-      expect(snackbarOpenSpy).toHaveBeenCalledWith('Dashboard link copied to clipboard');
+      expect(snackbarService.open).toHaveBeenCalledWith('Dashboard link copied to clipboard');
     });
 
     it('should open error snackbar when clipboard write fails', async () => {
@@ -193,7 +196,7 @@ describe('DashboardsPage', () => {
       pageComponent.onShare();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(snackbarOpenSpy).toHaveBeenCalledWith('Failed to copy link to clipboard');
+      expect(snackbarService.open).toHaveBeenCalledWith('Failed to copy link to clipboard');
     });
   });
 
