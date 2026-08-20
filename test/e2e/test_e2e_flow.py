@@ -329,11 +329,7 @@ def test_viewer_unauthorized_boundary(page: Page, screenshots_dir: Path) -> None
     """
     logger.info("=== Testing Unauthorized Persona Boundary (viewer@xmc.local) ===")
 
-    # Clear cookies/logout
-    page.goto(f"{BASE_URL}/api/logout", wait_until="networkidle")
-    page.context.clear_cookies()
-
-    # Login as unauthorized persona
+    # Login as unauthorized persona (runs in isolated context)
     login_via_dex(page, screenshots_dir, VIEWER_USER, VIEWER_PASSWORD)
 
     # Wait for redirection to landing page with error parameter
@@ -363,20 +359,40 @@ def main() -> None:
     logger.info("Starting headless Playwright E2E test execution...")
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(viewport={"width": 1280, "height": 800})
-        page = context.new_page()
 
         try:
-            test_admin_flow_and_experiment_lifecycle(page, screenshots_dir)
-            test_viewer_unauthorized_boundary(page, screenshots_dir)
+            # Run Admin Flow in an isolated context
+            with browser.new_context(viewport={"width": 1280, "height": 800}) as admin_ctx:
+                admin_page = admin_ctx.new_page()
+                try:
+                    test_admin_flow_and_experiment_lifecycle(admin_page, screenshots_dir)
+                except Exception:
+                    try:
+                        url = admin_page.url
+                    except Exception:
+                        url = "<unknown>"
+                    logger.exception("Admin flow failed at URL: %s", url)
+                    raise
+
+            # Run Viewer Flow in an isolated context
+            with browser.new_context(viewport={"width": 1280, "height": 800}) as viewer_ctx:
+                viewer_page = viewer_ctx.new_page()
+                try:
+                    test_viewer_unauthorized_boundary(viewer_page, screenshots_dir)
+                except Exception:
+                    try:
+                        url = viewer_page.url
+                    except Exception:
+                        url = "<unknown>"
+                    logger.exception("Viewer flow failed at URL: %s", url)
+                    raise
+
             logger.info("==================================================")
             logger.info("🎉 ALL E2E PLAYWRIGHT TESTS PASSED SUCCESSFULLY! 🎉")
             logger.info("==================================================")
         except Exception:
-            logger.exception("Test execution failed at URL: %s", page.url)
             sys.exit(1)
         finally:
-            context.close()
             browser.close()
             trace_handler.close()
             logger.removeHandler(trace_handler)
