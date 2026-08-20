@@ -50,7 +50,10 @@ class TestSpannerManager(unittest.TestCase):
             args=[],
             returncode=0,
             stdout=(
-                f"e2e-ess-{old_ts}-123456\ne2e-xid-{fresh_ts}-abcdef\nprod-db\ne2e-invalid-format\n"
+                f"projects/test-proj/instances/test-inst/databases/e2e-ess-{old_ts}-123456\n"
+                f"e2e-xid-{fresh_ts}-abcdef\n"
+                "prod-db\n"
+                "e2e-invalid-format\n"
             ),
         )
         mock_run.return_value = mock_res

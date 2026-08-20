@@ -53,25 +53,26 @@ class SpannerManager:
             )
             current_ts = int(time.time())
             for line in res.stdout.splitlines():
-                db = line.strip()
-                if not db.startswith("e2e-ess-") and not db.startswith("e2e-xid-"):
+                db_path = line.strip()
+                db_id = db_path.split("/")[-1]
+                if not db_id.startswith("e2e-ess-") and not db_id.startswith("e2e-xid-"):
                     continue
                 try:
-                    parts = db.split("-")
+                    parts = db_id.split("-")
                     if len(parts) >= 3:
                         ts_part = int(parts[2])
                     else:
                         continue
                     # If older than 1 hour (3600s), remove it
                     if current_ts - ts_part > 3600:
-                        logger.info("Cleaning up stale database: %s", db)
+                        logger.info("Cleaning up stale database: %s", db_id)
                         run_cmd(
                             [
                                 "gcloud",
                                 "spanner",
                                 "databases",
                                 "delete",
-                                db,
+                                db_id,
                                 f"--instance={self.cfg.spanner_instance}",
                                 f"--project={self.cfg.project_id}",
                                 "--quiet",

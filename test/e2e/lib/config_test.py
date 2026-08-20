@@ -45,6 +45,9 @@ class TestE2EConfig(unittest.TestCase):
         self.assertEqual(len(xid_parts), 4)
         self.assertEqual(len(xid_parts[3]), 6)
 
+        import tempfile
+
+        self.assertTrue(cfg.temp_dir.startswith(os.path.join(tempfile.gettempdir(), "xmc_e2e_")))
         self.assertTrue(os.path.isdir(cfg.temp_dir))
         # Cleanup
         os.rmdir(cfg.temp_dir)
