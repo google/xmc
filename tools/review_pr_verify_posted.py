@@ -24,93 +24,92 @@ from github_utils import GithubAPIError, GithubAuthError, call_github_api
 from tool_utils import HandledError, run_tool
 
 
-def parse_checklist_approved_items(
-    content: str,
-) -> list[dict[str, Any]]:
-    """Parse approved comment or resolution items from the markdown audit artifact."""
-    items: list[dict[str, Any]] = []
+def _parse_table_column_indices(headers: list[str]) -> dict[str, int]:
+    """Resolves header column indices for dynamic markdown table parsing."""
+    return {
+        "id": next(
+            (idx for idx, h in enumerate(headers) if h in ("item", "item id", "id", "#")),
+            -1,
+        ),
+        "status": next((idx for idx, h in enumerate(headers) if "status" in h), -1),
+        "path": next(
+            (
+                idx
+                for idx, h in enumerate(headers)
+                if any(k in h for k in ("file", "path", "target"))
+            ),
+            -1,
+        ),
+        "line": next((idx for idx, h in enumerate(headers) if "line" in h), -1),
+        "rule": next((idx for idx, h in enumerate(headers) if "rule" in h), -1),
+        "proposed": next(
+            (
+                idx
+                for idx, h in enumerate(headers)
+                if any(k in h for k in ("proposed", "comment", "summary", "description"))
+            ),
+            -1,
+        ),
+    }
 
-    # Case 1: Dynamic Markdown Table Parsing
-    lines = [line.strip() for line in content.splitlines()]
+
+def _parse_markdown_table_items(lines: list[str]) -> list[dict[str, Any]]:
+    """Extracts approved review items from dynamic markdown tables."""
+    items: list[dict[str, Any]] = []
     i = 0
     while i < len(lines):
         line = lines[i]
-        if (
+        is_table_header = (
             line.startswith("|")
             and line.endswith("|")
             and i + 1 < len(lines)
             and re.match(r"^\|[\s\-:|]+\|$", lines[i + 1])
-        ):
+        )
+        if is_table_header:
             headers = [col.strip().lower() for col in line.strip("|").split("|")]
-            i += 2  # Skip header and separator
-
-            # Map column names to indices
-            col_id = next(
-                (idx for idx, h in enumerate(headers) if h in ("item", "item id", "id", "#")), -1
-            )
-            col_status = next((idx for idx, h in enumerate(headers) if "status" in h), -1)
-            col_path = next(
-                (
-                    idx
-                    for idx, h in enumerate(headers)
-                    if any(k in h for k in ("file", "path", "target"))
-                ),
-                -1,
-            )
-            col_line = next((idx for idx, h in enumerate(headers) if "line" in h), -1)
-            col_rule = next((idx for idx, h in enumerate(headers) if "rule" in h), -1)
-            col_proposed = next(
-                (
-                    idx
-                    for idx, h in enumerate(headers)
-                    if any(k in h for k in ("proposed", "comment", "summary", "description"))
-                ),
-                -1,
-            )
-
+            cols = _parse_table_column_indices(headers)
+            i += 2
             while i < len(lines) and lines[i].startswith("|") and lines[i].endswith("|"):
-                row_cols = [c.strip() for c in lines[i].strip("|").split("|")]
-                if col_status != -1 and col_status < len(row_cols):
-                    raw_status = row_cols[col_status]
-                    # Check if status is Approved, Confirmed, Posted, or checked [x]
+                row = [c.strip() for c in lines[i].strip("|").split("|")]
+                if cols["status"] != -1 and cols["status"] < len(row):
+                    raw_status = row[cols["status"]]
                     if re.search(
                         r"\b(approved|confirmed|posted)\b|\[x\]", raw_status, re.IGNORECASE
                     ):
-                        item_id = (
-                            row_cols[col_id]
-                            if col_id != -1 and col_id < len(row_cols)
+                        raw_id = (
+                            row[cols["id"]]
+                            if cols["id"] != -1 and cols["id"] < len(row)
                             else f"#{len(items) + 1}"
                         )
                         raw_path = (
-                            row_cols[col_path]
-                            if col_path != -1 and col_path < len(row_cols)
+                            row[cols["path"]]
+                            if cols["path"] != -1 and cols["path"] < len(row)
                             else ""
                         )
                         raw_line = (
-                            row_cols[col_line]
-                            if col_line != -1 and col_line < len(row_cols)
+                            row[cols["line"]]
+                            if cols["line"] != -1 and cols["line"] < len(row)
                             else "0"
                         )
                         raw_rule = (
-                            row_cols[col_rule]
-                            if col_rule != -1 and col_rule < len(row_cols)
+                            row[cols["rule"]]
+                            if cols["rule"] != -1 and cols["rule"] < len(row)
                             else ""
                         )
                         raw_proposed = (
-                            row_cols[col_proposed]
-                            if col_proposed != -1 and col_proposed < len(row_cols)
+                            row[cols["proposed"]]
+                            if cols["proposed"] != -1 and cols["proposed"] < len(row)
                             else ""
                         )
 
                         clean_path = re.sub(r"[`*]", "", raw_path).strip()
                         line_match = re.search(r"\d+", raw_line)
                         clean_line = int(line_match.group(0)) if line_match else 0
-
                         if clean_path and clean_line > 0:
                             items.append(
                                 {
                                     "type": "initial_inline",
-                                    "item_id": item_id.strip(),
+                                    "item_id": raw_id.strip(),
                                     "status": raw_status.strip(),
                                     "file_path": clean_path,
                                     "line": clean_line,
@@ -121,6 +120,34 @@ def parse_checklist_approved_items(
                 i += 1
         else:
             i += 1
+    return items
+
+
+def _parse_re_review_thread_items(content: str) -> list[dict[str, Any]]:
+    """Extracts re-review thread blocks with recommended actions."""
+    items: list[dict[str, Any]] = []
+    thread_pattern = re.compile(
+        r"###\s+Thread ID\s+`(\d+)`\s+\(`([^`]+)`:L(\d+)\)(?:(?!###|---).)*?Recommended Action[^`:]*[:`]*\s*`?\[(RESOLVE|RESPOND)[^`\]]*\]`?",
+        re.DOTALL,
+    )
+    for match in thread_pattern.finditer(content):
+        thread_id, file_path, line, action = match.groups()
+        items.append(
+            {
+                "type": "re_review_thread",
+                "thread_id": int(thread_id),
+                "file_path": file_path.strip(),
+                "line": int(line),
+                "action": action.upper(),
+            }
+        )
+    return items
+
+
+def parse_checklist_approved_items(content: str) -> list[dict[str, Any]]:
+    """Parse approved comment or resolution items from the markdown audit artifact."""
+    lines = [line.strip() for line in content.splitlines()]
+    items = _parse_markdown_table_items(lines)
 
     # Fallback to simple regex if dynamic table parsing did not find any items
     if not items:
@@ -142,23 +169,7 @@ def parse_checklist_approved_items(
                 }
             )
 
-    # Case 2: Re-review thread blocks with Recommended Action [RESPOND] or [RESOLVE]
-    thread_pattern = re.compile(
-        r"###\s+Thread ID\s+`(\d+)`\s+\(`([^`]+)`:L(\d+)\)(?:(?!###|---).)*?Recommended Action[^`:]*[:`]*\s*`?\[(RESOLVE|RESPOND)[^`\]]*\]`?",
-        re.DOTALL,
-    )
-    for match in thread_pattern.finditer(content):
-        thread_id, file_path, line, action = match.groups()
-        items.append(
-            {
-                "type": "re_review_thread",
-                "thread_id": int(thread_id),
-                "file_path": file_path.strip(),
-                "line": int(line),
-                "action": action.upper(),
-            }
-        )
-
+    items.extend(_parse_re_review_thread_items(content))
     return items
 
 
