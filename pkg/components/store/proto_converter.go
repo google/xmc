@@ -16,14 +16,7 @@ package store
 
 import (
 	"fmt"
-	"maps"
 	"strings"
-	"time"
-
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
-
-	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 )
 
 const (
@@ -71,98 +64,4 @@ func IsValidComponentName(name string) bool {
 		return false
 	}
 	return true
-}
-
-// ToProto converts an internal ComponentRecord to its protobuf representation.
-// Returns nil if record is nil.
-func ToProto(record *ComponentRecord) *componentspb.Component {
-	if record == nil {
-		return nil
-	}
-	comp := &componentspb.Component{
-		Name:       FullComponentName(record.Name),
-		Etag:       record.Etag,
-		Labels:     copyLabels(record.Labels),
-		CreateTime: toTimestamp(record.CreateTime),
-		UpdateTime: toTimestamp(record.UpdateTime),
-		DeleteTime: toTimestampPtr(record.DeleteTime),
-	}
-	if record.Spec != nil {
-		comp.Spec = proto.Clone(record.Spec).(*componentspb.ComponentSpec)
-		comp.Spec.Generation = record.Generation
-	}
-	if record.Status != nil {
-		comp.Status = proto.Clone(record.Status).(*componentspb.ComponentAccessStatus)
-	}
-	if comp.Status != nil || record.State != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED || record.ObservedGeneration != nil {
-		if comp.Status == nil {
-			comp.Status = &componentspb.ComponentAccessStatus{}
-		}
-		comp.Status.State = record.State
-		if record.ObservedGeneration != nil {
-			comp.Status.ObservedGeneration = *record.ObservedGeneration
-		}
-	}
-	return comp
-}
-
-// FromProto converts a protobuf Component to its internal ComponentRecord representation.
-// Returns nil if comp is nil.
-func FromProto(comp *componentspb.Component) *ComponentRecord {
-	if comp == nil {
-		return nil
-	}
-	rec := &ComponentRecord{
-		Name:       CanonicalComponentName(comp.GetName()),
-		Etag:       comp.GetEtag(),
-		Labels:     copyLabels(comp.GetLabels()),
-		CreateTime: fromTimestamp(comp.GetCreateTime()),
-		UpdateTime: fromTimestamp(comp.GetUpdateTime()),
-		DeleteTime: fromTimestampPtr(comp.GetDeleteTime()),
-	}
-	if comp.GetSpec() != nil {
-		rec.Spec = proto.Clone(comp.GetSpec()).(*componentspb.ComponentSpec)
-		rec.Generation = comp.GetSpec().GetGeneration()
-	}
-	if comp.GetStatus() != nil {
-		rec.Status = proto.Clone(comp.GetStatus()).(*componentspb.ComponentAccessStatus)
-		rec.State = comp.GetStatus().GetState()
-		obsGen := comp.GetStatus().GetObservedGeneration()
-		rec.ObservedGeneration = &obsGen
-	}
-	return rec
-}
-
-// copyLabels creates an isolated shallow copy of a label map.
-func copyLabels(labels map[string]string) map[string]string {
-	return maps.Clone(labels)
-}
-
-func toTimestamp(t time.Time) *timestamppb.Timestamp {
-	if t.IsZero() {
-		return nil
-	}
-	return timestamppb.New(t)
-}
-
-func toTimestampPtr(t *time.Time) *timestamppb.Timestamp {
-	if t == nil || t.IsZero() {
-		return nil
-	}
-	return timestamppb.New(*t)
-}
-
-func fromTimestamp(ts *timestamppb.Timestamp) time.Time {
-	if ts == nil {
-		return time.Time{}
-	}
-	return ts.AsTime()
-}
-
-func fromTimestampPtr(ts *timestamppb.Timestamp) *time.Time {
-	if ts == nil {
-		return nil
-	}
-	t := ts.AsTime()
-	return &t
 }
