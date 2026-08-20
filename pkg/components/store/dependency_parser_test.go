@@ -15,6 +15,7 @@
 package store_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -171,6 +172,13 @@ spec:
 `,
 			},
 			want: []string{"string-dep-1, string-dep-2"},
+		},
+		{
+			name: "manifest with line exceeding 64KB",
+			manifests: []string{
+				"metadata:\n  annotations:\n    xmc.dev/depends-on: large-dep\n# " + strings.Repeat("A", 70000) + "\n---\nmetadata:\n  annotations:\n    xmc.dev/dependencies: second-dep",
+			},
+			want: []string{"large-dep", "second-dep"},
 		},
 		{
 			name: "empty and malformed manifests",

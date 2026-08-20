@@ -255,18 +255,24 @@ func compareSingleIdentifier(id1, id2 string) int {
 	if id1 == id2 {
 		return 0
 	}
-	num1, err1 := strconv.ParseUint(id1, 10, 64)
-	num2, err2 := strconv.ParseUint(id2, 10, 64)
-	if err1 == nil && err2 == nil {
-		if num1 < num2 {
+	isNum1 := isNumeric(id1)
+	isNum2 := isNumeric(id2)
+	if isNum1 && isNum2 {
+		if len(id1) < len(id2) {
+			return -1
+		}
+		if len(id1) > len(id2) {
+			return 1
+		}
+		if id1 < id2 {
 			return -1
 		}
 		return 1
 	}
-	if err1 == nil {
+	if isNum1 {
 		return -1
 	}
-	if err2 == nil {
+	if isNum2 {
 		return 1
 	}
 	if id1 < id2 {

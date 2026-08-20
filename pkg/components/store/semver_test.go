@@ -258,15 +258,24 @@ func TestCompareBuildMetadataIgnored(t *testing.T) {
 
 func TestNumericVsAlphanumericPreRelease(t *testing.T) {
 	// Numeric identifiers always have lower precedence than non-numeric identifiers (1 < alpha)
-	v1 := "1.0.0-1"
-	v2 := "1.0.0-alpha"
-
-	cmpVal, err := store.Compare(v1, v2)
-	if err != nil {
-		t.Fatalf("Compare(%q, %q) unexpected error: %v", v1, v2, err)
+	tests := []struct {
+		v1   string
+		v2   string
+		want int
+	}{
+		{v1: "1.0.0-1", v2: "1.0.0-alpha", want: -1},
+		{v1: "1.0.0-100000000000000000000", v2: "1.0.0-0alpha", want: -1},
+		{v1: "1.0.0-100000000000000000000", v2: "1.0.0-200000000000000000000", want: -1},
 	}
-	if cmpVal != -1 {
-		t.Errorf("Compare(%q, %q) = %d, want -1", v1, v2, cmpVal)
+
+	for _, tt := range tests {
+		cmpVal, err := store.Compare(tt.v1, tt.v2)
+		if err != nil {
+			t.Fatalf("Compare(%q, %q) unexpected error: %v", tt.v1, tt.v2, err)
+		}
+		if cmpVal != tt.want {
+			t.Errorf("Compare(%q, %q) = %d, want %d", tt.v1, tt.v2, cmpVal, tt.want)
+		}
 	}
 }
 

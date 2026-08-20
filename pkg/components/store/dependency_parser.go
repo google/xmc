@@ -15,7 +15,6 @@
 package store
 
 import (
-	"bufio"
 	"regexp"
 	"sort"
 	"strings"
@@ -74,9 +73,8 @@ func ExtractDependenciesFromManifests(manifests []string) []string {
 func splitYAMLDocuments(manifest string) []string {
 	var docs []string
 	var current []string
-	scanner := bufio.NewScanner(strings.NewReader(manifest))
-	for scanner.Scan() {
-		line := scanner.Text()
+	for _, line := range strings.Split(manifest, "\n") {
+		line = strings.TrimSuffix(line, "\r")
 		if strings.TrimSpace(line) == "---" {
 			if len(current) > 0 {
 				docs = append(docs, strings.Join(current, "\n"))
