@@ -28,6 +28,26 @@ logger = logging.getLogger("xmc_e2e_runner")
 class ImageBuilder:
     """Builds and tags OCI container images via Bazel and Docker."""
 
+    _SERVICES = [
+        (
+            "cmd/experiment_state_server",
+            "experiment_state_server_image_tarball",
+            "experiment_state_server_image:latest",
+        ),
+        (
+            "cmd/xid_service",
+            "xid_service_image_tarball",
+            "xid_service_image:latest",
+        ),
+        ("cmd/ui", "ui_image_tarball", "ui-image:latest"),
+        ("cmd/actuator", "actuator_image_tarball", "actuator_image:latest"),
+        (
+            "cmd/reconciler",
+            "reconciler_image_tarball",
+            "reconciler_image:latest",
+        ),
+    ]
+
     def __init__(self, config: E2EConfig) -> None:
         self.cfg = config
 
@@ -35,42 +55,21 @@ class ImageBuilder:
         """Builds all backend and frontend images."""
         if self.cfg.skip_build:
             logger.info("=== [Bazel] Skipping image builds (--skip-build set) ===")
-            return [
-                "experiment_state_server_image:latest",
-                "xid_service_image:latest",
-                "ui-image:latest",
-                "actuator_image:latest",
-                "reconciler_image:latest",
-            ]
+            return [tag for _, _, tag in self._SERVICES]
 
         logger.info("=== [Bazel] Building OCI images ===")
-        services = [
-            (
-                "cmd/experiment_state_server",
-                "experiment_state_server_image_tarball",
-                "experiment_state_server_image:latest",
-            ),
-            (
-                "cmd/xid_service",
-                "xid_service_image_tarball",
-                "xid_service_image:latest",
-            ),
-            ("cmd/ui", "ui_image_tarball", "ui-image:latest"),
-            ("cmd/actuator", "actuator_image_tarball", "actuator_image:latest"),
-            (
-                "cmd/reconciler",
-                "reconciler_image_tarball",
-                "reconciler_image:latest",
-            ),
-        ]
-
         logger.info("Building all service images in parallel with Bazel...")
-        bazel_targets = [f"//{pkg}:{target}" for pkg, target, _ in services]
+        bazel_targets = [f"//{pkg}:{target}" for pkg, target, _ in self._SERVICES]
         run_cmd(["bazel", "build", *bazel_targets], cwd=self.cfg.workspace_root)
 
+        bazel_bin_res = run_cmd(
+            ["bazel", "info", "bazel-bin"], cwd=self.cfg.workspace_root, capture_output=True
+        )
+        bazel_bin = bazel_bin_res.stdout.strip()
+
         images: list[str] = []
-        for pkg, target, tag in services:
-            tar_path = os.path.join(self.cfg.workspace_root, "bazel-bin", pkg, f"{target}.tar")
+        for pkg, target, tag in self._SERVICES:
+            tar_path = os.path.join(bazel_bin, pkg, f"{target}.tar")
             run_cmd(["docker", "load", "-i", tar_path])
             images.append(tag)
 

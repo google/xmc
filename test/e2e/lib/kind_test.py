@@ -147,14 +147,34 @@ class TestKindClusterManager(unittest.TestCase):
         self.mgr.load_images([])
         mock_run.assert_not_called()
 
+    @patch("test.e2e.lib.kind.run_cmd")
+    def test_apply_manifests_batches_arguments(self, mock_run):
+        self.mgr._apply_manifests()
+        mock_run.assert_called_once_with(
+            [
+                "kubectl",
+                "apply",
+                "-f",
+                os.path.join("/workspace", "test", "e2e", "manifests", "dummy_crds.yaml"),
+                "-f",
+                os.path.join("/workspace", "test", "e2e", "manifests", "redis.yaml"),
+                "-f",
+                os.path.join("/workspace", "test", "e2e", "manifests", "dex.yaml"),
+                "-f",
+                os.path.join("/workspace", "test", "e2e", "manifests", "gateway_proxy.yaml"),
+            ]
+        )
+
     @patch.object(KindClusterManager, "exists", return_value=True)
     @patch("test.e2e.lib.kind.run_cmd")
     def test_teardown_deletes_cluster_when_not_kept(self, mock_run, mock_exists):
+        os.makedirs(self.cfg.temp_dir, exist_ok=True)
         self.mgr.teardown()
         mock_run.assert_called_once_with(
             ["kind", "delete", "cluster", "--name", "test-cluster"],
             check=False,
         )
+        self.assertFalse(os.path.exists(self.cfg.temp_dir))
 
     @patch("test.e2e.lib.kind.run_cmd")
     def test_teardown_skips_deletion_when_keep_cluster_is_true(self, mock_run):

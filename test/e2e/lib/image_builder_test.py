@@ -41,6 +41,7 @@ class TestImageBuilder(unittest.TestCase):
 
     @patch("test.e2e.lib.image_builder.run_cmd")
     def test_build_all_executes_parallel_bazel_and_docker_load(self, mock_run):
+        mock_run.return_value.stdout = "/workspace/bazel-bin"
         cfg = E2EConfig(
             project_id="test-proj",
             spanner_instance="test-inst",
@@ -69,7 +70,7 @@ class TestImageBuilder(unittest.TestCase):
 
         # Check docker load calls
         self.assertEqual(len(images), 5)
-        self.assertEqual(mock_run.call_count, 6)  # 1 bazel build + 5 docker load
+        self.assertEqual(mock_run.call_count, 7)  # 1 bazel build + 1 bazel info + 5 docker load
 
 
 if __name__ == "__main__":

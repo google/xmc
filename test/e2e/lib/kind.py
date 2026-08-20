@@ -189,15 +189,10 @@ class KindClusterManager:
         logger.info("Applying dummy CRDs, Redis, Dex, and Gateway Proxy...")
         manifests_dir = os.path.join(self.cfg.workspace_root, "test", "e2e", "manifests")
         manifests = ["dummy_crds.yaml", "redis.yaml", "dex.yaml", "gateway_proxy.yaml"]
+        cmd = ["kubectl", "apply"]
         for manifest in manifests:
-            run_cmd(
-                [
-                    "kubectl",
-                    "apply",
-                    "-f",
-                    os.path.join(manifests_dir, manifest),
-                ]
-            )
+            cmd.extend(["-f", os.path.join(manifests_dir, manifest)])
+        run_cmd(cmd)
 
     def load_images(self, images: list[str]) -> None:
         """Loads Docker images into KinD nodes."""
@@ -237,3 +232,7 @@ class KindClusterManager:
                 )
         except Exception as e:
             logger.warning("Failed to safely teardown KinD cluster: %s", e)
+        finally:
+            import shutil
+
+            shutil.rmtree(self.cfg.temp_dir, ignore_errors=True)
