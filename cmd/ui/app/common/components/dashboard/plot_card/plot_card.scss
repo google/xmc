@@ -41,7 +41,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 12px 16px 8px 16px;
-    border-bottom: 1px solid #f1f3f4;
+    border-bottom: 1px solid var(--mat-sys-outline-variant, #f1f3f4);
     min-width: 0;
 
     .plot-title-group {
