@@ -14,43 +14,20 @@
 
 import 'jasmine';
 
+import { TestBed } from '@angular/core/testing';
 import { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import { AddExperimentDialogComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/add_experiment_dialog/add_experiment_dialog';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
+import { createMockComparisonDashboard } from 'xmanager_cloud/ui/app/testing/mock_dashboards';
 import { bootstrap, cleanState, getHarness, setupModule } from 'xmanager_cloud/ui/app/testing/test';
 
 import { DashboardsPage } from './dashboards_page';
 import { DashboardsPageHarness } from './dashboards_page_harness';
-
-const MOCK_DASHBOARD = {
-  name: 'dashboards/vcc_comparison',
-  title: 'VCC baseline tune comparison',
-  charts: [
-    {
-      name: 'experiments/234911122/charts/baseline',
-      title: 'VCC Baseline',
-      xid: 234911122,
-      plots: [],
-    },
-    {
-      name: 'experiments/234911123/charts/tuned_v1',
-      title: 'VCC tuned_v1',
-      xid: 234911123,
-      plots: [],
-    },
-    {
-      name: 'experiments/234911124/charts/tuned_v2',
-      title: 'VCC tuned_v2',
-      xid: 234911124,
-      plots: [],
-    },
-  ],
-};
 
 describe('DashboardsPage', () => {
   const state = cleanState(() => {
@@ -67,7 +44,7 @@ describe('DashboardsPage', () => {
         plotsData: [],
       }),
     );
-    dashboardServiceSpy.getDashboard.and.returnValue(of(MOCK_DASHBOARD));
+    dashboardServiceSpy.getDashboard.and.returnValue(of(createMockComparisonDashboard()));
 
     setupModule({
       imports: [DashboardsPage, NoopAnimationsModule],
@@ -129,15 +106,35 @@ describe('DashboardsPage', () => {
     expect(pageComponent.charts()[1].plots![0]).not.toBe(pageComponent.charts()[0].plots![0]);
   });
 
-  it('should create default comparison charts with independent plots array instances', () => {
+  it('should open AddExperimentDialog and use empty array for template plots when no charts exist', () => {
     const pageComponent = bootstrap(DashboardsPage);
-    (
-      pageComponent as unknown as { initDefaultComparisonDashboard: () => void }
-    ).initDefaultComparisonDashboard();
-    const charts = pageComponent.charts();
-    expect(charts.length).toBe(3);
-    expect(charts[0].plots).not.toBe(charts[1].plots);
-    expect(charts[1].plots).not.toBe(charts[2].plots);
+    pageComponent.charts.set([]);
+
+    const mockDialogRef = {
+      afterClosed: () => of({ xid: 234911125, wid: 1, title: 'VCC tuned_v3' }),
+    } as MatDialogRef<AddExperimentDialogComponent>;
+    spyOn(MatDialog.prototype, 'open').and.returnValue(mockDialogRef);
+
+    pageComponent.onOpenAddExperiment();
+    expect(MatDialog.prototype.open).toHaveBeenCalled();
+    expect(pageComponent.charts().length).toBe(1);
+    expect(pageComponent.charts()[0].plots).toEqual([]);
+  });
+
+  it('should show not-found state when dashboard fails to load', () => {
+    state.dashboardServiceSpy.getDashboard.and.returnValue(
+      throwError(() => new Error('Not found')),
+    );
+    const pageComponent = bootstrap(DashboardsPage);
+    expect(pageComponent.dashboardNotFound()).toBeTrue();
+    expect(pageComponent.isLoading()).toBeFalse();
+  });
+
+  it('should show not-found state when no dashboard ID is provided in route', () => {
+    const route = TestBed.inject(ActivatedRoute);
+    spyOn(route.snapshot.paramMap, 'get').and.returnValue(null);
+    const pageComponent = bootstrap(DashboardsPage);
+    expect(pageComponent.dashboardNotFound()).toBeTrue();
   });
 
   it('should remove chart from comparison', () => {

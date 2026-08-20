@@ -21,6 +21,7 @@ import { of, throwError } from 'rxjs';
 import { Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
+import { createMockDashboardList } from 'xmanager_cloud/ui/app/testing/mock_dashboards';
 import {
   bootstrap,
   cleanState,
@@ -34,24 +35,6 @@ import { DashboardsListPage, extractDashboardId } from './dashboards_list_page';
 const DASHBOARD_ROW_SELECTOR = '.dashboard-row';
 const DASHBOARD_TITLE_TEXT_SELECTOR = '.dashboard-title-text';
 
-const MOCK_DASHBOARDS: Dashboard[] = [
-  {
-    name: 'dashboards/vcc_comparison',
-    title: 'VCC baseline tune comparison',
-    description: 'Comparative evaluation of VCC baseline tuning across hyperparameter runs',
-    charts: [
-      { name: 'experiments/1/charts/c1', title: 'Chart 1', xid: 1, plots: [] },
-      { name: 'experiments/2/charts/c2', title: 'Chart 2', xid: 2, plots: [] },
-    ],
-  },
-  {
-    name: 'dashboards/testdata_overview',
-    title: 'Data Engine Golden Testcases',
-    description: 'Overview of all testcases',
-    charts: [],
-  },
-];
-
 describe('DashboardsListPage', () => {
   const state = cleanState(() => {
     const dashboardServiceSpy = jasmine.createSpyObj<DashboardService>('DashboardService', [
@@ -59,7 +42,9 @@ describe('DashboardsListPage', () => {
       'createDashboard',
     ]);
     const snackbarServiceSpy = jasmine.createSpyObj<SnackbarService>('SnackbarService', ['open']);
-    dashboardServiceSpy.listDashboards.and.returnValue(of({ dashboards: MOCK_DASHBOARDS }));
+    dashboardServiceSpy.listDashboards.and.returnValue(
+      of({ dashboards: createMockDashboardList() }),
+    );
 
     setupModule({
       imports: [DashboardsListPage, NoopAnimationsModule],

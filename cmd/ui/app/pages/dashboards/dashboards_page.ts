@@ -27,60 +27,9 @@ import {
   AddExperimentDialogResult,
 } from 'xmanager_cloud/ui/app/common/components/dashboard/add_experiment_dialog/add_experiment_dialog';
 import { DashboardGridComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/dashboard_grid/dashboard_grid';
-import {
-  Chart,
-  LayoutType,
-  PlotSpec,
-  PlotType,
-} from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { Chart, LayoutType } from 'xmanager_cloud/ui/app/service/dashboard_models';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
-
-function createDefaultPlots(): PlotSpec[] {
-  return [
-    {
-      plotId: 'val_loss_kpi',
-      title: 'Last validation loss',
-      type: PlotType.SUMMARY_BOX,
-      data: { metrics: ['val/loss'] },
-    },
-    {
-      plotId: 'train_acc_kpi',
-      title: 'Last training accuracy',
-      type: PlotType.SUMMARY_BOX,
-      data: { metrics: ['train/accuracy'] },
-    },
-    {
-      plotId: 'loss_vs_steps',
-      title: 'Validation loss vs steps',
-      type: PlotType.SCATTER,
-      data: { metrics: ['val/loss'] },
-    },
-    {
-      plotId: 'acc_vs_steps',
-      title: 'Training accuracy vs steps',
-      type: PlotType.SCATTER,
-      data: { metrics: ['train/accuracy'] },
-    },
-  ];
-}
-
-function createDefaultCharts(): Chart[] {
-  const experiments = [
-    { xid: 234911122, name: 'baseline', title: 'VCC Baseline' },
-    { xid: 234911123, name: 'tuned_v1', title: 'VCC tuned_v1' },
-    { xid: 234911124, name: 'tuned_v2', title: 'VCC tuned_v2' },
-  ];
-
-  return experiments.map((exp) => ({
-    name: `experiments/${exp.xid}/charts/${exp.name}`,
-    title: exp.title,
-    xid: exp.xid,
-    wid: 1,
-    plotLayout: { type: LayoutType.GRID },
-    plots: createDefaultPlots(),
-  }));
-}
 
 /**
  * Main Dashboards Page component rendering comparative metrics dashboards.
@@ -126,7 +75,7 @@ export class DashboardsPage implements OnInit {
         : `dashboards/${dashboardId}`;
       this.loadDashboard(resourceName);
     } else {
-      this.initDefaultComparisonDashboard();
+      this.dashboardNotFound.set(true);
     }
   }
 
@@ -141,21 +90,10 @@ export class DashboardsPage implements OnInit {
         this.isLoading.set(false);
       },
       error: () => {
-        // If not found in API, check if it's the default comparative dashboard
-        if (name.includes('vcc_comparison') || name.includes('default')) {
-          this.dashboardTitle.set('VCC baseline tune comparison');
-          this.initDefaultComparisonDashboard();
-          this.isLoading.set(false);
-        } else {
-          this.dashboardNotFound.set(true);
-          this.isLoading.set(false);
-        }
+        this.dashboardNotFound.set(true);
+        this.isLoading.set(false);
       },
     });
-  }
-
-  private initDefaultComparisonDashboard(): void {
-    this.charts.set(createDefaultCharts());
   }
 
   onRefresh(): void {
@@ -172,9 +110,7 @@ export class DashboardsPage implements OnInit {
     dialogRef.afterClosed().subscribe((result?: AddExperimentDialogResult) => {
       if (!result) return;
 
-      const templatePlots = this.charts()[0]?.plots
-        ? structuredClone(this.charts()[0].plots)
-        : createDefaultPlots();
+      const templatePlots = this.charts()[0]?.plots ? structuredClone(this.charts()[0].plots) : [];
       const newChart: Chart = {
         name: `experiments/${result.xid}/charts/custom_${Date.now()}`,
         title: result.title || `Experiment ${result.xid}`,
