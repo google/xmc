@@ -15,7 +15,7 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 
-import { Chart, LayoutSpec } from 'xmanager_cloud/ui/app/service/dashboard_models';
+import { Chart } from 'xmanager_cloud/ui/app/service/dashboard_models';
 
 import { ChartCardComponent, getChartKey } from '../chart_card/chart_card';
 
@@ -32,7 +32,6 @@ import { ChartCardComponent, getChartKey } from '../chart_card/chart_card';
 })
 export class DashboardGridComponent {
   readonly charts = input.required<Chart[]>();
-  readonly layout = input<LayoutSpec>();
   readonly removeChart = output<string>();
 
   protected readonly getChartKey = getChartKey;
