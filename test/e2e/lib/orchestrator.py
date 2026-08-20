@@ -50,6 +50,7 @@ class E2EOrchestrator:
     @contextlib.contextmanager
     def managed_lifecycle(self) -> Generator[None, None, None]:
         """Guarantees cleanup on success, failure, or interrupt."""
+        os.makedirs(self.cfg.temp_dir, exist_ok=True)
         try:
             self.spanner.setup()
             self.kind.setup()

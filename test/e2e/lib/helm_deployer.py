@@ -151,6 +151,7 @@ ui:
   image: "ui-image:latest"
   apiUrl: "http://localhost:8080/v1"
 """
+        os.makedirs(self.cfg.temp_dir, exist_ok=True)
         with open(self.values_file, "w", encoding="utf-8") as vf:
             vf.write(values_content)
 
