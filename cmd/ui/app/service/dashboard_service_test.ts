@@ -422,7 +422,7 @@ describe('DashboardService', () => {
 
   describe('getChartData', () => {
     const mockRawChartData: RawChartData = {
-      name: 'experiments/9001/charts/summary_single',
+      name: 'experiments/9001/workUnits/1/charts/summary_single',
       xid: '9001',
       wid: '1',
       plots_data: [
@@ -442,19 +442,19 @@ describe('DashboardService', () => {
 
     it('should fetch and normalize chart metrics data via custom :getData endpoint', async () => {
       const request: GetChartDataRequest = {
-        name: 'experiments/9001/charts/summary_single',
+        name: 'experiments/9001/workUnits/1/charts/summary_single',
         chartWidthPixels: 800,
       };
       const responsePromise = firstValueFrom<ChartData>(state.service.getChartData(request));
 
       const req = state.httpMock.expectOne(
-        `${XMC_API_DOMAIN}/experiments/9001/charts/summary_single:getData?chartWidthPixels=800`,
+        `${XMC_API_DOMAIN}/experiments/9001/workUnits/1/charts/summary_single:getData?chartWidthPixels=800`,
       );
       expect(req.request.method).toBe('GET');
       req.flush(mockRawChartData);
 
       const response = await responsePromise;
-      expect(response.name).toBe('experiments/9001/charts/summary_single');
+      expect(response.name).toBe('experiments/9001/workUnits/1/charts/summary_single');
       expect(response.xid).toBe(9001);
       expect(response.wid).toBe(1);
       expect(response.plotsData?.[0].plotId).toBe('kpi_loss');
@@ -475,12 +475,12 @@ describe('DashboardService', () => {
     it('should log structured diagnostic and rethrow error when getChartData HTTP request fails', async () => {
       const consoleSpy = spyOn(console, 'error');
       const request: GetChartDataRequest = {
-        name: 'experiments/9001/charts/summary_single',
+        name: 'experiments/9001/workUnits/1/charts/summary_single',
       };
       const responsePromise = firstValueFrom<ChartData>(state.service.getChartData(request));
 
       const req = state.httpMock.expectOne(
-        `${XMC_API_DOMAIN}/experiments/9001/charts/summary_single:getData`,
+        `${XMC_API_DOMAIN}/experiments/9001/workUnits/1/charts/summary_single:getData`,
       );
       req.flush('Gateway Timeout', { status: 504, statusText: 'Gateway Timeout' });
 
@@ -490,7 +490,7 @@ describe('DashboardService', () => {
       } catch (err: unknown) {
         expect((err as HttpErrorResponse).status).toBe(504);
         expect(consoleSpy).toHaveBeenCalledWith(
-          'Failed to fetch chart data for experiments/9001/charts/summary_single:',
+          'Failed to fetch chart data for experiments/9001/workUnits/1/charts/summary_single:',
           jasmine.any(Object),
         );
       }

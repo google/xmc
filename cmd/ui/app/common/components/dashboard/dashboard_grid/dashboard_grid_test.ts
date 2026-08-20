@@ -35,7 +35,7 @@ import { DashboardGridHarness } from './dashboard_grid_harness';
 class TestHostComponent {
   readonly charts = signal<Chart[]>([
     {
-      name: 'experiments/234911122/charts/baseline',
+      name: 'experiments/234911122/workUnits/1/charts/baseline',
       title: 'VCC Baseline',
       xid: 234911122,
       wid: 1,
@@ -50,7 +50,7 @@ class TestHostComponent {
       ],
     },
     {
-      name: 'experiments/234911123/charts/tune1',
+      name: 'experiments/234911123/workUnits/1/charts/tune1',
       title: 'VCC tuned_v1',
       xid: 234911123,
       wid: 1,
@@ -65,7 +65,7 @@ class TestHostComponent {
       ],
     },
     {
-      name: 'experiments/234911124/charts/tune2',
+      name: 'experiments/234911124/workUnits/1/charts/tune2',
       title: 'VCC tuned_v2',
       xid: 234911124,
       wid: 1,
@@ -116,7 +116,7 @@ describe('DashboardGridComponent', () => {
     const gridComponent = fixture.debugElement.children[0]
       .componentInstance as DashboardGridComponent;
     const emitSpy = spyOn(gridComponent.removeChart, 'emit');
-    gridComponent.onRemoveChart('experiments/234911122/charts/baseline');
-    expect(emitSpy).toHaveBeenCalledWith('experiments/234911122/charts/baseline');
+    gridComponent.onRemoveChart('experiments/234911122/workUnits/1/charts/baseline');
+    expect(emitSpy).toHaveBeenCalledWith('experiments/234911122/workUnits/1/charts/baseline');
   });
 });

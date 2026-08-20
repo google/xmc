@@ -39,7 +39,7 @@ import { ChartCardHarness } from './chart_card_harness';
 })
 class TestHostComponent {
   readonly chart = signal<Chart>({
-    name: 'experiments/9001/charts/mixed_overview',
+    name: 'experiments/9001/workUnits/1/charts/mixed_overview',
     title: 'VCC Baseline',
     xid: 234911122,
     wid: 1,
@@ -68,7 +68,7 @@ describe('ChartCardComponent', () => {
   let dashboardServiceSpy: jasmine.SpyObj<DashboardService>;
 
   const mockChartData: ChartData = {
-    name: 'experiments/9001/charts/mixed_overview',
+    name: 'experiments/9001/workUnits/1/charts/mixed_overview',
     xid: '9001',
     wid: '1',
     plotsData: [
@@ -117,7 +117,7 @@ describe('ChartCardComponent', () => {
 
   it('should fetch chart data on init', () => {
     expect(dashboardServiceSpy.getChartData).toHaveBeenCalledWith({
-      name: 'experiments/9001/charts/mixed_overview',
+      name: 'experiments/9001/workUnits/1/charts/mixed_overview',
     });
   });
 
@@ -155,8 +155,8 @@ describe('ChartCardComponent', () => {
   });
 
   it('should compute getChartKey using name or composite xid_wid_title fallback', () => {
-    expect(getChartKey({ name: 'experiments/1/charts/c1', xid: 1 })).toBe(
-      'experiments/1/charts/c1',
+    expect(getChartKey({ name: 'experiments/1/workUnits/1/charts/c1', xid: 1 })).toBe(
+      'experiments/1/workUnits/1/charts/c1',
     );
     expect(getChartKey({ xid: 123, wid: 2, title: 'eval' })).toBe('123_2_eval');
   });
@@ -172,6 +172,6 @@ describe('ChartCardComponent', () => {
     const chartCard = fixture.debugElement.children[0].componentInstance as ChartCardComponent;
     const emitSpy = spyOn(chartCard.remove, 'emit');
     chartCard.onRemove();
-    expect(emitSpy).toHaveBeenCalledWith('experiments/9001/charts/mixed_overview');
+    expect(emitSpy).toHaveBeenCalledWith('experiments/9001/workUnits/1/charts/mixed_overview');
   });
 });

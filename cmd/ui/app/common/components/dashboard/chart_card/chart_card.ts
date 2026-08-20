@@ -128,7 +128,8 @@ export class ChartCardComponent implements OnInit, OnDestroy {
 
   fetchChartData(): void {
     const c = this.chart();
-    const chartName = c.name || `experiments/${c.xid}/charts/${c.title || 'default'}`;
+    const chartName =
+      c.name || `experiments/${c.xid}/workUnits/${c.wid ?? 1}/charts/${c.title || 'default'}`;
 
     this.isLoading.set(true);
     this.error.set(null);
