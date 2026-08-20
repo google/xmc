@@ -54,6 +54,28 @@ class TestRunCmd(unittest.TestCase):
         )
         self.assertEqual(res.stdout, "hello\n")
 
+    @patch("subprocess.run")
+    def test_run_cmd_uses_default_timeout(self, mock_run):
+        mock_res = subprocess.CompletedProcess(
+            args=["echo", "hello"],
+            returncode=0,
+            stdout="hello\n",
+            stderr="",
+        )
+        mock_run.return_value = mock_res
+
+        run_cmd(["echo", "hello"])
+
+        mock_run.assert_called_once_with(
+            ["echo", "hello"],
+            cwd=None,
+            env=None,
+            timeout=900.0,
+            check=True,
+            capture_output=False,
+            text=True,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

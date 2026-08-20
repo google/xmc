@@ -19,6 +19,8 @@ from __future__ import annotations
 import logging
 import subprocess
 
+DEFAULT_TIMEOUT_SECONDS: float = 900.0  # 15 minutes
+
 logger = logging.getLogger("xmc_e2e_runner")
 
 
@@ -26,7 +28,7 @@ def run_cmd(
     cmd: list[str],
     cwd: str | None = None,
     env: dict[str, str] | None = None,
-    timeout: float | None = None,
+    timeout: float | None = DEFAULT_TIMEOUT_SECONDS,
     check: bool = True,
     capture_output: bool = False,
 ) -> subprocess.CompletedProcess[str]:
