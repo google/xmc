@@ -58,11 +58,13 @@ class PlaywrightTestExecutor:
             )
         return os.path.join(self.venv_dir, "bin", "python")
 
-    def execute(self) -> None:
-        """Runs the test_e2e_flow.py script."""
+    def execute(self, test_script: str | None = None) -> None:
+        """Runs the Playwright E2E test script."""
         logger.info("=== [Playwright] Executing E2E Test Flow ===")
         py_venv = self.setup_venv()
-        test_script = os.path.join(self.cfg.workspace_root, "test", "e2e", "test_e2e_flow.py")
+        resolved_test_script = test_script or os.path.join(
+            self.cfg.workspace_root, "test", "e2e", "test_e2e_flow.py"
+        )
         env = os.environ.copy()
         env["XMC_BASE_URL"] = "http://localhost:8080"
         env["XMC_DEX_URL"] = "http://localhost:5556"
@@ -74,7 +76,7 @@ class PlaywrightTestExecutor:
             else self.cfg.workspace_root
         )
 
-        run_cmd([py_venv, test_script], cwd=self.cfg.workspace_root, env=env)
+        run_cmd([py_venv, resolved_test_script], cwd=self.cfg.workspace_root, env=env)
 
 
 # Compatibility alias

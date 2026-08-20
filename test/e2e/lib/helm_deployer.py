@@ -288,17 +288,7 @@ ui:
             ]
         )
 
-        manifests_dir = os.path.join(self.cfg.workspace_root, "test", "e2e", "manifests")
-        run_cmd(
-            [
-                "kubectl",
-                "--context",
-                context,
-                "apply",
-                "-f",
-                os.path.join(manifests_dir, "gateway_proxy.yaml"),
-            ]
-        )
+        # Restart gateway-proxy so Nginx resolves freshly deployed service DNS upstreams
         run_cmd(
             [
                 "kubectl",

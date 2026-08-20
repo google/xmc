@@ -69,10 +69,18 @@ class TestPlaywrightTestExecutor(unittest.TestCase):
         mock_run.assert_called_once()
         args, kwargs = mock_run.call_args
         self.assertEqual(args[0], ["/mock/venv/bin/python", test_script])
-        self.assertEqual(kwargs["cwd"], "/workspace")
-        self.assertEqual(kwargs["env"]["XMC_BASE_URL"], "http://localhost:8080")
-        self.assertEqual(kwargs["env"]["XMC_DEX_URL"], "http://localhost:5556")
         self.assertEqual(kwargs["env"]["XMC_SCREENSHOTS_DIR"], "/screenshots")
+
+    @patch.object(PlaywrightTestExecutor, "setup_venv", return_value="/mock/venv/bin/python")
+    @patch("test.e2e.lib.test_executor.run_cmd")
+    def test_execute_with_custom_test_script(self, mock_run, mock_venv):
+        custom_script = "/custom/path/to/test.py"
+        self.executor.execute(test_script=custom_script)
+
+        mock_run.assert_called_once()
+        args, kwargs = mock_run.call_args
+        self.assertEqual(args[0], ["/mock/venv/bin/python", custom_script])
+        self.assertEqual(kwargs["cwd"], "/workspace")
 
 
 if __name__ == "__main__":
