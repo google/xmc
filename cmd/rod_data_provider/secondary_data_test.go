@@ -25,28 +25,29 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/internal/storage/spanner/statushistory"
 )
 
 type mockVelocityFetcher struct {
-	velocityRows []QueueMetricRow
-	pendingRows  []QueueMetricRow
+	velocityRows []statushistory.QueueMetricRow
+	pendingRows  []statushistory.QueueMetricRow
 	err          error
 }
 
 var _ QueueVelocityFetcher = (*mockVelocityFetcher)(nil)
 
-func (m *mockVelocityFetcher) FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) ([]QueueMetricRow, error) {
+func (m *mockVelocityFetcher) FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) ([]statushistory.QueueMetricRow, error) {
 	return m.velocityRows, m.err
 }
 
-func (m *mockVelocityFetcher) FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) ([]QueueMetricRow, error) {
+func (m *mockVelocityFetcher) FetchBatchPendingQueueMetrics(ctx context.Context, queueNames []string) ([]statushistory.QueueMetricRow, error) {
 	return m.pendingRows, m.err
 }
 
 func TestBatchGetQueueSecondaryData(t *testing.T) {
 	ctx := context.Background()
 	mockFetcher := &mockVelocityFetcher{
-		velocityRows: []QueueMetricRow{
+		velocityRows: []statushistory.QueueMetricRow{
 			{
 				QueueName:    "cq-gpu",
 				Count:        12,
@@ -54,7 +55,7 @@ func TestBatchGetQueueSecondaryData(t *testing.T) {
 				ResourceType: "nvidia-tesla-h100",
 			},
 		},
-		pendingRows: []QueueMetricRow{
+		pendingRows: []statushistory.QueueMetricRow{
 			{
 				QueueName:    "cq-gpu",
 				Count:        5,
@@ -108,11 +109,11 @@ func TestBatchGetQueueSecondaryData(t *testing.T) {
 func TestBatchGetQueueSecondaryData_MultiResource(t *testing.T) {
 	ctx := context.Background()
 	mockFetcher := &mockVelocityFetcher{
-		velocityRows: []QueueMetricRow{
+		velocityRows: []statushistory.QueueMetricRow{
 			{QueueName: "cq-mixed", Count: 10, TotalUnits: 16000, ResourceType: "CPU"},
 			{QueueName: "cq-mixed", Count: 10, TotalUnits: 32, ResourceType: "nvidia-tesla-h100"},
 		},
-		pendingRows: []QueueMetricRow{
+		pendingRows: []statushistory.QueueMetricRow{
 			{QueueName: "cq-mixed", Count: 4, TotalUnits: 8000, ResourceType: "CPU"},
 			{QueueName: "cq-mixed", Count: 4, TotalUnits: 16, ResourceType: "nvidia-tesla-h100"},
 		},
@@ -261,7 +262,7 @@ func TestRangePresetToDuration(t *testing.T) {
 func TestAggregateQueueMetricRows(t *testing.T) {
 	tests := []struct {
 		name string
-		rows []QueueMetricRow
+		rows []statushistory.QueueMetricRow
 		want map[string]aggregatedQueueMetric
 	}{
 		{
@@ -271,7 +272,7 @@ func TestAggregateQueueMetricRows(t *testing.T) {
 		},
 		{
 			name: "aggregates single queue with multiple resources",
-			rows: []QueueMetricRow{
+			rows: []statushistory.QueueMetricRow{
 				{QueueName: "cq-mixed", Count: 10, TotalUnits: 16000, ResourceType: "CPU"},
 				{QueueName: "cq-mixed", Count: 10, TotalUnits: 32, ResourceType: "nvidia-tesla-h100"},
 			},
@@ -287,7 +288,7 @@ func TestAggregateQueueMetricRows(t *testing.T) {
 		},
 		{
 			name: "ignores empty resource type",
-			rows: []QueueMetricRow{
+			rows: []statushistory.QueueMetricRow{
 				{QueueName: "cq-empty-res", Count: 5, TotalUnits: 0, ResourceType: ""},
 			},
 			want: map[string]aggregatedQueueMetric{

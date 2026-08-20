@@ -52,6 +52,23 @@ NON_CODE_FILES: set[str] = {
 }
 
 
+EXCLUDED_TEST_TARGETS: set[str] = {
+    "//cmd/ui:ui_unit_tests",
+}
+
+CODE_EXTENSIONS: tuple[str, ...] = (
+    ".go",
+    ".py",
+    ".proto",
+    ".bzl",
+)
+
+BUILD_FILE_NAMES: set[str] = {
+    "BUILD.bazel",
+    "BUILD",
+}
+
+
 def is_non_code_file(path_str: str) -> bool:
     """Returns True if the file path is a pure documentation, legal, or deployment artifact."""
     p = Path(path_str)
@@ -65,7 +82,8 @@ def classify_modified_files(files: list[str]) -> dict[str, bool]:
 
     Enforces Inverted Default Safety: Any code file that is not explicitly inside
     cmd/ui/ is treated as a backend file. Unknown newly created backend directories
-    automatically trigger backend tests.
+    automatically trigger backend tests. Non-frontend code files inside cmd/ui/
+    (e.g., Python server, shell scripts, Bazel builds) trigger both UI and backend tests.
     """
     has_core_infra = False
     has_ui = False
@@ -84,6 +102,13 @@ def classify_modified_files(files: list[str]) -> dict[str, bool]:
 
         if clean_f.startswith("cmd/ui/"):
             has_ui = True
+            # Non-frontend code files in cmd/ui/ (Python server, shell, Bazel) require backend tests
+            if (
+                clean_f.endswith(CODE_EXTENSIONS)
+                or clean_f.endswith(".sh")
+                or Path(clean_f).name in BUILD_FILE_NAMES
+            ):
+                has_backend = True
         else:
             # Inverted Default Safety: Anything else is backend code!
             has_backend = True
@@ -142,10 +167,14 @@ def _discover_static_rdeps_targets(files: list[str], cwd: Path | None = None) ->
     base_dir = cwd if cwd else Path.cwd()
     changed_dirs: set[str] = set()
     for f in files:
-        if (f.endswith(".go") or f.endswith(".py")) and not f.startswith("cmd/ui/"):
+        if is_non_code_file(f):
+            continue
+        if f.endswith(CODE_EXTENSIONS) or Path(f).name in BUILD_FILE_NAMES:
             p_dir = Path(f).parent.as_posix()
             if p_dir and p_dir != ".":
                 changed_dirs.add(p_dir)
+            else:
+                changed_dirs.add("")
 
     if not changed_dirs:
         return []
@@ -154,7 +183,7 @@ def _discover_static_rdeps_targets(files: list[str], cwd: Path | None = None) ->
     for root, _, filenames in os.walk(base_dir):
         if "BUILD.bazel" in filenames:
             rel_root = Path(root).relative_to(base_dir).as_posix()
-            if rel_root.startswith("cmd/ui") or "node_modules" in rel_root:
+            if "node_modules" in rel_root:
                 continue
             build_path = Path(root) / "BUILD.bazel"
             try:
@@ -166,29 +195,39 @@ def _discover_static_rdeps_targets(files: list[str], cwd: Path | None = None) ->
                 target_name = match.group(2)
                 pkg_path = "" if rel_root == "." else rel_root
                 target_label = f"//{pkg_path}:{target_name}" if pkg_path else f"//:{target_name}"
+                if target_label in EXCLUDED_TEST_TARGETS:
+                    continue
                 for cd in changed_dirs:
-                    if pkg_path == cd or cd.startswith(pkg_path) or pkg_path.startswith(cd):
+                    if (pkg_path == cd) or (
+                        cd and (cd.startswith(pkg_path) or pkg_path.startswith(cd))
+                    ):
                         test_targets.add(target_label)
     return sorted(test_targets)
 
 
 def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> list[str]:
-    """Runs Bazel query to discover unit test targets that transitively depend on changed Go packages.
+    """Runs Bazel query to discover unit test targets that transitively depend on changed packages.
 
     Returns empty list if Bazel is unavailable or query fails.
     """
     changed_pkgs: set[str] = set()
     for f in files:
-        if f.endswith(".go") and not f.startswith("cmd/ui/"):
+        if is_non_code_file(f):
+            continue
+        if f.endswith(CODE_EXTENSIONS) or Path(f).name in BUILD_FILE_NAMES:
             pkg_dir = Path(f).parent.as_posix()
             if pkg_dir and pkg_dir != ".":
                 changed_pkgs.add(f"//{pkg_dir}:all")
+            else:
+                changed_pkgs.add("//:all")
 
     if not changed_pkgs:
         return []
 
     pkg_set_expr = " ".join(sorted(changed_pkgs))
-    backend_universe = "//cmd/... + //internal/... + //sdks/... + //test/... + //tools/..."
+    backend_universe = (
+        "//cmd/... + //internal/... + //pkg/... + //sdks/... + //test/... + //tools/..."
+    )
     query_expr = f"kind('.*_test', rdeps({backend_universe}, set({pkg_set_expr})))"
 
     try:
@@ -210,8 +249,7 @@ def discover_bazel_rdeps_targets(files: list[str], cwd: Path | None = None) -> l
         )
         if res.stdout.strip():
             targets = [t.strip() for t in res.stdout.splitlines() if t.strip().startswith("//")]
-            # Filter out any accidental ui targets if present
-            return [t for t in targets if not t.startswith("//cmd/ui")]
+            return [t for t in targets if t not in EXCLUDED_TEST_TARGETS]
     except Exception:
         pass
 

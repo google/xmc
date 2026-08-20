@@ -259,6 +259,34 @@ func TestExtractRequestedResources(t *testing.T) {
 			}),
 			want: []*spb.Resource{},
 		},
+		{
+			name: "case insensitive GPU and TPU type matching",
+			wu: buildWorkUnitWithJobSet([]*essmsgpb.KubernetesJob{
+				{
+					Replicas: 1,
+					Spec: &essmsgpb.ExecutableSpec{
+						Resources: &essmsgpb.ResourceSet{
+							Resources: &essmsgpb.ResourceSet_GpuResources{
+								GpuResources: &essmsgpb.GpuResources{Type: "gpu", Count: 2},
+							},
+						},
+					},
+					Sidecars: []*essmsgpb.ExecutableSpec{
+						{
+							Resources: &essmsgpb.ResourceSet{
+								Resources: &essmsgpb.ResourceSet_TpuResources{
+									TpuResources: &essmsgpb.TpuResources{Type: "tpu", Topology: "2x2x2"},
+								},
+							},
+						},
+					},
+				},
+			}),
+			want: []*spb.Resource{
+				{ResourceType: "GPU", Count: 2.0},
+				{ResourceType: "TPU", Count: 8.0},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -280,31 +308,5 @@ func buildWorkUnitWithJobSet(jobs []*essmsgpb.KubernetesJob) *essmsgpb.WorkUnit 
 				},
 			},
 		},
-	}
-}
-
-func TestParseTotalChips(t *testing.T) {
-	tests := []struct {
-		topology string
-		want     int64
-	}{
-		{"", 1},
-		{"2x2", 4},
-		{"2x2x4", 16},
-		{"2X2X4", 16},
-		{" 2x2x4 ", 16},
-		{"  4X4  ", 16},
-		{"8x8", 64},
-		{"2x2xX", 1},
-		{"2x-2x4", 1},
-		{"invalid", 1},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.topology, func(t *testing.T) {
-			if got := parseTotalChips(tt.topology); got != tt.want {
-				t.Errorf("parseTotalChips(%q) = %d, want %d", tt.topology, got, tt.want)
-			}
-		})
 	}
 }

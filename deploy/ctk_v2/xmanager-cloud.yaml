@@ -188,6 +188,9 @@ deployment_groups:
       database_name: $(db_spanner.database_ids.xid)
       schema_file: $(ghpc_stage("../../internal/storage/spanner/schema/xid-schema.sql"))
       db_type: xid
+      # Both appliers reach the same Spanner instance, so they run one after the
+      # other rather than at once.
+      depends_on_anchor: $(apply_ess_schema.applied)
 
   - id: private_service_access
     source: modules/network/private-service-access
