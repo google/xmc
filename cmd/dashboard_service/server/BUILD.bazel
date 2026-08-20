@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "server",
     srcs = [
+        "createchart.go",
         "createdashboard.go",
         "deletedashboard.go",
         "getdashboard.go",
@@ -48,6 +49,7 @@ go_library(
 go_test(
     name = "server_test",
     srcs = [
+        "createchart_test.go",
         "createdashboard_test.go",
         "deletedashboard_test.go",
         "getdashboard_test.go",

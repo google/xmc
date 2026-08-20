@@ -25,13 +25,13 @@ func TestGetDashboard_Success(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	chart := blankChartProto("charts/test-chart-get-1", 100, 1)
+	chart := blankChartProto("test-chart-get-1", 100, 1)
 	if err := repo.CreateChart(ctx, chart); err != nil {
 		t.Fatalf("CreateChart failed: %v", err)
 	}
 
 	dash := blankDashboardProto("dashboards/test-get-1")
-	dash.Charts = []*dpb.Chart{{Name: "charts/test-chart-get-1"}}
+	dash.Charts = []*dpb.Chart{chart}
 	if err := repo.CreateDashboard(ctx, dash); err != nil {
 		t.Fatalf("CreateDashboard failed: %v", err)
 	}
@@ -55,6 +55,16 @@ func TestGetDashboard_Success(t *testing.T) {
 	}
 	if len(got.GetCharts()) != len(dash.GetCharts()) {
 		t.Fatalf("GetDashboard Charts len mismatch: got %d, want %d", len(got.GetCharts()), len(dash.GetCharts()))
+	}
+	gotChart := got.GetCharts()[0]
+	if gotChart.GetName() != chart.GetName() {
+		t.Errorf("GetDashboard Chart Name mismatch: got %q, want %q", gotChart.GetName(), chart.GetName())
+	}
+	if gotChart.GetTitle() != chart.GetTitle() {
+		t.Errorf("GetDashboard Chart Title mismatch: got %q, want %q", gotChart.GetTitle(), chart.GetTitle())
+	}
+	if gotChart.GetXid() != chart.GetXid() || gotChart.GetWid() != chart.GetWid() {
+		t.Errorf("GetDashboard Chart Xid/Wid mismatch: got (%d, %d), want (%d, %d)", gotChart.GetXid(), gotChart.GetWid(), chart.GetXid(), chart.GetWid())
 	}
 	if got.GetChartLayout() == nil || got.GetChartLayout().GetColumns() != dash.GetChartLayout().GetColumns() {
 		t.Errorf("GetDashboard ChartLayout mismatch")
