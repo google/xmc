@@ -15,7 +15,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
 import { Dashboard } from 'xmanager_cloud/ui/app/service/dashboard_models';
@@ -26,6 +26,7 @@ import {
   bootstrap,
   cleanState,
   flush,
+  get,
   getEl,
   getEls,
   setupModule,
@@ -116,8 +117,10 @@ describe('DashboardsListPage', () => {
     expect(firstTitle?.textContent?.trim()).toBe('VCC baseline tune comparison');
   });
 
-  it('should call createDashboard when dialog returns a valid dashboard', () => {
+  it('should navigate to dashboard page when createDashboard returns dashboard with id', () => {
     const component = bootstrap(DashboardsListPage);
+    const router = get(Router);
+    spyOn(router, 'navigate');
     const newDash: Dashboard = {
       name: 'dashboards/new_evaluation',
       title: 'New Evaluation',
@@ -128,6 +131,45 @@ describe('DashboardsListPage', () => {
     component.createDashboard(newDash);
 
     expect(state.dashboardServiceSpy.createDashboard).toHaveBeenCalledWith({ dashboard: newDash });
+    expect(router.navigate).toHaveBeenCalledWith(['/dashboards', 'new_evaluation']);
+    expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledTimes(1);
+  });
+
+  it('should reload dashboards when createDashboard returns dashboard without id', () => {
+    const component = bootstrap(DashboardsListPage);
+    const router = get(Router);
+    spyOn(router, 'navigate');
+    const newDash: Dashboard = {
+      name: '',
+      title: 'New Evaluation',
+      charts: [],
+    };
+    state.dashboardServiceSpy.createDashboard.and.returnValue(of(newDash));
+
+    component.createDashboard(newDash);
+
+    expect(state.dashboardServiceSpy.createDashboard).toHaveBeenCalledWith({ dashboard: newDash });
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledTimes(2);
+  });
+
+  it('should reload dashboards when createDashboard fails', () => {
+    const component = bootstrap(DashboardsListPage);
+    const router = get(Router);
+    spyOn(router, 'navigate');
+    state.dashboardServiceSpy.createDashboard.and.returnValue(
+      throwError(() => new Error('Creation failed')),
+    );
+
+    component.createDashboard({
+      name: 'dashboards/new_evaluation',
+      title: 'New Evaluation',
+      charts: [],
+    });
+
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(state.dashboardServiceSpy.listDashboards).toHaveBeenCalledTimes(2);
+    expect(component.isLoading()).toBeFalse();
   });
 
   it('should show error snackbar when listDashboards fails', () => {

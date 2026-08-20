@@ -135,9 +135,9 @@ export class DashboardsListPage implements OnInit {
         const id = extractDashboardId(created.name);
         if (id) {
           this.router.navigate(['/dashboards', id]);
-        } else {
-          this.loadDashboards();
+          return;
         }
+        this.loadDashboards();
       },
       error: () => {
         this.isLoading.set(false);
