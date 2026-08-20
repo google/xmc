@@ -106,30 +106,38 @@ jobs:
           mkdir -p "${HOME}/.local/bin"
           echo "${HOME}/.local/bin" >> $GITHUB_PATH
 
-          echo "=== Installing Kubectl ==="
-          if ! command -v kubectl &>/dev/null; then
-            curl -LO "https://dl.k8s.io/release/v1.32.2/bin/linux/amd64/kubectl"
-            chmod +x ./kubectl
-            mv ./kubectl "${HOME}/.local/bin/kubectl"
-          fi
+          echo "=== Installing Kubectl, KinD, and Helm in Parallel ==="
+          (
+            if ! command -v kubectl &>/dev/null; then
+              curl -fsSL "https://dl.k8s.io/release/v1.32.2/bin/linux/amd64/kubectl" -o "${HOME}/.local/bin/kubectl"
+              chmod +x "${HOME}/.local/bin/kubectl"
+            fi
+          ) &
+          PID_KUBECTL=$!
+
+          (
+            if ! command -v kind &>/dev/null; then
+              curl -fsSL "https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64" -o "${HOME}/.local/bin/kind"
+              chmod +x "${HOME}/.local/bin/kind"
+            fi
+          ) &
+          PID_KIND=$!
+
+          (
+            if ! command -v helm &>/dev/null; then
+              HELM_VERSION="v3.17.1"
+              curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" -o /tmp/helm.tar.gz
+              tar -zxvf /tmp/helm.tar.gz -C /tmp linux-amd64/helm
+              mv /tmp/linux-amd64/helm "${HOME}/.local/bin/helm"
+              rm -rf /tmp/helm.tar.gz /tmp/linux-amd64
+            fi
+          ) &
+          PID_HELM=$!
+
+          wait "${PID_KUBECTL}" "${PID_KIND}" "${PID_HELM}"
+
           kubectl version --client
-
-          echo "=== Installing KinD ==="
-          if ! command -v kind &>/dev/null; then
-            curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64
-            chmod +x ./kind
-            mv ./kind "${HOME}/.local/bin/kind"
-          fi
           kind --version
-
-          echo "=== Installing Helm ==="
-          if ! command -v helm &>/dev/null; then
-            HELM_VERSION="v3.17.1"
-            curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" -o helm.tar.gz
-            tar -zxvf helm.tar.gz linux-amd64/helm
-            mv linux-amd64/helm "${HOME}/.local/bin/helm"
-            rm -rf helm.tar.gz linux-amd64
-          fi
           helm version
 
       - name: 'Wait for Disk Space Cleanup'
