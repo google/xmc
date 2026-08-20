@@ -19,7 +19,7 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 
 import {
   Chart,
@@ -128,18 +128,18 @@ describe('ChartCardComponent', () => {
     expect(await harness.getPlotCardCount()).toBe(2);
   });
 
-  it('should unsubscribe and re-subscribe cleanly on consecutive fetchChartData calls', () => {
-    const subject = new Subject<ChartData>();
-    dashboardServiceSpy.getChartData.and.returnValue(subject);
+  it('should unsubscribe from previous request on consecutive fetchChartData calls', () => {
+    const firstRequest = new Subject<ChartData>();
+    const secondRequest = new Subject<ChartData>();
+    dashboardServiceSpy.getChartData.and.returnValues(firstRequest, secondRequest);
 
     const chartCard = fixture.debugElement.children[0].componentInstance as ChartCardComponent;
     chartCard.fetchChartData();
-
-    const initialSub = (chartCard as unknown as { chartDataSub: { closed: boolean } }).chartDataSub;
-    expect(initialSub.closed).toBeFalse();
+    expect(firstRequest.observed).toBeTrue();
 
     chartCard.fetchChartData();
-    expect(initialSub.closed).toBeTrue();
+    expect(firstRequest.observed).toBeFalse();
+    expect(secondRequest.observed).toBeTrue();
   });
 
   it('should unsubscribe on component destruction', () => {
@@ -148,12 +148,24 @@ describe('ChartCardComponent', () => {
 
     const chartCard = fixture.debugElement.children[0].componentInstance as ChartCardComponent;
     chartCard.fetchChartData();
+    expect(subject.observed).toBeTrue();
 
-    const sub = (chartCard as unknown as { chartDataSub: { closed: boolean } }).chartDataSub;
-    expect(sub?.closed).toBeFalse();
+    fixture.destroy();
+    expect(subject.observed).toBeFalse();
+  });
 
-    chartCard.ngOnDestroy();
-    expect(sub?.closed).toBeTrue();
+  it('should set error message when getChartData fails', () => {
+    dashboardServiceSpy.getChartData.and.returnValue(
+      throwError(() => new Error('Failed to load chart metrics')),
+    );
+
+    const chartCard = fixture.debugElement.children[0].componentInstance as ChartCardComponent;
+    chartCard.fetchChartData();
+
+    const errorSignal = (chartCard as unknown as { error: () => string | null }).error;
+    const isLoadingSignal = (chartCard as unknown as { isLoading: () => boolean }).isLoading;
+    expect(errorSignal()).toBe('Failed to load chart metrics');
+    expect(isLoadingSignal()).toBeFalse();
   });
 
   it('should compute getChartKey using name or composite xid_wid_title fallback', () => {

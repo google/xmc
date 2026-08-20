@@ -19,20 +19,19 @@ import {
   computed,
   inject,
   input,
-  OnDestroy,
-  OnInit,
   output,
   Pipe,
   PipeTransform,
   signal,
 } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { RouterModule } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, of, switchMap, tap } from 'rxjs';
 
 import {
   Chart,
@@ -101,17 +100,37 @@ export class PlotDataPipe implements PipeTransform {
     PlotDataPipe,
   ],
 })
-export class ChartCardComponent implements OnInit, OnDestroy {
+export class ChartCardComponent {
   readonly chart = input.required<Chart>();
   readonly isBaseline = input<boolean>(false);
   readonly remove = output<string>();
 
   private readonly dashboardService = inject(DashboardService);
-  private chartDataSub?: Subscription;
+  private readonly refreshTrigger$ = new BehaviorSubject<void>(undefined);
 
-  protected readonly chartData = signal<ChartData | undefined>(undefined);
   protected readonly isLoading = signal<boolean>(false);
   protected readonly error = signal<string | null>(null);
+
+  protected readonly chartData = toSignal(
+    combineLatest([toObservable(this.chart), this.refreshTrigger$]).pipe(
+      tap(() => {
+        this.isLoading.set(true);
+        this.error.set(null);
+      }),
+      switchMap(([c]) => {
+        const chartName =
+          c.name || `experiments/${c.xid}/workUnits/${c.wid ?? 1}/charts/${c.title || 'default'}`;
+        return this.dashboardService.getChartData({ name: chartName }).pipe(
+          tap(() => this.isLoading.set(false)),
+          catchError((err: { message?: string }) => {
+            this.error.set(err?.message || 'Failed to load chart metrics');
+            this.isLoading.set(false);
+            return of(undefined);
+          }),
+        );
+      }),
+    ),
+  );
 
   protected readonly headerTitle = computed(() => {
     const c = this.chart();
@@ -149,33 +168,8 @@ export class ChartCardComponent implements OnInit, OnDestroy {
     );
   });
 
-  ngOnInit(): void {
-    this.fetchChartData();
-  }
-
-  ngOnDestroy(): void {
-    this.chartDataSub?.unsubscribe();
-  }
-
   fetchChartData(): void {
-    const c = this.chart();
-    const chartName =
-      c.name || `experiments/${c.xid}/workUnits/${c.wid ?? 1}/charts/${c.title || 'default'}`;
-
-    this.isLoading.set(true);
-    this.error.set(null);
-    this.chartDataSub?.unsubscribe();
-
-    this.chartDataSub = this.dashboardService.getChartData({ name: chartName }).subscribe({
-      next: (data) => {
-        this.chartData.set(data);
-        this.isLoading.set(false);
-      },
-      error: (err) => {
-        this.error.set(err?.message || 'Failed to load chart metrics');
-        this.isLoading.set(false);
-      },
-    });
+    this.refreshTrigger$.next();
   }
 
   protected readonly plotDataMap = computed(() => {
