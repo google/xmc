@@ -109,6 +109,9 @@ func parseNumericSegment(seg string) (uint64, error) {
 	if seg == "" {
 		return 0, errors.New("empty segment")
 	}
+	if !isNumeric(seg) {
+		return 0, errors.New("segment contains non-digit characters")
+	}
 	if len(seg) > 1 && seg[0] == '0' {
 		return 0, errors.New("leading zero is not permitted")
 	}
@@ -337,6 +340,9 @@ func IsPatchUpdate(current, target string) (bool, error) {
 		return false, fmt.Errorf("invalid target version %q: %w", target, err)
 	}
 	if targetVer.Major != curVer.Major || targetVer.Minor != curVer.Minor {
+		return false, nil
+	}
+	if len(targetVer.PreRelease) > 0 && len(curVer.PreRelease) == 0 {
 		return false, nil
 	}
 	return targetVer.GreaterThan(curVer), nil

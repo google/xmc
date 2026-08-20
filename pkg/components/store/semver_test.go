@@ -150,6 +150,21 @@ func TestParse(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "leading plus in major",
+			input:   "+1.0.0",
+			wantErr: true,
+		},
+		{
+			name:    "leading plus in minor",
+			input:   "1.+0.0",
+			wantErr: true,
+		},
+		{
+			name:    "leading plus in patch",
+			input:   "1.0.+1",
+			wantErr: true,
+		},
+		{
 			name:    "mixed double leading v prefix",
 			input:   "vV1.0.0",
 			wantErr: true,
@@ -379,6 +394,7 @@ func TestIsPatchUpdate(t *testing.T) {
 		{name: "lower patch version", current: "1.2.2", target: "1.2.1", want: false},
 		{name: "different minor version", current: "1.2.0", target: "1.3.0", want: false},
 		{name: "different major version", current: "1.2.0", target: "2.2.0", want: false},
+		{name: "stable to higher prerelease is not patch update", current: "1.2.0", target: "1.2.1-alpha.1", want: false},
 		{name: "prerelease to final patch", current: "1.2.0-rc.1", target: "1.2.0", want: true},
 		{name: "invalid current version", current: "invalid", target: "1.2.1", wantErr: true},
 		{name: "invalid target version", current: "1.2.0", target: "invalid", wantErr: true},
