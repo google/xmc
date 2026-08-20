@@ -188,7 +188,10 @@ def resolve_review_thread(
         thread_node_id = target
     else:
         parsed = parse_comment_url(target)
-        comment_id = parsed["comment_id"] if parsed else int(target)
+        try:
+            comment_id = parsed["comment_id"] if parsed else int(target)
+        except ValueError as e:
+            raise GithubAPIError(f"Invalid thread or comment ID format: '{target}'") from e
 
         query = """
         query($owner: String!, $repo: String!, $pr: Int!) {
@@ -218,8 +221,11 @@ def resolve_review_thread(
             },
             user_agent=user_agent,
         )
+        if not data or "errors" in data or data.get("data") is None:
+            error_msg = data.get("errors") if data else "No response data"
+            raise GithubAPIError(f"GraphQL query failed: {error_msg}")
         threads = (
-            data.get("data", {})
+            data["data"]
             .get("repository", {})
             .get("pullRequest", {})
             .get("reviewThreads", {})
@@ -255,7 +261,10 @@ def resolve_review_thread(
         payload={"query": mutation, "variables": {"threadId": thread_node_id}},
         user_agent=user_agent,
     )
-    res_thread = res.get("data", {}).get("resolveReviewThread", {}).get("thread", {})
+    if not res or "errors" in res or res.get("data") is None:
+        error_msg = res.get("errors") if res else "No response data"
+        raise GithubAPIError(f"GraphQL mutation failed: {error_msg}")
+    res_thread = res["data"].get("resolveReviewThread", {}).get("thread", {})
     return {
         "status": "success",
         "thread_id": thread_node_id,
