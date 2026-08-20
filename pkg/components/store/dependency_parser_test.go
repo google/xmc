@@ -182,6 +182,21 @@ spec:
 			want: []string{"string-dep-1, string-dep-2"},
 		},
 		{
+			name: "spec dependencies as map",
+			manifests: []string{
+				`
+apiVersion: components.xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: comp3
+spec:
+  dependencies:
+    auth-service: {}
+`,
+			},
+			want: []string{"auth-service"},
+		},
+		{
 			name: "manifest with multi-line string containing document separator",
 			manifests: []string{
 				"metadata:\n  annotations:\n    xmc.dev/depends-on: script-dep\nspec:\n  script: |\n    echo \"start\"\n    ---\n    echo \"end\"\n",
@@ -233,6 +248,11 @@ func TestExtractDependenciesFromDescription(t *testing.T) {
 			name: "at depends-on directive",
 			desc: "Some summary.\n@depends-on: auth-service, db-service\nDetails follow.",
 			want: []string{"auth-service, db-service"},
+		},
+		{
+			name: "markdown list markers with directives",
+			desc: "Dependencies list:\n- @depends-on: service-a\n* depends-on: service-b\n+ xmc:dependencies: service-c",
+			want: []string{"service-a", "service-b", "service-c"},
 		},
 		{
 			name: "plain depends-on directive",
