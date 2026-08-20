@@ -66,8 +66,9 @@ jobs:
       - name: 'Authenticate to Google Cloud via Workload Identity Federation'
         uses: 'google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed' # v2.1.13
         with:
-          workload_identity_provider: 'projects/815549340089/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
-          service_account: 'xmc-e2e-ci@xmc-test-project-3.iam.gserviceaccount.com'
+          project_id: '${{ vars.GCP_PROJECT_ID || ''xmc-test-project-3'' }}'
+          workload_identity_provider: '${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || ''projects/815549340089/locations/global/workloadIdentityPools/github-pool/providers/github-provider'' }}'
+          service_account: '${{ vars.GCP_E2E_SERVICE_ACCOUNT || ''xmc-e2e-ci@xmc-test-project-3.iam.gserviceaccount.com'' }}'
 
       - name: 'Set up Cloud SDK'
         uses: 'google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f' # v2.2.1
@@ -151,8 +152,8 @@ jobs:
 
       - name: 'Run E2E Test Suite'
         env:
-          GCP_PROJECT_ID: 'xmc-test-project-3'
-          SPANNER_INSTANCE: 'xmc-e2e'
+          GCP_PROJECT_ID: '${{ vars.GCP_PROJECT_ID || ''xmc-test-project-3'' }}'
+          SPANNER_INSTANCE: '${{ vars.GCP_SPANNER_INSTANCE || ''xmc-e2e'' }}'
           XMC_SCREENSHOTS_DIR: '${{ github.workspace }}/e2e-screenshots'
         run: |
           mkdir -p "${XMC_SCREENSHOTS_DIR}"

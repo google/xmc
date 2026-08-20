@@ -198,3 +198,67 @@ kubectl delete pod -n arc-runners -l app=bazel-remote-cache
 kubectl delete pvc bazel-remote-cache-pvc -n arc-runners
 kubectl apply -f deploy/ci/bazel-remote-cache.yaml
 ```
+
+---
+
+## 4. Headless KinD & Playwright End-to-End (E2E) Pipeline
+
+The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/workflows/e2e-tests.yml)) spins up an entire ephemeral XMC environment on every PR and post-submit run on `main`.
+
+### Architecture & Resource Isolation
+
+```
++-----------------------------------------------------------------------------------------+
+| GitHub Actions ARC Runner Pod (or ubuntu-latest)                                        |
+|                                                                                         |
+|  +-------------------------------------+      +--------------------------------------+  |
+|  | Isolated Docker Engine (DinD)       |      | Python E2E Orchestrator              |  |
+|  |                                     |      |                                      |  |
+|  |  - KinD Cluster: xmc-e2e            |      |  1. Provision Spanner DBs & KinD     |  |
+|  |    - Core Services (ESS, UI, XID)   |<-----+  2. Build 5 OCI Image Tarballs       |  |
+|  |    - Ephemeral Redis & Dex OIDC IdP |      |  3. Load Images into KinD & Helm     |  |
+|  |    - Gateway Reverse Proxy (:8080)  |      |  4. Execute Playwright Tests         |  |
+|  |    - Dex Ingress (:5556)            |      |  5. Guaranteed Resource Teardown     |  |
+|  +-------------------------------------+      +--------------------------------------+  |
+|                                                                  |                      |
+|                                                                  v (WIF Authenticated)  |
+|  +-----------------------------------------------------------------------------------+  |
+|  | GCP Cloud Spanner (Instance: xmc-e2e in project xmc-test-project-3)               |  |
+|  |  - Ephemeral DB: e2e-ess-<epoch>-<hex> (Automated Schema Migrations)              |  |
+|  |  - Ephemeral DB: e2e-xid-<epoch>-<hex> (Automated Schema Migrations)              |  |
+|  +-----------------------------------------------------------------------------------+  |
++-----------------------------------------------------------------------------------------+
+```
+
+### Multi-Run Concurrency & Collision Prevention
+
+1. **KinD Cluster Isolation**:
+   - Each runner pod contains its own isolated Docker daemon. Multiple concurrent PR test runs execute in independent runner pods, meaning local KinD clusters named `xmc-e2e` never collide across jobs.
+2. **Ephemeral Spanner Database Names**:
+   - Each test run generates unique database names using the pattern `e2e-ess-<epoch>-<hex>` and `e2e-xid-<epoch>-<hex>`.
+   - Databases are dynamically created via `gcloud`, migrated via `bazel run //internal/storage/spanner/migrations:migrations`, and dropped during orchestrator teardown.
+3. **Automated Stale Database Garbage Collection**:
+   - Before provisioning new databases, `SpannerManager` automatically scans for any leftover databases older than 2 hours and deletes them, preventing orphaned resource accumulation if a runner pod is killed abruptly.
+
+### GitHub Repository Variables & Workload Identity Federation (WIF)
+
+Workload Identity Federation allows GitHub Actions to authenticate directly to GCP without long-lived service account keys:
+
+| Variable Name | Default Value | Description |
+| :--- | :--- | :--- |
+| `vars.GCP_PROJECT_ID` | `xmc-test-project-3` | Target GCP project hosting Cloud Spanner. |
+| `vars.GCP_SPANNER_INSTANCE` | `xmc-e2e` | Cloud Spanner instance used for ephemeral databases. |
+| `vars.GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/815549340089/...` | Workload Identity Pool provider resource URI. |
+| `vars.GCP_E2E_SERVICE_ACCOUNT` | `xmc-e2e-ci@xmc-test-project-3...` | Service account with `roles/spanner.databaseAdmin`. |
+
+### Execution on ARC Self-Hosted vs. GitHub-Hosted (`ubuntu-latest`) Runners
+
+- **On Self-Hosted ARC Runners (`arc-runner-set`)**:
+  - The job connects to the in-cluster Bazel Remote Cache (`bazel-remote-cache:9092`), achieving rapid build times.
+  - Docker-in-Docker is managed via the runner pod sidecar.
+- **On GitHub-Hosted Runners (`ubuntu-latest`)**:
+  - Requires `runs-on: 'ubuntu-latest'` in `.github/workflows/e2e-tests.yml`.
+  - Docker is natively available.
+  - WIF authentication requires the GitHub repository `google/xmc` to be mapped in the GCP Workload Identity Pool.
+  - Bazel caching will use the fallback GitHub Actions cache or GCS remote cache as configured in Section 2.
+
