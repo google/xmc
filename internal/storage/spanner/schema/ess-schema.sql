@@ -412,7 +412,7 @@ CREATE TABLE Charts (
   Title STRING(MAX) NOT NULL,
   Description STRING(MAX),
   Xid INT64 NOT NULL,
-  Wid INT64,
+  Wid INT64 NOT NULL DEFAULT (0),
   PlotLayout BYTES(MAX),
   Owner STRING(MAX) NOT NULL,
   CreatedAt TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),

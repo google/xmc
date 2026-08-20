@@ -83,8 +83,36 @@ func TestChartProtoToInsertMutations_Success(t *testing.T) {
 		t.Fatalf("ChartProtoToInsertMutations failed: %v", err)
 	}
 
-	if len(mutations) != 3 {
-		t.Errorf("Expected 3 mutations (chart + plot spec + artifact chart link), got %d", len(mutations))
+	if len(mutations) != 2 {
+		t.Errorf("Expected 2 mutations (chart + plot spec), got %d", len(mutations))
+	}
+}
+
+func TestChartProtoToInsertMutations_NoPlots(t *testing.T) {
+	chart := &dpb.Chart{
+		Name:        "experiments/100/workUnits/1/charts/test-chart-no-plots",
+		Title:       "Chart Without Plots",
+		Description: "No plots description",
+	}
+
+	mutations, err := ChartProtoToInsertMutations(chart)
+	if err != nil {
+		t.Fatalf("ChartProtoToInsertMutations failed: %v", err)
+	}
+
+	if len(mutations) != 1 {
+		t.Errorf("Expected 1 mutation (chart only), got %d", len(mutations))
+	}
+}
+
+func TestChartProtoToInsertMutations_InvalidName(t *testing.T) {
+	chart := &dpb.Chart{
+		Name:  "invalid-chart-name",
+		Title: "Invalid Name Chart",
+	}
+
+	if _, err := ChartProtoToInsertMutations(chart); err == nil {
+		t.Errorf("ChartProtoToInsertMutations with invalid name expected error, got nil")
 	}
 }
 

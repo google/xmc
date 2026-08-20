@@ -202,19 +202,32 @@ func (s *Server) getChartForData(ctx context.Context, chartName string) (*dpb.Ch
 
 // authorizeExperimentRead checks user read authorization against the XID service.
 func (s *Server) authorizeExperimentRead(ctx context.Context, user string, xid int64) error {
+	return s.authorizeExperiment(ctx, user, xid, xpb.XidAcls_READER)
+}
+
+// authorizeExperimentWrite checks user write authorization against the XID service.
+func (s *Server) authorizeExperimentWrite(ctx context.Context, user string, xid int64) error {
+	return s.authorizeExperiment(ctx, user, xid, xpb.XidAcls_WRITER)
+}
+
+// authorizeExperiment checks user authorization for a specific role against the XID service.
+func (s *Server) authorizeExperiment(ctx context.Context, user string, xid int64, roleType xpb.XidAcls_RoleType) error {
 	xidName := validator.ConstructXIDName(xid)
-	roleType := xpb.XidAcls_READER
 	xidResp, err := s.xidClient.CheckUserAuthorization(propagateAuthContext(ctx), &xidapipb.CheckUserAuthorizationRequest{
 		Name:     &xidName,
 		User:     &user,
 		RoleType: &roleType,
 	})
 	if err != nil {
-		logging.Error(ctx, "failed to check user authorization with XID service", "xid", xid, "user", user, "error", err)
+		logging.Error(ctx, "failed to check user authorization with XID service", "xid", xid, "user", user, "role", roleType.String(), "error", err)
 		return status.Errorf(codes.Internal, "failed to verify permissions for experiment %d", xid)
 	}
 	if xidResp == nil || !xidResp.GetAuthorized() {
-		return status.Errorf(codes.PermissionDenied, "user %q is not authorized to read experiment %d", user, xid)
+		action := "read"
+		if roleType == xpb.XidAcls_WRITER {
+			action = "modify"
+		}
+		return status.Errorf(codes.PermissionDenied, "user %q is not authorized to %s experiment %d", user, action, xid)
 	}
 	return nil
 }

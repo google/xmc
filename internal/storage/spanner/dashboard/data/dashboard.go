@@ -318,7 +318,7 @@ func DashboardRowToProto(row *spanner.Row, charts []*dpb.Chart) (*dpb.Dashboard,
 	}, nil
 }
 
-// ChartProtoToInsertMutations creates Spanner mutations to insert a Chart, its PlotSpecs, and ArtifactCharts associations.
+// ChartProtoToInsertMutations creates Spanner mutations to insert a Chart and its PlotSpecs.
 func ChartProtoToInsertMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) {
 	if chart == nil {
 		return nil, fmt.Errorf("chart proto must not be nil")
@@ -367,13 +367,6 @@ func ChartProtoToInsertMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) 
 		})
 		mutations = append(mutations, mPlot)
 	}
-
-	mArtifact := spanner.InsertOrUpdate(dashboardschema.ArtifactChartsTableName, []string{
-		"Xid", "WorkUnitId", "ArtifactId", "ArtifactChartId", "ChartId", "CreatedAt",
-	}, []interface{}{
-		chartXid, chartWid, int64(0), chartID, chartID, spanner.CommitTimestamp,
-	})
-	mutations = append(mutations, mArtifact)
 
 	return mutations, nil
 }

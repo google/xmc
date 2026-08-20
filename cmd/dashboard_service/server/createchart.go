@@ -35,7 +35,7 @@ func populateChartProperties(chart *dpb.Chart, chartID string, xid, wid int64) {
 
 // CreateChart handles creation of a new chart entity under a work unit.
 func (s *Server) CreateChart(ctx context.Context, req *spb.CreateChartRequest) (*dpb.Chart, error) {
-	_, _, err := s.auth.AuthenticateUserFromContext(ctx)
+	user, _, err := s.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "failed to authenticate user: %v", err)
 	}
@@ -45,6 +45,10 @@ func (s *Server) CreateChart(ctx context.Context, req *spb.CreateChartRequest) (
 	}
 
 	xid, wid, _ := validator.ValidateCreateChartParent(req)
+
+	if err := s.authorizeExperimentWrite(ctx, user, xid); err != nil {
+		return nil, err
+	}
 
 	chartID := req.GetChartId()
 	if chartID == "" {
