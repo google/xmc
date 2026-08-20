@@ -23,11 +23,18 @@ import sys
 
 # Ensure workspace root is in sys.path when invoked directly as a script
 _WORKSPACE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+_E2E_DIR = os.path.abspath(os.path.dirname(__file__))
 if _WORKSPACE_ROOT not in sys.path:
     sys.path.insert(0, _WORKSPACE_ROOT)
+if _E2E_DIR not in sys.path:
+    sys.path.insert(0, _E2E_DIR)
 
-from test.e2e.lib.config import parse_args  # noqa: E402
-from test.e2e.lib.orchestrator import E2EOrchestrator  # noqa: E402
+try:
+    from test.e2e.lib.config import parse_args  # noqa: E402
+    from test.e2e.lib.orchestrator import E2EOrchestrator  # noqa: E402
+except ImportError:
+    from lib.config import parse_args  # noqa: E402
+    from lib.orchestrator import E2EOrchestrator  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
