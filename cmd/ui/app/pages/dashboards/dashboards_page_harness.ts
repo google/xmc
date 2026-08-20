@@ -24,6 +24,10 @@ export class DashboardsPageHarness extends ComponentHarness {
 
   private readonly titleEl = this.locatorFor('.dashboard-title');
   private readonly gridHarness = this.locatorFor(DashboardGridHarness);
+  private readonly addExperimentButton = this.locatorFor('.add-experiment-button');
+  private readonly refreshButton = this.locatorFor('.refresh-button');
+  private readonly shareButton = this.locatorFor('.share-button');
+  private readonly notFoundEl = this.locatorForOptional('.not-found-container');
 
   async getTitle(): Promise<string> {
     return (await this.titleEl()).text();
@@ -31,5 +35,21 @@ export class DashboardsPageHarness extends ComponentHarness {
 
   async getGridHarness(): Promise<DashboardGridHarness> {
     return this.gridHarness();
+  }
+
+  async clickAddExperiment(): Promise<void> {
+    return (await this.addExperimentButton()).click();
+  }
+
+  async clickRefresh(): Promise<void> {
+    return (await this.refreshButton()).click();
+  }
+
+  async clickShare(): Promise<void> {
+    return (await this.shareButton()).click();
+  }
+
+  async isNotFoundVisible(): Promise<boolean> {
+    return (await this.notFoundEl()) !== null;
   }
 }

@@ -22,10 +22,17 @@ import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
 import { AddExperimentDialogComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/add_experiment_dialog/add_experiment_dialog';
+import { DashboardGridComponent } from 'xmanager_cloud/ui/app/common/components/dashboard/dashboard_grid/dashboard_grid';
 import { DashboardService } from 'xmanager_cloud/ui/app/service/dashboard_service';
 import { SnackbarService } from 'xmanager_cloud/ui/app/service/snackbar_service';
 import { createMockComparisonDashboard } from 'xmanager_cloud/ui/app/testing/mock_dashboards';
-import { bootstrap, cleanState, getHarness, setupModule } from 'xmanager_cloud/ui/app/testing/test';
+import {
+  bootstrap,
+  cleanState,
+  getDebugEl,
+  getHarness,
+  setupModule,
+} from 'xmanager_cloud/ui/app/testing/test';
 
 import { DashboardsPage } from './dashboards_page';
 import { DashboardsPageHarness } from './dashboards_page_harness';
@@ -82,8 +89,9 @@ describe('DashboardsPage', () => {
     expect(await grid.getChartCount()).toBe(3);
   });
 
-  it('should open AddExperimentDialog when clicking add experiment and deep-copy template plots', () => {
+  it('should open AddExperimentDialog when clicking add experiment and deep-copy template plots', async () => {
     const pageComponent = bootstrap(DashboardsPage);
+    const harness = await getHarness(DashboardsPageHarness);
     const initialPlot = { plotId: 'val_loss_kpi', title: 'Test Plot' } as any;
     pageComponent.charts.set([
       {
@@ -99,7 +107,7 @@ describe('DashboardsPage', () => {
     } as MatDialogRef<AddExperimentDialogComponent>;
     spyOn(MatDialog.prototype, 'open').and.returnValue(mockDialogRef);
 
-    pageComponent.onOpenAddExperiment();
+    await harness.clickAddExperiment();
     expect(MatDialog.prototype.open).toHaveBeenCalled();
     expect(pageComponent.charts().length).toBe(2);
     expect(pageComponent.charts()[1].plots).toEqual([initialPlot]);
@@ -107,8 +115,9 @@ describe('DashboardsPage', () => {
     expect(pageComponent.charts()[1].plots![0]).not.toBe(pageComponent.charts()[0].plots![0]);
   });
 
-  it('should open AddExperimentDialog and use empty array for template plots when no charts exist', () => {
+  it('should open AddExperimentDialog and use empty array for template plots when no charts exist', async () => {
     const pageComponent = bootstrap(DashboardsPage);
+    const harness = await getHarness(DashboardsPageHarness);
     pageComponent.charts.set([]);
 
     const mockDialogRef = {
@@ -116,42 +125,53 @@ describe('DashboardsPage', () => {
     } as MatDialogRef<AddExperimentDialogComponent>;
     spyOn(MatDialog.prototype, 'open').and.returnValue(mockDialogRef);
 
-    pageComponent.onOpenAddExperiment();
+    await harness.clickAddExperiment();
     expect(MatDialog.prototype.open).toHaveBeenCalled();
     expect(pageComponent.charts().length).toBe(1);
     expect(pageComponent.charts()[0].plots).toEqual([]);
   });
 
-  it('should show not-found state when dashboard fails to load', () => {
+  it('should refresh dashboard charts when clicking refresh button', async () => {
+    bootstrap(DashboardsPage);
+    const harness = await getHarness(DashboardsPageHarness);
+    await harness.clickRefresh();
+    expect(state.snackbarServiceSpy.open).toHaveBeenCalledWith('Dashboard refreshed');
+  });
+
+  it('should show not-found state when dashboard fails to load', async () => {
     state.dashboardServiceSpy.getDashboard.and.returnValue(
       throwError(() => new Error('Not found')),
     );
     const pageComponent = bootstrap(DashboardsPage);
-    expect(pageComponent.dashboardNotFound()).toBeTrue();
+    const harness = await getHarness(DashboardsPageHarness);
+    expect(await harness.isNotFoundVisible()).toBeTrue();
     expect(pageComponent.isLoading()).toBeFalse();
   });
 
-  it('should show not-found state when no dashboard ID is provided in route', () => {
+  it('should show not-found state when no dashboard ID is provided in route', async () => {
     const route = TestBed.inject(ActivatedRoute);
     spyOn(route.snapshot.paramMap, 'get').and.returnValue(null);
-    const pageComponent = bootstrap(DashboardsPage);
-    expect(pageComponent.dashboardNotFound()).toBeTrue();
+    bootstrap(DashboardsPage);
+    const harness = await getHarness(DashboardsPageHarness);
+    expect(await harness.isNotFoundVisible()).toBeTrue();
   });
 
   it('should remove chart from comparison', () => {
     const pageComponent = bootstrap(DashboardsPage);
     expect(pageComponent.charts().length).toBe(3);
-    pageComponent.onRemoveChart('experiments/234911124/charts/tuned_v2');
+    const grid = getDebugEl(DashboardGridComponent).componentInstance as DashboardGridComponent;
+    grid.removeChart.emit('experiments/234911124/charts/tuned_v2');
     expect(pageComponent.charts().length).toBe(2);
   });
 
   describe('onShare', () => {
-    it('should open success snackbar when clipboard copy succeeds', () => {
+    it('should open success snackbar when clipboard copy succeeds', async () => {
       const clipboard = TestBed.inject(Clipboard);
       spyOn(clipboard, 'copy').and.returnValue(true);
-      const pageComponent = bootstrap(DashboardsPage);
+      bootstrap(DashboardsPage);
+      const harness = await getHarness(DashboardsPageHarness);
 
-      pageComponent.onShare();
+      await harness.clickShare();
 
       expect(clipboard.copy).toHaveBeenCalledWith(window.location.href);
       expect(state.snackbarServiceSpy.open).toHaveBeenCalledWith(
@@ -159,12 +179,13 @@ describe('DashboardsPage', () => {
       );
     });
 
-    it('should open error snackbar when clipboard copy fails', () => {
+    it('should open error snackbar when clipboard copy fails', async () => {
       const clipboard = TestBed.inject(Clipboard);
       spyOn(clipboard, 'copy').and.returnValue(false);
-      const pageComponent = bootstrap(DashboardsPage);
+      bootstrap(DashboardsPage);
+      const harness = await getHarness(DashboardsPageHarness);
 
-      pageComponent.onShare();
+      await harness.clickShare();
 
       expect(clipboard.copy).toHaveBeenCalledWith(window.location.href);
       expect(state.snackbarServiceSpy.open).toHaveBeenCalledWith(
@@ -178,7 +199,8 @@ describe('DashboardsPage', () => {
     pageComponent.loadDashboard('dashboards/vcc_comparison');
     state.dashboardServiceSpy.updateDashboard.calls.reset();
 
-    pageComponent.onRemoveChart('experiments/234911124/charts/tuned_v2');
+    const grid = getDebugEl(DashboardGridComponent).componentInstance as DashboardGridComponent;
+    grid.removeChart.emit('experiments/234911124/charts/tuned_v2');
     expect(state.dashboardServiceSpy.updateDashboard).toHaveBeenCalled();
   });
 });

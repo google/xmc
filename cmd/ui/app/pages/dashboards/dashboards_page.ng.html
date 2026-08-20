@@ -26,12 +26,17 @@ limitations under the License.
     </div>
 
     <div class="header-right">
-      <button mat-button class="toolbar-button" type="button" (click)="onRefresh()">
+      <button mat-button class="toolbar-button refresh-button" type="button" (click)="onRefresh()">
         <mat-icon>refresh</mat-icon>
         <span>Refresh</span>
       </button>
 
-      <button mat-button class="toolbar-button" type="button" (click)="onOpenAddExperiment()">
+      <button
+        mat-button
+        class="toolbar-button add-experiment-button"
+        type="button"
+        (click)="onOpenAddExperiment()"
+      >
         <mat-icon>add</mat-icon>
         <span>Add experiment to compare</span>
       </button>
