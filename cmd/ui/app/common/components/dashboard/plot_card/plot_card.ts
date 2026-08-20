@@ -106,7 +106,9 @@ export class PlotCardComponent implements OnDestroy {
     effect(() => {
       const canvasEl = this.chartCanvas()?.nativeElement;
       if (canvasEl && !this.isSummaryBox()) {
-        this.initChart(canvasEl);
+        if (!this.chartInstance) {
+          this.initChart(canvasEl);
+        }
       } else {
         this.cleanupChart();
       }
@@ -131,6 +133,9 @@ export class PlotCardComponent implements OnDestroy {
    * Initializes the ECharts instance on the canvas container element.
    */
   private initChart(canvasEl: HTMLDivElement): void {
+    if (this.chartInstance) {
+      return;
+    }
     this.cleanupChart();
     this.chartInstance = echarts.init(canvasEl);
     this.renderChart();

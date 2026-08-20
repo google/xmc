@@ -18,6 +18,7 @@ import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import * as echarts from 'echarts';
 
 import { PlotData, PlotSpec, PlotType } from 'xmanager_cloud/ui/app/service/dashboard_models';
 
@@ -135,5 +136,47 @@ describe('PlotCardComponent', () => {
     fixture.detectChanges();
     expect(await harness.isSummaryBox()).toBeFalse();
     expect(await harness.hasCanvas()).toBeTrue();
+  });
+
+  it('should initialize ECharts instance only once across multiple data updates', async () => {
+    expect(await harness.isSummaryBox()).toBeFalse();
+    expect(await harness.hasCanvas()).toBeTrue();
+
+    const canvasEl = fixture.nativeElement.querySelector('.plot-canvas') as HTMLDivElement;
+    expect(canvasEl).not.toBeNull();
+    const initialInstance = echarts.getInstanceByDom(canvasEl);
+    expect(initialInstance).toBeDefined();
+
+    host.data.set({
+      plotId: 'loss_curve',
+      type: 'SCATTER',
+      scatterSeries: {
+        metricName: 'loss/val',
+        points: [
+          { step: 0, avgValue: 1.0 },
+          { step: 10, avgValue: 0.8 },
+          { step: 20, avgValue: 0.5 },
+        ],
+      },
+    });
+    fixture.detectChanges();
+
+    host.data.set({
+      plotId: 'loss_curve',
+      type: 'SCATTER',
+      scatterSeries: {
+        metricName: 'loss/val',
+        points: [
+          { step: 0, avgValue: 1.0 },
+          { step: 10, avgValue: 0.8 },
+          { step: 20, avgValue: 0.5 },
+          { step: 30, avgValue: 0.3 },
+        ],
+      },
+    });
+    fixture.detectChanges();
+
+    const currentInstance = echarts.getInstanceByDom(canvasEl);
+    expect(currentInstance).toBe(initialInstance);
   });
 });
