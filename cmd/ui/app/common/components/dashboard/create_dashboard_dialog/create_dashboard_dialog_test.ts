@@ -59,6 +59,31 @@ describe('CreateDashboardDialogComponent', () => {
     const added = component.plots()[component.plots().length - 1];
     expect(added.title).toBe('Last F1 Score');
     expect(added.data?.metrics).toEqual(['custom/f1_score']);
+    expect(added.plotId).toMatch(/^custom_f1_score_[a-z0-9]+$/);
+  });
+
+  it('should generate collision-resistant plotIds when adding multiple plots rapidly', () => {
+    component.newPlotForm.patchValue({
+      type: PlotType.SUMMARY_BOX,
+      metricName: 'val/loss',
+      title: 'Validation Loss 1',
+    });
+    component.addPlot();
+
+    component.newPlotForm.patchValue({
+      type: PlotType.SUMMARY_BOX,
+      metricName: 'val/loss',
+      title: 'Validation Loss 2',
+    });
+    component.addPlot();
+
+    const plots = component.plots();
+    const lastPlot = plots[plots.length - 1];
+    const secondLastPlot = plots[plots.length - 2];
+
+    expect(lastPlot.plotId).not.toBe(secondLastPlot.plotId);
+    expect(lastPlot.plotId).toMatch(/^val_loss_[a-z0-9]+$/);
+    expect(secondLastPlot.plotId).toMatch(/^val_loss_[a-z0-9]+$/);
   });
 
   it('should remove a plot by index', () => {
