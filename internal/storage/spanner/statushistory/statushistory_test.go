@@ -148,9 +148,9 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 			queueNames: []string{"q1"},
 			window:     1 * time.Hour,
 			mockItems: []WorkUnitStatusHistoryItem{
-				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 10),
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, ResourceTypeCPU, 10),
 				newMockItem(102, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, ResourceTypeCPU, 20),
-				newMockItem(103, "q1", -2*time.Minute, essmsgpb.WorkUnitStatus_RUNNING, ResourceTypeCPU, 30),
+				newMockItem(103, "q1", -2*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 30),
 			},
 			want: []QueueMetricRow{
 				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: ResourceTypeCPU},
@@ -161,8 +161,8 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 			queueNames: []string{"q1"},
 			window:     30 * time.Minute,
 			mockItems: []WorkUnitStatusHistoryItem{
-				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 10),
-				newMockItem(102, "q1", -45*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 20),
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, ResourceTypeCPU, 10),
+				newMockItem(102, "q1", -45*time.Minute, essmsgpb.WorkUnitStatus_STARTING, ResourceTypeCPU, 20),
 			},
 			want: []QueueMetricRow{
 				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: ResourceTypeCPU},
@@ -173,8 +173,8 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 			queueNames: []string{"q1"},
 			window:     1 * time.Hour,
 			mockItems: []WorkUnitStatusHistoryItem{
-				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 10),
-				newMockItem(201, "q2", -10*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 20),
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, ResourceTypeCPU, 10),
+				newMockItem(201, "q2", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, ResourceTypeCPU, 20),
 			},
 			want: []QueueMetricRow{
 				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: ResourceTypeCPU},
@@ -185,9 +185,9 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 			queueNames: []string{"q1"},
 			window:     1 * time.Hour,
 			mockItems: []WorkUnitStatusHistoryItem{
-				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 10),
-				newMockItem(102, "q1", -8*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 20),
-				newMockItem(103, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, "GPU", 4),
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, ResourceTypeCPU, 10),
+				newMockItem(102, "q1", -8*time.Minute, essmsgpb.WorkUnitStatus_STARTING, ResourceTypeCPU, 20),
+				newMockItem(103, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_RUNNING, "GPU", 4),
 			},
 			want: []QueueMetricRow{
 				{QueueName: "q1", Count: 3, TotalUnits: 30, ResourceType: ResourceTypeCPU},
@@ -199,7 +199,7 @@ func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
 			queueNames: []string{},
 			window:     1 * time.Hour,
 			mockItems: []WorkUnitStatusHistoryItem{
-				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, ResourceTypeCPU, 10),
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, ResourceTypeCPU, 10),
 			},
 			want: nil,
 		},

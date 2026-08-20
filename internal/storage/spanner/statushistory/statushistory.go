@@ -48,8 +48,8 @@ var DefaultMockStatusHistoryItems = []WorkUnitStatusHistoryItem{
 		HistoryId:      3,
 		QueueName:      "cpu-queue",
 		TransitionTime: time.Now().Add(-20 * time.Minute),
-		NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-		PreviousState:  int64(essmsgpb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED),
+		NewState:       int64(essmsgpb.WorkUnitStatus_STARTING),
+		PreviousState:  int64(essmsgpb.WorkUnitStatus_SCHEDULING),
 		ResourceType:   ResourceTypeCPU,
 		ResourceUnits:  16000,
 	},
@@ -70,8 +70,8 @@ var DefaultMockStatusHistoryItems = []WorkUnitStatusHistoryItem{
 		HistoryId:      5,
 		QueueName:      "tpu-queue",
 		TransitionTime: time.Now().Add(-15 * time.Minute),
-		NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-		PreviousState:  int64(essmsgpb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED),
+		NewState:       int64(essmsgpb.WorkUnitStatus_STARTING),
+		PreviousState:  int64(essmsgpb.WorkUnitStatus_SCHEDULING),
 		ResourceType:   "v5p",
 		ResourceUnits:  16,
 	},
@@ -81,8 +81,8 @@ var DefaultMockStatusHistoryItems = []WorkUnitStatusHistoryItem{
 		HistoryId:      6,
 		QueueName:      "tpu-queue",
 		TransitionTime: time.Now().Add(-8 * time.Minute),
-		NewState:       int64(essmsgpb.WorkUnitStatus_INITIALIZING),
-		PreviousState:  int64(essmsgpb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED),
+		NewState:       int64(essmsgpb.WorkUnitStatus_RUNNING),
+		PreviousState:  int64(essmsgpb.WorkUnitStatus_STARTING),
 		ResourceType:   "v5p",
 		ResourceUnits:  32,
 	},
@@ -172,7 +172,7 @@ func FetchBatchQueueVelocityWithMockItems(ctx context.Context, client *spanner.C
 		        FROM WorkUnitStatusHistoryMock
 		        WHERE QueueName IN UNNEST(@queueNames)
 		          AND TransitionTime >= @cutoffTime
-		          AND NewState = @admittedState
+		          AND NewState IN UNNEST(@admittedStates)
 		      ),
 		      QueueTotals AS (
 		        SELECT QueueName, COUNT(DISTINCT CONCAT(CAST(BitReversedXid AS STRING), '-', CAST(WorkUnitId AS STRING))) AS TotalAdmittedJobs
@@ -190,7 +190,10 @@ func FetchBatchQueueVelocityWithMockItems(ctx context.Context, client *spanner.C
 			"mockStatusHistory": mockItems,
 			"queueNames":        queueNames,
 			"cutoffTime":        cutoff,
-			"admittedState":     int64(essmsgpb.WorkUnitStatus_INITIALIZING),
+			"admittedStates": []int64{
+				int64(essmsgpb.WorkUnitStatus_STARTING),
+				int64(essmsgpb.WorkUnitStatus_RUNNING),
+			},
 		},
 	}
 
