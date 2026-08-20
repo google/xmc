@@ -16,15 +16,22 @@
 
 from test.e2e.lib.command import run_cmd
 from test.e2e.lib.config import E2EConfig, parse_args
+from test.e2e.lib.helm_deployer import HelmDeployer
 from test.e2e.lib.image_builder import ImageBuilder
 from test.e2e.lib.kind import KindClusterManager
+from test.e2e.lib.orchestrator import E2EOrchestrator
 from test.e2e.lib.spanner import SpannerManager
+from test.e2e.lib.test_executor import PlaywrightTestExecutor, TestExecutor
 
 __all__ = [
     "E2EConfig",
+    "E2EOrchestrator",
+    "HelmDeployer",
     "ImageBuilder",
     "KindClusterManager",
+    "PlaywrightTestExecutor",
     "SpannerManager",
+    "TestExecutor",
     "parse_args",
     "run_cmd",
 ]
