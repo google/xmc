@@ -50,14 +50,24 @@ class TestHelmDeployer(unittest.TestCase):
         os.makedirs(os.path.join(self.deployer.helm_dir, "templates"), exist_ok=True)
         sample_yaml = os.path.join(self.deployer.helm_dir, "templates", "deploy.yaml")
         with open(sample_yaml, "w", encoding="utf-8") as f:
-            f.write("spec:\n  containers:\n    - imagePullPolicy: Always\n")
+            f.write(
+                "spec:\n"
+                "  containers:\n"
+                "    - imagePullPolicy: Always\n"
+                '    - imagePullPolicy: "Always"\n'
+            )
 
         self.deployer._patch_image_pull_policy()
 
         with open(sample_yaml, encoding="utf-8") as f:
             content = f.read()
-        self.assertIn("imagePullPolicy: IfNotPresent", content)
-        self.assertNotIn("imagePullPolicy: Always", content)
+        self.assertEqual(
+            content,
+            "spec:\n"
+            "  containers:\n"
+            "    - imagePullPolicy: IfNotPresent\n"
+            "    - imagePullPolicy: IfNotPresent\n",
+        )
 
     def test_generate_values_file(self):
         self.deployer._generate_values_file()

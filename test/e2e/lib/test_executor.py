@@ -31,7 +31,7 @@ class PlaywrightTestExecutor:
 
     def __init__(self, config: E2EConfig) -> None:
         self.cfg = config
-        self.venv_dir = os.path.join(self.cfg.temp_dir, "venv")
+        self.venv_dir = os.path.join(self.cfg.workspace_root, ".venv_e2e")
 
     def setup_venv(self) -> str:
         """Sets up Python virtual environment and installs dependencies."""

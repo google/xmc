@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 
 from test.e2e.lib.command import run_cmd
@@ -79,13 +80,14 @@ class HelmDeployer:
                     file_path = os.path.join(root, file)
                     with open(file_path, encoding="utf-8") as f:
                         content = f.read()
-                    if "imagePullPolicy: Always" in content:
-                        content = content.replace(
-                            "imagePullPolicy: Always",
-                            "imagePullPolicy: IfNotPresent",
-                        )
+                    patched_content, count = re.subn(
+                        r'imagePullPolicy:\s*["\']?Always["\']?',
+                        "imagePullPolicy: IfNotPresent",
+                        content,
+                    )
+                    if count > 0:
                         with open(file_path, "w", encoding="utf-8") as f:
-                            f.write(content)
+                            f.write(patched_content)
 
     def _generate_values_file(self) -> None:
         """Generates dynamic Helm values connecting to local Dex and Spanner."""
